@@ -1,0 +1,10 @@
+﻿event_inherited();
+npc_name   = "Griff";
+dialog     = "Strong creatures need strong trainers. Come back when you want to get serious.";
+skin_col   = make_colour_rgb(172, 128, 82);
+shirt_col  = make_colour_rgb(58, 52, 48);
+pants_col  = make_colour_rgb(44, 38, 32);
+hair_col   = make_colour_rgb(38, 28, 18);
+hair_style = 0;
+patrol_r   = 50;
+spd        = 0.8;

@@ -1,0 +1,13 @@
+{
+  "$GMScript":"v1",
+  "%Name":"scr_time_system",
+  "isCompatibility":false,
+  "isDnD":false,
+  "name":"scr_time_system",
+  "parent":{
+    "name":"CreatureCaretaker",
+    "path":"CreatureCaretaker.yyp",
+  },
+  "resourceType":"GMScript",
+  "resourceVersion":"2.0",
+}

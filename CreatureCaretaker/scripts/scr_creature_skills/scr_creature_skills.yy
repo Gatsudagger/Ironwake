@@ -1,0 +1,13 @@
+﻿{
+  "$GMScript":"v1",
+  "%Name":"scr_creature_skills",
+  "isCompatibility":false,
+  "isDnD":false,
+  "name":"scr_creature_skills",
+  "parent":{
+    "name":"CreatureCaretaker",
+    "path":"CreatureCaretaker.yyp",
+  },
+  "resourceType":"GMScript",
+  "resourceVersion":"2.0",
+}

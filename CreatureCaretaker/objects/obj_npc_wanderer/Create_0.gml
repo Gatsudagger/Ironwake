@@ -1,0 +1,11 @@
+﻿event_inherited();
+npc_name   = "Pip";
+dialog     = "Your creature is SO cool! I want one that can outrun a horse someday!";
+skin_col   = make_colour_rgb(232, 192, 148);
+shirt_col  = make_colour_rgb(58, 132, 78);
+pants_col  = make_colour_rgb(52, 48, 92);
+hair_col   = make_colour_rgb(88, 52, 18);
+hair_style = 0;
+patrol_r   = 165;
+spd        = 1.6;
+patrol_wait = irandom_range(55, 130);

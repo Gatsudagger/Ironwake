@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/miles/AppData/Roaming/GameMakerStudio2/**)",
+      "Bash(grep -n '$GMObject' 'C:\\\\Users\\\\miles\\\\GameMakerProjects\\\\Here We Go\\\\objects\\\\obj_player\\\\obj_player.yy')"
+    ]
+  }
+}

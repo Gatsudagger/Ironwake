@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\miles\\\\GameMakerProjects\\\\CreatureCaretaker\\\\sprites\\\\spr_skill_icons\" -Recurse | ForEach-Object { \"$\\($_.FullName\\) [$\\($_.Length\\)]\" })",
+      "Bash(Get-ChildItem -Path \"C:\\\\Asset_Library\" -Directory)",
+      "Bash(Select-Object Name)",
+      "PowerShell(Get-ChildItem \"C:\\\\Asset_Library\\\\Tiny RPG Character Asset Pack v1.02 -Full 15 Characters\" -Recurse | Where-Object {$_.Extension -eq \".png\"} | Select-Object Name, @{Name=\"Size\";Expression={$_.Length}} | Group-Object Name | ForEach-Object {Write-Host \"$\\($_.Name\\): $\\($_.Count\\) files, Size: $\\($_.Group[0].Size\\)\"})",
+      "PowerShell(Get-ChildItem \"C:\\\\Asset_Library\\\\Tiny RPG Character Asset Pack v1.03b -Full 20 Characters\" -Recurse | Where-Object {$_.Extension -eq \".png\"} | Select-Object Name, @{Name=\"Size\";Expression={$_.Length}} | Group-Object Name | ForEach-Object {Write-Host \"$\\($_.Name\\): $\\($_.Count\\) files, Size: $\\($_.Group[0].Size\\)\"} | Sort-Object)"
+    ]
+  }
+}

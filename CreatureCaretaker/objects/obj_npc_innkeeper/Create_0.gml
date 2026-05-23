@@ -1,0 +1,10 @@
+﻿event_inherited();
+npc_name   = "Rona";
+dialog     = "Tired? Rest does wonders. Your creature sleeps better knowing you do too.";
+skin_col   = make_colour_rgb(242, 202, 158);
+shirt_col  = make_colour_rgb(138, 98, 58);
+pants_col  = make_colour_rgb(68, 52, 32);
+hair_col   = make_colour_rgb(162, 98, 28);
+hair_style = 2;
+patrol_r   = 70;
+spd        = 0.75;

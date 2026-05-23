@@ -1,0 +1,10 @@
+﻿event_inherited();
+npc_name   = "Mira";
+dialog     = "Fresh supplies for the ranch! A well-fed creature trains twice as hard.";
+skin_col   = make_colour_rgb(228, 188, 138);
+shirt_col  = make_colour_rgb(185, 75, 38);
+pants_col  = make_colour_rgb(88, 62, 38);
+hair_col   = make_colour_rgb(48, 28, 12);
+hair_style = 1;
+patrol_r   = 80;
+spd        = 0.9;

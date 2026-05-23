@@ -1,0 +1,13 @@
+﻿{
+  "$GMScript":"v1",
+  "%Name":"scr_ui_utils",
+  "isCompatibility":false,
+  "isDnD":false,
+  "name":"scr_ui_utils",
+  "parent":{
+    "name":"CreatureCaretaker",
+    "path":"CreatureCaretaker.yyp",
+  },
+  "resourceType":"GMScript",
+  "resourceVersion":"2.0",
+}
