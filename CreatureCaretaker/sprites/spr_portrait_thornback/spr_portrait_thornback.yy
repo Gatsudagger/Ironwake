@@ -1,8 +1,6 @@
 ﻿{
   "$GMSprite":"v2",
-  "%Name":"
-spr_portrait_thornback
-",
+  "%Name":"spr_portrait_thornback",
   "bboxMode":0,"bbox_bottom":67,"bbox_left":0,"bbox_right":67,"bbox_top":0,
   "collisionKind":1,"collisionTolerance":0,"DynamicTexturePage":false,"edgeFiltering":false,"For3D":false,
   "frames":[
@@ -10,34 +8,22 @@ spr_portrait_thornback
   ],
   "gridX":0,"gridY":0,"height":68,"HTile":false,
   "layers":[
-    {"$GMImageLayer":"","%Name":"
-5ec7e8b2-5917-4141-b58e-9c6ce5d1a3e8
-","blendMode":0,"displayName":"default","isLocked":false,"name":"
-5ec7e8b2-5917-4141-b58e-9c6ce5d1a3e8
-","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
+    {"$GMImageLayer":"","%Name":"5ec7e8b2-5917-4141-b58e-9c6ce5d1a3e8","blendMode":0,"displayName":"default","isLocked":false,"name":"5ec7e8b2-5917-4141-b58e-9c6ce5d1a3e8","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
   ],
-  "name":"
-spr_portrait_thornback
-",
+  "name":"spr_portrait_thornback",
   "nineSlice":null,"origin":4,
   "parent":{"name":"CreatureCaretaker","path":"CreatureCaretaker.yyp",},
   "preMultiplyAlpha":false,"resourceType":"GMSprite","resourceVersion":"2.0",
   "sequence":{
-    "$GMSequence":"v1","%Name":"
-spr_portrait_thornback
-","autoRecord":true,
+    "$GMSequence":"v1","%Name":"spr_portrait_thornback","autoRecord":true,
     "backdropHeight":768,"backdropImageOpacity":0.5,"backdropImagePath":"","backdropWidth":1366,"backdropXOffset":0.0,"backdropYOffset":0.0,
     "events":{"$KeyframeStore<MessageEventKeyframe>":"","Keyframes":[],"resourceType":"KeyframeStore<MessageEventKeyframe>","resourceVersion":"2.0",},
     "eventStubScript":null,
     "eventToFunction":{},
-    "length":
-1
-.0,
+    "length":1.0,
     "lockOrigin":false,
     "moments":{"$KeyframeStore<MomentsEventKeyframe>":"","Keyframes":[],"resourceType":"KeyframeStore<MomentsEventKeyframe>","resourceVersion":"2.0",},
-    "name":"
-spr_portrait_thornback
-","playback":1,"playbackSpeed":8,"playbackSpeedType":0,
+    "name":"spr_portrait_thornback","playback":1,"playbackSpeed":8,"playbackSpeedType":0,
     "resourceType":"GMSequence","resourceVersion":"2.0",
     "seqHeight":68.0,"seqWidth":68.0,
     "showBackdrop":true,"showBackdropImage":false,"timeUnits":1,
