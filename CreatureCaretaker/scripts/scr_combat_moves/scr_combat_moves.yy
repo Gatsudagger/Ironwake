@@ -1,0 +1,13 @@
+{
+  "$GMScript":"v1",
+  "%Name":"scr_combat_moves",
+  "isCompatibility":false,
+  "isDnD":false,
+  "name":"scr_combat_moves",
+  "parent":{
+    "name":"CreatureCaretaker",
+    "path":"CreatureCaretaker.yyp",
+  },
+  "resourceType":"GMScript",
+  "resourceVersion":"2.0",
+}

@@ -1,10 +1,12 @@
 ﻿// Creature IDs
-enum CREATURE {
+enum SPECIES {
 	HAREHOUND,
 	AMPHIBI,
 	BOULDEER,
 	SALAPENT,
 	RAPTOWL,
+	THORNBACK,
+	GLOWMOTH,
 	COUNT
 }
 
@@ -31,9 +33,9 @@ enum CREATURE {
 /// @desc Populates global.creature_data with base stats for all creatures.
 ///       Call once at game start before accessing any creature data.
 function scr_creature_data_init() {
-	global.creature_data = array_create(CREATURE.COUNT);
+	global.creature_data = array_create(SPECIES.COUNT);
 
-	global.creature_data[CREATURE.HAREHOUND] = {
+	global.creature_data[SPECIES.HAREHOUND] = {
 		name:      "Harehound",
 		sprite:    spr_creature_harehound,
 		walk_sprites: [
@@ -57,7 +59,7 @@ function scr_creature_data_init() {
 		skills:    [0, 1, 2],
 	};
 
-	global.creature_data[CREATURE.AMPHIBI] = {
+	global.creature_data[SPECIES.AMPHIBI] = {
 		name:      "Amphibi",
 		sprite:    spr_creature_amphibi,
 		walk_sprites: [
@@ -81,7 +83,7 @@ function scr_creature_data_init() {
 		skills:    [3, 4, 5],
 	};
 
-	global.creature_data[CREATURE.BOULDEER] = {
+	global.creature_data[SPECIES.BOULDEER] = {
 		name:      "Bouldeer",
 		sprite:    spr_creature_bouldeer,
 		walk_sprites: [
@@ -105,7 +107,7 @@ function scr_creature_data_init() {
 		skills:    [6, 7, 8],
 	};
 
-	global.creature_data[CREATURE.SALAPENT] = {
+	global.creature_data[SPECIES.SALAPENT] = {
 		name:      "Salapent",
 		sprite:    spr_creature_salapent,
 		walk_sprites: [
@@ -129,7 +131,7 @@ function scr_creature_data_init() {
 		skills:    [9, 10, 11],
 	};
 
-	global.creature_data[CREATURE.RAPTOWL] = {
+	global.creature_data[SPECIES.RAPTOWL] = {
 		name:      "Raptowl",
 		sprite:    spr_creature_raptowl,
 		walk_sprites: [
@@ -142,36 +144,145 @@ function scr_creature_data_init() {
 			spr_walk_raptowl_ul,
 			spr_walk_raptowl_ur,
 		],
-		strength:  55,
-		agility:   82,
-		dexterity: 85,
-		stamina:   35,
-		intellect: 80,
-		willpower: 58,
-		defense:   30,
-		health:    35,
+		strength:  65,
+		agility:   85,
+		dexterity: 82,
+		stamina:   50,
+		intellect: 60,
+		willpower: 65,
+		defense:   25,
+		health:    45,
 		skills:    [12, 13, 14],
+	};
+
+	global.creature_data[SPECIES.THORNBACK] = {
+		name:      "Thornback",
+		sprite:    spr_portrait_thornback,
+		walk_sprites: [
+			spr_walk_thornback_down,   // 0 down
+			spr_walk_thornback_up,     // 1 up
+			spr_walk_thornback_left,   // 2 left
+			spr_walk_thornback_right,  // 3 right
+			spr_walk_thornback_down,   // 4 dl → down
+			spr_walk_thornback_down,   // 5 dr → down
+			spr_walk_thornback_right,  // 6 ul → right
+			spr_walk_thornback_left,   // 7 ur → left
+		],
+		strength:  85,
+		agility:   30,
+		dexterity: 45,
+		stamina:   70,
+		intellect: 40,
+		willpower: 65,
+		defense:   90,
+		health:    75,
+		skills:    [0, 1, 2],
+	};
+
+	global.creature_data[SPECIES.GLOWMOTH] = {
+		name:      "Glowmoth",
+		sprite:    spr_portrait_glowmoth,
+		walk_sprites: [
+			spr_walk_glowmoth_down,   // 0 down
+			spr_walk_glowmoth_up,     // 1 up
+			spr_walk_glowmoth_left,   // 2 left
+			spr_walk_glowmoth_right,  // 3 right
+			spr_walk_glowmoth_left,   // 4 dl → left
+			spr_walk_glowmoth_right,  // 5 dr → right
+			spr_walk_glowmoth_left,   // 6 ul → left
+			spr_walk_glowmoth_right,  // 7 ur → right
+		],
+		strength:  25,
+		agility:   80,
+		dexterity: 70,
+		stamina:   50,
+		intellect: 90,
+		willpower: 72,
+		defense:   22,
+		health:    42,
+		skills:    [0, 1, 2],
 	};
 }
 
-/// @desc Returns the full base-stat struct for a creature.
-/// @param {real} creature_id   A CREATURE enum value
+/// @desc Returns the full base-stat struct for a species.
+/// @param {real} species   A SPECIES enum value
 /// @returns {Struct}
-function scr_creature_get_data(creature_id) {
-	return global.creature_data[creature_id];
+function scr_creature_get_data(species) {
+	return global.creature_data[species];
 }
 
-/// @desc Returns a single base stat value for a creature.
-/// @param {real}   creature_id   A CREATURE enum value
-/// @param {string} stat          A STAT_* macro string (e.g. STAT_STRENGTH)
+/// @desc Returns a single base stat value for a species.
+/// @param {real}   species   A SPECIES enum value
+/// @param {string} stat      A STAT_* macro string (e.g. STAT_STRENGTH)
 /// @returns {real}
-function scr_creature_get_stat(creature_id, stat) {
-	return global.creature_data[creature_id][$ stat];
+function scr_creature_get_stat(species, stat) {
+	return global.creature_data[species][$ stat];
 }
 
-/// @desc Returns the display name of a creature.
-/// @param {real} creature_id   A CREATURE enum value
+/// @desc Returns the display name of a species.
+/// @param {real} species   A SPECIES enum value
 /// @returns {string}
-function scr_creature_get_name(creature_id) {
-	return global.creature_data[creature_id].name;
+function scr_creature_get_name(species) {
+	return global.creature_data[species].name;
+}
+
+/// @desc Creates and returns a fully-populated creature instance struct.
+///       Pulls base stats from global.creature_data; all bonus stats start at 0.
+/// @param {real} species   A SPECIES enum value
+/// @returns {Struct}
+function scr_creature_create(species) {
+	var _tmpl = global.creature_data[species];
+	return {
+		// Identity
+		uid:              string(get_timer()) + string(species),
+		species:          species,
+		name:             "unnamed",
+		generation:       1,
+		age_days:         0,
+
+		// Base stats — fixed at creation from species defaults
+		base_strength:    _tmpl[$ STAT_STRENGTH],
+		base_agility:     _tmpl[$ STAT_AGILITY],
+		base_dexterity:   _tmpl[$ STAT_DEXTERITY],
+		base_stamina:     _tmpl[$ STAT_STAMINA],
+		base_intellect:   _tmpl[$ STAT_INTELLECT],
+		base_willpower:   _tmpl[$ STAT_WILLPOWER],
+		base_defense:     _tmpl[$ STAT_DEFENSE],
+		base_health:      _tmpl[$ STAT_HEALTH],
+
+		// Biome bonus stats — accumulated separately, start at 0
+		bonus_strength:   0,
+		bonus_agility:    0,
+		bonus_dexterity:  0,
+		bonus_stamina:    0,
+		bonus_intellect:  0,
+		bonus_willpower:  0,
+		bonus_defense:    0,
+		bonus_health:     0,
+
+		// Current state
+		current_stamina:  _tmpl[$ STAT_STAMINA],
+		current_health:   _tmpl[$ STAT_HEALTH],
+		biome:            -1,
+		bond:             0,
+
+		// Visual
+		color_variant:    0,
+		sprite_name:      "",
+
+		// Lineage
+		parent_a_uid:     "",
+		parent_b_uid:     "",
+
+		// Task state
+		active_task:       -1,
+		task_start_minute: 0,
+		task_end_minute:   0,
+		task_complete:     false,
+
+		// Injury state (Section 13.7 — full implementation later)
+		injury_type:        0,   // 0 = none
+		injury_severity:    0,
+		consecutive_faints: 0,
+	};
 }
