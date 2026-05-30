@@ -1,5 +1,4 @@
-﻿if (instance_exists(obj_task_ui) && (obj_task_ui.show_tasks || obj_task_ui.show_stats)) exit;
-
+﻿if (instance_exists(obj_menu_screen) && obj_menu_screen.visible) exit;
 if (instance_exists(obj_task_ui) && (obj_task_ui.show_tasks || obj_task_ui.show_stats)) exit;
 
 var dx = 0, dy = 0;

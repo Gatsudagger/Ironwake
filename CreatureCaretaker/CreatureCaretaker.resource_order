@@ -1,4 +1,6 @@
 {
   "FolderOrderSettings":[],
-  "ResourceOrderSettings":[],
+  "ResourceOrderSettings":[
+    {"name":"spr_placeholder","order":1,"path":"sprites/spr_placeholder/spr_placeholder.yy",},
+  ],
 }
