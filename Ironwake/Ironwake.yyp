@@ -1,0 +1,73 @@
+﻿{
+  "$GMProject":"v1",
+  "%Name":"Ironwake",
+  "AudioGroups":[
+    {"$GMAudioGroup":"v1","%Name":"audiogroup_default","exportDir":"","name":"audiogroup_default","resourceType":"GMAudioGroup","resourceVersion":"2.0","targets":-1,},
+  ],
+  "configs":{
+    "children":[],
+    "name":"Default",
+  },
+  "defaultScriptType":1,
+  "Folders":[],
+  "ForcedPrefabProjectReferences":[],
+  "IncludedFiles":[],
+  "isEcma":false,
+  "LibraryEmitters":[],
+  "MetaData":{
+    "IDEVersion":"2024.14.4.222",
+  },
+  "name":"Ironwake",
+  "resources":[
+    {"id":{"name":"spr_vault_guardian","path":"sprites/spr_vault_guardian/spr_vault_guardian.yy",},},
+    {"id":{"name":"spr_stone_golem","path":"sprites/spr_stone_golem/spr_stone_golem.yy",},},
+    {"id":{"name":"spr_vault_crawler","path":"sprites/spr_vault_crawler/spr_vault_crawler.yy",},},
+    {"id":{"name":"spr_dungeon_wraith","path":"sprites/spr_dungeon_wraith/spr_dungeon_wraith.yy",},},
+    {"id":{"name":"spr_skeleton_archer","path":"sprites/spr_skeleton_archer/spr_skeleton_archer.yy",},},
+    {"id":{"name":"spr_skeleton_soldier","path":"sprites/spr_skeleton_soldier/spr_skeleton_soldier.yy",},},
+    {"id":{"name":"spr_arcanist","path":"sprites/spr_arcanist/spr_arcanist.yy",},},
+    {"id":{"name":"spr_bloodwarden","path":"sprites/spr_bloodwarden/spr_bloodwarden.yy",},},
+    {"id":{"name":"spr_shadowstrider","path":"sprites/spr_shadowstrider/spr_shadowstrider.yy",},},
+    {"id":{"name":"spr_vfx_slash","path":"sprites/spr_vfx_slash/spr_vfx_slash.yy",},},
+    {"id":{"name":"spr_vfx_arcane","path":"sprites/spr_vfx_arcane/spr_vfx_arcane.yy",},},
+    {"id":{"name":"spr_vfx_fire","path":"sprites/spr_vfx_fire/spr_vfx_fire.yy",},},
+    {"id":{"name":"spr_vfx_void","path":"sprites/spr_vfx_void/spr_vfx_void.yy",},},
+    {"id":{"name":"obj_char_select","path":"objects/obj_char_select/obj_char_select.yy",},},
+    {"id":{"name":"obj_character_menu","path":"objects/obj_character_menu/obj_character_menu.yy",},},
+    {"id":{"name":"obj_combat_controller","path":"objects/obj_combat_controller/obj_combat_controller.yy",},},
+    {"id":{"name":"obj_floor_controller","path":"objects/obj_floor_controller/obj_floor_controller.yy",},},
+    {"id":{"name":"obj_game_controller","path":"objects/obj_game_controller/obj_game_controller.yy",},},
+    {"id":{"name":"obj_hub_controller","path":"objects/obj_hub_controller/obj_hub_controller.yy",},},
+    {"id":{"name":"rm_character_select","path":"rooms/rm_character_select/rm_character_select.yy",},},
+    {"id":{"name":"rm_dungeon_floor","path":"rooms/rm_dungeon_floor/rm_dungeon_floor.yy",},},
+    {"id":{"name":"rm_hub","path":"rooms/rm_hub/rm_hub.yy",},},
+    {"id":{"name":"Room1","path":"rooms/Room1/Room1.yy",},},
+    {"id":{"name":"scr_abilities","path":"scripts/scr_abilities/scr_abilities.yy",},},
+    {"id":{"name":"scr_combat","path":"scripts/scr_combat/scr_combat.yy",},},
+    {"id":{"name":"scr_enemies","path":"scripts/scr_enemies/scr_enemies.yy",},},
+    {"id":{"name":"scr_stats","path":"scripts/scr_stats/scr_stats.yy",},},
+    {"id":{"name":"scr_ui","path":"scripts/scr_ui/scr_ui.yy",},},
+    {"id":{"name":"spr_invisible","path":"sprites/spr_invisible/spr_invisible.yy",},},
+    {"id":{"name":"Sprite2","path":"sprites/Sprite2/Sprite2.yy",},},
+  ],
+  "resourceType":"GMProject",
+  "resourceVersion":"2.0",
+  "RoomOrderNodes":[
+    {"roomId":{"name":"rm_character_select","path":"rooms/rm_character_select/rm_character_select.yy",},},
+    {"roomId":{"name":"rm_hub","path":"rooms/rm_hub/rm_hub.yy",},},
+    {"roomId":{"name":"rm_dungeon_floor","path":"rooms/rm_dungeon_floor/rm_dungeon_floor.yy",},},
+    {"roomId":{"name":"Room1","path":"rooms/Room1/Room1.yy",},},
+  ],
+  "templateType":"game",
+  "TextureGroups":[
+    {"$GMTextureGroup":"","%Name":"Default","autocrop":true,"border":2,"compressFormat":"bz2","customOptions":"","directory":"","groupParent":null,"isScaled":true,"loadType":"default","mipsToGenerate":0,"name":"Default","resourceType":"GMTextureGroup","resourceVersion":"2.0","targets":-1,},
+  ],
+}
+
+
+
+
+
+
+
+
