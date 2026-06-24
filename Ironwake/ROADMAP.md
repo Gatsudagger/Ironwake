@@ -154,10 +154,15 @@ A "help menu" so players can read brief breakdowns of the game's mechanics.
 ## 5. Onboarding & game feel
 - [ ] **Tutorial / first-run guidance** — new players hit AP combat, traits, loadout, Vex,
       ascendance all at once with no teaching.
-- [ ] Combat juice pass (hit feedback, status icons on combatants, telegraph clarity).
+- [~] Combat juice pass — status icons on combatants + looping status VFX sprites +
+      damage-shake **shipped** (combat-feedback pass). Remaining: hit-feedback polish,
+      telegraph clarity, salvage VFX/SFX (MISC §5).
 - [x] **Sound settings (built, verify in-IDE)** — Music + SFX volume sliders, reachable from
-      title + hub (`O`), persisted in settings.ini. See `SYSTEMS_AUDIO.md`. Per-asset gain
-      (no audio groups). Master volume / mute deferred.
+      title + hub (`O`), persisted in settings.ini. Per-asset gain (no audio groups).
+      Master volume / mute deferred.
+- [~] **Enemy family-themed SFX — framework built, awaiting real audio.** Death/attack sounds
+      keyword-classified into 7 families with best-fit fallbacks; M drops in
+      `snd_death_/snd_attack_<family>` files, then they're registered in `audio_sfx_assets()`.
 - [ ] Audio coverage audit (any actions missing SFX).
 
 ---
@@ -194,6 +199,29 @@ A "help menu" so players can read brief breakdowns of the game's mechanics.
   in code, NOT `asset_get_index` (the latter didn't resolve agent-made sprites at runtime).
 - PixelLab available (side-view ~96px to match enemies; resize to 97×97 via PIL NEAREST).
 - [ ] Any other sprites that need real art (e.g. remaining placeholder enemies, room/biome art).
+
+---
+
+## 8. Deferred backlog (folded in from retired SYSTEMS_*.md specs)
+These were the "deferred / out of scope" tails of now-deleted spec docs (each system is built;
+durable details live in the `project_*` memories). Captured here so they aren't lost.
+
+- **Enemies (from enemy-difficulty):** enemy AoE / multi-target abilities; enemy buffs to allied
+      enemies (only self-heal today); telegraphed control (wind-up → control); give abilities to
+      the remaining basic-attacker enemies.
+- **Skins / character (from skins-gender + Vael):** 8-directional skins + idle animation;
+      inventory **character viewer** (rotating model + idle anim to show off skin) — both M-wanted;
+      female / gender-filtered portrait set (combat-sprite-only for now).
+- **Runes (from runes):** add-socket service beyond an item's generated socket count; rune set
+      bonuses / multi-rune synergies.
+- **Boons (from boons):** boon rarities / weighted offers; higher-tier boons at deeper floors.
+- **Alchemy (from Sable):** higher-tier brewing beyond standard→elite.
+- **Item Codex (from codex):** per-item hand-written lore beyond legendaries; "New!" badge on
+      newly-discovered items; re-roll any splash art that reads poorly (swap PNG, same dims).
+- **Loot (from loot-scaling):** drop-*quantity* tuning if still over-geared at low awakening;
+      per-source legendary pity timers.
+- **Events (from events):** per-item "pick 1 of 2" treasure agency (M declined for v1);
+      hand-written art per event.
 
 ---
 
