@@ -26,6 +26,14 @@ confirmed = false;
 // Set true when the name-entry overlay is active
 naming_active = false;
 
+// Set true when the portrait-selection overlay is active (after name confirmed)
+portrait_active   = false;
+selected_portrait = 0;
+
+// Cosmetic gender for the chosen class's combat sprite ("m"/"f"). Toggled with Q/E
+// on the class-select screen; committed to global.player_gender at confirm.
+selected_gender = "m";
+
 
 // -----------------------------------------------------------------------------
 // BASE STAT TEMPLATES

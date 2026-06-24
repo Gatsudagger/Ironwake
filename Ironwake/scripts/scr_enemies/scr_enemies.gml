@@ -52,7 +52,8 @@ function enemy_define(
     telegraph_message,
     mechanic_type,
     mechanic_value,
-    mechanic_turns
+    mechanic_turns,
+    abilities = []
 ) {
     return {
         name:              name,
@@ -86,6 +87,11 @@ function enemy_define(
         mechanic_value:    mechanic_value,
         mechanic_turns:    mechanic_turns,
 
+        // Special abilities (Difficulty Pass) — array of enemy_ability() structs.
+        // The combat engine may use one per turn instead of the basic attack.
+        abilities:         abilities,
+        ability_cd:        [],     // runtime per-ability cooldown counters
+
         // Runtime state — populated by the combat engine, empty on the template
         status_effects:    [],
 
@@ -95,6 +101,91 @@ function enemy_define(
         // Internal tracking used by retribution mechanic
         last_damage_type:  -1,
     };
+}
+
+// ---------------------------------------------------------------------------
+// enemy_ability(name, kind, chance, cooldown, value, extra)
+// Builds one enemy-ability struct. kind ∈ "spell" (typed damage) / "debuff" /
+// "dot" (status on player) / "control" (stun/root/silence) / "heal" (self).
+// `extra` (optional struct) may set: dtype (0-3), status_kind, turns, msg.
+// ---------------------------------------------------------------------------
+function enemy_ability(name, kind, chance, cooldown, value, extra) {
+    var _a = { name: name, kind: kind, chance: chance, cooldown: cooldown,
+               value: value, dtype: 0, status_kind: "", turns: 1, msg: "" };
+    if (extra != undefined) {
+        if (variable_struct_exists(extra, "dtype"))       _a.dtype = extra.dtype;
+        if (variable_struct_exists(extra, "status_kind")) _a.status_kind = extra.status_kind;
+        if (variable_struct_exists(extra, "turns"))       _a.turns = extra.turns;
+        if (variable_struct_exists(extra, "msg"))         _a.msg = extra.msg;
+    }
+    return _a;
+}
+
+// ---------------------------------------------------------------------------
+// enemy_pick_ability(actor)
+// Ticks the actor's per-ability cooldowns, then returns one ready ability that
+// procs this turn (random among those that pass their chance roll), or undefined
+// to fall through to the basic attack. Lazily initialises ability_cd.
+// ---------------------------------------------------------------------------
+function enemy_pick_ability(actor) {
+    if (!variable_struct_exists(actor, "abilities") || array_length(actor.abilities) == 0) return undefined;
+    if (!variable_struct_exists(actor, "ability_cd") || array_length(actor.ability_cd) != array_length(actor.abilities)) {
+        actor.ability_cd = array_create(array_length(actor.abilities), 0);
+    }
+    for (var _i = 0; _i < array_length(actor.ability_cd); _i++) {
+        if (actor.ability_cd[_i] > 0) actor.ability_cd[_i]--;
+    }
+    var _ready = [];
+    for (var _i = 0; _i < array_length(actor.abilities); _i++) {
+        if (actor.ability_cd[_i] > 0) continue;
+        var _ab = actor.abilities[_i];
+        var _ch = variable_struct_exists(_ab, "chance") ? _ab.chance : 100;
+        if (irandom(99) < _ch) array_push(_ready, _i);
+    }
+    if (array_length(_ready) == 0) return undefined;
+    var _pick = _ready[irandom(array_length(_ready) - 1)];
+    actor.ability_cd[_pick] = variable_struct_exists(actor.abilities[_pick], "cooldown") ? actor.abilities[_pick].cooldown : 3;
+    return actor.abilities[_pick];
+}
+
+// ---------------------------------------------------------------------------
+// boss_ability_set(floor, dungeon)
+// Two scaling abilities every boss gets: a typed nuke + a sparingly-used control
+// slam. Floor raises magnitudes. Keeps control rare (low chance, long cooldown).
+// ---------------------------------------------------------------------------
+function boss_ability_set(floor, dungeon) {
+    var _fl = clamp(floor, 1, 3);
+    var _nuke_dmg  = [14, 20, 28][_fl - 1];
+    var _dtype     = (dungeon == "tundra_tomb") ? 1 : ((dungeon == "scorched_depths") ? 1 : 2); // elemental / drain
+    var _nuke_name = (dungeon == "tundra_tomb") ? "Frozen Lance" : ((dungeon == "scorched_depths") ? "Molten Barrage" : "Soul Rend");
+    return [
+        enemy_ability(_nuke_name, "spell", 45, 2, _nuke_dmg, { dtype: _dtype, msg: "unleashes " + _nuke_name }),
+        enemy_ability("Crushing Slam", "control", 30, 4, 0, { status_kind: "stun", turns: 1, msg: "slams the ground — you are stunned" }),
+    ];
+}
+
+// ---------------------------------------------------------------------------
+// enemy_is_ranged(name) / enemy_is_spellcaster(name)
+// Combat classification (reach + kind) used by control effects: root stops only
+// melee enemies, silence stops only spellcasters, stun stops all.
+// See SYSTEMS_ATTACK_CLASS.md. Boss aliases aren't listed → default melee/attack.
+// ---------------------------------------------------------------------------
+function enemy_is_ranged(name) {
+    switch (name) {
+        case "Skeleton Archer": case "Lava Spitter": case "Frost Shard": case "Pale Archivist":
+            return true;
+    }
+    return false;
+}
+function enemy_is_spellcaster(name) {
+    switch (name) {
+        case "Dungeon Wraith": case "Vault Wraith": case "Ash Wraith": case "Snowbound Wraith":
+        case "Ice Specter":    case "Pale Archivist": case "Fire Drake":  case "Lava Spitter":
+        case "Frost Shard":    case "Cinder Imp":     case "Infernal Revenant":
+        case "Smoldering Revenant":
+            return true;
+    }
+    return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -119,6 +210,7 @@ function enemy_clone(enemy_template) {
     c.status_effects = [];    // fresh array — never share with the template
     c.is_defeated    = false;
     c.last_damage_type = -1;
+    c.ability_cd     = [];    // fresh per-combat cooldown counters
 
     return c;
 }
@@ -210,14 +302,15 @@ global.enemies_ashen_vault_standard = [
         /*armor*/0, /*el_resist*/4, /*dodge*/8, /*acc*/75,
         /*xp*/10, /*gold_min*/5, /*gold_max*/10,
         /*telegraph_turn*/0, /*telegraph_damage*/0, /*message*/"",
-        /*mechanic*/"phase_shift", /*value*/1, /*turns*/3
+        /*mechanic*/"phase_shift", /*value*/1, /*turns*/3,
+        /*abilities*/[
+            enemy_ability("Soul Drain", "spell", 35, 2, 9, { dtype: 2, msg: "drains your essence" }),
+            enemy_ability("Haunting Gaze", "debuff", 30, 3, 0.20, { status_kind: "blind", turns: 2, msg: "clouds your sight" }),
+        ]
     ),
 
     // 3: Skeleton Archer
     // Announces a 18-damage charged shot the turn before it fires.
-    // The "charge" mechanic is handled purely via the telegraph path —
-    // enemy_should_telegraph() returns true one turn early, UI shows the message,
-    // then enemy_get_attack_damage() returns telegraph_damage on the fire turn.
     enemy_define(
         "Skeleton Archer",
         /*HP*/24, /*damage*/6,
@@ -226,6 +319,36 @@ global.enemies_ashen_vault_standard = [
         /*telegraph_turn*/3, /*telegraph_damage*/18,
         /*message*/"is preparing a mighty blow!",
         /*mechanic*/"charge", /*value*/0, /*turns*/0
+    ),
+
+    // 4: Grave Stalker
+    // High dodge skirmisher — punishes players who repeat the same damage type.
+    // Forces constant ability rotation to avoid giving it armor stacks.
+    enemy_define(
+        "Grave Stalker",
+        /*HP*/20, /*damage*/7,
+        /*armor*/0, /*el_resist*/2, /*dodge*/14, /*acc*/78,
+        /*xp*/10, /*gold_min*/5, /*gold_max*/10,
+        /*telegraph_turn*/0, /*telegraph_damage*/0, /*message*/"",
+        /*mechanic*/"retribution", /*value*/5, /*turns*/0,
+        /*abilities*/[
+            enemy_ability("Rending Slash", "dot", 35, 3, 4, { turns: 3, msg: "opens a deep bleeding wound" }),
+        ]
+    ),
+
+    // 5: Bone Colossus
+    // Slow, armored bruiser. Fortifies every 3 turns, making it briefly
+    // nearly immune. Hit hard in the window between fortify cycles.
+    enemy_define(
+        "Bone Colossus",
+        /*HP*/38, /*damage*/9,
+        /*armor*/7, /*el_resist*/0, /*dodge*/0, /*acc*/68,
+        /*xp*/10, /*gold_min*/5, /*gold_max*/10,
+        /*telegraph_turn*/0, /*telegraph_damage*/0, /*message*/"",
+        /*mechanic*/"fortify", /*value*/0.4, /*turns*/3,
+        /*abilities*/[
+            enemy_ability("Bone Crush", "control", 22, 4, 0, { status_kind: "stun", turns: 1, msg: "smashes you to the ground — stunned" }),
+        ]
     ),
 
 ];
@@ -271,4 +394,169 @@ global.enemies_ashen_vault_elite = [
         /*mechanic*/"retribution", /*value*/4, /*turns*/0
     ),
 
+];
+
+// =============================================================================
+// SCORCHED DEPTHS — fire-themed dungeon, floors 1-3
+// =============================================================================
+global.enemies_scorched_depths_standard = [
+    enemy_define(
+        /*name*/"Cinder Imp",
+        /*HP*/38, /*damage*/4, /*armor*/1, /*el_resist*/3, /*dodge*/5, /*acc*/72,
+        /*xp*/12, /*gold_min*/3, /*gold_max*/8,
+        /*telegraph_turn*/0, /*telegraph_damage*/0,
+        /*message*/"",
+        /*mechanic*/"double_strike", /*value*/4, /*turns*/0
+    ),
+    enemy_define(
+        /*name*/"Magma Slug",
+        /*HP*/55, /*damage*/6, /*armor*/4, /*el_resist*/5, /*dodge*/0, /*acc*/68,
+        /*xp*/15, /*gold_min*/4, /*gold_max*/9,
+        /*telegraph_turn*/0, /*telegraph_damage*/0,
+        /*message*/"",
+        /*mechanic*/"regen", /*value*/4, /*turns*/2
+    ),
+    enemy_define(
+        /*name*/"Ash Wraith",
+        /*HP*/42, /*damage*/8, /*armor*/0, /*el_resist*/8, /*dodge*/10, /*acc*/70,
+        /*xp*/14, /*gold_min*/3, /*gold_max*/8,
+        /*telegraph_turn*/0, /*telegraph_damage*/0,
+        /*message*/"",
+        /*mechanic*/"phase_shift", /*value*/1, /*turns*/3
+    ),
+    enemy_define(
+        /*name*/"Fire Drake",
+        /*HP*/50, /*damage*/7, /*armor*/3, /*el_resist*/4, /*dodge*/3, /*acc*/74,
+        /*xp*/16, /*gold_min*/5, /*gold_max*/10,
+        /*telegraph_turn*/3, /*telegraph_damage*/18,
+        /*message*/"is drawing in a deep breath!",
+        /*mechanic*/"charge", /*value*/0, /*turns*/0,
+        /*abilities*/[
+            enemy_ability("Cinder Breath", "spell", 35, 2, 12, { dtype: 1, msg: "breathes a gout of flame" }),
+            enemy_ability("Searing Brand", "dot", 30, 3, 5, { turns: 3, msg: "sears you with lingering fire" }),
+        ]
+    ),
+
+    // Lava Spitter — high acc ranged attacker, retribution punishes repeated elements
+    enemy_define(
+        /*name*/"Lava Spitter",
+        /*HP*/30, /*damage*/8, /*armor*/0, /*el_resist*/6, /*dodge*/2, /*acc*/84,
+        /*xp*/12, /*gold_min*/4, /*gold_max*/9,
+        /*telegraph_turn*/0, /*telegraph_damage*/0, /*message*/"",
+        /*mechanic*/"retribution", /*value*/4, /*turns*/0
+    ),
+
+    // Smoldering Revenant — regenerates and explodes on death; punishes slow kills
+    enemy_define(
+        /*name*/"Smoldering Revenant",
+        /*HP*/36, /*damage*/6, /*armor*/1, /*el_resist*/5, /*dodge*/4, /*acc*/72,
+        /*xp*/14, /*gold_min*/5, /*gold_max*/10,
+        /*telegraph_turn*/0, /*telegraph_damage*/0, /*message*/"",
+        /*mechanic*/"death_burst", /*value*/10, /*turns*/0,
+        /*abilities*/[
+            enemy_ability("Ember Mending", "heal", 30, 3, 10, { msg: "draws on the embers and mends" }),
+        ]
+    ),
+];
+
+global.enemies_scorched_depths_elite = [
+    enemy_define(
+        /*name*/"Cinder Golem",
+        /*HP*/90, /*damage*/10, /*armor*/6, /*el_resist*/5, /*dodge*/0, /*acc*/72,
+        /*xp*/30, /*gold_min*/15, /*gold_max*/25,
+        /*telegraph_turn*/0, /*telegraph_damage*/0,
+        /*message*/"",
+        /*mechanic*/"fortify", /*value*/0.5, /*turns*/4
+    ),
+    enemy_define(
+        /*name*/"Infernal Revenant",
+        /*HP*/75, /*damage*/12, /*armor*/3, /*el_resist*/8, /*dodge*/5, /*acc*/74,
+        /*xp*/28, /*gold_min*/14, /*gold_max*/22,
+        /*telegraph_turn*/4, /*telegraph_damage*/20,
+        /*message*/"is channeling hellfire!",
+        /*mechanic*/"death_burst", /*value*/12, /*turns*/0
+    ),
+];
+
+// =============================================================================
+// TUNDRA TOMB — ice/undead dungeon, floors 1-3
+// =============================================================================
+global.enemies_tundra_tomb_standard = [
+    enemy_define(
+        /*name*/"Frost Shard",
+        /*HP*/35, /*damage*/7, /*armor*/1, /*el_resist*/6, /*dodge*/8, /*acc*/72,
+        /*xp*/13, /*gold_min*/3, /*gold_max*/8,
+        /*telegraph_turn*/0, /*telegraph_damage*/0,
+        /*message*/"",
+        /*mechanic*/"phase_shift", /*value*/1, /*turns*/3
+    ),
+    enemy_define(
+        /*name*/"Glacial Lurker",
+        /*HP*/44, /*damage*/5, /*armor*/2, /*el_resist*/4, /*dodge*/4, /*acc*/74,
+        /*xp*/14, /*gold_min*/4, /*gold_max*/9,
+        /*telegraph_turn*/0, /*telegraph_damage*/0,
+        /*message*/"",
+        /*mechanic*/"double_strike", /*value*/5, /*turns*/0
+    ),
+    enemy_define(
+        /*name*/"Pale Archivist",
+        /*HP*/40, /*damage*/6, /*armor*/1, /*el_resist*/5, /*dodge*/2, /*acc*/70,
+        /*xp*/13, /*gold_min*/3, /*gold_max*/8,
+        /*telegraph_turn*/3, /*telegraph_damage*/16,
+        /*message*/"is inscribing a death rune!",
+        /*mechanic*/"charge", /*value*/0, /*turns*/0,
+        /*abilities*/[
+            enemy_ability("Death Rune", "control", 25, 4, 0, { status_kind: "silence", turns: 2, msg: "binds your tongue — silenced" }),
+            enemy_ability("Frost Bolt", "spell", 35, 2, 10, { dtype: 1, msg: "hurls a shard of ice" }),
+        ]
+    ),
+    enemy_define(
+        /*name*/"Snowbound Wraith",
+        /*HP*/48, /*damage*/7, /*armor*/0, /*el_resist*/9, /*dodge*/6, /*acc*/73,
+        /*xp*/15, /*gold_min*/4, /*gold_max*/9,
+        /*telegraph_turn*/0, /*telegraph_damage*/0,
+        /*message*/"",
+        /*mechanic*/"regen", /*value*/3, /*turns*/2
+    ),
+
+    // Ice Specter — phases out AND punishes repeated damage types; very slippery
+    enemy_define(
+        /*name*/"Ice Specter",
+        /*HP*/28, /*damage*/8, /*armor*/0, /*el_resist*/10, /*dodge*/10, /*acc*/65,
+        /*xp*/14, /*gold_min*/4, /*gold_max*/9,
+        /*telegraph_turn*/0, /*telegraph_damage*/0, /*message*/"",
+        /*mechanic*/"phase_shift", /*value*/1, /*turns*/2,
+        /*abilities*/[
+            enemy_ability("Numbing Chill", "debuff", 35, 3, 0.20, { status_kind: "weaken", turns: 2, msg: "chills you to the bone — weakened" }),
+        ]
+    ),
+
+    // Frozen Thrall — fortifies behind an icy shell, then telegraphs a crushing blow
+    enemy_define(
+        /*name*/"Frozen Thrall",
+        /*HP*/40, /*damage*/7, /*armor*/5, /*el_resist*/4, /*dodge*/0, /*acc*/70,
+        /*xp*/14, /*gold_min*/4, /*gold_max*/9,
+        /*telegraph_turn*/4, /*telegraph_damage*/19,
+        /*message*/"is rearing back for a frozen slam!",
+        /*mechanic*/"fortify", /*value*/0.45, /*turns*/4
+    ),
+];
+
+global.enemies_tundra_tomb_elite = [
+    enemy_define(
+        /*name*/"Glacial Beast",
+        /*HP*/85, /*damage*/11, /*armor*/5, /*el_resist*/6, /*dodge*/2, /*acc*/76,
+        /*xp*/29, /*gold_min*/15, /*gold_max*/24,
+        /*telegraph_turn*/0, /*telegraph_damage*/0,
+        /*message*/"",
+        /*mechanic*/"fortify", /*value*/0.5, /*turns*/4
+    ),
+    enemy_define(
+        /*name*/"Frozen Sentinel",
+        /*HP*/72, /*damage*/10, /*armor*/4, /*el_resist*/7, /*dodge*/3, /*acc*/74,
+        /*xp*/27, /*gold_min*/14, /*gold_max*/22,
+        /*telegraph_turn*/4, /*telegraph_damage*/18,
+        /*message*/"is preparing a devastating strike!",
+        /*mechanic*/"retribution", /*value*/4, /*turns*/0
+    ),
 ];

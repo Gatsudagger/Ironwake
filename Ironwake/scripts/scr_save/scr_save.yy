@@ -1,0 +1,13 @@
+{
+  "$GMScript":"v1",
+  "%Name":"scr_save",
+  "isCompatibility":false,
+  "isDnD":false,
+  "name":"scr_save",
+  "parent":{
+    "name":"Ironwake",
+    "path":"Ironwake.yyp",
+  },
+  "resourceType":"GMScript",
+  "resourceVersion":"2.0",
+}

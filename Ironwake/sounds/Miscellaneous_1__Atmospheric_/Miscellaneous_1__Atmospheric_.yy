@@ -1,0 +1,26 @@
+{
+  "$GMSound":"v2",
+  "%Name":"Miscellaneous_1__Atmospheric_",
+  "audioGroupId":{
+    "name":"audiogroup_default",
+    "path":"audiogroups/audiogroup_default",
+  },
+  "bitDepth":1,
+  "channelFormat":0,
+  "compression":0,
+  "compressionQuality":4,
+  "conversionMode":0,
+  "duration":3.8749886,
+  "exportDir":"",
+  "name":"Miscellaneous_1__Atmospheric_",
+  "parent":{
+    "name":"Ironwake",
+    "path":"Ironwake.yyp",
+  },
+  "preload":false,
+  "resourceType":"GMSound",
+  "resourceVersion":"2.0",
+  "sampleRate":44100,
+  "soundFile":"Miscellaneous_1__Atmospheric_.wav",
+  "volume":1.0,
+}

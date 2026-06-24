@@ -1,3 +1,13 @@
+// Singleton guard — only one game controller may exist at a time
+if (instance_number(obj_game_controller) > 1) {
+    instance_destroy();
+    exit;
+}
+
+// -1 = no slot chosen yet (title screen hasn't selected one); set by the slot picker.
+// load_game() and save_game() both no-op when this is -1.
+global.save_slot = -1;
+
 depth = -99999; // draw GUI on top of all room controllers
 
 // Lock window and GUI layer to the designed resolution so playtest and
@@ -5,6 +15,60 @@ depth = -99999; // draw GUI on top of all room controllers
 window_set_size(1280, 720);
 window_center();
 display_set_gui_size(1280, 720);
+
+// Apply the saved fullscreen preference (settings.ini). The GUI layer stays at
+// 1280x720 above, so fullscreen just scales that surface to fill the display.
+video_apply();
+
+// -----------------------------------------------------------------------------
+// SPRITE INCLUDE GUARD
+// The female class sprites and all Vael skins are referenced ONLY via
+// asset_get_index("name") (a string the compiler can't see as a reference), so
+// GameMaker excludes them from the build and asset_get_index() returns -1 at
+// runtime even though they exist in the project. Referencing them here by their
+// bare asset identifiers — stored in a global so the assignment is never
+// dead-code-eliminated — forces the compiler to include them in the build.
+// (If a sprite is ever renamed/removed, update this list to match.)
+global.__sprite_includes = [
+    spr_hub_background,
+    spr_ui_frame,
+    spr_combatbg_ashen_1,
+    spr_combatbg_tundra_1,
+    spr_combatbg_scorched_1,
+    spr_fx_poison,
+    spr_fx_burn,
+    spr_fx_bleed,
+    spr_fx_blind,
+    spr_fx_stun,
+    spr_fx_weaken,
+    spr_fx_impact,
+    spr_arcanist_f,
+    spr_bloodwarden_f,
+    spr_shadowstrider_f,
+    spr_skin_ashen,
+    spr_skin_bloodsworn,
+    spr_skin_bonechoir,
+    spr_skin_cinderclad,
+    spr_skin_cryptlight,
+    spr_skin_dawnbreak,
+    spr_skin_doomherald,
+    spr_skin_duskhide,
+    spr_skin_ember,
+    spr_skin_frostbit,
+    spr_skin_goldwrought,
+    spr_skin_gravewalker,
+    spr_skin_hearth,
+    spr_skin_ironscale,
+    spr_skin_mirewalker,
+    spr_skin_pilgrim,
+    spr_skin_sanguine,
+    spr_skin_sovereign,
+    spr_skin_stormcall,
+    spr_skin_tide,
+    spr_skin_veilbind,
+    spr_skin_voidtouch,
+    spr_skin_wanderer,
+];
 
 // =============================================================================
 // obj_game_controller — Create event
@@ -73,6 +137,7 @@ global.last_run_perm_points = 0;   // perm points earned in the most recent run 
 // -----------------------------------------------------------------------------
 global.current_run_gold  = 0;
 global.current_run_kills = 0;
+if (!variable_global_exists("run_boons")) global.run_boons = [];   // active boons this run (Shrine tribute)
 
 
 // -----------------------------------------------------------------------------
@@ -88,22 +153,38 @@ global.current_run_kills = 0;
 // class_req: -1 = any, 0 = Arcanist, 1 = Bloodwarden, 2 = Shadowstrider.
 
 // --- COMMON WEAPONS (class_req set post-creation) ---
-var _cw_ashen        = create_item("Ashen Blade",    "weapon", 0, "STR", 2, "+2 STR",                       15);
-var _cw_shortbow     = create_item("Worn Shortbow",  "weapon", 0, "DEX", 2, "+2 DEX",                       14);
-var _cw_cracked_wand = create_item("Cracked Focus",  "weapon", 0, "INT", 2, "+2 INT, still channels power", 13);
+var _cw_ashen        = create_item("Ashen Blade",    "weapon", 0, "STR", 2, "",                        15);
+var _cw_shortbow     = create_item("Worn Shortbow",  "weapon", 0, "DEX", 2, "",                        14);
+var _cw_cracked_wand = create_item("Cracked Focus",  "weapon", 0, "INT", 2, "still channels power",   13);
 _cw_ashen.class_req = -1;  _cw_shortbow.class_req = -1;  _cw_cracked_wand.class_req = 0;
+// Class-weapon ability affixes — being class-locked grants a combat bonus (read in obj_combat_controller/Create_0).
+_cw_cracked_wand.unique_effect = "class_first_spell_ap";
+_cw_cracked_wand.unique_desc   = "First spell each combat costs 1 less AP";
 
 // --- UNCOMMON WEAPONS ---
-var _uw_gravel  = create_item("Gravelstone Sword", "weapon", 1, "STR", 4, "+4 STR, dense and brutal",              35);
-var _uw_wand    = create_item("Vaultstone Wand",   "weapon", 1, "INT", 4, "+4 INT, inscribed vault runes",         38);
-var _uw_sickle  = create_item("Shadow Sickle",     "weapon", 1, "DEX", 4, "+4 DEX, curved blade of the striders", 36);
+var _uw_gravel  = create_item("Gravelstone Sword", "weapon", 1, "STR", 4, "dense and brutal",              35);
+var _uw_wand    = create_item("Vaultstone Wand",   "weapon", 1, "INT", 4, "inscribed with vault runes",    38);
+var _uw_sickle  = create_item("Shadow Sickle",     "weapon", 1, "DEX", 4, "curved blade of the striders",  36);
 _uw_gravel.class_req = 1;  _uw_wand.class_req = 0;  _uw_sickle.class_req = 2;
+_uw_gravel.unique_effect = "class_lifesteal";    _uw_gravel.unique_desc = "Heal 10% of the melee damage you deal";
+_uw_wand.unique_effect   = "class_spell_dmg";    _uw_wand.unique_desc   = "Spells deal +12% damage";
+_uw_sickle.unique_effect = "class_crit";         _uw_sickle.unique_desc = "+8% critical hit chance";
 
 // --- RARE WEAPONS ---
-var _rw_ash    = create_item("Ashkeeper Blade",  "weapon", 2, "STR", 6, "+6 STR, forged in ashwalker tradition", 80);
-var _rw_vsept  = create_item("Void Scepter",     "weapon", 2, "INT", 6, "+6 INT, channels the void",            85);
-var _rw_serp   = create_item("Serpent's Reach",  "weapon", 2, "DEX", 6, "+6 DEX, flexible blade of the deep",   82);
+var _rw_ash    = create_item("Ashkeeper Blade",  "weapon", 2, "STR", 6, "forged in ashwalker tradition",  80);
+var _rw_vsept  = create_item("Void Scepter",     "weapon", 2, "INT", 6, "channels the void",             85);
+var _rw_serp   = create_item("Serpent's Reach",  "weapon", 2, "DEX", 6, "flexible blade of the deep",    82);
 _rw_ash.class_req = 1;  _rw_vsept.class_req = 0;  _rw_serp.class_req = 2;
+_rw_ash.unique_effect   = "class_start_shield";  _rw_ash.unique_desc   = "Start each combat with a 12 HP shield";
+_rw_vsept.unique_effect = "class_spell_crit_ap"; _rw_vsept.unique_desc = "Spell critical hits restore 1 AP";
+_rw_serp.unique_effect  = "class_kill_ap";       _rw_serp.unique_desc  = "Killing an enemy restores 1 AP";
+
+// --- PRE-DECLARED MULTI-STAT ITEMS (intrinsic secondary stats as affixes) ---
+var _ember_ring = create_item("Ember Ring", "ring", 1, "STR", 2, "glows with a warm inner heat", 26);
+_ember_ring.affixes = [{ suffix: "of Insight", prefix: "Arcane", stat_name: "INT", stat_value: 2 }];
+
+var _forsaken_circlet = create_item("Forsaken Circlet", "helm", 2, "INT", 5, "worn by a mage of the fallen court", 82);
+_forsaken_circlet.affixes = [{ suffix: "of Clarity", prefix: "Wise", stat_name: "WIS", stat_value: 3 }];
 
 global.loot_table_common = [
     // Weapons
@@ -111,33 +192,33 @@ global.loot_table_common = [
     _cw_shortbow,
     _cw_cracked_wand,
     // Offhand
-    create_item("Cracked Shield",     "offhand", 0, "CON", 2, "+2 CON",                        12),
-    create_item("Ash Totem",          "offhand", 0, "WIS", 1, "+1 WIS, carved wood talisman",   9),
-    create_item("Soulstone Fragment", "offhand", 0, "INT", 1, "+1 INT, chip of raw crystal",     9),
+    create_item("Cracked Shield",     "offhand", 0, "CON", 2, "",                         12),
+    create_item("Ash Totem",          "offhand", 0, "WIS", 1, "carved wood talisman",      9),
+    create_item("Soulstone Fragment", "offhand", 0, "INT", 1, "chip of raw soulstone",      9),
     // Helm
-    create_item("Ashen Hood",         "helm",    0, "DEX", 1, "+1 DEX, protects from vault dust", 9),
-    create_item("Bone Cap",           "helm",    0, "CON", 1, "+1 CON, crude skull-shaped guard",  8),
-    create_item("Tarnished Visor",    "helm",    0, "STR", 1, "+1 STR, bent but still sturdy",     8),
+    create_item("Ashen Hood",         "helm",    0, "DEX", 1, "protects from vault dust",   9),
+    create_item("Bone Cap",           "helm",    0, "CON", 1, "crude skull-shaped guard",   8),
+    create_item("Tarnished Visor",    "helm",    0, "STR", 1, "bent but still sturdy",      8),
     // Chest
-    create_item("Tattered Robes",     "chest",   0, "CON", 1, "+1 CON",                        10),
-    create_item("Rusted Chainshirt",  "chest",   0, "CON", 2, "+2 CON, rough but solid",        11),
-    create_item("Shadowcloth Tunic",  "chest",   0, "DEX", 1, "+1 DEX, woven shadow-thread",     9),
+    create_item("Tattered Robes",     "chest",   0, "CON", 1, "",                          10),
+    create_item("Rusted Chainshirt",  "chest",   0, "CON", 2, "rough but solid",            11),
+    create_item("Shadowcloth Tunic",  "chest",   0, "DEX", 1, "woven shadow-thread",         9),
     // Gloves
-    create_item("Worn Gauntlets",     "gloves",  0, "STR", 1, "+1 STR, old iron, liner rotted",  8),
-    create_item("Nimble Wraps",       "gloves",  0, "DEX", 1, "+1 DEX, tight cloth for grip",    8),
-    create_item("Sage's Gloves",      "gloves",  0, "INT", 1, "+1 INT, finger-cut for rune work", 7),
+    create_item("Worn Gauntlets",     "gloves",  0, "STR", 1, "old iron, liner rotted",     8),
+    create_item("Nimble Wraps",       "gloves",  0, "DEX", 1, "tight cloth for grip",       8),
+    create_item("Sage's Gloves",      "gloves",  0, "INT", 1, "finger-cut for rune work",   7),
     // Boots
-    create_item("Worn Treads",        "boots",   0, "DEX", 1, "+1 DEX, good for running",        7),
-    create_item("Ironshod Boots",     "boots",   0, "CON", 1, "+1 CON, iron toe-caps",            8),
-    create_item("Dustwalker Wraps",   "boots",   0, "WIS", 1, "+1 WIS, padded foot-wrappings",    7),
+    create_item("Worn Treads",        "boots",   0, "DEX", 1, "good for running",            7),
+    create_item("Ironshod Boots",     "boots",   0, "CON", 1, "iron toe-caps",               8),
+    create_item("Dustwalker Wraps",   "boots",   0, "WIS", 1, "padded foot-wrappings",       7),
     // Amulet
-    create_item("Dusty Amulet",       "amulet",  0, "WIS", 1, "+1 WIS",                          8),
-    create_item("Bone Talisman",      "amulet",  0, "CON", 1, "+1 CON, carved from femur bone",   8),
-    create_item("Silver Chain",       "amulet",  0, "CHA", 1, "+1 CHA, tarnished but charming",   7),
+    create_item("Dusty Amulet",       "amulet",  0, "WIS", 1, "",                            8),
+    create_item("Bone Talisman",      "amulet",  0, "CON", 1, "carved from femur bone",      8),
+    create_item("Silver Chain",       "amulet",  0, "CHA", 1, "tarnished but charming",      7),
     // Ring
-    create_item("Bone Ring",          "ring",    0, "INT", 1, "+1 INT",                           8),
-    create_item("Copper Signet",      "ring",    0, "STR", 1, "+1 STR, crest of no house",        7),
-    create_item("Tarnished Band",     "ring",    0, "DEX", 1, "+1 DEX, worn smooth",               7),
+    create_item("Bone Ring",          "ring",    0, "INT", 1, "",                            8),
+    create_item("Copper Signet",      "ring",    0, "STR", 1, "crest of no house",           7),
+    create_item("Tarnished Band",     "ring",    0, "DEX", 1, "worn smooth",                  7),
 ];
 
 global.loot_table_uncommon = [
@@ -146,26 +227,26 @@ global.loot_table_uncommon = [
     _uw_wand,
     _uw_sickle,
     // Offhand
-    create_item("Warden's Buckler",    "offhand", 1, "CON", 4, "+4 CON",                              30),
-    create_item("Runic Focus",         "offhand", 1, "INT", 3, "+3 INT, inscribed with focusing runes",32),
+    create_item("Warden's Buckler",    "offhand", 1, "CON", 4, "",                              30),
+    create_item("Runic Focus",         "offhand", 1, "INT", 3, "inscribed with focusing runes", 32),
     // Helm
-    create_item("Watcher's Cowl",      "helm",    1, "INT", 3, "+3 INT, hood of a Vault Watcher",      28),
-    create_item("Iron Skullcap",       "helm",    1, "CON", 3, "+3 CON, riveted steel, dented solid",  26),
+    create_item("Watcher's Cowl",      "helm",    1, "INT", 3, "hood of a Vault Watcher",       28),
+    create_item("Iron Skullcap",       "helm",    1, "CON", 3, "riveted steel, dented solid",   26),
     // Chest
-    create_item("Shadowthread Vest",   "chest",   1, "DEX", 3, "+3 DEX",                              32),
-    create_item("Ashwarden Coat",      "chest",   1, "CON", 3, "+3 CON, ash-fiber reinforced leather", 28),
+    create_item("Shadowthread Vest",   "chest",   1, "DEX", 3, "",                              32),
+    create_item("Ashwarden Coat",      "chest",   1, "CON", 3, "ash-fiber reinforced leather",  28),
     // Gloves
-    create_item("Irongrip Gauntlets",  "gloves",  1, "STR", 3, "+3 STR, weighted knuckles",            26),
-    create_item("Fleethand Wraps",     "gloves",  1, "DEX", 3, "+3 DEX, moves with the wearer",        28),
+    create_item("Irongrip Gauntlets",  "gloves",  1, "STR", 3, "weighted knuckles",             26),
+    create_item("Fleethand Wraps",     "gloves",  1, "DEX", 3, "moves with the wearer",         28),
     // Boots
-    create_item("Vaultstrider Boots",  "boots",   1, "DEX", 3, "+3 DEX, built for confined spaces",    27),
-    create_item("Stoneguard Greaves",  "boots",   1, "CON", 3, "+3 CON, leg plates absorbing impact",  26),
+    create_item("Vaultstrider Boots",  "boots",   1, "DEX", 3, "built for confined spaces",     27),
+    create_item("Stoneguard Greaves",  "boots",   1, "CON", 3, "leg plates absorb each blow",   26),
     // Amulet
-    create_item("Sentry's Pendant",    "amulet",  1, "WIS", 3, "+3 WIS",                              28),
-    create_item("Soul-Linked Talisman","amulet",  1, "INT", 3, "+3 INT, arcane resonance",             30),
+    create_item("Sentry's Pendant",    "amulet",  1, "WIS", 3, "",                              28),
+    create_item("Soul-Linked Talisman","amulet",  1, "INT", 3, "arcane resonance",              30),
     // Ring
-    create_item("Ember Ring",          "ring",    1, "STR", 2, "+2 STR +2 INT",                       26),
-    create_item("Voidtouched Ring",    "ring",    1, "INT", 3, "+3 INT, hums with void energy",        28),
+    _ember_ring,
+    create_item("Voidtouched Ring",    "ring",    1, "INT", 3, "hums with void energy",         28),
 ];
 
 global.loot_table_rare = [
@@ -174,58 +255,62 @@ global.loot_table_rare = [
     _rw_vsept,
     _rw_serp,
     // Offhand
-    create_item("Soulbound Orb",       "offhand", 2, "INT", 6, "+6 INT",                              85),
-    create_item("Ironhide Bulwark",    "offhand", 2, "CON", 6, "+6 CON, processed vault-metal",       80),
+    create_item("Soulbound Orb",       "offhand", 2, "INT", 6, "",                              85),
+    create_item("Ironhide Bulwark",    "offhand", 2, "CON", 6, "processed vault-metal",         80),
     // Helm
-    create_item("Forsaken Circlet",    "helm",    2, "INT", 5, "+5 INT +3 WIS",                       82),
-    create_item("Thornwarden Helm",    "helm",    2, "STR", 5, "+5 STR, war-crest of a fallen guardian",75),
+    _forsaken_circlet,
+    create_item("Thornwarden Helm",    "helm",    2, "STR", 5, "war-crest of a fallen guardian", 75),
     // Chest
-    create_item("Voidskin Coat",       "chest",   2, "DEX", 5, "+5 DEX",                              75),
-    create_item("Ironveil Plate",      "chest",   2, "CON", 7, "+7 CON",                              90),
+    create_item("Voidskin Coat",       "chest",   2, "DEX", 5, "",                              75),
+    create_item("Ironveil Plate",      "chest",   2, "CON", 7, "",                              90),
     // Gloves
-    create_item("Crushers",            "gloves",  2, "STR", 5, "+5 STR, massive war-gauntlets",       72),
-    create_item("Whispergloves",       "gloves",  2, "DEX", 5, "+5 DEX, make no sound at all",        75),
+    create_item("Crushers",            "gloves",  2, "STR", 5, "massive war-gauntlets",         72),
+    create_item("Whispergloves",       "gloves",  2, "DEX", 5, "make no sound at all",          75),
     // Boots
-    create_item("Shadowstep Boots",    "boots",   2, "DEX", 5, "+5 DEX, move between shadows",        74),
-    create_item("Colossus Stompers",   "boots",   2, "CON", 6, "+6 CON, each step shakes the floor",  78),
+    create_item("Shadowstep Boots",    "boots",   2, "DEX", 5, "move between shadows",          74),
+    create_item("Colossus Stompers",   "boots",   2, "CON", 6, "each step shakes the floor",    78),
     // Amulet
-    create_item("Medallion of Endurance","amulet",2, "CON", 5, "+5 CON, endures where others break",  72),
-    create_item("Warden's Eye",        "amulet",  2, "WIS", 5, "+5 WIS, see threats before they strike",75),
+    create_item("Medallion of Endurance","amulet",2, "CON", 5, "endures where others break",    72),
+    create_item("Warden's Eye",        "amulet",  2, "WIS", 5, "see threats before they strike", 75),
     // Ring
-    create_item("Wraithbone Signet",   "ring",    2, "WIS", 5, "+5 WIS",                              70),
-    create_item("Bloodpact Ring",      "ring",    2, "STR", 5, "+5 STR, sealed in blood",             72),
+    create_item("Wraithbone Signet",   "ring",    2, "WIS", 5, "",                              70),
+    create_item("Bloodpact Ring",      "ring",    2, "STR", 5, "sealed in blood",               72),
 ];
 
 // --- LEGENDARY LOOT TABLE — boss-drop only (5% weight) ---
 // Each legendary has fixed affixes and a unique effect hook (unique_effect string).
 // unique_desc is the in-game text shown in gold; unique_effect is the code identifier.
 var _leg_brand = create_item("Gatewarden's Brand", "weapon", 4, "STR", 4,
-    "+4 STR, +2 CON", 400);
+    "carried by those who sealed the vault gates", 400);
 _leg_brand.class_req    = -1;
 _leg_brand.affixes      = [{ suffix: "of Grit", prefix: "Sturdy", stat_name: "CON", stat_value: 2 }];
 _leg_brand.unique_effect = "gatewarden_brand";
 _leg_brand.unique_desc   = "First ability each combat costs 0 AP";
+_leg_brand.lore = "Forged for the wardens who chained the vault shut from the inside, knowing they would never leave. Its edge still remembers the weight of the gate — and swings as if no burden could ever slow the first blow.";
 
 var _leg_aegis = create_item("Heartstone Aegis", "chest", 4, "CON", 4,
-    "+4 CON, +2 WIS", 400);
+    "warm to the touch, even in the coldest vault", 400);
 _leg_aegis.class_req    = -1;
 _leg_aegis.affixes      = [{ suffix: "of Clarity", prefix: "Wise", stat_name: "WIS", stat_value: 2 }];
 _leg_aegis.unique_effect = "heartstone_aegis";
 _leg_aegis.unique_desc   = "Heal 5 HP whenever an enemy dies";
+_leg_aegis.lore = "A shard of the vault's buried heart, still beating long after the body around it failed. Those who wear it feel a borrowed warmth with every enemy that falls — the stone feeding on endings to keep its bearer from one.";
 
 var _leg_crown = create_item("Crown of the Hollow King", "helm", 4, "INT", 4,
-    "+4 INT, +3 WIS", 400);
+    "the king who vanished is still being waited for", 400);
 _leg_crown.class_req    = -1;
 _leg_crown.affixes      = [{ suffix: "of Clarity", prefix: "Wise", stat_name: "WIS", stat_value: 3 }];
 _leg_crown.unique_effect = "crown_hollow_king";
 _leg_crown.unique_desc   = "+1 trait slot while equipped (3 total)";
+_leg_crown.lore = "The Hollow King walked into the deepest vault and never came out; his court still sets a throne for his return. To wear his crown is to carry a little of that endless waiting — and the wider, sharper mind of someone who has stopped expecting an answer.";
 
 var _leg_thief = create_item("Thief of Hours", "ring", 4, "DEX", 2,
-    "+2 DEX, +2 WIS", 400);
+    "inscribed with the last seconds of a dying mage", 400);
 _leg_thief.class_req    = -1;
 _leg_thief.affixes      = [{ suffix: "of Clarity", prefix: "Wise", stat_name: "WIS", stat_value: 2 }];
 _leg_thief.unique_effect = "thief_of_hours";
 _leg_thief.unique_desc   = "Gain +1 AP on the first turn of every combat";
+_leg_thief.lore = "A dying mage spent her final spell not to survive, but to keep the last seconds of her life — and bound them into this ring. Whoever wears it begins each fight already a heartbeat ahead, spending borrowed time she will never get back.";
 
 global.loot_table_legendary = [ _leg_brand, _leg_aegis, _leg_crown, _leg_thief ];
 
@@ -254,23 +339,26 @@ global.affix_pool = [
 global.consumables_standard = [
     create_consumable("Healing Salve",    "heal",           25, "Restore 25 HP",                    20),
     create_consumable("Antidote",         "cleanse_dot",     0, "Clear all active DoT effects",      18),
-    create_consumable("Energy Tonic",     "energy",          1, "Restore 1 energy this turn",        15),
+    create_consumable("Energy Tonic",     "energy",          1, "Gain +1 AP this turn (free to use)", 15),
     create_consumable("Smelling Salts",   "cleanse_debuff",  0, "Remove one active debuff",          16),
 ];
 
 global.consumables_elite = [
     create_consumable("Greater Healing Salve", "heal",        50, "Restore 50 HP",                          45),
     create_consumable("Purification Draught",  "cleanse_all",  0, "Clear all negative effects",             50),
-    create_consumable("Adrenaline Vial",        "energy",       3, "Restore full energy immediately",        55),
+    create_consumable("Adrenaline Vial",        "energy",       3, "Gain +3 AP this turn (free to use)",     55),
     create_consumable("Warden's Tonic",         "heal_dot",     8, "Restore 8 HP per turn for 3 turns",      48),
 ];
 
-// Per-run consumable inventory (max 4 slots) and item drop log
+// Per-run consumable inventory (uncapped; lists scroll) and item drop log
 global.consumable_inventory = [];
 global.run_items_found      = [];
 
 // Equipment slots — 8 entries, one per slot (undefined = empty)
 global.inventory = array_create(8, undefined);
+
+// Item codex — records base names of every equipment item ever found or bought
+global.items_discovered = [];
 
 // Item storage
 global.equipment_stash    = [];   // safe hub storage — never lost on death
@@ -311,14 +399,23 @@ global.floor_rooms_cleared = [];
 // -----------------------------------------------------------------------------
 menu_open            = false;
 menu_tab             = 0;
-tab_names            = ["Stats", "Equipment", "Abilities", "Consumables"];
+tab_names            = ["Stats", "Equipment", "Abilities", "Consumables", "Compendium"];
 items_used_this_turn = 0;
+
+// Compendium (Help) tab state — index of the selected section in the left list
+compendium_section   = 0;
 
 // Equipment tab state
 equip_slot_selected = 0;
 equip_picker_open   = false;
 equip_picker_index  = 0;
 equip_msg           = "";   // class-restriction warning shown in the picker
+equip_notif_msg     = "";   // brief "Equipped X" confirmation
+equip_notif_timer   = 0;    // counts down from 150; fades in last 30 frames
+
+comparison_open     = false;
+comparison_item     = undefined;
+comparison_equipped = undefined;
 
 // Consumable tab submenu state
 consumable_submenu_open   = false;
@@ -359,6 +456,31 @@ global.petra_stock_special = undefined;   // elite consumable on special offer, 
 global.petra_special_qty   = 0;
 global.dorn_stock          = [];          // array of { item, price, sold }
 
+// Vex the Trainer overlay state (full-screen, opened from the hub NPC list)
+trainer_open         = false;
+trainer_tab          = 0;     // 0 = Stats, 1 = Trait Slots, 2 = Abilities, 3 = Potency
+trainer_cursor       = 0;     // selected row within the active tab
+trainer_confirm      = false; // true while a non-refundable sacrifice awaits Space
+trainer_notification = "";
+
+// Shared item-sacrifice picker (Vex stat/trait trade + Shrine tribute). One modal,
+// initialized once; see SYSTEMS_ITEM_PICKER.md. Captures input while open so the
+// underlying screen is frozen and nothing is consumed without select + confirm.
+if (!variable_global_exists("item_picker")) global.item_picker = {
+    open:             false,
+    purpose:          "",   // "vex_trait" | "vex_stat" | "shrine_boon"
+    context:          {},   // purpose-specific payload (gold/effect_id/stat_key/boon_id...)
+    candidates:       [],   // [{ source, idx, item, label, rarity, value }]  source 0=stash 1=pack
+    cursor:           0,
+    scroll:           0,
+    confirm:          false,// an item is selected, awaiting yes/no
+    resolved_purpose: "",   // one-shot: set on commit so the owning controller does aftermath
+    result_msg:       ""    // notification text produced by the resolve
+};
+
+// Sable salvage confirm gate (keeps Sable's own dust-preview list; just arms a yes/no).
+sable_confirm = false;
+
 shop_open         = -1;
 shop_index        = 0;
 shop_notification = "";
@@ -376,13 +498,14 @@ restock_shops();
 // global.player_loadout persists between runs; loadout_* are session state.
 // -----------------------------------------------------------------------------
 if (!variable_global_exists("player_loadout")) {
-    global.player_loadout = ["", "", "", ""];
+    global.player_loadout = ["", "", "", "", ""];
 }
 
 loadout_open       = false;
 loadout_cursor     = 0;
 loadout_selected   = [];   // up to 4 ability name strings being built this session
 loadout_full_timer = 0;    // countdown for "Loadout full" / "Slots full" flash (frames)
+loadout_locked_timer = 0;  // countdown for "ability is locked — unlock at Vex" flash (frames)
 loadout_confirmed  = false;
 loadout_tab        = 0;    // 0 = Abilities tab, 1 = Traits tab
 traits_cursor      = 0;
@@ -400,18 +523,175 @@ if (!variable_global_exists("player_traits")) {
 }
 if (!variable_global_exists("traits_unlocked")) {
     global.traits_unlocked = {
-        sense:           true,
-        scavenger:       true,
-        thick_skin:      true,
-        lucky_find:      false,
-        salvager:        false,
-        soul_siphon:     false,
-        crimson_reserve: false,
-        phantom_step:    false,
+        sense:            true,
+        scavenger:        true,
+        thick_skin:       true,
+        lucky_find:       false,
+        salvager:         false,
+        soul_siphon:      false,
+        crimson_reserve:  false,
+        phantom_step:     false,
+        // New traits — unlocked through progression
+        quick_recovery:   false,
+        treasure_hunter:  false,
+        battle_hardened:  false,
+        iron_will:        false,
+        ley_tap:          false,
+        arcane_surge:     false,
+        vampiric_edge:    false,
+        berserker_rage:   false,
+        shadow_meld:       false,
+        serrated_strikes:  false,
+        expanded_arsenal:  false,
+        prospector:        false,
+        last_stand:        false,
+        focused_power:     false,
+        chain_caster:      false,
+        plaguebearer:      false,
     };
+}
+// Backfill newer trait keys onto save files that predate them.
+var _tu_defaults = ["prospector", "last_stand", "focused_power", "chain_caster", "plaguebearer"];
+for (var _tui = 0; _tui < array_length(_tu_defaults); _tui++) {
+    if (!variable_struct_exists(global.traits_unlocked, _tu_defaults[_tui])) {
+        variable_struct_set(global.traits_unlocked, _tu_defaults[_tui], false);
+    }
 }
 
 // Trait unlock notification — drawn as a toast banner in hub/floor draw events.
 // Set trait_notif_msg and trait_notif_timer = 180 wherever a trait unlocks.
 trait_notif_msg   = "";
 trait_notif_timer = 0;
+
+// -----------------------------------------------------------------------------
+// 13b-RUNES. RUNE SYSTEM STATE (Maren the Runesmith) — see SYSTEMS_RUNES.md
+// rune_inventory: unsocketed runes the player owns ({id,name,domain,tier} structs)
+// rune_dust:      shared crafting reagent (Maren combines / Sable salvages)
+// aspect_slots:   unlocked character Aspect-rune slots (start 2, cap 4)
+// aspect_runes:   socketed Aspect runes (length <= aspect_slots)
+// Socketed GEAR runes ride on each item struct (item.runes / item.socket_count).
+// -----------------------------------------------------------------------------
+if (!variable_global_exists("rune_inventory")) global.rune_inventory = [];
+if (!variable_global_exists("rune_dust"))      global.rune_dust      = 0;
+if (!variable_global_exists("aspect_slots"))   global.aspect_slots   = 2;
+if (!variable_global_exists("aspect_runes"))   global.aspect_runes   = [];
+
+// Maren the Runesmith screen state (Phase 1 tabs: 0 Socket, 1 Runes)
+maren_open         = false;
+maren_tab          = 0;    // 0 = Socket gear, 1 = Runes (owned list)
+maren_cursor       = 0;    // row cursor in the active list
+maren_phase        = 0;    // Socket tab: 0 choose item, 1 choose socket, 2 choose rune
+maren_item_sel     = -1;   // chosen equipped-item slot index (0-7) in Socket tab
+maren_notification = "";
+
+// Sable the Alchemist screen state (tabs: 0 Salvage, 1 Brew, 2 Upgrade)
+sable_open         = false;
+sable_tab          = 0;
+sable_cursor       = 0;
+sable_phase        = 0;    // Salvage tab: 0 menu, 1 gear list, 2 rune list
+sable_notification = "";
+
+// Vael the Aesthete — transmog/skins (player_skin = active skin id)
+if (!variable_global_exists("player_skin"))    global.player_skin    = "default";
+if (!variable_global_exists("unlocked_skins")) global.unlocked_skins = [];
+
+// Cosmetic gender axis ("m"/"f") — chosen at character creation, combat sprite only.
+if (!variable_global_exists("player_gender"))  global.player_gender  = "m";
+vael_open            = false;
+vael_cursor          = 0;
+vael_notification    = "";
+vael_tab             = 0;   // 0 = Skins (transmog), 1 = Portrait (100g portrait change)
+vael_portrait_cursor = 0;   // browse index into global.portrait_sprites on the Portrait tab
+
+// -----------------------------------------------------------------------------
+// 13b. VEX THE TRAINER — permanent upgrades bought with gold (+items for stats)
+// bonus_trait_slots: extra active-trait slots purchased (base 2, +2 max → 4 total).
+// unlocked_abilities: names of non-starter abilities purchased into the loadout pool.
+// trait_potency: struct keyed by trait name → potency tier (0-5); each tier adds
+//                +10% to that trait's magnitude, paid for by permanently sacrificing
+//                5 points of the trait's associated permanent stat.
+// -----------------------------------------------------------------------------
+if (!variable_global_exists("bonus_trait_slots")) global.bonus_trait_slots = 0;
+if (!variable_global_exists("unlocked_abilities")) global.unlocked_abilities = [];
+if (!variable_global_exists("trait_potency"))      global.trait_potency      = {};
+
+// Persistent Battle Hardened HP bonus (accumulates across runs)
+if (!variable_global_exists("perm_hp_battle_hardened")) global.perm_hp_battle_hardened = 0;
+// Total boss kills across all runs (for trait/ability unlock gating)
+if (!variable_global_exists("total_boss_kills")) global.total_boss_kills = 0;
+// Highest character level ever reached in a run (persistent; gates char_level abilities)
+if (!variable_global_exists("highest_run_level")) global.highest_run_level = 1;
+// Last Stand trait: consumed once per run, reset at run start (end_run)
+if (!variable_global_exists("last_stand_used")) global.last_stand_used = false;
+// Player portrait selection (index into portrait_sprites array)
+if (!variable_global_exists("chosen_portrait")) global.chosen_portrait = 0;
+
+// Pause / Esc menu state (Resume / Settings / Quit to Title)
+if (!variable_global_exists("pause_open"))   global.pause_open   = false;
+if (!variable_global_exists("pause_cursor")) global.pause_cursor = 0;
+// Set true at the top of this controller's Step whenever a gc-managed overlay/modal
+// is open, so the hub's pause-menu trigger (a separate object that may step before us)
+// won't also open the pause menu on the SAME Esc press that just closed the overlay.
+if (!variable_global_exists("ui_overlay_latch")) global.ui_overlay_latch = false;
+// Character-creation / hub portrait pool. The 60 class-themed portraits below
+// (imported at 512x512) replace the old generic spr_portrait_01..11 placeholders,
+// which still exist as resources but are no longer offered. One flat A/D cycle,
+// grouped class → gender (Arcanist M/F, Bloodwarden M/F, Shadowstrider M/F) with
+// the named alt portraits (Deathweaver / Plaguehunter) at the end of each class.
+global.portrait_sprites = [
+    spr_portrait_arc_m1, spr_portrait_arc_m2, spr_portrait_arc_m3,
+    spr_portrait_arc_m4, spr_portrait_arc_m5, spr_portrait_arc_m6,
+    spr_portrait_arc_m7, spr_portrait_arc_m8, spr_portrait_arc_m9,
+    spr_portrait_arc_f1, spr_portrait_arc_f2, spr_portrait_arc_f3,
+    spr_portrait_arc_f4, spr_portrait_arc_f5, spr_portrait_arc_f6,
+    spr_portrait_arc_f7, spr_portrait_arc_f8, spr_portrait_arc_deathweaver,
+    spr_portrait_blood_m1, spr_portrait_blood_m2, spr_portrait_blood_m3,
+    spr_portrait_blood_m4, spr_portrait_blood_m5, spr_portrait_blood_m6,
+    spr_portrait_blood_m7, spr_portrait_blood_m8, spr_portrait_blood_m9,
+    spr_portrait_blood_m10, spr_portrait_blood_m11, spr_portrait_blood_m12,
+    spr_portrait_blood_f1, spr_portrait_blood_f2, spr_portrait_blood_f3,
+    spr_portrait_blood_f4, spr_portrait_blood_f5, spr_portrait_blood_f6,
+    spr_portrait_blood_f7, spr_portrait_blood_f8, spr_portrait_blood_f9,
+    spr_portrait_blood_f10, spr_portrait_blood_f11, spr_portrait_blood_f12,
+    spr_portrait_blood_f13, spr_portrait_shadow_m1, spr_portrait_shadow_m2,
+    spr_portrait_shadow_m3, spr_portrait_shadow_m4, spr_portrait_shadow_m5,
+    spr_portrait_shadow_m6, spr_portrait_shadow_m7, spr_portrait_shadow_m8,
+    spr_portrait_shadow_m9, spr_portrait_shadow_f1, spr_portrait_shadow_f2,
+    spr_portrait_shadow_f3, spr_portrait_shadow_f4, spr_portrait_shadow_f5,
+    spr_portrait_shadow_f6, spr_portrait_shadow_f7, spr_portrait_shadow_plaguehunter,
+];
+
+// Load persisted meta-progression only if a slot was selected before this room was entered.
+// For new games the slot is set but load_game() is skipped — defaults from above apply.
+if (global.save_slot >= 0) load_game();
+
+
+// -----------------------------------------------------------------------------
+// 14. DUNGEON SELECTION
+// Persisted per-dungeon ascendance unlock level and clear count.
+// -----------------------------------------------------------------------------
+if (!variable_global_exists("selected_dungeon")) {
+    global.selected_dungeon = "ashen_vault";
+}
+if (!variable_global_exists("selected_ascendance")) {
+    global.selected_ascendance = 0;
+}
+if (!variable_global_exists("dungeon_ascendance_unlocked")) {
+    global.dungeon_ascendance_unlocked = {
+        ashen_vault:     0,
+        scorched_depths: 0,
+        tundra_tomb:     0,
+    };
+}
+if (!variable_global_exists("dungeon_clears")) {
+    global.dungeon_clears = {
+        ashen_vault:     0,
+        scorched_depths: 0,
+        tundra_tomb:     0,
+    };
+}
+if (!variable_global_exists("dungeon_clears_total")) global.dungeon_clears_total = 0;
+
+dungeon_select_open   = false;
+dungeon_select_cursor = 0;   // 0 = ashen_vault, 1 = scorched_depths, 2 = tundra_tomb
+dungeon_select_asc    = 0;

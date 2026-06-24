@@ -1,0 +1,26 @@
+{
+  "$GMSound":"v2",
+  "%Name":"_2_dungeon_INITIAL",
+  "audioGroupId":{
+    "name":"audiogroup_default",
+    "path":"audiogroups/audiogroup_default",
+  },
+  "bitDepth":1,
+  "channelFormat":0,
+  "compression":0,
+  "compressionQuality":4,
+  "conversionMode":0,
+  "duration":108.0,
+  "exportDir":"",
+  "name":"_2_dungeon_INITIAL",
+  "parent":{
+    "name":"Ironwake",
+    "path":"Ironwake.yyp",
+  },
+  "preload":false,
+  "resourceType":"GMSound",
+  "resourceVersion":"2.0",
+  "sampleRate":44100,
+  "soundFile":"_2_dungeon_INITIAL.ogg",
+  "volume":1.0,
+}

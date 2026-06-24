@@ -26,15 +26,16 @@ npc_names = [
 // One-line summaries shown in the NPC list rows
 npc_descriptions = [
     "Weapons, armor, and gear — browse Dorn's rotating stock. Press Space to enter the forge.",
-    "Purification altar. Removes curses from equipment using reagents.",
-    "Sockets runes into abilities and gear. Combines and splits runes.",
+    "Salvages loot into rune dust; brews and upgrades potions. Press Space to open the apothecary.",
+    "Sockets gear runes for stats and aspect runes for combat buffs. Press Space to open the runeworks.",
     "Permanent stat upgrades, ability unlocks, and trait slot expansion.",
     "Consumables and supplies for your next run. Press Space to browse Petra's wares.",
-    "Cosmetic transmog — change the appearance of your gear."
+    "Cosmetic transmog — buy and wear character skins. Press Space to visit the atelier."
 ];
 
-// Dorn and Petra are available from the start; the rest gate on hub_unlocks
-npc_unlocked = [true, false, false, false, true, false];
+// All six hub NPCs available from the start.
+// (Sable [1] and Vael [5] unlocked for testing now that their systems are built.)
+npc_unlocked = [true, true, true, true, true, true];
 
 
 // -----------------------------------------------------------------------------
@@ -58,3 +59,55 @@ notification = "";
 // -----------------------------------------------------------------------------
 show_history   = false;
 history_scroll = 0;
+
+
+// -----------------------------------------------------------------------------
+// 5. ITEM GALLERY STATE
+// -----------------------------------------------------------------------------
+show_gallery        = false;
+gallery_scroll      = 0;    // top visible row index
+gallery_cursor      = -1;   // highlighted row (-1 = none)
+gallery_detail_item = undefined;   // item struct shown in detail panel (undefined = closed)
+
+// Hub music
+audio_play_sound(Rainy_Memories, 1, true);
+audio_apply_volumes();   // honor saved Music/SFX volumes for this session's sounds
+
+// NPC portrait animation state
+portrait_prev_npc   = 0;
+portrait_slide_y    = 0.0;
+portrait_fade_alpha = 1.0;
+
+
+// -----------------------------------------------------------------------------
+// 6. HUB ATMOSPHERE — camp background art, ambient embers, flavor line
+// -----------------------------------------------------------------------------
+// Looked up by name so the project compiles before the sprite resource exists.
+// Returns -1 until you create spr_hub_background in the IDE; the draw is guarded.
+bg_sprite = asset_get_index("spr_hub_background");
+
+// Drifting ember motes rising from the campfire glow (subtle, behind panels).
+// Count tripled (18 -> 54) for a livelier, more atmospheric drift.
+hub_embers = [];
+for (var _ei = 0; _ei < 54; _ei++) {
+    array_push(hub_embers, {
+        x:     irandom(1280),
+        y:     irandom(720),
+        spd:   0.2 + random(0.4),     // upward px/frame
+        phase: random(6.283),         // sine seed for horizontal drift + shimmer
+        drift: 8 + random(14),        // horizontal drift amplitude (px)
+        size:  1 + irandom(2),        // 1-3 px
+        a:     0.20 + random(0.32)    // base alpha 0.20-0.52 (slightly more visible)
+    });
+}
+
+// Rotating camp flavor line — one picked per hub visit.
+hub_flavor_lines = [
+    "The fire crackles low. Dorn's hammer rings somewhere in the dark.",
+    "Embers drift on a cold wind. The dungeon gate glows beyond the tents.",
+    "Camp is quiet. Sable hums over a bubbling flask.",
+    "Steel and rune-dust scent the air. Rest while you can.",
+    "Maren traces runes by firelight. The night holds its breath.",
+    "Below, the dungeon stirs. The camp keeps its small, stubborn warmth."
+];
+hub_flavor = hub_flavor_lines[irandom(array_length(hub_flavor_lines) - 1)];

@@ -1,14 +1,19 @@
 // =============================================================================
 // obj_floor_controller — Create event
-// Initialises the dungeon floor map for the current floor. Reads and writes
-// global floor-tracking variables managed by obj_game_controller.
+// Builds a branching dungeon floor map. The map is a DAG of room nodes stored
+// in global.floor_map so it survives room transitions without regenerating.
+//
+// Node struct fields:
+//   id, layer, slot, type, name, enemies, gold_min, gold_max,
+//   cleared, parents[], children[], px, py
+//
+// Accessibility rule: a room is enterable if it has no parents (entry node)
+// OR any parent node has been cleared.
 // =============================================================================
 
 
 // -----------------------------------------------------------------------------
-// 1. GLOBAL FLOOR STATE
-// Only initialised on first entry — preserved across room transitions so the
-// player's progress through a run is not reset when returning from combat.
+// 1. GLOBAL FLOOR STATE — initialised once per game session
 // -----------------------------------------------------------------------------
 if (!variable_global_exists("current_floor")) {
     global.current_floor       = 1;
@@ -17,115 +22,420 @@ if (!variable_global_exists("current_floor")) {
     global.dungeon_complete    = false;
 }
 
-
-// -----------------------------------------------------------------------------
-// 2. FLOOR LAYOUTS
-// One entry per floor. Each floor is an array of room definition structs.
-// Fields: type, name, enemies (combat/boss only), gold_min/max (treasure only),
-//         cleared (mutated at runtime — do not share references between runs).
-// -----------------------------------------------------------------------------
-floor_layouts = [
-
-    // Floor 1 — The Ashen Vault, upper level
-    [
-        { type: "combat",   name: "Dark Corridor",    enemies: "standard", cleared: false },
-        { type: "combat",   name: "Collapsed Hall",   enemies: "standard", cleared: false },
-        { type: "treasure", name: "Forgotten Cache",  gold_min: 30, gold_max: 60,  cleared: false },
-        { type: "combat",   name: "Warden's Post",    enemies: "standard", cleared: false },
-        { type: "boss",     name: "Vault Chamber",    enemies: "boss",     cleared: false },
-    ],
-
-    // Floor 2 — The Ashen Vault, mid level
-    [
-        { type: "combat",   name: "Lower Depths",     enemies: "standard", cleared: false },
-        { type: "combat",   name: "Bone Gallery",     enemies: "elite",    cleared: false },
-        { type: "treasure", name: "Ancient Vault",    gold_min: 50, gold_max: 90,  cleared: false },
-        { type: "combat",   name: "Guardian Hall",    enemies: "standard", cleared: false },
-        { type: "combat",   name: "Elite Chamber",    enemies: "elite",    cleared: false },
-        { type: "boss",     name: "Throne of Ash",    enemies: "boss",     cleared: false },
-    ],
-
-    // Floor 3 — The Ashen Vault, depths
-    [
-        { type: "combat",   name: "The Deep Dark",    enemies: "standard", cleared: false },
-        { type: "combat",   name: "Shattered Keep",   enemies: "elite",    cleared: false },
-        { type: "treasure", name: "Warden's Hoard",   gold_min: 80, gold_max: 140, cleared: false },
-        { type: "combat",   name: "The Killing Floor", enemies: "elite",   cleared: false },
-        { type: "combat",   name: "Antechamber",      enemies: "standard", cleared: false },
-        { type: "boss",     name: "The Final Seal",   enemies: "boss",     cleared: false },
-    ],
-
-];
-
-selected_room = 0;
-
-
-// -----------------------------------------------------------------------------
-// 3. CURRENT ROOMS — built from layout with cleared states restored from global
-// global.floor_rooms_cleared persists across room transitions so clearing a
-// combat room is not lost when the scene reloads on return.
-// -----------------------------------------------------------------------------
-returning_from_combat = variable_global_exists("just_cleared_room") && global.just_cleared_room;
-if (returning_from_combat) {
-    global.just_cleared_room = false;
+if (!variable_global_exists("run_seed")) {
+    global.run_seed = irandom(99999) + 1;
 }
 
-var _layout = floor_layouts[clamp(global.current_floor - 1, 0, 2)];
-var _have_saved = variable_global_exists("floor_rooms_cleared")
-                  && array_length(global.floor_rooms_cleared) == array_length(_layout);
 
-if (!_have_saved) {
-    // First entry on this floor — initialise cleared state in global storage
-    global.floor_rooms_cleared = [];
-    for (var _i = 0; _i < array_length(_layout); _i++) {
-        array_push(global.floor_rooms_cleared, false);
+// -----------------------------------------------------------------------------
+// 2. RETURNING-FROM-COMBAT FLAG
+// Set by Step_0 before room_goto(Room1). Cleared here so we only use it once.
+// -----------------------------------------------------------------------------
+returning_from_combat = variable_global_exists("just_cleared_room") && global.just_cleared_room;
+if (returning_from_combat) global.just_cleared_room = false;
+
+// Apply dungeon passive effects on each room entry (not the very first room)
+if (returning_from_combat) {
+    var _dung_passive = variable_global_exists("selected_dungeon") ? global.selected_dungeon : "ashen_vault";
+    var _asc_p = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
+    if (_dung_passive == "scorched_depths") {
+        // Every room: apply 1 fire stack; 2 stacks at A1+
+        if (!variable_global_exists("pending_fire_stacks")) global.pending_fire_stacks = 0;
+        global.pending_fire_stacks += (_asc_p >= 1) ? 2 : 1;
+    } else if (_dung_passive == "tundra_tomb") {
+        // Every other room: -1 AP penalty; every room at A3+
+        if (!variable_global_exists("pending_ap_penalty")) global.pending_ap_penalty = 0;
+        var _floor_odd = (global.current_floor mod 2 == 1);
+        if (_asc_p >= 3 || _floor_odd) global.pending_ap_penalty += 1;
     }
 }
 
-// Apply the just-cleared room before rebuilding so the state is already in
-// global.floor_rooms_cleared when the struct array is constructed below.
-// _have_saved guards against a floor-transition bug: after a boss kill,
-// floor_rooms_cleared is reset to [] before room_goto fires, so _have_saved
-// is false here. Without the guard, the stale current_room_index from the
-// previous floor would pre-clear the room at the same index on the new floor.
-if (returning_from_combat && _have_saved && global.current_room_index < array_length(_layout)) {
-    global.floor_rooms_cleared[global.current_room_index] = true;
-    // DEBUG — strip once floor progression is verified
-    show_debug_message("[FLOOR DEBUG] cleared: floor=" + string(global.current_floor)
-        + " room_index=" + string(global.current_room_index)
-        + " have_saved=true");
-    // END DEBUG
-} else if (returning_from_combat) {
-    // DEBUG — strip once floor progression is verified
-    show_debug_message("[FLOOR DEBUG] returning_from_combat guard FAILED: floor=" + string(global.current_floor)
-        + " have_saved=" + string(_have_saved)
-        + " room_index=" + string(variable_global_exists("current_room_index") ? global.current_room_index : -1)
-        + " layout_len=" + string(array_length(_layout)));
-    // END DEBUG
-}
 
-// Build current_rooms from the layout, restoring cleared flags from global
-current_rooms = [];
-for (var _i = 0; _i < array_length(_layout); _i++) {
-    var _r = _layout[_i];
-    array_push(current_rooms, {
-        type:     _r.type,
-        name:     _r.name,
-        enemies:  variable_struct_exists(_r, "enemies")  ? _r.enemies  : "standard",
-        gold_min: variable_struct_exists(_r, "gold_min") ? _r.gold_min : 0,
-        gold_max: variable_struct_exists(_r, "gold_max") ? _r.gold_max : 0,
-        cleared:  global.floor_rooms_cleared[_i]
-    });
+// -----------------------------------------------------------------------------
+// 3. FLOOR MAP — generated once per floor, persisted in global.floor_map
+// -----------------------------------------------------------------------------
+var _need_new_map = !variable_global_exists("floor_map")
+    || !variable_global_exists("floor_map_floor")
+    || global.floor_map_floor != global.current_floor;
+
+if (_need_new_map) {
+
+    // ---- Procedurally generate a layered DAG (replaces the old 5 fixed templates).
+    //      §6 variety pass: seeded by run_seed+floor so a given run is reproducible
+    //      but every floor differs. Produces the same four arrays the rest of this
+    //      event consumes (_node_count / _children / _layers / _slots), so all the
+    //      downstream position/parent/map code is unchanged. Guarantees a valid DAG:
+    //      every node is reachable from the entry AND every node has a path to the
+    //      boss (no dead ends). Constrained to the existing draw geometry: entry and
+    //      boss layers are single nodes, intermediate layers hold 1-3 nodes, and
+    //      there are 5-6 layers total (so at most 6 columns / 3 rows). ----
+    var _gen_old_seed = random_get_seed();
+    random_set_seed(global.run_seed * 101 + global.current_floor * 17 + 3);
+
+    // 5..6 layers (so 3-4 intermediate layers): keeps every floor from being too
+    // short — after the "guarantee >=2 combat/elite" net there's always room left
+    // for loot/event/rest. Width per layer (1-3) is the main shape-variety lever.
+    var _num_layers = 5 + irandom(1);    // 5 or 6 layers (boss layer index 4..5)
+    var _layer_nodes = [];               // _layer_nodes[l] = array of node ids in layer l
+    var _layers      = [];
+    var _slots       = [];
+    var _node_count  = 0;
+
+    for (var _gl = 0; _gl < _num_layers; _gl++) {
+        var _cnt;
+        if (_gl == 0 || _gl == _num_layers - 1) {
+            _cnt = 1;                    // entry + boss are single nodes
+        } else {
+            // 1-3 nodes, weighted toward 2 (roll 0->1, 1/2->2, 3->3).
+            var _r = irandom(3);
+            _cnt = (_r == 0) ? 1 : ((_r == 3) ? 3 : 2);
+        }
+        var _ids = [];
+        for (var _gs = 0; _gs < _cnt; _gs++) {
+            _layers[_node_count] = _gl;
+            _slots[_node_count]  = _gs;
+            array_push(_ids, _node_count);
+            _node_count++;
+        }
+        array_push(_layer_nodes, _ids);
+    }
+
+    // Build edges: connect each layer to the next so the graph is a valid DAG.
+    var _children = array_create(_node_count);
+    for (var _ci = 0; _ci < _node_count; _ci++) _children[_ci] = [];
+
+    for (var _gl = 0; _gl < _num_layers - 1; _gl++) {
+        var _from = _layer_nodes[_gl];
+        var _to   = _layer_nodes[_gl + 1];
+        var _to_n = array_length(_to);
+        var _has_parent = array_create(_to_n, false);
+
+        // Each source node fans out to 1-2 distinct random targets in the next layer.
+        for (var _a = 0; _a < array_length(_from); _a++) {
+            var _src   = _from[_a];
+            var _links = min(_to_n, 1 + ((_to_n > 1) ? irandom(1) : 0));
+            var _picked = [];
+            while (array_length(_picked) < _links) {
+                var _ti  = irandom(_to_n - 1);
+                var _dup = false;
+                for (var _pp = 0; _pp < array_length(_picked); _pp++) {
+                    if (_picked[_pp] == _ti) { _dup = true; break; }
+                }
+                if (!_dup) array_push(_picked, _ti);
+            }
+            for (var _pp = 0; _pp < array_length(_picked); _pp++) {
+                array_push(_children[_src], _to[_picked[_pp]]);
+                _has_parent[_picked[_pp]] = true;
+            }
+        }
+
+        // Reachability fix: any next-layer node still parentless gets one random source.
+        for (var _b = 0; _b < _to_n; _b++) {
+            if (!_has_parent[_b]) {
+                var _src2 = _from[irandom(array_length(_from) - 1)];
+                array_push(_children[_src2], _to[_b]);
+            }
+        }
+    }
+
+    random_set_seed(_gen_old_seed);   // restore RNG (the type block reseeds itself next)
+
+    // Build parents from children (reverse edges)
+    var _parents = [];
+    for (var _i = 0; _i < _node_count; _i++) array_push(_parents, []);
+    for (var _i = 0; _i < _node_count; _i++) {
+        var _ch = _children[_i];
+        for (var _j = 0; _j < array_length(_ch); _j++) {
+            array_push(_parents[_ch[_j]], _i);
+        }
+    }
+
+    // ---- Type + name assignment (seeded for reproducibility) ----
+    var _old_seed = random_get_seed();
+    random_set_seed(global.run_seed * 31 + global.current_floor * 7);
+
+    // Non-boss non-entry type pools, weighted by floor
+    var _type_pools = [
+        // floor 1: 4 combat + variety of loot/rest + an event + a shrine (boon tribute)
+        ["combat","combat","combat","combat","treasure","treasure_heal","treasure_vault","rest","event","shrine"],
+        // floor 2: 3 combat + 2 elite + varied loot + event + shrine
+        ["combat","combat","combat","elite","elite","treasure","treasure_heal","treasure_vault","rest","event","treasure_rare","shrine"],
+        // floor 3: elite-heavy + rare loot + 2 events + shrine
+        ["elite","elite","elite","elite","combat","combat","event","event","treasure","treasure_rare","rest","shrine"]
+    ];
+    var _pool_base = _type_pools[clamp(global.current_floor - 1, 0, 2)];
+
+    // §6 type-mix polish: copy the base pool and inject 0-2 random bonus optional
+    // rooms (floor-appropriate) so the decision/loot mix SHIFTS run-to-run, not just
+    // the order. Seeded (we're inside the type-assignment seed block). The downstream
+    // "guarantee >=2 combat/elite" safety net keeps every floor fight-bearing.
+    var _pool = [];
+    for (var _pbi = 0; _pbi < array_length(_pool_base); _pbi++) array_push(_pool, _pool_base[_pbi]);
+    var _bonus_pools = [
+        ["event", "treasure_heal", "rest",          "shrine"],   // floor 1 bonuses
+        ["event", "treasure_vault", "treasure_rare", "shrine"],  // floor 2 bonuses
+        ["event", "treasure_rare", "elite",          "shrine"]   // floor 3 bonuses
+    ];
+    var _bonus_list = _bonus_pools[clamp(global.current_floor - 1, 0, 2)];
+    var _bonus_n    = irandom(2);   // 0, 1, or 2 extra optional rooms this floor
+    for (var _bk = 0; _bk < _bonus_n; _bk++) {
+        array_push(_pool, _bonus_list[irandom(array_length(_bonus_list) - 1)]);
+    }
+
+    // Shuffle pool so room sequence varies per run
+    var _pool_copy = array_create(array_length(_pool));
+    array_copy(_pool_copy, 0, _pool, 0, array_length(_pool));
+    for (var _i = array_length(_pool_copy) - 1; _i > 0; _i--) {
+        var _j = irandom(_i);
+        var _tmp      = _pool_copy[_i];
+        _pool_copy[_i] = _pool_copy[_j];
+        _pool_copy[_j] = _tmp;
+    }
+
+    // Name pools per type
+    var _nm_combat      = ["Dark Corridor", "Collapsed Hall", "Warden's Post", "Hollow Chamber", "Ash Pit", "Shattered Keep", "Cinder Pass"];
+    var _nm_elite       = ["Bone Gallery", "Guardian Hall", "Elite Chamber", "The Killing Floor", "Death Row", "Iron Gauntlet", "Obsidian Vault"];
+    var _nm_treasure    = ["Forgotten Cache", "Ancient Vault", "Warden's Hoard", "Hidden Alcove", "Dusty Coffer", "Sealed Crypt"];
+    var _nm_treasure_h  = ["Supply Alcove", "Medic's Cache", "Healing Spring", "Herbalist's Stash", "Restoration Nook"];
+    var _nm_treasure_v  = ["Hidden Armory", "Equipment Locker", "Adventurer's Cache", "Armory Alcove", "Gear Cache"];
+    var _nm_treasure_r  = ["Ancient Reliquary", "Sanctum of Relics", "The Forgotten Vault", "Relic Chamber"];
+    var _nm_rest        = ["Sheltered Nook", "Campfire Recess", "Quiet Alcove", "Safe Harbor", "Rubble Den", "Still Chamber"];
+    var _nm_event       = ["Strange Alcove", "Whispering Hollow", "Forked Path", "Ill Omen", "Crossroads", "Eerie Chamber", "Veiled Threshold"];
+    var _nm_boss_by_floor = [["Vault Chamber"], ["Throne of Ash"], ["The Final Seal"]];
+
+    // Pre-pick names for all nodes (still inside seeded block)
+    var _picked_names = array_create(_node_count, "");
+    _picked_names[0] = _nm_combat[irandom(array_length(_nm_combat) - 1)];
+    _picked_names[_node_count - 1] = _nm_boss_by_floor[clamp(global.current_floor - 1, 0, 2)][0];
+    var _pool_cursor = 0;
+    for (var _i = 1; _i < _node_count - 1; _i++) {
+        var _t = _pool_copy[_pool_cursor mod array_length(_pool_copy)];
+        _pool_cursor++;
+        var _nm_pool = _nm_combat;
+        switch (_t) {
+            case "elite":          _nm_pool = _nm_elite;      break;
+            case "treasure":       _nm_pool = _nm_treasure;   break;
+            case "treasure_heal":  _nm_pool = _nm_treasure_h; break;
+            case "treasure_vault": _nm_pool = _nm_treasure_v; break;
+            case "treasure_rare":  _nm_pool = _nm_treasure_r; break;
+            case "rest":           _nm_pool = _nm_rest;       break;
+            case "event":          _nm_pool = _nm_event;      break;
+            case "shrine":         _nm_pool = ["Shrine of Tribute","Forgotten Altar","Offering Stone"]; break;
+        }
+        _picked_names[_i] = _nm_pool[irandom(array_length(_nm_pool) - 1)];
+    }
+
+    random_set_seed(_old_seed); // restore RNG after generation
+
+    // ---- Compute pixel positions ----
+    var _max_layer = 0;
+    for (var _i = 0; _i < _node_count; _i++) {
+        if (_layers[_i] > _max_layer) _max_layer = _layers[_i];
+    }
+
+    // Graph draw area: x=20..880 (w=860), y=100..680 (h=580)
+    // Node width 130 (was 148) so the widest 6-column templates keep a real gutter
+    // between columns instead of overlapping. Must match _NW in Draw_64.
+    var _gx1 = 20;  var _gx2 = 880;
+    var _gy1 = 100; var _gy2 = 680;
+    var _node_w = 130; var _node_h = 64;
+    var _mid_y  = (_gy1 + _gy2) * 0.5;   // 390
+    var _y_spread = 110;                   // offset for 2-node layers
+
+    // Count nodes per layer for y spread decision
+    var _per_layer = array_create(_max_layer + 1, 0);
+    for (var _i = 0; _i < _node_count; _i++) _per_layer[_layers[_i]]++;
+
+    // Layer x centers spread evenly across the graph area
+    var _layer_xs = [];
+    for (var _l = 0; _l <= _max_layer; _l++) {
+        var _t = (_max_layer > 0) ? (_l / _max_layer) : 0.5;
+        array_push(_layer_xs, _gx1 + _node_w * 0.5 + _t * (_gx2 - _gx1 - _node_w));
+    }
+
+    // ---- Build the map ----
+    var _map = [];
+    var _pool_cursor2 = 0;
+    for (var _i = 0; _i < _node_count; _i++) {
+        var _type = "combat";
+        if (_i == 0) {
+            _type = "combat";
+        } else if (_i == _node_count - 1) {
+            _type = "boss";
+        } else {
+            _type = _pool_copy[_pool_cursor2 mod array_length(_pool_copy)];
+            _pool_cursor2++;
+        }
+
+        var _enemies  = "standard";
+        var _gold_min = 0;
+        var _gold_max = 0;
+        var _fl = clamp(global.current_floor - 1, 0, 2);
+        switch (_type) {
+            case "combat":   _enemies = "standard"; break;
+            case "elite":    _enemies = "elite";    break;
+            case "boss":     _enemies = "boss";     break;
+            case "treasure":
+                _enemies = "none";
+                if (_fl == 0)      { _gold_min = 25; _gold_max = 55; }
+                else if (_fl == 1) { _gold_min = 45; _gold_max = 85; }
+                else               { _gold_min = 70; _gold_max = 130; }
+                break;
+            case "treasure_heal":
+                _enemies = "none";
+                if (_fl == 0)      { _gold_min = 5;  _gold_max = 20; }
+                else if (_fl == 1) { _gold_min = 10; _gold_max = 30; }
+                else               { _gold_min = 15; _gold_max = 40; }
+                break;
+            case "treasure_vault":
+                _enemies = "none";
+                if (_fl == 0)      { _gold_min = 15; _gold_max = 35; }
+                else if (_fl == 1) { _gold_min = 25; _gold_max = 50; }
+                else               { _gold_min = 40; _gold_max = 70; }
+                break;
+            case "treasure_rare":
+                _enemies = "none";
+                if (_fl == 0)      { _gold_min = 30; _gold_max = 55; }
+                else if (_fl == 1) { _gold_min = 50; _gold_max = 80; }
+                else               { _gold_min = 70; _gold_max = 120; }
+                break;
+            case "event":
+                _enemies = "none";   // interactive choice room; self-contained rewards
+                break;
+            case "shrine":
+                _enemies = "none";   // boon-tribute altar, no combat
+                break;
+        }
+
+        // Y position: spread slots in multi-node layers (supports up to 3 nodes/layer)
+        var _px = _layer_xs[_layers[_i]];
+        var _py = _mid_y;
+        var _lcount = _per_layer[_layers[_i]];
+        if (_lcount == 2) {
+            _py = (_slots[_i] == 0) ? _mid_y - _y_spread : _mid_y + _y_spread;
+        } else if (_lcount >= 3) {
+            if (_slots[_i] == 0)      _py = _mid_y - _y_spread;
+            else if (_slots[_i] == 1) _py = _mid_y;
+            else                      _py = _mid_y + _y_spread;
+        }
+
+        array_push(_map, {
+            id:       _i,
+            layer:    _layers[_i],
+            slot:     _slots[_i],
+            type:     _type,
+            name:     _picked_names[_i],
+            enemies:  _enemies,
+            gold_min: _gold_min,
+            gold_max: _gold_max,
+            cleared:  false,
+            parents:  _parents[_i],
+            children: _children[_i],
+            px:       _px,
+            py:       _py
+        });
+    }
+
+    // Guarantee at least 2 combat or elite rooms among intermediate nodes
+    var _cmbt_cnt = 0;
+    for (var _ci = 1; _ci < _node_count - 1; _ci++) {
+        var _ctype = _map[_ci].type;
+        if (_ctype == "combat" || _ctype == "elite") _cmbt_cnt++;
+    }
+    for (var _ci = 1; _ci < _node_count - 1 && _cmbt_cnt < 2; _ci++) {
+        var _ctype = _map[_ci].type;
+        if (_ctype != "combat" && _ctype != "elite") {
+            _map[_ci].type    = "combat";
+            _map[_ci].enemies = "standard";
+            _map[_ci].gold_min = 0;
+            _map[_ci].gold_max = 0;
+            _map[_ci].name    = _nm_combat[irandom(array_length(_nm_combat) - 1)];
+            _cmbt_cnt++;
+        }
+    }
+
+    global.floor_map            = _map;
+    global.floor_map_floor      = global.current_floor;
+    global.floor_rooms_cleared  = array_create(_node_count, false);
+
+} else {
+    // Returning from a room transition — restore cleared state for just-completed room
+    if (returning_from_combat
+        && variable_global_exists("current_room_index")
+        && global.current_room_index >= 0
+        && global.current_room_index < array_length(global.floor_rooms_cleared)) {
+        global.floor_rooms_cleared[global.current_room_index] = true;
+        show_debug_message("[FLOOR DEBUG] cleared room " + string(global.current_room_index)
+            + " on floor " + string(global.current_floor));
+    }
 }
 
 
 // -----------------------------------------------------------------------------
-// 4. TREASURE POPUP STATE
-// When the player enters a treasure room the popup is shown before clearing it.
-// treasure_timer drives the floating animation in Draw_64.
-// treasure_item holds the dropped item struct (or undefined if no item dropped).
+// 4. REBUILD current_rooms FROM global.floor_map + cleared flags
+// -----------------------------------------------------------------------------
+current_rooms = [];
+var _fmap = global.floor_map;
+for (var _i = 0; _i < array_length(_fmap); _i++) {
+    var _n = _fmap[_i];
+    array_push(current_rooms, {
+        id:       _n.id,
+        layer:    _n.layer,
+        slot:     _n.slot,
+        type:     _n.type,
+        name:     _n.name,
+        enemies:  _n.enemies,
+        gold_min: _n.gold_min,
+        gold_max: _n.gold_max,
+        cleared:  global.floor_rooms_cleared[_i],
+        parents:  _n.parents,
+        children: _n.children,
+        px:       _n.px,
+        py:       _n.py
+    });
+}
+
+// Start the cursor on the first room you can actually enter (the frontier),
+// so you don't have to navigate off the already-cleared entry node each time.
+selected_room = 0;
+for (var _i = 0; _i < array_length(current_rooms); _i++) {
+    if (floor_room_enterable(current_rooms, _i)) { selected_room = _i; break; }
+}
+
+
+// -----------------------------------------------------------------------------
+// 5. POPUP STATE — treasure/event overlay
+// showing_treasure: standard gold+item popup
+// showing_event:    rest / trap event popup
 // -----------------------------------------------------------------------------
 showing_treasure = false;
 treasure_gold    = 0;
 treasure_timer   = 0;
 treasure_item    = undefined;
+
+showing_event = false;
+event_title   = "";
+event_body    = "";
+event_color   = c_white;
+event_timer   = 0;
+
+// Shrine of Tribute — interactive boon-purchase overlay
+showing_shrine     = false;
+shrine_offers      = [];   // array of boon ids offered this shrine
+shrine_cursor      = 0;
+shrine_notification = "";
+
+// Event room — interactive stat-gated choice overlay (see SYSTEMS_EVENTS.md)
+showing_event_choice = false;
+event_active         = undefined;  // the rolled event struct
+event_cursor         = 0;
+event_phase          = "choose";   // "choose" | "result"
+event_result_text    = "";
+
+
+// -----------------------------------------------------------------------------
+// 6. DUNGEON MUSIC
+// -----------------------------------------------------------------------------
+audio_apply_volumes();   // honor saved Music/SFX volumes
+audio_play_sound(_2_dungeon_INITIAL, 1, false);
+dungeon_music_looping = false;

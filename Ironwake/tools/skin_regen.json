@@ -1,0 +1,120 @@
+{
+  "_meta": "v2 skin regeneration \u00e2\u20ac\u201d PRO mode, view low top-down, size 66, to match the male class sprites. Fill char_id as each is fired; build with build_char_sprite.py <char_id> <sprite_name>.",
+  "skins": [
+    {
+      "name": "spr_skin_wanderer",
+      "char_id": "cd6876cf-c38d-4ca4-a22b-dcb84ca04070",
+      "desc": "travel-worn hooded cloak, road-weary wandering adventurer, muted earth tones, detailed pixel art, fantasy RPG"
+    },
+    {
+      "name": "spr_skin_hearth",
+      "char_id": "b981637f-6f6b-41c6-988b-14241a2cdc42",
+      "desc": "warm banded-leather guardswoman, fire-tested, sturdy, amber and brown tones, detailed pixel art, fantasy RPG"
+    },
+    {
+      "name": "spr_skin_duskhide",
+      "char_id": "3ac9bea1-7064-42d7-a6fa-60c114febf53",
+      "desc": "dark supple rogue leathers, hooded assassin, charcoal and black, detailed pixel art, fantasy RPG"
+    },
+    {
+      "name": "spr_skin_pilgrim",
+      "char_id": "f61c7053-cbe0-4b21-91d2-b91411514ae8",
+      "desc": "hooded ascetic robe, wandering pilgrim woman, off-white and grey cloth, detailed pixel art, fantasy RPG"
+    },
+    {
+      "name": "spr_skin_ironscale",
+      "char_id": "c4385f3e-271f-414e-8bba-a1a59b1e0e96",
+      "desc": "riveted iron scale armor, dented veteran soldier, grey steel, detailed pixel art, fantasy RPG"
+    },
+    {
+      "name": "spr_skin_gravewalker",
+      "char_id": "c56b2912-b4e5-4098-b5c7-d812caddaa3e",
+      "desc": "grave-dirt caked plate armor, grim undead-hunter, ashen grey and bone, detailed pixel art, fantasy RPG"
+    },
+    {
+      "name": "spr_skin_bloodsworn",
+      "char_id": "bf90f67d-c817-490e-b68d-13580a1971df",
+      "desc": "crimson warsuit, blood-oath warrior woman, deep red and black, detailed pixel art, fantasy RPG"
+    },
+    {
+      "name": "spr_skin_cryptlight",
+      "char_id": "0418495b-1d76-47e5-8aa4-58d029ef610d",
+      "desc": "lantern-bearer in tattered wraps, crypt delver holding a glowing lantern, muted with warm light, detailed pixel art, fantasy RPG"
+    },
+    {
+      "name": "spr_skin_frostbit",
+      "char_id": "81e0151d-d11e-4e3f-975d-bb5b6a8b01f7",
+      "desc": "frost-rimed mail armor, ice-touched warrior woman, pale blue and white frost, detailed pixel art, fantasy RPG"
+    },
+    {
+      "name": "spr_skin_cinderclad",
+      "char_id": "fb636e7d-8b85-4833-bd96-4e2a3ba792cb",
+      "desc": "charred glowing warplate, fire knight with ember cracks, black and orange glow, detailed pixel art, fantasy RPG"
+    },
+    {
+      "name": "spr_skin_mirewalker",
+      "char_id": "dc73d9a5-3320-4ed3-8520-de6794383b75",
+      "desc": "bog-shrouded hide and moss cloak, swamp stalker, murky green and brown, detailed pixel art, fantasy RPG"
+    },
+    {
+      "name": "spr_skin_stormcall",
+      "char_id": "d6467501-3a49-4e24-9572-2cca70ae21d3",
+      "desc": "storm-charged robes, lightning sorceress crackling with energy, deep blue and electric, detailed pixel art, fantasy RPG"
+    },
+    {
+      "name": "spr_skin_bonechoir",
+      "char_id": "c05d3b3d-2426-4ec1-8cbb-f1629ab3b9b1",
+      "desc": "bound-bone armor, necromantic warrior wreathed in bone, pale ivory and dark, detailed pixel art, fantasy RPG"
+    },
+    {
+      "name": "spr_skin_veilbind",
+      "char_id": "086df8d7-b7f1-4623-a87a-555be621265b",
+      "desc": "woven-shadow shroud, shadow sorceress, dark purple and black mist, detailed pixel art, fantasy RPG"
+    },
+    {
+      "name": "spr_skin_goldwrought",
+      "char_id": "66d70a0b-4a65-44a3-ac36-1ed0c99c9c6d",
+      "desc": "gilded ornate regalia, golden champion woman, polished gold and white, detailed pixel art, fantasy RPG"
+    },
+    {
+      "name": "spr_skin_voidtouch",
+      "char_id": "9fb76b9b-af35-4d3c-97c8-1c1dc0dd6c7d",
+      "desc": "star-eaten dark void plate armor, cosmic knight, black with starry purple, detailed pixel art, fantasy RPG"
+    },
+    {
+      "name": "spr_skin_sanguine",
+      "char_id": "bd977815-6188-4555-a6d8-3f4fc61346d3",
+      "desc": "blood-dark vampire-lord finery, elegant noblewoman, crimson and black velvet, detailed pixel art, fantasy RPG"
+    },
+    {
+      "name": "spr_skin_dawnbreak",
+      "char_id": "cbbbfc22-383d-45de-94b7-f20fc7a655c0",
+      "desc": "radiant golden crusader plate, holy knight, gold and white with light, detailed pixel art, fantasy RPG"
+    },
+    {
+      "name": "spr_skin_doomherald",
+      "char_id": "fc830539-3e15-484c-bc1e-61eb6b483e4d",
+      "desc": "apocalyptic spiked warlord armor, menacing dark champion, blackened iron and red, detailed pixel art, fantasy RPG"
+    },
+    {
+      "name": "spr_skin_sovereign",
+      "char_id": "4689c6c8-4fbb-4c88-8133-d9536e8c2ad2",
+      "desc": "prestige royal regalia with crown and cape, regal queen, deep purple gold and white, detailed pixel art, fantasy RPG"
+    },
+    {
+      "name": "spr_skin_ashen",
+      "char_id": "b8b1b954-eb86-435f-9044-9e82b52207b8",
+      "desc": "gaunt revenant wreathed in ash-grey rags, hollow undead mage, ash and bone tones, detailed pixel art, fantasy RPG"
+    },
+    {
+      "name": "spr_skin_ember",
+      "char_id": "145d5cc5-17fc-4e26-8ce2-5f339aa08a43",
+      "desc": "molten plate armor glowing with inner fire, ember knight, black iron and orange glow, detailed pixel art, fantasy RPG"
+    },
+    {
+      "name": "spr_skin_tide",
+      "char_id": "3a2ccd66-9838-40bf-8a48-2abc7b13f8a7",
+      "desc": "flowing robes that move like deep water, tideborn sorceress, teal and sea-blue, detailed pixel art, fantasy RPG"
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "$GMSound":"v2",
+  "%Name":"teleport",
+  "audioGroupId":{
+    "name":"audiogroup_default",
+    "path":"audiogroups/audiogroup_default",
+  },
+  "bitDepth":1,
+  "channelFormat":0,
+  "compression":0,
+  "compressionQuality":4,
+  "conversionMode":0,
+  "duration":2.0897958,
+  "exportDir":"",
+  "name":"teleport",
+  "parent":{
+    "name":"Ironwake",
+    "path":"Ironwake.yyp",
+  },
+  "preload":false,
+  "resourceType":"GMSound",
+  "resourceVersion":"2.0",
+  "sampleRate":44100,
+  "soundFile":"teleport.wav",
+  "volume":1.0,
+}

@@ -1,0 +1,6 @@
+{
+  "spr_item_art_gatewarden_brand": {"base": "Gatewarden's Brand", "url": "https://api.pixellab.ai/mcp/map-objects/9128088f-b897-4283-a56d-75c188a75e50/download"},
+  "spr_item_art_heartstone_aegis": {"base": "Heartstone Aegis", "url": "https://api.pixellab.ai/mcp/map-objects/a8df9484-b82b-4186-a01b-687a3eb419c3/download"},
+  "spr_item_art_crown_hollow_king": {"base": "Crown of the Hollow King", "url": "https://api.pixellab.ai/mcp/map-objects/208ecc24-58aa-4b31-a006-c840b69f2577/download"},
+  "spr_item_art_thief_of_hours": {"base": "Thief of Hours", "url": "https://api.pixellab.ai/mcp/map-objects/3ed47a60-9df7-432a-86ec-bcb3f58a279e/download"}
+}
