@@ -124,6 +124,10 @@ if (phase == "cutscene") {
                 slot_confirm = true;
             } else {
                 global.save_slot = slot_selected;
+                // Wipe all persisted run/meta globals to defaults FIRST, so a New
+                // Game never inherits a previously-loaded save's gold/run history/
+                // inventory/stats (and never writes them into the new slot).
+                new_game_reset();
                 audio_stop_sound(Viking_March);
                 room_goto(rm_character_select);
             }

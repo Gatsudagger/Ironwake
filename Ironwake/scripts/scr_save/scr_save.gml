@@ -141,6 +141,115 @@ function save_game() {
 }
 
 
+// ---------------------------------------------------------------------------
+// new_game_reset()
+// Wipes every PERSISTED run/meta global back to first-launch defaults so a New
+// Game starts from a clean slate. Without this, a New Game inherited whatever was
+// last in memory — e.g. the gold / run history / inventory / stats of a save you
+// had just LOADED — and the first save_game() then wrote that stale state into the
+// new slot (the "new file has my Save 1 Arcanist's gold" bug). Resets EXACTLY the
+// set save_game() persists (the leak surface); character creation then fills in
+// name/class/stats/gender/portrait. Catalogs/pools (affix_pool, abilities_*,
+// traits_all, audio) are NOT touched — they aren't persisted and load once at boot.
+// Call right before entering character creation for a New Game.
+// ---------------------------------------------------------------------------
+function new_game_reset() {
+    // Economy
+    global.gold             = 0;
+    global.current_run_gold = 0;
+    global.player_name      = "Hero";
+
+    // Lifetime stats
+    global.run_count   = 0;
+    global.best_floor  = 0;
+    global.total_kills = 0;
+
+    // Last-run summary (hub panel)
+    global.last_run_result      = 0;
+    global.last_run_gold        = 0;
+    global.last_run_kills       = 0;
+    global.last_run_mercy_gold  = 0;
+    global.last_run_perm_points = 0;
+    global.last_run_mercy_item  = "";
+
+    // Permanent stat bonuses
+    global.perm_str_bonus      = 0;
+    global.perm_dex_bonus      = 0;
+    global.perm_con_bonus      = 0;
+    global.perm_int_bonus      = 0;
+    global.perm_wis_bonus      = 0;
+    global.perm_cha_bonus      = 0;
+    global.pending_perm_points = 0;
+
+    // Hub progression gate
+    global.hub_unlocks = 0;
+
+    // Ability / trait loadout + unlock registry
+    global.player_loadout  = ["", "", "", "", ""];
+    global.player_traits   = ["", ""];
+    global.traits_unlocked = {
+        sense: true, scavenger: true, thick_skin: true,
+        lucky_find: false, salvager: false, soul_siphon: false,
+        crimson_reserve: false, phantom_step: false,
+        quick_recovery: false, treasure_hunter: false, battle_hardened: false,
+        iron_will: false, ley_tap: false, arcane_surge: false,
+        vampiric_edge: false, berserker_rage: false, shadow_meld: false,
+        serrated_strikes: false, expanded_arsenal: false, prospector: false,
+        last_stand: false, focused_power: false, chain_caster: false, plaguebearer: false,
+    };
+
+    // Vex the Trainer permanent purchases
+    global.bonus_trait_slots  = 0;
+    global.unlocked_abilities = [];
+    global.trait_potency      = {};
+
+    // Item codex
+    global.items_discovered = [];
+
+    // Run history log
+    global.run_history = [];
+
+    // Equipped items + hub storage
+    global.inventory            = array_create(8, undefined);
+    global.equipment_stash      = [];
+    global.consumable_stash     = [];
+    global.consumable_inventory = [];
+
+    // Rune system (Maren)
+    global.rune_inventory = [];
+    global.rune_dust      = 0;
+    global.aspect_slots   = 2;
+    global.aspect_runes   = [];
+
+    // Transmog (Vael)
+    global.player_skin    = "default";
+    global.unlocked_skins = [];
+    global.player_gender  = "m";
+
+    // Run modifiers
+    global.run_boons  = [];
+    global.run_curses = [];
+
+    // Onboarding (per-slot)
+    global.tutorial_seen = {};
+
+    // Dungeon ascendance progression
+    global.dungeon_ascendance_unlocked = { ashen_vault: 0, scorched_depths: 0, tundra_tomb: 0 };
+    global.dungeon_clears              = { ashen_vault: 0, scorched_depths: 0, tundra_tomb: 0 };
+    global.dungeon_clears_total        = 0;
+    global.total_boss_kills            = 0;
+    global.highest_run_level           = 1;
+    global.perm_hp_battle_hardened     = 0;
+    global.selected_ascendance         = 0;
+    global.selected_dungeon            = "ashen_vault";
+
+    // Character identity — defaulted here, set during character creation
+    global.chosen_portrait = 0;
+    global.chosen_class    = 0;
+    global.chosen_stats    = undefined;
+}
+
+
 // Recover a character's class from a saved ability loadout. Abilities are
 // class-specific (the starter + Vex pools differ per class), so the loadout's
 // names uniquely point back to the owning class. Used to repair saves written
