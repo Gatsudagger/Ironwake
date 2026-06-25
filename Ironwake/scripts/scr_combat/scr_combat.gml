@@ -154,16 +154,22 @@ function stat_crit_chance(stats, crit_type) {
     return 0;
 }
 
-// combat_roll_hit(acc_bonus, ability_acc, target_dodge, guaranteed)
-// acc_bonus is the attacker's PRECOMPUTED accuracy bonus (player: curved stat_accuracy
-// stored as player.acc; enemies pass a small flat value). hit chance clamps to 5..95.
-function combat_roll_hit(acc_bonus, ability_acc, target_dodge, guaranteed) {
-    if (guaranteed) return true;
+// combat_roll_hit(attacker_acc, defender_dodge, guaranteed)
+// TWO-STAGE roll so the log can distinguish a MISS (attacker's accuracy failed) from a
+// DODGE (defender evaded a hit that would have landed), and so Dodge is a literal %.
+//   Stage 1: attacker_acc% to land at all  (clamp 5..99). Fail -> "miss".
+//   Stage 2: defender_dodge% to evade      (clamp 0..90). Pass -> "dodge".
+// Returns "hit" | "miss" | "dodge".
+function combat_roll_hit(attacker_acc, defender_dodge, guaranteed) {
+    if (guaranteed) return "hit";
 
-    var hit_chance = ability_acc + acc_bonus - target_dodge;
-    hit_chance     = clamp(hit_chance, 5, 95);
+    var _acc = clamp(attacker_acc, 5, 99);
+    if (irandom(99) >= _acc) return "miss";          // attacker failed to connect
 
-    return (irandom(99) < hit_chance); // irandom(99) gives 0–99 inclusive
+    var _dodge = clamp(defender_dodge, 0, 90);
+    if (_dodge > 0 && irandom(99) < _dodge) return "dodge"; // defender slipped it
+
+    return "hit";
 }
 
 // ---------------------------------------------------------------------------

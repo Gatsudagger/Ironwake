@@ -591,14 +591,15 @@ if (player_turn) {
                     var _cast_acc = ab.base_acc - combat_status_max(player, "blind") * 100
                                     + rune_aspect_ranged_acc(ab);
                     var _hit = combat_roll_hit(
-                        player.acc,
-                        _cast_acc,
+                        _cast_acc + player.acc,
                         target.dodge,
                         ab.guaranteed_hit || _react_force_hit
                     );
 
-                    if (!_hit) {
-                        array_push(combat_log, ab.name + " missed!");
+                    if (_hit != "hit") {
+                        array_push(combat_log, (_hit == "dodge")
+                            ? (target.name + " dodged " + ab.name + "!")
+                            : (ab.name + " missed!"));
                         play_sfx_var("snd_miss", -1);   // whiff (silent until imported)
 
                     } else {
@@ -1586,10 +1587,12 @@ if (player_turn) {
         var _shadow_meld_bonus = (variable_struct_exists(player, "shadow_meld_bonus")) ? player.shadow_meld_bonus : 0;
         player.shadow_meld_bonus = 0; // consume bonus whether hit or miss
         var _effective_dodge = player.dodge + _shadow_meld_bonus;
-        var _hit = combat_roll_hit(9, _enemy_acc, _effective_dodge, false);
+        var _hit = combat_roll_hit(_enemy_acc + 9, _effective_dodge, false);
 
-        if (!_hit) {
-            array_push(combat_log, actor.name + " attacked but missed!");
+        if (_hit != "hit") {
+            array_push(combat_log, (_hit == "dodge")
+                ? ("You dodged " + actor.name + "'s attack!")
+                : (actor.name + " attacked but missed!"));
             // Shadow Meld: grant +15 dodge for next turn after successfully dodging
             if (player.class_id == 2 && trait_active("Shadow Meld")) {
                 player.shadow_meld_bonus = 15;
@@ -1692,10 +1695,12 @@ if (player_turn) {
         // Fire a second independent hit roll using mechanic_value as the flat
         // per-hit damage (separate from the telegraphed damage path).
         if (actor.mechanic_type == "double_strike") {
-            var _hit2 = combat_roll_hit(9, _enemy_acc, player.dodge, false);
+            var _hit2 = combat_roll_hit(_enemy_acc + 9, player.dodge, false);
 
-            if (!_hit2) {
-                array_push(combat_log, actor.name + "'s second strike missed!");
+            if (_hit2 != "hit") {
+                array_push(combat_log, (_hit2 == "dodge")
+                    ? ("You dodged " + actor.name + "'s second strike!")
+                    : (actor.name + "'s second strike missed!"));
             } else {
                 var _final_dmg2 = combat_resolve_damage(
                     actor.mechanic_value,

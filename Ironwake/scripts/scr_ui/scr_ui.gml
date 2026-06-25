@@ -2394,7 +2394,8 @@ function ui_compendium_sections() {
         {
             title: "Hit & Crit",
             entries: [
-                { term: "Accuracy",        text: "Each attack rolls to hit based on its accuracy versus the target's Dodge. Blind lowers it sharply." },
+                { term: "Accuracy",        text: "First the attacker rolls to connect (its Accuracy, capped 5-99%). A failure is a MISS. Blind lowers Accuracy sharply." },
+                { term: "Dodge",           text: "If an attack connects, the defender rolls their Dodge % to evade it — that's a DODGE (shown separately from a miss). High DEX raises Dodge, with diminishing returns." },
                 { term: "Guaranteed Hit",  text: "Some abilities always land — they ignore accuracy, Dodge and Blind entirely." },
                 { term: "Critical Hits",   text: "A successful crit deals bonus damage. Certain abilities crit more often or for more." },
             ],
@@ -2598,16 +2599,16 @@ function ui_draw_character_menu() {
             draw_set_color(_hc);
             draw_text(_pad, _content_y + 384, "── Defense ──────────────");
             draw_set_color(_dc);
-            draw_text(_pad, _content_y + 410, "Dodge:           " + string(_derived.DODGE));
+            draw_text(_pad, _content_y + 410, "Dodge:           " + string(_derived.DODGE) + "%");
             draw_text(_pad, _content_y + 434, "Phys reduction:  " + string(_derived.phys_dmg_reduction) + "%");
-            draw_text(_pad, _content_y + 458, "Max HP:          " + string(_derived.HP));
-            // Accuracy — explained (it is percentage points added to each hit roll)
+            draw_text(_pad, _content_y + 458, "Base HP:         " + string(_derived.HP) + "  (+gear)");
+            // Accuracy — a flat bonus to each ability's to-hit, before the foe's dodge.
             draw_set_color(make_color_rgb(150, 180, 210));
-            draw_text(_crit_x, _content_y + 410, "Accuracy:  +" + string(_derived.ACC_modifier) + "% to hit");
+            draw_text(_crit_x, _content_y + 410, "Accuracy:  +" + string(_derived.ACC_modifier) + " to hit");
             draw_set_color(make_color_rgb(95, 105, 125));
-            draw_text(_crit_x, _content_y + 432, "Added to each attack's chance to land,");
-            draw_text(_crit_x, _content_y + 450, "vs the enemy's Dodge (capped 5–95%).");
-            draw_text(_crit_x, _content_y + 468, "Blind lowers it sharply.");
+            draw_text(_crit_x, _content_y + 432, "Added to each ability's hit chance");
+            draw_text(_crit_x, _content_y + 450, "(final chance capped 5-99%), then the");
+            draw_text(_crit_x, _content_y + 468, "foe's Dodge applies. Blind lowers it.");
 
             // ---- Footer ----
             draw_set_color(c_yellow);
@@ -2653,7 +2654,7 @@ function ui_draw_character_menu() {
             var _gender_txt = (variable_global_exists("player_gender") && global.player_gender == "f") ? "Female" : "Male";
             draw_set_halign(fa_center);
             draw_set_color(make_color_rgb(190, 200, 220));
-            draw_text((_cardx1 + _cardx2) / 2, _cardy2 + 8, _skin_name + "  ·  " + _gender_txt);
+            draw_text((_cardx1 + _cardx2) / 2, _cardy2 + 24, _skin_name + "  ·  " + _gender_txt);
             draw_set_halign(fa_left);
 
             // ---- Combat readiness summary ----
@@ -2665,8 +2666,8 @@ function ui_draw_character_menu() {
             var _prim_vals = [_derived.INT_crit_chance, _derived.STR_crit_chance, _derived.DEX_crit_chance];
             draw_set_color(c_white);
             draw_text(_rx, _content_y + 308, "HP:        " + string(_player.HP) + " / " + string(_player.max_HP));
-            draw_text(_rx, _content_y + 330, "Dodge:     " + string(_derived.DODGE));
-            draw_text(_rx, _content_y + 352, "Accuracy:  +" + string(_derived.ACC_modifier) + "% to hit");
+            draw_text(_rx, _content_y + 330, "Dodge:     " + string(_derived.DODGE) + "%");
+            draw_text(_rx, _content_y + 352, "Accuracy:  +" + string(_derived.ACC_modifier) + " to hit");
             draw_text(_rx, _content_y + 374, "Main crit: " + string(round(_prim_vals[_class_id] + _crit_flat)) + "%  (" + _prim_lbls[_class_id] + ")");
 
             // ---- Boons & Effects (right column, below readiness) ----
