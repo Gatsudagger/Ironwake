@@ -2190,6 +2190,104 @@ function ui_draw_combat_hud(combat_state, player, ability_array, selected_abilit
 }
 
 // ---------------------------------------------------------------------------
+// ui_draw_ability_detail(ab)
+// Full-screen "press Tab for the breakdown" popup for one ability — the elaborate
+// view so the dense screens don't have to cram the text. Shows icon, attack class,
+// AP + secondary-resource cost, cooldown, the full generated mechanics, the status-
+// reaction table (for detonators), and flavor. Drawn on the GUI layer over whatever
+// screen opened it; the caller gates input while it's up. See SYSTEMS_VIABILITY_PASS.md.
+// ---------------------------------------------------------------------------
+function ui_draw_ability_detail(ab) {
+    if (!is_struct(ab)) return;
+
+    // Dim the whole screen.
+    draw_set_alpha(0.80); draw_set_color(c_black);
+    draw_rectangle(0, 0, 1280, 720, false);
+    draw_set_alpha(1.0);
+
+    var _x1 = 260, _y1 = 96, _x2 = 1020, _y2 = 624;
+    draw_set_color(make_color_rgb(16, 17, 26));
+    draw_rectangle(_x1, _y1, _x2, _y2, false);
+    ui_draw_gothic_frame(_x1, _y1, _x2, _y2, 24);
+
+    var _pad = 30;
+    var _lx  = _x1 + _pad;
+    var _rx  = _x2 - _pad;
+    var _y   = _y1 + _pad;
+
+    // --- Header: icon + name ---
+    ui_draw_ability_icon(_lx, _y, 64, ab);
+    var _tx = _lx + 64 + 18;
+    draw_set_halign(fa_left); draw_set_valign(fa_top);
+    draw_set_color(c_white);
+    draw_text_transformed(_tx, _y + 2, ab.name, 1.6, 1.6, 0);
+
+    // Cost / class line.
+    var _ap  = variable_struct_exists(ab, "energy_cost") ? ab.energy_cost : 0;
+    var _sec = variable_struct_exists(ab, "secondary_cost") ? ab.secondary_cost : 0;
+    var _cls = variable_global_exists("chosen_class") ? global.chosen_class : 0;
+    var _resname = (_cls == 0) ? "Souls" : ((_cls == 1) ? "Blood" : "Preparation");
+    var _costline = string(_ap) + " AP";
+    if (_sec > 0) _costline += "   +" + string(_sec) + " " + _resname;
+    var _cd = ability_cooldown(ab);
+    if (_cd > 0) _costline += "   •   " + string(_cd) + "-turn cooldown";
+    draw_set_color(make_color_rgb(228, 190, 90));
+    draw_text(_tx, _y + 40, _costline);
+    draw_set_color(make_color_rgb(150, 160, 190));
+    draw_text(_tx, _y + 62, ability_attack_class_tag(ab));
+
+    _y += 96;
+    draw_set_color(make_color_rgb(60, 64, 90));
+    draw_line(_lx, _y, _rx, _y);
+    _y += 16;
+
+    // --- Mechanics (the canonical generated description) ---
+    draw_set_color(make_color_rgb(120, 200, 140));
+    draw_text(_lx, _y, "MECHANICS");
+    _y += 24;
+    draw_set_color(make_color_rgb(210, 214, 230));
+    var _mech = ability_describe(ab);
+    draw_text_ext(_lx, _y, _mech, 22, _rx - _lx);
+    _y += string_height_ext(_mech, 22, _rx - _lx) + 18;
+
+    // --- Status reactions table (detonators only) ---
+    if (ability_is_detonator(ab)) {
+        draw_set_color(make_color_rgb(190, 160, 240));
+        draw_text(_lx, _y, "STATUS REACTIONS  (this ability detonates a status on the target)");
+        _y += 24;
+        var _reacts = [
+            "Exposed (Vulnerable) — +12 damage (mark persists)",
+            "Root / Frost — +30% damage, shatters",
+            "Stun — guaranteed critical hit",
+            "Weaken — +15% damage",
+            "Blind — cannot miss",
+            "Poison — applies Mortality (-40% healing, 4 turns)",
+            "Bleed — bursts every remaining bleed tick",
+            "Void DoT — heals you for 30% of the damage dealt",
+        ];
+        draw_set_color(make_color_rgb(200, 204, 220));
+        for (var _ri = 0; _ri < array_length(_reacts); _ri++) {
+            draw_text(_lx + 8, _y, "•  " + _reacts[_ri]);
+            _y += 22;
+        }
+        _y += 8;
+    }
+
+    // --- Flavor (legacy authored line, if any) ---
+    if (variable_struct_exists(ab, "desc_full") && ab.desc_full != "") {
+        draw_set_color(make_color_rgb(140, 146, 170));
+        draw_text_ext(_lx, _y, ab.desc_full, 22, _rx - _lx);
+    }
+
+    // --- Footer ---
+    draw_set_halign(fa_center);
+    draw_set_color(make_color_rgb(150, 160, 190));
+    draw_text((_x1 + _x2) / 2, _y2 - 26, "[Tab] or [Esc] — Close");
+    draw_set_halign(fa_left); draw_set_valign(fa_top);
+    draw_set_color(c_white);
+}
+
+// ---------------------------------------------------------------------------
 // ui_compendium_sections()
 // Data for the Compendium / Help tab. Each section is { title, entries[] },
 // each entry is { term, text }. Data-driven so new mechanics are a quick add —

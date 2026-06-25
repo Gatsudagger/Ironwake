@@ -776,6 +776,13 @@ function ability_cooldown(ab) {
     return 0;
 }
 
+// ability_is_detonator(ab) — true for abilities that trigger status reactions on
+// hit (see SYSTEMS_VIABILITY_PASS.md). Accepts a struct or a name string.
+function ability_is_detonator(ab) {
+    var _n = is_struct(ab) ? ab.name : ab;
+    return (_n == "Snipe" || _n == "Assassinate" || _n == "Arcane Burst" || _n == "Soul Nova");
+}
+
 
 // =============================================================================
 // DYNAMIC ABILITY DESCRIPTIONS (single source of truth).

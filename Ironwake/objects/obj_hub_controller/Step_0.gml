@@ -136,6 +136,7 @@ if (instance_exists(obj_game_controller)) {
                 }
             }
             _gc_dsel.loadout_open       = true;
+            _gc_dsel.ability_detail_open = false;
             _gc_dsel.loadout_cursor     = 0;
             _gc_dsel.loadout_full_timer = 0;
             _gc_dsel.loadout_confirmed  = false;
@@ -178,6 +179,20 @@ if (instance_exists(obj_game_controller)) {
             array_delete(_gc_ld.loadout_selected, array_length(_gc_ld.loadout_selected) - 1, 1);
         }
         _ld_sel_cnt = array_length(_gc_ld.loadout_selected);
+
+        // --- Tab ability-detail popup (P7) ---
+        // While the popup is up, only Tab/Esc (close) — swallow all other loadout input.
+        if (_gc_ld.ability_detail_open) {
+            if (keyboard_check_pressed(vk_tab) || keyboard_check_pressed(vk_escape)) {
+                _gc_ld.ability_detail_open = false;
+            }
+            exit;
+        }
+        // Tab opens the full breakdown for the highlighted ability (Abilities tab, on a row).
+        if (keyboard_check_pressed(vk_tab) && _gc_ld.loadout_tab == 0 && _gc_ld.loadout_cursor < _ld_pool_sz) {
+            _gc_ld.ability_detail_open = true;
+            exit;
+        }
 
         // Tick flash timers (shared between tabs — "slots full" / "locked ability")
         if (_gc_ld.loadout_full_timer > 0) _gc_ld.loadout_full_timer--;

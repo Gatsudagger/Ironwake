@@ -1463,8 +1463,13 @@ if (instance_exists(obj_game_controller)) {
 
             // --- Controls hint: y=700-715 ---
             draw_set_color(make_color_rgb(65, 75, 100));
-            draw_text(640, 700, "W/S: Navigate   Q/E: Switch Tab   Enter: Toggle   Enter / Space: Confirm   Esc: Cancel");
+            draw_text(640, 700, "W/S: Navigate   Q/E: Switch Tab   Enter: Toggle   Tab: Details   Space: Confirm   Esc: Cancel");
             draw_set_halign(fa_left);
+
+            // --- Tab ability-detail popup, drawn over the loadout (P7) ---
+            if (_gc_ov.ability_detail_open && _gc_ov.loadout_cursor < _ov_pool_sz) {
+                ui_draw_ability_detail(_ov_pool[_gc_ov.loadout_cursor]);
+            }
 
         // =====================================================================
         // TRAITS TAB
