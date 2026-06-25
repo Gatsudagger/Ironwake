@@ -306,6 +306,7 @@ global.enemies_ashen_vault_standard = [
         /*abilities*/[
             enemy_ability("Soul Drain", "spell", 35, 2, 9, { dtype: 2, msg: "drains your essence" }),
             enemy_ability("Haunting Gaze", "debuff", 30, 3, 0.20, { status_kind: "blind", turns: 2, msg: "clouds your sight" }),
+            enemy_ability("Spectral Mend", "heal", 30, 3, 12, { msg: "knits its tattered form back together" }),
         ]
     ),
 
@@ -348,6 +349,7 @@ global.enemies_ashen_vault_standard = [
         /*mechanic*/"fortify", /*value*/0.4, /*turns*/3,
         /*abilities*/[
             enemy_ability("Bone Crush", "control", 22, 4, 0, { status_kind: "stun", turns: 1, msg: "smashes you to the ground — stunned" }),
+            enemy_ability("Knit Bone", "heal", 28, 4, 10, { msg: "knits its shattered bones" }),
         ]
     ),
 
@@ -508,6 +510,7 @@ global.enemies_tundra_tomb_standard = [
         /*abilities*/[
             enemy_ability("Death Rune", "control", 25, 4, 0, { status_kind: "silence", turns: 2, msg: "binds your tongue — silenced" }),
             enemy_ability("Frost Bolt", "spell", 35, 2, 10, { dtype: 1, msg: "hurls a shard of ice" }),
+            enemy_ability("Restorative Glyph", "heal", 35, 3, 16, { msg: "traces a restorative glyph and mends" }),
         ]
     ),
     enemy_define(

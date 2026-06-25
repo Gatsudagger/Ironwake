@@ -236,10 +236,10 @@ global.abilities_arcanist = [
     // 9: Soulbind — ties enemy fate to caster; reflects 40% damage for full combat
     ability_define("Soulbind",
         /*energy*/2, /*secondary*/1,
-        /*damage*/0, /*dtype*/2,        // void
+        /*damage*/6, /*dtype*/2,        // void — now lands a small hit on cast
         /*acc*/72, /*guaranteed*/false,
         /*crit_type*/3, /*base_crit*/0, // effect (WIS)
-        /*effect_type*/"status", /*effect_value*/0.4, /*duration*/-1, // -1 = combat-long
+        /*effect_type*/"status", /*effect_value*/0.5, /*duration*/-1, // -1 = combat-long
         /*self*/false),
 ];
 
@@ -339,7 +339,7 @@ global.abilities_bloodwarden = [
         /*damage*/0, /*dtype*/0,
         /*acc*/-1, /*guaranteed*/true,
         /*crit_type*/-1, /*base_crit*/0,
-        /*effect_type*/"status", /*effect_value*/5, /*duration*/4, // reflect 5 dmg/hit × 4 turns
+        /*effect_type*/"status", /*effect_value*/8, /*duration*/4, // reflect 8 dmg/hit × 4 turns
         /*self*/true),
 
     // 7: Undying — ultimate safety net; costs 3 Blood; survive lethal blow at 1 HP
@@ -468,7 +468,7 @@ global.abilities_shadowstrider = [
     // 6: Spike Trap — heavy trap; guaranteed on trigger; bleed stacks twice
     ability_define("Spike Trap",
         /*energy*/3, /*secondary*/2,
-        /*damage*/22, /*dtype*/0,       // physical
+        /*damage*/26, /*dtype*/0,       // physical
         /*acc*/-1, /*guaranteed*/true,
         /*crit_type*/1, /*base_crit*/10, // precision (DEX)
         /*effect_type*/"dot", /*effect_value*/6, /*duration*/4, // bleed ×2 stacks
@@ -496,7 +496,7 @@ global.abilities_shadowstrider = [
     // 9: Death Snare — apex trap; guaranteed trigger, stun 2 turns, top precision crit
     ability_define("Death Snare",
         /*energy*/3, /*secondary*/2,
-        /*damage*/28, /*dtype*/0,       // physical
+        /*damage*/32, /*dtype*/0,       // physical
         /*acc*/-1, /*guaranteed*/true,
         /*crit_type*/1, /*base_crit*/14, // precision (DEX)
         /*effect_type*/"status", /*effect_value*/1, /*duration*/2, // stun 2 turns
@@ -542,7 +542,7 @@ for (var _i = 0; _i < 10; _i++) {
 // --- GENERAL POOL: any class can slot these (selectable in every loadout) ---
 global.abilities_general = [
     ability_define("Strike",          1,0,  10,0,  85,false, 1,8,  "damage",0,0,  false),
-    ability_define("Field Dressing",  1,0,  0,0,   -1,true,  -1,0, "heal",12,0,   true),
+    ability_define("Field Dressing",  1,0,  0,0,   -1,true,  -1,0, "heal",14,0,   true),
     ability_define("Second Wind",     2,0,  0,0,   -1,true,  -1,0, "heal",10,0,   true),
     ability_define("Adrenaline Rush", 0,0,  0,0,   -1,true,  -1,0, "status",1,0,  true),
 ];
@@ -582,8 +582,8 @@ for (var _i = 0; _i < 3; _i++) {
 // --- BLOODWARDEN extras (indices 10-12) ---
 array_push(global.abilities_bloodwarden,
     ability_define("Sanguine Pact", 1,0,  0,0,   -1,true,  -1,0, "status",0,0,  true),
-    ability_define("Bonebreaker",   3,0,  18,0,  78,false, 0,12, "debuff",5,3,  false),
-    ability_define("Crimson Apex",  3,3,  22,3,  82,false, 0,12, "heal",18,0,   false));
+    ability_define("Bonebreaker",   3,0,  14,0,  78,false, 0,12, "debuff",5,3,  false),
+    ability_define("Crimson Apex",  3,3,  22,3,  82,false, 0,12, "heal",20,0,   false));
 var _bw_x = [
     { s:"Spend 8 HP to gain 3 Blood.",
       f:"Bleed yourself to fuel your Blood reserve when you need resources faster than combat provides them. Don't cast it low on HP." },
@@ -601,7 +601,7 @@ for (var _i = 0; _i < 3; _i++) {
 array_push(global.abilities_shadowstrider,
     ability_define("Flurry",        2,0,  16,0,  88,false, 1,18, "damage",0,0,  false),
     ability_define("Vanish",        1,0,  0,0,   -1,true,  -1,0, "status",1,1,  true),
-    ability_define("Killing Spree", 3,2,  14,0,  86,false, 1,12, "damage",0,0,  false));
+    ability_define("Killing Spree", 3,2,  12,0,  86,false, 1,12, "damage",0,0,  false));
 var _ss_x = [
     { s:"Deal 16 physical dmg. High precision crit.",
       f:"A rapid flurry of strikes with a sky-high crit chance — your most reliable burst once it's unlocked." },
@@ -690,7 +690,7 @@ array_push(global.abilities_shadowstrider,
     //     (rider). Spends 2 Prep. Rewards reading the board for the kill turn.
     ability_define("Assassinate",
         /*energy*/3, /*secondary*/2,
-        /*damage*/24, /*dtype*/0,       // physical
+        /*damage*/26, /*dtype*/0,       // physical
         /*acc*/82, /*guaranteed*/false,
         /*crit_type*/1, /*base_crit*/12, // precision (DEX)
         /*effect_type*/"damage", /*effect_value*/0, /*duration*/0,
@@ -808,12 +808,10 @@ function ability_effect_full(ab) {
         case "Soul Harvest":    _b = "Free 0-AP action: generate " + string(_ev) + " Souls."; break;
         case "Arcane Echo":     _b = "Deals +4 bonus damage per Soul you hold."; break;
         case "Soul Nova":       _b = "Consumes up to 4 Souls; +7 damage per Soul spent."; break;
-        case "Arcane Burst":    _b = "Deals +40% damage if the target is Exposed or debuffed."; break;
-        case "Flurry":          _b = "Deals +3 bonus damage per debuff on the target."; break;
+        case "Flurry":          _b = "Strikes 3 times; each hit rolls its own crit. +3 damage per debuff on the target."; break;
         case "Rupture":         _b = "Detonates every bleed/poison on the target: +5 damage per remaining tick, consuming them."; break;
         case "Assassinate":     _b = "Execute: deals DOUBLE damage to a target below 30% HP."; break;
-        case "Killing Spree":   _b = "Deals +5 bonus damage per debuff or trap on the target."; break;
-        case "Snipe":           _b = "Deals +" + string(_ev) + " bonus damage if the target is debuffed."; break;
+        case "Killing Spree":   _b = "Deals +6 bonus damage per debuff or trap on the target."; break;
         case "Adrenaline Rush": _b = "Gain +1 AP this turn (once per combat)."; break;
         case "Sanguine Pact":   _b = "Spend 8 HP to gain 3 Blood."; break;
         case "Second Wind":     _b = "Also restore 1 secondary resource (Soul / Blood / Prep)."; break;
@@ -828,6 +826,12 @@ function ability_effect_full(ab) {
         case "Soulbind":        _b = "Reflect " + string(round(_ev * 100)) + "% of damage you take back to the target (whole combat)."; break;
     }
     if (_b != "") array_push(_parts, _b);
+
+    // Detonators surface their reaction behavior (full table in Compendium > Status
+    // Reactions). See SYSTEMS_VIABILITY_PASS.md.
+    if (ab.name == "Snipe" || ab.name == "Assassinate" || ab.name == "Arcane Burst" || ab.name == "Soul Nova") {
+        array_push(_parts, "Detonator: reacts with a status on the target — Exposed +12 dmg, Root +30%, Stun guaranteed crit, Poison applies Mortality, Bleed/Void detonate. (See Status Reactions.)");
+    }
 
     // Standard effect from the typed status kind / effect_type.
     var _k = ability_status_kind(ab);

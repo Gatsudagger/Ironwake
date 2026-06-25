@@ -2229,6 +2229,20 @@ function ui_compendium_sections() {
             ],
         },
         {
+            title: "Status Reactions",
+            entries: [
+                { term: "Detonators",   text: "Snipe, Assassinate, Arcane Burst and Soul Nova are DETONATORS — when they hit a target carrying a status, they trigger a reaction based on that status (and usually consume it). Set up the status, then detonate." },
+                { term: "Poison",       text: "Detonating poison applies Mortality: the target's healing is cut for 4 turns. Utility, not burst — answers self-healing foes." },
+                { term: "Bleed",        text: "Detonating bleed bursts every remaining bleed tick at once for bonus damage." },
+                { term: "Root / Frost", text: "Detonating a rooted (or frozen) target shatters it for +30% damage." },
+                { term: "Vulnerable",   text: "Detonating an Exposed (Vulnerable) target adds a flat damage bonus. The mark is NOT consumed — it's a multi-hit window." },
+                { term: "Stun",         text: "Detonating a stunned target is a guaranteed critical hit." },
+                { term: "Weaken",       text: "Detonating a weakened target deals +15% damage." },
+                { term: "Blind",        text: "Detonating a blinded target cannot miss." },
+                { term: "Void",         text: "Detonating a void damage-over-time heals you for 30% of the damage dealt." },
+            ],
+        },
+        {
             title: "AP / Turn Economy",
             entries: [
                 { term: "Action Points (AP)", text: "You have 3 AP each turn. Abilities and items spend AP; bigger abilities cost more." },

@@ -294,6 +294,16 @@ function awaken_enemy_acc_bonus() {
     return _tbl[_asc];
 }
 
+// awaken_enemy_heal_mult() — enemy healing scales with Awakening (mirrors the dmg
+// curve). At high tiers, self-healing foes punish slow damage and reward burst /
+// anti-heal (mortality) / consumables. See SYSTEMS_VIABILITY_PASS.md (P6c).
+function awaken_enemy_heal_mult() {
+    var _asc = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
+    var _tbl = [1.0, 1.15, 1.35, 1.6, 1.9, 2.3];
+    _asc = clamp(_asc, 0, array_length(_tbl) - 1);
+    return _tbl[_asc];
+}
+
 // ---------------------------------------------------------------------------
 // combat_evasion_chance(target)
 // Dodge CHANCE (0-100) for the active-evasion abilities Blink / Shadow Step.
@@ -440,6 +450,27 @@ function ability_status_kind(ability) {
     return ability.effect_type;
 }
 
+// ability_status_element(ability) — the elemental flavor tag stamped on a status
+// when this ability applies it, used by the detonation reaction system. Most
+// statuses are kind-based (vulnerable/weaken/stun…) and need no element (""); only
+// DoTs and future fire/frost effects carry one. See SYSTEMS_VIABILITY_PASS.md.
+function ability_status_element(ability) {
+    switch (ability.name) {
+        case "Poison Dart":   return "poison";
+        case "Gore Strike": case "Spike Trap": case "Serrated Bleed":
+            return "bleed";
+        case "Entropy":       return "void";
+    }
+    if (ability.effect_type == "dot") {
+        switch (ability.damage_type) {
+            case 1: return "burn";    // elemental DoT (future fire abilities)
+            case 2: return "void";
+            default: return "bleed";  // physical / blood DoT reads as bleed
+        }
+    }
+    return "";
+}
+
 // combat_control_block_reason(combatant, attack_class)
 // Returns "" if the combatant may take an action of the given attack_class this turn,
 // else the reason it's blocked: "stunned" (any), "rooted" (melee classes), "silenced"
@@ -484,6 +515,53 @@ function combat_has_status(c, kind) {
         if (combat_status_kind_of(c.status_effects[_i]) == kind) return true;
     }
     return false;
+}
+
+// ---------------------------------------------------------------------------
+// DETONATION REACTIONS (Viability Pass — see SYSTEMS_VIABILITY_PASS.md).
+// A "detonator" ability (Snipe/Assassinate/Arcane Burst/Soul Nova/Rupture) reacts
+// with the strongest status on the target: a status-specific effect, then (usually)
+// the status is consumed. Statuses carry an `element` tag (poison/bleed/void/burn/
+// frost) set at application; untagged/enemy statuses fall back to inference.
+// ---------------------------------------------------------------------------
+function combat_status_element(se) {
+    if (is_struct(se) && variable_struct_exists(se, "element") && se.element != "") return se.element;
+    // Fallback inference for untagged statuses (older saves / enemy-applied DoTs).
+    var _k = (is_struct(se) && variable_struct_exists(se, "kind")) ? se.kind : "";
+    if (_k == "dot") return "bleed";   // generic DoT defaults to bleed
+    return "";
+}
+
+// combat_detonator_pick(target) — returns { key, idx } for the highest-priority
+// reaction the target is currently carrying, or { key:"", idx:-1 } if none.
+function combat_detonator_pick(target) {
+    var _none = { key: "", idx: -1 };
+    if (!is_struct(target) || !variable_struct_exists(target, "status_effects")) return _none;
+    var _se = target.status_effects;
+    var _order = ["stun", "frost", "root", "burn", "vulnerable", "bleed", "poison", "void", "weaken", "blind"];
+    for (var _o = 0; _o < array_length(_order); _o++) {
+        var _want = _order[_o];
+        for (var _i = 0; _i < array_length(_se); _i++) {
+            var _s  = _se[_i];
+            var _k  = variable_struct_exists(_s, "kind") ? _s.kind : "";
+            var _el = combat_status_element(_s);
+            var _match = false;
+            switch (_want) {
+                case "stun":       _match = (_k == "stun"); break;
+                case "frost":      _match = (_el == "frost"); break;
+                case "root":       _match = (_k == "root"); break;
+                case "burn":       _match = (_el == "burn"); break;
+                case "vulnerable": _match = (_k == "vulnerable"); break;
+                case "bleed":      _match = (_k == "dot" && _el == "bleed"); break;
+                case "poison":     _match = (_k == "dot" && _el == "poison"); break;
+                case "void":       _match = (_k == "dot" && _el == "void"); break;
+                case "weaken":     _match = (_k == "weaken"); break;
+                case "blind":      _match = (_k == "blind"); break;
+            }
+            if (_match) return { key: _want, idx: _i };
+        }
+    }
+    return _none;
 }
 
 // combat_tick_statuses(c, log) — generic per-turn tick: apply DoT damage and

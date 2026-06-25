@@ -569,6 +569,22 @@ if (player_turn) {
                   for (var _tgi = 0; _tgi < array_length(_targets); _tgi++) {
                     var target = _targets[_tgi];
 
+                    // ===== Detonation reactions (P1, SYSTEMS_VIABILITY_PASS.md) =====
+                    // A detonator ability reacts with the target's strongest status. Burn/Stun
+                    // resolve through the crit roll (below), Blind through the hit roll; the rest
+                    // (damage mods / poison->mortality / void lifesteal / consume) resolve later.
+                    var _detonator = (ab.base_damage > 0 && (ab.name == "Snipe"
+                        || ab.name == "Assassinate" || ab.name == "Arcane Burst" || ab.name == "Soul Nova"));
+                    var _react           = _detonator ? combat_detonator_pick(target) : { key: "", idx: -1 };
+                    var _react_key       = _react.key;
+                    var _react_crit_bonus = 0;      // fed into the crit roll
+                    var _react_force_hit  = false;  // Blind reaction: cannot miss
+                    switch (_react_key) {
+                        case "burn":  _react_crit_bonus = 40;  break;   // +40% crit chance
+                        case "stun":  _react_crit_bonus = 999; break;   // guaranteed crit
+                        case "blind": _react_force_hit  = true; break;
+                    }
+
                     // --- Hit roll ---
                     // Blind on the caster lowers accuracy (percentage points).
                     // Hunter aspect rune adds accuracy to ranged actions.
@@ -578,7 +594,7 @@ if (player_turn) {
                         player.stats,
                         _cast_acc,
                         target.dodge,
-                        ab.guaranteed_hit
+                        ab.guaranteed_hit || _react_force_hit
                     );
 
                     if (!_hit) {
@@ -594,7 +610,7 @@ if (player_turn) {
                             var _wpn_crit = (variable_struct_exists(player, "weapon_crit_bonus")) ? player.weapon_crit_bonus : 0;
                             _crit_result = combat_roll_crit(
                                 player.stats,
-                                ab.base_crit + rune_aspect_spell_crit(ab) + boon_value("duelist") + _wpn_crit,
+                                ab.base_crit + rune_aspect_spell_crit(ab) + boon_value("duelist") + _wpn_crit + _react_crit_bonus,
                                 ab.crit_type
                             );
                         }
@@ -627,7 +643,7 @@ if (player_turn) {
                         }
                         // Killing Spree: bonus per debuff / trap / mark on the target.
                         if (ab.name == "Killing Spree" && variable_struct_exists(target, "status_effects")) {
-                            _dmg += array_length(target.status_effects) * 5;
+                            _dmg += array_length(target.status_effects) * 6;
                         }
                         // Vanish: the empowered strike out of stealth deals bonus damage.
                         // Only a real ATTACK spends the ambush bonus — casting a pure debuff
@@ -637,25 +653,35 @@ if (player_turn) {
                             player.vanish_bonus = false;
                             array_push(combat_log, "Vanish: ambush strike for +12 damage!");
                         }
-                        // Snipe: +20 against a target already suffering a debuff/DoT/blind.
-                        if (ab.name == "Snipe" && (combat_has_status(target, "vulnerable")
-                            || combat_has_status(target, "weaken") || combat_has_status(target, "dot")
-                            || combat_has_status(target, "blind"))) {
-                            _dmg += 20;
+                        // Detonation reaction — pre-crit damage component (replaces the old flat
+                        // Snipe +20). Burn/Stun resolve via the crit roll above; Blind via the hit
+                        // roll; Poison/Void/consume resolve post-damage. (P1)
+                        if (_react_key == "root" || _react_key == "frost") {
+                            _dmg = round(_dmg * 1.3);
+                            array_push(combat_log, ab.name + " shatters a held foe (+30%)!");
+                        } else if (_react_key == "weaken") {
+                            _dmg = round(_dmg * 1.15);
+                        } else if (_react_key == "vulnerable") {
+                            _dmg += 12;
+                        } else if (_react_key == "bleed") {
+                            var _react_bt = 0;
+                            for (var _rbi = 0; _rbi < array_length(target.status_effects); _rbi++) {
+                                var _rbse = target.status_effects[_rbi];
+                                if (variable_struct_exists(_rbse, "kind") && _rbse.kind == "dot"
+                                    && combat_status_element(_rbse) == "bleed") {
+                                    _react_bt += variable_struct_exists(_rbse, "duration") ? _rbse.duration : 0;
+                                }
+                            }
+                            if (_react_bt > 0) {
+                                _dmg += _react_bt * 5;
+                                array_push(combat_log, ab.name + " detonates bleed (+" + string(_react_bt * 5) + ")!");
+                            }
                         }
 
                         // ===== §3 ability-rework combo riders (pre-crit so they scale) =====
-                        // Shared "is this target Exposed/debuffed?" test (mirrors Snipe's set).
-                        var _tgt_exposed = (combat_has_status(target, "vulnerable")
-                            || combat_has_status(target, "weaken") || combat_has_status(target, "dot")
-                            || combat_has_status(target, "blind") || combat_has_status(target, "mortality")
-                            || combat_has_status(target, "silence"));
-
-                        // Arcane Burst: a true payoff — +40% into an Exposed/debuffed foe.
-                        if (ab.name == "Arcane Burst" && _tgt_exposed) {
-                            _dmg = round(_dmg * 1.4);
-                            array_push(combat_log, "Arcane Burst strikes an Exposed foe (+40%)!");
-                        }
+                        // (Arcane Burst's old flat +40%-vs-Exposed is now handled by the unified
+                        //  detonation reaction system above — vulnerable -> +12, plus the richer
+                        //  element reactions. One consistent mechanic instead of a special case.)
                         // Flurry: +3 damage per debuff/DoT stack on the target.
                         if (ab.name == "Flurry" && variable_struct_exists(target, "status_effects")) {
                             _dmg += array_length(target.status_effects) * 3;
@@ -703,16 +729,31 @@ if (player_turn) {
                         var _cast_weaken = combat_status_max(player, "weaken");
                         if (_cast_weaken > 0) _dmg = max(1, round(_dmg * (1 - _cast_weaken)));
 
-                        if (_crit_result.critted) {
-                            _dmg = round(_dmg * _crit_result.multiplier);
+                        // Flurry: resolve as 3 independent strikes — each rolls crit and is
+                        // mitigated separately. Multi-hit identity: strong with crit scaling,
+                        // softer vs heavy armor (armor bites each hit). (P2)
+                        var _final_dmg;
+                        if (ab.name == "Flurry") {
+                            var _fl_each = max(1, round(_dmg / 3));
+                            _final_dmg = 0;
+                            for (var _fhi = 0; _fhi < 3; _fhi++) {
+                                var _fl_cr  = combat_roll_crit(player.stats,
+                                    ab.base_crit + boon_value("duelist") + _react_crit_bonus, ab.crit_type);
+                                var _fl_hit = _fl_cr.critted ? round(_fl_each * _fl_cr.multiplier) : _fl_each;
+                                if (_fl_cr.critted) _crit_result.critted = true; // popup/log flag CRIT if any hit crit
+                                _final_dmg += combat_resolve_damage(_fl_hit, ab.damage_type, target.armor, target.el_resist);
+                            }
+                        } else {
+                            if (_crit_result.critted) {
+                                _dmg = round(_dmg * _crit_result.multiplier);
+                            }
+                            _final_dmg = combat_resolve_damage(
+                                _dmg,
+                                ab.damage_type,
+                                target.armor,
+                                target.el_resist
+                            );
                         }
-
-                        var _final_dmg = combat_resolve_damage(
-                            _dmg,
-                            ab.damage_type,
-                            target.armor,
-                            target.el_resist
-                        );
 
                         // Vulnerable: target takes extra flat damage from every DAMAGING hit
                         // (summed). Pure-debuff abilities (base damage 0) must NOT pick this up —
@@ -738,8 +779,10 @@ if (player_turn) {
                             var _bleed_se = {
                                 name:         "Serrated Bleed",
                                 effect_type:  "dot",
+                                kind:         "dot",
                                 effect_value: round(3 * trait_potency_mult("Serrated Strikes")),
                                 duration:     2,
+                                element:      "bleed",
                                 source:       "player"
                             };
                             array_push(target.status_effects, _bleed_se);
@@ -780,6 +823,45 @@ if (player_turn) {
                                 array_push(combat_log, "Gravelstone Sword — leeched " + string(_ls) + " HP.");
                             }
                         }
+                        // ===== Detonation reaction — post-damage (P1) =====
+                        if (_react_key == "void" && _final_dmg > 0) {
+                            var _react_ls = combat_heal_after_mortality(player, round(_final_dmg * 0.3));
+                            if (_react_ls > 0) {
+                                player.HP = min(player.max_HP, player.HP + _react_ls);
+                                array_push(damage_popups, { value: _react_ls, x: 220, y: 240, timer: 45, col: c_lime });
+                                array_push(combat_log, ab.name + " siphons " + string(_react_ls) + " HP from the void!");
+                            }
+                        }
+                        if (_react_key == "poison" && !target.is_defeated && variable_struct_exists(target, "status_effects")) {
+                            array_push(target.status_effects, {
+                                name: "Mortality", effect_type: "debuff", kind: "mortality",
+                                effect_value: 0.4, duration: 4, element: "", source: "player"
+                            });
+                            array_push(combat_log, ab.name + " spreads the poison — " + target.name + "'s healing is suppressed!");
+                        }
+                        // Consume the reacted status (poison/bleed/root/frost/burn/void are spent;
+                        // stun/vulnerable/weaken/blind persist as ongoing windows).
+                        if (_react_key == "bleed" || _react_key == "poison" || _react_key == "void"
+                            || _react_key == "root" || _react_key == "frost" || _react_key == "burn") {
+                            var _rk_kept = [];
+                            for (var _rci = 0; _rci < array_length(target.status_effects); _rci++) {
+                                var _rcs = target.status_effects[_rci];
+                                var _rck = variable_struct_exists(_rcs, "kind") ? _rcs.kind : "";
+                                var _rce = combat_status_element(_rcs);
+                                var _rdrop = false;
+                                switch (_react_key) {
+                                    case "bleed":  _rdrop = (_rck == "dot" && _rce == "bleed"); break;
+                                    case "poison": _rdrop = (_rck == "dot" && _rce == "poison"); break;
+                                    case "void":   _rdrop = (_rck == "dot" && _rce == "void"); break;
+                                    case "root":   _rdrop = (_rck == "root"); break;
+                                    case "frost":  _rdrop = (_rce == "frost"); break;
+                                    case "burn":   _rdrop = (_rce == "burn"); break;
+                                }
+                                if (!_rdrop) array_push(_rk_kept, _rcs);
+                            }
+                            target.status_effects = _rk_kept;
+                        }
+
                         // Void Scepter (class weapon): a spell crit refunds 1 AP (once per cast).
                         if (!_scepter_refunded && variable_struct_exists(player, "spell_crit_ap") && player.spell_crit_ap
                             && _crit_result.critted && ability_class_is_spell(_atk_class)) {
@@ -923,6 +1005,21 @@ if (player_turn) {
                             if (target.HP <= 0) combat_on_enemy_defeated(target, player, combat_log);
                         }
 
+                        // --- Arcane Echo: always echoes 50% of its damage to every OTHER
+                        //     living enemy (its identity — a soul-fuelled mini-AoE). (P2) ---
+                        if (ab.name == "Arcane Echo" && _final_dmg > 0) {
+                            var _echo_splash = max(1, round(_final_dmg * 0.5));
+                            for (var _aei = 0; _aei < array_length(combat_state.combatants); _aei++) {
+                                var _aec = combat_state.combatants[_aei];
+                                if (_aec.is_player || _aec.is_defeated || _aec == target) continue;
+                                combat_apply_damage(_aec, _echo_splash);
+                                _aec.hit_flash = max(_aec.hit_flash, 10);
+                                array_push(combat_log, "Arcane Echo: " + _aec.name
+                                    + " takes " + string(_echo_splash) + " echo damage!");
+                                if (_aec.HP <= 0) combat_on_enemy_defeated(_aec, player, combat_log);
+                            }
+                        }
+
                         // --- Chain Caster: single-target elemental/void/blood damage
                         //     splashes 40% to every OTHER living enemy. ---
                         if (!_is_aoe && trait_active("Chain Caster") && ab.base_damage > 0
@@ -961,6 +1058,7 @@ if (player_turn) {
                                     kind:         _status_kind,
                                     effect_value: _status_ev,
                                     duration:     _status_dur,
+                                    element:      ability_status_element(ab),
                                     source:       "player"
                                 };
                                 array_push(target.status_effects, _status);
@@ -981,6 +1079,7 @@ if (player_turn) {
                                             kind:         _status_kind,
                                             effect_value: _status_ev,
                                             duration:     _pb_dur,
+                                            element:      ability_status_element(ab),
                                             source:       "player"
                                         });
                                         _pb_spread = true;
@@ -1014,13 +1113,20 @@ if (player_turn) {
                 }
 
                 if (ab.effect_type == "heal") {
-                    var _heal_amt = combat_heal_after_mortality(player, ab.effect_value);
-                    var _heal = min(player.max_HP - player.HP, _heal_amt);
-                    player.HP += _heal;
-                    if (_heal > 0) {
-                        array_push(damage_popups, { value: _heal, x: 220, y: 240, timer: 45, col: c_lime });
+                    // Field Dressing is emergency-grade: once per combat (P3). Ongoing sustain
+                    // must come from class resource-heals (Void Drain / Blood Surge / Second Wind).
+                    if (ab.name == "Field Dressing" && variable_struct_exists(player, "field_dressing_used") && player.field_dressing_used) {
+                        array_push(combat_log, "Field Dressing already used this combat.");
+                    } else {
+                        var _heal_amt = combat_heal_after_mortality(player, ab.effect_value);
+                        var _heal = min(player.max_HP - player.HP, _heal_amt);
+                        player.HP += _heal;
+                        if (_heal > 0) {
+                            array_push(damage_popups, { value: _heal, x: 220, y: 240, timer: 45, col: c_lime });
+                        }
+                        array_push(combat_log, player.name + " restored " + string(_heal) + " HP.");
+                        if (ab.name == "Field Dressing") player.field_dressing_used = true;
                     }
-                    array_push(combat_log, player.name + " restored " + string(_heal) + " HP.");
                 }
 
                 // --- Generic "resource" effect for SELF-targeted abilities (Soul Harvest).
@@ -1371,11 +1477,18 @@ if (player_turn) {
             if (_eab.kind != "heal") enemy_attack_sound(actor.name);
 
             if (_eab.kind == "heal") {
-                var _ehl = min(actor.max_HP - actor.HP, _eab.value);
+                // Scale by Awakening, then reduce by the enemy's Mortality (anti-heal). (P6)
+                var _eheal_raw = round(_eab.value * awaken_enemy_heal_mult());
+                var _eheal_amt = combat_heal_after_mortality(actor, _eheal_raw);
+                var _ehl = min(actor.max_HP - actor.HP, _eheal_amt);
                 actor.HP += _ehl;
                 actor.hit_flash = max(actor.hit_flash, 6);
                 if (_ehl > 0) array_push(damage_popups, { value: _ehl, x: _sa_x, y: _sa_y - 40, timer: 45, col: c_lime });
-                array_push(combat_log, actor.name + " " + ((_eab.msg != "") ? _eab.msg : ("mends " + string(_ehl) + " HP")) + ".");
+                if (_ehl <= 0 && combat_has_status(actor, "mortality")) {
+                    array_push(combat_log, actor.name + "'s mending is suppressed!");
+                } else {
+                    array_push(combat_log, actor.name + " " + ((_eab.msg != "") ? _eab.msg : ("mends " + string(_ehl) + " HP")) + ".");
+                }
 
             } else if (_eab.kind == "spell") {
                 var _sdmg = combat_mitigate_player(player, _eab.value, _eab.dtype, combat_log);
