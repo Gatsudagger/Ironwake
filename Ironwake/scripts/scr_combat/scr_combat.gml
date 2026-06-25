@@ -141,7 +141,7 @@ function stat_curve(stat, cap, half) {
     if (stat <= 0) return 0;
     return cap * stat / (stat + half);
 }
-function stat_accuracy(dex) { return stat_curve(dex, 55, 10); }   // ~+24 @8, +43 @38, ->55
+function stat_accuracy(dex) { return stat_curve(dex, 10, 18); }   // MINOR: ~+3 @8, +7 @38, ->10. Gear/traits/runes carry real accuracy.
 function stat_dodge(dex)    { return stat_curve(dex, 30, 22); }   // ~8 @8, 19 @38, ->30 (tamer)
 // Crit CHANCE contributed by the governing stat, by crit_type (matches combat_roll_crit).
 function stat_crit_chance(stats, crit_type) {
