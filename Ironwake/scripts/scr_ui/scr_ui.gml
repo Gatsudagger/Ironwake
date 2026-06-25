@@ -2601,14 +2601,14 @@ function ui_draw_character_menu() {
             draw_set_color(_dc);
             draw_text(_pad, _content_y + 410, "Dodge:           " + string(_derived.DODGE) + "%");
             draw_text(_pad, _content_y + 434, "Phys reduction:  " + string(_derived.phys_dmg_reduction) + "%");
-            draw_text(_pad, _content_y + 458, "Base HP:         " + string(_derived.HP) + "  (+gear)");
+            draw_text(_pad, _content_y + 458, "Base HP:         " + string(_derived.HP) + "  (+" + string(apply_equipment_stats({}).bonus_max_hp) + " gear)");
             // Accuracy — a flat bonus to each ability's to-hit, before the foe's dodge.
             draw_set_color(make_color_rgb(150, 180, 210));
-            draw_text(_crit_x, _content_y + 410, "Accuracy:  +" + string(_derived.ACC_modifier) + " to hit");
+            draw_text(_crit_x, _content_y + 410, "Accuracy:  +" + string(_derived.ACC_modifier) + "% to hit");
             draw_set_color(make_color_rgb(95, 105, 125));
-            draw_text(_crit_x, _content_y + 432, "Added to each ability's hit chance");
-            draw_text(_crit_x, _content_y + 450, "(final chance capped 5-99%), then the");
-            draw_text(_crit_x, _content_y + 468, "foe's Dodge applies. Blind lowers it.");
+            draw_text(_crit_x, _content_y + 432, "Flat % added on top of each ability's");
+            draw_text(_crit_x, _content_y + 450, "own hit chance (e.g. 85% + this, cap 99%).");
+            draw_text(_crit_x, _content_y + 468, "Then the foe's Dodge rolls. Blind lowers it.");
 
             // ---- Footer ----
             draw_set_color(c_yellow);
@@ -2667,7 +2667,7 @@ function ui_draw_character_menu() {
             draw_set_color(c_white);
             draw_text(_rx, _content_y + 308, "HP:        " + string(_player.HP) + " / " + string(_player.max_HP));
             draw_text(_rx, _content_y + 330, "Dodge:     " + string(_derived.DODGE) + "%");
-            draw_text(_rx, _content_y + 352, "Accuracy:  +" + string(_derived.ACC_modifier) + " to hit");
+            draw_text(_rx, _content_y + 352, "Accuracy:  +" + string(_derived.ACC_modifier) + "% to hit");
             draw_text(_rx, _content_y + 374, "Main crit: " + string(round(_prim_vals[_class_id] + _crit_flat)) + "%  (" + _prim_lbls[_class_id] + ")");
 
             // ---- Boons & Effects (right column, below readiness) ----
