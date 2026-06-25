@@ -538,6 +538,19 @@ if (shop_open != -1 && !stash_mode_open) {
 if (trainer_open) {
     var _tr_class = variable_global_exists("chosen_class") ? global.chosen_class : 0;
 
+    // --- Tab: examine the highlighted ability (tab 2) or trait (tab 3) before buying.
+    if (vex_detail_open) {
+        if (keyboard_check_pressed(vk_tab) || keyboard_check_pressed(vk_escape)) vex_detail_open = false;
+        exit;
+    }
+    if (keyboard_check_pressed(vk_tab)) {
+        if (trainer_tab == 2 && trainer_cursor < array_length(class_vex_purchasable(_tr_class))) {
+            vex_detail_open = true; exit;
+        } else if (trainer_tab == 3 && trainer_cursor < array_length(trait_vex_purchasable(_tr_class))) {
+            vex_detail_open = true; exit;
+        }
+    }
+
     // --- Trait-potency STAT PICKER sub-modal (tab 4) ------------------------
     // Opened from tab 4: pick ANY stat to sacrifice 5 permanent points from
     // (starting allocation + bought bonus). Intercepts all input while open.

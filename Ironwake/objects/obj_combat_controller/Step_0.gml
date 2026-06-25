@@ -1062,7 +1062,20 @@ if (player_turn) {
                                     source:       "player"
                                 };
                                 array_push(target.status_effects, _status);
-                                array_push(combat_log, ab.name + " applied to " + target.name + "!");
+                                // Name what the status DOES so players learn the system by reading the log.
+                                var _kind_phrase = "";
+                                switch (_status_kind) {
+                                    case "dot":        _kind_phrase = (ability_status_element(ab) != "" ? ability_status_element(ab) : "DoT") + " " + string(_status_ev) + "/turn"; break;
+                                    case "vulnerable": _kind_phrase = "Exposed (+" + string(_status_ev) + " dmg taken/hit)"; break;
+                                    case "weaken":     _kind_phrase = "Weakened (-" + string(round(_status_ev * 100)) + "% dmg)"; break;
+                                    case "blind":      _kind_phrase = "Blinded (-" + string(round(_status_ev * 100)) + "% acc)"; break;
+                                    case "stun":       _kind_phrase = "Stunned"; break;
+                                    case "root":       _kind_phrase = "Rooted"; break;
+                                    case "silence":    _kind_phrase = "Silenced"; break;
+                                    case "mortality":  _kind_phrase = "Mortality (-" + string(round(_status_ev * 100)) + "% healing)"; break;
+                                    default:           _kind_phrase = ab.name;
+                                }
+                                array_push(combat_log, ab.name + " → " + target.name + ": " + _kind_phrase + " (" + ability_turns(_status_dur) + ").");
 
                                 // Plaguebearer: single-target debuffs/DoTs also strike every
                                 // OTHER living enemy at half duration.

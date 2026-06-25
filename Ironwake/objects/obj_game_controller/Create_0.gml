@@ -519,7 +519,8 @@ if (!variable_global_exists("player_loadout")) {
 }
 
 loadout_open       = false;
-ability_detail_open = false;   // Tab detail popup over the loadout/Vex/char-menu ability list
+ability_detail_open = false;   // Tab detail popup over the loadout ability list
+vex_detail_open     = false;   // Tab detail popup over the Vex ability/trait list
 loadout_cursor     = 0;
 loadout_selected   = [];   // up to 4 ability name strings being built this session
 loadout_full_timer = 0;    // countdown for "Loadout full" / "Slots full" flash (frames)

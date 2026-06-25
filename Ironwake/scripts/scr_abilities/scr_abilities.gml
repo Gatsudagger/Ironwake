@@ -844,7 +844,14 @@ function ability_effect_full(ab) {
     var _k = ability_status_kind(ab);
     var _s = "";
     switch (_k) {
-        case "dot":        _s = "Applies " + string(_ev) + " damage/turn for " + ability_turns(_ed) + "."; break;
+        case "dot":
+            // Name the DoT flavor (bleed / poison / burn / void) so it's clear what
+            // kind of tick this is — and which detonation reaction it enables.
+            var _dot_el = ability_status_element(ab);
+            var _dot_word = (_dot_el != "") ? (_dot_el + " ") : "";
+            _s = "Applies " + string(_ev) + " " + _dot_word + "damage/turn for " + ability_turns(_ed)
+               + " (a " + (_dot_el != "" ? _dot_el : "damage-over-time") + " effect).";
+            break;
         case "silence":    _s = "Silences the target for " + ability_turns(_ed) + " (can't cast spells)."; break;
         case "stun":       _s = "Stuns the target for " + ability_turns(_ed) + " (any enemy can't act)."; break;
         case "root":       _s = "Roots the target for " + ability_turns(_ed) + " (melee enemies skip; ranged still attack)."; break;

@@ -2288,6 +2288,45 @@ function ui_draw_ability_detail(ab) {
 }
 
 // ---------------------------------------------------------------------------
+// ui_draw_trait_detail(tr)
+// Full-screen Tab breakdown for a TRAIT (mirrors ui_draw_ability_detail). Traits
+// are simpler — name + full description + class requirement.
+// ---------------------------------------------------------------------------
+function ui_draw_trait_detail(tr) {
+    if (!is_struct(tr)) return;
+    draw_set_alpha(0.80); draw_set_color(c_black);
+    draw_rectangle(0, 0, 1280, 720, false);
+    draw_set_alpha(1.0);
+
+    var _x1 = 300, _y1 = 160, _x2 = 980, _y2 = 540;
+    draw_set_color(make_color_rgb(16, 17, 26));
+    draw_rectangle(_x1, _y1, _x2, _y2, false);
+    ui_draw_gothic_frame(_x1, _y1, _x2, _y2, 24);
+
+    var _pad = 30, _lx = _x1 + _pad, _rx = _x2 - _pad, _y = _y1 + _pad;
+    draw_set_halign(fa_left); draw_set_valign(fa_top);
+    draw_set_color(c_white);
+    draw_text_transformed(_lx, _y, tr.name, 1.6, 1.6, 0);
+    _y += 44;
+    draw_set_color(make_color_rgb(190, 160, 240));
+    var _cr = variable_struct_exists(tr, "class_req") ? tr.class_req : -1;
+    var _crn = (_cr == 0) ? "Arcanist only" : ((_cr == 1) ? "Bloodwarden only" : ((_cr == 2) ? "Shadowstrider only" : "Any class"));
+    draw_text(_lx, _y, "TRAIT  •  " + _crn);
+    _y += 30;
+    draw_set_color(make_color_rgb(60, 64, 90));
+    draw_line(_lx, _y, _rx, _y);
+    _y += 16;
+    draw_set_color(make_color_rgb(210, 214, 230));
+    if (variable_struct_exists(tr, "description")) draw_text_ext(_lx, _y, tr.description, 24, _rx - _lx);
+
+    draw_set_halign(fa_center);
+    draw_set_color(make_color_rgb(150, 160, 190));
+    draw_text((_x1 + _x2) / 2, _y2 - 26, "[Tab] or [Esc] — Close");
+    draw_set_halign(fa_left); draw_set_valign(fa_top);
+    draw_set_color(c_white);
+}
+
+// ---------------------------------------------------------------------------
 // ui_compendium_sections()
 // Data for the Compendium / Help tab. Each section is { title, entries[] },
 // each entry is { term, text }. Data-driven so new mechanics are a quick add —
@@ -2300,8 +2339,8 @@ function ui_compendium_sections() {
             entries: [
                 { term: "Physical",     text: "Weapon-based damage, reduced by the target's Armor. The default for most strikes and shots." },
                 { term: "Elemental",    text: "Fire, frost and shock magic. Resisted by elemental wards rather than Armor." },
-                { term: "Drain (Void)", text: "Siphons life or resources from the target. Tends to bypass most Armor." },
-                { term: "Blood",        text: "Self-fueled magic — powerful, but many blood abilities cost some of your own HP to cast." },
+                { term: "Drain (Void)", text: "Siphons life or resources from the target and bypasses Armor entirely." },
+                { term: "Blood",        text: "Not a separate rule — the Bloodwarden's self-fueled flavor of Drain. It bypasses Armor like Drain, but many blood abilities cost some of your own HP to cast." },
             ],
         },
         {
@@ -4232,11 +4271,22 @@ function ui_draw_trainer_screen() {
     // --- Controls hint (raised from 702 to clear the bottom rim band) ---
     draw_set_halign(fa_center);
     draw_set_color(make_color_rgb(70, 75, 100));
-    draw_text(640, 684, "W/S: Navigate    Q/E: Section    Enter: Buy / Select    Esc: Close");
+    draw_text(640, 684, "W/S: Navigate    Q/E: Section    Enter: Buy / Select    Tab: Examine    Esc: Close");
     draw_set_halign(fa_left);
 
     // Ornate gothic rim around the whole overlay (matches the other NPC shops).
     ui_draw_gothic_frame(20, 20, 1260, 700, 20);
+
+    // --- Tab detail popup over the Abilities (2) / Traits (3) sections ---
+    if (variable_instance_exists(_gc, "vex_detail_open") && _gc.vex_detail_open) {
+        if (_gc.trainer_tab == 2) {
+            var _vd_ap = class_vex_purchasable(_class_id);
+            if (_gc.trainer_cursor < array_length(_vd_ap)) ui_draw_ability_detail(_vd_ap[_gc.trainer_cursor]);
+        } else if (_gc.trainer_tab == 3) {
+            var _vd_tp = trait_vex_purchasable(_class_id);
+            if (_gc.trainer_cursor < array_length(_vd_tp)) ui_draw_trait_detail(_vd_tp[_gc.trainer_cursor]);
+        }
+    }
 
     draw_set_valign(fa_top);
     draw_set_alpha(1.0);

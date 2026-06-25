@@ -806,6 +806,7 @@ if (mouse_check_button_pressed(mb_left)) {
                         _gc_mc.sell_index = 0; _gc_mc.sell_scroll = 0; _gc_mc.sell_confirm_name = "";
                     } else if (_hni == 3) {
                         _gc_mc.trainer_open = true; _gc_mc.trainer_tab = 0;
+                        _gc_mc.vex_detail_open = false;
                         _gc_mc.trainer_cursor = 0; _gc_mc.trainer_confirm = false;
                         _gc_mc.trainer_notification = "";
                         _gc_mc.trainer_statpick_open = false;
