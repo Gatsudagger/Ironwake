@@ -1248,33 +1248,37 @@ function ui_draw_ability_buttons(x, y, ability_array, selected_index, caster) {
 
 // ---------------------------------------------------------------------------
 // ui_draw_telegraph_warning(enemy_name, message)
-// Draws a full-width red banner at the top of the screen.
+// Draws a red banner sized to its text and centered at y=600 — NOT full screen
+// width, so it clears the combat log at the bottom-left.
 // Only called when enemy_should_telegraph() returns true for any enemy.
 // ---------------------------------------------------------------------------
 function ui_draw_telegraph_warning(enemy_name, message) {
     var room_w      = 1280;
     var banner_h    = 36;
     var banner_y    = 600;
-    var padding     = 8;
+
+    var warning_text = enemy_name + " " + message;
+
+    // Size the banner to the text (centered) instead of spanning the whole screen.
+    draw_set_halign(fa_center);
+    draw_set_valign(fa_middle);
+    var _pad_x = 28;
+    var _bw    = string_width(warning_text) + _pad_x * 2;
+    var _bx1   = room_w / 2 - _bw / 2;
+    var _bx2   = room_w / 2 + _bw / 2;
+    var mid_y  = banner_y + banner_h / 2;
 
     // Semi-transparent dark red backing
     draw_set_alpha(0.88);
     draw_set_color(make_color_rgb(160, 20, 20));
-    draw_rectangle(0, banner_y, room_w, banner_y + banner_h, false);
+    draw_rectangle(_bx1, banner_y, _bx2, banner_y + banner_h, false);
 
     // Solid red border
     draw_set_alpha(1.0);
     draw_set_color(c_red);
-    draw_rectangle(0, banner_y, room_w, banner_y + banner_h, true);
+    draw_rectangle(_bx1, banner_y, _bx2, banner_y + banner_h, true);
 
-    // Warning text — enemy name bolded by drawing twice with 1px offset (fake bold)
-    var warning_text = enemy_name + " " + message;
-    draw_set_color(c_white);
-    draw_set_halign(fa_center);
-    draw_set_valign(fa_middle);
-    var mid_y = banner_y + banner_h / 2;
-
-    // Fake bold: draw shadow offset then main text on top
+    // Warning text — fake bold via a 1px dark-red shadow under white.
     draw_set_color(make_color_rgb(80, 0, 0));
     draw_text(room_w / 2 + 1, mid_y + 1, warning_text);
     draw_set_color(c_white);
