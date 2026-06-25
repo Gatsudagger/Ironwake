@@ -50,19 +50,76 @@ function ui_item_stat_str(item) {
 }
 
 // ---------------------------------------------------------------------------
+// ui_str_hash(s) — small deterministic string hash (djb-ish, 31-mult). Used to
+// give Rare+ swords a STABLE per-item-identity icon (same base name → same icon).
+// ---------------------------------------------------------------------------
+function ui_str_hash(s) {
+    var _h = 0;
+    for (var _i = 1; _i <= string_length(s); _i++) {
+        _h = ((_h * 31) + ord(string_char_at(s, _i))) & 0x7fffffff;
+    }
+    return _h;
+}
+
+// ---------------------------------------------------------------------------
 // ui_weapon_icon_sprite(item)
 // Returns the asset index of the correct weapon icon based on name keywords.
-// Keyword map: sword/blade→sword, wand/focus/scepter→wand, bow→bow,
-//              sickle→sickle, spear/reach→spear. Defaults to sword.
+// Keyword map: wand/focus/scepter→wand, bow→bow, sickle→sickle, spear/reach→spear.
+// Everything else is treated as a sword (also the default). Rare+ swords (rarity
+// >= 2) get a theme- and rarity-specific icon via ui_sword_icon_rare; Common/
+// Uncommon swords keep the single plain spr_icon_weapon_sword.
 // ---------------------------------------------------------------------------
 function ui_weapon_icon_sprite(item) {
     var _n = string_lower(item.name);
-    if (string_pos("sword",  _n) > 0 || string_pos("blade",   _n) > 0) return spr_icon_weapon_sword;
-    if (string_pos("wand",   _n) > 0 || string_pos("focus",   _n) > 0 || string_pos("scepter", _n) > 0) return spr_icon_weapon_wand;
-    if (string_pos("bow",    _n) > 0)                                   return spr_icon_weapon_bow;
-    if (string_pos("sickle", _n) > 0)                                   return spr_icon_weapon_sickle;
-    if (string_pos("spear",  _n) > 0 || string_pos("reach",   _n) > 0) return spr_icon_weapon_spear;
+    if (string_pos("wand",   _n) > 0 || string_pos("focus", _n) > 0 || string_pos("scepter", _n) > 0) return spr_icon_weapon_wand;
+    if (string_pos("bow",    _n) > 0)                                  return spr_icon_weapon_bow;
+    if (string_pos("sickle", _n) > 0)                                  return spr_icon_weapon_sickle;
+    if (string_pos("spear",  _n) > 0 || string_pos("reach", _n) > 0)   return spr_icon_weapon_spear;
+
+    var _rar = variable_struct_exists(item, "rarity") ? item.rarity : 0;
+    if (_rar >= 2) return ui_sword_icon_rare(item, _n, _rar);
     return spr_icon_weapon_sword;
+}
+
+// ---------------------------------------------------------------------------
+// ui_sword_icon_rare(item, _n, _rar)
+// Picks an individual sword icon for a Rare+ sword. Theme comes from the base
+// name (the elemental identity — affixes are stat words, not elements) with the
+// full affixed name adding tints (Ghost→void, Gilded→radiant, Arcane/Runed→arcane).
+// Within a theme, rarity selects the lower (Rare) or upper (Epic+) half of the
+// theme's icon list — fancier art at higher rarity — and a base-name hash picks
+// within that half so each distinct sword always shows the same icon.
+// ---------------------------------------------------------------------------
+function ui_sword_icon_rare(item, _n, _rar) {
+    var _base = string_lower(item_base_name(item));
+    var _bucket;
+    if      (string_pos("ash",    _base) > 0 || string_pos("ember", _n) > 0 || string_pos("flame", _n) > 0
+          || string_pos("scorch", _n) > 0    || string_pos("sear",  _n) > 0 || string_pos("magma", _n) > 0
+          || string_pos("cinder", _n) > 0    || string_pos("fire",  _n) > 0)
+        _bucket = [spr_icon_sword_fire_a, spr_icon_sword_fire_b, spr_icon_sword_fire_c];
+    else if (string_pos("frost", _n) > 0 || string_pos("froze", _n) > 0 || string_pos("ice",   _n) > 0
+          || string_pos("glaci", _n) > 0 || string_pos("rime",  _n) > 0 || string_pos("chill", _n) > 0)
+        _bucket = [spr_icon_sword_frost_a, spr_icon_sword_frost_b];
+    else if (string_pos("ghost",  _n) > 0 || string_pos("void",  _n) > 0 || string_pos("shadow", _n) > 0
+          || string_pos("wraith", _n) > 0 || string_pos("abyss", _n) > 0)
+        _bucket = [spr_icon_sword_void_a, spr_icon_sword_void_b];
+    else if (string_pos("vampir",  _n) > 0 || string_pos("blood", _n) > 0 || string_pos("sanguine", _n) > 0
+          || string_pos("crimson", _n) > 0 || string_pos("gore",  _n) > 0 || string_pos("ruin",     _n) > 0)
+        _bucket = [spr_icon_sword_blood_a, spr_icon_sword_blood_b];
+    else if (string_pos("gild", _n) > 0 || string_pos("lucky",  _n) > 0 || string_pos("radian", _n) > 0
+          || string_pos("holy", _n) > 0 || string_pos("divine", _n) > 0 || string_pos("sacred", _n) > 0)
+        _bucket = [spr_icon_sword_radiant_a, spr_icon_sword_radiant_b];
+    else if (string_pos("arcane", _n) > 0 || string_pos("rune", _n) > 0 || string_pos("storm", _n) > 0)
+        _bucket = [spr_icon_sword_arcane_a, spr_icon_sword_arcane_b];
+    else
+        _bucket = [spr_icon_sword_steel_a, spr_icon_sword_steel_b, spr_icon_sword_steel_c, spr_icon_sword_steel_d];
+
+    var _len  = array_length(_bucket);
+    var _half = max(1, _len div 2);
+    var _start, _size;
+    if (_rar >= 3) { _start = _half; _size = _len - _half; }   // Epic+ → upper (fancier) half
+    else           { _start = 0;     _size = _half;        }   // Rare  → lower half
+    return _bucket[_start + (ui_str_hash(_base) mod _size)];
 }
 
 // ---------------------------------------------------------------------------
