@@ -1217,13 +1217,15 @@ function stats_derive(stat_struct) {
 
     return {
         HP:              10 + (CON * 3),
-        ACC_modifier:    DEX * 3,
-        DODGE:           DEX * 2,
+        // Diminishing-returns curves (shared with the combat rolls in scr_combat) so the
+        // stat sheet matches actual behaviour and high stats plateau instead of running away.
+        ACC_modifier:    round(stat_accuracy(DEX)),
+        DODGE:           round(stat_dodge(DEX)),
 
-        STR_crit_chance: STR * 1.5,
-        DEX_crit_chance: DEX * 2,
-        INT_crit_chance: INT * 1,
-        WIS_crit_chance: 5 + (WIS * 1.5),
+        STR_crit_chance: round(stat_crit_chance(stat_struct, 0)),
+        DEX_crit_chance: round(stat_crit_chance(stat_struct, 1)),
+        INT_crit_chance: round(stat_crit_chance(stat_struct, 2)),
+        WIS_crit_chance: round(stat_crit_chance(stat_struct, 3)),
 
         spell_slots:     max(1, INT),
 

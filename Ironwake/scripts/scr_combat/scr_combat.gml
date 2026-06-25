@@ -129,10 +129,38 @@ function combat_next_turn(combat_state) {
 // Clamped to [5, 95] percent unless guaranteed is true.
 // Returns true if the attack hits.
 // ---------------------------------------------------------------------------
-function combat_roll_hit(attacker_stats, ability_acc, target_dodge, guaranteed) {
+// ---------------------------------------------------------------------------
+// DIMINISHING-RETURNS STAT CURVES (Viability/stat rebalance).
+// Linear stat scaling let DEX run accuracy to +114 and dodge/crit to ~76 — every
+// attack auto-hit/auto-dodged/auto-crit. These asymptotic curves give smooth
+// diminishing returns that PLATEAU toward a cap: value = cap * stat / (stat + half).
+// Single source of truth — used by BOTH stats_derive (display) and the combat rolls
+// below, so the stat sheet and actual behaviour always match. See SYSTEMS_VIABILITY_PASS.md.
+// ---------------------------------------------------------------------------
+function stat_curve(stat, cap, half) {
+    if (stat <= 0) return 0;
+    return cap * stat / (stat + half);
+}
+function stat_accuracy(dex) { return stat_curve(dex, 55, 10); }   // ~+24 @8, +43 @38, ->55
+function stat_dodge(dex)    { return stat_curve(dex, 45, 14); }   // ~16 @8, 33 @38, ->45
+// Crit CHANCE contributed by the governing stat, by crit_type (matches combat_roll_crit).
+function stat_crit_chance(stats, crit_type) {
+    switch (crit_type) {
+        case 0: return stat_curve(stats.STR, 40, 16);       // Power     (STR)
+        case 1: return stat_curve(stats.DEX, 45, 18);       // Precision (DEX)
+        case 2: return stat_curve(stats.INT, 38, 20);       // Arcane    (INT)
+        case 3: return 5 + stat_curve(stats.WIS, 35, 16);   // Effect    (WIS) — keeps +5 base
+    }
+    return 0;
+}
+
+// combat_roll_hit(acc_bonus, ability_acc, target_dodge, guaranteed)
+// acc_bonus is the attacker's PRECOMPUTED accuracy bonus (player: curved stat_accuracy
+// stored as player.acc; enemies pass a small flat value). hit chance clamps to 5..95.
+function combat_roll_hit(acc_bonus, ability_acc, target_dodge, guaranteed) {
     if (guaranteed) return true;
 
-    var hit_chance = ability_acc + (attacker_stats.DEX * 3) - target_dodge;
+    var hit_chance = ability_acc + acc_bonus - target_dodge;
     hit_chance     = clamp(hit_chance, 5, 95);
 
     return (irandom(99) < hit_chance); // irandom(99) gives 0–99 inclusive
@@ -159,13 +187,11 @@ function combat_roll_crit(attacker_stats, ability_base_crit, crit_type) {
         effect_quality:  0,
     };
 
-    var chance = 0;
-    switch (crit_type) {
-        case 0: chance = ability_base_crit + (attacker_stats.STR * 1.5); break; // Power
-        case 1: chance = ability_base_crit + (attacker_stats.DEX * 2);   break; // Precision
-        case 2: chance = ability_base_crit + (attacker_stats.INT * 1);   break; // Arcane
-        case 3: chance = 5               + (attacker_stats.WIS * 1.5);  break; // Effect
-    }
+    // Stat contribution uses the shared diminishing-returns curve (stat_crit_chance);
+    // type 3 (Effect/WIS) already bakes in its +5 base, so don't add ability_base_crit there.
+    var chance;
+    if (crit_type == 3) chance = stat_crit_chance(attacker_stats, 3);
+    else                chance = ability_base_crit + stat_crit_chance(attacker_stats, crit_type);
     // "of Ruin" affix: flat crit bonus stored on the stats struct by apply_equipment_stats
     if (variable_struct_exists(attacker_stats, "crit_bonus")) {
         chance += attacker_stats.crit_bonus;

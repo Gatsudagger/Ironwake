@@ -591,7 +591,7 @@ if (player_turn) {
                     var _cast_acc = ab.base_acc - combat_status_max(player, "blind") * 100
                                     + rune_aspect_ranged_acc(ab);
                     var _hit = combat_roll_hit(
-                        player.stats,
+                        player.acc,
                         _cast_acc,
                         target.dodge,
                         ab.guaranteed_hit || _react_force_hit
@@ -1586,7 +1586,7 @@ if (player_turn) {
         var _shadow_meld_bonus = (variable_struct_exists(player, "shadow_meld_bonus")) ? player.shadow_meld_bonus : 0;
         player.shadow_meld_bonus = 0; // consume bonus whether hit or miss
         var _effective_dodge = player.dodge + _shadow_meld_bonus;
-        var _hit = combat_roll_hit({ DEX: 3 }, _enemy_acc, _effective_dodge, false);
+        var _hit = combat_roll_hit(9, _enemy_acc, _effective_dodge, false);
 
         if (!_hit) {
             array_push(combat_log, actor.name + " attacked but missed!");
@@ -1692,7 +1692,7 @@ if (player_turn) {
         // Fire a second independent hit roll using mechanic_value as the flat
         // per-hit damage (separate from the telegraphed damage path).
         if (actor.mechanic_type == "double_strike") {
-            var _hit2 = combat_roll_hit({ DEX: 3 }, _enemy_acc, player.dodge, false);
+            var _hit2 = combat_roll_hit(9, _enemy_acc, player.dodge, false);
 
             if (!_hit2) {
                 array_push(combat_log, actor.name + "'s second strike missed!");
