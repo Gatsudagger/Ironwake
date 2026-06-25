@@ -3646,7 +3646,8 @@ function ui_draw_stash_screen() {
 
         var _col = (_left_types[_i] == 1) ? make_color_rgb(80, 220, 220) : item_rarity_color(_it.rarity);
         if (_left_types[_i] == 0) ui_draw_item_icon(_lx + 8, _item_y + 5, 20, _it);
-        var _stl_tx = (_left_types[_i] == 0) ? _lx + 34 : _lx + 12;
+        else                      ui_draw_consumable_icon(_lx + 8, _item_y + 5, 20, _it);
+        var _stl_tx = _lx + 34;
         draw_set_color(_col);
         draw_text(_stl_tx, _item_y + 5, _it.name);
         draw_set_color(make_color_rgb(140, 150, 170));
@@ -3680,7 +3681,8 @@ function ui_draw_stash_screen() {
 
         var _col = (_right_types[_i] == 1) ? make_color_rgb(80, 220, 220) : item_rarity_color(_it.rarity);
         if (_right_types[_i] == 0) ui_draw_item_icon(_rx + 8, _item_y + 5, 20, _it);
-        var _str_tx = (_right_types[_i] == 0) ? _rx + 34 : _rx + 12;
+        else                       ui_draw_consumable_icon(_rx + 8, _item_y + 5, 20, _it);
+        var _str_tx = _rx + 34;
         draw_set_color(_col);
         draw_text(_str_tx, _item_y + 5, _it.name);
         draw_set_color(make_color_rgb(140, 150, 170));

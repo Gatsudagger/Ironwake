@@ -651,11 +651,12 @@ global.abilities_arcanist[14].desc_full  = "Dump your banked Souls into one flex
 
 // --- BLOODWARDEN: Cleave (free filler) + Rupture (Vex payoff) ---
 array_push(global.abilities_bloodwarden,
-    // 13: Cleave — the cheap reliable 1-AP attack Bloodwarden lacked (only Blood
-    //     Leech filled that slot). Plain physical filler / bleed-setup chip.
+    // 13: Cleave — a 1-AP sweeping AoE (hits ALL enemies) so it's distinct from
+    //     the general-pool Strike (single-target). The cheap clear-the-chaff tool
+    //     for Bloodwarden; lower per-target damage than a focused hit. is_aoe set below.
     ability_define("Cleave",
         /*energy*/1, /*secondary*/0,
-        /*damage*/11, /*dtype*/0,       // physical
+        /*damage*/9, /*dtype*/0,        // physical
         /*acc*/85, /*guaranteed*/false,
         /*crit_type*/0, /*base_crit*/8, // power (STR)
         /*effect_type*/"damage", /*effect_value*/0, /*duration*/0,
@@ -670,8 +671,8 @@ array_push(global.abilities_bloodwarden,
         /*crit_type*/2, /*base_crit*/8, // arcane (INT) — scales with Blood theme
         /*effect_type*/"damage", /*effect_value*/0, /*duration*/0,
         /*self*/false));
-global.abilities_bloodwarden[13].desc_short = "Deal 11 physical dmg. Reliable, cheap attack.";
-global.abilities_bloodwarden[13].desc_full  = "A dependable one-AP swing for when Blood is dry or you just need chip damage. Cheap enough to throw every turn and a fine opener for your bleeds.";
+global.abilities_bloodwarden[13].desc_short = "Deal 9 physical dmg to ALL enemies. Cheap sweep.";
+global.abilities_bloodwarden[13].desc_full  = "A 1-AP sweeping strike that hits every enemy — your cheap clear-the-chaff tool. Less per-target than a focused hit, but it softens a whole pack and opens bleeds across the board.";
 global.abilities_bloodwarden[14].desc_short = "Detonate all bleeds on target: +5 dmg per remaining tick.";
 global.abilities_bloodwarden[14].desc_full  = "Burst every bleed and poison on the target at once — 8 blood damage plus 5 for each remaining tick, consuming the stacks. Build bleeds with Gore Strike, then Rupture for a payoff hit.";
 
@@ -709,6 +710,7 @@ global.abilities_shadowstrider[14].desc_full  = "A precision finisher: heavy dam
 global.abilities_arcanist[8].is_aoe       = true;   // Rift        — elemental nuke, all enemies
 global.abilities_arcanist[12].is_aoe      = true;   // Singularity — ultimate, all enemies
 global.abilities_shadowstrider[4].is_aoe  = true;   // Smoke Bomb  — blind, all enemies (no damage)
+global.abilities_bloodwarden[13].is_aoe   = true;   // Cleave      — 1-AP sweep, all enemies (vs single-target Strike)
 
 
 // =============================================================================

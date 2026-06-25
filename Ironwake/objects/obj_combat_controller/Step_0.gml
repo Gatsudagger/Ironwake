@@ -1307,6 +1307,10 @@ if (player_turn) {
         // Counts DoT popups spawned this tick so stacked effects (e.g. two poisons)
         // can be staggered in time/space instead of overlapping into one number.
         var _dot_pop_n = 0;
+        // Aggregate DoT damage by FLAVOR (bleed/poison/void) so the combat log shows a
+        // combined total per flavor instead of one line per stack naming the ability.
+        var _dot_total = {};   // flavor -> summed damage this tick
+        var _dot_count = {};   // flavor -> number of stacks
         for (var _si = 0; _si < _se_count; _si++) {
             var _se = actor.status_effects[_si];
 
@@ -1341,12 +1345,20 @@ if (player_turn) {
                     col: make_color_rgb(255, 140, 0)
                 });
                 _dot_pop_n++;
-                array_push(combat_log,
-                    actor.name + " takes " + string(_dot_dmg) + " " + _se.name + " damage!");
-                if (actor.HP <= 0) {
+                // Accumulate by flavor (logged as a combined total after the loop).
+                var _dot_fl = combat_status_element(_se);
+                if (_dot_fl == "") _dot_fl = "damage-over-time";
+                if (!variable_struct_exists(_dot_total, _dot_fl)) {
+                    variable_struct_set(_dot_total, _dot_fl, 0);
+                    variable_struct_set(_dot_count, _dot_fl, 0);
+                }
+                variable_struct_set(_dot_total, _dot_fl, variable_struct_get(_dot_total, _dot_fl) + _dot_dmg);
+                variable_struct_set(_dot_count, _dot_fl, variable_struct_get(_dot_count, _dot_fl) + 1);
+                // Death from DoT — guard against a second stack re-firing the rewards.
+                if (actor.HP <= 0 && !actor.is_defeated) {
                     actor.is_defeated = true;
                     enemy_death_sound(actor.name);
-                    array_push(combat_log, actor.name + " defeated by " + _se.name + "!");
+                    array_push(combat_log, actor.name + " succumbs to " + _dot_fl + "!");
                     // --- Gold drop on DoT kill ---
                     var _gold_drop = irandom(actor.gold_max - actor.gold_min) + actor.gold_min;
                     add_gold(_gold_drop);
@@ -1409,6 +1421,19 @@ if (player_turn) {
             }
         }
         actor.status_effects = _se_keep;
+
+        // Combined DoT readout — one line per flavor with the total and stack count,
+        // e.g. "Skeleton takes 11 bleed damage (2 stacks)!" instead of per-ability lines.
+        var _dot_fl_names = variable_struct_get_names(_dot_total);
+        for (var _dfi = 0; _dfi < array_length(_dot_fl_names); _dfi++) {
+            var _dfn = _dot_fl_names[_dfi];
+            var _dft = variable_struct_get(_dot_total, _dfn);
+            var _dfc = variable_struct_get(_dot_count, _dfn);
+            if (_dft > 0) {
+                array_push(combat_log, actor.name + " takes " + string(_dft) + " " + _dfn
+                    + " damage" + (_dfc > 1 ? " (" + string(_dfc) + " stacks)" : "") + "!");
+            }
+        }
 
         // Skip the attack entirely if DoT finished the enemy this frame
         if (actor.is_defeated) {
