@@ -12,6 +12,10 @@
 //   Escape       — dismiss last-run summary or close history
 // =============================================================================
 
+// Onboarding coach-mark is modal — freeze the hub entirely while one is up. gc owns
+// the dismiss (see SYSTEMS_ONBOARDING.md); here we just block all hub input.
+if (tutorial_is_active()) exit;
+
 // -----------------------------------------------------------------------------
 // 0. AUDIO SETTINGS OVERLAY — captures all input while open; O opens it
 // -----------------------------------------------------------------------------
@@ -135,6 +139,8 @@ if (instance_exists(obj_game_controller)) {
             _gc_dsel.loadout_cursor     = 0;
             _gc_dsel.loadout_full_timer = 0;
             _gc_dsel.loadout_confirmed  = false;
+            // Onboarding: first time the loadout screen opens.
+            tutorial_try_show("loadout");
         }
 
         // Esc: close dungeon select without entering
@@ -681,6 +687,9 @@ if (keyboard_check_pressed(vk_space) || keyboard_check_pressed(vk_enter) || keyb
                 _gc_interact.trainer_cursor       = 0;
                 _gc_interact.trainer_confirm      = false;
                 _gc_interact.trainer_notification = "";
+                _gc_interact.trainer_statpick_open = false;
+                // Onboarding: first time Vex the Trainer opens.
+                tutorial_try_show("vex");
             } else if (selected_npc == 2) {
                 // Maren the Runesmith
                 _gc_interact.maren_open         = true;
@@ -738,6 +747,8 @@ if (!show_gallery && selected_npc == 6
                 ? variable_struct_get(global.dungeon_ascendance_unlocked, _cur_dk2) : 0;
             _gc_e.dungeon_select_asc  = min(_cur_asc2, _max_asc2);
             _gc_e.dungeon_select_open = true;
+            // Onboarding: first time the dungeon/awakening selector opens.
+            tutorial_try_show("ascendance");
             exit;
         }
 
@@ -782,6 +793,8 @@ if (mouse_check_button_pressed(mb_left)) {
                         _gc_mc.trainer_open = true; _gc_mc.trainer_tab = 0;
                         _gc_mc.trainer_cursor = 0; _gc_mc.trainer_confirm = false;
                         _gc_mc.trainer_notification = "";
+                        _gc_mc.trainer_statpick_open = false;
+                        tutorial_try_show("vex");   // Onboarding: first Vex open
                     } else if (_hni == 2) {
                         _gc_mc.maren_open = true; _gc_mc.maren_tab = 0;
                         _gc_mc.maren_phase = 0; _gc_mc.maren_item_sel = -1;
@@ -827,6 +840,8 @@ if (mouse_check_button_pressed(mb_left)) {
                     ? variable_struct_get(global.dungeon_ascendance_unlocked, _cur_dk3) : 0;
                 _gc_e2.dungeon_select_asc  = min(_cur_asc3, _max_asc3);
                 _gc_e2.dungeon_select_open = true;
+                // Onboarding: first time the dungeon/awakening selector opens.
+                tutorial_try_show("ascendance");
             }
         }
     }

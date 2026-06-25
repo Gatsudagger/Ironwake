@@ -95,6 +95,13 @@ function save_game() {
         equipment_stash:  global.equipment_stash,
         consumable_stash: global.consumable_stash,
 
+        // Carried consumable pack (run buffer). Saved so potions withdrawn from
+        // the stash into your pack — or carried forward after a winning run —
+        // survive a reload. (Equipment's carried_items is intentionally NOT saved
+        // so abandoning a run reverts cleanly; consumables persist because losing
+        // bought/withdrawn potions on reload was a silent data-loss trap.)
+        consumable_inventory: global.consumable_inventory,
+
         // Rune system (Maren) — socketed gear runes ride on the item structs above
         rune_inventory: variable_global_exists("rune_inventory") ? global.rune_inventory : [],
         rune_dust:      variable_global_exists("rune_dust")      ? global.rune_dust      : 0,
@@ -108,6 +115,11 @@ function save_game() {
 
         // Boons (run-scoped)
         run_boons:      variable_global_exists("run_boons")      ? global.run_boons      : [],
+        run_curses:     variable_global_exists("run_curses")     ? global.run_curses     : [],
+
+        // Onboarding: which tips this profile has already seen (per-slot).
+        // The enable/disable preference is global and lives in settings.ini, not here.
+        tutorial_seen: variable_global_exists("tutorial_seen") ? global.tutorial_seen : {},
 
         // Dungeon ascendance progression
         dungeon_ascendance_unlocked: variable_global_exists("dungeon_ascendance_unlocked") ? global.dungeon_ascendance_unlocked : { ashen_vault: 0, scorched_depths: 0, tundra_tomb: 0 },
@@ -280,6 +292,12 @@ function load_game() {
     if (variable_struct_exists(_s, "consumable_stash") && is_array(_s.consumable_stash)) {
         global.consumable_stash = _s.consumable_stash;
     }
+    // Carried consumable pack (run buffer) — restore so withdrawn/carried-forward
+    // potions survive a reload. Older saves lack this key; the gc-Create default ([])
+    // covers them.
+    if (variable_struct_exists(_s, "consumable_inventory") && is_array(_s.consumable_inventory)) {
+        global.consumable_inventory = _s.consumable_inventory;
+    }
 
     // Rune system (Maren)
     if (variable_struct_exists(_s, "rune_inventory") && is_array(_s.rune_inventory)) {
@@ -295,9 +313,20 @@ function load_game() {
         global.unlocked_skins = _s.unlocked_skins;
     }
     if (variable_struct_exists(_s, "player_gender"))  global.player_gender  = _s.player_gender;
-    if (variable_struct_exists(_s, "run_boons") && is_array(_s.run_boons)) {
-        global.run_boons = _s.run_boons;
+    // Boons and curses are run-scoped (cleared in end_run). A save can only hold
+    // non-empty values if it was written mid-run (boon_grant/curse_grant save on
+    // pickup); since loading always lands in the hub between runs, restoring them
+    // would carry stale modifiers into the next run. Always start a loaded game with
+    // none — this is the fresh-run reset the abandoned-run case needs.
+    global.run_boons  = [];
+    global.run_curses = [];
+    if (variable_struct_exists(_s, "tutorial_seen") && is_struct(_s.tutorial_seen)) {
+        global.tutorial_seen = _s.tutorial_seen;
     }
+    // NOTE: global.tutorial_enabled is intentionally NOT restored here. The
+    // enable/disable preference is a global setting owned by settings.ini (see
+    // audio_settings_init/save) so it persists from the title and across all
+    // profiles; loading a slot must not clobber it. Only tutorial_seen is per-slot.
 
     // Dungeon ascendance progression
     if (variable_struct_exists(_s, "dungeon_ascendance_unlocked") && is_struct(_s.dungeon_ascendance_unlocked)) {

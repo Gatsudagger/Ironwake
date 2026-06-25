@@ -419,9 +419,11 @@ event_body    = "";
 event_color   = c_white;
 event_timer   = 0;
 
-// Shrine of Tribute — interactive boon-purchase overlay
+// Shrine — interactive altar overlay. Rolls per visit as a Blessing altar (boons,
+// bought with tribute) or a Curse altar (curses, accepted for free — devil's bargain).
 showing_shrine     = false;
-shrine_offers      = [];   // array of boon ids offered this shrine
+shrine_kind        = "blessing";  // "blessing" = boons | "curse" = curses
+shrine_offers      = [];   // array of boon ids OR curse ids offered this shrine
 shrine_cursor      = 0;
 shrine_notification = "";
 

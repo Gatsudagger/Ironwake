@@ -231,6 +231,11 @@ if (phase == "cutscene") {
             draw_text(_mid, _card_y + _card_h - 36, "No save data");
         }
 
+        // Ornate gothic frame around each save plaque. Band 10 keeps the corner
+        // ornaments inside the 30px inter-card gaps and clear of the title (y80/118
+        // above) and the selection caret (y454 below). Locked cards dim to match.
+        ui_draw_gothic_frame(_cx, _card_y, _cx + _card_w, _card_y + _card_h, 10, _locked ? 0.35 : 1.0);
+
         draw_set_alpha(1.0);
     }
 

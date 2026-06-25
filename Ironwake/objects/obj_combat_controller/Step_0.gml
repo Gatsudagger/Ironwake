@@ -171,49 +171,70 @@ if (player_turn) {
             }
         }
         combat_tick_statuses(player, combat_log);
+        // Blood Price curse: lose a flat amount of HP at the start of each turn.
+        var _bp_drain = curse_turn_hp_drain();
+        if (_bp_drain > 0) {
+            player.HP -= _bp_drain;
+            array_push(combat_log, "Blood Price drains " + string(_bp_drain) + " HP.");
+        }
         if (player.HP <= 0 && !combat_try_last_stand(player, combat_log)) {
             player.is_defeated = true;
             exit; // victory/defeat check at the top of next frame resolves it
         }
     }
 
+    // Onboarding coach-marks (see SYSTEMS_ONBOARDING.md). On the player's turn, teach
+    // the AP economy first; once that's seen, teach target-switching the first time a
+    // fight has more than one foe. Both are once-only and self-gate (one tip at a time).
+    if (!combat_over) {
+        if (!tutorial_try_show("combat_ap")) {
+            // Count living foes (the roster is combat_state.combatants — player + enemies,
+            // distinguished by is_player; there is no standalone `enemies` array here).
+            var _foe_count = 0;
+            var _cbts = combat_state.combatants;
+            for (var _tci = 0; _tci < array_length(_cbts); _tci++) {
+                var _tcc = _cbts[_tci];
+                if (variable_struct_exists(_tcc, "is_player") && _tcc.is_player) continue;
+                if (variable_struct_exists(_tcc, "HP") && _tcc.HP <= 0) continue;
+                _foe_count++;
+            }
+            if (_foe_count > 1) tutorial_try_show("targeting");
+        }
+    }
+
     // -------------------------------------------------------------------------
     // 3a. CONSUMABLE QUICK MENU — intercepts all other input while open
     // -------------------------------------------------------------------------
-    var _ibx = 1060;
+    // Small framed button, far bottom-right so it clears the ability tooltip
+    // (x840-1160). Must stay in sync with the draw in Draw_64.
+    var _ibx = 1178;
     var _iby = 660;
-    var _ibw = 180;
-    var _ibh = 50;
+    var _ibw = 94;
+    var _ibh = 42;
 
-    // I key or ITEMS button click to toggle
-    if (keyboard_check_pressed(ord("I"))) {
-        if (consumable_quick_open) {
-            consumable_quick_open = false;
-        } else if (variable_global_exists("consumable_inventory")
-                   && array_length(global.consumable_inventory) > 0) {
-            consumable_quick_open   = true;
-            consumable_quick_cursor = 0;
-        }
+    // C key or ITEMS button click to toggle. The menu always opens — when the
+    // run buffer is empty it shows "No consumables held." rather than doing
+    // nothing (stash consumables stay hub-only; the buffers stay separate).
+    if (keyboard_check_pressed(ord("C"))) {
+        consumable_quick_open = !consumable_quick_open;
+        if (consumable_quick_open) consumable_quick_cursor = 0;
     }
 
     if (mouse_check_button_pressed(mb_left)) {
         var _iqmx = device_mouse_x_to_gui(0);
         var _iqmy = device_mouse_y_to_gui(0);
         if (_iqmx >= _ibx && _iqmx < _ibx + _ibw && _iqmy >= _iby && _iqmy < _iby + _ibh) {
-            if (consumable_quick_open) {
-                consumable_quick_open = false;
-            } else if (variable_global_exists("consumable_inventory")
-                       && array_length(global.consumable_inventory) > 0) {
-                consumable_quick_open   = true;
-                consumable_quick_cursor = 0;
-            }
+            consumable_quick_open = !consumable_quick_open;
+            if (consumable_quick_open) consumable_quick_cursor = 0;
         }
     }
 
     if (consumable_quick_open) {
         var _qcount = array_length(global.consumable_inventory);
         if (_qcount == 0) {
-            consumable_quick_open = false;
+            // Empty state: the menu stays open showing "No consumables held.";
+            // Esc closes it (C is handled by the toggle above).
+            if (keyboard_check_pressed(vk_escape)) consumable_quick_open = false;
         } else {
             // Navigation
             if (keyboard_check_pressed(vk_up) || keyboard_check_pressed(ord("W"))) {
@@ -222,7 +243,9 @@ if (player_turn) {
             if (keyboard_check_pressed(vk_down) || keyboard_check_pressed(ord("S"))) {
                 consumable_quick_cursor = min(_qcount - 1, consumable_quick_cursor + 1);
             }
-            if (keyboard_check_pressed(vk_escape) || keyboard_check_pressed(ord("I"))) {
+            // Esc closes. (C is handled by the toggle above — checking it here too
+            // would re-close it in the same frame it opens, so it's intentionally absent.)
+            if (keyboard_check_pressed(vk_escape)) {
                 consumable_quick_open = false;
                 exit;
             }
@@ -309,13 +332,15 @@ if (player_turn) {
         exit; // block all other combat input while the quick menu is open
     }
 
-    // --- Ability selection (navigate with arrow keys or WASD) ---
-    if (keyboard_check_pressed(vk_left) || keyboard_check_pressed(ord("A"))) {
-        selected_ability = max(0, selected_ability - 1);
-    }
-
-    if (keyboard_check_pressed(vk_right) || keyboard_check_pressed(ord("D"))) {
-        selected_ability = min(array_length(player.abilities) - 1, selected_ability + 1);
+    // --- Ability selection (navigate with arrow keys or WASD; wraps around) ---
+    var _ability_count = array_length(player.abilities);
+    if (_ability_count > 0) {
+        if (keyboard_check_pressed(vk_left) || keyboard_check_pressed(ord("A"))) {
+            selected_ability = (selected_ability - 1 + _ability_count) mod _ability_count;
+        }
+        if (keyboard_check_pressed(vk_right) || keyboard_check_pressed(ord("D"))) {
+            selected_ability = (selected_ability + 1) mod _ability_count;
+        }
     }
 
     // --- Tab key cycles through living enemies ---
@@ -330,14 +355,13 @@ if (player_turn) {
         }
     }
 
-    // --- 1-4 hotkeys: select and cast the corresponding ability ---
+    // --- Number hotkeys: select and cast the matching ability (1..N, max 9) ---
     var _should_cast = false;
-    for (var _hk = 0; _hk < 4; _hk++) {
+    var _hk_max = min(array_length(player.abilities), 9);
+    for (var _hk = 0; _hk < _hk_max; _hk++) {
         if (keyboard_check_pressed(ord(string(_hk + 1)))) {
-            if (_hk < array_length(player.abilities)) {
-                selected_ability = _hk;
-                _should_cast = true;
-            }
+            selected_ability = _hk;
+            _should_cast = true;
         }
     }
 
@@ -559,6 +583,7 @@ if (player_turn) {
 
                     if (!_hit) {
                         array_push(combat_log, ab.name + " missed!");
+                        play_sfx_var("snd_miss", -1);   // whiff (silent until imported)
 
                     } else {
                         // --- Crit roll (skip for abilities with no crit) ---
@@ -575,7 +600,13 @@ if (player_turn) {
                         }
 
                         // --- Damage calculation ---
+                        // Pure-debuff / utility abilities define base_damage 0 (e.g. Marked for
+                        // Death, Curse, Crippling Shot) — they apply a status and deal NO direct
+                        // damage. _deals_damage gates the damage riders, popup and log below so
+                        // they never "carry" a damage number (was picking up the target's own
+                        // Vulnerable bonus and reporting 0–12 phantom damage).
                         var _dmg = ab.base_damage;
+                        var _deals_damage = (ab.base_damage > 0);
                         var _ab_stat_dtype = variable_struct_exists(ab, "damage_type") ? ab.damage_type : 0;
                         if (ab.base_damage > 0 && variable_struct_exists(player, "derived")) {
                             if (_ab_stat_dtype == 0) {
@@ -599,7 +630,9 @@ if (player_turn) {
                             _dmg += array_length(target.status_effects) * 5;
                         }
                         // Vanish: the empowered strike out of stealth deals bonus damage.
-                        if (variable_struct_exists(player, "vanish_bonus") && player.vanish_bonus) {
+                        // Only a real ATTACK spends the ambush bonus — casting a pure debuff
+                        // (Marked for Death etc.) leaves it intact for your next damaging strike.
+                        if (_deals_damage && variable_struct_exists(player, "vanish_bonus") && player.vanish_bonus) {
                             _dmg += 12;
                             player.vanish_bonus = false;
                             array_push(combat_log, "Vanish: ambush strike for +12 damage!");
@@ -681,8 +714,10 @@ if (player_turn) {
                             target.el_resist
                         );
 
-                        // Vulnerable: target takes extra flat damage from every hit (summed).
-                        _final_dmg += combat_status_total(target, "vulnerable");
+                        // Vulnerable: target takes extra flat damage from every DAMAGING hit
+                        // (summed). Pure-debuff abilities (base damage 0) must NOT pick this up —
+                        // they only apply their own debuff.
+                        if (_deals_damage) _final_dmg += combat_status_total(target, "vulnerable");
 
                         // Arcane Surge: abilities costing 4+ AP deal +25% damage (Arcanist only)
                         if (player.class_id == 0 && trait_active("Arcane Surge")
@@ -694,8 +729,10 @@ if (player_turn) {
                             && player.HP <= floor(player.max_HP * 0.40)) {
                             _final_dmg = floor(_final_dmg * (1 + 0.20 * trait_potency_mult("Berserker Rage")));
                         }
-                        // Serrated Strikes: physical abilities apply 1 bleed stack (Shadowstrider only)
-                        if (player.class_id == 2 && trait_active("Serrated Strikes")
+                        // Serrated Strikes: physical ATTACKS apply 1 bleed stack (Shadowstrider
+                        // only). Gated on _deals_damage so a pure debuff (e.g. Marked for Death,
+                        // also physical-typed) doesn't proc a free bleed — it isn't an attack.
+                        if (_deals_damage && player.class_id == 2 && trait_active("Serrated Strikes")
                             && variable_struct_exists(ab, "damage_type") && ab.damage_type == 0
                             && !target.is_defeated && variable_struct_exists(target, "status_effects")) {
                             var _bleed_se = {
@@ -731,7 +768,8 @@ if (player_turn) {
                             _final_dmg = max(1, round(_final_dmg * (1 + player.spell_dmg_bonus)));
                         }
 
-                        combat_apply_damage(target, _final_dmg);
+                        // Pure debuffs never deal damage, even if a rider tried to add some.
+                        if (_deals_damage) combat_apply_damage(target, _final_dmg);
 
                         // Gravelstone Sword (class weapon): leech a share of melee damage dealt.
                         if (variable_struct_exists(player, "weapon_lifesteal") && player.weapon_lifesteal > 0
@@ -760,8 +798,10 @@ if (player_turn) {
                         }
                         var _vfx_ex = 1080 + _vfx_slot * (-80);
                         var _vfx_ey = 155  + _vfx_slot * 70;
-                        var _pop_col = (_crit_result.critted) ? c_yellow : make_color_rgb(255, 100, 100);
-                        array_push(damage_popups, { value: _final_dmg, x: _vfx_ex, y: _vfx_ey - 70, timer: 50, col: _pop_col });
+                        if (_deals_damage) {
+                            var _pop_col = (_crit_result.critted) ? c_yellow : make_color_rgb(255, 100, 100);
+                            array_push(damage_popups, { value: _final_dmg, x: _vfx_ex, y: _vfx_ey - 70, timer: 50, col: _pop_col });
+                        }
                         attack_anim_timer     = 20;
                         attack_anim_src_x     = 220;
                         attack_anim_src_y     = 310;
@@ -769,42 +809,36 @@ if (player_turn) {
                         attack_anim_dst_y     = _vfx_ey;
                         attack_anim_is_player = true;
 
-                        // VFX impact sprite keyed to damage type (3 = blood reuses slash)
+                        // VFX impact sprite keyed to damage type (3 = blood reuses physical impact).
+                        // 0 phys -> impact burst, 1 elem -> fiery explosion, 2 drain/void -> violet
+                        // explosion, default -> arcane lightning. All are multi-frame Gigapack effects.
                         var _ab_dtype = variable_struct_exists(ab, "damage_type") ? ab.damage_type : 0;
-                        var _vfx_spr_list = [spr_vfx_slash, spr_vfx_fire, spr_vfx_void, spr_vfx_slash];
+                        var _vfx_spr_list = [spr_vfx_impact, spr_vfx_fire, spr_vfx_void, spr_vfx_impact];
                         if (_ab_dtype >= 0 && _ab_dtype <= 3) {
                             vfx_spr = _vfx_spr_list[_ab_dtype];
                         } else {
                             vfx_spr = spr_vfx_arcane;
                         }
-                        vfx_x     = _vfx_ex;
-                        vfx_y     = _vfx_ey;
-                        vfx_timer = 20;
-                        // Per-class attack audio
-                        switch (player.class_id) {
-                            case 0: // Arcanist — arcane caster, no grunt
-                                audio_play_sound(spell1, 1, false);
-                                // NOTE: the "Magic" chime is the heal twinkle and is now
-                                // reserved for heals only — it used to layer onto offensive
-                                // Arcanist casts (incl. drains), which felt redundant.
-                                break;
-                            case 1: // Bloodwarden — heavy hitter, always grunts
-                                audio_play_sound((_ab_dtype == 0) ? attack1 : spell1, 1, false);
-                                audio_play_sound(grunt, 1, false);
-                                break;
-                            case 2: // Shadowstrider — quick and quiet
-                                audio_play_sound((_ab_dtype == 0) ? utility2 : teleport, 1, false);
-                                break;
-                            default:
-                                audio_play_sound((_ab_dtype == 0) ? attack1 : spell1, 1, false);
-                                audio_play_sound(grunt, 1, false);
-                        }
+                        vfx_x         = _vfx_ex;
+                        vfx_y         = _vfx_ey;
+                        vfx_timer     = 20;
+                        vfx_timer_max = 20;
+                        // Attack audio keyed to the ABILITY (damage type), not the class.
+                        // See play_ability_cast_sfx / SYSTEMS_COMBAT_FX.md.
+                        play_ability_cast_sfx(ab, player, true);
 
-                        // --- Hit log ---
-                        var _log_entry = player.name + " used " + ab.name
-                            + " for " + string(_final_dmg) + " damage";
-                        if (_crit_result.critted) _log_entry += " (CRIT!)";
-                        array_push(combat_log, _log_entry);
+                        // --- Hit log — damaging abilities report damage; pure debuffs/utility
+                        //     just report the cast (the debuff itself is logged when applied). ---
+                        if (_deals_damage) {
+                            var _log_entry = player.name + " used " + ab.name
+                                + " for " + string(_final_dmg) + " damage";
+                            if (_crit_result.critted) _log_entry += " (CRIT!)";
+                            array_push(combat_log, _log_entry);
+                        } else {
+                            var _log_entry = player.name + " used " + ab.name;
+                            if (_crit_result.critted) _log_entry += " (CRIT — empowered)";
+                            array_push(combat_log, _log_entry);
+                        }
 
                         // --- On-hit heal (e.g. Void Drain), reduced by Mortality ---
                         // Leech aspect rune boosts healing from drain (dtype 2) abilities.
@@ -966,11 +1000,17 @@ if (player_turn) {
                 // --- Self-targeted ability ---
                 array_push(combat_log, player.name + " used " + ab.name + ".");
                 if (ab.name == "Blink" || ab.name == "Shadow Step") {
-                    audio_play_sound(teleport, 1, false);
-                } else if (ab.effect_type == "heal") {
-                    audio_play_sound(Magic, 1, false);   // heal "twinkle" — reserved for heals
+                    audio_play_sound(teleport, 1, false);   // movement keeps its whoosh
                 } else {
-                    audio_play_sound(spell1, 1, false);  // non-heal self-cast (buffs / resource gen)
+                    // Support cast — sound keyed to the effect kind (heal/shield/buff/…).
+                    play_ability_cast_sfx(ab, player, false);
+                    // Self-cast VFX over the player: heal spell for restores, otherwise a
+                    // generic buff burst (shields, stat-ups, resource gains, self-debuffs).
+                    vfx_spr       = (ab.effect_type == "heal") ? spr_vfx_heal : spr_vfx_buff;
+                    vfx_x         = 220;
+                    vfx_y         = 240;
+                    vfx_timer     = 20;
+                    vfx_timer_max = 20;
                 }
 
                 if (ab.effect_type == "heal") {
@@ -1422,6 +1462,8 @@ if (player_turn) {
             }
             // Warding boon: flat % incoming-damage reduction.
             if (boon_active("warding")) _final_dmg = max(1, round(_final_dmg * boon_incoming_mult()));
+            // Curse penalties (Exposed/Ruin): flat % incoming-damage increase.
+            if (curse_incoming_mult() != 1.0) _final_dmg = max(1, round(_final_dmg * curse_incoming_mult()));
             // Soul Shield absorbs damage before it reaches HP.
             if (variable_struct_exists(player, "shield_hp") && player.shield_hp > 0 && _final_dmg > 0) {
                 var _sa = min(player.shield_hp, _final_dmg);
@@ -1431,7 +1473,9 @@ if (player_turn) {
             }
 
             combat_apply_damage(player, _final_dmg);
-            audio_play_sound(hurt, 1, false);
+            // Player takes a hit — gendered human "damage" grunt (snd_player_hurt[_f]),
+            // falling back to the library `hurt` until the pack is imported.
+            play_player_vocal("snd_player_hurt", hurt);
             // VFX: hit flash, popup, enemy attack slide, screen shake
             player.hit_flash   = 15;
             screen_shake_timer = 12;
@@ -1452,10 +1496,11 @@ if (player_turn) {
             attack_anim_enemy_idx = _ea_slot;
             // Impact spark over the player where the blow lands (same one-shot VFX
             // system as outgoing hits; spr_fx_impact is a 64px top-left-origin burst).
-            vfx_spr   = spr_fx_impact;
-            vfx_x     = 200;
-            vfx_y     = 300;
-            vfx_timer = 18;
+            vfx_spr       = spr_fx_impact;
+            vfx_x         = 200;
+            vfx_y         = 300;
+            vfx_timer     = 18;
+            vfx_timer_max = 18;
             array_push(combat_log,
                 actor.name + " attacked for " + string(_final_dmg) + " damage!");
 
@@ -1510,6 +1555,7 @@ if (player_turn) {
                 _final_dmg2 += combat_status_total(player, "vulnerable");
                 _final_dmg2 = max(1, _final_dmg2 - player.equip_armor);
                 if (boon_active("warding")) _final_dmg2 = max(1, round(_final_dmg2 * boon_incoming_mult()));
+                if (curse_incoming_mult() != 1.0) _final_dmg2 = max(1, round(_final_dmg2 * curse_incoming_mult()));
                 // Soul Shield absorbs the second strike too.
                 if (variable_struct_exists(player, "shield_hp") && player.shield_hp > 0 && _final_dmg2 > 0) {
                     var _sa2 = min(player.shield_hp, _final_dmg2);

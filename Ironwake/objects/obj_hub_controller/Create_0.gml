@@ -33,8 +33,9 @@ npc_descriptions = [
     "Cosmetic transmog — buy and wear character skins. Press Space to visit the atelier."
 ];
 
-// All six hub NPCs available from the start.
-// (Sable [1] and Vael [5] unlocked for testing now that their systems are built.)
+// All six hub NPCs are permanently available from the start (design decision —
+// no unlock gating). Not persisted in the save: re-initialized here every time the
+// hub loads, so no save can ever re-lock an NPC. Keep this array all-true.
 npc_unlocked = [true, true, true, true, true, true];
 
 
@@ -111,3 +112,11 @@ hub_flavor_lines = [
     "Below, the dungeon stirs. The camp keeps its small, stubborn warmth."
 ];
 hub_flavor = hub_flavor_lines[irandom(array_length(hub_flavor_lines) - 1)];
+
+
+// -----------------------------------------------------------------------------
+// 7. ONBOARDING — show the hub coach-mark on the player's very first camp visit
+// (the first surface they see after character creation). Once-only; gated by the
+// saved tutorial flags. See SYSTEMS_ONBOARDING.md.
+// -----------------------------------------------------------------------------
+tutorial_try_show("hub");

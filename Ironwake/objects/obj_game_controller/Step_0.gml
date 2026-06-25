@@ -12,6 +12,23 @@ if (keyboard_check_pressed(vk_f11)) {
     video_toggle_fullscreen();
 }
 
+// --- Onboarding coach-mark (see SYSTEMS_ONBOARDING.md) ---
+// A tip is modal: ui_input_blocked() reports true while one is active (freezing every
+// room controller), and gc owns the dismiss here. The clear is DEFERRED one frame
+// (tutorial_dismiss_pending) so the tip stays "active" through the ENTIRE Step phase
+// of the dismiss frame — no controller, whatever its instance order, can act on the
+// dismissing keypress. We exit so gc's own input handlers below are frozen too.
+if (global.tutorial_dismiss_pending) {
+    tutorial_dismiss();                       // mark seen + clear active
+    global.tutorial_dismiss_pending = false;
+}
+if (tutorial_is_active()) {
+    if (keyboard_check_pressed(vk_anykey) || mouse_check_button_pressed(mb_any)) {
+        global.tutorial_dismiss_pending = true;   // clear next frame, not now
+    }
+    exit;
+}
+
 // --- Shared item-sacrifice picker (Vex stat/trait trade) ---
 // While open the modal captures all input so the underlying screen is frozen.
 // We exit the same frame it closes so the confirming keypress can't fall through
@@ -54,6 +71,9 @@ if (equip_notif_timer > 0) {
     if (equip_notif_timer <= 0) equip_notif_msg = "";
 }
 
+// `I` opens the full character menu everywhere, combat included, so the player can
+// check equipment/status mid-fight. Combat item USE is a separate quick-menu on the
+// C key (obj_combat_controller) — distinct key, so the two don't conflict.
 if (!stash_mode_open && !loadout_open && keyboard_check_pressed(ord("I"))) {
     menu_open = !menu_open;
     menu_tab  = 0;
@@ -118,6 +138,8 @@ if (stash_mode_open) {
             }
             stash_mode_index = clamp(stash_mode_index, 0, max(0, _right_count - 2));
         }
+        // Persist the deposit/withdraw immediately (stash is hub-only state).
+        if (room == rm_hub || room == rm_character_select) save_game();
     }
 
     if (keyboard_check_pressed(vk_escape) || keyboard_check_pressed(vk_backspace)) {
@@ -324,6 +346,8 @@ if (shop_open != -1 && !stash_mode_open) {
                         global.gold       += _sell_price;
                         sell_index         = clamp(sell_index, 0, max(0, _sl_count - 2));
                         shop_notification  = "Sold for +" + string(_sell_price) + "g!";
+                        // Persist the sale (gold + removed item) right away.
+                        if (room == rm_hub || room == rm_character_select) save_game();
                     }
                 }
             }
@@ -339,6 +363,8 @@ if (shop_open != -1 && !stash_mode_open) {
                 sell_index         = clamp(sell_index, 0, max(0, _sl_count - 2));
                 shop_notification  = "Sold for +" + string(_sell_price) + "g!";
                 sell_confirm_name  = "";
+                // Persist the sale (gold + removed item) right away.
+                if (room == rm_hub || room == rm_character_select) save_game();
             }
 
         } else {
@@ -399,6 +425,8 @@ if (shop_open != -1 && !stash_mode_open) {
                 }
                 audio_play_sound(utility2, 1, false);
                 shop_notification = "Purchased — added to consumable stash.";
+                // Persist the purchase (gold spent + new consumable) right away.
+                if (room == rm_hub || room == rm_character_select) save_game();
             } else {
                 shop_notification = "Not enough gold!";
             }
@@ -432,6 +460,8 @@ if (shop_open != -1 && !stash_mode_open) {
                 global.dorn_stock[shop_index].sold = true;
                 audio_play_sound(utility2, 1, false);
                 shop_notification = "Purchased — added to equipment stash.";
+                // Persist the purchase (gold spent + new gear) right away.
+                if (room == rm_hub || room == rm_character_select) save_game();
                 // Advance cursor to next non-sold item
                 var _nx = shop_index + 1;
                 while (_nx < _dorn_len && global.dorn_stock[_nx].sold) _nx++;
@@ -508,6 +538,100 @@ if (shop_open != -1 && !stash_mode_open) {
 if (trainer_open) {
     var _tr_class = variable_global_exists("chosen_class") ? global.chosen_class : 0;
 
+    // --- Trait-potency STAT PICKER sub-modal (tab 4) ------------------------
+    // Opened from tab 4: pick ANY stat to sacrifice 5 permanent points from
+    // (starting allocation + bought bonus). Intercepts all input while open.
+    // Row geometry MUST match ui_draw_trainer_statpick() in scr_ui.
+    if (variable_instance_exists(id, "trainer_statpick_open") && trainer_statpick_open) {
+        var _sp_stats = ["STR", "DEX", "CON", "INT", "WIS", "CHA"];
+        // Per-stat allocation of the 5 points to spend (distribute with - / +).
+        if (!variable_instance_exists(id, "trainer_statpick_alloc")
+            || array_length(trainer_statpick_alloc) != 6) {
+            trainer_statpick_alloc = [0, 0, 0, 0, 0, 0];
+        }
+        var _sp_total = 0;
+        for (var _ti = 0; _ti < 6; _ti++) _sp_total += trainer_statpick_alloc[_ti];
+
+        // Esc / right-click — cancel a pending confirm first, else close the picker.
+        if (keyboard_check_pressed(vk_escape) || keyboard_check_pressed(vk_backspace)
+            || mouse_check_button_pressed(mb_right)) {
+            if (trainer_statpick_confirm) { trainer_statpick_confirm = false; }
+            else { trainer_statpick_open = false; trainer_notification = ""; }
+            exit;
+        }
+
+        // W/S — move between stat rows.
+        if (keyboard_check_pressed(vk_up)   || keyboard_check_pressed(ord("W"))) trainer_statpick_cursor = (trainer_statpick_cursor - 1 + 6) mod 6;
+        if (keyboard_check_pressed(vk_down) || keyboard_check_pressed(ord("S"))) trainer_statpick_cursor = (trainer_statpick_cursor + 1) mod 6;
+
+        // A/D or Left/Right (and the on-row - / + buttons) adjust the highlighted stat.
+        var _dec     = keyboard_check_pressed(vk_left)  || keyboard_check_pressed(ord("A"));
+        var _inc     = keyboard_check_pressed(vk_right) || keyboard_check_pressed(ord("D"));
+        var _do_conf = keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_space);
+
+        // Mouse: rows + on-row -/+ buttons + the confirm bar. Geometry MUST match
+        // ui_draw_trainer_statpick() (scr_ui).
+        var _sp_px = 420, _sp_pw = 440, _sp_py = 170, _sp_ph = 440, _sp_y0 = 250, _sp_rh = 40;
+        if (mouse_check_button_pressed(mb_left)) {
+            var _spmx = device_mouse_x_to_gui(0);
+            var _spmy = device_mouse_y_to_gui(0);
+            var _minus_x = _sp_px + _sp_pw - 96;
+            var _plus_x  = _sp_px + _sp_pw - 48;
+            for (var _spi = 0; _spi < 6; _spi++) {
+                var _spry = _sp_y0 + _spi * _sp_rh;
+                if (_spmy >= _spry && _spmy < _spry + _sp_rh - 4
+                    && _spmx >= _sp_px + 16 && _spmx < _sp_px + _sp_pw - 16) {
+                    trainer_statpick_cursor = _spi;
+                    if      (_spmx >= _minus_x && _spmx < _minus_x + 32) _dec = true;
+                    else if (_spmx >= _plus_x  && _spmx < _plus_x  + 32) _inc = true;
+                    break;
+                }
+            }
+            // Confirm bar (only meaningful at total 5).
+            if (_spmy >= _sp_py + _sp_ph - 70 && _spmy < _sp_py + _sp_ph - 36
+                && _spmx >= _sp_px + 16 && _spmx < _sp_px + _sp_pw - 16) {
+                _do_conf = true;
+            }
+        }
+
+        // Apply +/- with caps: can't exceed a stat's available points, nor 5 total.
+        if (_dec || _inc) {
+            trainer_statpick_confirm = false;   // any change disarms the confirm
+            var _cs    = trainer_statpick_cursor;
+            var _avail = stat_available_points(_sp_stats[_cs]);
+            if (_dec && trainer_statpick_alloc[_cs] > 0) trainer_statpick_alloc[_cs] -= 1;
+            if (_inc && _sp_total < 5 && trainer_statpick_alloc[_cs] < _avail) trainer_statpick_alloc[_cs] += 1;
+            _sp_total = 0;
+            for (var _ti2 = 0; _ti2 < 6; _ti2++) _sp_total += trainer_statpick_alloc[_ti2];
+        }
+
+        // Confirm / commit.
+        if (_do_conf) {
+            var _sp_tier = trait_potency_tier(trainer_statpick_trait);
+            if (_sp_tier >= 5) {
+                trainer_statpick_open = false;
+                trainer_notification  = trainer_statpick_trait + " is already at max potency.";
+            } else if (_sp_total != 5) {
+                trainer_notification = "Allocate exactly 5 points to sacrifice (currently " + string(_sp_total) + ").";
+            } else if (!trainer_statpick_confirm) {
+                trainer_statpick_confirm = true;
+                trainer_notification = "Sacrifice these 5 points permanently? This cannot be undone.";
+            } else {
+                for (var _ci = 0; _ci < 6; _ci++) {
+                    if (trainer_statpick_alloc[_ci] > 0) stat_spend_permanent(_sp_stats[_ci], trainer_statpick_alloc[_ci]);
+                }
+                if (!variable_global_exists("trait_potency")) global.trait_potency = {};
+                variable_struct_set(global.trait_potency, trainer_statpick_trait, _sp_tier + 1);
+                save_game();
+                trainer_notification = trainer_statpick_trait + " potency raised to Tier " + string(_sp_tier + 1)
+                    + "  (+" + string((_sp_tier + 1) * 10) + "% strength).";
+                trainer_statpick_confirm = false;
+                trainer_statpick_open    = false;
+            }
+        }
+        exit;
+    }
+
     // Row count for the active tab (used for navigation + mouse hit-testing)
     var _tr_rows = 1;
     if (trainer_tab == 0)      _tr_rows = 6;
@@ -522,7 +646,7 @@ if (trainer_open) {
     // Esc / Backspace — cancel a pending confirm first, otherwise close the screen
     if (keyboard_check_pressed(vk_escape) || keyboard_check_pressed(vk_backspace)) {
         if (trainer_confirm) { trainer_confirm = false; trainer_notification = ""; }
-        else                 { trainer_open = false;    trainer_notification = ""; }
+        else                 { trainer_open = false; trainer_statpick_open = false; trainer_notification = ""; }
         exit;
     }
 
@@ -670,30 +794,21 @@ if (trainer_open) {
     else if (trainer_tab == 4) {
         var _ups  = trait_upgradable_list();
         var _up   = _ups[clamp(trainer_cursor, 0, array_length(_ups) - 1)];
-        var _pkey = perm_bonus_key(_up.stat);
-        var _have = (_pkey != "") ? variable_global_get(_pkey) : 0;
         var _tier = trait_potency_tier(_up.name);
 
+        // Choosing a trait opens the stat picker (handled at the top of this block):
+        // you sacrifice 5 points from ANY stat you choose, not a fixed one.
         if (_act) {
             if (_tier >= 5) {
                 trainer_notification = _up.name + " is already at max potency (Tier 5, +50%).";
-                trainer_confirm = false;
-            } else if (_have < 5) {
-                trainer_notification = "Need 5 permanent " + _up.stat + " to sacrifice — you have " + string(_have) + ".";
-                trainer_confirm = false;
             } else {
-                trainer_confirm = true;
-                trainer_notification = "Beware, what you are about to do can not be undone.";
+                trainer_statpick_open    = true;
+                trainer_statpick_trait   = _up.name;
+                trainer_statpick_cursor  = 0;
+                trainer_statpick_confirm = false;
+                trainer_statpick_alloc   = [0, 0, 0, 0, 0, 0];
+                trainer_notification     = "";
             }
-        }
-        if (_commit && trainer_confirm && _tier < 5 && _have >= 5) {
-            variable_global_set(_pkey, _have - 5);
-            if (!variable_global_exists("trait_potency")) global.trait_potency = {};
-            variable_struct_set(global.trait_potency, _up.name, _tier + 1);
-            save_game();
-            trainer_notification = _up.name + " potency raised to Tier " + string(_tier + 1)
-                + "  (+" + string((_tier + 1) * 10) + "% strength).";
-            trainer_confirm = false;
         }
     }
 
@@ -1255,6 +1370,10 @@ if (mouse_check_button_pressed(mb_left)) {
                         equip_notif_timer = 150;
                         audio_play_sound(Check_1, 1, false);
                         equip_picker_open = false;
+                        // Persist the equip — but only in the hub, where both the slot
+                        // and the source (stash) are saved. Mid-run equips stay unsaved
+                        // so an abandoned run reverts cleanly (carried pack isn't saved).
+                        if (room == rm_hub || room == rm_character_select) save_game();
                     }
                     break;
                 }
@@ -1291,9 +1410,11 @@ if (mouse_check_button_pressed(mb_left)) {
                     }
                     if (_mcan && _mci < array_length(global.consumable_inventory)) {
                         var _mit = global.consumable_inventory[_mci];
+                        var _mused = false;
                         if (instance_exists(obj_combat_controller)) {
                             var _mctrl2 = instance_find(obj_combat_controller, 0);
                             var _mplyr  = _mctrl2.player;
+                            _mused = true;
                             if (_mit.effect_type == "heal") {
                                 var _mheal = min(_mplyr.max_HP - _mplyr.HP, _mit.effect_value);
                                 _mplyr.HP += _mheal;
@@ -1316,10 +1437,16 @@ if (mouse_check_button_pressed(mb_left)) {
                             } else {
                                 items_used_this_turn++;
                             }
+                        } else {
+                            // Out of combat: heals apply to the persistent run HP;
+                            // non-heal items have no effect here and are not consumed.
+                            _mused = consumable_use_out_of_combat(_mit);
                         }
-                        array_delete(global.consumable_inventory, _mci, 1);
-                        consumable_submenu_cursor = min(_mci, max(0, array_length(global.consumable_inventory)-1));
-                        if (array_length(global.consumable_inventory) == 0) consumable_submenu_open = false;
+                        if (_mused) {
+                            array_delete(global.consumable_inventory, _mci, 1);
+                            consumable_submenu_cursor = min(_mci, max(0, array_length(global.consumable_inventory)-1));
+                            if (array_length(global.consumable_inventory) == 0) consumable_submenu_open = false;
+                        }
                     }
                 } else {
                     consumable_submenu_cursor = _mci;
@@ -1338,13 +1465,23 @@ if (menu_tab == 1) {
     var _slot_keys = ["weapon", "offhand", "helm", "chest", "gloves", "boots", "amulet", "ring"];
 
     if (!equip_picker_open) {
-        // W/S cycles slot cursor with wrap-around (8 slots total)
+        // Grid navigation: 2 columns of 4 (col = slot div 4, row = slot mod 4).
+        // W/S move up/down within the current column; A/D switch columns laterally.
+        var _eq_row = equip_slot_selected mod 4;
+        var _eq_col = equip_slot_selected div 4;
         if (keyboard_check_pressed(ord("W")) || keyboard_check_pressed(vk_up)) {
-            equip_slot_selected = (equip_slot_selected - 1 + 8) mod 8;
+            _eq_row = (_eq_row - 1 + 4) mod 4;
         }
         if (keyboard_check_pressed(ord("S")) || keyboard_check_pressed(vk_down)) {
-            equip_slot_selected = (equip_slot_selected + 1) mod 8;
+            _eq_row = (_eq_row + 1) mod 4;
         }
+        if (keyboard_check_pressed(ord("A")) || keyboard_check_pressed(vk_left)) {
+            _eq_col = 0;
+        }
+        if (keyboard_check_pressed(ord("D")) || keyboard_check_pressed(vk_right)) {
+            _eq_col = 1;
+        }
+        equip_slot_selected = _eq_col * 4 + _eq_row;
 
         // Enter opens the item picker for this slot
         if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)) {
@@ -1363,6 +1500,9 @@ if (menu_tab == 1) {
                 } else {
                     array_push(global.carried_items, _old);
                 }
+                // Persist the unequip only in the hub. Mid-run the item goes to the
+                // un-saved carried pack, so saving an empty slot here would lose it.
+                if (_in_hub) save_game();
             }
         }
 
@@ -1433,6 +1573,9 @@ if (menu_tab == 1) {
             equip_notif_timer = 150;
             audio_play_sound(Check_1, 1, false);
             equip_picker_open = false;
+            // Persist the equip only in the hub (see unequip/Maren notes above):
+            // mid-run the source is the un-saved carried pack.
+            if (_picker_in_hub) save_game();
             } // end class_req else block
         }
 
@@ -1483,9 +1626,11 @@ if (menu_tab == 3) {
             }
             if (_can_use && _cons_cnt > 0 && consumable_submenu_cursor < _cons_cnt) {
                 var _item = global.consumable_inventory[consumable_submenu_cursor];
+                var _used = false;
                 if (instance_exists(obj_combat_controller)) {
                     var _ctrl_c = instance_find(obj_combat_controller, 0);
                     var _player = _ctrl_c.player;
+                    _used = true;
                     if (_item.effect_type == "heal") {
                         var _heal = min(_player.max_HP - _player.HP, _item.effect_value);
                         _player.HP += _heal;
@@ -1508,12 +1653,18 @@ if (menu_tab == 3) {
                     } else {
                         items_used_this_turn++;
                     }
+                } else {
+                    // Out of combat (hub / floor map): apply heals to the persistent
+                    // run HP. Items with no out-of-combat effect are NOT consumed.
+                    _used = consumable_use_out_of_combat(_item);
                 }
-                array_delete(global.consumable_inventory, consumable_submenu_cursor, 1);
-                consumable_submenu_cursor = min(consumable_submenu_cursor,
-                    max(0, array_length(global.consumable_inventory) - 1));
-                if (array_length(global.consumable_inventory) == 0) {
-                    consumable_submenu_open = false;
+                if (_used) {
+                    array_delete(global.consumable_inventory, consumable_submenu_cursor, 1);
+                    consumable_submenu_cursor = min(consumable_submenu_cursor,
+                        max(0, array_length(global.consumable_inventory) - 1));
+                    if (array_length(global.consumable_inventory) == 0) {
+                        consumable_submenu_open = false;
+                    }
                 }
             }
         }

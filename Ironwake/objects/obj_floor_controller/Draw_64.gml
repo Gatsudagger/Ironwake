@@ -131,25 +131,22 @@ for (var _i = 0; _i < _count; _i++) {
         case "shrine":          _tc = make_color_rgb(210, 170, 90); break;
     }
 
-    // Node fill — four states: cleared / dead (faded) / enterable / future
+    // Node fill — OPAQUE so the busy floor background never bleeds through and
+    // makes labels hard to read. State is conveyed by fill brightness (and the
+    // border color below) rather than transparency.
+    draw_set_alpha(1.0);
     if (_room.cleared) {
-        draw_set_alpha(0.35);
-        draw_set_color(make_color_rgb(20, 22, 32));
+        draw_set_color(make_color_rgb(16, 18, 26));
     } else if (_dead) {
-        draw_set_alpha(0.12);
-        draw_set_color(make_color_rgb(18, 20, 28));
+        draw_set_color(make_color_rgb(12, 13, 20));
     } else if (_is_sel) {
-        draw_set_alpha(1.0);
-        draw_set_color(make_color_rgb(28, 42, 68));
+        draw_set_color(make_color_rgb(30, 46, 74));
     } else if (_acc) {
-        draw_set_alpha(0.82);
-        draw_set_color(make_color_rgb(22, 28, 48));
+        draw_set_color(make_color_rgb(24, 32, 54));
     } else { // future
-        draw_set_alpha(0.4);
-        draw_set_color(make_color_rgb(20, 24, 38));
+        draw_set_color(make_color_rgb(18, 22, 34));
     }
     draw_rectangle(_nx, _ny, _nx + _NW, _ny + _NH, false);
-    draw_set_alpha(1.0);
 
     // Node border (no white select ring on a dead room — it isn't selectable)
     if (_is_sel && !_dead) {
@@ -441,6 +438,9 @@ if (showing_event) {
 
     event_timer++;
 
+    // Ornate gothic rim around the notice (content is centred, well inside the opening).
+    ui_draw_gothic_frame(20, 20, 1260, 700, 20);
+
     draw_set_halign(fa_left);
     draw_set_valign(fa_top);
 }
@@ -450,6 +450,8 @@ if (showing_event) {
 // 6b. SHRINE OF TRIBUTE — interactive boon-purchase overlay
 // -----------------------------------------------------------------------------
 if (showing_shrine) {
+    var _is_curse = (shrine_kind == "curse");
+
     draw_set_alpha(0.95);
     draw_set_color(c_black);
     draw_rectangle(0, 0, 1280, 720, false);
@@ -457,10 +459,17 @@ if (showing_shrine) {
 
     draw_set_halign(fa_center);
     draw_set_valign(fa_top);
-    draw_set_color(make_color_rgb(220, 185, 110));
-    draw_text_transformed(640, 56, "Shrine of Tribute", 1.8, 1.8, 0);
-    draw_set_color(make_color_rgb(165, 168, 188));
-    draw_text(640, 108, "Offer tribute for a boon that lasts this run. Boons vanish when the run ends.");
+    if (_is_curse) {
+        draw_set_color(make_color_rgb(205, 70, 70));
+        draw_text_transformed(640, 56, "Cursed Altar", 1.8, 1.8, 0);
+        draw_set_color(make_color_rgb(195, 160, 170));
+        draw_text(640, 108, "Embrace a curse to grow richer in spoils. Its burden lasts the whole run.");
+    } else {
+        draw_set_color(make_color_rgb(220, 185, 110));
+        draw_text_transformed(640, 56, "Shrine of Tribute", 1.8, 1.8, 0);
+        draw_set_color(make_color_rgb(165, 168, 188));
+        draw_text(640, 108, "Offer tribute for a boon that lasts this run. Boons vanish when the run ends.");
+    }
     var _sg  = global.gold;
     var _sdu = variable_global_exists("rune_dust") ? global.rune_dust : 0;
     draw_set_color(make_color_rgb(210, 200, 150));
@@ -469,45 +478,69 @@ if (showing_shrine) {
     var _sn = array_length(shrine_offers);
     if (_sn == 0) {
         draw_set_color(make_color_rgb(150, 150, 170));
-        draw_text(640, 320, "You already carry every boon. (Esc to leave.)");
+        draw_text(640, 320, _is_curse
+            ? "No curse remains to bind here. (Esc to leave.)"
+            : "You already carry every boon. (Esc to leave.)");
     } else {
         draw_set_halign(fa_left);
         for (var _i = 0; _i < _sn; _i++) {
-            var _bd  = boon_get(shrine_offers[_i]);
-            var _ry  = 196 + _i * 108;
+            var _ry   = 196 + _i * 108;
             var _ssel = (_i == shrine_cursor);
-            draw_set_color(_ssel ? make_color_rgb(45, 38, 22) : make_color_rgb(22, 20, 16));
-            draw_rectangle(220, _ry, 1060, _ry + 96, false);
-            draw_set_color(_ssel ? make_color_rgb(220, 185, 110) : make_color_rgb(70, 62, 45));
-            draw_rectangle(220, _ry, 1060, _ry + 96, true);
 
-            draw_set_color(make_color_rgb(235, 215, 150));
-            draw_text_transformed(240, _ry + 10, _bd.name, 1.2, 1.2, 0);
-            draw_set_color(make_color_rgb(190, 195, 210));
-            draw_text(240, _ry + 42, _bd.desc);
+            if (_is_curse) {
+                var _cd = curse_get(shrine_offers[_i]);
+                draw_set_color(_ssel ? make_color_rgb(48, 22, 22) : make_color_rgb(20, 14, 14));
+                draw_rectangle(220, _ry, 1060, _ry + 96, false);
+                draw_set_color(_ssel ? make_color_rgb(205, 80, 80) : make_color_rgb(80, 45, 45));
+                draw_rectangle(220, _ry, 1060, _ry + 96, true);
 
-            var _gold_ok = _sg >= _bd.cost;
-            var _dc      = boon_dust_cost(_bd.cost);
-            var _dust_ok = _sdu >= _dc;
-            var _ipick   = boon_item_tribute_pick(_bd.cost);
-            draw_set_color(_gold_ok ? make_color_rgb(150, 220, 150) : make_color_rgb(150, 110, 110));
-            draw_text(240, _ry + 68, "[1] " + string(_bd.cost) + "g");
-            draw_set_color(_dust_ok ? make_color_rgb(150, 220, 150) : make_color_rgb(150, 110, 110));
-            draw_text(360, _ry + 68, "[2] " + string(_dc) + " dust");
-            draw_set_color((_ipick != undefined) ? make_color_rgb(150, 220, 150) : make_color_rgb(150, 110, 110));
-            draw_text(520, _ry + 68, (_ipick != undefined)
-                ? ("[3] Sacrifice " + _ipick.item.name + " (" + item_rarity_name(_ipick.item.rarity) + ")")
-                : "[3] No item valuable enough");
+                draw_set_color(make_color_rgb(235, 130, 130));
+                draw_text_transformed(240, _ry + 10, _cd.name, 1.2, 1.2, 0);
+                draw_set_color(make_color_rgb(210, 160, 160));
+                draw_text(240, _ry + 44, "Curse:  " + _cd.desc);
+                draw_set_color(make_color_rgb(150, 220, 150));
+                draw_text(240, _ry + 68, "Reward: " + _cd.reward);
+            } else {
+                var _bd = boon_get(shrine_offers[_i]);
+                draw_set_color(_ssel ? make_color_rgb(45, 38, 22) : make_color_rgb(22, 20, 16));
+                draw_rectangle(220, _ry, 1060, _ry + 96, false);
+                draw_set_color(_ssel ? make_color_rgb(220, 185, 110) : make_color_rgb(70, 62, 45));
+                draw_rectangle(220, _ry, 1060, _ry + 96, true);
+
+                draw_set_color(make_color_rgb(235, 215, 150));
+                draw_text_transformed(240, _ry + 10, _bd.name, 1.2, 1.2, 0);
+                draw_set_color(make_color_rgb(190, 195, 210));
+                draw_text(240, _ry + 42, _bd.desc);
+
+                var _gold_ok = _sg >= _bd.cost;
+                var _dc      = boon_dust_cost(_bd.cost);
+                var _dust_ok = _sdu >= _dc;
+                var _ipick   = boon_item_tribute_pick(_bd.cost);
+                draw_set_color(_gold_ok ? make_color_rgb(150, 220, 150) : make_color_rgb(150, 110, 110));
+                draw_text(240, _ry + 68, "[1] " + string(_bd.cost) + "g");
+                draw_set_color(_dust_ok ? make_color_rgb(150, 220, 150) : make_color_rgb(150, 110, 110));
+                draw_text(360, _ry + 68, "[2] " + string(_dc) + " dust");
+                draw_set_color((_ipick != undefined) ? make_color_rgb(150, 220, 150) : make_color_rgb(150, 110, 110));
+                draw_text(520, _ry + 68, (_ipick != undefined)
+                    ? ("[3] Sacrifice " + _ipick.item.name + " (" + item_rarity_name(_ipick.item.rarity) + ")")
+                    : "[3] No item valuable enough");
+            }
         }
         draw_set_halign(fa_center);
     }
 
     if (shrine_notification != "") {
-        draw_set_color(make_color_rgb(225, 200, 150));
+        draw_set_color(_is_curse ? make_color_rgb(225, 150, 150) : make_color_rgb(225, 200, 150));
         draw_text(640, 556, shrine_notification);
     }
     draw_set_color(c_ltgray);
-    draw_text(640, 660, "W/S: Select     1: Gold     2: Dust     3: Item     Esc: Leave");
+    draw_text(640, 660, _is_curse
+        ? "W/S: Select     Enter: Embrace the curse     Esc: Leave"
+        : "W/S: Select     1: Gold     2: Dust     3: Item     Esc: Leave");
+
+    // Ornate gothic rim (title y56, offer rows x220..1060, hint y660 — all inside the opening).
+    ui_draw_gothic_frame(20, 20, 1260, 700, 20);
+
     draw_set_halign(fa_left);
     draw_set_valign(fa_top);
 }
@@ -595,6 +628,9 @@ if (showing_event_choice && event_active != undefined) {
         draw_text(640, 648, "W/S: Select     Enter: Choose");
     }
 
+    // Ornate gothic rim (choice rows x220..1060, hint y648 — all inside the opening).
+    ui_draw_gothic_frame(20, 20, 1260, 700, 20);
+
     draw_set_halign(fa_left);
     draw_set_valign(fa_top);
 }
@@ -639,3 +675,6 @@ ui_draw_item_picker();
 // otherwise host the settings overlay during a run)
 if (variable_global_exists("settings_open") && global.settings_open) ui_draw_settings_overlay();
 ui_draw_pause_menu();
+
+// Onboarding coach-mark — drawn last so it sits on top of the floor + shrine overlay.
+ui_draw_tutorial_tip();

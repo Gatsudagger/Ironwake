@@ -208,6 +208,12 @@ if (_boon_hpm != 1.0) {
     player.max_HP = max(1, round(player.max_HP * _boon_hpm));
     player.HP     = min(player.HP, player.max_HP);
 }
+// Curses: Frail / Ruin / Devil's Pact reduce max HP (devil's bargain).
+var _curse_hpm = curse_maxhp_mult();
+if (_curse_hpm != 1.0) {
+    player.max_HP = max(1, round(player.max_HP * _curse_hpm));
+    player.HP     = min(player.HP, player.max_HP);
+}
 player.dodge += _equip_bonus.dodge_flat;
 // crit_flat stored in stats so combat_roll_crit can read it from attacker_stats
 player.stats.crit_bonus = _equip_bonus.crit_flat;
@@ -264,6 +270,13 @@ if (player.weapon_start_shield > 0) {
 // and after HP restoration (Thick Skin adds to the restored HP value).
 if (variable_global_exists("player_traits")) {
     combat_apply_start_traits(player);
+}
+
+// Damnation curse: begin every combat at a reduced HP fraction (applied last, after
+// all max-HP changes and start-of-combat heals/shields are resolved).
+var _dmn_frac = curse_combat_start_hp_frac();
+if (_dmn_frac < 1.0) {
+    player.HP = min(player.HP, ceil(player.max_HP * _dmn_frac));
 }
 
 
@@ -484,6 +497,23 @@ for (var _ei = 0; _ei < array_length(enemies); _ei++) {
     _e.telegraph_damage = round(_e.telegraph_damage * _diff_mult);
 }
 
+// -----------------------------------------------------------------------------
+// CURSE PASS — opt-in run difficulty (devil's bargain). Doom buffs enemy HP;
+// Savagery/Doom/Devil's Pact buff enemy damage. Stacks on top of ascendance +
+// difficulty. See SYSTEMS_CURSES.md.
+// -----------------------------------------------------------------------------
+var _curse_ehp = curse_enemy_hp_mult();
+var _curse_edm = curse_enemy_damage_mult();
+if (_curse_ehp != 1.0 || _curse_edm != 1.0) {
+    for (var _ei = 0; _ei < array_length(enemies); _ei++) {
+        var _e = enemies[_ei];
+        _e.max_HP           = round(_e.max_HP * _curse_ehp);
+        _e.HP               = _e.max_HP;
+        _e.damage           = round(_e.damage * _curse_edm);
+        _e.telegraph_damage = round(_e.telegraph_damage * _curse_edm);
+    }
+}
+
 // Placeholder stats structs (initiative sort), status arrays, and combat
 // classification (reach + kind) for every enemy in the encounter.
 for (var _ei = 0; _ei < array_length(enemies); _ei++) {
@@ -592,11 +622,14 @@ screen_shake_timer = 0;
 screen_shake_x     = 0;
 screen_shake_y     = 0;
 
-// VFX impact sprite — drawn at hit position for a few frames
-vfx_timer = 0;
-vfx_spr   = -1;
-vfx_x     = 0;
-vfx_y     = 0;
+// VFX impact sprite — drawn at hit position for a few frames.
+// vfx_timer_max holds the value vfx_timer was set to, so the Draw event can map
+// the countdown onto the sprite's sub-images (multi-frame Gigapack effects).
+vfx_timer     = 0;
+vfx_timer_max = 0;
+vfx_spr       = -1;
+vfx_x         = 0;
+vfx_y         = 0;
 
 // Hit flash counters on each combatant struct (counts down from 15)
 player.hit_flash = 0;

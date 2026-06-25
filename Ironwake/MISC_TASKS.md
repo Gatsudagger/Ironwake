@@ -125,14 +125,14 @@ Captured 2026-06-23. Unverified-in-IDE; each item is a request/bug report to be 
 
 ## 5. Art / Visual Assets
 
-- [~] **Combat background screens per dungeon.** IN PROGRESS — system built + 3 of 9 done.
-  Per-floor arenas (3 floors × 3 dungeons), keyed by `global.current_floor`. DONE: floor-1 arenas for
-  all 3 dungeons (`spr_combatbg_ashen_1` / `_scorched_1` / `_tundra_1`, PixelLab, 400×224 stretched).
-  REMAINING: floors 2-3 for each dungeon (6 more). Render wiring + fallback already live
+- [x] **Combat background screens per dungeon.** DONE — all 9 of 9 (verify in-IDE).
+  Per-floor arenas (3 floors × 3 dungeons), keyed by `global.current_floor`: `spr_combatbg_<ashen|
+  scorched|tundra>_<1|2|3>` (PixelLab, 400×224 stretched to 1280×720). All on disk, registered in
+  `.yyp`, and in `global.__sprite_includes` (anti-strip). Render wiring + fallback live
   (`dungeon_bg_draw("combat",0.30)` in `obj_combat_controller/Draw_64`). See memory project_dungeon_backgrounds.
-- [~] **Dungeon-floor "rooms" screen art, per dungeon.** IN PROGRESS — wiring live, art pending.
-  `dungeon_bg_draw("floormap",0.45)` in `obj_floor_controller/Draw_64` already falls back to flat fill;
-  needs `spr_floormap_ashen` / `_scorched` / `_tundra` (1 per dungeon, not yet generated).
+- [x] **Dungeon-floor "rooms" screen art, per dungeon.** DONE (verify in-IDE).
+  `spr_floormap_ashen` / `_scorched` / `_tundra` generated, registered in `.yyp` + `__sprite_includes`.
+  `dungeon_bg_draw("floormap",0.45)` in `obj_floor_controller/Draw_64` draws them (flat-fill fallback if missing).
 - [ ] **Vael portrait-change feature.** Vael should let players change their portrait for **100g**.
   - More portrait images have been added to the folder.
   - Update **character-creation portrait selection** AND wire up **Vael's new portrait-change option**.

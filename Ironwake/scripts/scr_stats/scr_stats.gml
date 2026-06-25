@@ -354,6 +354,7 @@ function end_run(result) {
     global.current_floor       = 1;
     global.floor_rooms_cleared = [];
     global.run_boons           = [];   // boons last one run only — clear for the next
+    global.run_curses          = [];   // curses also last one run only (devil's bargain)
 
     // §6 variety: re-roll the floor seed for the NEXT run. Previously run_seed was
     // set once per session (obj_floor_controller Create) and never changed, so every
@@ -558,6 +559,53 @@ function create_consumable(name, effect_type, effect_value, description, gold_va
         description:   description,
         gold_value:    gold_value
     };
+}
+
+// ---------------------------------------------------------------------------
+// out_of_combat_max_hp() — the player's max HP outside combat, mirroring the
+// read-only stats view the character menu builds (base stats + equipment + run
+// XP bonuses + permanent meta bonuses). Used to cap heals applied on the hub /
+// floor map where there is no combat player object to read max_HP from.
+// ---------------------------------------------------------------------------
+function out_of_combat_max_hp() {
+    if (!variable_global_exists("chosen_stats") || is_undefined(global.chosen_stats)) return 1;
+    var _b  = global.chosen_stats;
+    var _sv = {
+        class_id: _b.class_id, class_name: _b.class_name,
+        STR: _b.STR, DEX: _b.DEX, CON: _b.CON, INT: _b.INT, WIS: _b.WIS, CHA: _b.CHA,
+        free_points: _b.free_points,
+    };
+    var _bonus = apply_equipment_stats(_sv);
+    if (variable_global_exists("run_stat_bonuses")) {
+        _sv.STR += global.run_stat_bonuses.STR; _sv.DEX += global.run_stat_bonuses.DEX;
+        _sv.CON += global.run_stat_bonuses.CON; _sv.INT += global.run_stat_bonuses.INT;
+        _sv.WIS += global.run_stat_bonuses.WIS; _sv.CHA += global.run_stat_bonuses.CHA;
+    }
+    if (variable_global_exists("perm_str_bonus")) {
+        _sv.STR += global.perm_str_bonus; _sv.DEX += global.perm_dex_bonus;
+        _sv.CON += global.perm_con_bonus; _sv.INT += global.perm_int_bonus;
+        _sv.WIS += global.perm_wis_bonus; _sv.CHA += global.perm_cha_bonus;
+    }
+    return stats_derive(_sv).HP + _bonus.bonus_max_hp;
+}
+
+// ---------------------------------------------------------------------------
+// consumable_use_out_of_combat(item) — apply a consumable when NO combat is
+// active (hub / floor map). Returns true if it was used (caller should remove
+// it), false if it has no effect here so the item is NOT wasted. Only direct
+// heals work out of combat; AP/cleanse/shield/heal-over-time need combat turns.
+// ---------------------------------------------------------------------------
+function consumable_use_out_of_combat(item) {
+    var _et = variable_struct_exists(item, "effect_type") ? item.effect_type : "";
+    if (_et == "heal") {
+        var _max = out_of_combat_max_hp();
+        if (!variable_global_exists("run_current_hp") || global.run_current_hp <= 0) {
+            global.run_current_hp = _max;
+        }
+        global.run_current_hp = min(_max, global.run_current_hp + item.effect_value);
+        return true;
+    }
+    return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -1020,8 +1068,9 @@ function handle_enemy_drops(enemy_type) {
     if (!variable_global_exists("rune_inventory")) global.rune_inventory = [];
     if (!variable_global_exists("rune_dust"))      global.rune_dust      = 0;
 
-    // Drop rarity scales with the awakening tier of the current run.
-    var _drop_asc = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
+    // Drop rarity scales with the awakening tier of the current run, plus any
+    // loot-tier bonus from active curses (devil's bargain — better loot for risk).
+    var _drop_asc = (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0) + curse_loot_asc_bonus();
 
     // Rune drops (additive to gear/consumable). Standard: none. Elite: ~6% Tier I.
     // Boss: guaranteed, with a 20% chance to be Tier II. Tier III is craft-only.
@@ -1043,6 +1092,7 @@ function handle_enemy_drops(enemy_type) {
     if (enemy_type == "elite")     _dust_gain = 2;
     else if (enemy_type == "boss") _dust_gain = 6;
     if (_dust_gain > 0 && boon_active("runic")) _dust_gain = round(_dust_gain * (1 + boon_value("runic")));
+    if (_dust_gain > 0) _dust_gain = round(_dust_gain * curse_dust_mult());   // curse rune-dust reward
     if (_dust_gain > 0) global.rune_dust += _dust_gain;
 
     // Combined log fragment appended to whatever gear/consumable also dropped.
@@ -1055,7 +1105,7 @@ function handle_enemy_drops(enemy_type) {
         // so higher tiers lean on boons/shops instead of drowning in heals.
         var _cons_chance = max(5, 10 - _drop_asc);
         if (trait_active("Lucky Find")) _cons_chance += 5;   // Lucky Find: +5%
-        if (irandom(99) < _cons_chance) {
+        if (!curse_blocks_consumables() && irandom(99) < _cons_chance) {   // Famine curse: no consumable drops
             var _c = roll_consumable_weighted(global.consumables_standard);
             array_push(global.run_items_found, _c);
             array_push(global.consumable_inventory, _c);
@@ -1074,7 +1124,7 @@ function handle_enemy_drops(enemy_type) {
         // Awakening taper (60% − 4%/tier, min 40%) + Lucky Find +5%.
         var _elite_cons_chance = max(40, 60 - _drop_asc * 4);
         if (trait_active("Lucky Find")) _elite_cons_chance += 5;
-        if (irandom(99) < _elite_cons_chance) {
+        if (!curse_blocks_consumables() && irandom(99) < _elite_cons_chance) {   // Famine curse: no consumable drops
             var _c = roll_consumable_weighted(global.consumables_elite);
             array_push(global.run_items_found, _c);
             array_push(global.consumable_inventory, _c);
@@ -1096,8 +1146,8 @@ function handle_enemy_drops(enemy_type) {
         array_push(global.carried_items, _item);
         discover_item(item_base_name(_item));
         var _result = _item.name + " [" + item_rarity_name(_item.rarity) + "]";
-        // 50% bonus consumable
-        if (irandom(99) < 50) {
+        // 50% bonus consumable (suppressed by the Famine curse)
+        if (!curse_blocks_consumables() && irandom(99) < 50) {
             var _c = roll_consumable_weighted(global.consumables_elite);
             array_push(global.run_items_found, _c);
             array_push(global.consumable_inventory, _c);
@@ -2060,6 +2110,229 @@ function boon_pay(id, method) {
 }
 
 // =============================================================================
+// CURSES — "Devil's Bargain". The inverse of boons: accept a run-long PENALTY in
+// exchange for a run-long REWARD boost (better loot + more gold/dust). No up-front
+// cost — the price is the added difficulty. Offered at Curse altars (a Shrine room
+// rolls as either a Blessing altar = boons, or a Curse altar = curses). Free to
+// stack; locked once accepted; reset every run (in end_run). See SYSTEMS_CURSES.md.
+// global.run_curses holds active curse ids; effects are queried via curse_active.
+// =============================================================================
+
+function curse_catalog() {
+    // tier:   1 = always offered, 2 = needs awakening >=2, 3 = needs awakening >=4
+    // loot:   tiers ADDED to the awakening fed into drop_weights (better loot)
+    // gold:   additive gold-find multiplier (e.g. 0.40 = +40%)
+    // dust:   additive rune-dust multiplier
+    return [
+        { id:"frail",      name:"Frail",        tier:1, desc:"-20% max HP",                          reward:"+40% gold found",                          loot:0, gold:0.40, dust:0.00 },
+        { id:"famine",     name:"Famine",       tier:1, desc:"No consumable drops this run",         reward:"+60% rune dust",                           loot:0, gold:0.00, dust:0.60 },
+        { id:"exposed",    name:"Exposed",      tier:1, desc:"Take +15% damage",                      reward:"Loot rarity +1 tier",                      loot:1, gold:0.00, dust:0.00 },
+        { id:"bloodprice", name:"Blood Price",  tier:2, desc:"Lose 4 HP at the start of each turn",   reward:"+50% gold & rune dust",                    loot:0, gold:0.50, dust:0.50 },
+        { id:"savagery",   name:"Savagery",     tier:2, desc:"Enemies deal +20% damage",             reward:"Loot rarity +1 tier, +25% gold",           loot:1, gold:0.25, dust:0.00 },
+        { id:"withered",   name:"Withered",     tier:2, desc:"-50% healing received",                reward:"Loot rarity +1 tier",                      loot:1, gold:0.00, dust:0.00 },
+        { id:"doom",       name:"Doom",         tier:3, desc:"Enemies have +25% HP and +15% damage", reward:"Loot rarity +2 tiers",                     loot:2, gold:0.00, dust:0.00 },
+        { id:"damnation",  name:"Damnation",    tier:3, desc:"Start each combat at 65% HP",          reward:"Loot rarity +2 tiers, +40% gold",          loot:2, gold:0.40, dust:0.00 },
+        { id:"ruin",       name:"Ruin",         tier:3, desc:"-30% max HP and +10% damage taken",    reward:"Loot rarity +2 tiers, +50% rune dust",     loot:2, gold:0.00, dust:0.50 },
+        { id:"devilspact", name:"Devil's Pact", tier:3, desc:"Enemies +20% damage; you -15% max HP", reward:"Loot +2 tiers; bonus drop from every elite & boss", loot:2, gold:0.00, dust:0.00 },
+    ];
+}
+
+function curse_get(id) {
+    var _c = curse_catalog();
+    for (var _i = 0; _i < array_length(_c); _i++) if (_c[_i].id == id) return _c[_i];
+    return undefined;
+}
+
+function curse_active(id) {
+    if (!variable_global_exists("run_curses")) return false;
+    for (var _i = 0; _i < array_length(global.run_curses); _i++) if (global.run_curses[_i] == id) return true;
+    return false;
+}
+
+function curse_grant(id) {
+    if (!variable_global_exists("run_curses")) global.run_curses = [];
+    if (!curse_active(id)) array_push(global.run_curses, id);
+    save_game();
+}
+
+// Higher-tier curses unlock with meta progression (matches the skin gate idiom).
+function curse_tier_available(tier) {
+    if (tier <= 1) return true;
+    var _awk = highest_awakening_unlocked();
+    if (tier == 2) return _awk >= 2;
+    return _awk >= 4;   // tier 3
+}
+
+// Accept a curse for free (the difficulty IS the cost). "" on success else reason.
+function curse_accept(id) {
+    var _c = curse_get(id);
+    if (_c == undefined) return "Unknown curse.";
+    if (curse_active(id)) return "Already bound.";
+    if (!curse_tier_available(_c.tier)) return "Not yet attainable.";
+    curse_grant(id);
+    return "";
+}
+
+// Roll up to 3 distinct, tier-available curses the player doesn't already carry.
+function curse_offer_roll() {
+    var _cat = curse_catalog();
+    var _pool = [];
+    for (var _i = 0; _i < array_length(_cat); _i++) {
+        if (curse_active(_cat[_i].id)) continue;
+        if (!curse_tier_available(_cat[_i].tier)) continue;
+        array_push(_pool, _cat[_i].id);
+    }
+    // Fisher-Yates partial shuffle
+    for (var _i = array_length(_pool) - 1; _i > 0; _i--) {
+        var _j = irandom(_i);
+        var _t = _pool[_i]; _pool[_i] = _pool[_j]; _pool[_j] = _t;
+    }
+    var _out = [];
+    for (var _i = 0; _i < min(3, array_length(_pool)); _i++) array_push(_out, _pool[_i]);
+    return _out;
+}
+
+// --- Penalty multipliers (parallel the boon_* hooks) -----------------------
+// Max-HP multiplier from curses (Frail -20%, Ruin -30%, Devil's Pact -15%).
+function curse_maxhp_mult() {
+    var _m = 1.0;
+    if (curse_active("frail"))      _m -= 0.20;
+    if (curse_active("ruin"))       _m -= 0.30;
+    if (curse_active("devilspact")) _m -= 0.15;
+    return max(0.20, _m);   // never reduce below 20% so the run stays playable
+}
+
+// Incoming-damage multiplier from curses (Exposed +15%, Ruin +10%).
+function curse_incoming_mult() {
+    var _m = 1.0;
+    if (curse_active("exposed")) _m += 0.15;
+    if (curse_active("ruin"))    _m += 0.10;
+    return _m;
+}
+
+// Enemy max-HP multiplier (Doom +25%).
+function curse_enemy_hp_mult() {
+    return curse_active("doom") ? 1.25 : 1.0;
+}
+
+// Enemy outgoing-damage multiplier (Savagery +20%, Doom +15%, Devil's Pact +20%).
+function curse_enemy_damage_mult() {
+    var _m = 1.0;
+    if (curse_active("savagery"))   _m += 0.20;
+    if (curse_active("doom"))       _m += 0.15;
+    if (curse_active("devilspact")) _m += 0.20;
+    return _m;
+}
+
+// --- Reward multipliers ----------------------------------------------------
+// Loot-tier bonus added to the awakening fed into drop_weights (sums all curses).
+function curse_loot_asc_bonus() {
+    if (!variable_global_exists("run_curses")) return 0;
+    var _b = 0;
+    var _cat = curse_catalog();
+    for (var _i = 0; _i < array_length(_cat); _i++) {
+        if (curse_active(_cat[_i].id)) _b += _cat[_i].loot;
+    }
+    return _b;
+}
+
+// Gold-find multiplier from curses (additive, 1.0 = no change).
+function curse_gold_mult() {
+    if (!variable_global_exists("run_curses")) return 1.0;
+    var _m = 1.0;
+    var _cat = curse_catalog();
+    for (var _i = 0; _i < array_length(_cat); _i++) {
+        if (curse_active(_cat[_i].id)) _m += _cat[_i].gold;
+    }
+    return _m;
+}
+
+// Rune-dust multiplier from curses (additive, 1.0 = no change).
+function curse_dust_mult() {
+    if (!variable_global_exists("run_curses")) return 1.0;
+    var _m = 1.0;
+    var _cat = curse_catalog();
+    for (var _i = 0; _i < array_length(_cat); _i++) {
+        if (curse_active(_cat[_i].id)) _m += _cat[_i].dust;
+    }
+    return _m;
+}
+
+// --- Misc penalty queries --------------------------------------------------
+function curse_blocks_consumables()   { return curse_active("famine"); }                 // Famine
+function curse_heal_mult()            { return curse_active("withered") ? 0.50 : 1.0; }  // Withered -50% healing
+function curse_combat_start_hp_frac() { return curse_active("damnation") ? 0.65 : 1.0; } // Damnation
+function curse_turn_hp_drain()        { return curse_active("bloodprice") ? 4 : 0; }     // Blood Price
+function curse_has_bonus_drops()      { return curse_active("devilspact"); }             // Devil's Pact
+
+// =============================================================================
+// ONBOARDING — contextual coach-marks. The first time the player reaches each key
+// surface (hub / loadout / combat / Vex / shrine / ...), a one-time dismissable tip
+// box teaches it, then never shows again. See SYSTEMS_ONBOARDING.md. Gated by
+// global.tutorial_seen (per-tip flags, saved) + global.tutorial_enabled (toggle).
+// global.tutorial_active = the id currently being shown ("" = none).
+// =============================================================================
+
+function tutorial_catalog() {
+    return [
+        { id:"hub",        title:"The Ironwake Camp",   body:"This is your hub between runs. Visit the camp's merchants and trainers, manage gear and abilities, then approach the dungeon gate to descend. Anything you bank here carries between runs." },
+        { id:"loadout",    title:"Prepare to Descend",  body:"Before each run, equip your gear and choose which abilities and traits to bring. You can only take a limited set into the dungeon, so build around how you want to fight." },
+        { id:"ascendance", title:"Awakening Tiers",     body:"Higher Awakening tiers make enemies tougher but drop better, rarer loot. Raise the tier when you want more risk for more reward — start low and work up." },
+        { id:"combat_ap",  title:"Action Points (AP)",  body:"Each turn you have 3 AP. Abilities cost AP to use; a basic attack is free. Spend your AP wisely, then end your turn to let the enemy act." },
+        { id:"targeting",  title:"Choosing a Target",   body:"When several foes are present, Tab or click to pick who you hit. The glowing rune beneath an enemy marks your current target." },
+        { id:"vex",        title:"Vex the Trainer",     body:"Vex teaches new abilities and traits for gold (and the occasional item). Learn abilities here, then slot them on the loadout screen before a run." },
+        { id:"shrine",     title:"Altars",              body:"A shrine is an altar. A Blessing altar sells boons for tribute; a Cursed altar lets you take on a curse — a run-long penalty — in exchange for far better spoils. Choose how greedy you dare to be." },
+    ];
+}
+
+function tutorial_get(id) {
+    var _c = tutorial_catalog();
+    for (var _i = 0; _i < array_length(_c); _i++) if (_c[_i].id == id) return _c[_i];
+    return undefined;
+}
+
+function tutorial_seen_has(id) {
+    if (!variable_global_exists("tutorial_seen")) return false;
+    return variable_struct_exists(global.tutorial_seen, id) && global.tutorial_seen[$ id];
+}
+
+function tutorial_mark_seen(id) {
+    if (!variable_global_exists("tutorial_seen")) global.tutorial_seen = {};
+    global.tutorial_seen[$ id] = true;
+    save_game();
+}
+
+// Try to raise a tip. Returns true if it became the active tip (so callers can react,
+// e.g. open into a paused state). seen is marked on DISMISS, not here, so an
+// interrupted show re-shows next time.
+function tutorial_try_show(id) {
+    if (variable_global_exists("tutorial_enabled") && !global.tutorial_enabled) return false;
+    if (tutorial_seen_has(id)) return false;
+    if (tutorial_get(id) == undefined) return false;
+    if (variable_global_exists("tutorial_active") && global.tutorial_active != "") return false; // one at a time
+    global.tutorial_active = id;
+    return true;
+}
+
+function tutorial_is_active() {
+    return variable_global_exists("tutorial_active") && global.tutorial_active != "";
+}
+
+// Dismiss the active tip (mark it seen). Call from the shared input intercept.
+function tutorial_dismiss() {
+    if (!tutorial_is_active()) return;
+    tutorial_mark_seen(global.tutorial_active);
+    global.tutorial_active = "";
+}
+
+// Re-show every tip (Settings "Reset tutorial").
+function tutorial_reset_all() {
+    global.tutorial_seen = {};
+    if (variable_global_exists("tutorial_active")) global.tutorial_active = "";
+    save_game();
+}
+
+// =============================================================================
 // SHARED ITEM-SACRIFICE PICKER  (see SYSTEMS_ITEM_PICKER.md)
 // A single modal that lets the player SELECT exactly which item to give up and
 // CONFIRM before it's destroyed. Replaces the old "auto-pick the least valuable
@@ -2339,14 +2612,17 @@ function item_picker_step() {
     if (mouse_check_button_pressed(mb_left)) {
         var _mx = device_mouse_x_to_gui(0);
         var _my = device_mouse_y_to_gui(0);
-        var _px = 340, _pw = 600, _py = 170;
+        // Geometry MUST stay in sync with ui_draw_item_picker() (scr_ui).
+        var _px = 220, _pw = 840, _py = 110, _ph = 500;
+        var _lx0 = _px + 16, _lx1 = _px + 404, _ly0 = _py + 86, _rh = 38;
+        var _cby0 = _py + _ph - 76, _cby1 = _py + _ph - 40;
         if (_p.confirm) {
-            if (_my >= _py + 408 && _my < _py + 446 && _mx >= _px + 20 && _mx < _px + _pw - 20) _act = true;
+            if (_my >= _cby0 && _my < _cby1 && _mx >= _px + 20 && _mx < _px + _pw - 20) _act = true;
         } else {
             var _vis = min(8, _n);
             for (var _r = 0; _r < _vis; _r++) {
-                var _ry = _py + 96 + _r * 38;
-                if (_mx >= _px + 20 && _mx < _px + _pw - 20 && _my >= _ry && _my < _ry + 34) {
+                var _ry = _ly0 + _r * _rh;
+                if (_mx >= _lx0 && _mx < _lx1 && _my >= _ry && _my < _ry + 34) {
                     var _idx = _p.scroll + _r;
                     if (_idx == _p.cursor) _act = true;
                     else { _p.cursor = _idx; _p.confirm = false; }
@@ -2501,7 +2777,7 @@ function event_resolve_choice(choice) {
 // result screen (concrete gains: gold, HP, item/consumable/dust/rune/boon names).
 function event_apply_effects(fx) {
     if (fx == undefined) return "";
-    var _asc = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
+    var _asc = (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0) + curse_loot_asc_bonus();
     var _sum = [];
 
     // Gold
@@ -3003,14 +3279,19 @@ function audio_sfx_assets() {
 function audio_settings_init() {
     if (!variable_global_exists("music_volume")) global.music_volume = 0.7;
     if (!variable_global_exists("sfx_volume"))   global.sfx_volume   = 0.8;
-    if (!variable_global_exists("settings_open"))   global.settings_open   = false;
-    if (!variable_global_exists("settings_cursor")) global.settings_cursor = 0;   // 0 = Music, 1 = SFX
+    if (!variable_global_exists("settings_open"))        global.settings_open        = false;
+    if (!variable_global_exists("settings_cursor"))      global.settings_cursor      = 0;   // 0 Music, 1 SFX, 2 Fullscreen, 3 Tutorial, 4 Reset
+    if (!variable_global_exists("settings_reset_flash")) global.settings_reset_flash = 0;
+    if (!variable_global_exists("tutorial_enabled"))     global.tutorial_enabled     = true;
 
     if (!variable_global_exists("settings_loaded")) {
         global.settings_loaded = true;
         ini_open("settings.ini");
-        global.music_volume = clamp(ini_read_real("audio", "music", global.music_volume), 0, 1);
-        global.sfx_volume   = clamp(ini_read_real("audio", "sfx",   global.sfx_volume),   0, 1);
+        global.music_volume     = clamp(ini_read_real("audio", "music", global.music_volume), 0, 1);
+        global.sfx_volume       = clamp(ini_read_real("audio", "sfx",   global.sfx_volume),   0, 1);
+        // Tutorial-tips preference lives here too so it persists from the title
+        // (where no save slot is loaded). 1 = enabled (default), 0 = disabled.
+        global.tutorial_enabled = (ini_read_real("ui", "tutorial_tips", 1) >= 0.5);
         ini_close();
     }
 }
@@ -3020,6 +3301,8 @@ function audio_settings_save() {
     ini_open("settings.ini");
     ini_write_real("audio", "music", global.music_volume);
     ini_write_real("audio", "sfx",   global.sfx_volume);
+    ini_write_real("ui", "tutorial_tips",
+        ((!variable_global_exists("tutorial_enabled")) || global.tutorial_enabled) ? 1 : 0);
     ini_close();
 }
 
@@ -3045,38 +3328,59 @@ function audio_settings_adjust(which, delta) {
 // Shared input handler for the settings overlay. Call from a controller's Step
 // while global.settings_open; returns true (so the caller can `exit` and block
 // its own input). W/S pick a row, A/D or ←/→ adjust sliders / toggle fullscreen,
-// Esc/O closes. Rows: 0 = Music, 1 = SFX, 2 = Fullscreen.
+// Esc/O closes. Rows: 0 Music, 1 SFX, 2 Fullscreen, 3 Tutorial Tips, 4 Reset Tutorial.
 function audio_settings_handle_input() {
     audio_settings_init();
     video_settings_init();
 
+    // Tick down the "tutorial reset" confirmation flash (drawn by the overlay).
+    if (variable_global_exists("settings_reset_flash") && global.settings_reset_flash > 0) {
+        global.settings_reset_flash--;
+    }
+
+    // Rows: 0 Music, 1 SFX, 2 Fullscreen, 3 Tutorial Tips, 4 Reset Tutorial.
     if (keyboard_check_pressed(vk_up)   || keyboard_check_pressed(ord("W"))) global.settings_cursor--;
     if (keyboard_check_pressed(vk_down) || keyboard_check_pressed(ord("S"))) global.settings_cursor++;
-    global.settings_cursor = clamp(global.settings_cursor, 0, 2);
+    global.settings_cursor = clamp(global.settings_cursor, 0, 4);
 
-    var _left  = keyboard_check_pressed(vk_left)  || keyboard_check_pressed(ord("A"));
-    var _right = keyboard_check_pressed(vk_right) || keyboard_check_pressed(ord("D"));
+    var _left    = keyboard_check_pressed(vk_left)  || keyboard_check_pressed(ord("A"));
+    var _right   = keyboard_check_pressed(vk_right) || keyboard_check_pressed(ord("D"));
+    var _confirm = keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_return)
+                || keyboard_check_pressed(vk_space);
 
-    if (global.settings_cursor == 2) {
-        // Fullscreen row — left/right/Enter/Space toggles it.
-        if (_left || _right
-        ||  keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_return)
-        ||  keyboard_check_pressed(vk_space)) {
-            video_toggle_fullscreen();
-        }
-        if (keyboard_check_pressed(vk_escape) || keyboard_check_pressed(ord("O"))) {
-            global.settings_open = false;
-            audio_settings_save();
-        }
-    } else {
-        if (_left)  audio_settings_adjust(global.settings_cursor, -0.05);
-        if (_right) audio_settings_adjust(global.settings_cursor,  0.05);
+    switch (global.settings_cursor) {
+        case 0: // Music
+            if (_left)  audio_settings_adjust(0, -0.05);
+            if (_right) audio_settings_adjust(0,  0.05);
+        break;
+        case 1: // Sound Effects
+            if (_left)  audio_settings_adjust(1, -0.05);
+            if (_right) audio_settings_adjust(1,  0.05);
+        break;
+        case 2: // Fullscreen
+            if (_left || _right || _confirm) video_toggle_fullscreen();
+        break;
+        case 3: // Tutorial Tips on/off
+            if (_left || _right || _confirm) {
+                if (!variable_global_exists("tutorial_enabled")) global.tutorial_enabled = true;
+                global.tutorial_enabled = !global.tutorial_enabled;
+                audio_settings_save();
+            }
+        break;
+        case 4: // Reset Tutorial — clear seen flags so every tip shows again
+            if (_left || _right || _confirm) {
+                tutorial_reset_all();
+                global.tutorial_enabled   = true;   // resetting implies you want the tips back
+                global.settings_reset_flash = 120;
+                audio_settings_save();
+            }
+        break;
+    }
 
-        if (keyboard_check_pressed(vk_escape) || keyboard_check_pressed(ord("O"))
-        ||  keyboard_check_pressed(vk_enter)  || keyboard_check_pressed(vk_return)) {
-            global.settings_open = false;
-            audio_settings_save();
-        }
+    // Esc / O always closes (Enter is reserved for the toggle/action rows above).
+    if (keyboard_check_pressed(vk_escape) || keyboard_check_pressed(ord("O"))) {
+        global.settings_open = false;
+        audio_settings_save();
     }
     return true;
 }

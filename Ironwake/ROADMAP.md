@@ -43,7 +43,8 @@ visible to players, so they read as promises. Each needs design-lock first.
         **Quickcast** (first spell each combat −1 AP) + **Echo** (first AoE each combat
         deals a 50% second instance to all hit) now obtainable & wired. Dust faucet
         finalized by Sable salvage (below).
-  - [ ] DECIDE: Maren is currently **unlocked from start** (for testing) — confirm or add a gate.
+  - [x] DECIDED: all hub NPCs (incl. Maren) are **permanently unlocked from start** — no
+        gate. `npc_unlocked` is all-true and not persisted (re-init each hub load).
 - [x] **Sable the Alchemist (built, verify in-IDE)** — `SYSTEMS_SABLE.md`. Hub slot 1,
       unlocked from start (testing). 3 tabs: **Salvage** (gear by rarity 1/2/5/10/20 +
       runes by tier 6/16/40 → dust; the primary dust faucet, distinct from Maren's Split),
@@ -55,8 +56,8 @@ visible to players, so they read as promises. Each needs design-lock first.
       (`vael_skin_catalog` + `player_combat_sprite`). 3 PixelLab skins (spr_skin_ashen 150g /
       ember 250g / tide 250g, 92×92 side-view, registered in .yyp). Registry shape is the
       forward hook for future per-item visual layers. player_skin/unlocked_skins persisted.
-- [x] All six hub NPCs unlocked & functional (npc_unlocked all true). DECIDE later: real
-      unlock gating for Sable[1]/Maren[2]/Vael[5] (all unlocked from start for testing).
+- [x] All six hub NPCs unlocked & functional (npc_unlocked all true) — **permanent design
+      decision, no unlock gating** (confirmed 2026-06-25). Not persisted; re-init each hub load.
 
 **Open question:** which (if any) are real planned systems vs vestigial names to repurpose/remove?
 

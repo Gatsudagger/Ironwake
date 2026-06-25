@@ -88,38 +88,57 @@ if (showing_shrine) {
         if (keyboard_check_pressed(vk_down) || keyboard_check_pressed(ord("S"))) { shrine_cursor = min(_sh_n - 1, shrine_cursor + 1); shrine_notification = ""; }
         shrine_cursor = clamp(shrine_cursor, 0, _sh_n - 1);
 
-        var _pay_method = "";
-        if (keyboard_check_pressed(ord("1"))) _pay_method = "gold";
-        else if (keyboard_check_pressed(ord("2"))) _pay_method = "dust";
-        else if (keyboard_check_pressed(ord("3"))) _pay_method = "item";
-
-        if (_pay_method == "item") {
-            // Item tribute now opens the shared picker (select + confirm) instead of
-            // auto-sacrificing the least valuable qualifying item.
-            var _bid = shrine_offers[shrine_cursor];
-            var _bd2 = boon_get(_bid);
-            if (boon_active(_bid)) {
-                shrine_notification = "Already claimed.";
-            } else {
-                var _cands = item_picker_candidates_by_tribute(_bd2.cost);
-                if (array_length(_cands) == 0) {
-                    shrine_notification = "No item valuable enough to sacrifice.";
+        if (shrine_kind == "curse") {
+            // Curse altar — accept the selected curse for free (the difficulty is
+            // the cost). Enter/Space binds it for the rest of the run.
+            if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_space)) {
+                var _cid = shrine_offers[shrine_cursor];
+                var _res = curse_accept(_cid);
+                if (_res == "") {
+                    var _cd = curse_get(_cid);
+                    shrine_notification = "You embrace " + _cd.name + ". The altar is sated.";
+                    showing_shrine = false;
+                    current_rooms[selected_room].cleared = true;
+                    global.floor_rooms_cleared[selected_room] = true;
                 } else {
-                    item_picker_open("shrine_boon", { boon_id: _bid, cost: _bd2.cost }, _cands);
-                    shrine_notification = "";
+                    shrine_notification = _res;
                 }
             }
-        } else if (_pay_method != "") {
-            var _bid = shrine_offers[shrine_cursor];
-            var _res = boon_pay(_bid, _pay_method);
-            if (_res == "") {
-                var _bd = boon_get(_bid);
-                shrine_notification = "Claimed " + _bd.name + "! The altar crumbles.";
-                showing_shrine = false;
-                current_rooms[selected_room].cleared = true;
-                global.floor_rooms_cleared[selected_room] = true;
-            } else {
-                shrine_notification = _res;
+        } else {
+            // Blessing altar — pay tribute (gold / dust / item) for a boon.
+            var _pay_method = "";
+            if (keyboard_check_pressed(ord("1"))) _pay_method = "gold";
+            else if (keyboard_check_pressed(ord("2"))) _pay_method = "dust";
+            else if (keyboard_check_pressed(ord("3"))) _pay_method = "item";
+
+            if (_pay_method == "item") {
+                // Item tribute now opens the shared picker (select + confirm) instead of
+                // auto-sacrificing the least valuable qualifying item.
+                var _bid = shrine_offers[shrine_cursor];
+                var _bd2 = boon_get(_bid);
+                if (boon_active(_bid)) {
+                    shrine_notification = "Already claimed.";
+                } else {
+                    var _cands = item_picker_candidates_by_tribute(_bd2.cost);
+                    if (array_length(_cands) == 0) {
+                        shrine_notification = "No item valuable enough to sacrifice.";
+                    } else {
+                        item_picker_open("shrine_boon", { boon_id: _bid, cost: _bd2.cost }, _cands);
+                        shrine_notification = "";
+                    }
+                }
+            } else if (_pay_method != "") {
+                var _bid = shrine_offers[shrine_cursor];
+                var _res = boon_pay(_bid, _pay_method);
+                if (_res == "") {
+                    var _bd = boon_get(_bid);
+                    shrine_notification = "Claimed " + _bd.name + "! The altar crumbles.";
+                    showing_shrine = false;
+                    current_rooms[selected_room].cleared = true;
+                    global.floor_rooms_cleared[selected_room] = true;
+                } else {
+                    shrine_notification = _res;
+                }
             }
         }
     }
@@ -262,7 +281,7 @@ if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter) || key
                 array_push(global.consumable_inventory, _tc);
                 treasure_item = _tc;
             } else {
-                var _te_asc = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
+                var _te_asc = (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0) + curse_loot_asc_bonus();
                 var _te = drop_equipment(drop_weights("chest", _te_asc));
                 array_push(global.run_items_found, _te);
                 array_push(global.carried_items, _te);
@@ -310,7 +329,7 @@ if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter) || key
         if (_tv_gold > 0) add_gold(_tv_gold);
         if (!variable_global_exists("run_items_found")) global.run_items_found = [];
         if (!variable_global_exists("carried_items"))   global.carried_items   = [];
-        var _tv_asc = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
+        var _tv_asc = (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0) + curse_loot_asc_bonus();
         var _tv_e = drop_equipment(drop_weights("vault", _tv_asc));
         array_push(global.run_items_found, _tv_e);
         array_push(global.carried_items, _tv_e);
@@ -328,7 +347,7 @@ if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter) || key
         if (_tr_gold > 0) add_gold(_tr_gold);
         if (!variable_global_exists("run_items_found")) global.run_items_found = [];
         if (!variable_global_exists("carried_items"))   global.carried_items   = [];
-        var _tr_asc = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
+        var _tr_asc = (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0) + curse_loot_asc_bonus();
         var _tr_e = drop_equipment(drop_weights("reliquary", _tr_asc));
         array_push(global.run_items_found, _tr_e);
         array_push(global.carried_items, _tr_e);
@@ -349,12 +368,21 @@ if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter) || key
         show_debug_message("[FLOOR DEBUG] room=" + string(selected_room) + " type=event id=" + event_active.id);
 
     } else if (_room.type == "shrine") {
-        // Shrine of Tribute — offer boons for gold / dust / item sacrifice.
-        shrine_offers       = boon_offer_roll();
+        // Shrine altar — coin-flip its nature, then roll the matching offers. If the
+        // chosen kind has nothing left to give, fall back to the other kind.
+        shrine_kind = (irandom(1) == 0) ? "curse" : "blessing";
+        if (shrine_kind == "curse") {
+            shrine_offers = curse_offer_roll();
+            if (array_length(shrine_offers) == 0) { shrine_kind = "blessing"; shrine_offers = boon_offer_roll(); }
+        } else {
+            shrine_offers = boon_offer_roll();
+            if (array_length(shrine_offers) == 0) { shrine_kind = "curse"; shrine_offers = curse_offer_roll(); }
+        }
         shrine_cursor       = 0;
         shrine_notification = "";
         showing_shrine      = true;
-        show_debug_message("[FLOOR DEBUG] room=" + string(selected_room) + " type=shrine offers=" + string(array_length(shrine_offers)));
+        tutorial_try_show("shrine");   // first-altar coach-mark (see SYSTEMS_ONBOARDING.md)
+        show_debug_message("[FLOOR DEBUG] room=" + string(selected_room) + " type=shrine kind=" + shrine_kind + " offers=" + string(array_length(shrine_offers)));
 
     } else if (_room.type == "combat" || _room.type == "elite" || _room.type == "boss") {
         audio_stop_sound(_2_dungeon_INITIAL);

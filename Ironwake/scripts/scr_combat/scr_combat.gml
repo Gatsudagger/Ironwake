@@ -512,8 +512,13 @@ function combat_tick_statuses(c, log) {
 // combat_heal_after_mortality(c, amount) — scales a heal by the bearer's
 // `mortality` debuff (−% healing received). Returns the reduced amount.
 function combat_heal_after_mortality(c, amount) {
+    // Withered curse: -50% healing received (applies to the player only; enemies
+    // don't carry curses). Stacks multiplicatively with the mortality debuff.
+    if (variable_struct_exists(c, "is_player") && c.is_player && curse_heal_mult() != 1.0) {
+        amount = amount * curse_heal_mult();
+    }
     var _m = combat_status_max(c, "mortality");
-    if (_m <= 0) return amount;
+    if (_m <= 0) return max(0, floor(amount));
     return max(0, floor(amount * (1 - _m)));
 }
 
@@ -532,6 +537,8 @@ function combat_mitigate_player(player, raw, dtype, log) {
     }
     // Warding boon: flat % incoming-damage reduction.
     if (boon_active("warding")) _d = max(1, round(_d * boon_incoming_mult()));
+    // Curse penalties (Exposed/Ruin): flat % incoming-damage increase.
+    if (curse_incoming_mult() != 1.0) _d = max(1, round(_d * curse_incoming_mult()));
     if (variable_struct_exists(player, "shield_hp") && player.shield_hp > 0 && _d > 0) {
         var _sa = min(player.shield_hp, _d);
         player.shield_hp -= _sa;
@@ -589,13 +596,50 @@ function enemy_sound_family(name) {
     return "undead";
 }
 
-// play_enemy_sfx(preferred_name, fallback_snd) — play the preferred audio asset if
-// it exists in the project, else the existing-library fallback. Safe pre-strip:
-// while no snd_* assets exist this always uses the fallback.
+// play_sfx_var(base, fallback) — play a RANDOM existing variation of a string-named
+// sound. Probes `base`, `base_2`, `base_3`; if any are imported it plays one at
+// random (so repeated swings/casts don't sound identical), else the existing-library
+// `fallback`. Pass fallback = -1 for "silence if not imported". Safe pre-strip: while
+// no snd_* assets exist this always uses the fallback. New imported sounds must also
+// be bare-listed in audio_sfx_assets() (scr_stats) or the build strips them.
+function play_sfx_var(base, fallback) {
+    var _names = [base, base + "_2", base + "_3"];
+    var _cands = [];
+    for (var _i = 0; _i < array_length(_names); _i++) {
+        var _s = asset_get_index(_names[_i]);
+        if (_s != -1 && audio_exists(_s)) array_push(_cands, _s);
+    }
+    if (array_length(_cands) > 0) {
+        audio_play_sound(_cands[irandom(array_length(_cands) - 1)], 1, false);
+        return;
+    }
+    if (fallback != -1 && fallback != undefined) audio_play_sound(fallback, 1, false);
+}
+
+// play_player_vocal(base, fallback) — like play_sfx_var but prefers the FEMALE
+// variant set (<base>_f, _f_2, _f_3) when the player's cosmetic gender is female, so
+// a female character cries out / grunts differently. Falls back to the base set, then
+// the library fallback. Use for the player's own voice (hurt/effort), not weapon FX.
+function play_player_vocal(base, fallback) {
+    if (variable_global_exists("player_gender") && global.player_gender == "f") {
+        var _fnames = [base + "_f", base + "_f_2", base + "_f_3"];
+        var _fcands = [];
+        for (var _i = 0; _i < array_length(_fnames); _i++) {
+            var _s = asset_get_index(_fnames[_i]);
+            if (_s != -1 && audio_exists(_s)) array_push(_fcands, _s);
+        }
+        if (array_length(_fcands) > 0) {
+            audio_play_sound(_fcands[irandom(array_length(_fcands) - 1)], 1, false);
+            return;
+        }
+    }
+    play_sfx_var(base, fallback);
+}
+
+// play_enemy_sfx(preferred_name, fallback_snd) — themed enemy sound with variation
+// support (delegates to play_sfx_var). Safe pre-strip: uses fallback until imported.
 function play_enemy_sfx(preferred_name, fallback_snd) {
-    var _s = asset_get_index(preferred_name);
-    if (_s != -1 && audio_exists(_s)) { audio_play_sound(_s, 1, false); return; }
-    audio_play_sound(fallback_snd, 1, false);
+    play_sfx_var(preferred_name, fallback_snd);
 }
 
 // enemy_death_sound(name) — themed death sound for an enemy.
@@ -630,6 +674,44 @@ function enemy_attack_sound(name) {
     play_enemy_sfx("snd_attack_" + _f, _fb);
 }
 
+// play_ability_cast_sfx(ab, caster, is_offensive) — PLAYER cast audio keyed to the
+// ABILITY (damage type + effect kind) instead of the caster's class, so a fireball and a
+// shadowbolt sound different no matter who throws them. See SYSTEMS_COMBAT_FX.md.
+// The specific asset picks are a first-draft best-guess (sounds weren't auditioned) —
+// each is a single-line swap. Called from obj_combat_controller's offensive-hit + self-
+// cast sites. Movement casts (Blink/Shadow Step) keep their own `teleport` cue upstream.
+function play_ability_cast_sfx(ab, caster, is_offensive) {
+    var _etype = variable_struct_exists(ab, "effect_type") ? ab.effect_type : "";
+    var _dtype = variable_struct_exists(ab, "damage_type") ? ab.damage_type : 0;
+
+    if (!is_offensive) {
+        // Support cast — keyed to what it grants. New snd_cast_* slots (Helton Yan
+        // pack) with the old library sounds as fallbacks until imported.
+        switch (_etype) {
+            case "heal":     play_sfx_var("snd_cast_heal",   Magic);               break; // bright twinkle
+            case "shield":   play_sfx_var("snd_cast_shield", Success_1__subtle_);  break; // defensive ward
+            case "resource": play_sfx_var("snd_cast_buff",   utility2);            break; // arcane gain
+            case "debuff":   play_sfx_var("snd_cast_debuff", Harp_2__Descending_); break; // ominous
+            default:         play_sfx_var("snd_cast_buff",   utility2);            break; // generic self-buff
+        }
+        return;
+    }
+
+    // Offensive cast — texture by damage type (0 phys · 1 elem · 2 drain/void · 3 blood).
+    switch (_dtype) {
+        case 0:  play_player_vocal("snd_player_atk", attack1); break;         // human weapon strike (gendered)
+        case 1:  play_sfx_var("snd_cast_elem",  spell1);  break;             // elemental cast
+        case 2:  play_sfx_var("snd_cast_void",  Obscure); break;             // dark whoosh
+        case 3:  play_sfx_var("snd_cast_blood", grunt);
+                 audio_play_sound(attack1, 1, false); break;                 // blood (visceral)
+        default: play_sfx_var("snd_cast_arcane", Strings_1);                 // arcane / other
+    }
+    // Class flavor: the Bloodwarden grunts with effort on physical strikes.
+    if (variable_struct_exists(caster, "class_id") && caster.class_id == 1 && _dtype == 0) {
+        audio_play_sound(grunt, 1, false);
+    }
+}
+
 // combat_on_enemy_defeated(target, player, combat_log) — shared kill handler:
 // gold, loot, XP, on-kill soul generation, and Heartstone Aegis. Called by both
 // the single-target and AoE damage paths so kill rewards never diverge.
@@ -638,9 +720,10 @@ function combat_on_enemy_defeated(target, player, combat_log) {
     enemy_death_sound(target.name);
     array_push(combat_log, target.name + " defeated!");
 
-    // Gold drop (Greed boon: +50%)
+    // Gold drop (Greed boon: +50%; curse gold-find reward stacks on top)
     var _gold_drop = irandom(target.gold_max - target.gold_min) + target.gold_min;
     if (boon_active("greed")) _gold_drop = round(_gold_drop * (1 + boon_value("greed")));
+    _gold_drop = round(_gold_drop * curse_gold_mult());
     add_gold(_gold_drop);
     global.current_run_kills++;
     array_push(combat_log, "Gained " + string(_gold_drop) + "g!");
@@ -649,6 +732,16 @@ function combat_on_enemy_defeated(target, player, combat_log) {
     var _drop_type = variable_global_exists("next_enemy_type") ? global.next_enemy_type : "standard";
     var _drop_result = handle_enemy_drops(_drop_type);
     if (_drop_result != "") array_push(combat_log, "Loot: " + _drop_result + "!");
+
+    // Devil's Pact curse: a guaranteed bonus equipment drop from every elite & boss.
+    if (curse_has_bonus_drops() && (_drop_type == "elite" || _drop_type == "boss")) {
+        var _bonus_asc = (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0) + curse_loot_asc_bonus();
+        var _bonus_item = drop_equipment(drop_weights(_drop_type, _bonus_asc));
+        if (variable_global_exists("run_items_found")) array_push(global.run_items_found, _bonus_item);
+        if (variable_global_exists("carried_items"))   array_push(global.carried_items, _bonus_item);
+        discover_item(item_base_name(_bonus_item));
+        array_push(combat_log, "Devil's Pact: " + _bonus_item.name + " [" + item_rarity_name(_bonus_item.rarity) + "]!");
+    }
 
     // XP grant (floor-scaled)
     var _xp_base  = variable_struct_exists(target, "xp_value") ? target.xp_value : 10;

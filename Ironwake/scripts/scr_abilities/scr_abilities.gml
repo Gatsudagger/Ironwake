@@ -1463,6 +1463,48 @@ function perm_bonus_key(stat) {
 }
 
 // ---------------------------------------------------------------------------
+// stat_available_points(stat) — PERMANENT points the player can sacrifice for a
+// trait-potency upgrade: the starting allocation (global.chosen_stats) PLUS the
+// permanently-bought bonus (perm_<stat>_bonus). Per-run XP bonuses are excluded
+// (they reset each run). Lets Vex spend down even your starting stats.
+// ---------------------------------------------------------------------------
+function stat_available_points(stat) {
+    var _base = 0;
+    if (variable_global_exists("chosen_stats") && is_struct(global.chosen_stats)
+        && variable_struct_exists(global.chosen_stats, stat)) {
+        _base = variable_struct_get(global.chosen_stats, stat);
+    }
+    var _pkey = perm_bonus_key(stat);
+    var _perm = (_pkey != "" && variable_global_exists(_pkey)) ? variable_global_get(_pkey) : 0;
+    return _base + _perm;
+}
+
+// ---------------------------------------------------------------------------
+// stat_spend_permanent(stat, amount) — permanently remove `amount` points from a
+// stat, draining the bought bonus (perm_<stat>_bonus) FIRST, then dipping into the
+// starting allocation (chosen_stats), floored at 0 so derived stats never go
+// negative. Returns the amount actually spent.
+// ---------------------------------------------------------------------------
+function stat_spend_permanent(stat, amount) {
+    var _remain = amount;
+    var _pkey = perm_bonus_key(stat);
+    if (_pkey != "" && variable_global_exists(_pkey)) {
+        var _perm = variable_global_get(_pkey);
+        var _take = min(_perm, _remain);
+        variable_global_set(_pkey, _perm - _take);
+        _remain -= _take;
+    }
+    if (_remain > 0 && variable_global_exists("chosen_stats") && is_struct(global.chosen_stats)
+        && variable_struct_exists(global.chosen_stats, stat)) {
+        var _base  = variable_struct_get(global.chosen_stats, stat);
+        var _take2 = min(_base, _remain);
+        variable_struct_set(global.chosen_stats, stat, _base - _take2);
+        _remain -= _take2;
+    }
+    return amount - _remain;
+}
+
+// ---------------------------------------------------------------------------
 // trait_potency_tier(trait_name) — current potency tier (0-5) for a trait.
 // trait_potency_mult(trait_name) — magnitude multiplier: 1 + 0.10 per tier.
 // Multiply a trait's base magnitude by this at each effect site.

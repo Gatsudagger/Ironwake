@@ -101,20 +101,26 @@ draw_set_valign(fa_top);
 draw_set_color(c_white);
 draw_text_transformed(640, 30, "THE IRONWAKE CAMP", 1.4, 1.4, 0);
 
-// Rotating camp flavor line — placed in the open bottom-center band (between the
-// NPC list and the footer) so it never collides with the title or the NPC rows.
+// Rotating camp flavor line — lives in the open center-column band BELOW the NPC
+// list (which ends at y630) and above the footer (y715). WIDTH-CONSTRAINED to that
+// column (x420-860) via draw_text_ext so a long lore line wraps within it instead
+// of stretching left into the character panel (x<=360) or right into the NPC detail
+// (x>=880). Centered at x640; wraps downward, leaving clearance above the footer.
 draw_set_color(make_color_rgb(150, 130, 110));
-draw_text(640, 662, hub_flavor);
+draw_text_ext(640, 640, hub_flavor, 20, 430);
 draw_set_halign(fa_left);
 
 
 // -----------------------------------------------------------------------------
-// 3. PLAYER INFO PANEL — top-left (x=20, y=70, w=280, h=200)
+// 3. PLAYER INFO PANEL — top-left (x=20, y=70, w=280, h=140)
+// Height trimmed from 200: the 4 stat lines only reach ~y190, so the old box had
+// dead space at the bottom that crowded the Last Run panel (y=280). Now ends at
+// y210, leaving clear separation.
 // -----------------------------------------------------------------------------
 var _pi_x = 20;
 var _pi_y = 70;
 var _pi_w = 280;
-var _pi_h = 200;
+var _pi_h = 140;
 
 draw_set_alpha(0.4);
 draw_set_color(c_black);
@@ -203,13 +209,16 @@ if (show_last_run) {
 
 
 // -----------------------------------------------------------------------------
-// 4b. CHARACTER PANEL — bottom-left (x=20, y=440, w=280, h=230)
-// Shows the player's class sprite, name, class, and total stats.
+// 4b. CHARACTER PANEL — bottom-left (x=20, y=440, w=340, h=244)
+// Shows the player's class sprite, name, class, and total stats. Enlarged from
+// 280x230: bigger portrait + ornate border, stats spread into the right-side space
+// (was a lot of dead space beside the portrait). Right edge x360 clears the NPC
+// list at x420; bottom y684 clears the controls hint at y715.
 // -----------------------------------------------------------------------------
 var _cp_x = 20;
 var _cp_y = 440;
-var _cp_w = 280;
-var _cp_h = 230;
+var _cp_w = 340;
+var _cp_h = 244;
 
 draw_set_alpha(0.4);
 draw_set_color(c_black);
@@ -260,42 +269,58 @@ var _derived = stats_derive(_sv);
 var _cs_HP   = _derived.HP + _eq_bonus.bonus_max_hp
              + (variable_global_exists("perm_hp_battle_hardened") ? global.perm_hp_battle_hardened : 0);
 
-var _cpx = _cp_x + 12;
-var _cpy = _cp_y + 10;
+var _cpx = _cp_x + 14;
+var _cpy = _cp_y + 12;
 
 // Name and class header
 draw_set_halign(fa_left);
 draw_set_valign(fa_top);
 draw_set_color(c_white);
-draw_text(_cpx, _cpy, global.player_name);
+draw_text_transformed(_cpx, _cpy, global.player_name, 1.15, 1.15, 0);
 draw_set_color(make_color_rgb(100, 160, 220));
-draw_text(_cpx, _cpy + 18, _cls_pre.name);
+draw_text(_cpx, _cpy + 24, _cls_pre.name);
 
-// Divider under header
+// Divider under header (full panel width)
 draw_set_color(make_color_rgb(40, 60, 100));
-draw_line(_cp_x + 8, _cpy + 36, _cp_x + _cp_w - 8, _cpy + 36);
+draw_line(_cp_x + 8, _cp_y + 54, _cp_x + _cp_w - 8, _cp_y + 54);
 
-// Portrait — left side (starts below divider at cpy+36)
+// Portrait — left side, enlarged to 160x160. Band 10 surrounds OUTWARD; with the
+// portrait at (+14,+68) the band clears the divider (top, y54), the panel border
+// (left), the stat column (right ~x206) and the panel bottom.
 var _port_idx = variable_global_exists("chosen_portrait") ? global.chosen_portrait : 0;
 _port_idx = clamp(_port_idx, 0, array_length(global.portrait_sprites) - 1);
-ui_draw_sprite_cover(global.portrait_sprites[_port_idx], 0,
-    _cp_x + 8, _cp_y + 52, 96, 128, 1.0);
-ui_draw_gothic_frame(_cp_x + 8, _cp_y + 52, _cp_x + 8 + 96, _cp_y + 52 + 128, 14);   // ornate portrait frame
+var _pt_x = _cp_x + 14;
+var _pt_y = _cp_y + 68;
+var _pt_w = 160;
+var _pt_h = 160;
+ui_draw_sprite_cover(global.portrait_sprites[_port_idx], 0, _pt_x, _pt_y, _pt_w, _pt_h, 1.0);
+ui_draw_gothic_frame(_pt_x, _pt_y, _pt_x + _pt_w, _pt_y + _pt_h, 10);   // ornate portrait frame
 
-// Stats — right of sprite
-var _st_x = _cp_x + 114;
-var _st_y = _cp_y + 52;
-var _slh  = 20;
-
-draw_set_color(make_color_rgb(150, 165, 200));
-draw_text(_st_x, _st_y,           "STR  " + string(_cs_STR));
-draw_text(_st_x, _st_y + _slh,     "DEX  " + string(_cs_DEX));
-draw_text(_st_x, _st_y + _slh * 2, "CON  " + string(_cs_CON));
-draw_text(_st_x, _st_y + _slh * 3, "INT  " + string(_cs_INT));
-draw_text(_st_x, _st_y + _slh * 4, "WIS  " + string(_cs_WIS));
-draw_text(_st_x, _st_y + _slh * 5, "CHA  " + string(_cs_CHA));
+// Stats — right of the portrait, spread to fill the panel: muted label on the left,
+// bright value right-aligned near the panel edge (fills what used to be dead space).
+var _st_lx = _pt_x + _pt_w + 22;   // label x  (~x216)
+var _st_vx = _cp_x + _cp_w - 18;   // value x (right-aligned, ~x342)
+var _st_y  = _cp_y + 72;
+var _slh   = 22;
+var _stat_names = ["STR", "DEX", "CON", "INT", "WIS", "CHA"];
+var _stat_vals  = [_cs_STR, _cs_DEX, _cs_CON, _cs_INT, _cs_WIS, _cs_CHA];
+for (var _si = 0; _si < 6; _si++) {
+    var _sy = _st_y + _si * _slh;
+    draw_set_halign(fa_left);
+    draw_set_color(make_color_rgb(150, 165, 200));
+    draw_text_transformed(_st_lx, _sy, _stat_names[_si], 1.15, 1.15, 0);
+    draw_set_halign(fa_right);
+    draw_set_color(c_white);
+    draw_text_transformed(_st_vx, _sy, string(_stat_vals[_si]), 1.15, 1.15, 0);
+}
+// HP on its own line, accented green
+var _hp_y = _st_y + 6 * _slh;
+draw_set_halign(fa_left);
 draw_set_color(make_color_rgb(80, 210, 100));
-draw_text(_st_x, _st_y + _slh * 6, "HP   " + string(_cs_HP));
+draw_text_transformed(_st_lx, _hp_y, "HP", 1.15, 1.15, 0);
+draw_set_halign(fa_right);
+draw_text_transformed(_st_vx, _hp_y, string(_cs_HP), 1.15, 1.15, 0);
+draw_set_halign(fa_left);
 
 
 // -----------------------------------------------------------------------------
@@ -1297,12 +1322,18 @@ if (instance_exists(obj_game_controller)) {
                                        : make_color_rgb(35, 40, 65)));
                 draw_rectangle(_lx, _ry, _lx + 660, _ry + _row_h, true);
 
+                // Ability icon on the left of the row (dim when locked)
+                draw_set_alpha(_ab_unlocked ? 1.0 : 0.4);
+                ui_draw_ability_icon(_lx + 6, _ry + 3, 40, _ab);
+                draw_set_alpha(1.0);
+                var _row_textx = _lx + 6 + 40 + 8;
+
                 var _name_suffix = _in_sel ? "  [SELECTED]" : (!_ab_unlocked ? "  [LOCKED]" : "");
                 draw_set_color(!_ab_unlocked ? make_color_rgb(125, 112, 78)
                             : (_in_sel  ? make_color_rgb(90, 210, 110)
                             : (_is_cur ? c_white
                                        : make_color_rgb(170, 180, 205))));
-                draw_text(_lx + 12, _ry + 4, _ab.name + _name_suffix);
+                draw_text(_row_textx, _ry + 4, _ab.name + _name_suffix);
 
                 // Energy cost tag — right-aligned inside the row
                 draw_set_halign(fa_right);
@@ -1312,12 +1343,12 @@ if (instance_exists(obj_game_controller)) {
 
                 if (!_ab_unlocked) {
                     draw_set_color(make_color_rgb(150, 120, 60));
-                    draw_text(_lx + 12, _ry + 26, "Locked — " + ability_unlock_condition_text(_ab.name));
+                    draw_text(_row_textx, _ry + 26, "Locked — " + ability_unlock_condition_text(_ab.name));
                 } else {
                     draw_set_color(_is_cur ? make_color_rgb(160, 170, 195) : make_color_rgb(85, 95, 120));
                     var _ls_tag = ability_attack_class_tag(_ab);
                     var _ls_sum = ability_summary(_ab);
-                    draw_text(_lx + 12, _ry + 26, (_ls_tag != "") ? (_ls_sum + "  " + _ls_tag) : _ls_sum);
+                    draw_text(_row_textx, _ry + 26, (_ls_tag != "") ? (_ls_sum + "  " + _ls_tag) : _ls_sum);
                 }
             }
 
@@ -1349,8 +1380,12 @@ if (instance_exists(obj_game_controller)) {
                 draw_text(_rx + 10, _sy + 8, string(_si2 + 1) + ".");
 
                 if (_has_ab) {
+                    // 56×56 ability icon between the slot number and its name
+                    draw_set_alpha(1.0);
+                    ui_draw_ability_icon(_rx + 30, _sy + 8, 56, _gc_ov.loadout_selected[_si2]);
+                    var _slot_textx = _rx + 30 + 56 + 10;
                     draw_set_color(make_color_rgb(110, 215, 130));
-                    draw_text(_rx + 32, _sy + 8, _gc_ov.loadout_selected[_si2]);
+                    draw_text(_slot_textx, _sy + 8, _gc_ov.loadout_selected[_si2]);
                     for (var _ai2 = 0; _ai2 < _ov_pool_sz; _ai2++) {
                         if (_ov_pool[_ai2].name == _gc_ov.loadout_selected[_si2]) {
                             // Energy cost in the slot header
@@ -1361,7 +1396,7 @@ if (instance_exists(obj_game_controller)) {
                             draw_set_color(make_color_rgb(85, 125, 95));
                             var _sl_tag = ability_attack_class_tag(_ov_pool[_ai2]);
                             var _sl_sum = ability_summary(_ov_pool[_ai2]);
-                            draw_text(_rx + 32, _sy + 40, (_sl_tag != "") ? (_sl_sum + "  " + _sl_tag) : _sl_sum);
+                            draw_text(_slot_textx, _sy + 40, (_sl_tag != "") ? (_sl_sum + "  " + _sl_tag) : _sl_sum);
                             break;
                         }
                     }
@@ -1458,7 +1493,7 @@ if (instance_exists(obj_game_controller)) {
             draw_text(_rx, 40, "SELECTED TRAITS");
 
             // Available trait rows (cursor navigates these)
-            var _tr_row_h   = 52;
+            var _tr_row_h   = 60;
             var _tr_row_gap = 4;
             for (var _tai = 0; _tai < _tr_avail_cnt; _tai++) {
                 var _tr     = _tr_avail[_tai];
@@ -1487,7 +1522,7 @@ if (instance_exists(obj_game_controller)) {
                                        : make_color_rgb(170, 175, 210)));
                 draw_text(_lx + 12, _ry + 5, _tr.name + _tr_name_suf);
                 draw_set_color(_is_cur ? make_color_rgb(155, 165, 200) : make_color_rgb(80, 88, 118));
-                draw_text(_lx + 12, _ry + 28, _tr.description);
+                draw_text_ext(_lx + 12, _ry + 27, _tr.description, 16, 636);
             }
 
             // Locked trait rows (greyed, no cursor, show unlock condition)
@@ -1534,7 +1569,7 @@ if (instance_exists(obj_game_controller)) {
                     for (var _tri2 = 0; _tri2 < array_length(global.traits_all); _tri2++) {
                         if (global.traits_all[_tri2].name == _tr_name) {
                             draw_set_color(make_color_rgb(130, 95, 180));
-                            draw_text(_rx + 32, _sy + 44, global.traits_all[_tri2].description);
+                            draw_text_ext(_rx + 32, _sy + 40, global.traits_all[_tri2].description, 16, 450);
                             break;
                         }
                     }
@@ -1607,6 +1642,7 @@ if (instance_exists(obj_game_controller)) {
 ui_draw_stash_screen();
 ui_draw_shop_screen();
 ui_draw_trainer_screen();
+ui_draw_trainer_statpick();
 ui_draw_maren_screen();
 ui_draw_sable_screen();
 ui_draw_vael_screen();
@@ -1650,3 +1686,6 @@ ui_draw_pause_menu();
 
 // Item-sacrifice picker modal — topmost (Vex stat/trait trade)
 ui_draw_item_picker();
+
+// Onboarding coach-mark — drawn last so it sits on top of the hub (see SYSTEMS_ONBOARDING.md).
+ui_draw_tutorial_tip();

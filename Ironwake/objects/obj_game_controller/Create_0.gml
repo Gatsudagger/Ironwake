@@ -33,8 +33,17 @@ global.__sprite_includes = [
     spr_hub_background,
     spr_ui_frame,
     spr_combatbg_ashen_1,
+    spr_combatbg_ashen_2,
+    spr_combatbg_ashen_3,
+    spr_floormap_ashen,
     spr_combatbg_tundra_1,
+    spr_combatbg_tundra_2,
+    spr_combatbg_tundra_3,
+    spr_floormap_tundra,
     spr_combatbg_scorched_1,
+    spr_combatbg_scorched_2,
+    spr_combatbg_scorched_3,
+    spr_floormap_scorched,
     spr_fx_poison,
     spr_fx_burn,
     spr_fx_bleed,
@@ -138,6 +147,14 @@ global.last_run_perm_points = 0;   // perm points earned in the most recent run 
 global.current_run_gold  = 0;
 global.current_run_kills = 0;
 if (!variable_global_exists("run_boons")) global.run_boons = [];   // active boons this run (Shrine tribute)
+if (!variable_global_exists("run_curses")) global.run_curses = []; // active curses this run (devil's bargain)
+
+// Onboarding coach-marks (see SYSTEMS_ONBOARDING.md). tutorial_seen = per-tip flags,
+// tutorial_enabled = the Settings toggle, tutorial_active = the tip showing now ("").
+if (!variable_global_exists("tutorial_seen"))    global.tutorial_seen    = {};
+if (!variable_global_exists("tutorial_enabled")) global.tutorial_enabled = true;
+global.tutorial_active          = "";
+global.tutorial_dismiss_pending = false;   // 1-frame deferred clear (race-free dismiss)
 
 
 // -----------------------------------------------------------------------------

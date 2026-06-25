@@ -231,14 +231,23 @@ for (var _ei = 0; _ei < _ecnt; _ei++) {
     _espr_idx++;
 }
 
-// VFX impact sprite: fades out and scales up over 20 frames with additive blend
+// VFX impact sprite: plays its frames, fades out and shrinks over its lifetime with
+// additive blend. The sub-image is driven by the countdown so multi-frame Gigapack
+// effects animate; single-frame sprites (spr_fx_impact) just hold frame 0. Scale is
+// normalised by source width so 64px and 128px effects read at a consistent on-screen
+// size.
 if (vfx_timer > 0) {
     vfx_timer--;
-    var _vfx_alpha = min(1.0, vfx_timer / 10.0);
-    var _vfx_scale = lerp(2.5, 1.5, vfx_timer / 20.0);
+    var _vfx_max    = (vfx_timer_max > 0) ? vfx_timer_max : 20;
+    var _vfx_prog   = clamp((_vfx_max - vfx_timer) / _vfx_max, 0, 1);   // 0 -> 1 over life
+    var _vfx_count  = sprite_get_number(vfx_spr);
+    var _vfx_frame  = clamp(floor(_vfx_prog * _vfx_count), 0, _vfx_count - 1);
+    var _vfx_alpha  = min(1.0, vfx_timer / 10.0);
+    var _vfx_target = lerp(165, 115, _vfx_prog);                        // on-screen px, shrinks
+    var _vfx_scale  = _vfx_target / max(1, sprite_get_width(vfx_spr));
     gpu_set_blendmode(bm_add);
     draw_set_alpha(_vfx_alpha);
-    draw_sprite_ext(vfx_spr, 0, vfx_x + screen_shake_x, vfx_y + screen_shake_y, _vfx_scale, _vfx_scale, 0, c_white, 1.0);
+    draw_sprite_ext(vfx_spr, _vfx_frame, vfx_x + screen_shake_x, vfx_y + screen_shake_y, _vfx_scale, _vfx_scale, 0, c_white, 1.0);
     gpu_set_blendmode(bm_normal);
     draw_set_alpha(1.0);
 }
@@ -325,46 +334,59 @@ if (player_turn && !combat_over) {
 
 // --- ITEMS button (bottom-right, always visible during player turn) ---
 if (player_turn && !combat_over) {
-    var _ibx = 1060;
+    // Small framed button, far bottom-right so it clears the ability tooltip
+    // (x840-1160). Toggles the quick menu; bound to the C key (Step_0 reads ord("C")).
+    // Coords must stay in sync with the click hit-test in Step_0.
+    var _ibx = 1178;
     var _iby = 660;
-    var _ibw = 180;
-    var _ibh = 50;
+    var _ibw = 94;
+    var _ibh = 42;
+    var _cx  = _ibx + _ibw / 2;
     var _has_consumables = variable_global_exists("consumable_inventory")
                            && array_length(global.consumable_inventory) > 0;
-    var _ib_lit = consumable_quick_open || (_has_consumables
-                  && device_mouse_x_to_gui(0) >= _ibx && device_mouse_x_to_gui(0) < _ibx + _ibw
-                  && device_mouse_y_to_gui(0) >= _iby && device_mouse_y_to_gui(0) < _iby + _ibh);
+
+    // Per-state colors + subtitle.
+    var _fill   = make_color_rgb(28, 28, 38);
+    var _border = make_color_rgb(45, 48, 65);
+    var _tcol   = make_color_rgb(55, 60, 82);
+    var _scol   = make_color_rgb(45, 50, 68);
+    var _sub    = "none";
+    if (_has_consumables) {
+        _fill   = consumable_quick_open ? make_color_rgb(28, 55, 40) : make_color_rgb(18, 40, 28);
+        _border = consumable_quick_open ? make_color_rgb(60, 190, 110) : make_color_rgb(35, 130, 70);
+        _tcol   = c_white;
+        _scol   = make_color_rgb(100, 200, 140);
+        _sub    = "x" + string(array_length(global.consumable_inventory)) + " held";
+    }
 
     draw_set_alpha(1.0);
-    if (!_has_consumables) {
-        draw_set_color(make_color_rgb(28, 28, 38));
-        draw_rectangle(_ibx, _iby, _ibx + _ibw, _iby + _ibh, false);
-        draw_set_color(make_color_rgb(45, 48, 65));
-        draw_rectangle(_ibx, _iby, _ibx + _ibw, _iby + _ibh, true);
-        draw_set_halign(fa_center);
-        draw_set_valign(fa_middle);
-        draw_set_color(make_color_rgb(55, 60, 82));
-        draw_text(_ibx + _ibw / 2, _iby + _ibh / 2 - 8, "[ I ]  ITEMS");
-        draw_set_color(make_color_rgb(45, 50, 68));
-        draw_text(_ibx + _ibw / 2, _iby + _ibh / 2 + 10, "None carried");
-    } else {
-        draw_set_color(consumable_quick_open ? make_color_rgb(28, 55, 40) : make_color_rgb(18, 40, 28));
-        draw_rectangle(_ibx, _iby, _ibx + _ibw, _iby + _ibh, false);
-        draw_set_color(consumable_quick_open ? make_color_rgb(60, 190, 110) : make_color_rgb(35, 130, 70));
-        draw_rectangle(_ibx, _iby, _ibx + _ibw, _iby + _ibh, true);
-        draw_set_halign(fa_center);
-        draw_set_valign(fa_middle);
-        draw_set_color(c_white);
-        draw_text(_ibx + _ibw / 2, _iby + _ibh / 2 - 8, "[ I ]  ITEMS");
-        draw_set_color(make_color_rgb(100, 200, 140));
-        draw_text(_ibx + _ibw / 2, _iby + _ibh / 2 + 10,
-            string(array_length(global.consumable_inventory)) + " carried");
-    }
+    // Fill
+    draw_set_color(_fill);
+    draw_rectangle(_ibx, _iby, _ibx + _ibw, _iby + _ibh, false);
+    // Framed double border (dark outer edge + brighter inner edge) so it reads as a button.
+    draw_set_color(make_color_rgb(10, 12, 18));
+    draw_rectangle(_ibx, _iby, _ibx + _ibw, _iby + _ibh, true);
+    draw_set_color(_border);
+    draw_rectangle(_ibx + 2, _iby + 2, _ibx + _ibw - 2, _iby + _ibh - 2, true);
+
+    // Labels — auto-fit to the (smaller) button width so they never overflow.
+    draw_set_halign(fa_center);
+    draw_set_valign(fa_middle);
+    var _title = "[ C ] ITEMS";
+    var _s1    = min(0.85, (_ibw - 12) / max(1, string_width(_title)));
+    draw_set_color(_tcol);
+    draw_text_transformed(_cx, _iby + _ibh / 2 - 8, _title, _s1, _s1, 0);
+    var _s2    = min(0.78, (_ibw - 12) / max(1, string_width(_sub)));
+    draw_set_color(_scol);
+    draw_text_transformed(_cx, _iby + _ibh / 2 + 8, _sub, _s2, _s2, 0);
+
     draw_set_halign(fa_left);
     draw_set_valign(fa_top);
 
     // --- Consumable quick-use popup ---
-    if (consumable_quick_open && _has_consumables) {
+    // Opens even with an empty run buffer (shows "No consumables held.") so the
+    // [C] button never silently no-ops. Stash consumables stay hub-only.
+    if (consumable_quick_open) {
         var _qcount = array_length(global.consumable_inventory);
         // Windowed list — cap visible rows and scroll around the cursor so the
         // selection is always on screen. Step's mouse hit-test uses the same math.
@@ -388,13 +410,20 @@ if (player_turn && !combat_over) {
         // Header
         draw_set_halign(fa_center);
         draw_set_color(c_white);
-        var _qhdr = "USE CONSUMABLE  (1 AP)";
+        var _qhdr = (_qcount > 0) ? "USE CONSUMABLE  (1 AP)" : "CONSUMABLES";
         if (_qcount > _q_max_vis) _qhdr += "   (" + string(consumable_quick_cursor + 1) + "/" + string(_qcount) + ")";
         draw_text_transformed(_px + _pw / 2, _py + 14, _qhdr, 1.1, 1.1, 0);
         // Scroll hints
         draw_set_color(make_color_rgb(120, 210, 160));
         if (_q_first > 0)        draw_text(_px + _pw / 2, _py + 36, "▲ more");
         if (_q_last < _qcount)   draw_text(_px + _pw / 2, _py + _ph - 44, "▼ more");
+
+        // Empty-state message (run buffer holds no consumables this run).
+        if (_qcount == 0) {
+            draw_set_halign(fa_center);
+            draw_set_color(make_color_rgb(150, 165, 185));
+            draw_text(_px + _pw / 2, _py + _ph / 2 - 4, "No consumables held.");
+        }
 
         // Item rows
         for (var _qi = _q_first; _qi < _q_last; _qi++) {
@@ -419,7 +448,8 @@ if (player_turn && !combat_over) {
         // Footer hint
         draw_set_halign(fa_center);
         draw_set_color(make_color_rgb(70, 85, 110));
-        draw_text(_px + _pw / 2, _py + _ph - 28, "W/S: Navigate   Enter/Click: Use   I/Esc: Close");
+        draw_text(_px + _pw / 2, _py + _ph - 28,
+            (_qcount > 0) ? "W/S: Navigate   Enter/Click: Use   C/Esc: Close" : "C/Esc: Close");
         draw_set_halign(fa_left);
         draw_set_alpha(1.0);
     }
@@ -473,77 +503,79 @@ if (instance_exists(obj_game_controller)) {
             "Boosts ALL ability damage  •  +1% gold find/pt  •  cheaper NPC prices (1.5%/pt, max 30%)"
         ];
 
+        // Layout: wider boxes with the hint wrapped INSIDE the box, and a uniform
+        // box height derived from the tallest wrapped hint so no text ever spills
+        // past the border. The value sits on the label row, top-right.
+        var _bx_l    = 290;
+        var _bx_r    = 990;
+        var _bx_padx = 22;
+        var _hint_lh = 19;
+        var _hint_w  = (_bx_r - _bx_l) - _bx_padx * 2;
+
+        var _max_hint_h = 0;
+        for (var _hi = 0; _hi < 6; _hi++) {
+            _max_hint_h = max(_max_hint_h, string_height_ext(_alloc_stat_hints[_hi], _hint_lh, _hint_w));
+        }
+        var _bx_h     = 26 + _max_hint_h + 12;   // label row + wrapped hint + padding
+        var _row_step = _bx_h + 10;
+        var _alloc_y0 = 140;
+
         for (var _si = 0; _si < 6; _si++) {
-            var _sy      = 160 + _si * 72;
+            var _sy      = _alloc_y0 + _si * _row_step;
             var _is_sel  = (_si == _gc_alloc_draw.level_alloc_index);
             var _is_pend = (_si == _pend_idx);
             var _cur_val = variable_struct_get(player.stats, _alloc_stat_names[_si]);
 
             // Background
             var _bg_col;
-            if (_is_pend) {
-                _bg_col = make_color_rgb(48, 32, 8);
-            } else if (_is_sel) {
-                _bg_col = make_color_rgb(30, 50, 90);
-            } else {
-                _bg_col = make_color_rgb(18, 22, 38);
-            }
-            if (_is_sel || _is_pend) {
-                draw_set_alpha(1.0);
-            } else {
-                draw_set_alpha(0.6);
-            }
+            if (_is_pend)      _bg_col = make_color_rgb(48, 32, 8);
+            else if (_is_sel)  _bg_col = make_color_rgb(30, 50, 90);
+            else               _bg_col = make_color_rgb(18, 22, 38);
+            draw_set_alpha((_is_sel || _is_pend) ? 1.0 : 0.6);
             draw_set_color(_bg_col);
-            draw_rectangle(340, _sy, 940, _sy + 58, false);
+            draw_rectangle(_bx_l, _sy, _bx_r, _sy + _bx_h, false);
             draw_set_alpha(1.0);
 
             // Border — amber for pending, blue for selected cursor, gray otherwise
             var _bd_col;
-            if (_is_pend) {
-                _bd_col = make_color_rgb(220, 145, 35);
-            } else if (_is_sel) {
-                _bd_col = make_color_rgb(80, 140, 220);
-            } else {
-                _bd_col = make_color_rgb(45, 55, 75);
-            }
+            if (_is_pend)      _bd_col = make_color_rgb(220, 145, 35);
+            else if (_is_sel)  _bd_col = make_color_rgb(80, 140, 220);
+            else               _bd_col = make_color_rgb(45, 55, 75);
             draw_set_color(_bd_col);
-            draw_rectangle(340, _sy, 940, _sy + 58, true);
+            draw_rectangle(_bx_l, _sy, _bx_r, _sy + _bx_h, true);
 
             // Stat label
             var _lbl_col;
-            if (_is_pend) {
-                _lbl_col = make_color_rgb(235, 165, 50);
-            } else if (_is_sel) {
-                _lbl_col = c_white;
-            } else {
-                _lbl_col = make_color_rgb(140, 150, 170);
-            }
+            if (_is_pend)      _lbl_col = make_color_rgb(235, 165, 50);
+            else if (_is_sel)  _lbl_col = c_white;
+            else               _lbl_col = make_color_rgb(140, 150, 170);
             draw_set_color(_lbl_col);
-            draw_text(360, _sy + 10, _alloc_stat_descs[_si] + "  (" + _alloc_stat_names[_si] + ")");
+            draw_text(_bx_l + _bx_padx, _sy + 6, _alloc_stat_descs[_si] + "  (" + _alloc_stat_names[_si] + ")");
 
-            // Stat hint description on second line
-            var _hint_col = (_is_sel || _is_pend) ? make_color_rgb(160, 180, 210) : make_color_rgb(90, 100, 120);
-            draw_set_color(_hint_col);
-            draw_text(360, _sy + 32, _alloc_stat_hints[_si]);
-
-            // Value — show "X -> X+1" for the provisionally selected stat
+            // Value — right-aligned on the label row; "X -> X+1" when pending
             draw_set_halign(fa_right);
             if (_is_pend) {
                 draw_set_color(make_color_rgb(235, 165, 50));
-                draw_text(920, _sy + 18, string(_cur_val) + "  ->  " + string(_cur_val + 1));
+                draw_text(_bx_r - _bx_padx, _sy + 6, string(_cur_val) + "  ->  " + string(_cur_val + 1));
             } else {
                 draw_set_color(_lbl_col);
-                draw_text(920, _sy + 18, string(_cur_val));
+                draw_text(_bx_r - _bx_padx, _sy + 6, string(_cur_val));
             }
             draw_set_halign(fa_left);
+
+            // Wrapped hint on the line(s) below the label
+            var _hint_col = (_is_sel || _is_pend) ? make_color_rgb(170, 188, 215) : make_color_rgb(95, 105, 128);
+            draw_set_color(_hint_col);
+            draw_text_ext(_bx_l + _bx_padx, _sy + 28, _alloc_stat_hints[_si], _hint_lh, _hint_w);
         }
 
+        var _alloc_footer_y = _alloc_y0 + 6 * _row_step + 8;
         draw_set_halign(fa_center);
         draw_set_color(make_color_rgb(80, 90, 110));
         if (_has_pend) {
-            draw_text(640, 620, "W/S: Navigate   Enter: Change selection   Space: Confirm");
+            draw_text(640, _alloc_footer_y, "W/S: Navigate   Enter: Change selection   Space: Confirm");
         } else {
-            draw_text(640, 620, "W/S: Navigate   Enter: Choose stat");
+            draw_text(640, _alloc_footer_y, "W/S: Navigate   Enter: Choose stat");
         }
         draw_set_halign(fa_left);
         draw_set_valign(fa_top);
@@ -887,3 +919,6 @@ if (instance_exists(obj_game_controller)) {
 // settings overlay) — topmost.
 if (variable_global_exists("settings_open") && global.settings_open) ui_draw_settings_overlay();
 ui_draw_pause_menu();
+
+// Onboarding coach-mark — drawn last so it sits on top of the combat scene.
+ui_draw_tutorial_tip();
