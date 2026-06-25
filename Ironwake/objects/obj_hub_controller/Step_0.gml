@@ -38,7 +38,7 @@ if (keyboard_check_pressed(ord("O")) && !ui_input_blocked() && !show_history && 
 // -----------------------------------------------------------------------------
 if (pause_menu_step()) exit;
 if (keyboard_check_pressed(vk_escape) && !ui_input_blocked() && !global.ui_overlay_latch
-    && !_dsel_open && !show_history && !show_last_run) {
+    && !_dsel_open && !show_history && !show_last_run && !show_gallery) {
     pause_menu_open();
     exit;
 }
