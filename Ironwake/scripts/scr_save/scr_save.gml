@@ -209,8 +209,8 @@ function new_game_reset() {
     // Run history log
     global.run_history = [];
 
-    // Equipped items + hub storage
-    global.inventory            = array_create(8, undefined);
+    // Equipped items + hub storage (9 slots; index 8 = Ranged Weapon)
+    global.inventory            = array_create(9, undefined);
     global.equipment_stash      = [];
     global.consumable_stash     = [];
     global.consumable_inventory = [];
@@ -387,16 +387,22 @@ function load_game() {
         global.run_history = _s.run_history;
     }
 
-    // Equipped items
+    // Equipped items. global.inventory is pre-sized to 9 (index 8 = Ranged Weapon).
+    // Old saves only have 8 entries — min() leaves index 8 undefined (empty ranged
+    // slot), so the migration is automatic and lossless (SYSTEMS_WEAPON_ROLES.md §A).
     if (variable_struct_exists(_s, "inventory") && is_array(_s.inventory)) {
-        for (var _ii = 0; _ii < min(8, array_length(_s.inventory)); _ii++) {
+        for (var _ii = 0; _ii < min(9, array_length(_s.inventory)); _ii++) {
             global.inventory[_ii] = _s.inventory[_ii];
+            item_migrate_weapon_fields(global.inventory[_ii]);   // backfill weapon_damage/two_handed
         }
     }
 
     // Hub-safe stash storage
     if (variable_struct_exists(_s, "equipment_stash") && is_array(_s.equipment_stash)) {
         global.equipment_stash = _s.equipment_stash;
+        for (var _esi = 0; _esi < array_length(global.equipment_stash); _esi++) {
+            item_migrate_weapon_fields(global.equipment_stash[_esi]);
+        }
     }
     if (variable_struct_exists(_s, "consumable_stash") && is_array(_s.consumable_stash)) {
         global.consumable_stash = _s.consumable_stash;

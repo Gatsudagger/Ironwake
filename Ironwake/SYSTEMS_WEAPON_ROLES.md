@@ -9,7 +9,7 @@ Status: `[ ]` todo · `[x]` done (verify in-IDE).
 
 ---
 
-## A. Two weapon slots  [ ]
+## A. Two weapon slots  [x]  (BUILT 2026-06-25, full compile clean)
 - Slot 0 "weapon" → display **"Melee Weapon"** (item.slot stays `"weapon"` = melee; avoids
   churning every `slot=="weapon"` check). Add slot index 8 **"Ranged Weapon"**
   (item.slot `"ranged_weapon"`). **Append at index 8** so existing inventory[0..7] indices and
@@ -20,7 +20,11 @@ Status: `[ ]` todo · `[x]` done (verify in-IDE).
 - **Save migration:** on load, if inventory length < 9, grow to 9 with index 8 = undefined
   (empty ranged slot). Old weapon stays in the melee slot. No data loss.
 
-## B. Strict reach-gating (role identity)  [ ]
+## B. Strict reach-gating (role identity)  [x]  (BUILT 2026-06-25)
+- IMPLEMENTED via a NEW flat `weapon_damage` field (per M): weapons carry separate flat damage
+  (reach-gated by slot) AND may still carry a global +stat. Only weapon_damage is reach-gated;
+  the +stat stays global as before. weapon_base_damage(rarity)=3/5/8/11/12 auto-seeds weapon slots.
+
 - Weapons no longer dump their damage into the global bonus. Instead:
   - **Melee Weapon** flat damage + its affixes apply ONLY to melee abilities
     (`ability_class_is_melee` = melee_attack / melee_spell).
@@ -54,7 +58,7 @@ Status: `[ ]` todo · `[x]` done (verify in-IDE).
 - Affix magnitudes by rarity (u/r/e): elemental dmg ~ +2/+4/+6; status applied at a low,
   short stack so it's a *setup*, not the main damage. Numbers first-pass/tunable.
 
-## D. Two-handed weapons  [ ]
+## D. Two-handed weapons  [x]  (BUILT 2026-06-25, full compile clean)
 - Weapons get `two_handed: true/false` (default false). 2H = greatswords / longbows / staves;
   bigger base damage + affix budget than 1H of the same rarity.
 - **Rule:** any equipped 2H weapon (melee OR ranged) LOCKS the single offhand slot:
@@ -66,7 +70,7 @@ Status: `[ ]` todo · `[x]` done (verify in-IDE).
 - Trade: 1H weapon + offhand utility  vs  2H power, no offhand. You may run 2H in both weapon
   slots (offhand stays locked).
 
-## D2. Offhands carry real defense  [ ]
+## D2. Offhands carry real defense  [x]  (BUILT 2026-06-25)
 - To make the 2H offhand-lock a genuine sacrifice, offhands must provide meaningful DEFENSIVE
   value (armor / dodge / max HP / block) — not just utility. Audit offhand drops/affixes so a
   shield-type offhand is the clear "defense" choice vs a 2H weapon's "offense." 2H weapons get a

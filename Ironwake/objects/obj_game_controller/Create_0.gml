@@ -171,8 +171,8 @@ global.tutorial_dismiss_pending = false;   // 1-frame deferred clear (race-free 
 
 // --- COMMON WEAPONS (class_req set post-creation) ---
 var _cw_ashen        = create_item("Ashen Blade",    "weapon", 0, "STR", 2, "",                        15);
-var _cw_shortbow     = create_item("Worn Shortbow",  "weapon", 0, "DEX", 2, "",                        14);
-var _cw_cracked_wand = create_item("Cracked Focus",  "weapon", 0, "INT", 2, "still channels power",   13);
+var _cw_shortbow     = create_item("Worn Shortbow",  "ranged_weapon", 0, "DEX", 2, "",                  14);
+var _cw_cracked_wand = create_item("Cracked Focus",  "ranged_weapon", 0, "INT", 2, "still channels power", 13);
 _cw_ashen.class_req = -1;  _cw_shortbow.class_req = -1;  _cw_cracked_wand.class_req = 0;
 // Class-weapon ability affixes — being class-locked grants a combat bonus (read in obj_combat_controller/Create_0).
 _cw_cracked_wand.unique_effect = "class_first_spell_ap";
@@ -180,7 +180,7 @@ _cw_cracked_wand.unique_desc   = "First spell each combat costs 1 less AP";
 
 // --- UNCOMMON WEAPONS ---
 var _uw_gravel  = create_item("Gravelstone Sword", "weapon", 1, "STR", 4, "dense and brutal",              35);
-var _uw_wand    = create_item("Vaultstone Wand",   "weapon", 1, "INT", 4, "inscribed with vault runes",    38);
+var _uw_wand    = create_item("Vaultstone Wand",   "ranged_weapon", 1, "INT", 4, "inscribed with vault runes", 38);
 var _uw_sickle  = create_item("Shadow Sickle",     "weapon", 1, "DEX", 4, "curved blade of the striders",  36);
 _uw_gravel.class_req = 1;  _uw_wand.class_req = 0;  _uw_sickle.class_req = 2;
 _uw_gravel.unique_effect = "class_lifesteal";    _uw_gravel.unique_desc = "Heal 10% of the melee damage you deal";
@@ -189,12 +189,45 @@ _uw_sickle.unique_effect = "class_crit";         _uw_sickle.unique_desc = "+8% c
 
 // --- RARE WEAPONS ---
 var _rw_ash    = create_item("Ashkeeper Blade",  "weapon", 2, "STR", 6, "forged in ashwalker tradition",  80);
-var _rw_vsept  = create_item("Void Scepter",     "weapon", 2, "INT", 6, "channels the void",             85);
+var _rw_vsept  = create_item("Void Scepter",     "ranged_weapon", 2, "INT", 6, "channels the void",       85);
 var _rw_serp   = create_item("Serpent's Reach",  "weapon", 2, "DEX", 6, "flexible blade of the deep",    82);
 _rw_ash.class_req = 1;  _rw_vsept.class_req = 0;  _rw_serp.class_req = 2;
 _rw_ash.unique_effect   = "class_start_shield";  _rw_ash.unique_desc   = "Start each combat with a 12 HP shield";
 _rw_vsept.unique_effect = "class_spell_crit_ap"; _rw_vsept.unique_desc = "Spell critical hits restore 1 AP";
 _rw_serp.unique_effect  = "class_kill_ap";       _rw_serp.unique_desc  = "Killing an enemy restores 1 AP";
+
+// --- TWO-HANDED WEAPONS (SYSTEMS_WEAPON_ROLES.md §D) ---
+// 2H weapons lock the offhand slot, so they carry a bigger weapon_damage budget
+// (~+80% over the 1H base for their rarity) plus a secondary affix as payoff.
+var _2hw_greatsword = create_item("Ruinous Greatsword", "weapon", 1, "STR", 4, "takes both hands to swing", 44);
+_2hw_greatsword.two_handed = true;  _2hw_greatsword.class_req = 1;  _2hw_greatsword.weapon_damage = 9;
+_2hw_greatsword.affixes = [{ suffix: "of the Bear", prefix: "Hardy", stat_name: "CON", stat_value: 3 }];
+
+var _2hw_longbow = create_item("Vault Longbow", "ranged_weapon", 1, "DEX", 4, "a tall war-bow drawn two-handed", 46);
+_2hw_longbow.two_handed = true;  _2hw_longbow.class_req = 2;  _2hw_longbow.weapon_damage = 9;
+_2hw_longbow.affixes = [{ suffix: "of Ruin", prefix: "Keen", stat_name: "crit_flat", stat_value: 5 }];
+
+var _2hw_staff = create_item("Stormcaller Staff", "ranged_weapon", 2, "INT", 6, "a great runed staff held in both hands", 96);
+_2hw_staff.two_handed = true;  _2hw_staff.class_req = 0;  _2hw_staff.weapon_damage = 13;
+_2hw_staff.affixes = [{ suffix: "of Clarity", prefix: "Wise", stat_name: "WIS", stat_value: 4 }];
+
+// --- DEFENSIVE OFFHANDS (SYSTEMS_WEAPON_ROLES.md §D2) ---
+// Shield-type offhands carry real DEFENSIVE value (armor / dodge / max HP) so
+// giving up the offhand for a 2H weapon's bigger damage is a genuine trade.
+var _off_cracked_shield = create_item("Cracked Shield", "offhand", 0, "CON", 2, "splintered but still turns a blow", 12);
+_off_cracked_shield.affixes = [{ suffix: "of Warding", prefix: "Sturdy", stat_name: "armor", stat_value: 2 }];
+
+var _off_buckler = create_item("Warden's Buckler", "offhand", 1, "CON", 4, "light enough to parry with", 30);
+_off_buckler.affixes = [
+    { suffix: "of Warding", prefix: "Sturdy", stat_name: "armor",      stat_value: 3 },
+    { suffix: "of Deflection", prefix: "Nimble", stat_name: "dodge_flat", stat_value: 2 },
+];
+
+var _off_bulwark = create_item("Ironhide Bulwark", "offhand", 2, "CON", 6, "processed vault-metal", 80);
+_off_bulwark.affixes = [{ suffix: "of the Mountain", prefix: "Ironhide", stat_name: "armor", stat_value: 5 }];
+
+var _off_soul_orb = create_item("Soulbound Orb", "offhand", 2, "INT", 6, "wards the bearer's life", 85);
+_off_soul_orb.affixes = [{ suffix: "of Vitality", prefix: "Soulbound", stat_name: "bonus_max_hp", stat_value: 10 }];
 
 // --- PRE-DECLARED MULTI-STAT ITEMS (intrinsic secondary stats as affixes) ---
 var _ember_ring = create_item("Ember Ring", "ring", 1, "STR", 2, "glows with a warm inner heat", 26);
@@ -209,7 +242,7 @@ global.loot_table_common = [
     _cw_shortbow,
     _cw_cracked_wand,
     // Offhand
-    create_item("Cracked Shield",     "offhand", 0, "CON", 2, "",                         12),
+    _off_cracked_shield,
     create_item("Ash Totem",          "offhand", 0, "WIS", 1, "carved wood talisman",      9),
     create_item("Soulstone Fragment", "offhand", 0, "INT", 1, "chip of raw soulstone",      9),
     // Helm
@@ -243,8 +276,10 @@ global.loot_table_uncommon = [
     _uw_gravel,
     _uw_wand,
     _uw_sickle,
+    _2hw_greatsword,
+    _2hw_longbow,
     // Offhand
-    create_item("Warden's Buckler",    "offhand", 1, "CON", 4, "",                              30),
+    _off_buckler,
     create_item("Runic Focus",         "offhand", 1, "INT", 3, "inscribed with focusing runes", 32),
     // Helm
     create_item("Watcher's Cowl",      "helm",    1, "INT", 3, "hood of a Vault Watcher",       28),
@@ -271,9 +306,10 @@ global.loot_table_rare = [
     _rw_ash,
     _rw_vsept,
     _rw_serp,
+    _2hw_staff,
     // Offhand
-    create_item("Soulbound Orb",       "offhand", 2, "INT", 6, "",                              85),
-    create_item("Ironhide Bulwark",    "offhand", 2, "CON", 6, "processed vault-metal",         80),
+    _off_soul_orb,
+    _off_bulwark,
     // Helm
     _forsaken_circlet,
     create_item("Thornwarden Helm",    "helm",    2, "STR", 5, "war-crest of a fallen guardian", 75),
@@ -371,8 +407,9 @@ global.consumables_elite = [
 global.consumable_inventory = [];
 global.run_items_found      = [];
 
-// Equipment slots — 8 entries, one per slot (undefined = empty)
-global.inventory = array_create(8, undefined);
+// Equipment slots — 9 entries, one per slot (undefined = empty)
+// Index 8 = Ranged Weapon (appended; SYSTEMS_WEAPON_ROLES.md §A).
+global.inventory = array_create(9, undefined);
 
 // Item codex — records base names of every equipment item ever found or bought
 global.items_discovered = [];

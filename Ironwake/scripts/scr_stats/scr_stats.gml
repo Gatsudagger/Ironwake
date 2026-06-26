@@ -473,14 +473,29 @@ function item_stat_ranges_text(base_item) {
     var _rar  = variable_struct_exists(base_item, "rarity")     ? base_item.rarity     : 0;
     var _sv   = variable_struct_exists(base_item, "stat_value") ? base_item.stat_value : 0;
     var _sn   = variable_struct_exists(base_item, "stat_name")  ? base_item.stat_name  : "";
+    var _slot = variable_struct_exists(base_item, "slot")       ? base_item.slot       : "";
+    var _has_unique = variable_struct_exists(base_item, "unique_effect") && base_item.unique_effect != "";
     var _txt  = _sn + " +" + string(_sv) + " (fixed base)";
+
+    // Weapons also carry flat reach-gated damage — show it so the codex reflects the
+    // weapon-roles system (melee vs ranged, 1H vs 2H).
+    if (_slot == "weapon" || _slot == "ranged_weapon") {
+        var _wd    = variable_struct_exists(base_item, "weapon_damage") ? base_item.weapon_damage : weapon_base_damage(_rar);
+        var _reach = (_slot == "weapon") ? "melee" : "ranged";
+        var _hands = (variable_struct_exists(base_item, "two_handed") && base_item.two_handed) ? "2H" : "1H";
+        _txt = "Weapon dmg +" + string(_wd) + " (" + _reach + ", " + _hands + ")\n" + _txt;
+    }
 
     if (_rar == 4) {
         _txt += "\nLegendary: fixed affix + unique effect (does not re-roll).";
         return _txt;
     }
     if (_rar == 0) {
-        _txt += "\nCommon: no affixes — what you see is what you get.";
+        // A Common can still carry an intrinsic unique effect (e.g. class-starter
+        // weapons) — distinguish that from a rolled affix so it doesn't read as a bug.
+        _txt += _has_unique
+            ? "\nCommon: no random affixes — its unique effect is built in."
+            : "\nCommon: no affixes — what you see is what you get.";
         return _txt;
     }
 
@@ -496,11 +511,30 @@ function item_stat_ranges_text(base_item) {
 }
 
 // ---------------------------------------------------------------------------
+// weapon_base_damage(rarity)
+// Default flat weapon damage by rarity for weapon-slot items (melee + ranged).
+// This is the reach-gated number (SYSTEMS_WEAPON_ROLES.md §B): it feeds only the
+// abilities of the weapon's reach class, separate from any global +stat the weapon
+// also carries. First-pass / tunable.
+// ---------------------------------------------------------------------------
+function weapon_base_damage(rarity) {
+    switch (rarity) {
+        case 0: return 3;    // Common
+        case 1: return 5;    // Uncommon
+        case 2: return 8;    // Rare
+        case 3: return 11;   // Epic
+        case 4: return 12;   // Legendary
+    }
+    return 0;
+}
+
 // create_item(name, slot, rarity, stat_name, stat_value, effect_desc, gold_value)
 // Returns an equipment item struct. Rarity: 0=common, 1=uncommon, 2=rare,
 // 3=epic, 4=legendary.
 // ---------------------------------------------------------------------------
 function create_item(name, slot, rarity, stat_name, stat_value, effect_desc, gold_value) {
+    // Weapon-slot items get a flat, reach-gated weapon_damage; all other gear = 0.
+    var _wpn_dmg = (slot == "weapon" || slot == "ranged_weapon") ? weapon_base_damage(rarity) : 0;
     return {
         name:          name,
         base_name:     name,   // immutable identity for the codex (affixes mutate `name`)
@@ -509,6 +543,8 @@ function create_item(name, slot, rarity, stat_name, stat_value, effect_desc, gol
         rarity:        rarity,
         stat_name:     stat_name,
         stat_value:    stat_value,
+        weapon_damage: _wpn_dmg,                          // flat reach-gated damage (weapons only)
+        two_handed:    false,                             // 2H weapons lock the offhand slot (set post-create)
         effect_desc:   effect_desc,
         gold_value:    gold_value,
         socket_count:  rune_sockets_for_rarity(rarity),   // rune sockets by rarity
@@ -634,6 +670,8 @@ function clone_item(src) {
         rarity:        src.rarity,
         stat_name:     src.stat_name,
         stat_value:    src.stat_value,
+        weapon_damage: variable_struct_exists(src, "weapon_damage") ? src.weapon_damage : 0,
+        two_handed:    variable_struct_exists(src, "two_handed")    ? src.two_handed    : false,
         effect_desc:   src.effect_desc,
         gold_value:    src.gold_value,
         class_req:     variable_struct_exists(src, "class_req")     ? src.class_req     : -1,
@@ -860,15 +898,16 @@ function drop_equipment(rarity_weights, do_discover = true) {
 // ---------------------------------------------------------------------------
 function equip_slot_index(slot_name) {
     switch (slot_name) {
-        case "weapon":  return 0;
-        case "offhand": return 1;
-        case "helm":    return 2;
-        case "chest":   return 3;
-        case "gloves":  return 4;
-        case "boots":   return 5;
-        case "amulet":  return 6;
-        case "ring":    return 7;
-        default:        return -1;
+        case "weapon":        return 0;   // melee weapon
+        case "offhand":       return 1;
+        case "helm":          return 2;
+        case "chest":         return 3;
+        case "gloves":        return 4;
+        case "boots":         return 5;
+        case "amulet":        return 6;
+        case "ring":          return 7;
+        case "ranged_weapon": return 8;   // appended (SYSTEMS_WEAPON_ROLES.md §A)
+        default:              return -1;
     }
 }
 
@@ -879,18 +918,84 @@ function equip_slot_index(slot_name) {
 // separate combat fields); they are accumulated and returned as a struct.
 // Always call on a COPY of chosen_stats — never the global itself.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Two-handed weapon helpers (SYSTEMS_WEAPON_ROLES.md §D).
+// A 2H weapon — equipped in the melee slot (0) OR the ranged slot (8) — locks
+// the single offhand slot (index 1): the offhand auto-returns to the pack on
+// equip, can't be re-equipped while a 2H is held, and is ignored by stat
+// accumulation. You MAY run 2H in both weapon slots (offhand stays locked).
+// ---------------------------------------------------------------------------
+function item_is_two_handed(item) {
+    if (item == undefined) return false;
+    return variable_struct_exists(item, "two_handed") && item.two_handed;
+}
+
+// Backfill weapon-role fields on items deserialized from older saves (pre-Stage-1
+// weapon_damage / pre-Stage-2 two_handed). Without this an equipped weapon saved
+// before the field existed shows no "+N dmg (1H)" line. Safe to call on any item.
+function item_migrate_weapon_fields(it) {
+    if (it == undefined || !is_struct(it)) return;
+    if (!variable_struct_exists(it, "slot")) return;
+    if (it.slot == "weapon" || it.slot == "ranged_weapon") {
+        if (!variable_struct_exists(it, "weapon_damage") || it.weapon_damage == 0) {
+            var _rar = variable_struct_exists(it, "rarity") ? it.rarity : 0;
+            it.weapon_damage = weapon_base_damage(_rar);
+        }
+    }
+    if (!variable_struct_exists(it, "two_handed")) it.two_handed = false;
+}
+
+// True if either equipped weapon (melee idx 0 or ranged idx 8) is two-handed.
+function two_handed_equipped() {
+    if (!variable_global_exists("inventory")) return false;
+    var _len = array_length(global.inventory);
+    if (_len > 0 && item_is_two_handed(global.inventory[0])) return true;
+    if (_len > 8 && item_is_two_handed(global.inventory[8])) return true;
+    return false;
+}
+
+// Move the equipped offhand (slot 1) back to the pack — stash in the hub,
+// carried items mid-run. Called when a 2H weapon is equipped so the offhand
+// empties. No-op if the offhand is already empty.
+function return_offhand_to_pack(in_hub) {
+    if (!variable_global_exists("inventory")) return;
+    if (array_length(global.inventory) <= 1) return;
+    var _off = global.inventory[1];
+    if (_off == undefined) return;
+    global.inventory[1] = undefined;
+    if (in_hub) array_push(global.equipment_stash, _off);
+    else        array_push(global.carried_items, _off);
+}
+
 function apply_equipment_stats(stats_struct) {
     // Extended bonus struct: armor/el_resist (old), plus affix-driven special fields.
     // bonus_max_hp  — flat HP added directly to player.max_HP after derive
     // crit_flat     — % added to all crit rolls (stored in stats_struct.crit_bonus)
     // dodge_flat    — flat added to player.dodge
     // gold_find     — % gold find bonus; consumed by add_gold() on the found-gold path
-    var _bonus = { armor: 0, el_resist: 0, bonus_max_hp: 0, crit_flat: 0, dodge_flat: 0, gold_find: 0 };
+    // melee_dmg_bonus / ranged_dmg_bonus — reach-gated flat weapon damage. NOT applied to
+    // stats_struct; summed into the cast resolver's _dmg per the ability's reach class
+    // (SYSTEMS_WEAPON_ROLES.md §B). Melee weapon → melee abilities, ranged weapon → ranged.
+    var _bonus = { armor: 0, el_resist: 0, bonus_max_hp: 0, crit_flat: 0, dodge_flat: 0, gold_find: 0,
+                   melee_dmg_bonus: 0, ranged_dmg_bonus: 0 };
     if (!variable_global_exists("inventory")) return _bonus;
 
+    // When a 2H weapon is equipped the offhand slot (1) is locked — ignore it
+    // entirely (belt-and-suspenders; the equip path already empties it).
+    var _offhand_locked = two_handed_equipped();
+
     for (var _i = 0; _i < array_length(global.inventory); _i++) {
+        if (_i == 1 && _offhand_locked) continue;
         var _it = global.inventory[_i];
         if (_it == undefined) continue;
+
+        // Reach-gated weapon damage routes by the item's own slot, not its stat.
+        var _wd = variable_struct_exists(_it, "weapon_damage") ? _it.weapon_damage : 0;
+        if (_wd != 0) {
+            if (_it.slot == "weapon")             _bonus.melee_dmg_bonus  += _wd;
+            else if (_it.slot == "ranged_weapon") _bonus.ranged_dmg_bonus += _wd;
+        }
+
         _equip_apply_stat(stats_struct, _bonus, _it.stat_name, _it.stat_value);
 
         // Apply affixes stored on the item (from drop_equipment or legendary fixed affixes)

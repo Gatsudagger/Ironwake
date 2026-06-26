@@ -66,6 +66,11 @@ if (variable_global_exists("perm_str_bonus")) {
 // Calculate derived combat values from the modified copy
 var _derived = stats_derive(_stats);
 
+// Reach-gated weapon damage (SYSTEMS_WEAPON_ROLES.md §B) rides on derived so the
+// cast resolver can add it by the ability's reach class. Equipment-sourced, not stat-derived.
+_derived.melee_dmg_bonus  = _equip_bonus.melee_dmg_bonus;
+_derived.ranged_dmg_bonus = _equip_bonus.ranged_dmg_bonus;
+
 // Assemble the player combat struct.
 // HP and DODGE come from derived values; armor and el_resist are from the
 // starting equipment (robe or leathers, +1 each).

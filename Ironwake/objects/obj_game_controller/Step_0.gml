@@ -1323,11 +1323,12 @@ if (mouse_check_button_pressed(mb_left)) {
     // --- Equipment tab (1) ---
     if (menu_tab == 1) {
         if (!equip_picker_open) {
-            // Click an equipment slot → select and open picker
-            for (var _msl = 0; _msl < 8; _msl++) {
-                var _mslx = 40 + floor(_msl / 4) * 580;
-                var _msly = 114 + (_msl mod 4) * 120;
-                if (_mmx >= _mslx && _mmx < _mslx+520 && _mmy >= _msly && _mmy < _msly+100) {
+            // Click an equipment slot → select and open picker.
+            // 9 slots in 2 columns of up to 5 rows (col = slot div 5).
+            for (var _msl = 0; _msl < 9; _msl++) {
+                var _mslx = 40 + floor(_msl / 5) * 580;
+                var _msly = 114 + (_msl mod 5) * 108;
+                if (_mmx >= _mslx && _mmx < _mslx+520 && _mmy >= _msly && _mmy < _msly+96) {
                     equip_slot_selected = _msl;
                     equip_picker_open   = true;
                     equip_picker_index  = 0;
@@ -1337,7 +1338,7 @@ if (mouse_check_button_pressed(mb_left)) {
             }
         } else {
             // Picker is open — click a row to equip
-            var _mpslot    = ["weapon","offhand","helm","chest","gloves","boots","amulet","ring"];
+            var _mpslot    = ["weapon","offhand","helm","chest","gloves","boots","amulet","ring","ranged_weapon"];
             var _mpslname  = _mpslot[equip_slot_selected];
             var _mpitems   = [];
             var _mpsrc     = [];
@@ -1367,6 +1368,9 @@ if (mouse_check_button_pressed(mb_left)) {
                     if (_mcr != -1 && _mcr != _mpcl) {
                         var _mcrnames = ["Arcanist", "Bloodwarden", "Shadowstrider"];
                         equip_msg = _mchosen.name + " requires " + _mcrnames[_mcr] + ".";
+                    } else if (equip_slot_selected == 1 && two_handed_equipped()) {
+                        // Offhand slot is locked while a two-handed weapon is equipped.
+                        equip_msg = "Two-handed weapon equipped — offhand is locked.";
                     } else {
                         equip_msg = "";
                         var _msinfo = _mpsrc[_mri];
@@ -1379,6 +1383,10 @@ if (mouse_check_button_pressed(mb_left)) {
                             if (_mold != undefined) array_push(global.carried_items, _mold);
                         }
                         global.inventory[equip_slot_selected] = _mchosen;
+                        // 2H weapon locks the offhand: return any equipped offhand to the pack.
+                        if ((equip_slot_selected == 0 || equip_slot_selected == 8) && item_is_two_handed(_mchosen)) {
+                            return_offhand_to_pack(_mp_in_hub);
+                        }
                         equip_notif_msg   = "Equipped " + _mchosen.name + "  →  " + string_upper(_mpslname);
                         equip_notif_timer = 150;
                         audio_play_sound(Check_1, 1, false);
@@ -1475,26 +1483,29 @@ if (mouse_check_button_pressed(mb_left)) {
 // EQUIPMENT TAB — slot select, picker, unequip
 // =============================================================================
 if (menu_tab == 1) {
-    var _slot_keys = ["weapon", "offhand", "helm", "chest", "gloves", "boots", "amulet", "ring"];
+    var _slot_keys = ["weapon", "offhand", "helm", "chest", "gloves", "boots", "amulet", "ring", "ranged_weapon"];
 
     if (!equip_picker_open) {
-        // Grid navigation: 2 columns of 4 (col = slot div 4, row = slot mod 4).
-        // W/S move up/down within the current column; A/D switch columns laterally.
-        var _eq_row = equip_slot_selected mod 4;
-        var _eq_col = equip_slot_selected div 4;
+        // Grid navigation: 2 columns (col = slot div 5). Col 0 holds slots 0-4 (5 rows),
+        // col 1 holds slots 5-8 (4 rows). W/S move within a column, A/D switch columns;
+        // the row is clamped to the destination column's height so col 1 never selects 9.
+        var _eq_col = equip_slot_selected div 5;
+        var _eq_row = equip_slot_selected mod 5;
+        var _eq_rows = (_eq_col == 0) ? 5 : 4;   // rows available in the current column
         if (keyboard_check_pressed(ord("W")) || keyboard_check_pressed(vk_up)) {
-            _eq_row = (_eq_row - 1 + 4) mod 4;
+            _eq_row = (_eq_row - 1 + _eq_rows) mod _eq_rows;
         }
         if (keyboard_check_pressed(ord("S")) || keyboard_check_pressed(vk_down)) {
-            _eq_row = (_eq_row + 1) mod 4;
+            _eq_row = (_eq_row + 1) mod _eq_rows;
         }
         if (keyboard_check_pressed(ord("A")) || keyboard_check_pressed(vk_left)) {
             _eq_col = 0;
         }
         if (keyboard_check_pressed(ord("D")) || keyboard_check_pressed(vk_right)) {
             _eq_col = 1;
+            _eq_row = min(_eq_row, 3);   // col 1 has only rows 0-3
         }
-        equip_slot_selected = _eq_col * 4 + _eq_row;
+        equip_slot_selected = _eq_col * 5 + _eq_row;
 
         // Enter opens the item picker for this slot
         if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)) {
@@ -1566,6 +1577,9 @@ if (menu_tab == 1) {
                 var _req_name    = (_chosen_cr >= 0 && _chosen_cr <= 2) ? _class_names[_chosen_cr] : "Unknown";
                 equip_msg = _chosen.name + " requires " + _req_name + ".";
                 // Don't equip — skip the rest of the block
+            } else if (equip_slot_selected == 1 && two_handed_equipped()) {
+                // Offhand slot is locked while a two-handed weapon is equipped.
+                equip_msg = "Two-handed weapon equipped — offhand is locked.";
             } else {
             equip_msg = "";
 
@@ -1582,6 +1596,11 @@ if (menu_tab == 1) {
             }
 
             global.inventory[equip_slot_selected] = _chosen;
+            // A 2H weapon (melee slot 0 or ranged slot 8) locks the offhand:
+            // return any equipped offhand to the pack so the slot empties.
+            if ((equip_slot_selected == 0 || equip_slot_selected == 8) && item_is_two_handed(_chosen)) {
+                return_offhand_to_pack(_picker_in_hub);
+            }
             equip_notif_msg   = "Equipped " + _chosen.name + "  →  " + string_upper(_slot_name);
             equip_notif_timer = 150;
             audio_play_sound(Check_1, 1, false);

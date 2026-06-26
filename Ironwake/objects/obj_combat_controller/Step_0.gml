@@ -635,6 +635,17 @@ if (player_turn) {
                             } else if (_ab_stat_dtype == 3) {
                                 _dmg += player.derived.elem_dmg_bonus + player.derived.cha_dmg_bonus;
                             }
+                            // Reach-gated weapon damage: the melee weapon's flat damage feeds
+                            // melee abilities, the ranged weapon's feeds ranged abilities
+                            // (SYSTEMS_WEAPON_ROLES.md §B). Self-targeted abilities are "none".
+                            if (variable_struct_exists(player.derived, "melee_dmg_bonus")) {
+                                var _reach_ac = ability_attack_class(ab);
+                                if (ability_class_is_melee(_reach_ac)) {
+                                    _dmg += player.derived.melee_dmg_bonus;
+                                } else if (ability_class_is_ranged(_reach_ac)) {
+                                    _dmg += player.derived.ranged_dmg_bonus;
+                                }
+                            }
                         }
 
                         // --- Expansion ability damage riders (pre-crit so they scale) ---

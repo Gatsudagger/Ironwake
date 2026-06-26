@@ -25,8 +25,17 @@
 // E.g.  "+4 STR   +2 CON  +5% Crit"
 // ---------------------------------------------------------------------------
 function ui_item_stat_str(item) {
-    if (!variable_struct_exists(item, "stat_value") || !variable_struct_exists(item, "stat_name")) return "";
-    var _s = "+" + string(item.stat_value) + " " + item.stat_name;
+    // Weapons lead with their flat reach-gated damage ("+N dmg"); any +stat the weapon
+    // also carries (global, as before) follows it. Non-weapons just show their stat.
+    var _s = "";
+    if (variable_struct_exists(item, "weapon_damage") && item.weapon_damage > 0) {
+        _s = "+" + string(item.weapon_damage) + " dmg";
+        // Tag the weapon's hand requirement so the offhand trade-off is visible.
+        _s += (variable_struct_exists(item, "two_handed") && item.two_handed) ? "  (2H)" : "  (1H)";
+    }
+    if (variable_struct_exists(item, "stat_value") && variable_struct_exists(item, "stat_name") && item.stat_value != 0) {
+        _s += (_s == "" ? "" : "   ") + "+" + string(item.stat_value) + " " + item.stat_name;
+    }
     if (variable_struct_exists(item, "affixes")) {
         var _aff = item.affixes;
         var _alen = array_length(_aff);
@@ -213,7 +222,8 @@ function ui_draw_item_icon(x, y, sz, item) {
     // Equipment slots (weapons dispatch to subtype helper)
     if (_spr == -1) {
         switch (_slot) {
-            case "weapon":  _spr = ui_weapon_icon_sprite(item);  break;
+            case "weapon":        _spr = ui_weapon_icon_sprite(item);  break;
+            case "ranged_weapon": _spr = ui_weapon_icon_sprite(item);  break;
             case "offhand": _spr = ui_offhand_icon_sprite(item); break;
             case "helm":    _spr = spr_icon_helm;                break;
             case "chest":   _spr = spr_icon_chest;               break;
@@ -240,7 +250,8 @@ function ui_draw_item_icon(x, y, sz, item) {
         // Fallback: slot-colored fill + 3-letter abbreviation
         var _bg;
         switch (_slot) {
-            case "weapon":  _bg = make_color_rgb(80, 38, 38); break;
+            case "weapon":        _bg = make_color_rgb(80, 38, 38); break;
+            case "ranged_weapon": _bg = make_color_rgb(80, 56, 30); break;
             case "offhand": _bg = make_color_rgb(32, 55, 80); break;
             case "helm":    _bg = make_color_rgb(48, 48, 72); break;
             case "chest":   _bg = make_color_rgb(36, 58, 44); break;
@@ -252,7 +263,8 @@ function ui_draw_item_icon(x, y, sz, item) {
         }
         var _abbrev;
         switch (_slot) {
-            case "weapon":  _abbrev = "WPN"; break;
+            case "weapon":        _abbrev = "MEL"; break;
+            case "ranged_weapon": _abbrev = "RWP"; break;
             case "offhand": _abbrev = "OFF"; break;
             case "helm":    _abbrev = "HLM"; break;
             case "chest":   _abbrev = "CHT"; break;
@@ -738,7 +750,8 @@ function status_fx_sprite_for(se) {
 // item_slot_label(slot) — display name for an equipment slot key (weapon→"Weapon").
 function item_slot_label(slot) {
     switch (slot) {
-        case "weapon":  return "Weapon";
+        case "weapon":        return "Melee Weapon";
+        case "ranged_weapon": return "Ranged Weapon";
         case "offhand": return "Offhand";
         case "helm":    return "Helm";
         case "chest":   return "Chest";
@@ -882,7 +895,13 @@ function ui_draw_enemy_status_icons(x, y, status_effects) {
 function ui_draw_item_tooltip(ttx, tty, item, compared_item) {
     var _pad  = 10;
     var _lh   = 20;
-    var _tw   = 300;
+    // Width is now adaptive: it grows to fit the longest line up to a cap, and any
+    // line wider than the inner text area wraps to multiple lines (draw_text_ext).
+    var _tw_min = 300;
+    var _tw_max = 470;
+
+    draw_set_halign(fa_left);
+    draw_set_valign(fa_top);
 
     var _has_rarity = variable_struct_exists(item, "rarity");
     var _rcol  = _has_rarity ? item_rarity_color(item.rarity) : make_color_rgb(80, 210, 210);
@@ -898,14 +917,47 @@ function ui_draw_item_tooltip(ttx, tty, item, compared_item) {
     var _has_compare = (compared_item != undefined);
     var _has_flavor  = (_flavor != "");
 
-    var _lines = 3  // name + slot + stat string
-               + (_has_unique  ? 1 : 0)
-               + (_has_flavor  ? 2 : 0)
-               + (_has_compare ? 3 : 0);
-    var _th = _pad * 2 + _lines * _lh;
+    // Build the row list. kind: "text" (txt+col, optional right-aligned tag) or "divider".
+    var _rows = [];
+    array_push(_rows, { kind: "text", txt: item.name, col: _rcol, tag: _rname, tagcol: make_color_rgb(130, 140, 165) });
+    array_push(_rows, { kind: "text", txt: variable_struct_exists(item, "slot") ? string_upper(item.slot) : " ",
+                        col: make_color_rgb(100, 110, 140), tag: "", tagcol: c_white });
+    array_push(_rows, { kind: "text", txt: ui_item_stat_str(item), col: c_white, tag: "", tagcol: c_white });
+    if (_has_unique) array_push(_rows, { kind: "text", txt: item.unique_desc, col: make_color_rgb(255, 200, 50), tag: "", tagcol: c_white });
+    if (_has_flavor) {
+        array_push(_rows, { kind: "divider" });
+        array_push(_rows, { kind: "text", txt: _flavor, col: make_color_rgb(110, 120, 145), tag: "", tagcol: c_white });
+    }
+    if (_has_compare) {
+        array_push(_rows, { kind: "divider" });
+        array_push(_rows, { kind: "text", txt: "Replaces: " + compared_item.name, col: make_color_rgb(150, 160, 180), tag: "", tagcol: c_white });
+        array_push(_rows, { kind: "text", txt: ui_item_stat_str(compared_item), col: make_color_rgb(110, 120, 140), tag: "", tagcol: c_white });
+    }
+
+    // Pass 1 — pick the panel width from the widest single-line content (name line
+    // also reserves room for the right-aligned rarity tag), clamped to [min, max].
+    var _maxw = _tw_min - _pad * 2;
+    for (var _ri = 0; _ri < array_length(_rows); _ri++) {
+        var _row = _rows[_ri];
+        if (_row.kind != "text" || _row.txt == "") continue;
+        var _w = string_width(_row.txt);
+        if (_row.tag != "") _w += string_width(_row.tag) + 24;
+        _maxw = max(_maxw, _w);
+    }
+    var _tw = clamp(_maxw + _pad * 2, _tw_min, _tw_max);
+    var _ww = _tw - _pad * 2;   // inner wrap width
+
+    // Pass 2 — measure height with wrapping applied.
+    var _th = _pad * 2;
+    for (var _ri = 0; _ri < array_length(_rows); _ri++) {
+        var _row = _rows[_ri];
+        if (_row.kind == "divider") { _th += 12; continue; }
+        _th += (_row.txt == "") ? _lh : string_height_ext(_row.txt, _lh, _ww);
+    }
 
     // Screen-clamp
     if (ttx + _tw > 1270) ttx -= _tw + 24;
+    if (ttx < 4)          ttx  = 4;
     if (tty + _th > 710)  tty  = 710 - _th;
     if (tty < 4)          tty  = 4;
 
@@ -918,63 +970,26 @@ function ui_draw_item_tooltip(ttx, tty, item, compared_item) {
     draw_rectangle(ttx, tty, ttx + _tw, tty + _th, true);
     draw_rectangle(ttx, tty, ttx + _tw, tty + 3, false);
 
-    draw_set_halign(fa_left);
-    draw_set_valign(fa_top);
+    // Pass 3 — render rows (wrapped via draw_text_ext).
     var _cx = ttx + _pad;
     var _cy = tty + _pad;
-
-    // Item name + rarity tag
-    draw_set_color(_rcol);
-    draw_text(_cx, _cy, item.name);
-    if (_rname != "") {
-        draw_set_halign(fa_right);
-        draw_set_color(make_color_rgb(130, 140, 165));
-        draw_text(ttx + _tw - _pad, _cy, _rname);
-        draw_set_halign(fa_left);
-    }
-    _cy += _lh;
-
-    // Slot label
-    if (variable_struct_exists(item, "slot")) {
-        draw_set_color(make_color_rgb(100, 110, 140));
-        draw_text(_cx, _cy, string_upper(item.slot));
-        _cy += _lh;
-    } else {
-        _cy += _lh;
-    }
-
-    // Stats string (primary + all affixes)
-    draw_set_color(c_white);
-    draw_text(_cx, _cy, ui_item_stat_str(item));
-    _cy += _lh;
-
-    // Unique effect
-    if (_has_unique) {
-        draw_set_color(make_color_rgb(255, 200, 50));
-        draw_text(_cx, _cy, item.unique_desc);
-        _cy += _lh;
-    }
-
-    // Flavor description (separate section with divider)
-    if (_has_flavor) {
-        draw_set_color(make_color_rgb(50, 55, 80));
-        draw_line(_cx, _cy + 8, ttx + _tw - _pad, _cy + 8);
-        _cy += _lh;
-        draw_set_color(make_color_rgb(110, 120, 145));
-        draw_text(_cx, _cy, _flavor);
-        _cy += _lh;
-    }
-
-    // Comparison (Replaces)
-    if (_has_compare) {
-        draw_set_color(make_color_rgb(50, 55, 80));
-        draw_line(_cx, _cy + 8, ttx + _tw - _pad, _cy + 8);
-        _cy += _lh;
-        draw_set_color(make_color_rgb(150, 160, 180));
-        draw_text(_cx, _cy, "Replaces: " + compared_item.name);
-        _cy += _lh;
-        draw_set_color(make_color_rgb(110, 120, 140));
-        draw_text(_cx, _cy, ui_item_stat_str(compared_item));
+    for (var _ri = 0; _ri < array_length(_rows); _ri++) {
+        var _row = _rows[_ri];
+        if (_row.kind == "divider") {
+            draw_set_color(make_color_rgb(50, 55, 80));
+            draw_line(_cx, _cy + 6, ttx + _tw - _pad, _cy + 6);
+            _cy += 12;
+            continue;
+        }
+        draw_set_color(_row.col);
+        draw_text_ext(_cx, _cy, _row.txt, _lh, _ww);
+        if (_row.tag != "") {
+            draw_set_halign(fa_right);
+            draw_set_color(_row.tagcol);
+            draw_text(ttx + _tw - _pad, _cy, _row.tag);
+            draw_set_halign(fa_left);
+        }
+        _cy += (_row.txt == "") ? _lh : string_height_ext(_row.txt, _lh, _ww);
     }
 
     draw_set_halign(fa_left);
@@ -2584,6 +2599,12 @@ function ui_draw_character_menu() {
             draw_text(_pad, _content_y + 246, "Elem abilities (INT):  +" + string(_derived.elem_dmg_bonus));
             draw_text(_pad, _content_y + 270, "DoT / effects  (WIS):  +" + string(_derived.dot_dmg_bonus));
             draw_text(_pad, _content_y + 294, "All abilities  (CHA):  +" + string(_derived.cha_dmg_bonus));
+            // Reach-gated weapon damage totals — flat dmg added to melee vs ranged abilities
+            // only (SYSTEMS_WEAPON_ROLES.md §B). Read from apply_equipment_stats's per-reach
+            // accumulators so this matches the cast resolver and the equip tab's per-weapon "+N dmg".
+            var _wpn_bonus = apply_equipment_stats({});
+            draw_text(_pad, _content_y + 318, "Melee Weapon dmg:   +" + string(_wpn_bonus.melee_dmg_bonus));
+            draw_text(_pad, _content_y + 342, "Ranged Weapon dmg:  +" + string(_wpn_bonus.ranged_dmg_bonus));
             // Crit chances (right sub-column) — now include the flat gear/Duelist bonus
             var _crit_x = _pad + 320;
             draw_set_color(_dc);
@@ -2731,8 +2752,8 @@ function ui_draw_character_menu() {
 
     // ---- EQUIPMENT TAB ----
     if (menu_tab == 1) {
-        var _slot_names = ["Weapon", "Offhand", "Helm", "Chest", "Gloves", "Boots", "Amulet", "Ring"];
-        var _slot_keys  = ["weapon", "offhand", "helm", "chest", "gloves", "boots", "amulet", "ring"];
+        var _slot_names = ["Melee Weapon", "Offhand", "Helm", "Chest", "Gloves", "Boots", "Amulet", "Ring", "Ranged Weapon"];
+        var _slot_keys  = ["weapon", "offhand", "helm", "chest", "gloves", "boots", "amulet", "ring", "ranged_weapon"];
         var _sel_slot   = _gc.equip_slot_selected;
 
         // Equip confirmation notification (fades over 150 frames, fully opaque first 120)
@@ -2760,11 +2781,15 @@ function ui_draw_character_menu() {
         }
         draw_set_halign(fa_left);
 
-        // 8 equipment slots
-        for (var _sl = 0; _sl < 8; _sl++) {
-            var _slx    = _pad + floor(_sl / 4) * 580;
-            var _sly    = _content_y + 24 + (_sl mod 4) * 120;
+        // 9 equipment slots — 2 columns of up to 5 rows (col = slot div 5).
+        var _offhand_locked = two_handed_equipped();   // 2H weapon locks the offhand slot (1)
+        for (var _sl = 0; _sl < 9; _sl++) {
+            var _slx    = _pad + floor(_sl / 5) * 580;
+            var _sly    = _content_y + 24 + (_sl mod 5) * 108;
             var _is_sel = (_sl == _sel_slot);
+            // The offhand slot fades out while a two-handed weapon is equipped.
+            var _slot_locked = (_sl == 1 && _offhand_locked);
+            if (_slot_locked) draw_set_alpha(0.4);
 
             // Slot background — highlight selected row
             if (_is_sel) {
@@ -2772,9 +2797,9 @@ function ui_draw_character_menu() {
             } else {
                 draw_set_color(make_color_rgb(20, 25, 40));
             }
-            draw_rectangle(_slx, _sly, _slx + 520, _sly + 100, false);
+            draw_rectangle(_slx, _sly, _slx + 520, _sly + 96, false);
             draw_set_color(_is_sel ? make_color_rgb(80, 140, 220) : make_color_rgb(50, 60, 80));
-            draw_rectangle(_slx, _sly, _slx + 520, _sly + 100, true);
+            draw_rectangle(_slx, _sly, _slx + 520, _sly + 96, true);
 
             var _equipped = undefined;
             if (variable_global_exists("inventory") && array_length(global.inventory) > _sl) {
@@ -2809,10 +2834,14 @@ function ui_draw_character_menu() {
                     draw_set_color(make_color_rgb(100, 110, 135));
                     draw_text(_slx + 56, _sly + 74, ui_truncate(_equipped.effect_desc, _txt_w));
                 }
+            } else if (_slot_locked) {
+                draw_set_color(make_color_rgb(150, 130, 90));
+                draw_text(_slx + 10, _sly + 45, "Two-handed: offhand locked");
             } else {
                 draw_set_color(make_color_rgb(60, 65, 80));
                 draw_text(_slx + 10, _sly + 45, "— Empty —");
             }
+            if (_slot_locked) draw_set_alpha(1.0);
         }
 
         // Bottom instruction line

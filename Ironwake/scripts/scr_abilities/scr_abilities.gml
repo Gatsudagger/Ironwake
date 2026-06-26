@@ -739,6 +739,7 @@ function ability_attack_class(ab) {
 
 // Convenience predicates used by the control checks.
 function ability_class_is_melee(_ac) { return (_ac == "melee_attack" || _ac == "melee_spell"); }
+function ability_class_is_ranged(_ac) { return (_ac == "ranged_attack" || _ac == "ranged_spell"); }
 function ability_class_is_spell(_ac) { return (_ac == "melee_spell" || _ac == "ranged_spell"); }
 
 // Human-readable label for tooltips / the compendium.
