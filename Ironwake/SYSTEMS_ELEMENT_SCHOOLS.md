@@ -42,7 +42,7 @@ from the viability + weapon-roles passes; schools are the new *damage* layer.
 
 ---
 
-## B. `ability_school(ab)` — the resolver  [ ]
+## B. `ability_school(ab)` — the resolver  [x]
 A new optional `school` string field on abilities. The resolver returns it, or a
 safe default inferred from `damage_type` so nothing is ever homeless:
 
@@ -65,7 +65,7 @@ Schools with no fitting ability yet (shadow, maybe arcane) just stay sparse.
 
 ---
 
-## C. Flat-per-hit school-damage affixes (the build axis)  [ ]
+## C. Flat-per-hit school-damage affixes (the build axis)  [x]
 Gear can grant **"+X [school] damage"** — a flat bonus added to every damaging
 ability of that school. **Flat, never % and never crit-scaled** (the deliberate
 choice: a % "spell power" multiplier is exactly the compounding pattern that makes
@@ -84,8 +84,11 @@ loadouts broken; flat keeps schools a build *direction*, not a power explosion).
   `combat_resolve_damage(_sb, ab.damage_type, armor, el_resist)` to `_final_dmg`.
   (Resolved against the ability's own mitigation, once, flat — same one rule as
   all the other flat weapon/gear components.)
-- **Magnitudes (first pass, tunable):** +2 / +4 / +6 by affix rarity
-  (uncommon/rare/epic), matching the elemental weapon affix budget.
+- **Magnitudes (M-revised 2026-06-25 — the PHASE 2 ROLLING rule):** per-affix by
+  TIER — uncommon **+1**, rare **+2–4 (cap 4 per affix)**, epic **+5–6**. An item
+  with 2+ affix slots may roll TWO DIFFERENT schools (e.g. +1 fire & +2 shadow =
+  best-in-slot). It's a RANDOM affix, not on every item. Phase 1's plumbing already
+  supports multiple `school_*` per item; Phase 2 adds the rolled pool.
 - **Naming:** prefix/suffix per school, caster-flavored — e.g. fire
   "Smoldering …" / "… of Flames", frost "Rimebound …" / "… of Rime", shadow
   "Umbral …" / "… of Shadow", etc. (full table at build time).
@@ -111,7 +114,7 @@ damage" gear affix buffs your fire *abilities*; it is a separate, stackable axis
 
 ---
 
-## E. UI  [ ]
+## E. UI  [x]
 - Ability detail / tooltip: show the school (e.g. "Fire · Ranged Spell").
 - Item tooltip / `ui_item_stat_str`: show the "+X fire damage" affix line (reuse
   the affix formatter; route `school_*` stat names to a readable string).
@@ -135,7 +138,7 @@ damage" gear affix buffs your fire *abilities*; it is a separate, stackable axis
 ---
 
 ## Build order (staged, each compiles + is testable)
-1. **Foundation:** `school` field + `ability_school()` + tag existing abilities +
+1. [x] **Foundation (BUILT 2026-06-25, full compile confirmed via IDE F5):** `school` field + `ability_school()` + tag existing abilities +
    `school_dmg` plumbing (apply_equipment_stats → derived → cast resolver flat add)
    + UI (ability tooltip school, item affix line) + Compendium section + 1–2
    hand-authored demo "+X school damage" pieces. No rolled affixes yet.

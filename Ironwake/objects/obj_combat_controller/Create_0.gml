@@ -76,6 +76,11 @@ _derived.ranged_dmg_bonus = _equip_bonus.ranged_dmg_bonus;
 _derived.melee_elem  = _equip_bonus.melee_elem;
 _derived.ranged_elem = _equip_bonus.ranged_elem;
 
+// Flat "+X <school> damage" gear affixes (SYSTEMS_ELEMENT_SCHOOLS.md §C): the cast
+// resolver reads player.derived.school_dmg[ability_school(ab)] and adds it as a
+// separate truly-flat post-crit component, mitigated by the ability's own type.
+_derived.school_dmg = _equip_bonus.school_dmg;
+
 // Assemble the player combat struct.
 // HP and DODGE come from derived values; armor and el_resist are from the
 // starting equipment (robe or leathers, +1 each).

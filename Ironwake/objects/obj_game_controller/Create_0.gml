@@ -250,6 +250,20 @@ _ember_ring.affixes = [{ suffix: "of Insight", prefix: "Arcane", stat_name: "INT
 var _forsaken_circlet = create_item("Forsaken Circlet", "helm", 2, "INT", 5, "worn by a mage of the fallen court", 82);
 _forsaken_circlet.affixes = [{ suffix: "of Clarity", prefix: "Wise", stat_name: "WIS", stat_value: 3 }];
 
+// --- DEMO SCHOOL-DAMAGE JEWELRY (SYSTEMS_ELEMENT_SCHOOLS.md §C, Phase 1) ---
+// Hand-authored "+X <school> damage" pieces so the flat school-damage axis is
+// reachable before rolled affixes exist (Phase 2). The school_<name> affix adds a
+// flat bonus to every damaging ability of that school (mitigated by the ability's
+// own type). Magnitudes by affix tier: uncommon +1, rare +2-4 (cap 4), epic +5-6.
+var _sch_ember = create_item("Emberheart Talisman", "amulet", 2, "INT", 5, "a warm coal that never cools", 76);
+_sch_ember.affixes = [{ suffix: "of Flames", prefix: "Smoldering", stat_name: "school_fire", stat_value: 4 }];
+
+var _sch_blood = create_item("Bloodsoaked Band", "ring", 1, "CON", 3, "darkened with old stains", 28);
+_sch_blood.affixes = [{ suffix: "of the Leech", prefix: "Sanguine", stat_name: "school_blood", stat_value: 1 }];
+
+var _sch_venom = create_item("Venomous Signet", "ring", 1, "DEX", 3, "the crest weeps a green bead", 28);
+_sch_venom.affixes = [{ suffix: "of Venom", prefix: "Toxic", stat_name: "school_poison", stat_value: 1 }];
+
 global.loot_table_common = [
     // Weapons
     _cw_ashen,
@@ -315,6 +329,8 @@ global.loot_table_uncommon = [
     // Ring
     _ember_ring,
     create_item("Voidtouched Ring",    "ring",    1, "INT", 3, "hums with void energy",         28),
+    _sch_blood,   // +1 Blood school damage (demo)
+    _sch_venom,   // +1 Poison school damage (demo)
 ];
 
 global.loot_table_rare = [
@@ -342,6 +358,7 @@ global.loot_table_rare = [
     // Amulet
     create_item("Medallion of Endurance","amulet",2, "CON", 5, "endures where others break",    72),
     create_item("Warden's Eye",        "amulet",  2, "WIS", 5, "see threats before they strike", 75),
+    _sch_ember,   // +4 Fire school damage (demo)
     // Ring
     create_item("Wraithbone Signet",   "ring",    2, "WIS", 5, "",                              70),
     create_item("Bloodpact Ring",      "ring",    2, "STR", 5, "sealed in blood",               72),

@@ -53,6 +53,10 @@ function ui_item_stat_str(item) {
                 _s += "   +" + string(_af.stat_value) + " Dodge";
             } else if (_asn == "gold_find") {
                 _s += "   +" + string(_af.stat_value) + "% Gold";
+            } else if (string_copy(_asn, 1, 7) == "school_") {
+                // "+X <school> damage" gear affix (SYSTEMS_ELEMENT_SCHOOLS.md §C).
+                var _sch_name = string_copy(_asn, 8, string_length(_asn) - 7);
+                _s += "   +" + string(_af.stat_value) + " " + school_label(_sch_name) + " dmg";
             } else {
                 _s += "   +" + string(_af.stat_value) + " " + _asn;
             }
@@ -1518,6 +1522,10 @@ function ui_draw_ability_tooltip(x, anchor_bottom, ability, caster) {
     //     exactly and anchored by its bottom edge (see header). Mirror these flags
     //     in the height sum and the body draw so all three stay consistent. ---
     var _ac_lbl  = ability_attack_class_label(ability_attack_class(ability));
+    // Element school prefix (SYSTEMS_ELEMENT_SCHOOLS.md §E): "Fire · Ranged Spell".
+    var _sch_lbl = school_label(ability_school(ability));
+    var _class_line = (_sch_lbl != "" && _ac_lbl != "") ? (_sch_lbl + " · " + _ac_lbl)
+                    : (_sch_lbl != "" ? _sch_lbl : _ac_lbl);
     var _is_aoe  = variable_struct_exists(ability, "is_aoe") && ability.is_aoe;
     var _has_dmg = variable_struct_exists(ability, "base_damage") && ability.base_damage > 0;
 
@@ -1531,7 +1539,7 @@ function ui_draw_ability_tooltip(x, anchor_bottom, ability, caster) {
     var panel_h = padding;                 // top pad
     panel_h += line_h + 4;                  // name
     panel_h += line_h;                      // AP / resource cost
-    if (_ac_lbl != "") panel_h += line_h;   // attack-class label
+    if (_class_line != "") panel_h += line_h;  // school · attack-class label
     if (_is_aoe)       panel_h += line_h;   // AoE indicator
     panel_h += line_h / 2;                  // blank gap
     if (_has_dmg)      panel_h += line_h;   // damage
@@ -1583,10 +1591,10 @@ function ui_draw_ability_tooltip(x, anchor_bottom, ability, caster) {
     draw_text(tx, cur_y, cost_str);
     cur_y += line_h;
 
-    // --- Attack class (melee/ranged x attack/spell) — drives root/silence ---
-    if (_ac_lbl != "") {
+    // --- School · Attack class (melee/ranged x attack/spell) — drives root/silence ---
+    if (_class_line != "") {
         draw_set_color(make_color_rgb(150, 175, 210));
-        draw_text(tx, cur_y, _ac_lbl);
+        draw_text(tx, cur_y, _class_line);
         cur_y += line_h;
     }
 
@@ -2286,7 +2294,11 @@ function ui_draw_ability_detail(ab) {
     draw_set_color(make_color_rgb(228, 190, 90));
     draw_text(_tx, _y + 40, _costline);
     draw_set_color(make_color_rgb(150, 160, 190));
-    draw_text(_tx, _y + 62, ability_attack_class_tag(ab));
+    // School prefix (SYSTEMS_ELEMENT_SCHOOLS.md §E), e.g. "Fire  (ranged/spell)".
+    var _detail_school = school_label(ability_school(ab));
+    var _detail_class  = ability_attack_class_tag(ab);
+    if (_detail_school != "") _detail_class = _detail_school + " school  " + _detail_class;
+    draw_text(_tx, _y + 62, _detail_class);
 
     _y += 96;
     draw_set_color(make_color_rgb(60, 64, 90));
@@ -2393,6 +2405,15 @@ function ui_compendium_sections() {
                 { term: "Elemental",    text: "Fire, frost and shock magic. Resisted by elemental wards rather than Armor." },
                 { term: "Drain (Void)", text: "Siphons life or resources from the target and bypasses Armor entirely." },
                 { term: "Blood",        text: "Not a separate rule — the Bloodwarden's self-fueled flavor of Drain. It bypasses Armor like Drain, but many blood abilities cost some of your own HP to cast." },
+            ],
+        },
+        {
+            title: "Damage Schools",
+            entries: [
+                { term: "What schools are", text: "A school is the FLAVOR of an ability's damage (its build identity), layered on top of the Damage Type. The Damage Type still decides mitigation — a Fire spell is still Elemental for Armor/wards. The eight schools: Fire, Frost, Shock, Arcane, Blood, Void, Shadow, Poison." },
+                { term: "School-damage gear", text: "Some gear grants \"+X <school> damage\" — a flat bonus added to every damaging ability of that school. It's always FLAT (never a percentage), so schools point your build in a direction without exploding your damage. A piece can carry more than one school, and they stack." },
+                { term: "Schools vs. Types",  text: "Damage TYPE (Physical / Elemental / Drain / Blood) = how the hit is mitigated. SCHOOL (Fire / Frost / …) = what flavor it is and which \"+X school damage\" gear buffs it. A school bonus is mitigated by the ability's own Type — e.g. a Poison-school bonus on a physical dart is reduced by Armor, while a poison DoT it leaves is unmitigated." },
+                { term: "Frost & Shock",      text: "These schools have few dedicated abilities yet — for now they come mostly from Frostbound / Storm-touched weapons, which apply the matching status. More school content arrives over time." },
             ],
         },
         {

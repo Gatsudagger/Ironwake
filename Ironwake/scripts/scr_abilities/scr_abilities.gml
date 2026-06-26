@@ -714,6 +714,24 @@ global.abilities_bloodwarden[13].is_aoe   = true;   // Cleave      — 1-AP swee
 
 
 // =============================================================================
+// SCHOOL TAGS — explicit `school` overrides where flavor deviates from the
+// damage_type default (see ability_school()). Everything not listed inherits the
+// default: dtype 1->arcane, 2->void, 3->blood, physical->none. So the arcane
+// (Arcane Burst/Rift/Echo/Singularity/Soul Nova), void (Void Drain/Entropy/Mana
+// Sever) and blood (Blood Leech/Vital Theft/Bloodfeast/Crimson Apex/Rupture)
+// abilities need no tag here. (SYSTEMS_ELEMENT_SCHOOLS.md §B.)
+// =============================================================================
+global.abilities_arcanist[0].school  = "fire";    // Soulfire     — elemental -> fire
+global.abilities_arcanist[5].school  = "shadow";  // Curse        — dark hex (no dmg; flavor)
+global.abilities_arcanist[9].school  = "shadow";  // Soulbind     — dark binding
+global.abilities_arcanist[13].school = "fire";    // Scorch       — burn primer
+
+global.abilities_bloodwarden[8].school = "poison"; // Plague Touch — plague (no dmg; flavor)
+
+global.abilities_shadowstrider[3].school = "poison"; // Poison Dart — the poison ability
+
+
+// =============================================================================
 // ATTACK CLASSIFICATION — reach (melee/ranged) x kind (attack/spell).
 // Control effects key off this: root blocks melee, silence blocks spell, stun all.
 // See SYSTEMS_ATTACK_CLASS.md.
@@ -784,6 +802,43 @@ function ability_cooldown(ab) {
 function ability_is_detonator(ab) {
     var _n = is_struct(ab) ? ab.name : ab;
     return (_n == "Snipe" || _n == "Assassinate" || _n == "Arcane Burst" || _n == "Soul Nova");
+}
+
+
+// =============================================================================
+// ELEMENT SCHOOLS — damage-flavor layer ON TOP of the coarse damage_type buckets
+// (SYSTEMS_ELEMENT_SCHOOLS.md). School is METADATA only: damage_type still governs
+// mitigation; the school tags an ability for build identity and "+X <school> damage"
+// gear affixes. Eight schools: fire / frost / shock / arcane / blood / void /
+// shadow / poison. frost & shock have no ability content yet (sparse by design —
+// filled by future content + the weapon elemental affixes that apply those statuses).
+// =============================================================================
+
+// ability_school(ab) — the school an ability damages with. Returns an explicit
+// `school` field if tagged (see the SCHOOL TAGS block below), else a safe default
+// inferred from damage_type so nothing is ever homeless. Physical attacks have no
+// school ("").
+function ability_school(ab) {
+    if (variable_struct_exists(ab, "school") && ab.school != "") return ab.school;
+    var _dt = variable_struct_exists(ab, "damage_type") ? ab.damage_type : 0;
+    switch (_dt) {
+        case 3: return "blood";    // blood-type abilities
+        case 2: return "void";     // drain/void-type abilities
+        case 1: return "arcane";   // generic elemental until tagged fire/frost/shock
+    }
+    return "";                     // physical (0) — no school
+}
+
+// Display label for a school string ("fire" -> "Fire"); "" -> "".
+function school_label(school) {
+    if (school == "") return "";
+    return string_upper(string_char_at(school, 1)) + string_copy(school, 2, string_length(school) - 1);
+}
+
+// ability_school_list() — the eight schools in canonical order (Compendium +
+// the school_dmg accumulator iteration).
+function ability_school_list() {
+    return ["fire", "frost", "shock", "arcane", "blood", "void", "shadow", "poison"];
 }
 
 

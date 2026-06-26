@@ -868,6 +868,24 @@ if (player_turn) {
                             }
                         }
 
+                        // School-damage gear affixes: "+X <school> damage" adds a separate
+                        // TRULY-FLAT component to any damaging ability of that school, resolved
+                        // once against the ability's OWN mitigation (school is metadata, dtype
+                        // governs mitigation). Never crit-scaled. (SYSTEMS_ELEMENT_SCHOOLS.md §C)
+                        if (_deals_damage && variable_struct_exists(player.derived, "school_dmg")) {
+                            var _sch = ability_school(ab);
+                            if (_sch != "" && variable_struct_exists(player.derived.school_dmg, _sch)) {
+                                var _sch_bonus = variable_struct_get(player.derived.school_dmg, _sch);
+                                if (_sch_bonus > 0) {
+                                    var _sch_hit = combat_resolve_damage(_sch_bonus, ab.damage_type, target.armor, target.el_resist);
+                                    if (_sch_hit > 0) {
+                                        _final_dmg += _sch_hit;
+                                        array_push(combat_log, ab.name + " — " + school_label(_sch) + " damage (+" + string(_sch_hit) + ")!");
+                                    }
+                                }
+                            }
+                        }
+
                         // Pure debuffs never deal damage, even if a rider tried to add some.
                         if (_deals_damage) combat_apply_damage(target, _final_dmg);
 

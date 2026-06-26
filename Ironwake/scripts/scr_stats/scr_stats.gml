@@ -1199,7 +1199,11 @@ function apply_equipment_stats(stats_struct) {
     // (SYSTEMS_WEAPON_ROLES.md §B). Melee weapon → melee abilities, ranged weapon → ranged.
     var _bonus = { armor: 0, el_resist: 0, bonus_max_hp: 0, crit_flat: 0, dodge_flat: 0, gold_find: 0,
                    melee_dmg_bonus: 0, ranged_dmg_bonus: 0,
-                   melee_elem: undefined, ranged_elem: undefined };
+                   melee_elem: undefined, ranged_elem: undefined,
+                   // Flat "+X <school> damage" accumulator (SYSTEMS_ELEMENT_SCHOOLS.md §C).
+                   // Keyed by the 8 schools; _equip_apply_stat routes "school_<name>" affixes
+                   // here, combat Create copies it onto player.derived.school_dmg.
+                   school_dmg: school_dmg_empty() };
     if (!variable_global_exists("inventory")) return _bonus;
 
     // When a 2H weapon is equipped the offhand slot (1) is locked — ignore it
@@ -1249,6 +1253,15 @@ function apply_equipment_stats(stats_struct) {
     return _bonus;
 }
 
+// school_dmg_empty() — fresh accumulator struct keyed by the 8 element schools,
+// all zeroed. Single source of the school key set (SYSTEMS_ELEMENT_SCHOOLS.md §C).
+function school_dmg_empty() {
+    var _s = {};
+    var _list = ability_school_list();
+    for (var _i = 0; _i < array_length(_list); _i++) variable_struct_set(_s, _list[_i], 0);
+    return _s;
+}
+
 // Internal helper — routes a stat_name/stat_value pair to the correct target.
 function _equip_apply_stat(stats_struct, bonus, stat_name, stat_value) {
     if (stat_name == "armor")        { bonus.armor        += stat_value; }
@@ -1257,6 +1270,13 @@ function _equip_apply_stat(stats_struct, bonus, stat_name, stat_value) {
     else if (stat_name == "crit_flat")   { bonus.crit_flat   += stat_value; }
     else if (stat_name == "dodge_flat")  { bonus.dodge_flat  += stat_value; }
     else if (stat_name == "gold_find")   { bonus.gold_find   += stat_value; }
+    // "school_<name>" -> flat school-damage accumulator (only known schools).
+    else if (string_copy(stat_name, 1, 7) == "school_") {
+        var _sk = string_copy(stat_name, 8, string_length(stat_name) - 7);
+        if (variable_struct_exists(bonus.school_dmg, _sk)) {
+            variable_struct_set(bonus.school_dmg, _sk, variable_struct_get(bonus.school_dmg, _sk) + stat_value);
+        }
+    }
     else {
         var _cur = variable_struct_get(stats_struct, stat_name);
         if (!is_undefined(_cur)) {
