@@ -829,12 +829,48 @@ function clone_item(src) {
 }
 
 // ---------------------------------------------------------------------------
-// roll_affixes(rarity, count, exclude_stat_names)
+// school_affix_value(rarity) — flat "+X <school> damage" magnitude by item
+// rarity for a ROLLED school affix (SYSTEMS_ELEMENT_SCHOOLS.md §C/§F1):
+// uncommon +1, rare +2-4 (cap 4), epic +5-6. Common/legendary never roll one.
+// ---------------------------------------------------------------------------
+function school_affix_value(rarity) {
+    switch (rarity) {
+        case 1: return 1;                    // uncommon
+        case 2: return irandom_range(2, 4);  // rare (cap 4)
+        case 3: return irandom_range(5, 6);  // epic
+    }
+    return 0;
+}
+
+// ---------------------------------------------------------------------------
+// slot_is_caster_affix(slot, base_name) — true if this item is a "caster slot"
+// eligible for rolled school-damage affixes: amulet, ring, or a FOCUS-TYPE
+// offhand (orb/wand/focus/etc.). Shields and other offhands are excluded so
+// they never roll "+spell damage".
+// ---------------------------------------------------------------------------
+function slot_is_caster_affix(slot, base_name) {
+    if (slot == "amulet" || slot == "ring") return true;
+    if (slot == "offhand") {
+        var _bn = string_lower(base_name);
+        var _kw = ["focus", "orb", "wand", "scepter", "tome", "idol", "sigil", "grimoire"];
+        for (var _i = 0; _i < array_length(_kw); _i++) {
+            if (string_pos(_kw[_i], _bn) > 0) return true;
+        }
+    }
+    return false;
+}
+
+// ---------------------------------------------------------------------------
+// roll_affixes(rarity, count, exclude_stat_names, slot, base_name)
 // Returns an array of affix structs chosen from global.affix_pool.
 // No duplicate stat_names. exclude_stat_names prevents doubling the base stat.
 // rarity: 1=uncommon, 2=rare, 3=epic (determines magnitude).
+// On caster slots (slot/base_name eligible per slot_is_caster_affix), each affix
+// slot has SCHOOL_AFFIX_CHANCE% to roll a flat school-damage affix from
+// global.school_affix_pool instead of a stat affix. Dedup keys on stat_name, so
+// two DIFFERENT schools can appear on a 2-affix item but never two of the same.
 // ---------------------------------------------------------------------------
-function roll_affixes(rarity, count, exclude_stat_names) {
+function roll_affixes(rarity, count, exclude_stat_names, slot = "", base_name = "") {
     if (!variable_global_exists("affix_pool")) return [];
     var _pool    = global.affix_pool;
     var _result  = [];
@@ -843,12 +879,39 @@ function roll_affixes(rarity, count, exclude_stat_names) {
         array_push(_used, exclude_stat_names[_ei]);
     }
 
+    // Caster gear may swap a stat affix for a flat school-damage affix per slot.
+    var SCHOOL_AFFIX_CHANCE = 40;   // % chance per affix slot (tunable)
+    var _school_pool = (variable_global_exists("school_affix_pool")
+                        && slot_is_caster_affix(slot, base_name))
+                       ? global.school_affix_pool : [];
+
     var _tries = 0;
     while (array_length(_result) < count && _tries < 60) {
         _tries++;
+        var _dup = false;
+
+        // School affix branch (caster slots only).
+        if (array_length(_school_pool) > 0 && irandom(99) < SCHOOL_AFFIX_CHANCE) {
+            var _sf = _school_pool[irandom(array_length(_school_pool) - 1)];
+            for (var _di = 0; _di < array_length(_used); _di++) {
+                if (_used[_di] == _sf.stat_name) { _dup = true; break; }
+            }
+            if (_dup) continue;
+            var _sval = school_affix_value(rarity);
+            if (_sval <= 0) continue;
+            array_push(_used, _sf.stat_name);
+            array_push(_result, {
+                suffix:     _sf.suffix,
+                prefix:     _sf.prefix,
+                stat_name:  _sf.stat_name,
+                stat_value: _sval,
+            });
+            continue;
+        }
+
+        // Standard stat affix.
         var _idx = irandom(array_length(_pool) - 1);
         var _af  = _pool[_idx];
-        var _dup = false;
         for (var _di = 0; _di < array_length(_used); _di++) {
             if (_used[_di] == _af.stat_name) { _dup = true; break; }
         }
@@ -1005,7 +1068,7 @@ function drop_equipment(rarity_weights, do_discover = true) {
     else if (_eff_rarity == 3) _affix_count = 2;
 
     if (_affix_count > 0) {
-        var _affixes = roll_affixes(_eff_rarity, _affix_count, [_item.stat_name]);
+        var _affixes = roll_affixes(_eff_rarity, _affix_count, [_item.stat_name], _item.slot, _item.base_name);
         apply_affixes_to_item(_item, _affixes);
     }
 

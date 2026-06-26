@@ -418,6 +418,24 @@ global.affix_pool = [
     { suffix: "of Greed",    prefix: "Lucky",   stat_name: "gold_find",    u_val: 3, r_val: 5,  e_val: 8  },
 ];
 
+// School-damage affix pool (SYSTEMS_ELEMENT_SCHOOLS.md §F1, Phase 2).
+// Flat "+X <school> damage" affixes that roll ONLY on caster slots
+// (amulet / ring / focus-type offhand) via roll_affixes(). Magnitude is set by
+// the per-tier rule in school_affix_value() (uncommon +1, rare +2-4, epic +5-6),
+// NOT fixed u/r/e values, so these entries carry only naming + the school key.
+// stat_name "school_<name>" is routed into school_dmg by _equip_apply_stat.
+// Caster-flavored prefix/suffix, kept distinct from the weapon elemental affixes.
+global.school_affix_pool = [
+    { school: "fire",   stat_name: "school_fire",   prefix: "Smoldering",   suffix: "of Flames"      },
+    { school: "frost",  stat_name: "school_frost",  prefix: "Rimebound",    suffix: "of Rime"        },
+    { school: "shock",  stat_name: "school_shock",  prefix: "Voltaic",      suffix: "of Thunder"     },
+    { school: "arcane", stat_name: "school_arcane", prefix: "Eldritch",     suffix: "of Mysteries"   },
+    { school: "poison", stat_name: "school_poison", prefix: "Toxic",        suffix: "of Venom"       },
+    { school: "void",   stat_name: "school_void",   prefix: "Voidtouched",  suffix: "of the Void"    },
+    { school: "shadow", stat_name: "school_shadow", prefix: "Umbral",       suffix: "of Shadow"      },
+    { school: "blood",  stat_name: "school_blood",  prefix: "Sanguine",     suffix: "of Bloodletting"},
+];
+
 
 // -----------------------------------------------------------------------------
 // 7. CONSUMABLES
