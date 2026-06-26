@@ -39,7 +39,12 @@ Status: `[ ]` todo · `[x]` done (verify in-IDE).
 - Weapon→slot tagging by family: melee = sword/blade/axe/mace/spear/sickle; ranged =
   bow/wand/focus/scepter/staff. Stored as an explicit `slot` on each weapon item.
 
-## C. Elemental affix (+dmg + status, feeds reactions)  [ ]
+## C. Elemental affix (+dmg + status, feeds reactions)  [x]  (BUILT 2026-06-25, full compile clean)
+<!-- Piggyback model (Option A, M-approved): burn=dot, frost=weaken, shock=vulnerable,
+     all element-tagged. Shock reaction = arc 33% to other enemies, else +25% crit if
+     the target is alone (M-approved). Affix rolls ~40% on uncommon/rare/epic weapons,
+     +2/+4/+6 elem dmg; 3 hand-authored demo weapons in the loot tables. -->
+
 - New affix family, prefix/suffix pairs:
   - **Flaming / of Embers** → fire: +N elemental dmg, applies **burn**.
   - **Frostbound / of Frost** → ice: +N elemental dmg, applies **frost**.
@@ -76,7 +81,16 @@ Status: `[ ]` todo · `[x]` done (verify in-IDE).
   shield-type offhand is the clear "defense" choice vs a 2H weapon's "offense." 2H weapons get a
   larger damage/affix budget precisely because they forgo this defense.
 
-## D3. Gear stat requirements (class identity)  [ ]
+## D3. Gear stat requirements (class identity)  [x]  (BUILT 2026-06-25, full compile clean)
+<!-- HARD BLOCK (M's call). Implemented COMPUTED (no per-item req fields / save
+     migration): item_stat_requirement(item) derives from slot+weapon family+rarity
+     (Rare+ only): weapons by family (bow/dagger→DEX, focus/wand/scepter/staff→INT,
+     else STR); chest/helm with STR or CON stat → that stat. req_stat_curve = 12/14/16
+     (R/E/L). player_base_stat = chosen_stats+perm+run (NOT equipment, no bootstrap
+     paradox). equip_stat_block_reason gates both equip paths (kb+mouse picker) after
+     the class_req check; red/green "Requires N STR" line on the tooltip + a Compendium
+     Item Rarities entry. Explicit req_stat/req_value on an item overrides the computed. -->
+
 - Gear can carry a stat requirement (e.g. heavy armor → STR, bows → DEX, focus/wand → INT,
   plate → CON). If the wearer doesn't meet it, the item can't be equipped (blocked at the equip
   step with a clear "Requires N STR" message), OR equips at reduced effect — DECIDE (recommend
@@ -85,10 +99,11 @@ Status: `[ ]` todo · `[x]` done (verify in-IDE).
 - Requirement scales with item rarity/tier. Stored as `req_stat` / `req_value` on the item;
   checked in the equip path (keyboard + mouse + picker) and shown on the item detail/tooltip.
 
-## E. UI  [ ]
+## E. UI  [x]  (BUILT across stages 1-3)
 - Equipment tab: show 9 slots; Melee Weapon + Ranged Weapon labeled; offhand faded when 2H.
-- Item detail / tooltips: weapons show their slot (Melee/Ranged), 1H/2H, and the elemental
-  affix's damage + status.
+- Item detail / tooltips: weapons show their reach + hand in the stat line ("+N dmg (Melee, 1H)"
+  via ui_item_stat_str, 2026-06-25), 1H/2H, the elemental affix's damage + status, and the §D3
+  stat requirement (red/green).
 - Ability detail popup + descriptions already surface reactions; burn/frost/shock auto-appear
   once added to the element helpers.
 

@@ -528,6 +528,129 @@ function weapon_base_damage(rarity) {
     return 0;
 }
 
+// ---------------------------------------------------------------------------
+// Elemental affix (SYSTEMS_WEAPON_ROLES.md §C). A weapon may carry ONE elemental
+// affix: on a damaging ability of the weapon's REACH class it adds a small
+// elemental hit AND applies that element's setup status, which feeds the
+// detonation reactions (SYSTEMS_VIABILITY_PASS.md). The weapon's SLOT decides
+// reach (no melee/ranged variant of the affix). Piggyback model (Option A):
+//   burn  -> kind "dot"        (small fire DoT)            -> reaction +40% crit
+//   frost -> kind "weaken"     (enemy attacks -10%)        -> reaction +30% shatter
+//   shock -> kind "vulnerable" (target +N dmg taken/hit)   -> reaction shock arc
+// so each status reuses already-wired passive reads, while its `element` tag
+// drives the reaction + the distinct icon/VFX.
+//
+// elem_affix struct on the item:
+//   { element, dmg, status_kind, status_value, status_dur, prefix, suffix }
+// ---------------------------------------------------------------------------
+
+// The three elemental affix families: naming + the setup status each applies.
+function elem_affix_family(element) {
+    switch (element) {
+        case "burn":  return { prefix: "Flaming",       suffix: "of Embers", status_kind: "dot",        status_value: 3,    status_dur: 2 };
+        case "frost": return { prefix: "Frostbound",    suffix: "of Frost",  status_kind: "weaken",     status_value: 0.10, status_dur: 2 };
+        case "shock": return { prefix: "Storm-touched", suffix: "of Storms", status_kind: "vulnerable", status_value: 3,    status_dur: 2 };
+    }
+    return undefined;
+}
+
+// Flat elemental damage the affix adds, by item rarity (uncommon/rare/epic).
+function elem_affix_damage(rarity) {
+    switch (rarity) {
+        case 1: return 2;   // Uncommon
+        case 2: return 4;   // Rare
+        case 3: return 6;   // Epic
+    }
+    return 0;
+}
+
+// elem_element_name(element) — display word for an element key.
+function elem_element_name(element) {
+    switch (element) {
+        case "burn":  return "fire";
+        case "frost": return "frost";
+        case "shock": return "shock";
+    }
+    return element;
+}
+
+// roll_elemental_affix(rarity) — returns an elem_affix struct for a weapon of the
+// given rarity, or undefined if none rolled. Only uncommon/rare/epic roll, ~40%
+// chance (a notable but not guaranteed roll).
+function roll_elemental_affix(rarity) {
+    if (rarity < 1 || rarity > 3) return undefined;   // common/legendary: no rolled elem affix
+    if (irandom(99) >= 40) return undefined;          // ~40% chance
+    var _elements = ["burn", "frost", "shock"];
+    var _element  = _elements[irandom(2)];
+    var _fam      = elem_affix_family(_element);
+    if (_fam == undefined) return undefined;
+    return {
+        element:      _element,
+        dmg:          elem_affix_damage(rarity),
+        status_kind:  _fam.status_kind,
+        status_value: _fam.status_value,
+        status_dur:   _fam.status_dur,
+        prefix:       _fam.prefix,
+        suffix:       _fam.suffix,
+    };
+}
+
+// make_elem_affix(element, rarity) — build a specific elemental affix (for
+// hand-authored demo/loot weapons rather than a random roll).
+function make_elem_affix(element, rarity) {
+    var _fam = elem_affix_family(element);
+    if (_fam == undefined) return undefined;
+    return {
+        element:      element,
+        dmg:          elem_affix_damage(rarity),
+        status_kind:  _fam.status_kind,
+        status_value: _fam.status_value,
+        status_dur:   _fam.status_dur,
+        prefix:       _fam.prefix,
+        suffix:       _fam.suffix,
+    };
+}
+
+// apply_elemental_affix_to_item(item, elem) — store the affix, fold its name in
+// (prefix form, or suffix form if a stat affix already prefixed the name), and
+// bump gold value.
+function apply_elemental_affix_to_item(item, elem) {
+    if (elem == undefined) return;
+    item.elem_affix = elem;
+    var _has_prefix = (variable_struct_exists(item, "affixes") && array_length(item.affixes) >= 2);
+    if (_has_prefix) item.name = item.name + " " + elem.suffix;
+    else             item.name = elem.prefix + " " + item.name;
+    item.gold_value = round(item.gold_value * 1.25);
+}
+
+// _clone_elem_affix(src) — deep-copy an item's elem_affix so a clone never shares
+// the struct with its source (returns undefined when there is none).
+function _clone_elem_affix(src) {
+    if (!variable_struct_exists(src, "elem_affix") || src.elem_affix == undefined) return undefined;
+    var _e = src.elem_affix;
+    return {
+        element:      _e.element,
+        dmg:          _e.dmg,
+        status_kind:  _e.status_kind,
+        status_value: _e.status_value,
+        status_dur:   _e.status_dur,
+        prefix:       _e.prefix,
+        suffix:       _e.suffix,
+    };
+}
+
+// elem_affix_describe(elem) — one-line tooltip/codex text for an elemental affix.
+function elem_affix_describe(elem) {
+    if (elem == undefined) return "";
+    var _st = "";
+    switch (elem.status_kind) {
+        case "dot":        _st = "burns " + string(elem.status_value) + "/turn"; break;
+        case "weaken":     _st = "chills (-" + string(round(elem.status_value * 100)) + "% enemy dmg)"; break;
+        case "vulnerable": _st = "shocks (+" + string(elem.status_value) + " dmg taken)"; break;
+    }
+    return "+" + string(elem.dmg) + " " + elem_element_name(elem.element) + " dmg, " + _st;
+}
+
 // create_item(name, slot, rarity, stat_name, stat_value, effect_desc, gold_value)
 // Returns an equipment item struct. Rarity: 0=common, 1=uncommon, 2=rare,
 // 3=epic, 4=legendary.
@@ -545,6 +668,7 @@ function create_item(name, slot, rarity, stat_name, stat_value, effect_desc, gol
         stat_value:    stat_value,
         weapon_damage: _wpn_dmg,                          // flat reach-gated damage (weapons only)
         two_handed:    false,                             // 2H weapons lock the offhand slot (set post-create)
+        elem_affix:    undefined,                         // elemental affix (SYSTEMS_WEAPON_ROLES.md §C); set post-create
         effect_desc:   effect_desc,
         gold_value:    gold_value,
         socket_count:  rune_sockets_for_rarity(rarity),   // rune sockets by rarity
@@ -672,6 +796,7 @@ function clone_item(src) {
         stat_value:    src.stat_value,
         weapon_damage: variable_struct_exists(src, "weapon_damage") ? src.weapon_damage : 0,
         two_handed:    variable_struct_exists(src, "two_handed")    ? src.two_handed    : false,
+        elem_affix:    _clone_elem_affix(src),
         effect_desc:   src.effect_desc,
         gold_value:    src.gold_value,
         class_req:     variable_struct_exists(src, "class_req")     ? src.class_req     : -1,
@@ -884,6 +1009,15 @@ function drop_equipment(rarity_weights, do_discover = true) {
         apply_affixes_to_item(_item, _affixes);
     }
 
+    // Elemental affix: weapons may also carry one (small elemental damage + a setup
+    // status), independent of the stat affixes (SYSTEMS_WEAPON_ROLES.md §C). Skip if
+    // the base already carries one (hand-authored elemental weapons) so it isn't
+    // doubled up or overwritten.
+    var _base_has_elem = (variable_struct_exists(_item, "elem_affix") && _item.elem_affix != undefined);
+    if ((_item.slot == "weapon" || _item.slot == "ranged_weapon") && !_base_has_elem) {
+        apply_elemental_affix_to_item(_item, roll_elemental_affix(_eff_rarity));
+    }
+
     // Sockets follow the FINAL rarity (epic was bumped from a rare base above).
     _item.socket_count = rune_sockets_for_rarity(_item.rarity);
 
@@ -967,6 +1101,93 @@ function return_offhand_to_pack(in_hub) {
     else        array_push(global.carried_items, _off);
 }
 
+// ---------------------------------------------------------------------------
+// Gear stat requirements (SYSTEMS_WEAPON_ROLES.md §D3). Reinforces class identity:
+// a low-STR Arcanist can't swing heavy plate / a greatsword, etc. Implemented as a
+// COMPUTED requirement derived from slot + weapon family + rarity (no per-item
+// fields / save migration; auto-applies to all existing and future gear). An
+// explicit req_stat/req_value on an item overrides the computed value. Only Rare+
+// gear gates, so the early game stays open. Hard block at equip (M's call).
+// ---------------------------------------------------------------------------
+
+// req_stat_curve(rarity) — required stat value by rarity (Rare+ only).
+function req_stat_curve(rarity) {
+    switch (rarity) {
+        case 2: return 12;   // Rare
+        case 3: return 14;   // Epic
+        case 4: return 16;   // Legendary
+    }
+    return 0;
+}
+
+// weapon_required_stat(item) — which stat a weapon demands, by family keyword.
+// bows/daggers → DEX, focus/wand/scepter/staff → INT, the rest (sword/axe/mace/
+// greatsword/spear…) → STR. Reads base_name so affix words don't mislead it.
+function weapon_required_stat(item) {
+    var _n = string_lower(variable_struct_exists(item, "base_name") ? item.base_name
+            : (variable_struct_exists(item, "name") ? item.name : ""));
+    if (string_pos("bow", _n) > 0)    return "DEX";
+    if (string_pos("wand", _n) > 0 || string_pos("focus", _n) > 0 || string_pos("scepter", _n) > 0
+        || string_pos("staff", _n) > 0 || string_pos("rod", _n) > 0) return "INT";
+    if (string_pos("sickle", _n) > 0 || string_pos("dagger", _n) > 0 || string_pos("knife", _n) > 0
+        || string_pos("blade", _n) > 0) return "DEX";
+    return "STR";
+}
+
+// item_stat_requirement(item) — returns { stat, value } the wearer must meet, or
+// { stat:"", value:0 } for none.
+function item_stat_requirement(item) {
+    var _none = { stat: "", value: 0 };
+    if (!is_struct(item)) return _none;
+    // Explicit per-item override wins.
+    if (variable_struct_exists(item, "req_stat") && is_string(item.req_stat) && item.req_stat != ""
+        && variable_struct_exists(item, "req_value") && item.req_value > 0) {
+        return { stat: item.req_stat, value: item.req_value };
+    }
+    var _rar = variable_struct_exists(item, "rarity") ? item.rarity : 0;
+    if (_rar < 2) return _none;   // Common/Uncommon: no requirement
+    var _slot = variable_struct_exists(item, "slot") ? item.slot : "";
+    var _val  = req_stat_curve(_rar);
+    if (_val <= 0) return _none;
+    if (_slot == "weapon" || _slot == "ranged_weapon") {
+        return { stat: weapon_required_stat(item), value: _val };
+    }
+    if (_slot == "chest" || _slot == "helm") {
+        // Heavy armor (STR/CON-based) demands that stat; light armor is unrestricted.
+        var _sn = variable_struct_exists(item, "stat_name") ? item.stat_name : "";
+        if (_sn == "STR" || _sn == "CON") return { stat: _sn, value: _val };
+    }
+    return _none;
+}
+
+// player_base_stat(stat_name) — the wearer's effective innate stat outside combat:
+// char-create base + permanent (Vex) bonus + in-run growth. Excludes EQUIPMENT
+// bonuses so requirements never depend on equip order (no bootstrap paradox).
+function player_base_stat(stat_name) {
+    if (!variable_global_exists("chosen_stats") || is_undefined(global.chosen_stats)) return 0;
+    var _v = variable_struct_get(global.chosen_stats, stat_name);
+    if (is_undefined(_v)) _v = 0;
+    if (variable_global_exists("run_stat_bonuses") && is_struct(global.run_stat_bonuses)) {
+        var _r = variable_struct_get(global.run_stat_bonuses, stat_name);
+        if (!is_undefined(_r)) _v += _r;
+    }
+    var _perm_map = { STR: "perm_str_bonus", DEX: "perm_dex_bonus", CON: "perm_con_bonus",
+                      INT: "perm_int_bonus", WIS: "perm_wis_bonus", CHA: "perm_cha_bonus" };
+    var _pg = variable_struct_get(_perm_map, stat_name);
+    if (!is_undefined(_pg) && variable_global_exists(_pg)) _v += variable_global_get(_pg);
+    return _v;
+}
+
+// equip_stat_block_reason(item) — "" if the wearer meets the item's stat
+// requirement (or it has none), else a "<Item> requires N STR." message. Used by
+// the equip paths to HARD-BLOCK an equip and by the tooltip to flag it.
+function equip_stat_block_reason(item) {
+    var _req = item_stat_requirement(item);
+    if (_req.value <= 0 || _req.stat == "") return "";
+    if (player_base_stat(_req.stat) >= _req.value) return "";
+    return item.name + " requires " + string(_req.value) + " " + _req.stat + ".";
+}
+
 function apply_equipment_stats(stats_struct) {
     // Extended bonus struct: armor/el_resist (old), plus affix-driven special fields.
     // bonus_max_hp  — flat HP added directly to player.max_HP after derive
@@ -977,7 +1198,8 @@ function apply_equipment_stats(stats_struct) {
     // stats_struct; summed into the cast resolver's _dmg per the ability's reach class
     // (SYSTEMS_WEAPON_ROLES.md §B). Melee weapon → melee abilities, ranged weapon → ranged.
     var _bonus = { armor: 0, el_resist: 0, bonus_max_hp: 0, crit_flat: 0, dodge_flat: 0, gold_find: 0,
-                   melee_dmg_bonus: 0, ranged_dmg_bonus: 0 };
+                   melee_dmg_bonus: 0, ranged_dmg_bonus: 0,
+                   melee_elem: undefined, ranged_elem: undefined };
     if (!variable_global_exists("inventory")) return _bonus;
 
     // When a 2H weapon is equipped the offhand slot (1) is locked — ignore it
@@ -994,6 +1216,13 @@ function apply_equipment_stats(stats_struct) {
         if (_wd != 0) {
             if (_it.slot == "weapon")             _bonus.melee_dmg_bonus  += _wd;
             else if (_it.slot == "ranged_weapon") _bonus.ranged_dmg_bonus += _wd;
+        }
+
+        // Reach-gated elemental affix (one melee + one ranged weapon at most).
+        var _ea = variable_struct_exists(_it, "elem_affix") ? _it.elem_affix : undefined;
+        if (_ea != undefined) {
+            if (_it.slot == "weapon")             _bonus.melee_elem  = _ea;
+            else if (_it.slot == "ranged_weapon") _bonus.ranged_elem = _ea;
         }
 
         _equip_apply_stat(stats_struct, _bonus, _it.stat_name, _it.stat_value);

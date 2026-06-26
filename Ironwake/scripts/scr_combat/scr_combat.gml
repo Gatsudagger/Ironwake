@@ -503,6 +503,26 @@ function ability_status_element(ability) {
     return "";
 }
 
+// elem_status_name(element) / elem_status_verb(element) — display name + log verb
+// for the setup status an elemental weapon affix applies (SYSTEMS_WEAPON_ROLES.md
+// §C). The name keyword ("Burn") also lets the icon/VFX resolver fall back cleanly.
+function elem_status_name(element) {
+    switch (element) {
+        case "burn":  return "Burning";
+        case "frost": return "Frostbite";
+        case "shock": return "Shock";
+    }
+    return "Elemental";
+}
+function elem_status_verb(element) {
+    switch (element) {
+        case "burn":  return "set ablaze";
+        case "frost": return "frozen";
+        case "shock": return "shocked";
+    }
+    return "afflicted";
+}
+
 // combat_control_block_reason(combatant, attack_class)
 // Returns "" if the combatant may take an action of the given attack_class this turn,
 // else the reason it's blocked: "stunned" (any), "rooted" (melee classes), "silenced"
@@ -570,7 +590,7 @@ function combat_detonator_pick(target) {
     var _none = { key: "", idx: -1 };
     if (!is_struct(target) || !variable_struct_exists(target, "status_effects")) return _none;
     var _se = target.status_effects;
-    var _order = ["stun", "frost", "root", "burn", "vulnerable", "bleed", "poison", "void", "weaken", "blind"];
+    var _order = ["stun", "frost", "root", "burn", "shock", "vulnerable", "bleed", "poison", "void", "weaken", "blind"];
     for (var _o = 0; _o < array_length(_order); _o++) {
         var _want = _order[_o];
         for (var _i = 0; _i < array_length(_se); _i++) {
@@ -583,6 +603,7 @@ function combat_detonator_pick(target) {
                 case "frost":      _match = (_el == "frost"); break;
                 case "root":       _match = (_k == "root"); break;
                 case "burn":       _match = (_el == "burn"); break;
+                case "shock":      _match = (_el == "shock"); break;
                 case "vulnerable": _match = (_k == "vulnerable"); break;
                 case "bleed":      _match = (_k == "dot" && _el == "bleed"); break;
                 case "poison":     _match = (_k == "dot" && _el == "poison"); break;

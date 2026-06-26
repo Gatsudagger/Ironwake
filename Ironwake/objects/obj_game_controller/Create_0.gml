@@ -211,6 +211,20 @@ var _2hw_staff = create_item("Stormcaller Staff", "ranged_weapon", 2, "INT", 6, 
 _2hw_staff.two_handed = true;  _2hw_staff.class_req = 0;  _2hw_staff.weapon_damage = 13;
 _2hw_staff.affixes = [{ suffix: "of Clarity", prefix: "Wise", stat_name: "WIS", stat_value: 4 }];
 
+// --- ELEMENTAL WEAPONS (SYSTEMS_WEAPON_ROLES.md §C) ---
+// Hand-authored examples of the elemental affix so a player reliably sees the
+// burn/frost/shock setup→detonation loop (drops also roll it on ~40% of weapons).
+// The affix renames the item (Flaming / Frostbound / Storm-touched) and adds a
+// small elemental hit + a short setup status, reach-gated by the weapon's slot.
+var _ew_flaming = create_item("Iron Brand", "weapon", 1, "STR", 3, "a soldier's blade", 40);
+apply_elemental_affix_to_item(_ew_flaming, make_elem_affix("burn", 1));
+
+var _ew_frost = create_item("Hunter's Bow", "ranged_weapon", 1, "DEX", 3, "a steady recurve bow", 42);
+apply_elemental_affix_to_item(_ew_frost, make_elem_affix("frost", 1));
+
+var _ew_storm = create_item("Runed Scepter", "ranged_weapon", 2, "INT", 5, "crowned with a storm-glass shard", 88);
+apply_elemental_affix_to_item(_ew_storm, make_elem_affix("shock", 2));
+
 // --- DEFENSIVE OFFHANDS (SYSTEMS_WEAPON_ROLES.md §D2) ---
 // Shield-type offhands carry real DEFENSIVE value (armor / dodge / max HP) so
 // giving up the offhand for a 2H weapon's bigger damage is a genuine trade.
@@ -278,6 +292,8 @@ global.loot_table_uncommon = [
     _uw_sickle,
     _2hw_greatsword,
     _2hw_longbow,
+    _ew_flaming,
+    _ew_frost,
     // Offhand
     _off_buckler,
     create_item("Runic Focus",         "offhand", 1, "INT", 3, "inscribed with focusing runes", 32),
@@ -307,6 +323,7 @@ global.loot_table_rare = [
     _rw_vsept,
     _rw_serp,
     _2hw_staff,
+    _ew_storm,
     // Offhand
     _off_soul_orb,
     _off_bulwark,

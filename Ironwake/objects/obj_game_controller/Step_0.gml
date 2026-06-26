@@ -1365,9 +1365,12 @@ if (mouse_check_button_pressed(mb_left)) {
                     var _mchosen  = _mpitems[_mri];
                     var _mcr      = variable_struct_exists(_mchosen, "class_req") ? _mchosen.class_req : -1;
                     var _mpcl     = variable_global_exists("chosen_class") ? global.chosen_class : -1;
+                    var _msreq = equip_stat_block_reason(_mchosen);
                     if (_mcr != -1 && _mcr != _mpcl) {
                         var _mcrnames = ["Arcanist", "Bloodwarden", "Shadowstrider"];
                         equip_msg = _mchosen.name + " requires " + _mcrnames[_mcr] + ".";
+                    } else if (_msreq != "") {
+                        equip_msg = _msreq;
                     } else if (equip_slot_selected == 1 && two_handed_equipped()) {
                         // Offhand slot is locked while a two-handed weapon is equipped.
                         equip_msg = "Two-handed weapon equipped — offhand is locked.";
@@ -1572,11 +1575,14 @@ if (menu_tab == 1) {
             // Class restriction check
             var _chosen_cr = variable_struct_exists(_chosen, "class_req") ? _chosen.class_req : -1;
             var _player_cl = variable_global_exists("chosen_class") ? global.chosen_class : -1;
+            var _ksreq     = equip_stat_block_reason(_chosen);
             if (_chosen_cr != -1 && _chosen_cr != _player_cl) {
                 var _class_names = ["Arcanist", "Bloodwarden", "Shadowstrider"];
                 var _req_name    = (_chosen_cr >= 0 && _chosen_cr <= 2) ? _class_names[_chosen_cr] : "Unknown";
                 equip_msg = _chosen.name + " requires " + _req_name + ".";
                 // Don't equip — skip the rest of the block
+            } else if (_ksreq != "") {
+                equip_msg = _ksreq;   // hard block: stat requirement not met
             } else if (equip_slot_selected == 1 && two_handed_equipped()) {
                 // Offhand slot is locked while a two-handed weapon is equipped.
                 equip_msg = "Two-handed weapon equipped — offhand is locked.";

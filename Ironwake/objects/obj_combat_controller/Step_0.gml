@@ -569,6 +569,17 @@ if (player_turn) {
                   for (var _tgi = 0; _tgi < array_length(_targets); _tgi++) {
                     var target = _targets[_tgi];
 
+                    // Reach-appropriate weapon contributions for this ability (set in the
+                    // weapon-damage block below). Both are applied as SEPARATE, TRULY-FLAT
+                    // components after the crit roll (never crit-scaled) so weapons stay the
+                    // damage FLOOR, not another multiplier (SYSTEMS_WEAPON_ROLES.md §B/§C):
+                    //  _wpn_flat = the weapon's flat damage, dealt as PHYSICAL (its own type,
+                    //              regardless of the ability's type — so a melee spell gets it
+                    //              as flat physical, not as the spell's element).
+                    //  _elem_aff = the elemental affix (its own element + setup status).
+                    var _wpn_flat = 0;
+                    var _elem_aff = undefined;
+
                     // ===== Detonation reactions (P1, SYSTEMS_VIABILITY_PASS.md) =====
                     // A detonator ability reacts with the target's strongest status. Burn/Stun
                     // resolve through the crit roll (below), Blind through the hit roll; the rest
@@ -583,6 +594,16 @@ if (player_turn) {
                         case "burn":  _react_crit_bonus = 40;  break;   // +40% crit chance
                         case "stun":  _react_crit_bonus = 999; break;   // guaranteed crit
                         case "blind": _react_force_hit  = true; break;
+                    }
+                    // Shock reaction (§C): arcs to other enemies post-damage; against a LONE
+                    // foe (no other living enemy) it instead empowers this hit with +25% crit.
+                    if (_react_key == "shock") {
+                        var _shock_has_others = false;
+                        for (var _shi = 0; _shi < array_length(combat_state.combatants); _shi++) {
+                            var _shc = combat_state.combatants[_shi];
+                            if (!_shc.is_player && !_shc.is_defeated && _shc != target) { _shock_has_others = true; break; }
+                        }
+                        if (!_shock_has_others) _react_crit_bonus += 25;
                     }
 
                     // --- Hit roll ---
@@ -635,15 +656,18 @@ if (player_turn) {
                             } else if (_ab_stat_dtype == 3) {
                                 _dmg += player.derived.elem_dmg_bonus + player.derived.cha_dmg_bonus;
                             }
-                            // Reach-gated weapon damage: the melee weapon's flat damage feeds
-                            // melee abilities, the ranged weapon's feeds ranged abilities
-                            // (SYSTEMS_WEAPON_ROLES.md §B). Self-targeted abilities are "none".
+                            // Reach-gated weapon contributions: the melee weapon feeds melee
+                            // abilities, the ranged weapon feeds ranged abilities (attacks AND
+                            // spells) — captured here, applied as flat post-crit components
+                            // below. Self-targeted abilities are "none" and get nothing.
                             if (variable_struct_exists(player.derived, "melee_dmg_bonus")) {
                                 var _reach_ac = ability_attack_class(ab);
                                 if (ability_class_is_melee(_reach_ac)) {
-                                    _dmg += player.derived.melee_dmg_bonus;
+                                    _wpn_flat = player.derived.melee_dmg_bonus;
+                                    if (variable_struct_exists(player.derived, "melee_elem")) _elem_aff = player.derived.melee_elem;
                                 } else if (ability_class_is_ranged(_reach_ac)) {
-                                    _dmg += player.derived.ranged_dmg_bonus;
+                                    _wpn_flat = player.derived.ranged_dmg_bonus;
+                                    if (variable_struct_exists(player.derived, "ranged_elem")) _elem_aff = player.derived.ranged_elem;
                                 }
                             }
                         }
@@ -823,6 +847,27 @@ if (player_turn) {
                             _final_dmg = max(1, round(_final_dmg * (1 + player.spell_dmg_bonus)));
                         }
 
+                        // Weapon flat damage: the reach-matched weapon's flat damage, dealt as
+                        // a SEPARATE PHYSICAL component (its own type — a melee spell gets it as
+                        // flat physical, not the spell's element) and TRULY FLAT (added after the
+                        // crit roll, never crit-scaled). Mitigated by armor like any physical
+                        // hit, so it's the steady floor of weapon output, not a multiplier. (§B)
+                        if (_deals_damage && _wpn_flat > 0) {
+                            var _wpn_hit = combat_resolve_damage(_wpn_flat, 0, target.armor, target.el_resist);
+                            if (_wpn_hit > 0) _final_dmg += _wpn_hit;
+                        }
+
+                        // Elemental weapon affix: a small separate elemental hit on a damaging
+                        // ability of the weapon's reach class, resolved vs el_resist (not the
+                        // ability's own type). The setup status is applied later. (§C)
+                        if (_deals_damage && _elem_aff != undefined && _elem_aff.dmg > 0) {
+                            var _elem_hit = combat_resolve_damage(_elem_aff.dmg, 1, target.armor, target.el_resist);
+                            if (_elem_hit > 0) {
+                                _final_dmg += _elem_hit;
+                                array_push(combat_log, ab.name + " — " + elem_element_name(_elem_aff.element) + " strike (+" + string(_elem_hit) + ")!");
+                            }
+                        }
+
                         // Pure debuffs never deal damage, even if a rider tried to add some.
                         if (_deals_damage) combat_apply_damage(target, _final_dmg);
 
@@ -851,10 +896,24 @@ if (player_turn) {
                             });
                             array_push(combat_log, ab.name + " spreads the poison — " + target.name + "'s healing is suppressed!");
                         }
-                        // Consume the reacted status (poison/bleed/root/frost/burn/void are spent;
-                        // stun/vulnerable/weaken/blind persist as ongoing windows).
+                        // Shock arc (§C): chain ~33% of the hit to every OTHER living enemy.
+                        // (If the target was alone, the +25% crit applied above instead.)
+                        if (_react_key == "shock" && _final_dmg > 0) {
+                            var _arc_dmg = max(1, round(_final_dmg * 0.33));
+                            for (var _ari = 0; _ari < array_length(combat_state.combatants); _ari++) {
+                                var _arc_c = combat_state.combatants[_ari];
+                                if (_arc_c.is_player || _arc_c.is_defeated || _arc_c == target) continue;
+                                combat_apply_damage(_arc_c, _arc_dmg);
+                                _arc_c.hit_flash = max(_arc_c.hit_flash, 10);
+                                array_push(combat_log, ab.name + " arcs to " + _arc_c.name + " (+" + string(_arc_dmg) + ")!");
+                                if (_arc_c.HP <= 0) combat_on_enemy_defeated(_arc_c, player, combat_log);
+                            }
+                        }
+                        // Consume the reacted status (poison/bleed/root/frost/burn/shock/void are
+                        // spent; stun/vulnerable/weaken/blind persist as ongoing windows).
                         if (_react_key == "bleed" || _react_key == "poison" || _react_key == "void"
-                            || _react_key == "root" || _react_key == "frost" || _react_key == "burn") {
+                            || _react_key == "root" || _react_key == "frost" || _react_key == "burn"
+                            || _react_key == "shock") {
                             var _rk_kept = [];
                             for (var _rci = 0; _rci < array_length(target.status_effects); _rci++) {
                                 var _rcs = target.status_effects[_rci];
@@ -868,6 +927,7 @@ if (player_turn) {
                                     case "root":   _rdrop = (_rck == "root"); break;
                                     case "frost":  _rdrop = (_rce == "frost"); break;
                                     case "burn":   _rdrop = (_rce == "burn"); break;
+                                    case "shock":  _rdrop = (_rce == "shock"); break;
                                 }
                                 if (!_rdrop) array_push(_rk_kept, _rcs);
                             }
@@ -1111,6 +1171,22 @@ if (player_turn) {
                                     }
                                     if (_pb_spread) array_push(combat_log, "Plaguebearer spreads " + ab.name + " to all enemies!");
                                 }
+                            }
+
+                            // Elemental weapon affix applies its setup status (burn/frost/shock)
+                            // on a damaging hit of the weapon's reach class. Low/short = setup,
+                            // not main damage; the `element` tag feeds the detonation reaction. (§C)
+                            if (_deals_damage && _elem_aff != undefined) {
+                                array_push(target.status_effects, {
+                                    name:         elem_status_name(_elem_aff.element),
+                                    effect_type:  (_elem_aff.status_kind == "dot") ? "dot" : "debuff",
+                                    kind:         _elem_aff.status_kind,
+                                    effect_value: _elem_aff.status_value,
+                                    duration:     _elem_aff.status_dur,
+                                    element:      _elem_aff.element,
+                                    source:       "player"
+                                });
+                                array_push(combat_log, target.name + " is " + elem_status_verb(_elem_aff.element) + "!");
                             }
                         }
                     }   // end if (_hit) else

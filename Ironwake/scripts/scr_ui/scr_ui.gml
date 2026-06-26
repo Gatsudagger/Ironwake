@@ -30,8 +30,11 @@ function ui_item_stat_str(item) {
     var _s = "";
     if (variable_struct_exists(item, "weapon_damage") && item.weapon_damage > 0) {
         _s = "+" + string(item.weapon_damage) + " dmg";
-        // Tag the weapon's hand requirement so the offhand trade-off is visible.
-        _s += (variable_struct_exists(item, "two_handed") && item.two_handed) ? "  (2H)" : "  (1H)";
+        // Tag the weapon's reach (Melee/Ranged — which abilities its damage feeds)
+        // and hand requirement so the role and the offhand trade-off are both visible.
+        var _reach_word = (variable_struct_exists(item, "slot") && item.slot == "ranged_weapon") ? "Ranged" : "Melee";
+        var _hand_word  = (variable_struct_exists(item, "two_handed") && item.two_handed) ? "2H" : "1H";
+        _s += "  (" + _reach_word + ", " + _hand_word + ")";
     }
     if (variable_struct_exists(item, "stat_value") && variable_struct_exists(item, "stat_name") && item.stat_value != 0) {
         _s += (_s == "" ? "" : "   ") + "+" + string(item.stat_value) + " " + item.stat_name;
@@ -54,6 +57,10 @@ function ui_item_stat_str(item) {
                 _s += "   +" + string(_af.stat_value) + " " + _asn;
             }
         }
+    }
+    // Elemental affix (small elemental damage + a setup status). (§C)
+    if (variable_struct_exists(item, "elem_affix") && item.elem_affix != undefined) {
+        _s += (_s == "" ? "" : "   ") + elem_affix_describe(item.elem_affix);
     }
     return _s;
 }
@@ -678,6 +685,14 @@ function status_icon_label(sname, etype) {
 function status_icon_style(se) {
     var _kind = combat_status_kind_of(se);
     var _name = string_lower(variable_struct_exists(se, "name") ? se.name : "");
+    // Elemental weapon-affix statuses get a distinct badge keyed off their element
+    // even though they piggyback existing kinds (frost=weaken, shock=vulnerable). (§C)
+    var _elem = (is_struct(se) && variable_struct_exists(se, "element")) ? se.element : "";
+    switch (_elem) {
+        case "burn":  return { label: "BRN",  color: make_color_rgb(225, 130,  40) };
+        case "frost": return { label: "FRST", color: make_color_rgb( 90, 180, 230) };
+        case "shock": return { label: "SHK",  color: make_color_rgb(230, 210,  70) };
+    }
     switch (_kind) {
         case "dot":
             if (string_pos("bleed", _name) || string_pos("gore", _name) || string_pos("rend", _name) || string_pos("hemor", _name))
@@ -728,6 +743,12 @@ function status_icons_from(status_effects) {
 function status_fx_sprite_for(se) {
     var _kind = combat_status_kind_of(se);
     var _name = string_lower(variable_struct_exists(se, "name") ? se.name : "");
+    // Elemental affix statuses use a dedicated aura; until dedicated frost/shock art
+    // exists, fall back to the weaken/stun auras so there's still a visible mark. (§C)
+    var _elem = (is_struct(se) && variable_struct_exists(se, "element")) ? se.element : "";
+    if (_elem == "burn")  return asset_get_index("spr_fx_burn");
+    if (_elem == "frost") { var _ff = asset_get_index("spr_fx_frost"); return (_ff >= 0) ? _ff : asset_get_index("spr_fx_weaken"); }
+    if (_elem == "shock") { var _fs = asset_get_index("spr_fx_shock"); return (_fs >= 0) ? _fs : asset_get_index("spr_fx_stun"); }
     var _key  = "";
     switch (_kind) {
         case "dot":
@@ -768,6 +789,10 @@ function item_slot_label(slot) {
 function status_effect_plain_text(se) {
     var _kind = combat_status_kind_of(se);
     var _val  = variable_struct_exists(se, "effect_value") ? se.effect_value : 0;
+    var _elem = (is_struct(se) && variable_struct_exists(se, "element")) ? se.element : "";
+    if (_elem == "burn")  return string(_val) + " fire dmg/turn";
+    if (_elem == "frost") return "chilled (-" + string(round(_val * 100)) + "% enemy dmg)";
+    if (_elem == "shock") return "shocked (+" + string(_val) + " dmg taken)";
     switch (_kind) {
         case "dot":        return string(_val) + " dmg/turn";
         case "blind":      return "reduced accuracy";
@@ -923,6 +948,14 @@ function ui_draw_item_tooltip(ttx, tty, item, compared_item) {
     array_push(_rows, { kind: "text", txt: variable_struct_exists(item, "slot") ? string_upper(item.slot) : " ",
                         col: make_color_rgb(100, 110, 140), tag: "", tagcol: c_white });
     array_push(_rows, { kind: "text", txt: ui_item_stat_str(item), col: c_white, tag: "", tagcol: c_white });
+    // Gear stat requirement (SYSTEMS_WEAPON_ROLES.md §D3): red if the wearer doesn't
+    // meet it (equipping is hard-blocked), dim green if satisfied.
+    var _req = item_stat_requirement(item);
+    if (_req.value > 0 && _req.stat != "") {
+        var _req_met = (player_base_stat(_req.stat) >= _req.value);
+        var _req_col = _req_met ? make_color_rgb(110, 170, 110) : make_color_rgb(225, 80, 80);
+        array_push(_rows, { kind: "text", txt: "Requires " + string(_req.value) + " " + _req.stat, col: _req_col, tag: "", tagcol: c_white });
+    }
     if (_has_unique) array_push(_rows, { kind: "text", txt: item.unique_desc, col: make_color_rgb(255, 200, 50), tag: "", tagcol: c_white });
     if (_has_flavor) {
         array_push(_rows, { kind: "divider" });
@@ -2382,15 +2415,20 @@ function ui_compendium_sections() {
                 { term: "Stun",             text: "The target skips its entire next turn — blocks every kind of action." },
                 { term: "Root",             text: "Blocks MELEE actions (attacks and spells). Ranged actions still work." },
                 { term: "Silence",          text: "Blocks SPELLS (melee and ranged). Weapon attacks still work." },
+                { term: "Burn",             text: "A small fire damage-over-time. Applied by Flaming weapons; feeds the burn reaction." },
+                { term: "Frost",            text: "Chills the target so its attacks hit softer. Applied by Frostbound weapons; feeds the frost shatter." },
+                { term: "Shock",            text: "Leaves the target shocked, taking extra damage per hit. Applied by Storm-touched weapons; feeds the shock arc." },
             ],
         },
         {
             title: "Status Reactions",
             entries: [
-                { term: "Detonators",   text: "Snipe, Assassinate, Arcane Burst and Soul Nova are DETONATORS — when they hit a target carrying a status, they trigger a reaction based on that status (and usually consume it). Set up the status, then detonate." },
+                { term: "Detonators",   text: "Snipe, Assassinate, Arcane Burst and Soul Nova are DETONATORS — when they hit a target carrying a status, they trigger a reaction based on that status (and usually consume it). Set up the status, then detonate. Elemental weapons (Flaming/Frostbound/Storm-touched) are an easy way to apply burn/frost/shock for these." },
                 { term: "Poison",       text: "Detonating poison applies Mortality: the target's healing is cut for 4 turns. Utility, not burst — answers self-healing foes." },
                 { term: "Bleed",        text: "Detonating bleed bursts every remaining bleed tick at once for bonus damage." },
+                { term: "Burn",         text: "Detonating a burning target strikes with +40% critical chance." },
                 { term: "Root / Frost", text: "Detonating a rooted (or frozen) target shatters it for +30% damage." },
+                { term: "Shock",        text: "Detonating shock arcs about a third of the hit to every other enemy. Against a lone foe it instead lands a +25% crit empowered strike." },
                 { term: "Vulnerable",   text: "Detonating an Exposed (Vulnerable) target adds a flat damage bonus. The mark is NOT consumed — it's a multi-hit window." },
                 { term: "Stun",         text: "Detonating a stunned target is a guaranteed critical hit." },
                 { term: "Weaken",       text: "Detonating a weakened target deals +15% damage." },
@@ -2431,6 +2469,7 @@ function ui_compendium_sections() {
                 { term: "Rare",      text: "Several affixes; a meaningful upgrade worth equipping." },
                 { term: "Epic",      text: "Strong, multi-affix gear that can anchor a build." },
                 { term: "Legendary", text: "Hand-crafted uniques with build-defining powers. The rarest drops." },
+                { term: "Requirements", text: "Rare and better weapons and heavy armor demand a minimum stat (STR/DEX/INT/CON) to wield — a greatsword needs STR, a bow needs DEX, a focus needs INT. If you don't meet it, the item can't be equipped; the requirement shows in red on its tooltip." },
             ],
         },
     ];

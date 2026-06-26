@@ -71,6 +71,11 @@ var _derived = stats_derive(_stats);
 _derived.melee_dmg_bonus  = _equip_bonus.melee_dmg_bonus;
 _derived.ranged_dmg_bonus = _equip_bonus.ranged_dmg_bonus;
 
+// Reach-gated elemental weapon affix (SYSTEMS_WEAPON_ROLES.md §C): on a damaging
+// ability of its reach class it adds a small elemental hit + a setup status.
+_derived.melee_elem  = _equip_bonus.melee_elem;
+_derived.ranged_elem = _equip_bonus.ranged_elem;
+
 // Assemble the player combat struct.
 // HP and DODGE come from derived values; armor and el_resist are from the
 // starting equipment (robe or leathers, +1 each).
