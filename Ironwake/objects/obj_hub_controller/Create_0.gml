@@ -5,6 +5,15 @@
 // be persistent before this room is loaded.
 // =============================================================================
 
+// Seed a shop if this character doesn't have one yet. Shop stock persists per slot
+// (saved/restored in scr_save), so a loaded character keeps their exact Dorn/Petra
+// stock and this is a no-op. It only rolls a fresh shop when the stock is empty -
+// a brand-new character, or a save written before shop persistence existed.
+if (!variable_global_exists("dorn_stock") || !is_array(global.dorn_stock)
+    || array_length(global.dorn_stock) == 0) {
+    restock_shops();
+}
+
 
 // -----------------------------------------------------------------------------
 // 1. NPC ROSTER

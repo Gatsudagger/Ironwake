@@ -1451,9 +1451,19 @@ if (mouse_check_button_pressed(mb_left)) {
                                 _mplyr.energy += _mit.effect_value;
                                 array_push(_mctrl2.combat_log, "Used " + _mit.name + " - +" + string(_mit.effect_value) + " AP!");
                             } else if (_mit.effect_type == "cleanse_dot") {
-                                array_push(_mctrl2.combat_log, "Used " + _mit.name + " - cleared DoT effects!");
+                                var _mcl = combat_cleanse(_mplyr, "dot");
+                                array_push(_mctrl2.combat_log, "Used " + _mit.name + (_mcl > 0
+                                    ? " - cleared " + string(_mcl) + " damage-over-time effect(s)!"
+                                    : " - no DoT effects to clear."));
+                            } else if (_mit.effect_type == "cleanse_debuff") {
+                                var _mcl = combat_cleanse(_mplyr, "one");
+                                array_push(_mctrl2.combat_log, "Used " + _mit.name + (_mcl > 0
+                                    ? " - removed a debuff!" : " - no debuff to remove."));
                             } else if (_mit.effect_type == "cleanse_all") {
-                                array_push(_mctrl2.combat_log, "Used " + _mit.name + " - cleared all negative effects!");
+                                var _mcl = combat_cleanse(_mplyr, "all");
+                                array_push(_mctrl2.combat_log, "Used " + _mit.name + (_mcl > 0
+                                    ? " - cleared " + string(_mcl) + " negative effect(s)!"
+                                    : " - no negative effects to clear."));
                             }
                             // AP-restore items are free; everything else costs 1 AP on your turn.
                             if (_mctrl2.player_turn) {
@@ -1681,9 +1691,19 @@ if (menu_tab == 3) {
                         _player.energy += _item.effect_value;
                         array_push(_ctrl_c.combat_log, "Used " + _item.name + " - +" + string(_item.effect_value) + " AP!");
                     } else if (_item.effect_type == "cleanse_dot") {
-                        array_push(_ctrl_c.combat_log, "Used " + _item.name + " - cleared DoT effects!");
+                        var _cl = combat_cleanse(_player, "dot");
+                        array_push(_ctrl_c.combat_log, "Used " + _item.name + (_cl > 0
+                            ? " - cleared " + string(_cl) + " damage-over-time effect(s)!"
+                            : " - no DoT effects to clear."));
+                    } else if (_item.effect_type == "cleanse_debuff") {
+                        var _cl = combat_cleanse(_player, "one");
+                        array_push(_ctrl_c.combat_log, "Used " + _item.name + (_cl > 0
+                            ? " - removed a debuff!" : " - no debuff to remove."));
                     } else if (_item.effect_type == "cleanse_all") {
-                        array_push(_ctrl_c.combat_log, "Used " + _item.name + " - cleared all negative effects!");
+                        var _cl = combat_cleanse(_player, "all");
+                        array_push(_ctrl_c.combat_log, "Used " + _item.name + (_cl > 0
+                            ? " - cleared " + string(_cl) + " negative effect(s)!"
+                            : " - no negative effects to clear."));
                     }
                     // AP-restore items are free; everything else costs 1 AP on your turn.
                     if (_ctrl_c.player_turn) {

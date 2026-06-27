@@ -16,7 +16,7 @@ if (ui_input_blocked()) exit;
 // Esc opens it only when no combat sub-overlay owns Esc (loot screen, the [I]
 // consumable quick-menu) and the fight is still live. See pause_menu_step (scr_stats).
 if (pause_menu_step()) exit;
-if (keyboard_check_pressed(vk_escape) && !combat_over && !show_loot_screen && !consumable_quick_open) {
+if (keyboard_check_pressed(vk_escape) && !combat_over && !show_loot_screen && !consumable_quick_open && !ability_detail_open) {
     pause_menu_open();
     exit;
 }
@@ -203,7 +203,11 @@ if (player_turn) {
                 if (variable_struct_exists(_tcc, "HP") && _tcc.HP <= 0) continue;
                 _foe_count++;
             }
-            if (_foe_count > 1) tutorial_try_show("targeting");
+            // Teach target-switching only in multi-foe fights; once that's handled (shown
+            // now, already seen, or single foe), teach inspect-on-hover. One tip at a time.
+            if (!(_foe_count > 1 && tutorial_try_show("targeting"))) {
+                tutorial_try_show("inspect");
+            }
         }
     }
 
@@ -307,11 +311,34 @@ if (player_turn) {
                         array_push(combat_log, "Used " + _citem.name
                             + " - +" + string(_citem.effect_value) + " AP!");
                     } else if (_citem.effect_type == "cleanse_dot") {
-                        array_push(combat_log, "Used " + _citem.name + " - cleared DoT effects!");
+                        var _cl_n = combat_cleanse(player, "dot");
+                        array_push(combat_log, "Used " + _citem.name + (_cl_n > 0
+                            ? " - cleared " + string(_cl_n) + " damage-over-time effect(s)!"
+                            : " - no DoT effects to clear."));
+                    } else if (_citem.effect_type == "cleanse_debuff") {
+                        var _cl_n = combat_cleanse(player, "one");
+                        array_push(combat_log, "Used " + _citem.name + (_cl_n > 0
+                            ? " - removed a debuff!" : " - no debuff to remove."));
                     } else if (_citem.effect_type == "cleanse_all") {
-                        array_push(combat_log, "Used " + _citem.name + " - cleared all effects!");
+                        var _cl_n = combat_cleanse(player, "all");
+                        array_push(combat_log, "Used " + _citem.name + (_cl_n > 0
+                            ? " - cleared " + string(_cl_n) + " negative effect(s)!"
+                            : " - no negative effects to clear."));
                     } else if (_citem.effect_type == "heal_dot") {
-                        array_push(combat_log, "Used " + _citem.name + "!");
+                        // Heal-over-time: apply a "regen" status that ticks each player
+                        // turn via combat_tick_statuses (previously this did NOTHING).
+                        // Both heal_dot tonics read "per turn for 3 turns".
+                        if (!variable_struct_exists(player, "status_effects")) player.status_effects = [];
+                        array_push(player.status_effects, {
+                            name:         _citem.name,
+                            kind:         "regen",
+                            effect_type:  "heal_dot",
+                            effect_value: _citem.effect_value,
+                            duration:     3,
+                            element:      ""
+                        });
+                        array_push(combat_log, "Used " + _citem.name + " - regenerating "
+                            + string(_citem.effect_value) + " HP/turn for 3 turns.");
                     } else if (_citem.effect_type == "shield") {
                         if (!variable_struct_exists(player, "shield_hp")) player.shield_hp = 0;
                         player.shield_hp += _citem.effect_value;
@@ -335,6 +362,24 @@ if (player_turn) {
             }
         }
         exit; // block all other combat input while the quick menu is open
+    }
+
+    // -------------------------------------------------------------------------
+    // 3b. ABILITY DETAIL POPUP (V) - full breakdown of the selected ability
+    // Mirrors the Tab popup on the loadout / Vex screens (ui_draw_ability_detail).
+    // Tab itself stays bound to target-cycling here, so combat uses V instead.
+    // While the popup is up, V or Esc closes it and all other combat input is
+    // swallowed.
+    // -------------------------------------------------------------------------
+    if (ability_detail_open) {
+        if (keyboard_check_pressed(ord("V")) || keyboard_check_pressed(vk_escape)) {
+            ability_detail_open = false;
+        }
+        exit;
+    }
+    if (keyboard_check_pressed(ord("V")) && array_length(player.abilities) > 0) {
+        ability_detail_open = true;
+        exit;
     }
 
     // --- Ability selection (navigate with arrow keys or WASD; wraps around) ---
@@ -468,7 +513,10 @@ if (player_turn) {
         // Applied FIRST so it composes with the per-cast discounts below (Quickcast can
         // still take it to 0). Mirrored in the cast branch + the UI via ability_effective_cost.
         var _syn_elig = ability_synergy_active(ab, player);
-        if (_syn_elig && ab.energy_cost > 0) ab.energy_cost = max(1, ab.energy_cost - 1);  // free abilities stay free
+        // Support abilities floor at 0 (a 1-AP support after another support is free);
+        // every other role floors at 1. Matches ability_effective_cost.
+        var _syn_floor = (ability_category(ab) == "support") ? 0 : 1;
+        if (_syn_elig && ab.energy_cost > 0) ab.energy_cost = max(_syn_floor, ab.energy_cost - 1);  // free abilities stay free
         var _qc_elig = rune_aspect_socketed("quickcast")
                        && variable_struct_exists(player, "rune_first_spell_used")
                        && !player.rune_first_spell_used
@@ -491,11 +539,12 @@ if (player_turn) {
             array_push(combat_log, "Not enough resources.");
 
         } else {
-            // Same-category synergy discount: apply the -1 AP (floor 1) for this cast.
+            // Same-category synergy discount: apply the -1 AP for this cast (floor 0 for
+            // support, 1 for other roles - see _syn_floor above).
             // Applied before Quickcast/Cracked Focus so those can still reduce further.
             // Guarded on >0 so a free (0-AP) ability is never pushed up to 1.
             if (_syn_elig && ab.energy_cost > 0) {
-                ab.energy_cost = max(1, ab.energy_cost - 1);
+                ab.energy_cost = max(_syn_floor, ab.energy_cost - 1);
                 array_push(combat_log, ab.name + " - "
                     + ability_category_label(ability_category(ab)) + " synergy: -1 AP!");
             }
@@ -1191,6 +1240,21 @@ if (player_turn) {
                                 var _status_dur = ab.effect_duration;
                                 if (ab.effect_type == "dot" && variable_struct_exists(player, "derived")) {
                                     _status_ev += player.derived.dot_dmg_bonus;
+                                }
+                                // Entropy escalation (M ask): if the target already carries a
+                                // void DoT, this cast deals DOUBLE damage - so stacking Entropy
+                                // on itself ramps up instead of being a flat re-apply.
+                                if (ab.name == "Entropy") {
+                                    var _has_void_dot = false;
+                                    for (var _evi = 0; _evi < array_length(target.status_effects); _evi++) {
+                                        var _evse = target.status_effects[_evi];
+                                        if (variable_struct_exists(_evse, "kind") && _evse.kind == "dot"
+                                            && combat_status_element(_evse) == "void") { _has_void_dot = true; break; }
+                                    }
+                                    if (_has_void_dot) {
+                                        _status_ev *= 2;
+                                        array_push(combat_log, "Entropy feeds on lingering void - DOUBLE damage!");
+                                    }
                                 }
                                 if (_crit_result.effect_quality == 1) {
                                     _status_dur += 1;

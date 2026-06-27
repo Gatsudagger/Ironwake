@@ -270,7 +270,7 @@ draw_text(_alloc_cx, _box_y + _box_h + 21, _stat_descs[selected_stat]);
 
 // Allocation key hints below the stat boxes
 draw_set_color(make_color_rgb(140, 145, 155));
-draw_text(_alloc_cx, _box_y + _box_h + 51, "Enter / Space: Add point        X: Remove point");
+draw_text_outline(_alloc_cx, _box_y + _box_h + 51, "Enter / Space: Add point        X: Remove point");
 
 
 // -----------------------------------------------------------------------------
@@ -281,7 +281,7 @@ var _inst_y = 1020;
 // Navigation hint
 draw_set_font(fnt_ui_small);
 draw_set_color(make_color_rgb(130, 135, 145));
-draw_text(960, _inst_y, "A / D: Class    Q / E: Gender    W / S: Stat    Enter / Space: Confirm");
+draw_text_outline(960, _inst_y, "A / D: Class    Q / E: Gender    W / S: Stat    Enter / Space: Confirm");
 
 // Readiness prompt
 if (free_points > 0) {
@@ -334,7 +334,7 @@ if (naming_active) {
     draw_set_halign(fa_center);
     draw_set_font(fnt_ui_small);
     draw_set_color(make_color_rgb(130, 135, 145));
-    draw_text(960, 597, "Enter to confirm       Escape to go back");
+    draw_text_outline(960, 597, "Enter to confirm       Escape to go back");
 }
 
 
@@ -393,7 +393,7 @@ if (portrait_active) {
     // Instructions
     draw_set_font(fnt_ui_small);
     draw_set_color(make_color_rgb(130, 135, 145));
-    draw_text(960, _main_y + _main_h + 72, "A / D: Browse       Enter / Space: Confirm");
+    draw_text_outline(960, _main_y + _main_h + 72, "A / D: Browse       Enter / Space: Confirm");
 }
 
 

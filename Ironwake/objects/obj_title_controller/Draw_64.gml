@@ -146,7 +146,7 @@ if (phase == "cutscene") {
     if (can_input && blink < 42) {
         draw_set_font(fnt_ui_small);
         draw_set_color(make_color_rgb(100, 110, 135));
-        draw_text(960, 818, "W/S: Navigate   Enter / Space: Select");
+        draw_text_outline(960, 818, "W/S: Navigate   Enter / Space: Select");
     }
 
     // Settings hint (always shown on the title screen)
@@ -170,7 +170,7 @@ if (phase == "cutscene") {
     draw_text(960, 120, slot_mode == "new_game" ? "SELECT SAVE SLOT - NEW GAME" : "SELECT SAVE SLOT - LOAD GAME");
     draw_set_font(fnt_ui_small);
     draw_set_color(make_color_rgb(70, 80, 105));
-    draw_text(960, 177, slot_mode == "new_game" ? "A/D to choose slot   Enter to confirm   Esc to go back" : "A/D to choose slot   Enter to load   Esc to go back");
+    draw_text_outline(960, 177, slot_mode == "new_game" ? "A/D to choose slot   Enter to confirm   Esc to go back" : "A/D to choose slot   Enter to load   Esc to go back");
 
     // Draw 3 slot cards
     var _card_w  = 510;

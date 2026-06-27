@@ -89,9 +89,11 @@ player = {
     is_player:  true,
     class_id:   _class_id,
 
-    // Vitals
-    HP:         _derived.HP,
-    max_HP:     _derived.HP,
+    // Vitals - max_HP folds in the equipment +HP affix bonus up front so the
+    // carry-over clamp below measures against the TRUE full HP. (Adding the bonus
+    // AFTER the clamp re-healed the gear-HP portion every combat - see below.)
+    HP:         _derived.HP + _equip_bonus.bonus_max_hp,
+    max_HP:     _derived.HP + _equip_bonus.bonus_max_hp,
 
     // Mitigation - base 1 each; equipment bonuses stored separately for Step application
     armor:           1,
@@ -222,11 +224,10 @@ if (variable_global_exists("run_preparation") && player.class_id == 2) {
     player.preparation = min(global.run_preparation, player.preparation_max);
 }
 
-// Apply special equipment bonus fields from affix system
-player.max_HP += _equip_bonus.bonus_max_hp;
-if (_equip_bonus.bonus_max_hp > 0) {
-    player.HP = min(player.HP + _equip_bonus.bonus_max_hp, player.max_HP);
-}
+// NOTE: the equipment +HP affix bonus (_equip_bonus.bonus_max_hp) is already folded
+// into player.max_HP at creation, so the carried-over HP clamp uses the true full max.
+// It must NOT be re-added here - doing so silently healed the gear-HP portion at the
+// start of every combat (the "Arcanist heals after combat" report).
 
 // Boons: Ironhide (+20% max HP) / Glass Cannon (-15% max HP).
 var _boon_hpm = boon_maxhp_mult();
@@ -681,6 +682,10 @@ combat_music_stopped = false;
 // Consumable quick menu (combat-native popup, separate from the character menu)
 consumable_quick_open   = false;
 consumable_quick_cursor = 0;
+
+// Full-screen ability breakdown popup (V key) - same view as the loadout/Vex Tab
+// popup (ui_draw_ability_detail). Tab stays bound to target-cycling in combat.
+ability_detail_open = false;
 
 // Boss extract choice (shown after defeating floor boss when floor < 3)
 boss_extract_open = false;

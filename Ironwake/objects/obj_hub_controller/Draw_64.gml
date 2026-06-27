@@ -113,7 +113,7 @@ draw_text(GUI_CX, 18, "THE IRONWAKE CAMP");
 // (x>=1320). Centered at GUI_CX; wraps downward, leaving clearance above the footer.
 draw_set_font(fnt_ui_small);
 draw_set_color(make_color_rgb(150, 130, 110));
-draw_text_ext(GUI_CX, 960, hub_flavor, 30, 645);
+draw_text_ext_outline(GUI_CX, 960, hub_flavor, 30, 645);
 draw_set_font(-1);
 draw_set_halign(fa_left);
 
@@ -203,19 +203,21 @@ if (show_last_run) {
     draw_text(_lx, _ly + 39, "Gold earned: " + string(global.last_run_gold));
     draw_text(_lx, _ly + 78, "Kills:       " + string(global.last_run_kills));
 
-    // Permanent points earned (only shown on full-clear victory)
+    // Permanent points earned (only shown on full-clear victory). Drawn at the
+    // smaller UI font so the all-caps gold line fits inside the 420px panel
+    // instead of spilling past the right border.
     if (variable_global_exists("last_run_perm_points") && global.last_run_perm_points > 0) {
-        draw_set_color(make_color_rgb(255, 210, 60));
-        draw_text(_lx, _ly + 117, "PERMANENT POINTS EARNED: " + string(global.last_run_perm_points));
-        // Dismiss hint shifts down
         draw_set_font(fnt_ui_small);
+        draw_set_color(make_color_rgb(255, 210, 60));
+        draw_text(_lx, _ly + 120, "PERMANENT POINTS EARNED: " + string(global.last_run_perm_points));
+        // Dismiss hint shifts down
         draw_set_color(c_gray);
-        draw_text(_lx, _ly + 156, "Esc to dismiss");
+        draw_text_outline(_lx, _ly + 156, "Esc to dismiss");
     } else {
         // Dismiss hint
         draw_set_font(fnt_ui_small);
         draw_set_color(c_gray);
-        draw_text(_lx, _ly + 123, "Esc to dismiss");
+        draw_text_outline(_lx, _ly + 123, "Esc to dismiss");
     }
     draw_set_font(-1);
 }
@@ -569,7 +571,7 @@ draw_set_halign(fa_center);
 draw_set_valign(fa_bottom);
 draw_set_font(fnt_ui_small);
 draw_set_color(c_gray);
-draw_text(GUI_CX, 1073, "W/S: Navigate   Enter / Space: Interact   H: History   T: Stash   G: Item Codex   P: Upgrade   O: Settings");
+draw_text_outline(GUI_CX, 1073, "W/S: Navigate   Enter / Space: Interact   H: History   T: Stash   G: Item Codex   P: Upgrade   O: Settings");
 
 // Reset draw state - font back to default so the not-yet-rescaled overlays below
 // (dungeon-select / history / perm-alloc / codex / loadout) keep their look.
@@ -796,7 +798,7 @@ if (_gc_ds != noone && _gc_ds.dungeon_select_open) {
     draw_set_valign(fa_bottom);
     draw_set_font(fnt_ui_small);
     draw_set_color(make_color_rgb(75, 82, 110));
-    draw_text(GUI_CX, 1073, "A / D: Cycle Dungeon     Q / E: Awakening     Enter: Confirm     Esc: Back");
+    draw_text_outline(GUI_CX, 1073, "A / D: Cycle Dungeon     Q / E: Awakening     Enter: Confirm     Esc: Back");
     draw_set_font(-1);
     draw_set_halign(fa_left);
     draw_set_valign(fa_top);
@@ -930,9 +932,9 @@ if (show_history) {
     // Scroll / close hint
     draw_set_color(make_color_rgb(120, 130, 150));
     if (_history_count > 8) {
-        draw_text(GUI_CX, 1035, "W/S to scroll   Esc to close");
+        draw_text_outline(GUI_CX, 1035, "W/S to scroll   Esc to close");
     } else {
-        draw_text(GUI_CX, 1035, "Esc to close");
+        draw_text_outline(GUI_CX, 1035, "Esc to close");
     }
 
     draw_set_font(-1);
@@ -1026,7 +1028,7 @@ if (instance_exists(obj_game_controller) && variable_global_exists("pending_perm
         draw_set_halign(fa_center);
         draw_set_font(fnt_ui_small);
         draw_set_color(make_color_rgb(80, 90, 110));
-        draw_text(GUI_CX, 938, "W/S: Navigate   Enter: Spend Point   Esc: Back");
+        draw_text_outline(GUI_CX, 938, "W/S: Navigate   Enter: Spend Point   Esc: Back");
         draw_set_font(-1);
         draw_set_halign(fa_left);
         draw_set_valign(fa_top);
@@ -1280,7 +1282,7 @@ if (show_gallery) {
         draw_set_font(fnt_ui_small);
         draw_set_halign(fa_right);
         draw_set_color(make_color_rgb(70, 80, 118));
-        draw_text(_dp_x + _dp_w - 27, _dp_y + _dp_h - 69, "Esc / click to close");
+        draw_text_outline(_dp_x + _dp_w - 27, _dp_y + _dp_h - 69, "Esc / click to close");
         draw_set_halign(fa_left);
 
     } else {
@@ -1297,7 +1299,7 @@ if (show_gallery) {
     draw_set_font(fnt_ui_small);
     draw_set_halign(fa_center);
     draw_set_color(make_color_rgb(60, 68, 100));
-    draw_text(GUI_CX, 1044, "W/S: Navigate   Enter: Inspect   G / Esc: Close Gallery");
+    draw_text_outline(GUI_CX, 1044, "W/S: Navigate   Enter: Inspect   G / Esc: Close Gallery");
     draw_set_halign(fa_left);
     draw_set_alpha(1.0);
     draw_set_font(-1);
@@ -1364,7 +1366,7 @@ if (instance_exists(obj_game_controller)) {
         // [ TAB ] hint between tabs
         draw_set_font(fnt_ui_small);
         draw_set_color(make_color_rgb(55, 62, 88));
-        draw_text(_mid, _tab_y + 11, "Q / E");
+        draw_text_outline(_mid, _tab_y + 11, "Q / E");
 
         draw_set_halign(fa_left);
 
@@ -1554,7 +1556,7 @@ if (instance_exists(obj_game_controller)) {
                 draw_text(GUI_CX, 1010, "Loadout full - remove an ability before adding another.");
             } else if (_conf_sel) {
                 draw_set_color(c_white);
-                draw_text(GUI_CX, 1010, string(_ov_sel_cnt) + " / " + string(_loadout_max) + " selected   |   [ Space ]  Confirm and Enter Dungeon");
+                draw_text_outline(GUI_CX, 1010, string(_ov_sel_cnt) + " / " + string(_loadout_max) + " selected   |   [ Space ]  Confirm and Enter Dungeon");
             } else if (_ov_sel_cnt == _loadout_max) {
                 draw_set_color(make_color_rgb(80, 175, 100));
                 draw_text(GUI_CX, 1010, string(_ov_sel_cnt) + " / " + string(_loadout_max) + " selected   |   Scroll down to [ Enter ] to confirm");
@@ -1565,7 +1567,7 @@ if (instance_exists(obj_game_controller)) {
 
             // --- Controls hint: y=1050 ---
             draw_set_color(make_color_rgb(65, 75, 100));
-            draw_text(GUI_CX, 1050, "W/S: Navigate   Q/E: Switch Tab   Enter: Toggle   Tab: Details   Space: Confirm   Esc: Cancel");
+            draw_text_outline(GUI_CX, 1050, "W/S: Navigate   Q/E: Switch Tab   Enter: Toggle   Tab: Details   Space: Confirm   Esc: Cancel");
             draw_set_halign(fa_left);
 
             // --- Tab ability-detail popup, drawn over the loadout (P7) ---
@@ -1749,7 +1751,7 @@ if (instance_exists(obj_game_controller)) {
 
             // --- Controls hint: y=1050 ---
             draw_set_color(make_color_rgb(65, 75, 100));
-            draw_text(GUI_CX, 1050, "W/S: Navigate   Q/E: Switch Tab   Enter: Toggle Trait   Esc: Cancel");
+            draw_text_outline(GUI_CX, 1050, "W/S: Navigate   Q/E: Switch Tab   Enter: Toggle Trait   Esc: Cancel");
             draw_set_halign(fa_left);
         }
 

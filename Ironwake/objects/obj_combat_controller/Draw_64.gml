@@ -16,6 +16,11 @@ if (!dungeon_bg_draw("combat", 0.30)) {
     draw_rectangle(0, 0, GUI_W, GUI_H, false);
 }
 
+// Reset the hover-status tooltip each frame; the status icon rows (enemy bars +
+// player buff row, drawn below) set it when the mouse is over a badge, and it's
+// drawn after those rows so the popup lands on top. (Task: hover-explain debuffs.)
+global.combat_status_tip = undefined;
+
 
 // -----------------------------------------------------------------------------
 // 2. ENEMY HP BARS (right side, stacked vertically)
@@ -32,6 +37,14 @@ var _bar_row_gap = 78;           // bar + status-icon row per grid row
 
 var _living_idx = 0;
 var _count = array_length(combat_state.combatants);
+
+// Inspect-on-hover: the enemy under the cursor (its HP bar OR its sprite) gets an
+// inspect tooltip drawn after the HUD. Capture the cursor + target here; the bar
+// loop and the sprite loop below both test against it. (Task: enemy class clarity.)
+var _mx_gui = device_mouse_x_to_gui(0);
+var _my_gui = device_mouse_y_to_gui(0);
+var _inspect_target = undefined;
+
 for (var _i = 0; _i < _count; _i++) {
     var _c = combat_state.combatants[_i];
     if (_c.is_player)   continue;
@@ -53,6 +66,25 @@ for (var _i = 0; _i < _count; _i++) {
 
     ui_draw_hp_bar(_bar_x, _bar_y, _bar_width, _bar_height,
                    _c.HP, _c.max_HP, _c.name);
+
+    // Attack-class tag (reach/kind), right-aligned under the bar so the player can
+    // see which control applies: ROOT blocks Melee, SILENCE blocks Spell, STUN all.
+    // Ranged foes are tinted amber as a "root won't stop this" cue.
+    var _ec_ranged = (variable_struct_exists(_c, "reach") && _c.reach == "ranged");
+    draw_set_font(fnt_ui_small);
+    draw_set_halign(fa_right);
+    draw_set_valign(fa_top);
+    draw_set_color(_ec_ranged ? make_color_rgb(220, 170, 80) : make_color_rgb(140, 155, 185));
+    draw_text(_bar_x + _bar_width, _bar_y + _bar_height + 9, enemy_class_tag(_c));
+    draw_set_halign(fa_left);
+    draw_set_font(-1);
+
+    // The HP bar (+ its class-tag line) is an inspect surface - hovering it opens
+    // the inspect tooltip after the HUD draws.
+    if (_mx_gui >= _bar_x && _mx_gui <= _bar_x + _bar_width
+        && _my_gui >= _bar_y && _my_gui <= _bar_y + _bar_height + 30) {
+        _inspect_target = _c;
+    }
 
     // Status icons below the HP bar for this enemy
     if (variable_struct_exists(_c, "status_effects") && array_length(_c.status_effects) > 0) {
@@ -126,6 +158,10 @@ if (combatant_has_status_kind(player, "stun")) _px_draw += irandom_range(-3, 3);
 // Normalise display size: larger canvases (skins, female class sprites) scale down
 // to the same ~345px display height (native 1080p; was 230px at 720p).
 var _pscale = 345 / max(1, sprite_get_height(_pspr));
+// Ground shadow beneath the player so the sprite reads against busy backgrounds.
+ui_draw_ground_shadow(_px_draw + sprite_get_width(_pspr) * _pscale * 0.5,
+                      _py_draw + sprite_get_height(_pspr) * _pscale,
+                      sprite_get_width(_pspr) * _pscale);
 draw_sprite_ext(_pspr, _pfr, _px_draw, _py_draw, _pscale, _pscale, 0, c_white, 1.0);
 if (player.hit_flash > 0) {
     player.hit_flash--;
@@ -189,6 +225,19 @@ for (var _ei = 0; _ei < _ecnt; _ei++) {
     var _ey = _espr_y0 + (_espr_idx * _espr_dy)
             + ((_espr_idx % 2 == 0) ? -_espr_zig : _espr_zig);
 
+    // Inspect hit-box from the RESTING sprite position (before lunge/shake jitter is
+    // applied below) so hovering the creature itself also opens the inspect tooltip,
+    // and the hot-zone doesn't jump around while it animates.
+    if (variable_struct_exists(_espr_map, _ec.name)) {
+        var _isp   = variable_struct_get(_espr_map, _ec.name);
+        var _isp_w = sprite_get_width(_isp)  * 3;
+        var _isp_h = sprite_get_height(_isp) * 3;
+        if (_mx_gui >= _ex && _mx_gui <= _ex + _isp_w
+            && _my_gui >= _ey && _my_gui <= _ey + _isp_h) {
+            _inspect_target = _ec;
+        }
+    }
+
     // Attack slide for the enemy that is currently attacking
     if (!attack_anim_is_player && attack_anim_enemy_idx == _espr_idx && _anim_progress > 0) {
         _ex = lerp(attack_anim_src_x, attack_anim_dst_x, _lunge_frac) + screen_shake_x;
@@ -205,6 +254,12 @@ for (var _ei = 0; _ei < _ecnt; _ei++) {
     if (variable_struct_exists(_espr_map, _ec.name)) {
         var _espr = variable_struct_get(_espr_map, _ec.name);
         var _espr_frame = (sprite_get_number(_espr) > 1) ? 3 : 0;
+
+        // Ground shadow beneath the enemy (under both the reticle and the sprite) so
+        // foes read against busy backgrounds.
+        ui_draw_ground_shadow(_ex + sprite_get_width(_espr)  * 3 * 0.5,
+                              _ey + sprite_get_height(_espr) * 3,
+                              sprite_get_width(_espr) * 3);
 
         // Selected-target reticle: a slowly-swirling arcane rune at the foe's feet,
         // drawn UNDER the sprite so it reads as a ground marker. Lets you map the
@@ -288,6 +343,21 @@ damage_popups = _kept_popups;
 draw_set_font(-1);
 draw_set_halign(fa_left);
 draw_set_valign(fa_top);
+
+// Hover-explain tooltip for a status badge (set by ui_draw_status_icon_row above).
+// Drawn here so it sits over the bars/HUD; later full-screen overlays (consumable
+// menu, ability detail, loot, pause) draw afterwards and naturally occlude it.
+if (global.combat_status_tip != undefined) {
+    ui_draw_status_tooltip(global.combat_status_tip.x, global.combat_status_tip.y,
+                           global.combat_status_tip.se);
+}
+
+// Enemy inspect tooltip - attack class + which controls stop the hovered foe. Drawn
+// last (over bars/HUD) but suppressed while a status-badge tooltip is up, so the two
+// hover popups don't overlap.
+if (_inspect_target != undefined && global.combat_status_tip == undefined) {
+    ui_draw_enemy_inspect_tooltip(_mx_gui, _my_gui, _inspect_target);
+}
 
 // -----------------------------------------------------------------------------
 // 3a. AP SYSTEM OVERLAYS (player turn only)
@@ -505,7 +575,7 @@ if (instance_exists(obj_game_controller)) {
         if (_has_pend) {
             draw_text(960, 158, "Allocate " + _pts_str + "   (Enter: change choice   Space: confirm)");
         } else {
-            draw_text(960, 158, "Allocate " + _pts_str + "   (W/S: Navigate   Enter: choose stat)");
+            draw_text_outline(960, 158, "Allocate " + _pts_str + "   (W/S: Navigate   Enter: choose stat)");
         }
 
         draw_set_halign(fa_left);
@@ -596,9 +666,9 @@ if (instance_exists(obj_game_controller)) {
         draw_set_halign(fa_center);
         draw_set_color(make_color_rgb(80, 90, 110));
         if (_has_pend) {
-            draw_text(960, _alloc_footer_y, "W/S: Navigate   Enter: Change selection   Space: Confirm");
+            draw_text_outline(960, _alloc_footer_y, "W/S: Navigate   Enter: Change selection   Space: Confirm");
         } else {
-            draw_text(960, _alloc_footer_y, "W/S: Navigate   Enter: Choose stat");
+            draw_text_outline(960, _alloc_footer_y, "W/S: Navigate   Enter: Choose stat");
         }
         draw_set_font(-1);
         draw_set_halign(fa_left);
@@ -671,25 +741,29 @@ if (show_loot_screen) {
             draw_set_color(_rarity_col);
             draw_set_halign(fa_left);
             draw_text(456, _iy + 3, _item.name);
-            // Stat line (e.g. "+4 STR, +12 HP") so found gear is readable at a glance
+            // Stat line (e.g. "+4 STR, +12 HP") so found gear is readable at a glance.
+            // Scale it down to ONE line within the left content area so a many-affix
+            // item can't overrun the right-hand rarity/slot/req column.
             draw_set_font(fnt_ui_small);
             draw_set_color(c_white);
-            var _lstat = ui_item_stat_str(_item);
-            draw_text(456, _iy + 33, _lstat);
-            // Stat requirement appended, red if the current class can't meet it (hard-blocked).
+            draw_set_halign(fa_left);
+            ui_draw_stat_line_fit(456, _iy + 33, ui_item_stat_str(_item), 1230 - 456);
+            draw_set_color(make_color_rgb(160, 165, 185));
+            draw_text(456, _iy + 60, _item.effect_desc);
+            // Right column (right-aligned): rarity, slot, and stat requirement - kept
+            // separate from the stat line so they never overlap. Requirement is red
+            // when the current class can't meet it (equipping is hard-blocked).
+            draw_set_halign(fa_right);
+            draw_set_color(_rarity_col);
+            draw_text(1530, _iy + 6, "[" + item_rarity_name(_item.rarity) + "]");
+            draw_set_color(make_color_rgb(140, 140, 100));
+            draw_text(1530, _iy + 33, "Slot: " + item_slot_label(_item.slot));
             var _lreq = item_stat_requirement(_item);
             if (_lreq.value > 0 && _lreq.stat != "") {
                 draw_set_color((player_base_stat(_lreq.stat) >= _lreq.value)
                     ? make_color_rgb(110, 170, 110) : make_color_rgb(225, 80, 80));
-                draw_text(456 + string_width(_lstat) + 27, _iy + 33, "Req " + string(_lreq.value) + " " + _lreq.stat);
+                draw_text(1530, _iy + 58, "Req " + string(_lreq.value) + " " + _lreq.stat);
             }
-            draw_set_color(make_color_rgb(160, 165, 185));
-            draw_text(456, _iy + 60, _item.effect_desc);
-            draw_set_halign(fa_right);
-            draw_set_color(_rarity_col);
-            draw_text(1530, _iy + 8, "[" + item_rarity_name(_item.rarity) + "]");
-            draw_set_color(make_color_rgb(140, 140, 100));
-            draw_text(1530, _iy + 42, "Slot: " + item_slot_label(_item.slot));
         }
     }
 
@@ -698,7 +772,7 @@ if (show_loot_screen) {
     draw_set_font(fnt_ui_small);
     if (_count > 8) {
         draw_set_color(make_color_rgb(120, 130, 150));
-        draw_text(960, 953, "W/S to scroll");
+        draw_text_outline(960, 953, "W/S to scroll");
     }
 
     draw_set_font(fnt_ui);
@@ -801,7 +875,7 @@ if (combat_over) {
         if (combat_result == 1) {
             draw_text(_cx, _summary_y, "Press R to continue");
         } else {
-            draw_text(_cx, _summary_y, "Press R to return to camp");
+            draw_text_outline(_cx, _summary_y, "Press R to return to camp");
         }
     }
 
@@ -839,7 +913,7 @@ if (combat_over) {
         draw_rectangle(402, 510, 930, 623, true);
         draw_set_font(fnt_ui);
         draw_set_color(c_white);
-        draw_text(666, 533, "[ E ]  Extract to Camp");
+        draw_text_outline(666, 533, "[ E ]  Extract to Camp");
         draw_set_font(fnt_ui_small);
         draw_set_color(make_color_rgb(140, 210, 140));
         draw_text(666, 579, "Keep all rewards  *  Safe");
@@ -857,7 +931,7 @@ if (combat_over) {
         draw_text(1254, 579, "Floor " + string(global.current_floor + 1) + "  *  Harder enemies");
 
         draw_set_color(make_color_rgb(70, 80, 110));
-        draw_text(_cx, 645, "E: Extract     Enter / Space: Continue to next floor");
+        draw_text_outline(_cx, 645, "E: Extract     Enter / Space: Continue to next floor");
 
         draw_set_font(-1);
         draw_set_halign(fa_left);
@@ -965,6 +1039,15 @@ if (instance_exists(obj_game_controller)) {
     if (_gc_cmp2.comparison_open && _gc_cmp2.comparison_item != undefined) {
         ui_draw_comparison_panel(_gc_cmp2.comparison_item, _gc_cmp2.comparison_equipped);
     }
+}
+
+// Ability detail breakdown (V) - full-screen popup over the combat HUD, mirroring
+// the Tab popup on the loadout / Vex screens. Close hint reads [V] since Tab is the
+// target-cycle key in combat. Drawn under the pause menu so Esc->pause still wins
+// if both somehow coexist (they don't - the Esc guard closes this first).
+if (player_turn && !combat_over && ability_detail_open) {
+    var _ad_idx = clamp(selected_ability, 0, array_length(player.abilities) - 1);
+    ui_draw_ability_detail(player.abilities[_ad_idx], "V");
 }
 
 // Pause / Esc menu + its Settings sub-screen (combat doesn't otherwise host the

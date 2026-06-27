@@ -102,6 +102,15 @@ function save_game() {
         // bought/withdrawn potions on reload was a silent data-loss trap.)
         consumable_inventory: global.consumable_inventory,
 
+        // Shop stock (per-slot persistence). Dorn's rotating gear (with sold flags)
+        // and Petra's special are session globals that USED to be shared across every
+        // slot - so an item one character bought stayed "sold" in another character's
+        // shop. Saving them per slot makes each character's shop independent and makes
+        // a purchase survive a reload until the next run re-rolls the stock.
+        dorn_stock:          variable_global_exists("dorn_stock")          ? global.dorn_stock          : [],
+        petra_stock_special: variable_global_exists("petra_stock_special") ? global.petra_stock_special : undefined,
+        petra_special_qty:   variable_global_exists("petra_special_qty")   ? global.petra_special_qty   : 0,
+
         // Rune system (Maren) - socketed gear runes ride on the item structs above
         rune_inventory: variable_global_exists("rune_inventory") ? global.rune_inventory : [],
         rune_dust:      variable_global_exists("rune_dust")      ? global.rune_dust      : 0,
@@ -151,7 +160,9 @@ function save_game() {
 // set save_game() persists (the leak surface); character creation then fills in
 // name/class/stats/gender/portrait. Catalogs/pools (affix_pool, abilities_*,
 // traits_all, audio) are NOT touched - they aren't persisted and load once at boot.
-// Call right before entering character creation for a New Game.
+// Call right before entering character creation for a New Game, AND right before
+// load_game() when loading a slot, so loading a character starts from a clean slate
+// and can't inherit the previously-active character's non-overwritten globals.
 // ---------------------------------------------------------------------------
 function new_game_reset() {
     // Economy
@@ -214,6 +225,13 @@ function new_game_reset() {
     global.equipment_stash      = [];
     global.consumable_stash     = [];
     global.consumable_inventory = [];
+
+    // Shop stock (per-slot). Cleared so no previous character's Dorn/Petra stock
+    // bleeds in; left empty here, then either restored by load_game() or freshly
+    // rolled by the hub on entry (restock_shops()).
+    global.dorn_stock          = [];
+    global.petra_stock_special = undefined;
+    global.petra_special_qty   = 0;
 
     // Rune system (Maren)
     global.rune_inventory = [];
@@ -413,6 +431,25 @@ function load_game() {
     if (variable_struct_exists(_s, "consumable_inventory") && is_array(_s.consumable_inventory)) {
         global.consumable_inventory = _s.consumable_inventory;
     }
+
+    // Shop stock (per-slot). Restore this character's Dorn/Petra stock. Saves
+    // written before shop persistence lack these keys; new_game_reset() leaves
+    // dorn_stock empty in that case and the hub seeds a fresh shop on entry.
+    if (variable_struct_exists(_s, "dorn_stock") && is_array(_s.dorn_stock)) {
+        global.dorn_stock = _s.dorn_stock;
+        for (var _dsi = 0; _dsi < array_length(global.dorn_stock); _dsi++) {
+            var _de = global.dorn_stock[_dsi];
+            if (is_struct(_de) && variable_struct_exists(_de, "item")) {
+                item_migrate_weapon_fields(_de.item);   // backfill weapon_damage/two_handed on shop gear
+            }
+        }
+    }
+    if (variable_struct_exists(_s, "petra_stock_special") && is_struct(_s.petra_stock_special)) {
+        global.petra_stock_special = _s.petra_stock_special;
+    } else {
+        global.petra_stock_special = undefined;
+    }
+    if (variable_struct_exists(_s, "petra_special_qty")) global.petra_special_qty = _s.petra_special_qty;
 
     // Rune system (Maren)
     if (variable_struct_exists(_s, "rune_inventory") && is_array(_s.rune_inventory)) {

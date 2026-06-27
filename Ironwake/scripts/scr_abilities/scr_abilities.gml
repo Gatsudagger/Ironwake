@@ -924,7 +924,11 @@ function ability_synergy_active(ab, caster) {
 function ability_effective_cost(ab, caster) {
     var _base = variable_struct_exists(ab, "energy_cost") ? ab.energy_cost : 0;
     if (_base <= 0) return _base;   // free abilities stay free
-    return max(1, _base - (ability_synergy_active(ab, caster) ? 1 : 0));
+    // SUPPORT abilities can be discounted all the way to 0 AP (M's call): a 1-AP
+    // support cast after another support this turn becomes free, so buff/heal chains
+    // are genuinely free. Every other role still floors at 1 AP.
+    var _floor = (ability_category(ab) == "support") ? 0 : 1;
+    return max(_floor, _base - (ability_synergy_active(ab, caster) ? 1 : 0));
 }
 
 
@@ -1013,6 +1017,7 @@ function ability_effect_full(ab) {
         case "Rupture":         _b = "Detonates every bleed/poison on the target: +5 damage per remaining tick, consuming them."; break;
         case "Assassinate":     _b = "Execute: deals DOUBLE damage to a target below 30% HP."; break;
         case "Killing Spree":   _b = "Deals +6 bonus damage per debuff or trap on the target."; break;
+        case "Entropy":         _b = "Deals DOUBLE damage if the target already carries a void DoT - stack it on itself to ramp up."; break;
         case "Adrenaline Rush": _b = "Gain +1 AP this turn (once per combat)."; break;
         case "Sanguine Pact":   _b = "Spend 8 HP to gain 3 Blood."; break;
         case "Second Wind":     _b = "Also restore 1 secondary resource (Soul / Blood / Prep)."; break;
@@ -1028,10 +1033,11 @@ function ability_effect_full(ab) {
     }
     if (_b != "") array_push(_parts, _b);
 
-    // Detonators surface their reaction behavior (full table in Compendium > Status
-    // Reactions). See SYSTEMS_VIABILITY_PASS.md.
+    // Detonators surface their reaction behavior. Kept to one plain-English line here;
+    // the full reaction table lives in the Tab/V ability-detail popup and the
+    // Compendium > Status Reactions page. See SYSTEMS_VIABILITY_PASS.md.
     if (ab.name == "Snipe" || ab.name == "Assassinate" || ab.name == "Arcane Burst" || ab.name == "Soul Nova") {
-        array_push(_parts, "Detonator: reacts with a status on the target - Exposed +12 dmg, Root +30%, Stun guaranteed crit, Poison applies Mortality, Bleed/Void detonate. (See Status Reactions.)");
+        array_push(_parts, "Detonates debuffs for secondary effects.");
     }
 
     // Standard effect from the typed status kind / effect_type.

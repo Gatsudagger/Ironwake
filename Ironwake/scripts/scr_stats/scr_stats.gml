@@ -645,11 +645,11 @@ function elem_affix_describe(elem) {
     if (elem == undefined) return "";
     var _st = "";
     switch (elem.status_kind) {
-        case "dot":        _st = "burns " + string(elem.status_value) + "/turn"; break;
-        case "weaken":     _st = "chills (-" + string(round(elem.status_value * 100)) + "% enemy dmg)"; break;
-        case "vulnerable": _st = "shocks (+" + string(elem.status_value) + " dmg taken)"; break;
+        case "dot":        _st = "applies Burn (" + string(elem.status_value) + " dmg/turn)"; break;
+        case "weaken":     _st = "applies Chill (foe deals -" + string(round(elem.status_value * 100)) + "% dmg)"; break;
+        case "vulnerable": _st = "applies Shock (foe takes +" + string(elem.status_value) + " dmg/hit)"; break;
     }
-    return "+" + string(elem.dmg) + " " + elem_element_name(elem.element) + " dmg, " + _st;
+    return "+" + string(elem.dmg) + " " + elem_element_name(elem.element) + " dmg on hit, " + _st;
 }
 
 // create_item(name, slot, rarity, stat_name, stat_value, effect_desc, gold_value)
@@ -1240,6 +1240,25 @@ function player_base_stat(stat_name) {
     var _pg = variable_struct_get(_perm_map, stat_name);
     if (!is_undefined(_pg) && variable_global_exists(_pg)) _v += variable_global_get(_pg);
     return _v;
+}
+
+// player_permanent_level() - the character's PERMANENT (meta) level: 1 + every
+// permanent point ever earned. Each permanent point (earned on a safe return,
+// run level 5/10/15 -> 1/2/3) is a permanent level-up, whether it's already been
+// spent into a perm_<stat>_bonus or is still pending. So this = 1 + (points spent)
+// + (points unspent), which equals 1 + lifetime points earned. Separate from
+// global.run_level (the per-dive level that resets to 1 each run). Display only -
+// it does NOT change run start level or any balance (M's call). See run history's
+// "Lifetime Perm Points" readout for the same earned total.
+function player_permanent_level() {
+    var _lv = 1;
+    var _keys = ["perm_str_bonus", "perm_dex_bonus", "perm_con_bonus",
+                 "perm_int_bonus", "perm_wis_bonus", "perm_cha_bonus"];
+    for (var _i = 0; _i < array_length(_keys); _i++) {
+        if (variable_global_exists(_keys[_i])) _lv += variable_global_get(_keys[_i]);
+    }
+    if (variable_global_exists("pending_perm_points")) _lv += global.pending_perm_points;
+    return _lv;
 }
 
 // equip_stat_block_reason(item) - "" if the wearer meets the item's stat
@@ -2700,6 +2719,7 @@ function tutorial_catalog() {
         { id:"ascendance", title:"Awakening Tiers",     body:"Higher Awakening tiers make enemies tougher but drop better, rarer loot. Raise the tier when you want more risk for more reward - start low and work up." },
         { id:"combat_ap",  title:"Action Points (AP)",  body:"Each turn you have 3 AP. Abilities cost AP to use; a basic attack is free. Spend your AP wisely, then end your turn to let the enemy act." },
         { id:"targeting",  title:"Choosing a Target",   body:"When several foes are present, Tab or click to pick who you hit. The glowing rune beneath an enemy marks your current target." },
+        { id:"inspect",    title:"Inspect Your Foes",   body:"Mouse over an enemy (or its health bar) to inspect it. You'll see whether it fights at Melee or Ranged and with Phys or Spell - and which controls stop it: Root halts melee, Silence stops spells, Stun stops anything. Ranged foes ignore Root, so a trap won't keep them off you." },
         { id:"vex",        title:"Vex the Trainer",     body:"Vex teaches new abilities and traits for gold (and the occasional item). Learn abilities here, then slot them on the loadout screen before a run." },
         { id:"shrine",     title:"Altars",              body:"A shrine is an altar. A Blessing altar sells boons for tribute; a Cursed altar lets you take on a curse - a run-long penalty - in exchange for far better spoils. Choose how greedy you dare to be." },
     ];
@@ -3962,6 +3982,20 @@ function video_settings_init() {
 // is true native density; on smaller ones GameMaker scales the GUI down to the window.
 function video_apply() {
     video_settings_init();
+
+    // HTML5 / itch.io: the browser page (and itch's embed frame) own canvas sizing and
+    // scaling. Calling window_set_size / window_center here pins the canvas to a fixed
+    // pixel size and FIGHTS that auto-scale - which is exactly what made the game
+    // "resize back to its original resolution" and the fullscreen toggle appear to
+    // shrink the window. On the web we only drive the real fullscreen request (the
+    // page scales the canvas to fill the frame on its own). NOTE: browser fullscreen
+    // from inside an itch iframe is gated by the browser/iframe policy; itch's own
+    // fullscreen button is the reliable path there.
+    if (os_browser != browser_not_a_browser) {
+        window_set_fullscreen(global.fullscreen);
+        return;
+    }
+
     window_set_fullscreen(global.fullscreen);
     if (!global.fullscreen) {
         var _win_w = min(GUI_W, display_get_width());

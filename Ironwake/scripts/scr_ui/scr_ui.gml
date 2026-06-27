@@ -11,6 +11,46 @@
 #macro GUI_CY (GUI_H / 2)   // 540 - vertical center
 
 // =============================================================================
+// draw_text_outline(x, y, str, [outline_col], [fill_col])
+// Draws str with a solid black (or given) outline so light hint/footer text and
+// lore flavor stay legible over busy backgrounds. Uses the CURRENT draw color as
+// the fill unless fill_col is supplied, and respects the current font / halign /
+// valign / alpha. Leaves the draw color set to the fill afterwards.
+// =============================================================================
+function draw_text_outline(x, y, str, outline_col = c_black, fill_col = undefined) {
+    var _fill = is_undefined(fill_col) ? draw_get_color() : fill_col;
+    draw_set_color(outline_col);
+    draw_text(x - 1, y - 1, str);
+    draw_text(x,     y - 1, str);
+    draw_text(x + 1, y - 1, str);
+    draw_text(x - 1, y,     str);
+    draw_text(x + 1, y,     str);
+    draw_text(x - 1, y + 1, str);
+    draw_text(x,     y + 1, str);
+    draw_text(x + 1, y + 1, str);
+    draw_set_color(_fill);
+    draw_text(x, y, str);
+}
+
+// draw_text_ext_outline(x, y, str, sep, w, [outline_col], [fill_col])
+// Wrapped (draw_text_ext) variant of draw_text_outline - for multi-line flavor /
+// lore text that needs both word-wrap and a legibility outline (e.g. the camp line).
+function draw_text_ext_outline(x, y, str, sep, w, outline_col = c_black, fill_col = undefined) {
+    var _fill = is_undefined(fill_col) ? draw_get_color() : fill_col;
+    draw_set_color(outline_col);
+    draw_text_ext(x - 1, y - 1, str, sep, w);
+    draw_text_ext(x,     y - 1, str, sep, w);
+    draw_text_ext(x + 1, y - 1, str, sep, w);
+    draw_text_ext(x - 1, y,     str, sep, w);
+    draw_text_ext(x + 1, y,     str, sep, w);
+    draw_text_ext(x - 1, y + 1, str, sep, w);
+    draw_text_ext(x,     y + 1, str, sep, w);
+    draw_text_ext(x + 1, y + 1, str, sep, w);
+    draw_set_color(_fill);
+    draw_text_ext(x, y, str, sep, w);
+}
+
+// =============================================================================
 // scr_ui.gml
 // Combat HUD drawing functions for Ironwake.
 // Room dimensions: 1920 x 1080 (GUI layer).
@@ -82,6 +122,22 @@ function ui_item_stat_str(item) {
 }
 
 // ---------------------------------------------------------------------------
+// ui_draw_stat_line_fit(x, y, txt, max_w)
+// Draws a pre-built stat string on ONE line, shrinking it uniformly only when it's
+// wider than max_w, so a busy many-affix item can't overrun a row's right-hand
+// column (loot screen, equip picker). Caller sets font/colour/halign first.
+// ---------------------------------------------------------------------------
+function ui_draw_stat_line_fit(x, y, txt, max_w) {
+    var _w = string_width(txt);
+    if (_w > max_w && _w > 0) {
+        var _sc = max_w / _w;
+        draw_text_transformed(x, y, txt, _sc, _sc, 0);
+    } else {
+        draw_text(x, y, txt);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // ui_str_hash(s) - small deterministic string hash (djb-ish, 31-mult). Used to
 // give Rare+ swords a STABLE per-item-identity icon (same base name -> same icon).
 // ---------------------------------------------------------------------------
@@ -103,14 +159,42 @@ function ui_str_hash(s) {
 // ---------------------------------------------------------------------------
 function ui_weapon_icon_sprite(item) {
     var _n = string_lower(item.name);
-    if (string_pos("wand",   _n) > 0 || string_pos("focus", _n) > 0 || string_pos("scepter", _n) > 0) return spr_icon_weapon_wand;
-    if (string_pos("bow",    _n) > 0)                                  return spr_icon_weapon_bow;
-    if (string_pos("sickle", _n) > 0)                                  return spr_icon_weapon_sickle;
-    if (string_pos("spear",  _n) > 0 || string_pos("reach", _n) > 0)   return spr_icon_weapon_spear;
+    // Caster weapons (incl. staff/rod) use the wand icon. Without staff/rod here a
+    // "Stormcaller Staff" fell through to the sword bucket and showed a sword icon
+    // (looked like a melee sword even though it's a ranged caster weapon). Matches
+    // weapon_required_stat's caster keyword list.
+    // Each family has 3 icon variants (base / _b / _c) so weapons of the same type
+    // don't all look identical. ui_weapon_icon_variant hashes the base name to pick
+    // one deterministically (a given weapon always shows the same icon).
+    if (string_pos("wand",   _n) > 0 || string_pos("focus", _n) > 0 || string_pos("scepter", _n) > 0
+        || string_pos("staff", _n) > 0 || string_pos("rod", _n) > 0)
+        return ui_weapon_icon_variant(item, [spr_icon_weapon_wand, spr_icon_weapon_wand_b, spr_icon_weapon_wand_c,
+                                             spr_icon_weapon_wand_d, spr_icon_weapon_wand_e]);
+    if (string_pos("bow",    _n) > 0)
+        return ui_weapon_icon_variant(item, [spr_icon_weapon_bow, spr_icon_weapon_bow_b, spr_icon_weapon_bow_c,
+                                             spr_icon_weapon_bow_d, spr_icon_weapon_bow_e]);
+    if (string_pos("sickle", _n) > 0)
+        return ui_weapon_icon_variant(item, [spr_icon_weapon_sickle, spr_icon_weapon_sickle_b,
+                                             spr_icon_weapon_sickle_c, spr_icon_weapon_sickle_d]);
+    if (string_pos("spear",  _n) > 0 || string_pos("reach", _n) > 0)
+        return ui_weapon_icon_variant(item, [spr_icon_weapon_spear, spr_icon_weapon_spear_b, spr_icon_weapon_spear_c,
+                                             spr_icon_weapon_spear_d, spr_icon_weapon_spear_e]);
 
     var _rar = variable_struct_exists(item, "rarity") ? item.rarity : 0;
     if (_rar >= 2) return ui_sword_icon_rare(item, _n, _rar);
-    return spr_icon_weapon_sword;
+    // Common/Uncommon swords pick from the plain steel variants.
+    return ui_weapon_icon_variant(item, [spr_icon_weapon_sword, spr_icon_weapon_sword_b, spr_icon_weapon_sword_c,
+                                         spr_icon_weapon_sword_d, spr_icon_weapon_sword_e]);
+}
+
+// ui_weapon_icon_variant(item, bucket) - deterministically pick one icon from a
+// family's variant list using a hash of the base name, so the same weapon always
+// shows the same icon while different weapons of the family spread across variants.
+function ui_weapon_icon_variant(item, bucket) {
+    var _len = array_length(bucket);
+    if (_len <= 1) return bucket[0];
+    var _base = string_lower(item_base_name(item));
+    return bucket[ui_str_hash(_base) mod _len];
 }
 
 // ---------------------------------------------------------------------------
@@ -172,6 +256,90 @@ function ui_offhand_icon_sprite(item) {
     if (string_pos("focus",     _n) > 0 || string_pos("runic",    _n) > 0
         || string_pos("tome",   _n) > 0 || string_pos("book",     _n) > 0 || string_pos("grimoire", _n) > 0) return spr_icon_offhand_focus;
     return spr_icon_offhand;
+}
+
+// ---------------------------------------------------------------------------
+// ui_chest_icon_sprite(item)
+// Chest subtype by name keyword so chests don't all read as one sprite (mirrors the
+// off-hand/weapon resolvers). Resolves themed sprites BY STRING (asset_get_index) so
+// it compiles + runs even before the art is imported - until those sprites exist it
+// falls back to the single spr_icon_chest (current look), then upgrades automatically
+// once the chest-icon art pass adds spr_icon_chest_{robe,plate,leather,void}.
+// ---------------------------------------------------------------------------
+function ui_chest_icon_sprite(item) {
+    var _n = string_lower(item.name);
+    var _key = "";
+    if      (string_pos("void", _n) > 0 || string_pos("shadowthread", _n) > 0 || string_pos("shadowcloth", _n) > 0)
+        _key = "spr_icon_chest_void";
+    else if (string_pos("robe", _n) > 0 || string_pos("vestment", _n) > 0 || string_pos("mantle", _n) > 0
+          || string_pos("spellweave", _n) > 0 || string_pos("acolyte", _n) > 0)
+        _key = "spr_icon_chest_robe";
+    else if (string_pos("plate", _n) > 0 || string_pos("cuirass", _n) > 0 || string_pos("chain", _n) > 0
+          || string_pos("brigandine", _n) > 0 || string_pos("ironveil", _n) > 0 || string_pos("aegis", _n) > 0)
+        _key = "spr_icon_chest_plate";
+    else if (string_pos("coat", _n) > 0 || string_pos("vest", _n) > 0 || string_pos("tunic", _n) > 0
+          || string_pos("wrap", _n) > 0 || string_pos("robes", _n) > 0)
+        _key = "spr_icon_chest_leather";
+    if (_key != "") {
+        var _s = asset_get_index(_key);
+        if (_s != -1 && sprite_exists(_s)) return _s;
+    }
+    return spr_icon_chest;   // graceful fallback until themed chest art is imported
+}
+
+// ---------------------------------------------------------------------------
+// ui_helm_icon_sprite / ui_gloves_icon_sprite / ui_boots_icon_sprite
+// Armor-piece subtype icons by name keyword (mirror the chest/off-hand resolvers).
+// Themed sprites are resolved BY STRING so they compile + run before the art is
+// imported, falling back to the single base sprite until then; once the icon art
+// pass adds them, variety appears automatically. Keyword order = priority.
+// ---------------------------------------------------------------------------
+function ui_helm_icon_sprite(item) {
+    var _n = string_lower(item.name);
+    var _key = "";
+    if      (string_pos("hood", _n) > 0 || string_pos("cowl", _n) > 0 || string_pos("hat", _n) > 0)
+        _key = "spr_icon_helm_hood";
+    else if (string_pos("circlet", _n) > 0 || string_pos("crown", _n) > 0 || string_pos("diadem", _n) > 0
+          || string_pos("tiara", _n) > 0 || string_pos("coronet", _n) > 0)
+        _key = "spr_icon_helm_circlet";
+    else  // cap / skullcap / visor / helm / helmet / casque / circlet handled above
+        _key = "spr_icon_helm_plate";
+    var _s = asset_get_index(_key);
+    if (_s != -1 && sprite_exists(_s)) return _s;
+    return spr_icon_helm;
+}
+
+function ui_gloves_icon_sprite(item) {
+    var _n = string_lower(item.name);
+    var _key = "";
+    if      (string_pos("sage", _n) > 0 || string_pos("rune", _n) > 0 || string_pos("arcane", _n) > 0
+          || string_pos("mage", _n) > 0 || string_pos("spell", _n) > 0)
+        _key = "spr_icon_gloves_arcane";
+    else if (string_pos("wrap", _n) > 0 || string_pos("nimble", _n) > 0 || string_pos("whisper", _n) > 0
+          || string_pos("fleet", _n) > 0 || string_pos("silk", _n) > 0)
+        _key = "spr_icon_gloves_cloth";
+    else  // gauntlet / irongrip / crusher / iron / steel / plated default to heavy
+        _key = "spr_icon_gloves_plate";
+    var _s = asset_get_index(_key);
+    if (_s != -1 && sprite_exists(_s)) return _s;
+    return spr_icon_gloves;
+}
+
+function ui_boots_icon_sprite(item) {
+    var _n = string_lower(item.name);
+    var _key = "";
+    if      (string_pos("greave", _n) > 0 || string_pos("stomper", _n) > 0 || string_pos("ironshod", _n) > 0
+          || string_pos("stoneguard", _n) > 0 || string_pos("colossus", _n) > 0 || string_pos("plate", _n) > 0
+          || string_pos("stone", _n) > 0)
+        _key = "spr_icon_boots_plate";
+    else if (string_pos("wrap", _n) > 0 || string_pos("dustwalker", _n) > 0 || string_pos("sandal", _n) > 0
+          || string_pos("cloth", _n) > 0 || string_pos("silk", _n) > 0)
+        _key = "spr_icon_boots_cloth";
+    else  // boots / treads / strider / step / leather default to leather
+        _key = "spr_icon_boots_leather";
+    var _s = asset_get_index(_key);
+    if (_s != -1 && sprite_exists(_s)) return _s;
+    return spr_icon_boots;
 }
 
 // ---------------------------------------------------------------------------
@@ -248,10 +416,10 @@ function ui_draw_item_icon(x, y, sz, item) {
             case "weapon":        _spr = ui_weapon_icon_sprite(item);  break;
             case "ranged_weapon": _spr = ui_weapon_icon_sprite(item);  break;
             case "offhand": _spr = ui_offhand_icon_sprite(item); break;
-            case "helm":    _spr = spr_icon_helm;                break;
-            case "chest":   _spr = spr_icon_chest;               break;
-            case "gloves":  _spr = spr_icon_gloves;              break;
-            case "boots":   _spr = spr_icon_boots;               break;
+            case "helm":    _spr = ui_helm_icon_sprite(item);    break;
+            case "chest":   _spr = ui_chest_icon_sprite(item);   break;
+            case "gloves":  _spr = ui_gloves_icon_sprite(item);  break;
+            case "boots":   _spr = ui_boots_icon_sprite(item);   break;
             case "amulet":  _spr = ui_amulet_icon_sprite(item);  break;
             case "ring":    _spr = ui_ring_icon_sprite(item);    break;
         }
@@ -728,6 +896,7 @@ function status_icon_style(se) {
         case "stun":       return { label: "STUN", color: make_color_rgb(228, 200,  60) };
         case "root":       return { label: "ROOT", color: make_color_rgb( 55, 160, 150) };
         case "silence":    return { label: "SIL",  color: make_color_rgb(125,  90, 205) };
+        case "regen":      return { label: "HEAL", color: make_color_rgb( 90, 200, 120) };
     }
     return {
         label: status_icon_label(se.name, se.effect_type),
@@ -748,7 +917,8 @@ function status_icons_from(status_effects) {
         array_push(_icons, {
             label:    _st.label,
             color:    _st.color,
-            duration: variable_struct_exists(_se, "duration") ? _se.duration : 0
+            duration: variable_struct_exists(_se, "duration") ? _se.duration : 0,
+            se:       _se   // source status, so the icon row can hover-explain it
         });
     }
     return _icons;
@@ -822,6 +992,7 @@ function status_effect_plain_text(se) {
         case "stun":       return "cannot act";
         case "root":       return "cannot melee";
         case "silence":    return "cannot cast";
+        case "regen":      return "+" + string(_val) + " HP/turn";
     }
     return (se.effect_type == "dot") ? (string(_val) + " dmg/turn") : "debuff";
 }
@@ -896,11 +1067,22 @@ function ui_draw_status_icon_row(x, y, icon_list) {
     var _ih  = 24;
     var _gap = 5;
     var _ix  = x;
+    // Mouse (GUI space) for hover-to-explain. The hovered status is stashed in a
+    // global and drawn as a tooltip later by obj_combat_controller (so it lands on
+    // top of every bar/row). Reset each combat Draw frame.
+    var _mx = device_mouse_x_to_gui(0);
+    var _my = device_mouse_y_to_gui(0);
     draw_set_halign(fa_center);
     draw_set_valign(fa_middle);
     draw_set_font(fnt_ui_small);
     for (var _i = 0; _i < array_length(icon_list); _i++) {
         var _ic = icon_list[_i];
+        // Hover hit-test (badge rect). Only entries carrying their source `se` are
+        // explainable (ad-hoc buff badges without one are skipped).
+        if (variable_struct_exists(_ic, "se")
+            && _mx >= _ix && _mx < _ix + _iw && _my >= y && _my < y + _ih) {
+            global.combat_status_tip = { se: _ic.se, x: _mx, y: _my };
+        }
         // filled badge
         draw_set_alpha(0.88);
         draw_set_color(_ic.color);
@@ -922,6 +1104,177 @@ function ui_draw_status_icon_row(x, y, icon_list) {
     draw_set_font(-1);
     draw_set_halign(fa_left);
     draw_set_valign(fa_top);
+    draw_set_alpha(1.0);
+}
+
+// ---------------------------------------------------------------------------
+// status_detonation_text(se) - the detonation reaction a status enables when a
+// detonator (Snipe/Assassinate/Arcane Burst/Soul Nova) hits a foe carrying it.
+// "" if the status doesn't detonate. Mirrors combat_detonator_pick + the reaction
+// values in obj_combat_controller/Step_0. See SYSTEMS_VIABILITY_PASS.md.
+// ---------------------------------------------------------------------------
+function status_detonation_text(se) {
+    if (!is_struct(se)) return "";
+    var _k  = variable_struct_exists(se, "kind") ? se.kind
+            : (variable_struct_exists(se, "effect_type") ? se.effect_type : "");
+    var _el = combat_status_element(se);   // explicit element, else inferred (dot -> bleed)
+    if (_k == "stun")                            return "Detonate: guaranteed critical hit.";
+    if (_el == "frost")                          return "Detonate: +30% damage (shatters).";
+    if (_k == "root")                            return "Detonate: +30% damage (shatters).";
+    if (_el == "burn")                           return "Detonate: +40% crit chance.";
+    if (_el == "shock")                          return "Detonate: arcs ~33% damage to other foes (or +25% crit if alone).";
+    if (_k == "vulnerable" || _k == "firemark")  return "Detonate: +12 bonus damage.";
+    if (_k == "dot" && _el == "bleed")           return "Detonate: bursts all remaining bleed ticks (+5 each).";
+    if (_k == "dot" && _el == "poison")          return "Detonate: applies Mortality (-40% healing, 4 turns).";
+    if (_k == "dot" && _el == "void")            return "Detonate: heals you 30% of the damage dealt.";
+    if (_k == "weaken")                          return "Detonate: +15% damage.";
+    if (_k == "blind")                           return "Detonate: cannot miss.";
+    return "";
+}
+
+// status_tooltip_desc(se) - one-line "what it does" explanation incl. turns left.
+function status_tooltip_desc(se) {
+    var _k    = variable_struct_exists(se, "kind") ? se.kind
+              : (variable_struct_exists(se, "effect_type") ? se.effect_type : "");
+    var _val  = variable_struct_exists(se, "effect_value") ? se.effect_value : 0;
+    var _dur  = variable_struct_exists(se, "duration") ? se.duration : 0;
+    var _el   = combat_status_element(se);
+    var _rawel = (is_struct(se) && variable_struct_exists(se, "element")) ? se.element : "";
+    var _turns = (_dur > 0) ? ("  (" + string(_dur) + " turn" + (_dur == 1 ? "" : "s") + " left)") : "";
+    var _base;
+    if (_rawel == "frost")      _base = "Chilled: deals " + string(round(_val * 100)) + "% less damage.";
+    else if (_rawel == "shock") _base = "Shocked: takes +" + string(_val) + " damage per hit.";
+    else switch (_k) {
+        case "dot":        _base = "Damage over time: " + string(_val) + " " + (_el != "" ? _el + " " : "") + "damage each turn."; break;
+        case "vulnerable": _base = "Exposed: takes +" + string(_val) + " damage per hit."; break;
+        case "firemark":   _base = "Seared: every hit on it deals +" + string(_val) + " fire damage."; break;
+        case "weaken":     _base = "Weakened: deals " + string(round(_val * 100)) + "% less damage."; break;
+        case "blind":      _base = "Blinded: -" + string(round(_val * 100)) + "% accuracy."; break;
+        case "mortality":  _base = "Mortality: healing received reduced " + string(round(_val * 100)) + "%."; break;
+        case "stun":       _base = "Stunned: cannot act."; break;
+        case "root":       _base = "Rooted: melee can't reach (ranged still acts)."; break;
+        case "silence":    _base = "Silenced: cannot cast spells."; break;
+        case "regen":      _base = "Regenerating: restores " + string(_val) + " HP each turn."; break;
+        default:           _base = "Active effect."; break;
+    }
+    return _base + _turns;
+}
+
+// ---------------------------------------------------------------------------
+// ui_draw_status_tooltip(mx, my, se) - floating popup explaining a status icon:
+// name, what it does (+turns left), and its detonation reaction (if any). Mirrors
+// the gear tooltip; self-sizes and clamps to the screen.
+// ---------------------------------------------------------------------------
+function ui_draw_status_tooltip(mx, my, se) {
+    if (!is_struct(se)) return;
+    draw_set_halign(fa_left); draw_set_valign(fa_top);
+    draw_set_font(fnt_ui_small);
+
+    var _pad = 15, _lh = 27, _w = 540, _iw = _w - _pad * 2;
+    var _st   = status_icon_style(se);
+    var _name = variable_struct_exists(se, "name") ? se.name : "Status";
+    var _desc = status_tooltip_desc(se);
+    var _det  = status_detonation_text(se);
+
+    // Height = pad + name line + desc(wrapped) + optional detonation(wrapped) + pad.
+    var _h = _pad * 2 + _lh;
+    _h += string_height_ext(_desc, _lh, _iw);
+    if (_det != "") _h += string_height_ext(_det, _lh, _iw) + 6;
+
+    var _x = mx + 24, _y = my + 18;
+    if (_x + _w > 1905) _x = mx - _w - 18;
+    if (_x < 6) _x = 6;
+    if (_y + _h > 1065) _y = 1065 - _h;
+    if (_y < 6) _y = 6;
+
+    draw_set_alpha(0.96);
+    draw_set_color(make_color_rgb(12, 14, 26));
+    draw_rectangle(_x, _y, _x + _w, _y + _h, false);
+    draw_set_alpha(1.0);
+    draw_set_color(_st.color);
+    draw_rectangle(_x, _y, _x + _w, _y + _h, true);
+    draw_rectangle(_x, _y, _x + _w, _y + 4, false);   // accent strip
+
+    var _cx = _x + _pad, _cy = _y + _pad;
+    draw_set_color(_st.color);
+    draw_text(_cx, _cy, _name);
+    _cy += _lh;
+    draw_set_color(make_color_rgb(215, 218, 230));
+    draw_text_ext(_cx, _cy, _desc, _lh, _iw);
+    _cy += string_height_ext(_desc, _lh, _iw);
+    if (_det != "") {
+        _cy += 6;
+        draw_set_color(make_color_rgb(255, 205, 90));
+        draw_text_ext(_cx, _cy, _det, _lh, _iw);
+    }
+
+    draw_set_font(-1);
+    draw_set_halign(fa_left); draw_set_valign(fa_top);
+    draw_set_alpha(1.0);
+}
+
+// ---------------------------------------------------------------------------
+// ui_draw_enemy_inspect_tooltip(mx, my, enemy)
+// Hover panel for an enemy: its attack class (reach x kind) and which control
+// effects stop it - Root halts melee, Silence stops spells, Stun stops anything.
+// Lets the player tell BEFORE acting whether e.g. a Bear Trap (root) will work on
+// a foe (ranged foes ignore root by design). See SYSTEMS_ATTACK_CLASS.md.
+// ---------------------------------------------------------------------------
+function ui_draw_enemy_inspect_tooltip(mx, my, enemy) {
+    if (!is_struct(enemy)) return;
+    draw_set_halign(fa_left); draw_set_valign(fa_top);
+    draw_set_font(fnt_ui_small);
+
+    var _reach     = variable_struct_exists(enemy, "reach") ? enemy.reach : "melee";
+    var _kind      = variable_struct_exists(enemy, "kind")  ? enemy.kind  : "attack";
+    var _is_ranged = (_reach == "ranged");
+    var _is_spell  = (_kind  == "spell");
+    var _name      = variable_struct_exists(enemy, "name") ? enemy.name : "Enemy";
+    var _class_str = (_is_ranged ? "Ranged" : "Melee") + " - " + (_is_spell ? "Spell" : "Phys");
+
+    var _green = make_color_rgb(120, 210, 120);
+    var _muted = make_color_rgb(180, 110, 110);
+    var _root_ok = !_is_ranged;
+    var _sil_ok  = _is_spell;
+    var _lines = [
+        { t: "Root:     " + (_root_ok ? "stops it" : "no effect (ranged)"), c: _root_ok ? _green : _muted },
+        { t: "Silence:  " + (_sil_ok  ? "stops it" : "no effect (phys)"),   c: _sil_ok  ? _green : _muted },
+        { t: "Stun:     stops it",                                          c: _green },
+    ];
+
+    var _pad = 15, _lh = 27, _w = 420;
+    var _h = _pad * 2 + _lh * (2 + array_length(_lines)) + 6;   // name + class + control lines + gap
+
+    var _x = mx + 24, _y = my + 18;
+    if (_x + _w > 1905) _x = mx - _w - 18;   // enemies sit top-right; flip left near the edge
+    if (_x < 6) _x = 6;
+    if (_y + _h > 1065) _y = 1065 - _h;
+    if (_y < 6) _y = 6;
+
+    var _accent = _is_ranged ? make_color_rgb(220, 170, 80) : make_color_rgb(150, 165, 195);
+    draw_set_alpha(0.96);
+    draw_set_color(make_color_rgb(12, 14, 26));
+    draw_rectangle(_x, _y, _x + _w, _y + _h, false);
+    draw_set_alpha(1.0);
+    draw_set_color(_accent);
+    draw_rectangle(_x, _y, _x + _w, _y + _h, true);
+    draw_rectangle(_x, _y, _x + _w, _y + 4, false);   // accent strip
+
+    var _cx = _x + _pad, _cy = _y + _pad;
+    draw_set_color(c_white);
+    draw_text(_cx, _cy, _name);
+    _cy += _lh;
+    draw_set_color(_accent);
+    draw_text(_cx, _cy, _class_str);
+    _cy += _lh + 6;
+    for (var _li = 0; _li < array_length(_lines); _li++) {
+        draw_set_color(_lines[_li].c);
+        draw_text(_cx, _cy, _lines[_li].t);
+        _cy += _lh;
+    }
+
+    draw_set_font(-1);
+    draw_set_halign(fa_left); draw_set_valign(fa_top);
     draw_set_alpha(1.0);
 }
 
@@ -971,6 +1324,15 @@ function ui_draw_item_tooltip(ttx, tty, item, compared_item) {
     array_push(_rows, { kind: "text", txt: item.name, col: _rcol, tag: _rname, tagcol: make_color_rgb(130, 140, 165) });
     array_push(_rows, { kind: "text", txt: variable_struct_exists(item, "slot") ? string_upper(item.slot) : " ",
                         col: make_color_rgb(100, 110, 140), tag: "", tagcol: c_white });
+    // Class restriction (gold = your class can use it, red = locked to another class).
+    var _it_cr = variable_struct_exists(item, "class_req") ? item.class_req : -1;
+    if (_it_cr != -1) {
+        var _cr_names = ["Arcanist", "Bloodwarden", "Shadowstrider"];
+        var _cr_name  = (_it_cr >= 0 && _it_cr <= 2) ? _cr_names[_it_cr] : "Unknown";
+        var _my_cl    = variable_global_exists("chosen_class") ? global.chosen_class : -1;
+        var _cr_col   = (_it_cr == _my_cl) ? make_color_rgb(210, 175, 90) : make_color_rgb(225, 80, 80);
+        array_push(_rows, { kind: "text", txt: _cr_name + " only", col: _cr_col, tag: "", tagcol: c_white });
+    }
     array_push(_rows, { kind: "text", txt: ui_item_stat_str(item), col: c_white, tag: "", tagcol: c_white });
     // Gear stat requirement (SYSTEMS_WEAPON_ROLES.md §D3): red if the wearer doesn't
     // meet it (equipping is hard-blocked), dim green if satisfied.
@@ -1250,9 +1612,37 @@ function ui_draw_turn_queue(x, y, combat_state) {
 }
 
 // ---------------------------------------------------------------------------
+// ui_draw_ground_shadow(cx, baseline_y, sprite_display_width)
+// Soft elliptical drop-shadow under a combat battler so the sprite reads against
+// busy dungeon backgrounds. cx = horizontal centre, baseline_y = the sprite's feet
+// (its bottom edge), width scales to the sprite. Three stacked ellipses (wide soft
+// halo -> mid -> dense core) fake a soft edge and stay visible on dark floors. Call
+// BEFORE the sprite so it sits beneath it.
+// ---------------------------------------------------------------------------
+function ui_draw_ground_shadow(cx, baseline_y, sprite_display_width) {
+    var _w  = sprite_display_width * 0.66;   // shadow is a bit narrower than the sprite
+    var _h  = _w * 0.30;                      // squashed: ground perspective
+    var _cy = baseline_y - _h * 0.35;         // nudge up so it hugs the feet
+    var _prev_a = draw_get_alpha();
+    draw_set_color(c_black);
+    // Three stacked ellipses (wide soft halo -> mid -> dense core) so the contact
+    // shadow reads even on dark arena floors. The old 0.14/0.30 pair was so faint it
+    // vanished against the dimmed dungeon backgrounds (looked like "no shadow").
+    draw_set_alpha(0.24);
+    draw_ellipse(cx - _w * 0.62, _cy - _h * 0.62, cx + _w * 0.62, _cy + _h * 0.62, false);
+    draw_set_alpha(0.42);
+    draw_ellipse(cx - _w * 0.46, _cy - _h * 0.46, cx + _w * 0.46, _cy + _h * 0.46, false);
+    draw_set_alpha(0.62);
+    draw_ellipse(cx - _w * 0.30, _cy - _h * 0.30, cx + _w * 0.30, _cy + _h * 0.30, false);
+    draw_set_alpha(_prev_a);
+    draw_set_color(c_white);
+}
+
+// ---------------------------------------------------------------------------
 // ui_draw_ability_buttons(x, y, ability_array, selected_index, caster)
 // Draws a row of ability buttons showing name and energy cost.
-// Uncastable abilities are dimmed. Selected ability has a white border.
+// Uncastable abilities are dimmed. The selected ability gets a bold, bright gold
+// ring (over its role-coloured border) so it's unmistakable while scrolling.
 // Each button: 240x75 with 12px gap.
 // ---------------------------------------------------------------------------
 function ui_draw_ability_buttons(x, y, ability_array, selected_index, caster) {
@@ -1286,15 +1676,25 @@ function ui_draw_ability_buttons(x, y, ability_array, selected_index, caster) {
         draw_set_color(make_color_rgb(40, 40, 55));
         draw_rectangle(bx, y, bx + btn_width, y + btn_height, false);
 
-        // Border - white for selected; otherwise tinted by role category
-        // (offense red / defense blue / support green / control purple) for at-a-glance
-        // role reading (SYSTEMS_ABILITY_SYNERGY.md).
-        if (i == selected_index) {
-            draw_set_color(c_white);
-        } else {
-            draw_set_color(ability_category_color(ability_category(ab)));
-        }
+        // Role-category border on EVERY button (offense red / defense blue / support
+        // green / control purple) for at-a-glance role reading (SYSTEMS_ABILITY_SYNERGY.md).
+        draw_set_color(ability_category_color(ability_category(ab)));
         draw_rectangle(bx, y, bx + btn_width, y + btn_height, true);
+
+        // Selected ability: a bold, bright gold ring drawn OUTSIDE the role border so
+        // the active choice is unmistakable even between same-coloured neighbours (the
+        // old 1px white border was ambiguous while scrolling). Full alpha so it stays
+        // bright even when the ability is dimmed for being uncastable; thickened by
+        // stacking outlines that expand outward (buttons have a 12px gap, no overlap).
+        if (i == selected_index) {
+            var _prev_sel_a = draw_get_alpha();
+            draw_set_alpha(1.0);
+            draw_set_color(make_color_rgb(255, 224, 120));
+            for (var _t = 1; _t <= 3; _t++) {
+                draw_rectangle(bx - _t, y - _t, bx + btn_width + _t, y + btn_height + _t, true);
+            }
+            draw_set_alpha(_prev_sel_a);
+        }
 
         // Ability icon - 60x60 badge on the left (inherits the dim alpha above)
         var _icon_sz = 60;
@@ -1360,7 +1760,12 @@ function ui_draw_telegraph_warning(enemy_name, message) {
     var banner_h    = 54;
     var banner_y    = 900;
 
-    var warning_text = enemy_name + " " + message;
+    // Fall back to a generic wind-up warning when an enemy has no authored message
+    // (most bosses set telegraph_turn/damage but inherit an empty message from their
+    // base clone, so the banner used to show just the name).
+    var _msg = (is_string(message) && message != "")
+             ? message : "is charging a devastating attack!";
+    var warning_text = enemy_name + " " + _msg;
 
     // Size the banner to the text (centered) instead of spanning the whole screen.
     draw_set_font(fnt_ui);
@@ -1605,6 +2010,7 @@ function ui_draw_ability_tooltip(x, anchor_bottom, ability, caster) {
     if (_has_dmg)      panel_h += line_h;   // damage
     panel_h += _effect_h;                   // effect description (wrapped)
     panel_h += line_h;                      // accuracy / always-hits
+    panel_h += line_h;                      // [V] details hint
     panel_h += padding;                     // bottom pad
 
     var _py   = anchor_bottom - panel_h;    // bottom-anchored: grows upward
@@ -1706,15 +2112,47 @@ function ui_draw_ability_tooltip(x, anchor_bottom, ability, caster) {
     if (variable_struct_exists(ability, "guaranteed_hit") && ability.guaranteed_hit) {
         draw_set_color(c_lime);
         draw_text(tx, cur_y, "Always hits");
-        cur_y += line_h;
 
-    // --- Line 7: Accuracy (only when not guaranteed) ---
+    // --- Line 7: Hit chance (only when not guaranteed) ---
     } else {
-        var dex    = variable_struct_exists(caster.stats, "DEX") ? caster.stats.DEX : 0;
-        var acc    = clamp(ability.base_acc + dex * 3, 0, 95);
+        // Stage 1 = accuracy to connect, EXACTLY as combat_roll_hit receives it (scr_combat):
+        // ability base accuracy + the caster's curved ACC_modifier (caster.acc), minus blind,
+        // plus ranged-rune accuracy; clamped 5..99. The OLD display used a linear DEX*3 that
+        // massively overstated it (e.g. 95% shown vs ~82% real for a low-DEX caster).
+        var _acc_bonus = variable_struct_exists(caster, "acc") ? caster.acc : 0;
+        var _blind_pen = round(combat_status_max(caster, "blind") * 100);
+        var _stage1 = clamp(ability.base_acc + _acc_bonus - _blind_pen + rune_aspect_ranged_acc(ability), 5, 99);
+        // Stage 2 = the target then rolls its DODGE to evade a connecting hit, so the REAL
+        // chance to land vs the selected enemy is stage1 * (1 - dodge). Look up that enemy's
+        // dodge from the combat controller (this tooltip is combat-only).
+        var _tgt_dodge = 0;
+        if (instance_exists(obj_combat_controller)) {
+            var _cc_tip = instance_find(obj_combat_controller, 0);
+            if (variable_instance_exists(_cc_tip, "selected_target") && variable_instance_exists(_cc_tip, "combat_state")) {
+                var _li_t  = 0;
+                var _cbt_t = _cc_tip.combat_state.combatants;
+                for (var _ti = 0; _ti < array_length(_cbt_t); _ti++) {
+                    var _tc = _cbt_t[_ti];
+                    if (_tc.is_player || _tc.is_defeated) continue;
+                    if (_li_t == _cc_tip.selected_target) { _tgt_dodge = clamp(_tc.dodge, 0, 90); break; }
+                    _li_t++;
+                }
+            }
+        }
+        var _net = round(_stage1 * (1 - _tgt_dodge / 100));
         draw_set_color(c_ltgray);
-        draw_text(tx, cur_y, "Accuracy: " + string(acc) + "%");
+        if (_tgt_dodge > 0) {
+            draw_text(tx, cur_y, "Hit: " + string(_net) + "%  (Acc " + string(_stage1) + "% - Dodge " + string(_tgt_dodge) + "%)");
+        } else {
+            draw_text(tx, cur_y, "Hit: " + string(_stage1) + "%");
+        }
     }
+    cur_y += line_h;
+
+    // --- Footer hint: V opens the full ability breakdown (mirrors the Tab popup on
+    //     the loadout / Vex screens; Tab is the target-cycle key in combat). ---
+    draw_set_color(make_color_rgb(150, 160, 190));
+    draw_text(tx, cur_y, "[V] Ability details");
 
     draw_set_font(-1);
     draw_set_halign(fa_left);
@@ -2168,7 +2606,7 @@ function ui_draw_settings_overlay() {
     draw_set_halign(fa_center);
     draw_set_font(fnt_ui_small);
     draw_set_color(make_color_rgb(150, 160, 185));
-    draw_text(GUI_CX, _py + _ph - 42, "W/S: Select    A/D or <-/->: Adjust / Toggle / Enter    Esc/O: Close");
+    draw_text_outline(GUI_CX, _py + _ph - 42, "W/S: Select    A/D or <-/->: Adjust / Toggle / Enter    Esc/O: Close");
 
     draw_set_halign(fa_left);
     draw_set_valign(fa_top);
@@ -2353,7 +2791,7 @@ function ui_draw_combat_hud(combat_state, player, ability_array, selected_abilit
 // reaction table (for detonators), and flavor. Drawn on the GUI layer over whatever
 // screen opened it; the caller gates input while it's up. See SYSTEMS_VIABILITY_PASS.md.
 // ---------------------------------------------------------------------------
-function ui_draw_ability_detail(ab) {
+function ui_draw_ability_detail(ab, close_key_label = "Tab") {
     if (!is_struct(ab)) return;
 
     // Dim the whole screen.
@@ -2478,7 +2916,7 @@ function ui_draw_ability_detail(ab) {
     draw_set_halign(fa_center);
     draw_set_font(fnt_ui_small);
     draw_set_color(make_color_rgb(150, 160, 190));
-    draw_text((_x1 + _x2) / 2, _y2 - 39, "[Tab] or [Esc] - Close");
+    draw_text_outline((_x1 + _x2) / 2, _y2 - 39, "[" + close_key_label + "] or [Esc] - Close");
     draw_set_halign(fa_left); draw_set_valign(fa_top);
     draw_set_color(c_white);
     draw_set_font(-1);
@@ -2522,7 +2960,7 @@ function ui_draw_trait_detail(tr) {
     draw_set_halign(fa_center);
     draw_set_font(fnt_ui_small);
     draw_set_color(make_color_rgb(150, 160, 190));
-    draw_text((_x1 + _x2) / 2, _y2 - 39, "[Tab] or [Esc] - Close");
+    draw_text_outline((_x1 + _x2) / 2, _y2 - 39, "[Tab] or [Esc] - Close");
     draw_set_halign(fa_left); draw_set_valign(fa_top);
     draw_set_color(c_white);
     draw_set_font(-1);
@@ -2780,26 +3218,87 @@ function ui_draw_character_menu() {
             // ---- Header: class + level + HP ----
             draw_set_font(fnt_ui_title);
             draw_set_color(make_color_rgb(80, 160, 220));
-            draw_text(_pad, _content_y, _class_names[_class_id]);
-            // Current run level, beside the class title
+            var _class_str = _class_names[_class_id];
+            draw_text(_pad, _content_y, _class_str);
+            // Measure the class name in its (title) font so the level text can sit just
+            // right of it instead of at a fixed x - a long name (Shadowstrider) in the
+            // large title font used to run past the fixed offset and overlap "Level X".
+            var _class_w = string_width(_class_str);
+            // Character level = PERMANENT (meta) level (1 + perm points earned), which
+            // persists in the hub - the old display showed run_level, which resets to 1
+            // each run so the hub read "Level 1" forever. During an actual fight, also
+            // show the per-dive level so in-run progression stays visible.
             draw_set_font(fnt_ui);
-            if (variable_global_exists("run_level")) {
-                draw_set_color(make_color_rgb(210, 200, 120));
-                draw_text(_pad + 450, _content_y + 9, "Level " + string(global.run_level));
+            draw_set_color(make_color_rgb(210, 200, 120));
+            var _lvl_txt = "Level " + string(player_permanent_level());
+            // In a run (on a floor or fighting), append the per-dive level so in-run
+            // progression stays visible; the hub has no run, so it shows only the
+            // permanent level.
+            var _in_run = _in_combat || instance_exists(obj_floor_controller);
+            if (_in_run && variable_global_exists("run_level")) {
+                _lvl_txt += "   (Dive Lv " + string(global.run_level) + ")";
             }
+            // Auto-position: just past the class name (+40 gap), but never left of the
+            // original 450 offset so short names keep the familiar layout.
+            var _lvl_x = _pad + max(450, _class_w + 40);
+            draw_text(_lvl_x, _content_y + 9, _lvl_txt);
             draw_set_color(c_white);
             draw_text(_pad, _content_y + 66, "HP: " + string(_player.HP) + " / " + string(_player.max_HP));
 
             // ---- Stat grid (two compact columns) ----
+            // The shown value is the TOTAL (base + gear). Hovering a stat pops a small
+            // box splitting it into Base vs Gear, because equip requirements test BASE
+            // only - so a stat reading 17 (12 of it from gear) can still fail a 12 req.
             draw_set_font(fnt_ui_small);
             var _stat_keys = ["STR", "DEX", "CON", "INT", "WIS", "CHA"];
+            var _smx = device_mouse_x_to_gui(0);
+            var _smy = device_mouse_y_to_gui(0);
+            var _hover_stat = -1;
             for (var _s = 0; _s < 6; _s++) {
                 var _sx  = _pad + floor(_s / 3) * 285;     // 0=STR/DEX/CON, 1=INT/WIS/CHA
                 var _sy  = _content_y + 126 + (_s mod 3) * 48;
-                draw_set_color(make_color_rgb(140, 160, 200));
+                var _is_hov = (_smx >= _sx && _smx <= _sx + 255 && _smy >= _sy && _smy <= _sy + 42);
+                if (_is_hov) _hover_stat = _s;
+                draw_set_color(_is_hov ? make_color_rgb(200, 215, 245) : make_color_rgb(140, 160, 200));
                 draw_text(_sx, _sy, _stat_keys[_s] + ":");
                 draw_set_color(c_white);
                 draw_text(_sx + 84, _sy, string(variable_struct_get(_stats, _stat_keys[_s])));
+            }
+            // Base-vs-gear popup for the hovered stat (drawn after the grid so it sits on top).
+            if (_hover_stat >= 0) {
+                var _hs_key   = _stat_keys[_hover_stat];
+                var _hs_total = variable_struct_get(_stats, _hs_key);
+                var _hs_base  = player_base_stat(_hs_key);
+                var _hs_gear  = _hs_total - _hs_base;
+                var _hs_line2 = (_hs_gear != 0)
+                              ? ((_hs_gear > 0 ? "Gear: +" : "Gear: ") + string(_hs_gear)) : "";
+                var _hs_note  = "Equip requirements use Base.";
+                var _hs_w = max(string_width(_hs_note), string_width(_hs_key + ": " + string(_hs_total))) + 36;
+                var _hs_h = (_hs_line2 != "") ? 138 : 108;
+                var _hs_x = _smx + 24;
+                var _hs_y = _smy + 12;
+                if (_hs_x + _hs_w > GUI_W) _hs_x = GUI_W - _hs_w - 6;
+                draw_set_alpha(0.95);
+                draw_set_color(make_color_rgb(18, 20, 32));
+                draw_rectangle(_hs_x, _hs_y, _hs_x + _hs_w, _hs_y + _hs_h, false);
+                draw_set_alpha(1.0);
+                draw_set_color(make_color_rgb(120, 140, 190));
+                draw_rectangle(_hs_x, _hs_y, _hs_x + _hs_w, _hs_y + _hs_h, true);
+                var _hs_ty = _hs_y + 12;
+                draw_set_color(c_white);
+                draw_text(_hs_x + 18, _hs_ty, _hs_key + ": " + string(_hs_total));
+                _hs_ty += 30;
+                draw_set_color(make_color_rgb(180, 200, 235));
+                draw_text(_hs_x + 18, _hs_ty, "Base: " + string(_hs_base));
+                _hs_ty += 27;
+                if (_hs_line2 != "") {
+                    draw_set_color(make_color_rgb(150, 210, 160));
+                    draw_text(_hs_x + 18, _hs_ty, _hs_line2);
+                    _hs_ty += 27;
+                }
+                draw_set_color(make_color_rgb(140, 145, 165));
+                draw_text(_hs_x + 18, _hs_ty, _hs_note);
+                draw_set_font(fnt_ui_small);
             }
 
             // ---- Offense ----
@@ -3081,9 +3580,9 @@ function ui_draw_character_menu() {
         draw_set_font(fnt_ui_small);
         draw_set_color(make_color_rgb(80, 90, 110));
         if (_gc.equip_picker_open) {
-            draw_text(960, 1035, "W/S: Navigate   Enter: Equip   Esc: Cancel");
+            draw_text_outline(960, 1035, "W/S: Navigate   Enter: Equip   Esc: Cancel");
         } else {
-            draw_text(960, 1035, "W/S: Navigate   Enter: Equip   U: Unequip");
+            draw_text_outline(960, 1035, "W/S: Navigate   Enter: Equip   U: Unequip");
         }
         draw_set_halign(fa_left);
 
@@ -3170,7 +3669,7 @@ function ui_draw_character_menu() {
                 draw_text(_eqx, _eq_ry + 12, _equipped_here.name);
                 draw_set_font(fnt_ui_small);
                 draw_set_color(make_color_rgb(120, 128, 145));
-                draw_text(_eqx, _eq_ry + 45, ui_item_stat_str(_equipped_here));
+                ui_draw_stat_line_fit(_eqx, _eq_ry + 45, ui_item_stat_str(_equipped_here), (_px + _pw - 200) - _eqx);
                 draw_set_halign(fa_right);
                 draw_set_color(make_color_rgb(120, 160, 210));
                 draw_text(_px + _pw - 21, _eq_ry + 12, "[Equipped]");
@@ -3212,7 +3711,7 @@ function ui_draw_character_menu() {
                     // Stat string
                     draw_set_font(fnt_ui_small);
                     draw_set_color(_locked ? make_color_rgb(70, 70, 80) : c_white);
-                    draw_text(_itx, _ry + 45, ui_item_stat_str(_it));
+                    ui_draw_stat_line_fit(_itx, _ry + 45, ui_item_stat_str(_it), (_px + _pw - 200) - _itx);
                     // Unique or flavor
                     if (!_locked && variable_struct_exists(_it, "unique_desc") && _it.unique_desc != "") {
                         draw_set_color(make_color_rgb(255, 200, 50));
@@ -3484,14 +3983,14 @@ function ui_draw_character_menu() {
         draw_set_halign(fa_center);
         draw_set_font(fnt_ui_small);
         draw_set_color(make_color_rgb(80, 90, 110));
-        draw_text(960, 1035, "Q/E: Switch Tab   I / Esc: Close");
+        draw_text_outline(960, 1035, "Q/E: Switch Tab   I / Esc: Close");
         draw_set_halign(fa_left);
     }
     draw_set_font(-1);
     if (menu_tab == 4) {
         draw_set_halign(fa_center);
         draw_set_color(make_color_rgb(80, 90, 110));
-        draw_text(640, 690, "W/S: Browse Sections   Q/E: Switch Tab   I / Esc: Close");
+        draw_text_outline(640, 690, "W/S: Browse Sections   Q/E: Switch Tab   I / Esc: Close");
         draw_set_halign(fa_left);
     }
     if (menu_tab == 3) {
@@ -3499,17 +3998,17 @@ function ui_draw_character_menu() {
         if (_gc.consumable_submenu_open && array_length(global.consumable_inventory) > 0) {
             if (_no_ap) {
                 draw_set_color(make_color_rgb(200, 80, 80));
-                draw_text(640, 690, "W/S: Navigate   Need 1 AP to use   Esc: Cancel");
+                draw_text_outline(640, 690, "W/S: Navigate   Need 1 AP to use   Esc: Cancel");
             } else if (_limit_reached) {
                 draw_set_color(make_color_rgb(200, 80, 80));
-                draw_text(640, 690, "W/S: Navigate   1 per turn limit   Esc: Cancel");
+                draw_text_outline(640, 690, "W/S: Navigate   1 per turn limit   Esc: Cancel");
             } else {
                 draw_set_color(make_color_rgb(80, 90, 110));
-                draw_text(640, 690, "W/S: Navigate   Enter: Use [-1 AP]   Esc: Cancel");
+                draw_text_outline(640, 690, "W/S: Navigate   Enter: Use [-1 AP]   Esc: Cancel");
             }
         } else {
             draw_set_color(make_color_rgb(100, 200, 100));
-            draw_text(640, 690, "Enter: Browse Items   Q/E: Switch Tab   I: Close");
+            draw_text_outline(640, 690, "Enter: Browse Items   Q/E: Switch Tab   I: Close");
         }
         draw_set_halign(fa_left);
     }
@@ -3576,7 +4075,7 @@ function ui_draw_shop_screen() {
     // Q/E hint between tabs
     draw_set_font(fnt_ui_small);
     draw_set_color(make_color_rgb(50, 60, 80));
-    draw_text(960, _tab_y + 12, "Q/E");
+    draw_text_outline(960, _tab_y + 12, "Q/E");
     draw_set_halign(fa_left);
 
     // Notification line (shifted below tab bar)
@@ -3738,7 +4237,7 @@ function ui_draw_shop_screen() {
                 draw_set_halign(fa_center);
                 draw_set_font(fnt_ui_small);
                 draw_set_color(make_color_rgb(80, 90, 110));
-                draw_text(960, _ry0 + 7 * (_rh + _rgap) + 6, "W/S to scroll  (" + string(_sl_count) + " items)");
+                draw_text_outline(960, _ry0 + 7 * (_rh + _rgap) + 6, "W/S to scroll  (" + string(_sl_count) + " items)");
                 draw_set_halign(fa_left);
             }
         }
@@ -3764,7 +4263,7 @@ function ui_draw_shop_screen() {
         if (_gc.sell_confirm_name != "") {
             draw_text(960, 1026, "SPACE to confirm   ESC to cancel");
         } else {
-            draw_text(960, 1026, "W/S: Navigate   Q/E: Buy/Sell   Enter: Sell   Esc: Close");
+            draw_text_outline(960, 1026, "W/S: Navigate   Q/E: Buy/Sell   Enter: Sell   Esc: Close");
         }
         draw_set_halign(fa_left);
         draw_set_valign(fa_top);
@@ -3918,7 +4417,7 @@ function ui_draw_shop_screen() {
     draw_set_halign(fa_center);
     draw_set_font(fnt_ui_small);
     draw_set_color(make_color_rgb(75, 85, 105));
-    draw_text(960, 1026, "W/S: Navigate   Q/E: Buy/Sell   Enter: Buy   Esc: Close     Purchases go to your stash.");
+    draw_text_outline(960, 1026, "W/S: Navigate   Q/E: Buy/Sell   Enter: Buy   Esc: Close     Purchases go to your stash.");
     draw_set_halign(fa_left);
     draw_set_valign(fa_top);
     draw_set_alpha(1.0);
@@ -4068,7 +4567,7 @@ function ui_draw_stash_screen() {
     draw_set_halign(fa_center);
     draw_set_font(fnt_ui_small);
     draw_set_color(c_gray);
-    draw_text(960, 1026, "Q/E: Switch Side   W/S: Navigate   Enter: Move Item   Esc: Close");
+    draw_text_outline(960, 1026, "Q/E: Switch Side   W/S: Navigate   Enter: Move Item   Esc: Close");
     draw_set_halign(fa_left);
     draw_set_valign(fa_top);
 
@@ -4683,7 +5182,7 @@ function ui_draw_trainer_screen() {
             draw_set_halign(fa_center);
             draw_set_font(fnt_ui_small);
             draw_set_color(make_color_rgb(255, 110, 110));
-            draw_text(960, 1002, "Beware, what you are about to do can not be undone.   [ Space ] Confirm     [ Esc ] Cancel");
+            draw_text_outline(960, 1002, "Beware, what you are about to do can not be undone.   [ Space ] Confirm     [ Esc ] Cancel");
             draw_set_halign(fa_left);
         }
     }
@@ -4692,7 +5191,7 @@ function ui_draw_trainer_screen() {
     draw_set_halign(fa_center);
     draw_set_font(fnt_ui_small);
     draw_set_color(make_color_rgb(70, 75, 100));
-    draw_text(960, 1026, "W/S: Navigate    Q/E: Section    Enter: Buy / Select    Tab: Examine    Esc: Close");
+    draw_text_outline(960, 1026, "W/S: Navigate    Q/E: Section    Enter: Buy / Select    Tab: Examine    Esc: Close");
     draw_set_halign(fa_left);
 
     // Ornate gothic rim around the whole overlay (matches the other NPC shops).
@@ -4816,7 +5315,7 @@ function ui_draw_trainer_statpick() {
         draw_set_font(fnt_ui_small); draw_set_color(c_white);
         draw_text_ext(_px + _pw / 2, _py + _ph - 96, "Sacrifice these 5 points permanently? Cannot be undone.", -1, _pw - 60);
         draw_set_color(c_ltgray);
-        draw_text(_px + _pw / 2, _py + _ph - 36, "Enter: confirm     Esc: back");
+        draw_text_outline(_px + _pw / 2, _py + _ph - 36, "Enter: confirm     Esc: back");
     } else {
         draw_set_halign(fa_center);
         draw_set_font(fnt_ui_small); draw_set_color(c_ltgray);
@@ -4912,11 +5411,18 @@ function ui_draw_maren_screen() {
                 var _ty = ui_maren_row(_i, _i == _cursor);
                 draw_set_color(item_rarity_color(_it.rarity));
                 draw_text(_list_x + 24, _ty, _it.name);
-                draw_set_halign(fa_right);
+                // Socket count drawn left-of-centre (not far-right) so it stays clear of
+                // the gear-breakdown panel that overlaps the right side of the rows.
                 draw_set_color(make_color_rgb(170, 160, 190));
-                draw_text(_list_x2 - 24, _ty,
+                draw_text(_list_x + 620, _ty,
                     string(array_length(_it.runes)) + " / " + string(_it.socket_count) + " sockets filled");
-                draw_set_halign(fa_left);
+            }
+            // Full gear breakdown for the highlighted piece (same panel the inventory
+            // uses) so you can judge an item's stats before deciding to socket it.
+            if (array_length(_slots) > 0) {
+                var _sel_i  = clamp(_cursor, 0, array_length(_slots) - 1);
+                var _sel_it = global.inventory[_slots[_sel_i]];
+                ui_draw_item_tooltip(1190, 255, _sel_it, undefined);
             }
         } else if (_gc.maren_phase == 1) {
             var _it = global.inventory[_gc.maren_item_sel];
@@ -5130,7 +5636,7 @@ function ui_draw_maren_screen() {
     draw_set_halign(fa_center);
     draw_set_font(fnt_ui_small);
     draw_set_color(make_color_rgb(70, 70, 95));
-    draw_text(960, 1026, "W/S: Navigate    Q/E: Tab    Enter: Select    Esc: Back / Close");
+    draw_text_outline(960, 1026, "W/S: Navigate    Q/E: Tab    Enter: Select    Esc: Back / Close");
     draw_set_halign(fa_left);
 
     // Ornate gothic rim around the whole overlay. Opening (30,30)-(1890,1050) keeps the
@@ -5317,7 +5823,7 @@ function ui_draw_sable_screen() {
     draw_set_halign(fa_center);
     draw_set_font(fnt_ui_small);
     draw_set_color(make_color_rgb(70, 95, 78));
-    draw_text(960, 1026, "W/S: Navigate    Q/E: Tab    Enter: Select    Esc: Back / Close");
+    draw_text_outline(960, 1026, "W/S: Navigate    Q/E: Tab    Enter: Select    Esc: Back / Close");
     draw_set_halign(fa_left);
 
     // Ornate gothic rim around the whole overlay (see Maren screen for geometry notes).
@@ -5540,7 +6046,7 @@ function ui_draw_vael_screen() {
     draw_set_halign(fa_center);
     draw_set_font(fnt_ui_small);
     draw_set_color(make_color_rgb(90, 75, 100));
-    draw_text(960, 1026, "W/S: Navigate    Enter: Buy / Wear    Q/E: Switch tab    Esc: Close");
+    draw_text_outline(960, 1026, "W/S: Navigate    Enter: Buy / Wear    Q/E: Switch tab    Esc: Close");
     draw_set_halign(fa_left);
 
     // Ornate gothic rim around the whole overlay (see Maren screen for geometry notes).
@@ -5617,7 +6123,7 @@ function ui_draw_vael_portrait_tab(_gc) {
     // Controls (raised to clear the bottom rim band)
     draw_set_font(fnt_ui_small);
     draw_set_color(make_color_rgb(90, 75, 100));
-    draw_text(960, 1026, "A/D: Browse    Q/E: Switch tab    Enter: Set (100g)    Esc: Close");
+    draw_text_outline(960, 1026, "A/D: Browse    Q/E: Switch tab    Enter: Set (100g)    Esc: Close");
     draw_set_halign(fa_left);
 
     // Ornate gothic rim around the whole overlay (matches the skins tab + Maren/Sable).
@@ -5685,7 +6191,7 @@ function ui_draw_item_picker() {
         draw_text(_px + _pw / 2, _py + _ph / 2, "No qualifying item to give up.");
         draw_set_font(fnt_ui_small);
         draw_set_color(c_ltgray);
-        draw_text(_px + _pw / 2, _py + _ph - 45, "Esc / Right-click: back");
+        draw_text_outline(_px + _pw / 2, _py + _ph - 45, "Esc / Right-click: back");
         draw_set_halign(fa_left); draw_set_valign(fa_top);
         draw_set_font(-1);
         return;
@@ -5751,6 +6257,15 @@ function ui_draw_item_picker() {
             draw_set_color(make_color_rgb(110, 120, 150));
             draw_text(_dx + 114, _dy + 69, string_upper(_it.slot));
         }
+        // Class restriction (gold = usable by your class, red = locked to another).
+        var _pk_cr = variable_struct_exists(_it, "class_req") ? _it.class_req : -1;
+        if (_pk_cr != -1) {
+            var _pk_names = ["Arcanist", "Bloodwarden", "Shadowstrider"];
+            var _pk_name  = (_pk_cr >= 0 && _pk_cr <= 2) ? _pk_names[_pk_cr] : "Unknown";
+            var _pk_my    = variable_global_exists("chosen_class") ? global.chosen_class : -1;
+            draw_set_color((_pk_cr == _pk_my) ? make_color_rgb(210, 175, 90) : make_color_rgb(225, 80, 80));
+            draw_text(_dx + 114, _dy + 96, _pk_name + " only");
+        }
 
         var _cy = _dy + 117;
         draw_set_color(make_color_rgb(50, 55, 80));
@@ -5805,11 +6320,11 @@ function ui_draw_item_picker() {
         draw_text(_px + _pw / 2, _cby0 + 14,
             item_picker_verb() + " " + _cur.label + "? This cannot be undone.");
         draw_set_color(c_ltgray);
-        draw_text(_px + _pw / 2, _py + _ph - 36, "Enter: confirm     Esc: back");
+        draw_text_outline(_px + _pw / 2, _py + _ph - 36, "Enter: confirm     Esc: back");
     } else {
         draw_set_halign(fa_center);
         draw_set_font(fnt_ui_small); draw_set_color(c_ltgray);
-        draw_text(_px + _pw / 2, _py + _ph - 36, "W/S: Select     Enter: choose     Esc: cancel");
+        draw_text_outline(_px + _pw / 2, _py + _ph - 36, "W/S: Select     Enter: choose     Esc: cancel");
     }
 
     draw_set_halign(fa_left); draw_set_valign(fa_top);

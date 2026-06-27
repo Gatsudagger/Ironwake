@@ -194,20 +194,27 @@ _rw_ash.class_req = 1;  _rw_vsept.class_req = 0;  _rw_serp.class_req = 2;
 _rw_ash.unique_effect   = "class_start_shield";  _rw_ash.unique_desc   = "Start each combat with a 12 HP shield";
 _rw_vsept.unique_effect = "class_spell_crit_ap"; _rw_vsept.unique_desc = "Spell critical hits restore 1 AP";
 _rw_serp.unique_effect  = "class_kill_ap";       _rw_serp.unique_desc  = "Killing an enemy restores 1 AP";
+// Explicit req_stat overrides: these names resolve to the WRONG stat under
+// weapon_required_stat ("blade"->DEX, "Serpent's Reach"->STR default), which would
+// gate each weapon behind a stat its own class doesn't build. Pin to the real stat.
+_rw_ash.req_stat  = "STR"; _rw_ash.req_value  = req_stat_curve(2);   // Bloodwarden STR blade
+_rw_serp.req_stat = "DEX"; _rw_serp.req_value = req_stat_curve(2);   // Shadowstrider DEX reach
 
 // --- TWO-HANDED WEAPONS (SYSTEMS_WEAPON_ROLES.md §D) ---
 // 2H weapons lock the offhand slot, so they carry a bigger weapon_damage budget
 // (~+80% over the 1H base for their rarity) plus a secondary affix as payoff.
+// class_req -1: 2H weapons are NOT class-locked (no unique_effect). The 2H tag,
+// stat bonus, and Rare+ stat requirement steer them without a hard lock.
 var _2hw_greatsword = create_item("Ruinous Greatsword", "weapon", 1, "STR", 4, "takes both hands to swing", 44);
-_2hw_greatsword.two_handed = true;  _2hw_greatsword.class_req = 1;  _2hw_greatsword.weapon_damage = 9;
+_2hw_greatsword.two_handed = true;  _2hw_greatsword.class_req = -1;  _2hw_greatsword.weapon_damage = 9;
 _2hw_greatsword.affixes = [{ suffix: "of the Bear", prefix: "Hardy", stat_name: "CON", stat_value: 3 }];
 
 var _2hw_longbow = create_item("Vault Longbow", "ranged_weapon", 1, "DEX", 4, "a tall war-bow drawn two-handed", 46);
-_2hw_longbow.two_handed = true;  _2hw_longbow.class_req = 2;  _2hw_longbow.weapon_damage = 9;
+_2hw_longbow.two_handed = true;  _2hw_longbow.class_req = -1;  _2hw_longbow.weapon_damage = 9;
 _2hw_longbow.affixes = [{ suffix: "of Ruin", prefix: "Keen", stat_name: "crit_flat", stat_value: 5 }];
 
 var _2hw_staff = create_item("Stormcaller Staff", "ranged_weapon", 2, "INT", 6, "a great runed staff held in both hands", 96);
-_2hw_staff.two_handed = true;  _2hw_staff.class_req = 0;  _2hw_staff.weapon_damage = 13;
+_2hw_staff.two_handed = true;  _2hw_staff.class_req = -1;  _2hw_staff.weapon_damage = 13;
 _2hw_staff.affixes = [{ suffix: "of Clarity", prefix: "Wise", stat_name: "WIS", stat_value: 4 }];
 
 // --- ELEMENTAL WEAPONS (SYSTEMS_WEAPON_ROLES.md §C) ---
@@ -264,10 +271,15 @@ var _sch_venom = create_item("Venomous Signet", "ring", 1, "DEX", 3, "the crest 
 _sch_venom.affixes = [{ suffix: "of Venom", prefix: "Toxic", stat_name: "school_poison", stat_value: 1 }];
 
 global.loot_table_common = [
-    // Weapons
+    // Weapons. Generic (class_req -1) bases fill every archetype so each class
+    // finds an equippable, stat-appropriate weapon. Names resolve to the right
+    // stat under weapon_required_stat (spear/saber/pike->STR, sickle->DEX, wand->INT).
     _cw_ashen,
     _cw_shortbow,
     _cw_cracked_wand,
+    create_item("Chipped Spear", "weapon",        0, "STR", 2, "a notched footman's spear",      14),
+    create_item("Rusty Sickle",  "weapon",        0, "DEX", 2, "a farmer's tool gone to rust",   13),
+    create_item("Bent Wand",     "ranged_weapon", 0, "INT", 2, "warped but it still channels",   13),
     // Offhand
     _off_cracked_shield,
     create_item("Ash Totem",          "offhand", 0, "WIS", 1, "carved wood talisman",      9),
@@ -276,10 +288,13 @@ global.loot_table_common = [
     create_item("Ashen Hood",         "helm",    0, "DEX", 1, "protects from vault dust",   9),
     create_item("Bone Cap",           "helm",    0, "CON", 1, "crude skull-shaped guard",   8),
     create_item("Tarnished Visor",    "helm",    0, "STR", 1, "bent but still sturdy",      8),
-    // Chest
+    // Chest - spread across stats so every class finds usable chests (was CON/DEX only).
     create_item("Tattered Robes",     "chest",   0, "CON", 1, "",                          10),
     create_item("Rusted Chainshirt",  "chest",   0, "CON", 2, "rough but solid",            11),
     create_item("Shadowcloth Tunic",  "chest",   0, "DEX", 1, "woven shadow-thread",         9),
+    create_item("Spellweave Robe",    "chest",   0, "INT", 1, "rune-stitched cloth",         9),
+    create_item("Acolyte Vestment",   "chest",   0, "WIS", 1, "simple temple garb",          9),
+    create_item("Padded Brigandine",  "chest",   0, "STR", 1, "quilted and studded",        10),
     // Gloves
     create_item("Worn Gauntlets",     "gloves",  0, "STR", 1, "old iron, liner rotted",     8),
     create_item("Nimble Wraps",       "gloves",  0, "DEX", 1, "tight cloth for grip",       8),
@@ -299,7 +314,7 @@ global.loot_table_common = [
 ];
 
 global.loot_table_uncommon = [
-    // Weapons (class-restricted)
+    // Weapons. Class-locked (unique_effect) + generic (class_req -1) bases.
     _uw_gravel,
     _uw_wand,
     _uw_sickle,
@@ -307,6 +322,11 @@ global.loot_table_uncommon = [
     _2hw_longbow,
     _ew_flaming,
     _ew_frost,
+    create_item("Iron Saber",     "weapon",        1, "STR", 4, "a heavy cavalry saber",          34),
+    create_item("Soldier's Pike", "weapon",        1, "STR", 4, "a long infantry pike",           34),
+    create_item("Recurve Bow",    "ranged_weapon", 1, "DEX", 4, "a hunter's recurve",             36),
+    create_item("Oak Staff",      "ranged_weapon", 1, "INT", 4, "a channeling staff of seasoned oak", 36),
+    create_item("Brass Scepter",  "ranged_weapon", 1, "INT", 4, "a tarnished ceremonial scepter", 35),
     // Offhand
     _off_buckler,
     create_item("Runic Focus",         "offhand", 1, "INT", 3, "inscribed with focusing runes", 32),
@@ -316,6 +336,9 @@ global.loot_table_uncommon = [
     // Chest
     create_item("Shadowthread Vest",   "chest",   1, "DEX", 3, "",                              32),
     create_item("Ashwarden Coat",      "chest",   1, "CON", 3, "ash-fiber reinforced leather",  28),
+    create_item("Mage's Robe",         "chest",   1, "INT", 3, "woven for spell-focus",         30),
+    create_item("Druidic Wrap",        "chest",   1, "WIS", 3, "bound with living vine",         29),
+    create_item("Soldier's Cuirass",   "chest",   1, "STR", 3, "battered campaign plate",        30),
     // Gloves
     create_item("Irongrip Gauntlets",  "gloves",  1, "STR", 3, "weighted knuckles",             26),
     create_item("Fleethand Wraps",     "gloves",  1, "DEX", 3, "moves with the wearer",         28),
@@ -333,12 +356,20 @@ global.loot_table_uncommon = [
 ];
 
 global.loot_table_rare = [
-    // Weapons (class-restricted)
+    // Weapons. Class-locked (unique_effect) + generic (class_req -1) bases.
+    // Generic rare names resolve to the matching stat so the Rare+ stat gate
+    // (req_stat_curve = 12) steers each one to the right class.
     _rw_ash,
     _rw_vsept,
     _rw_serp,
     _2hw_staff,
     _ew_storm,
+    create_item("Tempered Saber",  "weapon",        2, "STR", 6, "folded steel, keen and balanced",      78),
+    create_item("Warden's Spear",  "weapon",        2, "STR", 6, "the long spear of a vault warden",      78),
+    create_item("Reaper's Sickle", "weapon",        2, "DEX", 6, "a wicked curved harvesting hook",       78),
+    create_item("Vaultwood Bow",   "ranged_weapon", 2, "DEX", 6, "cut from rare vault-grown wood",        80),
+    create_item("Crystal Wand",    "ranged_weapon", 2, "INT", 6, "a focusing wand tipped with raw crystal", 80),
+    create_item("Runed Staff",     "ranged_weapon", 2, "INT", 6, "etched with channeling runes",          80),
     // Offhand
     _off_soul_orb,
     _off_bulwark,
@@ -348,6 +379,9 @@ global.loot_table_rare = [
     // Chest
     create_item("Voidskin Coat",       "chest",   2, "DEX", 5, "",                              75),
     create_item("Ironveil Plate",      "chest",   2, "CON", 7, "",                              90),
+    create_item("Archmage Vestment",   "chest",   2, "INT", 5, "humming with ley-energy",       80),
+    create_item("Oracle Mantle",       "chest",   2, "WIS", 5, "embroidered with seer-sigils",  78),
+    create_item("Warplate Cuirass",    "chest",   2, "STR", 7, "forged for front-line wardens",  90),
     // Gloves
     create_item("Crushers",            "gloves",  2, "STR", 5, "massive war-gauntlets",         72),
     create_item("Whispergloves",       "gloves",  2, "DEX", 5, "make no sound at all",          75),

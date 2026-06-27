@@ -113,6 +113,11 @@ if (phase == "cutscene") {
                 // Empty slot - can't load, do nothing
             } else {
                 global.save_slot = slot_selected;
+                // Wipe all run/meta globals to defaults FIRST so nothing from a
+                // previously-loaded character (e.g. another slot's shop stock, which
+                // isn't fully overwritten by load_game) can bleed into this one. Then
+                // load this slot's data over the clean slate.
+                new_game_reset();
                 load_game();
                 audio_stop_sound(Viking_March);
                 room_goto(rm_hub);

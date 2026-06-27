@@ -188,6 +188,18 @@ function enemy_is_spellcaster(name) {
     return false;
 }
 
+// enemy_class_tag(c) - short "Melee/Phys" style label for an enemy's attack class
+// (reach x kind), drawn under its HP bar so the player can see which control
+// effects apply: ROOT blocks Melee, SILENCE blocks Spell, STUN blocks all.
+// Mirrors ability_attack_class_tag's vocabulary. See SYSTEMS_ATTACK_CLASS.md.
+function enemy_class_tag(c) {
+    var _reach = variable_struct_exists(c, "reach") ? c.reach : "melee";
+    var _kind  = variable_struct_exists(c, "kind")  ? c.kind  : "attack";
+    var _rw = (_reach == "ranged") ? "Ranged" : "Melee";
+    var _kw = (_kind  == "spell")  ? "Spell"  : "Phys";
+    return _rw + "/" + _kw;
+}
+
 // ---------------------------------------------------------------------------
 // enemy_clone(enemy_template)
 // Returns a shallow copy of the template with a fresh status_effects array

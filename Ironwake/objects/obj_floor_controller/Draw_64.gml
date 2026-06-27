@@ -667,7 +667,7 @@ if (showing_event_choice && event_active != undefined) {
         draw_set_halign(fa_center);
         draw_set_font(fnt_ui_small);
         draw_set_color(c_ltgray);
-        draw_text(GUI_CX, 972, "W/S: Select     Enter: Choose");
+        draw_text_outline(GUI_CX, 972, "W/S: Select     Enter: Choose");
     }
 
     // Ornate gothic rim (choice rows x330..1590, hint y972 - all inside the opening).
@@ -699,7 +699,7 @@ draw_text(GUI_CX, 1073, "WASD / Arrow Keys: Move between rooms   Enter: Enter Ro
 
 if (_boss_cleared) {
     draw_set_color(c_gray);
-    draw_text(GUI_CX, 1047, "E: Extract to Camp");
+    draw_text_outline(GUI_CX, 1047, "E: Extract to Camp");
 } else {
     draw_set_color(make_color_rgb(45, 50, 60));
     draw_text(GUI_CX, 1047, "E: Extract  [Defeat the boss first]");
@@ -708,6 +708,23 @@ if (_boss_cleared) {
 draw_set_halign(fa_left);
 draw_set_valign(fa_top);
 draw_set_alpha(1.0);
+draw_set_font(-1);
+
+// Player HP + gold readout (top-left). Drawn AFTER the event/shrine overlays (which
+// dim the whole screen) so it stays visible during them - many events gamble HP and
+// gold, so the player needs both at a glance. Drawn BEFORE the character/pause menus
+// so those full overlays still cover it (they show HP/gold themselves).
+var _hud_max_hp = out_of_combat_max_hp();
+var _hud_hp     = (variable_global_exists("run_current_hp") && global.run_current_hp > 0)
+                  ? min(global.run_current_hp, _hud_max_hp) : _hud_max_hp;
+draw_set_font(fnt_ui);
+draw_set_halign(fa_left);
+draw_set_valign(fa_top);
+draw_set_color(make_color_rgb(225, 95, 95));
+draw_text(30, 30, "HP: " + string(_hud_hp) + " / " + string(_hud_max_hp));
+draw_set_color(c_yellow);
+draw_text(30, 66, "Gold: " + string(global.gold) + "g");
+draw_set_color(c_white);
 draw_set_font(-1);
 
 ui_draw_character_menu();

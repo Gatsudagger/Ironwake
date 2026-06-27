@@ -632,9 +632,19 @@ function combat_tick_statuses(c, log) {
     var _keep = [];
     for (var _i = 0; _i < array_length(c.status_effects); _i++) {
         var _se = c.status_effects[_i];
-        if (combat_status_kind_of(_se) == "dot") {
+        var _se_kind = combat_status_kind_of(_se);
+        if (_se_kind == "dot") {
             combat_apply_damage(c, _se.effect_value);
             array_push(log, _cname + " takes " + string(_se.effect_value) + " " + _se.name + " damage!");
+        } else if (_se_kind == "regen") {
+            // Heal-over-time (Warden's / Phoenix Tonic). Clamp to max HP; heals raw to
+            // match the instant-heal consumable (no mortality reduction on player items).
+            var _rmax  = variable_struct_exists(c, "max_HP") ? c.max_HP : c.HP;
+            var _rheal = min(_rmax - c.HP, _se.effect_value);
+            if (_rheal > 0) {
+                c.HP += _rheal;
+                array_push(log, _cname + " recovers " + string(_rheal) + " HP from " + _se.name + ".");
+            }
         }
         _se.duration--;
         if (_se.duration > 0) {
@@ -644,6 +654,36 @@ function combat_tick_statuses(c, log) {
         }
     }
     c.status_effects = _keep;
+}
+
+// combat_status_is_debuff(se) - true for HARMFUL statuses (everything except the
+// beneficial ones like regen). Used by the cleanse consumables so they never strip
+// a player's own buff (e.g. a Warden's Tonic heal-over-time).
+function combat_status_is_debuff(se) {
+    switch (combat_status_kind_of(se)) {
+        case "regen": return false;   // beneficial heal-over-time
+    }
+    return true;   // dot / vulnerable / weaken / blind / mortality / stun / root / silence / firemark
+}
+
+// combat_cleanse(c, mode) - removes statuses from c.status_effects and returns the
+// count removed. mode: "dot" = every damage-over-time; "one" = the first debuff
+// (Smelling Salts); "all" = every debuff (Purification Draught). Buffs are kept.
+// Single source of truth for ALL cleanse consumables across every use path.
+function combat_cleanse(c, mode) {
+    if (!variable_struct_exists(c, "status_effects")) return 0;
+    var _kept = [];
+    var _removed = 0;
+    for (var _i = 0; _i < array_length(c.status_effects); _i++) {
+        var _se = c.status_effects[_i];
+        var _take = false;
+        if      (mode == "dot") _take = (combat_status_kind_of(_se) == "dot");
+        else if (mode == "all") _take = combat_status_is_debuff(_se);
+        else if (mode == "one") _take = (_removed == 0 && combat_status_is_debuff(_se));
+        if (_take) _removed++; else array_push(_kept, _se);
+    }
+    c.status_effects = _kept;
+    return _removed;
 }
 
 // combat_heal_after_mortality(c, amount) - scales a heal by the bearer's
