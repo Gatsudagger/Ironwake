@@ -1,1 +1,1 @@
-// Draw GUI intentionally empty — menu drawing moved to ui_draw_character_menu() in scr_ui (called by room controllers). This object's Draw GUI does not fire reliably (persistent + no sprite GMS2 quirk).
+// Draw GUI intentionally empty - menu drawing moved to ui_draw_character_menu() in scr_ui (called by room controllers). This object's Draw GUI does not fire reliably (persistent + no sprite GMS2 quirk).

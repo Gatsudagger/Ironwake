@@ -1,4 +1,4 @@
-// Singleton guard — only one game controller may exist at a time
+// Singleton guard - only one game controller may exist at a time
 if (instance_number(obj_game_controller) > 1) {
     instance_destroy();
     exit;
@@ -10,14 +10,13 @@ global.save_slot = -1;
 
 depth = -99999; // draw GUI on top of all room controllers
 
-// Lock window and GUI layer to the designed resolution so playtest and
-// compiled game always render at 1280x720 regardless of IDE settings.
-window_set_size(1280, 720);
-window_center();
-display_set_gui_size(1280, 720);
+// Native 1920x1080 GUI canvas (clean 1.5x over the old 1280x720; SYSTEMS_RESOLUTION.md).
+// The GUI layer is the real drawing surface; in fullscreen GameMaker maps it 1:1 to a
+// 1080p display, so there's no upscale blur.
+display_set_gui_size(GUI_W, GUI_H);
 
-// Apply the saved fullscreen preference (settings.ini). The GUI layer stays at
-// 1280x720 above, so fullscreen just scales that surface to fill the display.
+// Window sizing (auto-fit: native 1920x1080, clamped down only on sub-1080p displays,
+// centered) AND the saved fullscreen preference are both handled by video_apply().
 video_apply();
 
 // -----------------------------------------------------------------------------
@@ -26,8 +25,8 @@ video_apply();
 // asset_get_index("name") (a string the compiler can't see as a reference), so
 // GameMaker excludes them from the build and asset_get_index() returns -1 at
 // runtime even though they exist in the project. Referencing them here by their
-// bare asset identifiers — stored in a global so the assignment is never
-// dead-code-eliminated — forces the compiler to include them in the build.
+// bare asset identifiers - stored in a global so the assignment is never
+// dead-code-eliminated - forces the compiler to include them in the build.
 // (If a sprite is ever renamed/removed, update this list to match.)
 global.__sprite_includes = [
     spr_hub_background,
@@ -80,7 +79,7 @@ global.__sprite_includes = [
 ];
 
 // =============================================================================
-// obj_game_controller — Create event
+// obj_game_controller - Create event
 // This object is persistent (survives all room transitions) and is the single
 // source of truth for all meta-progression data that carries between runs.
 // It should exist in the first room and never be destroyed.
@@ -174,7 +173,7 @@ var _cw_ashen        = create_item("Ashen Blade",    "weapon", 0, "STR", 2, "", 
 var _cw_shortbow     = create_item("Worn Shortbow",  "ranged_weapon", 0, "DEX", 2, "",                  14);
 var _cw_cracked_wand = create_item("Cracked Focus",  "ranged_weapon", 0, "INT", 2, "still channels power", 13);
 _cw_ashen.class_req = -1;  _cw_shortbow.class_req = -1;  _cw_cracked_wand.class_req = 0;
-// Class-weapon ability affixes — being class-locked grants a combat bonus (read in obj_combat_controller/Create_0).
+// Class-weapon ability affixes - being class-locked grants a combat bonus (read in obj_combat_controller/Create_0).
 _cw_cracked_wand.unique_effect = "class_first_spell_ap";
 _cw_cracked_wand.unique_desc   = "First spell each combat costs 1 less AP";
 
@@ -213,7 +212,7 @@ _2hw_staff.affixes = [{ suffix: "of Clarity", prefix: "Wise", stat_name: "WIS", 
 
 // --- ELEMENTAL WEAPONS (SYSTEMS_WEAPON_ROLES.md §C) ---
 // Hand-authored examples of the elemental affix so a player reliably sees the
-// burn/frost/shock setup→detonation loop (drops also roll it on ~40% of weapons).
+// burn/frost/shock setup->detonation loop (drops also roll it on ~40% of weapons).
 // The affix renames the item (Flaming / Frostbound / Storm-touched) and adds a
 // small elemental hit + a short setup status, reach-gated by the weapon's slot.
 var _ew_flaming = create_item("Iron Brand", "weapon", 1, "STR", 3, "a soldier's blade", 40);
@@ -364,7 +363,7 @@ global.loot_table_rare = [
     create_item("Bloodpact Ring",      "ring",    2, "STR", 5, "sealed in blood",               72),
 ];
 
-// --- LEGENDARY LOOT TABLE — boss-drop only (5% weight) ---
+// --- LEGENDARY LOOT TABLE - boss-drop only (5% weight) ---
 // Each legendary has fixed affixes and a unique effect hook (unique_effect string).
 // unique_desc is the in-game text shown in gold; unique_effect is the code identifier.
 var _leg_brand = create_item("Gatewarden's Brand", "weapon", 4, "STR", 4,
@@ -373,7 +372,7 @@ _leg_brand.class_req    = -1;
 _leg_brand.affixes      = [{ suffix: "of Grit", prefix: "Sturdy", stat_name: "CON", stat_value: 2 }];
 _leg_brand.unique_effect = "gatewarden_brand";
 _leg_brand.unique_desc   = "First ability each combat costs 0 AP";
-_leg_brand.lore = "Forged for the wardens who chained the vault shut from the inside, knowing they would never leave. Its edge still remembers the weight of the gate — and swings as if no burden could ever slow the first blow.";
+_leg_brand.lore = "Forged for the wardens who chained the vault shut from the inside, knowing they would never leave. Its edge still remembers the weight of the gate - and swings as if no burden could ever slow the first blow.";
 
 var _leg_aegis = create_item("Heartstone Aegis", "chest", 4, "CON", 4,
     "warm to the touch, even in the coldest vault", 400);
@@ -381,7 +380,7 @@ _leg_aegis.class_req    = -1;
 _leg_aegis.affixes      = [{ suffix: "of Clarity", prefix: "Wise", stat_name: "WIS", stat_value: 2 }];
 _leg_aegis.unique_effect = "heartstone_aegis";
 _leg_aegis.unique_desc   = "Heal 5 HP whenever an enemy dies";
-_leg_aegis.lore = "A shard of the vault's buried heart, still beating long after the body around it failed. Those who wear it feel a borrowed warmth with every enemy that falls — the stone feeding on endings to keep its bearer from one.";
+_leg_aegis.lore = "A shard of the vault's buried heart, still beating long after the body around it failed. Those who wear it feel a borrowed warmth with every enemy that falls - the stone feeding on endings to keep its bearer from one.";
 
 var _leg_crown = create_item("Crown of the Hollow King", "helm", 4, "INT", 4,
     "the king who vanished is still being waited for", 400);
@@ -389,7 +388,7 @@ _leg_crown.class_req    = -1;
 _leg_crown.affixes      = [{ suffix: "of Clarity", prefix: "Wise", stat_name: "WIS", stat_value: 3 }];
 _leg_crown.unique_effect = "crown_hollow_king";
 _leg_crown.unique_desc   = "+1 trait slot while equipped (3 total)";
-_leg_crown.lore = "The Hollow King walked into the deepest vault and never came out; his court still sets a throne for his return. To wear his crown is to carry a little of that endless waiting — and the wider, sharper mind of someone who has stopped expecting an answer.";
+_leg_crown.lore = "The Hollow King walked into the deepest vault and never came out; his court still sets a throne for his return. To wear his crown is to carry a little of that endless waiting - and the wider, sharper mind of someone who has stopped expecting an answer.";
 
 var _leg_thief = create_item("Thief of Hours", "ring", 4, "DEX", 2,
     "inscribed with the last seconds of a dying mage", 400);
@@ -397,14 +396,14 @@ _leg_thief.class_req    = -1;
 _leg_thief.affixes      = [{ suffix: "of Clarity", prefix: "Wise", stat_name: "WIS", stat_value: 2 }];
 _leg_thief.unique_effect = "thief_of_hours";
 _leg_thief.unique_desc   = "Gain +1 AP on the first turn of every combat";
-_leg_thief.lore = "A dying mage spent her final spell not to survive, but to keep the last seconds of her life — and bound them into this ring. Whoever wears it begins each fight already a heartbeat ahead, spending borrowed time she will never get back.";
+_leg_thief.lore = "A dying mage spent her final spell not to survive, but to keep the last seconds of her life - and bound them into this ring. Whoever wears it begins each fight already a heartbeat ahead, spending borrowed time she will never get back.";
 
 global.loot_table_legendary = [ _leg_brand, _leg_aegis, _leg_crown, _leg_thief ];
 
-// --- AFFIX POOL — 10 affixes, rolled at drop time for uncommon+ items ---
+// --- AFFIX POOL - 10 affixes, rolled at drop time for uncommon+ items ---
 // u_val/r_val/e_val = stat bonus at uncommon / rare / epic rarity.
 // Special stat_names: bonus_max_hp (flat HP), crit_flat (%crit), dodge_flat (flat dodge),
-//                     gold_find (% bonus, display only — hook in add_gold for future use).
+//                     gold_find (% bonus, display only - hook in add_gold for future use).
 global.affix_pool = [
     { suffix: "of Might",    prefix: "Iron",    stat_name: "STR",          u_val: 1, r_val: 2, e_val: 3 },
     { suffix: "of Grace",    prefix: "Swift",   stat_name: "DEX",          u_val: 1, r_val: 2, e_val: 3 },
@@ -459,16 +458,16 @@ global.consumables_elite = [
 global.consumable_inventory = [];
 global.run_items_found      = [];
 
-// Equipment slots — 9 entries, one per slot (undefined = empty)
+// Equipment slots - 9 entries, one per slot (undefined = empty)
 // Index 8 = Ranged Weapon (appended; SYSTEMS_WEAPON_ROLES.md §A).
 global.inventory = array_create(9, undefined);
 
-// Item codex — records base names of every equipment item ever found or bought
+// Item codex - records base names of every equipment item ever found or bought
 global.items_discovered = [];
 
 // Item storage
-global.equipment_stash    = [];   // safe hub storage — never lost on death
-global.carried_items      = [];   // unequipped equipment in pack during a run — at risk on death
+global.equipment_stash    = [];   // safe hub storage - never lost on death
+global.carried_items      = [];   // unequipped equipment in pack during a run - at risk on death
 global.consumable_stash   = [];   // consumables stored safely in the hub
 global.secure_slots       = 0;    // future trait: guaranteed-safe carried item count
 global.secured_items      = [];   // indices into carried_items marked safe (unused while secure_slots==0)
@@ -490,7 +489,7 @@ global.run_history = [];
 // -----------------------------------------------------------------------------
 global.hub_unlocks = 0;
 
-// Cleared state for each room on the current floor — persists across the
+// Cleared state for each room on the current floor - persists across the
 // combat room transition so the floor map is not reset on return.
 global.floor_rooms_cleared = [];
 
@@ -508,7 +507,7 @@ menu_tab             = 0;
 tab_names            = ["Stats", "Equipment", "Abilities", "Consumables", "Compendium"];
 items_used_this_turn = 0;
 
-// Compendium (Help) tab state — index of the selected section in the left list
+// Compendium (Help) tab state - index of the selected section in the left list
 compendium_section   = 0;
 
 // Equipment tab state
@@ -595,7 +594,7 @@ sell_index        = 0;    // sell-list cursor row
 sell_scroll       = 0;    // sell-list scroll offset (top visible row)
 sell_confirm_name = "";   // non-empty = rare item awaiting Space confirmation
 
-// Initial stock — loot tables are defined above, so this is safe to call here
+// Initial stock - loot tables are defined above, so this is safe to call here
 restock_shops();
 
 
@@ -613,7 +612,7 @@ vex_detail_open     = false;   // Tab detail popup over the Vex ability/trait li
 loadout_cursor     = 0;
 loadout_selected   = [];   // up to 4 ability name strings being built this session
 loadout_full_timer = 0;    // countdown for "Loadout full" / "Slots full" flash (frames)
-loadout_locked_timer = 0;  // countdown for "ability is locked — unlock at Vex" flash (frames)
+loadout_locked_timer = 0;  // countdown for "ability is locked - unlock at Vex" flash (frames)
 loadout_confirmed  = false;
 loadout_tab        = 0;    // 0 = Abilities tab, 1 = Traits tab
 traits_cursor      = 0;
@@ -639,7 +638,7 @@ if (!variable_global_exists("traits_unlocked")) {
         soul_siphon:      false,
         crimson_reserve:  false,
         phantom_step:     false,
-        // New traits — unlocked through progression
+        // New traits - unlocked through progression
         quick_recovery:   false,
         treasure_hunter:  false,
         battle_hardened:  false,
@@ -666,13 +665,13 @@ for (var _tui = 0; _tui < array_length(_tu_defaults); _tui++) {
     }
 }
 
-// Trait unlock notification — drawn as a toast banner in hub/floor draw events.
+// Trait unlock notification - drawn as a toast banner in hub/floor draw events.
 // Set trait_notif_msg and trait_notif_timer = 180 wherever a trait unlocks.
 trait_notif_msg   = "";
 trait_notif_timer = 0;
 
 // -----------------------------------------------------------------------------
-// 13b-RUNES. RUNE SYSTEM STATE (Maren the Runesmith) — see SYSTEMS_RUNES.md
+// 13b-RUNES. RUNE SYSTEM STATE (Maren the Runesmith) - see SYSTEMS_RUNES.md
 // rune_inventory: unsocketed runes the player owns ({id,name,domain,tier} structs)
 // rune_dust:      shared crafting reagent (Maren combines / Sable salvages)
 // aspect_slots:   unlocked character Aspect-rune slots (start 2, cap 4)
@@ -699,11 +698,11 @@ sable_cursor       = 0;
 sable_phase        = 0;    // Salvage tab: 0 menu, 1 gear list, 2 rune list
 sable_notification = "";
 
-// Vael the Aesthete — transmog/skins (player_skin = active skin id)
+// Vael the Aesthete - transmog/skins (player_skin = active skin id)
 if (!variable_global_exists("player_skin"))    global.player_skin    = "default";
 if (!variable_global_exists("unlocked_skins")) global.unlocked_skins = [];
 
-// Cosmetic gender axis ("m"/"f") — chosen at character creation, combat sprite only.
+// Cosmetic gender axis ("m"/"f") - chosen at character creation, combat sprite only.
 if (!variable_global_exists("player_gender"))  global.player_gender  = "m";
 vael_open            = false;
 vael_cursor          = 0;
@@ -712,10 +711,10 @@ vael_tab             = 0;   // 0 = Skins (transmog), 1 = Portrait (100g portrait
 vael_portrait_cursor = 0;   // browse index into global.portrait_sprites on the Portrait tab
 
 // -----------------------------------------------------------------------------
-// 13b. VEX THE TRAINER — permanent upgrades bought with gold (+items for stats)
-// bonus_trait_slots: extra active-trait slots purchased (base 2, +2 max → 4 total).
+// 13b. VEX THE TRAINER - permanent upgrades bought with gold (+items for stats)
+// bonus_trait_slots: extra active-trait slots purchased (base 2, +2 max -> 4 total).
 // unlocked_abilities: names of non-starter abilities purchased into the loadout pool.
-// trait_potency: struct keyed by trait name → potency tier (0-5); each tier adds
+// trait_potency: struct keyed by trait name -> potency tier (0-5); each tier adds
 //                +10% to that trait's magnitude, paid for by permanently sacrificing
 //                5 points of the trait's associated permanent stat.
 // -----------------------------------------------------------------------------
@@ -744,7 +743,7 @@ if (!variable_global_exists("ui_overlay_latch")) global.ui_overlay_latch = false
 // Character-creation / hub portrait pool. The 60 class-themed portraits below
 // (imported at 512x512) replace the old generic spr_portrait_01..11 placeholders,
 // which still exist as resources but are no longer offered. One flat A/D cycle,
-// grouped class → gender (Arcanist M/F, Bloodwarden M/F, Shadowstrider M/F) with
+// grouped class -> gender (Arcanist M/F, Bloodwarden M/F, Shadowstrider M/F) with
 // the named alt portraits (Deathweaver / Plaguehunter) at the end of each class.
 global.portrait_sprites = [
     spr_portrait_arc_m1, spr_portrait_arc_m2, spr_portrait_arc_m3,
@@ -770,7 +769,7 @@ global.portrait_sprites = [
 ];
 
 // Load persisted meta-progression only if a slot was selected before this room was entered.
-// For new games the slot is set but load_game() is skipped — defaults from above apply.
+// For new games the slot is set but load_game() is skipped - defaults from above apply.
 if (global.save_slot >= 0) load_game();
 
 

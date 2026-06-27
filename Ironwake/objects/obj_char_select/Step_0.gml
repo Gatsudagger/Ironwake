@@ -1,15 +1,15 @@
 // =============================================================================
-// obj_char_select — Step event
+// obj_char_select - Step event
 // Handles all keyboard input for the character selection screen.
 // Input map:
-//   Left / A              — previous class
-//   Right / D             — next class
-//   Up / W                — previous stat row
-//   Down / S              — next stat row
-//   Enter / Space         — add 1 free point to selected stat (or confirm when pool empty)
-//   X                     — remove 1 point from selected stat (refunds to pool)
-//   Mouse click (panel)   — select class
-//   Mouse click (stat box)— select stat + add point if pool > 0
+//   Left / A              - previous class
+//   Right / D             - next class
+//   Up / W                - previous stat row
+//   Down / S              - next stat row
+//   Enter / Space         - add 1 free point to selected stat (or confirm when pool empty)
+//   X                     - remove 1 point from selected stat (refunds to pool)
+//   Mouse click (panel)   - select class
+//   Mouse click (stat box)- select stat + add point if pool > 0
 // =============================================================================
 
 // Stat name lookup shared by the add and remove sections
@@ -21,10 +21,10 @@ if (!naming_active && !confirmed) {
     var _mx = device_mouse_x_to_gui(0);
     var _my = device_mouse_y_to_gui(0);
     if (mouse_check_button_pressed(mb_left)) {
-        // Class panels: x0=200, stride=300, w=280, y=120-530
+        // Class panels: x0=150, stride=552, w=516, y=174-789 (lockstep with native draw layout)
         for (var _ci = 0; _ci < 3; _ci++) {
-            var _cpx = 200 + _ci * 300;
-            if (_mx >= _cpx && _mx < _cpx+280 && _my >= 120 && _my < 530) {
+            var _cpx = 150 + _ci * 552;
+            if (_mx >= _cpx && _mx < _cpx+516 && _my >= 174 && _my < 789) {
                 if (_ci != selected_class) {
                     selected_class = _ci;
                     working_stats  = stats_init(selected_class);
@@ -35,12 +35,12 @@ if (!naming_active && !confirmed) {
                 break;
             }
         }
-        // Stat boxes: row_x0=375, stride=90, w=80, y=562-614
-        var _bx0 = 375;
-        var _by0 = 562;
+        // Stat boxes: row_x0=562.5, stride=135, w=120, y=843-921 (lockstep with native draw)
+        var _bx0 = 562.5;
+        var _by0 = 843;
         for (var _si2 = 0; _si2 < 6; _si2++) {
-            var _sbx = _bx0 + _si2 * 90;
-            if (_mx >= _sbx && _mx < _sbx+80 && _my >= _by0 && _my < _by0+52) {
+            var _sbx = _bx0 + _si2 * 135;
+            if (_mx >= _sbx && _mx < _sbx+120 && _my >= _by0 && _my < _by0+78) {
                 selected_stat = _si2;
                 if (free_points > 0) {
                     stats_apply_points(working_stats, _stat_names[_si2], 1);
@@ -50,7 +50,7 @@ if (!naming_active && !confirmed) {
             }
         }
         // Confirm: click the bottom instruction bar area when all points are spent
-        if (free_points == 0 && _my >= 670 && _my <= 715) {
+        if (free_points == 0 && _my >= 1005 && _my <= 1073) {
             naming_active   = true;
             keyboard_string = "";
         }
@@ -59,7 +59,7 @@ if (!naming_active && !confirmed) {
 
 
 // -----------------------------------------------------------------------------
-// NAME ENTRY — active after Space confirms class/stats
+// NAME ENTRY - active after Space confirms class/stats
 // Captures keyboard_string; Enter finalises; Escape cancels back to selection.
 // -----------------------------------------------------------------------------
 if (naming_active) {
@@ -91,7 +91,7 @@ if (naming_active) {
 
 
 // -----------------------------------------------------------------------------
-// PORTRAIT SELECTION — active after name entry confirmed
+// PORTRAIT SELECTION - active after name entry confirmed
 // A / D cycles portraits; Enter confirms and goes to hub.
 // -----------------------------------------------------------------------------
 if (portrait_active) {
@@ -116,7 +116,7 @@ if (portrait_active) {
 
 
 // -----------------------------------------------------------------------------
-// 1. CLASS SELECTION — left / right
+// 1. CLASS SELECTION - left / right
 // -----------------------------------------------------------------------------
 var _class_changed = false;
 
@@ -140,7 +140,7 @@ if (_class_changed) {
 
 
 // -----------------------------------------------------------------------------
-// 1b. GENDER TOGGLE — Q / E flips the chosen class's combat-sprite gender.
+// 1b. GENDER TOGGLE - Q / E flips the chosen class's combat-sprite gender.
 // Cosmetic only; both options shown on the selected class panel.
 // -----------------------------------------------------------------------------
 if (keyboard_check_pressed(ord("Q")) || keyboard_check_pressed(ord("E"))) {
@@ -149,7 +149,7 @@ if (keyboard_check_pressed(ord("Q")) || keyboard_check_pressed(ord("E"))) {
 
 
 // -----------------------------------------------------------------------------
-// 2. STAT ROW SELECTION — up / down
+// 2. STAT ROW SELECTION - up / down
 // -----------------------------------------------------------------------------
 if (keyboard_check_pressed(vk_up) || keyboard_check_pressed(ord("W"))) {
     selected_stat = max(0, selected_stat - 1);
@@ -161,7 +161,7 @@ if (keyboard_check_pressed(vk_down) || keyboard_check_pressed(ord("S"))) {
 
 
 // -----------------------------------------------------------------------------
-// 3. ALLOCATE POINT — Z or Enter
+// 3. ALLOCATE POINT - Z or Enter
 // stats_apply_points handles clamping; we read free_points back from the
 // struct so the display stays in sync with the actual pool.
 // -----------------------------------------------------------------------------
@@ -174,7 +174,7 @@ if (keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_space) || keyb
 
 
 // -----------------------------------------------------------------------------
-// 4. REMOVE POINT — X
+// 4. REMOVE POINT - X
 // stats_apply_points prevents the stat from dropping below its class preset
 // floor, so no additional guard is needed here.
 // -----------------------------------------------------------------------------
@@ -185,7 +185,7 @@ if (keyboard_check_pressed(ord("X"))) {
 
 
 // -----------------------------------------------------------------------------
-// 5. CONFIRM — Space
+// 5. CONFIRM - Space
 // Opens the name-entry overlay instead of immediately going to rm_hub.
 // -----------------------------------------------------------------------------
 if ((keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_space)) && !confirmed && !naming_active) {

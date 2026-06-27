@@ -4,8 +4,8 @@
 // Format: JSON via json_stringify / json_parse, written to "ironwake_save.json"
 // in GMS2's sandboxed save directory.
 //
-// save_game() — call at the end of end_run() and on any other permanent state change.
-// load_game() — call once at the end of obj_game_controller Create_0.
+// save_game() - call at the end of end_run() and on any other permanent state change.
+// load_game() - call once at the end of obj_game_controller Create_0.
 // =============================================================================
 
 // ---------------------------------------------------------------------------
@@ -96,13 +96,13 @@ function save_game() {
         consumable_stash: global.consumable_stash,
 
         // Carried consumable pack (run buffer). Saved so potions withdrawn from
-        // the stash into your pack — or carried forward after a winning run —
+        // the stash into your pack - or carried forward after a winning run -
         // survive a reload. (Equipment's carried_items is intentionally NOT saved
         // so abandoning a run reverts cleanly; consumables persist because losing
         // bought/withdrawn potions on reload was a silent data-loss trap.)
         consumable_inventory: global.consumable_inventory,
 
-        // Rune system (Maren) — socketed gear runes ride on the item structs above
+        // Rune system (Maren) - socketed gear runes ride on the item structs above
         rune_inventory: variable_global_exists("rune_inventory") ? global.rune_inventory : [],
         rune_dust:      variable_global_exists("rune_dust")      ? global.rune_dust      : 0,
         aspect_slots:   variable_global_exists("aspect_slots")   ? global.aspect_slots   : 2,
@@ -145,12 +145,12 @@ function save_game() {
 // new_game_reset()
 // Wipes every PERSISTED run/meta global back to first-launch defaults so a New
 // Game starts from a clean slate. Without this, a New Game inherited whatever was
-// last in memory — e.g. the gold / run history / inventory / stats of a save you
-// had just LOADED — and the first save_game() then wrote that stale state into the
+// last in memory - e.g. the gold / run history / inventory / stats of a save you
+// had just LOADED - and the first save_game() then wrote that stale state into the
 // new slot (the "new file has my Save 1 Arcanist's gold" bug). Resets EXACTLY the
 // set save_game() persists (the leak surface); character creation then fills in
 // name/class/stats/gender/portrait. Catalogs/pools (affix_pool, abilities_*,
-// traits_all, audio) are NOT touched — they aren't persisted and load once at boot.
+// traits_all, audio) are NOT touched - they aren't persisted and load once at boot.
 // Call right before entering character creation for a New Game.
 // ---------------------------------------------------------------------------
 function new_game_reset() {
@@ -243,7 +243,7 @@ function new_game_reset() {
     global.selected_ascendance         = 0;
     global.selected_dungeon            = "ashen_vault";
 
-    // Character identity — defaulted here, set during character creation
+    // Character identity - defaulted here, set during character creation
     global.chosen_portrait = 0;
     global.chosen_class    = 0;
     global.chosen_stats    = undefined;
@@ -340,7 +340,7 @@ function load_game() {
     // Hub progression
     if (variable_struct_exists(_s, "hub_unlocks")) global.hub_unlocks = _s.hub_unlocks;
 
-    // Loadout — copy element-by-element to preserve existing array length
+    // Loadout - copy element-by-element to preserve existing array length
     if (variable_struct_exists(_s, "player_loadout") && is_array(_s.player_loadout)) {
         for (var _i = 0; _i < min(5, array_length(_s.player_loadout)); _i++) {
             global.player_loadout[_i] = _s.player_loadout[_i];
@@ -364,7 +364,7 @@ function load_game() {
         global.trait_potency = _s.trait_potency;
     }
 
-    // Trait unlock registry — only write keys already declared in the default struct
+    // Trait unlock registry - only write keys already declared in the default struct
     // so a corrupt / future save file can't inject unknown trait keys
     if (variable_struct_exists(_s, "traits_unlocked") && is_struct(_s.traits_unlocked)) {
         var _save_keys = variable_struct_get_names(_s.traits_unlocked);
@@ -388,7 +388,7 @@ function load_game() {
     }
 
     // Equipped items. global.inventory is pre-sized to 9 (index 8 = Ranged Weapon).
-    // Old saves only have 8 entries — min() leaves index 8 undefined (empty ranged
+    // Old saves only have 8 entries - min() leaves index 8 undefined (empty ranged
     // slot), so the migration is automatic and lossless (SYSTEMS_WEAPON_ROLES.md §A).
     if (variable_struct_exists(_s, "inventory") && is_array(_s.inventory)) {
         for (var _ii = 0; _ii < min(9, array_length(_s.inventory)); _ii++) {
@@ -407,7 +407,7 @@ function load_game() {
     if (variable_struct_exists(_s, "consumable_stash") && is_array(_s.consumable_stash)) {
         global.consumable_stash = _s.consumable_stash;
     }
-    // Carried consumable pack (run buffer) — restore so withdrawn/carried-forward
+    // Carried consumable pack (run buffer) - restore so withdrawn/carried-forward
     // potions survive a reload. Older saves lack this key; the gc-Create default ([])
     // covers them.
     if (variable_struct_exists(_s, "consumable_inventory") && is_array(_s.consumable_inventory)) {
@@ -432,7 +432,7 @@ function load_game() {
     // non-empty values if it was written mid-run (boon_grant/curse_grant save on
     // pickup); since loading always lands in the hub between runs, restoring them
     // would carry stale modifiers into the next run. Always start a loaded game with
-    // none — this is the fresh-run reset the abandoned-run case needs.
+    // none - this is the fresh-run reset the abandoned-run case needs.
     global.run_boons  = [];
     global.run_curses = [];
     if (variable_struct_exists(_s, "tutorial_seen") && is_struct(_s.tutorial_seen)) {

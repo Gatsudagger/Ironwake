@@ -1,5 +1,5 @@
 // =============================================================================
-// obj_char_select — Create event
+// obj_char_select - Create event
 // Initialises the character selection screen state.
 // The player picks a class, optionally allocates 4 free stat points, then
 // confirms to proceed into combat.
@@ -20,7 +20,7 @@ selected_stat = 0;
 // Points remaining for the player to distribute before confirming
 free_points = 4;
 
-// Set true once the player presses Confirm — triggers room transition
+// Set true once the player presses Confirm - triggers room transition
 confirmed = false;
 
 // Set true when the name-entry overlay is active

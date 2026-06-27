@@ -3,31 +3,31 @@
 // Ability data structures and resolution logic for Ironwake.
 //
 // Ability field reference:
-//   name             string  — display name
-//   energy_cost      int     — energy spent on cast (1–3)
-//   secondary_cost   int     — Souls / Blood / Preparation spent (0 = none)
-//   base_damage      int     — raw damage before mitigation (0 = no damage)
-//   damage_type      int     — 0=physical, 1=elemental, 2=drain
-//   base_acc         int     — flat accuracy added to hit roll; -1 = not applicable
-//   guaranteed_hit   bool    — bypasses the hit roll entirely
-//   crit_type        int     — 0=power(STR), 1=precision(DEX), 2=arcane(INT),
+//   name             string  - display name
+//   energy_cost      int     - energy spent on cast (1-3)
+//   secondary_cost   int     - Souls / Blood / Preparation spent (0 = none)
+//   base_damage      int     - raw damage before mitigation (0 = no damage)
+//   damage_type      int     - 0=physical, 1=elemental, 2=drain
+//   base_acc         int     - flat accuracy added to hit roll; -1 = not applicable
+//   guaranteed_hit   bool    - bypasses the hit roll entirely
+//   crit_type        int     - 0=power(STR), 1=precision(DEX), 2=arcane(INT),
 //                              3=effect(WIS), -1=no crit
-//   base_crit        real    — flat crit% added to the stat-based roll (0 = no crit)
-//   effect_type      string  — "none","damage","heal","shield","debuff","dot",
+//   base_crit        real    - flat crit% added to the stat-based roll (0 = no crit)
+//   effect_type      string  - "none","damage","heal","shield","debuff","dot",
 //                              "status","resource","passive"
-//   effect_value     real    — heal amount / shield HP / debuff magnitude / etc.
-//   effect_duration  int     — turns the effect lasts (0 = instant)
-//   self_targeted    bool    — ability targets the caster rather than an enemy
+//   effect_value     real    - heal amount / shield HP / debuff magnitude / etc.
+//   effect_duration  int     - turns the effect lasts (0 = instant)
+//   self_targeted    bool    - ability targets the caster rather than an enemy
 //
 // Secondary resource mapping (mirrors scr_stats class IDs):
-//   Arcanist (0)     → souls
-//   Bloodwarden (1)  → blood
-//   Shadowstrider(2) → preparation
+//   Arcanist (0)     -> souls
+//   Bloodwarden (1)  -> blood
+//   Shadowstrider(2) -> preparation
 // =============================================================================
 
 // ---------------------------------------------------------------------------
 // ability_define(...)
-// Factory function — returns a fully populated ability struct.
+// Factory function - returns a fully populated ability struct.
 // All Phase 1 abilities are built with this call so the shape is always
 // consistent and callers never need to set fields manually.
 // ---------------------------------------------------------------------------
@@ -73,13 +73,19 @@ function ability_can_cast(ability, caster) {
     // Energy check
     if (caster.energy < ability.energy_cost) return false;
 
-    // Secondary resource check — only relevant when cost > 0
-    if (ability.secondary_cost > 0) {
-        if      (variable_struct_exists(caster, "souls")       && caster.souls       < ability.secondary_cost) return false;
-        else if (variable_struct_exists(caster, "blood")       && caster.blood       < ability.secondary_cost) return false;
-        else if (variable_struct_exists(caster, "preparation") && caster.preparation < ability.secondary_cost) return false;
-    }
+    // Secondary resource check (souls / blood / preparation)
+    return ability_secondary_ok(ability, caster);
+}
 
+// ability_secondary_ok(ability, caster) - true when the caster can pay the ability's
+// SECONDARY resource cost (souls / blood / preparation), ignoring AP. Split out of
+// ability_can_cast so the UI can gate on the synergy-discounted AP cost
+// (ability_effective_cost) while still checking the secondary resource separately.
+function ability_secondary_ok(ability, caster) {
+    if (ability.secondary_cost <= 0) return true;
+    if      (variable_struct_exists(caster, "souls"))       return caster.souls       >= ability.secondary_cost;
+    else if (variable_struct_exists(caster, "blood"))       return caster.blood       >= ability.secondary_cost;
+    else if (variable_struct_exists(caster, "preparation")) return caster.preparation >= ability.secondary_cost;
     return true;
 }
 
@@ -104,7 +110,7 @@ function ability_spend_resources(ability, caster) {
 // ---------------------------------------------------------------------------
 // abilities_get_loadout(class_id)
 // Returns the 4-ability starting array for the given class.
-// Single source of truth — used by obj_combat_controller Create and the
+// Single source of truth - used by obj_combat_controller Create and the
 // character menu when displaying abilities outside combat.
 // ---------------------------------------------------------------------------
 function abilities_get_loadout(class_id) {
@@ -142,10 +148,10 @@ function abilities_get_loadout(class_id) {
 // Secondary resource: Souls (max 10, starts at 0 each combat)
 // Playstyle: build Souls on kills, spend for high-damage/utility spells.
 // -----------------------------------------------------------------------------
-// desc_short: one readable line shown in the list row (≤50 chars)
-// desc_full:  1-2 sentences for the description box — what it does and when to use it
+// desc_short: one readable line shown in the list row (<=50 chars)
+// desc_full:  1-2 sentences for the description box - what it does and when to use it
 global.abilities_arcanist = [
-    // 0: Soulfire — aggressive generator: hits hard AND builds Souls each cast.
+    // 0: Soulfire - aggressive generator: hits hard AND builds Souls each cast.
     //    Niche: spam for damage and soul generation; pairs with Arcane Burst.
     ability_define("Soulfire",
         /*energy*/1, /*secondary*/0,
@@ -155,18 +161,19 @@ global.abilities_arcanist = [
         /*effect_type*/"resource", /*effect_value*/2, /*duration*/0, // +2 Souls on cast
         /*self*/false),
 
-    // 1: Void Drain — sustain option: lower damage but heals, guaranteed, bypasses armor.
-    //    Niche: spend 2 energy to recover HP safely; not a soul generator.
+    // 1: Void Drain - cheap sustain: 1 AP on a 2-turn cooldown. Lower damage but heals,
+    //    guaranteed, bypasses armor. Also banks 1 Soul on hit (see obj_combat_controller
+    //    Step_0 hook). The cooldown is what keeps the cheap heal+Soul from being spammed.
     ability_define("Void Drain",
-        /*energy*/2, /*secondary*/0,
-        /*damage*/8, /*dtype*/2,        // drain — bypasses all mitigation
+        /*energy*/1, /*secondary*/0,
+        /*damage*/8, /*dtype*/2,        // drain - bypasses all mitigation
         /*acc*/-1, /*guaranteed*/true,
         /*crit_type*/-1, /*base_crit*/0,
         /*effect_type*/"heal", /*effect_value*/8, /*duration*/0,
         /*self*/false),
 
-    // 2: Arcane Burst — big nuke; costs a Soul, high arcane crit ceiling.
-    //    §3 rework: now a true payoff — +40% damage vs a debuffed/Exposed target
+    // 2: Arcane Burst - big nuke; costs a Soul, high arcane crit ceiling.
+    //    §3 rework: now a true payoff - +40% damage vs a debuffed/Exposed target
     //    (rider in obj_combat_controller/Step_0). Base bumped 28->38 so a committed
     //    3-AP cast finally beats a turn of three cheap 1-AP spells.
     ability_define("Arcane Burst",
@@ -177,7 +184,7 @@ global.abilities_arcanist = [
         /*effect_type*/"damage", /*effect_value*/0, /*duration*/0,
         /*self*/false),
 
-    // 3: Soul Harvest — passive; logic triggered by the combat engine on-kill
+    // 3: Soul Harvest - passive; logic triggered by the combat engine on-kill
     ability_define("Soul Harvest",
         /*energy*/0, /*secondary*/0,
         /*damage*/0, /*dtype*/0,
@@ -186,9 +193,10 @@ global.abilities_arcanist = [
         /*effect_type*/"resource", /*effect_value*/2, /*duration*/0, // +2 souls
         /*self*/true),
 
-    // 4: Blink — spend 1 energy to go untargetable for 2 incoming attacks (charge-based).
-    //    effect_value = initial charge count; combat_check_blink() in scr_combat decrements
-    //    untargetable_turns per attack absorbed and clears is_untargetable at 0.
+    // 4: Blink - staged evasion over the next 3 incoming attacks (2-turn CD). The cast
+    //    sets player.blink_charges = 3; the incoming-attack block in obj_combat_controller/
+    //    Step_0 resolves it: charge 3 = guaranteed full dodge, 2 = 50% dmg taken, 1 = 25%
+    //    less, then it ends. Only the first hit is a guaranteed dodge.
     ability_define("Blink",
         /*energy*/1, /*secondary*/0,
         /*damage*/0, /*dtype*/0,
@@ -197,16 +205,16 @@ global.abilities_arcanist = [
         /*effect_type*/"status", /*effect_value*/2, /*duration*/2, // 2 charges; absorbs 2 attacks
         /*self*/true),
 
-    // 5: Curse — WIS crit improves status quality; debuffs incoming damage
+    // 5: Curse - WIS crit improves status quality; debuffs incoming damage
     ability_define("Curse",
         /*energy*/2, /*secondary*/0,
         /*damage*/0, /*dtype*/2,        // void
         /*acc*/75, /*guaranteed*/false,
-        /*crit_type*/3, /*base_crit*/0, // effect (WIS) — no base_crit, formula uses 5+WIS*1.5
+        /*crit_type*/3, /*base_crit*/0, // effect (WIS) - no base_crit, formula uses 5+WIS*1.5
         /*effect_type*/"debuff", /*effect_value*/4, /*duration*/3, // +4 damage taken
         /*self*/false),
 
-    // 6: Soul Shield — costs 1 Soul, absorbs 10 HP of incoming damage
+    // 6: Soul Shield - costs 1 Soul, absorbs 10 HP of incoming damage
     ability_define("Soul Shield",
         /*energy*/1, /*secondary*/1,
         /*damage*/0, /*dtype*/0,
@@ -215,16 +223,16 @@ global.abilities_arcanist = [
         /*effect_type*/"shield", /*effect_value*/10, /*duration*/0,
         /*self*/true),
 
-    // 7: Entropy — damage-over-time, WIS crit can upgrade stack quality
+    // 7: Entropy - damage-over-time, WIS crit can upgrade stack quality
     ability_define("Entropy",
         /*energy*/2, /*secondary*/0,
         /*damage*/0, /*dtype*/2,        // void
         /*acc*/78, /*guaranteed*/false,
         /*crit_type*/3, /*base_crit*/0, // effect (WIS)
-        /*effect_type*/"dot", /*effect_value*/6, /*duration*/4, // 6 dmg/turn × 4 turns
+        /*effect_type*/"dot", /*effect_value*/6, /*duration*/4, // 6 dmg/turn x 4 turns
         /*self*/false),
 
-    // 8: Rift — Soul-fuelled AoE; arcane crit adds elemental stacks to all targets
+    // 8: Rift - Soul-fuelled AoE; arcane crit adds elemental stacks to all targets
     ability_define("Rift",
         /*energy*/3, /*secondary*/2,
         /*damage*/20, /*dtype*/1,       // elemental
@@ -233,10 +241,10 @@ global.abilities_arcanist = [
         /*effect_type*/"damage", /*effect_value*/0, /*duration*/0, // hits all enemies
         /*self*/false),
 
-    // 9: Soulbind — ties enemy fate to caster; reflects 40% damage for full combat
+    // 9: Soulbind - ties enemy fate to caster; reflects 40% damage for full combat
     ability_define("Soulbind",
         /*energy*/2, /*secondary*/1,
-        /*damage*/6, /*dtype*/2,        // void — now lands a small hit on cast
+        /*damage*/6, /*dtype*/2,        // void - now lands a small hit on cast
         /*acc*/72, /*guaranteed*/false,
         /*crit_type*/3, /*base_crit*/0, // effect (WIS)
         /*effect_type*/"status", /*effect_value*/0.5, /*duration*/-1, // -1 = combat-long
@@ -246,23 +254,23 @@ global.abilities_arcanist = [
 // Plain-English descriptions for Arcanist abilities
 var _arc_d = [
     { s: "Deal 15 elemental dmg. Gain +2 Soul.",
-      f: "A quick elemental blast that also fills your Soul reserve. Cheap to cast — spam it to fuel bigger spells on the next turn." },
-    { s: "Deal 8 drain dmg. Heal 8 HP. Always hits.",
-      f: "A guaranteed drain that heals you as much as it deals. Bypasses armor entirely. Costs 2 energy — use it when you need to stay alive." },
+      f: "A quick elemental blast that also fills your Soul reserve. Cheap to cast - spam it to fuel bigger spells on the next turn." },
+    { s: "1 AP: 8 drain dmg, heal 8, +1 Soul. 2-turn CD.",
+      f: "A guaranteed drain that heals as much as it deals and banks 1 Soul, bypassing armor entirely. Now 1 AP on a 2-turn cooldown - cheap sustain you can't spam every turn." },
     { s: "Spend 1 Soul. Deal 28 elemental dmg.",
       f: "Your big nuke. Costs 1 Soul for a massive elemental hit with a strong arcane crit chance. Save it for tough or high-HP enemies." },
     { s: "0 AP cost. Gain +2 Soul instantly.",
-      f: "Costs zero AP — cast it for free and keep your other abilities available this turn. One use per turn. Save it to top off your Soul reserve before an Arcane Burst." },
-    { s: "~(50% + WIS) chance to dodge the next attack. 2-turn cooldown.",
-      f: "Spend 1 energy to phase out. The next enemy attack has a (50% + WIS*2)% chance — capped at 85% — to pass through you; otherwise it lands. Stun halves the odds. 2-turn cooldown, so it can't be spammed every turn." },
+      f: "Costs zero AP - cast it for free and keep your other abilities available this turn. One use per turn. Save it to top off your Soul reserve before an Arcane Burst." },
+    { s: "Fully dodge the next attack; soften the 2 after. 2-turn CD.",
+      f: "Phase out: the next enemy attack is fully evaded automatically. The two attacks after that still land but for 50% then 25% less damage. A charge is spent per attacking enemy, so it spans a swarm. 2-turn cooldown." },
     { s: "Target takes +4 dmg from all hits for 3 turns.",
       f: "A debuff that amplifies all incoming damage to the target. Strong when you have multiple damage sources or DoTs ticking per turn." },
     { s: "Spend 1 Soul. Absorb 10 incoming dmg.",
-      f: "Converts 1 Soul into a 10 HP damage buffer. Cheap protection — cast it when your Soul bar is stocked and you expect a big hit." },
+      f: "Converts 1 Soul into a 10 HP damage buffer. Cheap protection - cast it when your Soul bar is stocked and you expect a big hit." },
     { s: "Apply poison: 6 dmg/turn for 4 turns.",
       f: "No upfront damage, but 24 total if the target lives long enough. Best on tough enemies you plan to wear down over several turns." },
     { s: "Spend 2 Souls. Deal 20 elemental dmg to all enemies.",
-      f: "An AoE nuke that hits every enemy at once. High Soul cost — save it for multi-enemy fights or finishing off a weakened group." },
+      f: "An AoE nuke that hits every enemy at once. High Soul cost - save it for multi-enemy fights or finishing off a weakened group." },
     { s: "Spend 1 Soul. Reflect 40% of damage taken at target.",
       f: "A combat-long bond that returns 40% of every hit you receive to the bound enemy. Best in long fights where you're taking sustained damage." },
 ];
@@ -278,7 +286,7 @@ for (var _i = 0; _i < 10; _i++) {
 //            burst heals and powerful self-buffs.
 // -----------------------------------------------------------------------------
 global.abilities_bloodwarden = [
-    // 0: Blood Leech — reliable drain + heal to sustain
+    // 0: Blood Leech - reliable drain + heal to sustain
     ability_define("Blood Leech",
         /*energy*/1, /*secondary*/0,
         /*damage*/10, /*dtype*/3,       // blood
@@ -287,7 +295,7 @@ global.abilities_bloodwarden = [
         /*effect_type*/"heal", /*effect_value*/8, /*duration*/0,
         /*self*/false),
 
-    // 1: Iron Skin — flat damage reduction for 3 turns
+    // 1: Iron Skin - flat damage reduction for 3 turns
     ability_define("Iron Skin",
         /*energy*/2, /*secondary*/0,
         /*damage*/0, /*dtype*/0,
@@ -296,16 +304,16 @@ global.abilities_bloodwarden = [
         /*effect_type*/"shield", /*effect_value*/4, /*duration*/3, // -4 incoming dmg
         /*self*/true),
 
-    // 2: Gore Strike — physical hit + bleed DoT; power crit spike
+    // 2: Gore Strike - physical hit + bleed DoT; power crit spike
     ability_define("Gore Strike",
         /*energy*/2, /*secondary*/0,
         /*damage*/14, /*dtype*/0,       // physical
         /*acc*/82, /*guaranteed*/false,
         /*crit_type*/0, /*base_crit*/10, // power (STR)
-        /*effect_type*/"dot", /*effect_value*/3, /*duration*/4, // bleed 3/turn × 4
+        /*effect_type*/"dot", /*effect_value*/3, /*duration*/4, // bleed 3/turn x 4
         /*self*/false),
 
-    // 3: Blood Surge — spend 2 Blood to heal immediately
+    // 3: Blood Surge - spend 2 Blood to heal immediately
     ability_define("Blood Surge",
         /*energy*/0, /*secondary*/2,
         /*damage*/0, /*dtype*/0,
@@ -314,7 +322,7 @@ global.abilities_bloodwarden = [
         /*effect_type*/"heal", /*effect_value*/14, /*duration*/0,
         /*self*/true),
 
-    // 4: Marrow Crush — heavy physical hit + 30% damage debuff on target.
+    // 4: Marrow Crush - heavy physical hit + 30% damage debuff on target.
     //    §3 rework: base bumped 18->24 so the 3-AP cast is worth a full turn.
     ability_define("Marrow Crush",
         /*energy*/3, /*secondary*/0,
@@ -324,7 +332,7 @@ global.abilities_bloodwarden = [
         /*effect_type*/"debuff", /*effect_value*/0.3, /*duration*/3, // -30% damage dealt
         /*self*/false),
 
-    // 5: Vital Theft — drain hit + steal 8 max HP from target for combat
+    // 5: Vital Theft - drain hit + steal 8 max HP from target for combat
     ability_define("Vital Theft",
         /*energy*/2, /*secondary*/1,
         /*damage*/8, /*dtype*/3,        // blood
@@ -333,16 +341,16 @@ global.abilities_bloodwarden = [
         /*effect_type*/"status", /*effect_value*/8, /*duration*/-1, // -8 max HP combat-long
         /*self*/false),
 
-    // 6: Bloodthorn Aura — thorns effect; returns damage when struck
+    // 6: Bloodthorn Aura - thorns effect; returns damage when struck
     ability_define("Bloodthorn Aura",
         /*energy*/2, /*secondary*/0,
         /*damage*/0, /*dtype*/0,
         /*acc*/-1, /*guaranteed*/true,
         /*crit_type*/-1, /*base_crit*/0,
-        /*effect_type*/"status", /*effect_value*/8, /*duration*/4, // reflect 8 dmg/hit × 4 turns
+        /*effect_type*/"status", /*effect_value*/8, /*duration*/4, // reflect 8 dmg/hit x 4 turns
         /*self*/true),
 
-    // 7: Undying — ultimate safety net; costs 3 Blood; survive lethal blow at 1 HP
+    // 7: Undying - ultimate safety net; costs 3 Blood; survive lethal blow at 1 HP
     ability_define("Undying",
         /*energy*/3, /*secondary*/3,
         /*damage*/0, /*dtype*/0,
@@ -351,7 +359,7 @@ global.abilities_bloodwarden = [
         /*effect_type*/"status", /*effect_value*/1, /*duration*/1, // survive lethal at 1 HP this turn
         /*self*/true),
 
-    // 8: Plague Touch — WIS crit improves debuff; halves enemy healing for 5 turns
+    // 8: Plague Touch - WIS crit improves debuff; halves enemy healing for 5 turns
     ability_define("Plague Touch",
         /*energy*/1, /*secondary*/0,
         /*damage*/0, /*dtype*/3,        // blood
@@ -360,7 +368,7 @@ global.abilities_bloodwarden = [
         /*effect_type*/"debuff", /*effect_value*/0.5, /*duration*/5, // -50% healing received
         /*self*/false),
 
-    // 9: Bloodfeast — every ability drains 6 HP from targets for 2 turns
+    // 9: Bloodfeast - every ability drains 6 HP from targets for 2 turns
     ability_define("Bloodfeast",
         /*energy*/3, /*secondary*/2,
         /*damage*/0, /*dtype*/3,        // blood
@@ -373,11 +381,11 @@ global.abilities_bloodwarden = [
 // Plain-English descriptions for Bloodwarden abilities
 var _bw_d = [
     { s: "Deal 10 blood dmg. Heal 8 HP. 80% accuracy.",
-      f: "Your bread-and-butter sustain skill. Blood damage scales with INT, and you heal every cast. Low energy cost — use it freely." },
+      f: "Your bread-and-butter sustain skill. Blood damage scales with INT, and you heal every cast. Low energy cost - use it freely." },
     { s: "Reduce all incoming dmg by 4 for 3 turns.",
-      f: "A flat damage reduction buff on a timer. Cast it before a heavy hit or telegraph — 4 damage off every incoming hit for 3 full turns." },
+      f: "A flat damage reduction buff on a timer. Cast it before a heavy hit or telegraph - 4 damage off every incoming hit for 3 full turns." },
     { s: "Deal 14 physical dmg. Bleed: 3 dmg/turn for 4 turns.",
-      f: "A melee hit that opens a bleed wound. The 12 total bleed damage adds up — strong opener on high-HP targets or bosses." },
+      f: "A melee hit that opens a bleed wound. The 12 total bleed damage adds up - strong opener on high-HP targets or bosses." },
     { s: "Spend 2 Blood. Heal 14 HP. Free action.",
       f: "A zero-energy burst heal that costs only Blood. Perfect for recovering mid-fight when your Blood reserve is stocked." },
     { s: "Deal 18 physical dmg. Target deals 30% less dmg for 3 turns.",
@@ -385,11 +393,11 @@ var _bw_d = [
     { s: "Spend 1 Blood. Drain 8 HP. Reduce target max HP by 8.",
       f: "Permanently lowers the enemy's maximum HP for this combat. Combine with Gore Strike's bleed to whittle down a boss faster." },
     { s: "Return 5 dmg to each attacker per hit for 4 turns.",
-      f: "A thorns buff that punishes every incoming attack. Pairs well with Iron Skin — you reduce their damage while they take damage for hitting you." },
+      f: "A thorns buff that punishes every incoming attack. Pairs well with Iron Skin - you reduce their damage while they take damage for hitting you." },
     { s: "Spend 3 Blood. Survive one lethal hit at 1 HP this turn.",
       f: "An emergency safety net that guarantees you survive one killing blow per cast. Burn it the moment death is imminent." },
     { s: "Target heals 50% less for 5 turns.",
-      f: "Neutralizes enemy healing for extended fights. Low energy cost and a wide 5-turn window — cast it early on any regenerating enemy." },
+      f: "Neutralizes enemy healing for extended fights. Low energy cost and a wide 5-turn window - cast it early on any regenerating enemy." },
     { s: "Spend 2 Blood. Each ability also drains 6 HP for 2 turns.",
       f: "A short vampiric burst that adds a drain rider to every ability you cast for 2 turns. Stack with Blood Leech for maximum sustain." },
 ];
@@ -407,7 +415,7 @@ for (var _i = 0; _i < 10; _i++) {
 //       on the caster; the combat engine clears it when the trap fires.
 // -----------------------------------------------------------------------------
 global.abilities_shadowstrider = [
-    // 0: Snipe — high base ACC + precision crit; bonus damage when target is debuffed
+    // 0: Snipe - high base ACC + precision crit; bonus damage when target is debuffed
     //    (effect_value stores the 20 bonus damage; caller checks debuff state)
     ability_define("Snipe",
         /*energy*/1, /*secondary*/0,
@@ -417,7 +425,7 @@ global.abilities_shadowstrider = [
         /*effect_type*/"damage", /*effect_value*/20, /*duration*/0, // +20 if target debuffed
         /*self*/false),
 
-    // 1: Bear Trap — place trap (costs 1 Prep); triggers with guaranteed hit + root
+    // 1: Bear Trap - place trap (costs 1 Prep); triggers with guaranteed hit + root
     ability_define("Bear Trap",
         /*energy*/2, /*secondary*/1,
         /*damage*/16, /*dtype*/0,       // physical
@@ -426,7 +434,8 @@ global.abilities_shadowstrider = [
         /*effect_type*/"status", /*effect_value*/1, /*duration*/1, // root 1 turn
         /*self*/false),
 
-    // 2: Shadow Step — dodge next single-target attack entirely
+    // 2: Shadow Step - dodge CHANCE on each of the next 3 incoming attacks (2-turn CD).
+    //    Cast sets player.shadow_step_charges = 3; resolved in obj_combat_controller/Step_0.
     ability_define("Shadow Step",
         /*energy*/1, /*secondary*/0,
         /*damage*/0, /*dtype*/0,
@@ -435,7 +444,7 @@ global.abilities_shadowstrider = [
         /*effect_type*/"status", /*effect_value*/1, /*duration*/1, // dodge next single-target
         /*self*/true),
 
-    // 3: Poison Dart — low upfront damage; DoT does the real work.
+    // 3: Poison Dart - low upfront damage; DoT does the real work.
     //    Niche: apply sustained poison at the same energy cost as Snipe.
     //    Crit bumped to 10 so it crits at a reasonable rate despite lower base damage;
     //    crit still trails Snipe (15) to preserve Snipe's identity as the precision burst.
@@ -444,10 +453,10 @@ global.abilities_shadowstrider = [
         /*damage*/6, /*dtype*/0,        // physical
         /*acc*/88, /*guaranteed*/false,
         /*crit_type*/1, /*base_crit*/10, // precision (DEX); was 6
-        /*effect_type*/"dot", /*effect_value*/5, /*duration*/4, // poison 5/turn × 4
+        /*effect_type*/"dot", /*effect_value*/5, /*duration*/4, // poison 5/turn x 4
         /*self*/false),
 
-    // 4: Smoke Bomb — AoE accuracy debuff; WIS crit can upgrade duration/magnitude
+    // 4: Smoke Bomb - AoE accuracy debuff; WIS crit can upgrade duration/magnitude
     ability_define("Smoke Bomb",
         /*energy*/2, /*secondary*/1,
         /*damage*/0, /*dtype*/0,
@@ -456,7 +465,7 @@ global.abilities_shadowstrider = [
         /*effect_type*/"debuff", /*effect_value*/0.4, /*duration*/2, // -40% ACC all enemies
         /*self*/false),
 
-    // 5: Crippling Shot — physical hit + slow and damage reduction debuff
+    // 5: Crippling Shot - physical hit + slow and damage reduction debuff
     ability_define("Crippling Shot",
         /*energy*/2, /*secondary*/0,
         /*damage*/10, /*dtype*/0,       // physical
@@ -465,16 +474,16 @@ global.abilities_shadowstrider = [
         /*effect_type*/"debuff", /*effect_value*/0.25, /*duration*/3, // -25% dmg + slow
         /*self*/false),
 
-    // 6: Spike Trap — heavy trap; guaranteed on trigger; bleed stacks twice
+    // 6: Spike Trap - heavy trap; guaranteed on trigger; bleed stacks twice
     ability_define("Spike Trap",
         /*energy*/3, /*secondary*/2,
         /*damage*/26, /*dtype*/0,       // physical
         /*acc*/-1, /*guaranteed*/true,
         /*crit_type*/1, /*base_crit*/10, // precision (DEX)
-        /*effect_type*/"dot", /*effect_value*/6, /*duration*/4, // bleed ×2 stacks
+        /*effect_type*/"dot", /*effect_value*/6, /*duration*/4, // bleed x2 stacks
         /*self*/false),
 
-    // 7: Marked for Death — no damage; WIS crit upgrades mark quality
+    // 7: Marked for Death - no damage; WIS crit upgrades mark quality
     //    effect_value = 8 bonus damage per hit; effect_duration = 4 turns / 3 hits max
     ability_define("Marked for Death",
         /*energy*/1, /*secondary*/0,
@@ -484,7 +493,7 @@ global.abilities_shadowstrider = [
         /*effect_type*/"debuff", /*effect_value*/8, /*duration*/4, // +8/hit up to 3 hits or 4 turns
         /*self*/false),
 
-    // 8: Evasive Roll — reactive: halve next hit above 10 damage; costs 2 Prep
+    // 8: Evasive Roll - reactive: halve next hit above 10 damage; costs 2 Prep
     ability_define("Evasive Roll",
         /*energy*/0, /*secondary*/2,
         /*damage*/0, /*dtype*/0,
@@ -493,7 +502,7 @@ global.abilities_shadowstrider = [
         /*effect_type*/"status", /*effect_value*/10, /*duration*/1, // halve hits >10 dmg
         /*self*/true),
 
-    // 9: Death Snare — apex trap; guaranteed trigger, stun 2 turns, top precision crit
+    // 9: Death Snare - apex trap; guaranteed trigger, stun 2 turns, top precision crit
     ability_define("Death Snare",
         /*energy*/3, /*secondary*/2,
         /*damage*/32, /*dtype*/0,       // physical
@@ -506,25 +515,25 @@ global.abilities_shadowstrider = [
 // Plain-English descriptions for Shadowstrider abilities
 var _ss_d = [
     { s: "Deal 14 physical dmg. +20 bonus dmg if target is debuffed.",
-      f: "High accuracy and a strong precision crit. Deals a big bonus on debuffed targets — set up Marked for Death or Smoke Bomb first, then fire." },
+      f: "High accuracy and a strong precision crit. Deals a big bonus on debuffed targets - set up Marked for Death or Smoke Bomb first, then fire." },
     { s: "Spend 1 Prep. Trap: 16 dmg + Root (melee enemy loses a turn).",
-      f: "A guaranteed-hit trap that roots the target. A rooted MELEE enemy can't reach you and skips its turn — but ranged enemies still attack through it (use Death Snare's stun for those)." },
-    { s: "~(50% + WIS) chance to dodge the next single-target attack. 2-turn cooldown.",
-      f: "A reactive dodge on a 1-energy budget. The next single-target attack has a (50% + WIS*2)% chance — capped at 85% — to be dodged; otherwise it connects. Stun halves the odds. 2-turn cooldown. Time it for a telegraph or a hard-hitting turn." },
+      f: "A guaranteed-hit trap that roots the target. A rooted MELEE enemy can't reach you and skips its turn - but ranged enemies still attack through it (use Death Snare's stun for those)." },
+    { s: "~(50% + WIS) chance to dodge each of the next 3 attacks. 2-turn CD.",
+      f: "A reactive evasion on a 1-energy budget. Each of the next 3 incoming attacks has a (50% + WIS*2)% chance - capped at 85% - to be dodged; otherwise it connects. Stun halves the odds. 2-turn cooldown. Strong against a pack." },
     { s: "Deal 6 physical dmg. Poison: 5 dmg/turn for 4 turns.",
-      f: "Low upfront damage but 20 total over time. Cheap to cast — apply it early and let the poison tick while you use other abilities." },
+      f: "Low upfront damage but 20 total over time. Cheap to cast - apply it early and let the poison tick while you use other abilities." },
     { s: "Spend 1 Prep. All enemies hit 40% less often for 2 turns.",
       f: "A group accuracy debuff that buys you breathing room. Cast it before a risky turn or when you need to set up traps without taking a beating." },
     { s: "Deal 10 physical dmg. Target deals 25% less dmg for 3 turns.",
-      f: "A reliable hit with a lasting damage debuff. Reduces the most dangerous enemy's output for several turns — use it early." },
-    { s: "Spend 2 Prep. Trap fires: 22 dmg + bleed 6/turn × 4 turns.",
-      f: "Your most powerful trap. Heavy damage and a punishing bleed — the Preparation cost is worth it on elites and the boss." },
+      f: "A reliable hit with a lasting damage debuff. Reduces the most dangerous enemy's output for several turns - use it early." },
+    { s: "Spend 2 Prep. Trap fires: 22 dmg + bleed 6/turn x 4 turns.",
+      f: "Your most powerful trap. Heavy damage and a punishing bleed - the Preparation cost is worth it on elites and the boss." },
     { s: "All hits on target deal +8 bonus dmg for up to 4 turns.",
       f: "A mark that amplifies every attack landing on the target. Apply it early and then stack Snipe and traps on top to maximize the window." },
     { s: "Spend 2 Prep. Next hit above 10 dmg is halved.",
-      f: "No energy cost — just Preparation. Hold it in reserve for telegraphed heavy hits. Has no effect on weak attacks below 10 damage." },
+      f: "No energy cost - just Preparation. Hold it in reserve for telegraphed heavy hits. Has no effect on weak attacks below 10 damage." },
     { s: "Spend 2 Prep. Trap: 28 dmg + Stun for 2 turns.",
-      f: "The apex trap. Guaranteed massive damage and a 2-turn stun that shuts down ANY enemy — melee or ranged, attacker or caster. Save your Preparation for elites and bosses." },
+      f: "The apex trap. Guaranteed massive damage and a 2-turn stun that shuts down ANY enemy - melee or ranged, attacker or caster. Save your Preparation for elites and bosses." },
 ];
 for (var _i = 0; _i < 10; _i++) {
     global.abilities_shadowstrider[_i].desc_short = _ss_d[_i].s;
@@ -533,7 +542,7 @@ for (var _i = 0; _i < 10; _i++) {
 
 
 // =============================================================================
-// ABILITIES EXPANSION — general pool + 3 extra abilities per class
+// ABILITIES EXPANSION - general pool + 3 extra abilities per class
 // Gated free / Vex-gold / progression-goal (see ability_unlock_info()).
 // New class abilities are appended via array_push so the indexed literals above
 // and abilities_get_loadout()'s index references stay valid.
@@ -548,13 +557,13 @@ global.abilities_general = [
 ];
 var _gen_d = [
     { s:"Deal 10 physical dmg. Reliable, cheap attack.",
-      f:"A dependable physical strike any class can throw every turn. Cheap and accurate — your fallback when resources run dry." },
-    { s:"Heal 12 HP. Basic self-sustain.",
-      f:"A quick patch-up that costs only 1 AP. No setup, no resource — top yourself off between bigger plays." },
+      f:"A dependable physical strike any class can throw every turn. Cheap and accurate - your fallback when resources run dry." },
+    { s:"Heal 14 HP. 2-turn cooldown.",
+      f:"A quick 1-AP patch-up - restores 14 HP on a 2-turn cooldown (no longer once per combat). No setup, no resource; top yourself off between bigger plays." },
     { s:"Heal 10 HP and restore 1 secondary resource.",
       f:"Recovers HP and refunds 1 Soul / Blood / Preparation. Great for stretching a long fight when both bars run low." },
     { s:"+1 AP this turn (once per combat).",
-      f:"Costs no AP and instantly grants an extra action point — but only once per fight. Save it for the turn you need a burst of tempo." },
+      f:"Costs no AP and instantly grants an extra action point - but only once per fight. Save it for the turn you need a burst of tempo." },
 ];
 for (var _i = 0; _i < array_length(global.abilities_general); _i++) {
     global.abilities_general[_i].desc_short = _gen_d[_i].s;
@@ -568,11 +577,11 @@ array_push(global.abilities_arcanist,
     ability_define("Singularity", 3,3,  32,1,  88,false, 2,10, "damage",0,0,  false));
 var _arc_x = [
     { s:"Deal 10 void dmg. Silence target 3 turns (can't cast).",
-      f:"Sever the target's mana: a silenced enemy can't take spell actions for 3 turns. Shuts down casters and ranged spellcasters cold — useless on pure melee bruisers, who don't cast anyway." },
+      f:"Sever the target's mana: a silenced enemy can't take spell actions for 3 turns. Shuts down casters and ranged spellcasters cold - useless on pure melee bruisers, who don't cast anyway." },
     { s:"Spend 1 Soul. Deal 14 elemental dmg, +4 per Soul held.",
       f:"An elemental echo that grows with your Soul reserve. The fuller your Souls when you cast, the harder it detonates." },
     { s:"Spend 3 Souls. Deal 32 elemental dmg. Ultimate.",
-      f:"Collapse your hoarded Souls into a single devastating arcane detonation — your highest-damage finisher." },
+      f:"Collapse your hoarded Souls into a single devastating arcane detonation - your highest-damage finisher." },
 ];
 for (var _i = 0; _i < 3; _i++) {
     global.abilities_arcanist[10 + _i].desc_short = _arc_x[_i].s;
@@ -590,7 +599,7 @@ var _bw_x = [
     { s:"Deal 18 physical dmg. Target takes +5 dmg for 3 turns.",
       f:"A bone-shattering blow that shreds the target's defenses, leaving them to take +5 from every follow-up. Strong elite opener." },
     { s:"Spend 3 Blood. Deal 22 blood dmg and heal 18 HP. Ultimate.",
-      f:"Your apex strike — a massive blood blow that returns a huge heal on impact. Swings a losing fight back in your favor." },
+      f:"Your apex strike - a massive blood blow that returns a huge heal on impact. Swings a losing fight back in your favor." },
 ];
 for (var _i = 0; _i < 3; _i++) {
     global.abilities_bloodwarden[10 + _i].desc_short = _bw_x[_i].s;
@@ -604,11 +613,11 @@ array_push(global.abilities_shadowstrider,
     ability_define("Killing Spree", 3,2,  12,0,  86,false, 1,12, "damage",0,0,  false));
 var _ss_x = [
     { s:"Deal 16 physical dmg. High precision crit.",
-      f:"A rapid flurry of strikes with a sky-high crit chance — your most reliable burst once it's unlocked." },
+      f:"A rapid flurry of strikes with a sky-high crit chance - your most reliable burst once it's unlocked." },
     { s:"~(50% + WIS) chance to dodge the next attack; your next hit deals +12 dmg.",
-      f:"Slip out of sight for a (50% + WIS*2)% chance — capped 85% — to dodge the next attack, then explode from cover for bonus damage on your following strike. Stun halves the dodge odds." },
+      f:"Slip out of sight for a (50% + WIS*2)% chance - capped 85% - to dodge the next attack, then explode from cover for bonus damage on your following strike. Stun halves the dodge odds." },
     { s:"Spend 2 Prep. Deal 14 dmg, +5 per debuff on target. Ultimate.",
-      f:"Rewards setup — the more debuffs, traps, and marks stacked on the target, the more this carves off. Your payoff finisher." },
+      f:"Rewards setup - the more debuffs, traps, and marks stacked on the target, the more this carves off. Your payoff finisher." },
 ];
 for (var _i = 0; _i < 3; _i++) {
     global.abilities_shadowstrider[10 + _i].desc_short = _ss_x[_i].s;
@@ -617,7 +626,7 @@ for (var _i = 0; _i < 3; _i++) {
 
 
 // =============================================================================
-// §3 ABILITY REWORK — setup->payoff damage abilities (one free primer per class,
+// §3 ABILITY REWORK - setup->payoff damage abilities (one free primer per class,
 // one Vex-gated payoff per class). Pushed at indices 13-14 so all earlier index
 // literals and abilities_get_loadout() references stay valid. Combo riders live
 // in obj_combat_controller/Step_0 next to the Snipe / Arcane Echo hooks. See
@@ -626,7 +635,7 @@ for (var _i = 0; _i < 3; _i++) {
 
 // --- ARCANIST: Scorch (free primer) + Soul Nova (Vex payoff) ---
 array_push(global.abilities_arcanist,
-    // 13: Scorch — cheap Expose primer. Applies vulnerable so Arcane Burst / Snipe
+    // 13: Scorch - cheap Expose primer. Applies vulnerable so Arcane Burst / Snipe
     //     / Soul Nova land harder. Pure data (effect_type "debuff" -> vulnerable).
     ability_define("Scorch",
         /*energy*/1, /*secondary*/0,
@@ -635,7 +644,7 @@ array_push(global.abilities_arcanist,
         /*crit_type*/2, /*base_crit*/6, // arcane (INT)
         /*effect_type*/"debuff", /*effect_value*/3, /*duration*/2, // Exposed +3/hit, 2 turns
         /*self*/false),
-    // 14: Soul Nova — flexible mid-cost soul DUMP. Consumes up to 4 Souls for +7
+    // 14: Soul Nova - flexible mid-cost soul DUMP. Consumes up to 4 Souls for +7
     //     damage each (rider). Build with Soulfire/Scorch, dump here or in Burst.
     ability_define("Soul Nova",
         /*energy*/2, /*secondary*/0,    // souls consumed by the rider, not secondary_cost
@@ -644,14 +653,14 @@ array_push(global.abilities_arcanist,
         /*crit_type*/2, /*base_crit*/8, // arcane (INT)
         /*effect_type*/"damage", /*effect_value*/0, /*duration*/0,
         /*self*/false));
-global.abilities_arcanist[13].desc_short = "Deal 8 elemental dmg. Expose target (+3 dmg/hit, 2t).";
-global.abilities_arcanist[13].desc_full  = "A cheap setup spell: chip damage plus an Exposed mark that makes every follow-up hit land for +3. Open with this, then detonate with Arcane Burst or Soul Nova.";
+global.abilities_arcanist[13].desc_short = "8 fire dmg. Sear [Fire+]: +3 fire/hit 2t. +1 Soul.";
+global.abilities_arcanist[13].desc_full  = "A cheap fire primer: 8 fire damage, then a Searing mark [Fire+] that makes every follow-up hit deal +3 fire damage for 2 turns, and banks 1 Soul. Open with this, then detonate with Arcane Burst or Soul Nova.";
 global.abilities_arcanist[14].desc_short = "Spend up to 4 Souls. Deal 8 elem +7 per Soul spent.";
-global.abilities_arcanist[14].desc_full  = "Dump your banked Souls into one flexible blast — up to 4 Souls for +7 damage each. Cheaper and more flexible than Arcane Burst; rewards a turn or two of Soul generation.";
+global.abilities_arcanist[14].desc_full  = "Dump your banked Souls into one flexible blast - up to 4 Souls for +7 damage each. Cheaper and more flexible than Arcane Burst; rewards a turn or two of Soul generation.";
 
 // --- BLOODWARDEN: Cleave (free filler) + Rupture (Vex payoff) ---
 array_push(global.abilities_bloodwarden,
-    // 13: Cleave — a 1-AP sweeping AoE (hits ALL enemies) so it's distinct from
+    // 13: Cleave - a 1-AP sweeping AoE (hits ALL enemies) so it's distinct from
     //     the general-pool Strike (single-target). The cheap clear-the-chaff tool
     //     for Bloodwarden; lower per-target damage than a focused hit. is_aoe set below.
     ability_define("Cleave",
@@ -661,24 +670,24 @@ array_push(global.abilities_bloodwarden,
         /*crit_type*/0, /*base_crit*/8, // power (STR)
         /*effect_type*/"damage", /*effect_value*/0, /*duration*/0,
         /*self*/false),
-    // 14: Rupture — bleed DETONATOR. Consumes all bleed/DoT stacks on the target
+    // 14: Rupture - bleed DETONATOR. Consumes all bleed/DoT stacks on the target
     //     for +5 damage per remaining tick (rider). Pairs with Gore Strike /
     //     Serrated Strikes / poison. Weak with no setup, brutal with a full stack.
     ability_define("Rupture",
         /*energy*/2, /*secondary*/0,
-        /*damage*/8, /*dtype*/3,        // blood — bypasses armor
+        /*damage*/8, /*dtype*/3,        // blood - bypasses armor
         /*acc*/84, /*guaranteed*/false,
-        /*crit_type*/2, /*base_crit*/8, // arcane (INT) — scales with Blood theme
+        /*crit_type*/2, /*base_crit*/8, // arcane (INT) - scales with Blood theme
         /*effect_type*/"damage", /*effect_value*/0, /*duration*/0,
         /*self*/false));
 global.abilities_bloodwarden[13].desc_short = "Deal 9 physical dmg to ALL enemies. Cheap sweep.";
-global.abilities_bloodwarden[13].desc_full  = "A 1-AP sweeping strike that hits every enemy — your cheap clear-the-chaff tool. Less per-target than a focused hit, but it softens a whole pack and opens bleeds across the board.";
+global.abilities_bloodwarden[13].desc_full  = "A 1-AP sweeping strike that hits every enemy - your cheap clear-the-chaff tool. Less per-target than a focused hit, but it softens a whole pack and opens bleeds across the board.";
 global.abilities_bloodwarden[14].desc_short = "Detonate all bleeds on target: +5 dmg per remaining tick.";
-global.abilities_bloodwarden[14].desc_full  = "Burst every bleed and poison on the target at once — 8 blood damage plus 5 for each remaining tick, consuming the stacks. Build bleeds with Gore Strike, then Rupture for a payoff hit.";
+global.abilities_bloodwarden[14].desc_full  = "Burst every bleed and poison on the target at once - 8 blood damage plus 5 for each remaining tick, consuming the stacks. Build bleeds with Gore Strike, then Rupture for a payoff hit.";
 
 // --- SHADOWSTRIDER: Throat Slit (free primer) + Assassinate (Vex payoff) ---
 array_push(global.abilities_shadowstrider,
-    // 13: Throat Slit — dedicated cheap Expose primer (cleaner than waiting on
+    // 13: Throat Slit - dedicated cheap Expose primer (cleaner than waiting on
     //     Poison Dart's slow DoT). Sets up Snipe / Assassinate / Flurry.
     ability_define("Throat Slit",
         /*energy*/1, /*secondary*/0,
@@ -687,7 +696,7 @@ array_push(global.abilities_shadowstrider,
         /*crit_type*/1, /*base_crit*/8, // precision (DEX)
         /*effect_type*/"debuff", /*effect_value*/4, /*duration*/2, // Exposed +4/hit, 2 turns
         /*self*/false),
-    // 14: Assassinate — execute finisher. +100% damage on a target below 30% HP
+    // 14: Assassinate - execute finisher. +100% damage on a target below 30% HP
     //     (rider). Spends 2 Prep. Rewards reading the board for the kill turn.
     ability_define("Assassinate",
         /*energy*/3, /*secondary*/2,
@@ -697,47 +706,47 @@ array_push(global.abilities_shadowstrider,
         /*effect_type*/"damage", /*effect_value*/0, /*duration*/0,
         /*self*/false));
 global.abilities_shadowstrider[13].desc_short = "Deal 5 physical dmg. Expose target (+4 dmg/hit, 2t).";
-global.abilities_shadowstrider[13].desc_full  = "A quick cut that Exposes the target — every follow-up hit lands for +4 for 2 turns. Your cheapest setup; chain it into Snipe, Flurry, or Assassinate.";
+global.abilities_shadowstrider[13].desc_full  = "A quick cut that Exposes the target - every follow-up hit lands for +4 for 2 turns. Your cheapest setup; chain it into Snipe, Flurry, or Assassinate.";
 global.abilities_shadowstrider[14].desc_short = "Spend 2 Prep. Deal 24 dmg, DOUBLED if target below 30% HP.";
-global.abilities_shadowstrider[14].desc_full  = "A precision finisher: heavy damage that deals DOUBLE against a target below 30% HP. Save it for the kill — when the execute lands it's your biggest single hit.";
+global.abilities_shadowstrider[14].desc_full  = "A precision finisher: heavy damage that deals DOUBLE against a target below 30% HP. Save it for the kill - when the execute lands it's your biggest single hit.";
 
 
 // =============================================================================
-// AoE TAGS — abilities that resolve against EVERY living enemy.
+// AoE TAGS - abilities that resolve against EVERY living enemy.
 // Default (tag absent) = single-target. aoe_falloff defaults to 1.0 (full
 // damage to all); combat reads `ab.is_aoe` and `ab.aoe_falloff`.
 // =============================================================================
-global.abilities_arcanist[8].is_aoe       = true;   // Rift        — elemental nuke, all enemies
-global.abilities_arcanist[12].is_aoe      = true;   // Singularity — ultimate, all enemies
-global.abilities_shadowstrider[4].is_aoe  = true;   // Smoke Bomb  — blind, all enemies (no damage)
-global.abilities_bloodwarden[13].is_aoe   = true;   // Cleave      — 1-AP sweep, all enemies (vs single-target Strike)
+global.abilities_arcanist[8].is_aoe       = true;   // Rift        - elemental nuke, all enemies
+global.abilities_arcanist[12].is_aoe      = true;   // Singularity - ultimate, all enemies
+global.abilities_shadowstrider[4].is_aoe  = true;   // Smoke Bomb  - blind, all enemies (no damage)
+global.abilities_bloodwarden[13].is_aoe   = true;   // Cleave      - 1-AP sweep, all enemies (vs single-target Strike)
 
 
 // =============================================================================
-// SCHOOL TAGS — explicit `school` overrides where flavor deviates from the
+// SCHOOL TAGS - explicit `school` overrides where flavor deviates from the
 // damage_type default (see ability_school()). Everything not listed inherits the
 // default: dtype 1->arcane, 2->void, 3->blood, physical->none. So the arcane
 // (Arcane Burst/Rift/Echo/Singularity/Soul Nova), void (Void Drain/Entropy/Mana
 // Sever) and blood (Blood Leech/Vital Theft/Bloodfeast/Crimson Apex/Rupture)
 // abilities need no tag here. (SYSTEMS_ELEMENT_SCHOOLS.md §B.)
 // =============================================================================
-global.abilities_arcanist[0].school  = "fire";    // Soulfire     — elemental -> fire
-global.abilities_arcanist[5].school  = "shadow";  // Curse        — dark hex (no dmg; flavor)
-global.abilities_arcanist[9].school  = "shadow";  // Soulbind     — dark binding
-global.abilities_arcanist[13].school = "fire";    // Scorch       — burn primer
+global.abilities_arcanist[0].school  = "fire";    // Soulfire     - elemental -> fire
+global.abilities_arcanist[5].school  = "shadow";  // Curse        - dark hex (no dmg; flavor)
+global.abilities_arcanist[9].school  = "shadow";  // Soulbind     - dark binding
+global.abilities_arcanist[13].school = "fire";    // Scorch       - burn primer
 
-global.abilities_bloodwarden[8].school = "poison"; // Plague Touch — plague (no dmg; flavor)
+global.abilities_bloodwarden[8].school = "poison"; // Plague Touch - plague (no dmg; flavor)
 
-global.abilities_shadowstrider[3].school = "poison"; // Poison Dart — the poison ability
+global.abilities_shadowstrider[3].school = "poison"; // Poison Dart - the poison ability
 
 
 // =============================================================================
-// ATTACK CLASSIFICATION — reach (melee/ranged) x kind (attack/spell).
+// ATTACK CLASSIFICATION - reach (melee/ranged) x kind (attack/spell).
 // Control effects key off this: root blocks melee, silence blocks spell, stun all.
 // See SYSTEMS_ATTACK_CLASS.md.
 // =============================================================================
 
-// ability_attack_class(ab) → "melee_attack" | "ranged_attack" | "melee_spell" |
+// ability_attack_class(ab) -> "melee_attack" | "ranged_attack" | "melee_spell" |
 // "ranged_spell" | "none" (self/buff). kind derives from damage_type (physical =
 // attack, else spell); reach from the MELEE name set below.
 function ability_attack_class(ab) {
@@ -791,13 +800,15 @@ function ability_attack_class_tag(ab) {
 // ability struct). Pass an ability struct.
 function ability_cooldown(ab) {
     switch (ab.name) {
-        case "Blink":       return 2;
-        case "Shadow Step": return 2;
+        case "Blink":          return 2;
+        case "Shadow Step":    return 2;
+        case "Field Dressing": return 2;   // was once-per-combat; now a 2-turn CD like Blink
+        case "Void Drain":     return 2;   // cheap 1-AP heal/Soul, gated by a 2-turn CD
     }
     return 0;
 }
 
-// ability_is_detonator(ab) — true for abilities that trigger status reactions on
+// ability_is_detonator(ab) - true for abilities that trigger status reactions on
 // hit (see SYSTEMS_VIABILITY_PASS.md). Accepts a struct or a name string.
 function ability_is_detonator(ab) {
     var _n = is_struct(ab) ? ab.name : ab;
@@ -806,15 +817,127 @@ function ability_is_detonator(ab) {
 
 
 // =============================================================================
-// ELEMENT SCHOOLS — damage-flavor layer ON TOP of the coarse damage_type buckets
+// ABILITY ROLE CATEGORY - Offense / Defense / Support / Control
+// (SYSTEMS_ABILITY_SYNERGY.md). A role axis orthogonal to the reachxkind attack
+// class. Drives the same-category AP synergy discount and the category colour
+// coding. Name-keyed overrides (hybrids + the design's explicit classifications)
+// win over a derivation fallback, so nothing is ever homeless. Pass a struct or a
+// bare name string.
+// =============================================================================
+function ability_category(ab) {
+    var _n = is_struct(ab) ? ab.name : ab;
+
+    // --- Name-keyed overrides ---
+    switch (_n) {
+        // offense - damage IS the point (traps included: damage tools that also CC,
+        // classed offense so trap users still get the offense discount - tunable).
+        case "Strike":       case "Cleave":        case "Snipe":         case "Flurry":
+        case "Killing Spree": case "Throat Slit":  case "Assassinate":   case "Gore Strike":
+        case "Marrow Crush": case "Bonebreaker":   case "Crimson Apex":  case "Rupture":
+        case "Soulfire":     case "Arcane Burst":  case "Soul Nova":     case "Arcane Echo":
+        case "Singularity":  case "Rift":          case "Scorch":        case "Poison Dart":
+        case "Crippling Shot": case "Mana Sever":  case "Vital Theft":   case "Soulbind":
+        case "Bear Trap":    case "Spike Trap":    case "Death Trap":
+            return "offense";
+
+        // defense - self-protection
+        case "Iron Skin":    case "Bloodthorn Aura": case "Soul Shield": case "Blink":
+        case "Shadow Step":  case "Evasive Roll":  case "Vanish":        case "Undying":
+            return "defense";
+
+        // support - heal / buff / resource (incl. sustain-primary hybrids: Void Drain,
+        // Blood Leech - judgment calls, tunable).
+        case "Field Dressing": case "Void Drain":  case "Blood Surge":   case "Second Wind":
+        case "Adrenaline Rush": case "Soul Harvest": case "Sanguine Pact": case "Bloodfeast":
+        case "Blood Leech":
+            return "support";
+
+        // control - pure debuff / CC, no damage as the point (Entropy is DoT-only
+        // debuff - judgment call, tunable).
+        case "Curse":        case "Smoke Bomb":    case "Marked for Death": case "Entropy":
+        case "Plague Touch":
+            return "control";
+    }
+
+    // --- Derivation fallback (only reached by abilities not named above) ---
+    if (!is_struct(ab)) return "offense";   // bare name, no struct to inspect - safe default
+    var _self  = variable_struct_exists(ab, "self_targeted") && ab.self_targeted;
+    var _etype = variable_struct_exists(ab, "effect_type")  ? ab.effect_type  : "none";
+    var _dmg   = variable_struct_exists(ab, "base_damage")  ? ab.base_damage  : 0;
+
+    if (_self) {
+        // self-targeted protective status (shield / dodge / survival / reflect) -> defense;
+        // otherwise heal / resource / other self-buff -> support.
+        if (_etype == "shield" || _etype == "status") return "defense";
+        return "support";
+    }
+    if (_dmg == 0) return "control";   // no damage, aimed outward = pure debuff / CC
+    return "offense";                  // deals damage = offense
+}
+
+// Display label for a category string ("offense" -> "Offense"); "" -> "".
+function ability_category_label(_cat) {
+    switch (_cat) {
+        case "offense": return "Offense";
+        case "defense": return "Defense";
+        case "support": return "Support";
+        case "control": return "Control";
+    }
+    return "";
+}
+
+// Short role-tag text for an ability, e.g. "[Offense]" - drawn as a category-coloured
+// chip on the loadout / Vex rows (mirrors ability_attack_class_tag). "" if homeless.
+function ability_category_tag(ab) {
+    var _lbl = ability_category_label(ability_category(ab));
+    return (_lbl != "") ? ("[" + _lbl + "]") : "";
+}
+
+// UI colour for a category (offense red / defense blue / support green / control purple).
+function ability_category_color(_cat) {
+    switch (_cat) {
+        case "offense": return make_color_rgb(220,  90,  80);
+        case "defense": return make_color_rgb( 80, 140, 220);
+        case "support": return make_color_rgb( 90, 200, 120);
+        case "control": return make_color_rgb(170, 110, 220);
+    }
+    return c_white;
+}
+
+// ability_synergy_active(ab, caster) - true when an ability of THIS ability's role
+// category was already cast THIS player turn, so the same-category synergy discount
+// applies. Reads the per-turn set caster.turn_cast_categories (reset at player-turn
+// start by obj_combat_controller). Safe when the caster/set is missing.
+function ability_synergy_active(ab, caster) {
+    if (is_undefined(caster) || !variable_struct_exists(caster, "turn_cast_categories")) return false;
+    var _cat = ability_category(ab);
+    var _set = caster.turn_cast_categories;
+    return variable_struct_exists(_set, _cat) && _set[$ _cat];
+}
+
+// ability_effective_cost(ab, caster) - SINGLE SOURCE OF TRUTH for the AP a caster
+// pays for an ability right now, after the same-category synergy discount (-1 AP,
+// floor 1). Used by the UI cost display and standalone gates; the combat cast block
+// folds the same -1 into its inline discount stack (Quickcast/Cracked Focus/etc.) so
+// every path agrees. Free (0-AP) abilities stay 0; only AP is discounted, never the
+// secondary resource. Pass the casting player as `caster` (may be undefined -> no discount).
+function ability_effective_cost(ab, caster) {
+    var _base = variable_struct_exists(ab, "energy_cost") ? ab.energy_cost : 0;
+    if (_base <= 0) return _base;   // free abilities stay free
+    return max(1, _base - (ability_synergy_active(ab, caster) ? 1 : 0));
+}
+
+
+// =============================================================================
+// ELEMENT SCHOOLS - damage-flavor layer ON TOP of the coarse damage_type buckets
 // (SYSTEMS_ELEMENT_SCHOOLS.md). School is METADATA only: damage_type still governs
 // mitigation; the school tags an ability for build identity and "+X <school> damage"
 // gear affixes. Eight schools: fire / frost / shock / arcane / blood / void /
-// shadow / poison. frost & shock have no ability content yet (sparse by design —
+// shadow / poison. frost & shock have no ability content yet (sparse by design -
 // filled by future content + the weapon elemental affixes that apply those statuses).
 // =============================================================================
 
-// ability_school(ab) — the school an ability damages with. Returns an explicit
+// ability_school(ab) - the school an ability damages with. Returns an explicit
 // `school` field if tagged (see the SCHOOL TAGS block below), else a safe default
 // inferred from damage_type so nothing is ever homeless. Physical attacks have no
 // school ("").
@@ -826,7 +949,7 @@ function ability_school(ab) {
         case 2: return "void";     // drain/void-type abilities
         case 1: return "arcane";   // generic elemental until tagged fire/frost/shock
     }
-    return "";                     // physical (0) — no school
+    return "";                     // physical (0) - no school
 }
 
 // Display label for a school string ("fire" -> "Fire"); "" -> "".
@@ -835,7 +958,7 @@ function school_label(school) {
     return string_upper(string_char_at(school, 1)) + string_copy(school, 2, string_length(school) - 1);
 }
 
-// ability_school_list() — the eight schools in canonical order (Compendium +
+// ability_school_list() - the eight schools in canonical order (Compendium +
 // the school_dmg accumulator iteration).
 function ability_school_list() {
     return ["fire", "frost", "shock", "arcane", "blood", "void", "shadow", "poison"];
@@ -846,7 +969,7 @@ function ability_school_list() {
 // DYNAMIC ABILITY DESCRIPTIONS (single source of truth).
 // Built entirely from the ability's LIVE fields, so the text auto-updates when
 // the numbers change (future ability leveling, buffs, etc.). Used by the combat
-// tooltip AND the loadout screen — write nothing twice, nothing can drift.
+// tooltip AND the loadout screen - write nothing twice, nothing can drift.
 // See ROADMAP.md §2.
 // =============================================================================
 
@@ -855,10 +978,23 @@ function ability_dtype_name(dt) {
     return "physical";
 }
 
+// ability_damage_word(ab) - the damage-type word shown to the player. Prefers the
+// concrete elemental school (fire/frost/shock) over the generic "elemental" so a
+// schooled ability reads as its actual flavor (Soulfire/Scorch -> "fire"); arcane,
+// void, blood and physical fall back to the plain damage_type name. (Element Schools)
+function ability_damage_word(ab) {
+    var _dt = variable_struct_exists(ab, "damage_type") ? ab.damage_type : 0;
+    if (_dt == 1) {
+        var _sch = ability_school(ab);
+        if (_sch == "fire" || _sch == "frost" || _sch == "shock") return _sch;
+    }
+    return ability_dtype_name(_dt);
+}
+
 // "1 turn" / "N turns"
 function ability_turns(n) { return string(n) + (n == 1 ? " turn" : " turns"); }
 
-// ability_effect_full(ab) — everything the ability DOES except the raw damage number
+// ability_effect_full(ab) - everything the ability DOES except the raw damage number
 // (shown separately as a stat line). Magnitudes/durations come from live fields.
 function ability_effect_full(ab) {
     var _ev = variable_struct_exists(ab, "effect_value")    ? ab.effect_value    : 0;
@@ -880,8 +1016,8 @@ function ability_effect_full(ab) {
         case "Adrenaline Rush": _b = "Gain +1 AP this turn (once per combat)."; break;
         case "Sanguine Pact":   _b = "Spend 8 HP to gain 3 Blood."; break;
         case "Second Wind":     _b = "Also restore 1 secondary resource (Soul / Blood / Prep)."; break;
-        case "Blink":           _b = "Blink away: ~(50% + WIS) chance to dodge the next attack. 2-turn cooldown."; break;
-        case "Shadow Step":     _b = "~(50% + WIS) chance to dodge the next single-target attack. 2-turn cooldown."; break;
+        case "Blink":           _b = "Fully dodge the next attack; the 2nd hit after takes 50% less and the 3rd 25% less. 2-turn cooldown."; break;
+        case "Shadow Step":     _b = "~(50% + WIS) chance to dodge each of the next 3 attacks. 2-turn cooldown."; break;
         case "Evasive Roll":    _b = "Halve the next incoming hit above 10 damage."; break;
         case "Vanish":          _b = "~(50% + WIS) chance to dodge the next attack; your next strike deals +12 damage."; break;
         case "Bloodthorn Aura": _b = "Reflect " + string(_ev) + " damage to attackers for " + ability_turns(_ed) + "."; break;
@@ -895,7 +1031,7 @@ function ability_effect_full(ab) {
     // Detonators surface their reaction behavior (full table in Compendium > Status
     // Reactions). See SYSTEMS_VIABILITY_PASS.md.
     if (ab.name == "Snipe" || ab.name == "Assassinate" || ab.name == "Arcane Burst" || ab.name == "Soul Nova") {
-        array_push(_parts, "Detonator: reacts with a status on the target — Exposed +12 dmg, Root +30%, Stun guaranteed crit, Poison applies Mortality, Bleed/Void detonate. (See Status Reactions.)");
+        array_push(_parts, "Detonator: reacts with a status on the target - Exposed +12 dmg, Root +30%, Stun guaranteed crit, Poison applies Mortality, Bleed/Void detonate. (See Status Reactions.)");
     }
 
     // Standard effect from the typed status kind / effect_type.
@@ -904,7 +1040,7 @@ function ability_effect_full(ab) {
     switch (_k) {
         case "dot":
             // Name the DoT flavor (bleed / poison / burn / void) so it's clear what
-            // kind of tick this is — and which detonation reaction it enables.
+            // kind of tick this is - and which detonation reaction it enables.
             var _dot_el = ability_status_element(ab);
             var _dot_word = (_dot_el != "") ? (_dot_el + " ") : "";
             _s = "Applies " + string(_ev) + " " + _dot_word + "damage/turn for " + ability_turns(_ed)
@@ -914,11 +1050,17 @@ function ability_effect_full(ab) {
         case "stun":       _s = "Stuns the target for " + ability_turns(_ed) + " (any enemy can't act)."; break;
         case "root":       _s = "Roots the target for " + ability_turns(_ed) + " (melee enemies skip; ranged still attack)."; break;
         case "vulnerable": _s = "Target takes +" + string(_ev) + " damage per hit for " + ability_turns(_ed) + "."; break;
+        case "firemark":
+            // Scorch's mark: every follow-up hit deals +N TRUE FIRE damage (reduced by
+            // the target's elemental resist). Banks a Soul on cast. Badges [Fire+].
+            _s = "Sears the target [Fire+]: every hit on it deals +" + string(_ev) + " fire damage for " + ability_turns(_ed) + ", and banks 1 Soul.";
+            break;
         case "weaken":     _s = "Target deals " + string(round(_ev * 100)) + "% less damage for " + ability_turns(_ed) + "."; break;
         case "blind":      _s = "Reduces target accuracy by " + string(round(_ev * 100)) + "% for " + ability_turns(_ed) + "."; break;
         case "mortality":  _s = "Reduces target healing by " + string(round(_ev * 100)) + "% for " + ability_turns(_ed) + "."; break;
         default:
-            if (_et == "heal")        _s = "Restores " + string(_ev) + " HP.";
+            if (_et == "heal")        _s = "Restores " + string(_ev) + " HP."
+                                         + (ability_cooldown(ab) > 0 ? (" " + string(ability_cooldown(ab)) + "-turn cooldown.") : "");
             else if (_et == "shield") _s = (_ed > 0)
                 ? ("Reduces incoming damage by " + string(_ev) + " for " + ability_turns(_ed) + ".")
                 : ("Absorbs the next " + string(_ev) + " damage.");
@@ -930,14 +1072,14 @@ function ability_effect_full(ab) {
     return _out;
 }
 
-// ability_describe(ab) — full standalone description: damage clause + all effects.
+// ability_describe(ab) - full standalone description: damage clause + all effects.
 // This is the one canonical description shown on every screen.
 function ability_describe(ab) {
     var _out = "";
     if (variable_struct_exists(ab, "base_damage") && ab.base_damage > 0) {
         var _dt  = variable_struct_exists(ab, "damage_type") ? ab.damage_type : 0;
         var _aoe = (variable_struct_exists(ab, "is_aoe") && ab.is_aoe && !trait_active("Focused Power"));
-        _out = "Deal " + string(ab.base_damage) + " " + ability_dtype_name(_dt) + " damage"
+        _out = "Deal " + string(ab.base_damage) + " " + ability_damage_word(ab) + " damage"
              + (_aoe ? " to all enemies" : "") + ".";
     }
     var _eff = ability_effect_full(ab);
@@ -946,7 +1088,7 @@ function ability_describe(ab) {
     return _out;
 }
 
-// ability_summary(ab) — compact one-line version for tight list rows (loadout list,
+// ability_summary(ab) - compact one-line version for tight list rows (loadout list,
 // Vex shop). Same live-field source, just abbreviated.
 function ability_summary(ab) {
     var _ev = variable_struct_exists(ab, "effect_value")    ? ab.effect_value    : 0;
@@ -954,7 +1096,7 @@ function ability_summary(ab) {
     var _et = variable_struct_exists(ab, "effect_type")     ? ab.effect_type     : "none";
     var _p = [];
     if (variable_struct_exists(ab, "base_damage") && ab.base_damage > 0) {
-        array_push(_p, string(ab.base_damage) + " " + ability_dtype_name(ab.damage_type));
+        array_push(_p, string(ab.base_damage) + " " + ability_damage_word(ab));
     }
     var _tag = "";
     switch (ability_status_kind(ab)) {
@@ -963,11 +1105,12 @@ function ability_summary(ab) {
         case "stun":       _tag = "Stun " + string(_ed) + "t"; break;
         case "root":       _tag = "Root " + string(_ed) + "t"; break;
         case "vulnerable": _tag = "+" + string(_ev) + " dmg taken " + string(_ed) + "t"; break;
+        case "firemark":   _tag = "[Fire+] +" + string(_ev) + " fire/hit " + string(_ed) + "t, +1 Soul"; break;
         case "weaken":     _tag = "-" + string(round(_ev * 100)) + "% dmg " + string(_ed) + "t"; break;
         case "blind":      _tag = "-" + string(round(_ev * 100)) + "% acc " + string(_ed) + "t"; break;
         case "mortality":  _tag = "-" + string(round(_ev * 100)) + "% heal " + string(_ed) + "t"; break;
         default:
-            if (_et == "heal")        _tag = "Heal " + string(_ev);
+            if (_et == "heal")        _tag = "Heal " + string(_ev) + (ability_cooldown(ab) > 0 ? (" " + string(ability_cooldown(ab)) + "t CD") : "");
             else if (_et == "shield") _tag = (_ed > 0) ? ("-" + string(_ev) + " dmg " + string(_ed) + "t") : ("Shield " + string(_ev));
     }
     if (_tag == "") {
@@ -984,8 +1127,8 @@ function ability_summary(ab) {
             case "Snipe":           _tag = "+" + string(_ev) + " if debuffed"; break;
             case "Adrenaline Rush": _tag = "+1 AP"; break;
             case "Sanguine Pact":   _tag = "HP -> Blood"; break;
-            case "Blink":           _tag = "Dodge chance, 2t CD"; break;
-            case "Shadow Step":     _tag = "Dodge chance, 2t CD"; break;
+            case "Blink":           _tag = "Dodge 1, soften 2 - 2t CD"; break;
+            case "Shadow Step":     _tag = "Dodge chance x3 - 2t CD"; break;
             case "Evasive Roll":    _tag = "Halve next hit"; break;
             case "Vanish":          _tag = "Vanish, +12 next"; break;
             case "Bloodthorn Aura": _tag = "Thorns " + string(_ev) + "/" + string(_ed) + "t"; break;
@@ -999,7 +1142,7 @@ function ability_summary(ab) {
     if (variable_struct_exists(ab, "is_aoe") && ab.is_aoe) array_push(_p, "all enemies");
 
     var _o = "";
-    for (var _i = 0; _i < array_length(_p); _i++) _o += (_i > 0 ? " · " : "") + _p[_i];
+    for (var _i = 0; _i < array_length(_p); _i++) _o += (_i > 0 ? " - " : "") + _p[_i];
     return (_o == "") ? "Utility" : _o;
 }
 
@@ -1010,17 +1153,17 @@ function ability_summary(ab) {
 // Gate before each run (up to 2 active at once via global.player_traits).
 //
 // Trait field reference:
-//   name         string  — display name; also the key stored in player_traits
-//   description  string  — one-line effect summary shown in the gate overlay
-//   class_req    int     — -1 = any class, 0/1/2 = class-specific
-//   unlock_type  string  — "default", "full_clear", "char_level", "boss_kill"
-//   unlock_value real    — threshold relevant to unlock_type (0 if not used)
-//   effect_id    string  — snake_case key in global.traits_unlocked struct
+//   name         string  - display name; also the key stored in player_traits
+//   description  string  - one-line effect summary shown in the gate overlay
+//   class_req    int     - -1 = any class, 0/1/2 = class-specific
+//   unlock_type  string  - "default", "full_clear", "char_level", "boss_kill"
+//   unlock_value real    - threshold relevant to unlock_type (0 if not used)
+//   effect_id    string  - snake_case key in global.traits_unlocked struct
 // =============================================================================
 
 // ---------------------------------------------------------------------------
 // trait_define(...)
-// Factory function — returns a fully populated trait struct.
+// Factory function - returns a fully populated trait struct.
 // ---------------------------------------------------------------------------
 function trait_define(name, description, class_req, unlock_type, unlock_value, effect_id) {
     return {
@@ -1055,7 +1198,7 @@ function trait_active(trait_name) {
 global.traits_all = [
 
     // -------------------------------------------------------------------------
-    // UNIVERSAL — unlocked from the start
+    // UNIVERSAL - unlocked from the start
     // -------------------------------------------------------------------------
     trait_define("Sense",
         "Reveals loot quality and threat level of rooms on the floor map.",
@@ -1070,7 +1213,7 @@ global.traits_all = [
         -1, "default", 0, "thick_skin"),
 
     // -------------------------------------------------------------------------
-    // UNIVERSAL — unlocked through dungeon progression
+    // UNIVERSAL - unlocked through dungeon progression
     // -------------------------------------------------------------------------
     trait_define("Quick Recovery",
         "Rest rooms restore 25 HP instead of 15.",
@@ -1109,7 +1252,7 @@ global.traits_all = [
         -1, "total_boss_kills", 3, "last_stand"),
 
     // -------------------------------------------------------------------------
-    // UNIVERSAL — AoE-themed (the burst-vs-spread levers)
+    // UNIVERSAL - AoE-themed (the burst-vs-spread levers)
     // -------------------------------------------------------------------------
     trait_define("Focused Power",
         "AoE abilities instead strike only your target for +50% damage.",
@@ -1124,7 +1267,7 @@ global.traits_all = [
         -1, "dungeon_clears_total", 6, "plaguebearer"),
 
     // -------------------------------------------------------------------------
-    // CLASS: ARCANIST (class_req 0) — unlocked via boss kills
+    // CLASS: ARCANIST (class_req 0) - unlocked via boss kills
     // -------------------------------------------------------------------------
     trait_define("Soul Siphon",
         "Gain +1 Soul whenever an enemy dies (Arcanist only).",
@@ -1139,7 +1282,7 @@ global.traits_all = [
         0, "total_boss_kills", 4, "arcane_surge"),
 
     // -------------------------------------------------------------------------
-    // CLASS: BLOODWARDEN (class_req 1) — unlocked via boss kills
+    // CLASS: BLOODWARDEN (class_req 1) - unlocked via boss kills
     // -------------------------------------------------------------------------
     trait_define("Crimson Reserve",
         "Start each combat with +20 Blood (Bloodwarden only).",
@@ -1154,7 +1297,7 @@ global.traits_all = [
         1, "total_boss_kills", 4, "berserker_rage"),
 
     // -------------------------------------------------------------------------
-    // CLASS: SHADOWSTRIDER (class_req 2) — unlocked via boss kills
+    // CLASS: SHADOWSTRIDER (class_req 2) - unlocked via boss kills
     // -------------------------------------------------------------------------
     trait_define("Phantom Step",
         "The first enemy attack each combat automatically misses (Shadowstrider only).",
@@ -1172,7 +1315,7 @@ global.traits_all = [
 
 
 // =============================================================================
-// VEX THE TRAINER — helper functions
+// VEX THE TRAINER - helper functions
 // Permanent meta-progression bought from Vex: trait slots, ability unlocks,
 // and trait potency (stat-sacrifice strengthening).
 // =============================================================================
@@ -1235,17 +1378,17 @@ function commit_player_traits(new_traits) {
 // ---------------------------------------------------------------------------
 // ability_unlock_info(ability_name)
 // Returns the gating descriptor for an ability, or undefined when the ability is
-// FREE (a default starter — never listed here). Single source of truth for all
+// FREE (a default starter - never listed here). Single source of truth for all
 // ability gating. Fields:
-//   type       "vex"  — bought from Vex the Trainer for `cost` gold
-//              "goal" — unlocks automatically when a progression goal is met
+//   type       "vex"  - bought from Vex the Trainer for `cost` gold
+//              "goal" - unlocks automatically when a progression goal is met
 //   cost       gold price (vex only; 0 for goal)
 //   goal_type  "char_level" | "total_boss_kills" | "dungeon_clears_total" (goal only)
 //   goal_value threshold for goal_type (goal only)
 // ---------------------------------------------------------------------------
 function ability_unlock_info(ability_name) {
     switch (ability_name) {
-        // ---- VEX (gold purchase) — tiered 100 / 250 / 400 ----
+        // ---- VEX (gold purchase) - tiered 100 / 250 / 400 ----
         // The "goal" type is retained in goal_met / ability_is_unlocked below for
         // FUTURE milestone-free abilities, but no ability currently uses it.
         // General pool
@@ -1290,7 +1433,7 @@ function ability_unlock_info(ability_name) {
 }
 
 // ---------------------------------------------------------------------------
-// ability_unlock_cost(name) — gold price (0 for free / goal-gated abilities).
+// ability_unlock_cost(name) - gold price (0 for free / goal-gated abilities).
 // ---------------------------------------------------------------------------
 function ability_unlock_cost(ability_name) {
     var _info = ability_unlock_info(ability_name);
@@ -1299,7 +1442,7 @@ function ability_unlock_cost(ability_name) {
 }
 
 // ---------------------------------------------------------------------------
-// goal_met(goal_type, goal_value) — true when the named progression goal is met.
+// goal_met(goal_type, goal_value) - true when the named progression goal is met.
 // Reads persistent meta-progression globals so the check is valid in the hub.
 // ---------------------------------------------------------------------------
 function goal_met(goal_type, goal_value) {
@@ -1315,7 +1458,7 @@ function goal_met(goal_type, goal_value) {
 }
 
 // ---------------------------------------------------------------------------
-// ability_unlock_condition_text(name) — one-line gate description for the UI.
+// ability_unlock_condition_text(name) - one-line gate description for the UI.
 // ---------------------------------------------------------------------------
 function ability_unlock_condition_text(ability_name) {
     var _info = ability_unlock_info(ability_name);
@@ -1352,7 +1495,7 @@ function ability_is_unlocked(ability_name) {
 }
 
 // ---------------------------------------------------------------------------
-// abilities_class_pool(class_id) — the full selectable pool for a class: its own
+// abilities_class_pool(class_id) - the full selectable pool for a class: its own
 // abilities followed by the shared general pool. Used everywhere the loadout
 // screen builds its ability list so general abilities are always slottable.
 // ---------------------------------------------------------------------------
@@ -1375,9 +1518,9 @@ function abilities_class_pool(class_id) {
 }
 
 // ---------------------------------------------------------------------------
-// class_vex_purchasable(class_id) — locked vex-gated abilities offered for sale
+// class_vex_purchasable(class_id) - locked vex-gated abilities offered for sale
 // at Vex (class pool + general pool, vex-type only, not yet bought). Goal-gated
-// abilities never appear here — they unlock on their own.
+// abilities never appear here - they unlock on their own.
 // ---------------------------------------------------------------------------
 function class_vex_purchasable(class_id) {
     var _pool = abilities_class_pool(class_id);
@@ -1393,12 +1536,12 @@ function class_vex_purchasable(class_id) {
 }
 
 // =============================================================================
-// VEX TRAIT TRAINER — traits are bought from Vex (gold + a rarity-matched item)
+// VEX TRAIT TRAINER - traits are bought from Vex (gold + a rarity-matched item)
 // instead of unlocking free at progression milestones. The 3 default traits
 // (Sense / Scavenger / Thick Skin, unlock_type "default") remain free at start.
 // =============================================================================
 
-// trait_get_by_name(name) — the trait struct from global.traits_all, or undefined.
+// trait_get_by_name(name) - the trait struct from global.traits_all, or undefined.
 function trait_get_by_name(trait_name) {
     if (!variable_global_exists("traits_all")) return undefined;
     for (var _i = 0; _i < array_length(global.traits_all); _i++) {
@@ -1407,7 +1550,7 @@ function trait_get_by_name(trait_name) {
     return undefined;
 }
 
-// trait_is_unlocked(name) — true for default traits, or when its effect_id flag is
+// trait_is_unlocked(name) - true for default traits, or when its effect_id flag is
 // set in global.traits_unlocked (a Vex purchase is the only thing that sets it now).
 function trait_is_unlocked(trait_name) {
     var _t = trait_get_by_name(trait_name);
@@ -1418,15 +1561,15 @@ function trait_is_unlocked(trait_name) {
     return variable_struct_get(global.traits_unlocked, _t.effect_id);
 }
 
-// trait_unlock_tier(name) — 1/2/3 price tier (see SYSTEMS_VEX_REWORK.md). Anything
+// trait_unlock_tier(name) - 1/2/3 price tier (see SYSTEMS_VEX_REWORK.md). Anything
 // not listed defaults to tier 2.
 function trait_unlock_tier(trait_name) {
     switch (trait_name) {
-        // Tier 1 — utility / economy
+        // Tier 1 - utility / economy
         case "Quick Recovery": case "Treasure Hunter": case "Lucky Find":
         case "Salvager": case "Prospector":
             return 1;
-        // Tier 3 — powerful / build-defining
+        // Tier 3 - powerful / build-defining
         case "Focused Power": case "Chain Caster": case "Plaguebearer":
         case "Arcane Surge": case "Berserker Rage": case "Serrated Strikes":
             return 3;
@@ -1434,7 +1577,7 @@ function trait_unlock_tier(trait_name) {
     return 2;
 }
 
-// trait_unlock_cost(name) — { gold, min_rarity, item_label } for a Vex purchase.
+// trait_unlock_cost(name) - { gold, min_rarity, item_label } for a Vex purchase.
 // min_rarity: 1 uncommon+, 2 rare+, 4 legendary.
 function trait_unlock_cost(trait_name) {
     // Gold is CHA-discounted (the item requirement is unaffected).
@@ -1445,7 +1588,7 @@ function trait_unlock_cost(trait_name) {
     return { gold:cha_price(350), min_rarity:2, item_label:"Rare" };
 }
 
-// trait_vex_purchasable(class_id) — traits Vex offers for the current class: not a
+// trait_vex_purchasable(class_id) - traits Vex offers for the current class: not a
 // default starter, class-appropriate (universal or matching class), not yet owned.
 function trait_vex_purchasable(class_id) {
     var _out = [];
@@ -1461,7 +1604,7 @@ function trait_vex_purchasable(class_id) {
 }
 
 // ---------------------------------------------------------------------------
-// ability_in_loadout(name) — true when the ability is in the confirmed loadout.
+// ability_in_loadout(name) - true when the ability is in the confirmed loadout.
 // ---------------------------------------------------------------------------
 function ability_in_loadout(ability_name) {
     if (!variable_global_exists("player_loadout")) return false;
@@ -1488,7 +1631,7 @@ function loadout_list_scroll(cursor, pool_sz, max_vis) {
 
 // ---------------------------------------------------------------------------
 // class_locked_abilities(class_id)
-// Returns the ability structs for the given class that are not yet unlocked —
+// Returns the ability structs for the given class that are not yet unlocked -
 // i.e. the rows Vex offers for purchase.
 // ---------------------------------------------------------------------------
 function class_locked_abilities(class_id) {
@@ -1524,7 +1667,7 @@ function trait_upgradable_list() {
 }
 
 // ---------------------------------------------------------------------------
-// perm_bonus_key(stat) — maps a 3-letter stat to its global.perm_*_bonus name.
+// perm_bonus_key(stat) - maps a 3-letter stat to its global.perm_*_bonus name.
 // ---------------------------------------------------------------------------
 function perm_bonus_key(stat) {
     switch (stat) {
@@ -1539,7 +1682,7 @@ function perm_bonus_key(stat) {
 }
 
 // ---------------------------------------------------------------------------
-// stat_available_points(stat) — PERMANENT points the player can sacrifice for a
+// stat_available_points(stat) - PERMANENT points the player can sacrifice for a
 // trait-potency upgrade: the starting allocation (global.chosen_stats) PLUS the
 // permanently-bought bonus (perm_<stat>_bonus). Per-run XP bonuses are excluded
 // (they reset each run). Lets Vex spend down even your starting stats.
@@ -1556,7 +1699,7 @@ function stat_available_points(stat) {
 }
 
 // ---------------------------------------------------------------------------
-// stat_spend_permanent(stat, amount) — permanently remove `amount` points from a
+// stat_spend_permanent(stat, amount) - permanently remove `amount` points from a
 // stat, draining the bought bonus (perm_<stat>_bonus) FIRST, then dipping into the
 // starting allocation (chosen_stats), floored at 0 so derived stats never go
 // negative. Returns the amount actually spent.
@@ -1581,8 +1724,8 @@ function stat_spend_permanent(stat, amount) {
 }
 
 // ---------------------------------------------------------------------------
-// trait_potency_tier(trait_name) — current potency tier (0-5) for a trait.
-// trait_potency_mult(trait_name) — magnitude multiplier: 1 + 0.10 per tier.
+// trait_potency_tier(trait_name) - current potency tier (0-5) for a trait.
+// trait_potency_mult(trait_name) - magnitude multiplier: 1 + 0.10 per tier.
 // Multiply a trait's base magnitude by this at each effect site.
 // ---------------------------------------------------------------------------
 function trait_potency_tier(trait_name) {

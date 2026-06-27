@@ -3,15 +3,15 @@
 // Turn-based combat engine for Ironwake.
 //
 // Turn flow:
-//   1. combat_init()          — build sorted combatant queue
-//   2. combat_next_turn()     — advance queue, restore energy, tick resources
+//   1. combat_init()          - build sorted combatant queue
+//   2. combat_next_turn()     - advance queue, restore energy, tick resources
 //   3. Per-action:
-//        combat_roll_hit()    — determine if attack lands
-//        combat_roll_crit()   — determine crit type and quality
-//        combat_resolve_damage() — apply mitigation, return final value
-//        combat_apply_damage()   — subtract from HP
-//   4. combat_is_defeated()   — check individual combatant
-//   5. combat_check_victory() — check win/loss condition for full combat
+//        combat_roll_hit()    - determine if attack lands
+//        combat_roll_crit()   - determine crit type and quality
+//        combat_resolve_damage() - apply mitigation, return final value
+//        combat_apply_damage()   - subtract from HP
+//   4. combat_is_defeated()   - check individual combatant
+//   5. combat_check_victory() - check win/loss condition for full combat
 //
 // Class IDs (mirrors scr_stats): 0 = Arcanist, 1 = Bloodwarden, 2 = Shadowstrider
 // Damage types: 0 = physical, 1 = elemental, 2 = drain, 3 = blood (INT-scaled, bypasses armor)
@@ -23,14 +23,14 @@
 // Receives an array of combatant structs.
 //
 // Expected fields per combatant struct:
-//   is_player   bool   — true for player-controlled combatant
-//   class_id    int    — 0/1/2 (player only; enemies can omit)
-//   stats       struct — output of stats_init(); must include DEX, WIS, STR, INT
-//   HP          real   — current hit points
+//   is_player   bool   - true for player-controlled combatant
+//   class_id    int    - 0/1/2 (player only; enemies can omit)
+//   stats       struct - output of stats_init(); must include DEX, WIS, STR, INT
+//   HP          real   - current hit points
 //   max_HP      real
-//   armor       real   — flat physical damage reduction
-//   el_resist   real   — flat elemental damage reduction
-//   dodge       real   — subtracted from attacker hit chance
+//   armor       real   - flat physical damage reduction
+//   el_resist   real   - flat elemental damage reduction
+//   dodge       real   - subtracted from attacker hit chance
 //
 // Returns a combat_state struct used by all subsequent functions.
 // ---------------------------------------------------------------------------
@@ -65,15 +65,15 @@ function combat_init(combatant_array) {
         if (!c.is_player) continue;
 
         switch (c.class_id) {
-            case 0: // Arcanist — Souls
+            case 0: // Arcanist - Souls
                 c.souls     = 0;
                 c.souls_max = 10;
                 break;
-            case 1: // Bloodwarden — Blood
+            case 1: // Bloodwarden - Blood
                 c.blood     = 0;
                 c.blood_max = 10;
                 break;
-            case 2: // Shadowstrider — Preparation
+            case 2: // Shadowstrider - Preparation
                 c.preparation     = 0;
                 c.preparation_max = 10;
                 c.trap_active     = false;
@@ -131,10 +131,10 @@ function combat_next_turn(combat_state) {
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 // DIMINISHING-RETURNS STAT CURVES (Viability/stat rebalance).
-// Linear stat scaling let DEX run accuracy to +114 and dodge/crit to ~76 — every
+// Linear stat scaling let DEX run accuracy to +114 and dodge/crit to ~76 - every
 // attack auto-hit/auto-dodged/auto-crit. These asymptotic curves give smooth
 // diminishing returns that PLATEAU toward a cap: value = cap * stat / (stat + half).
-// Single source of truth — used by BOTH stats_derive (display) and the combat rolls
+// Single source of truth - used by BOTH stats_derive (display) and the combat rolls
 // below, so the stat sheet and actual behaviour always match. See SYSTEMS_VIABILITY_PASS.md.
 // ---------------------------------------------------------------------------
 function stat_curve(stat, cap, half) {
@@ -149,7 +149,7 @@ function stat_crit_chance(stats, crit_type) {
         case 0: return stat_curve(stats.STR, 40, 16);       // Power     (STR)
         case 1: return stat_curve(stats.DEX, 45, 18);       // Precision (DEX)
         case 2: return stat_curve(stats.INT, 38, 20);       // Arcane    (INT)
-        case 3: return 5 + stat_curve(stats.WIS, 35, 16);   // Effect    (WIS) — keeps +5 base
+        case 3: return 5 + stat_curve(stats.WIS, 35, 16);   // Effect    (WIS) - keeps +5 base
     }
     return 0;
 }
@@ -177,10 +177,10 @@ function combat_roll_hit(attacker_acc, defender_dodge, guaranteed) {
 // Determines if a crit fires and, if so, returns the crit result struct.
 //
 // Crit types:
-//   0 — Power     (STR): chance = base + STR*1.5,  multiplier 1.6x
-//   1 — Precision (DEX): chance = base + DEX*2,    multiplier 1.35x
-//   2 — Arcane    (INT): chance = base + INT*1,    multiplier 1.25x + 2 elemental stacks
-//   3 — Effect    (WIS): chance = 5 + WIS*1.5,     improves status quality (no damage mult)
+//   0 - Power     (STR): chance = base + STR*1.5,  multiplier 1.6x
+//   1 - Precision (DEX): chance = base + DEX*2,    multiplier 1.35x
+//   2 - Arcane    (INT): chance = base + INT*1,    multiplier 1.25x + 2 elemental stacks
+//   3 - Effect    (WIS): chance = 5 + WIS*1.5,     improves status quality (no damage mult)
 //
 // Returns a struct:
 //   { critted: bool, multiplier: real, bonus_el_stacks: int, effect_quality: int }
@@ -208,17 +208,17 @@ function combat_roll_crit(attacker_stats, ability_base_crit, crit_type) {
     result.critted = true;
 
     switch (crit_type) {
-        case 0: // Power — raw damage spike
+        case 0: // Power - raw damage spike
             result.multiplier = 1.6;
             break;
-        case 1: // Precision — moderate multiplier
+        case 1: // Precision - moderate multiplier
             result.multiplier = 1.35;
             break;
-        case 2: // Arcane — smaller multiplier but adds elemental stacks
+        case 2: // Arcane - smaller multiplier but adds elemental stacks
             result.multiplier      = 1.25;
             result.bonus_el_stacks = 2;
             break;
-        case 3: // Effect — no damage bonus; improves applied status quality
+        case 3: // Effect - no damage bonus; improves applied status quality
             result.multiplier     = 1.0;
             result.effect_quality = 1; // caller interprets: 1 = upgraded status
             break;
@@ -232,10 +232,10 @@ function combat_roll_crit(attacker_stats, ability_base_crit, crit_type) {
 // Applies mitigation and returns the final damage value (never below 0).
 //
 // Damage types:
-//   0 — Physical: reduced by target_armor
-//   1 — Elemental: reduced by target_el_resist
-//   2 — Drain: bypasses all mitigation
-//   3 — Blood: bypasses armor; flat bonus added by caller via INT scaling
+//   0 - Physical: reduced by target_armor
+//   1 - Elemental: reduced by target_el_resist
+//   2 - Drain: bypasses all mitigation
+//   3 - Blood: bypasses armor; flat bonus added by caller via INT scaling
 //
 // Note: percentage modifiers from gear/traits should be applied by the caller
 // to the returned value, after this function runs.
@@ -250,10 +250,10 @@ function combat_resolve_damage(base_damage, damage_type, target_armor, target_el
         case 1: // Elemental
             final_damage = base_damage - target_el_resist;
             break;
-        case 2: // Drain — no mitigation
+        case 2: // Drain - no mitigation
             final_damage = base_damage;
             break;
-        case 3: // Blood — bypasses armor, scales with INT via caller
+        case 3: // Blood - bypasses armor, scales with INT via caller
             final_damage = base_damage;
             break;
     }
@@ -279,11 +279,11 @@ function combat_apply_damage(target_struct, damage) {
 // an attack targets a combatant who has is_untargetable == true.
 //
 // Behaviour:
-//   • Consumes one charge (target.untargetable_turns--).
-//   • Appends an "attack avoided" line to combat_log.
-//   • When charges hit 0, clears is_untargetable and appends an expiry line.
-//   • Returns true  → caller should skip damage resolution for this hit.
-//   • Returns false → target is not blinking; caller proceeds normally.
+//   * Consumes one charge (target.untargetable_turns--).
+//   * Appends an "attack avoided" line to combat_log.
+//   * When charges hit 0, clears is_untargetable and appends an expiry line.
+//   * Returns true  -> caller should skip damage resolution for this hit.
+//   * Returns false -> target is not blinking; caller proceeds normally.
 //
 // The combat controller initialises untargetable_turns from Blink's
 // effect_duration (currently 2) when the ability is cast.
@@ -299,7 +299,7 @@ function combat_check_blink(target, combat_log) {
     } else {
         _tname = "Target";
     }
-    array_push(combat_log, _tname + " blinks — the attack passes through!");
+    array_push(combat_log, _tname + " blinks - the attack passes through!");
 
     if (target.untargetable_turns <= 0) {
         target.is_untargetable    = false;
@@ -316,7 +316,7 @@ function combat_check_blink(target, combat_log) {
 // ---------------------------------------------------------------------------
 // awaken_enemy_acc_bonus()
 // Flat accuracy points added to every enemy hit roll, scaling with the run's
-// Awakening tier. Stops stacked DODGE/DEX from trivializing high Awakenings —
+// Awakening tier. Stops stacked DODGE/DEX from trivializing high Awakenings -
 // at A4/A5 even an evasion build gets hit. Added to _enemy_acc in combat.
 // ---------------------------------------------------------------------------
 function awaken_enemy_acc_bonus() {
@@ -326,7 +326,7 @@ function awaken_enemy_acc_bonus() {
     return _tbl[_asc];
 }
 
-// awaken_enemy_heal_mult() — enemy healing scales with Awakening (mirrors the dmg
+// awaken_enemy_heal_mult() - enemy healing scales with Awakening (mirrors the dmg
 // curve). At high tiers, self-healing foes punish slow damage and reward burst /
 // anti-heal (mortality) / consumables. See SYSTEMS_VIABILITY_PASS.md (P6c).
 function awaken_enemy_heal_mult() {
@@ -340,7 +340,7 @@ function awaken_enemy_heal_mult() {
 // combat_evasion_chance(target)
 // Dodge CHANCE (0-100) for the active-evasion abilities Blink / Shadow Step.
 // These used to be guaranteed; now they roll. Base 50% + WIS*2, capped 85%.
-// Stun halves the chance (weakened evasion — you can't reliably slip a hit
+// Stun halves the chance (weakened evasion - you can't reliably slip a hit
 // while stunned). Call once per incoming attack the window covers.
 // ---------------------------------------------------------------------------
 function combat_evasion_chance(target) {
@@ -355,9 +355,9 @@ function combat_evasion_chance(target) {
 // combat_apply_start_traits(player)
 // Call at combat start after the player struct and secondary resources are
 // fully built. Applies all trait effects that modify starting combat state.
-//   Thick Skin     — +10% max HP (and current HP, capped at new max)
-//   Crimson Reserve— +20 Blood at combat start (Bloodwarden only)
-//   Phantom Step   — sets phantom_step_active flag; consumed on first hit
+//   Thick Skin     - +10% max HP (and current HP, capped at new max)
+//   Crimson Reserve- +20 Blood at combat start (Bloodwarden only)
+//   Phantom Step   - sets phantom_step_active flag; consumed on first hit
 // ---------------------------------------------------------------------------
 function combat_apply_start_traits(player) {
     // Thick Skin: +10% maximum HP (scaled by Vex trait potency)
@@ -367,7 +367,7 @@ function combat_apply_start_traits(player) {
         player.HP      = min(player.HP + _bonus, player.max_HP);
     }
 
-    // Crimson Reserve: Bloodwarden only — start combat with +20 Blood
+    // Crimson Reserve: Bloodwarden only - start combat with +20 Blood
     if (player.class_id == 1 && variable_struct_exists(player, "blood")
         && trait_active("Crimson Reserve")) {
         player.blood = min(player.blood_max, player.blood + 20);
@@ -418,7 +418,7 @@ function combat_check_phantom_step(player, combat_log) {
 
     player.phantom_step_active = false;
     array_push(combat_log,
-        "Phantom Step — the first enemy attack misses automatically!");
+        "Phantom Step - the first enemy attack misses automatically!");
     return true;
 }
 
@@ -426,7 +426,7 @@ function combat_check_phantom_step(player, combat_log) {
 // combat_try_last_stand(player, combat_log)
 // Last Stand trait: the first time the player would die in a run, survive at
 // 1 HP instead. Consumed once per run (global.last_stand_used, reset in end_run).
-// Returns true when the death was averted (HP set to 1); false otherwise — the
+// Returns true when the death was averted (HP set to 1); false otherwise - the
 // caller should mark the player defeated only when this returns false.
 // ---------------------------------------------------------------------------
 function combat_try_last_stand(player, combat_log) {
@@ -441,15 +441,15 @@ function combat_try_last_stand(player, combat_log) {
 }
 
 // =============================================================================
-// STATUS LAYER — typed buffs/debuffs (AoE + status systems)
+// STATUS LAYER - typed buffs/debuffs (AoE + status systems)
 // Each entry pushed onto a combatant's status_effects[] carries a `kind`
 // (dot / vulnerable / weaken / blind / mortality / stun / root). The aggregation
 // helpers read all active statuses of a kind and return the combined modifier.
-//   vulnerable — flat extra damage taken          (summed)
-//   weaken     — % outgoing damage reduction        (max)
-//   blind      — % accuracy reduction (0..1)         (max)
-//   mortality  — % healing reduction (0..1)          (max)
-//   stun/root/silence — control flags (stun=all, root=melee, silence=spell)
+//   vulnerable - flat extra damage taken          (summed)
+//   weaken     - % outgoing damage reduction        (max)
+//   blind      - % accuracy reduction (0..1)         (max)
+//   mortality  - % healing reduction (0..1)          (max)
+//   stun/root/silence - control flags (stun=all, root=melee, silence=spell)
 // `kind` falls back to effect_type for legacy statuses that predate this layer.
 // =============================================================================
 
@@ -458,10 +458,15 @@ function combat_status_kind_of(se) {
     return variable_struct_exists(se, "kind") ? se.kind : se.effect_type;
 }
 
-// ability_status_kind(ability) — single source of truth mapping an ability to the
+// ability_status_kind(ability) - single source of truth mapping an ability to the
 // status `kind` it applies. Re-tags the existing debuffs onto the typed layer.
 function ability_status_kind(ability) {
     switch (ability.name) {
+        case "Scorch":
+            // Dedicated "firemark" kind: a per-hit TRUE FIRE rider (mitigated by the
+            // target's el_resist), NOT the typeless `vulnerable` sum. Still detonates as
+            // vulnerable (see combat_detonator_pick) so the Arcane Burst combo survives.
+            return "firemark";
         case "Curse": case "Bonebreaker": case "Marked for Death":
             return "vulnerable";
         case "Marrow Crush": case "Crippling Shot":
@@ -475,19 +480,20 @@ function ability_status_kind(ability) {
         case "Bear Trap":
             return "root";
         case "Mana Sever":
-            return "silence";   // "sever mana" — target can't take spell actions
+            return "silence";   // "sever mana" - target can't take spell actions
     }
     if (ability.effect_type == "dot")    return "dot";
     if (ability.effect_type == "debuff") return "vulnerable";
     return ability.effect_type;
 }
 
-// ability_status_element(ability) — the elemental flavor tag stamped on a status
+// ability_status_element(ability) - the elemental flavor tag stamped on a status
 // when this ability applies it, used by the detonation reaction system. Most
-// statuses are kind-based (vulnerable/weaken/stun…) and need no element (""); only
+// statuses are kind-based (vulnerable/weaken/stun...) and need no element (""); only
 // DoTs and future fire/frost effects carry one. See SYSTEMS_VIABILITY_PASS.md.
 function ability_status_element(ability) {
     switch (ability.name) {
+        case "Scorch":        return "fire";   // firemark rider deals true fire damage
         case "Poison Dart":   return "poison";
         case "Gore Strike": case "Spike Trap": case "Serrated Bleed":
             return "bleed";
@@ -503,7 +509,7 @@ function ability_status_element(ability) {
     return "";
 }
 
-// elem_status_name(element) / elem_status_verb(element) — display name + log verb
+// elem_status_name(element) / elem_status_verb(element) - display name + log verb
 // for the setup status an elemental weapon affix applies (SYSTEMS_WEAPON_ROLES.md
 // §C). The name keyword ("Burn") also lets the icon/VFX resolver fall back cleanly.
 function elem_status_name(element) {
@@ -537,7 +543,7 @@ function combat_control_block_reason(combatant, attack_class) {
     return "";
 }
 
-// combat_status_total(c, kind) — sum of effect_value across active statuses of kind.
+// combat_status_total(c, kind) - sum of effect_value across active statuses of kind.
 function combat_status_total(c, kind) {
     if (!variable_struct_exists(c, "status_effects")) return 0;
     var _t = 0;
@@ -548,7 +554,7 @@ function combat_status_total(c, kind) {
     return _t;
 }
 
-// combat_status_max(c, kind) — largest effect_value of kind (for % modifiers,
+// combat_status_max(c, kind) - largest effect_value of kind (for % modifiers,
 // so stacking the same debuff doesn't compound).
 function combat_status_max(c, kind) {
     if (!variable_struct_exists(c, "status_effects")) return 0;
@@ -560,7 +566,7 @@ function combat_status_max(c, kind) {
     return _m;
 }
 
-// combat_has_status(c, kind) — true if any active status of kind is present.
+// combat_has_status(c, kind) - true if any active status of kind is present.
 function combat_has_status(c, kind) {
     if (!variable_struct_exists(c, "status_effects")) return false;
     for (var _i = 0; _i < array_length(c.status_effects); _i++) {
@@ -570,7 +576,7 @@ function combat_has_status(c, kind) {
 }
 
 // ---------------------------------------------------------------------------
-// DETONATION REACTIONS (Viability Pass — see SYSTEMS_VIABILITY_PASS.md).
+// DETONATION REACTIONS (Viability Pass - see SYSTEMS_VIABILITY_PASS.md).
 // A "detonator" ability (Snipe/Assassinate/Arcane Burst/Soul Nova/Rupture) reacts
 // with the strongest status on the target: a status-specific effect, then (usually)
 // the status is consumed. Statuses carry an `element` tag (poison/bleed/void/burn/
@@ -584,7 +590,7 @@ function combat_status_element(se) {
     return "";
 }
 
-// combat_detonator_pick(target) — returns { key, idx } for the highest-priority
+// combat_detonator_pick(target) - returns { key, idx } for the highest-priority
 // reaction the target is currently carrying, or { key:"", idx:-1 } if none.
 function combat_detonator_pick(target) {
     var _none = { key: "", idx: -1 };
@@ -604,7 +610,7 @@ function combat_detonator_pick(target) {
                 case "root":       _match = (_k == "root"); break;
                 case "burn":       _match = (_el == "burn"); break;
                 case "shock":      _match = (_el == "shock"); break;
-                case "vulnerable": _match = (_k == "vulnerable"); break;
+                case "vulnerable": _match = (_k == "vulnerable" || _k == "firemark"); break;  // Scorch's firemark detonates as Exposed (+12)
                 case "bleed":      _match = (_k == "dot" && _el == "bleed"); break;
                 case "poison":     _match = (_k == "dot" && _el == "poison"); break;
                 case "void":       _match = (_k == "dot" && _el == "void"); break;
@@ -617,7 +623,7 @@ function combat_detonator_pick(target) {
     return _none;
 }
 
-// combat_tick_statuses(c, log) — generic per-turn tick: apply DoT damage and
+// combat_tick_statuses(c, log) - generic per-turn tick: apply DoT damage and
 // decrement every status' duration, dropping expired ones. Used for the PLAYER
 // at turn start (enemies use the richer inline tick in Step_0 for kill/VFX).
 function combat_tick_statuses(c, log) {
@@ -640,8 +646,8 @@ function combat_tick_statuses(c, log) {
     c.status_effects = _keep;
 }
 
-// combat_heal_after_mortality(c, amount) — scales a heal by the bearer's
-// `mortality` debuff (−% healing received). Returns the reduced amount.
+// combat_heal_after_mortality(c, amount) - scales a heal by the bearer's
+// `mortality` debuff (-% healing received). Returns the reduced amount.
 function combat_heal_after_mortality(c, amount) {
     // Withered curse: -50% healing received (applies to the player only; enemies
     // don't carry curses). Stacks multiplicatively with the mortality debuff.
@@ -653,10 +659,10 @@ function combat_heal_after_mortality(c, amount) {
     return max(0, floor(amount * (1 - _m)));
 }
 
-// combat_mitigate_player(player, raw, dtype, log) — runs the full player damage
-// mitigation chain for an enemy ability hit (typed): resist/armor → vulnerable →
-// flat reduction (Iron Skin) → equip armor → % physical reduction (physical only)
-// → Soul Shield absorption (mutates shield_hp, logs). Returns the final damage.
+// combat_mitigate_player(player, raw, dtype, log) - runs the full player damage
+// mitigation chain for an enemy ability hit (typed): resist/armor -> vulnerable ->
+// flat reduction (Iron Skin) -> equip armor -> % physical reduction (physical only)
+// -> Soul Shield absorption (mutates shield_hp, logs). Returns the final damage.
 // Mirrors the inline basic-attack chain so enemy spells can't diverge from it.
 function combat_mitigate_player(player, raw, dtype, log) {
     var _d = combat_resolve_damage(raw, dtype, player.armor, player.el_resist);
@@ -679,7 +685,7 @@ function combat_mitigate_player(player, raw, dtype, log) {
     return _d;
 }
 
-// combat_absorb_shield(c, dmg) — depletes a `shield_hp` pool (Soul Shield) before
+// combat_absorb_shield(c, dmg) - depletes a `shield_hp` pool (Soul Shield) before
 // HP. Returns the damage remaining after absorption.
 function combat_absorb_shield(c, dmg) {
     if (!variable_struct_exists(c, "shield_hp") || c.shield_hp <= 0) return dmg;
@@ -689,19 +695,19 @@ function combat_absorb_shield(c, dmg) {
 }
 
 // =============================================================================
-// ENEMY SFX — family-themed death/attack sounds (see SYSTEMS_ENEMY_SFX.md)
+// ENEMY SFX - family-themed death/attack sounds (see SYSTEMS_ENEMY_SFX.md)
 // Every enemy used to play the same human death yell (die5). These helpers map an
-// enemy NAME → a "sound family" by keyword, then play a family-specific sound.
+// enemy NAME -> a "sound family" by keyword, then play a family-specific sound.
 // Each family has a PREFERRED sound name (a string, e.g. "snd_death_fire") resolved
 // at runtime: if that audio asset exists it plays, otherwise we fall back to a
 // best-fit sound from the existing library. So new audio the user adds in the IDE
-// (named per the convention below) activates with NO code change — drop in
+// (named per the convention below) activates with NO code change - drop in
 // snd_death_<family> / snd_attack_<family> and it's picked up automatically.
-// Families: undead · wraith · construct · beast · fire · ice · boss.
+// Families: undead - wraith - construct - beast - fire - ice - boss.
 // =============================================================================
 
-// enemy_sound_family(name) — keyword-classify an enemy name into a sound family.
-// First match wins (priority handles overlaps like "Smoldering Revenant" → wraith).
+// enemy_sound_family(name) - keyword-classify an enemy name into a sound family.
+// First match wins (priority handles overlaps like "Smoldering Revenant" -> wraith).
 function enemy_sound_family(name) {
     var _n = string_lower(name);
     if (string_pos("malgrath", _n) || string_pos("sovereign", _n) || string_pos("eternal frost", _n))
@@ -727,7 +733,7 @@ function enemy_sound_family(name) {
     return "undead";
 }
 
-// play_sfx_var(base, fallback) — play a RANDOM existing variation of a string-named
+// play_sfx_var(base, fallback) - play a RANDOM existing variation of a string-named
 // sound. Probes `base`, `base_2`, `base_3`; if any are imported it plays one at
 // random (so repeated swings/casts don't sound identical), else the existing-library
 // `fallback`. Pass fallback = -1 for "silence if not imported". Safe pre-strip: while
@@ -747,7 +753,7 @@ function play_sfx_var(base, fallback) {
     if (fallback != -1 && fallback != undefined) audio_play_sound(fallback, 1, false);
 }
 
-// play_player_vocal(base, fallback) — like play_sfx_var but prefers the FEMALE
+// play_player_vocal(base, fallback) - like play_sfx_var but prefers the FEMALE
 // variant set (<base>_f, _f_2, _f_3) when the player's cosmetic gender is female, so
 // a female character cries out / grunts differently. Falls back to the base set, then
 // the library fallback. Use for the player's own voice (hurt/effort), not weapon FX.
@@ -767,13 +773,13 @@ function play_player_vocal(base, fallback) {
     play_sfx_var(base, fallback);
 }
 
-// play_enemy_sfx(preferred_name, fallback_snd) — themed enemy sound with variation
+// play_enemy_sfx(preferred_name, fallback_snd) - themed enemy sound with variation
 // support (delegates to play_sfx_var). Safe pre-strip: uses fallback until imported.
 function play_enemy_sfx(preferred_name, fallback_snd) {
     play_sfx_var(preferred_name, fallback_snd);
 }
 
-// enemy_death_sound(name) — themed death sound for an enemy.
+// enemy_death_sound(name) - themed death sound for an enemy.
 function enemy_death_sound(name) {
     var _f = enemy_sound_family(name);
     var _fb;
@@ -789,7 +795,7 @@ function enemy_death_sound(name) {
     play_enemy_sfx("snd_death_" + _f, _fb);
 }
 
-// enemy_attack_sound(name) — themed attack/cast sound for an enemy's offensive action.
+// enemy_attack_sound(name) - themed attack/cast sound for an enemy's offensive action.
 function enemy_attack_sound(name) {
     var _f = enemy_sound_family(name);
     var _fb;
@@ -805,10 +811,10 @@ function enemy_attack_sound(name) {
     play_enemy_sfx("snd_attack_" + _f, _fb);
 }
 
-// play_ability_cast_sfx(ab, caster, is_offensive) — PLAYER cast audio keyed to the
+// play_ability_cast_sfx(ab, caster, is_offensive) - PLAYER cast audio keyed to the
 // ABILITY (damage type + effect kind) instead of the caster's class, so a fireball and a
 // shadowbolt sound different no matter who throws them. See SYSTEMS_COMBAT_FX.md.
-// The specific asset picks are a first-draft best-guess (sounds weren't auditioned) —
+// The specific asset picks are a first-draft best-guess (sounds weren't auditioned) -
 // each is a single-line swap. Called from obj_combat_controller's offensive-hit + self-
 // cast sites. Movement casts (Blink/Shadow Step) keep their own `teleport` cue upstream.
 function play_ability_cast_sfx(ab, caster, is_offensive) {
@@ -816,7 +822,7 @@ function play_ability_cast_sfx(ab, caster, is_offensive) {
     var _dtype = variable_struct_exists(ab, "damage_type") ? ab.damage_type : 0;
 
     if (!is_offensive) {
-        // Support cast — keyed to what it grants. New snd_cast_* slots (Helton Yan
+        // Support cast - keyed to what it grants. New snd_cast_* slots (Helton Yan
         // pack) with the old library sounds as fallbacks until imported.
         switch (_etype) {
             case "heal":     play_sfx_var("snd_cast_heal",   Magic);               break; // bright twinkle
@@ -828,7 +834,7 @@ function play_ability_cast_sfx(ab, caster, is_offensive) {
         return;
     }
 
-    // Offensive cast — texture by damage type (0 phys · 1 elem · 2 drain/void · 3 blood).
+    // Offensive cast - texture by damage type (0 phys - 1 elem - 2 drain/void - 3 blood).
     switch (_dtype) {
         case 0:  play_player_vocal("snd_player_atk", attack1); break;         // human weapon strike (gendered)
         case 1:  play_sfx_var("snd_cast_elem",  spell1);  break;             // elemental cast
@@ -843,7 +849,7 @@ function play_ability_cast_sfx(ab, caster, is_offensive) {
     }
 }
 
-// combat_on_enemy_defeated(target, player, combat_log) — shared kill handler:
+// combat_on_enemy_defeated(target, player, combat_log) - shared kill handler:
 // gold, loot, XP, on-kill soul generation, and Heartstone Aegis. Called by both
 // the single-target and AoE damage paths so kill rewards never diverge.
 function combat_on_enemy_defeated(target, player, combat_log) {
@@ -917,7 +923,7 @@ function combat_on_enemy_defeated(target, player, combat_log) {
     // Serpent's Reach (class weapon): killing an enemy refunds 1 AP.
     if (variable_struct_exists(player, "kill_ap_refund") && player.kill_ap_refund) {
         player.energy += 1;
-        array_push(combat_log, "Serpent's Reach — kill restores 1 AP.");
+        array_push(combat_log, "Serpent's Reach - kill restores 1 AP.");
     }
 }
 
@@ -934,9 +940,9 @@ function combat_is_defeated(combatant_struct) {
 // Scans the combatant list and evaluates the outcome.
 //
 // Returns:
-//    1  — all enemies defeated (player wins)
-//   -1  — player combatant defeated (player loses)
-//    0  — combat is still ongoing
+//    1  - all enemies defeated (player wins)
+//   -1  - player combatant defeated (player loses)
+//    0  - combat is still ongoing
 // ---------------------------------------------------------------------------
 function combat_check_victory(combat_state) {
     var any_player_alive = false;

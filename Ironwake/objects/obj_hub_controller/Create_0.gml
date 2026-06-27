@@ -1,7 +1,7 @@
 // =============================================================================
-// obj_hub_controller — Create event
+// obj_hub_controller - Create event
 // Initialises all hub UI state. Runs once when the hub room is entered.
-// Reads global state set by obj_game_controller — that object must exist and
+// Reads global state set by obj_game_controller - that object must exist and
 // be persistent before this room is loaded.
 // =============================================================================
 
@@ -25,15 +25,15 @@ npc_names = [
 
 // One-line summaries shown in the NPC list rows
 npc_descriptions = [
-    "Weapons, armor, and gear — browse Dorn's rotating stock. Press Space to enter the forge.",
+    "Weapons, armor, and gear - browse Dorn's rotating stock. Press Space to enter the forge.",
     "Salvages loot into rune dust; brews and upgrades potions. Press Space to open the apothecary.",
     "Sockets gear runes for stats and aspect runes for combat buffs. Press Space to open the runeworks.",
     "Permanent stat upgrades, ability unlocks, and trait slot expansion.",
     "Consumables and supplies for your next run. Press Space to browse Petra's wares.",
-    "Cosmetic transmog — buy and wear character skins. Press Space to visit the atelier."
+    "Cosmetic transmog - buy and wear character skins. Press Space to visit the atelier."
 ];
 
-// All six hub NPCs are permanently available from the start (design decision —
+// All six hub NPCs are permanently available from the start (design decision -
 // no unlock gating). Not persisted in the save: re-initialized here every time the
 // hub loads, so no save can ever re-lock an NPC. Keep this array all-true.
 npc_unlocked = [true, true, true, true, true, true];
@@ -81,7 +81,7 @@ portrait_fade_alpha = 1.0;
 
 
 // -----------------------------------------------------------------------------
-// 6. HUB ATMOSPHERE — camp background art, ambient embers, flavor line
+// 6. HUB ATMOSPHERE - camp background art, ambient embers, flavor line
 // -----------------------------------------------------------------------------
 // Looked up by name so the project compiles before the sprite resource exists.
 // Returns -1 until you create spr_hub_background in the IDE; the draw is guarded.
@@ -92,8 +92,8 @@ bg_sprite = asset_get_index("spr_hub_background");
 hub_embers = [];
 for (var _ei = 0; _ei < 54; _ei++) {
     array_push(hub_embers, {
-        x:     irandom(1280),
-        y:     irandom(720),
+        x:     irandom(GUI_W),
+        y:     irandom(GUI_H),
         spd:   0.2 + random(0.4),     // upward px/frame
         phase: random(6.283),         // sine seed for horizontal drift + shimmer
         drift: 8 + random(14),        // horizontal drift amplitude (px)
@@ -102,7 +102,7 @@ for (var _ei = 0; _ei < 54; _ei++) {
     });
 }
 
-// Rotating camp flavor line — one picked per hub visit.
+// Rotating camp flavor line - one picked per hub visit.
 hub_flavor_lines = [
     "The fire crackles low. Dorn's hammer rings somewhere in the dark.",
     "Embers drift on a cold wind. The dungeon gate glows beyond the tents.",
@@ -115,7 +115,7 @@ hub_flavor = hub_flavor_lines[irandom(array_length(hub_flavor_lines) - 1)];
 
 
 // -----------------------------------------------------------------------------
-// 7. ONBOARDING — show the hub coach-mark on the player's very first camp visit
+// 7. ONBOARDING - show the hub coach-mark on the player's very first camp visit
 // (the first surface they see after character creation). Once-only; gated by the
 // saved tutorial flags. See SYSTEMS_ONBOARDING.md.
 // -----------------------------------------------------------------------------

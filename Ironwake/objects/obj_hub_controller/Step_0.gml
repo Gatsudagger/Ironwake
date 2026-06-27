@@ -1,23 +1,23 @@
 // =============================================================================
-// obj_hub_controller — Step event
+// obj_hub_controller - Step event
 // Handles all keyboard input on the hub screen.
 // Input map:
-//   Up / W       — move selection up (or scroll history)
-//   Down / S     — move selection down (or scroll history)
-//   Space/Enter  — interact with selected NPC (if unlocked)
-//   S (past NPC 5) — highlight dungeon button; Enter/Space confirms entry
-//   H            — toggle run history overlay
-//   T            — open stash screen
-//   P            — open permanent stat allocation (if points available)
-//   Escape       — dismiss last-run summary or close history
+//   Up / W       - move selection up (or scroll history)
+//   Down / S     - move selection down (or scroll history)
+//   Space/Enter  - interact with selected NPC (if unlocked)
+//   S (past NPC 5) - highlight dungeon button; Enter/Space confirms entry
+//   H            - toggle run history overlay
+//   T            - open stash screen
+//   P            - open permanent stat allocation (if points available)
+//   Escape       - dismiss last-run summary or close history
 // =============================================================================
 
-// Onboarding coach-mark is modal — freeze the hub entirely while one is up. gc owns
+// Onboarding coach-mark is modal - freeze the hub entirely while one is up. gc owns
 // the dismiss (see SYSTEMS_ONBOARDING.md); here we just block all hub input.
 if (tutorial_is_active()) exit;
 
 // -----------------------------------------------------------------------------
-// 0. AUDIO SETTINGS OVERLAY — captures all input while open; O opens it
+// 0. AUDIO SETTINGS OVERLAY - captures all input while open; O opens it
 // -----------------------------------------------------------------------------
 if (variable_global_exists("settings_open") && global.settings_open) {
     audio_settings_handle_input();
@@ -32,7 +32,7 @@ if (keyboard_check_pressed(ord("O")) && !ui_input_blocked() && !show_history && 
 }
 
 // -----------------------------------------------------------------------------
-// 0b. PAUSE / ESC MENU — Resume / Settings / Quit to Title
+// 0b. PAUSE / ESC MENU - Resume / Settings / Quit to Title
 // pause_menu_step() freezes the hub while the menu (or its Settings sub-screen)
 // is open; otherwise Esc opens it when nothing else is up.
 // -----------------------------------------------------------------------------
@@ -44,14 +44,14 @@ if (keyboard_check_pressed(vk_escape) && !ui_input_blocked() && !global.ui_overl
 }
 
 // -----------------------------------------------------------------------------
-// 0a. DUNGEON SELECTION OVERLAY — runs before everything else
+// 0a. DUNGEON SELECTION OVERLAY - runs before everything else
 // -----------------------------------------------------------------------------
 if (instance_exists(obj_game_controller)) {
     var _gc_dsel = instance_find(obj_game_controller, 0);
     if (_gc_dsel.dungeon_select_open) {
         var _dungeon_keys = ["ashen_vault", "scorched_depths", "tundra_tomb"];
 
-        // A/D navigate dungeons — wraps cyclically through all 3
+        // A/D navigate dungeons - wraps cyclically through all 3
         if (keyboard_check_pressed(ord("A")) || keyboard_check_pressed(vk_left)) {
             _gc_dsel.dungeon_select_cursor = (_gc_dsel.dungeon_select_cursor - 1 + 3) mod 3;
             var _dk = _dungeon_keys[_gc_dsel.dungeon_select_cursor];
@@ -155,7 +155,7 @@ if (instance_exists(obj_game_controller)) {
 
 
 // -----------------------------------------------------------------------------
-// 0b. LOADOUT OVERLAY — runs BEFORE ui_input_blocked() check
+// 0b. LOADOUT OVERLAY - runs BEFORE ui_input_blocked() check
 // loadout_open is included in ui_input_blocked() to freeze the rest of the hub,
 // but the handler itself must not be blocked by its own flag.
 // -----------------------------------------------------------------------------
@@ -181,7 +181,7 @@ if (instance_exists(obj_game_controller)) {
         _ld_sel_cnt = array_length(_gc_ld.loadout_selected);
 
         // --- Tab ability-detail popup (P7) ---
-        // While the popup is up, only Tab/Esc (close) — swallow all other loadout input.
+        // While the popup is up, only Tab/Esc (close) - swallow all other loadout input.
         if (_gc_ld.ability_detail_open) {
             if (keyboard_check_pressed(vk_tab) || keyboard_check_pressed(vk_escape)) {
                 _gc_ld.ability_detail_open = false;
@@ -194,7 +194,7 @@ if (instance_exists(obj_game_controller)) {
             exit;
         }
 
-        // Tick flash timers (shared between tabs — "slots full" / "locked ability")
+        // Tick flash timers (shared between tabs - "slots full" / "locked ability")
         if (_gc_ld.loadout_full_timer > 0) _gc_ld.loadout_full_timer--;
         if (variable_instance_exists(_gc_ld, "loadout_locked_timer") && _gc_ld.loadout_locked_timer > 0) _gc_ld.loadout_locked_timer--;
 
@@ -328,18 +328,18 @@ if (instance_exists(obj_game_controller)) {
             var _ldmx = device_mouse_x_to_gui(0);
             var _ldmy = device_mouse_y_to_gui(0);
 
-            // Tab buttons: ABILITIES x=424-634 y=6-34, TRAITS x=646-856 y=6-34
-            if (_ldmx >= 424 && _ldmx < 634 && _ldmy >= 6 && _ldmy < 34) _gc_ld.loadout_tab = 0;
-            if (_ldmx >= 646 && _ldmx < 856 && _ldmy >= 6 && _ldmy < 34) _gc_ld.loadout_tab = 1;
+            // Tab buttons: ABILITIES x=636-951 y=9-51, TRAITS x=969-1284 y=9-51
+            if (_ldmx >= 636 && _ldmx < 951 && _ldmy >= 9 && _ldmy < 51) _gc_ld.loadout_tab = 0;
+            if (_ldmx >= 969 && _ldmx < 1284 && _ldmy >= 9 && _ldmy < 51) _gc_ld.loadout_tab = 1;
 
             if (_gc_ld.loadout_tab == 0) {
-                // Ability rows: x=40-700, windowed list (matches Draw_64 scroll)
+                // Ability rows: x=60-1050, windowed list (matches Draw_64 scroll)
                 var _ld_max_vis = 10;
                 var _ld_scroll  = loadout_list_scroll(_gc_ld.loadout_cursor, _ld_pool_sz, _ld_max_vis);
                 for (var _ldvis = 0; _ldvis < min(_ld_max_vis, _ld_pool_sz - _ld_scroll); _ldvis++) {
                     var _ldai = _ld_scroll + _ldvis;
-                    var _ldry = 55 + _ldvis * 49;
-                    if (_ldmx >= 40 && _ldmx < 700 && _ldmy >= _ldry && _ldmy < _ldry+46) {
+                    var _ldry = 83 + _ldvis * 74;
+                    if (_ldmx >= 60 && _ldmx < 1050 && _ldmy >= _ldry && _ldmy < _ldry+69) {
                         var _ldname = _ld_pool[_ldai].name;
                         var _ldin   = false;
                         var _ldsi   = -1;
@@ -359,8 +359,8 @@ if (instance_exists(obj_game_controller)) {
                         break;
                     }
                 }
-                // Confirm bar: x=40-1240, y=665-695, requires 4 abilities selected
-                if (_ldmx >= 40 && _ldmx < 1240 && _ldmy >= 665 && _ldmy < 695 && _ld_sel_cnt == _loadout_max) {
+                // Confirm bar: x=60-1860, y=998-1043, requires 4 abilities selected
+                if (_ldmx >= 60 && _ldmx < 1860 && _ldmy >= 998 && _ldmy < 1043 && _ld_sel_cnt == _loadout_max) {
                     var _ltr = _gc_ld.traits_selected;
                     var _mc_cost = trait_respec_cost(_ltr);
                     if (_mc_cost > 0 && global.gold < _mc_cost) {
@@ -377,7 +377,7 @@ if (instance_exists(obj_game_controller)) {
                     }
                 }
             } else {
-                // Traits tab — available trait rows
+                // Traits tab - available trait rows
                 var _ldtr_avail = [];
                 for (var _ltta = 0; _ltta < array_length(global.traits_all); _ltta++) {
                     var _ltt = global.traits_all[_ltta];
@@ -386,8 +386,8 @@ if (instance_exists(obj_game_controller)) {
                 }
                 var _ldtr_max = max_trait_slots();
                 for (var _ldtai = 0; _ldtai < array_length(_ldtr_avail); _ldtai++) {
-                    var _ldrty = 55 + _ldtai * 56;
-                    if (_ldmx >= 40 && _ldmx < 700 && _ldmy >= _ldrty && _ldmy < _ldrty+52) {
+                    var _ldrty = 83 + _ldtai * 84;
+                    if (_ldmx >= 60 && _ldmx < 1050 && _ldmy >= _ldrty && _ldmy < _ldrty+78) {
                         var _ldtrname = _ldtr_avail[_ldtai].name;
                         var _ldtrin   = false;
                         var _ldtrsi   = -1;
@@ -415,7 +415,7 @@ if (instance_exists(obj_game_controller)) {
 
 
 // Block all hub input while any gc overlay (menu, stash, shop, level alloc) is open.
-// Perm alloc is hub-specific and not in ui_input_blocked — handled below.
+// Perm alloc is hub-specific and not in ui_input_blocked - handled below.
 if (ui_input_blocked()) exit;
 
 
@@ -443,7 +443,7 @@ if (instance_exists(obj_game_controller)) {
         exit;
     }
 
-    // Perm alloc input — runs when open; blocks everything below
+    // Perm alloc input - runs when open; blocks everything below
     if (_gc_hub.perm_alloc_open) {
         if (keyboard_check_pressed(vk_up)   || keyboard_check_pressed(ord("W"))) {
             _gc_hub.perm_alloc_index = max(0, _gc_hub.perm_alloc_index - 1);
@@ -469,10 +469,10 @@ if (instance_exists(obj_game_controller)) {
             var _pamx = device_mouse_x_to_gui(0);
             var _pamy = device_mouse_y_to_gui(0);
             for (var _pai = 0; _pai < 6; _pai++) {
-                var _pay = 170 + _pai * 72;
-                if (_pamx >= 340 && _pamx < 940 && _pamy >= _pay && _pamy < _pay+58) {
+                var _pay = 255 + _pai * 108;
+                if (_pamx >= 510 && _pamx < 1410 && _pamy >= _pay && _pamy < _pay+87) {
                     if (_gc_hub.perm_alloc_index == _pai && global.pending_perm_points > 0) {
-                        // Second click on same row → spend point
+                        // Second click on same row -> spend point
                         var _pkeys = ["perm_str_bonus","perm_dex_bonus","perm_con_bonus",
                                       "perm_int_bonus","perm_wis_bonus","perm_cha_bonus"];
                         variable_global_set(_pkeys[_pai], variable_global_get(_pkeys[_pai]) + 1);
@@ -491,7 +491,7 @@ if (instance_exists(obj_game_controller)) {
 
 
 // -----------------------------------------------------------------------------
-// 0. RUN HISTORY OVERLAY — intercepts navigation input while open
+// 0. RUN HISTORY OVERLAY - intercepts navigation input while open
 // -----------------------------------------------------------------------------
 if (keyboard_check_pressed(ord("H"))) {
     show_history   = !show_history;
@@ -514,7 +514,7 @@ if (show_history) {
 
 
 // -----------------------------------------------------------------------------
-// 0c. ITEM GALLERY OVERLAY — G to toggle, intercepts input while open
+// 0c. ITEM GALLERY OVERLAY - G to toggle, intercepts input while open
 // -----------------------------------------------------------------------------
 var _loadout_is_open_step = instance_exists(obj_game_controller)
     && instance_find(obj_game_controller, 0).loadout_open;
@@ -526,7 +526,7 @@ if (!_loadout_is_open_step && keyboard_check_pressed(ord("G"))) {
 }
 
 if (show_gallery) {
-    // Build master item list (same logic as Draw does — needed for scroll bounds)
+    // Build master item list (same logic as Draw does - needed for scroll bounds)
     var _gal_all = [];
     if (variable_global_exists("loot_table_common"))    { for (var _gi = 0; _gi < array_length(global.loot_table_common);    _gi++) array_push(_gal_all, global.loot_table_common[_gi]);    }
     if (variable_global_exists("loot_table_uncommon"))  { for (var _gi = 0; _gi < array_length(global.loot_table_uncommon);  _gi++) array_push(_gal_all, global.loot_table_uncommon[_gi]);  }
@@ -573,10 +573,10 @@ if (show_gallery) {
     if (mouse_check_button_pressed(mb_left)) {
         var _gmx = device_mouse_x_to_gui(0);
         var _gmy = device_mouse_y_to_gui(0);
-        // List rows: x=20-730, y=80+i*46, h=42
+        // List rows: x=30-1095, y=120+i*69, h=63
         for (var _gri = 0; _gri < _gal_visible; _gri++) {
-            var _gry = 80 + _gri * 46;
-            if (_gmx >= 20 && _gmx < 730 && _gmy >= _gry && _gmy < _gry + 42) {
+            var _gry = 120 + _gri * 69;
+            if (_gmx >= 30 && _gmx < 1095 && _gmy >= _gry && _gmy < _gry + 63) {
                 var _abs_i = gallery_scroll + _gri;
                 if (_abs_i < _gal_count) {
                     gallery_cursor = _abs_i;
@@ -596,8 +596,8 @@ if (show_gallery) {
                 break;
             }
         }
-        // Close detail panel X button: x=1235-1255, y=72-92
-        if (_gmx >= 1235 && _gmx < 1255 && _gmy >= 72 && _gmy < 92 && gallery_detail_item != undefined) {
+        // Close detail panel X button: x=1853-1883, y=108-138
+        if (_gmx >= 1853 && _gmx < 1883 && _gmy >= 108 && _gmy < 138 && gallery_detail_item != undefined) {
             gallery_detail_item = undefined;
         }
     }
@@ -607,8 +607,8 @@ if (show_gallery) {
         var _gax = device_mouse_x_to_gui(0);
         var _gay = device_mouse_y_to_gui(0);
         for (var _gari = 0; _gari < _gal_visible; _gari++) {
-            var _gary = 80 + _gari * 46;
-            if (_gax >= 20 && _gax < 730 && _gay >= _gary && _gay < _gary + 42) {
+            var _gary = 120 + _gari * 69;
+            if (_gax >= 30 && _gax < 1095 && _gay >= _gary && _gay < _gary + 63) {
                 var _gabs = gallery_scroll + _gari;
                 if (_gabs < _gal_count) {
                     var _gcit = _gal_all[_gabs];
@@ -738,7 +738,7 @@ if (keyboard_check_pressed(vk_space) || keyboard_check_pressed(vk_enter) || keyb
 
 
 // -----------------------------------------------------------------------------
-// 3. ENTER DUNGEON — dungeon button must be highlighted (selected_npc == 6) first
+// 3. ENTER DUNGEON - dungeon button must be highlighted (selected_npc == 6) first
 // Opens dungeon selection overlay; loadout opens after dungeon is chosen.
 // -----------------------------------------------------------------------------
 if (!show_gallery && selected_npc == 6
@@ -782,18 +782,18 @@ if (keyboard_check_pressed(vk_escape)) {
 
 
 // -----------------------------------------------------------------------------
-// 5. MOUSE INPUT — NPC list rows, Enter Dungeon button, last-run dismiss
+// 5. MOUSE INPUT - NPC list rows, Enter Dungeon button, last-run dismiss
 // -----------------------------------------------------------------------------
 if (mouse_check_button_pressed(mb_left)) {
     var _hmx = device_mouse_x_to_gui(0);
     var _hmy = device_mouse_y_to_gui(0);
 
-    // NPC rows: x=420-860, y=70+i*64, h=54
+    // NPC rows: x=630-1290, y=105+i*96, h=81
     for (var _hni = 0; _hni < 6; _hni++) {
-        var _hnry = 70 + _hni * 64;
-        if (_hmx >= 420 && _hmx < 860 && _hmy >= _hnry && _hmy < _hnry+54) {
+        var _hnry = 105 + _hni * 96;
+        if (_hmx >= 630 && _hmx < 1290 && _hmy >= _hnry && _hmy < _hnry+81) {
             if (_hni == selected_npc && npc_unlocked[_hni]) {
-                // Second click on already-selected unlocked NPC → interact
+                // Second click on already-selected unlocked NPC -> interact
                 if (instance_exists(obj_game_controller)) {
                     var _gc_mc = instance_find(obj_game_controller, 0);
                     if (_hni == 0) {
@@ -836,8 +836,8 @@ if (mouse_check_button_pressed(mb_left)) {
         }
     }
 
-    // Enter Dungeon button: x=880-1260, y=580-660
-    if (_hmx >= 880 && _hmx < 1260 && _hmy >= 580 && _hmy < 660) {
+    // Enter Dungeon button: x=1320-1890, y=870-990
+    if (_hmx >= 1320 && _hmx < 1890 && _hmy >= 870 && _hmy < 990) {
         if (instance_exists(obj_game_controller)) {
             var _gc_e2 = instance_find(obj_game_controller, 0);
             if (_gc_e2.loadout_confirmed) {
@@ -863,7 +863,7 @@ if (mouse_check_button_pressed(mb_left)) {
     }
 
     // Last run summary dismiss
-    if (show_last_run && _hmx >= 20 && _hmx < 300 && _hmy >= 280 && _hmy < 430) {
+    if (show_last_run && _hmx >= 30 && _hmx < 450 && _hmy >= 420 && _hmy < 642) {
         show_last_run = false;
     }
 }

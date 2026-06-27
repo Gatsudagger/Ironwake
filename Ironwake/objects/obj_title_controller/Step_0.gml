@@ -1,8 +1,8 @@
 // =============================================================================
-// obj_title_controller — Step
+// obj_title_controller - Step
 // =============================================================================
 
-// Audio settings overlay — while open it captures all input.
+// Audio settings overlay - while open it captures all input.
 if (variable_global_exists("settings_open") && global.settings_open) {
     audio_settings_handle_input();
     exit;
@@ -43,7 +43,7 @@ if (phase == "cutscene") {
             }
         }
     } else {
-        // All lines typed — brief hold then transition to title
+        // All lines typed - brief hold then transition to title
         line_pause++;
         if (line_pause >= 80) {
             phase = "title";
@@ -110,7 +110,7 @@ if (phase == "cutscene") {
 
         if (slot_mode == "load_game") {
             if (_preview == undefined) {
-                // Empty slot — can't load, do nothing
+                // Empty slot - can't load, do nothing
             } else {
                 global.save_slot = slot_selected;
                 load_game();
@@ -119,7 +119,7 @@ if (phase == "cutscene") {
             }
 
         } else {
-            // New Game — occupied slots need one confirmation press
+            // New Game - occupied slots need one confirmation press
             if (_preview != undefined && !slot_confirm) {
                 slot_confirm = true;
             } else {

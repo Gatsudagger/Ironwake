@@ -1,17 +1,17 @@
 // =============================================================================
-// obj_floor_controller — Step event
+// obj_floor_controller - Step event
 // Handles all input on the dungeon floor map screen.
 // Input map:
-//   W / Up    — select previous room (by id)
-//   S / Down  — select next room (by id)
-//   Enter / Space — enter selected room (accessibility + clear checks)
-//   E         — extract to camp (only after boss cleared)
+//   W / Up    - select previous room (by id)
+//   S / Down  - select next room (by id)
+//   Enter / Space - enter selected room (accessibility + clear checks)
+//   E         - extract to camp (only after boss cleared)
 // Accessibility rule: room is enterable if it has no parents OR any parent cleared.
 // =============================================================================
 
 if (ui_input_blocked()) exit;
 
-// Pause / Esc menu — freeze the floor while it (or its Settings sub-screen) is open.
+// Pause / Esc menu - freeze the floor while it (or its Settings sub-screen) is open.
 // The Esc-to-open trigger lives lower down, past every popup block, so it only
 // fires when no shrine/event/treasure popup is up. See pause_menu_step (scr_stats).
 if (pause_menu_step()) exit;
@@ -41,7 +41,7 @@ if (variable_global_exists("item_picker") && global.item_picker.resolved_purpose
 
 
 // -----------------------------------------------------------------------------
-// 1. TREASURE POPUP — intercepts all input until dismissed
+// 1. TREASURE POPUP - intercepts all input until dismissed
 // -----------------------------------------------------------------------------
 if (showing_treasure) {
     if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)
@@ -55,7 +55,7 @@ if (showing_treasure) {
 
 
 // -----------------------------------------------------------------------------
-// 2. EVENT POPUP (rest / trap) — intercepts all input until dismissed
+// 2. EVENT POPUP (rest / trap) - intercepts all input until dismissed
 // -----------------------------------------------------------------------------
 if (showing_event) {
     if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)
@@ -69,13 +69,13 @@ if (showing_event) {
 
 
 // -----------------------------------------------------------------------------
-// 2b. SHRINE OF TRIBUTE — interactive boon purchase (see SYSTEMS_BOONS.md)
-//   W/S select boon · 1 pay gold · 2 pay dust · 3 sacrifice item · Esc leave
+// 2b. SHRINE OF TRIBUTE - interactive boon purchase (see SYSTEMS_BOONS.md)
+//   W/S select boon - 1 pay gold - 2 pay dust - 3 sacrifice item - Esc leave
 // -----------------------------------------------------------------------------
 if (showing_shrine) {
     var _sh_n = array_length(shrine_offers);
 
-    // Leave (mark cleared — shrines don't persist once visited)
+    // Leave (mark cleared - shrines don't persist once visited)
     if (keyboard_check_pressed(vk_escape) || keyboard_check_pressed(vk_backspace)) {
         showing_shrine = false;
         current_rooms[selected_room].cleared = true;
@@ -89,7 +89,7 @@ if (showing_shrine) {
         shrine_cursor = clamp(shrine_cursor, 0, _sh_n - 1);
 
         if (shrine_kind == "curse") {
-            // Curse altar — accept the selected curse for free (the difficulty is
+            // Curse altar - accept the selected curse for free (the difficulty is
             // the cost). Enter/Space binds it for the rest of the run.
             if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_space)) {
                 var _cid = shrine_offers[shrine_cursor];
@@ -105,7 +105,7 @@ if (showing_shrine) {
                 }
             }
         } else {
-            // Blessing altar — pay tribute (gold / dust / item) for a boon.
+            // Blessing altar - pay tribute (gold / dust / item) for a boon.
             var _pay_method = "";
             if (keyboard_check_pressed(ord("1"))) _pay_method = "gold";
             else if (keyboard_check_pressed(ord("2"))) _pay_method = "dust";
@@ -147,11 +147,11 @@ if (showing_shrine) {
 
 
 // -----------------------------------------------------------------------------
-// 2c. EVENT ROOM — interactive stat-gated choice overlay (see SYSTEMS_EVENTS.md)
-//   W/S select choice (skips locked) · Enter confirm · result phase: any key closes
+// 2c. EVENT ROOM - interactive stat-gated choice overlay (see SYSTEMS_EVENTS.md)
+//   W/S select choice (skips locked) - Enter confirm - result phase: any key closes
 // -----------------------------------------------------------------------------
 if (showing_event_choice) {
-    // Result phase — any key closes the overlay and marks the room cleared.
+    // Result phase - any key closes the overlay and marks the room cleared.
     if (event_phase == "result") {
         if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)
             || keyboard_check_pressed(vk_space) || mouse_check_button_pressed(mb_left)) {
@@ -200,7 +200,7 @@ if (showing_event_choice) {
 // Move by map geometry instead of cycling ids: Left/Right change column (layer),
 // Up/Down move within the current column. Only reachable rooms are selectable.
 // -----------------------------------------------------------------------------
-// Esc opens the pause menu — only reachable here, with no popup active (every
+// Esc opens the pause menu - only reachable here, with no popup active (every
 // treasure/event/shrine block above exits first), so it never steals Esc from them.
 if (keyboard_check_pressed(vk_escape)) {
     pause_menu_open();
@@ -359,7 +359,7 @@ if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter) || key
         show_debug_message("[FLOOR DEBUG] room=" + string(selected_room) + " type=treasure_rare gold=" + string(_tr_gold));
 
     } else if (_room.type == "event") {
-        // Event room — roll an event and open the interactive choice overlay.
+        // Event room - roll an event and open the interactive choice overlay.
         event_active      = event_roll();
         event_cursor      = event_first_unlocked(event_active);
         event_phase       = "choose";
@@ -368,7 +368,7 @@ if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter) || key
         show_debug_message("[FLOOR DEBUG] room=" + string(selected_room) + " type=event id=" + event_active.id);
 
     } else if (_room.type == "shrine") {
-        // Shrine altar — coin-flip its nature, then roll the matching offers. If the
+        // Shrine altar - coin-flip its nature, then roll the matching offers. If the
         // chosen kind has nothing left to give, fall back to the other kind.
         shrine_kind = (irandom(1) == 0) ? "curse" : "blessing";
         if (shrine_kind == "curse") {
@@ -402,7 +402,7 @@ if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter) || key
 
 
 // -----------------------------------------------------------------------------
-// 5. EXTRACT TO CAMP — only after floor boss is defeated
+// 5. EXTRACT TO CAMP - only after floor boss is defeated
 // -----------------------------------------------------------------------------
 if (keyboard_check_pressed(ord("E"))) {
     var _boss_cleared = false;
@@ -426,7 +426,7 @@ if (keyboard_check_pressed(ord("E"))) {
 
 // -----------------------------------------------------------------------------
 // 6. MOUSE: click a node box to select it
-// Node center is at (room.px, room.py), half-dims are NW/2=65, NH/2=32.
+// Node center is at (room.px, room.py), half-dims are NW/2=98, NH/2=48.
 // Only reachable rooms can be selected (unreachable ones are greyed out).
 // -----------------------------------------------------------------------------
 if (mouse_check_button_pressed(mb_left)) {
@@ -436,9 +436,9 @@ if (mouse_check_button_pressed(mb_left)) {
     for (var _mi = 0; _mi < array_length(current_rooms); _mi++) {
         if (!_mreach[_mi]) continue;
         var _mr  = current_rooms[_mi];
-        var _mnx = _mr.px - 65;
-        var _mny = _mr.py - 32;
-        if (_mx >= _mnx && _mx < _mnx + 130 && _my >= _mny && _my < _mny + 64) {
+        var _mnx = _mr.px - 98;
+        var _mny = _mr.py - 48;
+        if (_mx >= _mnx && _mx < _mnx + 195 && _my >= _mny && _my < _mny + 96) {
             selected_room = _mi;
             break;
         }

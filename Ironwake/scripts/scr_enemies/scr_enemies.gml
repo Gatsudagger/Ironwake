@@ -3,30 +3,30 @@
 // Enemy data structures and the Phase 1 Ashen Vault roster for Ironwake.
 //
 // Usage pattern:
-//   1. Call enemy_clone(template) at the start of each encounter — never pass
+//   1. Call enemy_clone(template) at the start of each encounter - never pass
 //      a template directly into combat, or stat mutations will persist.
 //   2. Pass the cloned struct as a combatant to combat_init() in scr_combat.
 //   3. The combat engine must branch on mechanic_type each turn to trigger
 //      special behaviour. See per-mechanic notes below.
 //
 // mechanic_type reference:
-//   "none"         — no special behaviour
-//   "double_strike"— enemy attacks twice per action; each hit uses mechanic_value
+//   "none"         - no special behaviour
+//   "double_strike"- enemy attacks twice per action; each hit uses mechanic_value
 //                    as the per-hit damage. Combat engine: fire two hit rolls.
-//   "phase_shift"  — enemy becomes untargetable for mechanic_value turns every
+//   "phase_shift"  - enemy becomes untargetable for mechanic_value turns every
 //                    mechanic_turns turns. Combat engine: set an untargetable flag.
-//   "charge"       — pairs with telegraph; enemy winds up and delivers
+//   "charge"       - pairs with telegraph; enemy winds up and delivers
 //                    telegraph_damage on the telegraphed turn. No extra engine
 //                    logic needed beyond the telegraph path.
-//   "regen"        — enemy recovers mechanic_value HP at the start of its turn
+//   "regen"        - enemy recovers mechanic_value HP at the start of its turn
 //                    every mechanic_turns turns. Combat engine: call
 //                    combat_apply_damage with negative damage (heal).
-//   "death_burst"  — on defeat, enemy deals mechanic_value elemental damage to
+//   "death_burst"  - on defeat, enemy deals mechanic_value elemental damage to
 //                    the player. Combat engine: check after combat_is_defeated().
-//   "fortify"      — reduces incoming damage by (1 - mechanic_value) for one turn
+//   "fortify"      - reduces incoming damage by (1 - mechanic_value) for one turn
 //                    every mechanic_turns turns. Combat engine: apply multiplier
 //                    before combat_resolve_damage.
-//   "retribution"  — gains mechanic_value armor for 2 turns when hit by the same
+//   "retribution"  - gains mechanic_value armor for 2 turns when hit by the same
 //                    damage type twice in a row. Combat engine: track last_damage_type
 //                    on the enemy struct and compare each hit.
 // =============================================================================
@@ -72,30 +72,30 @@ function enemy_define(
         gold_min:          gold_min,
         gold_max:          gold_max,
 
-        // Combat system flags — combat_init reads these
+        // Combat system flags - combat_init reads these
         is_player:         false,
         class_id:          -1,
         energy:            3,
 
-        // Telegraph — warns the player one turn before a big attack lands
+        // Telegraph - warns the player one turn before a big attack lands
         telegraph_turn:    telegraph_turn,     // fires every N turns (0 = never)
         telegraph_damage:  telegraph_damage,
         telegraph_message: telegraph_message,
 
-        // Special mechanic — the combat engine checks mechanic_type each turn
+        // Special mechanic - the combat engine checks mechanic_type each turn
         mechanic_type:     mechanic_type,
         mechanic_value:    mechanic_value,
         mechanic_turns:    mechanic_turns,
 
-        // Special abilities (Difficulty Pass) — array of enemy_ability() structs.
+        // Special abilities (Difficulty Pass) - array of enemy_ability() structs.
         // The combat engine may use one per turn instead of the basic attack.
         abilities:         abilities,
         ability_cd:        [],     // runtime per-ability cooldown counters
 
-        // Runtime state — populated by the combat engine, empty on the template
+        // Runtime state - populated by the combat engine, empty on the template
         status_effects:    [],
 
-        // Defeated flag — set true by the combat engine, never true on a template
+        // Defeated flag - set true by the combat engine, never true on a template
         is_defeated:       false,
 
         // Internal tracking used by retribution mechanic
@@ -160,7 +160,7 @@ function boss_ability_set(floor, dungeon) {
     var _nuke_name = (dungeon == "tundra_tomb") ? "Frozen Lance" : ((dungeon == "scorched_depths") ? "Molten Barrage" : "Soul Rend");
     return [
         enemy_ability(_nuke_name, "spell", 45, 2, _nuke_dmg, { dtype: _dtype, msg: "unleashes " + _nuke_name }),
-        enemy_ability("Crushing Slam", "control", 30, 4, 0, { status_kind: "stun", turns: 1, msg: "slams the ground — you are stunned" }),
+        enemy_ability("Crushing Slam", "control", 30, 4, 0, { status_kind: "stun", turns: 1, msg: "slams the ground - you are stunned" }),
     ];
 }
 
@@ -168,7 +168,7 @@ function boss_ability_set(floor, dungeon) {
 // enemy_is_ranged(name) / enemy_is_spellcaster(name)
 // Combat classification (reach + kind) used by control effects: root stops only
 // melee enemies, silence stops only spellcasters, stun stops all.
-// See SYSTEMS_ATTACK_CLASS.md. Boss aliases aren't listed → default melee/attack.
+// See SYSTEMS_ATTACK_CLASS.md. Boss aliases aren't listed -> default melee/attack.
 // ---------------------------------------------------------------------------
 function enemy_is_ranged(name) {
     switch (name) {
@@ -207,7 +207,7 @@ function enemy_clone(enemy_template) {
     // Reset runtime-only fields so template state never leaks into combat
     c.HP             = enemy_template.max_HP;
     c.energy         = 3;
-    c.status_effects = [];    // fresh array — never share with the template
+    c.status_effects = [];    // fresh array - never share with the template
     c.is_defeated    = false;
     c.last_damage_type = -1;
     c.ability_cd     = [];    // fresh per-combat cooldown counters
@@ -223,7 +223,7 @@ function enemy_clone(enemy_template) {
 // (big) attack fires and returns telegraph_damage instead of base damage.
 // Returns 0 if the enemy is already defeated.
 //
-// Note: double_strike enemies deal mechanic_value per hit × 2 — the combat
+// Note: double_strike enemies deal mechanic_value per hit x 2 - the combat
 // engine handles the two separate hit rolls; this function returns the
 // per-hit value via enemy.mechanic_value for that mechanic type.
 // ---------------------------------------------------------------------------
@@ -256,7 +256,7 @@ function enemy_should_telegraph(enemy, turn_number) {
 
 // =============================================================================
 // PHASE 1: ASHEN VAULT ROSTER
-// Templates — always pass through enemy_clone() before combat use.
+// Templates - always pass through enemy_clone() before combat use.
 // =============================================================================
 
 // -----------------------------------------------------------------------------
@@ -266,7 +266,7 @@ function enemy_should_telegraph(enemy, turn_number) {
 global.enemies_ashen_vault_standard = [
 
     // 0: Ashen Skeleton
-    // Straightforward melee attacker. No mechanics — good for teaching
+    // Straightforward melee attacker. No mechanics - good for teaching
     // the core hit/damage loop to the player.
     enemy_define(
         "Ashen Skeleton",
@@ -323,7 +323,7 @@ global.enemies_ashen_vault_standard = [
     ),
 
     // 4: Grave Stalker
-    // High dodge skirmisher — punishes players who repeat the same damage type.
+    // High dodge skirmisher - punishes players who repeat the same damage type.
     // Forces constant ability rotation to avoid giving it armor stacks.
     enemy_define(
         "Grave Stalker",
@@ -348,7 +348,7 @@ global.enemies_ashen_vault_standard = [
         /*telegraph_turn*/0, /*telegraph_damage*/0, /*message*/"",
         /*mechanic*/"fortify", /*value*/0.4, /*turns*/3,
         /*abilities*/[
-            enemy_ability("Bone Crush", "control", 22, 4, 0, { status_kind: "stun", turns: 1, msg: "smashes you to the ground — stunned" }),
+            enemy_ability("Bone Crush", "control", 22, 4, 0, { status_kind: "stun", turns: 1, msg: "smashes you to the ground - stunned" }),
             enemy_ability("Knit Bone", "heal", 28, 4, 10, { msg: "knits its shattered bones" }),
         ]
     ),
@@ -365,10 +365,10 @@ global.enemies_ashen_vault_elite = [
     // 0: Stone Golem
     // Massive armor makes physical damage mostly useless; elemental is preferred.
     // Fortifies every 4 turns (50% damage reduction for that turn), on the same
-    // cycle as its telegraph attack — the player must choose to attack through
+    // cycle as its telegraph attack - the player must choose to attack through
     // the fortify or hold back.
     // COMBAT ENGINE: on turns where (turn_number mod mechanic_turns) == 0, apply
-    // a 0.5× multiplier to all incoming damage before combat_resolve_damage().
+    // a 0.5x multiplier to all incoming damage before combat_resolve_damage().
     enemy_define(
         "Stone Golem",
         /*HP*/80, /*damage*/14,
@@ -380,7 +380,7 @@ global.enemies_ashen_vault_elite = [
     ),
 
     // 1: Vault Guardian
-    // Punishes players who repeat the same damage type — after two consecutive
+    // Punishes players who repeat the same damage type - after two consecutive
     // hits of the same type it gains 4 armor for 2 turns (retribution).
     // Forces the player to alternate damage types or switch to drain.
     // COMBAT ENGINE: after each hit, compare the incoming damage_type to
@@ -399,7 +399,7 @@ global.enemies_ashen_vault_elite = [
 ];
 
 // =============================================================================
-// SCORCHED DEPTHS — fire-themed dungeon, floors 1-3
+// SCORCHED DEPTHS - fire-themed dungeon, floors 1-3
 // =============================================================================
 global.enemies_scorched_depths_standard = [
     enemy_define(
@@ -439,7 +439,7 @@ global.enemies_scorched_depths_standard = [
         ]
     ),
 
-    // Lava Spitter — high acc ranged attacker, retribution punishes repeated elements
+    // Lava Spitter - high acc ranged attacker, retribution punishes repeated elements
     enemy_define(
         /*name*/"Lava Spitter",
         /*HP*/30, /*damage*/8, /*armor*/0, /*el_resist*/6, /*dodge*/2, /*acc*/84,
@@ -448,7 +448,7 @@ global.enemies_scorched_depths_standard = [
         /*mechanic*/"retribution", /*value*/4, /*turns*/0
     ),
 
-    // Smoldering Revenant — regenerates and explodes on death; punishes slow kills
+    // Smoldering Revenant - regenerates and explodes on death; punishes slow kills
     enemy_define(
         /*name*/"Smoldering Revenant",
         /*HP*/36, /*damage*/6, /*armor*/1, /*el_resist*/5, /*dodge*/4, /*acc*/72,
@@ -481,7 +481,7 @@ global.enemies_scorched_depths_elite = [
 ];
 
 // =============================================================================
-// TUNDRA TOMB — ice/undead dungeon, floors 1-3
+// TUNDRA TOMB - ice/undead dungeon, floors 1-3
 // =============================================================================
 global.enemies_tundra_tomb_standard = [
     enemy_define(
@@ -508,7 +508,7 @@ global.enemies_tundra_tomb_standard = [
         /*message*/"is inscribing a death rune!",
         /*mechanic*/"charge", /*value*/0, /*turns*/0,
         /*abilities*/[
-            enemy_ability("Death Rune", "control", 25, 4, 0, { status_kind: "silence", turns: 2, msg: "binds your tongue — silenced" }),
+            enemy_ability("Death Rune", "control", 25, 4, 0, { status_kind: "silence", turns: 2, msg: "binds your tongue - silenced" }),
             enemy_ability("Frost Bolt", "spell", 35, 2, 10, { dtype: 1, msg: "hurls a shard of ice" }),
             enemy_ability("Restorative Glyph", "heal", 35, 3, 16, { msg: "traces a restorative glyph and mends" }),
         ]
@@ -522,7 +522,7 @@ global.enemies_tundra_tomb_standard = [
         /*mechanic*/"regen", /*value*/3, /*turns*/2
     ),
 
-    // Ice Specter — phases out AND punishes repeated damage types; very slippery
+    // Ice Specter - phases out AND punishes repeated damage types; very slippery
     enemy_define(
         /*name*/"Ice Specter",
         /*HP*/28, /*damage*/8, /*armor*/0, /*el_resist*/10, /*dodge*/10, /*acc*/65,
@@ -530,11 +530,11 @@ global.enemies_tundra_tomb_standard = [
         /*telegraph_turn*/0, /*telegraph_damage*/0, /*message*/"",
         /*mechanic*/"phase_shift", /*value*/1, /*turns*/2,
         /*abilities*/[
-            enemy_ability("Numbing Chill", "debuff", 35, 3, 0.20, { status_kind: "weaken", turns: 2, msg: "chills you to the bone — weakened" }),
+            enemy_ability("Numbing Chill", "debuff", 35, 3, 0.20, { status_kind: "weaken", turns: 2, msg: "chills you to the bone - weakened" }),
         ]
     ),
 
-    // Frozen Thrall — fortifies behind an icy shell, then telegraphs a crushing blow
+    // Frozen Thrall - fortifies behind an icy shell, then telegraphs a crushing blow
     enemy_define(
         /*name*/"Frozen Thrall",
         /*HP*/40, /*damage*/7, /*armor*/5, /*el_resist*/4, /*dodge*/0, /*acc*/70,

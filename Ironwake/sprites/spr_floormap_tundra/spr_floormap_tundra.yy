@@ -2,9 +2,9 @@
   "$GMSprite":"v2",
   "%Name":"spr_floormap_tundra",
   "bboxMode":0,
-  "bbox_bottom":223,
+  "bbox_bottom":895,
   "bbox_left":0,
-  "bbox_right":399,
+  "bbox_right":1599,
   "bbox_top":0,
   "collisionKind":1,
   "collisionTolerance":0,
@@ -16,7 +16,7 @@
   ],
   "gridX":0,
   "gridY":0,
-  "height":224,
+  "height":896,
   "HTile":false,
   "layers":[
     {"$GMImageLayer":"","%Name":"48099c40-0087-42d9-a516-18797c2cae3c","blendMode":0,"displayName":"default","isLocked":false,"name":"48099c40-0087-42d9-a516-18797c2cae3c","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
@@ -86,5 +86,5 @@
   },
   "type":0,
   "VTile":false,
-  "width":400,
+  "width":1600,
 }

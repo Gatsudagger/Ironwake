@@ -1,5 +1,5 @@
 // =============================================================================
-// obj_combat_controller — Create event
+// obj_combat_controller - Create event
 // Bootstraps a single combat encounter: builds the player struct, clones
 // enemies, runs combat_init, and sets up all controller state.
 // =============================================================================
@@ -93,7 +93,7 @@ player = {
     HP:         _derived.HP,
     max_HP:     _derived.HP,
 
-    // Mitigation — base 1 each; equipment bonuses stored separately for Step application
+    // Mitigation - base 1 each; equipment bonuses stored separately for Step application
     armor:           1,
     el_resist:       1,
     equip_armor:     _equip_bonus.armor,
@@ -103,7 +103,7 @@ player = {
     dodge:      _derived.DODGE,
     acc:        _derived.ACC_modifier,
 
-    // Action economy — restored to 3 at the start of each turn
+    // Action economy - restored to 3 at the start of each turn
     energy:     3,
 
     // Checked by the turn queue UI and the combat engine defeat logic
@@ -112,10 +112,15 @@ player = {
     // Flat damage reduction applied after armor (set by Iron Skin, reset on expiry)
     damage_reduction: 0,
 
-    // Defensive status flags — set by Blink and Shadow Step abilities
-    is_untargetable:    false,
-    untargetable_turns: 0,
-    shadow_step_active: false,
+    // Defensive status flags.
+    // is_untargetable/untargetable_turns - Vanish's chance-dodge window.
+    // blink_charges - Blink's staged guard: 3 = next hit auto-dodged, 2 = -50% dmg,
+    //   1 = -25% dmg, 0 = inactive (see obj_combat_controller/Step_0 incoming-attack block).
+    // shadow_step_charges - Shadow Step rolls a dodge CHANCE on each of the next N attacks.
+    is_untargetable:     false,
+    untargetable_turns:  0,
+    blink_charges:       0,
+    shadow_step_charges: 0,
 
     // Buff duration trackers (read by HUD for status icon display)
     iron_skin_duration:  0,
@@ -128,10 +133,10 @@ player = {
     status_effects: [],
     shield_hp:      0,
 
-    // Raw stats struct — crit functions read STR/DEX/INT/WIS from here
+    // Raw stats struct - crit functions read STR/DEX/INT/WIS from here
     stats:      _stats,
 
-    // Derived combat values — flat damage bonuses, reductions, crit ceilings
+    // Derived combat values - flat damage bonuses, reductions, crit ceilings
     derived:    _derived,
 };
 
@@ -157,17 +162,17 @@ if (variable_global_exists("pending_trap_damage") && global.pending_trap_damage 
 // Attach secondary resource fields based on class; abilities come from the
 // shared abilities_get_loadout() so the menu and combat always show the same set.
 switch (_class_id) {
-    case 0: // Arcanist — Souls
+    case 0: // Arcanist - Souls
         player.souls     = 0;
         player.souls_max = 10;
         break;
 
-    case 1: // Bloodwarden — Blood
+    case 1: // Bloodwarden - Blood
         player.blood     = 0;
         player.blood_max = 10;
         break;
 
-    case 2: // Shadowstrider — Preparation
+    case 2: // Shadowstrider - Preparation
         player.preparation     = 0;
         player.preparation_max = 10;
         player.trap_active     = false;
@@ -199,6 +204,12 @@ if (!_loadout_valid) {
 // Decremented at the start of each player turn; set when a cooldown ability
 // (Blink / Shadow Step) is cast. Kept off the shared ability struct on purpose.
 player.ability_cd = array_create(array_length(player.abilities), 0);
+
+// Same-category AP synergy tracker (SYSTEMS_ABILITY_SYNERGY.md): a set of the role
+// categories (offense/defense/support/control) already cast THIS player turn. The
+// 2nd+ ability of a category costs -1 AP (floor 1). Reset at each player-turn start
+// (obj_combat_controller/Step_0, the need_player_status_tick block).
+player.turn_cast_categories = {};
 
 // Restore secondary resources carried from the previous room
 if (variable_global_exists("run_souls") && player.class_id == 0) {
@@ -243,14 +254,14 @@ player.crown_hollow_king = false;  // +1 trait slot (hub loadout screen)
 player.gatewarden_used   = false;  // tracks if the 0-AP proc is available this combat
 
 // Class-weapon ability affixes (set by equipped class-locked weapons; see obj_game_controller/Create_0)
-player.cf_first_spell_ap  = false;  // Cracked Focus  — first spell each combat costs 1 less AP (min 1)
+player.cf_first_spell_ap  = false;  // Cracked Focus  - first spell each combat costs 1 less AP (min 1)
 player.cf_used            = false;  // tracks whether that discount has fired this combat
-player.spell_dmg_bonus    = 0;      // Vaultstone Wand — outgoing spell damage % (e.g. 0.12)
-player.spell_crit_ap      = false;  // Void Scepter   — spell crit restores 1 AP
-player.weapon_lifesteal   = 0;      // Gravelstone Sword — heal % of melee damage dealt
-player.weapon_start_shield = 0;     // Ashkeeper Blade — shield_hp granted at combat start
-player.weapon_crit_bonus  = 0;      // Shadow Sickle  — flat % added to crit rolls
-player.kill_ap_refund     = false;  // Serpent's Reach — killing an enemy refunds 1 AP
+player.spell_dmg_bonus    = 0;      // Vaultstone Wand - outgoing spell damage % (e.g. 0.12)
+player.spell_crit_ap      = false;  // Void Scepter   - spell crit restores 1 AP
+player.weapon_lifesteal   = 0;      // Gravelstone Sword - heal % of melee damage dealt
+player.weapon_start_shield = 0;     // Ashkeeper Blade - shield_hp granted at combat start
+player.weapon_crit_bonus  = 0;      // Shadow Sickle  - flat % added to crit rolls
+player.kill_ap_refund     = false;  // Serpent's Reach - killing an enemy refunds 1 AP
 
 for (var _li = 0; _li < array_length(global.inventory); _li++) {
     var _lit = global.inventory[_li];
@@ -299,7 +310,7 @@ if (_dmn_frac < 1.0) {
 // 2. CLONE ENEMIES
 // -----------------------------------------------------------------------------
 
-// Always clone templates — never pass the template directly into combat, or
+// Always clone templates - never pass the template directly into combat, or
 // stat mutations (damage taken, status effects) will persist across encounters.
 // Enemy pool is chosen by global.next_enemy_type set by obj_floor_controller.
 var _enemy_type;
@@ -438,7 +449,7 @@ if (_enemy_type == "elite") {
     enemy2.damage = 6;
 
 } else {
-    // Standard — pick two random different enemies from the standard pool
+    // Standard - pick two random different enemies from the standard pool
     var _pool_size = array_length(_std_pool);
     var _idx1 = irandom(_pool_size - 1);
     var _idx2 = irandom(_pool_size - 1);
@@ -452,7 +463,7 @@ if (_enemy_type == "elite") {
 }
 
 // -----------------------------------------------------------------------------
-// ENCOUNTER SIZE — 2-4 enemies by room difficulty + RNG.
+// ENCOUNTER SIZE - 2-4 enemies by room difficulty + RNG.
 // enemy1/enemy2 are the base pair; extras are extra standard mobs (weak adds for
 // bosses). All enemies below are scaled/initialised via the `enemies` array.
 // -----------------------------------------------------------------------------
@@ -495,7 +506,7 @@ if (_asc > 0) {
 }
 
 // -----------------------------------------------------------------------------
-// DIFFICULTY PASS — baseline enemy buff + per-floor scaling.
+// DIFFICULTY PASS - baseline enemy buff + per-floor scaling.
 // Baseline (~+15%) applies to everyone; floor scaling stacks on standard/elite
 // only (bosses already escalate via their hand-tuned per-floor stats above).
 // Stacks multiplicatively with ascendance. See SYSTEMS_ENEMY_DIFFICULTY.md.
@@ -513,7 +524,7 @@ for (var _ei = 0; _ei < array_length(enemies); _ei++) {
 }
 
 // -----------------------------------------------------------------------------
-// CURSE PASS — opt-in run difficulty (devil's bargain). Doom buffs enemy HP;
+// CURSE PASS - opt-in run difficulty (devil's bargain). Doom buffs enemy HP;
 // Savagery/Doom/Devil's Pact buff enemy damage. Stacks on top of ascendance +
 // difficulty. See SYSTEMS_CURSES.md.
 // -----------------------------------------------------------------------------
@@ -555,7 +566,15 @@ combat_state = combat_init(_combatants);
 // 4. CONTROLLER VARIABLES (continued)
 // -----------------------------------------------------------------------------
 
-// Loot screen shown after combat when items dropped this room
+// Loot screen shown after combat when items dropped this room.
+// Reset the loot buffer on combat ENTRY so the post-combat screen ("Items
+// collected this room") shows ONLY what drops during THIS fight. Treasure/event
+// rooms also push into global.run_items_found, but they display their own popups
+// and store the items in carried_items/consumable_inventory - so clearing here
+// just stops those earlier pickups from re-appearing on the next combat's loot
+// screen (the "I found the same item again" duplicate-looking bug). run_items_found
+// is purely the loot-screen display buffer; it is not the run-history record.
+global.run_items_found = [];
 show_loot_screen   = false;
 loot_screen_scroll = 0;
 
@@ -568,10 +587,10 @@ boss_bonus_granted = false;
 // -----------------------------------------------------------------------------
 
 // Abilities the player has already used in the current player turn.
-// Cleared when a new player turn starts (enemy turn → player turn transition).
+// Cleared when a new player turn starts (enemy turn -> player turn transition).
 abilities_used_this_turn = [];
 
-// Set true on each enemy→player transition; consumed at player turn start to
+// Set true on each enemy->player transition; consumed at player turn start to
 // tick the player's status effects (DoT/debuff durations) exactly once per turn.
 need_player_status_tick = false;
 
@@ -620,10 +639,10 @@ array_push(combat_log,
 // 6. VISUAL EFFECTS STATE
 // -----------------------------------------------------------------------------
 
-// Floating damage/heal numbers — each entry: { value, x, y, timer, col }
+// Floating damage/heal numbers - each entry: { value, x, y, timer, col }
 damage_popups = [];
 
-// Attack slide animation — attacker lunges toward target over 20 frames
+// Attack slide animation - attacker lunges toward target over 20 frames
 attack_anim_timer     = 0;
 attack_anim_src_x     = 0;
 attack_anim_src_y     = 0;
@@ -632,12 +651,12 @@ attack_anim_dst_y     = 0;
 attack_anim_is_player = true;   // true = player is attacker
 attack_anim_enemy_idx = 0;      // which enemy slot is sliding
 
-// Screen shake — random sprite offset while timer > 0
+// Screen shake - random sprite offset while timer > 0
 screen_shake_timer = 0;
 screen_shake_x     = 0;
 screen_shake_y     = 0;
 
-// VFX impact sprite — drawn at hit position for a few frames.
+// VFX impact sprite - drawn at hit position for a few frames.
 // vfx_timer_max holds the value vfx_timer was set to, so the Draw event can map
 // the countdown onto the sprite's sub-images (multi-frame Gigapack effects).
 vfx_timer     = 0;
@@ -650,7 +669,7 @@ vfx_y         = 0;
 player.hit_flash = 0;
 for (var _ei = 0; _ei < array_length(enemies); _ei++) enemies[_ei].hit_flash = 0;
 
-// Battle music — boss gets its own track, everything else gets the combat loop
+// Battle music - boss gets its own track, everything else gets the combat loop
 audio_apply_volumes();   // honor saved Music/SFX volumes
 if (_enemy_type == "boss") {
     audio_play_sound(_14_BOSS_y_LOOP, 1, true);

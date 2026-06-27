@@ -1,5 +1,5 @@
 // =============================================================================
-// obj_floor_controller — Create event
+// obj_floor_controller - Create event
 // Builds a branching dungeon floor map. The map is a DAG of room nodes stored
 // in global.floor_map so it survives room transitions without regenerating.
 //
@@ -13,7 +13,7 @@
 
 
 // -----------------------------------------------------------------------------
-// 1. GLOBAL FLOOR STATE — initialised once per game session
+// 1. GLOBAL FLOOR STATE - initialised once per game session
 // -----------------------------------------------------------------------------
 if (!variable_global_exists("current_floor")) {
     global.current_floor       = 1;
@@ -52,7 +52,7 @@ if (returning_from_combat) {
 
 
 // -----------------------------------------------------------------------------
-// 3. FLOOR MAP — generated once per floor, persisted in global.floor_map
+// 3. FLOOR MAP - generated once per floor, persisted in global.floor_map
 // -----------------------------------------------------------------------------
 var _need_new_map = !variable_global_exists("floor_map")
     || !variable_global_exists("floor_map_floor")
@@ -73,7 +73,7 @@ if (_need_new_map) {
     random_set_seed(global.run_seed * 101 + global.current_floor * 17 + 3);
 
     // 5..6 layers (so 3-4 intermediate layers): keeps every floor from being too
-    // short — after the "guarantee >=2 combat/elite" net there's always room left
+    // short - after the "guarantee >=2 combat/elite" net there's always room left
     // for loot/event/rest. Width per layer (1-3) is the main shape-variety lever.
     var _num_layers = 5 + irandom(1);    // 5 or 6 layers (boss layer index 4..5)
     var _layer_nodes = [];               // _layer_nodes[l] = array of node ids in layer l
@@ -86,9 +86,11 @@ if (_need_new_map) {
         if (_gl == 0 || _gl == _num_layers - 1) {
             _cnt = 1;                    // entry + boss are single nodes
         } else {
-            // 1-3 nodes, weighted toward 2 (roll 0->1, 1/2->2, 3->3).
-            var _r = irandom(3);
-            _cnt = (_r == 0) ? 1 : ((_r == 3) ? 3 : 2);
+            // 1-3 nodes, weighted toward WIDER layers for more branching: roll
+            // 0..5 -> 0:1node (1/6), 1-3:2nodes (3/6), 4-5:3nodes (2/6). Fewer
+            // single-node "pinch" layers means more real forks per floor.
+            var _r = irandom(5);
+            _cnt = (_r == 0) ? 1 : ((_r >= 4) ? 3 : 2);
         }
         var _ids = [];
         for (var _gs = 0; _gs < _cnt; _gs++) {
@@ -101,40 +103,49 @@ if (_need_new_map) {
     }
 
     // Build edges: connect each layer to the next so the graph is a valid DAG.
+    // Both _from and _to are stored TOP->BOTTOM (slot order == vertical order, see
+    // py assignment below), so we can connect by vertical PROXIMITY instead of by
+    // random index. This is the fix for "I took the top path but got forced into
+    // the bottom room": edges now follow the drawn position, and the staircase
+    // walk below guarantees no two connection lines ever cross (planar map).
     var _children = array_create(_node_count);
     for (var _ci = 0; _ci < _node_count; _ci++) _children[_ci] = [];
 
     for (var _gl = 0; _gl < _num_layers - 1; _gl++) {
         var _from = _layer_nodes[_gl];
         var _to   = _layer_nodes[_gl + 1];
-        var _to_n = array_length(_to);
-        var _has_parent = array_create(_to_n, false);
+        var _nf   = array_length(_from);
+        var _nt   = array_length(_to);
 
-        // Each source node fans out to 1-2 distinct random targets in the next layer.
-        for (var _a = 0; _a < array_length(_from); _a++) {
-            var _src   = _from[_a];
-            var _links = min(_to_n, 1 + ((_to_n > 1) ? irandom(1) : 0));
-            var _picked = [];
-            while (array_length(_picked) < _links) {
-                var _ti  = irandom(_to_n - 1);
-                var _dup = false;
-                for (var _pp = 0; _pp < array_length(_picked); _pp++) {
-                    if (_picked[_pp] == _ti) { _dup = true; break; }
-                }
-                if (!_dup) array_push(_picked, _ti);
-            }
-            for (var _pp = 0; _pp < array_length(_picked); _pp++) {
-                array_push(_children[_src], _to[_picked[_pp]]);
-                _has_parent[_picked[_pp]] = true;
-            }
-        }
+        // Monotone "staircase" walk from the two tops to the two bottoms. At each
+        // step we advance whichever side is further behind in vertical fraction and
+        // connect the new pair. Because both indices only ever move DOWN, edges stay
+        // sorted and never cross. Every source and every target is touched, so the
+        // graph is fully connected with no dead ends - forks (out-degree 2) appear
+        // naturally wherever the next layer is as wide or wider, merges where it's
+        // narrower. (Replaces the old random-index fan-out + orphan-adoption pass.)
+        var _a = 0;   // index into _from (top -> bottom)
+        var _b = 0;   // index into _to
+        array_push(_children[_from[0]], _to[0]);
 
-        // Reachability fix: any next-layer node still parentless gets one random source.
-        for (var _b = 0; _b < _to_n; _b++) {
-            if (!_has_parent[_b]) {
-                var _src2 = _from[irandom(array_length(_from) - 1)];
-                array_push(_children[_src2], _to[_b]);
+        while (_a < _nf - 1 || _b < _nt - 1) {
+            var _advance_source;
+            if (_a >= _nf - 1) {
+                _advance_source = false;        // source column exhausted -> step target
+            } else if (_b >= _nt - 1) {
+                _advance_source = true;         // target column exhausted -> step source
+            } else {
+                // Both can move: step the side whose NEXT node sits higher up (smaller
+                // vertical fraction) so the connection stays diagonal/proximate. When
+                // the two are level, coin-flip for shape variety (still monotone, so
+                // still non-crossing).
+                var _fa = (_a + 1) / (_nf - 1);
+                var _fb = (_b + 1) / (_nt - 1);
+                if (abs(_fa - _fb) < 0.001) _advance_source = (irandom(1) == 0);
+                else                        _advance_source = (_fa < _fb);
             }
+            if (_advance_source) _a++; else _b++;
+            array_push(_children[_from[_a]], _to[_b]);
         }
     }
 
@@ -233,14 +244,14 @@ if (_need_new_map) {
         if (_layers[_i] > _max_layer) _max_layer = _layers[_i];
     }
 
-    // Graph draw area: x=20..880 (w=860), y=100..680 (h=580)
-    // Node width 130 (was 148) so the widest 6-column templates keep a real gutter
+    // Graph draw area: x=30..1320 (w=1290), y=150..1020 (h=870)  [native 1080p x1.5]
+    // Node width 195 (130x1.5) so the widest 6-column templates keep a real gutter
     // between columns instead of overlapping. Must match _NW in Draw_64.
-    var _gx1 = 20;  var _gx2 = 880;
-    var _gy1 = 100; var _gy2 = 680;
-    var _node_w = 130; var _node_h = 64;
-    var _mid_y  = (_gy1 + _gy2) * 0.5;   // 390
-    var _y_spread = 110;                   // offset for 2-node layers
+    var _gx1 = 30;  var _gx2 = 1320;
+    var _gy1 = 150; var _gy2 = 1020;
+    var _node_w = 195; var _node_h = 96;
+    var _mid_y  = (_gy1 + _gy2) * 0.5;   // 585
+    var _y_spread = 165;                   // offset for 2-node layers
 
     // Count nodes per layer for y spread decision
     var _per_layer = array_create(_max_layer + 1, 0);
@@ -359,7 +370,7 @@ if (_need_new_map) {
     global.floor_rooms_cleared  = array_create(_node_count, false);
 
 } else {
-    // Returning from a room transition — restore cleared state for just-completed room
+    // Returning from a room transition - restore cleared state for just-completed room
     if (returning_from_combat
         && variable_global_exists("current_room_index")
         && global.current_room_index >= 0
@@ -404,7 +415,7 @@ for (var _i = 0; _i < array_length(current_rooms); _i++) {
 
 
 // -----------------------------------------------------------------------------
-// 5. POPUP STATE — treasure/event overlay
+// 5. POPUP STATE - treasure/event overlay
 // showing_treasure: standard gold+item popup
 // showing_event:    rest / trap event popup
 // -----------------------------------------------------------------------------
@@ -419,15 +430,15 @@ event_body    = "";
 event_color   = c_white;
 event_timer   = 0;
 
-// Shrine — interactive altar overlay. Rolls per visit as a Blessing altar (boons,
-// bought with tribute) or a Curse altar (curses, accepted for free — devil's bargain).
+// Shrine - interactive altar overlay. Rolls per visit as a Blessing altar (boons,
+// bought with tribute) or a Curse altar (curses, accepted for free - devil's bargain).
 showing_shrine     = false;
 shrine_kind        = "blessing";  // "blessing" = boons | "curse" = curses
 shrine_offers      = [];   // array of boon ids OR curse ids offered this shrine
 shrine_cursor      = 0;
 shrine_notification = "";
 
-// Event room — interactive stat-gated choice overlay (see SYSTEMS_EVENTS.md)
+// Event room - interactive stat-gated choice overlay (see SYSTEMS_EVENTS.md)
 showing_event_choice = false;
 event_active         = undefined;  // the rolled event struct
 event_cursor         = 0;
