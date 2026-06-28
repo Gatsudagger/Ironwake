@@ -492,6 +492,12 @@ function ui_consumable_icon_sprite(cname) {
         case "Purification Draught":  return spr_icon_consumable_purification_draught;
         case "Adrenaline Vial":       return spr_icon_consumable_adrenaline_vial;
         case "Warden's Tonic":        return spr_icon_consumable_wardens_tonic;
+        // Sable's brewed (alchemy-exclusive) potions.
+        case "Aegis Draught":          return spr_icon_consumable_aegis_draught;
+        case "Master Healing Draught": return spr_icon_consumable_master_healing_draught;
+        case "Phoenix Tonic":          return spr_icon_consumable_phoenix_tonic;
+        case "Cleansing Philter":      return spr_icon_consumable_cleansing_philter;
+        case "Ley Battery":            return spr_icon_consumable_ley_battery;
     }
     return -1;
 }
@@ -513,6 +519,31 @@ function ui_draw_consumable_icon(x, y, sz, item) {
     if (_spr != -1 && sprite_exists(_spr)) {
         draw_sprite_stretched(_spr, 0, x + 2, y + 2, sz - 4, sz - 4);
     }
+}
+
+// ---------------------------------------------------------------------------
+// ui_draw_consumable_entry(x, ty, item, name_col)
+// Draws a potion as an equipment-style row: icon badge on the left, NAME on the top
+// line and its EFFECT description below - mirroring how gear reads. `item` may be a
+// brew-catalog def (uses .desc) or a consumable instance (uses .description). `ty` is
+// the row text baseline returned by ui_maren_row.
+// ---------------------------------------------------------------------------
+function ui_draw_consumable_entry(_x, _ty, item, _name_col = make_color_rgb(150, 215, 200)) {
+    var _ry  = _ty - 15;
+    var _isz = 48;
+    ui_draw_consumable_icon(_x + 6, _ry + 9, _isz, item);
+    var _tx  = _x + 6 + _isz + 18;
+    var _nm  = variable_struct_exists(item, "name") ? item.name : "Potion";
+    var _ds  = variable_struct_exists(item, "desc")        ? item.desc
+             : (variable_struct_exists(item, "description") ? item.description : "");
+    draw_set_halign(fa_left);
+    draw_set_font(fnt_ui);
+    draw_set_color(_name_col);
+    draw_text(_tx, _ry + 4, _nm);
+    draw_set_font(fnt_ui_small);
+    draw_set_color(make_color_rgb(170, 185, 180));
+    draw_text(_tx, _ry + 38, _ds);
+    draw_set_font(fnt_ui);
 }
 
 // ---------------------------------------------------------------------------
@@ -6566,11 +6597,13 @@ function ui_draw_sable_screen() {
             var _b   = _brew[_bi];
             var _tyb = ui_maren_row(_bi, _bi == _cursor);
             var _aff = (global.gold >= _b.gold) && (_dust >= _b.dust);
-            draw_set_color(_aff ? make_color_rgb(190, 220, 195) : make_color_rgb(120, 130, 122));
-            draw_text(_list_x + 24, _tyb, _b.name + "  -  " + _b.desc);
+            // Equipment-style row: icon + name + effect description.
+            ui_draw_consumable_entry(_list_x, _tyb, _b,
+                _aff ? make_color_rgb(190, 220, 195) : make_color_rgb(120, 130, 122));
             draw_set_halign(fa_right);
-            draw_set_color(make_color_rgb(200, 180, 130));
-            draw_text(_list_x2 - 24, _tyb, string(_b.gold) + "g  +  " + string(_b.dust) + " Dust");
+            draw_set_font(fnt_ui_small);
+            draw_set_color(_aff ? make_color_rgb(200, 180, 130) : make_color_rgb(150, 120, 110));
+            draw_text(_list_x2 - 24, _tyb + 12, string(_b.gold) + "g  +  " + string(_b.dust) + " Dust");
             draw_set_halign(fa_left);
         }
     } else if (_gc.sable_tab == 2) {
@@ -6587,8 +6620,21 @@ function ui_draw_sable_screen() {
             var _g   = _groups[_ui];
             var _tyu = ui_maren_row(_ui, _ui == _cursor);
             var _uaff = (global.gold >= _ucost.gold) && (_dust >= _ucost.dust);
-            draw_set_color(_uaff ? make_color_rgb(190, 220, 195) : make_color_rgb(120, 130, 122));
-            draw_text(_list_x + 24, _tyu, "3x " + _g.from + "  ->  " + _g.to + "   (have " + string(_g.count) + ")");
+            var _ucol = _uaff ? make_color_rgb(190, 220, 195) : make_color_rgb(120, 130, 122);
+            // Show the RESULT potion equipment-style (icon + name + effect); the recipe
+            // (fuse 3x source) sits on the right.
+            var _utmpl = sable_elite_template(_g.to);
+            if (_utmpl != undefined) {
+                ui_draw_consumable_entry(_list_x, _tyu, _utmpl, _ucol);
+            } else {
+                draw_set_color(_ucol);
+                draw_text(_list_x + 24, _tyu, _g.to);
+            }
+            draw_set_halign(fa_right);
+            draw_set_font(fnt_ui_small);
+            draw_set_color(make_color_rgb(180, 195, 205));
+            draw_text(_list_x2 - 24, _tyu + 12, "Fuse 3x " + _g.from + "   (have " + string(_g.count) + ")");
+            draw_set_halign(fa_left);
         }
     } else {
         // -------- REBIRTH TAB --------
