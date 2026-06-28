@@ -78,6 +78,26 @@ global.__sprite_includes = [
     spr_skin_veilbind,
     spr_skin_voidtouch,
     spr_skin_wanderer,
+    // Rune gem icons - resolved via rune_icon_sprite("spr_icon_rune_<id>") strings,
+    // so they need a hard reference here or the compiler strips them from the build.
+    spr_icon_rune_vitality,
+    spr_icon_rune_might,
+    spr_icon_rune_finesse,
+    spr_icon_rune_fortitude,
+    spr_icon_rune_insight,
+    spr_icon_rune_keen,
+    spr_icon_rune_warding,
+    spr_icon_rune_evasion,
+    spr_icon_rune_ember,
+    spr_icon_rune_serration,
+    spr_icon_rune_hemorrhage,
+    spr_icon_rune_hunter,
+    spr_icon_rune_bulwark,
+    spr_icon_rune_leech,
+    spr_icon_rune_surge,
+    spr_icon_rune_anchor,
+    spr_icon_rune_quickcast,
+    spr_icon_rune_echo,
 ];
 
 // =============================================================================
@@ -730,6 +750,10 @@ maren_cursor       = 0;    // row cursor in the active list
 maren_phase        = 0;    // Socket tab: 0 choose item, 1 choose socket, 2 choose rune
 maren_item_sel     = -1;   // chosen equipped-item slot index (0-7) in Socket tab
 maren_notification = "";
+maren_scroll       = 0;    // first visible row index (list windowing for long rune lists)
+// Confirm modal: undefined = none, else { action, message, warn, cost } describing a
+// pending gold-costing or destructive action awaiting Enter (confirm) / Esc (cancel).
+maren_confirm      = undefined;
 
 // Sable the Alchemist screen state (tabs: 0 Salvage, 1 Brew, 2 Upgrade)
 sable_open         = false;

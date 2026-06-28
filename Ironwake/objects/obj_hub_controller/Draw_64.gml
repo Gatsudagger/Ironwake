@@ -108,14 +108,35 @@ draw_text(GUI_CX, 18, "THE IRONWAKE CAMP");
 
 // Rotating camp flavor line - lives in the open center-column band BELOW the NPC
 // list (which ends at y945) and above the footer (y1073). WIDTH-CONSTRAINED to that
-// column (x630-1290) via draw_text_ext so a long lore line wraps within it instead
-// of stretching left into the character panel (x<=540) or right into the NPC detail
-// (x>=1320). Centered at GUI_CX; wraps downward, leaving clearance above the footer.
-draw_set_font(fnt_ui_small);
-draw_set_color(make_color_rgb(150, 130, 110));
-draw_text_ext_outline(GUI_CX, 960, hub_flavor, 30, 645);
+// column (x630-1290) so a long lore line wraps within it instead of stretching into
+// the character panel (x<=540) or NPC detail (x>=1320).
+//
+// Drawn ~2x the old size: the readable Centaur UI font scaled up via
+// draw_text_ext_transformed (Castellar title font is all-caps and unreadable for
+// sentences). The message still AUTO-WRAPS (the messages vary in length), and the
+// whole wrapped block is vertically fitted into the band [948..1070] so even the
+// longest, three-line message clears the footer. A dark 8-way outline keeps it
+// legible over the camp art.
+draw_set_font(fnt_ui);
+draw_set_halign(fa_center);
+draw_set_valign(fa_top);
+var _flav_scale = 1.275;                            // 22px Centaur -> ~28px (25% smaller than the 1.7x pass)
+var _flav_w     = 700 / _flav_scale;                // ~700px on-screen wrap width (unscaled)
+var _flav_sep   = 26;                               // line spacing scales with the text (~33px on-screen)
+var _flav_h     = string_height_ext(hub_flavor, _flav_sep, _flav_w) * _flav_scale;
+var _flav_y     = min(max(948, 1008 - _flav_h * 0.5), 1070 - _flav_h);
+draw_set_color(make_color_rgb(12, 11, 9));
+for (var _fox = -2; _fox <= 2; _fox += 2) {
+    for (var _foy = -2; _foy <= 2; _foy += 2) {
+        if (_fox == 0 && _foy == 0) continue;
+        draw_text_ext_transformed(GUI_CX + _fox, _flav_y + _foy, hub_flavor, _flav_sep, _flav_w, _flav_scale, _flav_scale, 0);
+    }
+}
+draw_set_color(make_color_rgb(208, 184, 152));
+draw_text_ext_transformed(GUI_CX, _flav_y, hub_flavor, _flav_sep, _flav_w, _flav_scale, _flav_scale, 0);
 draw_set_font(-1);
 draw_set_halign(fa_left);
+draw_set_valign(fa_top);
 
 
 // -----------------------------------------------------------------------------

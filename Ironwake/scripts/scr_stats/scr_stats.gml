@@ -2125,6 +2125,45 @@ function rune_describe(rune) {
     return _def.name + " " + rune_tier_roman(rune.tier) + " - " + _blurb;
 }
 
+// Rune name + tier only, e.g. "Vitality II" (the "name" line, like an item name).
+function rune_title(rune) {
+    var _def = rune_get(rune.id);
+    var _nm  = (_def != undefined) ? _def.name : rune.name;
+    return _nm + " " + rune_tier_roman(rune.tier);
+}
+
+// Rune stat-effect only, e.g. "+35 Max HP" (the "stat" line, like an item's stat str).
+function rune_effect(rune) {
+    var _def = rune_get(rune.id);
+    if (_def == undefined) return "";
+    return string_replace_all(_def.blurb, "#", string(rune_value(rune)));
+}
+
+// Thematic gem color for a rune (drives the code-drawn fallback gem + name tint).
+function rune_glyph_color(id) {
+    switch (id) {
+        case "might":      case "serration":  return make_color_rgb(210,  80,  70);  // red
+        case "hemorrhage": case "leech":      return make_color_rgb(180,  40,  60);  // crimson
+        case "ember":                         return make_color_rgb(235, 130,  50);  // ember orange
+        case "vitality":   case "fortitude":  case "bulwark": return make_color_rgb(220, 160, 70); // amber
+        case "finesse":    case "hunter":     case "evasion": return make_color_rgb(90, 205, 110); // green
+        case "keen":                          return make_color_rgb(240, 215,  90);  // gold
+        case "warding":                       return make_color_rgb(70, 200, 190);   // teal
+        case "insight":    case "surge":      case "quickcast": case "echo": return make_color_rgb(110, 170, 240); // arcane blue
+        case "anchor":                        return make_color_rgb(150, 155, 175);  // steel
+    }
+    return make_color_rgb(160, 200, 240);
+}
+
+// Sprite icon for a rune (gem/glyph). Returns a sprite id, or -1 if its art isn't
+// imported yet (the UI then draws a code-gem fallback). Resolved by rune id so the
+// table activates automatically once the spr_icon_rune_* assets exist in the IDE.
+function rune_icon_sprite(id) {
+    var _nm = "spr_icon_rune_" + id;
+    if (asset_get_index(_nm) != -1 && asset_get_type(_nm) == asset_sprite) return asset_get_index(_nm);
+    return -1;
+}
+
 // A random droppable rune at the given tier (excludes tier3-only flagships,
 // which are craft / legendary-drop only). Returns a rune instance struct.
 function rune_random(tier) {
@@ -2393,6 +2432,10 @@ function maren_combine_rune(id, tier) {
     save_game();
     return "";
 }
+
+// Flat gold charged to socket OR unsocket a rune (small service fee). Unlike the
+// forge costs this is a fixed 30g, not CHA-discounted, so the prompt is predictable.
+function rune_socket_cost() { return 30; }
 
 // Split cost (gold only - split RETURNS dust). Gold is CHA-discounted.
 function rune_split_cost() { return { gold: cha_price(20) }; }
@@ -3455,7 +3498,10 @@ function player_effective_stat(stat_name) {
 // Success% for a stat check: clamp(base + (stat - ref) * per, 10, 90).
 function event_check_chance(stat_name, base_pct, per_point, ref) {
     var _s = player_effective_stat(stat_name);
-    return clamp(base_pct + (_s - ref) * per_point, 10, 90);
+    // Sense trait: a flat +5% to every stat-check's success odds (read of the room
+    // tips the bet in your favor). Folded into the base before the curve + clamp.
+    var _sense_bonus = trait_active("Sense") ? 5 : 0;
+    return clamp(base_pct + _sense_bonus + (_s - ref) * per_point, 10, 90);
 }
 
 // event_effect_phrase(fx) - short plain-language summary of an effects struct,

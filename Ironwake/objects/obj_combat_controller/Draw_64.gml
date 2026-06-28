@@ -216,6 +216,11 @@ var _espr_map = {
     "Glacial Warden":       spr_glacial_beast,
     "Tomb Archon":          spr_frozen_sentinel,
     "The Eternal Frost":    spr_frozen_sentinel,
+    // Scorched Depths bosses - reuse fitting elite sprites (these renamed clones were
+    // missing from the map, so they rendered with no model). See obj_combat_controller Create.
+    "Forge Tyrant":         spr_cinder_golem,
+    "Molten Revenant":      spr_infernal_revenant,
+    "The Ashen Colossus":   spr_fire_drake,
 };
 var _espr_x0  = 1665;
 var _espr_y0  = 225;
@@ -760,6 +765,18 @@ if (show_loot_screen) {
             draw_set_color(_rarity_col);
             draw_set_halign(fa_left);
             draw_text(456, _iy + 3, _item.name);
+            // Class restriction tag after the name (gold = your class, red = locked).
+            // Standardized with the loadout tooltip / Dorn shop so it shows everywhere.
+            var _loot_cr = variable_struct_exists(_item, "class_req") ? _item.class_req : -1;
+            if (_loot_cr != -1) {
+                var _loot_cr_names = ["Arcanist", "Bloodwarden", "Shadowstrider"];
+                var _loot_my_cl    = variable_global_exists("chosen_class") ? global.chosen_class : -1;
+                draw_set_font(fnt_ui_small);
+                draw_set_color((_loot_cr == _loot_my_cl) ? make_color_rgb(210, 175, 90) : make_color_rgb(225, 80, 80));
+                draw_text(456 + string_width(_item.name) + 18, _iy + 9,
+                    "[" + _loot_cr_names[clamp(_loot_cr, 0, 2)] + " only]");
+                draw_set_font(fnt_ui);
+            }
             // Stat line (e.g. "+4 STR, +12 HP") so found gear is readable at a glance.
             // Scale it down to ONE line within the left content area so a many-affix
             // item can't overrun the right-hand rarity/slot/req column.

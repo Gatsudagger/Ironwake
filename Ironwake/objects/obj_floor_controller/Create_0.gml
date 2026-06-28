@@ -94,11 +94,11 @@ if (_need_new_map) {
         if (_gl == 0 || _gl == _num_layers - 1) {
             _cnt = 1;                    // entry + boss are single nodes
         } else {
-            // 1-3 nodes, weighted toward WIDER layers for more branching: roll
-            // 0..5 -> 0:1node (1/6), 1-3:2nodes (3/6), 4-5:3nodes (2/6). Fewer
-            // single-node "pinch" layers means more real forks per floor.
+            // 1-3 nodes. Readability pass: favor 2-wide layers and make 3-wide RARE so
+            // the map reads as a couple of distinct routes instead of a dense grid.
+            // Roll 0..5 -> 0:1node (1/6), 1-4:2nodes (4/6), 5:3nodes (1/6).
             var _r = irandom(5);
-            _cnt = (_r == 0) ? 1 : ((_r >= 4) ? 3 : 2);
+            _cnt = (_r == 0) ? 1 : ((_r == 5) ? 3 : 2);
         }
         var _ids = [];
         for (var _gs = 0; _gs < _cnt; _gs++) {
@@ -110,12 +110,20 @@ if (_need_new_map) {
         array_push(_layer_nodes, _ids);
     }
 
-    // Build edges: connect each layer to the next so the graph is a valid DAG.
-    // Both _from and _to are stored TOP->BOTTOM (slot order == vertical order, see
-    // py assignment below), so we can connect by vertical PROXIMITY instead of by
-    // random index. This is the fix for "I took the top path but got forced into
-    // the bottom room": edges now follow the drawn position, and the staircase
-    // walk below guarantees no two connection lines ever cross (planar map).
+    // Build edges as vertical LANES with the FEWEST connections that keep the map
+    // valid, so route choices feel EXCLUSIVE. Old behaviour (a staircase touching every
+    // adjacent pair) meant almost any room could reach almost any other - picking a path
+    // barred you from nothing. Now:
+    //   1) each room links to its single vertically-nearest room in the next layer
+    //      (out-degree 1 by default), and
+    //   2) only a room that would otherwise be orphaned (no parent) attaches to its
+    //      nearest parent - the ONLY way a fork is created, and only where the next
+    //      layer is wider.
+    // So equal-width stretches become fully isolated parallel lanes that don't rejoin
+    // until a later pinch, widening layers create a genuine fork, and narrowing layers a
+    // merge. The graph stays valid (every room reachable from entry AND able to reach the
+    // boss - no dead ends) and planar (all mappings are by vertical proximity, both
+    // columns sorted top->bottom, so straight connection lines never cross).
     var _children = array_create(_node_count);
     for (var _ci = 0; _ci < _node_count; _ci++) _children[_ci] = [];
 
@@ -124,36 +132,24 @@ if (_need_new_map) {
         var _to   = _layer_nodes[_gl + 1];
         var _nf   = array_length(_from);
         var _nt   = array_length(_to);
+        var _claimed = array_create(_nt, false);   // does target j have a parent yet?
 
-        // Monotone "staircase" walk from the two tops to the two bottoms. At each
-        // step we advance whichever side is further behind in vertical fraction and
-        // connect the new pair. Because both indices only ever move DOWN, edges stay
-        // sorted and never cross. Every source and every target is touched, so the
-        // graph is fully connected with no dead ends - forks (out-degree 2) appear
-        // naturally wherever the next layer is as wide or wider, merges where it's
-        // narrower. (Replaces the old random-index fan-out + orphan-adoption pass.)
-        var _a = 0;   // index into _from (top -> bottom)
-        var _b = 0;   // index into _to
-        array_push(_children[_from[0]], _to[0]);
+        // 1) Each parent -> its single nearest child (lanes; out-degree 1).
+        for (var _pi = 0; _pi < _nf; _pi++) {
+            var _pfrac = (_nf > 1) ? (_pi / (_nf - 1)) : 0.5;
+            var _cj    = round(_pfrac * (_nt - 1));
+            array_push(_children[_from[_pi]], _to[_cj]);
+            _claimed[_cj] = true;
+        }
 
-        while (_a < _nf - 1 || _b < _nt - 1) {
-            var _advance_source;
-            if (_a >= _nf - 1) {
-                _advance_source = false;        // source column exhausted -> step target
-            } else if (_b >= _nt - 1) {
-                _advance_source = true;         // target column exhausted -> step source
-            } else {
-                // Both can move: step the side whose NEXT node sits higher up (smaller
-                // vertical fraction) so the connection stays diagonal/proximate. When
-                // the two are level, coin-flip for shape variety (still monotone, so
-                // still non-crossing).
-                var _fa = (_a + 1) / (_nf - 1);
-                var _fb = (_b + 1) / (_nt - 1);
-                if (abs(_fa - _fb) < 0.001) _advance_source = (irandom(1) == 0);
-                else                        _advance_source = (_fa < _fb);
-            }
-            if (_advance_source) _a++; else _b++;
-            array_push(_children[_from[_a]], _to[_b]);
+        // 2) Adopt any still-parentless child via its nearest parent (the only fork
+        //    source; happens only when this layer is wider than the last).
+        for (var _tj = 0; _tj < _nt; _tj++) {
+            if (_claimed[_tj]) continue;
+            var _tfrac = (_nt > 1) ? (_tj / (_nt - 1)) : 0.5;
+            var _pj    = round(_tfrac * (_nf - 1));
+            array_push(_children[_from[_pj]], _to[_tj]);
+            _claimed[_tj] = true;
         }
     }
 

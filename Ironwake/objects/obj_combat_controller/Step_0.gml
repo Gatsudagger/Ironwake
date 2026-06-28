@@ -1848,6 +1848,10 @@ if (player_turn) {
             }
 
         } else {
+            // Gross incoming = the enemy's effective swing before ANY of the player's
+            // defensive layers (armor / Iron Skin / equip armor / phys reduction /
+            // Warding). Captured here so we can report how much was mitigated in the log.
+            var _gross_incoming = _base_dmg + combat_status_total(player, "vulnerable");
             var _final_dmg = combat_resolve_damage(
                 _base_dmg,
                 0,              // enemies deal physical damage by default
@@ -1868,6 +1872,9 @@ if (player_turn) {
             if (curse_incoming_mult() != 1.0) _final_dmg = max(1, round(_final_dmg * curse_incoming_mult()));
             // Blink softening: 2nd/3rd charge takes 50%/25%-reduced damage if the hit lands.
             if (_incoming_mult < 1.0) _final_dmg = max(1, round(_final_dmg * _incoming_mult));
+            // How much the player's defenses shaved off this swing (armor/Iron Skin/etc.),
+            // measured before Soul Shield (which logs its own absorb line separately).
+            var _dmg_blocked = max(0, _gross_incoming - _final_dmg);
             // Soul Shield absorbs damage before it reaches HP.
             if (variable_struct_exists(player, "shield_hp") && player.shield_hp > 0 && _final_dmg > 0) {
                 var _sa = min(player.shield_hp, _final_dmg);
@@ -1906,7 +1913,8 @@ if (player_turn) {
             vfx_timer     = 18;
             vfx_timer_max = 18;
             array_push(combat_log,
-                actor.name + " attacked for " + string(_final_dmg) + " damage!");
+                actor.name + " attacked for " + string(_final_dmg) + " damage!"
+                + ((_dmg_blocked > 0) ? ("  (" + string(_dmg_blocked) + " blocked)") : ""));
 
             // --- Bloodthorn Aura reflect ---
             if (player.bloodthorn_active) {
@@ -1952,6 +1960,7 @@ if (player_turn) {
                     ? ("You dodged " + actor.name + "'s second strike!")
                     : (actor.name + "'s second strike missed!"));
             } else {
+                var _gross_incoming2 = actor.mechanic_value + combat_status_total(player, "vulnerable");
                 var _final_dmg2 = combat_resolve_damage(
                     actor.mechanic_value,
                     0,
@@ -1963,6 +1972,7 @@ if (player_turn) {
                 if (boon_active("warding")) _final_dmg2 = max(1, round(_final_dmg2 * boon_incoming_mult()));
                 if (curse_incoming_mult() != 1.0) _final_dmg2 = max(1, round(_final_dmg2 * curse_incoming_mult()));
                 if (_incoming_mult < 1.0) _final_dmg2 = max(1, round(_final_dmg2 * _incoming_mult));  // Blink softening
+                var _dmg_blocked2 = max(0, _gross_incoming2 - _final_dmg2);
                 // Soul Shield absorbs the second strike too.
                 if (variable_struct_exists(player, "shield_hp") && player.shield_hp > 0 && _final_dmg2 > 0) {
                     var _sa2 = min(player.shield_hp, _final_dmg2);
@@ -1977,7 +1987,8 @@ if (player_turn) {
                 screen_shake_timer = max(screen_shake_timer, 8);
                 array_push(damage_popups, { value: _final_dmg2, x: 278, y: 338, timer: 50, col: make_color_rgb(255, 80, 80) });
                 array_push(combat_log,
-                    actor.name + " strikes again for " + string(_final_dmg2) + " damage!");
+                    actor.name + " strikes again for " + string(_final_dmg2) + " damage!"
+                    + ((_dmg_blocked2 > 0) ? ("  (" + string(_dmg_blocked2) + " blocked)") : ""));
 
                 // --- Bloodthorn Aura reflect (double strike) ---
                 if (player.bloodthorn_active) {

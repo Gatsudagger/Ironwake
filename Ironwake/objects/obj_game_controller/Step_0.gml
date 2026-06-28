@@ -843,6 +843,84 @@ if (variable_instance_exists(id, "maren_open") && maren_open) {
                   ? global.inventory[maren_item_sel] : undefined;
     item_ensure_sockets(_m_item);
 
+    // --- Confirm modal: a pending gold-costing / destructive action awaiting a yes/no.
+    //     Takes input priority over the whole screen. Enter confirms, Esc cancels. ---
+    if (maren_confirm != undefined) {
+        if (keyboard_check_pressed(vk_escape) || keyboard_check_pressed(vk_backspace)
+            || mouse_check_button_pressed(mb_right)) {
+            maren_confirm = undefined;
+            maren_notification = "Cancelled.";
+            exit;
+        }
+        if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)) {
+            var _cf = maren_confirm;
+            maren_confirm = undefined;
+
+            if (_cf.action == "socket") {
+                if (global.gold < _cf.cost) { maren_notification = "Need " + string(_cf.cost) + "g."; exit; }
+                if (maren_socket_rune(maren_item_sel, _cf.rune_inv)) {
+                    global.gold -= _cf.cost; save_game();
+                    maren_notification = "Socketed " + _cf.name + " " + rune_tier_roman(_cf.tier)
+                        + ".  (-" + string(_cf.cost) + "g)";
+                } else {
+                    maren_notification = "That item has no open sockets.";
+                }
+                maren_phase = 1; maren_cursor = 0; maren_scroll = 0;
+
+            } else if (_cf.action == "unsocket") {
+                if (global.gold < _cf.cost) { maren_notification = "Need " + string(_cf.cost) + "g."; exit; }
+                if (maren_unsocket_rune(maren_item_sel, _cf.rune_idx)) {
+                    global.gold -= _cf.cost; save_game();
+                    maren_notification = "Removed " + _cf.name + " " + rune_tier_roman(_cf.tier)
+                        + " (returned to inventory).  (-" + string(_cf.cost) + "g)";
+                    maren_cursor = clamp(maren_cursor, 0, max(0, (_m_item != undefined ? _m_item.socket_count : 1) - 1));
+                } else {
+                    maren_notification = "Could not remove that rune.";
+                }
+
+            } else if (_cf.action == "split") {
+                var _sr_name = _cf.name; var _sr_tier = _cf.tier;
+                var _sres = maren_split_rune(_cf.rune_inv);
+                maren_notification = (_sres == "")
+                    ? ("Split " + _sr_name + " " + rune_tier_roman(_sr_tier) + ".")
+                    : _sres;
+                maren_cursor = clamp(maren_cursor, 0, max(0, array_length(global.rune_inventory) - 1));
+
+            } else if (_cf.action == "combine") {
+                var _cres = maren_combine_rune(_cf.grp_id, _cf.grp_tier);
+                maren_notification = (_cres == "")
+                    ? ("Forged " + _cf.name + " " + rune_tier_roman(_cf.grp_tier + 1) + "!")
+                    : _cres;
+                maren_cursor = 0; maren_scroll = 0;
+
+            } else if (_cf.action == "aspect_socket") {
+                if (global.gold < _cf.cost) { maren_notification = "Need " + string(_cf.cost) + "g."; exit; }
+                if (maren_aspect_socket(_cf.rune_inv)) {
+                    global.gold -= _cf.cost; save_game();
+                    maren_notification = "Socketed " + _cf.name + " " + rune_tier_roman(_cf.tier)
+                        + ".  (-" + string(_cf.cost) + "g)";
+                } else {
+                    maren_notification = "No open Aspect slot.";
+                }
+                maren_phase = 0; maren_cursor = 0; maren_scroll = 0;
+
+            } else if (_cf.action == "aspect_unsocket") {
+                if (global.gold < _cf.cost) { maren_notification = "Need " + string(_cf.cost) + "g."; exit; }
+                if (maren_aspect_unsocket(_cf.slot_idx)) {
+                    global.gold -= _cf.cost; save_game();
+                    maren_notification = "Removed " + _cf.name + " " + rune_tier_roman(_cf.tier)
+                        + " (returned to inventory).  (-" + string(_cf.cost) + "g)";
+                    // Re-clamp against the aspect-tab row count (nav re-clamps next frame too).
+                    maren_cursor = clamp(maren_cursor, 0, max(0, (variable_global_exists("aspect_slots") ? global.aspect_slots : 2)));
+                } else {
+                    maren_notification = "Could not remove that rune.";
+                }
+            }
+            exit;
+        }
+        exit;   // swallow all other input while the confirm prompt is open
+    }
+
     // Aspect-tab state
     var _m_aslots  = variable_global_exists("aspect_slots") ? global.aspect_slots : 2;
     var _m_asocked = variable_global_exists("aspect_runes") ? array_length(global.aspect_runes) : 0;
@@ -872,10 +950,10 @@ if (variable_instance_exists(id, "maren_open") && maren_open) {
 
     // Esc / Backspace - step back one phase, else close the screen
     if (keyboard_check_pressed(vk_escape) || keyboard_check_pressed(vk_backspace)) {
-        if (maren_tab == 0 && maren_phase == 2)      { maren_phase = 1; maren_cursor = 0; }
-        else if (maren_tab == 0 && maren_phase == 1) { maren_phase = 0; maren_item_sel = -1; maren_cursor = 0; }
-        else if (maren_tab == 1 && maren_phase == 1) { maren_phase = 0; maren_cursor = 0; }
-        else if (maren_tab == 2 && maren_phase > 0)  { maren_phase = 0; maren_cursor = 0; }
+        if (maren_tab == 0 && maren_phase == 2)      { maren_phase = 1; maren_cursor = 0; maren_scroll = 0; }
+        else if (maren_tab == 0 && maren_phase == 1) { maren_phase = 0; maren_item_sel = -1; maren_cursor = 0; maren_scroll = 0; }
+        else if (maren_tab == 1 && maren_phase == 1) { maren_phase = 0; maren_cursor = 0; maren_scroll = 0; }
+        else if (maren_tab == 2 && maren_phase > 0)  { maren_phase = 0; maren_cursor = 0; maren_scroll = 0; }
         else                                          { maren_open = false; }
         maren_notification = "";
         exit;
@@ -887,7 +965,7 @@ if (variable_instance_exists(id, "maren_open") && maren_open) {
     else if (keyboard_check_pressed(ord("Q")) || keyboard_check_pressed(vk_left)) _maren_tabchg = -1;
     if (_maren_tabchg != 0) {
         maren_tab = (maren_tab + _maren_tabchg + 4) mod 4;
-        maren_phase = 0; maren_item_sel = -1; maren_cursor = 0; maren_notification = "";
+        maren_phase = 0; maren_item_sel = -1; maren_cursor = 0; maren_scroll = 0; maren_notification = "";
         exit;
     }
 
@@ -895,6 +973,14 @@ if (variable_instance_exists(id, "maren_open") && maren_open) {
     if (nav_up())   { maren_cursor = wrap_index(maren_cursor - 1, _m_rows); maren_notification = ""; }
     if (nav_down()) { maren_cursor = wrap_index(maren_cursor + 1, _m_rows); maren_notification = ""; }
     maren_cursor = clamp(maren_cursor, 0, max(0, _m_rows - 1));
+
+    // Scroll window: keep the cursor on-screen for long lists (auto-follow). Because
+    // this re-derives scroll from the cursor every frame, it also self-resets to 0
+    // whenever a tab/phase change sets maren_cursor back to 0. Shared with the draw.
+    var _m_vis = maren_visible_rows();
+    if (maren_cursor < maren_scroll)               maren_scroll = maren_cursor;
+    else if (maren_cursor >= maren_scroll + _m_vis) maren_scroll = maren_cursor - _m_vis + 1;
+    maren_scroll = clamp(maren_scroll, 0, max(0, _m_rows - _m_vis));
 
     // Mouse - tab bar (x=445+t*200, y=70, w=190, h=40) + row select acts immediately
     var _m_act = (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter));
@@ -905,14 +991,18 @@ if (variable_instance_exists(id, "maren_open") && maren_open) {
         for (var _mtb = 0; _mtb < 4; _mtb++) {
             var _mtx = 368 + _mtb * 300;
             if (_mmx >= _mtx && _mmx < _mtx + 285 && _mmy >= 105 && _mmy < 165) {
-                maren_tab = _mtb; maren_phase = 0; maren_item_sel = -1; maren_cursor = 0; maren_notification = "";
+                maren_tab = _mtb; maren_phase = 0; maren_item_sel = -1; maren_cursor = 0; maren_scroll = 0; maren_notification = "";
                 _hit_tab = true; break;
             }
         }
-        // Rows: list starts at y=285, each row 72px tall, x 300..1620
+        // Rows: list starts at y=285, each row 72px tall, x 300..1620. The clicked
+        // screen-row maps to data index maren_scroll + row (windowed list).
         if (!_hit_tab && _mmx >= 300 && _mmx < 1620) {
             var _row = floor((_mmy - 285) / 72);
-            if (_row >= 0 && _row < _m_rows) { maren_cursor = _row; _m_act = true; }
+            if (_row >= 0 && _row < _m_vis) {
+                var _click_idx = maren_scroll + _row;
+                if (_click_idx < _m_rows) { maren_cursor = _click_idx; _m_act = true; }
+            }
         }
     }
 
@@ -922,45 +1012,72 @@ if (variable_instance_exists(id, "maren_open") && maren_open) {
             if (maren_phase == 0) {
                 if (array_length(_m_slots) > 0) {
                     maren_item_sel = _m_slots[clamp(maren_cursor, 0, array_length(_m_slots) - 1)];
-                    maren_phase = 1; maren_cursor = 0; maren_notification = "";
+                    maren_phase = 1; maren_cursor = 0; maren_scroll = 0; maren_notification = "";
                 }
             } else if (maren_phase == 1 && _m_item != undefined) {
                 var _filled = array_length(_m_item.runes);
                 if (maren_cursor < _filled) {
+                    // Unsocket -> confirm + 30g (rune returns to inventory unharmed).
                     var _ur = _m_item.runes[maren_cursor];
-                    maren_unsocket_rune(maren_item_sel, maren_cursor);
-                    maren_notification = "Removed " + _ur.name + " " + rune_tier_roman(_ur.tier) + ".";
-                    maren_cursor = clamp(maren_cursor, 0, max(0, _m_item.socket_count - 1));
+                    var _ucost = rune_socket_cost();
+                    if (global.gold < _ucost) {
+                        maren_notification = "Removing a rune costs " + string(_ucost) + "g - not enough gold.";
+                    } else {
+                        maren_confirm = {
+                            action: "unsocket", cost: _ucost, rune_idx: maren_cursor,
+                            name: _ur.name, tier: _ur.tier,
+                            message: "Remove " + _ur.name + " " + rune_tier_roman(_ur.tier)
+                                + " from " + _m_item.name + " for " + string(_ucost) + "g?",
+                            warn: "The rune returns to your inventory unharmed."
+                        };
+                    }
                 } else if (array_length(_m_gear) > 0) {
-                    maren_phase = 2; maren_cursor = 0; maren_notification = "";
+                    maren_phase = 2; maren_cursor = 0; maren_scroll = 0; maren_notification = "";
                 } else {
                     maren_notification = "No gear runes to socket. (Aspect runes go in the Aspects tab.)";
                 }
             } else if (maren_phase == 2) {
                 if (array_length(_m_gear) > 0) {
+                    // Socket -> confirm + 30g.
                     var _ri = _m_gear[clamp(maren_cursor, 0, array_length(_m_gear) - 1)];
                     var _rn = global.rune_inventory[_ri];
-                    if (maren_socket_rune(maren_item_sel, _ri)) {
-                        maren_notification = "Socketed " + _rn.name + " " + rune_tier_roman(_rn.tier) + ".";
+                    var _scost = rune_socket_cost();
+                    if (global.gold < _scost) {
+                        maren_notification = "Socketing costs " + string(_scost) + "g - not enough gold.";
                     } else {
-                        maren_notification = "That item has no open sockets.";
+                        maren_confirm = {
+                            action: "socket", cost: _scost, rune_inv: _ri,
+                            name: _rn.name, tier: _rn.tier,
+                            message: "Socket " + _rn.name + " " + rune_tier_roman(_rn.tier)
+                                + " into " + (_m_item != undefined ? _m_item.name : "this item")
+                                + " for " + string(_scost) + "g?",
+                            warn: ""
+                        };
                     }
-                    maren_phase = 1; maren_cursor = 0;
                 }
             }
         } else if (maren_tab == 1) {
             // -------- ASPECTS TAB --------
             if (maren_phase == 0) {
                 if (maren_cursor < _m_asocked) {
-                    // Filled slot -> unsocket
+                    // Filled slot -> unsocket (confirm + 30g; rune returns to inventory).
                     var _ua = global.aspect_runes[maren_cursor];
-                    maren_aspect_unsocket(maren_cursor);
-                    maren_notification = "Removed " + _ua.name + " " + rune_tier_roman(_ua.tier) + ".";
-                    maren_cursor = clamp(maren_cursor, 0, max(0, _m_rows - 1));
+                    var _aucost = rune_socket_cost();
+                    if (global.gold < _aucost) {
+                        maren_notification = "Removing a rune costs " + string(_aucost) + "g - not enough gold.";
+                    } else {
+                        maren_confirm = {
+                            action: "aspect_unsocket", cost: _aucost, slot_idx: maren_cursor,
+                            name: _ua.name, tier: _ua.tier,
+                            message: "Remove " + _ua.name + " " + rune_tier_roman(_ua.tier)
+                                + " from its Aspect slot for " + string(_aucost) + "g?",
+                            warn: "The rune returns to your inventory unharmed."
+                        };
+                    }
                 } else if (maren_cursor < _m_aslots) {
                     // Empty slot -> choose an aspect rune
                     if (array_length(_m_asp) > 0) {
-                        maren_phase = 1; maren_cursor = 0; maren_notification = "";
+                        maren_phase = 1; maren_cursor = 0; maren_scroll = 0; maren_notification = "";
                     } else {
                         maren_notification = "No aspect runes to socket.";
                     }
@@ -971,14 +1088,21 @@ if (variable_instance_exists(id, "maren_open") && maren_open) {
                 }
             } else if (maren_phase == 1) {
                 if (array_length(_m_asp) > 0) {
+                    // Aspect socket -> confirm + 30g.
                     var _ai  = _m_asp[clamp(maren_cursor, 0, array_length(_m_asp) - 1)];
                     var _rna = global.rune_inventory[_ai];
-                    if (maren_aspect_socket(_ai)) {
-                        maren_notification = "Socketed " + _rna.name + " " + rune_tier_roman(_rna.tier) + ".";
+                    var _ascost = rune_socket_cost();
+                    if (global.gold < _ascost) {
+                        maren_notification = "Socketing costs " + string(_ascost) + "g - not enough gold.";
                     } else {
-                        maren_notification = "No open Aspect slot.";
+                        maren_confirm = {
+                            action: "aspect_socket", cost: _ascost, rune_inv: _ai,
+                            name: _rna.name, tier: _rna.tier,
+                            message: "Socket " + _rna.name + " " + rune_tier_roman(_rna.tier)
+                                + " into an Aspect slot for " + string(_ascost) + "g?",
+                            warn: ""
+                        };
                     }
-                    maren_phase = 0; maren_cursor = 0;
                 }
             }
         } else if (maren_tab == 2) {
@@ -986,26 +1110,37 @@ if (variable_instance_exists(id, "maren_open") && maren_open) {
             if (maren_phase == 0) {
                 // Sub-menu: 0 Combine, 1 Split, 2 Craft Flagship
                 maren_phase = clamp(maren_cursor, 0, 2) + 1;
-                maren_cursor = 0; maren_notification = "";
+                maren_cursor = 0; maren_scroll = 0; maren_notification = "";
             } else if (maren_phase == 1) {
-                // Combine
+                // Combine -> confirm (consumes 3 runes).
                 if (array_length(_m_groups) > 0) {
-                    var _grp = _m_groups[clamp(maren_cursor, 0, array_length(_m_groups) - 1)];
-                    var _cres = maren_combine_rune(_grp.id, _grp.tier);
-                    maren_notification = (_cres == "")
-                        ? ("Forged " + _grp.name + " " + rune_tier_roman(_grp.tier + 1) + "!")
-                        : _cres;
-                    maren_cursor = 0;
+                    var _grp  = _m_groups[clamp(maren_cursor, 0, array_length(_m_groups) - 1)];
+                    var _ccost = rune_combine_cost(_grp.tier);
+                    maren_confirm = {
+                        action: "combine", grp_id: _grp.id, grp_tier: _grp.tier, name: _grp.name,
+                        message: "Combine 3x " + _grp.name + " " + rune_tier_roman(_grp.tier)
+                            + " into 1x " + _grp.name + " " + rune_tier_roman(_grp.tier + 1)
+                            + " for " + string(_ccost.gold) + "g + " + string(_ccost.dust) + " dust?",
+                        warn: "This DESTROYS all 3 source runes to forge the upgrade."
+                    };
                 }
             } else if (maren_phase == 2) {
-                // Split
+                // Split -> confirm (breaks the rune down; net loss).
                 if (array_length(global.rune_inventory) > 0) {
                     var _sidx = clamp(maren_cursor, 0, array_length(global.rune_inventory) - 1);
                     var _sr2  = global.rune_inventory[_sidx];
-                    var _sres = maren_split_rune(_sidx);
-                    maren_notification = (_sres == "")
-                        ? ("Split " + _sr2.name + " " + rune_tier_roman(_sr2.tier) + ".")
-                        : _sres;
+                    var _spcost = rune_split_cost();
+                    var _spdust = rune_split_dust(_sr2.tier);
+                    var _spwarn = (_sr2.tier > 1)
+                        ? ("This DESTROYS the rune, returning one " + _sr2.name + " " + rune_tier_roman(_sr2.tier - 1)
+                           + " + " + string(_spdust) + " dust (you lose a tier).")
+                        : ("This DESTROYS the rune for only " + string(_spdust) + " dust - no rune is returned.");
+                    maren_confirm = {
+                        action: "split", rune_inv: _sidx, name: _sr2.name, tier: _sr2.tier,
+                        message: "Split " + _sr2.name + " " + rune_tier_roman(_sr2.tier)
+                            + " for " + string(_spcost.gold) + "g?",
+                        warn: _spwarn
+                    };
                     maren_cursor = clamp(maren_cursor, 0, max(0, array_length(global.rune_inventory) - 1));
                 }
             } else {

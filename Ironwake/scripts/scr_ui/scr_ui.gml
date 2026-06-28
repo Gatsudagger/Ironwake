@@ -1357,6 +1357,14 @@ function ui_draw_item_tooltip(ttx, tty, item, compared_item) {
         array_push(_rows, { kind: "text", txt: "Requires " + string(_req.value) + " " + _req.stat, col: _req_col, tag: "", tagcol: c_white });
     }
     if (_has_unique) array_push(_rows, { kind: "text", txt: item.unique_desc, col: make_color_rgb(255, 200, 50), tag: "", tagcol: c_white });
+    // Socketed runes - list each rune's effect so equipped/inspected gear shows what
+    // its sockets are contributing (these feed apply_equipment_stats but weren't visible).
+    if (variable_struct_exists(item, "runes") && array_length(item.runes) > 0) {
+        for (var _rune_ri = 0; _rune_ri < array_length(item.runes); _rune_ri++) {
+            array_push(_rows, { kind: "text", txt: "* " + rune_describe(item.runes[_rune_ri]),
+                                col: make_color_rgb(150, 200, 255), tag: "", tagcol: c_white });
+        }
+    }
     if (_has_flavor) {
         array_push(_rows, { kind: "divider" });
         array_push(_rows, { kind: "text", txt: _flavor, col: make_color_rgb(110, 120, 145), tag: "", tagcol: c_white });
@@ -2792,30 +2800,89 @@ function ui_draw_combat_overlay(combat_state, player, ability_array, selected_ab
                 var _pv_tgt = _pv_live[_pv_idx];
                 var _pv_est = combat_estimate_hit(_pv_ab, player, _pv_tgt);
 
-                var _pv_main = "";
+                // Only DAMAGE-dealing abilities get a preview - this shows the actual
+                // stat-scaled hit (not the ability's base number). Defensive / utility
+                // abilities (no direct damage) return -1 and show nothing at all.
                 if (_pv_est >= 0) {
-                    _pv_main = _pv_ab.name + "  will hit  " + _pv_tgt.name + "  for ~" + string(_pv_est) + " dmg";
-                } else {
-                    _pv_main = _pv_ab.name + "  ->  " + _pv_tgt.name;
-                }
+                    // Detonation: if a detonator (Snipe / Assassinate / Arcane Burst /
+                    // Soul Nova) would pop a status the target is carrying, note the bonus.
+                    var _det_txt = "";
+                    if (ability_is_detonator(_pv_ab)) {
+                        var _dp = combat_detonator_pick(_pv_tgt);
+                        if (_dp.key != "" && _dp.idx >= 0 && _dp.idx < array_length(_pv_tgt.status_effects)) {
+                            // Strip the "Detonate: " prefix - the "+ DETONATE" header below says it.
+                            _det_txt = string_replace_all(status_detonation_text(_pv_tgt.status_effects[_dp.idx]), "Detonate: ", "");
+                        }
+                    }
 
-                var _flash = 0.6 + 0.4 * (0.5 + 0.5 * sin(current_time / 220));
-                draw_set_halign(fa_left);
-                draw_set_valign(fa_bottom);
-                draw_set_alpha(_flash);
-                draw_set_font(fnt_ui);
-                draw_set_color(make_color_rgb(255, 226, 120));
-                draw_text_outline(36, 726, _pv_main);
+                    // NARROW vertical panel hugging the LEFT edge (x30, w290) so it clears
+                    // the player sprite (drawn from x330) instead of running across it.
+                    // Stacked just above the combat log. Reads top-down: label, big number,
+                    // target, then the detonation note when one applies.
+                    var _box_x = 30;
+                    var _box_w = 290;
+                    var _pad   = 12;
+                    var _tw    = _box_w - _pad * 2;
 
-                var _pv_eff = variable_struct_exists(_pv_ab, "desc_short") ? _pv_ab.desc_short : "";
-                if (_pv_eff != "") {
-                    draw_set_alpha(min(1.0, _flash + 0.15));
+                    var _det_h = 0;
+                    if (_det_txt != "") {
+                        draw_set_font(fnt_ui_small);
+                        _det_h = 10 + 24 + string_height_ext(_det_txt, 22, _tw);
+                    }
+                    var _box_h = _pad + 24 + 48 + 26 + _det_h + _pad;
+                    var _box_y = 729 - _box_h;   // bottom ~6px above the log (y735)
+
+                    draw_set_alpha(0.85);
+                    draw_set_color(make_color_rgb(18, 16, 22));
+                    draw_rectangle(_box_x, _box_y, _box_x + _box_w, _box_y + _box_h, false);
+                    draw_set_alpha(1.0);
+                    draw_set_color(make_color_rgb(120, 100, 50));
+                    draw_rectangle(_box_x, _box_y, _box_x + _box_w, _box_y + _box_h, true);
+
+                    draw_set_halign(fa_left);
+                    draw_set_valign(fa_top);
+                    var _ty = _box_y + _pad;
+
+                    // Label
                     draw_set_font(fnt_ui_small);
-                    draw_set_color(make_color_rgb(180, 210, 230));
-                    draw_text_outline(36, 700, "Effect:  " + _pv_eff);
+                    draw_set_color(make_color_rgb(150, 140, 120));
+                    draw_text(_box_x + _pad, _ty, "POTENTIAL DAMAGE");
+                    _ty += 24;
+
+                    // Big stat-scaled number (gently flashing for attention)
+                    var _flash = 0.8 + 0.2 * (0.5 + 0.5 * sin(current_time / 220));
+                    draw_set_alpha(_flash);
+                    draw_set_font(fnt_ui_title);
+                    draw_set_color(make_color_rgb(255, 210, 90));
+                    var _num_str = string(_pv_est);
+                    draw_text(_box_x + _pad, _ty, _num_str);
+                    var _num_w = string_width(_num_str);   // measured in the title font
+                    // "approx" hint trailing the big number (small, so the title font's
+                    // missing '~' glyph is never an issue).
+                    draw_set_font(fnt_ui_small);
+                    draw_set_color(make_color_rgb(150, 140, 120));
+                    draw_text(_box_x + _pad + _num_w + 10, _ty + 18, "approx.");
+                    draw_set_alpha(1.0);
+                    _ty += 48;
+
+                    // Target
+                    draw_set_font(fnt_ui_small);
+                    draw_set_color(make_color_rgb(195, 200, 215));
+                    draw_text(_box_x + _pad, _ty, "to " + _pv_tgt.name);
+                    _ty += 26;
+
+                    // Detonation note (when it applies)
+                    if (_det_txt != "") {
+                        _ty += 10;
+                        draw_set_font(fnt_ui_small);
+                        draw_set_color(make_color_rgb(255, 150, 60));
+                        draw_text(_box_x + _pad, _ty, "+ DETONATE");
+                        _ty += 24;
+                        draw_set_color(make_color_rgb(230, 185, 135));
+                        draw_text_ext(_box_x + _pad, _ty, _det_txt, 22, _tw);
+                    }
+                    draw_set_valign(fa_top);
                 }
-                draw_set_alpha(1.0);
-                draw_set_valign(fa_top);
             }
         }
     }
@@ -3110,8 +3177,10 @@ function ui_draw_ability_detail(ab, close_key_label = "Tab") {
     _y += 36;
     draw_set_font(fnt_ui);
     draw_set_color(make_color_rgb(200, 204, 220));
+    // Support abilities can be discounted all the way to 0 AP; every other role floors at 1.
+    var _syn_floor_text = (_detail_cat == "support") ? "to 0 AP" : "1 less AP (minimum 1)";
     var _syn_text = "After you cast another " + _cat_lbl + " ability this turn, this one "
-                  + "costs 1 less AP (minimum 1). Chaining same-role abilities makes minor "
+                  + "costs " + _syn_floor_text + ". Chaining same-role abilities makes minor "
                   + "buffs and supports worth casting together.";
     draw_text_ext(_lx, _y, _syn_text, -1, _rx - _lx);
     _y += string_height_ext(_syn_text, -1, _rx - _lx) + 27;
@@ -3282,8 +3351,8 @@ function ui_compendium_sections() {
             title: "Ability Synergy",
             entries: [
                 { term: "Role Categories", text: "Every ability has a role: OFFENSE (deal damage), DEFENSE (protect yourself), SUPPORT (heal / buff / resource) or CONTROL (debuff / crowd-control). Buttons and ability rows are colour-coded - offense red, defense blue, support green, control purple." },
-                { term: "Same-Role Discount", text: "After you cast an ability of a role this turn, every LATER ability of the SAME role costs 1 less AP (minimum 1). The first of each role pays full price; the discount resets at the start of your next turn." },
-                { term: "Why it matters", text: "Stacking same-role abilities is cheaper, so minor buffs become worth casting together - e.g. Bloodthorn Aura (2 AP) then Iron Skin (2-1 = 1 AP) is 3 AP for both, not 4. On the combat bar a discounted ability shows GREEN AP pips at its reduced cost." },
+                { term: "Same-Role Discount", text: "After you cast an ability of a role this turn, every LATER ability of the SAME role costs 1 less AP. SUPPORT abilities can drop all the way to 0 AP (free); every other role floors at 1 AP. The first of each role pays full price; the discount resets at the start of your next turn." },
+                { term: "Why it matters", text: "Stacking same-role abilities is cheaper, so minor buffs become worth casting together - e.g. a 1-AP support after another support this turn becomes FREE, and Bloodthorn Aura (2 AP) then Iron Skin (2-1 = 1 AP) is 3 AP for both, not 4. On the combat bar a discounted ability shows GREEN AP pips at its reduced cost." },
                 { term: "What's discounted", text: "Only AP is reduced - secondary resources (Souls / Blood / Preparation) always cost full. Free (0-AP) abilities stay free. The discount stacks with other AP reductions like Quickcast." },
             ],
         },
@@ -4807,6 +4876,18 @@ function ui_draw_shop_screen() {
                 draw_set_font(fnt_ui);
                 draw_set_color(_rcol);
                 draw_text(_rx0 + 75, _ry + 12, _entry.item.name);
+                // Class restriction tag appended after the name (gold = your class can
+                // use it, red = locked to another). Standardized with the loadout tooltip.
+                var _dorn_cr = variable_struct_exists(_entry.item, "class_req") ? _entry.item.class_req : -1;
+                if (_dorn_cr != -1) {
+                    var _dorn_cr_names = ["Arcanist", "Bloodwarden", "Shadowstrider"];
+                    var _dorn_my_cl    = variable_global_exists("chosen_class") ? global.chosen_class : -1;
+                    draw_set_font(fnt_ui_small);
+                    draw_set_color((_dorn_cr == _dorn_my_cl) ? make_color_rgb(210, 175, 90) : make_color_rgb(225, 80, 80));
+                    draw_text(_rx0 + 75 + string_width(_entry.item.name) + 18, _ry + 15,
+                        "[" + _dorn_cr_names[clamp(_dorn_cr, 0, 2)] + " only]");
+                    draw_set_font(fnt_ui);
+                }
                 draw_set_halign(fa_right);
                 draw_set_font(fnt_ui_small);
                 draw_text(_rx0 + _rw - 24, _ry + 12, "[" + item_rarity_name(_entry.item.rarity) + "]");
@@ -5898,14 +5979,95 @@ function ui_draw_trainer_statpick() {
     draw_set_font(-1);
 }
 
+// Number of Maren/Sable list rows that fit on screen at once (rows start at y=285,
+// 72px each; the list must clear the notification y=999 + controls y=1026). Drives the
+// scroll windowing in both the Maren input block (Step) and ui_draw_maren_screen.
+function maren_visible_rows() { return 9; }
+
+// Bottom-of-list "Showing X-Y of N (W/S to scroll)" hint + edge chevrons, drawn when a
+// windowed Maren list overflows. _scroll = first visible index, _vis = window size.
+function ui_maren_scroll_hint(_scroll, _vis, _count) {
+    if (_count <= _vis) return;
+    var _first = _scroll + 1;
+    var _last  = min(_scroll + _vis, _count);
+    draw_set_halign(fa_center);
+    draw_set_valign(fa_top);
+    draw_set_font(fnt_ui_small);
+    var _arrows = (_scroll > 0 ? "^ " : "") + (_scroll + _vis < _count ? "v " : "");
+    draw_set_color(make_color_rgb(165, 150, 195));
+    draw_text(960, 948, _arrows + "Showing " + string(_first) + "-" + string(_last) + " of " + string(_count) + "   (W/S to scroll)");
+    draw_set_halign(fa_left);
+}
+
 // Draws one Maren list-row background (row index _i) and returns the text baseline y.
-function ui_maren_row(_i, _selected, _base_y = 285) {
+// _x1 lets a screen narrow the row (e.g. the Socket-gear list, so the item detail
+// panel can sit clear to its right instead of overlapping the rows).
+function ui_maren_row(_i, _selected, _base_y = 285, _x1 = 1620) {
     var _ry = _base_y + _i * 72;
     draw_set_color(_selected ? make_color_rgb(45, 38, 66) : make_color_rgb(20, 18, 30));
-    draw_rectangle(300, _ry, 1620, _ry + 66, false);
+    draw_rectangle(300, _ry, _x1, _ry + 66, false);
     draw_set_color(_selected ? make_color_rgb(150, 110, 220) : make_color_rgb(45, 42, 62));
-    draw_rectangle(300, _ry, 1620, _ry + 66, true);
+    draw_rectangle(300, _ry, _x1, _ry + 66, true);
     return _ry + 15;
+}
+
+// Code-drawn faceted gem glyph (fallback when a rune's sprite icon isn't imported).
+// Centered at (_cx,_cy), radius _r, in theme color _col.
+function ui_draw_gem_glyph(_cx, _cy, _r, _col) {
+    var _top = merge_color(_col, c_white, 0.45);
+    var _dk  = merge_color(_col, c_black, 0.40);
+    var _wx  = _r * 0.8;
+    // Diamond body (upper + lower triangles).
+    draw_set_color(_col);
+    draw_triangle(_cx, _cy - _r, _cx - _wx, _cy, _cx + _wx, _cy, false);
+    draw_triangle(_cx - _wx, _cy, _cx + _wx, _cy, _cx, _cy + _r, false);
+    // Bright top facet.
+    draw_set_color(_top);
+    draw_triangle(_cx, _cy - _r, _cx - _r * 0.42, _cy - _r * 0.18, _cx + _r * 0.42, _cy - _r * 0.18, false);
+    // Darker lower half for depth.
+    draw_set_color(_dk);
+    draw_triangle(_cx - _wx, _cy, _cx + _wx, _cy, _cx, _cy + _r, false);
+    // Outline + center crease.
+    draw_set_color(merge_color(_col, c_white, 0.25));
+    draw_line(_cx, _cy - _r, _cx - _wx, _cy);
+    draw_line(_cx - _wx, _cy, _cx, _cy + _r);
+    draw_line(_cx, _cy + _r, _cx + _wx, _cy);
+    draw_line(_cx + _wx, _cy, _cx, _cy - _r);
+    draw_line(_cx - _wx, _cy, _cx + _wx, _cy);
+}
+
+// Draws a rune as an equipment-style entry: gem icon, then the rune NAME on the top
+// line and its STAT EFFECT below (mirroring how gear rows read). _ty is the row text
+// baseline returned by ui_maren_row. Optionally tags the rune's domain on the right.
+function ui_draw_rune_entry(_x, _ty, rune, _show_domain_tag = false, _row_x1 = 1620) {
+    var _ry   = _ty - 15;
+    var _icon = rune_icon_sprite(rune.id);
+    var _gcol = rune_glyph_color(rune.id);
+    var _isz  = 48;
+    var _ix   = _x + 6;
+    var _iy   = _ry + 9;
+    if (_icon != -1) {
+        draw_sprite_stretched(_icon, 0, _ix, _iy, _isz, _isz);
+    } else {
+        ui_draw_gem_glyph(_ix + _isz * 0.5, _iy + _isz * 0.5, _isz * 0.5, _gcol);
+    }
+    var _tx = _ix + _isz + 18;
+    draw_set_halign(fa_left);
+    draw_set_font(fnt_ui);
+    draw_set_color(_gcol);
+    draw_text(_tx, _ry + 4, rune_title(rune));
+    draw_set_font(fnt_ui_small);
+    draw_set_color(make_color_rgb(225, 230, 240));
+    draw_text(_tx, _ry + 38, rune_effect(rune));
+    if (_show_domain_tag) {
+        var _def   = rune_get(rune.id);
+        var _isasp = (_def != undefined && _def.domain == "aspect");
+        draw_set_halign(fa_right);
+        draw_set_color(make_color_rgb(130, 125, 150));
+        draw_text(_row_x1 - 24, _ry + 24, _isasp ? "Aspect" : "Gear");
+        draw_set_halign(fa_left);
+    }
+    draw_set_font(fnt_ui);
 }
 
 // ---------------------------------------------------------------------------
@@ -5962,6 +6124,8 @@ function ui_draw_maren_screen() {
     var _list_x = 300;
     var _list_x2 = 1620;
     var _cursor = _gc.maren_cursor;
+    var _scroll = _gc.maren_scroll;          // first visible row (list windowing)
+    var _vis    = maren_visible_rows();
 
     if (_gc.maren_tab == 0) {
         // -------- SOCKET GEAR TAB --------
@@ -5976,24 +6140,33 @@ function ui_draw_maren_screen() {
                 draw_set_color(make_color_rgb(120, 115, 140));
                 draw_text(_list_x, _row_y0 + 12, "No socketed gear equipped. Uncommon+ items have sockets - equip some first.");
             }
-            for (var _i = 0; _i < array_length(_slots); _i++) {
+            // Narrow the item rows so the detail panel sits clear to their RIGHT instead
+            // of overlapping them (the old panel landed on top of the rows). Rows now end
+            // at x=1130; the tooltip is placed at x=1165 (its adaptive width fits on-screen
+            // without the auto-flip that caused the overlap).
+            var _socket_row_x1 = 1130;
+            var _slot_n = array_length(_slots);
+            for (var _i = _scroll; _i < min(_slot_n, _scroll + _vis); _i++) {
                 var _it = global.inventory[_slots[_i]];
                 item_ensure_sockets(_it);
-                var _ty = ui_maren_row(_i, _i == _cursor);
+                var _ty = ui_maren_row(_i - _scroll, _i == _cursor, _row_y0, _socket_row_x1);
                 draw_set_color(item_rarity_color(_it.rarity));
                 draw_text(_list_x + 24, _ty, _it.name);
-                // Socket count drawn left-of-centre (not far-right) so it stays clear of
-                // the gear-breakdown panel that overlaps the right side of the rows.
+                // Socket count right-aligned within the narrowed row.
+                draw_set_halign(fa_right);
                 draw_set_color(make_color_rgb(170, 160, 190));
-                draw_text(_list_x + 620, _ty,
-                    string(array_length(_it.runes)) + " / " + string(_it.socket_count) + " sockets filled");
+                draw_text(_socket_row_x1 - 18, _ty,
+                    string(array_length(_it.runes)) + " / " + string(_it.socket_count) + " sockets");
+                draw_set_halign(fa_left);
             }
+            ui_maren_scroll_hint(_scroll, _vis, _slot_n);
             // Full gear breakdown for the highlighted piece (same panel the inventory
-            // uses) so you can judge an item's stats before deciding to socket it.
+            // uses) so you can judge an item's stats before deciding to socket it. Sits to
+            // the right of the narrowed rows.
             if (array_length(_slots) > 0) {
                 var _sel_i  = clamp(_cursor, 0, array_length(_slots) - 1);
                 var _sel_it = global.inventory[_slots[_sel_i]];
-                ui_draw_item_tooltip(1190, 255, _sel_it, undefined);
+                ui_draw_item_tooltip(1165, 255, _sel_it, undefined);
             }
         } else if (_gc.maren_phase == 1) {
             var _it = global.inventory[_gc.maren_item_sel];
@@ -6009,8 +6182,7 @@ function ui_draw_maren_screen() {
             for (var _s = 0; _s < _it.socket_count; _s++) {
                 var _ty2 = ui_maren_row(_s, _s == _cursor);
                 if (_s < _filled) {
-                    draw_set_color(make_color_rgb(150, 200, 255));
-                    draw_text(_list_x + 24, _ty2, rune_describe(_it.runes[_s]));
+                    ui_draw_rune_entry(_list_x, _ty2, _it.runes[_s]);
                     draw_set_halign(fa_right);
                     draw_set_color(make_color_rgb(150, 110, 110));
                     draw_text(_list_x2 - 24, _ty2, "Enter: remove");
@@ -6033,12 +6205,13 @@ function ui_draw_maren_screen() {
                 draw_set_color(make_color_rgb(120, 115, 140));
                 draw_text(_list_x, _row_y0 + 12, "No gear runes in inventory.");
             }
-            for (var _g = 0; _g < array_length(_gear); _g++) {
+            var _gear_n = array_length(_gear);
+            for (var _g = _scroll; _g < min(_gear_n, _scroll + _vis); _g++) {
                 var _rn = global.rune_inventory[_gear[_g]];
-                var _ty3 = ui_maren_row(_g, _g == _cursor);
-                draw_set_color(make_color_rgb(150, 200, 255));
-                draw_text(_list_x + 24, _ty3, rune_describe(_rn));
+                var _ty3 = ui_maren_row(_g - _scroll, _g == _cursor);
+                ui_draw_rune_entry(_list_x, _ty3, _rn);
             }
+            ui_maren_scroll_hint(_scroll, _vis, _gear_n);
         }
     } else if (_gc.maren_tab == 1) {
         // -------- ASPECTS TAB (character Aspect slots) --------
@@ -6055,8 +6228,7 @@ function ui_draw_maren_screen() {
             for (var _s = 0; _s < _slots_n; _s++) {
                 var _tya = ui_maren_row(_s, _s == _cursor);
                 if (_s < array_length(_socked)) {
-                    draw_set_color(make_color_rgb(230, 200, 120));
-                    draw_text(_list_x + 24, _tya, rune_describe(_socked[_s]));
+                    ui_draw_rune_entry(_list_x, _tya, _socked[_s]);
                     draw_set_halign(fa_right);
                     draw_set_color(make_color_rgb(150, 110, 110));
                     draw_text(_list_x2 - 24, _tya, "Enter: remove");
@@ -6092,26 +6264,41 @@ function ui_draw_maren_screen() {
                 draw_set_color(make_color_rgb(120, 115, 140));
                 draw_text(_list_x, _row_y0 + 12, "No aspect runes in inventory.");
             }
-            for (var _a = 0; _a < array_length(_asp); _a++) {
+            var _asp_n = array_length(_asp);
+            for (var _a = _scroll; _a < min(_asp_n, _scroll + _vis); _a++) {
                 var _rna = global.rune_inventory[_asp[_a]];
-                var _tya2 = ui_maren_row(_a, _a == _cursor);
-                draw_set_color(make_color_rgb(230, 200, 120));
-                draw_text(_list_x + 24, _tya2, rune_describe(_rna));
+                var _tya2 = ui_maren_row(_a - _scroll, _a == _cursor);
+                ui_draw_rune_entry(_list_x, _tya2, _rna);
             }
+            ui_maren_scroll_hint(_scroll, _vis, _asp_n);
         }
     } else if (_gc.maren_tab == 2) {
         // -------- FORGE TAB (Combine / Split / Craft Flagship) --------
         if (_gc.maren_phase == 0) {
             draw_set_color(make_color_rgb(140, 130, 165));
-            draw_text(_list_x, 225, "Maren's Forge - reshape your runes.");
-            var _menu = ["Combine   (3 identical  ->  1 next tier)",
-                         "Split   (1 rune  ->  one tier lower  +  dust)",
-                         "Craft Flagship   (forge a rare Quickcast / Echo)"];
+            draw_text(_list_x, 225, "Maren's Forge - choose your craft:");
+            // Each option reads like an equipment row: bold name on top, a flavor +
+            // mechanics explanation in the sub-line below (replaces the old terse lines).
+            var _menu = [
+                { name: "Combine",
+                  desc: "Fuse three matching runes into one of the next tier - greater power drawn from sacrifice." },
+                { name: "Split",
+                  desc: "Shatter a rune one tier down and reclaim its dust. What is unmade never comes back whole." },
+                { name: "Craft Flagship",
+                  desc: "Forge a legendary Quickcast or Echo rune from raw dust and gold - Maren's masterwork." }
+            ];
             for (var _fm = 0; _fm < 3; _fm++) {
                 var _tyf = ui_maren_row(_fm, _fm == _cursor);
-                draw_set_color(make_color_rgb(210, 190, 240));
-                draw_text(_list_x + 24, _tyf, _menu[_fm]);
+                var _fry = _tyf - 15;
+                var _fsel = (_fm == _cursor);
+                draw_set_font(fnt_ui);
+                draw_set_color(_fsel ? make_color_rgb(230, 205, 255) : make_color_rgb(195, 180, 220));
+                draw_text(_list_x + 24, _fry + 6, _menu[_fm].name);
+                draw_set_font(fnt_ui_small);
+                draw_set_color(_fsel ? make_color_rgb(170, 162, 190) : make_color_rgb(135, 130, 155));
+                draw_text(_list_x + 24, _fry + 39, _menu[_fm].desc);
             }
+            draw_set_font(fnt_ui);
         } else if (_gc.maren_phase == 1) {
             // Combine: 3-of-a-kind groups
             var _groups = rune_combine_groups();
@@ -6121,21 +6308,27 @@ function ui_draw_maren_screen() {
                 draw_set_color(make_color_rgb(120, 115, 140));
                 draw_text(_list_x, _row_y0 + 12, "No 3-of-a-kind runes (same type AND tier) available.");
             }
-            for (var _gi = 0; _gi < array_length(_groups); _gi++) {
+            var _grp_n = array_length(_groups);
+            for (var _gi = _scroll; _gi < min(_grp_n, _scroll + _vis); _gi++) {
                 var _grp  = _groups[_gi];
                 var _ccst = rune_combine_cost(_grp.tier);
-                var _tyc  = ui_maren_row(_gi, _gi == _cursor);
+                var _tyc  = ui_maren_row(_gi - _scroll, _gi == _cursor);
+                // Gem icon + name + effect of the source rune (equipment-style row).
+                ui_draw_rune_entry(_list_x, _tyc, rune_make(_grp.id, _grp.tier));
+                // Right column: fuse action on the name row, cost on the effect row, so
+                // the two lines mirror the gem's name/effect rows and stay inside the row.
                 var _caff = (global.gold >= _ccst.gold) && (_dust >= _ccst.dust);
-                draw_set_color(_caff ? make_color_rgb(150, 200, 255) : make_color_rgb(120, 110, 130));
-                draw_text(_list_x + 24, _tyc,
-                    "3x " + _grp.name + " " + rune_tier_roman(_grp.tier)
-                    + "  ->  " + _grp.name + " " + rune_tier_roman(_grp.tier + 1)
-                    + "   (have " + string(_grp.count) + ")");
                 draw_set_halign(fa_right);
-                draw_set_color(make_color_rgb(200, 180, 130));
-                draw_text(_list_x2 - 24, _tyc, string(_ccst.gold) + "g  +  " + string(_ccst.dust) + " Dust");
+                draw_set_font(fnt_ui_small);
+                draw_set_color(make_color_rgb(150, 200, 255));
+                draw_text(_list_x2 - 24, _tyc - 11,
+                    "x3  ->  " + _grp.name + " " + rune_tier_roman(_grp.tier + 1)
+                    + "   (have " + string(_grp.count) + ")");
+                draw_set_color(_caff ? make_color_rgb(200, 180, 130) : make_color_rgb(165, 110, 110));
+                draw_text(_list_x2 - 24, _tyc + 23, string(_ccst.gold) + "g  +  " + string(_ccst.dust) + " Dust");
                 draw_set_halign(fa_left);
             }
+            ui_maren_scroll_hint(_scroll, _vis, _grp_n);
         } else if (_gc.maren_phase == 2) {
             // Split: any owned rune
             draw_set_color(make_color_rgb(140, 130, 165));
@@ -6144,20 +6337,22 @@ function ui_draw_maren_screen() {
                 draw_set_color(make_color_rgb(120, 115, 140));
                 draw_text(_list_x, _row_y0 + 12, "No runes to split.");
             }
-            for (var _si = 0; _si < array_length(global.rune_inventory); _si++) {
+            var _split_n = array_length(global.rune_inventory);
+            for (var _si = _scroll; _si < min(_split_n, _scroll + _vis); _si++) {
                 var _sr  = global.rune_inventory[_si];
-                var _tys = ui_maren_row(_si, _si == _cursor);
-                draw_set_color(make_color_rgb(150, 200, 255));
-                draw_text(_list_x + 24, _tys, rune_describe(_sr));
+                var _tys = ui_maren_row(_si - _scroll, _si == _cursor);
+                ui_draw_rune_entry(_list_x, _tys, _sr);
                 draw_set_halign(fa_right);
+                draw_set_font(fnt_ui_small);
                 draw_set_color(make_color_rgb(200, 180, 130));
                 var _db = rune_split_dust(_sr.tier);
                 var _yield = (_sr.tier > 1)
                     ? (_sr.name + " " + rune_tier_roman(_sr.tier - 1) + "  +  " + string(_db) + " Dust")
                     : (string(_db) + " Dust");
-                draw_text(_list_x2 - 24, _tys, "->  " + _yield);
+                draw_text(_list_x2 - 24, _tys + 23, "->  " + _yield);
                 draw_set_halign(fa_left);
             }
+            ui_maren_scroll_hint(_scroll, _vis, _split_n);
         } else {
             // Craft Flagship
             var _flags = rune_flagship_ids();
@@ -6166,10 +6361,14 @@ function ui_draw_maren_screen() {
             draw_text(_list_x, 225, "Craft Flagship - forge a tier III rune (" + string(_fc.gold) + "g  +  " + string(_fc.dust) + " Dust):");
             var _faff = (global.gold >= _fc.gold) && (_dust >= _fc.dust);
             for (var _fi = 0; _fi < array_length(_flags); _fi++) {
-                var _fdef = rune_get(_flags[_fi]);
                 var _tyfl = ui_maren_row(_fi, _fi == _cursor);
-                draw_set_color(_faff ? make_color_rgb(230, 200, 120) : make_color_rgb(120, 110, 130));
-                draw_text(_list_x + 24, _tyfl, _fdef.name + " III - " + _fdef.blurb);
+                // Gem icon + name + effect of the tier-III flagship being forged.
+                ui_draw_rune_entry(_list_x, _tyfl, rune_make(_flags[_fi], 3));
+                draw_set_halign(fa_right);
+                draw_set_font(fnt_ui_small);
+                draw_set_color(_faff ? make_color_rgb(200, 180, 130) : make_color_rgb(165, 110, 110));
+                draw_text(_list_x2 - 24, _tyfl + 23, string(_fc.gold) + "g  +  " + string(_fc.dust) + " Dust");
+                draw_set_halign(fa_left);
             }
         }
     } else {
@@ -6180,18 +6379,13 @@ function ui_draw_maren_screen() {
             draw_set_color(make_color_rgb(120, 115, 140));
             draw_text(_list_x, _row_y0 + 12, "No runes yet. Elites and bosses drop them.");
         }
-        for (var _r = 0; _r < array_length(global.rune_inventory); _r++) {
+        var _runes_n = array_length(global.rune_inventory);
+        for (var _r = _scroll; _r < min(_runes_n, _scroll + _vis); _r++) {
             var _rn2  = global.rune_inventory[_r];
-            var _def2 = rune_get(_rn2.id);
-            var _aspect = (_def2 != undefined && _def2.domain == "aspect");
-            var _ty4 = ui_maren_row(_r, _r == _cursor);
-            draw_set_color(_aspect ? make_color_rgb(230, 200, 120) : make_color_rgb(150, 200, 255));
-            draw_text(_list_x + 24, _ty4, rune_describe(_rn2));
-            draw_set_halign(fa_right);
-            draw_set_color(make_color_rgb(130, 125, 150));
-            draw_text(_list_x2 - 24, _ty4, _aspect ? "Aspect" : "Gear");
-            draw_set_halign(fa_left);
+            var _ty4 = ui_maren_row(_r - _scroll, _r == _cursor);
+            ui_draw_rune_entry(_list_x, _ty4, _rn2, true, _list_x2);
         }
+        ui_maren_scroll_hint(_scroll, _vis, _runes_n);
     }
 
     // Notification line
@@ -6214,6 +6408,46 @@ function ui_draw_maren_screen() {
     // band fully on-screen while containing the title, currency, tabs and content. Drawn
     // last so it sits on top.
     ui_draw_gothic_frame(30, 30, 1890, 1050, 30);
+
+    // Confirm modal - a pending gold-costing / destructive action (drawn topmost, over
+    // the rim) so socketing/unsocketing/forging always asks before spending or destroying.
+    if (variable_instance_exists(_gc, "maren_confirm") && _gc.maren_confirm != undefined) {
+        var _cf = _gc.maren_confirm;
+        draw_set_alpha(0.82);
+        draw_set_color(c_black);
+        draw_rectangle(0, 0, GUI_W, GUI_H, false);
+        draw_set_alpha(1.0);
+
+        var _cbx0 = 480; var _cbx1 = 1440; var _cby0 = 372; var _cby1 = 708;
+        draw_set_color(make_color_rgb(20, 16, 30));
+        draw_rectangle(_cbx0, _cby0, _cbx1, _cby1, false);
+        draw_set_color(make_color_rgb(180, 140, 230));
+        draw_rectangle(_cbx0, _cby0, _cbx1, _cby1, true);
+
+        draw_set_halign(fa_center);
+        draw_set_valign(fa_top);
+        draw_set_font(fnt_ui_title);
+        draw_set_color(make_color_rgb(210, 185, 240));
+        draw_text(GUI_CX, _cby0 + 30, "Confirm");
+
+        draw_set_font(fnt_ui);
+        draw_set_color(c_white);
+        draw_text_ext(GUI_CX, _cby0 + 102, _cf.message, 36, _cbx1 - _cbx0 - 90);
+
+        if (_cf.warn != "") {
+            draw_set_font(fnt_ui_small);
+            // Destruction warnings glow red; benign notes (rune returns safely) stay amber.
+            var _cf_danger = (string_pos("DESTROY", _cf.warn) > 0);
+            draw_set_color(_cf_danger ? make_color_rgb(235, 110, 95) : make_color_rgb(220, 190, 120));
+            draw_text_ext(GUI_CX, _cby0 + 192, _cf.warn, 32, _cbx1 - _cbx0 - 90);
+        }
+
+        draw_set_font(fnt_ui_small);
+        draw_set_color(c_ltgray);
+        draw_text(GUI_CX, _cby1 - 48, "Enter: Confirm        Esc: Cancel");
+        draw_set_halign(fa_left);
+        draw_set_valign(fa_top);
+    }
 
     draw_set_valign(fa_top);
     draw_set_alpha(1.0);
@@ -6315,10 +6549,7 @@ function ui_draw_sable_screen() {
             for (var _ri = 0; _ri < array_length(_rinv); _ri++) {
                 var _rn  = _rinv[_ri];
                 var _tyr = ui_maren_row(_ri, _ri == _cursor);
-                var _def = rune_get(_rn.id);
-                var _asp = (_def != undefined && _def.domain == "aspect");
-                draw_set_color(_asp ? make_color_rgb(230, 200, 120) : make_color_rgb(150, 200, 255));
-                draw_text(_list_x + 24, _tyr, rune_describe(_rn));
+                ui_draw_rune_entry(_list_x, _tyr, _rn);
                 draw_set_halign(fa_right);
                 draw_set_color(make_color_rgb(200, 180, 130));
                 draw_text(_list_x2 - 24, _tyr, "+" + string(sable_salvage_rune_dust(_rn.tier)) + " Dust");

@@ -81,29 +81,39 @@ for (var _i = 0; _i < _count; _i++) {
 }
 
 // --- Pass 1: Connection lines ---
+// Straight node-edge-to-node-edge connectors (the layout is a planar staircase, so
+// direct lines never cross). Drawn as a dark underlay + a brighter top stroke so the
+// path reads cleanly instead of as a flat web. Brightness encodes state: a cleared
+// parent's edges are the lit "trail you walked", still-reachable edges are mid-tone,
+// and abandoned (dead) branches are dimmed hard so they recede.
 for (var _i = 0; _i < _count; _i++) {
     var _room = current_rooms[_i];
+    var _p_reach = _reachable[_i];
     for (var _ci = 0; _ci < array_length(_room.children); _ci++) {
-        var _child  = current_rooms[_room.children[_ci]];
+        var _child_id = _room.children[_ci];
+        var _child  = current_rooms[_child_id];
         var _x1 = _room.px + _NW * 0.5;
         var _y1 = _room.py;
         var _x2 = _child.px - _NW * 0.5;
         var _y2 = _child.py;
-        var _mid_x = (_x1 + _x2) * 0.5;
 
-        // Line brightness: cleared parent = brighter
+        var _edge_dead   = (!_p_reach || !_reachable[_child_id]) && !_room.cleared;
+        var _top_col; var _top_w; var _top_a;
         if (_room.cleared) {
-            draw_set_color(make_color_rgb(70, 100, 140));
-            draw_set_alpha(0.9);
+            _top_col = make_color_rgb(95, 135, 185); _top_w = 5; _top_a = 0.95;   // walked trail
+        } else if (!_edge_dead) {
+            _top_col = make_color_rgb(70, 95, 140);  _top_w = 4; _top_a = 0.85;   // open path ahead
         } else {
-            draw_set_color(make_color_rgb(38, 48, 70));
-            draw_set_alpha(0.7);
+            _top_col = make_color_rgb(34, 40, 58);   _top_w = 2; _top_a = 0.55;   // dead branch
         }
 
-        // Elbow line: horizontal from parent, vertical segment, horizontal to child
-        draw_line(_x1, _y1, _mid_x, _y1);
-        draw_line(_mid_x, _y1, _mid_x, _y2);
-        draw_line(_mid_x, _y2, _x2, _y2);
+        // Dark underlay for separation from the busy backdrop, then the colored stroke.
+        draw_set_alpha(_top_a * 0.6);
+        draw_set_color(make_color_rgb(8, 10, 18));
+        draw_line_width(_x1, _y1, _x2, _y2, _top_w + 4);
+        draw_set_alpha(_top_a);
+        draw_set_color(_top_col);
+        draw_line_width(_x1, _y1, _x2, _y2, _top_w);
     }
 }
 draw_set_alpha(1.0);
@@ -210,9 +220,21 @@ for (var _i = 0; _i < _count; _i++) {
             case "shrine":          _sense_str = "TRIBUTE";   break;
         }
         if (_sense_str != "") {
+            // Brighter readout with a shadow + small pill backing so the Sense hint
+            // actually reads against the node fill (it was too subtle before).
             draw_set_halign(fa_right);
-            draw_set_color(make_color_rgb(155, 215, 175));
-            draw_text(_nx + _NW - 9, _ny + 21, _sense_str);
+            draw_set_valign(fa_top);
+            var _ss_w  = string_width(_sense_str);
+            var _ss_rx = _nx + _NW - 9;
+            var _ss_ty = _ny + 18;
+            draw_set_alpha(0.55);
+            draw_set_color(make_color_rgb(14, 28, 20));
+            draw_rectangle(_ss_rx - _ss_w - 8, _ss_ty - 3, _ss_rx + 5, _ss_ty + 24, false);
+            draw_set_alpha(1.0);
+            draw_set_color(make_color_rgb(10, 22, 16));
+            draw_text(_ss_rx + 1, _ss_ty + 1, _sense_str);
+            draw_set_color(make_color_rgb(150, 240, 175));
+            draw_text(_ss_rx, _ss_ty, _sense_str);
         }
     }
 }

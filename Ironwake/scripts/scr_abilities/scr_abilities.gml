@@ -1223,7 +1223,7 @@ global.traits_all = [
     // UNIVERSAL - unlocked from the start
     // -------------------------------------------------------------------------
     trait_define("Sense",
-        "Reveals loot quality and threat level of rooms on the floor map.",
+        "Reveals each room's threat/loot rating on the floor map, and gives +5% success on event-room stat checks.",
         -1, "default", 0, "sense"),
 
     trait_define("Scavenger",
