@@ -12,6 +12,19 @@ if (keyboard_check_pressed(vk_f11)) {
     video_toggle_fullscreen();
 }
 
+// HTML5 / itch: keep the canvas matched to the live browser/itch frame so it always
+// fills it. The frame resizes on fullscreen-launch and window-resize, and GM's HTML5
+// scaling won't upscale a fixed canvas to a bigger frame, so we re-size to the browser
+// dimensions whenever they change. The fixed 1920x1080 GUI layer stretches to fill it.
+// (Desktop is sized once in video_apply; this whole block is web-only.)
+if (os_browser != browser_not_a_browser) {
+    var _bw = browser_width;
+    var _bh = browser_height;
+    if (_bw > 0 && _bh > 0 && (window_get_width() != _bw || window_get_height() != _bh)) {
+        window_set_size(_bw, _bh);
+    }
+}
+
 // --- Onboarding coach-mark (see SYSTEMS_ONBOARDING.md) ---
 // A tip is modal: ui_input_blocked() reports true while one is active (freezing every
 // room controller), and gc owns the dismiss here. The clear is DEFERRED one frame

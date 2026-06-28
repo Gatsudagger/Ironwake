@@ -6,6 +6,128 @@
 draw_set_color(make_color_rgb(6, 7, 12));
 draw_rectangle(0, 0, GUI_W, GUI_H, false);
 
+// -----------------------------------------------------------------------
+// INTRO SCENE BACKDROP + AMBIENT (forest/town/crypt vista, shooting star,
+// red-moon glow, twinkling stars, drifting fog). Drawn under the edge
+// vignette below so its frame deepens the scene's forest-opening edges.
+// -----------------------------------------------------------------------
+// Per-phase fade + pan: cutscene = dim & panning; title/slot = bright.
+var _scene_a   = scene_alpha;
+var _scene_pan = scene_pan;
+
+// Moon-glow screen position is resolved from the same pan/scale as the scene so
+// the halo stays locked to the painted moon. -1 = no vista (skip the glow).
+var _moon_x = -1, _moon_y = -1, _moon_r = 0;
+
+if (scene_sprite != -1 && sprite_exists(scene_sprite) && _scene_a > 0.01) {
+    var _sw  = sprite_get_width(scene_sprite);
+    var _sh  = sprite_get_height(scene_sprite);
+    if (_sw > 0 && _sh > 0) {
+        // Cover by height (the vista is wider than 16:9) so the full sky/moon
+        // shows and the extra width becomes horizontal pan room.
+        var _ssc      = GUI_H / _sh;
+        var _sdw      = _sw * _ssc;
+        var _overscan = max(0, _sdw - GUI_W);
+        var _sx       = -_overscan * _scene_pan;
+        draw_sprite_ext(scene_sprite, 0, _sx, 0, _ssc, _ssc, 0, c_white, _scene_a);
+
+        _moon_x = _sx + moon_fx * _sw * _ssc;
+        _moon_y =        moon_fy * _sh * _ssc;
+        _moon_r = moon_fr * _sw * _ssc;
+    }
+}
+
+if (_scene_a > 0.01) {
+    // --- Twinkling stars (upper sky) ---
+    for (var _si = 0; _si < array_length(sky_stars); _si++) {
+        var _st = sky_stars[_si];
+        var _sa = _st.a * (0.45 + 0.55 * sin(current_time / 600 + _st.phase)) * _scene_a;
+        if (_sa > 0) {
+            draw_set_alpha(_sa);
+            draw_set_color(make_color_rgb(210, 220, 245));
+            draw_rectangle(_st.x, _st.y, _st.x + _st.size, _st.y + _st.size, false);
+        }
+    }
+
+    // --- Drifting fog/mist banks (soft horizontal gradient bands) ---
+    for (var _fi = 0; _fi < array_length(fog_layers); _fi++) {
+        var _fl  = fog_layers[_fi];
+        var _fy  = _fl.y + sin(current_time * _fl.spd + _fl.off) * 10;
+        var _fa  = _fl.a * (0.65 + 0.35 * sin(current_time / 2500 + _fl.off)) * _scene_a;
+        var _fcl = make_color_rgb(86, 96, 118);
+        var _fh  = 90;   // band half-height (transparent -> fog -> transparent)
+        draw_primitive_begin(pr_trianglestrip);
+        draw_vertex_color(0,     _fy - _fh, _fcl, 0);
+        draw_vertex_color(GUI_W, _fy - _fh, _fcl, 0);
+        draw_vertex_color(0,     _fy,       _fcl, _fa);
+        draw_vertex_color(GUI_W, _fy,       _fcl, _fa);
+        draw_vertex_color(0,     _fy + _fh, _fcl, 0);
+        draw_vertex_color(GUI_W, _fy + _fh, _fcl, 0);
+        draw_primitive_end();
+    }
+    draw_set_alpha(1.0);
+
+    // --- Red-moon glow (soft additive halo, slow pulse) - tracks the painted moon ---
+    if (_moon_x >= 0) {
+        var _mp    = 0.5 + 0.5 * sin(current_time / 950);
+        var _mglow = (0.07 + 0.06 * _mp) * _scene_a;
+        gpu_set_blendmode(bm_add);
+        draw_set_color(make_color_rgb(185, 38, 26));
+        for (var _g = 3; _g >= 1; _g--) {
+            draw_set_alpha(_mglow / _g);
+            draw_circle(_moon_x, _moon_y, _moon_r * (0.6 + _g * 0.55), false);
+        }
+        gpu_set_blendmode(bm_normal);
+        draw_set_alpha(1.0);
+    }
+
+    // --- Shooting star: update timer/motion then draw the streak ---
+    if (!star_active) {
+        star_timer--;
+        if (star_timer <= 0) {
+            star_active  = true;
+            var _fromleft = (random(1) < 0.5);
+            star_y        = 40 + irandom(190);
+            var _spd      = 17 + random(9);
+            star_dx       = _fromleft ?  _spd : -_spd;
+            star_x        = _fromleft ? -60  : (GUI_W + 60);
+            star_dy       = 5 + random(5);
+            star_maxlife  = 90;
+            star_life     = star_maxlife;
+        }
+    } else {
+        star_x += star_dx;
+        star_y += star_dy;
+        star_life--;
+        if (star_life <= 0 || star_x < -90 || star_x > GUI_W + 90) {
+            star_active = false;
+            star_timer  = 300 + irandom(450);   // ~5-12s between streaks
+        }
+    }
+
+    if (star_active) {
+        // Fade in over the first frames, out over the last - never a hard pop.
+        var _ta = _scene_a
+                * clamp(star_life / 22.0, 0, 1)
+                * clamp((star_maxlife - star_life) / 8.0, 0, 1);
+        gpu_set_blendmode(bm_add);
+        for (var _t = 7; _t >= 1; _t--) {       // tail behind the head
+            var _px = star_x - star_dx * _t * 0.55;
+            var _py = star_y - star_dy * _t * 0.55;
+            draw_set_alpha(_ta * (1 - _t / 8.0));
+            draw_set_color(make_color_rgb(190, 205, 255));
+            draw_circle(_px, _py, max(0.5, 2.3 - _t * 0.22), false);
+        }
+        draw_set_alpha(_ta);
+        draw_set_color(c_white);
+        draw_circle(star_x, star_y, 2.6, false);
+        gpu_set_blendmode(bm_normal);
+        draw_set_alpha(1.0);
+    }
+
+    draw_set_color(c_white);
+}
+
 // Atmospheric edge vignette
 draw_set_alpha(0.35);
 draw_set_color(c_black);
@@ -19,6 +141,17 @@ draw_set_alpha(1.0);
 // CUTSCENE PHASE
 // -----------------------------------------------------------------------
 if (phase == "cutscene") {
+    // Soft central scrim so the crawl stays legible over the lit vista without
+    // hiding the sky (stars/moon) above or the fog below. Peaks in the text band.
+    var _scrim = make_color_rgb(4, 5, 9);
+    draw_primitive_begin(pr_trianglestrip);
+    draw_vertex_color(0,     250, _scrim, 0);    draw_vertex_color(GUI_W, 250, _scrim, 0);
+    draw_vertex_color(0,     540, _scrim, 0.5);  draw_vertex_color(GUI_W, 540, _scrim, 0.5);
+    draw_vertex_color(0,     830, _scrim, 0);    draw_vertex_color(GUI_W, 830, _scrim, 0);
+    draw_primitive_end();
+    draw_set_alpha(1.0);
+    draw_set_color(c_white);
+
     draw_set_font(fnt_ui);
     var _num_panels = array_length(cutscene_panels);
     var _sep        = 48;   // line separation WITHIN a panel
@@ -95,10 +228,10 @@ if (phase == "cutscene") {
     draw_set_color(make_color_rgb(130, 195, 255));
     draw_text(960, 300, "IRONWAKE");
 
-    // Subtitle
+    // Subtitle (black outline so it stays legible over the lit vista)
     draw_set_font(fnt_ui_small);
-    draw_set_color(make_color_rgb(80, 92, 115));
-    draw_text(960, 402, "A  R O G U E L I T E  D U N G E O N  C R A W L E R");
+    draw_set_color(make_color_rgb(120, 134, 160));
+    draw_text_outline(960, 402, "A  R O G U E L I T E  D U N G E O N  C R A W L E R");
 
     // Decorative line under subtitle
     draw_set_alpha(title_alpha * 0.4);
@@ -129,17 +262,17 @@ if (phase == "cutscene") {
             }
             draw_set_font(fnt_ui);
             draw_set_color(make_color_rgb(130, 195, 255));
-            draw_text(698, _oy, ">");
+            draw_text_outline(698, _oy, ">");
         }
 
         draw_set_font(fnt_ui);
-        draw_set_color(_avail ? c_white : make_color_rgb(55, 60, 78));
-        draw_text(960, _oy, _options[_i]);
+        draw_set_color(_avail ? c_white : make_color_rgb(110, 116, 134));
+        draw_text_outline(960, _oy, _options[_i]);
 
         if (_i == 1 && !_any_save) {
             draw_set_font(fnt_ui_small);
-            draw_set_color(make_color_rgb(50, 55, 72));
-            draw_text(960, _oy + 39, "no saves found");
+            draw_set_color(make_color_rgb(120, 125, 142));
+            draw_text_outline(960, _oy + 39, "no saves found");
         }
     }
 
@@ -151,8 +284,8 @@ if (phase == "cutscene") {
 
     // Settings hint (always shown on the title screen)
     draw_set_font(fnt_ui_small);
-    draw_set_color(make_color_rgb(90, 100, 125));
-    draw_text(960, 1035, "[ O ]  Settings");
+    draw_set_color(make_color_rgb(130, 140, 165));
+    draw_text_outline(960, 1035, "[ O ]  Settings");
 
     draw_set_alpha(1.0);
     draw_set_font(-1);

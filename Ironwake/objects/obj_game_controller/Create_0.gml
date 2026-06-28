@@ -30,6 +30,7 @@ video_apply();
 // (If a sprite is ever renamed/removed, update this list to match.)
 global.__sprite_includes = [
     spr_hub_background,
+    spr_title_background,
     spr_ui_frame,
     spr_combatbg_ashen_1,
     spr_combatbg_ashen_2,

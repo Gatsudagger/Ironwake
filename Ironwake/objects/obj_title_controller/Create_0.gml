@@ -47,3 +47,55 @@ slot_previews    = array_create(3, undefined);
 slot_previews[0] = get_slot_preview(0);
 slot_previews[1] = get_slot_preview(1);
 slot_previews[2] = get_slot_preview(2);
+
+// =============================================================================
+// INTRO SCENE BACKGROUND + AMBIENT ATMOSPHERE
+// A wide dark-forest/town/crypt night vista (spr_title_background) drawn behind
+// BOTH the cutscene (slow horizontal pan, dim behind the text) and the title menu
+// (brightens to full, gentle parallax drift). Looked up by name so the project
+// compiles before the sprite resource exists - the draw is guarded on existence.
+// =============================================================================
+scene_sprite = asset_get_index("spr_title_background");
+scene_alpha  = 0.0;     // background fade-in (ramps to 0.5 in cutscene, 1.0 at title)
+scene_pan    = 0.0;     // 0..1 horizontal pan progress across the vista's overscan
+
+// Twinkling stars scattered across the upper sky band.
+sky_stars = [];
+for (var _si = 0; _si < 70; _si++) {
+    array_push(sky_stars, {
+        x:     irandom(GUI_W),
+        y:     irandom(430),            // upper sky region only
+        phase: random(6.283),
+        size:  (random(1) < 0.82) ? 1 : 2,
+        a:     0.20 + random(0.45)
+    });
+}
+
+// Drifting low fog/mist banks hazing the town + forest base.
+fog_layers = [];
+for (var _fi = 0; _fi < 3; _fi++) {
+    array_push(fog_layers, {
+        y:    700 + _fi * 95,
+        spd:  0.0006 + _fi * 0.0003,    // sine-bob rate (slow)
+        off:  random(6.283),
+        a:    0.10 + _fi * 0.03         // base alpha per band
+    });
+}
+
+// Periodic shooting star. Dormant until the timer fires, then streaks across the
+// sky and resets to a fresh cooldown. Only one streak in flight at a time.
+star_timer   = 90 + irandom(180);      // frames until the first streak
+star_active  = false;
+star_x       = 0;
+star_y       = 0;
+star_dx      = 0;
+star_dy      = 0;
+star_life    = 0;
+star_maxlife = 0;
+
+// Red-moon glow anchor, stored as FRACTIONS of the vista image so the additive
+// halo tracks the painted moon as the scene pans. Measured from the art: the moon
+// disc sits at ~(0.555, 0.178) of the image, radius ~0.083 of its width.
+moon_fx = 0.555;
+moon_fy = 0.178;
+moon_fr = 0.083;

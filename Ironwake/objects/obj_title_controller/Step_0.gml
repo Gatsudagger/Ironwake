@@ -26,6 +26,10 @@ if (phase == "cutscene") {
     // Fade the whole screen in once at the start
     screen_alpha = min(1.0, screen_alpha + 0.04);
 
+    // Backdrop fades up to a dim 0.5 (readable behind the text) and slow-pans.
+    scene_alpha = min(0.5, scene_alpha + 0.01);
+    scene_pan   = min(1.0, scene_pan + 0.0010);
+
     var _num_panels = array_length(cutscene_panels);
 
     if (panel_idx < _num_panels) {
@@ -51,6 +55,10 @@ if (phase == "cutscene") {
     }
 
 } else if (phase == "title") {
+    // Backdrop brightens to full and keeps a gentle parallax drift.
+    scene_alpha = min(1.0, scene_alpha + 0.012);
+    scene_pan   = min(1.0, scene_pan + 0.0004);
+
     // Fade in title logo, then menu
     title_alpha = min(1.0, title_alpha + 0.018);
     if (title_alpha > 0.6) {

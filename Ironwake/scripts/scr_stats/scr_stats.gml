@@ -3983,16 +3983,20 @@ function video_settings_init() {
 function video_apply() {
     video_settings_init();
 
-    // HTML5 / itch.io: the browser page (and itch's embed frame) own canvas sizing and
-    // scaling. Calling window_set_size / window_center here pins the canvas to a fixed
-    // pixel size and FIGHTS that auto-scale - which is exactly what made the game
-    // "resize back to its original resolution" and the fullscreen toggle appear to
-    // shrink the window. On the web we only drive the real fullscreen request (the
-    // page scales the canvas to fill the frame on its own). NOTE: browser fullscreen
-    // from inside an itch iframe is gated by the browser/iframe policy; itch's own
-    // fullscreen button is the reliable path there.
+    // HTML5 / itch.io: match the canvas to the ACTUAL browser / itch frame size so it
+    // always fills it. GameMaker's "Keep aspect ratio" HTML5 scaling does NOT reliably
+    // upscale a fixed canvas to a larger frame (a native 1920x1080 canvas just sat
+    // top-left in a bigger fullscreen window), so we drive the size ourselves from
+    // browser_width/height. The fixed 1920x1080 GUI layer (display_set_gui_size) is then
+    // stretched by GM to fill the window. The frame size changes on fullscreen-launch /
+    // window-resize, so obj_game_controller/Step_0 re-applies this every step too; this
+    // call just avoids a one-frame flash at startup. Works in BOTH itch embed modes
+    // (click-to-launch-fullscreen = whole window; embed-in-page = the inline viewport).
     if (os_browser != browser_not_a_browser) {
         window_set_fullscreen(global.fullscreen);
+        var _bw = browser_width;
+        var _bh = browser_height;
+        if (_bw > 0 && _bh > 0) window_set_size(_bw, _bh);
         return;
     }
 
