@@ -493,9 +493,10 @@ global.consumables_elite = [
 global.consumable_inventory = [];
 global.run_items_found      = [];
 
-// Equipment slots - 9 entries, one per slot (undefined = empty)
+// Equipment slots - 10 entries, one per slot (undefined = empty)
 // Index 8 = Ranged Weapon (appended; SYSTEMS_WEAPON_ROLES.md §A).
-global.inventory = array_create(9, undefined);
+// Index 9 = Ring 2 (second ring position; accepts "ring" items).
+global.inventory = array_create(EQUIP_SLOT_COUNT, undefined);
 
 // Item codex - records base names of every equipment item ever found or bought
 global.items_discovered = [];

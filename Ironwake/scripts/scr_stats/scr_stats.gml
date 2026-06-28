@@ -747,7 +747,17 @@ function out_of_combat_max_hp() {
         _sv.CON += global.perm_con_bonus; _sv.INT += global.perm_int_bonus;
         _sv.WIS += global.perm_wis_bonus; _sv.CHA += global.perm_cha_bonus;
     }
-    return stats_derive(_sv).HP + _bonus.bonus_max_hp;
+    var _max = stats_derive(_sv).HP + _bonus.bonus_max_hp;
+
+    // Apply the SAME run boon/curse max-HP multipliers combat does (Ironhide/Glass
+    // Cannon, then Frail/Ruin/Devil's Pact), each rounded in sequence exactly as
+    // obj_combat_controller/Create_0 - otherwise the floor/hub HP readout disagrees
+    // with the in-fight bar and can even clamp the shown current HP too low.
+    var _bm = boon_maxhp_mult();
+    if (_bm != 1.0) _max = max(1, round(_max * _bm));
+    var _cm = curse_maxhp_mult();
+    if (_cm != 1.0) _max = max(1, round(_max * _cm));
+    return _max;
 }
 
 // ---------------------------------------------------------------------------
@@ -1090,8 +1100,39 @@ function drop_equipment(rarity_weights, do_discover = true) {
 }
 
 // ---------------------------------------------------------------------------
+// consumables_grouped()
+// A DISPLAY view of global.consumable_inventory that collapses identical items
+// (same name) into one row, so menus show "Smelling Salts  x5" instead of five
+// separate rows. The underlying array is NOT changed - it still holds 5 real
+// entries (so array_length is the true count for inventory caps). Each group is
+// { item, count, first_index }; `first_index` is the lowest array position, i.e.
+// the instance a menu should consume when the player uses that row.
+// ---------------------------------------------------------------------------
+function consumables_grouped() {
+    var _inv = variable_global_exists("consumable_inventory") ? global.consumable_inventory : [];
+    var _groups   = [];
+    var _index_of = {};   // item name -> its slot in _groups
+    for (var _i = 0; _i < array_length(_inv); _i++) {
+        var _it  = _inv[_i];
+        var _key = _it.name;
+        if (variable_struct_exists(_index_of, _key)) {
+            _groups[variable_struct_get(_index_of, _key)].count++;
+        } else {
+            variable_struct_set(_index_of, _key, array_length(_groups));
+            array_push(_groups, { item: _it, count: 1, first_index: _i });
+        }
+    }
+    return _groups;
+}
+
+// consumable_group_label(group) - "Name" or "Name  xN" for the grouped menus.
+function consumable_group_label(group) {
+    return group.item.name + (group.count > 1 ? "   x" + string(group.count) : "");
+}
+
+// ---------------------------------------------------------------------------
 // equip_slot_index(slot_name)
-// Maps a lowercase slot name to its index in global.inventory[0..7].
+// Maps a lowercase slot name to its index in global.inventory[0..9].
 // Returns -1 for unknown names.
 // ---------------------------------------------------------------------------
 function equip_slot_index(slot_name) {
@@ -1103,9 +1144,32 @@ function equip_slot_index(slot_name) {
         case "gloves":        return 4;
         case "boots":         return 5;
         case "amulet":        return 6;
-        case "ring":          return 7;
+        case "ring":          return 7;   // Ring 1 (rings keep slot "ring"; Ring 2 is idx 9)
         case "ranged_weapon": return 8;   // appended (SYSTEMS_WEAPON_ROLES.md §A)
+        case "ring2":         return 9;   // Ring 2 - second ring POSITION (accepts "ring" items)
         default:              return -1;
+    }
+}
+
+// Number of equip positions in global.inventory (0..EQUIP_SLOT_COUNT-1).
+#macro EQUIP_SLOT_COUNT 10
+
+// equip_position_item_slot(idx) - the item `.slot` type each equip POSITION accepts.
+// Ring 2 (idx 9) is a second ring position, so it accepts items whose slot is "ring".
+// Used by the equip picker to filter which pack/stash items can go in a position.
+function equip_position_item_slot(idx) {
+    switch (idx) {
+        case 0: return "weapon";
+        case 1: return "offhand";
+        case 2: return "helm";
+        case 3: return "chest";
+        case 4: return "gloves";
+        case 5: return "boots";
+        case 6: return "amulet";
+        case 7: return "ring";
+        case 8: return "ranged_weapon";
+        case 9: return "ring";          // Ring 2 accepts the same item type as Ring 1
+        default: return "";
     }
 }
 

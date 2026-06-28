@@ -1337,8 +1337,8 @@ if (mouse_check_button_pressed(mb_left)) {
     if (menu_tab == 1) {
         if (!equip_picker_open) {
             // Click an equipment slot -> select and open picker.
-            // 9 slots in 2 columns of up to 5 rows (col = slot div 5).
-            for (var _msl = 0; _msl < 9; _msl++) {
+            // 10 slots in 2 columns of 5 rows (col = slot div 5).
+            for (var _msl = 0; _msl < EQUIP_SLOT_COUNT; _msl++) {
                 var _mslx = 60 + floor(_msl / 5) * 870;
                 var _msly = 171 + (_msl mod 5) * 162;
                 if (_mmx >= _mslx && _mmx < _mslx+780 && _mmy >= _msly && _mmy < _msly+144) {
@@ -1350,9 +1350,9 @@ if (mouse_check_button_pressed(mb_left)) {
                 }
             }
         } else {
-            // Picker is open - click a row to equip
-            var _mpslot    = ["weapon","offhand","helm","chest","gloves","boots","amulet","ring","ranged_weapon"];
-            var _mpslname  = _mpslot[equip_slot_selected];
+            // Picker is open - click a row to equip. Filter by the item-TYPE the
+            // position accepts (Ring 2 accepts "ring" items).
+            var _mpslname  = equip_position_item_slot(equip_slot_selected);
             var _mpitems   = [];
             var _mpsrc     = [];
             // Stash is hub-only: during a run you can only equip from your pack.
@@ -1423,7 +1423,10 @@ if (mouse_check_button_pressed(mb_left)) {
 
     // --- Consumables tab (3) ---
     if (menu_tab == 3) {
-        var _mcons = array_length(global.consumable_inventory);
+        // Grouped view (one row per distinct consumable); clicks map back to a real
+        // inventory index. Mirrors the scr_ui draw + the keyboard handler.
+        var _mgroups = consumables_grouped();
+        var _mcons   = array_length(_mgroups);
         // Same windowing as the draw (scr_ui) so clicks land on the visible rows.
         var _mcons_max_vis = 7;
         var _mcons_first   = ui_list_window_first(consumable_submenu_cursor, _mcons, _mcons_max_vis);
@@ -1438,8 +1441,8 @@ if (mouse_check_button_pressed(mb_left)) {
                     // Click already-highlighted item -> use it
                     var _mcan = true;
                     // AP-restore items ("energy") cost no AP, so they work at 0 AP too.
-                    var _m_is_ap = (_mci < array_length(global.consumable_inventory)
-                        && global.consumable_inventory[_mci].effect_type == "energy");
+                    var _m_is_ap = (_mci < array_length(_mgroups)
+                        && _mgroups[_mci].item.effect_type == "energy");
                     if (instance_exists(obj_combat_controller)) {
                         var _mctrl = instance_find(obj_combat_controller, 0);
                         if (!_mctrl.player_turn && items_used_this_turn >= 1) _mcan = false;
@@ -1448,8 +1451,9 @@ if (mouse_check_button_pressed(mb_left)) {
                             array_push(_mctrl.combat_log, "Need 1 AP to use an item!");
                         }
                     }
-                    if (_mcan && _mci < array_length(global.consumable_inventory)) {
-                        var _mit = global.consumable_inventory[_mci];
+                    if (_mcan && _mci < array_length(_mgroups)) {
+                        var _mreal_idx = _mgroups[_mci].first_index;
+                        var _mit = _mgroups[_mci].item;
                         var _mused = false;
                         if (instance_exists(obj_combat_controller)) {
                             var _mctrl2 = instance_find(obj_combat_controller, 0);
@@ -1493,9 +1497,10 @@ if (mouse_check_button_pressed(mb_left)) {
                             _mused = consumable_use_out_of_combat(_mit);
                         }
                         if (_mused) {
-                            array_delete(global.consumable_inventory, _mci, 1);
-                            consumable_submenu_cursor = min(_mci, max(0, array_length(global.consumable_inventory)-1));
-                            if (array_length(global.consumable_inventory) == 0) consumable_submenu_open = false;
+                            array_delete(global.consumable_inventory, _mreal_idx, 1);
+                            var _mg2 = array_length(consumables_grouped());
+                            consumable_submenu_cursor = min(_mci, max(0, _mg2 - 1));
+                            if (_mg2 == 0) consumable_submenu_open = false;
                         }
                     }
                 } else {
@@ -1512,15 +1517,14 @@ if (mouse_check_button_pressed(mb_left)) {
 // EQUIPMENT TAB - slot select, picker, unequip
 // =============================================================================
 if (menu_tab == 1) {
-    var _slot_keys = ["weapon", "offhand", "helm", "chest", "gloves", "boots", "amulet", "ring", "ranged_weapon"];
+    var _slot_keys = ["weapon", "offhand", "helm", "chest", "gloves", "boots", "amulet", "ring", "ranged_weapon", "ring2"];
 
     if (!equip_picker_open) {
-        // Grid navigation: 2 columns (col = slot div 5). Col 0 holds slots 0-4 (5 rows),
-        // col 1 holds slots 5-8 (4 rows). W/S move within a column, A/D switch columns;
-        // the row is clamped to the destination column's height so col 1 never selects 9.
+        // Grid navigation: 2 columns of 5 (col = slot div 5). Col 0 holds slots 0-4,
+        // col 1 holds slots 5-9. W/S move within a column, A/D switch columns.
         var _eq_col = equip_slot_selected div 5;
         var _eq_row = equip_slot_selected mod 5;
-        var _eq_rows = (_eq_col == 0) ? 5 : 4;   // rows available in the current column
+        var _eq_rows = 5;   // both columns now have 5 rows (10 slots total)
         if (keyboard_check_pressed(ord("W")) || keyboard_check_pressed(vk_up)) {
             _eq_row = (_eq_row - 1 + _eq_rows) mod _eq_rows;
         }
@@ -1532,7 +1536,6 @@ if (menu_tab == 1) {
         }
         if (keyboard_check_pressed(ord("D")) || keyboard_check_pressed(vk_right)) {
             _eq_col = 1;
-            _eq_row = min(_eq_row, 3);   // col 1 has only rows 0-3
         }
         equip_slot_selected = _eq_col * 5 + _eq_row;
 
@@ -1560,8 +1563,10 @@ if (menu_tab == 1) {
         }
 
     } else {
-        // Picker open - build filtered list for the selected slot every frame
-        var _slot_name   = _slot_keys[equip_slot_selected];
+        // Picker open - build filtered list for the selected slot every frame. Use the
+        // item-TYPE the position accepts (Ring 2 accepts "ring" items) so rings list for
+        // either ring position.
+        var _slot_name   = equip_position_item_slot(equip_slot_selected);
         var _picker_items = [];
         var _picker_src   = [];   // { source: 0=stash/1=carried, idx: original_index }
         // Stash is hub-only: during a run you can only equip from your pack.
@@ -1657,7 +1662,10 @@ if (menu_tab == 1) {
 if (menu_tab == 3) {
 
     if (consumable_submenu_open) {
-        var _cons_cnt = array_length(global.consumable_inventory);
+        // Grouped view: identical consumables show as one "Name xN" row; cursor + use
+        // map back through it to a real inventory index. Mirrors the scr_ui draw.
+        var _cgroups  = consumables_grouped();
+        var _cons_cnt = array_length(_cgroups);
 
         // Navigate
         if (keyboard_check_pressed(vk_up) || keyboard_check_pressed(ord("W"))) {
@@ -1677,7 +1685,7 @@ if (menu_tab == 3) {
             var _can_use = true;
             // AP-restore items ("energy") cost no AP, so they stay usable at 0 AP.
             var _sel_is_ap = (_cons_cnt > 0 && consumable_submenu_cursor < _cons_cnt
-                && global.consumable_inventory[consumable_submenu_cursor].effect_type == "energy");
+                && _cgroups[consumable_submenu_cursor].item.effect_type == "energy");
             if (instance_exists(obj_combat_controller)) {
                 var _ctrl_c = instance_find(obj_combat_controller, 0);
                 if (!_ctrl_c.player_turn && items_used_this_turn >= 1) {
@@ -1689,7 +1697,8 @@ if (menu_tab == 3) {
                 }
             }
             if (_can_use && _cons_cnt > 0 && consumable_submenu_cursor < _cons_cnt) {
-                var _item = global.consumable_inventory[consumable_submenu_cursor];
+                var _real_idx = _cgroups[consumable_submenu_cursor].first_index;
+                var _item = _cgroups[consumable_submenu_cursor].item;
                 var _used = false;
                 if (instance_exists(obj_combat_controller)) {
                     var _ctrl_c = instance_find(obj_combat_controller, 0);
@@ -1733,10 +1742,10 @@ if (menu_tab == 3) {
                     _used = consumable_use_out_of_combat(_item);
                 }
                 if (_used) {
-                    array_delete(global.consumable_inventory, consumable_submenu_cursor, 1);
-                    consumable_submenu_cursor = min(consumable_submenu_cursor,
-                        max(0, array_length(global.consumable_inventory) - 1));
-                    if (array_length(global.consumable_inventory) == 0) {
+                    array_delete(global.consumable_inventory, _real_idx, 1);
+                    var _cg2 = array_length(consumables_grouped());
+                    consumable_submenu_cursor = min(consumable_submenu_cursor, max(0, _cg2 - 1));
+                    if (_cg2 == 0) {
                         consumable_submenu_open = false;
                     }
                 }

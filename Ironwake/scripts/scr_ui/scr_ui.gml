@@ -1138,6 +1138,17 @@ function status_tooltip_desc(se) {
               : (variable_struct_exists(se, "effect_type") ? se.effect_type : "");
     var _val  = variable_struct_exists(se, "effect_value") ? se.effect_value : 0;
     var _dur  = variable_struct_exists(se, "duration") ? se.duration : 0;
+
+    // A badge can carry its own one-line explanation (player buffs like Iron Skin /
+    // Blink / Vanish that live on the player struct, not in status_effects[], so they
+    // have no typed `kind` to switch on). It supplies its own duration noun too
+    // ("charge" for stacked-evasion buffs, "turn" otherwise).
+    if (variable_struct_exists(se, "desc")) {
+        var _noun = variable_struct_exists(se, "dur_noun") ? se.dur_noun : "turn";
+        var _suf  = (_dur > 0) ? ("  (" + string(_dur) + " " + _noun + (_dur == 1 ? "" : "s") + " left)") : "";
+        return se.desc + _suf;
+    }
+
     var _el   = combat_status_element(se);
     var _rawel = (is_struct(se) && variable_struct_exists(se, "element")) ? se.element : "";
     var _turns = (_dur > 0) ? ("  (" + string(_dur) + " turn" + (_dur == 1 ? "" : "s") + " left)") : "";
@@ -1171,7 +1182,10 @@ function ui_draw_status_tooltip(mx, my, se) {
     draw_set_font(fnt_ui_small);
 
     var _pad = 15, _lh = 27, _w = 540, _iw = _w - _pad * 2;
-    var _st   = status_icon_style(se);
+    // Header/accent colour: a badge may supply its own (player buffs); otherwise derive
+    // it from the typed status style. (Avoids running status_icon_style on a buff struct
+    // that has no `kind`/`effect_type`.)
+    var _st_color = variable_struct_exists(se, "color") ? se.color : status_icon_style(se).color;
     var _name = variable_struct_exists(se, "name") ? se.name : "Status";
     var _desc = status_tooltip_desc(se);
     var _det  = status_detonation_text(se);
@@ -1191,12 +1205,12 @@ function ui_draw_status_tooltip(mx, my, se) {
     draw_set_color(make_color_rgb(12, 14, 26));
     draw_rectangle(_x, _y, _x + _w, _y + _h, false);
     draw_set_alpha(1.0);
-    draw_set_color(_st.color);
+    draw_set_color(_st_color);
     draw_rectangle(_x, _y, _x + _w, _y + _h, true);
     draw_rectangle(_x, _y, _x + _w, _y + 4, false);   // accent strip
 
     var _cx = _x + _pad, _cy = _y + _pad;
-    draw_set_color(_st.color);
+    draw_set_color(_st_color);
     draw_text(_cx, _cy, _name);
     _cy += _lh;
     draw_set_color(make_color_rgb(215, 218, 230));
@@ -1455,14 +1469,16 @@ function ui_draw_hp_bar(x, y, width, height, current_hp, max_hp, label) {
     var _hp_str = string(current_hp) + " / " + string(max_hp);
     var _label_max = width - 12 - string_width(_hp_str) - 12;   // l-pad + readout + gap
 
-    // Label (left-aligned, vertically centered on the bar), truncated to fit.
+    // Label (left-aligned, vertically centered on the bar), truncated to fit. Black
+    // outline so the white name + HP readout stay legible over the yellow/green/red
+    // fill (white-on-yellow was nearly unreadable at mid HP).
     draw_set_halign(fa_left);
     draw_set_valign(fa_middle);
     draw_set_color(c_white);
-    draw_text(x + 6, y + height / 2, ui_truncate(label, max(20, _label_max)));
+    draw_text_outline(x + 6, y + height / 2, ui_truncate(label, max(20, _label_max)));
 
     draw_set_halign(fa_right);
-    draw_text(x + width - 6, y + height / 2, _hp_str);
+    draw_text_outline(x + width - 6, y + height / 2, _hp_str);
 
     // Reset alignment to safe defaults
     draw_set_font(-1);
@@ -1678,8 +1694,12 @@ function ui_draw_ability_buttons(x, y, ability_array, selected_index, caster) {
 
         // Role-category border on EVERY button (offense red / defense blue / support
         // green / control purple) for at-a-glance role reading (SYSTEMS_ABILITY_SYNERGY.md).
+        // Drawn 3px thick (stacked inward outlines) so the role colour is noticeable in
+        // combat and stays readable next to the gold selection ring below.
         draw_set_color(ability_category_color(ability_category(ab)));
-        draw_rectangle(bx, y, bx + btn_width, y + btn_height, true);
+        for (var _b = 0; _b < 3; _b++) {
+            draw_rectangle(bx + _b, y + _b, bx + btn_width - _b, y + btn_height - _b, true);
+        }
 
         // Selected ability: a bold, bright gold ring drawn OUTSIDE the role border so
         // the active choice is unmistakable even between same-coloured neighbours (the
@@ -2696,40 +2716,60 @@ function ui_draw_combat_hud(combat_state, player, ability_array, selected_abilit
     }
 
     // --- Active player buff icons (below XP bar) ---
+    // Each carries an `se` descriptor (name + one-line desc + duration noun + colour) so
+    // it hover-explains itself like the typed debuff badges do. These buffs live on the
+    // player struct (not status_effects[]), so they have no typed `kind` - the desc is
+    // authored here. (Task: every status has a mouse-over explanation.)
     var _pbuffs = [];
     if (variable_struct_exists(player, "iron_skin_duration") && player.iron_skin_duration > 0) {
+        var _is_col = make_color_rgb(80, 140, 220);
         array_push(_pbuffs, {
             label:    "IS",
-            color:    make_color_rgb(80, 140, 220),
-            duration: player.iron_skin_duration
+            color:    _is_col,
+            duration: player.iron_skin_duration,
+            se: { name: "Iron Skin", color: _is_col, duration: player.iron_skin_duration, dur_noun: "turn",
+                  desc: "Iron Skin: reduces the damage you take from each incoming hit while active." }
         });
     }
     if (variable_struct_exists(player, "bloodthorn_active") && player.bloodthorn_active) {
+        var _bt_col = make_color_rgb(190, 55, 55);
+        var _bt_val = variable_struct_exists(player, "bloodthorn_value") ? player.bloodthorn_value : 0;
         array_push(_pbuffs, {
             label:    "BT",
-            color:    make_color_rgb(190, 55, 55),
-            duration: player.bloodthorn_duration
+            color:    _bt_col,
+            duration: player.bloodthorn_duration,
+            se: { name: "Bloodthorn Aura", color: _bt_col, duration: player.bloodthorn_duration, dur_noun: "turn",
+                  desc: "Bloodthorn Aura: reflects " + string(_bt_val) + " damage back at any enemy that strikes you." }
         });
     }
     if (variable_struct_exists(player, "blink_charges") && player.blink_charges > 0) {
+        var _blk_col = make_color_rgb(70, 75, 210);
         array_push(_pbuffs, {
             label:    "BLK",
-            color:    make_color_rgb(70, 75, 210),
-            duration: player.blink_charges
+            color:    _blk_col,
+            duration: player.blink_charges,
+            se: { name: "Blink", color: _blk_col, duration: player.blink_charges, dur_noun: "charge",
+                  desc: "Blink: staged evasion of your next incoming attacks - the first is fully dodged, then half damage, then quarter as the charges drop." }
         });
     }
     if (variable_struct_exists(player, "is_untargetable") && player.is_untargetable) {
+        var _van_col = make_color_rgb(120, 70, 200);
         array_push(_pbuffs, {
             label:    "VAN",
-            color:    make_color_rgb(120, 70, 200),
-            duration: player.untargetable_turns
+            color:    _van_col,
+            duration: player.untargetable_turns,
+            se: { name: "Vanish", color: _van_col, duration: player.untargetable_turns, dur_noun: "charge",
+                  desc: "Vanished: a chance to completely avoid each incoming attack (scales with Wisdom); your next strike also deals bonus damage." }
         });
     }
     if (variable_struct_exists(player, "shadow_step_charges") && player.shadow_step_charges > 0) {
+        var _ss_col = make_color_rgb(45, 155, 65);
         array_push(_pbuffs, {
             label:    "SS",
-            color:    make_color_rgb(45, 155, 65),
-            duration: player.shadow_step_charges
+            color:    _ss_col,
+            duration: player.shadow_step_charges,
+            se: { name: "Shadow Step", color: _ss_col, duration: player.shadow_step_charges, dur_noun: "charge",
+                  desc: "Shadow Step: a chance to dodge each of your next incoming attacks." }
         });
     }
     // Typed debuffs/statuses applied to the player (poison, Sight Clouded/blind,
@@ -3475,8 +3515,8 @@ function ui_draw_character_menu() {
 
     // ---- EQUIPMENT TAB ----
     if (menu_tab == 1) {
-        var _slot_names = ["Melee Weapon", "Offhand", "Helm", "Chest", "Gloves", "Boots", "Amulet", "Ring", "Ranged Weapon"];
-        var _slot_keys  = ["weapon", "offhand", "helm", "chest", "gloves", "boots", "amulet", "ring", "ranged_weapon"];
+        var _slot_names = ["Melee Weapon", "Offhand", "Helm", "Chest", "Gloves", "Boots", "Amulet", "Ring 1", "Ranged Weapon", "Ring 2"];
+        var _slot_keys  = ["weapon", "offhand", "helm", "chest", "gloves", "boots", "amulet", "ring", "ranged_weapon", "ring2"];
         var _sel_slot   = _gc.equip_slot_selected;
 
         // Equip confirmation notification (fades over 150 frames, fully opaque first 120)
@@ -3506,9 +3546,9 @@ function ui_draw_character_menu() {
         }
         draw_set_halign(fa_left);
 
-        // 9 equipment slots - 2 columns of up to 5 rows (col = slot div 5).
+        // 10 equipment slots - 2 columns of 5 rows (col = slot div 5).
         var _offhand_locked = two_handed_equipped();   // 2H weapon locks the offhand slot (1)
-        for (var _sl = 0; _sl < 9; _sl++) {
+        for (var _sl = 0; _sl < EQUIP_SLOT_COUNT; _sl++) {
             var _slx    = _pad + floor(_sl / 5) * 870;
             var _sly    = _content_y + 36 + (_sl mod 5) * 162;
             var _is_sel = (_sl == _sel_slot);
@@ -3588,7 +3628,9 @@ function ui_draw_character_menu() {
 
         // --- EQUIP PICKER OVERLAY ---
         if (_gc.equip_picker_open) {
-            var _slot_name = _slot_keys[_sel_slot];
+            // Filter by the item-TYPE the position accepts (Ring 2 -> "ring"), so rings
+            // list for either ring position. Must match the Step picker.
+            var _slot_name = equip_position_item_slot(_sel_slot);
 
             // Build filtered list (same order as Step)
             var _picker_items = [];
@@ -3803,7 +3845,10 @@ function ui_draw_character_menu() {
 
     // ---- CONSUMABLES TAB ----
     if (menu_tab == 3) {
-        var _cons_count     = array_length(global.consumable_inventory);
+        // Grouped view: identical consumables collapse to one "Name xN" row (the real
+        // array still holds every entry). Step's nav/use map back through it.
+        var _cgroups        = consumables_grouped();
+        var _cons_count     = array_length(_cgroups);
         var _sub_open       = _gc.consumable_submenu_open;
         var _sub_cur        = _gc.consumable_submenu_cursor;
 
@@ -3864,7 +3909,8 @@ function ui_draw_character_menu() {
             draw_set_halign(fa_left);
 
             for (var _ci = _cons_first; _ci < _cons_last; _ci++) {
-                var _c      = global.consumable_inventory[_ci];
+                var _c      = _cgroups[_ci].item;
+                var _clabel = consumable_group_label(_cgroups[_ci]);
                 var _cy2    = _content_y + 60 + (_ci - _cons_first) * 120;
                 var _is_cur = (_sub_open && _ci == _sub_cur);
 
@@ -3910,7 +3956,7 @@ function ui_draw_character_menu() {
                 } else {
                     draw_set_color(make_color_rgb(80, 220, 220));
                 }
-                draw_text(_ctext_x, _cy2 + 12, _c.name);
+                draw_text(_ctext_x, _cy2 + 12, _clabel);
 
                 // Description
                 draw_set_font(fnt_ui_small);

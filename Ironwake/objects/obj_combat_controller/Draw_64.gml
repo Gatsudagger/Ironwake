@@ -54,14 +54,15 @@ for (var _i = 0; _i < _count; _i++) {
     var _bar_y = _bar_row_y0 + (_living_idx div 2) * _bar_row_gap;
 
     if (_living_idx == selected_target) {
-        draw_set_font(fnt_ui);
-        draw_set_color(c_white);
-        draw_set_halign(fa_right);
-        draw_set_valign(fa_middle);
-        draw_text(_bar_x - 9, _bar_y + _bar_height / 2, ">");
-        draw_set_font(-1);
-        draw_set_halign(fa_left);
-        draw_set_valign(fa_top);
+        // Small target reticle just LEFT of the bar - the SAME marker shown under the
+        // selected foe's sprite (just smaller), so the highlighted name/HP bar and the
+        // sprite read as one selection. The old ">" glyph was big and bled into the
+        // adjacent column's bar; this is sized + centred to sit in the gutter cleanly.
+        var _mk_sz = 16;
+        var _mk_sc = (_mk_sz / max(1, sprite_get_width(spr_target_cursor)))
+                   * (1 + 0.06 * sin(current_time / 180));   // same breathing pulse
+        draw_sprite_ext(spr_target_cursor, 0, _bar_x - 11, _bar_y + _bar_height / 2,
+                        _mk_sc, _mk_sc, current_time * 0.05, c_white, 0.95);
     }
 
     ui_draw_hp_bar(_bar_x, _bar_y, _bar_width, _bar_height,
@@ -466,7 +467,10 @@ if (player_turn && !combat_over) {
     // Opens even with an empty run buffer (shows "No consumables held.") so the
     // [C] button never silently no-ops. Stash consumables stay hub-only.
     if (consumable_quick_open) {
-        var _qcount = array_length(global.consumable_inventory);
+        // Grouped view: identical consumables collapse to one "Name xN" row (the real
+        // array still holds N entries). Step uses the same grouping for nav + use.
+        var _qgroups = consumables_grouped();
+        var _qcount  = array_length(_qgroups);
         // Windowed list - cap visible rows and scroll around the cursor so the
         // selection is always on screen. Step's mouse hit-test uses the same math.
         var _q_max_vis = 6;
@@ -509,7 +513,8 @@ if (player_turn && !combat_over) {
 
         // Item rows
         for (var _qi = _q_first; _qi < _q_last; _qi++) {
-            var _qitem  = global.consumable_inventory[_qi];
+            var _qitem  = _qgroups[_qi].item;
+            var _qlabel = consumable_group_label(_qgroups[_qi]);
             var _qry    = _py + 75 + (_qi - _q_first) * 108;
             var _is_cur = (_qi == consumable_quick_cursor);
 
@@ -523,7 +528,7 @@ if (player_turn && !combat_over) {
             draw_set_halign(fa_left);
             draw_set_font(fnt_ui);
             draw_set_color(_is_cur ? c_white : make_color_rgb(160, 175, 195));
-            draw_text(_px + 33, _qry + 12, _qitem.name);
+            draw_text(_px + 33, _qry + 12, _qlabel);
             draw_set_font(fnt_ui_small);
             draw_set_color(_is_cur ? make_color_rgb(120, 210, 160) : make_color_rgb(80, 110, 95));
             draw_text(_px + 33, _qry + 48, _qitem.description);

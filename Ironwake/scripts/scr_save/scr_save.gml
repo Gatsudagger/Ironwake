@@ -220,8 +220,8 @@ function new_game_reset() {
     // Run history log
     global.run_history = [];
 
-    // Equipped items + hub storage (9 slots; index 8 = Ranged Weapon)
-    global.inventory            = array_create(9, undefined);
+    // Equipped items + hub storage (10 slots; index 8 = Ranged Weapon, 9 = Ring 2)
+    global.inventory            = array_create(EQUIP_SLOT_COUNT, undefined);
     global.equipment_stash      = [];
     global.consumable_stash     = [];
     global.consumable_inventory = [];
@@ -405,11 +405,13 @@ function load_game() {
         global.run_history = _s.run_history;
     }
 
-    // Equipped items. global.inventory is pre-sized to 9 (index 8 = Ranged Weapon).
-    // Old saves only have 8 entries - min() leaves index 8 undefined (empty ranged
-    // slot), so the migration is automatic and lossless (SYSTEMS_WEAPON_ROLES.md §A).
+    // Equipped items. global.inventory is pre-sized to EQUIP_SLOT_COUNT (10): index 8 =
+    // Ranged Weapon, 9 = Ring 2. Older saves have fewer entries - the extra positions
+    // stay undefined (empty), so the migration is automatic and lossless (the same
+    // pattern that added the ranged slot; SYSTEMS_WEAPON_ROLES.md §A).
+    global.inventory = array_create(EQUIP_SLOT_COUNT, undefined);   // ensure full width pre-copy
     if (variable_struct_exists(_s, "inventory") && is_array(_s.inventory)) {
-        for (var _ii = 0; _ii < min(9, array_length(_s.inventory)); _ii++) {
+        for (var _ii = 0; _ii < min(EQUIP_SLOT_COUNT, array_length(_s.inventory)); _ii++) {
             global.inventory[_ii] = _s.inventory[_ii];
             item_migrate_weapon_fields(global.inventory[_ii]);   // backfill weapon_damage/two_handed
         }

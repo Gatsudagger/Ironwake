@@ -239,7 +239,10 @@ if (player_turn) {
     }
 
     if (consumable_quick_open) {
-        var _qcount = array_length(global.consumable_inventory);
+        // Grouped view (identical consumables collapse to one row); cursor + use map
+        // through it back to a real inventory index. Mirrors Draw_64.
+        var _qgroups = consumables_grouped();
+        var _qcount  = array_length(_qgroups);
         if (_qcount == 0) {
             // Empty state: the menu stays open showing "No consumables held.";
             // Esc closes it (C is handled by the toggle above).
@@ -290,7 +293,9 @@ if (player_turn) {
             }
 
             if (_use_item) {
-                var _citem = global.consumable_inventory[_use_idx];
+                // Map the grouped row back to a real inventory index (the first instance).
+                var _real_idx = _qgroups[_use_idx].first_index;
+                var _citem = _qgroups[_use_idx].item;
                 // AP-restore items ("energy") cost no AP, so they work at 0 AP too.
                 var _q_is_ap = (_citem.effect_type == "energy");
                 if (player.energy < 1 && !_q_is_ap) {
@@ -347,12 +352,13 @@ if (player_turn) {
                     }
                     // AP-restore items are free; everything else costs 1 AP.
                     if (!_q_is_ap) player.energy -= 1;
-                    array_delete(global.consumable_inventory, _use_idx, 1);
+                    array_delete(global.consumable_inventory, _real_idx, 1);
                     if (instance_exists(obj_game_controller)) {
                         instance_find(obj_game_controller, 0).items_used_this_turn++;
                     }
-                    // Close if nothing left, otherwise clamp cursor
-                    var _remaining = array_length(global.consumable_inventory);
+                    // Close if nothing left, otherwise clamp cursor to the new GROUP count
+                    // (using the last of a stack removes that whole row).
+                    var _remaining = array_length(consumables_grouped());
                     if (_remaining == 0) {
                         consumable_quick_open = false;
                     } else {
