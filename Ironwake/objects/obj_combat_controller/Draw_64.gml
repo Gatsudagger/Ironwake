@@ -29,9 +29,11 @@ global.combat_status_tip = undefined;
 // Enemy HP bars laid out in a 2-COLUMN grid (was a single 4-tall stack that
 // collided with the enemy sprites). Fill left->right, top->bottom: each pair of
 // foes starts a new row, so 4 enemies form a 2x2 block instead of one deep column.
-var _bar_width   = 420;
+var _bar_width   = 400;
 var _bar_height  = 42;
-var _bar_col_x   = [1041, 1482];   // the two column origins (x)
+// Columns spread wider apart so the LEFT-of-bar target reticle for the right
+// column sits in a clear gutter instead of clipping the end of the left bar.
+var _bar_col_x   = [990, 1485];   // the two column origins (x)
 var _bar_row_y0  = 96;
 var _bar_row_gap = 78;           // bar + status-icon row per grid row
 
@@ -58,15 +60,16 @@ for (var _i = 0; _i < _count; _i++) {
         // selected foe's sprite (just smaller), so the highlighted name/HP bar and the
         // sprite read as one selection. The old ">" glyph was big and bled into the
         // adjacent column's bar; this is sized + centred to sit in the gutter cleanly.
-        var _mk_sz = 16;
+        var _mk_sz = 32;   // doubled from 16 so the bar marker reads clearly
         var _mk_sc = (_mk_sz / max(1, sprite_get_width(spr_target_cursor)))
                    * (1 + 0.06 * sin(current_time / 180));   // same breathing pulse
-        draw_sprite_ext(spr_target_cursor, 0, _bar_x - 11, _bar_y + _bar_height / 2,
+        // Pushed a little further left so the larger marker still clears the bar.
+        draw_sprite_ext(spr_target_cursor, 0, _bar_x - 22, _bar_y + _bar_height / 2,
                         _mk_sc, _mk_sc, current_time * 0.05, c_white, 0.95);
     }
 
     ui_draw_hp_bar(_bar_x, _bar_y, _bar_width, _bar_height,
-                   _c.HP, _c.max_HP, _c.name);
+                   _c.HP, _c.max_HP, _c.name, true);
 
     // Attack-class tag (reach/kind), right-aligned under the bar so the player can
     // see which control applies: ROOT blocks Melee, SILENCE blocks Spell, STUN all.
@@ -101,7 +104,9 @@ for (var _i = 0; _i < _count; _i++) {
 // Draws player HP, AP pips, secondary resource, turn queue, ability
 // buttons, combat log, and any active telegraph warning.
 // -----------------------------------------------------------------------------
-ui_draw_combat_hud(combat_state, player, player.abilities, selected_ability, combat_log);
+// draw_log=false defers the hit-preview + combat log to ui_draw_combat_overlay
+// (called after the battler sprites) so combat text always sits on top of them.
+ui_draw_combat_hud(combat_state, player, player.abilities, selected_ability, combat_log, false);
 
 // Awakening tier reference - small label top-right, above the enemy HP bars.
 var _awk_asc = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
@@ -160,8 +165,10 @@ if (combatant_has_status_kind(player, "stun")) _px_draw += irandom_range(-3, 3);
 // to the same ~345px display height (native 1080p; was 230px at 720p).
 var _pscale = 345 / max(1, sprite_get_height(_pspr));
 // Ground shadow beneath the player so the sprite reads against busy backgrounds.
+// Baseline raised to ~0.94 of the canvas height so it sits at the model's feet
+// rather than at the empty bottom of the sprite canvas.
 ui_draw_ground_shadow(_px_draw + sprite_get_width(_pspr) * _pscale * 0.5,
-                      _py_draw + sprite_get_height(_pspr) * _pscale,
+                      _py_draw + sprite_get_height(_pspr) * _pscale * 0.94,
                       sprite_get_width(_pspr) * _pscale);
 draw_sprite_ext(_pspr, _pfr, _px_draw, _py_draw, _pscale, _pscale, 0, c_white, 1.0);
 if (player.hit_flash > 0) {
@@ -258,8 +265,10 @@ for (var _ei = 0; _ei < _ecnt; _ei++) {
 
         // Ground shadow beneath the enemy (under both the reticle and the sprite) so
         // foes read against busy backgrounds.
+        // Baseline raised to ~0.94 of the sprite height so the shadow hugs the
+        // enemy's feet; width scales with the model so big foes cast bigger shadows.
         ui_draw_ground_shadow(_ex + sprite_get_width(_espr)  * 3 * 0.5,
-                              _ey + sprite_get_height(_espr) * 3,
+                              _ey + sprite_get_height(_espr) * 3 * 0.94,
                               sprite_get_width(_espr) * 3);
 
         // Selected-target reticle: a slowly-swirling arcane rune at the foe's feet,
@@ -268,7 +277,8 @@ for (var _ei = 0; _ei < _ecnt; _ei++) {
         if (_espr_idx == selected_target) {
             var _cur_cx = _ex + sprite_get_width(_espr)  * 3 * 0.5;
             var _cur_cy = _ey + sprite_get_height(_espr) * 3;            // at the feet
-            var _cur_sc = max(0.18, (sprite_get_width(_espr) * 3) / sprite_get_width(spr_target_cursor)) * 0.4;
+            // Shrunk 30% from the old *0.4 factor (0.4 -> 0.28) so the ground rune sits tighter under the foe.
+            var _cur_sc = max(0.18, (sprite_get_width(_espr) * 3) / sprite_get_width(spr_target_cursor)) * 0.28;
             _cur_sc    *= 1 + 0.06 * sin(current_time / 180);            // gentle breathing pulse
             var _cur_rot = current_time * 0.05;                          // continuous swirl
             draw_sprite_ext(spr_target_cursor, 0, _cur_cx, _cur_cy,
@@ -344,6 +354,10 @@ damage_popups = _kept_popups;
 draw_set_font(-1);
 draw_set_halign(fa_left);
 draw_set_valign(fa_top);
+
+// Combat text overlay (hit preview + combat log) - drawn AFTER the battler sprites
+// and their shadows so combat text always has visual priority over them.
+ui_draw_combat_overlay(combat_state, player, player.abilities, selected_ability, combat_log);
 
 // Hover-explain tooltip for a status badge (set by ui_draw_status_icon_row above).
 // Drawn here so it sits over the bars/HUD; later full-screen overlays (consumable
@@ -789,6 +803,18 @@ if (show_loot_screen) {
     draw_set_valign(fa_top);
     draw_set_alpha(1.0);
     ui_draw_character_menu();
+    exit;
+}
+
+
+// -----------------------------------------------------------------------------
+// 4b. CONSUMABLE OVERFLOW PROMPT - pack-full pickups awaiting a discard choice.
+// Only shown once the fight is won (no living enemies), matching the Step gate
+// in the victory path - so it never interrupts an ongoing battle.
+// -----------------------------------------------------------------------------
+if (!combat_over && consumable_overflow_pending()
+    && array_length(combat_living_enemies(combat_state)) == 0) {
+    ui_draw_consumable_overflow();
     exit;
 }
 

@@ -31,6 +31,7 @@ video_apply();
 global.__sprite_includes = [
     spr_hub_background,
     spr_title_background,
+    spr_title_foreground,
     spr_ui_frame,
     spr_combatbg_ashen_1,
     spr_combatbg_ashen_2,
@@ -545,6 +546,9 @@ items_used_this_turn = 0;
 
 // Compendium (Help) tab state - index of the selected section in the left list
 compendium_section   = 0;
+
+// Abilities tab state - index of the selected ability (left list -> right breakdown)
+ability_view_cursor  = 0;
 
 // Equipment tab state
 equip_slot_selected = 0;

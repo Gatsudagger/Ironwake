@@ -69,6 +69,17 @@ if (showing_event) {
 
 
 // -----------------------------------------------------------------------------
+// 2a-overflow. CONSUMABLE OVERFLOW PROMPT - a pack-full pickup awaits a discard
+// choice. Sits after the treasure/event popups so the player sees what dropped
+// first, then resolves the pack here before navigating on.
+// -----------------------------------------------------------------------------
+if (consumable_overflow_pending()) {
+    consumable_overflow_step();
+    exit;
+}
+
+
+// -----------------------------------------------------------------------------
 // 2b. SHRINE OF TRIBUTE - interactive boon purchase (see SYSTEMS_BOONS.md)
 //   W/S select boon - 1 pay gold - 2 pay dust - 3 sacrifice item - Esc leave
 // -----------------------------------------------------------------------------
@@ -84,8 +95,8 @@ if (showing_shrine) {
     }
 
     if (_sh_n > 0) {
-        if (keyboard_check_pressed(vk_up)   || keyboard_check_pressed(ord("W"))) { shrine_cursor = max(0, shrine_cursor - 1);        shrine_notification = ""; }
-        if (keyboard_check_pressed(vk_down) || keyboard_check_pressed(ord("S"))) { shrine_cursor = min(_sh_n - 1, shrine_cursor + 1); shrine_notification = ""; }
+        if (nav_up())   { shrine_cursor = wrap_index(shrine_cursor - 1, _sh_n); shrine_notification = ""; }
+        if (nav_down()) { shrine_cursor = wrap_index(shrine_cursor + 1, _sh_n); shrine_notification = ""; }
         shrine_cursor = clamp(shrine_cursor, 0, _sh_n - 1);
 
         if (shrine_kind == "curse") {
@@ -166,8 +177,8 @@ if (showing_event_choice) {
 
     // Move cursor, skipping locked choices (wraps).
     var _move = 0;
-    if (keyboard_check_pressed(vk_up)   || keyboard_check_pressed(ord("W"))) _move = -1;
-    if (keyboard_check_pressed(vk_down) || keyboard_check_pressed(ord("S"))) _move = 1;
+    if (nav_up())   _move = -1;
+    if (nav_down()) _move = 1;
     if (_move != 0 && _ev_n > 0) {
         var _try = event_cursor;
         for (var _k = 0; _k < _ev_n; _k++) {
@@ -212,8 +223,8 @@ var _cur = current_rooms[selected_room];
 
 // Horizontal: pick the nearest column on the chosen side, then the room in it
 // whose vertical position is closest to the current one.
-var _go_left  = keyboard_check_pressed(vk_left)  || keyboard_check_pressed(ord("A"));
-var _go_right = keyboard_check_pressed(vk_right) || keyboard_check_pressed(ord("D"));
+var _go_left  = nav_left();
+var _go_right = nav_right();
 if (_go_left || _go_right) {
     var _best_layer = -1;
     for (var _i = 0; _i < array_length(current_rooms); _i++) {
@@ -237,8 +248,8 @@ if (_go_left || _go_right) {
 }
 
 // Vertical: move to the nearest reachable room in the same column above/below.
-var _go_up   = keyboard_check_pressed(vk_up)   || keyboard_check_pressed(ord("W"));
-var _go_down = keyboard_check_pressed(vk_down) || keyboard_check_pressed(ord("S"));
+var _go_up   = nav_up();
+var _go_down = nav_down();
 if (_go_up || _go_down) {
     var _v_best_i = -1; var _v_best_dy = 999999;
     for (var _i = 0; _i < array_length(current_rooms); _i++) {
@@ -278,7 +289,7 @@ if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter) || key
             if (irandom(99) < 70) {
                 var _tc = roll_consumable_weighted(global.consumables_standard);
                 array_push(global.run_items_found, _tc);
-                array_push(global.consumable_inventory, _tc);
+                consumable_award(_tc);
                 treasure_item = _tc;
             } else {
                 var _te_asc = (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0) + curse_loot_asc_bonus();
@@ -315,7 +326,7 @@ if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter) || key
         if (!variable_global_exists("consumable_inventory")) global.consumable_inventory = [];
         var _th_c = roll_consumable(global.consumables_standard);
         array_push(global.run_items_found, _th_c);
-        array_push(global.consumable_inventory, _th_c);
+        consumable_award(_th_c);
         treasure_gold  = _th_gold;
         treasure_item  = _th_c;
         treasure_timer = 0;

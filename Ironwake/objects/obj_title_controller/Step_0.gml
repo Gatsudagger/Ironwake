@@ -28,7 +28,10 @@ if (phase == "cutscene") {
 
     // Backdrop fades up to a dim 0.5 (readable behind the text) and slow-pans.
     scene_alpha = min(0.5, scene_alpha + 0.01);
-    scene_pan   = min(1.0, scene_pan + 0.0010);
+    scene_pan   = min(1.0, scene_pan + 0.0016);
+    // Dolly creeps forward through the cutscene (foreground trees slowly approach,
+    // still fully opaque - the fade-out is saved for the title load below).
+    intro_t     = min(0.45, intro_t + 0.0014);
 
     var _num_panels = array_length(cutscene_panels);
 
@@ -57,7 +60,10 @@ if (phase == "cutscene") {
 } else if (phase == "title") {
     // Backdrop brightens to full and keeps a gentle parallax drift.
     scene_alpha = min(1.0, scene_alpha + 0.012);
-    scene_pan   = min(1.0, scene_pan + 0.0004);
+    scene_pan   = min(1.0, scene_pan + 0.0008);
+    // Dolly accelerates as the title loads - the foreground treeline grows, sinks
+    // past the camera and fades out as we arrive at the town.
+    intro_t     = min(1.0, intro_t + 0.009);
 
     // Fade in title logo, then menu
     title_alpha = min(1.0, title_alpha + 0.018);
@@ -68,12 +74,8 @@ if (phase == "cutscene") {
     blink     = (blink + 1) mod 60;
 
     if (can_input) {
-        if (keyboard_check_pressed(vk_up) || keyboard_check_pressed(ord("W"))) {
-            selected = max(0, selected - 1);
-        }
-        if (keyboard_check_pressed(vk_down) || keyboard_check_pressed(ord("S"))) {
-            selected = min(1, selected + 1);
-        }
+        if (nav_up())   selected = wrap_index(selected - 1, 2);
+        if (nav_down()) selected = wrap_index(selected + 1, 2);
 
         if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)
         ||  keyboard_check_pressed(vk_space)) {
@@ -103,14 +105,8 @@ if (phase == "cutscene") {
     }
 
     // Left/right or A/D to change slot
-    if (keyboard_check_pressed(vk_left) || keyboard_check_pressed(ord("A"))) {
-        slot_selected = max(0, slot_selected - 1);
-        slot_confirm  = false;
-    }
-    if (keyboard_check_pressed(vk_right) || keyboard_check_pressed(ord("D"))) {
-        slot_selected = min(2, slot_selected + 1);
-        slot_confirm  = false;
-    }
+    if (nav_left())  { slot_selected = wrap_index(slot_selected - 1, 3); slot_confirm = false; }
+    if (nav_right()) { slot_selected = wrap_index(slot_selected + 1, 3); slot_confirm = false; }
 
     if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)
     ||  keyboard_check_pressed(vk_space)) {

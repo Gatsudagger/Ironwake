@@ -112,12 +112,9 @@ if (stash_mode_open) {
         stash_mode_side  = 1;
         stash_mode_index = 0;
     }
-    if (keyboard_check_pressed(vk_up)   || keyboard_check_pressed(ord("W"))) {
-        stash_mode_index = max(0, stash_mode_index - 1);
-    }
-    if (keyboard_check_pressed(vk_down) || keyboard_check_pressed(ord("S"))) {
-        stash_mode_index = min(max(0, _cur_count - 1), stash_mode_index + 1);
-    }
+    // Hold-to-repeat + wrap-around (top<->bottom). nav_up/down auto-repeat while held.
+    if (nav_up())   stash_mode_index = wrap_index(stash_mode_index - 1, _cur_count);
+    if (nav_down()) stash_mode_index = wrap_index(stash_mode_index + 1, _cur_count);
 
     if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)) {
         if (stash_mode_side == 0) {
@@ -159,31 +156,35 @@ if (stash_mode_open) {
         stash_mode_open = false;
     }
 
-    // Mouse: click a column to switch side; click an item row to select it
+    // Mouse: click a column to switch side; click an item row to select it.
+    // Geometry mirrors ui_draw_stash_screen (cols at x45/x1020 width 855, list
+    // top y185, row height 75) including the scroll window so clicks map to the
+    // right entry even when the list is scrolled.
     if (mouse_check_button_pressed(mb_left)) {
         var _smx = device_mouse_x_to_gui(0);
         var _smy = device_mouse_y_to_gui(0);
+        var _list_top    = 185;
+        var _row_h       = 75;
+        var _max_bot     = 1020;
+        var _rows_vis    = max(1, floor((_max_bot - _list_top) / _row_h));
         // Switch to left side
-        if (_smx >= 30 && _smx < 600 && _smy >= 82 && _smy < 680) {
+        if (_smx >= 45 && _smx < 900 && _smy >= 140 && _smy < _max_bot) {
             if (stash_mode_side != 0) { stash_mode_side = 0; stash_mode_index = 0; }
-            else {
-                // Select item row within left side
-                var _lcnt = array_length(global.carried_items) + array_length(global.consumable_inventory);
-                for (var _sli = 0; _sli < _lcnt; _sli++) {
-                    var _sliy = 112 + _sli * 50;
-                    if (_smy >= _sliy && _smy < _sliy+48) { stash_mode_index = _sli; break; }
-                }
+            else if (_smy >= _list_top) {
+                var _lcnt   = array_length(global.carried_items) + array_length(global.consumable_inventory);
+                var _lscr   = clamp(stash_mode_index - floor(_rows_vis / 2), 0, max(0, _lcnt - _rows_vis));
+                var _lrow   = _lscr + floor((_smy - _list_top) / _row_h);
+                if (_lrow >= 0 && _lrow < _lcnt) stash_mode_index = _lrow;
             }
         }
         // Switch to right side
-        if (_smx >= 680 && _smx < 1250 && _smy >= 82 && _smy < 680) {
+        if (_smx >= 1020 && _smx < 1875 && _smy >= 140 && _smy < _max_bot) {
             if (stash_mode_side != 1) { stash_mode_side = 1; stash_mode_index = 0; }
-            else {
-                var _rcnt = array_length(global.equipment_stash) + array_length(global.consumable_stash);
-                for (var _sri = 0; _sri < _rcnt; _sri++) {
-                    var _sriy = 112 + _sri * 50;
-                    if (_smy >= _sriy && _smy < _sriy+48) { stash_mode_index = _sri; break; }
-                }
+            else if (_smy >= _list_top) {
+                var _rcnt   = array_length(global.equipment_stash) + array_length(global.consumable_stash);
+                var _rscr   = clamp(stash_mode_index - floor(_rows_vis / 2), 0, max(0, _rcnt - _rows_vis));
+                var _rrow   = _rscr + floor((_smy - _list_top) / _row_h);
+                if (_rrow >= 0 && _rrow < _rcnt) stash_mode_index = _rrow;
             }
         }
     }
@@ -196,12 +197,8 @@ if (stash_mode_open) {
 // combat controller's Step while the overlay is active without breaking input.
 // =============================================================================
 if (level_alloc_open) {
-    if (keyboard_check_pressed(vk_up)   || keyboard_check_pressed(ord("W"))) {
-        level_alloc_index = max(0, level_alloc_index - 1);
-    }
-    if (keyboard_check_pressed(vk_down) || keyboard_check_pressed(ord("S"))) {
-        level_alloc_index = min(5, level_alloc_index + 1);
-    }
+    if (nav_up())   level_alloc_index = wrap_index(level_alloc_index - 1, 6);
+    if (nav_down()) level_alloc_index = wrap_index(level_alloc_index + 1, 6);
 
     // Enter: set or move the provisional stat choice - does NOT commit yet
     if ((keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)) && global.pending_stat_points > 0) {
@@ -315,13 +312,13 @@ if (shop_open != -1 && !stash_mode_open) {
             var _needs_confirm = variable_struct_exists(_cur_item, "rarity") && _cur_item.rarity >= 2;
 
             // W/S: navigate (clears any pending confirm)
-            if (keyboard_check_pressed(vk_up) || keyboard_check_pressed(ord("W"))) {
-                sell_index        = max(0, sell_index - 1);
+            if (nav_up()) {
+                sell_index        = wrap_index(sell_index - 1, _sl_count);
                 sell_confirm_name = "";
                 shop_notification = "";
             }
-            if (keyboard_check_pressed(vk_down) || keyboard_check_pressed(ord("S"))) {
-                sell_index        = min(max(0, _sl_count - 1), sell_index + 1);
+            if (nav_down()) {
+                sell_index        = wrap_index(sell_index + 1, _sl_count);
                 sell_confirm_name = "";
                 shop_notification = "";
             }
@@ -404,14 +401,8 @@ if (shop_open != -1 && !stash_mode_open) {
         var _has_spec  = (global.petra_stock_special != undefined && global.petra_special_qty > 0);
         var _petra_max = 3 + (_has_spec ? 1 : 0);
 
-        if (keyboard_check_pressed(vk_up)   || keyboard_check_pressed(ord("W"))) {
-            shop_index = max(0, shop_index - 1);
-            shop_notification = "";
-        }
-        if (keyboard_check_pressed(vk_down) || keyboard_check_pressed(ord("S"))) {
-            shop_index = min(_petra_max, shop_index + 1);
-            shop_notification = "";
-        }
+        if (nav_up())   { shop_index = wrap_index(shop_index - 1, _petra_max + 1); shop_notification = ""; }
+        if (nav_down()) { shop_index = wrap_index(shop_index + 1, _petra_max + 1); shop_notification = ""; }
 
         if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)) {
             var _sit;
@@ -449,13 +440,13 @@ if (shop_open != -1 && !stash_mode_open) {
         // Dorn
         var _dorn_len = array_length(global.dorn_stock);
 
-        if (keyboard_check_pressed(vk_up) || keyboard_check_pressed(ord("W"))) {
+        if (nav_up()) {
             shop_notification = "";
             var _prev = shop_index - 1;
             while (_prev >= 0 && global.dorn_stock[_prev].sold) _prev--;
             if (_prev >= 0) shop_index = _prev;
         }
-        if (keyboard_check_pressed(vk_down) || keyboard_check_pressed(ord("S"))) {
+        if (nav_down()) {
             shop_notification = "";
             var _next = shop_index + 1;
             while (_next < _dorn_len && global.dorn_stock[_next].sold) _next++;
@@ -587,8 +578,8 @@ if (trainer_open) {
         }
 
         // W/S - move between stat rows.
-        if (keyboard_check_pressed(vk_up)   || keyboard_check_pressed(ord("W"))) trainer_statpick_cursor = (trainer_statpick_cursor - 1 + 6) mod 6;
-        if (keyboard_check_pressed(vk_down) || keyboard_check_pressed(ord("S"))) trainer_statpick_cursor = (trainer_statpick_cursor + 1) mod 6;
+        if (nav_up())   trainer_statpick_cursor = wrap_index(trainer_statpick_cursor - 1, 6);
+        if (nav_down()) trainer_statpick_cursor = wrap_index(trainer_statpick_cursor + 1, 6);
 
         // A/D or Left/Right (and the on-row - / + buttons) adjust the highlighted stat.
         var _dec     = keyboard_check_pressed(vk_left)  || keyboard_check_pressed(ord("A"));
@@ -687,14 +678,8 @@ if (trainer_open) {
     }
 
     // W/S - navigate rows
-    if (keyboard_check_pressed(vk_up) || keyboard_check_pressed(ord("W"))) {
-        trainer_cursor = max(0, trainer_cursor - 1);
-        trainer_confirm = false; trainer_notification = "";
-    }
-    if (keyboard_check_pressed(vk_down) || keyboard_check_pressed(ord("S"))) {
-        trainer_cursor = min(max(0, _tr_rows - 1), trainer_cursor + 1);
-        trainer_confirm = false; trainer_notification = "";
-    }
+    if (nav_up())   { trainer_cursor = wrap_index(trainer_cursor - 1, _tr_rows); trainer_confirm = false; trainer_notification = ""; }
+    if (nav_down()) { trainer_cursor = wrap_index(trainer_cursor + 1, _tr_rows); trainer_confirm = false; trainer_notification = ""; }
     trainer_cursor = clamp(trainer_cursor, 0, max(0, _tr_rows - 1));
 
     // Enter = act, Space = commit a sacrifice
@@ -907,8 +892,8 @@ if (variable_instance_exists(id, "maren_open") && maren_open) {
     }
 
     // W/S - navigate rows
-    if (keyboard_check_pressed(vk_up)   || keyboard_check_pressed(ord("W"))) { maren_cursor = max(0, maren_cursor - 1);        maren_notification = ""; }
-    if (keyboard_check_pressed(vk_down) || keyboard_check_pressed(ord("S"))) { maren_cursor = min(_m_rows - 1, maren_cursor + 1); maren_notification = ""; }
+    if (nav_up())   { maren_cursor = wrap_index(maren_cursor - 1, _m_rows); maren_notification = ""; }
+    if (nav_down()) { maren_cursor = wrap_index(maren_cursor + 1, _m_rows); maren_notification = ""; }
     maren_cursor = clamp(maren_cursor, 0, max(0, _m_rows - 1));
 
     // Mouse - tab bar (x=445+t*200, y=70, w=190, h=40) + row select acts immediately
@@ -1087,8 +1072,8 @@ if (variable_instance_exists(id, "sable_open") && sable_open) {
     }
 
     // W/S - navigate (moving the cursor cancels a pending salvage confirm)
-    if (keyboard_check_pressed(vk_up)   || keyboard_check_pressed(ord("W"))) { sable_cursor = max(0, sable_cursor - 1);          sable_notification = ""; sable_confirm = false; }
-    if (keyboard_check_pressed(vk_down) || keyboard_check_pressed(ord("S"))) { sable_cursor = min(_s_rows - 1, sable_cursor + 1); sable_notification = ""; sable_confirm = false; }
+    if (nav_up())   { sable_cursor = wrap_index(sable_cursor - 1, _s_rows); sable_notification = ""; sable_confirm = false; }
+    if (nav_down()) { sable_cursor = wrap_index(sable_cursor + 1, _s_rows); sable_notification = ""; sable_confirm = false; }
     sable_cursor = clamp(sable_cursor, 0, max(0, _s_rows - 1));
 
     // Mouse - tab bar (x=345+t*200) + row select
@@ -1214,8 +1199,8 @@ if (variable_instance_exists(id, "vael_open") && vael_open) {
     // --- Portrait tab: carousel browse + 100g change ---
     if (vael_tab == 1) {
         var _p_cnt = max(1, array_length(global.portrait_sprites));
-        if (keyboard_check_pressed(ord("A")) || keyboard_check_pressed(vk_left))  { vael_portrait_cursor = (vael_portrait_cursor - 1 + _p_cnt) mod _p_cnt; vael_notification = ""; }
-        if (keyboard_check_pressed(ord("D")) || keyboard_check_pressed(vk_right)) { vael_portrait_cursor = (vael_portrait_cursor + 1) mod _p_cnt; vael_notification = ""; }
+        if (nav_left())  { vael_portrait_cursor = wrap_index(vael_portrait_cursor - 1, _p_cnt); vael_notification = ""; }
+        if (nav_right()) { vael_portrait_cursor = wrap_index(vael_portrait_cursor + 1, _p_cnt); vael_notification = ""; }
         vael_portrait_cursor = clamp(vael_portrait_cursor, 0, _p_cnt - 1);
 
         if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)) {
@@ -1232,8 +1217,8 @@ if (variable_instance_exists(id, "vael_open") && vael_open) {
         exit;
     }
 
-    if (keyboard_check_pressed(vk_up)   || keyboard_check_pressed(ord("W"))) { vael_cursor = max(0, vael_cursor - 1);          vael_notification = ""; }
-    if (keyboard_check_pressed(vk_down) || keyboard_check_pressed(ord("S"))) { vael_cursor = min(_v_rows - 1, vael_cursor + 1); vael_notification = ""; }
+    if (nav_up())   { vael_cursor = wrap_index(vael_cursor - 1, _v_rows); vael_notification = ""; }
+    if (nav_down()) { vael_cursor = wrap_index(vael_cursor + 1, _v_rows); vael_notification = ""; }
     vael_cursor = clamp(vael_cursor, 0, max(0, _v_rows - 1));
 
     var _v_act = (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter));
@@ -1294,14 +1279,19 @@ if (!equip_picker_open && !consumable_submenu_open) {
     }
 }
 
-// Compendium tab (4): W/S or Up/Down browse sections (clamped, no wrap)
+// Compendium tab (4): W/S or Up/Down browse sections (hold-repeat + wrap)
 if (menu_tab == 4) {
     var _comp_count = array_length(ui_compendium_sections());
-    if (keyboard_check_pressed(ord("S")) || keyboard_check_pressed(vk_down)) {
-        compendium_section = min(_comp_count - 1, compendium_section + 1);
-    }
-    if (keyboard_check_pressed(ord("W")) || keyboard_check_pressed(vk_up)) {
-        compendium_section = max(0, compendium_section - 1);
+    if (nav_down()) compendium_section = wrap_index(compendium_section + 1, _comp_count);
+    if (nav_up())   compendium_section = wrap_index(compendium_section - 1, _comp_count);
+}
+
+// Abilities tab (2): W/S browse the loadout (left list -> right breakdown).
+if (menu_tab == 2 && variable_global_exists("chosen_class")) {
+    var _abil_count = array_length(abilities_get_loadout(global.chosen_class));
+    if (_abil_count > 0) {
+        if (nav_down()) ability_view_cursor = wrap_index(ability_view_cursor + 1, _abil_count);
+        if (nav_up())   ability_view_cursor = wrap_index(ability_view_cursor - 1, _abil_count);
     }
 }
 
@@ -1336,12 +1326,12 @@ if (mouse_check_button_pressed(mb_left)) {
     // --- Equipment tab (1) ---
     if (menu_tab == 1) {
         if (!equip_picker_open) {
-            // Click an equipment slot -> select and open picker.
-            // 10 slots in 2 columns of 5 rows (col = slot div 5).
+            // Click an equipment slot -> select and open picker. Single-column list
+            // on the right (geometry mirrors ui_draw_character_menu equipment tab:
+            // list x740..1850, rows from y166, height ~83).
             for (var _msl = 0; _msl < EQUIP_SLOT_COUNT; _msl++) {
-                var _mslx = 60 + floor(_msl / 5) * 870;
-                var _msly = 171 + (_msl mod 5) * 162;
-                if (_mmx >= _mslx && _mmx < _mslx+780 && _mmy >= _msly && _mmy < _msly+144) {
+                var _msly = 166 + _msl * 83;
+                if (_mmx >= 740 && _mmx < 1850 && _mmy >= _msly && _mmy < _msly+80) {
                     equip_slot_selected = _msl;
                     equip_picker_open   = true;
                     equip_picker_index  = 0;
@@ -1352,7 +1342,8 @@ if (mouse_check_button_pressed(mb_left)) {
         } else {
             // Picker is open - click a row to equip. Filter by the item-TYPE the
             // position accepts (Ring 2 accepts "ring" items).
-            var _mpslname  = equip_position_item_slot(equip_slot_selected);
+            var _msel_inv  = equip_display_to_inv(equip_slot_selected);
+            var _mpslname  = equip_position_item_slot(_msel_inv);
             var _mpitems   = [];
             var _mpsrc     = [];
             // Stash is hub-only: during a run you can only equip from your pack.
@@ -1373,7 +1364,7 @@ if (mouse_check_button_pressed(mb_left)) {
             }
             // Selectable rows are pushed down one row when an item is worn in this
             // slot (the dimmed "[Equipped]" row occupies the top - see scr_ui picker).
-            var _mp_eq_off = (global.inventory[equip_slot_selected] != undefined) ? 108 : 0;
+            var _mp_eq_off = (global.inventory[_msel_inv] != undefined) ? 108 : 0;
             for (var _mri = 0; _mri < array_length(_mpitems); _mri++) {
                 var _mpry = 228 + _mp_eq_off + _mri * 108;
                 if (_mmx >= 366 && _mmx < 1554 && _mmy >= _mpry && _mmy < _mpry+102) {
@@ -1387,13 +1378,13 @@ if (mouse_check_button_pressed(mb_left)) {
                         equip_msg = _mchosen.name + " requires " + _mcrnames[_mcr] + ".";
                     } else if (_msreq != "") {
                         equip_msg = _msreq;
-                    } else if (equip_slot_selected == 1 && two_handed_equipped()) {
+                    } else if (_msel_inv == 1 && two_handed_equipped()) {
                         // Offhand slot is locked while a two-handed weapon is equipped.
                         equip_msg = "Two-handed weapon equipped - offhand is locked.";
                     } else {
                         equip_msg = "";
                         var _msinfo = _mpsrc[_mri];
-                        var _mold   = global.inventory[equip_slot_selected];
+                        var _mold   = global.inventory[_msel_inv];
                         if (_msinfo.source == 0) {
                             array_delete(global.equipment_stash, _msinfo.idx, 1);
                             if (_mold != undefined) array_push(global.equipment_stash, _mold);
@@ -1401,9 +1392,9 @@ if (mouse_check_button_pressed(mb_left)) {
                             array_delete(global.carried_items, _msinfo.idx, 1);
                             if (_mold != undefined) array_push(global.carried_items, _mold);
                         }
-                        global.inventory[equip_slot_selected] = _mchosen;
+                        global.inventory[_msel_inv] = _mchosen;
                         // 2H weapon locks the offhand: return any equipped offhand to the pack.
-                        if ((equip_slot_selected == 0 || equip_slot_selected == 8) && item_is_two_handed(_mchosen)) {
+                        if ((_msel_inv == 0 || _msel_inv == 8) && item_is_two_handed(_mchosen)) {
                             return_offhand_to_pack(_mp_in_hub);
                         }
                         equip_notif_msg   = "Equipped " + _mchosen.name + "  ->  " + string_upper(_mpslname);
@@ -1417,6 +1408,19 @@ if (mouse_check_button_pressed(mb_left)) {
                     }
                     break;
                 }
+            }
+        }
+    }
+
+    // --- Abilities tab (2): click a row in the left list to select it ---
+    if (menu_tab == 2 && variable_global_exists("chosen_class")) {
+        var _alist = abilities_get_loadout(global.chosen_class);
+        var _alcnt = array_length(_alist);
+        if (_alcnt > 0 && _mmx >= 86 && _mmx < 684) {
+            var _alrh = min(108, (830) / _alcnt);   // mirrors the draw (panel 150..1012, pad 16)
+            for (var _ali = 0; _ali < _alcnt; _ali++) {
+                var _aly = 166 + _ali * _alrh;
+                if (_mmy >= _aly && _mmy < _aly + _alrh - 6) { ability_view_cursor = _ali; break; }
             }
         }
     }
@@ -1517,27 +1521,16 @@ if (mouse_check_button_pressed(mb_left)) {
 // EQUIPMENT TAB - slot select, picker, unequip
 // =============================================================================
 if (menu_tab == 1) {
-    var _slot_keys = ["weapon", "offhand", "helm", "chest", "gloves", "boots", "amulet", "ring", "ranged_weapon", "ring2"];
+    // equip_slot_selected is the VISUAL list row (single column, 0..9); the actual
+    // inventory index is mapped through equip_display_to_inv so Ring 2 can sit under
+    // Ring 1 without remapping stored slots.
+    var _sel_inv = equip_display_to_inv(equip_slot_selected);
 
     if (!equip_picker_open) {
-        // Grid navigation: 2 columns of 5 (col = slot div 5). Col 0 holds slots 0-4,
-        // col 1 holds slots 5-9. W/S move within a column, A/D switch columns.
-        var _eq_col = equip_slot_selected div 5;
-        var _eq_row = equip_slot_selected mod 5;
-        var _eq_rows = 5;   // both columns now have 5 rows (10 slots total)
-        if (keyboard_check_pressed(ord("W")) || keyboard_check_pressed(vk_up)) {
-            _eq_row = (_eq_row - 1 + _eq_rows) mod _eq_rows;
-        }
-        if (keyboard_check_pressed(ord("S")) || keyboard_check_pressed(vk_down)) {
-            _eq_row = (_eq_row + 1) mod _eq_rows;
-        }
-        if (keyboard_check_pressed(ord("A")) || keyboard_check_pressed(vk_left)) {
-            _eq_col = 0;
-        }
-        if (keyboard_check_pressed(ord("D")) || keyboard_check_pressed(vk_right)) {
-            _eq_col = 1;
-        }
-        equip_slot_selected = _eq_col * 5 + _eq_row;
+        // Single-column navigation - W/S wrap through all 10 slot rows.
+        if (nav_up())   equip_slot_selected = wrap_index(equip_slot_selected - 1, EQUIP_SLOT_COUNT);
+        if (nav_down()) equip_slot_selected = wrap_index(equip_slot_selected + 1, EQUIP_SLOT_COUNT);
+        _sel_inv = equip_display_to_inv(equip_slot_selected);
 
         // Enter opens the item picker for this slot
         if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)) {
@@ -1547,9 +1540,9 @@ if (menu_tab == 1) {
 
         // U unequips the selected slot
         if (keyboard_check_pressed(ord("U"))) {
-            var _old = global.inventory[equip_slot_selected];
+            var _old = global.inventory[_sel_inv];
             if (_old != undefined) {
-                global.inventory[equip_slot_selected] = undefined;
+                global.inventory[_sel_inv] = undefined;
                 var _in_hub = (room == rm_hub || room == rm_character_select);
                 if (_in_hub) {
                     array_push(global.equipment_stash, _old);
@@ -1566,7 +1559,7 @@ if (menu_tab == 1) {
         // Picker open - build filtered list for the selected slot every frame. Use the
         // item-TYPE the position accepts (Ring 2 accepts "ring" items) so rings list for
         // either ring position.
-        var _slot_name   = equip_position_item_slot(equip_slot_selected);
+        var _slot_name   = equip_position_item_slot(_sel_inv);
         var _picker_items = [];
         var _picker_src   = [];   // { source: 0=stash/1=carried, idx: original_index }
         // Stash is hub-only: during a run you can only equip from your pack.
@@ -1587,14 +1580,8 @@ if (menu_tab == 1) {
         }
         var _picker_count = array_length(_picker_items);
 
-        if (keyboard_check_pressed(ord("W")) || keyboard_check_pressed(vk_up)) {
-            if (_picker_count > 0) equip_picker_index = (equip_picker_index - 1 + _picker_count) mod _picker_count;
-            equip_msg = "";
-        }
-        if (keyboard_check_pressed(ord("S")) || keyboard_check_pressed(vk_down)) {
-            if (_picker_count > 0) equip_picker_index = (equip_picker_index + 1) mod _picker_count;
-            equip_msg = "";
-        }
+        if (nav_up())   { if (_picker_count > 0) equip_picker_index = wrap_index(equip_picker_index - 1, _picker_count); equip_msg = ""; }
+        if (nav_down()) { if (_picker_count > 0) equip_picker_index = wrap_index(equip_picker_index + 1, _picker_count); equip_msg = ""; }
 
         if ((keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)) && _picker_count == 0) {
             equip_picker_open = false;
@@ -1614,14 +1601,14 @@ if (menu_tab == 1) {
                 // Don't equip - skip the rest of the block
             } else if (_ksreq != "") {
                 equip_msg = _ksreq;   // hard block: stat requirement not met
-            } else if (equip_slot_selected == 1 && two_handed_equipped()) {
+            } else if (_sel_inv == 1 && two_handed_equipped()) {
                 // Offhand slot is locked while a two-handed weapon is equipped.
                 equip_msg = "Two-handed weapon equipped - offhand is locked.";
             } else {
             equip_msg = "";
 
             var _src_info = _picker_src[equip_picker_index];
-            var _old      = global.inventory[equip_slot_selected];
+            var _old      = global.inventory[_sel_inv];
 
             // Remove chosen item from its source array
             if (_src_info.source == 0) {
@@ -1632,10 +1619,10 @@ if (menu_tab == 1) {
                 if (_old != undefined) array_push(global.carried_items, _old);
             }
 
-            global.inventory[equip_slot_selected] = _chosen;
+            global.inventory[_sel_inv] = _chosen;
             // A 2H weapon (melee slot 0 or ranged slot 8) locks the offhand:
             // return any equipped offhand to the pack so the slot empties.
-            if ((equip_slot_selected == 0 || equip_slot_selected == 8) && item_is_two_handed(_chosen)) {
+            if ((_sel_inv == 0 || _sel_inv == 8) && item_is_two_handed(_chosen)) {
                 return_offhand_to_pack(_picker_in_hub);
             }
             equip_notif_msg   = "Equipped " + _chosen.name + "  ->  " + string_upper(_slot_name);
@@ -1667,13 +1654,9 @@ if (menu_tab == 3) {
         var _cgroups  = consumables_grouped();
         var _cons_cnt = array_length(_cgroups);
 
-        // Navigate
-        if (keyboard_check_pressed(vk_up) || keyboard_check_pressed(ord("W"))) {
-            consumable_submenu_cursor = max(0, consumable_submenu_cursor - 1);
-        }
-        if (keyboard_check_pressed(vk_down) || keyboard_check_pressed(ord("S"))) {
-            consumable_submenu_cursor = min(max(0, _cons_cnt - 1), consumable_submenu_cursor + 1);
-        }
+        // Navigate (hold-repeat + wrap)
+        if (nav_up())   consumable_submenu_cursor = wrap_index(consumable_submenu_cursor - 1, _cons_cnt);
+        if (nav_down()) consumable_submenu_cursor = wrap_index(consumable_submenu_cursor + 1, _cons_cnt);
 
         // Close without using
         if (keyboard_check_pressed(vk_escape)) {

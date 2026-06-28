@@ -52,10 +52,8 @@ if (combat_over) exit;
 // 1b. LOOT SCREEN - intercepts all input after combat while items are shown
 // -----------------------------------------------------------------------------
 if (show_loot_screen) {
-    if (keyboard_check_pressed(vk_up) || keyboard_check_pressed(ord("W"))) {
-        loot_screen_scroll = max(0, loot_screen_scroll - 1);
-    }
-    if (keyboard_check_pressed(vk_down) || keyboard_check_pressed(ord("S"))) {
+    if (nav_up())   loot_screen_scroll = max(0, loot_screen_scroll - 1);
+    if (nav_down()) {
         var _max_scroll = max(0, array_length(global.run_items_found) - 5);
         loot_screen_scroll = min(_max_scroll, loot_screen_scroll + 1);
     }
@@ -125,6 +123,13 @@ if (_result == 1) {
         && array_length(global.run_items_found) > 0
         && !show_loot_screen) {
         show_loot_screen = true;
+        exit;
+    }
+    // Resolve any pack-full consumable pickups before combat closes (after the
+    // loot review so the player has seen what dropped). The modal runs one frame
+    // at a time until the overflow queue is empty.
+    if (!combat_over && consumable_overflow_pending()) {
+        consumable_overflow_step();
         exit;
     }
     if (!combat_over) {
@@ -248,13 +253,9 @@ if (player_turn) {
             // Esc closes it (C is handled by the toggle above).
             if (keyboard_check_pressed(vk_escape)) consumable_quick_open = false;
         } else {
-            // Navigation
-            if (keyboard_check_pressed(vk_up) || keyboard_check_pressed(ord("W"))) {
-                consumable_quick_cursor = max(0, consumable_quick_cursor - 1);
-            }
-            if (keyboard_check_pressed(vk_down) || keyboard_check_pressed(ord("S"))) {
-                consumable_quick_cursor = min(_qcount - 1, consumable_quick_cursor + 1);
-            }
+            // Navigation (hold-repeat + wrap)
+            if (nav_up())   consumable_quick_cursor = wrap_index(consumable_quick_cursor - 1, _qcount);
+            if (nav_down()) consumable_quick_cursor = wrap_index(consumable_quick_cursor + 1, _qcount);
             // Esc closes. (C is handled by the toggle above - checking it here too
             // would re-close it in the same frame it opens, so it's intentionally absent.)
             if (keyboard_check_pressed(vk_escape)) {
@@ -391,12 +392,8 @@ if (player_turn) {
     // --- Ability selection (navigate with arrow keys or WASD; wraps around) ---
     var _ability_count = array_length(player.abilities);
     if (_ability_count > 0) {
-        if (keyboard_check_pressed(vk_left) || keyboard_check_pressed(ord("A"))) {
-            selected_ability = (selected_ability - 1 + _ability_count) mod _ability_count;
-        }
-        if (keyboard_check_pressed(vk_right) || keyboard_check_pressed(ord("D"))) {
-            selected_ability = (selected_ability + 1) mod _ability_count;
-        }
+        if (nav_left())  selected_ability = wrap_index(selected_ability - 1, _ability_count);
+        if (nav_right()) selected_ability = wrap_index(selected_ability + 1, _ability_count);
     }
 
     // --- Tab key cycles through living enemies ---
@@ -435,15 +432,15 @@ if (player_turn) {
                 break;
             }
         }
-        // Enemy HP bars: 2-column grid matching Draw_64 - columns at x=1041/1482
+        // Enemy HP bars: 2-column grid matching Draw_64 - columns at x=990/1485 (w400)
         // (width 420), living enemy i at row (i div 2), y=96+row*78, h=42.
         var _cbar_li = 0;
         for (var _cti = 0; _cti < array_length(combat_state.combatants); _cti++) {
             var _ctc = combat_state.combatants[_cti];
             if (!_ctc.is_player && !_ctc.is_defeated) {
-                var _cbar_x = (_cbar_li mod 2 == 0) ? 1041 : 1482;
+                var _cbar_x = (_cbar_li mod 2 == 0) ? 990 : 1485;
                 var _cbar_y = 96 + (_cbar_li div 2) * 78;
-                if (_cmx >= _cbar_x && _cmx < _cbar_x + 420 && _cmy >= _cbar_y && _cmy < _cbar_y + 42) {
+                if (_cmx >= _cbar_x && _cmx < _cbar_x + 400 && _cmy >= _cbar_y && _cmy < _cbar_y + 42) {
                     selected_target = _cbar_li;
                 }
                 _cbar_li++;

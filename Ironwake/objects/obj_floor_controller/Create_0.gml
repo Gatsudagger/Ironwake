@@ -34,6 +34,14 @@ if (!variable_global_exists("run_seed")) {
 returning_from_combat = variable_global_exists("just_cleared_room") && global.just_cleared_room;
 if (returning_from_combat) global.just_cleared_room = false;
 
+// Fresh run start: normalize the consumable pack to its carry cap, auto-
+// depositing any excess (e.g. bought past the cap in the hub) into the stash.
+// Mid-run re-entries skip this so pickups during the dive aren't disturbed.
+if (!returning_from_combat) {
+    if (variable_global_exists("consumable_overflow")) global.consumable_overflow = [];
+    consumable_enforce_cap_to_stash();
+}
+
 // Apply dungeon passive effects on each room entry (not the very first room)
 if (returning_from_combat) {
     var _dung_passive = variable_global_exists("selected_dungeon") ? global.selected_dungeon : "ashen_vault";

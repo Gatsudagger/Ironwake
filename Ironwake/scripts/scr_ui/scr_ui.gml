@@ -1436,8 +1436,23 @@ function ui_draw_item_tooltip(ttx, tty, item, compared_item) {
 // Draws a filled HP bar with a label and "current / max" readout.
 // Color zones: green >=50%, yellow 25-50%, red <25%.
 // ---------------------------------------------------------------------------
-function ui_draw_hp_bar(x, y, width, height, current_hp, max_hp, label) {
+function ui_draw_hp_bar(x, y, width, height, current_hp, max_hp, label, ornate = false) {
     var ratio = (max_hp > 0) ? clamp(current_hp / max_hp, 0, 1) : 0;
+
+    // Ornate gothic trim (enemy bars): a bronze frame with darker inset + small
+    // corner ticks, drawn just OUTSIDE the bar so it reads as a forged metal plate.
+    if (ornate) {
+        draw_set_color(make_color_rgb(58, 44, 24));
+        draw_rectangle(x - 4, y - 4, x + width + 4, y + height + 4, true);
+        draw_set_color(make_color_rgb(150, 120, 62));
+        draw_rectangle(x - 3, y - 3, x + width + 3, y + height + 3, true);
+        draw_set_color(make_color_rgb(205, 170, 95));   // corner ticks
+        var _ck = 8;
+        draw_line(x - 3, y - 3, x - 3 + _ck, y - 3);  draw_line(x - 3, y - 3, x - 3, y - 3 + _ck);
+        draw_line(x + width + 3, y - 3, x + width + 3 - _ck, y - 3);  draw_line(x + width + 3, y - 3, x + width + 3, y - 3 + _ck);
+        draw_line(x - 3, y + height + 3, x - 3 + _ck, y + height + 3);  draw_line(x - 3, y + height + 3, x - 3, y + height + 3 - _ck);
+        draw_line(x + width + 3, y + height + 3, x + width + 3 - _ck, y + height + 3);  draw_line(x + width + 3, y + height + 3, x + width + 3, y + height + 3 - _ck);
+    }
 
     // Background track
     draw_set_color(c_dkgray);
@@ -1636,20 +1651,20 @@ function ui_draw_turn_queue(x, y, combat_state) {
 // BEFORE the sprite so it sits beneath it.
 // ---------------------------------------------------------------------------
 function ui_draw_ground_shadow(cx, baseline_y, sprite_display_width) {
-    var _w  = sprite_display_width * 0.66;   // shadow is a bit narrower than the sprite
-    var _h  = _w * 0.30;                      // squashed: ground perspective
-    var _cy = baseline_y - _h * 0.35;         // nudge up so it hugs the feet
+    var _w  = sprite_display_width * 0.46;   // tighter than before (was 0.66) - smaller pool
+    var _h  = _w * 0.26;                      // squashed: ground perspective
+    var _cy = baseline_y - _h * 0.5;          // sit just above the passed feet baseline
     var _prev_a = draw_get_alpha();
     draw_set_color(c_black);
-    // Three stacked ellipses (wide soft halo -> mid -> dense core) so the contact
-    // shadow reads even on dark arena floors. The old 0.14/0.30 pair was so faint it
-    // vanished against the dimmed dungeon backgrounds (looked like "no shadow").
-    draw_set_alpha(0.24);
+    // Three stacked ellipses (soft halo -> mid -> dense core). Sized down so the
+    // contact shadow hugs the feet instead of spreading into a big pool, while the
+    // graded alphas keep it readable on dark arena floors.
+    draw_set_alpha(0.30);
     draw_ellipse(cx - _w * 0.62, _cy - _h * 0.62, cx + _w * 0.62, _cy + _h * 0.62, false);
-    draw_set_alpha(0.42);
-    draw_ellipse(cx - _w * 0.46, _cy - _h * 0.46, cx + _w * 0.46, _cy + _h * 0.46, false);
-    draw_set_alpha(0.62);
-    draw_ellipse(cx - _w * 0.30, _cy - _h * 0.30, cx + _w * 0.30, _cy + _h * 0.30, false);
+    draw_set_alpha(0.48);
+    draw_ellipse(cx - _w * 0.44, _cy - _h * 0.44, cx + _w * 0.44, _cy + _h * 0.44, false);
+    draw_set_alpha(0.66);
+    draw_ellipse(cx - _w * 0.28, _cy - _h * 0.28, cx + _w * 0.28, _cy + _h * 0.28, false);
     draw_set_alpha(_prev_a);
     draw_set_color(c_white);
 }
@@ -1826,6 +1841,124 @@ function ui_draw_telegraph_warning(enemy_name, message) {
 // so wrapped text never overlaps the entry below it.
 // Stops drawing when the next entry would reach the top padding boundary.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// ui_draw_log_line(x, y, str, max_w)
+// Draws one combat-log line word-by-word, tinting the operative words so key
+// events pop: CRIT (gold), MISS / DODGE (cool gray-blue / cyan), and the eight
+// element schools (school_color). A number immediately tied to one of those
+// events inherits its color too. Everything else stays the caller's color.
+// Truncates with "..." at max_w. Caller sets font + alpha first.
+// ---------------------------------------------------------------------------
+function ui_draw_log_line(x, y, str, max_w) {
+    var _COL_BASE  = make_color_rgb(225, 225, 230);
+    var _COL_CRIT  = make_color_rgb(255, 205,  70);
+    var _COL_MISS  = make_color_rgb(150, 165, 195);
+    var _COL_DODGE = make_color_rgb( 95, 210, 220);
+    var _COL_GOLD  = make_color_rgb(240, 200,  70);
+    var _COL_DUST  = make_color_rgb( 90, 195, 185);
+
+    var _words = string_split_words_log(str);
+    var _n = array_length(_words);
+    var _cx = x;
+    var _space_w = string_width(" ");
+
+    // Pre-scan: pick the color a number in this line should take, even when the
+    // keyword comes AFTER the number (the log writes "... for 42 damage (CRIT!)").
+    // Priority: crit > school > gold. Gold also covers loot/economy lines.
+    var _num_col   = -1;
+    var _gold_line = false;
+    for (var _ps = 0; _ps < _n; _ps++) {
+        var _pc = string_lower(string_trim_punct_log(_words[_ps]));
+        if (_pc == "crit" || _pc == "critical" || _pc == "crits") { _num_col = _COL_CRIT; }
+        if (_num_col != _COL_CRIT && (_pc == "fire" || _pc == "frost" || _pc == "shock" || _pc == "arcane"
+            || _pc == "blood" || _pc == "void" || _pc == "shadow" || _pc == "poison")) {
+            if (_num_col == -1) _num_col = school_color(_pc);
+        }
+        if (_pc == "gold" || log_word_is_goldnum(_pc)) _gold_line = true;
+    }
+    if (_num_col == -1 && _gold_line) _num_col = _COL_GOLD;
+
+    for (var _i = 0; _i < _n; _i++) {
+        var _w    = _words[_i];
+        var _core = string_lower(string_trim_punct_log(_w));
+        var _col  = _COL_BASE;
+        var _is_num = (_core != "" && string_digits(_core) == _core);
+
+        if (_core == "crit" || _core == "critical" || _core == "crits") {
+            _col = _COL_CRIT;
+        } else if (_core == "miss" || _core == "missed" || _core == "misses" || _core == "missing") {
+            _col = _COL_MISS;
+        } else if (_core == "dodge" || _core == "dodged" || _core == "dodges") {
+            _col = _COL_DODGE;
+        } else if (_core == "fire" || _core == "frost" || _core == "shock" || _core == "arcane"
+                || _core == "blood" || _core == "void" || _core == "shadow" || _core == "poison") {
+            _col = school_color(_core);
+        } else if (_core == "gold" || log_word_is_goldnum(_core)) {
+            _col = _COL_GOLD;
+        } else if (_core == "dust" || _core == "rune") {
+            _col = _COL_DUST;
+        } else if (_core == "common")      { _col = make_color_rgb(165, 170, 180);
+        } else if (_core == "uncommon")    { _col = make_color_rgb(100, 205, 100);
+        } else if (_core == "rare")        { _col = make_color_rgb( 90, 155, 235);
+        } else if (_core == "epic")        { _col = make_color_rgb(190, 110, 235);
+        } else if (_core == "legendary")   { _col = make_color_rgb(235, 150,  60);
+        } else if (_core == "consumable")  { _col = make_color_rgb( 90, 210, 210);
+        } else if (_is_num && _num_col != -1) {
+            _col = _num_col;
+        }
+
+        // Word + trailing space; stop with an ellipsis if we'd overflow.
+        var _seg_w = string_width(_w);
+        if (_cx + _seg_w > x + max_w) {
+            draw_set_color(_COL_BASE);
+            draw_text(_cx, y, "...");
+            return;
+        }
+        draw_set_color(_col);
+        draw_text(_cx, y, _w);
+        _cx += _seg_w + _space_w;
+    }
+}
+
+// log_word_is_goldnum(core) - true for a "12g" style gold amount (digits + a
+// trailing 'g'), so the combat log can tint gold drops in gold.
+function log_word_is_goldnum(_core) {
+    var _len = string_length(_core);
+    if (_len < 2) return false;
+    if (string_char_at(_core, _len) != "g") return false;
+    var _digits = string_copy(_core, 1, _len - 1);
+    return (string_digits(_digits) == _digits);
+}
+
+// Split a log line on spaces (helper kept local so the renderer stays self-
+// contained). Returns an array of words with empties dropped.
+function string_split_words_log(_s) {
+    var _out = [];
+    var _cur = "";
+    for (var _i = 1; _i <= string_length(_s); _i++) {
+        var _c = string_char_at(_s, _i);
+        if (_c == " ") {
+            if (_cur != "") { array_push(_out, _cur); _cur = ""; }
+        } else {
+            _cur += _c;
+        }
+    }
+    if (_cur != "") array_push(_out, _cur);
+    return _out;
+}
+
+// Strip leading/trailing punctuation from a word so keyword matching is clean
+// ("(CRIT!)" -> "crit!" stays, but "42," -> "42"). Keeps inner characters.
+function string_trim_punct_log(_w) {
+    var _p = "(),.:;'\"+-[]!?";
+    var _s = _w;
+    while (string_length(_s) > 0 && string_pos(string_char_at(_s, 1), _p) > 0)
+        _s = string_delete(_s, 1, 1);
+    while (string_length(_s) > 0 && string_pos(string_char_at(_s, string_length(_s)), _p) > 0)
+        _s = string_delete(_s, string_length(_s), 1);
+    return _s;
+}
+
 function ui_draw_combat_log(x, y, width, height, log_array) {
     var line_h  = 29;
     var padding = 12;
@@ -1871,8 +2004,8 @@ function ui_draw_combat_log(x, y, width, height, log_array) {
 
         // Fade by age relative to the newest visible line
         draw_set_alpha(lerp(1.0, 0.45, min(_row / 8.0, 1.0)));
-        draw_set_color(c_white);
-        draw_text(x + padding, _ly, ui_truncate(log_array[_idx], max_width));
+        // Keyword/number color coding (crit/miss/dodge/schools); truncates internally.
+        ui_draw_log_line(x + padding, _ly, log_array[_idx], max_width);
     }
     draw_set_alpha(1.0);
 
@@ -2634,7 +2767,64 @@ function ui_draw_settings_overlay() {
     draw_set_font(-1);
 }
 
-function ui_draw_combat_hud(combat_state, player, ability_array, selected_ability_index, log_array) {
+// ui_draw_combat_overlay(...) - the hit-preview band + combat log. Split out of
+// the HUD so the combat controller can draw it AFTER the battler sprites, keeping
+// combat text on top of the sprites/shadows (text always has visual priority).
+function ui_draw_combat_overlay(combat_state, player, ability_array, selected_ability_index, log_array) {
+    // --- Ability hit preview (flashing, in the open band above the combat log) ---
+    if (instance_exists(obj_combat_controller)) {
+        var _cc_pv = instance_find(obj_combat_controller, 0);
+        if (_cc_pv.player_turn && !_cc_pv.combat_over && !_cc_pv.show_loot_screen) {
+            var _pv_ab    = ability_array[selected_ability_index];
+            var _pv_live  = combat_living_enemies(combat_state);
+            if (is_struct(_pv_ab) && array_length(_pv_live) > 0) {
+                var _pv_mx  = device_mouse_x_to_gui(0);
+                var _pv_my  = device_mouse_y_to_gui(0);
+                var _pv_idx = clamp(_cc_pv.selected_target, 0, array_length(_pv_live) - 1);
+                for (var _pvi = 0; _pvi < array_length(_pv_live); _pvi++) {
+                    var _bx = (_pvi mod 2 == 0) ? 990 : 1485;
+                    var _by = 96 + (_pvi div 2) * 78;
+                    if (_pv_mx >= _bx && _pv_mx < _bx + 400 && _pv_my >= _by && _pv_my < _by + 42) {
+                        _pv_idx = _pvi;
+                        break;
+                    }
+                }
+                var _pv_tgt = _pv_live[_pv_idx];
+                var _pv_est = combat_estimate_hit(_pv_ab, player, _pv_tgt);
+
+                var _pv_main = "";
+                if (_pv_est >= 0) {
+                    _pv_main = _pv_ab.name + "  will hit  " + _pv_tgt.name + "  for ~" + string(_pv_est) + " dmg";
+                } else {
+                    _pv_main = _pv_ab.name + "  ->  " + _pv_tgt.name;
+                }
+
+                var _flash = 0.6 + 0.4 * (0.5 + 0.5 * sin(current_time / 220));
+                draw_set_halign(fa_left);
+                draw_set_valign(fa_bottom);
+                draw_set_alpha(_flash);
+                draw_set_font(fnt_ui);
+                draw_set_color(make_color_rgb(255, 226, 120));
+                draw_text_outline(36, 726, _pv_main);
+
+                var _pv_eff = variable_struct_exists(_pv_ab, "desc_short") ? _pv_ab.desc_short : "";
+                if (_pv_eff != "") {
+                    draw_set_alpha(min(1.0, _flash + 0.15));
+                    draw_set_font(fnt_ui_small);
+                    draw_set_color(make_color_rgb(180, 210, 230));
+                    draw_text_outline(36, 700, "Effect:  " + _pv_eff);
+                }
+                draw_set_alpha(1.0);
+                draw_set_valign(fa_top);
+            }
+        }
+    }
+
+    // --- Combat log (bottom strip) ---
+    ui_draw_combat_log(30, 735, 1170, 210, log_array);
+}
+
+function ui_draw_combat_hud(combat_state, player, ability_array, selected_ability_index, log_array, draw_log = true) {
 
     // --- Turn queue (top-center) ---
     ui_draw_turn_queue(600, 15, combat_state);
@@ -2793,8 +2983,13 @@ function ui_draw_combat_hud(combat_state, player, ability_array, selected_abilit
     // --- Ability buttons (bottom-center) ---
     ui_draw_ability_buttons(240, 990, ability_array, selected_ability_index, player);
 
-    // --- Combat log (bottom strip - freed left zone for character sprites) ---
-    ui_draw_combat_log(30, 735, 1170, 210, log_array);
+    // --- Hit preview + combat log ---
+    // Deferred to draw AFTER the battler sprites (so combat text always sits on top
+    // of the sprites/shadows) when the caller passes draw_log=false; otherwise drawn
+    // inline here. See ui_draw_combat_overlay.
+    if (draw_log) {
+        ui_draw_combat_overlay(combat_state, player, ability_array, selected_ability_index, log_array);
+    }
 
     // --- Ability tooltip (lower-right) ---
     // Bottom-anchored at y945 (a 45px gap above the ability button row + C/Items
@@ -3017,10 +3212,12 @@ function ui_compendium_sections() {
         {
             title: "Damage Types",
             entries: [
+                { term: "How types work", text: "The Damage TYPE decides how a hit is mitigated. There are four: Physical, Elemental, Void, and Blood. Each maps to a default school (see Damage Schools) but the TYPE is what Armor / wards check." },
                 { term: "Physical",     text: "Weapon-based damage, reduced by the target's Armor. The default for most strikes and shots." },
-                { term: "Elemental",    text: "Fire, frost and shock magic. Resisted by elemental wards rather than Armor." },
-                { term: "Drain (Void)", text: "Siphons life or resources from the target and bypasses Armor entirely." },
-                { term: "Blood",        text: "Not a separate rule - the Bloodwarden's self-fueled flavor of Drain. It bypasses Armor like Drain, but many blood abilities cost some of your own HP to cast." },
+                { term: "Elemental",    text: "Reduced by the target's Elemental Resistance (wards) instead of Armor. Covers the Fire, Frost, Shock and Arcane schools." },
+                { term: "Void",         text: "Its own type (the Void school). Bypasses ALL mitigation - neither Armor nor wards reduce it. Void/drain hits often siphon life or resources from the target." },
+                { term: "Blood",        text: "Its own type (the Blood school). Bypasses Armor (and isn't stopped by wards either). Many blood abilities are self-fuelled - they cost some of your own HP or Blood to cast." },
+                { term: "Poison & DoTs", text: "Poison and other damage-over-time ticks land UNMITIGATED regardless of the type that applied them - Armor and wards don't reduce DoT ticks." },
             ],
         },
         {
@@ -3028,7 +3225,7 @@ function ui_compendium_sections() {
             entries: [
                 { term: "What schools are", text: "A school is the FLAVOR of an ability's damage (its build identity), layered on top of the Damage Type. The Damage Type still decides mitigation - a Fire spell is still Elemental for Armor/wards. The eight schools: Fire, Frost, Shock, Arcane, Blood, Void, Shadow, Poison." },
                 { term: "School-damage gear", text: "Some gear grants \"+X <school> damage\" - a flat bonus added to every damaging ability of that school. It's always FLAT (never a percentage), so schools point your build in a direction without exploding your damage. A piece can carry more than one school, and they stack." },
-                { term: "Schools vs. Types",  text: "Damage TYPE (Physical / Elemental / Drain / Blood) = how the hit is mitigated. SCHOOL (Fire / Frost / ...) = what flavor it is and which \"+X school damage\" gear buffs it. A school bonus is mitigated by the ability's own Type - e.g. a Poison-school bonus on a physical dart is reduced by Armor, while a poison DoT it leaves is unmitigated." },
+                { term: "Schools vs. Types",  text: "Damage TYPE (Physical / Elemental / Void / Blood) = how the hit is mitigated. SCHOOL (Fire / Frost / Shock / Arcane / Blood / Void / Shadow / Poison) = what flavor it is and which \"+X school damage\" gear buffs it. A school bonus is mitigated by the ability's own Type - e.g. a Poison-school bonus on a physical dart is reduced by Armor, while a poison DoT it leaves is unmitigated." },
                 { term: "Frost & Shock",      text: "These schools have few dedicated abilities yet - for now they come mostly from Frostbound / Storm-touched weapons, which apply the matching status. More school content arrives over time." },
             ],
         },
@@ -3146,6 +3343,10 @@ function ui_draw_character_menu() {
     draw_rectangle(0, 0, GUI_W, GUI_H, false);
     draw_set_alpha(1.0);
 
+    // Ornate gothic rim around the whole menu (matches the NPC shop overlays). Drawn
+    // before the tab bar so the tabs sit cleanly on top of the top band.
+    ui_draw_gothic_frame(30, 30, 1890, 1050, 30);
+
     // Tab bar at top - 5 tabs, centered (matches click zones in obj_game_controller Step)
     var _tab_w = 252;
     var _tab_h = 66;
@@ -3217,7 +3418,9 @@ function ui_draw_character_menu() {
             _stats_view.CHA += global.perm_cha_bonus;
         }
         var _derived_view = stats_derive(_stats_view);
-        var _sv_max_hp = _derived_view.HP + _sv_bonus.bonus_max_hp;
+        // Use the shared out-of-combat max so the Stats tab matches the floor HUD
+        // and the in-fight bar (includes Thick Skin's static +10% and boon/curse mults).
+        var _sv_max_hp = out_of_combat_max_hp();
         _player = {
             class_id:  global.chosen_class,
             stats:     _stats_view,
@@ -3514,10 +3717,13 @@ function ui_draw_character_menu() {
     }
 
     // ---- EQUIPMENT TAB ----
+    // Restructured: a large detail/preview panel on the LEFT (big icon + full stats
+    // of the selected slot) and a single-column slot LIST on the right. Ring 2 sits
+    // directly under Ring 1 (equip_display_order). Both panels wear a gothic frame.
     if (menu_tab == 1) {
         var _slot_names = ["Melee Weapon", "Offhand", "Helm", "Chest", "Gloves", "Boots", "Amulet", "Ring 1", "Ranged Weapon", "Ring 2"];
-        var _slot_keys  = ["weapon", "offhand", "helm", "chest", "gloves", "boots", "amulet", "ring", "ranged_weapon", "ring2"];
-        var _sel_slot   = _gc.equip_slot_selected;
+        var _sel_pos    = clamp(_gc.equip_slot_selected, 0, EQUIP_SLOT_COUNT - 1);
+        var _sel_inv    = equip_display_to_inv(_sel_pos);
 
         // Equip confirmation notification (fades over 150 frames, fully opaque first 120)
         if (variable_instance_exists(_gc, "equip_notif_timer") && _gc.equip_notif_timer > 0) {
@@ -3526,7 +3732,7 @@ function ui_draw_character_menu() {
             draw_set_halign(fa_center);
             draw_set_font(fnt_ui);
             draw_set_color(make_color_rgb(100, 220, 130));
-            draw_text(960, 105, _gc.equip_notif_msg);
+            draw_text(960, 110, _gc.equip_notif_msg);
             draw_set_halign(fa_left);
             draw_set_alpha(1.0);
         }
@@ -3538,80 +3744,147 @@ function ui_draw_character_menu() {
         draw_set_halign(fa_right);
         draw_set_font(fnt_ui_small);
         draw_set_color(make_color_rgb(120, 130, 150));
-        // Stash is only reachable in the hub; during a run show the pack only.
         if (_equip_in_hub) {
-            draw_text(1860, _content_y, "Stash: " + string(_stash_count) + "   Pack: " + string(_pack_count));
+            draw_text(1850, 120, "Stash: " + string(_stash_count) + "   Pack: " + string(_pack_count));
         } else {
-            draw_text(1860, _content_y, "Pack: " + string(_pack_count) + "  (stash left in town)");
+            draw_text(1850, 120, "Pack: " + string(_pack_count) + "  (stash left in town)");
         }
         draw_set_halign(fa_left);
 
-        // 10 equipment slots - 2 columns of 5 rows (col = slot div 5).
-        var _offhand_locked = two_handed_equipped();   // 2H weapon locks the offhand slot (1)
-        for (var _sl = 0; _sl < EQUIP_SLOT_COUNT; _sl++) {
-            var _slx    = _pad + floor(_sl / 5) * 870;
-            var _sly    = _content_y + 36 + (_sl mod 5) * 162;
-            var _is_sel = (_sl == _sel_slot);
-            // The offhand slot fades out while a two-handed weapon is equipped.
-            var _slot_locked = (_sl == 1 && _offhand_locked);
+        var _offhand_locked = two_handed_equipped();   // 2H weapon locks the offhand slot
+
+        // ===== LEFT DETAIL / PREVIEW PANEL =====
+        var _dp_x1 = 70, _dp_y1 = 150, _dp_x2 = 700, _dp_y2 = 1012;
+        draw_set_color(make_color_rgb(14, 17, 28));
+        draw_rectangle(_dp_x1, _dp_y1, _dp_x2, _dp_y2, false);
+        ui_draw_gothic_frame(_dp_x1, _dp_y1, _dp_x2, _dp_y2, 26);
+
+        var _dp_cx   = (_dp_x1 + _dp_x2) / 2;
+        var _sel_item = (variable_global_exists("inventory") && array_length(global.inventory) > _sel_inv)
+                        ? global.inventory[_sel_inv] : undefined;
+
+        // Slot title
+        draw_set_halign(fa_center);
+        draw_set_font(fnt_ui);
+        draw_set_color(make_color_rgb(200, 180, 120));
+        draw_text(_dp_cx, _dp_y1 + 26, _slot_names[_sel_inv]);
+
+        // Large icon (or empty plate)
+        var _big = 300;
+        var _big_x = _dp_cx - _big / 2;
+        var _big_y = _dp_y1 + 80;
+        if (_sel_item != undefined) {
+            ui_draw_item_icon(_big_x, _big_y, _big, _sel_item);
+        } else {
+            draw_set_color(make_color_rgb(12, 14, 22));
+            draw_rectangle(_big_x, _big_y, _big_x + _big, _big_y + _big, false);
+            draw_set_color(make_color_rgb(50, 56, 74));
+            draw_rectangle(_big_x, _big_y, _big_x + _big, _big_y + _big, true);
+            draw_set_valign(fa_middle);
+            draw_set_color(make_color_rgb(70, 76, 96));
+            draw_text(_dp_cx, _big_y + _big / 2, (_sel_inv == 1 && _offhand_locked) ? "LOCKED" : "EMPTY");
+            draw_set_valign(fa_top);
+        }
+
+        // Detail text under the icon
+        var _info_y = _big_y + _big + 28;
+        var _info_w = (_dp_x2 - _dp_x1) - 56;
+        if (_sel_item != undefined) {
+            var _rcol = item_rarity_color(_sel_item.rarity);
+            draw_set_halign(fa_center);
+            draw_set_font(fnt_ui);
+            draw_set_color(_rcol);
+            draw_text_ext(_dp_cx, _info_y, _sel_item.name, 34, _info_w);
+            _info_y += max(40, string_height_ext(_sel_item.name, 34, _info_w)) + 8;
+
+            draw_set_font(fnt_ui_small);
+            draw_set_color(make_color_rgb(170, 150, 90));
+            draw_text(_dp_cx, _info_y, item_rarity_name(_sel_item.rarity) + "  |  " + item_slot_label(_sel_item.slot));
+            _info_y += 40;
+
+            // Full stat string (wrapped, left-aligned within the panel)
+            draw_set_halign(fa_left);
+            draw_set_color(c_white);
+            var _stat_str = ui_item_stat_str(_sel_item);
+            draw_text_ext(_dp_x1 + 28, _info_y, _stat_str, 32, _info_w);
+            _info_y += string_height_ext(_stat_str, 32, _info_w) + 10;
+
+            // Requirement (green if met, red if not)
+            var _req = item_stat_requirement(_sel_item);
+            if (_req.value > 0 && _req.stat != "") {
+                draw_set_color((player_base_stat(_req.stat) >= _req.value)
+                    ? make_color_rgb(110, 190, 110) : make_color_rgb(230, 90, 90));
+                draw_text(_dp_x1 + 28, _info_y, "Requires " + _req.stat + " " + string(_req.value));
+                _info_y += 34;
+            }
+
+            // Unique effect or flavor
+            if (variable_struct_exists(_sel_item, "unique_desc") && _sel_item.unique_desc != "") {
+                draw_set_color(make_color_rgb(255, 200, 50));
+                draw_text_ext(_dp_x1 + 28, _info_y + 4, _sel_item.unique_desc, 30, _info_w);
+            } else if (variable_struct_exists(_sel_item, "effect_desc") && _sel_item.effect_desc != "") {
+                draw_set_color(make_color_rgb(140, 150, 175));
+                draw_text_ext(_dp_x1 + 28, _info_y + 4, _sel_item.effect_desc, 30, _info_w);
+            }
+        }
+        draw_set_halign(fa_left);
+        draw_set_valign(fa_top);
+
+        // ===== RIGHT SLOT LIST (single column) =====
+        var _ls_x1 = 740, _ls_x2 = 1850, _ls_y1 = 150, _ls_y2 = 1012;
+        draw_set_color(make_color_rgb(14, 17, 28));
+        draw_rectangle(_ls_x1, _ls_y1, _ls_x2, _ls_y2, false);
+        ui_draw_gothic_frame(_ls_x1, _ls_y1, _ls_x2, _ls_y2, 26);
+
+        var _row_pad = 16;
+        var _row_h   = (( _ls_y2 - _ls_y1) - _row_pad * 2) / EQUIP_SLOT_COUNT;
+        for (var _r = 0; _r < EQUIP_SLOT_COUNT; _r++) {
+            var _inv = equip_display_to_inv(_r);
+            var _ry  = _ls_y1 + _row_pad + _r * _row_h;
+            var _is_sel = (_r == _sel_pos);
+            var _slot_locked = (_inv == 1 && _offhand_locked);
             if (_slot_locked) draw_set_alpha(0.4);
 
-            // Slot background - highlight selected row
+            // Row background + selection accent
+            draw_set_color(_is_sel ? make_color_rgb(34, 54, 86) : make_color_rgb(18, 22, 36));
+            draw_rectangle(_ls_x1 + 18, _ry + 3, _ls_x2 - 18, _ry + _row_h - 5, false);
             if (_is_sel) {
-                draw_set_color(make_color_rgb(30, 50, 80));
-            } else {
-                draw_set_color(make_color_rgb(20, 25, 40));
+                draw_set_color(make_color_rgb(150, 120, 60));
+                draw_rectangle(_ls_x1 + 18, _ry + 3, _ls_x2 - 18, _ry + _row_h - 5, true);
+                // gold accent bar on the left edge
+                draw_set_color(make_color_rgb(210, 175, 90));
+                draw_rectangle(_ls_x1 + 18, _ry + 3, _ls_x1 + 24, _ry + _row_h - 5, false);
             }
-            draw_rectangle(_slx, _sly, _slx + 780, _sly + 144, false);
-            draw_set_color(_is_sel ? make_color_rgb(80, 140, 220) : make_color_rgb(50, 60, 80));
-            draw_rectangle(_slx, _sly, _slx + 780, _sly + 144, true);
 
-            var _equipped = undefined;
-            if (variable_global_exists("inventory") && array_length(global.inventory) > _sl) {
-                _equipped = global.inventory[_sl];
-            }
+            var _equipped = (variable_global_exists("inventory") && array_length(global.inventory) > _inv)
+                            ? global.inventory[_inv] : undefined;
+
+            // Icon badge
+            var _icon_sz = _row_h - 22;
+            if (_equipped != undefined) ui_draw_item_icon(_ls_x1 + 34, _ry + 8, _icon_sz, _equipped);
+
+            // Slot name (small, top) + item name (rarity color, below)
+            var _tx = _ls_x1 + 34 + _icon_sz + 22;
+            draw_set_font(fnt_ui_small);
+            draw_set_color(_is_sel ? make_color_rgb(210, 190, 130) : make_color_rgb(120, 130, 150));
+            draw_text(_tx, _ry + 10, _slot_names[_inv]);
+
             draw_set_font(fnt_ui);
-            draw_set_color(_is_sel ? c_white : make_color_rgb(100, 110, 130));
-            draw_text(_slx + 15, _sly + 12, _slot_names[_sl]);
-
             if (_equipped != undefined) {
-                var _rcol = item_rarity_color(_equipped.rarity);
-                // Rarity tag - moved up to the slot-label line (its left side is empty)
-                // so it never collides with a long item name on the row below.
+                draw_set_color(item_rarity_color(_equipped.rarity));
+                draw_text(_tx, _ry + 38, ui_truncate(_equipped.name, _ls_x2 - _tx - 230));
                 draw_set_halign(fa_right);
                 draw_set_font(fnt_ui_small);
-                draw_set_color(_rcol);
-                draw_text(_slx + 765, _sly + 12, item_rarity_name(_equipped.rarity));
+                draw_set_color(item_rarity_color(_equipped.rarity));
+                draw_text(_ls_x2 - 34, _ry + 14, item_rarity_name(_equipped.rarity));
+                draw_set_color(make_color_rgb(150, 160, 180));
+                draw_text(_ls_x2 - 34, _ry + 44, ui_truncate(ui_item_stat_str(_equipped), 360));
                 draw_set_halign(fa_left);
-                // Icon badge - pushed below the slot-name label so they don't overlap.
-                ui_draw_item_icon(_slx + 12, _sly + 48, 60, _equipped);
-                // Text column is clipped to the slot box (84..759 = 675px wide).
-                var _txt_w = 675;
-                // Name
-                draw_set_font(fnt_ui);
-                draw_set_color(_rcol);
-                draw_text(_slx + 84, _sly + 45, ui_truncate(_equipped.name, _txt_w));
-                // Stat string
-                draw_set_font(fnt_ui_small);
-                draw_set_color(c_white);
-                draw_text(_slx + 84, _sly + 78, ui_truncate(ui_item_stat_str(_equipped), _txt_w));
-                // Flavor text or unique effect
-                if (variable_struct_exists(_equipped, "unique_desc") && _equipped.unique_desc != "") {
-                    draw_set_color(make_color_rgb(255, 200, 50));
-                    draw_text(_slx + 84, _sly + 111, ui_truncate(_equipped.unique_desc, _txt_w));
-                } else if (_equipped.effect_desc != "") {
-                    draw_set_color(make_color_rgb(100, 110, 135));
-                    draw_text(_slx + 84, _sly + 111, ui_truncate(_equipped.effect_desc, _txt_w));
-                }
-            } else if (_slot_locked) {
-                draw_set_font(fnt_ui);
-                draw_set_color(make_color_rgb(150, 130, 90));
-                draw_text(_slx + 15, _sly + 68, "Two-handed: offhand locked");
             } else {
-                draw_set_font(fnt_ui);
-                draw_set_color(make_color_rgb(60, 65, 80));
-                draw_text(_slx + 15, _sly + 68, "- Empty -");
+                draw_set_color(_slot_locked ? make_color_rgb(150, 130, 90) : make_color_rgb(70, 76, 96));
+                draw_text(_tx, _ry + 38, _slot_locked ? "Two-handed: offhand locked" : "- Empty -");
             }
+
             if (_slot_locked) draw_set_alpha(1.0);
         }
 
@@ -3630,7 +3903,7 @@ function ui_draw_character_menu() {
         if (_gc.equip_picker_open) {
             // Filter by the item-TYPE the position accepts (Ring 2 -> "ring"), so rings
             // list for either ring position. Must match the Step picker.
-            var _slot_name = equip_position_item_slot(_sel_slot);
+            var _slot_name = equip_position_item_slot(_sel_inv);
 
             // Build filtered list (same order as Step)
             var _picker_items = [];
@@ -3668,8 +3941,8 @@ function ui_draw_character_menu() {
             // worn item (same name/stats sitting in the pack) reads as if the item
             // vanished. Selectable rows shift down one row while this is present.
             var _equipped_here = (variable_global_exists("inventory")
-                && array_length(global.inventory) > _sel_slot)
-                ? global.inventory[_sel_slot] : undefined;
+                && array_length(global.inventory) > _sel_inv)
+                ? global.inventory[_sel_inv] : undefined;
             var _eq_extra = (_equipped_here != undefined) ? 1 : 0;
             var _list_y0  = _py + 48 + _eq_extra * _row_h;   // top of the selectable list
             var _ph       = max(150, (_visible + _eq_extra) * _row_h + 48);
@@ -3684,7 +3957,7 @@ function ui_draw_character_menu() {
             draw_set_halign(fa_center);
             draw_set_font(fnt_ui);
             draw_set_color(c_white);
-            draw_text(_px + _pw / 2, _py + 12, "Choose " + _slot_names[_sel_slot]);
+            draw_text(_px + _pw / 2, _py + 12, "Choose " + _slot_names[_sel_inv]);
             draw_set_halign(fa_left);
 
             // Class restriction warning / equip_msg
@@ -3794,8 +4067,8 @@ function ui_draw_character_menu() {
                         var _tt_ry = _list_y0 + _tt_ri * _row_h;
                         if (_hmy >= _tt_ry && _hmy < _tt_ry + _row_h - 6) {
                             var _cur_eq = (variable_global_exists("inventory")
-                                && array_length(global.inventory) > _sel_slot)
-                                ? global.inventory[_sel_slot] : undefined;
+                                && array_length(global.inventory) > _sel_inv)
+                                ? global.inventory[_sel_inv] : undefined;
                             ui_draw_item_tooltip(_hmx + 18, _hmy - 45, _picker_items[_tt_ri], _cur_eq);
                             break;
                         }
@@ -3806,41 +4079,148 @@ function ui_draw_character_menu() {
     }
 
     // ---- ABILITIES TAB ----
-    if (menu_tab == 2) {
-        if (_player != undefined) {
-            for (var _ab = 0; _ab < array_length(_player.abilities); _ab++) {
-                var _a  = _player.abilities[_ab];
-                var _ay = _content_y + _ab * 195;
+    // Two-pane: a selectable list of the loadout on the LEFT, a full breakdown of
+    // the highlighted ability on the RIGHT (mechanics, cost, school, and the CURRENT
+    // damage it lands for with your equipped gear). Both panels gothic-framed.
+    if (menu_tab == 2 && _player != undefined && array_length(_player.abilities) > 0) {
+        var _abs  = _player.abilities;
+        var _acnt = array_length(_abs);
+        var _acur = clamp(_gc.ability_view_cursor, 0, _acnt - 1);
 
-                draw_set_color(make_color_rgb(20, 28, 48));
-                draw_rectangle(_pad, _ay, 1860, _ay + 165, false);
-                draw_set_color(make_color_rgb(60, 80, 120));
-                draw_rectangle(_pad, _ay, 1860, _ay + 165, true);
+        // ===== LEFT: ability list =====
+        var _al_x1 = 70, _al_x2 = 700, _al_y1 = 150, _al_y2 = 1012;
+        draw_set_color(make_color_rgb(14, 17, 28));
+        draw_rectangle(_al_x1, _al_y1, _al_x2, _al_y2, false);
+        ui_draw_gothic_frame(_al_x1, _al_y1, _al_x2, _al_y2, 26);
 
-                draw_set_font(fnt_ui);
-                draw_set_color(c_white);
-                draw_text(_pad + 21, _ay + 15, _a.name);
-                draw_set_font(fnt_ui_small);
-                draw_set_color(c_yellow);
-                draw_text(_pad + 21, _ay + 57, "AP: " + string(_a.energy_cost));
+        var _alr_pad = 16;
+        var _alr_h   = min(108, ((_al_y2 - _al_y1) - _alr_pad * 2) / _acnt);
+        for (var _ab = 0; _ab < _acnt; _ab++) {
+            var _a  = _abs[_ab];
+            var _ay = _al_y1 + _alr_pad + _ab * _alr_h;
+            var _asel = (_ab == _acur);
 
-                if (_a.base_damage > 0) {
-                    draw_set_color(make_color_rgb(220, 100, 80));
-                    var _dtype = ["physical", "elemental", "drain", "blood"];
-                    var _dt_idx = clamp(_a.damage_type, 0, array_length(_dtype) - 1);
-                    draw_text(_pad + 210, _ay + 57,
-                        "Damage: " + string(_a.base_damage) + " (" + _dtype[_dt_idx] + ")");
-                }
-
-                draw_set_color(make_color_rgb(160, 170, 200));
-                draw_text(_pad + 21, _ay + 99, _a.effect_type + " - " + string(_a.effect_value));
-
-                if (_a.guaranteed_hit) {
-                    draw_set_color(make_color_rgb(100, 180, 100));
-                    draw_text(_pad + 750, _ay + 57, "Always hits");
-                }
+            draw_set_color(_asel ? make_color_rgb(34, 54, 86) : make_color_rgb(18, 22, 36));
+            draw_rectangle(_al_x1 + 16, _ay + 3, _al_x2 - 16, _ay + _alr_h - 5, false);
+            if (_asel) {
+                draw_set_color(make_color_rgb(210, 175, 90));
+                draw_rectangle(_al_x1 + 16, _ay + 3, _al_x1 + 22, _ay + _alr_h - 5, false);
             }
+
+            var _aic = _alr_h - 24;
+            ui_draw_ability_icon(_al_x1 + 30, _ay + 10, _aic, _a);
+
+            draw_set_font(fnt_ui);
+            draw_set_color(_asel ? c_white : make_color_rgb(170, 180, 200));
+            draw_text(_al_x1 + 30 + _aic + 16, _ay + 12, ui_truncate(_a.name, _al_x2 - (_al_x1 + 30 + _aic + 16) - 16));
+            draw_set_font(fnt_ui_small);
+            draw_set_color(make_color_rgb(228, 190, 90));
+            draw_text(_al_x1 + 30 + _aic + 16, _ay + 48, string(_a.energy_cost) + " AP");
         }
+
+        // ===== RIGHT: breakdown of the selected ability =====
+        var _ad = _abs[_acur];
+        var _bd_x1 = 740, _bd_x2 = 1850, _bd_y1 = 150, _bd_y2 = 1012;
+        draw_set_color(make_color_rgb(16, 18, 28));
+        draw_rectangle(_bd_x1, _bd_y1, _bd_x2, _bd_y2, false);
+        ui_draw_gothic_frame(_bd_x1, _bd_y1, _bd_x2, _bd_y2, 26);
+
+        var _bpad = 40;
+        var _blx  = _bd_x1 + _bpad;
+        var _brx  = _bd_x2 - _bpad;
+        var _by   = _bd_y1 + _bpad;
+
+        // Header: icon + name + role chip
+        ui_draw_ability_icon(_blx, _by, 96, _ad);
+        var _btx = _blx + 96 + 24;
+        draw_set_halign(fa_left); draw_set_valign(fa_top);
+        draw_set_font(fnt_ui_title);
+        draw_set_color(c_white);
+        draw_text(_btx, _by + 3, _ad.name);
+        var _cat = ability_category(_ad);
+        draw_set_font(fnt_ui);
+        draw_set_color(ability_category_color(_cat));
+        draw_text(_btx, _by + 60, ability_category_label(_cat));
+
+        // Cost / cooldown line
+        var _ap2  = variable_struct_exists(_ad, "energy_cost") ? _ad.energy_cost : 0;
+        var _sec2 = variable_struct_exists(_ad, "secondary_cost") ? _ad.secondary_cost : 0;
+        var _cls2 = variable_global_exists("chosen_class") ? global.chosen_class : 0;
+        var _resn = (_cls2 == 0) ? "Souls" : ((_cls2 == 1) ? "Blood" : "Preparation");
+        var _cl2  = string(_ap2) + " AP";
+        if (_sec2 > 0) _cl2 += "   +" + string(_sec2) + " " + _resn;
+        var _cd2 = ability_cooldown(_ad);
+        if (_cd2 > 0) _cl2 += "   *   " + string(_cd2) + "-turn cooldown";
+        draw_set_halign(fa_right);
+        draw_set_font(fnt_ui);
+        draw_set_color(make_color_rgb(228, 190, 90));
+        draw_text(_brx, _by + 6, _cl2);
+        draw_set_halign(fa_left);
+
+        _by += 120;
+        // School / attack-class line
+        draw_set_font(fnt_ui_small);
+        draw_set_color(make_color_rgb(150, 160, 190));
+        var _sch = school_label(ability_school(_ad));
+        var _acl = ability_attack_class_tag(_ad);
+        if (_sch != "") {
+            draw_set_color(school_color(ability_school(_ad)));
+            _acl = _sch + " school  -  " + _acl;
+        }
+        draw_text(_blx, _by, _acl);
+        _by += 38;
+
+        // CURRENT DAMAGE WITH EQUIPMENT (estimate against an unmitigated target)
+        var _dmg_derived = _in_combat ? _player.derived : out_of_combat_dmg_derived();
+        var _est = combat_estimate_hit(_ad, { derived: _dmg_derived }, {});
+        if (_est >= 0) {
+            draw_set_font(fnt_ui);
+            draw_set_color(make_color_rgb(235, 120, 90));
+            draw_text(_blx, _by, "Current hit (with gear):  ~" + string(_est)
+                + "    [base " + string(_ad.base_damage) + "]");
+            _by += 44;
+        } else if (variable_struct_exists(_ad, "effect_value") && _ad.effect_value != 0) {
+            draw_set_font(fnt_ui);
+            draw_set_color(make_color_rgb(120, 200, 160));
+            draw_text(_blx, _by, _ad.effect_type + ":  " + string(_ad.effect_value));
+            _by += 44;
+        }
+
+        draw_set_color(make_color_rgb(60, 64, 90));
+        draw_line(_blx, _by, _brx, _by);
+        _by += 22;
+
+        // Mechanics
+        draw_set_font(fnt_ui_small);
+        draw_set_color(make_color_rgb(120, 200, 140));
+        draw_text(_blx, _by, "MECHANICS");
+        _by += 34;
+        draw_set_font(fnt_ui);
+        draw_set_color(make_color_rgb(210, 214, 230));
+        var _mech2 = ability_describe(_ad);
+        draw_text_ext(_blx, _by, _mech2, -1, _brx - _blx);
+        _by += string_height_ext(_mech2, -1, _brx - _blx) + 28;
+
+        // Flavor / full description
+        if (variable_struct_exists(_ad, "desc_full") && _ad.desc_full != "") {
+            draw_set_font(fnt_ui);
+            draw_set_color(make_color_rgb(140, 146, 170));
+            draw_text_ext(_blx, _by, _ad.desc_full, -1, _brx - _blx);
+        }
+
+        draw_set_halign(fa_left);
+        draw_set_valign(fa_top);
+
+        // Hint
+        draw_set_halign(fa_center);
+        draw_set_font(fnt_ui_small);
+        draw_set_color(make_color_rgb(80, 90, 110));
+        draw_text_outline(960, 1035, "W/S: Browse abilities");
+        draw_set_halign(fa_left);
+    } else if (menu_tab == 2) {
+        draw_set_font(fnt_ui);
+        draw_set_color(make_color_rgb(120, 130, 150));
+        draw_text(_pad, _content_y + 30, "No abilities to show - start a run to view your loadout.");
     }
 
     // ---- CONSUMABLES TAB ----
@@ -3865,6 +4245,16 @@ function ui_draw_character_menu() {
                 _limit_reached = true;
             }
         }
+
+        // Pack carry-cap readout (top-right of the tab) so the 10-slot limit and
+        // any Pack Rat bonus are always visible.
+        var _pack_n   = variable_global_exists("consumable_inventory") ? array_length(global.consumable_inventory) : 0;
+        var _pack_cap = consumable_carry_cap();
+        draw_set_font(fnt_ui_small);
+        draw_set_halign(fa_right);
+        draw_set_color((_pack_n >= _pack_cap) ? make_color_rgb(225, 120, 90) : make_color_rgb(150, 200, 200));
+        draw_text(1335, _content_y, "Pack  " + string(_pack_n) + " / " + string(_pack_cap));
+        draw_set_halign(fa_left);
 
         if (_cons_count == 0) {
             draw_set_font(fnt_ui);
@@ -4471,6 +4861,92 @@ function ui_draw_shop_screen() {
 }
 
 // ---------------------------------------------------------------------------
+// ui_draw_consumable_overflow()
+// Modal shown mid-run when the pack is full and another consumable is picked
+// up. Resolves global.consumable_overflow one item at a time (see
+// consumable_overflow_step). Drawn over both the combat and floor screens.
+// ---------------------------------------------------------------------------
+function ui_draw_consumable_overflow() {
+    if (!consumable_overflow_pending()) return;
+    if (!variable_global_exists("consumable_overflow_cursor")) global.consumable_overflow_cursor = 0;
+
+    // Dim the whole screen
+    draw_set_alpha(0.72);
+    draw_set_color(make_color_rgb(6, 8, 14));
+    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+    draw_set_alpha(1.0);
+
+    var _new    = global.consumable_overflow[0];
+    var _groups = consumables_grouped();
+    var _options = array_length(_groups) + 1;
+    var _cur    = clamp(global.consumable_overflow_cursor, 0, _options - 1);
+
+    var _pw = 760;
+    var _ph = 600;
+    var _px = (GUI_W - _pw) / 2;
+    var _py = (GUI_H - _ph) / 2;
+
+    // Panel
+    draw_set_color(make_color_rgb(18, 20, 32));
+    draw_rectangle(_px, _py, _px + _pw, _py + _ph, false);
+    draw_set_color(make_color_rgb(200, 110, 80));
+    draw_rectangle(_px, _py, _px + _pw, _py + _ph, true);
+
+    draw_set_halign(fa_center);
+    draw_set_valign(fa_top);
+    draw_set_font(fnt_ui_title);
+    draw_set_color(make_color_rgb(230, 130, 90));
+    draw_text(_px + _pw / 2, _py + 18, "PACK FULL  (" + string(consumable_carry_cap()) + "/"
+        + string(consumable_carry_cap()) + ")");
+
+    draw_set_font(fnt_ui_small);
+    draw_set_color(make_color_rgb(200, 210, 225));
+    draw_text(_px + _pw / 2, _py + 70, "Picked up  " + _new.name + ".  Discard one to make room, or leave it.");
+
+    var _pending_extra = array_length(global.consumable_overflow) - 1;
+    if (_pending_extra > 0) {
+        draw_set_color(make_color_rgb(150, 160, 180));
+        draw_text(_px + _pw / 2, _py + 96, "(" + string(_pending_extra) + " more waiting)");
+    }
+
+    draw_set_halign(fa_left);
+    draw_set_font(fnt_ui);
+    var _row_h = 46;
+    var _list_x = _px + 50;
+    var _list_y = _py + 140;
+
+    for (var _i = 0; _i < _options; _i++) {
+        var _is_sel = (_i == _cur);
+        var _ry = _list_y + _i * _row_h;
+        if (_ry + _row_h - 6 > _py + _ph - 70) break;   // don't spill past the footer
+
+        if (_is_sel) {
+            draw_set_alpha(0.9);
+            draw_set_color(make_color_rgb(60, 40, 30));
+            draw_rectangle(_list_x - 14, _ry - 4, _px + _pw - 50, _ry + _row_h - 10, false);
+            draw_set_alpha(1.0);
+        }
+
+        if (_i < array_length(_groups)) {
+            draw_set_color(_is_sel ? make_color_rgb(120, 230, 230) : make_color_rgb(80, 200, 200));
+            draw_text(_list_x, _ry, "Discard:  " + consumable_group_label(_groups[_i]));
+        } else {
+            draw_set_color(_is_sel ? make_color_rgb(230, 160, 120) : make_color_rgb(180, 130, 100));
+            draw_text(_list_x, _ry, "Leave " + _new.name + " behind");
+        }
+    }
+
+    draw_set_halign(fa_center);
+    draw_set_font(fnt_ui_small);
+    draw_set_color(c_gray);
+    draw_text(_px + _pw / 2, _py + _ph - 40, "W/S: Navigate    Enter: Confirm");
+
+    draw_set_halign(fa_left);
+    draw_set_valign(fa_top);
+    draw_set_font(-1);
+}
+
+// ---------------------------------------------------------------------------
 // ui_draw_stash_screen()
 // Two-column stash management overlay drawn in the hub.
 // Left column: items taken on the run (at risk). Right: safe stash.
@@ -4491,18 +4967,21 @@ function ui_draw_stash_screen() {
     draw_set_valign(fa_top);
     draw_set_font(fnt_ui_title);
     draw_set_color(c_white);
-    draw_text(960, 36, "ITEM STASH");   // y36 keeps the title inside the rim opening
+    draw_text(960, 30, "ITEM STASH");   // y30 keeps the title inside the rim opening
 
-    // Subtitle warning
+    // Subtitle warning (pushed clear of the large title font's descenders so they
+    // no longer collide just under the title)
     draw_set_font(fnt_ui_small);
     draw_set_color(make_color_rgb(180, 150, 80));
-    draw_text(960, 81, "Equipped gear is always safe.   Carried items are lost on death (1 random salvage).");
+    draw_text(960, 102, "Equipped gear is always safe.   Carried items are lost on death (1 random salvage).");
     draw_set_halign(fa_left);
 
-    var _ly      = 123;
+    var _ly      = 140;
     var _col_w   = 855;
     var _row_h   = 75;
     var _max_bot = 1020;
+    var _list_top = _ly + 45;
+    var _rows_visible = max(1, floor((_max_bot - _list_top) / _row_h));
 
     // Build left list: carried equipment then consumable_inventory
     var _left_items = [];
@@ -4540,8 +5019,18 @@ function ui_draw_stash_screen() {
     draw_set_color(make_color_rgb(200, 100, 80));
     draw_text(_lx + 15, _ly + 9, "TAKING ON RUN  (at risk)");
 
-    var _item_y = _ly + 45;
-    for (var _i = 0; _i < array_length(_left_items); _i++) {
+    // Scroll window: keep the selection in view (the list follows the cursor
+    // instead of the cursor scrolling off-screen). Only the active side tracks
+    // the cursor; the inactive side shows from the top.
+    var _left_n      = array_length(_left_items);
+    var _left_scroll = 0;
+    if (_left_active) {
+        _left_scroll = clamp(_gc.stash_mode_index - floor(_rows_visible / 2),
+                             0, max(0, _left_n - _rows_visible));
+    }
+
+    var _item_y = _list_top;
+    for (var _i = _left_scroll; _i < _left_n; _i++) {
         if (_item_y + _row_h > _max_bot) break;
         var _it     = _left_items[_i];
         var _is_sel = (_left_active && _gc.stash_mode_index == _i);
@@ -4564,6 +5053,21 @@ function ui_draw_stash_screen() {
 
         _item_y += _row_h;
     }
+    // More-above / more-below hints
+    if (_left_scroll > 0) {
+        draw_set_font(fnt_ui_small);
+        draw_set_halign(fa_right);
+        draw_set_color(make_color_rgb(150, 170, 200));
+        draw_text(_lx + _col_w - 14, _list_top - 26, "^ more");
+        draw_set_halign(fa_left);
+    }
+    if (_left_scroll + _rows_visible < _left_n) {
+        draw_set_font(fnt_ui_small);
+        draw_set_halign(fa_right);
+        draw_set_color(make_color_rgb(150, 170, 200));
+        draw_text(_lx + _col_w - 14, _max_bot + 2, "v more");
+        draw_set_halign(fa_left);
+    }
     if (array_length(_left_items) == 0) {
         draw_set_font(fnt_ui);
         draw_set_color(make_color_rgb(70, 80, 100));
@@ -4579,8 +5083,15 @@ function ui_draw_stash_screen() {
     draw_set_color(make_color_rgb(100, 200, 100));
     draw_text(_rx + 15, _ly + 9, "STASH  (safe)");
 
-    _item_y = _ly + 45;
-    for (var _i = 0; _i < array_length(_right_items); _i++) {
+    var _right_n      = array_length(_right_items);
+    var _right_scroll = 0;
+    if (_right_active) {
+        _right_scroll = clamp(_gc.stash_mode_index - floor(_rows_visible / 2),
+                              0, max(0, _right_n - _rows_visible));
+    }
+
+    _item_y = _list_top;
+    for (var _i = _right_scroll; _i < _right_n; _i++) {
         if (_item_y + _row_h > _max_bot) break;
         var _it     = _right_items[_i];
         var _is_sel = (_right_active && _gc.stash_mode_index == _i);
@@ -4602,6 +5113,20 @@ function ui_draw_stash_screen() {
         draw_text(_str_tx, _item_y + 39, (_right_types[_i] == 1) ? _it.description : ui_item_stat_str(_it));
 
         _item_y += _row_h;
+    }
+    if (_right_scroll > 0) {
+        draw_set_font(fnt_ui_small);
+        draw_set_halign(fa_right);
+        draw_set_color(make_color_rgb(150, 170, 200));
+        draw_text(_rx + _col_w - 14, _list_top - 26, "^ more");
+        draw_set_halign(fa_left);
+    }
+    if (_right_scroll + _rows_visible < _right_n) {
+        draw_set_font(fnt_ui_small);
+        draw_set_halign(fa_right);
+        draw_set_color(make_color_rgb(150, 170, 200));
+        draw_text(_rx + _col_w - 14, _max_bot + 2, "v more");
+        draw_set_halign(fa_left);
     }
     if (array_length(_right_items) == 0) {
         draw_set_font(fnt_ui);

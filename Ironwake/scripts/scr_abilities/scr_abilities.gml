@@ -962,6 +962,22 @@ function school_label(school) {
     return string_upper(string_char_at(school, 1)) + string_copy(school, 2, string_length(school) - 1);
 }
 
+// school_color(school) - canonical tint for each element/school. Used by the
+// combat-log color coding and any school-tagged UI text.
+function school_color(school) {
+    switch (school) {
+        case "fire":   return make_color_rgb(235, 110,  45);
+        case "frost":  return make_color_rgb( 95, 180, 235);
+        case "shock":  return make_color_rgb(235, 215,  75);
+        case "arcane": return make_color_rgb(190, 110, 230);
+        case "blood":  return make_color_rgb(205,  55,  55);
+        case "void":   return make_color_rgb(150,  95, 210);
+        case "shadow": return make_color_rgb(150, 140, 185);
+        case "poison": return make_color_rgb( 95, 200,  95);
+    }
+    return c_white;
+}
+
 // ability_school_list() - the eight schools in canonical order (Compendium +
 // the school_dmg accumulator iteration).
 function ability_school_list() {
@@ -1215,7 +1231,7 @@ global.traits_all = [
         -1, "default", 0, "scavenger"),
 
     trait_define("Thick Skin",
-        "+10% maximum HP at the start of each combat.",
+        "+10% maximum HP while equipped (static - not a heal).",
         -1, "default", 0, "thick_skin"),
 
     // -------------------------------------------------------------------------
@@ -1252,6 +1268,10 @@ global.traits_all = [
     trait_define("Prospector",
         "Combat loot rolls one quality tier better.",
         -1, "dungeon_clears_total", 2, "prospector"),
+
+    trait_define("Pack Rat",
+        "Carry +5 consumables on a run (base pack holds 10). Each potency tier adds +5 more, up to +15.",
+        -1, "dungeon_clears_total", 2, "pack_rat"),
 
     trait_define("Last Stand",
         "Once per run, survive a lethal blow at 1 HP.",
@@ -1662,7 +1682,7 @@ function class_locked_abilities(class_id) {
 // ---------------------------------------------------------------------------
 function trait_upgradable_list() {
     return [
-        { name: "Thick Skin",       stat: "CON", effect: "+10% max HP at combat start" },
+        { name: "Thick Skin",       stat: "CON", effect: "+10% max HP while equipped" },
         { name: "Scavenger",        stat: "CHA", effect: "+15% gold from all sources" },
         { name: "Quick Recovery",   stat: "WIS", effect: "Rest rooms heal 25 HP" },
         { name: "Arcane Surge",     stat: "INT", effect: "+25% dmg on 4+ AP abilities" },
@@ -1742,4 +1762,14 @@ function trait_potency_tier(trait_name) {
 
 function trait_potency_mult(trait_name) {
     return 1 + 0.10 * trait_potency_tier(trait_name);
+}
+
+// trait_maxhp_mult() - STATIC max-HP multiplier from equipped traits. Thick Skin
+// is a flat +10% max HP (scaled by its Vex potency) while equipped - NOT a per-
+// combat heal. Applied identically in obj_combat_controller/Create and in
+// out_of_combat_max_hp() so the floor/hub HP readout matches the in-fight bar.
+function trait_maxhp_mult() {
+    var _m = 1.0;
+    if (trait_active("Thick Skin")) _m *= 1 + 0.10 * trait_potency_mult("Thick Skin");
+    return _m;
 }

@@ -262,6 +262,61 @@ function combat_resolve_damage(base_damage, damage_type, target_armor, target_el
 }
 
 // ---------------------------------------------------------------------------
+// combat_living_enemies(combat_state)
+// Returns an array of the still-standing enemy combatants in turn order. The
+// same ordering the HP-bar grid and selected_target index use.
+// ---------------------------------------------------------------------------
+function combat_living_enemies(combat_state) {
+    var _out = [];
+    if (!is_struct(combat_state) || !variable_struct_exists(combat_state, "combatants")) return _out;
+    for (var _i = 0; _i < array_length(combat_state.combatants); _i++) {
+        var _c = combat_state.combatants[_i];
+        if (!_c.is_player && !_c.is_defeated) array_push(_out, _c);
+    }
+    return _out;
+}
+
+// ---------------------------------------------------------------------------
+// combat_estimate_hit(ability, caster, target)
+// APPROXIMATE single-hit damage preview for the "[Ability] -> ~X dmg" readout.
+// Mirrors the main terms of the real cast (base + damage-type stat scaling,
+// armor/resist mitigation, then the truly-flat weapon component) but deliberately
+// omits situational riders - crit, detonations, boon/curse multipliers, AoE
+// falloff - so it stays a stable "what it'll roughly land for" number. Returns
+// -1 for pure-utility abilities (base_damage 0) which deal no direct damage.
+// ---------------------------------------------------------------------------
+function combat_estimate_hit(ability, caster, target) {
+    if (!is_struct(ability) || !variable_struct_exists(ability, "base_damage")) return -1;
+    if (ability.base_damage <= 0) return -1;
+
+    var _dtype = variable_struct_exists(ability, "damage_type") ? ability.damage_type : 0;
+    var _dmg   = ability.base_damage;
+
+    if (variable_struct_exists(caster, "derived")) {
+        var _d = caster.derived;
+        if (_dtype == 0)      _dmg += _d.phys_dmg_bonus + _d.cha_dmg_bonus;
+        else if (_dtype == 1) _dmg += _d.elem_dmg_bonus + _d.cha_dmg_bonus;
+        else if (_dtype == 2) _dmg += _d.cha_dmg_bonus;
+        else if (_dtype == 3) _dmg += _d.elem_dmg_bonus + _d.cha_dmg_bonus;
+    }
+
+    var _armor  = (is_struct(target) && variable_struct_exists(target, "armor"))     ? target.armor     : 0;
+    var _resist = (is_struct(target) && variable_struct_exists(target, "el_resist")) ? target.el_resist : 0;
+    var _final  = combat_resolve_damage(_dmg, _dtype, _armor, _resist);
+
+    // Truly-flat weapon component (added post-mitigation in the real cast).
+    if (variable_struct_exists(caster, "derived")) {
+        var _ac = ability_attack_class(ability);
+        if (ability_class_is_melee(_ac) && variable_struct_exists(caster.derived, "melee_dmg_bonus"))
+            _final += caster.derived.melee_dmg_bonus;
+        else if (ability_class_is_ranged(_ac) && variable_struct_exists(caster.derived, "ranged_dmg_bonus"))
+            _final += caster.derived.ranged_dmg_bonus;
+    }
+
+    return max(1, round(_final));
+}
+
+// ---------------------------------------------------------------------------
 // combat_apply_damage(target_struct, damage)
 // Subtracts damage from target HP, clamping at 0.
 // Returns the actual damage dealt (accounting for the HP floor).
@@ -355,18 +410,13 @@ function combat_evasion_chance(target) {
 // combat_apply_start_traits(player)
 // Call at combat start after the player struct and secondary resources are
 // fully built. Applies all trait effects that modify starting combat state.
-//   Thick Skin     - +10% max HP (and current HP, capped at new max)
 //   Crimson Reserve- +20 Blood at combat start (Bloodwarden only)
 //   Phantom Step   - sets phantom_step_active flag; consumed on first hit
+// NOTE: Thick Skin is NOT here anymore - it is a STATIC +10% max HP folded into
+// player.max_HP at creation (see obj_combat_controller/Create + trait_maxhp_mult),
+// so it no longer acts as a per-combat heal that inflated HP each fight.
 // ---------------------------------------------------------------------------
 function combat_apply_start_traits(player) {
-    // Thick Skin: +10% maximum HP (scaled by Vex trait potency)
-    if (trait_active("Thick Skin")) {
-        var _bonus = floor(player.max_HP * 0.10 * trait_potency_mult("Thick Skin"));
-        player.max_HP += _bonus;
-        player.HP      = min(player.HP + _bonus, player.max_HP);
-    }
-
     // Crimson Reserve: Bloodwarden only - start combat with +20 Blood
     if (player.class_id == 1 && variable_struct_exists(player, "blood")
         && trait_active("Crimson Reserve")) {

@@ -97,12 +97,8 @@ if (naming_active) {
 if (portrait_active) {
     var _portrait_count = array_length(global.portrait_sprites);
 
-    if (keyboard_check_pressed(vk_left) || keyboard_check_pressed(ord("A"))) {
-        selected_portrait = (selected_portrait - 1 + _portrait_count) mod _portrait_count;
-    }
-    if (keyboard_check_pressed(vk_right) || keyboard_check_pressed(ord("D"))) {
-        selected_portrait = (selected_portrait + 1) mod _portrait_count;
-    }
+    if (nav_left())  selected_portrait = wrap_index(selected_portrait - 1, _portrait_count);
+    if (nav_right()) selected_portrait = wrap_index(selected_portrait + 1, _portrait_count);
 
     if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_space)) {
         global.chosen_portrait = selected_portrait;
@@ -120,15 +116,8 @@ if (portrait_active) {
 // -----------------------------------------------------------------------------
 var _class_changed = false;
 
-if (keyboard_check_pressed(vk_left) || keyboard_check_pressed(ord("A"))) {
-    selected_class = max(0, selected_class - 1);
-    _class_changed = true;
-}
-
-if (keyboard_check_pressed(vk_right) || keyboard_check_pressed(ord("D"))) {
-    selected_class = min(2, selected_class + 1);
-    _class_changed = true;
-}
+if (nav_left())  { selected_class = wrap_index(selected_class - 1, 3); _class_changed = true; }
+if (nav_right()) { selected_class = wrap_index(selected_class + 1, 3); _class_changed = true; }
 
 if (_class_changed) {
     // Rebuild working stats from the new class preset and reset the free pool
@@ -151,13 +140,8 @@ if (keyboard_check_pressed(ord("Q")) || keyboard_check_pressed(ord("E"))) {
 // -----------------------------------------------------------------------------
 // 2. STAT ROW SELECTION - up / down
 // -----------------------------------------------------------------------------
-if (keyboard_check_pressed(vk_up) || keyboard_check_pressed(ord("W"))) {
-    selected_stat = max(0, selected_stat - 1);
-}
-
-if (keyboard_check_pressed(vk_down) || keyboard_check_pressed(ord("S"))) {
-    selected_stat = min(5, selected_stat + 1);
-}
+if (nav_up())   selected_stat = wrap_index(selected_stat - 1, 6);
+if (nav_down()) selected_stat = wrap_index(selected_stat + 1, 6);
 
 
 // -----------------------------------------------------------------------------

@@ -142,6 +142,16 @@ player = {
     derived:    _derived,
 };
 
+// Thick Skin: STATIC +10% max HP while equipped (multiplier, NOT a heal). Folded
+// in BEFORE the HP carry-over clamp so the carried HP measures against the true
+// full max and out_of_combat_max_hp() (which applies the same mult) matches the
+// in-fight bar. Boon/curse max-HP mults stack on top below.
+var _trait_hpm = trait_maxhp_mult();
+if (_trait_hpm != 1.0) {
+    player.max_HP = max(1, round(player.max_HP * _trait_hpm));
+    player.HP     = player.max_HP;
+}
+
 // Restore HP carried from the previous room, or record full HP for room 1
 if (variable_global_exists("run_current_hp") && global.run_current_hp > 0) {
     player.HP = min(global.run_current_hp, player.max_HP);

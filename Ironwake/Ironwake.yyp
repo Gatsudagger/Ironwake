@@ -438,6 +438,7 @@
     {"id":{"name":"spr_stone_golem","path":"sprites/spr_stone_golem/spr_stone_golem.yy",},},
     {"id":{"name":"spr_target_cursor","path":"sprites/spr_target_cursor/spr_target_cursor.yy",},},
     {"id":{"name":"spr_title_background","path":"sprites/spr_title_background/spr_title_background.yy",},},
+    {"id":{"name":"spr_title_foreground","path":"sprites/spr_title_foreground/spr_title_foreground.yy",},},
     {"id":{"name":"spr_ui_frame","path":"sprites/spr_ui_frame/spr_ui_frame.yy",},},
     {"id":{"name":"spr_vault_crawler","path":"sprites/spr_vault_crawler/spr_vault_crawler.yy",},},
     {"id":{"name":"spr_vault_guardian","path":"sprites/spr_vault_guardian/spr_vault_guardian.yy",},},

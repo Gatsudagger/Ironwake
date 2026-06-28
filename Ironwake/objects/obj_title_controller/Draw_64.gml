@@ -25,14 +25,22 @@ if (scene_sprite != -1 && sprite_exists(scene_sprite) && _scene_a > 0.01) {
     if (_sw > 0 && _sh > 0) {
         // Cover by height (the vista is wider than 16:9) so the full sky/moon
         // shows and the extra width becomes horizontal pan room.
-        var _ssc      = GUI_H / _sh;
-        var _sdw      = _sw * _ssc;
-        var _overscan = max(0, _sdw - GUI_W);
-        var _sx       = -_overscan * _scene_pan;
-        draw_sprite_ext(scene_sprite, 0, _sx, 0, _ssc, _ssc, 0, c_white, _scene_a);
+        var _ssc0     = GUI_H / _sh;
+        var _sdw0     = _sw * _ssc0;
+        var _overscan = max(0, _sdw0 - GUI_W);
+        var _sx0      = -_overscan * _scene_pan;
+
+        // Subtle dolly-in toward the town: the vista scales up a little over the
+        // intro (scaled around screen centre) so the backdrop reads as approaching
+        // rather than static. Moon-glow tracking recomputed from the zoomed values.
+        var _z   = lerp(1.0, 1.12, intro_t);
+        var _ssc = _ssc0 * _z;
+        var _sx  = GUI_CX + (_sx0 - GUI_CX) * _z;
+        var _sy  = GUI_CY * (1 - _z);
+        draw_sprite_ext(scene_sprite, 0, _sx, _sy, _ssc, _ssc, 0, c_white, _scene_a);
 
         _moon_x = _sx + moon_fx * _sw * _ssc;
-        _moon_y =        moon_fy * _sh * _ssc;
+        _moon_y = _sy + moon_fy * _sh * _ssc;
         _moon_r = moon_fr * _sw * _ssc;
     }
 }
@@ -126,6 +134,50 @@ if (_scene_a > 0.01) {
     }
 
     draw_set_color(c_white);
+}
+
+// -----------------------------------------------------------------------
+// PARALLAX FOREGROUND LAYER (near treeline silhouette)
+// Drawn in FRONT of the vista + sky ambient (stars/moon/fog/shooting star) but
+// BEHIND the vignette and text crawl. A transparent-sky pine treeline clump is
+// tiled across the bottom and panned faster than the vista so it reads as a
+// closer plane -> depth. Alternate tiles are MIRRORED, which makes their edges
+// match exactly (seamless) and hides the single-clump repeat. Optional: no-ops
+// cleanly until spr_title_foreground is imported, so the intro never breaks.
+// -----------------------------------------------------------------------
+{
+    var _fg = asset_get_index("spr_title_foreground");
+    // Foreground fades OUT as we push through it on arrival (held solid until the
+    // title starts loading). screen_alpha covers the initial scene fade-in so the
+    // trees come up with the rest of the vista rather than popping in.
+    var _fg_t    = intro_t;
+    var _fg_fade = 1 - clamp((_fg_t - 0.45) / 0.45, 0, 1);   // solid <=0.45, gone by 0.9
+    var _fg_a    = screen_alpha * _fg_fade * 0.95;
+    if (_fg != -1 && sprite_exists(_fg) && _fg_a > 0.01) {
+        var _fw = sprite_get_width(_fg);
+        var _fh = sprite_get_height(_fg);
+        if (_fw > 0 && _fh > 0) {
+            // Dolly-forward: the treeline GROWS (gets closer) and SINKS below the
+            // camera as intro_t rises, so it reads as the viewer moving through the
+            // forest edge toward the town.
+            var _target_h = GUI_H * lerp(0.52, 1.15, _fg_t);
+            var _fsc      = _target_h / _fh;
+            var _tile_w   = _fw * _fsc;
+            var _fy       = GUI_H - _target_h + _target_h * 0.55 * _fg_t;
+            var _pan_px   = 420 * _fg_t;                 // gentle horizontal drift too
+
+            // Tile across the screen (+ a tile of margin each side). Even tiles
+            // normal, odd tiles mirrored so the seams match exactly (seamless).
+            var _first = floor(_pan_px / _tile_w) - 1;
+            var _last  = _first + ceil(GUI_W / _tile_w) + 2;
+            for (var _t = _first; _t <= _last; _t++) {
+                var _tx  = _t * _tile_w - _pan_px;
+                var _mir = ((_t & 1) == 0) ? 1 : -1;
+                var _ox  = (_mir == 1) ? _tx : _tx + _tile_w;
+                draw_sprite_ext(_fg, 0, _ox, _fy, _fsc * _mir, _fsc, 0, c_white, _fg_a);
+            }
+        }
+    }
 }
 
 // Atmospheric edge vignette

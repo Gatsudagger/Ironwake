@@ -575,14 +575,45 @@ function elem_element_name(element) {
     return element;
 }
 
+// dungeon_bias_school() - the current dungeon's elemental identity, used to lightly
+// bias loot toward thematically matching gear (a fire dungeon drops more Fire gear,
+// etc.). "" = no bias. Matches global.school_affix_pool school ids.
+function dungeon_bias_school() {
+    var _d = variable_global_exists("selected_dungeon") ? global.selected_dungeon : "";
+    switch (_d) {
+        case "scorched_depths": return "fire";
+        case "tundra_tomb":     return "frost";
+        case "ashen_vault":     return "void";   // ashen/wraith vault theme
+    }
+    return "";
+}
+
+// dungeon_bias_element() - the weapon elemental-affix element (burn/frost/shock)
+// favored by the current dungeon, or "" if the dungeon has no matching element.
+function dungeon_bias_element() {
+    switch (dungeon_bias_school()) {
+        case "fire":  return "burn";
+        case "frost": return "frost";
+        case "shock": return "shock";
+    }
+    return "";   // void/neutral dungeons: no matching weapon elemental affix
+}
+
 // roll_elemental_affix(rarity) - returns an elem_affix struct for a weapon of the
 // given rarity, or undefined if none rolled. Only uncommon/rare/epic roll, ~40%
-// chance (a notable but not guaranteed roll).
+// chance (a notable but not guaranteed roll). The element is biased toward the
+// current dungeon's element (fire dungeon -> more burn weapons, etc.).
 function roll_elemental_affix(rarity) {
     if (rarity < 1 || rarity > 3) return undefined;   // common/legendary: no rolled elem affix
     if (irandom(99) >= 40) return undefined;          // ~40% chance
     var _elements = ["burn", "frost", "shock"];
-    var _element  = _elements[irandom(2)];
+    var _bias     = dungeon_bias_element();
+    var _element;
+    if (_bias != "" && irandom(99) < 60) {
+        _element = _bias;                              // dungeon-themed ~60% of rolls
+    } else {
+        _element = _elements[irandom(2)];
+    }
     var _fam      = elem_affix_family(_element);
     if (_fam == undefined) return undefined;
     return {
@@ -749,6 +780,12 @@ function out_of_combat_max_hp() {
     }
     var _max = stats_derive(_sv).HP + _bonus.bonus_max_hp;
 
+    // Static trait max-HP multiplier (Thick Skin) - applied FIRST, exactly as
+    // obj_combat_controller/Create_0 folds it in before the boon/curse mults, so
+    // the floor/hub readout matches the in-fight max.
+    var _tm = trait_maxhp_mult();
+    if (_tm != 1.0) _max = max(1, round(_max * _tm));
+
     // Apply the SAME run boon/curse max-HP multipliers combat does (Ironhide/Glass
     // Cannon, then Frail/Ruin/Devil's Pact), each rounded in sequence exactly as
     // obj_combat_controller/Create_0 - otherwise the floor/hub HP readout disagrees
@@ -758,6 +795,44 @@ function out_of_combat_max_hp() {
     var _cm = curse_maxhp_mult();
     if (_cm != 1.0) _max = max(1, round(_max * _cm));
     return _max;
+}
+
+// ---------------------------------------------------------------------------
+// out_of_combat_dmg_derived() - the damage-bonus view used to PREVIEW ability
+// damage in the character menu when no combat player exists. Rebuilds the
+// equipment-adjusted stats (same assembly as out_of_combat_max_hp) and returns a
+// struct shaped like player.derived's damage fields, so combat_estimate_hit() can
+// estimate "current damage with equipment" out of combat too.
+// ---------------------------------------------------------------------------
+function out_of_combat_dmg_derived() {
+    var _empty = { phys_dmg_bonus: 0, elem_dmg_bonus: 0, cha_dmg_bonus: 0,
+                   melee_dmg_bonus: 0, ranged_dmg_bonus: 0 };
+    if (!variable_global_exists("chosen_stats") || is_undefined(global.chosen_stats)) return _empty;
+    var _b  = global.chosen_stats;
+    var _sv = {
+        class_id: _b.class_id, class_name: _b.class_name,
+        STR: _b.STR, DEX: _b.DEX, CON: _b.CON, INT: _b.INT, WIS: _b.WIS, CHA: _b.CHA,
+        free_points: _b.free_points,
+    };
+    var _bonus = apply_equipment_stats(_sv);   // mutates _sv stats, returns equip bonus
+    if (variable_global_exists("run_stat_bonuses")) {
+        _sv.STR += global.run_stat_bonuses.STR; _sv.DEX += global.run_stat_bonuses.DEX;
+        _sv.CON += global.run_stat_bonuses.CON; _sv.INT += global.run_stat_bonuses.INT;
+        _sv.WIS += global.run_stat_bonuses.WIS; _sv.CHA += global.run_stat_bonuses.CHA;
+    }
+    if (variable_global_exists("perm_str_bonus")) {
+        _sv.STR += global.perm_str_bonus; _sv.DEX += global.perm_dex_bonus;
+        _sv.CON += global.perm_con_bonus; _sv.INT += global.perm_int_bonus;
+        _sv.WIS += global.perm_wis_bonus; _sv.CHA += global.perm_cha_bonus;
+    }
+    var _d = stats_derive(_sv);
+    return {
+        phys_dmg_bonus:   _d.phys_dmg_bonus,
+        elem_dmg_bonus:   _d.elem_dmg_bonus,
+        cha_dmg_bonus:    _d.cha_dmg_bonus,
+        melee_dmg_bonus:  variable_struct_exists(_bonus, "melee_dmg_bonus")  ? _bonus.melee_dmg_bonus  : 0,
+        ranged_dmg_bonus: variable_struct_exists(_bonus, "ranged_dmg_bonus") ? _bonus.ranged_dmg_bonus : 0,
+    };
 }
 
 // ---------------------------------------------------------------------------
@@ -901,9 +976,16 @@ function roll_affixes(rarity, count, exclude_stat_names, slot = "", base_name = 
         _tries++;
         var _dup = false;
 
-        // School affix branch (caster slots only).
+        // School affix branch (caster slots only). The school is biased toward the
+        // current dungeon's school (fire dungeon -> more Fire-damage caster gear).
         if (array_length(_school_pool) > 0 && irandom(99) < SCHOOL_AFFIX_CHANCE) {
             var _sf = _school_pool[irandom(array_length(_school_pool) - 1)];
+            var _bias_school = dungeon_bias_school();
+            if (_bias_school != "" && irandom(99) < 55) {
+                for (var _bsi = 0; _bsi < array_length(_school_pool); _bsi++) {
+                    if (_school_pool[_bsi].school == _bias_school) { _sf = _school_pool[_bsi]; break; }
+                }
+            }
             for (var _di = 0; _di < array_length(_used); _di++) {
                 if (_used[_di] == _sf.stat_name) { _dup = true; break; }
             }
@@ -1131,6 +1213,136 @@ function consumable_group_label(group) {
 }
 
 // ---------------------------------------------------------------------------
+// CONSUMABLE PACK CARRY CAP
+// The run pack (global.consumable_inventory) holds a limited number of
+// consumables. Base 10; the universal Pack Rat trait raises it +5 per tier
+// (base equip = +5, then +5 per potency tier, capped at +15) -> 10/15/20/25.
+// Overflow auto-deposits to the stash at run start; mid-run pickups past the
+// cap go through a discard prompt (see global.consumable_overflow).
+// ---------------------------------------------------------------------------
+function consumable_carry_cap() {
+    var _cap = 10;
+    if (trait_active("Pack Rat")) {
+        // +5 for owning it, +5 per potency tier, total bonus capped at +15.
+        var _bonus = 5 + 5 * min(trait_potency_tier("Pack Rat"), 2);
+        _cap += _bonus;
+    }
+    return _cap;
+}
+
+// consumable_pack_full() - true when the run pack is at/over its carry cap.
+function consumable_pack_full() {
+    if (!variable_global_exists("consumable_inventory")) return false;
+    return array_length(global.consumable_inventory) >= consumable_carry_cap();
+}
+
+// consumable_award(item) - mid-run pickup router. Adds to the pack when there's
+// room; otherwise queues the item in global.consumable_overflow for the post-
+// combat discard prompt and returns false (caller can tag its log line).
+function consumable_award(item) {
+    if (!variable_global_exists("consumable_inventory")) global.consumable_inventory = [];
+    if (!variable_global_exists("consumable_overflow"))  global.consumable_overflow  = [];
+    if (array_length(global.consumable_inventory) < consumable_carry_cap()) {
+        array_push(global.consumable_inventory, item);
+        return true;
+    }
+    array_push(global.consumable_overflow, item);
+    return false;
+}
+
+// consumable_enforce_cap_to_stash() - trims the pack down to the carry cap,
+// pushing any excess into the consumable stash (oldest-first stays carried).
+// Called at run start so a pack overstuffed in the hub is normalized, and on
+// return so nothing is ever stuck over-cap.
+function consumable_enforce_cap_to_stash() {
+    if (!variable_global_exists("consumable_inventory")) global.consumable_inventory = [];
+    if (!variable_global_exists("consumable_stash"))     global.consumable_stash     = [];
+    var _cap = consumable_carry_cap();
+    while (array_length(global.consumable_inventory) > _cap) {
+        var _last = array_length(global.consumable_inventory) - 1;
+        array_push(global.consumable_stash, global.consumable_inventory[_last]);
+        array_delete(global.consumable_inventory, _last, 1);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// MENU NAVIGATION - hold-to-repeat input
+// key_nav(key) returns true on the initial press AND, while the key stays held,
+// repeats on a fixed cadence after a short initial delay. This gives every menu
+// "hold to keep moving" without each site tracking its own timer. nav_up/down/
+// left/right fold the WASD + arrow pairs together. Pair with wrap-around cursor
+// math (mod) at the call site for full QoL navigation.
+// ---------------------------------------------------------------------------
+function key_nav(_key) {
+    if (!variable_global_exists("nav_timers")) global.nav_timers = {};
+    var _k = string(_key);
+    if (keyboard_check_pressed(_key)) {
+        variable_struct_set(global.nav_timers, _k, 0);
+        return true;
+    }
+    if (keyboard_check(_key)) {
+        var _t = (variable_struct_exists(global.nav_timers, _k)
+                  ? variable_struct_get(global.nav_timers, _k) : 0) + 1;
+        variable_struct_set(global.nav_timers, _k, _t);
+        var _initial_delay = 22;   // ~0.37s held before auto-repeat kicks in
+        var _repeat_every  = 5;     // then one step every 5 frames (~12/sec)
+        return (_t >= _initial_delay && ((_t - _initial_delay) mod _repeat_every) == 0);
+    }
+    variable_struct_set(global.nav_timers, _k, 0);
+    return false;
+}
+function nav_up()    { var _a = key_nav(vk_up);    var _b = key_nav(ord("W")); return _a || _b; }
+function nav_down()  { var _a = key_nav(vk_down);  var _b = key_nav(ord("S")); return _a || _b; }
+function nav_left()  { var _a = key_nav(vk_left);  var _b = key_nav(ord("A")); return _a || _b; }
+function nav_right() { var _a = key_nav(vk_right); var _b = key_nav(ord("D")); return _a || _b; }
+
+// wrap_index(i, n) - cursor wrap so top<->bottom (and left<->right) cycle.
+function wrap_index(i, n) {
+    if (n <= 0) return 0;
+    return ((i mod n) + n) mod n;
+}
+
+// ---------------------------------------------------------------------------
+// CONSUMABLE OVERFLOW DISCARD PROMPT
+// When the pack is full mid-run and another consumable is picked up, the new
+// item is queued in global.consumable_overflow. This modal resolves the queue
+// one item at a time: pick a held consumable to discard (and take the new one),
+// or leave the new one behind. Shared by the combat and floor controllers.
+// ---------------------------------------------------------------------------
+function consumable_overflow_pending() {
+    return variable_global_exists("consumable_overflow")
+        && array_length(global.consumable_overflow) > 0;
+}
+
+// Resolve input for the overflow modal. Returns true while still open.
+function consumable_overflow_step() {
+    if (!consumable_overflow_pending()) return false;
+    if (!variable_global_exists("consumable_overflow_cursor")) global.consumable_overflow_cursor = 0;
+
+    var _groups = consumables_grouped();
+    var _options = array_length(_groups) + 1;   // +1 = "Leave it behind"
+    var _cur = global.consumable_overflow_cursor;
+
+    if (nav_up())   _cur = wrap_index(_cur - 1, _options);
+    if (nav_down()) _cur = wrap_index(_cur + 1, _options);
+    global.consumable_overflow_cursor = _cur;
+
+    if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)) {
+        var _new = global.consumable_overflow[0];
+        if (_cur < array_length(_groups)) {
+            // Discard one of the chosen held consumable, take the new one.
+            var _idx = _groups[_cur].first_index;
+            array_delete(global.consumable_inventory, _idx, 1);
+            array_push(global.consumable_inventory, _new);
+        }
+        // else: "Leave it behind" - the new item is simply dropped.
+        array_delete(global.consumable_overflow, 0, 1);
+        global.consumable_overflow_cursor = 0;
+    }
+    return consumable_overflow_pending();
+}
+
+// ---------------------------------------------------------------------------
 // equip_slot_index(slot_name)
 // Maps a lowercase slot name to its index in global.inventory[0..9].
 // Returns -1 for unknown names.
@@ -1153,6 +1365,21 @@ function equip_slot_index(slot_name) {
 
 // Number of equip positions in global.inventory (0..EQUIP_SLOT_COUNT-1).
 #macro EQUIP_SLOT_COUNT 10
+
+// equip_display_order() - the VISUAL top-to-bottom order of equip positions in
+// the Equipment tab, as inventory indices. Ring 2 (inv idx 9) is pulled up to sit
+// directly under Ring 1 (idx 7); the ranged weapon (idx 8) follows. The stored
+// inventory indices are UNCHANGED (no save migration) - only the display order.
+function equip_display_order() {
+    return [0, 1, 2, 3, 4, 5, 6, 7, 9, 8];
+}
+
+// equip_display_to_inv(pos) - map a visual list row (0..9) to its inventory index.
+function equip_display_to_inv(pos) {
+    var _o = equip_display_order();
+    if (pos < 0 || pos >= array_length(_o)) return pos;
+    return _o[pos];
+}
 
 // equip_position_item_slot(idx) - the item `.slot` type each equip POSITION accepts.
 // Ring 2 (idx 9) is a second ring position, so it accepts items whose slot is "ring".
@@ -1278,7 +1505,7 @@ function weapon_required_stat(item) {
     if (string_pos("wand", _n) > 0 || string_pos("focus", _n) > 0 || string_pos("scepter", _n) > 0
         || string_pos("staff", _n) > 0 || string_pos("rod", _n) > 0) return "INT";
     if (string_pos("sickle", _n) > 0 || string_pos("dagger", _n) > 0 || string_pos("knife", _n) > 0
-        || string_pos("blade", _n) > 0) return "DEX";
+        || string_pos("blade", _n) > 0 || string_pos("serpent", _n) > 0 || string_pos("reach", _n) > 0) return "DEX";
     return "STR";
 }
 
@@ -1629,8 +1856,8 @@ function handle_enemy_drops(enemy_type) {
         if (!curse_blocks_consumables() && irandom(99) < _cons_chance) {   // Famine curse: no consumable drops
             var _c = roll_consumable_weighted(global.consumables_standard);
             array_push(global.run_items_found, _c);
-            array_push(global.consumable_inventory, _c);
-            return _c.name + " [Consumable]" + _rune_suffix;
+            var _fit = consumable_award(_c);
+            return _c.name + " [Consumable]" + (_fit ? "" : " (PACK FULL)") + _rune_suffix;
         }
         // 4% equipment drop - rarity weights scale with awakening (drop_weights).
         if (irandom(99) < 4) {
@@ -1648,8 +1875,8 @@ function handle_enemy_drops(enemy_type) {
         if (!curse_blocks_consumables() && irandom(99) < _elite_cons_chance) {   // Famine curse: no consumable drops
             var _c = roll_consumable_weighted(global.consumables_elite);
             array_push(global.run_items_found, _c);
-            array_push(global.consumable_inventory, _c);
-            return _c.name + " [Consumable]" + _rune_suffix;
+            var _fit = consumable_award(_c);
+            return _c.name + " [Consumable]" + (_fit ? "" : " (PACK FULL)") + _rune_suffix;
         }
         // 28% equipment drop - rarity weights scale with awakening (drop_weights).
         if (irandom(99) < 28) {
@@ -1671,8 +1898,8 @@ function handle_enemy_drops(enemy_type) {
         if (!curse_blocks_consumables() && irandom(99) < 50) {
             var _c = roll_consumable_weighted(global.consumables_elite);
             array_push(global.run_items_found, _c);
-            array_push(global.consumable_inventory, _c);
-            _result += " + " + _c.name;
+            var _fit = consumable_award(_c);
+            _result += " + " + _c.name + (_fit ? "" : " (PACK FULL)");
         }
         return _result + _rune_suffix;
     }
@@ -1909,6 +2136,13 @@ function rune_random(tier) {
         array_push(_pool, _d.id);
     }
     if (array_length(_pool) == 0) return rune_make("vitality", tier);
+    // Elemental dungeons lean toward elemental-themed runes (Ember = +elemental
+    // damage, Warding = +elemental resist). Runes aren't per-element, so this is
+    // the closest thematic bias available.
+    if (dungeon_bias_element() != "" && irandom(99) < 35) {
+        var _themed = ["ember", "warding"];
+        return rune_make(_themed[irandom(array_length(_themed) - 1)], tier);
+    }
     return rune_make(_pool[irandom(array_length(_pool) - 1)], tier);
 }
 
@@ -3135,8 +3369,8 @@ function item_picker_step() {
         return;
     }
 
-    if (keyboard_check_pressed(vk_up)   || keyboard_check_pressed(ord("W"))) { _p.cursor = max(0, _p.cursor - 1);      _p.confirm = false; }
-    if (keyboard_check_pressed(vk_down) || keyboard_check_pressed(ord("S"))) { _p.cursor = min(_n - 1, _p.cursor + 1); _p.confirm = false; }
+    if (nav_up())   { _p.cursor = wrap_index(_p.cursor - 1, _n); _p.confirm = false; }
+    if (nav_down()) { _p.cursor = wrap_index(_p.cursor + 1, _n); _p.confirm = false; }
 
     // Mouse hover moves the cursor so the detail pane (full description) follows the
     // pointer. Gated on the mouse actually MOVING so it doesn't fight keyboard nav, and
@@ -3371,8 +3605,8 @@ function event_apply_effects(fx) {
         var _pool = (fx.consumable == "elite") ? global.consumables_elite : global.consumables_standard;
         var _c = roll_consumable_weighted(_pool);
         array_push(global.run_items_found, _c);
-        array_push(global.consumable_inventory, _c);
-        array_push(_sum, _c.name);
+        var _fit = consumable_award(_c);
+        array_push(_sum, _c.name + (_fit ? "" : " (pack full)"));
     }
     // Rune dust
     if (variable_struct_exists(fx, "dust") && fx.dust > 0) {
@@ -3897,12 +4131,12 @@ function audio_settings_handle_input() {
     }
 
     // Rows: 0 Music, 1 SFX, 2 Fullscreen, 3 Tutorial Tips, 4 Reset Tutorial.
-    if (keyboard_check_pressed(vk_up)   || keyboard_check_pressed(ord("W"))) global.settings_cursor--;
-    if (keyboard_check_pressed(vk_down) || keyboard_check_pressed(ord("S"))) global.settings_cursor++;
+    if (nav_up())   global.settings_cursor = wrap_index(global.settings_cursor - 1, 5);
+    if (nav_down()) global.settings_cursor = wrap_index(global.settings_cursor + 1, 5);
     global.settings_cursor = clamp(global.settings_cursor, 0, 4);
 
-    var _left    = keyboard_check_pressed(vk_left)  || keyboard_check_pressed(ord("A"));
-    var _right   = keyboard_check_pressed(vk_right) || keyboard_check_pressed(ord("D"));
+    var _left    = nav_left();
+    var _right   = nav_right();
     var _confirm = keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_return)
                 || keyboard_check_pressed(vk_space);
 
@@ -3971,8 +4205,8 @@ function pause_menu_step() {
     if (!global.pause_open) return false;
 
     var _opt_count = 3;   // 0 Resume, 1 Settings, 2 Quit to Title
-    if (keyboard_check_pressed(vk_up)   || keyboard_check_pressed(ord("W"))) global.pause_cursor--;
-    if (keyboard_check_pressed(vk_down) || keyboard_check_pressed(ord("S"))) global.pause_cursor++;
+    if (nav_up())   global.pause_cursor--;
+    if (nav_down()) global.pause_cursor++;
     global.pause_cursor = ((global.pause_cursor mod _opt_count) + _opt_count) mod _opt_count;
 
     // Mouse hover selects a row (geometry MUST match ui_draw_pause_menu).

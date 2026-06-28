@@ -732,6 +732,9 @@ ui_draw_character_menu();
 // Item-sacrifice picker modal - topmost (Shrine item tribute)
 ui_draw_item_picker();
 
+// Consumable overflow discard prompt (pack-full pickup)
+ui_draw_consumable_overflow();
+
 // Pause / Esc menu + its Settings sub-screen (drawn here since the floor doesn't
 // otherwise host the settings overlay during a run)
 if (variable_global_exists("settings_open") && global.settings_open) ui_draw_settings_overlay();

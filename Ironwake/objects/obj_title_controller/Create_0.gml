@@ -58,6 +58,10 @@ slot_previews[2] = get_slot_preview(2);
 scene_sprite = asset_get_index("spr_title_background");
 scene_alpha  = 0.0;     // background fade-in (ramps to 0.5 in cutscene, 1.0 at title)
 scene_pan    = 0.0;     // 0..1 horizontal pan progress across the vista's overscan
+// intro_t: 0..1 "dolly forward" progress for the parallax. Creeps up through the
+// cutscene, then accelerates as the title loads. Drives the foreground treeline
+// (grows + sinks + fades as you push through it) and a subtle vista zoom-in.
+intro_t = 0.0;
 
 // Twinkling stars scattered across the upper sky band.
 sky_stars = [];

@@ -52,15 +52,15 @@ if (instance_exists(obj_game_controller)) {
         var _dungeon_keys = ["ashen_vault", "scorched_depths", "tundra_tomb"];
 
         // A/D navigate dungeons - wraps cyclically through all 3
-        if (keyboard_check_pressed(ord("A")) || keyboard_check_pressed(vk_left)) {
-            _gc_dsel.dungeon_select_cursor = (_gc_dsel.dungeon_select_cursor - 1 + 3) mod 3;
+        if (nav_left()) {
+            _gc_dsel.dungeon_select_cursor = wrap_index(_gc_dsel.dungeon_select_cursor - 1, 3);
             var _dk = _dungeon_keys[_gc_dsel.dungeon_select_cursor];
             var _max_asc = variable_global_exists("dungeon_ascendance_unlocked")
                 ? variable_struct_get(global.dungeon_ascendance_unlocked, _dk) : 0;
             _gc_dsel.dungeon_select_asc = min(_gc_dsel.dungeon_select_asc, _max_asc);
         }
-        if (keyboard_check_pressed(ord("D")) || keyboard_check_pressed(vk_right)) {
-            _gc_dsel.dungeon_select_cursor = (_gc_dsel.dungeon_select_cursor + 1) mod 3;
+        if (nav_right()) {
+            _gc_dsel.dungeon_select_cursor = wrap_index(_gc_dsel.dungeon_select_cursor + 1, 3);
             var _dk = _dungeon_keys[_gc_dsel.dungeon_select_cursor];
             var _max_asc = variable_global_exists("dungeon_ascendance_unlocked")
                 ? variable_struct_get(global.dungeon_ascendance_unlocked, _dk) : 0;
@@ -214,12 +214,8 @@ if (instance_exists(obj_game_controller)) {
         if (_gc_ld.loadout_tab == 0) {
             var _ld_max_cur = _ld_pool_sz - 1 + (_ld_sel_cnt == _loadout_max ? 1 : 0);
 
-            if (keyboard_check_pressed(vk_up)   || keyboard_check_pressed(ord("W"))) {
-                _gc_ld.loadout_cursor = max(0, _gc_ld.loadout_cursor - 1);
-            }
-            if (keyboard_check_pressed(vk_down) || keyboard_check_pressed(ord("S"))) {
-                _gc_ld.loadout_cursor = min(_ld_max_cur, _gc_ld.loadout_cursor + 1);
-            }
+            if (nav_up())   _gc_ld.loadout_cursor = wrap_index(_gc_ld.loadout_cursor - 1, _ld_max_cur + 1);
+            if (nav_down()) _gc_ld.loadout_cursor = wrap_index(_gc_ld.loadout_cursor + 1, _ld_max_cur + 1);
 
             // Space or Enter at confirm row: commit and enter dungeon
             if ((keyboard_check_pressed(vk_space) || keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter))
@@ -294,12 +290,8 @@ if (instance_exists(obj_game_controller)) {
             var _tr_avail_cnt = array_length(_tr_avail);
             var _tr_sel_cnt   = array_length(_gc_ld.traits_selected);
 
-            if (keyboard_check_pressed(vk_up)   || keyboard_check_pressed(ord("W"))) {
-                _gc_ld.traits_cursor = max(0, _gc_ld.traits_cursor - 1);
-            }
-            if (keyboard_check_pressed(vk_down) || keyboard_check_pressed(ord("S"))) {
-                _gc_ld.traits_cursor = min(max(0, _tr_avail_cnt - 1), _gc_ld.traits_cursor + 1);
-            }
+            if (nav_up())   _gc_ld.traits_cursor = wrap_index(_gc_ld.traits_cursor - 1, _tr_avail_cnt);
+            if (nav_down()) _gc_ld.traits_cursor = wrap_index(_gc_ld.traits_cursor + 1, _tr_avail_cnt);
 
             if ((keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter))
                 && _tr_avail_cnt > 0) {
@@ -445,12 +437,8 @@ if (instance_exists(obj_game_controller)) {
 
     // Perm alloc input - runs when open; blocks everything below
     if (_gc_hub.perm_alloc_open) {
-        if (keyboard_check_pressed(vk_up)   || keyboard_check_pressed(ord("W"))) {
-            _gc_hub.perm_alloc_index = max(0, _gc_hub.perm_alloc_index - 1);
-        }
-        if (keyboard_check_pressed(vk_down) || keyboard_check_pressed(ord("S"))) {
-            _gc_hub.perm_alloc_index = min(5, _gc_hub.perm_alloc_index + 1);
-        }
+        if (nav_up())   _gc_hub.perm_alloc_index = wrap_index(_gc_hub.perm_alloc_index - 1, 6);
+        if (nav_down()) _gc_hub.perm_alloc_index = wrap_index(_gc_hub.perm_alloc_index + 1, 6);
         if ((keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)) && global.pending_perm_points > 0) {
             var _perm_stat_keys = ["perm_str_bonus", "perm_dex_bonus", "perm_con_bonus",
                                    "perm_int_bonus", "perm_wis_bonus", "perm_cha_bonus"];
@@ -499,10 +487,8 @@ if (keyboard_check_pressed(ord("H"))) {
 }
 
 if (show_history) {
-    if (keyboard_check_pressed(vk_up) || keyboard_check_pressed(ord("W"))) {
-        history_scroll = max(0, history_scroll - 1);
-    }
-    if (keyboard_check_pressed(vk_down) || keyboard_check_pressed(ord("S"))) {
+    if (nav_up())   history_scroll = max(0, history_scroll - 1);
+    if (nav_down()) {
         var _max_scroll = max(0, array_length(global.run_history) - 5);
         history_scroll = min(_max_scroll, history_scroll + 1);
     }
@@ -536,13 +522,13 @@ if (show_gallery) {
     var _gal_visible  = 12;
     var _gal_max_scroll = max(0, _gal_count - _gal_visible);
 
-    if (keyboard_check_pressed(vk_up) || keyboard_check_pressed(ord("W"))) {
+    if (nav_up()) {
         if (gallery_cursor > 0) {
             gallery_cursor--;
             if (gallery_cursor < gallery_scroll) gallery_scroll = gallery_cursor;
         }
     }
-    if (keyboard_check_pressed(vk_down) || keyboard_check_pressed(ord("S"))) {
+    if (nav_down()) {
         if (gallery_cursor < _gal_count - 1) {
             gallery_cursor++;
             if (gallery_cursor >= gallery_scroll + _gal_visible) gallery_scroll = gallery_cursor - _gal_visible + 1;
@@ -659,15 +645,8 @@ if (show_gallery) {
 // 1. NPC LIST NAVIGATION
 // Clearing the notification on any navigation keypress keeps the UI clean.
 // -----------------------------------------------------------------------------
-if (keyboard_check_pressed(vk_up) || keyboard_check_pressed(ord("W"))) {
-    selected_npc = max(0, selected_npc - 1);
-    notification = "";
-}
-
-if (keyboard_check_pressed(vk_down) || keyboard_check_pressed(ord("S"))) {
-    selected_npc = min(6, selected_npc + 1);
-    notification = "";
-}
+if (nav_up())   { selected_npc = wrap_index(selected_npc - 1, 7); notification = ""; }
+if (nav_down()) { selected_npc = wrap_index(selected_npc + 1, 7); notification = ""; }
 
 
 // -----------------------------------------------------------------------------
