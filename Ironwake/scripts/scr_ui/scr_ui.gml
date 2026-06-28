@@ -4654,7 +4654,7 @@ function ui_draw_stash_screen() {
             _gc.comparison_item     = _st_hover;
             _gc.comparison_equipped = undefined;
             if (variable_global_exists("inventory")) {
-                var _cmp_si = equip_slot_index(_st_hover.slot);
+                var _cmp_si = comparison_target_index(_st_hover);   // ring-aware target
                 if (_cmp_si >= 0 && _cmp_si < array_length(global.inventory)) {
                     _gc.comparison_equipped = global.inventory[_cmp_si];
                 }

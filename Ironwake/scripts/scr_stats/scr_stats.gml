@@ -1173,6 +1173,26 @@ function equip_position_item_slot(idx) {
     }
 }
 
+// comparison_target_index(item) - which equipped POSITION to compare a hovered item
+// against. Same as equip_slot_index for single-slot items, but for rings (two
+// positions, 7 + 9) it targets the slot the player would actually fill: the ring
+// position currently selected in the equipment tab, else the first EMPTY ring slot
+// (so the panel shows the true gain), else Ring 1. Returns -1 for non-equipment.
+function comparison_target_index(item) {
+    if (!is_struct(item) || !variable_struct_exists(item, "slot")) return -1;
+    var _idx = equip_slot_index(item.slot);
+    if (item.slot == "ring" && variable_global_exists("inventory")) {
+        if (instance_exists(obj_game_controller)) {
+            var _sel = instance_find(obj_game_controller, 0).equip_slot_selected;
+            if (_sel == 7 || _sel == 9) return _sel;   // honor the targeted ring position
+        }
+        if (array_length(global.inventory) > 7 && global.inventory[7] == undefined) return 7;
+        if (array_length(global.inventory) > 9 && global.inventory[9] == undefined) return 9;
+        return 7;
+    }
+    return _idx;
+}
+
 // ---------------------------------------------------------------------------
 // apply_equipment_stats(stats_struct)
 // Applies all equipped items' stat bonuses to stats_struct IN PLACE.

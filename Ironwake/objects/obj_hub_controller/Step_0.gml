@@ -624,7 +624,7 @@ if (show_gallery) {
                         _gcgc.comparison_item     = _gcit;
                         _gcgc.comparison_equipped = undefined;
                         if (variable_global_exists("inventory")) {
-                            var _gcsi = equip_slot_index(_gcit.slot);
+                            var _gcsi = comparison_target_index(_gcit);   // ring-aware target
                             if (_gcsi >= 0 && _gcsi < array_length(global.inventory)) {
                                 _gcgc.comparison_equipped = global.inventory[_gcsi];
                             }
