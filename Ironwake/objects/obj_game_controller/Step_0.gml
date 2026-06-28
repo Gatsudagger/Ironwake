@@ -1801,9 +1801,11 @@ if (menu_tab == 3) {
         // Use selected item
         if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)) {
             var _can_use = true;
-            // AP-restore items ("energy") cost no AP, so they stay usable at 0 AP.
-            var _sel_is_ap = (_cons_cnt > 0 && consumable_submenu_cursor < _cons_cnt
-                && _cgroups[consumable_submenu_cursor].item.effect_type == "energy");
+            // AP-restore items ("energy") and the resource+AP brew ("resource_ap") cost
+            // no AP, so they stay usable at 0 AP.
+            var _sel_et    = (_cons_cnt > 0 && consumable_submenu_cursor < _cons_cnt)
+                ? _cgroups[consumable_submenu_cursor].item.effect_type : "";
+            var _sel_is_ap = (_sel_et == "energy" || _sel_et == "resource_ap");
             if (instance_exists(obj_combat_controller)) {
                 var _ctrl_c = instance_find(obj_combat_controller, 0);
                 if (!_ctrl_c.player_turn && items_used_this_turn >= 1) {
@@ -1844,10 +1846,37 @@ if (menu_tab == 3) {
                         array_push(_ctrl_c.combat_log, "Used " + _item.name + (_cl > 0
                             ? " - cleared " + string(_cl) + " negative effect(s)!"
                             : " - no negative effects to clear."));
+                    } else if (_item.effect_type == "shield") {
+                        if (!variable_struct_exists(_player, "shield_hp")) _player.shield_hp = 0;
+                        _player.shield_hp += _item.effect_value;
+                        array_push(_ctrl_c.combat_log, "Used " + _item.name
+                            + " - gained a " + string(_item.effect_value) + "-point shield!");
+                    } else if (_item.effect_type == "heal_dot") {
+                        if (!variable_struct_exists(_player, "status_effects")) _player.status_effects = [];
+                        array_push(_player.status_effects, {
+                            name: _item.name, kind: "regen", effect_type: "heal_dot",
+                            effect_value: _item.effect_value, duration: 3, element: ""
+                        });
+                        array_push(_ctrl_c.combat_log, "Used " + _item.name + " - regenerating "
+                            + string(_item.effect_value) + " HP/turn for 3 turns.");
+                    } else if (_item.effect_type == "resource_ap") {
+                        // Ley Battery: +N class secondary resource AND +1 burst AP (free).
+                        var _ley_res2   = _item.effect_value;
+                        var _ley_label2 = "resource";
+                        if (variable_struct_exists(_player, "souls")) {
+                            _player.souls = min(_player.souls_max, _player.souls + _ley_res2); _ley_label2 = "Souls";
+                        } else if (variable_struct_exists(_player, "blood")) {
+                            _player.blood = min(_player.blood_max, _player.blood + _ley_res2); _ley_label2 = "Blood";
+                        } else if (variable_struct_exists(_player, "preparation")) {
+                            _player.preparation = min(_player.preparation_max, _player.preparation + _ley_res2); _ley_label2 = "Preparation";
+                        }
+                        _player.energy += 1;
+                        array_push(_ctrl_c.combat_log, "Used " + _item.name
+                            + " - +" + string(_ley_res2) + " " + _ley_label2 + " and +1 AP!");
                     }
                     // AP-restore items are free; everything else costs 1 AP on your turn.
                     if (_ctrl_c.player_turn) {
-                        if (_item.effect_type != "energy") {
+                        if (_item.effect_type != "energy" && _item.effect_type != "resource_ap") {
                             _ctrl_c.player.energy -= 1;
                             array_push(_ctrl_c.combat_log, "  [-1 AP]");
                         }

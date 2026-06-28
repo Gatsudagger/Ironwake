@@ -297,8 +297,9 @@ if (player_turn) {
                 // Map the grouped row back to a real inventory index (the first instance).
                 var _real_idx = _qgroups[_use_idx].first_index;
                 var _citem = _qgroups[_use_idx].item;
-                // AP-restore items ("energy") cost no AP, so they work at 0 AP too.
-                var _q_is_ap = (_citem.effect_type == "energy");
+                // AP-restore items ("energy") and the resource+AP brew ("resource_ap")
+                // cost no AP, so they work at 0 AP too (and their +AP is a real net gain).
+                var _q_is_ap = (_citem.effect_type == "energy" || _citem.effect_type == "resource_ap");
                 if (player.energy < 1 && !_q_is_ap) {
                     array_push(combat_log, "Need 1 AP to use a consumable.");
                 } else {
@@ -350,6 +351,21 @@ if (player_turn) {
                         player.shield_hp += _citem.effect_value;
                         array_push(combat_log, "Used " + _citem.name
                             + " - gained a " + string(_citem.effect_value) + "-point shield!");
+                    } else if (_citem.effect_type == "resource_ap") {
+                        // Ley Battery: restore the class's secondary resource AND grant +1
+                        // burst AP (free to use). Distinct from Adrenaline Vial (pure AP).
+                        var _ley_res   = _citem.effect_value;
+                        var _ley_label = "resource";
+                        if (variable_struct_exists(player, "souls")) {
+                            player.souls = min(player.souls_max, player.souls + _ley_res); _ley_label = "Souls";
+                        } else if (variable_struct_exists(player, "blood")) {
+                            player.blood = min(player.blood_max, player.blood + _ley_res); _ley_label = "Blood";
+                        } else if (variable_struct_exists(player, "preparation")) {
+                            player.preparation = min(player.preparation_max, player.preparation + _ley_res); _ley_label = "Preparation";
+                        }
+                        player.energy += 1;
+                        array_push(combat_log, "Used " + _citem.name
+                            + " - +" + string(_ley_res) + " " + _ley_label + " and +1 AP!");
                     }
                     // AP-restore items are free; everything else costs 1 AP.
                     if (!_q_is_ap) player.energy -= 1;

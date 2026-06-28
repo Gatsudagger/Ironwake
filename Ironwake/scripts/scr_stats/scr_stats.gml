@@ -2548,7 +2548,7 @@ function sable_brew_catalog() {
         { id:"master",  name:"Master Healing Draught", effect:"heal",        value:90, desc:"Restore 90 HP",                     gold_val:70, dust:30, gold:cha_price(40) },
         { id:"phoenix", name:"Phoenix Tonic",          effect:"heal_dot",    value:15, desc:"Restore 15 HP per turn for 3 turns",gold_val:60, dust:35, gold:cha_price(40) },
         { id:"philter", name:"Cleansing Philter",      effect:"cleanse_all", value:0,  desc:"Clear all negative effects",        gold_val:50, dust:20, gold:cha_price(25) },
-        { id:"ley",     name:"Ley Battery",            effect:"energy",      value:3,  desc:"Gain +3 AP this turn (free to use)",gold_val:55, dust:30, gold:cha_price(35) },
+        { id:"ley",     name:"Ley Battery",            effect:"resource_ap", value:3,  desc:"Restore +3 of your class resource and +1 AP (free to use)", gold_val:55, dust:30, gold:cha_price(35) },
     ];
 }
 function sable_brew_get(id) {
