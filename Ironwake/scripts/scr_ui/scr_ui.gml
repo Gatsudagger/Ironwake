@@ -627,6 +627,71 @@ function ui_draw_ability_icon(x, y, sz, ability) {
 }
 
 // ---------------------------------------------------------------------------
+// ui_trait_icon_sprite(tr)
+// Resolves the 64x64 icon sprite for a trait by its effect_id. Returns -1 when
+// no icon is mapped so callers fall back to a plain badge. 18 icons come from
+// the framed warrior/mage library packs, 7 from PixelLab gap-fills - together
+// they cover all 25 traits. Add a case here when a new trait ships.
+// ---------------------------------------------------------------------------
+function ui_trait_icon_sprite(tr) {
+    var _eid = (is_struct(tr) && variable_struct_exists(tr, "effect_id")) ? tr.effect_id : tr;
+    switch (_eid) {
+        // --- Universal ---
+        case "sense":            return spr_icon_trait_sense;
+        case "scavenger":        return spr_icon_trait_scavenger;
+        case "thick_skin":       return spr_icon_trait_thick_skin;
+        case "quick_recovery":   return spr_icon_trait_quick_recovery;
+        case "treasure_hunter":  return spr_icon_trait_treasure_hunter;
+        case "lucky_find":       return spr_icon_trait_lucky_find;
+        case "battle_hardened":  return spr_icon_trait_battle_hardened;
+        case "salvager":         return spr_icon_trait_salvager;
+        case "iron_will":        return spr_icon_trait_iron_will;
+        case "expanded_arsenal": return spr_icon_trait_expanded_arsenal;
+        case "prospector":       return spr_icon_trait_prospector;
+        case "pack_rat":         return spr_icon_trait_pack_rat;
+        case "last_stand":       return spr_icon_trait_last_stand;
+        // --- AoE-themed ---
+        case "focused_power":    return spr_icon_trait_focused_power;
+        case "chain_caster":     return spr_icon_trait_chain_caster;
+        case "plaguebearer":     return spr_icon_trait_plaguebearer;
+        // --- Arcanist ---
+        case "soul_siphon":      return spr_icon_trait_soul_siphon;
+        case "ley_tap":          return spr_icon_trait_ley_tap;
+        case "arcane_surge":     return spr_icon_trait_arcane_surge;
+        // --- Bloodwarden ---
+        case "crimson_reserve":  return spr_icon_trait_crimson_reserve;
+        case "vampiric_edge":    return spr_icon_trait_vampiric_edge;
+        case "berserker_rage":   return spr_icon_trait_berserker_rage;
+        // --- Shadowstrider ---
+        case "phantom_step":     return spr_icon_trait_phantom_step;
+        case "shadow_meld":      return spr_icon_trait_shadow_meld;
+        case "serrated_strikes": return spr_icon_trait_serrated_strikes;
+    }
+    return -1;
+}
+
+// ---------------------------------------------------------------------------
+// ui_draw_trait_icon(x, y, sz, tr)
+// Draws a trait's icon in a square badge at (x,y). When the trait has no mapped
+// sprite, draws a plain dark slate badge with a bronze border so the row keeps
+// a consistent icon column. Uses the caller's current alpha (so dimmed rows dim
+// their icon). Callers own any outer framing/selection glow.
+// ---------------------------------------------------------------------------
+function ui_draw_trait_icon(x, y, sz, tr) {
+    var _spr = ui_trait_icon_sprite(tr);
+    if (_spr != -1 && sprite_exists(_spr)) {
+        draw_sprite_stretched(_spr, 0, x, y, sz, sz);
+    } else {
+        var _a = draw_get_alpha();
+        draw_set_color(make_color_rgb(20, 22, 32));
+        draw_rectangle(x, y, x + sz, y + sz, false);
+        draw_set_color(make_color_rgb(120, 84, 40));
+        draw_rectangle(x, y, x + sz, y + sz, true);
+        draw_set_alpha(_a);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // item_splash_sprite(base_name)
 // Returns the codex splash-art sprite for a base item, or -1 if none exists yet.
 // Art is generated in batches (PixelLab) and wired here as each sprite lands;
@@ -3275,15 +3340,18 @@ function ui_draw_trait_detail(tr) {
 
     var _pad = 45, _lx = _x1 + _pad, _rx = _x2 - _pad, _y = _y1 + _pad;
     draw_set_halign(fa_left); draw_set_valign(fa_top);
+    // Trait icon badge beside the title.
+    ui_draw_trait_icon(_lx, _y + 2, 72, tr);
+    var _hx = _lx + 92;
     draw_set_font(fnt_ui_title);
     draw_set_color(c_white);
-    draw_text(_lx, _y, tr.name);
+    draw_text(_hx, _y, tr.name);
     _y += 66;
     draw_set_font(fnt_ui_small);
     draw_set_color(make_color_rgb(190, 160, 240));
     var _cr = variable_struct_exists(tr, "class_req") ? tr.class_req : -1;
     var _crn = (_cr == 0) ? "Arcanist only" : ((_cr == 1) ? "Bloodwarden only" : ((_cr == 2) ? "Shadowstrider only" : "Any class"));
-    draw_text(_lx, _y, "TRAIT  *  " + _crn);
+    draw_text(_hx, _y, "TRAIT  *  " + _crn);
     _y += 45;
     draw_set_color(make_color_rgb(60, 64, 90));
     draw_line(_lx, _y, _rx, _y);
@@ -4315,7 +4383,7 @@ function ui_draw_character_menu() {
         draw_set_halign(fa_center);
         draw_set_font(fnt_ui_small);
         draw_set_color(make_color_rgb(80, 90, 110));
-        draw_text_outline(960, 1035, "W/S: Browse abilities");
+        draw_text_outline(960, 1035, "W/S: Browse Abilities    Q/E: Switch Tab    I / Esc: Close");
         draw_set_halign(fa_left);
     } else if (menu_tab == 2) {
         draw_set_font(fnt_ui);
@@ -4514,19 +4582,21 @@ function ui_draw_character_menu() {
         }
     }
 
-    // Bottom instructions
-    if (menu_tab != 1 && menu_tab != 3 && menu_tab != 4) {
+    // Bottom instructions. Stats(0) uses the generic line; Equipment(1) and
+    // Abilities(2) draw their own hints above; Consumables(3)/Compendium(4)
+    // draw context-specific hints below. All footers share fnt_ui_small and the
+    // (960,1035) bottom-center anchor so they read consistently at 1080p.
+    draw_set_font(fnt_ui_small);
+    if (menu_tab == 0) {
         draw_set_halign(fa_center);
-        draw_set_font(fnt_ui_small);
         draw_set_color(make_color_rgb(80, 90, 110));
         draw_text_outline(960, 1035, "Q/E: Switch Tab   I / Esc: Close");
         draw_set_halign(fa_left);
     }
-    draw_set_font(-1);
     if (menu_tab == 4) {
         draw_set_halign(fa_center);
         draw_set_color(make_color_rgb(80, 90, 110));
-        draw_text_outline(640, 690, "W/S: Browse Sections   Q/E: Switch Tab   I / Esc: Close");
+        draw_text_outline(960, 1035, "W/S: Browse Sections   Q/E: Switch Tab   I / Esc: Close");
         draw_set_halign(fa_left);
     }
     if (menu_tab == 3) {
@@ -4534,20 +4604,21 @@ function ui_draw_character_menu() {
         if (_gc.consumable_submenu_open && array_length(global.consumable_inventory) > 0) {
             if (_no_ap) {
                 draw_set_color(make_color_rgb(200, 80, 80));
-                draw_text_outline(640, 690, "W/S: Navigate   Need 1 AP to use   Esc: Cancel");
+                draw_text_outline(960, 1035, "W/S: Navigate   Need 1 AP to use   Esc: Cancel");
             } else if (_limit_reached) {
                 draw_set_color(make_color_rgb(200, 80, 80));
-                draw_text_outline(640, 690, "W/S: Navigate   1 per turn limit   Esc: Cancel");
+                draw_text_outline(960, 1035, "W/S: Navigate   1 per turn limit   Esc: Cancel");
             } else {
                 draw_set_color(make_color_rgb(80, 90, 110));
-                draw_text_outline(640, 690, "W/S: Navigate   Enter: Use [-1 AP]   Esc: Cancel");
+                draw_text_outline(960, 1035, "W/S: Navigate   Enter: Use [-1 AP]   Esc: Cancel");
             }
         } else {
             draw_set_color(make_color_rgb(100, 200, 100));
-            draw_text_outline(640, 690, "Enter: Browse Items   Q/E: Switch Tab   I: Close");
+            draw_text_outline(960, 1035, "Enter: Browse Items   Q/E: Switch Tab   I: Close");
         }
         draw_set_halign(fa_left);
     }
+    draw_set_font(-1);
 }
 
 // ---------------------------------------------------------------------------
@@ -5763,13 +5834,18 @@ function ui_draw_trainer_screen() {
                 draw_set_color(_sel ? _accent : make_color_rgb(38, 40, 60));
                 draw_rectangle(_rx0, _ry, _rx1, _ry + _rh, true);
 
+                // Trait icon badge (selected row full, others slightly dimmed).
+                draw_set_alpha(_sel ? 1.0 : 0.8);
+                ui_draw_trait_icon(_rx0 + 12, _ry + 11, 64, _tt);
+                draw_set_alpha(1.0);
+
                 draw_set_font(fnt_ui);
                 draw_set_color(_sel ? c_white : make_color_rgb(180, 185, 210));
-                draw_text(_rx0 + 24, _ry + 9, _tt.name
+                draw_text(_rx0 + 92, _ry + 9, _tt.name
                     + (_tt.class_req != -1 ? "   (" + _class_names[clamp(_tt.class_req, 0, 2)] + ")" : ""));
                 draw_set_font(fnt_ui_small);
                 draw_set_color(make_color_rgb(120, 125, 150));
-                draw_text(_rx0 + 24, _ry + 45, _tt.description);
+                draw_text(_rx0 + 92, _ry + 45, _tt.description);
 
                 draw_set_halign(fa_right);
                 draw_set_font(fnt_ui);
@@ -5826,12 +5902,18 @@ function ui_draw_trainer_screen() {
             draw_set_color(_sel ? _accent : make_color_rgb(38, 40, 60));
             draw_rectangle(_rx0, _ry, _rx1, _ry + _rh, true);
 
+            // Trait icon badge (this list carries only name/stat/effect, so resolve
+            // the full trait struct for its effect_id).
+            draw_set_alpha(_sel ? 1.0 : 0.8);
+            ui_draw_trait_icon(_rx0 + 12, _ry + 11, 64, trait_get_by_name(_up.name));
+            draw_set_alpha(1.0);
+
             draw_set_font(fnt_ui);
             draw_set_color(_sel ? c_white : make_color_rgb(180, 185, 210));
-            draw_text(_rx0 + 24, _ry + 9, _up.name);
+            draw_text(_rx0 + 92, _ry + 9, _up.name);
             draw_set_font(fnt_ui_small);
             draw_set_color(make_color_rgb(120, 125, 150));
-            draw_text(_rx0 + 24, _ry + 45, _up.effect + "   -   Tier " + string(_tier) + " / 5   (+" + string(_tier * 10) + "% now)");
+            draw_text(_rx0 + 92, _ry + 45, _up.effect + "   -   Tier " + string(_tier) + " / 5   (+" + string(_tier * 10) + "% now)");
 
             // Tier pips
             for (var _p = 0; _p < 5; _p++) {
@@ -6543,7 +6625,7 @@ function ui_draw_sable_screen() {
             draw_set_color(make_color_rgb(140, 160, 145));
             draw_text(_list_x, 225, "Salvage unwanted loot into rune dust:");
             var _menu = ["Salvage Gear   (unequipped pack + stash)",
-                         "Salvage Runes   (unsocketed - fully scrapped)"];
+                         "Salvage Runes & Aspects   (unsocketed - fully scrapped)"];
             for (var _sm = 0; _sm < 2; _sm++) {
                 var _tys = ui_maren_row(_sm, _sm == _cursor);
                 draw_set_color(make_color_rgb(190, 220, 195));

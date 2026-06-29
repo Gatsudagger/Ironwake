@@ -1620,8 +1620,8 @@ if (instance_exists(obj_game_controller)) {
             // Panel headers
             draw_set_font(fnt_ui);
             draw_set_color(make_color_rgb(150, 120, 210));
-            draw_text(_lx, 60, "AVAILABLE TRAITS");
-            draw_text(_rx, 60, "SELECTED TRAITS");
+            draw_text(_lx, 60, "AVAILABLE TRAITS  (" + string(_tr_avail_cnt) + ")");
+            draw_text(_rx, 60, "SELECTED TRAITS  (" + string(_tr_sel_cnt) + " / " + string(max_trait_slots()) + ")");
 
             // Available trait rows (cursor navigates these)
             var _tr_row_h   = 90;
@@ -1647,15 +1647,26 @@ if (instance_exists(obj_game_controller)) {
                                        : make_color_rgb(35, 40, 65)));
                 draw_rectangle(_lx, _ry, _lx + 990, _ry + _tr_row_h, true);
 
+                // Left accent bar on the active cursor / selected rows.
+                if (_is_cur || _in_sel) {
+                    draw_set_color(_in_sel ? make_color_rgb(140, 70, 210) : make_color_rgb(100, 60, 180));
+                    draw_rectangle(_lx, _ry, _lx + 5, _ry + _tr_row_h, false);
+                }
+
+                // Trait icon badge (left of the text); cursor row shows it full, others dimmed.
+                draw_set_alpha(_is_cur ? 1.0 : 0.78);
+                ui_draw_trait_icon(_lx + 14, _ry + 13, 64, _tr);
+                draw_set_alpha(1.0);
+
                 var _tr_name_suf = _in_sel ? "  [SELECTED]" : "";
                 draw_set_font(fnt_ui);
                 draw_set_color(_in_sel  ? make_color_rgb(190, 130, 255)
                             : (_is_cur ? c_white
                                        : make_color_rgb(170, 175, 210)));
-                draw_text(_lx + 18, _ry + 8, _tr.name + _tr_name_suf);
+                draw_text(_lx + 92, _ry + 8, _tr.name + _tr_name_suf);
                 draw_set_font(fnt_ui_small);
                 draw_set_color(_is_cur ? make_color_rgb(155, 165, 200) : make_color_rgb(80, 88, 118));
-                draw_text_ext(_lx + 18, _ry + 41, _tr.description, -1, 954);
+                draw_text_ext(_lx + 92, _ry + 41, _tr.description, -1, 880);
             }
 
             // Locked trait rows (greyed, no cursor, show unlock condition)
@@ -1668,15 +1679,17 @@ if (instance_exists(obj_game_controller)) {
                 draw_rectangle(_lx, _ry, _lx + 990, _ry + 51, false);
                 draw_set_color(make_color_rgb(28, 32, 48));
                 draw_rectangle(_lx, _ry, _lx + 990, _ry + 51, true);
+                // Dimmed icon (alpha already 0.45 from the locked-row block above).
+                ui_draw_trait_icon(_lx + 9, _ry + 8, 36, _tr);
                 draw_set_font(fnt_ui_small);
                 draw_set_color(make_color_rgb(80, 85, 108));
-                draw_text(_lx + 18, _ry + 5, _tr.name + "  [LOCKED]");
+                draw_text(_lx + 56, _ry + 5, _tr.name + "  [LOCKED]");
                 var _cond = "";
                 if      (_tr.unlock_type == "full_clear")  _cond = "Unlock: Complete a full 3-floor run";
                 else if (_tr.unlock_type == "char_level")  _cond = "Unlock: Reach level " + string(_tr.unlock_value) + " in a run";
                 else if (_tr.unlock_type == "boss_kill")   _cond = "Unlock: Defeat Malgrath the Warden";
                 draw_set_color(make_color_rgb(55, 60, 78));
-                draw_text(_lx + 18, _ry + 27, _cond);
+                draw_text(_lx + 56, _ry + 27, _cond);
                 draw_set_alpha(1.0);
             }
 
@@ -1693,27 +1706,33 @@ if (instance_exists(obj_game_controller)) {
                 draw_set_color(_has_tr ? make_color_rgb(110, 55, 170) : make_color_rgb(35, 40, 60));
                 draw_rectangle(_rx, _sy, _rx + 735, _sy + _tr_slot_h, true);
 
-                draw_set_font(fnt_ui);
+                draw_set_font(fnt_ui_small);
                 draw_set_color(make_color_rgb(70, 80, 105));
-                draw_text(_rx + 15, _sy + 15, string(_si2 + 1) + ".");
+                draw_text(_rx + 14, _sy + 7, string(_si2 + 1));
 
                 if (_has_tr) {
-                    var _tr_name = _gc_ov.traits_selected[_si2];
+                    var _tr_name   = _gc_ov.traits_selected[_si2];
+                    var _tr_struct = trait_get_by_name(_tr_name);
+                    if (_tr_struct != undefined) {
+                        ui_draw_trait_icon(_rx + 40, _sy + 28, 68, _tr_struct);
+                    }
                     draw_set_font(fnt_ui);
                     draw_set_color(make_color_rgb(190, 130, 255));
-                    draw_text(_rx + 48, _sy + 15, _tr_name);
-                    for (var _tri2 = 0; _tri2 < array_length(global.traits_all); _tri2++) {
-                        if (global.traits_all[_tri2].name == _tr_name) {
-                            draw_set_font(fnt_ui_small);
-                            draw_set_color(make_color_rgb(130, 95, 180));
-                            draw_text_ext(_rx + 48, _sy + 60, global.traits_all[_tri2].description, -1, 675);
-                            break;
-                        }
+                    draw_text(_rx + 124, _sy + 24, _tr_name);
+                    if (_tr_struct != undefined) {
+                        draw_set_font(fnt_ui_small);
+                        draw_set_color(make_color_rgb(130, 95, 180));
+                        draw_text_ext(_rx + 124, _sy + 62, _tr_struct.description, -1, 596);
                     }
                 } else {
+                    // Empty-slot placeholder badge.
+                    draw_set_color(make_color_rgb(16, 18, 28));
+                    draw_rectangle(_rx + 40, _sy + 28, _rx + 108, _sy + 96, false);
+                    draw_set_color(make_color_rgb(48, 40, 70));
+                    draw_rectangle(_rx + 40, _sy + 28, _rx + 108, _sy + 96, true);
                     draw_set_font(fnt_ui);
                     draw_set_color(make_color_rgb(45, 50, 70));
-                    draw_text(_rx + 48, _sy + 45, "---  none  ---");
+                    draw_text(_rx + 124, _sy + 48, "---  empty slot  ---");
                 }
             }
 
@@ -1728,12 +1747,13 @@ if (instance_exists(obj_game_controller)) {
             draw_set_halign(fa_left);
             if (_tr_avail_cnt > 0) {
                 var _dtr = _tr_avail[_gc_ov.traits_cursor];
+                ui_draw_trait_icon(_desc_x + 13, 913, 64, _dtr);
                 draw_set_font(fnt_ui);
                 draw_set_color(make_color_rgb(200, 155, 255));
-                draw_text(_desc_x + 15, 911, _dtr.name);
+                draw_text(_desc_x + 90, 911, _dtr.name);
                 draw_set_font(fnt_ui_small);
                 draw_set_color(make_color_rgb(155, 130, 210));
-                draw_text_ext(_desc_x + 15, 942, _dtr.description, -1, _desc_w - 30);
+                draw_text_ext(_desc_x + 90, 942, _dtr.description, -1, _desc_w - 105);
             } else {
                 draw_set_font(fnt_ui_small);
                 draw_set_halign(fa_center);
