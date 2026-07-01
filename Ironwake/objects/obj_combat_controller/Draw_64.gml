@@ -177,6 +177,46 @@ if (player.hit_flash > 0) {
     draw_sprite_ext(_pspr, _pfr, _px_draw, _py_draw, _pscale, _pscale, 0, c_white, (player.hit_flash / 15.0) * 0.8);
     gpu_set_blendmode(bm_normal);
 }
+
+// --- Active pet companion (Pets Phase 3: combat presence) --------------------
+// The equipped pet stands beside the player, facing east toward the enemies, idling via
+// its looping directional sprite. All archetypes are PRESENT (sells the "it's with you"
+// lore); only Combatant pets will act on their own turn (a later slice). Display height
+// grows with Stage so evolution reads at a glance. Bottom-centre origin -> draw at feet.
+var _pet_co = pet_active();
+if (_pet_co != undefined && !_pet_co.is_egg) {
+    var _petspr = pet_sprite(_pet_co, "e");
+    if (_petspr >= 0) {
+        var _pet_disp_h = [120, 145, 170, 200, 230];   // display height by Stage 0-4
+        var _peth_t = _pet_disp_h[clamp(_pet_co.stage, 0, 4)];
+        var _petsc  = _peth_t / max(1, sprite_get_height(_petspr));
+        // Player feet (origin top-left): centre-x + a step to the right, ground-line y.
+        var _petx = _px_draw + sprite_get_width(_pspr) * _pscale * 0.5 + 120;
+        var _pety = _py_draw + sprite_get_height(_pspr) * _pscale * 0.94;
+
+        // Procedural attack lunge: on a Combatant strike (global.pet_lunge_t0), the pet
+        // surges toward the enemies (right) and snaps back over ~260ms, with a squash-
+        // stretch and a white impact flash at the apex. Purely code-driven (no attack art).
+        var _lunge_dx = 0, _sx = _petsc, _flash = 0;
+        var _lt0 = variable_global_exists("pet_lunge_t0") ? global.pet_lunge_t0 : -100000;
+        var _lprog = (current_time - _lt0) / 260;
+        if (_lprog >= 0 && _lprog <= 1) {
+            var _arc  = sin(_lprog * pi);          // 0 -> 1 -> 0
+            _lunge_dx = _arc * 96;                  // toward the enemy line
+            _sx       = _petsc * (1 + 0.18 * _arc); // stretch forward as it lunges
+            if (_lprog > 0.34 && _lprog < 0.60) _flash = 0.55;   // impact
+        }
+
+        ui_draw_ground_shadow(_petx, _pety, sprite_get_width(_petspr) * _petsc * 0.8);
+        draw_sprite_ext(_petspr, pet_anim_frame(_petspr), _petx + _lunge_dx, _pety, _sx, _petsc, 0, c_white, 1.0);
+        // Additive white flash on the sprite at the strike apex.
+        if (_flash > 0) {
+            gpu_set_blendmode(bm_add);
+            draw_sprite_ext(_petspr, pet_anim_frame(_petspr), _petx + _lunge_dx, _pety, _sx, _petsc, 0, c_white, _flash);
+            gpu_set_blendmode(bm_normal);
+        }
+    }
+}
 // Looping status VFX (poison gas, flames, blind mist, ...) over the player sprite.
 if (variable_struct_exists(player, "status_effects")) {
     ui_draw_status_fx(_px_draw + sprite_get_width(_pspr) * _pscale * 0.5, _py_draw,
@@ -544,13 +584,18 @@ if (player_turn && !combat_over) {
             draw_set_color(_is_cur ? make_color_rgb(60, 200, 110) : make_color_rgb(35, 80, 52));
             draw_rectangle(_px + 15, _qry, _px + _pw - 15, _qry + 93, true);
 
+            // Icon badge on the left (visual liveliness - matches the gear/shop look).
+            var _qisz = 68;
+            ui_draw_consumable_icon(_px + 30, _qry + 13, _qisz, _qitem);
+            var _qtx = _px + 30 + _qisz + 16;
+
             draw_set_halign(fa_left);
             draw_set_font(fnt_ui);
             draw_set_color(_is_cur ? c_white : make_color_rgb(160, 175, 195));
-            draw_text(_px + 33, _qry + 12, _qlabel);
+            draw_text(_qtx, _qry + 12, _qlabel);
             draw_set_font(fnt_ui_small);
             draw_set_color(_is_cur ? make_color_rgb(120, 210, 160) : make_color_rgb(80, 110, 95));
-            draw_text(_px + 33, _qry + 48, _qitem.description);
+            draw_text(_qtx, _qry + 48, _qitem.description);
         }
 
         // Footer hint
@@ -1051,6 +1096,19 @@ if (combat_over) {
             global.just_cleared_room = true;
 
             if (variable_global_exists("just_cleared_boss") && global.just_cleared_boss) {
+                // SHARED floor-clear hook: credit this cleared floor (at the run's
+                // Awakening) toward time-gated systems (Petra orders; Phase 2 pets).
+                // Fires before the extract/continue/victory branch so the credit banks
+                // regardless of what the player does next.
+                floor_clear_credit(variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0);
+                // Phase 2 pets: a rare boss-egg drop (odds scale with Awakening, never
+                // guaranteed). The egg lands in Bairc's stable (persistent across runs);
+                // surfaced in the log now and as a hub notice on return.
+                var _boss_egg = pet_try_boss_egg(variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0);
+                if (_boss_egg != undefined) {
+                    array_push(combat_log, "Among the remains: a " + _boss_egg.name + " egg! Bairc can raise it.");
+                    global.pet_find_notice = "You recovered a " + _boss_egg.name + " egg - visit Bairc.";
+                }
                 if (global.current_floor >= 3) {
                     // Full dungeon clear - end run as victory
                     global.just_cleared_boss = false;

@@ -29,6 +29,63 @@ video_apply();
 // dead-code-eliminated - forces the compiler to include them in the build.
 // (If a sprite is ever renamed/removed, update this list to match.)
 global.__sprite_includes = [
+    // Pet sprites are referenced only by string (pet_sprite -> asset_get_index), so they
+    // must be listed here or the compiler strips them. (Pets Phase 2 art backlog.)
+    spr_pet_cryptling_baby,
+    spr_pet_cryptling_adult,
+    spr_pet_wisplet_baby,      spr_pet_wisplet_adult,
+    spr_pet_carrion_moth_baby, spr_pet_carrion_moth_adult,
+    spr_pet_gravewing_baby,    spr_pet_gravewing_adult,
+    spr_pet_hollow_pup_baby,   spr_pet_hollow_pup_adult,
+    spr_pet_bonehound_baby,
+    spr_pet_bonehound_adult,
+    spr_pet_graveling_baby,
+    spr_pet_graveling_adult,
+    spr_pet_ashling_baby,
+    spr_pet_ashling_adult,
+    // Animated directional idle sprites (south/east) - referenced by string in pet_sprite.
+    spr_pet_cryptling_baby_s,  spr_pet_cryptling_baby_e,
+    spr_pet_cryptling_adult_s, spr_pet_cryptling_adult_e,
+    spr_pet_graveling_baby_s,  spr_pet_graveling_baby_e,
+    spr_pet_graveling_adult_s, spr_pet_graveling_adult_e,
+    spr_pet_ashling_baby_s,    spr_pet_ashling_baby_e,
+    spr_pet_ashling_adult_s,   spr_pet_ashling_adult_e,
+    spr_pet_bonehound_baby_s,  spr_pet_bonehound_baby_e,
+    spr_pet_bonehound_adult_s, spr_pet_bonehound_adult_e,
+    // Redesigned creature species - 3 stages (baby/youngadult/adult) x south/east animated idle.
+    spr_pet_luna_moth_baby_s,     spr_pet_luna_moth_baby_e,
+    spr_pet_luna_moth_youngadult_s, spr_pet_luna_moth_youngadult_e,
+    spr_pet_luna_moth_adult_s,    spr_pet_luna_moth_adult_e,
+    spr_pet_gloomtoad_baby_s,     spr_pet_gloomtoad_baby_e,
+    spr_pet_gloomtoad_youngadult_s, spr_pet_gloomtoad_youngadult_e,
+    spr_pet_gloomtoad_adult_s,    spr_pet_gloomtoad_adult_e,
+    spr_pet_wyrmling_baby_s,      spr_pet_wyrmling_baby_e,
+    spr_pet_wyrmling_youngadult_s, spr_pet_wyrmling_youngadult_e,
+    spr_pet_wyrmling_adult_s,     spr_pet_wyrmling_adult_e,
+    spr_pet_nightowl_baby_s,      spr_pet_nightowl_baby_e,
+    spr_pet_nightowl_youngadult_s, spr_pet_nightowl_youngadult_e,
+    spr_pet_nightowl_adult_s,     spr_pet_nightowl_adult_e,
+    spr_pet_bone_stag_baby_s,     spr_pet_bone_stag_baby_e,
+    spr_pet_bone_stag_youngadult_s, spr_pet_bone_stag_youngadult_e,
+    spr_pet_bone_stag_adult_s,    spr_pet_bone_stag_adult_e,
+    spr_pet_saber_hound_baby_s,   spr_pet_saber_hound_baby_e,
+    spr_pet_saber_hound_youngadult_s, spr_pet_saber_hound_youngadult_e,
+    spr_pet_saber_hound_adult_s,  spr_pet_saber_hound_adult_e,
+    // Themed hatch eggs - static shell (roster/station) + 9-frame hatch anim (cutscene).
+    spr_pet_egg_gilded,  spr_pet_egg_gilded_hatch,
+    spr_pet_egg_fortune, spr_pet_egg_fortune_hatch,
+    spr_pet_egg_savage,  spr_pet_egg_savage_hatch,
+    spr_pet_egg_tender,  spr_pet_egg_tender_hatch,
+    // Pet feed item icons (Petra shop + Bairc feed menu). Resolved by spr_pet_feed_<id>.
+    spr_pet_feed_scraps, spr_pet_feed_forage, spr_pet_feed_prime,
+    spr_pet_feed_mending_mash, spr_pet_feed_purgeroot, spr_pet_feed_hearty_roast,
+    // Keeper species brought to 3-stage animated (new directional/young-adult sprites).
+    spr_pet_bonehound_youngadult_s, spr_pet_bonehound_youngadult_e,
+    spr_pet_hollow_pup_baby_s,       spr_pet_hollow_pup_baby_e,
+    spr_pet_hollow_pup_youngadult_s, spr_pet_hollow_pup_youngadult_e,
+    spr_pet_hollow_pup_adult_s,      spr_pet_hollow_pup_adult_e,
+    // Bairc hub sprite (now animated) + portrait - referenced by string via asset_get_index.
+    spr_npc_bairc_idle, spr_npc_bairc_action, spr_npc_bairc_portrait,
     spr_hub_background,
     spr_title_background,
     spr_title_foreground,
@@ -98,6 +155,22 @@ global.__sprite_includes = [
     spr_icon_rune_anchor,
     spr_icon_rune_quickcast,
     spr_icon_rune_echo,
+    // NPC actor sprites (idle + action) - drawn via asset_get_index("spr_npc_<id>_..")
+    // strings, so they need a hard reference here or the compiler strips them.
+    spr_npc_dorn_idle,   spr_npc_dorn_action,
+    spr_npc_sable_idle,  spr_npc_sable_action,
+    spr_npc_maren_idle,  spr_npc_maren_action,
+    spr_npc_vex_idle,    spr_npc_vex_action,
+    spr_npc_petra_idle,  spr_npc_petra_action,
+    spr_npc_vael_idle,   spr_npc_vael_action,
+    spr_heart_fx,
+    // Themed armor icons - resolved via asset_get_index("spr_icon_<slot>_<type>")
+    // strings in ui_*_icon_sprite(), so they need hard refs here or the compiler
+    // strips them and every chest/helm/glove/boot falls back to its base icon.
+    spr_icon_chest_leather, spr_icon_chest_plate, spr_icon_chest_robe, spr_icon_chest_void,
+    spr_icon_helm_hood,     spr_icon_helm_circlet, spr_icon_helm_plate,
+    spr_icon_gloves_arcane, spr_icon_gloves_cloth, spr_icon_gloves_plate,
+    spr_icon_boots_plate,   spr_icon_boots_cloth,  spr_icon_boots_leather,
 ];
 
 // =============================================================================
@@ -169,6 +242,35 @@ global.current_run_gold  = 0;
 global.current_run_kills = 0;
 if (!variable_global_exists("run_boons")) global.run_boons = [];   // active boons this run (Shrine tribute)
 if (!variable_global_exists("run_curses")) global.run_curses = []; // active curses this run (devil's bargain)
+// Sable exotic find-buff potions (last until 2 bosses slain; see scr_stats potion_* fns).
+if (!variable_global_exists("gold_potion_bosses")) global.gold_potion_bosses = 0;
+if (!variable_global_exists("gold_potion_mult"))   global.gold_potion_mult   = 0;
+if (!variable_global_exists("loot_potion_bosses")) global.loot_potion_bosses = 0;
+if (!variable_global_exists("loot_potion_pts"))    global.loot_potion_pts    = 0;
+
+// NPC affinity (thin track - Phase 0.5). Meta-persistent per-NPC score->tier; loaded
+// from save when a slot loads. Guarded so a re-create never wipes it. See scr_stats.
+if (!variable_global_exists("npc_affinity")) global.npc_affinity = affinity_fresh();
+
+// Petra Treasure Trader order (Phase 1). Cross-run persistent; undefined = no order.
+// Saved per slot; NOT reset in end_run (it earns out by clearing floors). See scr_stats.
+if (!variable_global_exists("petra_order")) global.petra_order = undefined;
+
+// Pets (Phase 2). Cross-run persistent roster + active companion index + uid counter.
+// Saved per slot; NOT reset in end_run (pets are raised ACROSS runs). See scr_stats /
+// PETS_DESIGN.md. active_pet = index into pet_roster, or -1 for none.
+if (!variable_global_exists("pet_roster"))  global.pet_roster  = [];
+if (!variable_global_exists("active_pet"))  global.active_pet  = -1;
+if (!variable_global_exists("pet_next_id")) global.pet_next_id = 1;
+// One-shot "you found an egg" message, set on a boss-egg drop and shown next hub visit.
+if (!variable_global_exists("pet_find_notice")) global.pet_find_notice = "";
+// Whether this character has received its one free starter pet yet (so Bairc is reachable).
+if (!variable_global_exists("pet_starter_given")) global.pet_starter_given = false;
+// Feed pouch: owned pet-feed items bought from Petra (struct keyed by feed id -> count).
+if (!variable_global_exists("pet_feed_pouch") || !is_struct(global.pet_feed_pouch)) global.pet_feed_pouch = {};
+// Combat pet-attack lunge clock (current_time of the last Combatant strike; drives the
+// procedural lunge in obj_combat_controller Draw_64). Far-past default = no lunge showing.
+if (!variable_global_exists("pet_lunge_t0")) global.pet_lunge_t0 = -100000;
 
 // Onboarding coach-marks (see SYSTEMS_ONBOARDING.md). tutorial_seen = per-tip flags,
 // tutorial_enabled = the Settings toggle, tutorial_active = the tip showing now ("").
@@ -237,6 +339,7 @@ _2hw_longbow.affixes = [{ suffix: "of Ruin", prefix: "Keen", stat_name: "crit_fl
 
 var _2hw_staff = create_item("Stormcaller Staff", "ranged_weapon", 2, "INT", 6, "a great runed staff held in both hands", 96);
 _2hw_staff.two_handed = true;  _2hw_staff.class_req = -1;  _2hw_staff.weapon_damage = 13;
+_2hw_staff.caster_2h = true;   // staff: allows a non-shield offhand (focus/tome), forbids a melee weapon (Task 10)
 _2hw_staff.affixes = [{ suffix: "of Clarity", prefix: "Wise", stat_name: "WIS", stat_value: 4 }];
 
 // --- ELEMENTAL WEAPONS (SYSTEMS_WEAPON_ROLES.md §C) ---
@@ -399,7 +502,7 @@ global.loot_table_rare = [
     _forsaken_circlet,
     create_item("Thornwarden Helm",    "helm",    2, "STR", 5, "war-crest of a fallen guardian", 75),
     // Chest
-    create_item("Voidskin Coat",       "chest",   2, "DEX", 5, "",                              75),
+    create_item("Voidskin Coat",       "chest",   2, "INT", 5, "stitched from void-touched hide; it drinks the light", 75),
     create_item("Ironveil Plate",      "chest",   2, "CON", 7, "",                              90),
     create_item("Archmage Vestment",   "chest",   2, "INT", 5, "humming with ley-energy",       80),
     create_item("Oracle Mantle",       "chest",   2, "WIS", 5, "embroidered with seer-sigils",  78),
@@ -510,6 +613,14 @@ global.consumables_elite = [
     create_consumable("Warden's Tonic",         "heal_dot",     8, "Restore 8 HP per turn for 3 turns",      48),
 ];
 
+// Master (3rd) tier - the targets of Sable's elite->master upgrade rung. Names + stats
+// match the matching brew-catalog potions (so the icons already resolve). Only the
+// effects with a meaningful step up have a master rung (heal, heal-over-time).
+global.consumables_master = [
+    create_consumable("Master Healing Draught", "heal",     90, "Restore 90 HP",                       70),
+    create_consumable("Phoenix Tonic",          "heal_dot", 15, "Restore 15 HP per turn for 3 turns",  60),
+];
+
 // Per-run consumable inventory (uncapped; lists scroll) and item drop log
 global.consumable_inventory = [];
 global.run_items_found      = [];
@@ -577,6 +688,10 @@ equip_picker_index  = 0;
 equip_msg           = "";   // class-restriction warning shown in the picker
 equip_notif_msg     = "";   // brief "Equipped X" confirmation
 equip_notif_timer   = 0;    // counts down from 150; fades in last 30 frames
+// Right-hand "found items" (pack) column on the Equipment tab.
+equip_found_focus   = false;  // is the found-items column focused (vs the slot list)?
+equip_found_cursor  = 0;
+equip_found_sort    = 0;      // 0 = by rarity, 1 = by type/slot
 
 comparison_open     = false;
 comparison_item     = undefined;
@@ -649,10 +764,18 @@ sable_confirm = false;
 shop_open         = -1;
 shop_index        = 0;
 shop_notification = "";
-shop_tab          = 0;    // 0 = BUY tab, 1 = SELL tab
+shop_tab          = 0;    // 0 = BUY tab, 1 = SELL tab, 2 = TRADE tab (Petra only)
 sell_index        = 0;    // sell-list cursor row
 sell_scroll       = 0;    // sell-list scroll offset (top visible row)
 sell_confirm_name = "";   // non-empty = rare item awaiting Space confirmation
+
+// Petra Treasure Trader tab (shop_tab == 2; Petra only). See PETRA_TT_PHASE1_SPEC.md.
+petra_trade_cursor       = 0;     // stash-list row cursor
+petra_trade_scroll       = 0;     // stash-list window scroll offset
+petra_trade_selected     = [];    // chosen stash indices (up to 3, all same tier)
+petra_trade_lever        = false; // Lever A (dust roll-bias) toggled on
+petra_trade_confirm      = false; // a placement is awaiting the no-takeback confirm
+petra_trade_notification = "";
 
 // Initial stock - loot tables are defined above, so this is safe to call here
 restock_shops();
@@ -668,6 +791,9 @@ if (!variable_global_exists("player_loadout")) {
 
 loadout_open       = false;
 ability_detail_open = false;   // Tab detail popup over the loadout ability list
+ability_detail_scroll = 0;     // vertical scroll offset (px) for the Tab ability-detail popup body
+global.ui_ability_detail_max_scroll = 0;  // published by ui_draw_ability_detail each frame; input clamps to it
+global.combat_log_breakdowns = true;       // hover a damage log line for a DnD-style math breakdown (Task 1; flip false to disable)
 vex_detail_open     = false;   // Tab detail popup over the Vex ability/trait list
 loadout_cursor     = 0;
 loadout_selected   = [];   // up to 4 ability name strings being built this session
@@ -761,6 +887,30 @@ sable_tab          = 0;
 sable_cursor       = 0;
 sable_phase        = 0;    // Salvage tab: 0 menu, 1 gear list, 2 rune list
 sable_notification = "";
+
+// Bairc the Creature Keeper - pet stable / hatchery screen (Phase 2). Opens only once
+// the player owns a pet (bairc_active()); dormant before that. See PETS_DESIGN.md.
+bairc_open         = false;
+bairc_cursor       = 0;
+bairc_notification = "";
+bairc_detail_open  = false;   // Tab pet-kit detail popup over the station
+companion_detail_open = false; // Tab pet-kit detail popup over the Gate Companion tab
+bairc_naming       = false;    // text-entry modal for naming/renaming the selected pet
+bairc_intro_open       = false;  // first-talk dialogue popup (before the station opens)
+bairc_intro_armed      = false;  // ignores the interact keypress that opened it (1-frame arm)
+bairc_capstone_open    = false;  // capstone PICK modal (raised Adult choosing its Stage-3 gift)
+bairc_capstone_sel     = 0;      // highlighted capstone card (0/1)
+bairc_capstone_confirm = false;  // two-step lock: Yes/No confirm after choosing
+bairc_release_confirm  = false;  // "Release" modal: permanently let the highlighted creature go
+
+// Full-screen hatch cutscene (shake -> crack -> reveal). Launched from the Bairc
+// Enter-on-egg action; drawn over the Bairc screen by hatch_cutscene_draw().
+hatch_active  = false;
+hatch_pet     = undefined;
+hatch_phase   = 0;      // 0 shake, 1 crack, 2 reveal
+hatch_t       = 0;      // frame counter within the current phase
+hatch_frame   = 0;      // current crack-animation frame (phase 1)
+hatch_done    = false;  // pet_hatch() already applied (guards double-hatch)
 
 // Vael the Aesthete - transmog/skins (player_skin = active skin id)
 if (!variable_global_exists("player_skin"))    global.player_skin    = "default";

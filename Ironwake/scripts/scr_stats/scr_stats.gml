@@ -23,6 +23,10 @@ function restock_shops() {
         global.petra_special_qty   = 1 + irandom(1);
     }
 
+    // Petra's rotating PREMIUM pet feed: one of the premium pool, changes each run.
+    var _feed_pool = pet_feed_premium_pool();
+    global.petra_feed_premium = _feed_pool[irandom(array_length(_feed_pool) - 1)].id;
+
     // Dorn: stock scales with the HIGHEST awakening unlocked (permanent meta growth).
     // Items are fully rolled (affixes), so his gear stays relevant past floor 1.
     // do_discover=false - shop items are only codex-revealed when actually bought.
@@ -32,7 +36,10 @@ function restock_shops() {
     var _dorn_count   = 3 + (_dorn_awk >= 2 ? 1 : 0) + (_dorn_awk >= 4 ? 1 : 0);
     repeat (_dorn_count) {
         var _di     = drop_equipment(_dorn_weights, false);
-        var _dprice = max(1, floor(_di.gold_value * 1.6));
+        // Rare/Epic+ gear is a premium buy - roughly double the markup so a strong
+        // piece is a real gold sink, not a cheap upgrade. (Task: Dorn rare/epic cost)
+        var _dmarkup = (_di.rarity >= 2) ? 3.2 : 1.6;
+        var _dprice  = max(1, floor(_di.gold_value * _dmarkup));
         array_push(global.dorn_stock, { item: _di, price: _dprice, sold: false });
     }
 }
@@ -200,6 +207,28 @@ function end_run(result) {
     global.last_run_gold   = global.current_run_gold;
     global.last_run_kills  = global.current_run_kills;
 
+    // Phase 2 pets: the ACTIVE pet banks Stage growth for completing this run and may
+    // EVOLVE (completing a run is the gate feed alone can't open; clear > extract >
+    // death). Surfaced on the next hub visit via the pet notice. (PETS_DESIGN.md §5)
+    var _pet_evo = pet_run_complete(result);
+    if (_pet_evo != undefined && variable_global_exists("pet_find_notice")) {
+        var _evo_msg = _pet_evo.name + " grew into a " + pet_stage_name(_pet_evo.stage) + "!";
+        global.pet_find_notice = (global.pet_find_notice != "")
+            ? (global.pet_find_notice + "   " + _evo_msg) : _evo_msg;
+    }
+    // Injury / permadeath / recovery for the carried pet (§8). Surfaced on hub return.
+    var _pet_inj = pet_on_run_end(result);
+    if (_pet_inj != "" && variable_global_exists("pet_find_notice")) {
+        global.pet_find_notice = (global.pet_find_notice != "")
+            ? (global.pet_find_notice + "   " + _pet_inj) : _pet_inj;
+    }
+    // Corruption progress: a survived run feeds a pushed pet toward fulfillment (§7).
+    var _pet_corr = pet_corruption_on_run_end(result);
+    if (_pet_corr != "" && variable_global_exists("pet_find_notice")) {
+        global.pet_find_notice = (global.pet_find_notice != "")
+            ? (global.pet_find_notice + "   " + _pet_corr) : _pet_corr;
+    }
+
     // Reset Last Stand for the next run (consumed at most once per run in combat)
     if (variable_global_exists("last_stand_used")) global.last_stand_used = false;
 
@@ -356,6 +385,8 @@ function end_run(result) {
     global.floor_rooms_cleared = [];
     global.run_boons           = [];   // boons last one run only - clear for the next
     global.run_curses          = [];   // curses also last one run only (devil's bargain)
+    potion_buffs_clear();              // Goldfinger / Faerie's Tear end with the run (incl. death)
+    affinity_reset_run_gain();         // clear the per-run affinity grind cap (NOT score/tier)
 
     // §6 variety: re-roll the floor seed for the NEXT run. Previously run_seed was
     // set once per session (obj_floor_controller Create) and never changed, so every
@@ -565,6 +596,19 @@ function elem_affix_damage(rarity) {
     return 0;
 }
 
+// Chance (0..1) for the affix to apply its setup status on a qualifying hit. (Task 12)
+// Previously the status landed on EVERY weapon hit, which made an uncommon weapon's
+// rider out-value some abilities (a guaranteed DoT each swing). It is now a modest,
+// rarity-scaled PROC; the flat elemental damage above still applies on every hit.
+function elem_affix_status_chance(rarity) {
+    switch (rarity) {
+        case 1: return 0.10;   // Uncommon
+        case 2: return 0.15;   // Rare
+        case 3: return 0.20;   // Epic
+    }
+    return 0;
+}
+
 // elem_element_name(element) - display word for an element key.
 function elem_element_name(element) {
     switch (element) {
@@ -617,13 +661,14 @@ function roll_elemental_affix(rarity) {
     var _fam      = elem_affix_family(_element);
     if (_fam == undefined) return undefined;
     return {
-        element:      _element,
-        dmg:          elem_affix_damage(rarity),
-        status_kind:  _fam.status_kind,
-        status_value: _fam.status_value,
-        status_dur:   _fam.status_dur,
-        prefix:       _fam.prefix,
-        suffix:       _fam.suffix,
+        element:       _element,
+        dmg:           elem_affix_damage(rarity),
+        status_kind:   _fam.status_kind,
+        status_value:  _fam.status_value,
+        status_dur:    _fam.status_dur,
+        status_chance: elem_affix_status_chance(rarity),
+        prefix:        _fam.prefix,
+        suffix:        _fam.suffix,
     };
 }
 
@@ -633,13 +678,14 @@ function make_elem_affix(element, rarity) {
     var _fam = elem_affix_family(element);
     if (_fam == undefined) return undefined;
     return {
-        element:      element,
-        dmg:          elem_affix_damage(rarity),
-        status_kind:  _fam.status_kind,
-        status_value: _fam.status_value,
-        status_dur:   _fam.status_dur,
-        prefix:       _fam.prefix,
-        suffix:       _fam.suffix,
+        element:       element,
+        dmg:           elem_affix_damage(rarity),
+        status_kind:   _fam.status_kind,
+        status_value:  _fam.status_value,
+        status_dur:    _fam.status_dur,
+        status_chance: elem_affix_status_chance(rarity),
+        prefix:        _fam.prefix,
+        suffix:        _fam.suffix,
     };
 }
 
@@ -661,26 +707,34 @@ function _clone_elem_affix(src) {
     if (!variable_struct_exists(src, "elem_affix") || src.elem_affix == undefined) return undefined;
     var _e = src.elem_affix;
     return {
-        element:      _e.element,
-        dmg:          _e.dmg,
-        status_kind:  _e.status_kind,
-        status_value: _e.status_value,
-        status_dur:   _e.status_dur,
-        prefix:       _e.prefix,
-        suffix:       _e.suffix,
+        element:       _e.element,
+        dmg:           _e.dmg,
+        status_kind:   _e.status_kind,
+        status_value:  _e.status_value,
+        status_dur:    _e.status_dur,
+        status_chance: variable_struct_exists(_e, "status_chance") ? _e.status_chance : 0.10,
+        prefix:        _e.prefix,
+        suffix:        _e.suffix,
     };
 }
 
-// elem_affix_describe(elem) - one-line tooltip/codex text for an elemental affix.
-function elem_affix_describe(elem) {
+// elem_affix_describe(elem, slot) - one-line tooltip/codex text for an elemental
+// affix. The flat damage is a WEAPON-attack rider (not a spell-damage bonus) that
+// fires on hits of the weapon's own reach class; the setup status is a chance proc.
+// `slot` ("weapon"/"ranged_weapon") names the reach so the text reads clearly. (Task 12)
+function elem_affix_describe(elem, slot = "") {
     if (elem == undefined) return "";
+    var _reach = (slot == "ranged_weapon") ? "ranged" : ((slot == "weapon") ? "melee" : "weapon");
+    var _chance = variable_struct_exists(elem, "status_chance") ? elem.status_chance : 0.10;
+    var _pct    = string(round(_chance * 100));
+    var _dur    = string(elem.status_dur);
     var _st = "";
     switch (elem.status_kind) {
-        case "dot":        _st = "applies Burn (" + string(elem.status_value) + " dmg/turn)"; break;
-        case "weaken":     _st = "applies Chill (foe deals -" + string(round(elem.status_value * 100)) + "% dmg)"; break;
-        case "vulnerable": _st = "applies Shock (foe takes +" + string(elem.status_value) + " dmg/hit)"; break;
+        case "dot":        _st = _pct + "% chance to apply Burn (" + string(elem.status_value) + " dmg/turn, " + _dur + "t)"; break;
+        case "weaken":     _st = _pct + "% chance to Chill (foe -" + string(round(elem.status_value * 100)) + "% dmg, " + _dur + "t)"; break;
+        case "vulnerable": _st = _pct + "% chance to Shock (foe +" + string(elem.status_value) + " dmg/hit, " + _dur + "t)"; break;
     }
-    return "+" + string(elem.dmg) + " " + elem_element_name(elem.element) + " dmg on hit, " + _st;
+    return "+" + string(elem.dmg) + " " + school_label(elem_element_name(elem.element)) + " dmg on " + _reach + " hit. (" + _st + ")";
 }
 
 // create_item(name, slot, rarity, stat_name, stat_value, effect_desc, gold_value)
@@ -851,7 +905,46 @@ function consumable_use_out_of_combat(item) {
         global.run_current_hp = min(_max, global.run_current_hp + item.effect_value);
         return true;
     }
+    // Sable's exotic find-buff potions apply out of combat too (drink between floors).
+    if (_et == "gold_find_pot") { potion_drink_gold(item.effect_value);  return true; }
+    if (_et == "loot_find_pot") { potion_drink_loot(item.effect_value);  return true; }
     return false;
+}
+
+// ---------------------------------------------------------------------------
+// EXOTIC FIND-BUFF POTIONS (Sable) - Goldfinger Elixir (+gold drops) & Faerie's
+// Tear (+loot drop chance). Their effect lasts until 2 BOSSES are slain (~2 floors),
+// NOT a whole run, so high-difficulty players must bring another to cover floor 3+.
+// Not stackable (drinking just refreshes the 2-boss window + magnitude); cleared on
+// death and run-end. Counters decrement in floor_clear_credit (one per boss-clear).
+// ---------------------------------------------------------------------------
+function potion_drink_gold(pct_points) {
+    global.gold_potion_bosses = 2;                 // refresh window (not stackable)
+    global.gold_potion_mult   = pct_points / 100;  // e.g. 7 -> 0.07
+}
+function potion_drink_loot(pct_points) {
+    global.loot_potion_bosses = 2;
+    global.loot_potion_pts    = pct_points;        // added to drop-% thresholds (e.g. +8)
+}
+// Gold-drop multiplier from the Goldfinger Elixir (1.0 = inactive).
+function potion_gold_mult() {
+    return (variable_global_exists("gold_potion_bosses") && global.gold_potion_bosses > 0)
+        ? (1 + global.gold_potion_mult) : 1;
+}
+// Extra equipment-drop chance (percentage points) from Faerie's Tear (0 = inactive).
+function potion_loot_bonus_pts() {
+    return (variable_global_exists("loot_potion_bosses") && global.loot_potion_bosses > 0)
+        ? global.loot_potion_pts : 0;
+}
+// Tick on each boss-clear (called from floor_clear_credit).
+function potion_buffs_on_boss_clear() {
+    if (variable_global_exists("gold_potion_bosses") && global.gold_potion_bosses > 0) global.gold_potion_bosses -= 1;
+    if (variable_global_exists("loot_potion_bosses") && global.loot_potion_bosses > 0) global.loot_potion_bosses -= 1;
+}
+// Clear both buffs (run-end / death / load).
+function potion_buffs_clear() {
+    global.gold_potion_bosses = 0;
+    global.loot_potion_bosses = 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -1466,6 +1559,68 @@ function two_handed_equipped() {
 // Move the equipped offhand (slot 1) back to the pack - stash in the hub,
 // carried items mid-run. Called when a 2H weapon is equipped so the offhand
 // empties. No-op if the offhand is already empty.
+// equip_found_list(sort_mode) - the player's PACK (carried_items) as a browsable list
+// for the Equipment tab's right-hand "found items" column. Returns [{item, idx}] where
+// idx is the index into global.carried_items (rebuilt each frame, so it survives equips).
+// sort_mode 0 = rarity (high->low, then name); 1 = type/slot (then rarity).
+function equip_found_list(sort_mode) {
+    var _out = [];
+    // Hub-only: gear deposited to the equipment stash also appears here, so found items
+    // that were auto-deposited on return stay browsable/equippable (matches the per-slot
+    // picker, which pulls stash + pack). During a run only the carried pack exists.
+    // Each entry tags its source so the equip action removes from the right array.
+    var _in_hub = (room == rm_hub || room == rm_character_select);
+    if (_in_hub && variable_global_exists("equipment_stash")) {
+        for (var _s = 0; _s < array_length(global.equipment_stash); _s++) {
+            array_push(_out, { item: global.equipment_stash[_s], idx: _s, src: 0 });   // 0 = stash
+        }
+    }
+    if (variable_global_exists("carried_items")) {
+        for (var _i = 0; _i < array_length(global.carried_items); _i++) {
+            array_push(_out, { item: global.carried_items[_i], idx: _i, src: 1 });      // 1 = pack
+        }
+    }
+    if (sort_mode == 1) {
+        array_sort(_out, function(a, b) {
+            var _as = variable_struct_exists(a.item, "slot") ? a.item.slot : "";
+            var _bs = variable_struct_exists(b.item, "slot") ? b.item.slot : "";
+            if (_as < _bs) return -1;
+            if (_as > _bs) return 1;
+            return b.item.rarity - a.item.rarity;
+        });
+    } else {
+        array_sort(_out, function(a, b) {
+            if (a.item.rarity != b.item.rarity) return b.item.rarity - a.item.rarity;
+            if (a.item.name < b.item.name) return -1;
+            if (a.item.name > b.item.name) return 1;
+            return 0;
+        });
+    }
+    return _out;
+}
+
+// equip_target_inv_for_slot(slot) - the inventory index an item of this slot type equips
+// into. Rings prefer an OPEN ring position (7 then 9), else Ring 1. -1 = no valid slot.
+function equip_target_inv_for_slot(slot) {
+    switch (slot) {
+        case "weapon":        return 0;
+        case "offhand":       return 1;
+        case "helm":          return 2;
+        case "chest":         return 3;
+        case "gloves":        return 4;
+        case "boots":         return 5;
+        case "amulet":        return 6;
+        case "ranged_weapon": return 8;
+        case "ring":
+            if (variable_global_exists("inventory")) {
+                if (global.inventory[7] == undefined) return 7;
+                if (array_length(global.inventory) > 9 && global.inventory[9] == undefined) return 9;
+            }
+            return 7;
+    }
+    return -1;
+}
+
 function return_offhand_to_pack(in_hub) {
     if (!variable_global_exists("inventory")) return;
     if (array_length(global.inventory) <= 1) return;
@@ -1474,6 +1629,60 @@ function return_offhand_to_pack(in_hub) {
     global.inventory[1] = undefined;
     if (in_hub) array_push(global.equipment_stash, _off);
     else        array_push(global.carried_items, _off);
+}
+
+// Return any equipped inventory slot's item to the pack (stash in hub, carried mid-run).
+function return_inv_slot_to_pack(idx, in_hub) {
+    if (!variable_global_exists("inventory")) return;
+    if (array_length(global.inventory) <= idx) return;
+    var _it = global.inventory[idx];
+    if (_it == undefined) return;
+    global.inventory[idx] = undefined;
+    if (in_hub) array_push(global.equipment_stash, _it);
+    else        array_push(global.carried_items, _it);
+}
+
+// --- Caster two-hander (staff) special case (Task 10) -------------------------
+// A staff (a 2H weapon tagged caster_2h, equipped in the RANGED slot 8) occupies
+// both hands but still permits a focus/tome offhand - just NOT a shield - and forbids
+// a melee weapon. Other 2H weapons (greatsword/longbow) fully lock the offhand as before.
+function item_is_caster_2h(item) {
+    if (item == undefined || !is_struct(item)) return false;
+    return item_is_two_handed(item)
+        && variable_struct_exists(item, "caster_2h") && item.caster_2h;
+}
+
+// True if the ranged slot (8) holds a caster 2H staff.
+function caster_staff_equipped() {
+    if (!variable_global_exists("inventory")) return false;
+    return (array_length(global.inventory) > 8) && item_is_caster_2h(global.inventory[8]);
+}
+
+// True if a NON-caster 2H weapon (greatsword/longbow) is equipped - these still
+// HARD-LOCK the offhand. The caster staff does not.
+function hard_two_handed_equipped() {
+    if (!variable_global_exists("inventory")) return false;
+    var _len = array_length(global.inventory);
+    if (_len > 0 && item_is_two_handed(global.inventory[0]) && !item_is_caster_2h(global.inventory[0])) return true;
+    if (_len > 8 && item_is_two_handed(global.inventory[8]) && !item_is_caster_2h(global.inventory[8])) return true;
+    return false;
+}
+
+// Is `item` a shield-type offhand? Shields are the defensive offhands (CON primary
+// or carrying an armor affix); caster focuses / totems / orbs are not. A staff
+// forbids shields but allows focuses.
+function item_is_shield_offhand(item) {
+    if (item == undefined || !is_struct(item)) return false;
+    if (variable_struct_exists(item, "slot") && item.slot != "offhand") return false;
+    if (variable_struct_exists(item, "offhand_kind")) return item.offhand_kind == "shield";
+    if (variable_struct_exists(item, "stat_name") && item.stat_name == "CON") return true;
+    if (variable_struct_exists(item, "affixes")) {
+        for (var _a = 0; _a < array_length(item.affixes); _a++) {
+            var _af = item.affixes[_a];
+            if (variable_struct_exists(_af, "stat_name") && _af.stat_name == "armor") return true;
+        }
+    }
+    return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -1575,7 +1784,17 @@ function player_permanent_level() {
 // equip_stat_block_reason(item) - "" if the wearer meets the item's stat
 // requirement (or it has none), else a "<Item> requires N STR." message. Used by
 // the equip paths to HARD-BLOCK an equip and by the tooltip to flag it.
+// Legendary gear can be FOUND early (the thrill of a lucky drop) but can't be
+// USED until the character has enough permanent (meta) levels - this keeps a
+// +loot-tier shrine roll on A0 from handing out an immediately game-breaking
+// legendary. (Task 6)
+#macro LEGENDARY_EQUIP_PERM_LEVEL 4
+
 function equip_stat_block_reason(item) {
+    if (is_struct(item) && variable_struct_exists(item, "rarity") && item.rarity >= 4
+        && player_permanent_level() < LEGENDARY_EQUIP_PERM_LEVEL) {
+        return item.name + " requires Level " + string(LEGENDARY_EQUIP_PERM_LEVEL) + " (permanent) to equip.";
+    }
     var _req = item_stat_requirement(item);
     if (_req.value <= 0 || _req.stat == "") return "";
     if (player_base_stat(_req.stat) >= _req.value) return "";
@@ -1600,9 +1819,10 @@ function apply_equipment_stats(stats_struct) {
                    school_dmg: school_dmg_empty() };
     if (!variable_global_exists("inventory")) return _bonus;
 
-    // When a 2H weapon is equipped the offhand slot (1) is locked - ignore it
-    // entirely (belt-and-suspenders; the equip path already empties it).
-    var _offhand_locked = two_handed_equipped();
+    // When a HARD 2H weapon (greatsword/longbow) is equipped the offhand slot (1) is
+    // locked - ignore it entirely. A caster staff does NOT lock the offhand: its
+    // focus/tome offhand still contributes stats. (Task 10)
+    var _offhand_locked = hard_two_handed_equipped();
 
     for (var _i = 0; _i < array_length(global.inventory); _i++) {
         if (_i == 1 && _offhand_locked) continue;
@@ -1819,6 +2039,8 @@ function handle_enemy_drops(enemy_type) {
     // Drop rarity scales with the awakening tier of the current run, plus any
     // loot-tier bonus from active curses (devil's bargain - better loot for risk).
     var _drop_asc = (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0) + curse_loot_asc_bonus();
+    // Faerie's Tear potion + active Boon pet: extra equipment-drop chance (percentage points).
+    var _loot_pot = potion_loot_bonus_pts() + pet_active_boon_loot_pts() + pet_active_egg_bonus("loot");
 
     // Rune drops (additive to gear/consumable). Standard: none. Elite: ~6% Tier I.
     // Boss: guaranteed, with a 20% chance to be Tier II. Tier III is craft-only.
@@ -1859,8 +2081,8 @@ function handle_enemy_drops(enemy_type) {
             var _fit = consumable_award(_c);
             return _c.name + " [Consumable]" + (_fit ? "" : " (PACK FULL)") + _rune_suffix;
         }
-        // 4% equipment drop - rarity weights scale with awakening (drop_weights).
-        if (irandom(99) < 4) {
+        // 4% equipment drop (+ Faerie's Tear bonus) - rarity weights scale with awakening.
+        if (irandom(99) < 4 + _loot_pot) {
             var _item = drop_equipment(drop_weights("standard", _drop_asc));
             array_push(global.run_items_found, _item);
             array_push(global.carried_items, _item);
@@ -1878,8 +2100,8 @@ function handle_enemy_drops(enemy_type) {
             var _fit = consumable_award(_c);
             return _c.name + " [Consumable]" + (_fit ? "" : " (PACK FULL)") + _rune_suffix;
         }
-        // 28% equipment drop - rarity weights scale with awakening (drop_weights).
-        if (irandom(99) < 28) {
+        // 28% equipment drop (+ Faerie's Tear bonus) - rarity weights scale with awakening.
+        if (irandom(99) < 28 + _loot_pot) {
             var _item = drop_equipment(drop_weights("elite", _drop_asc));
             array_push(global.run_items_found, _item);
             array_push(global.carried_items, _item);
@@ -2118,6 +2340,25 @@ function rune_tier_roman(t) {
 }
 
 // Full human-readable line, e.g. "Vitality II - +35 Max HP".
+// rune_inventory_sort() - sort the unsocketed rune pool alphabetically by name, then
+// by tier (ascending). Covers BOTH gear and aspect runes (they share global.rune_inventory),
+// so every list that reads it (Maren socket/aspect tabs, Sable salvage) shows a stable
+// alphabetical order instead of drop-order. Called whenever Maren/Sable opens (the only
+// places the pool is shown); the array is sorted in place so index-based socket/salvage
+// operations stay correct.
+function rune_inventory_sort() {
+    if (!variable_global_exists("rune_inventory") || !is_array(global.rune_inventory)) return;
+    if (array_length(global.rune_inventory) < 2) return;
+    array_sort(global.rune_inventory, function(a, b) {
+        var _ad = rune_get(a.id); var _bd = rune_get(b.id);
+        var _an = (_ad != undefined) ? _ad.name : a.id;
+        var _bn = (_bd != undefined) ? _bd.name : b.id;
+        if (_an < _bn) return -1;
+        if (_an > _bn) return 1;
+        return a.tier - b.tier;
+    });
+}
+
 function rune_describe(rune) {
     var _def = rune_get(rune.id);
     if (_def == undefined) return rune.name;
@@ -2196,7 +2437,14 @@ function item_ensure_sockets(it) {
 function maren_socketable_slots() {
     var _out = [];
     if (!variable_global_exists("inventory")) return _out;
-    for (var _i = 0; _i < array_length(global.inventory); _i++) {
+    // Walk slots in the equipment tab's VISUAL order (equip_display_order, which puts
+    // Ring 2 before the ranged weapon) rather than raw inventory index order, so the
+    // socket-gear list mirrors exactly what the player sees on the equipment screen
+    // instead of looking like an equip-time order. (Task: socket list order)
+    var _order = equip_display_order();
+    for (var _p = 0; _p < array_length(_order); _p++) {
+        var _i = _order[_p];
+        if (_i < 0 || _i >= array_length(global.inventory)) continue;
         var _it = global.inventory[_i];
         if (_it == undefined) continue;
         var _sc = variable_struct_exists(_it, "socket_count") ? _it.socket_count : rune_sockets_for_rarity(_it.rarity);
@@ -2549,6 +2797,10 @@ function sable_brew_catalog() {
         { id:"phoenix", name:"Phoenix Tonic",          effect:"heal_dot",    value:15, desc:"Restore 15 HP per turn for 3 turns",gold_val:60, dust:35, gold:cha_price(40) },
         { id:"philter", name:"Cleansing Philter",      effect:"cleanse_all", value:0,  desc:"Clear all negative effects",        gold_val:50, dust:20, gold:cha_price(25) },
         { id:"ley",     name:"Ley Battery",            effect:"resource_ap", value:3,  desc:"Restore +3 of your class resource and +1 AP (free to use)", gold_val:55, dust:30, gold:cha_price(35) },
+        // Exotic find-buff potions - effect lasts until 2 bosses are slain (~2 floors),
+        // NOT stackable, cleared on death. See potion_* in this file.
+        { id:"goldfinger", name:"Goldfinger Elixir", effect:"gold_find_pot", value:7, desc:"Gold drops +7% until 2 bosses are slain",       gold_val:65, dust:30, gold:cha_price(45) },
+        { id:"faerie",     name:"Faerie's Tear",     effect:"loot_find_pot", value:8, desc:"Loot drop chance +8% until 2 bosses are slain", gold_val:65, dust:35, gold:cha_price(50) },
     ];
 }
 function sable_brew_get(id) {
@@ -2577,6 +2829,10 @@ function sable_upgrade_map() {
         { from:"Energy Tonic",   to:"Adrenaline Vial" },
         { from:"Antidote",       to:"Purification Draught" },
         { from:"Smelling Salts", to:"Purification Draught" },
+        // Higher tier: fuse 3 elites into their master form (only effects with a real
+        // step up). Targets live in global.consumables_master (sable_elite_template).
+        { from:"Greater Healing Salve", to:"Master Healing Draught" },
+        { from:"Warden's Tonic",        to:"Phoenix Tonic" },
     ];
 }
 function sable_upgrade_cost() { return { gold: cha_price(20), dust: 10 }; }
@@ -2600,6 +2856,11 @@ function sable_elite_template(name) {
     if (variable_global_exists("consumables_elite")) {
         for (var _i = 0; _i < array_length(global.consumables_elite); _i++)
             if (global.consumables_elite[_i].name == name) return global.consumables_elite[_i];
+    }
+    // Higher-tier (elite->master) upgrade targets live in their own list.
+    if (variable_global_exists("consumables_master")) {
+        for (var _i = 0; _i < array_length(global.consumables_master); _i++)
+            if (global.consumables_master[_i].name == name) return global.consumables_master[_i];
     }
     return undefined;
 }
@@ -3066,6 +3327,1369 @@ function curse_turn_hp_drain()        { return curse_active("bloodprice") ? 4 : 
 function curse_has_bonus_drops()      { return curse_active("devilspact"); }             // Devil's Pact
 
 // =============================================================================
+// NPC AFFINITY (thin track - Phase 0.5). Per-NPC hidden score -> discrete tiers,
+// fed by function-use drip. NO gifts / gate-quests / neglect-decay yet (Phase 4).
+// global.npc_affinity = { <id>: { score, tier, gate_ready, run_gain } } keyed by
+// stable string ids. Meta-persistent (survives across runs, saved per slot); only
+// run_gain resets each run (end_run). Tiers: 0 Stranger 1 Acquaintance 2 Friend
+// 3 Companion 4 Lover. See AFFINITY_THIN_SPEC.md / NPC_Affinity_System_Design.md.
+// =============================================================================
+
+// Stable NPC ids (index-independent so roster growth - e.g. Bairc - can't shift keys).
+function affinity_npc_ids() {
+    return ["dorn", "sable", "maren", "vex", "petra", "vael"];
+}
+
+// Cumulative score needed to REACH each tier (index = tier). TUNABLE.
+function affinity_thresholds() { return [0, 15, 45, 100, 180]; }
+
+// Per-run soft cap on grindable (function-use) gain per NPC. TUNABLE.
+// (Bumped 10 -> 30 on 2026-06-29 so a session of buying can actually cross a tier;
+// also better matches the intended ~Friend-in-2-runs pacing.)
+function affinity_run_soft_cap()  { return 30; }
+
+// Scarcity caps (thin track = hard blocks; soft-demotion deferred to Phase 4).
+function affinity_max_lovers()     { return 1; }
+function affinity_max_companions() { return 2; }
+
+// Tier display name for a tier index.
+function affinity_tier_name_for(tier) {
+    switch (tier) {
+        case 0: return "Stranger";
+        case 1: return "Acquaintance";
+        case 2: return "Friend";
+        case 3: return "Companion";
+        case 4: return "Lover";
+    }
+    return "Stranger";
+}
+
+// Build a fresh zeroed affinity struct for every current NPC id.
+function affinity_fresh() {
+    var _a = {};
+    var _ids = affinity_npc_ids();
+    for (var _i = 0; _i < array_length(_ids); _i++) {
+        variable_struct_set(_a, _ids[_i], { score: 0, tier: 0, gate_ready: false, run_gain: 0 });
+    }
+    return _a;
+}
+
+// Guarantee global.npc_affinity exists with a complete entry for every NPC id.
+// Idempotent; backfills missing fields (schema drift / old saves). Returns the struct.
+function affinity_ensure() {
+    if (!variable_global_exists("npc_affinity") || !is_struct(global.npc_affinity)) {
+        global.npc_affinity = affinity_fresh();
+        return global.npc_affinity;
+    }
+    var _ids = affinity_npc_ids();
+    for (var _i = 0; _i < array_length(_ids); _i++) {
+        var _id = _ids[_i];
+        if (!variable_struct_exists(global.npc_affinity, _id) || !is_struct(variable_struct_get(global.npc_affinity, _id))) {
+            variable_struct_set(global.npc_affinity, _id, { score: 0, tier: 0, gate_ready: false, run_gain: 0 });
+        } else {
+            var _e = variable_struct_get(global.npc_affinity, _id);
+            if (!variable_struct_exists(_e, "score"))      _e.score      = 0;
+            if (!variable_struct_exists(_e, "tier"))       _e.tier       = 0;
+            if (!variable_struct_exists(_e, "gate_ready")) _e.gate_ready = false;
+            if (!variable_struct_exists(_e, "run_gain"))   _e.run_gain   = 0;
+        }
+    }
+    return global.npc_affinity;
+}
+
+// Fetch an NPC's affinity entry (ensures the struct first). undefined on bad id.
+function affinity_entry(id) {
+    affinity_ensure();
+    if (!variable_struct_exists(global.npc_affinity, id)) return undefined;
+    return variable_struct_get(global.npc_affinity, id);
+}
+
+// --- Read API (features query these, never the raw struct) -----------------
+function affinity_tier(id) {
+    var _e = affinity_entry(id);
+    return (_e == undefined) ? 0 : _e.tier;
+}
+function affinity_at_least(id, tier) { return affinity_tier(id) >= tier; }
+function affinity_tier_name(id)      { return affinity_tier_name_for(affinity_tier(id)); }
+
+// How many NPCs currently sit at exactly the given tier (scarcity-cap checks).
+function affinity_count_at_tier(tier) {
+    affinity_ensure();
+    var _n = 0;
+    var _ids = affinity_npc_ids();
+    for (var _i = 0; _i < array_length(_ids); _i++) {
+        if (variable_struct_get(global.npc_affinity, _ids[_i]).tier == tier) _n++;
+    }
+    return _n;
+}
+
+// Progress fraction (0..1) from the current tier toward the next gate. 1.0 at Lover.
+// Drives the UI bar; the raw score is intentionally never surfaced (diegetic).
+function affinity_progress_frac(id) {
+    var _e = affinity_entry(id);
+    if (_e == undefined) return 0;
+    var _th = affinity_thresholds();
+    if (_e.tier >= array_length(_th) - 1) return 1.0;
+    var _lo = _th[_e.tier];
+    var _hi = _th[_e.tier + 1];
+    if (_hi <= _lo) return 1.0;
+    return clamp((_e.score - _lo) / (_hi - _lo), 0, 1);
+}
+
+// True when this NPC has reached the next gate and awaits the deepen-bond confirm.
+// Computed LIVE from score (robust to any score change, not just affinity_add), and
+// applies the frictionless Stranger->Acquaintance auto-cross on the way. tier 0 never
+// reports "ready" (it auto-crosses); Lover (max) never reports ready.
+function affinity_gate_ready(id) {
+    var _e = affinity_entry(id);
+    if (_e == undefined) return false;
+    var _th = affinity_thresholds();
+    if (_e.tier == 0 && _e.score >= _th[1]) { _e.tier = 1; global.heart_pending = 1; }   // auto-cross on-ramp, live
+    if (_e.tier < 1 || _e.tier >= array_length(_th) - 1) return false;
+    return _e.score >= _th[_e.tier + 1];
+}
+
+// --- Earning + gates -------------------------------------------------------
+
+// Recompute gate_ready from score; auto-cross the frictionless Stranger->Acquaintance
+// gate (tier 0->1 needs no confirm). Friend+/Lover gates set gate_ready for the
+// one-click deepen-bond confirm.
+function affinity_refresh_gate(id) {
+    var _e = affinity_entry(id);
+    if (_e == undefined) return;
+    var _th = affinity_thresholds();
+    if (_e.tier >= array_length(_th) - 1) { _e.gate_ready = false; return; }   // maxed (Lover)
+
+    if (_e.score >= _th[_e.tier + 1]) {
+        if (_e.tier == 0) {
+            _e.tier = 1;                 // Stranger -> Acquaintance: auto, no confirm
+            global.heart_pending = 1;    // tier-up heart burst (blue)
+            _e.gate_ready = false;
+            affinity_refresh_gate(id);   // score may already clear the next gate
+        } else {
+            _e.gate_ready = true;        // awaits the deepen-bond confirm
+        }
+    } else {
+        _e.gate_ready = false;
+    }
+}
+
+// Add function-use drip to an NPC. Honours the per-run soft cap, updates score, and
+// refreshes the gate. Phase 0.5: drip is the ONLY score source. Save is handled by
+// the caller (drip rides the hub's existing post-transaction save).
+function affinity_add(id, amount) {
+    var _e = affinity_entry(id);
+    if (_e == undefined || amount <= 0) return;
+    npc_actor_play_action();   // the open NPC's sprite reacts to the transaction
+    var _room = affinity_run_soft_cap() - _e.run_gain;
+    if (_room <= 0) return;             // this NPC already capped this run
+    var _gain = min(amount, _room);
+    _e.score    += _gain;
+    _e.run_gain += _gain;
+    affinity_refresh_gate(id);
+}
+
+// Cross a ready gate (the one-click "deepen bond" confirm - placeholder for the
+// Phase-4 gate quest). Enforces scarcity caps as hard blocks. Returns "" on success
+// else a reason string for the UI. Caller saves on success.
+function affinity_try_advance(id) {
+    var _e = affinity_entry(id);
+    if (_e == undefined)         return "Unknown.";
+    if (!affinity_gate_ready(id)) return "Not ready.";   // live check (also applies auto-cross)
+    var _target = _e.tier + 1;
+
+    if (_target == 4 && affinity_count_at_tier(4) >= affinity_max_lovers()) {
+        return "Your heart belongs to another.";
+    }
+    if (_target == 3 && affinity_count_at_tier(3) >= affinity_max_companions()) {
+        return "You can't commit to more right now.";
+    }
+
+    _e.tier = _target;
+    global.heart_pending = _target;     // tier-up heart burst (blue tiers 1-3, red Lover)
+    affinity_refresh_gate(id);          // re-evaluate (score may reach the next gate)
+    return "";
+}
+
+// Reset the per-run grind cap for every NPC (NOT score/tier). Called from end_run.
+function affinity_reset_run_gain() {
+    if (!variable_global_exists("npc_affinity") || !is_struct(global.npc_affinity)) return;
+    var _ids = affinity_npc_ids();
+    for (var _i = 0; _i < array_length(_ids); _i++) {
+        if (variable_struct_exists(global.npc_affinity, _ids[_i])) {
+            variable_struct_get(global.npc_affinity, _ids[_i]).run_gain = 0;
+        }
+    }
+}
+
+// =============================================================================
+// PETRA TREASURE TRADER (Phase 1). Async gear-laundering: give 3 same-tier items,
+// earn 1 of the next tier up by clearing floors. Builds the two SHARED primitives
+// both Petra and Pets use: the floor-clear banking hook (floor_clear_credit) and the
+// cross-run persistent order (global.petra_order, NOT reset in end_run, saved per
+// slot). See PETRA_TT_PHASE1_SPEC.md. v1 = exact cut line (single order, Lever A
+// only, no Legendary-input branch). Rarity 0..4 = Common..Legendary.
+// =============================================================================
+
+// The 4-rung trade ladder. cost_floors = floor-clears required (banked across runs);
+// req_awk = each credited floor must be at/above this Awakening; gold charged at
+// placement (sunk on cancel); dust = optional Lever A roll-bias cost. All TUNABLE.
+function petra_ladder() {
+    return [
+        { in_rarity: 0, out_rarity: 1, cost_floors: 1, req_awk: 0, gold: 25,  dust: 5  },
+        { in_rarity: 1, out_rarity: 2, cost_floors: 3, req_awk: 0, gold: 75,  dust: 10 },
+        { in_rarity: 2, out_rarity: 3, cost_floors: 6, req_awk: 2, gold: 200, dust: 20 },
+        { in_rarity: 3, out_rarity: 4, cost_floors: 6, req_awk: 3, gold: 500, dust: 40 },
+    ];
+}
+function petra_ladder_for(in_rarity) {
+    var _l = petra_ladder();
+    for (var _i = 0; _i < array_length(_l); _i++) if (_l[_i].in_rarity == in_rarity) return _l[_i];
+    return undefined;
+}
+
+function petra_order_active() {
+    return variable_global_exists("petra_order") && is_struct(global.petra_order);
+}
+
+// --- Affinity-derived perks (read the thin-affinity API) -------------------
+// Friend (>=2): -10% on Petra gold costs (trade fee + her consumable shop).
+function petra_gold_mult()          { return affinity_at_least("petra", 2) ? 0.90 : 1.0; }
+// Companion (>=3): faster delivery - shave 1 floor off the cost (min 1).
+function petra_delivery_reduction() { return affinity_at_least("petra", 3) ? 1 : 0; }
+// Cancel-recovery band [min,max] by Petra tier (Stranger..Friend 0-1, Companion 1-2, Lover 2-3).
+function petra_cancel_band() {
+    var _t = affinity_tier("petra");
+    if (_t >= 4) return [2, 3];
+    if (_t >= 3) return [1, 2];
+    return [0, 1];
+}
+
+// --- Stash helpers ---------------------------------------------------------
+function petra_item_value(item) {
+    return (is_struct(item) && variable_struct_exists(item, "gold_value")) ? item.gold_value : 0;
+}
+function petra_stash_count_of_rarity(r) {
+    if (!variable_global_exists("equipment_stash")) return 0;
+    var _n = 0;
+    for (var _i = 0; _i < array_length(global.equipment_stash); _i++) {
+        var _it = global.equipment_stash[_i];
+        if (is_struct(_it) && variable_struct_exists(_it, "rarity") && _it.rarity == r) _n++;
+    }
+    return _n;
+}
+// Consume specific stash items by index. Deletes high-index-first so the remaining
+// target indices stay valid during removal.
+function petra_consume_indices(indices) {
+    var _sorted = [];
+    for (var _i = 0; _i < array_length(indices); _i++) array_push(_sorted, indices[_i]);
+    array_sort(_sorted, false);   // descending
+    for (var _i = 0; _i < array_length(_sorted); _i++) {
+        var _ix = _sorted[_i];
+        if (_ix >= 0 && _ix < array_length(global.equipment_stash)) array_delete(global.equipment_stash, _ix, 1);
+    }
+}
+
+// --- Output generation -----------------------------------------------------
+// A "quality score" for comparing two candidate outputs (Lever A take-higher-of-two).
+function petra_item_quality(item) {
+    var _q = 0;
+    if (is_struct(item) && variable_struct_exists(item, "affixes")) {
+        for (var _i = 0; _i < array_length(item.affixes); _i++) _q += item.affixes[_i].stat_value;
+        _q += array_length(item.affixes) * 0.1;   // tiebreak toward more affixes
+    }
+    return _q;
+}
+// Roll ONE item of an exact rarity with affixes (mirrors drop_equipment's non-legendary
+// path, but forces the rarity - no Prospector bump, no tier drift).
+function petra_roll_one(rarity) {
+    var _tbl;
+    if (rarity <= 0)      _tbl = global.loot_table_common;
+    else if (rarity == 1) _tbl = global.loot_table_uncommon;
+    else                  _tbl = global.loot_table_rare;   // rare + epic share rare bases
+    var _item = clone_item(_tbl[irandom(array_length(_tbl) - 1)]);
+    _item.rarity = rarity;
+    var _ac = 0;
+    if (rarity == 1)      _ac = 1;
+    else if (rarity == 2) _ac = (irandom(1) == 0) ? 1 : 2;
+    else if (rarity == 3) _ac = 2;
+    if (_ac > 0) apply_affixes_to_item(_item, roll_affixes(rarity, _ac, [_item.stat_name], _item.slot, _item.base_name));
+    var _be = (variable_struct_exists(_item, "elem_affix") && _item.elem_affix != undefined);
+    if ((_item.slot == "weapon" || _item.slot == "ranged_weapon") && !_be) {
+        apply_elemental_affix_to_item(_item, roll_elemental_affix(rarity));
+    }
+    return _item;
+}
+// Make the trade output. Legendary = a hand-authored unique. Lever A (dust_bias)
+// rolls twice and keeps the higher-quality result.
+function petra_make_item(rarity, dust_bias) {
+    if (rarity == 4 && variable_global_exists("loot_table_legendary")
+        && array_length(global.loot_table_legendary) > 0) {
+        return clone_item(global.loot_table_legendary[irandom(array_length(global.loot_table_legendary) - 1)]);
+    }
+    var _best = petra_roll_one(rarity);
+    if (dust_bias) {
+        var _alt = petra_roll_one(rarity);
+        if (petra_item_quality(_alt) > petra_item_quality(_best)) _best = _alt;
+    }
+    return _best;
+}
+// A clean base item of a rarity (no affixes) - what a cancel recovers.
+function petra_base_item(rarity) {
+    if (rarity >= 4 && variable_global_exists("loot_table_legendary") && array_length(global.loot_table_legendary) > 0) {
+        return clone_item(global.loot_table_legendary[irandom(array_length(global.loot_table_legendary) - 1)]);
+    }
+    var _tbl;
+    if (rarity <= 0)      _tbl = global.loot_table_common;
+    else if (rarity == 1) _tbl = global.loot_table_uncommon;
+    else                  _tbl = global.loot_table_rare;
+    var _it = clone_item(_tbl[irandom(array_length(_tbl) - 1)]);
+    _it.rarity = rarity;
+    return _it;
+}
+
+// --- Order lifecycle: place / cancel / collect -----------------------------
+// Returns "" on success, else a reason string for the UI.
+// Place an order from 3 PLAYER-CHOSEN stash items (array of stash indices). Validates
+// exactly-3 + all same tier. Returns "" on success else a reason string.
+function petra_place_order(indices, dust_bias) {
+    if (petra_order_active())        return "Collect your current order first.";
+    if (array_length(indices) != 3)  return "Choose exactly 3 items.";
+
+    var _rar = -1;
+    for (var _i = 0; _i < 3; _i++) {
+        var _ix = indices[_i];
+        if (_ix < 0 || _ix >= array_length(global.equipment_stash)) return "Invalid selection.";
+        var _it = global.equipment_stash[_ix];
+        if (!is_struct(_it) || !variable_struct_exists(_it, "rarity")) return "Invalid item.";
+        if (_rar == -1) _rar = _it.rarity;
+        else if (_it.rarity != _rar) return "All 3 items must be the same tier.";
+    }
+
+    var _rung = petra_ladder_for(_rar);
+    if (_rung == undefined) return item_rarity_name(_rar) + " items can't be traded up.";
+
+    var _gold_cost = floor(_rung.gold * petra_gold_mult());
+    var _dust_cost = dust_bias ? _rung.dust : 0;
+    if (global.gold < _gold_cost) return "Need " + string(_gold_cost) + "g.";
+    if (dust_bias && (!variable_global_exists("rune_dust") || global.rune_dust < _dust_cost))
+        return "Need " + string(_dust_cost) + " dust for the roll-bias.";
+
+    // Consume the chosen items + costs (gold is sunk; affixes on inputs are destroyed).
+    petra_consume_indices(indices);
+    global.gold -= _gold_cost;
+    if (dust_bias) global.rune_dust -= _dust_cost;
+
+    global.petra_order = {
+        input_tier:      _rar,
+        output_tier:     _rung.out_rarity,
+        req_awakening:   _rung.req_awk,
+        cost_floors:     max(1, _rung.cost_floors - petra_delivery_reduction()),
+        progress_floors: 0,
+        dust_bias:       dust_bias,
+        status:          "in_progress",
+    };
+    affinity_add("petra", 4);   // placing an order is the deepest Petra interaction
+    if (room == rm_hub || room == rm_character_select) save_game();
+    return "";
+}
+
+function petra_cancel_order() {
+    if (!petra_order_active()) return "No order to cancel.";
+    var _in = global.petra_order.input_tier;
+    var _band    = petra_cancel_band();
+    var _recover = min(3, irandom_range(_band[0], _band[1]));
+    for (var _i = 0; _i < _recover; _i++) array_push(global.equipment_stash, petra_base_item(_in));
+    global.petra_order = undefined;
+    if (room == rm_hub || room == rm_character_select) save_game();
+    return "Order cancelled. Recovered " + string(_recover) + " item" + (_recover == 1 ? "" : "s")
+        + ". (Gold not refunded.)";
+}
+
+function petra_collect() {
+    if (!petra_order_active())              return "Nothing to collect.";
+    if (global.petra_order.status != "ready") return "Your order isn't ready yet.";
+    var _out  = global.petra_order.output_tier;
+    var _bias = global.petra_order.dust_bias;
+    var _item = petra_make_item(_out, _bias);
+    array_push(global.equipment_stash, _item);
+    discover_item(item_base_name(_item));
+    global.petra_order = undefined;
+    if (room == rm_hub || room == rm_character_select) save_game();
+    return "Collected a " + item_rarity_name(_out) + " item: " + _item.name + "!";
+}
+
+// One-line order status for the UI.
+function petra_order_status_text() {
+    if (!petra_order_active()) return "No active order.";
+    var _o = global.petra_order;
+    if (_o.status == "ready") return "READY - a " + item_rarity_name(_o.output_tier) + " awaits collection.";
+    var _awk = (_o.req_awakening > 0) ? ("   (floors must be A" + string(_o.req_awakening) + "+)") : "";
+    return item_rarity_name(_o.input_tier) + " -> " + item_rarity_name(_o.output_tier)
+        + "    " + string(_o.progress_floors) + " / " + string(_o.cost_floors) + " floors" + _awk
+        + (_o.dust_bias ? "    [roll-biased]" : "");
+}
+
+// SHARED PRIMITIVE: credit one cleared floor toward time-gated systems. Called once
+// per boss-clear (from obj_combat_controller) with the run's Awakening. Banks
+// immediately so extract AND death keep already-cleared floors. Phase 2 pets hook here too.
+function floor_clear_credit(awk) {
+    if (petra_order_active() && global.petra_order.status == "in_progress") {
+        if (awk >= global.petra_order.req_awakening) {
+            global.petra_order.progress_floors += 1;
+            if (global.petra_order.progress_floors >= global.petra_order.cost_floors) {
+                global.petra_order.status = "ready";
+            }
+        }
+    }
+    // Tick down the exotic find-buff potions (Goldfinger / Faerie's Tear): one boss slain.
+    potion_buffs_on_boss_clear();
+    // Note: pet Stage growth is banked per-RUN (at end_run via pet_run_complete), not
+    // per-floor - "complete a run" is the gate (design §5), so nothing pet-Stage here.
+}
+
+// =============================================================================
+// PETS (Creature subsystem) - Phase 2 Slice 1+2: data model, acquisition, hatch.
+// See PETS_DESIGN.md. Feed/growth, evolution, the Companion Gate tab and all combat
+// are LATER slices; their fields are reserved here so saves stay forward-compatible.
+// Naming: PET_STAGE_AWAKENED (4) is deliberately distinct from global.awakening_level
+// (difficulty) - never display them adjacent (design §10).
+// =============================================================================
+#macro PET_STAGE_BABY       0
+#macro PET_STAGE_ADOLESCENT 1
+#macro PET_STAGE_YOUNGADULT 2
+#macro PET_STAGE_ADULT      3
+#macro PET_STAGE_AWAKENED   4
+
+#macro PET_ARCH_BOON      0
+#macro PET_ARCH_COMBATANT 1
+#macro PET_ARCH_GUARDIAN  2
+
+function pet_archetype_name(a) {
+    switch (a) {
+        case PET_ARCH_BOON:      return "Boon";
+        case PET_ARCH_COMBATANT: return "Combatant";
+        case PET_ARCH_GUARDIAN:  return "Guardian";
+    }
+    return "Unknown";
+}
+
+function pet_archetype_blurb(a) {
+    switch (a) {
+        case PET_ARCH_BOON:      return "Grants passive boons (gold / loot / stats). Never fights.";
+        case PET_ARCH_COMBATANT: return "Takes its own turn in combat once grown. Fights beside you.";
+        case PET_ARCH_GUARDIAN:  return "Passively shields and heals you in combat. Never attacks.";
+    }
+    return "";
+}
+
+function pet_stage_name(s) {
+    switch (s) {
+        case PET_STAGE_BABY:       return "Baby";
+        case PET_STAGE_ADOLESCENT: return "Adolescent";
+        case PET_STAGE_YOUNGADULT: return "Young Adult";
+        case PET_STAGE_ADULT:      return "Adult";
+        case PET_STAGE_AWAKENED:   return "Awakened";
+    }
+    return "?";
+}
+
+// Growth points needed to fill the bar for `stage` and become READY to evolve.
+// Feed adds growth instantly; an active run adds a baseline. The bar can be FILLED by
+// feed alone, but only an active-run completion CROSSES it (design §5). (TBD - playtest.)
+function pet_growth_needed(stage) {
+    switch (stage) {
+        case PET_STAGE_BABY:       return 4;
+        case PET_STAGE_ADOLESCENT: return 6;
+        case PET_STAGE_YOUNGADULT: return 9;
+        case PET_STAGE_ADULT:      return 12;   // -> Awakened (Stage 4 effects TBD; capped at Adult for now)
+    }
+    return 0;
+}
+
+// The highest stage a pet can currently reach. Awakened (4) is design-TBD (crossover),
+// so growth caps at Adult until that pass ships.
+function pet_max_stage() { return PET_STAGE_ADULT; }
+
+// True when the growth bar is full - the pet is READY but still needs an active run to cross.
+function pet_growth_ready(pet) {
+    if (!is_struct(pet) || pet.is_egg || pet.stage >= pet_max_stage()) return false;
+    return pet.growth >= pet_growth_needed(pet.stage);
+}
+
+// --- FEED (design §12): feed is now BOUGHT AS ITEMS from Petra (gold) into a feed pouch,
+// then APPLIED to a pet at Bairc (no gold there). 3 basic tiers are always in Petra's stock;
+// one PREMIUM feed rotates each run (rolled in restock_shops) and carries a small perk. ---
+// perk: "none" | "mend" (heals 1 injury tier) | "purge" (cures a pushing corruption).
+function pet_feed_catalog() {   // the 3 always-stocked basics
+    return [
+        { id:"scraps", name:"Table Scraps",     growth:1, gold:12, perk:"none", blurb:"barely a meal, but it counts" },
+        { id:"forage", name:"Forager's Bundle", growth:2, gold:30, perk:"none", blurb:"roots, grubs and dried meat" },
+        { id:"prime",  name:"Prime Cut",        growth:4, gold:70, perk:"none", blurb:"the good stuff - it eats well today" },
+    ];
+}
+// Rotating premium feeds - one is stocked per run (global.petra_feed_premium id).
+function pet_feed_premium_pool() {
+    return [
+        { id:"mending_mash", name:"Mending Mash",  growth:3, gold:95,  perk:"mend",  blurb:"knits a wounded creature back together (heals one injury)" },
+        { id:"purgeroot",    name:"Purgeroot Loaf", growth:3, gold:110, perk:"purge", blurb:"bitter root that quiets a corrupting hunger (cures a Pushing pet)" },
+        { id:"hearty_roast", name:"Hearty Roast",  growth:6, gold:130, perk:"none",  blurb:"a feast - the fastest growth gold can buy" },
+    ];
+}
+// The premium feed currently in Petra's stock (falls back to the first if unrolled).
+function pet_feed_current_premium() {
+    var _pool = pet_feed_premium_pool();
+    if (variable_global_exists("petra_feed_premium")) {
+        for (var _i = 0; _i < array_length(_pool); _i++)
+            if (_pool[_i].id == global.petra_feed_premium) return _pool[_i];
+    }
+    return _pool[0];
+}
+// Icon sprite for a feed id (spr_pet_feed_<id>), or -1 if not imported yet.
+function pet_feed_icon(id) {
+    return asset_get_index("spr_pet_feed_" + id);
+}
+
+// Resolve any feed def by id (basics + full premium pool).
+function pet_feed_get(id) {
+    var _b = pet_feed_catalog();
+    for (var _i = 0; _i < array_length(_b); _i++) if (_b[_i].id == id) return _b[_i];
+    var _p = pet_feed_premium_pool();
+    for (var _j = 0; _j < array_length(_p); _j++) if (_p[_j].id == id) return _p[_j];
+    return undefined;
+}
+// The feeds Petra sells right now: 3 basics + the current rotating premium.
+function pet_feed_shop_list() {
+    var _list = pet_feed_catalog();
+    array_push(_list, pet_feed_current_premium());
+    return _list;
+}
+
+// --- Feed pouch: owned feed items (struct keyed by feed id -> count). Persisted in save. ---
+function pet_feed_pouch() {
+    if (!variable_global_exists("pet_feed_pouch") || !is_struct(global.pet_feed_pouch)) global.pet_feed_pouch = {};
+    return global.pet_feed_pouch;
+}
+function pet_feed_pouch_count(id) {
+    var _p = pet_feed_pouch();
+    return variable_struct_exists(_p, id) ? variable_struct_get(_p, id) : 0;
+}
+function pet_feed_pouch_add(id, n) {
+    variable_struct_set(pet_feed_pouch(), id, pet_feed_pouch_count(id) + n);
+}
+function pet_feed_pouch_total() {
+    var _p = pet_feed_pouch(); var _k = variable_struct_get_names(_p); var _t = 0;
+    for (var _i = 0; _i < array_length(_k); _i++) _t += variable_struct_get(_p, _k[_i]);
+    return _t;
+}
+// Feeds the player currently OWNS (count > 0), for the Bairc apply menu.
+function pet_feed_owned_list() {
+    var _all = pet_feed_shop_list();   // canonical order (basics then premium)
+    // include any owned feed not in current shop stock (a premium bought last run)
+    var _pool = pet_feed_premium_pool();
+    for (var _i = 0; _i < array_length(_pool); _i++) {
+        var _found = false;
+        for (var _j = 0; _j < array_length(_all); _j++) if (_all[_j].id == _pool[_i].id) { _found = true; break; }
+        if (!_found) array_push(_all, _pool[_i]);
+    }
+    var _out = [];
+    for (var _k = 0; _k < array_length(_all); _k++)
+        if (pet_feed_pouch_count(_all[_k].id) > 0) array_push(_out, _all[_k]);
+    return _out;
+}
+
+// Apply an owned feed (by id) to a pet - spends one from the pouch (no gold). Fills growth
+// toward (clamped at) the next-stage threshold; feed makes a pet READY but never crosses on
+// its own. Premium perks fire here. Returns "" on success, else an error message.
+function pet_feed_apply(pet, feed_id) {
+    if (!is_struct(pet) || pet.is_egg)   return "An egg can't be fed - hatch it first.";
+    if (pet.stage >= pet_max_stage())     return pet.name + " is fully grown.";
+    if (pet_growth_ready(pet))            return pet.name + " is already ready - take it on a run.";
+    var _f = pet_feed_get(feed_id);
+    if (_f == undefined)                  return "";
+    if (pet_feed_pouch_count(feed_id) <= 0) return "You have no " + _f.name + " - buy some from Petra.";
+    variable_struct_set(pet_feed_pouch(), feed_id, pet_feed_pouch_count(feed_id) - 1);
+    var _need  = pet_growth_needed(pet.stage);
+    pet.growth = min(_need, pet.growth + _f.growth);
+    // Premium perk.
+    if (_f.perk == "mend" && pet.injured > 0) {
+        pet.injured = max(0, pet.injured - 1);
+    } else if (_f.perk == "purge" && pet_corr_state(pet) == "pushing") {
+        pet_corruption_cure(pet);
+    }
+    return "";
+}
+
+// The full ordered Petra BUY list, shared by the input handler and the draw so their row
+// indices never drift: 4 standard consumables, an optional limited special, then the pet
+// feeds (3 basics + rotating premium). Each entry: {kind:"consum"/"feed", it, price, special}.
+function petra_buy_list() {
+    var _list = [];
+    for (var _i = 0; _i < 4; _i++) {
+        var _c = global.consumables_standard[_i];
+        array_push(_list, { kind:"consum", it:_c, price:cha_price(floor(_c.gold_value * 1.5)), special:false });
+    }
+    if (global.petra_stock_special != undefined && global.petra_special_qty > 0) {
+        var _s = global.petra_stock_special;
+        array_push(_list, { kind:"consum", it:_s, price:cha_price(floor(_s.gold_value * 2)), special:true });
+    }
+    var _feeds = pet_feed_shop_list();
+    for (var _f = 0; _f < array_length(_feeds); _f++) {
+        var _fd = _feeds[_f];
+        array_push(_list, { kind:"feed", it:_fd, price:cha_price(_fd.gold), special:false });
+    }
+    return _list;
+}
+
+// Run completion advances the ACTIVE pet's growth and CROSSES a full bar (the gate that
+// feed alone can't open, design §5). result: 1 clear / 0 extract / -1 death. Clear gives
+// the most baseline, extract less, death none. Returns the pet if it EVOLVED, else undefined.
+function pet_run_complete(result) {
+    var _p = pet_active();
+    if (_p == undefined || _p.is_egg || _p.stage >= pet_max_stage()) return undefined;
+    var _gain = (result == 1) ? 2 : ((result == 0) ? 1 : 0);   // clear / extract / death
+    if (_gain <= 0) return undefined;                          // a death banks no growth
+    _p.growth += _gain;
+    if (_p.growth >= pet_growth_needed(_p.stage)) {
+        _p.stage += 1;
+        _p.growth = 0;
+        if (_p.stage >= PET_STAGE_ADULT) {
+            // Raised pets CHOOSE their capstone at Bairc (flagged pending, no effect until
+            // picked); found/wild creatures auto-roll one on the spot. See pet_capstone_*.
+            if (_p.raised) _p.capstone_pending = true;
+            else           pet_assign_capstone(_p);
+        }
+        return _p;                                             // evolved this run
+    }
+    return undefined;
+}
+
+// 3-STAGE authored art (redesigned creature species): each species has baby, youngadult
+// and adult frames (+ egg). Adolescent reuses the baby frame slightly enlarged; awakened
+// reuses the adult frame. So growth reads across 4 stages with 3 authored frames/species.
+// pet_sprite_key(pet) -> "egg" | "baby" | "youngadult" | "adult" for the frame to draw.
+function pet_sprite_key(pet) {
+    if (!is_struct(pet) || pet.is_egg) return "egg";
+    if (pet.stage >= PET_STAGE_ADULT)      return "adult";        // adult (3) + awakened (4)
+    if (pet.stage >= PET_STAGE_YOUNGADULT) return "youngadult";   // young adult (2)
+    return "baby";                                                 // baby (0) + adolescent (1)
+}
+
+// Subtle scale multiplier that sells the adolescent in-between on the reused baby frame.
+// (Young adult and adult now have their own authored frames, so they sit at true size.)
+function pet_stage_scale(pet) {
+    if (!is_struct(pet) || pet.is_egg) return 1.0;
+    switch (pet.stage) {
+        case PET_STAGE_BABY:       return 1.00;   // baby frame, true size
+        case PET_STAGE_ADOLESCENT: return 1.25;   // baby frame, larger
+        case PET_STAGE_YOUNGADULT: return 1.00;   // young-adult frame, own art
+        case PET_STAGE_ADULT:      return 1.00;   // adult frame, full size
+    }
+    return 1.0;
+}
+
+// Resolve a pet's display sprite index (newest-art-wins, graceful fallback so the loop
+// works before art exists): species key frame (spr_pet_<species>_<key>) -> species base
+// (spr_pet_<species>) -> shared egg (spr_pet_egg) -> -1 (caller draws a placeholder).
+// NOTE: when pet art is imported, these string-only refs MUST be added to
+// global.__sprite_includes or the compiler strips them (see dungeon_bg_sprite note).
+// dir: facing key for directional art - "s" (south, the default the station shows) or
+// "e" (east, the combat-facing). Resolution prefers the directional animated sprite,
+// then south, then the current no-direction static sprite, so single-frame art keeps
+// working until the animated south/east frames are imported. (8-dir + idle-anim convention)
+function pet_sprite(pet, dir = "s") {
+    if (!is_struct(pet)) return -1;
+    var _key  = pet_sprite_key(pet);
+    var _base = "spr_pet_" + pet.species + "_" + _key;
+    var _cands = [_base + "_" + dir, _base + "_s", _base];   // directional -> south -> legacy static
+    for (var _i = 0; _i < array_length(_cands); _i++) {
+        var _a = asset_get_index(_cands[_i]);
+        if (_a >= 0) return _a;
+    }
+    // Requested key not authored yet -> walk down to the nearest older frame that exists
+    // (adult -> youngadult -> baby), so a legacy species missing a middle frame still draws.
+    var _fallbacks = [];
+    if (_key == "adult")           _fallbacks = ["youngadult", "baby"];
+    else if (_key == "youngadult") _fallbacks = ["adult", "baby"];   // prefer older look, else adult
+    for (var _f = 0; _f < array_length(_fallbacks); _f++) {
+        var _kbase = "spr_pet_" + pet.species + "_" + _fallbacks[_f];
+        var _cb = [_kbase + "_" + dir, _kbase + "_s", _kbase];
+        for (var _j = 0; _j < array_length(_cb); _j++) {
+            var _ab = asset_get_index(_cb[_j]);
+            if (_ab >= 0) return _ab;
+        }
+    }
+    if (pet.is_egg) {
+        // Prefer the typed egg art (gilded/fortune/savage/tender) over the shared egg.
+        if (variable_struct_exists(pet, "egg_type") && pet.egg_type != "") {
+            var _te = asset_get_index("spr_pet_egg_" + pet.egg_type);
+            if (_te >= 0) return _te;
+        }
+        var _eg = asset_get_index("spr_pet_egg");
+        if (_eg >= 0) return _eg;
+    }
+    return asset_get_index("spr_pet_" + pet.species);
+}
+
+// Current looping idle frame for a sprite, derived from the global clock so the station
+// (and later combat) can play a multi-frame idle without an owning instance. Single-frame
+// sprites return 0, so this is safe before animated art exists. ~8 fps loop.
+function pet_anim_frame(spr) {
+    if (spr < 0) return 0;
+    var _n = sprite_get_number(spr);
+    if (_n <= 1) return 0;
+    return (current_time div 120) mod _n;
+}
+
+// --- Boon archetype passives (Pets Phase 3) ----------------------------------
+// Only a BOON-archetype active pet grants these economy boons, and only once grown
+// (design §4: Baby none, Adolescent 1 minor boon, Young Adult a 2nd, Adult strong).
+// gold = outgoing multiplier %, loot = extra equipment-drop percentage POINTS (matches
+// the Faerie's Tear unit). 0 for non-boon / egg / baby. (Values TBD - balance pass.)
+function pet_boon_gold_pct_for(stage) {
+    switch (stage) {
+        case PET_STAGE_ADOLESCENT: return 0.05;
+        case PET_STAGE_YOUNGADULT: return 0.08;
+        case PET_STAGE_ADULT:      return 0.12;
+    }
+    return 0;
+}
+function pet_boon_loot_pts_for(stage) {
+    switch (stage) {
+        case PET_STAGE_YOUNGADULT: return 3;   // the 2nd boon unlocks at Young Adult
+        case PET_STAGE_ADULT:      return 5;
+    }
+    return 0;
+}
+function pet_active_boon_gold_pct() {
+    var _p = pet_active();
+    if (_p == undefined || _p.is_egg || _p.archetype != PET_ARCH_BOON) return 0;
+    var _base = pet_boon_gold_pct_for(_p.stage) + pet_kit_mods(_p).gold;   // base + named kit (prospector/windfall)
+    var _v = _base * pet_injury_mult(_p.injured) * pet_corruption_mult(_p);
+    if (pet_is_fulfilled(_p)) _v += 0.05;   // grand boon: a big second helping of gold
+    return _v;
+}
+function pet_active_boon_loot_pts() {
+    var _p = pet_active();
+    if (_p == undefined || _p.is_egg || _p.archetype != PET_ARCH_BOON) return 0;
+    var _base = pet_boon_loot_pts_for(_p.stage) + pet_kit_mods(_p).loot;   // base + named kit (lucky/treasure sense)
+    var _v = _base * pet_injury_mult(_p.injured) * pet_corruption_mult(_p);
+    if (pet_is_fulfilled(_p)) _v += 3;       // grand boon: extra loot find
+    return round(_v);
+}
+
+// One-line summary of what a pet grants at its current stage (for the station/HUD).
+function pet_effect_text(pet) {
+    if (!is_struct(pet) || pet.is_egg) return "";
+    if (pet.injured >= 2) return "Injured - too hurt to act. Survive a run with it to heal.";
+    if (pet.injured == 1) return "Injured (weakened). " + pet_effect_text_base(pet);
+    return pet_effect_text_base(pet);
+}
+function pet_effect_text_base(pet) {
+    switch (pet.archetype) {
+        case PET_ARCH_BOON:
+            var _g = pet_boon_gold_pct_for(pet.stage), _l = pet_boon_loot_pts_for(pet.stage);
+            if (_g <= 0 && _l <= 0) return "Too young to grant a boon yet.";
+            var _s = "Boon: ";
+            if (_g > 0) _s += "+" + string(round(_g * 100)) + "% gold";
+            if (_l > 0) _s += (_g > 0 ? ", " : "") + "+" + string(_l) + "% loot find";
+            return _s;
+        case PET_ARCH_COMBATANT:
+            if (pet.stage < PET_STAGE_YOUNGADULT) return "Combatant: too young to fight (acts from Young Adult).";
+            return "Combatant: strikes an enemy each turn for " + string(pet.stage >= PET_STAGE_ADULT ? 16 : 8) + ".";
+        case PET_ARCH_GUARDIAN:
+            if (pet.stage < PET_STAGE_YOUNGADULT) return "Guardian: too young to protect (acts from Young Adult).";
+            return "Guardian: each turn heals " + string(pet.stage >= PET_STAGE_ADULT ? 10 : 5)
+                 + " (if hurt) or shields " + string(pet.stage >= PET_STAGE_ADULT ? 12 : 7) + ".";
+    }
+    return "";
+}
+
+// --- Injury ladder & permadeath (Pets Phase 3, §8) ----------------------------
+// Dying while CARRYING a pet injures THAT pet (M's scope). Injuries stack across deaths
+// and WEAKEN the pet (worse each tier) until it stops acting, then permadeath at the top.
+// A successful extract/clear with the pet active heals it back to full. (Threshold: M's
+// "moderate".) injured tier 0 = healthy.
+#macro PET_INJURY_DEATH 3   // injured >= this -> the pet is permanently lost
+
+// Effectiveness multiplier for an injury tier: tier 1 weakened, tier 2 can't act.
+function pet_injury_mult(tier) {
+    if (tier <= 0) return 1.0;
+    if (tier == 1) return 0.6;
+    return 0.0;             // tier 2+ : injured too badly to act
+}
+function pet_active_injury_mult() {
+    var _p = pet_active();
+    if (_p == undefined || _p.is_egg) return 1.0;
+    return pet_injury_mult(_p.injured);
+}
+
+// Resolve the active pet's fate at run end. result: 1 clear / 0 extract / -1 death.
+// Returns a one-line notice (injured / lost / recovered) for the hub, or "".
+function pet_on_run_end(result) {
+    var _p = pet_active();
+    if (_p == undefined || _p.is_egg) return "";
+    if (result == -1) {
+        _p.injured += 1;
+        if (_p.injured >= PET_INJURY_DEATH) {
+            var _lost = _p.name;
+            array_delete(global.pet_roster, global.active_pet, 1);   // the carried pet is the active one
+            global.active_pet = -1;
+            return _lost + " succumbed to its injuries and is lost.";
+        }
+        return _p.name + " was hurt by your fall (injury " + string(_p.injured) + "/" + string(PET_INJURY_DEATH) + ").";
+    }
+    // Survived: the carried pet recovers fully.
+    if (_p.injured > 0) { _p.injured = 0; return _p.name + " recovered from its injuries."; }
+    return "";
+}
+
+// Short injury tag for list rows / detail ("" when healthy).
+function pet_injury_tag(pet) {
+    if (!is_struct(pet) || pet.injured <= 0) return "";
+    if (pet.injured >= 2) return "  [INJURED - can't act]";
+    return "  [injured]";
+}
+
+// --- Corruption (Pets Phase 3, §7) -------------------------------------------
+// A corrupted pet starts PUSHING: it carries a curse-style debuff (player -20% max HP,
+// -10% damage) but gains a PERMANENT +15% to its effect each completed run, fully
+// corrupting after 3 runs (-> grand archetype ability, debuff gone). You may CURE it any
+// time to lock in the gains so far and drop the debuff, but forfeit the grand ability.
+// Safe getters tolerate older pets that predate these fields.
+function pet_corr_state(pet) {
+    if (!is_struct(pet) || !variable_struct_exists(pet, "corruption_state")) return "none";
+    return pet.corruption_state;
+}
+function pet_corr_runs(pet) {
+    if (!is_struct(pet) || !variable_struct_exists(pet, "corruption_runs")) return 0;
+    return pet.corruption_runs;
+}
+function pet_corruption_mult(pet)  { return 1.0 + 0.15 * pet_corr_runs(pet); }   // permanent enhancement
+function pet_is_fulfilled(pet)     { return pet_corr_state(pet) == "fulfilled"; }
+
+// True while the active pet is a corrupted pet still being PUSHED (carries the debuff).
+function pet_corruption_pushing_active() {
+    var _p = pet_active();
+    if (_p == undefined || _p.is_egg) return false;
+    return pet_corr_state(_p) == "pushing";
+}
+function pet_corruption_maxhp_mult()      { return pet_corruption_pushing_active() ? 0.80 : 1.0; }   // -20% max HP
+function pet_corruption_player_dmg_mult() { return pet_corruption_pushing_active() ? 0.90 : 1.0; }   // -10% damage
+
+// On a SURVIVED run the active pushed pet gains +15% (permanent) and, after 3, fully
+// corrupts. Death doesn't advance it (injury handles death). Returns a notice or "".
+function pet_corruption_on_run_end(result) {
+    if (result == -1) return "";
+    var _p = pet_active();
+    if (_p == undefined || _p.is_egg || pet_corr_state(_p) != "pushing") return "";
+    _p.corruption_runs += 1;
+    if (_p.corruption_runs >= 3) {
+        _p.corruption_state = "fulfilled";
+        return _p.name + " has FULLY CORRUPTED - its true power awakens!";
+    }
+    return _p.name + " feeds on the dark (corruption " + string(_p.corruption_runs) + "/3).";
+}
+
+// Cure a pushed pet: keep its gains, drop the debuff, forfeit the grand ability. "" if N/A.
+function pet_corruption_cure(pet) {
+    if (!is_struct(pet) || pet.is_egg || pet_corr_state(pet) != "pushing") return "";
+    pet.corruption_state = "cured";
+    return pet.name + " is purged - it keeps its dark strength, but the grand power is lost.";
+}
+
+function pet_corruption_tag(pet) {
+    switch (pet_corr_state(pet)) {
+        case "pushing":   return "  [CORRUPTING " + string(pet_corr_runs(pet)) + "/3]";
+        case "cured":     return "  [purged]";
+        case "fulfilled": return "  [FULLY CORRUPTED]";
+    }
+    return "";
+}
+
+// --- Pet KIT: named abilities & traits per archetype (Pets §5) ----------------
+// Each archetype has stage-gated Traits (auto: 1 at Adolescent, +1 at Young Adult) plus
+// a Stage-3 CAPSTONE chosen from a pool (raised pets pick; wild pets roll - see
+// pet_assign_capstone). The kit is the NAMED layer over the archetype's base behavior and
+// drives the Tab detail popup + small additive effect mods. (Values TBD - balance.)
+function pet_kit_catalog() {
+    return [
+        // BOON
+        { arch:PET_ARCH_BOON, id:"prospector", name:"Prospector",     kind:"Trait",   stage:1, effect:"gold", val:0.04, desc:"Sniffs out coin - +4% gold while it is your companion." },
+        { arch:PET_ARCH_BOON, id:"lucky",      name:"Lucky Streak",   kind:"Trait",   stage:2, effect:"loot", val:2,    desc:"Fortune leans your way - +2% loot find while active." },
+        { arch:PET_ARCH_BOON, id:"windfall",   name:"Windfall",       kind:"Ability", stage:3, effect:"gold", val:0.08, desc:"Capstone: a surge of fortune - a further +8% gold." },
+        { arch:PET_ARCH_BOON, id:"treasure_sense", name:"Treasure Sense", kind:"Ability", stage:3, effect:"loot", val:4, desc:"Capstone: an unerring nose for loot - a further +4% loot find." },
+        // COMBATANT
+        { arch:PET_ARCH_COMBATANT, id:"vicious", name:"Vicious",      kind:"Trait",   stage:1, effect:"dmg", val:0.15, desc:"Goes for the throat - +15% to its attacks." },
+        { arch:PET_ARCH_COMBATANT, id:"savage",  name:"Savage",       kind:"Trait",   stage:2, effect:"dmg", val:0.20, desc:"Tastes blood - a further +20% to its attacks." },
+        { arch:PET_ARCH_COMBATANT, id:"rend",    name:"Rend",         kind:"Ability", stage:3, effect:"dmg", val:0.50, desc:"Capstone: brutal, tearing strikes - +50% attack damage." },
+        { arch:PET_ARCH_COMBATANT, id:"executioner", name:"Executioner", kind:"Ability", stage:3, effect:"execute", val:0.40, desc:"Capstone: +40% damage to enemies below 30% HP - it finishes the wounded." },
+        // GUARDIAN
+        { arch:PET_ARCH_GUARDIAN, id:"devoted", name:"Devoted",       kind:"Trait",   stage:1, effect:"heal", val:0.25, desc:"Never leaves your side - +25% to its healing." },
+        { arch:PET_ARCH_GUARDIAN, id:"warding", name:"Warding",       kind:"Trait",   stage:2, effect:"shield", val:0.25, desc:"Raises stronger wards - +25% to its shields." },
+        { arch:PET_ARCH_GUARDIAN, id:"guardian_angel", name:"Guardian Angel", kind:"Ability", stage:3, effect:"both", val:0, desc:"Capstone: each turn it heals AND shields you, never just one." },
+        { arch:PET_ARCH_GUARDIAN, id:"bulwark", name:"Bulwark",       kind:"Ability", stage:3, effect:"shield", val:0.50, desc:"Capstone: an immovable ward - +50% to its shields." },
+    ];
+}
+
+function pet_kit_get(id) {
+    var _c = pet_kit_catalog();
+    for (var _i = 0; _i < array_length(_c); _i++) if (_c[_i].id == id) return _c[_i];
+    return undefined;
+}
+
+// The Stage-3 capstone pool for an archetype (entries the player picks / rolls from).
+function pet_archetype_capstones(arch) {
+    var _c = pet_kit_catalog(); var _out = [];
+    for (var _i = 0; _i < array_length(_c); _i++)
+        if (_c[_i].arch == arch && _c[_i].stage >= 3) array_push(_out, _c[_i]);
+    return _out;
+}
+
+// A pet's currently-unlocked kit: auto traits (stage <3, gated by stage) + the chosen
+// Stage-3 capstone (kit_capstone) once Adult.
+function pet_kit(pet) {
+    var _out = [];
+    if (!is_struct(pet) || pet.is_egg) return _out;
+    var _c = pet_kit_catalog();
+    for (var _i = 0; _i < array_length(_c); _i++) {
+        var _e = _c[_i];
+        if (_e.arch != pet.archetype) continue;
+        if (_e.stage < 3 && pet.stage >= _e.stage) array_push(_out, _e);
+    }
+    if (pet.stage >= PET_STAGE_ADULT && variable_struct_exists(pet, "kit_capstone") && pet.kit_capstone != "") {
+        var _cap = pet_kit_get(pet.kit_capstone);
+        if (_cap != undefined) array_push(_out, _cap);
+    }
+    return _out;
+}
+
+// Auto-roll a Stage-3 capstone (found/wild creatures). No-op if one is already set.
+// Boss-egg (signature) would curate later. Raised pets use pet_capstone_choose instead.
+function pet_assign_capstone(pet) {
+    if (!is_struct(pet)) return;
+    if (variable_struct_exists(pet, "kit_capstone") && pet.kit_capstone != "") return;
+    var _pool = pet_archetype_capstones(pet.archetype);
+    if (array_length(_pool) > 0) pet.kit_capstone = _pool[irandom(array_length(_pool) - 1)].id;
+    pet.capstone_locked  = true;
+    pet.capstone_pending = false;
+}
+
+// --- Raised-pet capstone PICK (design: raised pets choose their Stage-3 gift at Bairc,
+// permanent once locked; found creatures auto-roll). ------------------------------------
+// Safe getters tolerate pets saved before these fields existed.
+function pet_capstone_is_pending(pet) {
+    return is_struct(pet) && variable_struct_exists(pet, "capstone_pending") && pet.capstone_pending;
+}
+function pet_capstone_is_locked(pet) {
+    return is_struct(pet) && variable_struct_exists(pet, "capstone_locked") && pet.capstone_locked;
+}
+
+// True when the selected pet is a raised Adult still owing a capstone choice.
+function pet_capstone_can_pick(pet) {
+    if (!is_struct(pet) || pet.is_egg) return false;
+    return pet.raised && pet.stage >= PET_STAGE_ADULT && pet_capstone_is_pending(pet);
+}
+
+// Lock in a raised pet's chosen capstone (by id). Permanent - guarded by can_pick.
+function pet_capstone_choose(pet, capstone_id) {
+    if (!pet_capstone_can_pick(pet)) return false;
+    pet.kit_capstone     = capstone_id;
+    pet.capstone_pending = false;
+    pet.capstone_locked  = true;
+    return true;
+}
+
+// One-time migration for saves made before the pick UI: a RAISED Adult that already has an
+// auto-rolled capstone but was never "locked" by the new system gets that roll cleared and
+// re-flagged pending, so it can choose once. Self-guarding (after clearing, kit_capstone is
+// "" so it won't re-trigger); found pets and already-locked pets are untouched.
+function pet_capstone_migrate_all() {
+    var _r = pet_roster();
+    for (var _i = 0; _i < array_length(_r); _i++) {
+        var _p = _r[_i];
+        if (is_struct(_p) && !_p.is_egg && _p.raised && _p.stage >= PET_STAGE_ADULT
+            && !pet_capstone_is_locked(_p)
+            && variable_struct_exists(_p, "kit_capstone") && _p.kit_capstone != "") {
+            _p.kit_capstone     = "";
+            _p.capstone_pending = true;
+        }
+    }
+}
+
+// Count of pets awaiting a capstone pick (for a Bairc badge / notice).
+function pet_capstone_pending_count() {
+    var _r = pet_roster(); var _n = 0;
+    for (var _i = 0; _i < array_length(_r); _i++) if (pet_capstone_can_pick(_r[_i])) _n++;
+    return _n;
+}
+
+// Aggregate the additive effect mods from a pet's unlocked kit.
+function pet_kit_mods(pet) {
+    var _m = { dmg:0, heal:0, shield:0, gold:0, loot:0, execute:0, both:false };
+    var _k = pet_kit(pet);
+    for (var _i = 0; _i < array_length(_k); _i++) {
+        var _e = _k[_i];
+        switch (_e.effect) {
+            case "dmg":     _m.dmg     += _e.val; break;
+            case "heal":    _m.heal    += _e.val; break;
+            case "shield":  _m.shield  += _e.val; break;
+            case "gold":    _m.gold    += _e.val; break;
+            case "loot":    _m.loot    += _e.val; break;
+            case "execute": _m.execute += _e.val; break;
+            case "both":    _m.both     = true;   break;
+        }
+    }
+    return _m;
+}
+
+// Species catalog. Archetype is rolled SEPARATELY at acquisition (design §3), so a
+// species is cosmetic + a future signature/sprite hook, NOT an archetype lock. The
+// boss-signature roster (one species per boss) is content-pass TBD (design §12).
+function pet_species_catalog() {
+    return [
+        { id:"luna_moth",   name:"Luna Moth",   blurb:"a pale grub that dreams of moonlit wings" },
+        { id:"bone_stag",   name:"Bone Stag",   blurb:"antlers rise like a cathedral of bone" },
+        { id:"saber_hound", name:"Saber Hound", blurb:"born snarling, grows into the snarl" },
+        { id:"gloomtoad",   name:"Gloomtoad",   blurb:"its stare draws thoughts into the mire" },
+        { id:"wyrmling",    name:"Wyrmling",    blurb:"a hatchling that remembers being a dragon" },
+        { id:"nightowl",    name:"Nightowl",    blurb:"keeps watch through the longest dark" },
+        { id:"bonehound",   name:"Bonehound",   blurb:"loyal even past death" },
+        { id:"hollow_pup",  name:"Hollow Pup",  blurb:"hollow-eyed, but its tail still wags" },
+    ];
+}
+
+function pet_species_get(id) {
+    var _c = pet_species_catalog();
+    for (var _i = 0; _i < array_length(_c); _i++) if (_c[_i].id == id) return _c[_i];
+    return { id:id, name:"Creature", blurb:"" };
+}
+
+function pet_species_random() {
+    var _c = pet_species_catalog();
+    return _c[irandom(array_length(_c) - 1)].id;
+}
+
+// Safe read of the player-named flag. Pets created before the naming feature lack the
+// `named` field, so a raw `pet.named` read throws - always go through this.
+function pet_named(pet) {
+    return is_struct(pet) && variable_struct_exists(pet, "named") && pet.named;
+}
+
+// Save cleanup: pets from the retired humanoid species (the anthropomorphic "mothmen"
+// dropped in the redesign, see [[feedback_pets_not_anthropomorphic]]) are remapped IN
+// PLACE to a thematic new creature so their old art can never render. Keeps stage / bond /
+// growth / progress; only rebrands the display name if the player never gave it a custom
+// one. Idempotent - a no-op once no retired pets remain.
+function pet_migrate_retired_species() {
+    if (!variable_global_exists("pet_roster") || !is_array(global.pet_roster)) return;
+    var _map = {
+        cryptling:    "gloomtoad",
+        graveling:    "bone_stag",
+        ashling:      "wyrmling",
+        wisplet:      "nightowl",
+        carrion_moth: "luna_moth",
+        gravewing:    "nightowl",
+    };
+    for (var _i = 0; _i < array_length(global.pet_roster); _i++) {
+        var _p = global.pet_roster[_i];
+        if (!is_struct(_p) || !variable_struct_exists(_p, "species")) continue;
+        if (!variable_struct_exists(_p, "named")) _p.named = false;   // backfill pre-naming pets so raw reads never throw
+        if (variable_struct_exists(_map, _p.species)) {
+            _p.species = variable_struct_get(_map, _p.species);
+            if (!variable_struct_exists(_p, "named") || !_p.named) {
+                _p.name = pet_species_get(_p.species).name;   // was still the old default name
+            }
+        }
+    }
+}
+
+// Permanently remove the pet at roster index _idx (Bairc "Release"). Fixes the active-pet
+// pointer for the index shift. Returns the released creature's label for the notice, or ""
+// if the index was invalid.
+function pet_release(_idx) {
+    if (!variable_global_exists("pet_roster") || !is_array(global.pet_roster)) return "";
+    if (_idx < 0 || _idx >= array_length(global.pet_roster)) return "";
+    var _p    = global.pet_roster[_idx];
+    var _labl = _p.is_egg ? (_p.name + " egg") : _p.name;
+    array_delete(global.pet_roster, _idx, 1);
+    if (variable_global_exists("active_pet")) {
+        if      (global.active_pet == _idx) global.active_pet = -1;
+        else if (global.active_pet >  _idx) global.active_pet -= 1;
+    }
+    return _labl;
+}
+
+// Build a pet/egg struct. archetype < 0 => roll one (revealed immediately, design §3).
+// is_egg true => unhatched (hatches to Stage 0). `stage` applies to FOUND creatures.
+function pet_make(species_id, source, archetype, stage, is_egg) {
+    if (!variable_global_exists("pet_next_id")) global.pet_next_id = 1;
+    var _arch = (archetype < 0) ? irandom(2) : archetype;
+    var _awk  = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
+    var _sp   = pet_species_get(species_id);
+    var _egg  = is_egg ? pet_egg_random() : "";   // eggs carry a random egg-type benefit (§3)
+    return {
+        uid:            global.pet_next_id++,
+        species:        species_id,
+        name:           _sp.name,                         // species name until the player names it
+        named:          false,                            // has the player given it a custom name? (1st free, rename 20 dust)
+        archetype:      _arch,
+        source:         source,                          // egg_event/egg_shrine/egg_curse/egg_boss/found
+        raised:         (string_pos("egg", source) > 0), // hatched egg = raised; found = not raised
+        stage:          is_egg ? PET_STAGE_BABY : stage,
+        growth:         0,                               // feed progress (later slice)
+        stage_floors:   0,                               // banked active-run progress (later slice)
+        bond:           0,                               // loyalty (later slice)
+        injured:        0,                               // injury ladder tier (Phase 3)
+        corrupted:      false,                           // is this a corrupted pet? (Phase 3 §7)
+        corruption_runs:  0,                             // completed runs pushed (0..3); +15% effect each, permanent
+        corruption_state: "none",                        // "none" / "pushing" / "cured" / "fulfilled"
+        kit_capstone:   "",                              // Stage-3 capstone id (rolled wild / picked raised); see pet_kit_catalog
+        capstone_pending: false,                         // RAISED pet reached Adult, awaiting the player's capstone pick at Bairc
+        capstone_locked:  false,                         // capstone decided (rolled for found, chosen for raised) - never changes
+        is_egg:         is_egg,
+        egg_type:       _egg,                             // RNG egg-type benefit kept after hatch (§3)
+        awk_at_acquire: _awk,
+        signature:      (source == "egg_boss"),          // boss-egg => curated Stage-3 kit (later)
+        // sprite-state (animation shelved; fields reserved per design §6/§13)
+        sprite_name:    "spr_pet_" + species_id,
+        sprite_state:   "idle",
+        sprite_frame:   0
+    };
+}
+
+function pet_roster() {
+    if (!variable_global_exists("pet_roster")) global.pet_roster = [];
+    return global.pet_roster;
+}
+function pet_count() { return array_length(pet_roster()); }
+
+// True once the player owns any pet/egg - Bairc wakes from his dormant "......" state.
+function bairc_active() { return pet_count() > 0; }
+
+function pet_active() {
+    if (!variable_global_exists("active_pet")) return undefined;
+    if (global.active_pet < 0 || global.active_pet >= pet_count()) return undefined;
+    return global.pet_roster[global.active_pet];
+}
+
+// Add a pet/egg to the roster; returns it. The first pet ever owned auto-equips.
+function pet_add(pet) {
+    var _r = pet_roster();
+    array_push(_r, pet);
+    if (!variable_global_exists("active_pet")) global.active_pet = -1;
+    if (global.active_pet < 0) global.active_pet = 0;
+    return pet;
+}
+
+// Hatch an egg in-place into a Stage-0 baby (archetype was already rolled/revealed).
+function pet_hatch(pet) {
+    if (!is_struct(pet) || !pet.is_egg) return false;
+    pet.is_egg = false;
+    pet.stage  = PET_STAGE_BABY;
+    return true;
+}
+
+// --- Full-screen hatch cutscene (Pets §3) -------------------------------------
+// A modal shake -> crack -> reveal sequence launched from the Bairc Enter-on-egg
+// action. State lives on obj_game_controller (see its Create). hatch_cutscene_step()
+// runs from gc Step while hatch_active (owning all input); hatch_cutscene_draw()
+// (scr_ui) renders it over the Bairc screen. pet_hatch() is applied at the reveal.
+#macro HATCH_SHAKE_LEN  50   // frames of trembling before the shell cracks
+#macro HATCH_CRACK_HOLD 7    // frames each crack-animation frame is held
+#macro HATCH_REVEAL_MIN 36   // min frames of reveal before input can dismiss it
+
+// The multi-frame crack animation for a pet's egg type (falls back to the static
+// egg sprite when the animated art isn't authored yet). Cutscene-only.
+function hatch_crack_sprite(pet) {
+    if (is_struct(pet) && variable_struct_exists(pet, "egg_type") && pet.egg_type != "") {
+        var _h = asset_get_index("spr_pet_egg_" + pet.egg_type + "_hatch");
+        if (_h >= 0) return _h;
+    }
+    return pet_sprite(pet, "s");
+}
+
+// Begin the hatch cutscene for an egg (no-op if it isn't an egg). Runs in gc scope.
+function hatch_cutscene_start(pet) {
+    if (!is_struct(pet) || !pet.is_egg) return;
+    hatch_active = true;
+    hatch_pet    = pet;
+    hatch_phase  = 0;
+    hatch_t      = 0;
+    hatch_frame  = 0;
+    hatch_done   = false;
+}
+
+// Advance the cutscene one step (called from gc Step while hatch_active). Runs in gc scope.
+function hatch_cutscene_step() {
+    hatch_t += 1;
+    switch (hatch_phase) {
+        case 0: // SHAKE - trembling shell, backdrop darkening
+            if (hatch_t >= HATCH_SHAKE_LEN) { hatch_phase = 1; hatch_t = 0; hatch_frame = 0; }
+            break;
+
+        case 1: // CRACK - advance the hatch animation frame by frame
+            var _hsp = hatch_crack_sprite(hatch_pet);
+            var _n   = (_hsp >= 0) ? sprite_get_number(_hsp) : 1;
+            if (hatch_t >= HATCH_CRACK_HOLD) {
+                hatch_t = 0;
+                hatch_frame += 1;
+                if (hatch_frame >= _n) {
+                    if (!hatch_done) {                    // shell broken -> hatch into a baby
+                        pet_hatch(hatch_pet);
+                        hatch_done = true;
+                        audio_play_sound(Check_1, 1, false);
+                    }
+                    hatch_phase = 2; hatch_t = 0;
+                }
+            }
+            break;
+
+        case 2: // REVEAL - baby scales in; wait for the player to dismiss (min hold first)
+            if (hatch_t >= HATCH_REVEAL_MIN &&
+                (keyboard_check_pressed(vk_enter)  || keyboard_check_pressed(vk_return)
+              || keyboard_check_pressed(vk_space)  || keyboard_check_pressed(vk_escape))) {
+                if (!hatch_done) { pet_hatch(hatch_pet); hatch_done = true; }
+                bairc_notification = hatch_pet.name + " hatches - a "
+                    + pet_archetype_name(hatch_pet.archetype) + " baby!";
+                hatch_active = false;
+                hatch_pet    = undefined;
+                if (room == rm_hub || room == rm_character_select) save_game();
+            }
+            break;
+    }
+}
+
+// Number of unhatched eggs currently held.
+function pet_egg_count() {
+    var _r = pet_roster(); var _n = 0;
+    for (var _i = 0; _i < array_length(_r); _i++) if (_r[_i].is_egg) _n++;
+    return _n;
+}
+
+// --- Acquisition --------------------------------------------------------------
+// Grant a pet from a source ("egg_event"/"egg_shrine"/"egg_curse"/"egg_boss"). ~15%
+// of non-boss sources yield a FOUND creature (already alive, Stage 1-2) instead of an
+// egg (design §3.2) - rarer, no full raise-history. Returns the granted pet/egg.
+function pet_grant_from_source(source) {
+    var _species = pet_species_random();
+    var _pet;
+    if (source != "egg_boss" && irandom(99) < 15) {
+        _pet = pet_make(_species, "found", -1, 1 + irandom(1), false);   // found, Stage 1-2
+    } else {
+        _pet = pet_make(_species, source, -1, PET_STAGE_BABY, true);     // egg
+    }
+    // ~12% of finds arrive CORRUPTED (§7): they start PUSHING (carried debuff, but gains a
+    // permanent +15% each completed run, fully corrupting after 3). You can cure anytime.
+    if (irandom(99) < 12) { _pet.corrupted = true; _pet.corruption_state = "pushing"; }
+    return pet_add(_pet);
+}
+
+// True if a species has imported base art (so the starter never rolls an artless one).
+function pet_species_has_art(species_id) {
+    return asset_get_index("spr_pet_" + species_id + "_baby_s") >= 0
+        || asset_get_index("spr_pet_" + species_id + "_baby") >= 0
+        || asset_get_index("spr_pet_" + species_id) >= 0;
+}
+
+// The one-time STARTER egg, granted on the first Bairc talk. Random species (preferring
+// ones with finished art) + random archetype, delivered as an EGG ready to hatch (doubles
+// as the hatch tutorial). randomize() first so each SAVE SLOT rolls its own unique creature
+// - no shared/duplicate spawns across save files.
+function pet_grant_starter() {
+    randomize();
+    var _cat = pet_species_catalog();
+    var _arted = [];
+    for (var _i = 0; _i < array_length(_cat); _i++)
+        if (pet_species_has_art(_cat[_i].id)) array_push(_arted, _cat[_i].id);
+    var _species = (array_length(_arted) > 0) ? _arted[irandom(array_length(_arted) - 1)] : pet_species_random();
+    return pet_add(pet_make(_species, "egg_starter", -1, PET_STAGE_BABY, true));   // is_egg = true
+}
+
+// --- Egg types (Pets §3): RNG egg design, each carrying a small permanent benefit that
+// the HATCHLING keeps while it is your active companion. Egg type is independent of the
+// creature inside (a surprise). 4 types for now (expandable). ----------------------------
+function pet_egg_type_catalog() {
+    return [
+        { id:"gilded",  name:"Gilded Egg",  effect:"gold", val:0.05, desc:"+5% gold while its hatchling is active." },
+        { id:"fortune", name:"Fortune Egg", effect:"loot", val:5,    desc:"+5% loot find while its hatchling is active." },
+        { id:"savage",  name:"Savage Egg",  effect:"dmg",  val:0.05, desc:"+5% pet damage (no effect on Guardian pets)." },
+        { id:"tender",  name:"Tender Egg",  effect:"mend", val:0.05, desc:"+5% pet heal & shield (no effect on Combatant pets)." },
+    ];
+}
+function pet_egg_type_get(id) {
+    var _c = pet_egg_type_catalog();
+    for (var _i = 0; _i < array_length(_c); _i++) if (_c[_i].id == id) return _c[_i];
+    return undefined;
+}
+function pet_egg_random() {
+    var _c = pet_egg_type_catalog();
+    return _c[irandom(array_length(_c) - 1)].id;
+}
+
+// The active pet's egg benefit for a given kind ("gold"/"loot"/"dmg"/"mend"), honoring the
+// archetype exclusions (damage egg skips Guardians; mend egg skips Combatants). 0 if none.
+function pet_active_egg_bonus(kind) {
+    var _p = pet_active();
+    if (_p == undefined || _p.is_egg) return 0;
+    if (!variable_struct_exists(_p, "egg_type") || _p.egg_type == "") return 0;
+    var _et = pet_egg_type_get(_p.egg_type);
+    if (_et == undefined || _et.effect != kind) return 0;
+    if (kind == "dmg"  && _p.archetype == PET_ARCH_GUARDIAN)  return 0;
+    if (kind == "mend" && _p.archetype == PET_ARCH_COMBATANT) return 0;
+    return _et.val;
+}
+
+// Display label for a pet's egg type ("" if none).
+function pet_egg_label(pet) {
+    if (!is_struct(pet) || !variable_struct_exists(pet, "egg_type") || pet.egg_type == "") return "";
+    var _et = pet_egg_type_get(pet.egg_type);
+    return (_et == undefined) ? "" : _et.name;
+}
+
+// Boss-clear pet roll. Rare even at max difficulty; odds rise with Awakening but never
+// approach guaranteed (design §3.1). Returns the granted pet, or undefined.
+function pet_try_boss_egg(awk) {
+    var _chance = min(14, 4 + 2 * awk);                  // 4% A0 -> cap 14%
+    if (irandom(99) < _chance) return pet_grant_from_source("egg_boss");
+    return undefined;
+}
+
+// Grant a pet egg/creature from a Shrine (blessing) or Curse altar, appending a themed
+// hub notice (surfaced on the next hub visit). source: "egg_shrine" / "egg_curse". Curse
+// eggs skew corrupted (thematic). Returns the granted pet. Used by the floor shrine flow.
+function pet_grant_altar_egg(source) {
+    var _pe = pet_grant_from_source(source);
+    if (source == "egg_curse" && !_pe.corrupted && irandom(99) < 40) {
+        _pe.corrupted = true; _pe.corruption_state = "pushing";
+    }
+    var _msg;
+    if (source == "egg_curse") {
+        _msg = _pe.is_egg
+            ? "A dark egg festers where the altar stood - visit Bairc."
+            : ("A " + _pe.name + " slinks from the altar's shadow - visit Bairc.");
+    } else {
+        _msg = _pe.is_egg
+            ? "The altar leaves behind an egg - visit Bairc."
+            : ("A " + _pe.name + " emerges from the rubble - visit Bairc.");
+    }
+    if (variable_global_exists("pet_find_notice"))
+        global.pet_find_notice = (global.pet_find_notice != "") ? (global.pet_find_notice + "   " + _msg) : _msg;
+    return _pe;
+}
+
+// One-line label for a roster row: name, egg/stage, archetype, found tag.
+function pet_row_label(pet) {
+    if (!is_struct(pet)) return "";
+    if (pet.is_egg) {
+        var _el = pet_egg_label(pet);
+        return pet.name + " Egg" + (_el != "" ? "  -  " + _el : "") + "  (" + pet_archetype_name(pet.archetype) + ")";
+    }
+    var _tag = pet.raised ? "" : "  (found)";
+    return pet.name + "  -  " + pet_stage_name(pet.stage) + "  -  " + pet_archetype_name(pet.archetype) + _tag + pet_injury_tag(pet) + pet_corruption_tag(pet);
+}
+
+// =============================================================================
 // ONBOARDING - contextual coach-marks. The first time the player reaches each key
 // surface (hub / loadout / combat / Vex / shrine / ...), a one-time dismissable tip
 // box teaches it, then never shows again. See SYSTEMS_ONBOARDING.md. Gated by
@@ -3193,22 +4817,20 @@ function item_picker_candidates_by_rarity(min_rarity) {
 }
 
 // Every held item whose tribute worth (item_tribute_value) covers `cost`.
+// PACK-ONLY by design: the Shrine is the only caller and it always runs mid-run, so
+// the carried pack (source 1) is the sole valid tribute source - the hub stash must
+// never be offered to the altar. (Task 8)
 function item_picker_candidates_by_tribute(cost) {
     var _out = [];
-    // Stash is HUB-ONLY - the Shrine runs mid-run, so only the carried pack qualifies.
-    var _in_hub = (room == rm_hub || room == rm_character_select);
-    for (var _s = 0; _s < 2; _s++) {
-        if (_s == 0 && !_in_hub) continue;
-        var _arr = (_s == 0) ? global.equipment_stash : global.carried_items;
-        for (var _i = 0; _i < array_length(_arr); _i++) {
-            var _it = _arr[_i];
-            if (!is_struct(_it)) continue;
-            var _rar = variable_struct_exists(_it, "rarity") ? _it.rarity : 0;
-            if (item_tribute_value(_rar) < cost) continue;
-            var _val = variable_struct_exists(_it, "gold_value") ? _it.gold_value : 0;
-            var _nm  = variable_struct_exists(_it, "name") ? _it.name : "item";
-            array_push(_out, { source:_s, idx:_i, item:_it, label:_nm, rarity:_rar, value:_val });
-        }
+    var _arr = global.carried_items;
+    for (var _i = 0; _i < array_length(_arr); _i++) {
+        var _it = _arr[_i];
+        if (!is_struct(_it)) continue;
+        var _rar = variable_struct_exists(_it, "rarity") ? _it.rarity : 0;
+        if (item_tribute_value(_rar) < cost) continue;
+        var _val = variable_struct_exists(_it, "gold_value") ? _it.gold_value : 0;
+        var _nm  = variable_struct_exists(_it, "name") ? _it.name : "item";
+        array_push(_out, { source:1, idx:_i, item:_it, label:_nm, rarity:_rar, value:_val });
     }
     array_sort(_out, function(a, b) {
         if (a.rarity != b.rarity) return a.rarity - b.rarity;
@@ -3373,12 +4995,14 @@ function item_picker_resolve() {
             global.gold -= _ctx.gold;
             if (!variable_global_exists("traits_unlocked")) global.traits_unlocked = {};
             variable_struct_set(global.traits_unlocked, _ctx.effect_id, true);
+            affinity_add("vex", 2);   // function-use drip (trait unlock)
             save_game();
             _msg = "Unlocked " + _ctx.trait_name + "!   (traded: " + _name + ")";
             break;
         case "vex_stat":
             global.gold -= _ctx.gold;
             variable_global_set(_ctx.stat_key, variable_global_get(_ctx.stat_key) + 1);
+            affinity_add("vex", 2);   // function-use drip (stat upgrade)
             save_game();
             _msg = "+1 permanent " + _ctx.stat_name + "   (traded: " + _name + ")";
             break;
@@ -3515,8 +5139,8 @@ function event_effect_phrase(fx) {
     if (variable_struct_exists(fx, "hp") && fx.hp != 0)
         array_push(_p, (fx.hp > 0 ? "+" : "") + string(fx.hp) + " HP");
     if (variable_struct_exists(fx, "item") && fx.item != "") {
-        var _lbl = "gear";
-        if (fx.item == "vault")          _lbl = "good gear";
+        var _lbl = "an item";
+        if (fx.item == "vault")          _lbl = "rare gear";
         else if (fx.item == "reliquary") _lbl = "a relic";
         array_push(_p, _lbl);
     }
@@ -3528,6 +5152,8 @@ function event_effect_phrase(fx) {
         array_push(_p, "a rune");
     if (variable_struct_exists(fx, "boon") && fx.boon != "")
         array_push(_p, "a BOON");
+    if (variable_struct_exists(fx, "pet_egg") && fx.pet_egg != "")
+        array_push(_p, "a creature");
     if (array_length(_p) == 0) return "nothing";
     var _s = "";
     for (var _i = 0; _i < array_length(_p); _i++) _s += (_i > 0 ? " + " : "") + _p[_i];
@@ -3539,30 +5165,27 @@ function event_effect_phrase(fx) {
 // the player's current stat plus win/lose outcomes, or for a weighted choice the
 // per-outcome chances. Keeps the catalog lean (no hand-written odds text).
 function event_choice_mechanics_text(choice) {
-    var _prefix = "";
-    if (variable_struct_exists(choice, "req_stat") && choice.req_stat != "" && choice.req_amount > 0)
-        _prefix += "Needs " + choice.req_stat + " " + string(choice.req_amount) + ".  ";
-    var _cost = event_choice_cost(choice);
-    if (_cost > 0) _prefix += "Costs " + string(_cost) + "g.  ";
-
+    // The gold cost and stat requirement are already shown on the right side of each
+    // choice row (and as the lock reason), so they are intentionally left OUT here -
+    // this line is purely the OUTCOMES, written as clear labeled segments instead of
+    // one run-on string. (Task 9)
     if (choice.resolve == "check") {
         var _pct = event_check_chance(choice.check_stat, choice.check_base, choice.check_per, choice.check_ref);
-        return _prefix + choice.check_stat + " check ~" + string(_pct) + "%"
-             + "  -  Win: " + event_effect_phrase(choice.success.effects)
-             + "  -  Lose: " + event_effect_phrase(choice.fail.effects);
+        return "Succeed (" + string(_pct) + "%): " + event_effect_phrase(choice.success.effects)
+             + "        Fail: " + event_effect_phrase(choice.fail.effects);
     }
 
     // weighted
     var _outs = choice.outcomes;
     if (array_length(_outs) == 1)
-        return _prefix + "Always: " + event_effect_phrase(_outs[0].effects);
+        return "Guaranteed: " + event_effect_phrase(_outs[0].effects);
 
     var _total = 0;
     for (var _i = 0; _i < array_length(_outs); _i++) _total += _outs[_i].weight;
-    var _s = _prefix;
+    var _s = "Odds:   ";
     for (var _i = 0; _i < array_length(_outs); _i++) {
         var _pc = (_total > 0) ? round(_outs[_i].weight * 100 / _total) : 0;
-        _s += (_i > 0 ? "  -  " : "") + string(_pc) + "% " + event_effect_phrase(_outs[_i].effects);
+        _s += (_i > 0 ? "     /     " : "") + string(_pc) + "%  " + event_effect_phrase(_outs[_i].effects);
     }
     return _s;
 }
@@ -3667,6 +5290,15 @@ function event_apply_effects(fx) {
         array_push(global.rune_inventory, _rn);
         array_push(_sum, _rn.name + " " + rune_tier_roman(_rn.tier) + " [Rune]");
     }
+    // Pet egg/creature (Phase 2) - fx.pet_egg is a source tag ("egg_event"/"egg_shrine"/
+    // "egg_curse"). Lands in Bairc's stable; ~15% arrive as a found creature instead.
+    if (variable_struct_exists(fx, "pet_egg") && fx.pet_egg != "") {
+        var _pe = pet_grant_from_source(fx.pet_egg);
+        array_push(_sum, _pe.is_egg ? (_pe.name + " egg") : ("a living " + _pe.name));
+        global.pet_find_notice = _pe.is_egg
+            ? ("You recovered a " + _pe.name + " egg - visit Bairc.")
+            : ("A " + _pe.name + " follows you home - visit Bairc.");
+    }
     // Boon (rare jackpot) - "random" picks an unowned boon, else a specific id
     if (variable_struct_exists(fx, "boon") && fx.boon != "") {
         var _bid = fx.boon;
@@ -3744,6 +5376,28 @@ function event_catalog() {
             { label: "Retreat", hint: "Leave it untouched - no risk, no reward",
               cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
               outcomes: [ { weight: 100, text: "You back out the way you came.", effects: {} } ] }
+        ]
+    });
+
+    // --- Abandoned Nest (Phase 2: an event-room pet-egg source) ------------
+    array_push(_cat, {
+        id: "abandoned_nest",
+        title: "Abandoned Nest",
+        body: "Beneath the curled skeleton of something large, a single egg rests - kept warm, somehow, long after its mother stopped moving.",
+        color: make_color_rgb(150, 190, 150),
+        choices: [
+            { label: "Take the egg", hint: "Carry it home - Bairc can raise whatever hatches",
+              cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+              outcomes: [ { weight: 100, text: "You cradle the egg and tuck it away. It is faintly warm.",
+                            effects: { pet_egg: "egg_event" } } ] },
+            { label: "Search the remains", hint: "Look past the egg for what its mother guarded",
+              cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+              outcomes: [ { weight: 60, text: "Old bones, older gold.", effects: { gold: 45 } },
+                          { weight: 40, text: "Tucked beneath a wing-bone, the egg comes with you anyway.",
+                            effects: { pet_egg: "egg_event", gold: 20 } } ] },
+            { label: "Leave it undisturbed", hint: "Some things should be left to rest",
+              cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+              outcomes: [ { weight: 100, text: "You leave the nest to the dark.", effects: {} } ] }
         ]
     });
 
@@ -4108,6 +5762,10 @@ function audio_sfx_assets() {
     return [
         utility2, Check_1, Chimes__Ascending_, Success_2,
         spell1, Magic, attack1, grunt, teleport, die5, hurt,
+        // Ability-cast fallbacks (play_ability_cast_sfx in scr_combat) - these play
+        // until the snd_cast_* pack is imported, so they MUST be gain-controlled too
+        // or they stay at full volume (the Void Drain / void-cast "immune sound" bug).
+        Obscure, Strings_1, Success_1__subtle_, Harp_2__Descending_,
     ];
 }
 

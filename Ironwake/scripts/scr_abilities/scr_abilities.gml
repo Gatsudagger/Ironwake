@@ -137,6 +137,35 @@ function abilities_get_loadout(class_id) {
     return [];
 }
 
+// abilities_resolve_player_loadout(class_id)
+// The player's ACTUAL equipped loadout: resolves the confirmed global.player_loadout
+// ability names against the class ability pool (honoring the Expanded Arsenal trait's
+// 5th slot), falling back to the class default starters if no valid loadout is set.
+// Single source of truth shared by combat (obj_combat_controller Create) AND the
+// out-of-combat character menu (scr_ui Abilities tab) so the two never diverge -
+// previously the menu called abilities_get_loadout() directly and always showed the
+// 4 class starters instead of the real (up to 5) equipped set.
+function abilities_resolve_player_loadout(class_id) {
+    if (variable_global_exists("player_loadout") && is_array(global.player_loadout)
+        && array_length(global.player_loadout) > 0 && global.player_loadout[0] != "") {
+        var _pool = abilities_class_pool(class_id);   // class abilities + general pool
+        var _max  = trait_active("Expanded Arsenal") ? 5 : 4;
+        var _out  = [];
+        for (var _li = 0; _li < _max && _li < array_length(global.player_loadout); _li++) {
+            var _lname = global.player_loadout[_li];
+            if (_lname == "") continue;
+            for (var _ai = 0; _ai < array_length(_pool); _ai++) {
+                if (_pool[_ai].name == _lname) {
+                    array_push(_out, _pool[_ai]);
+                    break;
+                }
+            }
+        }
+        if (array_length(_out) >= 4 && array_length(_out) <= _max) return _out;
+    }
+    return abilities_get_loadout(class_id);
+}
+
 // =============================================================================
 // PHASE 1 ABILITY LISTS
 // Defined as global arrays so any system can read them by index without
@@ -1005,8 +1034,10 @@ function ability_dtype_name(dt) {
 function ability_damage_word(ab) {
     var _dt = variable_struct_exists(ab, "damage_type") ? ab.damage_type : 0;
     if (_dt == 1) {
+        // Name the concrete element (fire/frost/shock/arcane) rather than the generic
+        // "elemental" so descriptions read like the school shown under the ability name.
         var _sch = ability_school(ab);
-        if (_sch == "fire" || _sch == "frost" || _sch == "shock") return _sch;
+        if (_sch == "fire" || _sch == "frost" || _sch == "shock" || _sch == "arcane") return _sch;
     }
     return ability_dtype_name(_dt);
 }
@@ -1101,7 +1132,9 @@ function ability_describe(ab) {
     if (variable_struct_exists(ab, "base_damage") && ab.base_damage > 0) {
         var _dt  = variable_struct_exists(ab, "damage_type") ? ab.damage_type : 0;
         var _aoe = (variable_struct_exists(ab, "is_aoe") && ab.is_aoe && !trait_active("Focused Power"));
-        _out = "Deal " + string(ab.base_damage) + " " + ability_damage_word(ab) + " damage"
+        // School/damage word Capitalized (Fire/Frost/Arcane/Physical...) for a consistent,
+        // proper-noun look across descriptions, equipment and logs. (Polish)
+        _out = "Deal " + string(ab.base_damage) + " " + school_label(ability_damage_word(ab)) + " damage"
              + (_aoe ? " to all enemies" : "") + ".";
     }
     var _eff = ability_effect_full(ab);
@@ -1118,7 +1151,7 @@ function ability_summary(ab) {
     var _et = variable_struct_exists(ab, "effect_type")     ? ab.effect_type     : "none";
     var _p = [];
     if (variable_struct_exists(ab, "base_damage") && ab.base_damage > 0) {
-        array_push(_p, string(ab.base_damage) + " " + ability_damage_word(ab));
+        array_push(_p, string(ab.base_damage) + " " + school_label(ability_damage_word(ab)));
     }
     var _tag = "";
     switch (ability_status_kind(ab)) {
@@ -1338,6 +1371,43 @@ global.traits_all = [
         2, "total_boss_kills", 4, "serrated_strikes"),
 
 ];
+
+// ---------------------------------------------------------------------------
+// trait_colloquial(effect_id)
+// Plain-language "what this means for you" blurb, shown in the Tab detail popup
+// ABOVE the technical description. The trait's own `description` is the technical
+// half; this is the friendly half. Keyed by effect_id. Unknown id -> "".
+// ---------------------------------------------------------------------------
+function trait_colloquial(effect_id) {
+    switch (effect_id) {
+        case "sense":            return "You scout ahead. Before you set foot in a room you already know whether it's a death-trap or a payday, and you're a little better at talking or sneaking your way through events.";
+        case "scavenger":        return "You have a nose for coin. Everything that pays out, pays out a bit more.";
+        case "thick_skin":       return "You're simply harder to kill. A flat slab of extra health that's always there.";
+        case "quick_recovery":   return "You rest well. Every campfire patches you up more than it would anyone else.";
+        case "treasure_hunter":  return "You know where the good stuff hides. A treasure room never comes up empty for you.";
+        case "lucky_find":       return "Fallen enemies tend to leave a little something behind - potions drop a touch more often.";
+        case "battle_hardened":  return "Every boss you put down toughens you for good. The deeper you go, the more punishment you can take - forever.";
+        case "salvager":         return "When it all goes wrong, you cling to more of your gear. Dying costs you less of what you were carrying.";
+        case "iron_will":        return "You grit your teeth through the first hex, poison, or stun each fight like it's nothing.";
+        case "expanded_arsenal": return "You travel heavy on tricks - room for one more ability on every run.";
+        case "prospector":       return "Your luck runs rich. Loot from fights tends to come out a cut above what it should.";
+        case "pack_rat":         return "You hoard supplies. You can haul more potions into a run, and pouring Potency in lets you carry even more.";
+        case "last_stand":       return "Once a run, a blow that should kill you instead leaves you standing on a sliver of life.";
+        case "focused_power":    return "You trade spread for impact - attacks that would spray the room instead slam your single target far harder.";
+        case "chain_caster":     return "Your single-target magic ricochets, throwing a splash of damage onto everyone else in the room.";
+        case "plaguebearer":     return "Your rot spreads. The poisons and curses you land creep onto every other enemy too.";
+        case "soul_siphon":      return "Death feeds you. Every enemy that falls hands you a Soul to fuel your spells. (Arcanist)";
+        case "ley_tap":          return "You start each fight already humming with power - an extra action to spend turn one. (Arcanist)";
+        case "arcane_surge":     return "Your big, expensive spells land like a hammer - the costliest casts hit even harder. (Arcanist)";
+        case "crimson_reserve":  return "You walk into every fight with the tank already part-full of Blood to spend. (Bloodwarden)";
+        case "vampiric_edge":    return "Your bleeds and poisons feed you back - every tick of them mends a little of your own flesh. (Bloodwarden)";
+        case "berserker_rage":   return "Cornered and bloodied is exactly where you want to be - the closer to death, the harder you hit. (Bloodwarden)";
+        case "phantom_step":     return "You're a ghost on the first beat - the opening attack of every fight simply passes through you. (Shadowstrider)";
+        case "shadow_meld":      return "Slip a blow and you melt further into the dark, even harder to touch for a moment. (Shadowstrider)";
+        case "serrated_strikes": return "Your edges are wicked - every physical hit leaves a free, lingering bleed. (Shadowstrider)";
+    }
+    return "";
+}
 
 
 // =============================================================================

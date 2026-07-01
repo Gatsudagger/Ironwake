@@ -2,8 +2,19 @@
 
 **System:** Pets & the Creature Keeper (Bairc)
 **Status:** DESIGN COMPLETE — not yet implemented
+**Build phase:** **Phase 2–3** (after Petra TT). Phase 2 = non-combat (Bairc net-new NPC, hatch, Companion Gate tab, feed via Petra, Stage evolution reusing Phase-1 banking hook + persistence). Phase 3 = combat/corruption/injury. See `BUILD_ORDER.md`.
 **Depends on:** event/shrine/curse room system, 3-AP combat, trait system, hybrid affix system, Petra merchant, Gate loadout screen, full-clear extraction logic
 **Stage-4 (Awakened) effects:** TBD — flagged placeholder, design pass after 0–3 ships and tests
+
+---
+
+## 0. Reconciliation notes (READ FIRST — added 2026-06-29)
+
+Checked against the live build, not the stale `Ironwake_GDD_v1.docx`:
+- **Bairc does NOT exist yet.** The hub has exactly **6 NPCs** (`obj_hub_controller/Create` `npc_names`: Dorn, Sable, Maren, Vex, Petra, Vael), and that array is hard-length-6 (`npc_descriptions` / `npc_unlocked` match). Bairc is a **net-new 7th NPC** — adding him means extending those roster arrays and his hub station, not toggling an existing slot. The doc's "occupies a hub slot from the start, dormant" describes the *target* design, not current state.
+- **Petra (the feed vendor) exists** as the consumables/supplies Merchant — adding feed to her stock fits her role. (She's also getting a Treasure Trader function; see `Petra_Treasure_Trader_Design.md`.)
+- **Affinity dependency:** Bairc is a consumer of the net-new NPC Affinity system (`NPC_Affinity_System_Design.md`), which is also unbuilt.
+- The "curse-room-style carried risk" tone referenced in §7 refers to the **run-curse devil's-bargain** system (`SYSTEMS_CURSES.md`), which is built — that reference is accurate.
 
 ---
 
@@ -27,7 +38,7 @@ Design priorities: keep most pets non-combatant most of the time (avoids combat-
 **Dialogue restraint is mandatory.** The gentle-giant-among-monsters archetype works through what he *doesn't* say. Sparse lines only.
 
 ### Unlock behavior
-- Bairc occupies a hub NPC slot from the start but is **dormant** until the player finds their first pet/egg.
+- Bairc occupies a hub NPC slot from the start but is **dormant** until the player finds their first pet/egg. *(Build note: this slot is net-new — see §0; he must be added as a 7th hub NPC.)*
 - Interacting with him before that:
   > "......"
   > *He looks at you, unsure, then returns to his garden.*

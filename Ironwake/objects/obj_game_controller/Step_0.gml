@@ -25,6 +25,14 @@ if (os_browser != browser_not_a_browser) {
     }
 }
 
+// --- Full-screen hatch cutscene ---
+// While an egg is hatching it owns every input; the cutscene advances itself and
+// applies pet_hatch at the reveal. Drawn over the Bairc screen by hatch_cutscene_draw().
+if (hatch_active) {
+    hatch_cutscene_step();
+    exit;
+}
+
 // --- Onboarding coach-mark (see SYSTEMS_ONBOARDING.md) ---
 // A tip is modal: ui_input_blocked() reports true while one is active (freezing every
 // room controller), and gc owns the dismiss here. The clear is DEFERRED one frame
@@ -93,6 +101,9 @@ if (!stash_mode_open && !loadout_open && keyboard_check_pressed(ord("I"))) {
     equip_picker_open       = false;
     consumable_submenu_open = false;
     compendium_section      = 0;
+    equip_found_focus       = false;   // Equipment tab: is the right "found items" column focused?
+    equip_found_cursor      = 0;
+    equip_found_sort        = 0;       // 0 = sort by rarity, 1 = sort by type/slot
 }
 
 
@@ -233,17 +244,41 @@ if (level_alloc_open) {
 
 
 // =============================================================================
+// DEEPEN BOND (B) inside an open NPC screen, so a ready gate is actionable right
+// where you earn it (mirrors the hub-list B handler, which is gated off while a
+// screen is open). Maps the currently-open NPC screen to its affinity id. No-ops
+// when no NPC screen is open (B stays free for the hub list / combat).
+// =============================================================================
+if (keyboard_check_pressed(ord("B"))) {
+    var _bond_npc = "";
+    if (shop_open == 0)                                                    _bond_npc = "petra";
+    else if (shop_open == 1)                                               _bond_npc = "dorn";
+    else if (variable_instance_exists(id, "trainer_open") && trainer_open) _bond_npc = "vex";
+    else if (variable_instance_exists(id, "maren_open")   && maren_open)   _bond_npc = "maren";
+    else if (variable_instance_exists(id, "sable_open")   && sable_open)   _bond_npc = "sable";
+    else if (variable_instance_exists(id, "vael_open")    && vael_open)    _bond_npc = "vael";
+    if (_bond_npc != "" && affinity_gate_ready(_bond_npc)) {
+        affinity_try_advance(_bond_npc);
+        if (room == rm_hub || room == rm_character_select) save_game();
+    }
+}
+
+// =============================================================================
 // SHOP INPUT - runs before menu_open guard; gc handles all buy/sell logic
 // =============================================================================
 if (shop_open != -1 && !stash_mode_open) {
 
-    // Q/E: switch between BUY and SELL tabs
-    if (keyboard_check_pressed(ord("Q")) || keyboard_check_pressed(ord("E"))) {
-        shop_tab          = 1 - shop_tab;
-        sell_index        = 0;
-        sell_scroll       = 0;
-        sell_confirm_name = "";
-        shop_notification = "";
+    // Q/E: cycle tabs. Petra (shop_open == 0) has a 3rd "Treasure Trader" tab; Dorn has 2.
+    var _shop_ntabs = (shop_open == 0) ? 3 : 2;
+    if (keyboard_check_pressed(ord("E"))) {
+        shop_tab = (shop_tab + 1) mod _shop_ntabs;
+        sell_index = 0; sell_scroll = 0; sell_confirm_name = ""; shop_notification = "";
+        petra_trade_confirm = false; petra_trade_selected = []; petra_trade_notification = "";
+    }
+    if (keyboard_check_pressed(ord("Q"))) {
+        shop_tab = (shop_tab + _shop_ntabs - 1) mod _shop_ntabs;
+        sell_index = 0; sell_scroll = 0; sell_confirm_name = ""; shop_notification = "";
+        petra_trade_confirm = false; petra_trade_selected = []; petra_trade_notification = "";
     }
 
     // =========================================================================
@@ -306,7 +341,11 @@ if (shop_open != -1 && !stash_mode_open) {
                 else if (_cur_item.rarity == 3) _gv = 200;
                 else                            _gv = 400;
             }
-            var _sell_price = max(1, floor(_gv * 0.4));
+            // Base sell value = 40% of gold_value. The vendor's affinity tier sweetens
+            // the deal: +5% per tier (Acquaintance..Lover -> +0%..+20%). (Task: affinity sell)
+            var _shop_npc   = (shop_open == 0) ? "petra" : "dorn";
+            var _sell_tier  = affinity_tier(_shop_npc);
+            var _sell_price = max(1, floor(_gv * 0.4 * (1 + 0.05 * _sell_tier)));
 
             // Rare-or-above items need a second confirmation step
             var _needs_confirm = variable_struct_exists(_cur_item, "rarity") && _cur_item.rarity >= 2;
@@ -393,46 +432,181 @@ if (shop_open != -1 && !stash_mode_open) {
     }
 
     // =========================================================================
+    // TREASURE TRADER TAB (Petra only; shop_tab == 2). Async gear laundering -
+    // 3 same-tier items -> 1 of the next tier, earned by clearing floors. Reads/
+    // writes global.petra_order. Logic lives in scr_stats (PETRA_TT_PHASE1_SPEC.md).
+    // =========================================================================
+    if (shop_tab == 2) {
+        // Esc/Backspace: cancel a pending confirm first, else close the shop.
+        if (keyboard_check_pressed(vk_escape) || keyboard_check_pressed(vk_backspace)) {
+            if (petra_trade_confirm) {
+                petra_trade_confirm      = false;
+                petra_trade_notification = "";
+            } else {
+                shop_open = -1; shop_tab = 0; shop_index = 0;
+                sell_index = 0; sell_scroll = 0; sell_confirm_name = "";
+                shop_notification = ""; petra_trade_notification = "";
+            }
+            exit;
+        }
+
+        // --- An order exists: collect (ready) or cancel (in progress) ---
+        if (petra_order_active()) {
+            if (global.petra_order.status == "ready") {
+                if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_space)) {
+                    petra_trade_notification = petra_collect();
+                    petra_trade_confirm = false;
+                }
+            } else {
+                // In progress: C cancels (two-step confirm).
+                if (keyboard_check_pressed(ord("C"))) {
+                    if (!petra_trade_confirm) {
+                        petra_trade_confirm = true;
+                        petra_trade_notification = "Cancel the order? You may recover only some inputs - gold is NOT refunded.  C: confirm   Esc: keep";
+                    } else {
+                        petra_trade_confirm = false;
+                        petra_trade_notification = petra_cancel_order();
+                    }
+                }
+            }
+            exit;
+        }
+
+        // --- No order: choose 3 same-tier stash items, then place ---
+        var _stash_n = array_length(global.equipment_stash);
+
+        // Pending no-takeback preview: Space confirms+places; any move cancels it.
+        if (petra_trade_confirm) {
+            if (keyboard_check_pressed(vk_space)) {
+                var _res = petra_place_order(petra_trade_selected, petra_trade_lever);
+                if (_res == "") { petra_trade_notification = "Order placed! Earn it by clearing floors."; petra_trade_selected = []; }
+                else            { petra_trade_notification = _res; }
+                petra_trade_confirm = false;
+            }
+            if (nav_up() || nav_down() || keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_tab)) {
+                petra_trade_confirm = false; petra_trade_notification = "";
+            }
+            exit;
+        }
+
+        // Navigate the stash list (windowed to 8 rows).
+        if (_stash_n > 0) {
+            if (nav_up())   petra_trade_cursor = wrap_index(petra_trade_cursor - 1, _stash_n);
+            if (nav_down()) petra_trade_cursor = wrap_index(petra_trade_cursor + 1, _stash_n);
+            petra_trade_cursor = clamp(petra_trade_cursor, 0, _stash_n - 1);
+            if (petra_trade_cursor < petra_trade_scroll)      petra_trade_scroll = petra_trade_cursor;
+            if (petra_trade_cursor >= petra_trade_scroll + 8) petra_trade_scroll = petra_trade_cursor - 7;
+        }
+
+        // Tab toggles the dust roll-bias lever (Lever A).
+        if (keyboard_check_pressed(vk_tab)) {
+            petra_trade_lever        = !petra_trade_lever;
+            petra_trade_notification = petra_trade_lever ? "Roll-bias ON - spends dust for better affix odds." : "Roll-bias off.";
+        }
+
+        // Enter toggles selection of the highlighted item (max 3, all same tier).
+        if ((keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)) && _stash_n > 0) {
+            var _ci    = petra_trade_cursor;
+            var _found = -1;
+            for (var _si = 0; _si < array_length(petra_trade_selected); _si++) {
+                if (petra_trade_selected[_si] == _ci) { _found = _si; break; }
+            }
+            if (_found >= 0) {
+                array_delete(petra_trade_selected, _found, 1);
+                petra_trade_notification = "";
+            } else if (array_length(petra_trade_selected) >= 3) {
+                petra_trade_notification = "Already chose 3 - deselect one first (Enter).";
+            } else {
+                var _it = global.equipment_stash[_ci];
+                var _r  = (is_struct(_it) && variable_struct_exists(_it, "rarity")) ? _it.rarity : -1;
+                var _same = true;
+                if (array_length(petra_trade_selected) > 0) {
+                    var _first = global.equipment_stash[petra_trade_selected[0]];
+                    var _fr    = (is_struct(_first) && variable_struct_exists(_first, "rarity")) ? _first.rarity : -1;
+                    _same = (_r == _fr);
+                }
+                if (petra_ladder_for(_r) == undefined) {
+                    petra_trade_notification = item_rarity_name(_r) + " items can't be traded up.";
+                } else if (!_same) {
+                    petra_trade_notification = "All 3 items must be the same tier.";
+                } else {
+                    array_push(petra_trade_selected, _ci);
+                    petra_trade_notification = "";
+                }
+            }
+        }
+
+        // Space: when 3 are chosen, open the no-takeback preview.
+        if (keyboard_check_pressed(vk_space)) {
+            if (array_length(petra_trade_selected) != 3) {
+                petra_trade_notification = "Select 3 same-tier items first (Enter to toggle).";
+            } else {
+                var _r2    = global.equipment_stash[petra_trade_selected[0]].rarity;
+                var _rung2 = petra_ladder_for(_r2);
+                if (_rung2 == undefined) {
+                    petra_trade_notification = item_rarity_name(_r2) + " items can't be traded up.";
+                } else {
+                    var _gc_cost  = floor(_rung2.gold * petra_gold_mult());
+                    var _fl       = max(1, _rung2.cost_floors - petra_delivery_reduction());
+                    var _awk      = (_rung2.req_awk > 0) ? (" at A" + string(_rung2.req_awk) + "+") : "";
+                    var _dust_txt = petra_trade_lever ? ("  +" + string(_rung2.dust) + " dust") : "";
+                    petra_trade_notification = "Trade 3 " + item_rarity_name(_r2) + " -> " + item_rarity_name(_rung2.out_rarity)
+                        + "  for " + string(_gc_cost) + "g" + _dust_txt + ", " + string(_fl) + " floor" + (_fl == 1 ? "" : "s") + _awk
+                        + ".  Affixes destroyed. Space: confirm   Esc: cancel";
+                    petra_trade_confirm = true;
+                }
+            }
+        }
+        exit;
+    }
+
+    // =========================================================================
     // BUY TAB (original buy logic - unchanged)
     // =========================================================================
     var _is_petra = (shop_open == 0);
 
     if (_is_petra) {
-        var _has_spec  = (global.petra_stock_special != undefined && global.petra_special_qty > 0);
-        var _petra_max = 3 + (_has_spec ? 1 : 0);
+        // Unified buy list: consumables (+special) then pet feeds. Row indices match the draw.
+        var _buy_list = petra_buy_list();
+        var _buy_n    = array_length(_buy_list);
 
-        if (nav_up())   { shop_index = wrap_index(shop_index - 1, _petra_max + 1); shop_notification = ""; }
-        if (nav_down()) { shop_index = wrap_index(shop_index + 1, _petra_max + 1); shop_notification = ""; }
+        if (nav_up())   { shop_index = wrap_index(shop_index - 1, _buy_n); shop_notification = ""; }
+        if (nav_down()) { shop_index = wrap_index(shop_index + 1, _buy_n); shop_notification = ""; }
+        shop_index = clamp(shop_index, 0, _buy_n - 1);
 
         if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)) {
-            var _sit;
-            var _sprice;
-            if (shop_index < 4) {
-                _sit    = global.consumables_standard[shop_index];
-                _sprice = cha_price(floor(_sit.gold_value * 1.5));
+            var _entry  = _buy_list[shop_index];
+            var _sprice = _entry.price;
+            if (global.gold < _sprice) {
+                shop_notification = "Not enough gold!";
+            } else if (_entry.kind == "feed") {
+                // Pet feed -> feed pouch (applied later at Bairc).
+                global.gold -= _sprice;
+                pet_feed_pouch_add(_entry.it.id, 1);
+                affinity_add("petra", 2);
+                audio_play_sound(utility2, 1, false);
+                shop_notification = _entry.it.name + " added to your feed pouch (Bairc feeds it).";
+                if (room == rm_hub || room == rm_character_select) save_game();
             } else {
-                _sit    = global.petra_stock_special;
-                _sprice = cha_price(floor(_sit.gold_value * 2));
-            }
-            if (global.gold >= _sprice) {
+                // Consumable (standard or limited special).
+                var _sit = _entry.it;
                 global.gold -= _sprice;
                 var _fresh = create_consumable(_sit.name, _sit.effect_type, _sit.effect_value,
                                                _sit.description, _sit.gold_value);
                 array_push(global.consumable_stash, _fresh);
-                if (shop_index == 4 && _has_spec) {
+                affinity_add("petra", 2);   // function-use drip (consumable buy)
+                if (_entry.special) {
                     global.petra_special_qty--;
                     if (global.petra_special_qty <= 0) {
                         global.petra_stock_special = undefined;
                         global.petra_special_qty   = 0;
-                        shop_index = min(shop_index, 3);
+                        shop_index = min(shop_index, array_length(petra_buy_list()) - 1);
                     }
                 }
                 audio_play_sound(utility2, 1, false);
                 shop_notification = "Purchased - added to consumable stash.";
                 // Persist the purchase (gold spent + new consumable) right away.
                 if (room == rm_hub || room == rm_character_select) save_game();
-            } else {
-                shop_notification = "Not enough gold!";
             }
         }
 
@@ -460,6 +634,7 @@ if (shop_open != -1 && !stash_mode_open) {
             if (global.gold >= _dprice) {
                 global.gold -= _dprice;
                 array_push(global.equipment_stash, _dentry.item);
+                affinity_add("dorn", 2);   // function-use drip (gear buy)
                 discover_item(item_base_name(_dentry.item));
                 global.dorn_stock[shop_index].sold = true;
                 audio_play_sound(utility2, 1, false);
@@ -496,13 +671,18 @@ if (shop_open != -1 && !stash_mode_open) {
     if (mouse_check_button_pressed(mb_left)) {
         var _shmx = device_mouse_x_to_gui(0);
         var _shmy = device_mouse_y_to_gui(0);
-        // BUY tab: x=600-938, y=87-126
-        if (_shmx >= 600 && _shmx < 938 && _shmy >= 87 && _shmy < 126 && shop_tab != 0) {
-            shop_tab = 0; sell_confirm_name = ""; shop_notification = "";
-        }
-        // SELL tab: x=983-1320, y=87-126
-        if (_shmx >= 983 && _shmx < 1320 && _shmy >= 87 && _shmy < 126 && shop_tab != 1) {
-            shop_tab = 1; sell_index = 0; sell_scroll = 0; sell_confirm_name = ""; shop_notification = "";
+        // Tab clicks (auto-centred to match the draw side). Petra (shop_open==0) has 3.
+        var _mt_n   = (shop_open == 0) ? 3 : 2;
+        var _mt_w   = 320;
+        var _mt_gap = 24;
+        var _mt_x0  = 960 - (_mt_n * _mt_w + (_mt_n - 1) * _mt_gap) / 2;
+        for (var _mti = 0; _mti < _mt_n; _mti++) {
+            var _mtx = _mt_x0 + _mti * (_mt_w + _mt_gap);
+            if (_shmx >= _mtx && _shmx < _mtx + _mt_w && _shmy >= 96 && _shmy < 138 && shop_tab != _mti) {
+                shop_tab = _mti;
+                sell_index = 0; sell_scroll = 0; sell_confirm_name = ""; shop_notification = "";
+                petra_trade_confirm = false; petra_trade_selected = []; petra_trade_notification = "";
+            }
         }
         // Row clicks - select cursor only (Enter buys/sells)
         if (shop_tab == 0) {
@@ -552,6 +732,8 @@ if (trainer_open) {
             vex_detail_open = true; exit;
         } else if (trainer_tab == 3 && trainer_cursor < array_length(trait_vex_purchasable(_tr_class))) {
             vex_detail_open = true; exit;
+        } else if (trainer_tab == 4) {
+            vex_detail_open = true; exit;   // Potency: general mechanic explanation
         }
     }
 
@@ -710,7 +892,7 @@ if (trainer_open) {
         }
         for (var _rwi = 0; _rwi < _tr_vis; _rwi++) {
             var _rwy = 225 + _rwi * 96;
-            if (_tmx >= 180 && _tmx < 1740 && _tmy >= _rwy && _tmy < _rwy + 87) {
+            if (_tmx >= 180 && _tmx < 1500 && _tmy >= _rwy && _tmy < _rwy + 87) {
                 var _row_idx = _tr_hscroll + _rwi;
                 if (trainer_cursor == _row_idx) { _act = true; }
                 else { trainer_cursor = _row_idx; trainer_confirm = false; trainer_notification = ""; }
@@ -752,6 +934,7 @@ if (trainer_open) {
             } else {
                 global.gold -= _slot_cost;
                 global.bonus_trait_slots = _bts + 1;
+                affinity_add("vex", 2);   // function-use drip (trait slot)
                 save_game();
                 trainer_notification = "Trait slot unlocked - you can now equip " + string(2 + global.bonus_trait_slots) + " traits.";
             }
@@ -772,6 +955,7 @@ if (trainer_open) {
                 global.gold -= _cost;
                 if (!variable_global_exists("unlocked_abilities")) global.unlocked_abilities = [];
                 array_push(global.unlocked_abilities, _ab.name);
+                affinity_add("vex", 2);   // function-use drip (ability unlock)
                 save_game();
                 trainer_notification = "Unlocked " + _ab.name + "! It can now be slotted in your loadout.";
                 trainer_cursor = clamp(trainer_cursor, 0, max(0, array_length(_locked) - 2));
@@ -828,12 +1012,221 @@ if (trainer_open) {
 
 
 // =============================================================================
+// BAIRC FIRST-TALK DIALOGUE - a modal popup shown before his station opens the very
+// first time. Arms only after the interact key that triggered it is released, so that
+// same keypress can't dismiss it; then any key / click opens the station + hatch prompt.
+// =============================================================================
+if (variable_instance_exists(id, "bairc_intro_open") && bairc_intro_open) {
+    if (!bairc_intro_armed) {
+        if (!keyboard_check(vk_anykey) && !mouse_check_button(mb_left)) bairc_intro_armed = true;
+    } else if (keyboard_check_pressed(vk_anykey) || mouse_check_button_pressed(mb_left)) {
+        bairc_intro_open   = false;
+        bairc_open         = true;   // now open the station
+        bairc_cursor       = 0;
+        bairc_notification = "Your egg is stirring - highlight it and press Enter to hatch it.";
+    }
+    exit;
+}
+
+// =============================================================================
+// BAIRC THE CREATURE KEEPER - pet stable / hatchery (Phase 2). Cursor over the
+// roster; Enter hatches an egg, else sets the highlighted pet as active companion;
+// Esc closes. Layout constants MUST match ui_draw_bairc_screen() in scr_ui.
+// =============================================================================
+if (variable_instance_exists(id, "bairc_open") && bairc_open) {
+    var _bp_n = pet_count();
+    if (_bp_n > 0) bairc_cursor = clamp(bairc_cursor, 0, _bp_n - 1); else bairc_cursor = 0;
+
+    // NAMING modal (typed text entry): captures keyboard_string; Enter confirms, Esc cancels.
+    // First name is free; renaming costs 20 dust. Swallows all other input while up.
+    if (bairc_naming) {
+        if (string_length(keyboard_string) > 16) keyboard_string = string_copy(keyboard_string, 1, 16);
+        if (keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_return)) {
+            var _nm = string_trim(keyboard_string);
+            if (_nm != "" && _bp_n > 0) {
+                var _np      = global.pet_roster[bairc_cursor];
+                var _rename  = pet_named(_np);
+                if (!_rename || global.rune_dust >= 20) {
+                    if (_rename) global.rune_dust -= 20;
+                    _np.name  = _nm;
+                    _np.named = true;
+                    bairc_notification = "\"" + _nm + "\" - this name will now be known to them...";
+                    audio_play_sound(Check_1, 1, false);
+                    if (room == rm_hub || room == rm_character_select) save_game();
+                } else {
+                    bairc_notification = "Renaming costs 20 dust.";
+                }
+            }
+            bairc_naming = false;
+        }
+        if (keyboard_check_pressed(vk_escape)) bairc_naming = false;
+        exit;
+    }
+
+    // CAPSTONE PICK modal (raised Adult choosing its permanent Stage-3 gift). Two-step:
+    // A/D highlights a card, Enter opens a Yes/No confirm, Enter again locks it. Esc backs
+    // out (confirm -> selection -> close). Swallows all other input while up.
+    if (bairc_capstone_open) {
+        var _cp_pet  = (_bp_n > 0) ? global.pet_roster[bairc_cursor] : undefined;
+        var _cp_pool = (is_struct(_cp_pet)) ? pet_archetype_capstones(_cp_pet.archetype) : [];
+        var _cp_n    = array_length(_cp_pool);
+        if (!pet_capstone_can_pick(_cp_pet) || _cp_n == 0) { bairc_capstone_open = false; exit; }
+
+        if (!bairc_capstone_confirm) {
+            if (nav_left())  bairc_capstone_sel = wrap_index(bairc_capstone_sel - 1, _cp_n);
+            if (nav_right()) bairc_capstone_sel = wrap_index(bairc_capstone_sel + 1, _cp_n);
+            bairc_capstone_sel = clamp(bairc_capstone_sel, 0, _cp_n - 1);
+            if (keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_space)) {
+                bairc_capstone_confirm = true;
+            }
+            if (keyboard_check_pressed(vk_escape)) bairc_capstone_open = false;
+        } else {
+            // Yes/No confirm - permanent choice.
+            if (keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_return)) {
+                var _pick = _cp_pool[clamp(bairc_capstone_sel, 0, _cp_n - 1)];
+                if (pet_capstone_choose(_cp_pet, _pick.id)) {
+                    bairc_notification = _cp_pet.name + " takes up " + _pick.name + " - its path is set.";
+                    audio_play_sound(Check_1, 1, false);
+                    if (room == rm_hub || room == rm_character_select) save_game();
+                }
+                bairc_capstone_open    = false;
+                bairc_capstone_confirm = false;
+            }
+            if (keyboard_check_pressed(vk_escape)) bairc_capstone_confirm = false;   // back to selection
+        }
+        exit;
+    }
+
+    // RELEASE confirm modal: permanently let the highlighted creature go. Enter confirms,
+    // Esc keeps it. Swallows all other input while up.
+    if (bairc_release_confirm) {
+        if (_bp_n == 0) { bairc_release_confirm = false; exit; }
+        if (keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_return)) {
+            var _rl = pet_release(bairc_cursor);
+            if (_rl != "") {
+                bairc_notification = "You let " + _rl + " go. It slips back into the dark.";
+                audio_play_sound(Check_1, 1, false);
+                bairc_cursor = clamp(bairc_cursor, 0, max(0, pet_count() - 1));
+                if (room == rm_hub || room == rm_character_select) save_game();
+            }
+            bairc_release_confirm = false;
+        }
+        if (keyboard_check_pressed(vk_escape)) bairc_release_confirm = false;
+        exit;
+    }
+
+    // Tab pet-kit detail popup: while up, only Tab/Esc (close) - swallow all else.
+    if (bairc_detail_open) {
+        if (keyboard_check_pressed(vk_tab) || keyboard_check_pressed(vk_escape)) bairc_detail_open = false;
+        exit;
+    }
+    if (keyboard_check_pressed(vk_tab) && _bp_n > 0) {
+        bairc_detail_open = true;
+        exit;
+    }
+
+    if (keyboard_check_pressed(vk_escape)) {
+        bairc_open = false;
+        exit;
+    }
+    if (_bp_n > 0) {
+        if (nav_up())   { bairc_cursor = wrap_index(bairc_cursor - 1, _bp_n); bairc_notification = ""; }
+        if (nav_down()) { bairc_cursor = wrap_index(bairc_cursor + 1, _bp_n); bairc_notification = ""; }
+
+        var _bp = global.pet_roster[bairc_cursor];
+        if (keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_space)) {
+            if (_bp.is_egg) {
+                hatch_cutscene_start(_bp);   // full-screen shake -> crack -> reveal; hatches at the reveal
+            } else {
+                global.active_pet  = bairc_cursor;
+                bairc_notification = _bp.name + " is now your active companion.";
+                audio_play_sound(Check_1, 1, false);
+                if (room == rm_hub || room == rm_character_select) save_game();
+            }
+        }
+
+        // Feed: number keys 1-N apply an OWNED feed (bought from Petra) to the highlighted
+        // pet - no gold here. Feed FILLS the growth bar; an active run still evolves it.
+        var _owned    = pet_feed_owned_list();
+        var _feed_key = -1;
+        if      (keyboard_check_pressed(ord("1"))) _feed_key = 0;
+        else if (keyboard_check_pressed(ord("2"))) _feed_key = 1;
+        else if (keyboard_check_pressed(ord("3"))) _feed_key = 2;
+        else if (keyboard_check_pressed(ord("4"))) _feed_key = 3;
+        else if (keyboard_check_pressed(ord("5"))) _feed_key = 4;
+        else if (keyboard_check_pressed(ord("6"))) _feed_key = 5;
+        if (_feed_key >= 0) {
+            if (_feed_key >= array_length(_owned)) {
+                if (!_bp.is_egg && pet_feed_pouch_total() <= 0)
+                    bairc_notification = "No feed on hand - buy some from Petra the Trader.";
+            } else {
+                var _fr = pet_feed_apply(_bp, _owned[_feed_key].id);
+                if (_fr == "") {
+                    bairc_notification = _bp.name + " enjoys the " + _owned[_feed_key].name + "."
+                        + (pet_growth_ready(_bp) ? "  Ready to grow - take it on a run!" : "");
+                    audio_play_sound(Check_1, 1, false);
+                    if (room == rm_hub || room == rm_character_select) save_game();
+                } else {
+                    bairc_notification = _fr;
+                }
+            }
+        }
+
+        // C: cure a pushed corrupted pet (keeps the gains so far, drops the debuff,
+        // forfeits the grand ability).
+        if (keyboard_check_pressed(ord("C"))) {
+            var _cure = pet_corruption_cure(_bp);
+            if (_cure != "") {
+                bairc_notification = _cure;
+                audio_play_sound(Check_1, 1, false);
+                if (room == rm_hub || room == rm_character_select) save_game();
+            }
+        }
+
+        // G: choose the raised Adult's permanent Stage-3 capstone (opens the pick modal).
+        if (keyboard_check_pressed(ord("G"))) {
+            if (pet_capstone_can_pick(_bp)) {
+                bairc_capstone_open    = true;
+                bairc_capstone_sel     = 0;
+                bairc_capstone_confirm = false;
+            } else if (!_bp.is_egg && !_bp.raised) {
+                bairc_notification = "Only creatures you raised from an egg choose their gift.";
+            } else if (!_bp.is_egg && _bp.stage < PET_STAGE_ADULT) {
+                bairc_notification = _bp.name + " must reach adulthood before choosing a gift.";
+            } else if (pet_capstone_is_locked(_bp)) {
+                bairc_notification = _bp.name + "'s path is already set.";
+            }
+        }
+
+        // R: release the highlighted creature (opens a confirm; permanent).
+        if (keyboard_check_pressed(ord("R"))) {
+            bairc_release_confirm = true;
+        }
+
+        // N: name / rename the highlighted creature (first name free, rename 20 dust).
+        if (keyboard_check_pressed(ord("N"))) {
+            if (_bp.is_egg) {
+                bairc_notification = "You can name it once it hatches.";
+            } else if (pet_named(_bp) && global.rune_dust < 20) {
+                bairc_notification = "Renaming costs 20 dust (you have " + string(global.rune_dust) + ").";
+            } else {
+                bairc_naming    = true;
+                keyboard_string = "";
+            }
+        }
+    }
+    exit;
+}
+
+
+// =============================================================================
 // MAREN THE RUNESMITH - rune socketing (Phase 1: Socket gear + Runes list).
 // Runs alongside the trainer block, before the menu_open guard.
 // Socket tab is a 3-phase flow: 0 pick item -> 1 pick socket -> 2 pick rune.
 // Layout constants here MUST match ui_draw_maren_screen() in scr_ui.
 // =============================================================================
 if (variable_instance_exists(id, "maren_open") && maren_open) {
+    rune_inventory_sort();   // keep the rune/aspect pool alphabetical (display + index ops read this)
     var _m_slots = maren_socketable_slots();
     var _m_gear  = rune_inventory_indices("gear");
     var _m_asp   = rune_inventory_indices("aspect");
@@ -859,7 +1252,7 @@ if (variable_instance_exists(id, "maren_open") && maren_open) {
             if (_cf.action == "socket") {
                 if (global.gold < _cf.cost) { maren_notification = "Need " + string(_cf.cost) + "g."; exit; }
                 if (maren_socket_rune(maren_item_sel, _cf.rune_inv)) {
-                    global.gold -= _cf.cost; save_game();
+                    global.gold -= _cf.cost; affinity_add("maren", 2); save_game();   // function-use drip (socket)
                     maren_notification = "Socketed " + _cf.name + " " + rune_tier_roman(_cf.tier)
                         + ".  (-" + string(_cf.cost) + "g)";
                 } else {
@@ -896,7 +1289,7 @@ if (variable_instance_exists(id, "maren_open") && maren_open) {
             } else if (_cf.action == "aspect_socket") {
                 if (global.gold < _cf.cost) { maren_notification = "Need " + string(_cf.cost) + "g."; exit; }
                 if (maren_aspect_socket(_cf.rune_inv)) {
-                    global.gold -= _cf.cost; save_game();
+                    global.gold -= _cf.cost; affinity_add("maren", 2); save_game();   // function-use drip (aspect socket)
                     maren_notification = "Socketed " + _cf.name + " " + rune_tier_roman(_cf.tier)
                         + ".  (-" + string(_cf.cost) + "g)";
                 } else {
@@ -1167,6 +1560,7 @@ if (variable_instance_exists(id, "maren_open") && maren_open) {
 // Layout constants here MUST match ui_draw_sable_screen() in scr_ui.
 // =============================================================================
 if (variable_instance_exists(id, "sable_open") && sable_open) {
+    rune_inventory_sort();   // keep the rune/aspect pool alphabetical (display + index ops read this)
     var _s_gear   = sable_salvageable_gear();
     var _s_rinv   = variable_global_exists("rune_inventory") ? global.rune_inventory : [];
     var _s_brew   = sable_brew_catalog();
@@ -1218,7 +1612,7 @@ if (variable_instance_exists(id, "sable_open") && sable_open) {
         var _smy = device_mouse_y_to_gui(0);
         var _s_hit_tab = false;
         for (var _stb = 0; _stb < 4; _stb++) {
-            var _stx = 518 + _stb * 300;
+            var _stx = 368 + _stb * 300;   // centred on x960 (matches the draw side)
             if (_smx >= _stx && _smx < _stx + 285 && _smy >= 105 && _smy < 165) {
                 sable_tab = _stb; sable_phase = 0; sable_cursor = 0; sable_notification = "";
                 _s_hit_tab = true; break;
@@ -1226,9 +1620,20 @@ if (variable_instance_exists(id, "sable_open") && sable_open) {
         }
         if (!_s_hit_tab && _smx >= 300 && _smx < 1620) {
             var _srow = floor((_smy - 285) / 72);
-            if (_srow >= 0 && _srow < _s_rows) {
-                if (sable_cursor != _srow) sable_confirm = false;   // clicking a new row cancels a pending salvage confirm
-                sable_cursor = _srow; _s_act = true;
+            // The salvage gear/rune lists (tab 0, phase 1/2) are WINDOWED in the draw
+            // (ui_list_window_first, _svis=9) - map the clicked screen row back to the
+            // real list index via the same window offset. Other tabs aren't windowed
+            // (short lists) so _sfirst stays 0. Keep _svis in sync with scr_ui.
+            var _sfirst = 0;
+            var _svis_now = _s_rows;
+            if (sable_tab == 0 && sable_phase >= 1) {
+                _sfirst   = ui_list_window_first(sable_cursor, _s_rows, 9);
+                _svis_now = min(_s_rows - _sfirst, 9);
+            }
+            if (_srow >= 0 && _srow < _svis_now) {
+                var _sidx = clamp(_sfirst + _srow, 0, _s_rows - 1);
+                if (sable_cursor != _sidx) sable_confirm = false;   // clicking a new row cancels a pending salvage confirm
+                sable_cursor = _sidx; _s_act = true;
             }
         }
     }
@@ -1251,6 +1656,7 @@ if (variable_instance_exists(id, "sable_open") && sable_open) {
                         sable_confirm = false;
                         var _gd = sable_salvage_gear_at(_gsel);
                         sable_notification = (_gd >= 0) ? ("Salvaged " + _gname + " for " + string(_gd) + " dust.") : "Could not salvage.";
+                        if (_gd >= 0) affinity_add("sable", 2);   // function-use drip (salvage)
                         sable_cursor = clamp(sable_cursor, 0, max(0, array_length(sable_salvageable_gear()) - 1));
                     }
                 }
@@ -1266,6 +1672,7 @@ if (variable_instance_exists(id, "sable_open") && sable_open) {
                         sable_confirm = false;
                         var _rd = sable_salvage_rune_at(_rsel);
                         sable_notification = (_rd >= 0) ? ("Scrapped " + _rname + " for " + string(_rd) + " dust.") : "Could not scrap.";
+                        if (_rd >= 0) affinity_add("sable", 2);   // function-use drip (scrap)
                         sable_cursor = clamp(sable_cursor, 0, max(0, array_length(global.rune_inventory) - 1));
                     }
                 }
@@ -1276,6 +1683,7 @@ if (variable_instance_exists(id, "sable_open") && sable_open) {
                 var _bdef = _s_brew[_bsel];
                 var _bres = sable_brew(_bdef.id);
                 sable_notification = (_bres == "") ? ("Brewed " + _bdef.name + "!") : _bres;
+                if (_bres == "") affinity_add("sable", 2);   // function-use drip (brew)
             }
         } else if (sable_tab == 2) {
             if (array_length(_s_groups) > 0) {
@@ -1283,6 +1691,7 @@ if (variable_instance_exists(id, "sable_open") && sable_open) {
                 var _ug = _s_groups[_usel];
                 var _ures = sable_upgrade(_ug.from);
                 sable_notification = (_ures == "") ? ("Upgraded 3x " + _ug.from + " into " + _ug.to + "!") : _ures;
+                if (_ures == "") affinity_add("sable", 2);   // function-use drip (upgrade)
                 sable_cursor = 0;
             }
         } else {
@@ -1362,7 +1771,7 @@ if (variable_instance_exists(id, "vael_open") && vael_open) {
         var _vmy = device_mouse_y_to_gui(0);
         // Windowed list: x300..1200, start y225, row step 72 (matches ui_draw_vael_screen).
         if (_vmx >= 300 && _vmx < 1200) {
-            var _v_vis    = 11;
+            var _v_vis    = 10;   // match the draw-side window (clears the controls line)
             var _v_scroll = vael_list_scroll(clamp(vael_cursor, 0, _v_rows - 1), _v_rows, _v_vis);
             var _vvis_row = floor((_vmy - 225) / 72);
             if (_vvis_row >= 0 && _vvis_row < _v_vis) {
@@ -1380,6 +1789,7 @@ if (variable_instance_exists(id, "vael_open") && vael_open) {
         } else {
             var _vbuy = vael_buy_skin(_vsel.id);
             vael_notification = (_vbuy == "") ? ("Purchased & equipped " + _vsel.name + "!") : _vbuy;
+            if (_vbuy == "") affinity_add("vael", 2);   // function-use drip (skin buy / transmog)
         }
     }
 
@@ -1423,7 +1833,7 @@ if (menu_tab == 4) {
 
 // Abilities tab (2): W/S browse the loadout (left list -> right breakdown).
 if (menu_tab == 2 && variable_global_exists("chosen_class")) {
-    var _abil_count = array_length(abilities_get_loadout(global.chosen_class));
+    var _abil_count = array_length(abilities_resolve_player_loadout(global.chosen_class));
     if (_abil_count > 0) {
         if (nav_down()) ability_view_cursor = wrap_index(ability_view_cursor + 1, _abil_count);
         if (nav_up())   ability_view_cursor = wrap_index(ability_view_cursor - 1, _abil_count);
@@ -1513,9 +1923,13 @@ if (mouse_check_button_pressed(mb_left)) {
                         equip_msg = _mchosen.name + " requires " + _mcrnames[_mcr] + ".";
                     } else if (_msreq != "") {
                         equip_msg = _msreq;
-                    } else if (_msel_inv == 1 && two_handed_equipped()) {
-                        // Offhand slot is locked while a two-handed weapon is equipped.
+                    } else if (_msel_inv == 1 && hard_two_handed_equipped()) {
+                        // Offhand slot is locked while a greatsword/longbow 2H is equipped.
                         equip_msg = "Two-handed weapon equipped - offhand is locked.";
+                    } else if (_msel_inv == 1 && caster_staff_equipped() && item_is_shield_offhand(_mchosen)) {
+                        equip_msg = "A two-handed staff cannot also hold a shield.";
+                    } else if (_msel_inv == 0 && caster_staff_equipped()) {
+                        equip_msg = "A two-handed staff is equipped - no melee weapon.";
                     } else {
                         equip_msg = "";
                         var _msinfo = _mpsrc[_mri];
@@ -1528,9 +1942,16 @@ if (mouse_check_button_pressed(mb_left)) {
                             if (_mold != undefined) array_push(global.carried_items, _mold);
                         }
                         global.inventory[_msel_inv] = _mchosen;
-                        // 2H weapon locks the offhand: return any equipped offhand to the pack.
+                        // 2H weapon vacates the offhand. A caster staff only displaces a
+                        // SHIELD (keeps a focus/tome) and clears any melee weapon; other
+                        // 2H weapons displace any offhand. (Task 10)
                         if ((_msel_inv == 0 || _msel_inv == 8) && item_is_two_handed(_mchosen)) {
-                            return_offhand_to_pack(_mp_in_hub);
+                            if (item_is_caster_2h(_mchosen)) {
+                                if (item_is_shield_offhand(global.inventory[1])) return_offhand_to_pack(_mp_in_hub);
+                                return_inv_slot_to_pack(0, _mp_in_hub);
+                            } else {
+                                return_offhand_to_pack(_mp_in_hub);
+                            }
                         }
                         equip_notif_msg   = "Equipped " + _mchosen.name + "  ->  " + string_upper(_mpslname);
                         equip_notif_timer = 150;
@@ -1549,7 +1970,7 @@ if (mouse_check_button_pressed(mb_left)) {
 
     // --- Abilities tab (2): click a row in the left list to select it ---
     if (menu_tab == 2 && variable_global_exists("chosen_class")) {
-        var _alist = abilities_get_loadout(global.chosen_class);
+        var _alist = abilities_resolve_player_loadout(global.chosen_class);
         var _alcnt = array_length(_alist);
         if (_alcnt > 0 && _mmx >= 86 && _mmx < 684) {
             var _alrh = min(108, (830) / _alcnt);   // mirrors the draw (panel 150..1012, pad 16)
@@ -1620,6 +2041,14 @@ if (mouse_check_button_pressed(mb_left)) {
                                 array_push(_mctrl2.combat_log, "Used " + _mit.name + (_mcl > 0
                                     ? " - cleared " + string(_mcl) + " negative effect(s)!"
                                     : " - no negative effects to clear."));
+                            } else if (_mit.effect_type == "gold_find_pot") {
+                                potion_drink_gold(_mit.effect_value);
+                                array_push(_mctrl2.combat_log, "Used " + _mit.name
+                                    + " - gold drops +" + string(_mit.effect_value) + "% until 2 bosses fall!");
+                            } else if (_mit.effect_type == "loot_find_pot") {
+                                potion_drink_loot(_mit.effect_value);
+                                array_push(_mctrl2.combat_log, "Used " + _mit.name
+                                    + " - loot chance +" + string(_mit.effect_value) + "% until 2 bosses fall!");
                             }
                             // AP-restore items are free; everything else costs 1 AP on your turn.
                             if (_mctrl2.player_turn) {
@@ -1662,6 +2091,93 @@ if (menu_tab == 1) {
     var _sel_inv = equip_display_to_inv(equip_slot_selected);
 
     if (!equip_picker_open) {
+        // ===== Found-items (pack) column: focus / browse / sort / equip =====
+        // The right column lists the pack. A/<- focuses the slots, D/-> the found list;
+        // a click focuses whichever was clicked. Q/E stay reserved for tab switching.
+        var _found   = equip_found_list(equip_found_sort);
+        var _found_n = array_length(_found);
+        equip_found_cursor = clamp(equip_found_cursor, 0, max(0, _found_n - 1));
+
+        if (mouse_check_button_pressed(mb_left)) {
+            var _emx = device_mouse_x_to_gui(0);
+            var _emy = device_mouse_y_to_gui(0);
+            if (_emx >= 1652 && _emx <= 1842 && _emy >= 162 && _emy <= 202) {
+                equip_found_sort = (equip_found_sort + 1) mod 2;   // sort toggle button
+            } else if (_emx >= 1360 && _emx <= 1862 && _emy >= 150 && _emy <= 1012) {
+                equip_found_focus = true;   // clicking the column focuses it even when empty
+                if (_found_n > 0) {
+                    var _ffirst = ui_list_window_first(equip_found_cursor, _found_n, 12);
+                    var _frow   = floor((_emy - 236) / 60);
+                    if (_frow >= 0 && _frow < min(12, _found_n - _ffirst)) equip_found_cursor = clamp(_ffirst + _frow, 0, _found_n - 1);
+                }
+            } else if (_emx >= 580 && _emx <= 1340 && _emy >= 150 && _emy <= 1012) {
+                equip_found_focus = false;
+                var _srow = floor((_emy - 166) / 83);
+                if (_srow >= 0 && _srow < EQUIP_SLOT_COUNT) equip_slot_selected = _srow;
+            }
+        }
+        if (keyboard_check_pressed(ord("D")) || keyboard_check_pressed(vk_right)) equip_found_focus = true;   // lateral swap (works even if pack empty)
+        if (keyboard_check_pressed(ord("A")) || keyboard_check_pressed(vk_left))  equip_found_focus = false;
+
+        if (equip_found_focus) {
+            if (_found_n > 0 && nav_up())   equip_found_cursor = wrap_index(equip_found_cursor - 1, _found_n);
+            if (_found_n > 0 && nav_down()) equip_found_cursor = wrap_index(equip_found_cursor + 1, _found_n);
+            equip_found_cursor = clamp(equip_found_cursor, 0, max(0, _found_n - 1));
+
+            // Enter equips the highlighted found item into its slot.
+            if ((keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)) && _found_n > 0) {
+                var _fitem = _found[equip_found_cursor].item;
+                var _fsrc  = _found[equip_found_cursor].idx;
+                var _fsrctype = variable_struct_exists(_found[equip_found_cursor], "src") ? _found[equip_found_cursor].src : 1; // 0 stash / 1 pack
+                var _ftgt  = equip_target_inv_for_slot(_fitem.slot);
+                var _fcr   = variable_struct_exists(_fitem, "class_req") ? _fitem.class_req : -1;
+                var _fmycl = variable_global_exists("chosen_class") ? global.chosen_class : -1;
+                var _fsreq = equip_stat_block_reason(_fitem);
+                if (_ftgt == -1) {
+                    equip_msg = "Can't equip that item.";
+                } else if (_fcr != -1 && _fcr != _fmycl) {
+                    var _fcn = ["Arcanist", "Bloodwarden", "Shadowstrider"];
+                    equip_msg = _fitem.name + " requires " + ((_fcr >= 0 && _fcr <= 2) ? _fcn[_fcr] : "another class") + ".";
+                } else if (_fsreq != "") {
+                    equip_msg = _fsreq;
+                } else if (_ftgt == 1 && hard_two_handed_equipped()) {
+                    equip_msg = "Two-handed weapon equipped - offhand is locked.";
+                } else if (_ftgt == 1 && caster_staff_equipped() && item_is_shield_offhand(_fitem)) {
+                    equip_msg = "A two-handed staff cannot also hold a shield.";
+                } else if (_ftgt == 0 && caster_staff_equipped()) {
+                    equip_msg = "A two-handed staff is equipped - no melee weapon.";
+                } else {
+                    var _fhub = (room == rm_hub || room == rm_character_select);
+                    var _fold = global.inventory[_ftgt];
+                    // Remove the chosen item from its own source (stash or pack), and return
+                    // the previously-equipped item to that same source.
+                    if (_fsrctype == 0) {
+                        array_delete(global.equipment_stash, _fsrc, 1);
+                        if (_fold != undefined) array_push(global.equipment_stash, _fold);
+                    } else {
+                        array_delete(global.carried_items, _fsrc, 1);
+                        if (_fold != undefined) array_push(global.carried_items, _fold);
+                    }
+                    global.inventory[_ftgt] = _fitem;
+                    if ((_ftgt == 0 || _ftgt == 8) && item_is_two_handed(_fitem)) {
+                        if (item_is_caster_2h(_fitem)) {
+                            if (item_is_shield_offhand(global.inventory[1])) return_offhand_to_pack(_fhub);
+                            return_inv_slot_to_pack(0, _fhub);
+                        } else {
+                            return_offhand_to_pack(_fhub);
+                        }
+                    }
+                    equip_notif_msg   = "Equipped " + _fitem.name + "  ->  " + string_upper(_fitem.slot);
+                    equip_notif_timer = 150;
+                    equip_msg         = "";
+                    audio_play_sound(Check_1, 1, false);
+                    if (_fhub) save_game();
+                    // List rebuilds next frame (stash + pack); just keep the cursor non-negative,
+                    // the draw/Step re-clamp to the new length.
+                    equip_found_cursor = max(0, equip_found_cursor);
+                }
+            }
+        } else {
         // Single-column navigation - W/S wrap through all 10 slot rows.
         if (nav_up())   equip_slot_selected = wrap_index(equip_slot_selected - 1, EQUIP_SLOT_COUNT);
         if (nav_down()) equip_slot_selected = wrap_index(equip_slot_selected + 1, EQUIP_SLOT_COUNT);
@@ -1689,6 +2205,7 @@ if (menu_tab == 1) {
                 if (_in_hub) save_game();
             }
         }
+        }   // end slot-focus branch
 
     } else {
         // Picker open - build filtered list for the selected slot every frame. Use the
@@ -1736,9 +2253,13 @@ if (menu_tab == 1) {
                 // Don't equip - skip the rest of the block
             } else if (_ksreq != "") {
                 equip_msg = _ksreq;   // hard block: stat requirement not met
-            } else if (_sel_inv == 1 && two_handed_equipped()) {
-                // Offhand slot is locked while a two-handed weapon is equipped.
+            } else if (_sel_inv == 1 && hard_two_handed_equipped()) {
+                // Offhand slot is locked while a greatsword/longbow 2H is equipped.
                 equip_msg = "Two-handed weapon equipped - offhand is locked.";
+            } else if (_sel_inv == 1 && caster_staff_equipped() && item_is_shield_offhand(_chosen)) {
+                equip_msg = "A two-handed staff cannot also hold a shield.";
+            } else if (_sel_inv == 0 && caster_staff_equipped()) {
+                equip_msg = "A two-handed staff is equipped - no melee weapon.";
             } else {
             equip_msg = "";
 
@@ -1755,10 +2276,16 @@ if (menu_tab == 1) {
             }
 
             global.inventory[_sel_inv] = _chosen;
-            // A 2H weapon (melee slot 0 or ranged slot 8) locks the offhand:
-            // return any equipped offhand to the pack so the slot empties.
+            // A 2H weapon vacates the offhand. A caster staff only displaces a SHIELD
+            // (keeps a focus/tome) and clears any melee weapon; other 2H weapons
+            // displace any offhand. (Task 10)
             if ((_sel_inv == 0 || _sel_inv == 8) && item_is_two_handed(_chosen)) {
-                return_offhand_to_pack(_picker_in_hub);
+                if (item_is_caster_2h(_chosen)) {
+                    if (item_is_shield_offhand(global.inventory[1])) return_offhand_to_pack(_picker_in_hub);
+                    return_inv_slot_to_pack(0, _picker_in_hub);
+                } else {
+                    return_offhand_to_pack(_picker_in_hub);
+                }
             }
             equip_notif_msg   = "Equipped " + _chosen.name + "  ->  " + string_upper(_slot_name);
             equip_notif_timer = 150;
@@ -1873,6 +2400,14 @@ if (menu_tab == 3) {
                         _player.energy += 1;
                         array_push(_ctrl_c.combat_log, "Used " + _item.name
                             + " - +" + string(_ley_res2) + " " + _ley_label2 + " and +1 AP!");
+                    } else if (_item.effect_type == "gold_find_pot") {
+                        potion_drink_gold(_item.effect_value);
+                        array_push(_ctrl_c.combat_log, "Used " + _item.name
+                            + " - gold drops +" + string(_item.effect_value) + "% until 2 bosses fall!");
+                    } else if (_item.effect_type == "loot_find_pot") {
+                        potion_drink_loot(_item.effect_value);
+                        array_push(_ctrl_c.combat_log, "Used " + _item.name
+                            + " - loot chance +" + string(_item.effect_value) + "% until 2 bosses fall!");
                     }
                     // AP-restore items are free; everything else costs 1 AP on your turn.
                     if (_ctrl_c.player_turn) {

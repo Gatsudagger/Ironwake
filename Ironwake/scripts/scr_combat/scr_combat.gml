@@ -951,6 +951,8 @@ function combat_on_enemy_defeated(target, player, combat_log) {
     var _gold_drop = irandom(target.gold_max - target.gold_min) + target.gold_min;
     if (boon_active("greed")) _gold_drop = round(_gold_drop * (1 + boon_value("greed")));
     _gold_drop = round(_gold_drop * curse_gold_mult());
+    _gold_drop = round(_gold_drop * potion_gold_mult());   // Goldfinger Elixir (+gold, 2-boss buff)
+    _gold_drop = round(_gold_drop * (1 + pet_active_boon_gold_pct() + pet_active_egg_bonus("gold")));   // active Boon pet + Gilded-egg hatchling
     add_gold(_gold_drop);
     global.current_run_kills++;
     array_push(combat_log, "Gained " + string(_gold_drop) + "g!");
@@ -1053,4 +1055,98 @@ function combat_check_victory(combat_state) {
     if (!any_player_alive) return -1; // player lost
     if (!any_enemy_alive)  return  1; // player won
     return 0;                         // ongoing
+}
+
+// ---------------------------------------------------------------------------
+// combat_pet_act(combat_state, player, combat_log, damage_popups)
+// The active pet's combat turn (Pets Phase 3, lightweight hook). Resolves ONCE when the
+// player ends their turn, BEFORE the enemies act (You -> Pet -> Enemies). Only Combatant
+// and Guardian pets at Stage 2+ act; Boon pets just stand present. The log + popup arrays
+// are passed by reference so the pet can announce itself. Returns true if it acted (the
+// caller then adds a brief pause before enemies). Numbers are conservative + TBD-balance.
+// ---------------------------------------------------------------------------
+function combat_pet_act(combat_state, player, combat_log, damage_popups) {
+    var _p = pet_active();
+    if (_p == undefined || _p.is_egg || _p.stage < PET_STAGE_YOUNGADULT) return false;
+    var _adult = (_p.stage >= PET_STAGE_ADULT);
+    var _imult = pet_injury_mult(_p.injured);   // injury weakens (tier 1) or benches (tier 2+) the pet
+    if (_imult <= 0) return false;
+    var _cmult     = pet_corruption_mult(_p);    // permanent +15%/run enhancement (kept after cure)
+    var _fulfilled = pet_is_fulfilled(_p);       // fully corrupted -> grand archetype ability
+    var _kit = pet_kit_mods(_p);                 // named-kit modifiers (traits/abilities, Pets §5)
+
+    if (_p.archetype == PET_ARCH_COMBATANT) {
+        var _base = max(1, round((_adult ? 16 : 8) * _imult * _cmult * (1 + _kit.dmg + pet_active_egg_bonus("dmg"))));
+        var _exec = (_kit.execute > 0) ? (1 + _kit.execute) : 1;   // Executioner capstone vs low-HP foes
+
+        if (_fulfilled) {
+            // GRAND: corrupted cleave - strike EVERY living enemy.
+            var _slot = 0, _any = false;
+            for (var _i = 0; _i < array_length(combat_state.combatants); _i++) {
+                var _c = combat_state.combatants[_i];
+                if (_c.is_player || _c.is_defeated) continue;
+                var _cmul = (_c.max_HP > 0 && _c.HP < _c.max_HP * 0.30) ? _exec : 1;
+                var _cd = combat_resolve_damage(round(_base * _cmul), 0, _c.armor, _c.el_resist);
+                if (_cd < 1) _cd = 1;
+                combat_apply_damage(_c, _cd);
+                array_push(damage_popups, { value: _cd, x: 1620 + _slot * (-120), y: 233 + _slot * 105 - 105, timer: 50, col: make_color_rgb(190, 120, 220) });
+                if (_c.HP <= 0) combat_on_enemy_defeated(_c, player, combat_log);
+                _slot++; _any = true;
+            }
+            if (_any) {
+                array_push(combat_log, _p.name + " erupts - corrupted cleave hits all foes for " + string(_base) + "!");
+                global.pet_lunge_t0 = current_time;   // procedural lunge (combat draw)
+            }
+            return _any;
+        }
+
+        // Strike the lowest-HP living enemy (helps secure kills).
+        var _best = undefined, _bslot = -1, _live = 0;
+        for (var _bi = 0; _bi < array_length(combat_state.combatants); _bi++) {
+            var _bc = combat_state.combatants[_bi];
+            if (_bc.is_player || _bc.is_defeated) continue;
+            if (_best == undefined || _bc.HP < _best.HP) { _best = _bc; _bslot = _live; }
+            _live++;
+        }
+        if (_best == undefined) return false;
+        var _emul = (_best.max_HP > 0 && _best.HP < _best.max_HP * 0.30) ? _exec : 1;
+        var _dmg = combat_resolve_damage(round(_base * _emul), 0, _best.armor, _best.el_resist);
+        if (_dmg < 1) _dmg = 1;
+        combat_apply_damage(_best, _dmg);
+        array_push(combat_log, _p.name + " strikes " + _best.name + " for " + string(_dmg) + "!");
+        array_push(damage_popups, { value: _dmg, x: 1620 + _bslot * (-120), y: 233 + _bslot * 105 - 105, timer: 50, col: make_color_rgb(150, 215, 150) });
+        if (_best.HP <= 0) combat_on_enemy_defeated(_best, player, combat_log);
+        global.pet_lunge_t0 = current_time;   // procedural lunge (combat draw)
+        return true;
+    }
+
+    if (_p.archetype == PET_ARCH_GUARDIAN) {
+        // One per turn normally (heal if hurt, else ward); a fulfilled Guardian does BOTH.
+        var _egg_mend = pet_active_egg_bonus("mend");
+        var _heal_amt = max(1, round((_adult ? 10 : 5) * _imult * _cmult * (1 + _kit.heal + _egg_mend)));
+        var _sh_amt   = max(1, round((_adult ? 12 : 7) * _imult * _cmult * (1 + _kit.shield + _egg_mend)));
+        // Guardian Angel capstone (_kit.both) also makes it heal AND shield, like fulfilled.
+        var _do_heal   = _fulfilled || _kit.both || (player.HP < player.max_HP * 0.70);
+        var _do_shield = _fulfilled || _kit.both || (player.HP >= player.max_HP * 0.70);
+        var _did = false;
+        if (_do_heal) {
+            var _before = player.HP;
+            player.HP = min(player.max_HP, player.HP + _heal_amt);
+            var _gain = player.HP - _before;
+            if (_gain > 0) {
+                array_push(combat_log, _p.name + " tends your wounds (+" + string(_gain) + " HP).");
+                array_push(damage_popups, { value: _gain, x: 360, y: 360, timer: 50, col: make_color_rgb(120, 220, 140) });
+                _did = true;
+            }
+        }
+        if (_do_shield) {
+            player.shield_hp += _sh_amt;
+            array_push(combat_log, _p.name + " raises a ward (+" + string(_sh_amt) + " shield).");
+            array_push(damage_popups, { value: _sh_amt, x: 360, y: 402, timer: 50, col: make_color_rgb(120, 185, 235) });
+            _did = true;
+        }
+        return _did;
+    }
+
+    return false;
 }

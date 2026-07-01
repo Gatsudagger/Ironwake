@@ -494,8 +494,6 @@ if (showing_event) {
 // 6b. SHRINE OF TRIBUTE - interactive boon-purchase overlay
 // -----------------------------------------------------------------------------
 if (showing_shrine) {
-    var _is_curse = (shrine_kind == "curse");
-
     draw_set_alpha(0.95);
     draw_set_color(c_black);
     draw_rectangle(0, 0, GUI_W, GUI_H, false);
@@ -503,6 +501,28 @@ if (showing_shrine) {
 
     draw_set_halign(fa_center);
     draw_set_valign(fa_top);
+
+    if (!shrine_revealed) {
+    // --- Veiled altar: its nature stays hidden until the player chooses to approach.
+    //     Leaving here forgoes the shrine entirely; approaching commits (a revealed
+    //     curse then traps them). See the shrine block in Step_0. -------------------
+    draw_set_font(fnt_ui_title);
+    draw_set_color(make_color_rgb(150, 140, 170));
+    draw_text(GUI_CX, 84, "An Ancient Altar");
+    draw_set_font(fnt_ui);
+    draw_set_color(make_color_rgb(180, 175, 195));
+    draw_text(GUI_CX, 320, "A shrouded altar thrums with hidden power.");
+    draw_text(GUI_CX, 384, "Its nature - blessing or curse - is veiled.");
+    draw_set_font(fnt_ui_small);
+    draw_set_color(make_color_rgb(200, 160, 120));
+    draw_text(GUI_CX, 500, "Approach and you are committed - a curse, once revealed, will not release you.");
+    draw_set_color(c_ltgray);
+    draw_text(GUI_CX, 990, "Space / Enter: Approach the altar      Esc: Leave (forgo it)");
+    ui_draw_gothic_frame(30, 30, 1890, 1050, 30);
+    draw_set_halign(fa_left);
+    draw_set_valign(fa_top);
+    } else {
+    var _is_curse = (shrine_kind == "curse");
     if (_is_curse) {
         draw_set_font(fnt_ui_title);
         draw_set_color(make_color_rgb(205, 70, 70));
@@ -591,7 +611,9 @@ if (showing_shrine) {
     draw_set_font(fnt_ui_small);
     draw_set_color(c_ltgray);
     draw_text(GUI_CX, 990, _is_curse
-        ? "W/S: Select     Enter: Embrace the curse     Esc: Leave"
+        ? ((_sn == 0)
+            ? "No curse remains - Esc: Leave"
+            : "W/S: Select     Enter: Embrace the curse  (the altar will not release you)")
         : "W/S: Select     1: Gold     2: Dust     3: Item     Esc: Leave");
 
     // Ornate gothic rim (title y84, offer rows x330..1590, hint y990 - all inside the opening).
@@ -599,6 +621,7 @@ if (showing_shrine) {
 
     draw_set_halign(fa_left);
     draw_set_valign(fa_top);
+    }   // end revealed branch
 }
 
 

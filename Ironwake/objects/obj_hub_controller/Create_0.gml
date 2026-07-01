@@ -29,7 +29,8 @@ npc_names = [
     "Maren the Runesmith",
     "Vex the Trainer",
     "Petra the Merchant",
-    "Vael the Aesthete"
+    "Vael the Aesthete",
+    "Bairc the Creature Keeper"
 ];
 
 // One-line summaries shown in the NPC list rows
@@ -39,13 +40,15 @@ npc_descriptions = [
     "Sockets gear runes for stats and aspect runes for combat buffs. Press Space to open the runeworks.",
     "Permanent stat upgrades, ability unlocks, and trait slot expansion.",
     "Consumables and supplies for your next run. Press Space to browse Petra's wares.",
-    "Cosmetic transmog - buy and wear character skins. Press Space to visit the atelier."
+    "Cosmetic transmog - buy and wear character skins. Press Space to visit the atelier.",
+    "Tends and raises the creatures you find below. Press Space to visit his garden."
 ];
 
-// All six hub NPCs are permanently available from the start (design decision -
-// no unlock gating). Not persisted in the save: re-initialized here every time the
-// hub loads, so no save can ever re-lock an NPC. Keep this array all-true.
-npc_unlocked = [true, true, true, true, true, true];
+// All seven hub NPCs are permanently present from the start (design decision -
+// no unlock gating). Bairc is PRESENT but DORMANT until you find your first pet/egg
+// (handled at interaction, not here). Not persisted: re-initialized every hub load so
+// no save can re-lock an NPC. Keep this array all-true.
+npc_unlocked = [true, true, true, true, true, true, true];
 
 
 // -----------------------------------------------------------------------------
@@ -62,6 +65,23 @@ show_last_run = (global.last_run_result != 0);
 // Drawn by Draw_64 as a small overlay near the bottom of the detail panel.
 // -----------------------------------------------------------------------------
 notification = "";
+// Surface a pet/egg recovered during the last run (set at boss-clear), once, on return.
+// Persist immediately so a creature found mid-run can't be lost before the next save.
+if (variable_global_exists("pet_find_notice") && global.pet_find_notice != "") {
+    notification = global.pet_find_notice;
+    global.pet_find_notice = "";
+    if (variable_global_exists("save_slot") && global.save_slot >= 0) save_game();
+}
+
+// (Starter pet is now granted the first time you TALK to Bairc - see obj_hub_controller
+// Step: he notices the egg stir, hands it to you as a tutorial. No auto-grant here.)
+
+// One-time capstone re-pick migration: raised Adults from before the pick UI get their
+// auto-rolled capstone cleared so they can choose. Self-guarding, safe to call each entry.
+if (variable_global_exists("pet_roster")) pet_capstone_migrate_all();
+
+// Re-skin any retired humanoid-species pets to a real creature (idempotent).
+if (variable_global_exists("pet_roster")) pet_migrate_retired_species();
 
 
 // -----------------------------------------------------------------------------

@@ -126,6 +126,19 @@ function save_game() {
         run_boons:      variable_global_exists("run_boons")      ? global.run_boons      : [],
         run_curses:     variable_global_exists("run_curses")     ? global.run_curses     : [],
 
+        // NPC affinity (thin track, meta-persistent per slot)
+        npc_affinity:   variable_global_exists("npc_affinity")   ? global.npc_affinity   : undefined,
+
+        // Petra Treasure Trader order (cross-run persistent; undefined = none)
+        petra_order:    variable_global_exists("petra_order")    ? global.petra_order    : undefined,
+
+        // Pets (cross-run persistent roster + active companion + uid counter)
+        pet_roster:     variable_global_exists("pet_roster")     ? global.pet_roster     : [],
+        active_pet:     variable_global_exists("active_pet")     ? global.active_pet     : -1,
+        pet_next_id:    variable_global_exists("pet_next_id")    ? global.pet_next_id    : 1,
+        pet_starter_given: variable_global_exists("pet_starter_given") ? global.pet_starter_given : false,
+        pet_feed_pouch: (variable_global_exists("pet_feed_pouch") && is_struct(global.pet_feed_pouch)) ? global.pet_feed_pouch : {},
+
         // Onboarding: which tips this profile has already seen (per-slot).
         // The enable/disable preference is global and lives in settings.ini, not here.
         tutorial_seen: variable_global_exists("tutorial_seen") ? global.tutorial_seen : {},
@@ -226,6 +239,19 @@ function new_game_reset() {
     global.consumable_stash     = [];
     global.consumable_inventory = [];
 
+    // NPC affinity (thin track) - fresh zeroed relationships for a new character.
+    global.npc_affinity = affinity_fresh();
+
+    // Petra Treasure Trader - no open order on a new character.
+    global.petra_order = undefined;
+
+    // Pets - a new character owns none yet (gets a starter on first hub visit).
+    global.pet_roster  = [];
+    global.active_pet  = -1;
+    global.pet_next_id = 1;
+    global.pet_starter_given = false;
+    global.pet_feed_pouch    = {};
+
     // Shop stock (per-slot). Cleared so no previous character's Dorn/Petra stock
     // bleeds in; left empty here, then either restored by load_game() or freshly
     // rolled by the hub on entry (restock_shops()).
@@ -247,6 +273,8 @@ function new_game_reset() {
     // Run modifiers
     global.run_boons  = [];
     global.run_curses = [];
+    global.gold_potion_bosses = 0;   // exotic find-buff potions never carry across a load
+    global.loot_potion_bosses = 0;
 
     // Onboarding (per-slot)
     global.tutorial_seen = {};
@@ -427,6 +455,25 @@ function load_game() {
     if (variable_struct_exists(_s, "consumable_stash") && is_array(_s.consumable_stash)) {
         global.consumable_stash = _s.consumable_stash;
     }
+
+    // NPC affinity (thin track). Restore the saved relationships; affinity_ensure()
+    // backfills any missing NPC keys/fields so older saves load cleanly.
+    if (variable_struct_exists(_s, "npc_affinity") && is_struct(_s.npc_affinity)) {
+        global.npc_affinity = _s.npc_affinity;
+    }
+    affinity_ensure();
+
+    // Petra Treasure Trader order (cross-run persistent). Absent/!struct -> no order.
+    global.petra_order = (variable_struct_exists(_s, "petra_order") && is_struct(_s.petra_order))
+        ? _s.petra_order : undefined;
+
+    // Pets (cross-run persistent). Older saves lack these keys -> empty roster.
+    global.pet_roster  = (variable_struct_exists(_s, "pet_roster")  && is_array(_s.pet_roster))  ? _s.pet_roster  : [];
+    global.active_pet  = (variable_struct_exists(_s, "active_pet"))  ? _s.active_pet  : -1;
+    global.pet_next_id = (variable_struct_exists(_s, "pet_next_id")) ? _s.pet_next_id : (array_length(global.pet_roster) + 1);
+    global.pet_starter_given = (variable_struct_exists(_s, "pet_starter_given")) ? _s.pet_starter_given : false;
+    global.pet_feed_pouch    = (variable_struct_exists(_s, "pet_feed_pouch") && is_struct(_s.pet_feed_pouch)) ? _s.pet_feed_pouch : {};
+    pet_migrate_retired_species();   // re-skin any retired humanoid-species pets to a real creature
     // Carried consumable pack (run buffer) - restore so withdrawn/carried-forward
     // potions survive a reload. Older saves lack this key; the gc-Create default ([])
     // covers them.
@@ -474,6 +521,8 @@ function load_game() {
     // none - this is the fresh-run reset the abandoned-run case needs.
     global.run_boons  = [];
     global.run_curses = [];
+    global.gold_potion_bosses = 0;   // exotic find-buff potions never carry across a load
+    global.loot_potion_bosses = 0;
     if (variable_struct_exists(_s, "tutorial_seen") && is_struct(_s.tutorial_seen)) {
         global.tutorial_seen = _s.tutorial_seen;
     }

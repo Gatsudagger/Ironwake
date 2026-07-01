@@ -441,6 +441,11 @@ shrine_kind        = "blessing";  // "blessing" = boons | "curse" = curses
 shrine_offers      = [];   // array of boon ids OR curse ids offered this shrine
 shrine_cursor      = 0;
 shrine_notification = "";
+// Whether the player has APPROACHED the altar (committed). While false the altar's
+// nature (blessing/curse) is veiled and the player may still leave freely. Once they
+// approach, the kind is revealed - and a CURSE altar then traps them (no Esc, must
+// embrace a curse). See the shrine block in Step_0 / Draw_64.
+shrine_revealed    = false;
 
 // Event room - interactive stat-gated choice overlay (see SYSTEMS_EVENTS.md)
 showing_event_choice = false;

@@ -373,7 +373,7 @@ var _row_h     = 81;
 var _row_gap   = 15;
 var _row_w     = 660;
 
-for (var _i = 0; _i < 6; _i++) {
+for (var _i = 0; _i < array_length(npc_names); _i++) {
     var _ry      = _nl_y + _i * (_row_h + _row_gap);
     var _is_sel  = (_i == selected_npc);
     var _is_lock = !npc_unlocked[_i];
@@ -419,7 +419,7 @@ draw_set_valign(fa_top);
 // -----------------------------------------------------------------------------
 // 6. SELECTED NPC DETAIL PANEL - right (x=1320, y=105, w=570, h=225)
 // -----------------------------------------------------------------------------
-if (selected_npc < 6) {
+if (selected_npc < array_length(npc_names)) {
 var _dp_x = 1320;
 var _dp_y = 105;
 var _dp_w = 570;
@@ -455,6 +455,32 @@ draw_text(_ddx, _ddy, npc_names[selected_npc]);
 draw_set_font(fnt_ui_small);
 draw_set_color(make_color_rgb(180, 190, 210));
 draw_text_ext(_ddx, _ddy + 42, npc_descriptions[selected_npc], 27, 510);
+
+// --- Affinity (thin track): tier + progress toward next gate. The raw score is
+// intentionally never shown (diegetic). Only the 6 affinity-scored NPCs (0..5) have a
+// bond; Bairc (index 6) is not affinity-wired until a later Phase-2 slice, so guard the
+// index to avoid reading past affinity_npc_ids().
+var _aff_ids = affinity_npc_ids();
+if (selected_npc < array_length(_aff_ids)) {
+    var _aff_id   = _aff_ids[selected_npc];
+    var _aff_tier = affinity_tier(_aff_id);
+    var _aff_rdy  = affinity_gate_ready(_aff_id);
+    draw_set_color(make_color_rgb(210, 190, 130));
+    draw_text(_ddx, _ddy + 100, "Bond: " + affinity_tier_name(_aff_id));
+    if (_aff_rdy) {
+        draw_set_color(c_aqua);
+        draw_text(_ddx + 200, _ddy + 100, "[B] Deepen bond");
+    } else if (_aff_tier < 4) {
+        // thin progress bar toward the next gate
+        var _bx = _ddx, _by = _ddy + 124, _bw = 320, _bh = 8;
+        draw_set_color(make_color_rgb(40, 44, 56));
+        draw_rectangle(_bx, _by, _bx + _bw, _by + _bh, false);
+        draw_set_color(make_color_rgb(210, 190, 130));
+        draw_rectangle(_bx, _by, _bx + _bw * affinity_progress_frac(_aff_id), _by + _bh, false);
+        draw_set_color(make_color_rgb(90, 96, 110));
+        draw_rectangle(_bx, _by, _bx + _bw, _by + _bh, true);
+    }
+}
 
 // Interaction hint or unlock condition
 if (npc_unlocked[selected_npc]) {
@@ -522,6 +548,19 @@ var _port_sprites = [
 // currently chosen dungeon (was blank before).
 if (selected_npc < array_length(_port_sprites)) {
     ui_draw_sprite_cover(_port_sprites[selected_npc], 0, _pp_x, _pp_y, _pp_w, _pp_h, portrait_fade_alpha);
+} else if (selected_npc < array_length(npc_names)) {
+    // NPC beyond the authored portrait set (Bairc): use his hub sprite if imported,
+    // else a captioned placeholder so the panel never falls through to the gate art.
+    var _np_spr = asset_get_index("spr_npc_bairc_portrait");   // M-supplied profile art
+    if (_np_spr < 0) _np_spr = asset_get_index("spr_npc_bairc_idle");
+    if (_np_spr >= 0) {
+        ui_draw_sprite_cover(_np_spr, 0, _pp_x, _pp_y, _pp_w, _pp_h, portrait_fade_alpha);
+    } else {
+        draw_set_halign(fa_center); draw_set_valign(fa_middle);
+        draw_set_font(fnt_ui_title); draw_set_color(make_color_rgb(120, 130, 160));
+        draw_text(_pp_x + _pp_w / 2, _pp_y + _pp_h / 2, npc_names[selected_npc]);
+        draw_set_halign(fa_left); draw_set_valign(fa_top); draw_set_font(-1);
+    }
 } else {
     // Enter Dungeon preview - the chest+monster "gate" art (now imported).
     var _prev_spr   = spr_dungeon_gate;
@@ -559,7 +598,7 @@ var _eb_y = 870;
 var _eb_w = 570;
 var _eb_h = 120;
 
-var _eb_sel = (selected_npc == 6);
+var _eb_sel = (selected_npc == array_length(npc_names));
 
 draw_set_alpha(1.0);
 draw_set_color(_eb_sel ? make_color_rgb(25, 160, 130) : make_color_rgb(20, 120, 100));
@@ -1364,31 +1403,29 @@ if (instance_exists(obj_game_controller)) {
         var _tab_w  = 315;
         var _mid    = GUI_CX;
 
-        // ABILITIES tab
-        var _t0_on = (_gc_ov.loadout_tab == 0);
-        draw_set_color(_t0_on ? make_color_rgb(22, 32, 65) : make_color_rgb(11, 13, 22));
-        draw_rectangle(_mid - _tab_w - 9, _tab_y, _mid - 9, _tab_y + _tab_h, false);
-        draw_set_color(_t0_on ? make_color_rgb(70, 100, 200) : make_color_rgb(32, 38, 65));
-        draw_rectangle(_mid - _tab_w - 9, _tab_y, _mid - 9, _tab_y + _tab_h, true);
+        // Three centred tabs: ABILITIES / TRAITS / COMPANION (ranges mirror the Step
+        // mouse hit-tests). Each gets its own accent colour.
+        var _tab_names = ["ABILITIES", "TRAITS", "COMPANION"];
+        var _tab_acc   = [make_color_rgb(70, 100, 200), make_color_rgb(120, 65, 190), make_color_rgb(90, 170, 110)];
+        var _tab_bgon  = [make_color_rgb(22, 32, 65),   make_color_rgb(28, 18, 52),   make_color_rgb(18, 42, 26)];
+        var _tab_gap   = 9;
+        var _tab_tot   = 3 * _tab_w + 2 * _tab_gap;
+        var _tab_x0    = _mid - _tab_tot / 2;
         draw_set_font(fnt_ui);
         draw_set_halign(fa_center);
-        draw_set_color(_t0_on ? c_white : make_color_rgb(75, 85, 120));
-        draw_text(_mid - _tab_w / 2 - 9, _tab_y + 11, "ABILITIES");
-
-        // TRAITS tab
-        var _t1_on = (_gc_ov.loadout_tab == 1);
-        draw_set_color(_t1_on ? make_color_rgb(28, 18, 52) : make_color_rgb(11, 13, 22));
-        draw_rectangle(_mid + 9, _tab_y, _mid + _tab_w + 9, _tab_y + _tab_h, false);
-        draw_set_color(_t1_on ? make_color_rgb(120, 65, 190) : make_color_rgb(32, 38, 65));
-        draw_rectangle(_mid + 9, _tab_y, _mid + _tab_w + 9, _tab_y + _tab_h, true);
-        draw_set_color(_t1_on ? c_white : make_color_rgb(75, 85, 120));
-        draw_text(_mid + _tab_w / 2 + 9, _tab_y + 11, "TRAITS");
-
-        // [ TAB ] hint between tabs
+        for (var _tbi = 0; _tbi < 3; _tbi++) {
+            var _tbx = _tab_x0 + _tbi * (_tab_w + _tab_gap);
+            var _ton = (_gc_ov.loadout_tab == _tbi);
+            draw_set_color(_ton ? _tab_bgon[_tbi] : make_color_rgb(11, 13, 22));
+            draw_rectangle(_tbx, _tab_y, _tbx + _tab_w, _tab_y + _tab_h, false);
+            draw_set_color(_ton ? _tab_acc[_tbi] : make_color_rgb(32, 38, 65));
+            draw_rectangle(_tbx, _tab_y, _tbx + _tab_w, _tab_y + _tab_h, true);
+            draw_set_color(_ton ? c_white : make_color_rgb(75, 85, 120));
+            draw_text(_tbx + _tab_w / 2, _tab_y + 11, _tab_names[_tbi]);
+        }
         draw_set_font(fnt_ui_small);
         draw_set_color(make_color_rgb(55, 62, 88));
-        draw_text_outline(_mid, _tab_y + 11, "Q / E");
-
+        draw_text_outline(_mid, _tab_y + _tab_h + 6, "Q / E switch tabs");
         draw_set_halign(fa_left);
 
         // =====================================================================
@@ -1527,28 +1564,59 @@ if (instance_exists(obj_game_controller)) {
                 }
             }
 
-            // --- Description box: y=900-990 ---
+            // --- "Press Tab" hint (clearly above the description box - ample room here) ---
+            draw_set_halign(fa_center);
+            draw_set_valign(fa_top);
+            draw_set_font(fnt_ui_small);
+            draw_set_color(make_color_rgb(120, 205, 240));
+            draw_text_outline(960, 843, "[ Tab ]  -  full breakdown of the highlighted ability");
+            draw_set_halign(fa_left);
+
+            // --- Description box: y=870-990, ornate double border + top accent strip ---
             var _desc_x = 60;
             var _desc_w = 1800;
             draw_set_color(make_color_rgb(10, 13, 26));
-            draw_rectangle(_desc_x, 900, _desc_x + _desc_w, 990, false);
-            draw_set_color(make_color_rgb(45, 55, 85));
-            draw_rectangle(_desc_x, 900, _desc_x + _desc_w, 990, true);
+            draw_rectangle(_desc_x, 870, _desc_x + _desc_w, 990, false);
+            draw_set_color(make_color_rgb(82, 108, 158));                          // outer border
+            draw_rectangle(_desc_x, 870, _desc_x + _desc_w, 990, true);
+            draw_set_color(make_color_rgb(38, 52, 82));                            // inner border
+            draw_rectangle(_desc_x + 3, 873, _desc_x + _desc_w - 3, 987, true);
+            draw_set_color(make_color_rgb(95, 135, 205));                          // top accent strip
+            draw_rectangle(_desc_x, 870, _desc_x + _desc_w, 875, false);
 
             draw_set_halign(fa_left);
             if (_gc_ov.loadout_cursor < _ov_pool_sz) {
                 var _dab = _ov_pool[_gc_ov.loadout_cursor];
+                // Line 1: name + role chip + cost (the "basic ability part" from the Tab popup).
                 draw_set_font(fnt_ui);
                 draw_set_color(c_white);
-                draw_text(_desc_x + 15, 911, _dab.name);
+                draw_text(_desc_x + 24, 885, _dab.name);
+                var _dn_w = string_width(_dab.name);
+                var _d_cat = ability_category(_dab);
+                draw_set_color(ability_category_color(_d_cat));
+                draw_text(_desc_x + 24 + _dn_w + 30, 888, ability_category_label(_d_cat));
+                // Cost line, right-aligned (AP + secondary resource + cooldown).
+                var _d_ap  = variable_struct_exists(_dab, "energy_cost")    ? _dab.energy_cost    : 0;
+                var _d_sec = variable_struct_exists(_dab, "secondary_cost") ? _dab.secondary_cost : 0;
+                var _d_cls = variable_global_exists("chosen_class") ? global.chosen_class : 0;
+                var _d_res = (_d_cls == 0) ? "Souls" : ((_d_cls == 1) ? "Blood" : "Preparation");
+                var _d_cost = string(_d_ap) + " AP";
+                if (_d_sec > 0) _d_cost += "   +" + string(_d_sec) + " " + _d_res;
+                var _d_cd = ability_cooldown(_dab);
+                if (_d_cd > 0) _d_cost += "   *   " + string(_d_cd) + "-turn CD";
+                draw_set_halign(fa_right);
+                draw_set_color(make_color_rgb(228, 190, 90));
+                draw_text(_desc_x + _desc_w - 24, 888, _d_cost);
+                draw_set_halign(fa_left);
+                // Line 2+: full mechanics breakdown.
                 draw_set_font(fnt_ui_small);
-                draw_set_color(make_color_rgb(160, 175, 205));
-                draw_text_ext(_desc_x + 15, 942, ability_describe(_dab), -1, _desc_w - 30);
+                draw_set_color(make_color_rgb(172, 187, 217));
+                draw_text_ext(_desc_x + 24, 927, ability_describe(_dab), -1, _desc_w - 48);
             } else {
                 draw_set_font(fnt_ui_small);
                 draw_set_halign(fa_center);
                 draw_set_color(make_color_rgb(80, 195, 100));
-                draw_text(_desc_x + _desc_w / 2, 933, "All " + string(_loadout_max) + " abilities chosen - press Enter on the confirm bar below to start your run.");
+                draw_text(_desc_x + _desc_w / 2, 921, "All " + string(_loadout_max) + " abilities chosen - press Enter on the confirm bar below to start your run.");
                 draw_set_halign(fa_left);
             }
 
@@ -1593,13 +1661,13 @@ if (instance_exists(obj_game_controller)) {
 
             // --- Tab ability-detail popup, drawn over the loadout (P7) ---
             if (_gc_ov.ability_detail_open && _gc_ov.loadout_cursor < _ov_pool_sz) {
-                ui_draw_ability_detail(_ov_pool[_gc_ov.loadout_cursor]);
+                ui_draw_ability_detail(_ov_pool[_gc_ov.loadout_cursor], "Tab", _gc_ov.ability_detail_scroll);
             }
 
         // =====================================================================
         // TRAITS TAB
         // =====================================================================
-        } else {
+        } else if (_gc_ov.loadout_tab == 1) {
 
             // Build available (unlocked, class-filtered) and locked lists
             var _tr_avail  = [];
@@ -1794,6 +1862,156 @@ if (instance_exists(obj_game_controller)) {
             draw_set_color(make_color_rgb(65, 75, 100));
             draw_text_outline(GUI_CX, 1050, "W/S: Navigate   Q/E: Switch Tab   Enter: Toggle Trait   Esc: Cancel");
             draw_set_halign(fa_left);
+
+        // =====================================================================
+        // COMPANION TAB (equip-only: pick the active pet, or None)
+        // =====================================================================
+        } else {
+            var _eqp = [];
+            for (var _cpi = 0; _cpi < pet_count(); _cpi++) {
+                if (!global.pet_roster[_cpi].is_egg) array_push(_eqp, _cpi);
+            }
+            var _crows = array_length(_eqp) + 1;   // pets + a "No companion" row
+            var _ccur  = clamp(_gc_ov.loadout_cursor, 0, _crows - 1);
+
+            draw_set_font(fnt_ui);
+            draw_set_color(make_color_rgb(150, 210, 160));
+            draw_text(_lx, 60, "YOUR CREATURES  (" + string(array_length(_eqp)) + ")");
+            draw_text(_rx, 60, "COMPANION");
+
+            var _crh = 78;
+            for (var _ri = 0; _ri < _crows; _ri++) {
+                var _ry      = _list_y0 + _ri * _crh;
+                var _sel     = (_ri == _ccur);
+                var _is_none = (_ri >= array_length(_eqp));
+                var _ridx    = _is_none ? -1 : _eqp[_ri];
+                var _active  = (global.active_pet == _ridx);
+
+                draw_set_color(_sel ? make_color_rgb(28, 44, 34) : make_color_rgb(18, 22, 30));
+                draw_rectangle(_lx, _ry, _lx + 660, _ry + _crh - 10, false);
+                draw_set_color(_sel ? make_color_rgb(90, 180, 120) : make_color_rgb(40, 50, 62));
+                draw_rectangle(_lx, _ry, _lx + 660, _ry + _crh - 10, true);
+
+                // Icon box (creature sprite shrunk to fit); blank for the "None" row.
+                var _ibs  = _crh - 22;
+                var _ibx0 = _lx + 8, _iby0 = _ry + 6, _ibx1 = _ibx0 + _ibs, _iby1 = _iby0 + _ibs;
+                draw_set_color(make_color_rgb(14, 18, 22));
+                draw_rectangle(_ibx0, _iby0, _ibx1, _iby1, false);
+                draw_set_color(_sel ? make_color_rgb(80, 150, 100) : make_color_rgb(40, 50, 60));
+                draw_rectangle(_ibx0, _iby0, _ibx1, _iby1, true);
+
+                var _ctx = _ibx1 + 14;
+                if (_is_none) {
+                    draw_set_font(fnt_ui);
+                    draw_set_color(make_color_rgb(170, 176, 190));
+                    draw_text(_ctx, _ry + 24, (_active ? "* " : "") + "No companion");
+                } else {
+                    var _cp   = global.pet_roster[_ridx];
+                    var _cisp = pet_sprite(_cp, "s");
+                    if (_cisp >= 0) {
+                        var _cisc = min((_ibs - 10) / max(1, sprite_get_width(_cisp)), (_ibs - 8) / max(1, sprite_get_height(_cisp)));
+                        draw_sprite_ext(_cisp, pet_anim_frame(_cisp), (_ibx0 + _ibx1) / 2, _iby1 - 5, _cisc, _cisc, 0, c_white, 1);
+                    }
+                    // Line 1: name (+ active marker) + stage on the right.
+                    draw_set_font(fnt_ui);
+                    draw_set_color(make_color_rgb(220, 226, 238));
+                    draw_text(_ctx, _ry + 10, (_active ? "* " : "") + _cp.name);
+                    draw_set_halign(fa_right);
+                    draw_set_font(fnt_ui_small);
+                    draw_set_color(make_color_rgb(150, 200, 140));
+                    draw_text(_lx + 660 - 16, _ry + 14, pet_stage_name(_cp.stage));
+                    draw_set_halign(fa_left);
+                    // Line 2: species + archetype + tags, muted.
+                    draw_set_font(fnt_ui_small);
+                    draw_set_color(make_color_rgb(150, 160, 185));
+                    draw_text(_ctx, _ry + 46, "(" + pet_species_get(_cp.species).name + ")   " + pet_archetype_name(_cp.archetype) + pet_injury_tag(_cp) + pet_corruption_tag(_cp));
+                }
+            }
+
+            // Right: framed companion detail card - a portrait box + header band +
+            // GRANTS box + egg-gift chip, so nothing floats or overlaps.
+            var _cx0 = _rx, _cx1 = 1836, _cy0 = 100, _cy1 = 900;
+            if (_ccur < array_length(_eqp)) {
+                var _hp = global.pet_roster[_eqp[_ccur]];
+
+                // Card frame.
+                draw_set_color(make_color_rgb(18, 20, 30));
+                draw_rectangle(_cx0, _cy0, _cx1, _cy1, false);
+                draw_set_color(make_color_rgb(70, 100, 84));
+                draw_rectangle(_cx0, _cy0, _cx1, _cy1, true);
+
+                var _ipad = 24;
+                // Portrait box (left within card); fit art by BOTH width and height.
+                var _px0 = _cx0 + _ipad, _py0 = _cy0 + _ipad, _px1 = _px0 + 200, _py1 = _py0 + 200;
+                draw_set_color(make_color_rgb(24, 27, 38));
+                draw_rectangle(_px0, _py0, _px1, _py1, false);
+                draw_set_color(make_color_rgb(60, 70, 92));
+                draw_rectangle(_px0, _py0, _px1, _py1, true);
+                var _hsp = pet_sprite(_hp, "s");
+                if (_hsp >= 0) {
+                    var _fw = (_px1 - _px0) - 26, _fh = (_py1 - _py0) - 22;
+                    var _hsc = min(_fw / max(1, sprite_get_width(_hsp)), _fh / max(1, sprite_get_height(_hsp)));
+                    draw_sprite_ext(_hsp, pet_anim_frame(_hsp), (_px0 + _px1) / 2, _py1 - 11, _hsc, _hsc, 0, c_white, 1);
+                }
+
+                // Header band (right of portrait): name + stage/archetype + egg chip.
+                var _tx = _px1 + 28;
+                var _active_here = (global.active_pet == _eqp[_ccur]);
+                draw_set_font(fnt_ui); draw_set_color(c_white);
+                draw_text(_tx, _py0 + 6, _hp.name + (_active_here ? "   (active)" : ""));
+                draw_set_font(fnt_ui_small); draw_set_color(make_color_rgb(190, 160, 240));
+                draw_text(_tx, _py0 + 54, pet_stage_name(_hp.stage) + "  -  " + pet_archetype_name(_hp.archetype));
+                var _egl = pet_egg_label(_hp);
+                if (_egl != "") {
+                    var _chtxt = "Egg gift: " + _egl;
+                    var _chy = _py0 + 96, _chw = 26 + string_width(_chtxt);
+                    draw_set_color(make_color_rgb(40, 36, 22));
+                    draw_rectangle(_tx, _chy, _tx + _chw, _chy + 36, false);
+                    draw_set_color(make_color_rgb(150, 130, 70));
+                    draw_rectangle(_tx, _chy, _tx + _chw, _chy + 36, true);
+                    draw_set_color(make_color_rgb(222, 200, 140));
+                    draw_text(_tx + 13, _chy + 7, _chtxt);
+                }
+
+                // GRANTS box (below portrait, full card width).
+                var _gx0 = _cx0 + _ipad, _gx1 = _cx1 - _ipad, _gy0 = _py1 + 26;
+                var _ceff = pet_effect_text(_hp);
+                if (_ceff == "") _ceff = "No passive yet - it grows into its gifts.";
+                draw_set_font(fnt_ui);
+                var _ew = (_gx1 - _gx0) - 28;
+                var _eh = string_height_ext(_ceff, 30, _ew);
+                var _gy1 = _gy0 + 46 + _eh + 18;
+                draw_set_color(make_color_rgb(20, 30, 24));
+                draw_rectangle(_gx0, _gy0, _gx1, _gy1, false);
+                draw_set_color(make_color_rgb(64, 110, 80));
+                draw_rectangle(_gx0, _gy0, _gx1, _gy1, true);
+                draw_set_font(fnt_ui_small); draw_set_color(make_color_rgb(120, 200, 140));
+                draw_text(_gx0 + 14, _gy0 + 12, "GRANTS");
+                draw_set_font(fnt_ui); draw_set_color(make_color_rgb(210, 230, 214));
+                draw_text_ext(_gx0 + 14, _gy0 + 46, _ceff, 30, _ew);
+
+                // Footer hint inside the card.
+                draw_set_font(fnt_ui_small); draw_set_color(make_color_rgb(150, 160, 190));
+                draw_text(_cx0 + _ipad, _cy1 - 42, "[Tab] full kit & details");
+            } else {
+                draw_set_color(make_color_rgb(18, 20, 30));
+                draw_rectangle(_cx0, _cy0, _cx1, _cy1, false);
+                draw_set_color(make_color_rgb(50, 58, 72));
+                draw_rectangle(_cx0, _cy0, _cx1, _cy1, true);
+                draw_set_font(fnt_ui);
+                draw_set_color(make_color_rgb(150, 156, 175));
+                draw_text(_cx0 + 26, _cy0 + 26, "Dive alone - no companion this run.");
+            }
+
+            draw_set_halign(fa_center);
+            draw_set_color(make_color_rgb(65, 75, 100));
+            draw_text_outline(GUI_CX, 1050, "W/S: Navigate   Q/E: Switch Tab   Tab: Details   Enter: Set Active   Esc: Cancel");
+            draw_set_halign(fa_left);
+
+            // Tab pet-kit detail popup over the Companion tab.
+            if (_gc_ov.companion_detail_open && _ccur < array_length(_eqp)) {
+                ui_draw_pet_detail(global.pet_roster[_eqp[_ccur]]);
+            }
         }
 
         draw_set_valign(fa_top);
@@ -1809,6 +2027,10 @@ ui_draw_trainer_statpick();
 ui_draw_maren_screen();
 ui_draw_sable_screen();
 ui_draw_vael_screen();
+ui_draw_bairc_screen();
+ui_draw_bairc_intro();      // first-talk dialogue popup (before the station opens)
+ui_draw_bairc_capstone();   // raised-Adult capstone pick modal, over the Bairc screen
+hatch_cutscene_draw();   // full-screen egg-hatch sequence, over the Bairc screen
 ui_draw_character_menu();
 
 // Comparison panel - drawn above all overlays
@@ -1839,6 +2061,24 @@ if (instance_exists(obj_game_controller)) {
         draw_set_alpha(1.0);
         draw_set_font(-1);
     }
+}
+
+// Tier-up heart VFX (blue Acquaintance..Companion, red Lover) for hub-list deepens.
+// Only when no NPC screen is open - an open screen draws its own hearts via the actor
+// (drawing in both places would double-advance the shared particle list).
+var _hb_gc = instance_exists(obj_game_controller) ? instance_find(obj_game_controller, 0) : noone;
+var _hb_screen = false;
+if (_hb_gc != noone) {
+    _hb_screen = (_hb_gc.shop_open != -1)
+        || (variable_instance_exists(_hb_gc, "trainer_open") && _hb_gc.trainer_open)
+        || (variable_instance_exists(_hb_gc, "maren_open")   && _hb_gc.maren_open)
+        || (variable_instance_exists(_hb_gc, "sable_open")   && _hb_gc.sable_open)
+        || (variable_instance_exists(_hb_gc, "vael_open")    && _hb_gc.vael_open)
+        || (variable_instance_exists(_hb_gc, "bairc_open")   && _hb_gc.bairc_open);
+}
+if (!_hb_screen) {
+    npc_hearts_consume_pending(1605, 600);   // near the NPC portrait panel
+    npc_hearts_draw();
 }
 
 // Audio settings overlay - drawn on top of everything when open

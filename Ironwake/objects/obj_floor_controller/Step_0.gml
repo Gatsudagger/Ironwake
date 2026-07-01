@@ -37,6 +37,11 @@ if (variable_global_exists("item_picker") && global.item_picker.resolved_purpose
     current_rooms[selected_room].cleared = true;
     global.floor_rooms_cleared[selected_room] = true;
     global.item_picker.resolved_purpose = "";   // consume the one-shot
+    // Rare: the crumbling altar reveals a pet egg (item-tribute claim path).
+    if (irandom(99) < 20) {
+        var _se2 = pet_grant_altar_egg("egg_shrine");
+        shrine_notification += _se2.is_egg ? "  An egg rests in the rubble..." : ("  A " + _se2.name + " stirs in the rubble...");
+    }
 }
 
 
@@ -86,12 +91,35 @@ if (consumable_overflow_pending()) {
 if (showing_shrine) {
     var _sh_n = array_length(shrine_offers);
 
-    // Leave (mark cleared - shrines don't persist once visited)
-    if (keyboard_check_pressed(vk_escape) || keyboard_check_pressed(vk_backspace)) {
-        showing_shrine = false;
-        current_rooms[selected_room].cleared = true;
-        global.floor_rooms_cleared[selected_room] = true;
+    // --- Pre-approach: the altar's nature is veiled. The player may walk away freely
+    //     (forgoing any boon AND any curse), or APPROACH to commit. Approaching is the
+    //     gamble - it reveals the kind, and a curse altar then springs its trap. ------
+    if (!shrine_revealed) {
+        if (keyboard_check_pressed(vk_escape) || keyboard_check_pressed(vk_backspace)) {
+            showing_shrine = false;
+            current_rooms[selected_room].cleared = true;
+            global.floor_rooms_cleared[selected_room] = true;
+            exit;
+        }
+        if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_space)) {
+            shrine_revealed     = true;   // commit - reveal blessing/curse
+            shrine_cursor       = 0;
+            shrine_notification = "";
+        }
         exit;
+    }
+
+    // --- Revealed. Leaving is allowed for a BLESSING altar (tribute is optional), but a
+    //     CURSE altar will not release the player - they must embrace a curse. The
+    //     _sh_n==0 guard keeps a degenerate empty-curse altar from soft-locking. ------
+    if (keyboard_check_pressed(vk_escape) || keyboard_check_pressed(vk_backspace)) {
+        if (shrine_kind != "curse" || _sh_n == 0) {
+            showing_shrine = false;
+            current_rooms[selected_room].cleared = true;
+            global.floor_rooms_cleared[selected_room] = true;
+            exit;
+        }
+        shrine_notification = "The altar's grip holds you - you must embrace a curse to leave.";
     }
 
     if (_sh_n > 0) {
@@ -111,6 +139,11 @@ if (showing_shrine) {
                     showing_shrine = false;
                     current_rooms[selected_room].cleared = true;
                     global.floor_rooms_cleared[selected_room] = true;
+                    // The sated altar sometimes leaves a (often corrupted) egg behind.
+                    if (irandom(99) < 25) {
+                        var _ce = pet_grant_altar_egg("egg_curse");
+                        shrine_notification += _ce.is_egg ? "  A dark egg festers in the ashes..." : ("  A " + _ce.name + " lurks in the dark...");
+                    }
                 } else {
                     shrine_notification = _res;
                 }
@@ -147,6 +180,11 @@ if (showing_shrine) {
                     showing_shrine = false;
                     current_rooms[selected_room].cleared = true;
                     global.floor_rooms_cleared[selected_room] = true;
+                    // Rare: the crumbling altar reveals a pet egg.
+                    if (irandom(99) < 20) {
+                        var _se = pet_grant_altar_egg("egg_shrine");
+                        shrine_notification += _se.is_egg ? "  An egg rests in the rubble..." : ("  A " + _se.name + " stirs in the rubble...");
+                    }
                 } else {
                     shrine_notification = _res;
                 }
@@ -379,9 +417,11 @@ if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter) || key
         show_debug_message("[FLOOR DEBUG] room=" + string(selected_room) + " type=event id=" + event_active.id);
 
     } else if (_room.type == "shrine") {
-        // Shrine altar - coin-flip its nature, then roll the matching offers. If the
-        // chosen kind has nothing left to give, fall back to the other kind.
-        shrine_kind = (irandom(1) == 0) ? "curse" : "blessing";
+        // Shrine altar - roll its nature (~33% cursed; curse altars are the rarer,
+        // riskier surprise), then roll the matching offers. If the chosen kind has
+        // nothing left to give, fall back to the other kind. The nature stays VEILED
+        // (shrine_revealed=false) until the player chooses to approach the altar.
+        shrine_kind = (irandom(99) < 33) ? "curse" : "blessing";
         if (shrine_kind == "curse") {
             shrine_offers = curse_offer_roll();
             if (array_length(shrine_offers) == 0) { shrine_kind = "blessing"; shrine_offers = boon_offer_roll(); }
@@ -391,6 +431,7 @@ if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter) || key
         }
         shrine_cursor       = 0;
         shrine_notification = "";
+        shrine_revealed     = false;   // veiled until the player approaches
         showing_shrine      = true;
         tutorial_try_show("shrine");   // first-altar coach-mark (see SYSTEMS_ONBOARDING.md)
         show_debug_message("[FLOOR DEBUG] room=" + string(selected_room) + " type=shrine kind=" + shrine_kind + " offers=" + string(array_length(shrine_offers)));

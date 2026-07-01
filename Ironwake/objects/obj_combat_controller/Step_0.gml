@@ -79,6 +79,12 @@ if (show_loot_screen) {
 var _result = combat_check_victory(combat_state);
 
 if (_result == 1) {
+    // Hold briefly on the killing blow so the final hit's damage number and the combat
+    // log are readable before the victory transition begins. (Task 2)
+    if (!combat_over && victory_pause_timer < victory_pause_frames) {
+        victory_pause_timer++;
+        exit;
+    }
     // Close stash if open when combat resolves
     if (instance_exists(obj_game_controller)) {
         instance_find(obj_game_controller, 0).stash_mode_open = false;
@@ -366,6 +372,16 @@ if (player_turn) {
                         player.energy += 1;
                         array_push(combat_log, "Used " + _citem.name
                             + " - +" + string(_ley_res) + " " + _ley_label + " and +1 AP!");
+                    } else if (_citem.effect_type == "gold_find_pot") {
+                        // Goldfinger Elixir: +gold drops until 2 bosses are slain.
+                        potion_drink_gold(_citem.effect_value);
+                        array_push(combat_log, "Used " + _citem.name
+                            + " - gold drops +" + string(_citem.effect_value) + "% until 2 bosses fall!");
+                    } else if (_citem.effect_type == "loot_find_pot") {
+                        // Faerie's Tear: +loot drop chance until 2 bosses are slain.
+                        potion_drink_loot(_citem.effect_value);
+                        array_push(combat_log, "Used " + _citem.name
+                            + " - loot chance +" + string(_citem.effect_value) + "% until 2 bosses fall!");
                     }
                     // AP-restore items are free; everything else costs 1 AP.
                     if (!_q_is_ap) player.energy -= 1;
@@ -477,7 +493,11 @@ if (player_turn) {
             }
             combat_next_turn(combat_state);
             player_turn = combat_state.active.is_player;
-            if (!player_turn) enemy_turn_timer = enemy_turn_delay;
+            if (!player_turn) {
+                // Pet takes its turn before the enemies (Pets Phase 3 lightweight hook).
+                enemy_turn_timer = enemy_turn_delay
+                    + (combat_pet_act(combat_state, player, combat_log, damage_popups) ? 45 : 0);
+            }
             exit;
         }
     }
@@ -498,7 +518,9 @@ if (player_turn) {
         combat_next_turn(combat_state);
         player_turn = combat_state.active.is_player;
         if (!player_turn) {
-            enemy_turn_timer = enemy_turn_delay;
+            // Pet takes its turn before the enemies (Pets Phase 3 lightweight hook).
+            enemy_turn_timer = enemy_turn_delay
+                + (combat_pet_act(combat_state, player, combat_log, damage_popups) ? 45 : 0);
         }
     }
 
@@ -942,6 +964,9 @@ if (player_turn) {
                         var _thf = (target.max_HP > 0) ? (target.HP / target.max_HP) : 1;
                         var _boon_dm = boon_damage_mult(_thf);
                         if (_boon_dm != 1.0) _final_dmg = max(1, round(_final_dmg * _boon_dm));
+                        // Corruption (Pets §7): pushing a corrupted active pet saps your damage.
+                        var _pet_corr_dm = pet_corruption_player_dmg_mult();
+                        if (_pet_corr_dm != 1.0) _final_dmg = max(1, round(_final_dmg * _pet_corr_dm));
 
                         // Focused Power: an AoE funneled to one target hits 50% harder.
                         if (_focused_burst) _final_dmg = round(_final_dmg * 1.5);
@@ -972,7 +997,7 @@ if (player_turn) {
                             var _elem_hit = combat_resolve_damage(_elem_aff.dmg, 1, target.armor, target.el_resist);
                             if (_elem_hit > 0) {
                                 _final_dmg += _elem_hit;
-                                array_push(combat_log, ab.name + " - " + elem_element_name(_elem_aff.element) + " strike (+" + string(_elem_hit) + ")!");
+                                array_push(combat_log, ab.name + " - " + school_label(elem_element_name(_elem_aff.element)) + " strike (+" + string(_elem_hit) + ")!");
                             }
                         }
 
@@ -1114,6 +1139,40 @@ if (player_turn) {
                                 + " for " + string(_final_dmg) + " damage";
                             if (_crit_result.critted) _log_entry += " (CRIT!)";
                             array_push(combat_log, _log_entry);
+
+                            // Damage breakdown for the hover tooltip (Task 1). These are the
+                            // component magnitudes that fed this hit - like reading the dice
+                            // roll. Component damage is shown pre-mitigation; the line's total
+                            // is the real post-armor number. Whole feature is gated by the flag.
+                            if (global.combat_log_breakdowns) {
+                                var _bd_lines = [];
+                                var _bd_base  = variable_struct_exists(ab, "base_damage") ? ab.base_damage : 0;
+                                array_push(_bd_lines, { label: "Ability base", val: string(_bd_base) });
+                                var _bd_bonus = _dmg - _bd_base;   // stat scaling + pre-crit riders
+                                if (_bd_bonus != 0)
+                                    array_push(_bd_lines, { label: "Power & bonuses", val: (_bd_bonus > 0 ? "+" : "") + string(_bd_bonus) });
+                                if (_crit_result.critted)
+                                    array_push(_bd_lines, { label: "Critical hit", val: "x" + string(_crit_result.multiplier) });
+                                if (_wpn_flat > 0)
+                                    array_push(_bd_lines, { label: ability_class_is_melee(_atk_class) ? "Melee weapon" : "Ranged weapon", val: "+" + string(_wpn_flat) + " physical" });
+                                if (_elem_aff != undefined && _elem_aff.dmg > 0)
+                                    array_push(_bd_lines, { label: elem_element_name(_elem_aff.element) + " (weapon)", val: "+" + string(_elem_aff.dmg) });
+                                if (_aspect_dmg_pct > 0)
+                                    array_push(_bd_lines, { label: "Aspect rune", val: "+" + string(round(_aspect_dmg_pct * 100)) + "%" });
+                                if (variable_struct_exists(player, "spell_dmg_bonus") && player.spell_dmg_bonus > 0 && ability_class_is_spell(_atk_class))
+                                    array_push(_bd_lines, { label: "Spell focus", val: "+" + string(round(player.spell_dmg_bonus * 100)) + "%" });
+                                var _bd = {
+                                    title:   ab.name,
+                                    total:   _final_dmg,
+                                    crit:    _crit_result.critted,
+                                    school:  ability_school(ab),
+                                    lines:   _bd_lines
+                                };
+                                // Lazily realign combat_log_detail to combat_log, then attach.
+                                while (array_length(combat_log_detail) < array_length(combat_log) - 1)
+                                    array_push(combat_log_detail, undefined);
+                                array_push(combat_log_detail, _bd);
+                            }
                         } else {
                             var _log_entry = player.name + " used " + ab.name;
                             if (_crit_result.critted) _log_entry += " (CRIT - empowered)";
@@ -1329,10 +1388,14 @@ if (player_turn) {
                                 }
                             }
 
-                            // Elemental weapon affix applies its setup status (burn/frost/shock)
-                            // on a damaging hit of the weapon's reach class. Low/short = setup,
-                            // not main damage; the `element` tag feeds the detonation reaction. (§C)
-                            if (_deals_damage && _elem_aff != undefined) {
+                            // Elemental weapon affix MAY apply its setup status (burn/frost/shock)
+                            // on a damaging hit of the weapon's reach class - now a chance proc
+                            // (~10% uncommon), not every hit, so the rider no longer out-values
+                            // abilities. The flat elemental damage above still lands every hit.
+                            // The `element` tag feeds the detonation reaction. (Task 12, §C)
+                            var _elem_proc = (_elem_aff != undefined)
+                                && (variable_struct_exists(_elem_aff, "status_chance") ? random(1) < _elem_aff.status_chance : true);
+                            if (_deals_damage && _elem_aff != undefined && _elem_proc) {
                                 array_push(target.status_effects, {
                                     name:         elem_status_name(_elem_aff.element),
                                     effect_type:  (_elem_aff.status_kind == "dot") ? "dot" : "debuff",

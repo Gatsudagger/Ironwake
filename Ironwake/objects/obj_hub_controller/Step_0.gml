@@ -185,23 +185,50 @@ if (instance_exists(obj_game_controller)) {
         if (_gc_ld.ability_detail_open) {
             if (keyboard_check_pressed(vk_tab) || keyboard_check_pressed(vk_escape)) {
                 _gc_ld.ability_detail_open = false;
+                exit;
             }
+            // Q/E cycle to the prev/next ability in the pool so the in-depth breakdowns
+            // can be read sequentially without closing the popup (mirrors W/S list nav).
+            if (_ld_pool_sz > 0) {
+                if (keyboard_check_pressed(ord("Q"))) {
+                    _gc_ld.loadout_cursor = wrap_index(_gc_ld.loadout_cursor - 1, _ld_pool_sz);
+                    _gc_ld.ability_detail_scroll = 0;
+                }
+                if (keyboard_check_pressed(ord("E"))) {
+                    _gc_ld.loadout_cursor = wrap_index(_gc_ld.loadout_cursor + 1, _ld_pool_sz);
+                    _gc_ld.ability_detail_scroll = 0;
+                }
+            }
+            // W/S (or Up/Down) scroll the breakdown body when it overflows the panel.
+            var _ad_max = global.ui_ability_detail_max_scroll;
+            if (nav_down()) _gc_ld.ability_detail_scroll = clamp(_gc_ld.ability_detail_scroll + 48, 0, _ad_max);
+            if (nav_up())   _gc_ld.ability_detail_scroll = clamp(_gc_ld.ability_detail_scroll - 48, 0, _ad_max);
             exit;
         }
         // Tab opens the full breakdown for the highlighted ability (Abilities tab, on a row).
         if (keyboard_check_pressed(vk_tab) && _gc_ld.loadout_tab == 0 && _gc_ld.loadout_cursor < _ld_pool_sz) {
-            _gc_ld.ability_detail_open = true;
+            _gc_ld.ability_detail_open   = true;
+            _gc_ld.ability_detail_scroll = 0;
             exit;
+        }
+        // Companion-tab pet-kit detail popup (Tab). While up, only Tab/Esc closes it.
+        if (_gc_ld.companion_detail_open) {
+            if (keyboard_check_pressed(vk_tab) || keyboard_check_pressed(vk_escape)) _gc_ld.companion_detail_open = false;
+            exit;
+        }
+        if (keyboard_check_pressed(vk_tab) && _gc_ld.loadout_tab == 2) {
+            var _cd_eq = 0;
+            for (var _cdi = 0; _cdi < pet_count(); _cdi++) if (!global.pet_roster[_cdi].is_egg) _cd_eq++;
+            if (_gc_ld.loadout_cursor < _cd_eq) { _gc_ld.companion_detail_open = true; exit; }
         }
 
         // Tick flash timers (shared between tabs - "slots full" / "locked ability")
         if (_gc_ld.loadout_full_timer > 0) _gc_ld.loadout_full_timer--;
         if (variable_instance_exists(_gc_ld, "loadout_locked_timer") && _gc_ld.loadout_locked_timer > 0) _gc_ld.loadout_locked_timer--;
 
-        // Q/E switch between Abilities (0) and Traits (1)
-        if (keyboard_check_pressed(ord("Q")) || keyboard_check_pressed(ord("E"))) {
-            _gc_ld.loadout_tab = 1 - _gc_ld.loadout_tab;
-        }
+        // Q/E cycle the three tabs: Abilities (0) / Traits (1) / Companion (2).
+        if (keyboard_check_pressed(ord("E"))) { _gc_ld.loadout_tab = (_gc_ld.loadout_tab + 1) mod 3; _gc_ld.loadout_cursor = 0; }
+        if (keyboard_check_pressed(ord("Q"))) { _gc_ld.loadout_tab = (_gc_ld.loadout_tab + 2) mod 3; _gc_ld.loadout_cursor = 0; }
 
         if (keyboard_check_pressed(vk_escape)) {
             _gc_ld.loadout_open = false;
@@ -266,7 +293,7 @@ if (instance_exists(obj_game_controller)) {
         // =====================================================================
         // TRAITS TAB
         // =====================================================================
-        } else {
+        } else if (_gc_ld.loadout_tab == 1) {
             // Base 2 + bought slots (Vex) + 1 while Crown of the Hollow King is equipped
             var _max_traits = max_trait_slots();
             // Gracefully trim traits_selected if Crown was just unequipped
@@ -313,6 +340,26 @@ if (instance_exists(obj_game_controller)) {
                     _gc_ld.loadout_full_timer = 60;
                 }
             }
+
+        // =====================================================================
+        // COMPANION TAB (equip-only: choose the active pet, or None)
+        // =====================================================================
+        } else {
+            // Equippable pets = non-egg roster entries; rows = those + a final "None".
+            var _eq_pets = [];
+            for (var _pci = 0; _pci < pet_count(); _pci++) {
+                if (!global.pet_roster[_pci].is_egg) array_push(_eq_pets, _pci);
+            }
+            var _comp_rows = array_length(_eq_pets) + 1;   // pets + the "No companion" row
+            if (nav_up())   _gc_ld.loadout_cursor = wrap_index(_gc_ld.loadout_cursor - 1, _comp_rows);
+            if (nav_down()) _gc_ld.loadout_cursor = wrap_index(_gc_ld.loadout_cursor + 1, _comp_rows);
+
+            if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)) {
+                global.active_pet = (_gc_ld.loadout_cursor < array_length(_eq_pets))
+                    ? _eq_pets[_gc_ld.loadout_cursor]   // equip the highlighted pet
+                    : -1;                                // "None" row
+                if (room == rm_hub || room == rm_character_select) save_game();
+            }
         }
 
         // Mouse: loadout tab buttons, ability/trait rows, confirm bar
@@ -320,9 +367,13 @@ if (instance_exists(obj_game_controller)) {
             var _ldmx = device_mouse_x_to_gui(0);
             var _ldmy = device_mouse_y_to_gui(0);
 
-            // Tab buttons: ABILITIES x=636-951 y=9-51, TRAITS x=969-1284 y=9-51
-            if (_ldmx >= 636 && _ldmx < 951 && _ldmy >= 9 && _ldmy < 51) _gc_ld.loadout_tab = 0;
-            if (_ldmx >= 969 && _ldmx < 1284 && _ldmy >= 9 && _ldmy < 51) _gc_ld.loadout_tab = 1;
+            // Three tab buttons (y=9-51), centred: ABILITIES / TRAITS / COMPANION.
+            // Ranges match the Draw_64 tab-bar loop (_tx0=479, width 315, gap 9).
+            if (_ldmy >= 9 && _ldmy < 51) {
+                if      (_ldmx >= 479  && _ldmx < 794)  { _gc_ld.loadout_tab = 0; _gc_ld.loadout_cursor = 0; }
+                else if (_ldmx >= 803  && _ldmx < 1118) { _gc_ld.loadout_tab = 1; _gc_ld.loadout_cursor = 0; }
+                else if (_ldmx >= 1127 && _ldmx < 1442) { _gc_ld.loadout_tab = 2; _gc_ld.loadout_cursor = 0; }
+            }
 
             if (_gc_ld.loadout_tab == 0) {
                 // Ability rows: x=60-1050, windowed list (matches Draw_64 scroll)
@@ -368,7 +419,7 @@ if (instance_exists(obj_game_controller)) {
                         room_goto(rm_dungeon_floor);
                     }
                 }
-            } else {
+            } else if (_gc_ld.loadout_tab == 1) {
                 // Traits tab - available trait rows
                 var _ldtr_avail = [];
                 for (var _ltta = 0; _ltta < array_length(global.traits_all); _ltta++) {
@@ -645,15 +696,17 @@ if (show_gallery) {
 // 1. NPC LIST NAVIGATION
 // Clearing the notification on any navigation keypress keeps the UI clean.
 // -----------------------------------------------------------------------------
-if (nav_up())   { selected_npc = wrap_index(selected_npc - 1, 7); notification = ""; }
-if (nav_down()) { selected_npc = wrap_index(selected_npc + 1, 7); notification = ""; }
+// Positions: one row per NPC (0..N-1) plus the Enter-Dungeon button at index N.
+var _npc_slots = array_length(npc_names) + 1;
+if (nav_up())   { selected_npc = wrap_index(selected_npc - 1, _npc_slots); notification = ""; }
+if (nav_down()) { selected_npc = wrap_index(selected_npc + 1, _npc_slots); notification = ""; }
 
 
 // -----------------------------------------------------------------------------
 // 2. INTERACT WITH SELECTED NPC
 // -----------------------------------------------------------------------------
 if (keyboard_check_pressed(vk_space) || keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_return)) {
-    if (selected_npc < 6 && npc_unlocked[selected_npc]) {
+    if (selected_npc < array_length(npc_names) && npc_unlocked[selected_npc]) {
         if (instance_exists(obj_game_controller)) {
             var _gc_interact = instance_find(obj_game_controller, 0);
             if (selected_npc == 0) {
@@ -706,6 +759,23 @@ if (keyboard_check_pressed(vk_space) || keyboard_check_pressed(vk_enter) || keyb
                 _gc_interact.vael_notification    = "";
                 _gc_interact.vael_tab             = 0;
                 _gc_interact.vael_portrait_cursor = clamp(global.chosen_portrait, 0, array_length(global.portrait_sprites) - 1);
+            } else if (selected_npc == 6) {
+                // Bairc the Creature Keeper. FIRST talk: he notices the egg you brought stir,
+                // hands it over, and his station opens (the hatch tutorial). After that, normal.
+                if (!variable_global_exists("pet_starter_given") || !global.pet_starter_given) {
+                    pet_grant_starter();
+                    global.pet_starter_given        = true;
+                    _gc_interact.bairc_intro_open    = true;   // dialogue popup first, then the station
+                    _gc_interact.bairc_intro_armed   = false;
+                    _gc_interact.bairc_cursor        = 0;
+                    if (room == rm_hub || room == rm_character_select) save_game();
+                } else if (!bairc_active()) {
+                    notification = "Bairc looks at you, unsure, then returns to his garden.   \"......\"";
+                } else {
+                    _gc_interact.bairc_open         = true;
+                    _gc_interact.bairc_cursor       = 0;
+                    _gc_interact.bairc_notification = "";
+                }
             } else {
                 notification = npc_names[selected_npc] + ": Coming Soon.";
             }
@@ -717,10 +787,31 @@ if (keyboard_check_pressed(vk_space) || keyboard_check_pressed(vk_enter) || keyb
 
 
 // -----------------------------------------------------------------------------
-// 3. ENTER DUNGEON - dungeon button must be highlighted (selected_npc == 6) first
+// 2b. DEEPEN BOND (thin affinity, Phase 0.5) - one-click placeholder gate that a
+// real gate quest will replace in Phase 4. When the selected NPC's relationship has
+// reached a gate (affinity_gate_ready), B crosses it. Auto-gated by the
+// ui_input_blocked() exit above, so it never fires while a shop screen is open.
+// -----------------------------------------------------------------------------
+if (keyboard_check_pressed(ord("B")) && selected_npc < 6 && !show_history && !show_gallery) {
+    var _bond_ids = affinity_npc_ids();
+    var _bond_id  = _bond_ids[selected_npc];
+    if (affinity_gate_ready(_bond_id)) {
+        var _adv = affinity_try_advance(_bond_id);
+        if (_adv == "") {
+            notification = npc_names[selected_npc] + ": your bond deepens to " + affinity_tier_name(_bond_id) + ".";
+            if (room == rm_hub || room == rm_character_select) save_game();
+        } else {
+            notification = _adv;   // a scarcity-cap block reason
+        }
+    }
+}
+
+
+// -----------------------------------------------------------------------------
+// 3. ENTER DUNGEON - dungeon button must be highlighted (the slot AFTER the last NPC)
 // Opens dungeon selection overlay; loadout opens after dungeon is chosen.
 // -----------------------------------------------------------------------------
-if (!show_gallery && selected_npc == 6
+if (!show_gallery && selected_npc == array_length(npc_names)
     && (keyboard_check_pressed(vk_space) || keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_return))) {
     if (instance_exists(obj_game_controller)) {
         var _gc_e = instance_find(obj_game_controller, 0);
@@ -768,7 +859,7 @@ if (mouse_check_button_pressed(mb_left)) {
     var _hmy = device_mouse_y_to_gui(0);
 
     // NPC rows: x=630-1290, y=105+i*96, h=81
-    for (var _hni = 0; _hni < 6; _hni++) {
+    for (var _hni = 0; _hni < array_length(npc_names); _hni++) {
         var _hnry = 105 + _hni * 96;
         if (_hmx >= 630 && _hmx < 1290 && _hmy >= _hnry && _hmy < _hnry+81) {
             if (_hni == selected_npc && npc_unlocked[_hni]) {
@@ -803,6 +894,21 @@ if (mouse_check_button_pressed(mb_left)) {
                         _gc_mc.vael_notification = "";
                         _gc_mc.vael_tab = 0;
                         _gc_mc.vael_portrait_cursor = clamp(global.chosen_portrait, 0, array_length(global.portrait_sprites) - 1);
+                    } else if (_hni == 6) {
+                        // Bairc - first talk hands you the starter egg (tutorial), then normal.
+                        if (!variable_global_exists("pet_starter_given") || !global.pet_starter_given) {
+                            pet_grant_starter();
+                            global.pet_starter_given     = true;
+                            _gc_mc.bairc_intro_open       = true;   // dialogue popup first, then the station
+                            _gc_mc.bairc_intro_armed      = false;
+                            _gc_mc.bairc_cursor           = 0;
+                            if (room == rm_hub || room == rm_character_select) save_game();
+                        } else if (!bairc_active()) {
+                            notification = "Bairc looks at you, unsure, then returns to his garden.   \"......\"";
+                        } else {
+                            _gc_mc.bairc_open = true; _gc_mc.bairc_cursor = 0;
+                            _gc_mc.bairc_notification = "";
+                        }
                     } else {
                         notification = npc_names[_hni] + ": Coming Soon.";
                     }

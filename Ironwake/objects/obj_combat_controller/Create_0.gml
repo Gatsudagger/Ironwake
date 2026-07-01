@@ -190,27 +190,9 @@ switch (_class_id) {
         player.trap_active     = false;
         break;
 }
-// Build abilities from the player's confirmed loadout, or fall back to class defaults
-var _ab_pool_cc = abilities_class_pool(_class_id);   // class abilities + general pool
-var _loadout_valid = false;
-if (variable_global_exists("player_loadout") && global.player_loadout[0] != "") {
-    var _loadout_max_cc = trait_active("Expanded Arsenal") ? 5 : 4;
-    player.abilities = [];
-    for (var _li = 0; _li < _loadout_max_cc; _li++) {
-        var _lname = global.player_loadout[_li];
-        if (_lname == "") continue;
-        for (var _ai = 0; _ai < array_length(_ab_pool_cc); _ai++) {
-            if (_ab_pool_cc[_ai].name == _lname) {
-                array_push(player.abilities, _ab_pool_cc[_ai]);
-                break;
-            }
-        }
-    }
-    _loadout_valid = (array_length(player.abilities) >= 4 && array_length(player.abilities) <= _loadout_max_cc);
-}
-if (!_loadout_valid) {
-    player.abilities = abilities_get_loadout(_class_id);
-}
+// Build abilities from the player's confirmed loadout, or fall back to class defaults.
+// Shared resolver (also used by the out-of-combat character menu) so the two never drift.
+player.abilities = abilities_resolve_player_loadout(_class_id);
 
 // Per-combat ability cooldown counters (turns), one slot per loadout ability.
 // Decremented at the start of each player turn; set when a cooldown ability
@@ -251,6 +233,12 @@ if (_curse_hpm != 1.0) {
     player.max_HP = max(1, round(player.max_HP * _curse_hpm));
     player.HP     = min(player.HP, player.max_HP);
 }
+// Corruption (Pets §7): a pushing-corrupted active pet gnaws at you - reduced max HP.
+var _pet_corr_hpm = pet_corruption_maxhp_mult();
+if (_pet_corr_hpm != 1.0) {
+    player.max_HP = max(1, round(player.max_HP * _pet_corr_hpm));
+    player.HP     = min(player.HP, player.max_HP);
+}
 player.dodge += _equip_bonus.dodge_flat;
 // crit_flat stored in stats so combat_roll_crit can read it from attacker_stats
 player.stats.crit_bonus = _equip_bonus.crit_flat;
@@ -260,7 +248,7 @@ player.gold_find_pct = _equip_bonus.gold_find;
 // Detect equipped legendary unique effects
 player.gatewarden_brand  = false;  // first ability each combat costs 0 AP
 player.heartstone_aegis  = false;  // heal 5 HP on enemy death
-player.thief_of_hours    = false;  // +1 AP on first player turn
+player.thief_of_hours    = 0;      // # of equipped Thief of Hours rings (+1 AP first turn each, stacks)
 player.crown_hollow_king = false;  // +1 trait slot (hub loadout screen)
 player.gatewarden_used   = false;  // tracks if the 0-AP proc is available this combat
 
@@ -280,7 +268,7 @@ for (var _li = 0; _li < array_length(global.inventory); _li++) {
     if (!variable_struct_exists(_lit, "unique_effect") || _lit.unique_effect == "") continue;
     if (_lit.unique_effect == "gatewarden_brand")  { player.gatewarden_brand  = true; player.gatewarden_used = false; }
     if (_lit.unique_effect == "heartstone_aegis")  player.heartstone_aegis  = true;
-    if (_lit.unique_effect == "thief_of_hours")    player.thief_of_hours    = true;
+    if (_lit.unique_effect == "thief_of_hours")    player.thief_of_hours   += 1;
     if (_lit.unique_effect == "crown_hollow_king") player.crown_hollow_king = true;
     // Class-weapon affixes
     if (_lit.unique_effect == "class_first_spell_ap") player.cf_first_spell_ap   = true;
@@ -292,9 +280,10 @@ for (var _li = 0; _li < array_length(global.inventory); _li++) {
     if (_lit.unique_effect == "class_kill_ap")        player.kill_ap_refund      = true;
 }
 
-// Thief of Hours: start first turn with +1 AP
-if (player.thief_of_hours) {
-    player.energy = 4;
+// Thief of Hours: start first turn with +1 AP per equipped ring (stacks).
+// Add to current energy (still the base 3 here) so it stays correct if base AP changes.
+if (player.thief_of_hours > 0) {
+    player.energy += player.thief_of_hours;
 }
 
 // Ashkeeper Blade: start each combat with a shield (stacks with any other shield grant)
@@ -617,10 +606,20 @@ selected_target = 0;
 // supports mouse-wheel scrollback via combat_log_scroll (0 = pinned to newest).
 combat_log          = [];
 combat_log_scroll   = 0;    // rows scrolled back from the newest entry
+// Parallel to combat_log: a damage-breakdown struct per line (undefined for most
+// lines). Hovering a damage line shows the math, BG3/Pathfinder-style. Kept aligned
+// lazily by combat_log_push_breakdown(). Feature-flagged (global.combat_log_breakdowns)
+// so the whole thing reverts by flipping one flag. (Task 1)
+combat_log_detail   = [];
 combat_log_last_len = 0;    // tracks growth so new entries snap the view to newest
 
 // Set true once combat_check_victory returns a non-zero result
 combat_over = false;
+
+// Brief hold after the killing blow so the final hit / damage number and combat log
+// are readable before the victory transition fires (loot screen, etc.). (Task 2)
+victory_pause_timer  = 0;
+victory_pause_frames = 60;   // ~1 second at 60 fps
 
 // 0 = ongoing, 1 = player won, -1 = player lost
 combat_result = 0;
