@@ -239,9 +239,17 @@ if (_pet_corr_hpm != 1.0) {
     player.max_HP = max(1, round(player.max_HP * _pet_corr_hpm));
     player.HP     = min(player.HP, player.max_HP);
 }
+// Vital egg (Pets §3): active hatchling from a Vital Egg raises max HP. Like the boon/curse
+// HP mults above, this only lifts the ceiling and clamps - it must NOT heal each combat.
+var _pet_vit = pet_active_egg_bonus("vit");
+if (_pet_vit > 0) {
+    player.max_HP = max(1, round(player.max_HP * (1 + _pet_vit)));
+    player.HP     = min(player.HP, player.max_HP);
+}
 player.dodge += _equip_bonus.dodge_flat;
 // crit_flat stored in stats so combat_roll_crit can read it from attacker_stats
-player.stats.crit_bonus = _equip_bonus.crit_flat;
+// (+ Keen egg: active hatchling adds flat crit-chance points on the same channel)
+player.stats.crit_bonus = _equip_bonus.crit_flat + pet_active_egg_bonus("crit");
 // gold_find stored for future hook; add_gold will check this when implemented
 player.gold_find_pct = _equip_bonus.gold_find;
 

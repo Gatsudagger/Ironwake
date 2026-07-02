@@ -764,6 +764,8 @@ function combat_mitigate_player(player, raw, dtype, log) {
     }
     // Warding boon: flat % incoming-damage reduction.
     if (boon_active("warding")) _d = max(1, round(_d * boon_incoming_mult()));
+    // Warding egg (Pets §3): active hatchling reduces incoming damage.
+    if (pet_egg_ward_mult() != 1.0) _d = max(1, round(_d * pet_egg_ward_mult()));
     // Curse penalties (Exposed/Ruin): flat % incoming-damage increase.
     if (curse_incoming_mult() != 1.0) _d = max(1, round(_d * curse_incoming_mult()));
     if (variable_struct_exists(player, "shield_hp") && player.shield_hp > 0 && _d > 0) {
@@ -976,7 +978,7 @@ function combat_on_enemy_defeated(target, player, combat_log) {
     var _xp_base  = variable_struct_exists(target, "xp_value") ? target.xp_value : 10;
     var _xp_floor = variable_global_exists("current_floor") ? global.current_floor : 1;
     var _xp_scale = (_xp_floor == 2) ? 1.25 : ((_xp_floor >= 3) ? 1.5 : 1.0);
-    var _xp_amt   = round(_xp_base * _xp_scale);
+    var _xp_amt   = round(_xp_base * _xp_scale * (1 + pet_active_egg_bonus("xp")));   // Scholar's egg
     var _xp_lvls  = grant_xp(_xp_amt);
     array_push(combat_log, "Gained " + string(_xp_amt) + " XP!");
     if (_xp_lvls > 0) {
@@ -1071,12 +1073,12 @@ function combat_pet_act(combat_state, player, combat_log, damage_popups) {
     var _adult = (_p.stage >= PET_STAGE_ADULT);
     var _imult = pet_injury_mult(_p.injured);   // injury weakens (tier 1) or benches (tier 2+) the pet
     if (_imult <= 0) return false;
-    var _cmult     = pet_corruption_mult(_p);    // permanent +15%/run enhancement (kept after cure)
+    var _cmult     = pet_corruption_mult(_p) * pet_bond_mult(_p);   // corruption +15%/run + Soul-bound +5% (§5 Axis 3)
     var _fulfilled = pet_is_fulfilled(_p);       // fully corrupted -> grand archetype ability
     var _kit = pet_kit_mods(_p);                 // named-kit modifiers (traits/abilities, Pets §5)
 
     if (_p.archetype == PET_ARCH_COMBATANT) {
-        var _base = max(1, round((_adult ? 16 : 8) * _imult * _cmult * (1 + _kit.dmg + pet_active_egg_bonus("dmg"))));
+        var _base = max(1, round((_adult ? 16 : 8) * _imult * _cmult * pet_stat_mult(_p, "pow") * (1 + _kit.dmg + pet_active_egg_bonus("dmg"))));
         var _exec = (_kit.execute > 0) ? (1 + _kit.execute) : 1;   // Executioner capstone vs low-HP foes
 
         if (_fulfilled) {
@@ -1123,8 +1125,9 @@ function combat_pet_act(combat_state, player, combat_log, damage_popups) {
     if (_p.archetype == PET_ARCH_GUARDIAN) {
         // One per turn normally (heal if hurt, else ward); a fulfilled Guardian does BOTH.
         var _egg_mend = pet_active_egg_bonus("mend");
-        var _heal_amt = max(1, round((_adult ? 10 : 5) * _imult * _cmult * (1 + _kit.heal + _egg_mend)));
-        var _sh_amt   = max(1, round((_adult ? 12 : 7) * _imult * _cmult * (1 + _kit.shield + _egg_mend)));
+        var _smult    = pet_stat_mult(_p, "spr");   // SPR stat modifies heal & shield
+        var _heal_amt = max(1, round((_adult ? 10 : 5) * _imult * _cmult * _smult * (1 + _kit.heal + _egg_mend)));
+        var _sh_amt   = max(1, round((_adult ? 12 : 7) * _imult * _cmult * _smult * (1 + _kit.shield + _egg_mend)));
         // Guardian Angel capstone (_kit.both) also makes it heal AND shield, like fulfilled.
         var _do_heal   = _fulfilled || _kit.both || (player.HP < player.max_HP * 0.70);
         var _do_shield = _fulfilled || _kit.both || (player.HP >= player.max_HP * 0.70);

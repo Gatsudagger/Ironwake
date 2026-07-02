@@ -138,6 +138,12 @@ function save_game() {
         pet_next_id:    variable_global_exists("pet_next_id")    ? global.pet_next_id    : 1,
         pet_starter_given: variable_global_exists("pet_starter_given") ? global.pet_starter_given : false,
         pet_feed_pouch: (variable_global_exists("pet_feed_pouch") && is_struct(global.pet_feed_pouch)) ? global.pet_feed_pouch : {},
+        // Bond-axis extras: preferred-feed discoveries (per species), Bairc's donated
+        // garden, and the one-time lore ledger + any still-unshown queued lines.
+        pet_pref_discovered: (variable_global_exists("pet_pref_discovered") && is_struct(global.pet_pref_discovered)) ? global.pet_pref_discovered : {},
+        bairc_donated:   (variable_global_exists("bairc_donated")   && is_array(global.bairc_donated))    ? global.bairc_donated   : [],
+        bairc_lore_seen: (variable_global_exists("bairc_lore_seen") && is_struct(global.bairc_lore_seen)) ? global.bairc_lore_seen : {},
+        bairc_lore_queue:(variable_global_exists("bairc_lore_queue")&& is_array(global.bairc_lore_queue)) ? global.bairc_lore_queue : [],
 
         // Onboarding: which tips this profile has already seen (per-slot).
         // The enable/disable preference is global and lives in settings.ini, not here.
@@ -251,6 +257,10 @@ function new_game_reset() {
     global.pet_next_id = 1;
     global.pet_starter_given = false;
     global.pet_feed_pouch    = {};
+    global.pet_pref_discovered = {};
+    global.bairc_donated       = [];
+    global.bairc_lore_seen     = {};
+    global.bairc_lore_queue    = [];
 
     // Shop stock (per-slot). Cleared so no previous character's Dorn/Petra stock
     // bleeds in; left empty here, then either restored by load_game() or freshly
@@ -473,6 +483,11 @@ function load_game() {
     global.pet_next_id = (variable_struct_exists(_s, "pet_next_id")) ? _s.pet_next_id : (array_length(global.pet_roster) + 1);
     global.pet_starter_given = (variable_struct_exists(_s, "pet_starter_given")) ? _s.pet_starter_given : false;
     global.pet_feed_pouch    = (variable_struct_exists(_s, "pet_feed_pouch") && is_struct(_s.pet_feed_pouch)) ? _s.pet_feed_pouch : {};
+    // Bond-axis extras (older saves lack these keys -> empty defaults).
+    global.pet_pref_discovered = (variable_struct_exists(_s, "pet_pref_discovered") && is_struct(_s.pet_pref_discovered)) ? _s.pet_pref_discovered : {};
+    global.bairc_donated       = (variable_struct_exists(_s, "bairc_donated")    && is_array(_s.bairc_donated))    ? _s.bairc_donated    : [];
+    global.bairc_lore_seen     = (variable_struct_exists(_s, "bairc_lore_seen")  && is_struct(_s.bairc_lore_seen)) ? _s.bairc_lore_seen  : {};
+    global.bairc_lore_queue    = (variable_struct_exists(_s, "bairc_lore_queue") && is_array(_s.bairc_lore_queue)) ? _s.bairc_lore_queue : [];
     pet_migrate_retired_species();   // re-skin any retired humanoid-species pets to a real creature
     // Carried consumable pack (run buffer) - restore so withdrawn/carried-forward
     // potions survive a reload. Older saves lack this key; the gc-Create default ([])

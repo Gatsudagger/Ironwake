@@ -2063,6 +2063,7 @@ function handle_enemy_drops(enemy_type) {
     else if (enemy_type == "boss") _dust_gain = 6;
     if (_dust_gain > 0 && boon_active("runic")) _dust_gain = round(_dust_gain * (1 + boon_value("runic")));
     if (_dust_gain > 0) _dust_gain = round(_dust_gain * curse_dust_mult());   // curse rune-dust reward
+    if (_dust_gain > 0) _dust_gain = round(_dust_gain * (1 + pet_active_egg_bonus("dust")));   // Dust egg
     if (_dust_gain > 0) global.rune_dust += _dust_gain;
 
     // Combined log fragment appended to whatever gear/consumable also dropped.
@@ -3836,6 +3837,29 @@ function pet_feed_premium_pool() {
         { id:"hearty_roast", name:"Hearty Roast",  growth:6, gold:130, perk:"none",  blurb:"a feast - the fastest growth gold can buy" },
     ];
 }
+// Species-preferred feed (design §5): one hand-authored favorite per species. Hidden until
+// a pet of that species reaches Bond tier 1 (Trusting), then Petra stocks it WHILE you keep
+// a living (hatched) pet of the species. It is the growth ceiling - nothing feeds a creature
+// faster - and no other species will touch it (species-locked in pet_feed_apply).
+function pet_feed_preferred_catalog() {
+    return [
+        { id:"pref_luna_moth",   species:"luna_moth",   name:"Moonpetal Nectar",    growth:7, gold:100, perk:"none", blurb:"gathered at full dark - luna moths drink nothing sweeter" },
+        { id:"pref_bone_stag",   species:"bone_stag",   name:"Marrowgrass Bale",    growth:7, gold:100, perk:"none", blurb:"pale grass grown on graves - bone stags graze it to the root" },
+        { id:"pref_saber_hound", species:"saber_hound", name:"Blooded Haunch",      growth:7, gold:100, perk:"none", blurb:"still warm - a saber hound's eyes go wide for it" },
+        { id:"pref_gloomtoad",   species:"gloomtoad",   name:"Mirefly Clutch",      growth:7, gold:100, perk:"none", blurb:"glowing eggs skimmed off the mire - a gloomtoad delicacy" },
+        { id:"pref_wyrmling",    species:"wyrmling",    name:"Ember-Charred Heart", growth:7, gold:100, perk:"none", blurb:"seared black outside, red within - wyrmlings remember fire" },
+        { id:"pref_nightowl",    species:"nightowl",    name:"Twilight Vole",       growth:7, gold:100, perk:"none", blurb:"caught at dusk - the only hour a nightowl deigns to hunt" },
+        { id:"pref_bonehound",   species:"bonehound",   name:"Grave-Marrow Bone",   growth:7, gold:100, perk:"none", blurb:"old bone, older marrow - a bonehound gnaws it for days" },
+        { id:"pref_hollow_pup",  species:"hollow_pup",  name:"Hearthmilk Sop",      growth:7, gold:100, perk:"none", blurb:"warm bread in sweet milk - it makes the hollow eyes shine" },
+    ];
+}
+// The preferred-feed def for a species (undefined if none authored).
+function pet_feed_preferred_for(species_id) {
+    var _c = pet_feed_preferred_catalog();
+    for (var _i = 0; _i < array_length(_c); _i++) if (_c[_i].species == species_id) return _c[_i];
+    return undefined;
+}
+
 // The premium feed currently in Petra's stock (falls back to the first if unrolled).
 function pet_feed_current_premium() {
     var _pool = pet_feed_premium_pool();
@@ -3850,18 +3874,30 @@ function pet_feed_icon(id) {
     return asset_get_index("spr_pet_feed_" + id);
 }
 
-// Resolve any feed def by id (basics + full premium pool).
+// Resolve any feed def by id (basics + full premium pool + species-preferred).
 function pet_feed_get(id) {
     var _b = pet_feed_catalog();
     for (var _i = 0; _i < array_length(_b); _i++) if (_b[_i].id == id) return _b[_i];
     var _p = pet_feed_premium_pool();
     for (var _j = 0; _j < array_length(_p); _j++) if (_p[_j].id == id) return _p[_j];
+    var _pf = pet_feed_preferred_catalog();
+    for (var _k = 0; _k < array_length(_pf); _k++) if (_pf[_k].id == id) return _pf[_k];
     return undefined;
 }
-// The feeds Petra sells right now: 3 basics + the current rotating premium.
+// The feeds Petra sells right now: 3 basics + the current rotating premium + every
+// DISCOVERED species favorite whose species still has a living pet in the roster.
+// (Petra's buy list is windowed, so extra rows scroll rather than overflow.)
 function pet_feed_shop_list() {
     var _list = pet_feed_catalog();
     array_push(_list, pet_feed_current_premium());
+    var _pc = pet_feed_preferred_catalog();
+    for (var _i = 0; _i < array_length(_pc); _i++) {
+        if (!pet_pref_is_discovered(_pc[_i].species)) continue;
+        var _r = pet_roster(); var _own = false;
+        for (var _j = 0; _j < array_length(_r); _j++)
+            if (is_struct(_r[_j]) && !_r[_j].is_egg && _r[_j].species == _pc[_i].species) { _own = true; break; }
+        if (_own) array_push(_list, _pc[_i]);
+    }
     return _list;
 }
 
@@ -3884,9 +3920,12 @@ function pet_feed_pouch_total() {
 }
 // Feeds the player currently OWNS (count > 0), for the Bairc apply menu.
 function pet_feed_owned_list() {
-    var _all = pet_feed_shop_list();   // canonical order (basics then premium)
-    // include any owned feed not in current shop stock (a premium bought last run)
+    var _all = pet_feed_shop_list();   // canonical order (basics then premium then favorites)
+    // include any owned feed not in current shop stock (a premium bought last run, or a
+    // species favorite whose last pet has since left the roster)
     var _pool = pet_feed_premium_pool();
+    var _pref = pet_feed_preferred_catalog();
+    for (var _pi = 0; _pi < array_length(_pref); _pi++) array_push(_pool, _pref[_pi]);
     for (var _i = 0; _i < array_length(_pool); _i++) {
         var _found = false;
         for (var _j = 0; _j < array_length(_all); _j++) if (_all[_j].id == _pool[_i].id) { _found = true; break; }
@@ -3908,6 +3947,9 @@ function pet_feed_apply(pet, feed_id) {
     var _f = pet_feed_get(feed_id);
     if (_f == undefined)                  return "";
     if (pet_feed_pouch_count(feed_id) <= 0) return "You have no " + _f.name + " - buy some from Petra.";
+    // Species favorites are exactly that - no other creature will touch them.
+    if (variable_struct_exists(_f, "species") && _f.species != pet.species)
+        return "Only a " + pet_species_get(_f.species).name + " will eat that.";
     variable_struct_set(pet_feed_pouch(), feed_id, pet_feed_pouch_count(feed_id) - 1);
     var _need  = pet_growth_needed(pet.stage);
     pet.growth = min(_need, pet.growth + _f.growth);
@@ -3946,9 +3988,18 @@ function petra_buy_list() {
 // the most baseline, extract less, death none. Returns the pet if it EVOLVED, else undefined.
 function pet_run_complete(result) {
     var _p = pet_active();
-    if (_p == undefined || _p.is_egg || _p.stage >= pet_max_stage()) return undefined;
+    if (_p == undefined || _p.is_egg) return undefined;
     var _gain = (result == 1) ? 2 : ((result == 0) ? 1 : 0);   // clear / extract / death
-    if (_gain <= 0) return undefined;                          // a death banks no growth
+    if (_gain <= 0) return undefined;                          // a death banks no growth (or bond)
+    // Bond banks the same raw amount (before egg boosts) and keeps rising after Adult -
+    // §5 Axis 3. Milestone crossings surface on the next hub visit like evolutions do.
+    var _bond_msg = pet_bond_gain(_p, _gain);
+    if (_bond_msg != "" && variable_global_exists("pet_find_notice")) {
+        global.pet_find_notice = (global.pet_find_notice != "")
+            ? (global.pet_find_notice + "   " + _bond_msg) : _bond_msg;
+    }
+    if (_p.stage >= pet_max_stage()) return undefined;         // fully grown: bond only
+    _gain += pet_active_egg_bonus("growth");                   // Ley egg: matures faster
     _p.growth += _gain;
     if (_p.growth >= pet_growth_needed(_p.stage)) {
         _p.stage += 1;
@@ -4020,10 +4071,16 @@ function pet_sprite(pet, dir = "s") {
         }
     }
     if (pet.is_egg) {
-        // Prefer the typed egg art (gilded/fortune/savage/tender) over the shared egg.
+        // Prefer the typed egg art over the shared egg; borrow a close typed egg for any
+        // expansion type whose own art hasn't been imported yet (never spoil the species).
         if (variable_struct_exists(pet, "egg_type") && pet.egg_type != "") {
             var _te = asset_get_index("spr_pet_egg_" + pet.egg_type);
             if (_te >= 0) return _te;
+            var _fb = pet_egg_art_fallback(pet.egg_type);
+            if (_fb != "") {
+                var _fbi = asset_get_index("spr_pet_egg_" + _fb);
+                if (_fbi >= 0) return _fbi;
+            }
         }
         var _eg = asset_get_index("spr_pet_egg");
         if (_eg >= 0) return _eg;
@@ -4065,7 +4122,7 @@ function pet_active_boon_gold_pct() {
     var _p = pet_active();
     if (_p == undefined || _p.is_egg || _p.archetype != PET_ARCH_BOON) return 0;
     var _base = pet_boon_gold_pct_for(_p.stage) + pet_kit_mods(_p).gold;   // base + named kit (prospector/windfall)
-    var _v = _base * pet_injury_mult(_p.injured) * pet_corruption_mult(_p);
+    var _v = _base * pet_injury_mult(_p.injured) * pet_corruption_mult(_p) * pet_stat_mult(_p, "lck") * pet_bond_mult(_p);   // LCK stat + Soul-bound
     if (pet_is_fulfilled(_p)) _v += 0.05;   // grand boon: a big second helping of gold
     return _v;
 }
@@ -4073,9 +4130,143 @@ function pet_active_boon_loot_pts() {
     var _p = pet_active();
     if (_p == undefined || _p.is_egg || _p.archetype != PET_ARCH_BOON) return 0;
     var _base = pet_boon_loot_pts_for(_p.stage) + pet_kit_mods(_p).loot;   // base + named kit (lucky/treasure sense)
-    var _v = _base * pet_injury_mult(_p.injured) * pet_corruption_mult(_p);
+    var _v = _base * pet_injury_mult(_p.injured) * pet_corruption_mult(_p) * pet_stat_mult(_p, "lck") * pet_bond_mult(_p);   // LCK stat + Soul-bound
     if (pet_is_fulfilled(_p)) _v += 3;       // grand boon: extra loot find
     return round(_v);
+}
+
+// --- Pet stats (Pets §5): three weak, archetype-tied stats that modestly modify their
+// matching ability's effectiveness. Derived from archetype + stage + a stable per-creature
+// "talent" (0..2, hashed from uid) so NO new saved fields are needed and old pets Just Work.
+//   PWR -> Combatant strike damage   SPR -> Guardian heal/shield   LCK -> Boon gold/loot
+#macro PET_STAT_COEFF 0.03   // effectiveness gain per stat point (very weak, TBD-balance)
+
+// The archetype's primary (governing) stat key.
+function pet_stat_primary(archetype) {
+    switch (archetype) {
+        case PET_ARCH_COMBATANT: return "pow";
+        case PET_ARCH_GUARDIAN:  return "spr";
+        case PET_ARCH_BOON:      return "lck";
+    }
+    return "";
+}
+// Stable 0..2 talent offset per (creature, stat), hashed from the creature's uid so every
+// creature differs a little without storing anything.
+function pet_stat_talent(pet, which) {
+    var _u = (is_struct(pet) && variable_struct_exists(pet, "uid")) ? pet.uid : 0;
+    var _k = (which == "pow") ? 1 : ((which == "spr") ? 2 : 3);
+    return ((_u * 31 + _k * 7) mod 3);
+}
+// A creature's current value for a stat (weak; primary grows +1/stage, secondaries +1 per 2).
+// A Devoted bond (tier 2) adds +1 to the governing stat - loyalty made numeric.
+function pet_stat(pet, which) {
+    if (!is_struct(pet)) return 0;
+    var _stage  = pet.is_egg ? 0 : pet.stage;
+    var _is_pri = (which == pet_stat_primary(pet.archetype));
+    var _base   = _is_pri ? 3 : 1;
+    var _growth = _is_pri ? _stage : (_stage div 2);
+    if (_is_pri && pet_bond_tier(pet) >= 2) _growth += 1;   // Devoted bond bonus
+    return _base + _growth + pet_stat_talent(pet, which);
+}
+// The effectiveness multiplier a stat grants (1.0 for eggs).
+function pet_stat_mult(pet, which) {
+    if (!is_struct(pet) || pet.is_egg) return 1.0;
+    return 1.0 + pet_stat(pet, which) * PET_STAT_COEFF;
+}
+// Active creature's stat multiplier (1.0 if none / egg).
+function pet_active_stat_mult(which) {
+    var _p = pet_active();
+    if (_p == undefined || _p.is_egg) return 1.0;
+    return pet_stat_mult(_p, which);
+}
+function pet_stat_name(which) {
+    switch (which) { case "pow": return "PWR"; case "spr": return "SPR"; case "lck": return "LCK"; }
+    return "";
+}
+
+// --- Bond / Loyalty (Pets §5 Axis 3): rises from carrying a pet ACTIVE through survived
+// runs (clear +2 / extract +1, mirroring banked growth; a death banks nothing). Unlike
+// growth it keeps rising after Adult, so a finished pet still deepens. Milestones pay off
+// in discovery + a little power; all thresholds live in one catalog for tuning. ---------
+function pet_bond(pet) {
+    return (is_struct(pet) && variable_struct_exists(pet, "bond")) ? pet.bond : 0;
+}
+function pet_bond_milestones() {
+    return [
+        { at:4,  name:"Trusting"   },   // reveals the species' preferred feed (Petra stocks it)
+        { at:10, name:"Devoted"    },   // +1 governing stat
+        { at:18, name:"Soul-bound" },   // +5% to everything it does
+    ];
+}
+// Bond tier 0..3 ("Wary" -> Trusting -> Devoted -> Soul-bound).
+function pet_bond_tier(pet) {
+    var _b = pet_bond(pet), _m = pet_bond_milestones(), _t = 0;
+    for (var _i = 0; _i < array_length(_m); _i++) if (_b >= _m[_i].at) _t = _i + 1;
+    return _t;
+}
+function pet_bond_tier_name(tier) {
+    var _m = pet_bond_milestones();
+    return (tier >= 1 && tier <= array_length(_m)) ? _m[tier - 1].name : "Wary";
+}
+// Bond needed for the NEXT tier, or -1 once Soul-bound (for the station's progress line).
+function pet_bond_next_at(pet) {
+    var _t = pet_bond_tier(pet), _m = pet_bond_milestones();
+    return (_t >= array_length(_m)) ? -1 : _m[_t].at;
+}
+// Soul-bound: a +5% effectiveness multiplier on everything the pet does, applied at the
+// same sites as injury/corruption mults (boon gold/loot + combat act amounts).
+function pet_bond_mult(pet) { return (pet_bond_tier(pet) >= 3) ? 1.05 : 1.0; }
+
+// Bank bond after a survived run and fire milestone payoffs. Returns a notice string when
+// a milestone was crossed ("" otherwise). Tier-1 reveals the species' preferred feed;
+// lore fragments queue for Bairc's next audience (sparse, one-time - design §10).
+function pet_bond_gain(pet, amount) {
+    if (!is_struct(pet) || pet.is_egg || amount <= 0) return "";
+    var _t0 = pet_bond_tier(pet);
+    pet.bond = pet_bond(pet) + amount;
+    var _t1 = pet_bond_tier(pet);
+    if (_t1 <= _t0) return "";
+    var _msg = pet.name + "'s bond deepens - " + pet_bond_tier_name(_t1) + ".";
+    if (_t1 >= 1 && _t0 < 1) {
+        pet_pref_discover(pet.species);
+        _msg += "  Petra now knows what it loves to eat.";
+        bairc_lore_unlock("first_trusting");
+    }
+    if (_t1 >= 2 && _t0 < 2) { _msg += "  (+1 " + pet_stat_name(pet_stat_primary(pet.archetype)) + ")"; bairc_lore_unlock("first_devoted"); }
+    if (_t1 >= 3 && _t0 < 3) { _msg += "  (+5% to all it does)"; bairc_lore_unlock("first_soulbound"); }
+    return _msg;
+}
+
+// --- Preferred-feed discovery ledger (per SPECIES, not per pet): set at Bond tier 1,
+// persisted in the save. Petra stocks a discovered species' favorite while you keep a
+// living pet of that species. ---------------------------------------------------------
+function pet_pref_discovered() {
+    if (!variable_global_exists("pet_pref_discovered") || !is_struct(global.pet_pref_discovered)) global.pet_pref_discovered = {};
+    return global.pet_pref_discovered;
+}
+function pet_pref_is_discovered(species_id) { return variable_struct_exists(pet_pref_discovered(), species_id); }
+function pet_pref_discover(species_id)      { variable_struct_set(pet_pref_discovered(), species_id, true); }
+
+// --- Bairc lore fragments (design §10): the past-lives reveal, surfaced one line at a
+// time through Bairc when bond/donation firsts happen. Each key fires ONCE ever; queued
+// lines show as his portrait dialogue the next time his garden is visited. -------------
+function bairc_lore_lines() {
+    return {
+        first_trusting:  "It follows you without being asked now.\n\n...It did that for someone before, I think.",
+        first_devoted:   "The way it watches you. I have seen that look before - in another life.\n\nSo has it.",
+        first_soulbound: "Some bonds outlast the grave, stranger.\n\nThis one already has.",
+        first_donation:  "I will watch over this one.\n\n...They all find their way back to my garden, in the end.",
+    };
+}
+function bairc_lore_queue() {
+    if (!variable_global_exists("bairc_lore_queue") || !is_array(global.bairc_lore_queue)) global.bairc_lore_queue = [];
+    return global.bairc_lore_queue;
+}
+function bairc_lore_unlock(key) {
+    if (!variable_global_exists("bairc_lore_seen") || !is_struct(global.bairc_lore_seen)) global.bairc_lore_seen = {};
+    if (variable_struct_exists(global.bairc_lore_seen, key)) return;   // one-time, ever
+    variable_struct_set(global.bairc_lore_seen, key, true);
+    array_push(bairc_lore_queue(), key);
 }
 
 // One-line summary of what a pet grants at its current stage (for the station/HUD).
@@ -4088,21 +4279,92 @@ function pet_effect_text(pet) {
 function pet_effect_text_base(pet) {
     switch (pet.archetype) {
         case PET_ARCH_BOON:
-            var _g = pet_boon_gold_pct_for(pet.stage), _l = pet_boon_loot_pts_for(pet.stage);
+            var _lm = pet_stat_mult(pet, "lck");   // LCK modifies gold/loot
+            var _g = round(pet_boon_gold_pct_for(pet.stage) * 100 * _lm);
+            var _l = round(pet_boon_loot_pts_for(pet.stage) * _lm);
             if (_g <= 0 && _l <= 0) return "Too young to grant a boon yet.";
             var _s = "Boon: ";
-            if (_g > 0) _s += "+" + string(round(_g * 100)) + "% gold";
+            if (_g > 0) _s += "+" + string(_g) + "% gold";
             if (_l > 0) _s += (_g > 0 ? ", " : "") + "+" + string(_l) + "% loot find";
             return _s;
         case PET_ARCH_COMBATANT:
             if (pet.stage < PET_STAGE_YOUNGADULT) return "Combatant: too young to fight (acts from Young Adult).";
-            return "Combatant: strikes an enemy each turn for " + string(pet.stage >= PET_STAGE_ADULT ? 16 : 8) + ".";
+            return "Combatant: strikes an enemy each turn for " + string(round((pet.stage >= PET_STAGE_ADULT ? 16 : 8) * pet_stat_mult(pet, "pow"))) + ".";
         case PET_ARCH_GUARDIAN:
             if (pet.stage < PET_STAGE_YOUNGADULT) return "Guardian: too young to protect (acts from Young Adult).";
-            return "Guardian: each turn heals " + string(pet.stage >= PET_STAGE_ADULT ? 10 : 5)
-                 + " (if hurt) or shields " + string(pet.stage >= PET_STAGE_ADULT ? 12 : 7) + ".";
+            var _sm = pet_stat_mult(pet, "spr");   // SPR modifies heal/shield
+            return "Guardian: each turn heals " + string(round((pet.stage >= PET_STAGE_ADULT ? 10 : 5) * _sm))
+                 + " (if hurt) or shields " + string(round((pet.stage >= PET_STAGE_ADULT ? 12 : 7) * _sm)) + ".";
     }
     return "";
+}
+
+// --- Creature profile builders (Pets §5) --------------------------------------
+// One-line egg-type passive descriptor for a hatched creature ("" if none). The egg boon
+// is carried by the hatchling while it is your active companion.
+function pet_egg_passive_text(pet) {
+    if (!is_struct(pet) || pet.is_egg) return "";
+    if (!variable_struct_exists(pet, "egg_type") || pet.egg_type == "") return "";
+    var _et = pet_egg_type_get(pet.egg_type);
+    return (_et == undefined) ? "" : _et.desc;
+}
+
+// PASSIVES / TRAITS list for the profile sheet: the egg-type boon, the archetype's economy
+// boon (Boon pets - it is a standing passive, not an action), and every unlocked kit TRAIT.
+// Each entry is { name, desc }. Empty for eggs.
+function pet_passive_list(pet) {
+    var _out = [];
+    if (!is_struct(pet) || pet.is_egg) return _out;
+    // Egg-type passive (kept after hatch).
+    if (variable_struct_exists(pet, "egg_type") && pet.egg_type != "") {
+        var _et = pet_egg_type_get(pet.egg_type);
+        if (_et != undefined) array_push(_out, { name: "Egg Type: " + _et.name, desc: _et.desc });
+    }
+    // Boon archetype: the gold/loot boon is a passive (LCK-modified).
+    if (pet.archetype == PET_ARCH_BOON) {
+        var _lm = pet_stat_mult(pet, "lck");
+        var _g = round(pet_boon_gold_pct_for(pet.stage) * 100 * _lm);
+        var _l = round(pet_boon_loot_pts_for(pet.stage) * _lm);
+        if (_g > 0 || _l > 0) {
+            var _bd = "";
+            if (_g > 0) _bd += "+" + string(_g) + "% gold";
+            if (_l > 0) _bd += (_g > 0 ? ", " : "") + "+" + string(_l) + "% loot find";
+            array_push(_out, { name: "Fortune's Favor", desc: _bd + " while it is your active companion." });
+        }
+    }
+    // Kit traits (stage-gated).
+    var _kit = pet_kit(pet);
+    for (var _i = 0; _i < array_length(_kit); _i++)
+        if (_kit[_i].kind == "Trait") array_push(_out, { name: _kit[_i].name, desc: _kit[_i].desc });
+    return _out;
+}
+
+// ABILITIES list for the profile sheet: the archetype's per-turn combat action
+// (Combatant / Guardian) plus every unlocked kit ABILITY (Stage-3 capstone). Boon pets have
+// no combat action - their power is the passive above. Each entry { name, desc }.
+function pet_ability_list(pet) {
+    var _out = [];
+    if (!is_struct(pet) || pet.is_egg) return _out;
+    if (pet.archetype == PET_ARCH_COMBATANT) {
+        var _cd  = round((pet.stage >= PET_STAGE_ADULT) ? 16 : 8) * pet_stat_mult(pet, "pow");   // mirrors combat_pet_act
+        _cd = round(_cd);
+        var _ct  = (pet.stage < PET_STAGE_YOUNGADULT)
+            ? "Strikes an enemy each turn once it reaches Young Adult."
+            : "Strikes the weakest living enemy each turn for " + string(_cd) + " damage.";
+        array_push(_out, { name: "Strike", desc: _ct });
+    } else if (pet.archetype == PET_ARCH_GUARDIAN) {
+        var _sm = pet_stat_mult(pet, "spr");
+        var _gh = round(((pet.stage >= PET_STAGE_ADULT) ? 10 : 5) * _sm);
+        var _gs = round(((pet.stage >= PET_STAGE_ADULT) ? 12 : 7) * _sm);
+        var _gt = (pet.stage < PET_STAGE_YOUNGADULT)
+            ? "Guards you each turn once it reaches Young Adult."
+            : "Each turn heals you " + string(_gh) + " (when hurt) or raises a " + string(_gs) + "-point shield.";
+        array_push(_out, { name: "Guard", desc: _gt });
+    }
+    var _kit = pet_kit(pet);
+    for (var _i = 0; _i < array_length(_kit); _i++)
+        if (_kit[_i].kind == "Ability") array_push(_out, { name: _kit[_i].name, desc: _kit[_i].desc });
+    return _out;
 }
 
 // --- Injury ladder & permadeath (Pets Phase 3, §8) ----------------------------
@@ -4404,14 +4666,29 @@ function pet_migrate_retired_species() {
     }
 }
 
-// Permanently remove the pet at roster index _idx (Bairc "Release"). Fixes the active-pet
-// pointer for the index shift. Returns the released creature's label for the notice, or ""
-// if the index was invalid.
-function pet_release(_idx) {
+// The creatures entrusted to Bairc over this save's whole history. Each entry keeps just
+// enough to draw it wandering his garden: { species, name, stage }. Persisted in the save.
+function bairc_donated() {
+    if (!variable_global_exists("bairc_donated") || !is_array(global.bairc_donated)) global.bairc_donated = [];
+    return global.bairc_donated;
+}
+
+// DONATE the pet at roster index _idx to Bairc (design §6: donation, not release - the
+// creature is entrusted, not abandoned, and lives on visibly in his garden). Removes it
+// from the roster, fixes the active-pet pointer for the index shift, and returns the
+// creature's label for the notice ("" if the index was invalid). A donated EGG joins the
+// garden too - Bairc hatches it in his own time (stage 0).
+function pet_donate(_idx) {
     if (!variable_global_exists("pet_roster") || !is_array(global.pet_roster)) return "";
     if (_idx < 0 || _idx >= array_length(global.pet_roster)) return "";
     var _p    = global.pet_roster[_idx];
     var _labl = _p.is_egg ? (_p.name + " egg") : _p.name;
+    array_push(bairc_donated(), {
+        species: _p.species,
+        name:    _p.name,
+        stage:   _p.is_egg ? PET_STAGE_BABY : _p.stage,
+    });
+    bairc_lore_unlock("first_donation");
     array_delete(global.pet_roster, _idx, 1);
     if (variable_global_exists("active_pet")) {
         if      (global.active_pet == _idx) global.active_pet = -1;
@@ -4505,6 +4782,11 @@ function hatch_crack_sprite(pet) {
     if (is_struct(pet) && variable_struct_exists(pet, "egg_type") && pet.egg_type != "") {
         var _h = asset_get_index("spr_pet_egg_" + pet.egg_type + "_hatch");
         if (_h >= 0) return _h;
+        var _fb = pet_egg_art_fallback(pet.egg_type);   // borrow a close type's crack anim
+        if (_fb != "") {
+            var _fbh = asset_get_index("spr_pet_egg_" + _fb + "_hatch");
+            if (_fbh >= 0) return _fbh;
+        }
     }
     return pet_sprite(pet, "s");
 }
@@ -4611,11 +4893,33 @@ function pet_grant_starter() {
 // creature inside (a surprise). 4 types for now (expandable). ----------------------------
 function pet_egg_type_catalog() {
     return [
-        { id:"gilded",  name:"Gilded Egg",  effect:"gold", val:0.05, desc:"+5% gold while its hatchling is active." },
-        { id:"fortune", name:"Fortune Egg", effect:"loot", val:5,    desc:"+5% loot find while its hatchling is active." },
-        { id:"savage",  name:"Savage Egg",  effect:"dmg",  val:0.05, desc:"+5% pet damage (no effect on Guardian pets)." },
-        { id:"tender",  name:"Tender Egg",  effect:"mend", val:0.05, desc:"+5% pet heal & shield (no effect on Combatant pets)." },
+        { id:"gilded",  name:"Gilded Egg",   effect:"gold",   val:0.05, desc:"+5% gold while its hatchling is active." },
+        { id:"fortune", name:"Fortune Egg",  effect:"loot",   val:5,    desc:"+5% loot find while its hatchling is active." },
+        { id:"savage",  name:"Savage Egg",   effect:"dmg",    val:0.05, desc:"+5% pet damage (no effect on Guardian pets)." },
+        { id:"tender",  name:"Tender Egg",   effect:"mend",   val:0.05, desc:"+5% pet heal & shield (no effect on Combatant pets)." },
+        // Expansion slate (§3): six more surprise egg designs, each a small permanent perk
+        // carried by the hatchling while it is your active companion.
+        { id:"vital",   name:"Vital Egg",    effect:"vit",    val:0.08, desc:"+8% max HP while its hatchling is active." },
+        { id:"ley",     name:"Ley Egg",      effect:"growth", val:1,    desc:"+1 growth each survived run (its hatchling matures faster)." },
+        { id:"scholar", name:"Scholar's Egg",effect:"xp",     val:0.08, desc:"+8% XP while its hatchling is active." },
+        { id:"dust",    name:"Dust Egg",     effect:"dust",   val:0.08, desc:"+8% rune dust while its hatchling is active." },
+        { id:"warding", name:"Warding Egg",  effect:"ward",   val:0.06, desc:"-6% damage taken while its hatchling is active." },
+        { id:"keen",    name:"Keen Egg",     effect:"crit",   val:5,    desc:"+5% crit chance while its hatchling is active." },
     ];
+}
+// Art fallback: until a new egg type's own sprite is imported, borrow a thematically
+// close existing egg sprite so it still renders (never falls through to the hatchling
+// species sprite, which would spoil the surprise). Maps id -> existing typed egg id.
+function pet_egg_art_fallback(egg_type) {
+    switch (egg_type) {
+        case "vital":   return "tender";    // soft, nurturing
+        case "ley":     return "gilded";    // arcane sheen
+        case "scholar": return "fortune";   // ornate, studious
+        case "dust":    return "gilded";    // mineral glint
+        case "warding": return "savage";    // bony, armored
+        case "keen":    return "savage";    // sharp, aggressive
+    }
+    return "";
 }
 function pet_egg_type_get(id) {
     var _c = pet_egg_type_catalog();
@@ -4638,6 +4942,13 @@ function pet_active_egg_bonus(kind) {
     if (kind == "dmg"  && _p.archetype == PET_ARCH_GUARDIAN)  return 0;
     if (kind == "mend" && _p.archetype == PET_ARCH_COMBATANT) return 0;
     return _et.val;
+}
+
+// Warding-egg incoming-damage multiplier for the active pet (1.0 if none). Mirrors the
+// Warding boon's shape so combat can apply it at every player damage-mitigation site.
+function pet_egg_ward_mult() {
+    var _w = pet_active_egg_bonus("ward");
+    return (_w > 0) ? (1.0 - _w) : 1.0;
 }
 
 // Display label for a pet's egg type ("" if none).

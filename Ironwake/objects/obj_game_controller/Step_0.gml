@@ -1029,6 +1029,23 @@ if (variable_instance_exists(id, "bairc_intro_open") && bairc_intro_open) {
 }
 
 // =============================================================================
+// BAIRC LORE FRAGMENT - his portrait dialogue for a queued one-time lore line
+// (bond milestones / first donation, design §10). Same arm-then-any-key flow as
+// the intro so the keypress that opened the garden can't skip it.
+// =============================================================================
+if (variable_instance_exists(id, "bairc_lore_open") && bairc_lore_open) {
+    if (!bairc_lore_armed) {
+        if (!keyboard_check(vk_anykey) && !mouse_check_button(mb_left)) bairc_lore_armed = true;
+    } else if (keyboard_check_pressed(vk_anykey) || mouse_check_button_pressed(mb_left)) {
+        bairc_lore_open = false;
+        var _lq = bairc_lore_queue();
+        if (array_length(_lq) > 0) array_delete(_lq, 0, 1);   // consumed
+        if (room == rm_hub || room == rm_character_select) save_game();
+    }
+    exit;
+}
+
+// =============================================================================
 // BAIRC THE CREATURE KEEPER - pet stable / hatchery (Phase 2). Cursor over the
 // roster; Enter hatches an egg, else sets the highlighted pet as active companion;
 // Esc closes. Layout constants MUST match ui_draw_bairc_screen() in scr_ui.
@@ -1036,6 +1053,14 @@ if (variable_instance_exists(id, "bairc_intro_open") && bairc_intro_open) {
 if (variable_instance_exists(id, "bairc_open") && bairc_open) {
     var _bp_n = pet_count();
     if (_bp_n > 0) bairc_cursor = clamp(bairc_cursor, 0, _bp_n - 1); else bairc_cursor = 0;
+
+    // A queued lore fragment takes the floor before anything else (one per visit-moment;
+    // the next queued line shows after this one is dismissed).
+    if (array_length(bairc_lore_queue()) > 0 && !bairc_lore_open) {
+        bairc_lore_open  = true;
+        bairc_lore_armed = false;
+        exit;
+    }
 
     // NAMING modal (typed text entry): captures keyboard_string; Enter confirms, Esc cancels.
     // First name is free; renaming costs 20 dust. Swallows all other input while up.
@@ -1097,14 +1122,14 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open) {
         exit;
     }
 
-    // RELEASE confirm modal: permanently let the highlighted creature go. Enter confirms,
-    // Esc keeps it. Swallows all other input while up.
+    // DONATE confirm modal (design §6: donation, not release): entrust the highlighted
+    // creature to Bairc's garden. Enter confirms, Esc keeps it. Swallows all other input.
     if (bairc_release_confirm) {
         if (_bp_n == 0) { bairc_release_confirm = false; exit; }
         if (keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_return)) {
-            var _rl = pet_release(bairc_cursor);
+            var _rl = pet_donate(bairc_cursor);
             if (_rl != "") {
-                bairc_notification = "You let " + _rl + " go. It slips back into the dark.";
+                bairc_notification = "Bairc takes " + _rl + " gently. It has a home in his garden now.";
                 audio_play_sound(Check_1, 1, false);
                 bairc_cursor = clamp(bairc_cursor, 0, max(0, pet_count() - 1));
                 if (room == rm_hub || room == rm_character_select) save_game();
@@ -1198,7 +1223,7 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open) {
             }
         }
 
-        // R: release the highlighted creature (opens a confirm; permanent).
+        // R: donate the highlighted creature to Bairc's garden (opens a confirm; permanent).
         if (keyboard_check_pressed(ord("R"))) {
             bairc_release_confirm = true;
         }

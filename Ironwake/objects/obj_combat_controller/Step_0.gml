@@ -1947,6 +1947,8 @@ if (player_turn) {
             }
             // Warding boon: flat % incoming-damage reduction.
             if (boon_active("warding")) _final_dmg = max(1, round(_final_dmg * boon_incoming_mult()));
+            // Warding egg (Pets §3): active hatchling reduces incoming damage.
+            if (pet_egg_ward_mult() != 1.0) _final_dmg = max(1, round(_final_dmg * pet_egg_ward_mult()));
             // Curse penalties (Exposed/Ruin): flat % incoming-damage increase.
             if (curse_incoming_mult() != 1.0) _final_dmg = max(1, round(_final_dmg * curse_incoming_mult()));
             // Blink softening: 2nd/3rd charge takes 50%/25%-reduced damage if the hit lands.
@@ -2049,6 +2051,7 @@ if (player_turn) {
                 _final_dmg2 += combat_status_total(player, "vulnerable");
                 _final_dmg2 = max(1, _final_dmg2 - player.equip_armor);
                 if (boon_active("warding")) _final_dmg2 = max(1, round(_final_dmg2 * boon_incoming_mult()));
+                if (pet_egg_ward_mult() != 1.0) _final_dmg2 = max(1, round(_final_dmg2 * pet_egg_ward_mult()));   // Warding egg
                 if (curse_incoming_mult() != 1.0) _final_dmg2 = max(1, round(_final_dmg2 * curse_incoming_mult()));
                 if (_incoming_mult < 1.0) _final_dmg2 = max(1, round(_final_dmg2 * _incoming_mult));  // Blink softening
                 var _dmg_blocked2 = max(0, _gross_incoming2 - _final_dmg2);

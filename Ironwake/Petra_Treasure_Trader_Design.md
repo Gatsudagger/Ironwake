@@ -1,14 +1,15 @@
 # Petra the Merchant — Treasure Trader Function
 
 **Status:** Final draft (workshopped) — numbers are placeholder, pending tuning pass
+**Build phase:** **Phase 1** (first feature built, after the Phase-0.5 thin-affinity scaffold). Ships the shared floor-clear-banking hook + cross-run persistence layer. v1 = exact cut line (§12). See `BUILD_ORDER.md`.
 **System owner:** Vendor / meta-progression
-**Depends on:** Tier ladder, affix system (rarity-scaled, 0–2 affixes), magic dust + rune economy, floor-clear / boss-kill tracking, cursed-item framework (§0 — reconcile w/ GDD), NPC Affinity system (separate doc — cancel-recovery odds + discounts)
+**Depends on:** Tier ladder, affix system (rarity-scaled, 0–2 affixes), magic dust + rune economy, floor-clear / boss-kill tracking, cursed-item framework (§0 — reconcile w/ GDD), **NPC Affinity system** (Petra's perks + cancel-recovery odds + discounts; see that doc), **Journal system** (Quests tab surfaces her gate quests + recipe hunts; Relationships tab shows her profile/ledger)
 
 ---
 
 ## 0. Reconciliation notes (READ FIRST)
 
-- **Cursed items** are believed already defined in the Ironwake folder / GDD ("immense power + meaningful drawback, unique in some way"). This doc does **not** redefine them — it only adds Petra as an acquisition path. Pull the existing spec before implementing the Legendary→Cursed branch (§6). Working definition used here, to be replaced: *high-power items with a real drawback, obtainable ONLY through Petra, never as dungeon drops.*
+- **Cursed items DO NOT exist yet** (corrected 2026-06-29 against the live build; the "GDD" is `Ironwake_GDD_v1.docx`, a stale Word doc — the living spec is the `SYSTEMS_*.md` files + code). The only "curse" system Ironwake has is the run-scoped **"devil's bargain"** (`SYSTEMS_CURSES.md` / `curse_catalog()` in `scr_stats`): accept a run-long penalty at a Shrine *Curse altar* for a run-long loot/gold/dust boost. That is **not** an item-level system. **"Cursed Unique" gear (§6/§7) is net-new and undesigned.** Per M (2026-06-29) it is to be its **own separate item framework with bespoke per-item drawbacks** — NOT a reuse of the run-curse penalty vocabulary. Working definition until that framework is designed: *high-power items with a real, unique drawback, obtainable ONLY through Petra, never as dungeon drops.* Do not conflate with run-curses.
 - **NPC Affinity system** is referenced for cancel-recovery odds and (future) discounts. It is its own design doc; Petra is one consumer of it.
 - **All numbers are placeholder** and must be tuned against live economy data (dust/rune faucet, drop rates, floor counts).
 
@@ -16,10 +17,10 @@
 
 ## 1. Problem this solves
 
-Petra currently lacks a distinct identity. Treasure Trader makes her a sink for surplus gear + risk resources, and a soft crafting/gambling hybrid that rewards cross-run planning.
+Petra is already the hub's **consumables & supplies merchant** ("Consumables and supplies for your next run"), but that role is shallow. Treasure Trader is a **second function layered onto the existing merchant** — making her a sink for surplus gear + risk resources, and a soft crafting/gambling hybrid that rewards cross-run planning.
 
 - Converts junk-tier surplus into a directed upgrade path.
-- Costs **time + risk**, not gold — competes with the extraction decision.
+- Costs **time + risk + a scaling gold fee** (gold fee added by M 2026-06-29; supersedes the original "not gold" framing — see `PETRA_TT_PHASE1_SPEC.md §3`). Time/risk still compete with the extraction decision; the gold fee is an additional sink + the target of Petra's Friend discount.
 - Gives dust and runes a second meaningful use.
 
 ---
@@ -124,7 +125,7 @@ Two outcomes, accessed differently:
 3 Legendaries → reroll affixes on a Legendary (toward god-roll). Subject to levers + pity (§9).
 
 ### Cursed Unique (recipe-gated)
-Requires **specific legendary combinations + a reagent** — a recipe to discover, not a menu pick. Chase content, obtainable ONLY here. Cursed-item mechanics themselves: see §0.
+Requires **specific legendary combinations + a reagent** — a recipe to discover, not a menu pick. Chase content, obtainable ONLY here. Cursed-item mechanics themselves are **net-new and undesigned** (a separate bespoke item-drawback framework) — see §0; there is NO existing spec.
 
 **Discovery = ledger + lore (both):**
 - **Lore drops** (scrolls/notes in-world) seed awareness a recipe exists.
@@ -133,12 +134,22 @@ Requires **specific legendary combinations + a reagent** — a recipe to discove
 
 ---
 
-## 8. Reputation track
+## 8. Affinity track (Petra's perks by relationship tier)
 
-Repeated trades build reputation (via the Affinity system), unlocking:
-- **Faster delivery times** (scaled reduction on floor/boss cost).
-- **A 2nd order slot** — gated DEEP. The 2nd slot is itself a pinnacle reward; the bulk of the game stays single-slot so the time-gate keeps its teeth.
-- **Better cancel-recovery odds** (§5).
+Petra is a consumer of the **NPC Affinity system** (see *NPC Affinity & Relationship System* doc). Her perks are her tier rewards. Tiers: Stranger → Acquaintance → Friend → Companion → Lover. Perks start at **Friend** (Stranger/Acquaintance are access/quest tiers, no perks).
+
+| Tier | Petra perk |
+|---|---|
+| Stranger / Acquaintance | No perk (relationship-building tiers) |
+| **Friend** | **Discount** on her services (transactional) |
+| **Companion** | **Faster delivery** (scaled reduction on floor/boss cost) + **2nd order slot** + **improved cancel-recovery** (1–2 items) |
+| **Lover** | **Recipe Insight** — auto-reveals one cursed-recipe hint per run (signature lateral perk, feeds §7 discovery) + **best cancel-recovery** (2–3 items) |
+
+### Notes
+- **The 2nd order slot is now concretely the Companion-tier perk** (this supersedes the earlier vague "gated DEEP" language). Because Companion is a *scarce* slot (player can hold only 1–2 Companions total, per the Affinity system), spending Petra's Companion slot on the 2nd order is a real opportunity cost against bringing another NPC close. That scarcity is the gate, not raw grind.
+- **Recipe Insight (Lover)** is lateral, not power-creep — it accelerates cursed-recipe *discovery* (§7), reinforcing Petra's treasure-trader identity rather than scaling her numbers.
+- **Cancel-recovery (§5)** is tier-stepped: pre-Friend 0–1, Friend 0–1, Companion 1–2, Lover 2–3 items recovered on a cancelled order.
+- Standard affinity rules apply (gate quests to advance, neglect decay below Companion, betrayal/slot-demotion). See the Affinity doc; neglect for Petra = no buy/sell/trade with her for 6 floor-clears.
 
 ---
 
@@ -162,7 +173,7 @@ Tracked **pity counter** on rerolls: after N failed/poor rerolls, the next is gu
 
 ## 11. Open / to-confirm
 
-1. **Cursed-item mechanics** — reconcile with existing GDD spec (§0).
+1. **Cursed-item mechanics** — net-new and undesigned; build a **separate bespoke item-drawback framework** (§0). There is NO existing spec to reconcile against (the run-curse "devil's bargain" is a different, run-scoped system).
 2. **Lever C resource** — does slot lock cost dust, runes, or both?
 3. **Exact numbers** — dust per tier, floor/boss counts per tier, Awakening floors, lower-tier lever steepness, pity N, jackpot overroll rarity, reputation thresholds, 2nd-slot gate depth, cancel-recovery odds curve vs. affinity. All placeholder.
 4. **Ledger hint UI** — how redacted recipe hints render.
@@ -174,6 +185,6 @@ Tracked **pity counter** on rerolls: after N failed/poor rerolls, the next is gu
 
 **Ship:** base ladder + floor-clear tracking w/ per-floor Awakening gate + Lever A (dust bias) + no-takeback preview + single order + reputation (delivery speed only) + cancel (flat or simple recovery).
 
-**Hold for v1.1:** Levers B/C, jackpot overroll, Legendary branch (reroll + cursed), pity, 2nd order slot, ledger + lore discovery, affinity-weighted cancel recovery.
+**Hold for v1.1:** Levers B/C, jackpot overroll, Legendary branch (reroll + cursed), pity, 2nd order slot (Companion-tier affinity perk), ledger + lore discovery, affinity-weighted cancel recovery, Recipe Insight (Lover perk). Most of these depend on the Affinity and Journal systems shipping.
 
 Rationale: validates the sink + async floor-clear loop with minimal tuning surface before layering in the deterministic/gambling systems and the Affinity dependency.

@@ -76,6 +76,13 @@ global.__sprite_includes = [
     spr_pet_egg_fortune, spr_pet_egg_fortune_hatch,
     spr_pet_egg_savage,  spr_pet_egg_savage_hatch,
     spr_pet_egg_tender,  spr_pet_egg_tender_hatch,
+    // Expansion eggs (Pets §3): vital/ley/scholar/dust/warding/keen.
+    spr_pet_egg_vital,   spr_pet_egg_vital_hatch,
+    spr_pet_egg_ley,     spr_pet_egg_ley_hatch,
+    spr_pet_egg_scholar, spr_pet_egg_scholar_hatch,
+    spr_pet_egg_dust,    spr_pet_egg_dust_hatch,
+    spr_pet_egg_keen,    spr_pet_egg_keen_hatch,
+    spr_pet_egg_warding, spr_pet_egg_warding_hatch,
     // Pet feed item icons (Petra shop + Bairc feed menu). Resolved by spr_pet_feed_<id>.
     spr_pet_feed_scraps, spr_pet_feed_forage, spr_pet_feed_prime,
     spr_pet_feed_mending_mash, spr_pet_feed_purgeroot, spr_pet_feed_hearty_roast,
@@ -901,7 +908,9 @@ bairc_intro_armed      = false;  // ignores the interact keypress that opened it
 bairc_capstone_open    = false;  // capstone PICK modal (raised Adult choosing its Stage-3 gift)
 bairc_capstone_sel     = 0;      // highlighted capstone card (0/1)
 bairc_capstone_confirm = false;  // two-step lock: Yes/No confirm after choosing
-bairc_release_confirm  = false;  // "Release" modal: permanently let the highlighted creature go
+bairc_release_confirm  = false;  // "Donate" modal: entrust the highlighted creature to Bairc's garden
+bairc_lore_open        = false;  // one-time lore-fragment dialogue (bond milestones / first donation, §10)
+bairc_lore_armed       = false;  // same 1-frame arm as the intro so the opening keypress can't skip it
 
 // Full-screen hatch cutscene (shake -> crack -> reveal). Launched from the Bairc
 // Enter-on-egg action; drawn over the Bairc screen by hatch_cutscene_draw().

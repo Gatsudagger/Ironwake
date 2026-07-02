@@ -2029,6 +2029,7 @@ ui_draw_sable_screen();
 ui_draw_vael_screen();
 ui_draw_bairc_screen();
 ui_draw_bairc_intro();      // first-talk dialogue popup (before the station opens)
+ui_draw_bairc_lore();       // queued one-time lore fragment, over the garden (design §10)
 ui_draw_bairc_capstone();   // raised-Adult capstone pick modal, over the Bairc screen
 hatch_cutscene_draw();   // full-screen egg-hatch sequence, over the Bairc screen
 ui_draw_character_menu();
