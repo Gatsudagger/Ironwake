@@ -1146,7 +1146,7 @@ function ui_draw_pet_stat_tooltip(mx, my, pet, which) {
         var _bd  = pet_stat_breakdown(pet, which);
         var _src = "Base " + string(_bd.base) + "   Stage +" + string(_bd.stage) + "   Talent +" + string(_bd.talent);
         if (_bd.bond > 0)      _src += "   Bond +" + string(_bd.bond);
-        if (_bd.signature > 0) _src += "   Signature +" + string(_bd.signature);
+        if (_bd.signature > 0) _src += "   Scion +" + string(_bd.signature);
         array_push(_lines, { txt: _src, col: make_color_rgb(170, 178, 198) });
     }
     array_push(_lines, { txt: "Grows fastest on " + _arch_of + " creatures.", col: make_color_rgb(140, 145, 165) });
@@ -1374,13 +1374,13 @@ function ui_draw_bairc_screen() {
         draw_set_color(c_white);
         draw_text(_dx, _dy, _p.is_egg ? (_p.name + " Egg") : _p.name);
 
-        // STATUS pills only (ACTIVE / INJURED / SIGNATURE), spaced to the right of the
+        // STATUS pills only (ACTIVE / INJURED / SCION), spaced to the right of the
         // name - identity facts (species/type/stage) are labelled rows in the PROFILE
         // box below, Pokemon-style, so nothing reads as a floating unexplained label.
         var _plx = _dx + string_width(_p.is_egg ? (_p.name + " Egg") : _p.name) + 34;
         if (global.active_pet == _cur)    _plx = ui_bairc_pill(_plx, _dy + 6, "ACTIVE", make_color_rgb(120, 210, 150)) + 12;
         if (!_p.is_egg && _p.injured > 0) _plx = ui_bairc_pill(_plx, _dy + 6, "INJURED", make_color_rgb(220, 120, 90)) + 12;
-        if (_p.signature)                 _plx = ui_bairc_pill(_plx, _dy + 6, "SIGNATURE", make_color_rgb(200, 160, 235)) + 12;
+        if (_p.signature)                 _plx = ui_bairc_pill(_plx, _dy + 6, "SCION", make_color_rgb(200, 160, 235)) + 12;
 
         // ---- PROFILE box: Species / Type / Life Stage / Growth / Bond rows ----
         var _pa_y0 = _dy + 64, _pa_y1 = _dy + 254;
@@ -1520,8 +1520,8 @@ function ui_draw_bairc_screen() {
                 draw_set_color(make_color_rgb(210, 180, 120));
                 var _sig_sp = pet_species_get(_p.species);
                 draw_text(_dx, _by + 2, variable_struct_exists(_sig_sp, "boss")
-                    ? ("A signature creature - kin of " + _sig_sp.boss + ".")
-                    : "A signature creature - a boss's own kin.");
+                    ? ("A scion of " + _sig_sp.boss + " - its like is found nowhere else.")
+                    : "A boss's scion - its like is found nowhere else.");
                 _by += 32;
             }
         }
@@ -5469,6 +5469,14 @@ function ui_draw_character_menu() {
         draw_set_valign(fa_top);
         draw_set_halign(fa_left);
 
+        // Creatures/eggs found THIS RUN go straight to Bairc, so a display-only strip
+        // pinned to the column bottom keeps that loot observable in-run like any drop.
+        var _rfp      = variable_global_exists("run_found_pets") ? global.run_found_pets : [];
+        var _rfp_n    = array_length(_rfp);
+        var _rfp_show = min(_rfp_n, 3);
+        var _rfp_h    = (_rfp_n > 0) ? (52 + _rfp_show * 30 + ((_rfp_n > _rfp_show) ? 26 : 0)) : 0;
+        var _fc_ly2   = _fc_y2 - _rfp_h;   // pack list's usable bottom
+
         if (_found_n == 0) {
             draw_set_font(fnt_ui);
             draw_set_color(make_color_rgb(70, 76, 96));
@@ -5476,7 +5484,7 @@ function ui_draw_character_menu() {
         } else {
             var _fl_y0    = _fc_y1 + 86;
             var _fl_rowh  = 60;
-            var _fl_vis   = floor((_fc_y2 - _fl_y0 - 14) / _fl_rowh);
+            var _fl_vis   = max(1, floor((_fc_ly2 - _fl_y0 - 14) / _fl_rowh));
             var _fl_first = ui_list_window_first(_fcur, _found_n, _fl_vis);
             var _fl_last  = min(_found_n, _fl_first + _fl_vis);
             for (var _fi = _fl_first; _fi < _fl_last; _fi++) {
@@ -5507,8 +5515,25 @@ function ui_draw_character_menu() {
             if (_fl_first > 0)       draw_text(_fc_x1 + 24, _fc_y1 + 60, "^ " + string(_fl_first) + " more");
             if (_fl_last < _found_n) {
                 draw_set_halign(fa_center);
-                draw_text((_fc_x1 + _fc_x2) / 2, _fc_y2 - 28, "v " + string(_found_n - _fl_last) + " more");
+                draw_text((_fc_x1 + _fc_x2) / 2, _fc_ly2 - 28, "v " + string(_found_n - _fl_last) + " more");
                 draw_set_halign(fa_left);
+            }
+        }
+
+        // The creatures-found strip itself (display-only - the pets live at Bairc's,
+        // this is just the receipt).
+        if (_rfp_n > 0) {
+            draw_set_color(make_color_rgb(60, 66, 90));
+            draw_line(_fc_x1 + 16, _fc_ly2, _fc_x2 - 16, _fc_ly2);
+            draw_set_font(fnt_ui_small);
+            draw_set_color(make_color_rgb(190, 160, 240));
+            draw_text(_fc_x1 + 24, _fc_ly2 + 10, "CREATURES FOUND  -  waiting with Bairc");
+            draw_set_color(make_color_rgb(205, 210, 224));
+            for (var _ri = 0; _ri < _rfp_show; _ri++)
+                draw_text(_fc_x1 + 36, _fc_ly2 + 40 + _ri * 30, _rfp[_ri]);
+            if (_rfp_n > _rfp_show) {
+                draw_set_color(make_color_rgb(120, 124, 138));
+                draw_text(_fc_x1 + 36, _fc_ly2 + 40 + _rfp_show * 30, "+" + string(_rfp_n - _rfp_show) + " more");
             }
         }
 

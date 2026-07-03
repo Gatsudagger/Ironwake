@@ -1012,7 +1012,8 @@ if (show_history) {
 if (instance_exists(obj_game_controller) && variable_global_exists("pending_perm_points")) {
     var _gc_hub_d = instance_find(obj_game_controller, 0);
 
-    // Banner - centered in the open zone below the NPC list, with blink
+    // Banner - centered in the open zone below the NPC list, with blink. The list is
+    // 7 rows since Bairc joined (last row ends y762), so the banner sits under that.
     if (global.pending_perm_points > 0 && !_gc_hub_d.perm_alloc_open) {
         var _blink_on = ((current_time mod 900) < 500);
         draw_set_alpha(_blink_on ? 1.0 : 0.28);
@@ -1020,7 +1021,7 @@ if (instance_exists(obj_game_controller) && variable_global_exists("pending_perm
         var _ban_w = 720;
         var _ban_h = 78;
         var _ban_x = GUI_CX - _ban_w / 2;
-        var _ban_y = 714;
+        var _ban_y = 806;
 
         draw_set_color(make_color_rgb(50, 38, 8));
         draw_rectangle(_ban_x, _ban_y, _ban_x + _ban_w, _ban_y + _ban_h, false);

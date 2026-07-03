@@ -298,6 +298,9 @@ if (!variable_global_exists("active_pet"))  global.active_pet  = -1;
 if (!variable_global_exists("pet_next_id")) global.pet_next_id = 1;
 // One-shot "you found an egg" message, set on a boss-egg drop and shown next hub visit.
 if (!variable_global_exists("pet_find_notice")) global.pet_find_notice = "";
+// Creatures/eggs found during the CURRENT run (labels only; cleared in end_run) - shown
+// as a display-only strip in the equipment Found column so pet loot is observable in-run.
+if (!variable_global_exists("run_found_pets")) global.run_found_pets = [];
 // Whether this character has received its one free starter pet yet (so Bairc is reachable).
 if (!variable_global_exists("pet_starter_given")) global.pet_starter_given = false;
 // Feed pouch: owned pet-feed items bought from Petra (struct keyed by feed id -> count).

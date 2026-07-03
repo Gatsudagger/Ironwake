@@ -202,6 +202,7 @@ function end_run(result) {
     if (variable_global_exists("run_level")) {
         _end_level = global.run_level;
     }
+    global.run_found_pets = [];   // run-scoped "creatures found" strip (equipment Found column)
     global.run_count++;
     global.last_run_result = result;
     global.last_run_gold   = global.current_run_gold;
@@ -4998,6 +4999,10 @@ function pet_grant_from_source(source, species_override = "") {
     // ~12% of finds arrive CORRUPTED (§7): they start PUSHING (carried debuff, but gains a
     // permanent +15% each completed run, fully corrupting after 3). You can cure anytime.
     if (irandom(99) < 12) { _pet.corrupted = true; _pet.corruption_state = "pushing"; }
+    // Record for the run-scoped "creatures found" strip in the equipment Found column -
+    // pets go straight to Bairc, so this is the only in-run place the loot is visible.
+    if (!variable_global_exists("run_found_pets")) global.run_found_pets = [];
+    array_push(global.run_found_pets, _pet.is_egg ? (pet_species_get(_pet.species).name + " Egg") : _pet.name);
     return pet_add(_pet);
 }
 
@@ -5097,7 +5102,7 @@ function pet_egg_label(pet) {
 // (one per boss, found nowhere else); duplicates are allowed - a later, higher-Awakening
 // kill yields a stronger copy of the same kin. Returns the granted pet, or undefined.
 function pet_try_boss_egg(awk) {
-    var _chance = min(14, 4 + 2 * awk);                  // 4% A0 -> cap 14%
+    var _chance = min(14, 4 + awk);                      // 4% A0 +1%/awk -> 9% A5 (playtest-tuned from +2%/awk, M 2026-07-03)
     if (irandom(99) >= _chance) return undefined;
     var _dung  = variable_global_exists("selected_dungeon") ? global.selected_dungeon : "ashen_vault";
     var _floor = variable_global_exists("current_floor")    ? global.current_floor    : 1;
