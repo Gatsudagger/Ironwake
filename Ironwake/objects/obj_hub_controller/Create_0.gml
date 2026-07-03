@@ -14,6 +14,28 @@ if (!variable_global_exists("dorn_stock") || !is_array(global.dorn_stock)
     restock_shops();
 }
 
+// Bairc Companion perk (Phase 4a): on the first hub return after a run, he quietly
+// mends one injury tier on the most-hurt creature. Armed in end_run, consumed here.
+if (variable_global_exists("bairc_mend_pending") && global.bairc_mend_pending
+    && affinity_at_least("bairc", 3)) {
+    global.bairc_mend_pending = false;
+    var _bm_best = undefined;
+    var _bm_r = pet_roster();
+    for (var _bm = 0; _bm < array_length(_bm_r); _bm++) {
+        var _bmp = _bm_r[_bm];
+        if (is_struct(_bmp) && !_bmp.is_egg && _bmp.injured > 0
+            && (_bm_best == undefined || _bmp.injured > _bm_best.injured)) _bm_best = _bmp;
+    }
+    if (_bm_best != undefined) {
+        _bm_best.injured = max(0, _bm_best.injured - 1);
+        if (variable_global_exists("pet_find_notice")) {
+            var _bm_msg = "Bairc has already seen to " + _bm_best.name + " - its wounds sit easier.";
+            global.pet_find_notice = (global.pet_find_notice != "")
+                ? (global.pet_find_notice + "   " + _bm_msg) : _bm_msg;
+        }
+    }
+}
+
 
 // -----------------------------------------------------------------------------
 // 1. NPC ROSTER

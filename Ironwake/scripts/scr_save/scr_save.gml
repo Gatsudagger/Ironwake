@@ -129,6 +129,11 @@ function save_game() {
         // NPC affinity (thin track, meta-persistent per slot)
         npc_affinity:   variable_global_exists("npc_affinity")   ? global.npc_affinity   : undefined,
 
+        // Phase 4a: quest state, journal badges + per-NPC interaction ledger.
+        quests:          (variable_global_exists("quests")          && is_array(global.quests))           ? global.quests          : [],
+        journal_badges:  (variable_global_exists("journal_badges")  && is_struct(global.journal_badges))  ? global.journal_badges  : undefined,
+        npc_ledger:      (variable_global_exists("npc_ledger")      && is_struct(global.npc_ledger))      ? global.npc_ledger      : undefined,
+
         // Petra Treasure Trader order (cross-run persistent; undefined = none)
         petra_order:    variable_global_exists("petra_order")    ? global.petra_order    : undefined,
 
@@ -247,6 +252,11 @@ function new_game_reset() {
 
     // NPC affinity (thin track) - fresh zeroed relationships for a new character.
     global.npc_affinity = affinity_fresh();
+
+    // Phase 4a: quests / journal - clean slate.
+    global.quests         = [];
+    global.journal_badges = { npcs: {}, quests: {} };
+    global.npc_ledger     = {};
 
     // Petra Treasure Trader - no open order on a new character.
     global.petra_order = undefined;
@@ -472,6 +482,12 @@ function load_game() {
         global.npc_affinity = _s.npc_affinity;
     }
     affinity_ensure();
+
+    // Phase 4a: quests / journal (older saves lack these keys -> seeded/empty defaults).
+    global.quests         = (variable_struct_exists(_s, "quests")         && is_array(_s.quests))          ? _s.quests         : [];
+    global.journal_badges = (variable_struct_exists(_s, "journal_badges") && is_struct(_s.journal_badges)) ? _s.journal_badges : { npcs: {}, quests: {} };
+    global.npc_ledger     = (variable_struct_exists(_s, "npc_ledger")     && is_struct(_s.npc_ledger))     ? _s.npc_ledger     : {};
+    quest_state_ensure();   // append-migrate rows for quests added since this save
 
     // Petra Treasure Trader order (cross-run persistent). Absent/!struct -> no order.
     global.petra_order = (variable_struct_exists(_s, "petra_order") && is_struct(_s.petra_order))

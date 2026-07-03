@@ -963,6 +963,7 @@ function combat_on_enemy_defeated(target, player, combat_log) {
     _gold_drop = round(_gold_drop * (1 + pet_active_boon_gold_pct() + pet_active_lck_gold_pct() + pet_active_splash_gold_pct() + pet_active_egg_bonus("gold")));   // Fortune pet gift + universal LCK + Gilded-Soul splash + Gilded-egg hatchling
     add_gold(_gold_drop);
     global.current_run_kills++;
+    quest_tick("kill_family", enemy_sound_family(target.name), 1);   // Phase 4a quest objective
     array_push(combat_log, "Gained " + string(_gold_drop) + "g!");
 
     // Item / consumable drop

@@ -1534,7 +1534,7 @@ function ability_unlock_info(ability_name) {
 function ability_unlock_cost(ability_name) {
     var _info = ability_unlock_info(ability_name);
     if (_info == undefined) return 0;
-    return cha_price(_info.cost);   // CHA vendor discount
+    return vex_price(cha_price(_info.cost));   // CHA vendor discount + Vex Friend perk
 }
 
 // ---------------------------------------------------------------------------
@@ -1676,12 +1676,12 @@ function trait_unlock_tier(trait_name) {
 // trait_unlock_cost(name) - { gold, min_rarity, item_label } for a Vex purchase.
 // min_rarity: 1 uncommon+, 2 rare+, 4 legendary.
 function trait_unlock_cost(trait_name) {
-    // Gold is CHA-discounted (the item requirement is unaffected).
+    // Gold is CHA-discounted + Vex Friend perk (the item requirement is unaffected).
     switch (trait_unlock_tier(trait_name)) {
-        case 1: return { gold:cha_price(200), min_rarity:1, item_label:"Uncommon" };
-        case 3: return { gold:cha_price(500), min_rarity:4, item_label:"Legendary" };
+        case 1: return { gold:vex_price(cha_price(200)), min_rarity:1, item_label:"Uncommon" };
+        case 3: return { gold:vex_price(cha_price(500)), min_rarity:4, item_label:"Legendary" };
     }
-    return { gold:cha_price(350), min_rarity:2, item_label:"Rare" };
+    return { gold:vex_price(cha_price(350)), min_rarity:2, item_label:"Rare" };
 }
 
 // trait_vex_purchasable(class_id) - traits Vex offers for the current class: not a

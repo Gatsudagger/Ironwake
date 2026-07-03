@@ -73,6 +73,53 @@ if (variable_global_exists("item_picker") && global.item_picker.resolved_purpose
     }
 }
 
+// --- JOURNAL (Phase 4a): J toggles the overlay at the hub / on the floor map. While
+// open it owns all input (ui_input_blocked() reports true, freezing every room
+// controller). Viewing works both places; ACTIONS (start / turn in) are hub-only.
+if (journal_open) {
+    if (keyboard_check_pressed(ord("J")) || keyboard_check_pressed(vk_escape)) { journal_open = false; exit; }
+    if (keyboard_check_pressed(ord("Q")) || keyboard_check_pressed(ord("E"))) {
+        journal_tab = (journal_tab + 1) mod 2;   // two tabs: either key flips
+        journal_cursor = 0;
+    }
+    if (journal_tab == 0) {
+        var _jm = journal_met_ids();
+        var _jn = array_length(_jm);
+        if (_jn > 0) {
+            if (nav_up())   journal_cursor = wrap_index(journal_cursor - 1, _jn);
+            if (nav_down()) journal_cursor = wrap_index(journal_cursor + 1, _jn);
+            journal_cursor = clamp(journal_cursor, 0, _jn - 1);
+            journal_clear_npc(_jm[journal_cursor]);   // badges clear on VIEW
+        }
+    } else {
+        var _jq  = journal_quest_rows();
+        var _jqn = array_length(_jq);
+        if (_jqn > 0) {
+            if (nav_up())   journal_cursor = wrap_index(journal_cursor - 1, _jqn);
+            if (nav_down()) journal_cursor = wrap_index(journal_cursor + 1, _jqn);
+            journal_cursor = clamp(journal_cursor, 0, _jqn - 1);
+            var _jrow = _jq[journal_cursor];
+            journal_clear_quest(_jrow);               // badges clear on VIEW
+            if ((keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_space))
+                && room == rm_hub) {
+                if (quest_is_complete(_jrow)) {
+                    if (quest_turn_in(_jrow) == "") { audio_play_sound(Check_1, 1, false); save_game(); }
+                } else if (quest_state(_jrow) != undefined && quest_state(_jrow).status == "available") {
+                    if (quest_start(_jrow) == "") save_game();
+                }
+            }
+        }
+    }
+    exit;
+}
+if (keyboard_check_pressed(ord("J")) && (room == rm_hub || room == rm_dungeon_floor)
+    && !ui_input_blocked() && !global.ui_overlay_latch
+    && (!variable_global_exists("pause_open") || !global.pause_open)) {
+    journal_open   = true;
+    journal_cursor = 0;
+    exit;
+}
+
 // Close comparison panel on ESC (checked before other handlers)
 if (comparison_open && keyboard_check_pressed(vk_escape)) {
     comparison_open     = false;
@@ -794,13 +841,15 @@ if (trainer_open) {
             }
         }
 
-        // Apply +/- with caps: can't exceed a stat's available points, nor 5 total.
+        // Apply +/- with caps: can't exceed a stat's available points, nor the total
+        // (5, or 4 with Vex's Companion perk - vex_potency_points).
+        var _sp_need = vex_potency_points();
         if (_dec || _inc) {
             trainer_statpick_confirm = false;   // any change disarms the confirm
             var _cs    = trainer_statpick_cursor;
             var _avail = stat_available_points(_sp_stats[_cs]);
             if (_dec && trainer_statpick_alloc[_cs] > 0) trainer_statpick_alloc[_cs] -= 1;
-            if (_inc && _sp_total < 5 && trainer_statpick_alloc[_cs] < _avail) trainer_statpick_alloc[_cs] += 1;
+            if (_inc && _sp_total < _sp_need && trainer_statpick_alloc[_cs] < _avail) trainer_statpick_alloc[_cs] += 1;
             _sp_total = 0;
             for (var _ti2 = 0; _ti2 < 6; _ti2++) _sp_total += trainer_statpick_alloc[_ti2];
         }
@@ -811,11 +860,11 @@ if (trainer_open) {
             if (_sp_tier >= 5) {
                 trainer_statpick_open = false;
                 trainer_notification  = trainer_statpick_trait + " is already at max potency.";
-            } else if (_sp_total != 5) {
-                trainer_notification = "Allocate exactly 5 points to sacrifice (currently " + string(_sp_total) + ").";
+            } else if (_sp_total != _sp_need) {
+                trainer_notification = "Allocate exactly " + string(_sp_need) + " points to sacrifice (currently " + string(_sp_total) + ").";
             } else if (!trainer_statpick_confirm) {
                 trainer_statpick_confirm = true;
-                trainer_notification = "Sacrifice these 5 points permanently? This cannot be undone.";
+                trainer_notification = "Sacrifice these " + string(_sp_need) + " points permanently? This cannot be undone.";
             } else {
                 for (var _ci = 0; _ci < 6; _ci++) {
                     if (trainer_statpick_alloc[_ci] > 0) stat_spend_permanent(_sp_stats[_ci], trainer_statpick_alloc[_ci]);
@@ -910,7 +959,7 @@ if (trainer_open) {
     if (trainer_tab == 0 && _act) {
         var _stat_keys  = ["perm_str_bonus","perm_dex_bonus","perm_con_bonus","perm_int_bonus","perm_wis_bonus","perm_cha_bonus"];
         var _stat_names = ["STR","DEX","CON","INT","WIS","CHA"];
-        var _stat_cost  = cha_price(200);
+        var _stat_cost  = vex_price(cha_price(200));   // Vex Friend perk: 10% off
         if (global.gold < _stat_cost) {
             trainer_notification = "Not enough gold - a stat costs " + string(_stat_cost) + "g + a Rare item.";
         } else if (!trainer_has_rare_item()) {
@@ -929,7 +978,7 @@ if (trainer_open) {
         if (_bts >= 2) {
             trainer_notification = "All trait slots already purchased (4 total).";
         } else {
-            var _slot_cost = cha_price((_bts == 0) ? 800 : 2000);
+            var _slot_cost = vex_price(cha_price((_bts == 0) ? 800 : 2000));   // Vex Friend perk: 10% off
             if (global.gold < _slot_cost) {
                 trainer_notification = "Not enough gold - the next slot costs " + string(_slot_cost) + "g.";
             } else {
@@ -1121,6 +1170,7 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open) {
                         ? (_cp_pet.name + " draws " + _pick.name + " into itself - the crossing is complete.")
                         : (_cp_pet.name + " takes up " + _pick.name + " - its path is set.");
                     audio_play_sound(Check_1, 1, false);
+                    affinity_add("bairc", 2);   // function-use drip (gift/splash pick)
                     if (room == rm_hub || room == rm_character_select) save_game();
                 }
                 bairc_capstone_open    = false;
@@ -1140,6 +1190,7 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open) {
             if (_rl != "") {
                 bairc_notification = "Bairc takes " + _rl + " gently. It has a home in his garden now.";
                 audio_play_sound(Check_1, 1, false);
+                affinity_add("bairc", 2);   // function-use drip (donation)
                 bairc_cursor = clamp(bairc_cursor, 0, max(0, pet_count() - 1));
                 if (room == rm_hub || room == rm_character_select) save_game();
             }
@@ -1171,10 +1222,12 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open) {
         if (keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_space)) {
             if (_bp.is_egg) {
                 hatch_cutscene_start(_bp);   // full-screen shake -> crack -> reveal; hatches at the reveal
+                affinity_add("bairc", 2);    // function-use drip (hatching together)
             } else {
                 global.active_pet  = bairc_cursor;
                 bairc_notification = _bp.name + " is now your active companion.";
                 audio_play_sound(Check_1, 1, false);
+                affinity_add("bairc", 2);    // function-use drip (companion chosen)
                 if (room == rm_hub || room == rm_character_select) save_game();
             }
         }
@@ -1199,6 +1252,7 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open) {
                     bairc_notification = _bp.name + " enjoys the " + _owned[_feed_key].name + "."
                         + (pet_growth_ready(_bp) ? "  Ready to grow - take it on a run!" : "");
                     audio_play_sound(Check_1, 1, false);
+                    affinity_add("bairc", 2);   // function-use drip (feeding)
                     if (room == rm_hub || room == rm_character_select) save_game();
                 } else {
                     bairc_notification = _fr;
@@ -1604,7 +1658,7 @@ if (variable_instance_exists(id, "sable_open") && sable_open) {
     rune_inventory_sort();   // keep the rune/aspect pool alphabetical (display + index ops read this)
     var _s_gear   = sable_salvageable_gear();
     var _s_rinv   = variable_global_exists("rune_inventory") ? global.rune_inventory : [];
-    var _s_brew   = sable_brew_catalog();
+    var _s_brew   = sable_brew_catalog_priced();
     var _s_groups = sable_upgrade_groups();
 
     // Row count for the active tab + phase
@@ -1789,12 +1843,15 @@ if (variable_instance_exists(id, "vael_open") && vael_open) {
         vael_portrait_cursor = clamp(vael_portrait_cursor, 0, _p_cnt - 1);
 
         if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)) {
+            // Vael Companion perk: portrait changes are free ("for you? always").
+            var _pcost = affinity_at_least("vael", 3) ? 0 : 100;
             if (vael_portrait_cursor == global.chosen_portrait) {
                 vael_notification = "That's already your portrait.";
-            } else if (global.gold >= 100) {
-                global.gold -= 100;
+            } else if (global.gold >= _pcost) {
+                global.gold -= _pcost;
                 global.chosen_portrait = vael_portrait_cursor;
-                vael_notification = "Portrait changed!  (-100g)";
+                vael_notification = (_pcost > 0) ? "Portrait changed!  (-100g)" : "Portrait changed!  (her gift)";
+                affinity_add("vael", 2);   // function-use drip (portrait change)
             } else {
                 vael_notification = "Not enough gold - you need 100g.";
             }

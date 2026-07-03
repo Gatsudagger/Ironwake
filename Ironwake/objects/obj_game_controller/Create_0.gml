@@ -943,6 +943,12 @@ bairc_release_confirm  = false;  // "Donate" modal: entrust the highlighted crea
 bairc_lore_open        = false;  // one-time lore-fragment dialogue (bond milestones / first donation, §10)
 bairc_lore_armed       = false;  // same 1-frame arm as the intro so the opening keypress can't skip it
 
+// --- JOURNAL (Phase 4a): J-key overlay, hub + floor map. Two tabs (Relationships /
+// Quests), master-detail; actions hub-only. See PHASE4A_SPEC.md. ---
+journal_open    = false;
+journal_tab     = 0;    // 0 = Relationships, 1 = Quests
+journal_cursor  = 0;    // Relationships: met-NPC row | Quests: flattened grouped row
+
 // Full-screen hatch cutscene (shake -> crack -> reveal). Launched from the Bairc
 // Enter-on-egg action; drawn over the Bairc screen by hatch_cutscene_draw().
 hatch_active  = false;

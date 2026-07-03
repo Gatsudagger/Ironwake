@@ -780,6 +780,9 @@ ui_draw_item_picker();
 // Consumable overflow discard prompt (pack-full pickup)
 ui_draw_consumable_overflow();
 
+// J-key Journal overlay (Phase 4a) - view/track mid-run; actions are hub-only.
+ui_draw_journal();
+
 // Pause / Esc menu + its Settings sub-screen (drawn here since the floor doesn't
 // otherwise host the settings overlay during a run)
 if (variable_global_exists("settings_open") && global.settings_open) ui_draw_settings_overlay();

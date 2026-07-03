@@ -827,6 +827,7 @@ function ui_input_blocked() {
     if (variable_instance_exists(_gc, "bairc_intro_open") && _gc.bairc_intro_open) return true;   // Bairc first-talk dialogue
     if (variable_instance_exists(_gc, "level_alloc_open") && _gc.level_alloc_open) return true;
     if (variable_instance_exists(_gc, "loadout_open")     && _gc.loadout_open)     return true;
+    if (variable_instance_exists(_gc, "journal_open")     && _gc.journal_open)     return true;   // J Journal (Phase 4a)
     return false;
 }
 
@@ -1098,6 +1099,289 @@ function ui_draw_bairc_capstone() {
     draw_set_alpha(1.0); draw_set_color(c_white); draw_set_font(-1);
 }
 
+// ---------------------------------------------------------------------------
+// JOURNAL (Phase 4a, PHASE4A_SPEC.md): the player character's personal journal.
+// J-key overlay (hub + floor map; gc owns input). Two tabs, master-detail:
+//   0 Relationships - met NPCs, profile, tier + diegetic progress, blurb, taste
+//     slots (all "???" until gifts land in 4b), interaction ledger, pinned quest.
+//   1 Quests - Active / Available / Completed, detail + hub-only actions.
+// ---------------------------------------------------------------------------
+function journal_npc_portrait(id) {
+    switch (id) {
+        case "dorn":  return Blacksmith_1__Dark_Gritty_;
+        case "sable": return Alcehmist_2__Flirty_;
+        case "maren": return Runesmith_3__Facewrap_;
+        case "vex":   return Trainer_2__Sullen_;
+        case "petra": return Merchant_7__Voluptuous_;
+        case "vael":  return Aesthete_2__Gothic_;
+        case "bairc":
+            var _b = asset_get_index("spr_npc_bairc_portrait");
+            if (_b < 0) _b = asset_get_index("spr_npc_bairc_idle");
+            return _b;
+    }
+    return -1;
+}
+
+// One-line reward description for a quest def (mirrors quest_turn_in's grants).
+function journal_quest_reward_text(def) {
+    var _r = def.reward; var _out = "";
+    if (_r.gold > 0) _out += string(_r.gold) + "g";
+    if (_r.feed != "" && _r.feed_n > 0) {
+        var _fd = pet_feed_get(_r.feed);
+        _out += (_out != "" ? ", " : "") + string(_r.feed_n) + "x " + ((_fd != undefined) ? _fd.name : _r.feed);
+    }
+    if (_r.rune_id != "" && _r.rune_tier > 0) {
+        var _rd = rune_get(_r.rune_id);
+        _out += (_out != "" ? ", " : "") + ((_rd != undefined) ? _rd.name : _r.rune_id) + " " + rune_tier_roman(_r.rune_tier) + " rune";
+    }
+    return (_out == "") ? "Their thanks" : _out;
+}
+
+function ui_draw_journal() {
+    if (!instance_exists(obj_game_controller)) return;
+    var _gc = instance_find(obj_game_controller, 0);
+    if (!variable_instance_exists(_gc, "journal_open") || !_gc.journal_open) return;
+    var _at_hub = (room == rm_hub);
+
+    // Dim + panel + frame (vendor-screen footprint).
+    draw_set_alpha(0.86); draw_set_color(c_black);
+    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+    draw_set_alpha(1.0);
+    var _x1 = 120, _y1 = 66, _x2 = 1800, _y2 = 1020;
+    draw_set_color(make_color_rgb(18, 17, 24));
+    draw_rectangle(_x1, _y1, _x2, _y2, false);
+    ui_draw_gothic_frame(_x1, _y1, _x2, _y2, 36);
+
+    draw_set_halign(fa_left); draw_set_valign(fa_top);
+    draw_set_font(fnt_ui_title);
+    draw_set_color(make_color_rgb(228, 215, 180));
+    draw_text(_x1 + 45, _y1 + 36, "Journal");
+
+    // Tab chips.
+    var _tabs = ["RELATIONSHIPS", "QUESTS"];
+    var _tx = _x1 + 340;
+    draw_set_font(fnt_ui);
+    for (var _t = 0; _t < 2; _t++) {
+        var _hot = (_gc.journal_tab == _t);
+        var _tw  = string_width(_tabs[_t]) + 48;
+        draw_set_color(_hot ? make_color_rgb(52, 48, 66) : make_color_rgb(26, 26, 34));
+        draw_rectangle(_tx, _y1 + 36, _tx + _tw, _y1 + 84, false);
+        draw_set_color(_hot ? make_color_rgb(228, 205, 140) : make_color_rgb(70, 72, 92));
+        draw_rectangle(_tx, _y1 + 36, _tx + _tw, _y1 + 84, true);
+        draw_set_color(_hot ? make_color_rgb(240, 232, 250) : make_color_rgb(140, 145, 165));
+        draw_set_halign(fa_center);
+        draw_text(_tx + _tw / 2, _y1 + 45, _tabs[_t]);
+        draw_set_halign(fa_left);
+        _tx += _tw + 24;
+    }
+
+    var _list_x1 = _x1 + 45,  _list_x2 = _x1 + 640;
+    var _det_x1  = _x1 + 680, _det_x2  = _x2 - 45;
+    var _top     = _y1 + 130, _bot     = _y2 - 84;
+    // Sub-panels.
+    draw_set_color(make_color_rgb(12, 12, 18));
+    draw_rectangle(_list_x1 - 14, _top - 12, _list_x2 + 14, _bot, false);
+    draw_rectangle(_det_x1 - 14,  _top - 12, _det_x2 + 14,  _bot, false);
+    draw_set_color(make_color_rgb(52, 54, 74));
+    draw_rectangle(_list_x1 - 14, _top - 12, _list_x2 + 14, _bot, true);
+    draw_rectangle(_det_x1 - 14,  _top - 12, _det_x2 + 14,  _bot, true);
+
+    if (_gc.journal_tab == 0) {
+        // ============ RELATIONSHIPS ============
+        var _ids = journal_met_ids();
+        var _n   = array_length(_ids);
+        var _cur = clamp(_gc.journal_cursor, 0, max(0, _n - 1));
+        if (_n == 0) {
+            draw_set_font(fnt_ui); draw_set_color(make_color_rgb(150, 156, 175));
+            draw_text(_list_x1, _top + 12, "No one yet. Talk to the townsfolk.");
+        }
+        var _row_h = 96;
+        for (var _i = 0; _i < _n; _i++) {
+            var _id = _ids[_i];
+            var _ry = _top + _i * _row_h;
+            var _hot = (_i == _cur);
+            draw_set_color(_hot ? make_color_rgb(40, 42, 58) : make_color_rgb(20, 21, 30));
+            draw_rectangle(_list_x1 - 6, _ry, _list_x2 + 6, _ry + _row_h - 10, false);
+            draw_set_color(_hot ? make_color_rgb(210, 185, 120) : make_color_rgb(52, 56, 76));
+            draw_rectangle(_list_x1 - 6, _ry, _list_x2 + 6, _ry + _row_h - 10, true);
+            // Portrait thumb.
+            var _ps = journal_npc_portrait(_id);
+            if (_ps >= 0) ui_draw_sprite_cover(_ps, 0, _list_x1 + 2, _ry + 7, 72, 72, 1.0, 0);
+            draw_set_color(make_color_rgb(52, 56, 76));
+            draw_rectangle(_list_x1 + 2, _ry + 7, _list_x1 + 74, _ry + 79, true);
+            // Name + tier.
+            draw_set_font(fnt_ui); draw_set_color(_hot ? c_white : make_color_rgb(205, 208, 222));
+            draw_text(_list_x1 + 94, _ry + 12, npc_display_name(_id));
+            draw_set_font(fnt_ui_small); draw_set_color(make_color_rgb(210, 190, 130));
+            draw_text(_list_x1 + 94, _ry + 50, affinity_tier_name(_id));
+            // Update badge.
+            if (journal_npc_badged(_id)) {
+                draw_set_color(make_color_rgb(235, 180, 80));
+                draw_circle(_list_x2 - 16, _ry + 22, 7, false);
+            }
+        }
+        // ---- Profile pane ----
+        if (_n > 0) {
+            var _pid = _ids[_cur];
+            var _px  = _det_x1, _py = _top + 6;
+            var _pspr = journal_npc_portrait(_pid);
+            if (_pspr >= 0) ui_draw_sprite_cover(_pspr, 0, _px, _py, 210, 210, 1.0, 0);
+            draw_set_color(make_color_rgb(60, 64, 88));
+            draw_rectangle(_px, _py, _px + 210, _py + 210, true);
+            draw_set_font(fnt_ui); draw_set_color(c_white);
+            draw_text(_px + 240, _py + 6, npc_display_name(_pid));
+            draw_set_font(fnt_ui_small); draw_set_color(make_color_rgb(210, 190, 130));
+            draw_text(_px + 240, _py + 48, affinity_tier_name(_pid));
+            // Diegetic progress bar toward the next gate (never the raw score).
+            if (affinity_tier(_pid) < 4) {
+                var _bw2 = 380, _bh2 = 12, _bx2 = _px + 240, _by2 = _py + 92;
+                draw_set_color(make_color_rgb(40, 44, 56));
+                draw_rectangle(_bx2, _by2, _bx2 + _bw2, _by2 + _bh2, false);
+                draw_set_color(make_color_rgb(210, 190, 130));
+                draw_rectangle(_bx2, _by2, _bx2 + _bw2 * affinity_progress_frac(_pid), _by2 + _bh2, false);
+                draw_set_color(make_color_rgb(90, 96, 110));
+                draw_rectangle(_bx2, _by2, _bx2 + _bw2, _by2 + _bh2, true);
+                draw_set_color(make_color_rgb(140, 145, 165));
+                draw_text(_bx2, _by2 + 20, affinity_gate_ready(_pid)
+                    ? "Ready to grow closer - see them at the hub."
+                    : "Growing closer...");
+            } else {
+                draw_set_color(make_color_rgb(226, 150, 150));
+                draw_text(_px + 240, _py + 92, "Yours, and you theirs.");
+            }
+            // Lore blurb.
+            var _by3 = _py + 232;
+            draw_set_color(make_color_rgb(185, 190, 205));
+            draw_text_ext(_px, _by3, journal_npc_blurb(_pid), 27, _det_x2 - _px - 10);
+            _by3 += string_height_ext(journal_npc_blurb(_pid), 27, _det_x2 - _px - 10) + 22;
+            // Gift tastes - schema slots; nothing revealed until gifting lands (4b).
+            draw_set_color(make_color_rgb(120, 200, 140));
+            draw_text(_px, _by3, "TASTES"); _by3 += 30;
+            draw_set_color(make_color_rgb(140, 145, 165));
+            draw_text(_px, _by3, "Loves ???     Likes ???     Dislikes ???     (learn by gifting - soon)");
+            _by3 += 44;
+            // Interaction ledger (newest last; show the most recent 6).
+            draw_set_color(make_color_rgb(120, 200, 140));
+            draw_text(_px, _by3, "MY NOTES"); _by3 += 30;
+            var _led = npc_ledger(_pid);
+            var _ln  = array_length(_led);
+            if (_ln == 0) {
+                draw_set_color(make_color_rgb(120, 126, 148));
+                draw_text(_px, _by3, "Nothing worth writing down yet.");
+                _by3 += 30;
+            } else {
+                var _l0 = max(0, _ln - 6);
+                for (var _li = _l0; _li < _ln; _li++) {
+                    draw_set_color(make_color_rgb(170, 176, 195));
+                    draw_text_ext(_px, _by3, "- " + _led[_li].text, 24, _det_x2 - _px - 10);
+                    _by3 += string_height_ext("- " + _led[_li].text, 24, _det_x2 - _px - 10) + 6;
+                }
+            }
+            // Pinned active quest with this NPC.
+            var _pq = "";
+            var _qrows = journal_quest_rows();
+            for (var _qi = 0; _qi < array_length(_qrows); _qi++) {
+                var _qd2 = quest_def(_qrows[_qi]);
+                var _qs2 = quest_state(_qrows[_qi]);
+                if (_qd2 != undefined && _qd2.npc == _pid && _qs2.status == "active") { _pq = _qrows[_qi]; break; }
+            }
+            if (_pq != "") {
+                var _pqd = quest_def(_pq); var _pqs = quest_state(_pq);
+                _by3 += 10;
+                draw_set_color(make_color_rgb(228, 205, 140));
+                draw_text(_px, _by3, "QUEST:  " + _pqd.name + "   ("
+                    + string(min(_pqs.progress, _pqd.obj_target)) + " / " + string(_pqd.obj_target) + ")");
+            }
+        }
+    } else {
+        // ============ QUESTS ============
+        var _rows = journal_quest_rows();
+        var _qn   = array_length(_rows);
+        var _qcur = clamp(_gc.journal_cursor, 0, max(0, _qn - 1));
+        if (_qn == 0) {
+            draw_set_font(fnt_ui); draw_set_color(make_color_rgb(150, 156, 175));
+            draw_text(_list_x1, _top + 12, "No quests yet.");
+        }
+        var _qy = _top;
+        var _last_status = "";
+        for (var _i2 = 0; _i2 < _qn; _i2++) {
+            var _qid = _rows[_i2];
+            var _qd  = quest_def(_qid);
+            var _qs  = quest_state(_qid);
+            // Group header when the status band changes (rows are pre-grouped).
+            if (_qs.status != _last_status) {
+                _last_status = _qs.status;
+                draw_set_font(fnt_ui_small);
+                draw_set_color(make_color_rgb(120, 200, 140));
+                var _glabel = (_qs.status == "active") ? "ACTIVE" : ((_qs.status == "available") ? "AVAILABLE" : "COMPLETED");
+                draw_text(_list_x1, _qy, _glabel);
+                _qy += 33;
+            }
+            var _qhot = (_i2 == _qcur);
+            draw_set_color(_qhot ? make_color_rgb(40, 42, 58) : make_color_rgb(20, 21, 30));
+            draw_rectangle(_list_x1 - 6, _qy, _list_x2 + 6, _qy + 66, false);
+            draw_set_color(_qhot ? make_color_rgb(210, 185, 120) : make_color_rgb(52, 56, 76));
+            draw_rectangle(_list_x1 - 6, _qy, _list_x2 + 6, _qy + 66, true);
+            draw_set_font(fnt_ui);
+            draw_set_color(_qs.status == "done" ? make_color_rgb(130, 136, 155) : (_qhot ? c_white : make_color_rgb(205, 208, 222)));
+            draw_text(_list_x1 + 10, _qy + 6, _qd.name);
+            draw_set_font(fnt_ui_small);
+            draw_set_color(make_color_rgb(140, 145, 165));
+            draw_text(_list_x1 + 10, _qy + 40, npc_display_name(_qd.npc)
+                + ((_qs.status == "active") ? ("   " + string(min(_qs.progress, _qd.obj_target)) + " / " + string(_qd.obj_target)
+                    + (quest_is_complete(_qid) ? "  -  READY" : "")) : ""));
+            if (journal_quest_badged(_qid)) {
+                draw_set_color(make_color_rgb(235, 180, 80));
+                draw_circle(_list_x2 - 16, _qy + 16, 7, false);
+            }
+            _qy += 76;
+        }
+        // ---- Quest detail pane ----
+        if (_qn > 0) {
+            var _sid = _rows[_qcur];
+            var _sd  = quest_def(_sid);
+            var _ss  = quest_state(_sid);
+            var _dx2 = _det_x1, _dy2 = _top + 6;
+            draw_set_font(fnt_ui); draw_set_color(c_white);
+            draw_text(_dx2, _dy2, _sd.name); _dy2 += 46;
+            draw_set_font(fnt_ui_small);
+            draw_set_color(make_color_rgb(210, 190, 130));
+            draw_text(_dx2, _dy2, "For " + npc_display_name(_sd.npc)); _dy2 += 40;
+            draw_set_color(make_color_rgb(205, 208, 222));
+            draw_text(_dx2, _dy2, "Objective:  " + _sd.objective
+                + "   (" + string(min(_ss.progress, _sd.obj_target)) + " / " + string(_sd.obj_target) + ")"); _dy2 += 36;
+            draw_set_color(make_color_rgb(185, 200, 160));
+            draw_text(_dx2, _dy2, "Reward:  " + journal_quest_reward_text(_sd)); _dy2 += 48;
+            draw_set_color(make_color_rgb(170, 176, 195));
+            draw_text_ext(_dx2, _dy2, _sd.flavor, 27, _det_x2 - _dx2 - 10);
+            _dy2 += string_height_ext(_sd.flavor, 27, _det_x2 - _dx2 - 10) + 30;
+            // Status / action line (actions are hub-only - greyed elsewhere, never hidden).
+            if (_ss.status == "done") {
+                draw_set_color(make_color_rgb(130, 136, 155));
+                draw_text(_dx2, _dy2, "Done.");
+            } else if (quest_is_complete(_sid)) {
+                draw_set_color(_at_hub ? make_color_rgb(120, 220, 140) : make_color_rgb(110, 120, 110));
+                draw_text(_dx2, _dy2, _at_hub ? "[Enter] Turn in - see " + npc_display_name(_sd.npc) + "."
+                                              : "Ready to turn in - return to " + npc_display_name(_sd.npc) + " at the hub.");
+            } else if (_ss.status == "active") {
+                draw_set_color(make_color_rgb(140, 145, 165));
+                draw_text(_dx2, _dy2, "Underway - progress ticks as you play.");
+            } else {
+                draw_set_color(_at_hub ? make_color_rgb(228, 205, 140) : make_color_rgb(120, 116, 100));
+                draw_text(_dx2, _dy2, _at_hub ? "[Enter] Accept" : "Accept at the hub.");
+            }
+        }
+    }
+
+    // Footer.
+    draw_set_halign(fa_center); draw_set_valign(fa_bottom);
+    draw_set_font(fnt_ui_small); draw_set_color(make_color_rgb(150, 160, 190));
+    draw_text((_x1 + _x2) / 2, _y2 - 30, "W/S: Rows     Q/E: Tab     "
+        + (_at_hub ? "Enter: Act     " : "(actions at the hub)     ") + "J / Esc: Close");
+    draw_set_halign(fa_left); draw_set_valign(fa_top);
+    draw_set_alpha(1.0); draw_set_color(c_white); draw_set_font(-1);
+}
+
 // Archetype accent colour (Boon gold / Combatant red / Guardian green) for chips & bars.
 function pet_arch_color(archetype) {
     switch (archetype) {
@@ -1254,7 +1538,7 @@ function ui_draw_bairc_screen() {
     draw_set_font(fnt_ui_small);
     var _stb_ovf = pet_stable_overflow();
     draw_set_color(_stb_ovf > 0 ? make_color_rgb(230, 160, 90) : make_color_rgb(150, 200, 140));
-    draw_text(_list_x, _list_y - 36, "STABLE  (" + string(pet_stabled_count()) + "/" + string(PET_STABLE_CAPACITY) + ")"
+    draw_text(_list_x, _list_y - 36, "STABLE  (" + string(pet_stabled_count()) + "/" + string(pet_stable_capacity()) + ")"
         + (_stb_ovf > 0 ? "  -  crowded" : ""));
 
     if (_n == 0) {
@@ -7863,7 +8147,8 @@ function ui_draw_trainer_statpick() {
     draw_text_ext(_px + _pw / 2, _py + 18, "Raise " + _gc.trainer_statpick_trait + " potency", -1, _hw);
     draw_set_font(fnt_ui_small);
     draw_set_color(c_ltgray);
-    draw_text_ext(_px + _pw / 2, _py + 66, "Spend 5 points total - use - / + on any stats", -1, _hw);
+    draw_text_ext(_px + _pw / 2, _py + 66, "Spend " + string(vex_potency_points()) + " points total - use - / + on any stats"
+        + (vex_potency_points() < 5 ? "  (Vex's favor: one less)" : ""), -1, _hw);
     draw_set_halign(fa_left);
 
     // Stat rows: name - (have N) - [-] alloc [+]
@@ -7912,8 +8197,8 @@ function ui_draw_trainer_statpick() {
     // Running total.
     draw_set_halign(fa_center);
     draw_set_font(fnt_ui);
-    draw_set_color(_total == 5 ? make_color_rgb(120, 210, 130) : c_yellow);
-    draw_text(_px + _pw / 2, _y0 + 6 * _rh + 9, "Total: " + string(_total) + " / 5");
+    draw_set_color(_total == vex_potency_points() ? make_color_rgb(120, 210, 130) : c_yellow);
+    draw_text(_px + _pw / 2, _y0 + 6 * _rh + 9, "Total: " + string(_total) + " / " + string(vex_potency_points()));
     draw_set_halign(fa_left);
 
     // Footer / confirm
@@ -7923,7 +8208,7 @@ function ui_draw_trainer_statpick() {
         draw_set_alpha(1.0);
         draw_set_halign(fa_center);
         draw_set_font(fnt_ui_small); draw_set_color(c_white);
-        draw_text_ext(_px + _pw / 2, _py + _ph - 96, "Sacrifice these 5 points permanently? Cannot be undone.", -1, _pw - 60);
+        draw_text_ext(_px + _pw / 2, _py + _ph - 96, "Sacrifice these " + string(vex_potency_points()) + " points permanently? Cannot be undone.", -1, _pw - 60);
         draw_set_color(c_ltgray);
         draw_text_outline(_px + _pw / 2, _py + _ph - 36, "Enter: confirm     Esc: back");
     } else {
@@ -8538,7 +8823,7 @@ function ui_draw_sable_screen() {
         }
     } else if (_gc.sable_tab == 1) {
         // -------- BREW TAB --------
-        var _brew = sable_brew_catalog();
+        var _brew = sable_brew_catalog_priced();
         var _slots_used = variable_global_exists("consumable_inventory") ? array_length(global.consumable_inventory) : 0;
         draw_set_color(make_color_rgb(140, 160, 145));
         draw_text(_list_x, 225, "Brew a potion  (you hold " + string(_slots_used) + " consumables):");
@@ -8784,8 +9069,9 @@ function ui_draw_vael_screen() {
         } else if (!_unlocked) {
             draw_set_color(make_color_rgb(150, 110, 120)); draw_text(1145, _ty, "LOCKED");
         } else {
-            draw_set_color((global.gold >= _sk.gold) ? make_color_rgb(230, 210, 150) : make_color_rgb(170, 120, 120));
-            draw_text(1145, _ty, string(_sk.gold) + "g");
+            var _vdisc = floor(_sk.gold * affinity_discount_mult("vael"));   // Friend perk: 15% off
+            draw_set_color((global.gold >= _vdisc) ? make_color_rgb(230, 210, 150) : make_color_rgb(170, 120, 120));
+            draw_text(1145, _ty, string(_vdisc) + "g");
         }
         draw_set_halign(fa_left);
     }

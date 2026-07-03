@@ -482,6 +482,18 @@ if (selected_npc < array_length(_aff_ids)) {
     }
 }
 
+// Quest affordance (Phase 4a): the row NPC has a startable / turn-in-ready quest.
+var _dq_ids = affinity_npc_ids();
+if (selected_npc < array_length(_dq_ids)) {
+    var _dq_qid = quest_for_npc(_dq_ids[selected_npc]);
+    if (_dq_qid != "") {
+        draw_set_halign(fa_right);
+        draw_set_color(quest_is_complete(_dq_qid) ? make_color_rgb(120, 220, 140) : make_color_rgb(228, 205, 140));
+        draw_text(_dp_x + _dp_w - 24, _ddy + 138, quest_is_complete(_dq_qid) ? "[Q] Turn in quest" : "[Q] Quest available");
+        draw_set_halign(fa_left);
+    }
+}
+
 // Interaction hint or unlock condition
 if (npc_unlocked[selected_npc]) {
     draw_set_color(c_lime);
@@ -633,7 +645,16 @@ draw_set_halign(fa_center);
 draw_set_valign(fa_bottom);
 draw_set_font(fnt_ui_small);
 draw_set_color(c_gray);
-draw_text_outline(GUI_CX, 1073, "W/S: Navigate   Enter / Space: Interact   H: History   T: Stash   G: Item Codex   P: Upgrade   O: Settings");
+var _foot_txt = "W/S: Navigate   Enter / Space: Interact   J: Journal   H: History   T: Stash   G: Item Codex   P: Upgrade   O: Settings";
+draw_text_outline(GUI_CX, 1073, _foot_txt);
+// Amber pulse dot beside "J: Journal" while anything in the Journal is unread.
+if (journal_any_badge()) {
+    var _jb_x = GUI_CX - string_width(_foot_txt) / 2 + string_width("W/S: Navigate   Enter / Space: Interact   J: Journal") + 12;
+    draw_set_alpha(0.55 + 0.35 * sin(current_time / 300));
+    draw_set_color(make_color_rgb(235, 180, 80));
+    draw_circle(_jb_x, 1060, 6, false);
+    draw_set_alpha(1.0);
+}
 
 // Reset draw state - font back to default so the not-yet-rescaled overlays below
 // (dungeon-select / history / perm-alloc / codex / loadout) keep their look.
@@ -2049,6 +2070,7 @@ ui_draw_bairc_intro();      // first-talk dialogue popup (before the station ope
 ui_draw_bairc_lore();       // queued one-time lore fragment, over the garden (design §10)
 ui_draw_bairc_capstone();   // raised-Adult capstone pick modal, over the Bairc screen
 hatch_cutscene_draw();   // full-screen egg-hatch sequence, over the Bairc screen
+ui_draw_journal();       // J-key Journal overlay (Phase 4a) - over hub content, under pause
 ui_draw_character_menu();
 
 // Comparison panel - drawn above all overlays

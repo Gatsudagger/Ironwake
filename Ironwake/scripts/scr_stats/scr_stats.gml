@@ -33,14 +33,32 @@ function restock_shops() {
     global.dorn_stock = [];
     var _dorn_awk     = highest_awakening_unlocked();
     var _dorn_weights = drop_weights("dorn", _dorn_awk);
-    var _dorn_count   = 3 + (_dorn_awk >= 2 ? 1 : 0) + (_dorn_awk >= 4 ? 1 : 0);
+    var _dorn_count   = 3 + (_dorn_awk >= 2 ? 1 : 0) + (_dorn_awk >= 4 ? 1 : 0)
+                      + (affinity_at_least("dorn", 3) ? 1 : 0);   // Companion perk: +1 stock slot
+    var _dorn_disc    = affinity_discount_mult("dorn");           // Friend perk: 10% off (baked at restock)
     repeat (_dorn_count) {
         var _di     = drop_equipment(_dorn_weights, false);
         // Rare/Epic+ gear is a premium buy - roughly double the markup so a strong
         // piece is a real gold sink, not a cheap upgrade. (Task: Dorn rare/epic cost)
         var _dmarkup = (_di.rarity >= 2) ? 3.2 : 1.6;
-        var _dprice  = max(1, floor(_di.gold_value * _dmarkup));
+        var _dprice  = max(1, floor(_di.gold_value * _dmarkup * _dorn_disc));
         array_push(global.dorn_stock, { item: _di, price: _dprice, sold: false });
+    }
+    // Dorn Lover perk (Master's Pick): he always holds back something Rare or better.
+    if (affinity_at_least("dorn", 4)) {
+        var _has_rare = false;
+        for (var _ds = 0; _ds < array_length(global.dorn_stock); _ds++)
+            if (global.dorn_stock[_ds].item.rarity >= 2) { _has_rare = true; break; }
+        if (!_has_rare) {
+            repeat (12) {   // bounded re-rolls; weights make rare+ likely well within this
+                var _dp = drop_equipment(_dorn_weights, false);
+                if (_dp.rarity >= 2) {
+                    var _dpp = max(1, floor(_dp.gold_value * 3.2 * _dorn_disc));
+                    global.dorn_stock[0] = { item: _dp, price: _dpp, sold: false };
+                    break;
+                }
+            }
+        }
     }
 }
 
@@ -388,6 +406,9 @@ function end_run(result) {
     global.run_curses          = [];   // curses also last one run only (devil's bargain)
     potion_buffs_clear();              // Goldfinger / Faerie's Tear end with the run (incl. death)
     affinity_reset_run_gain();         // clear the per-run affinity grind cap (NOT score/tier)
+    // Phase 4a affinity perks that recharge per run:
+    global.sable_free_brew   = affinity_at_least("sable", 4);   // Lover: first brew after a run is free
+    global.bairc_mend_pending = affinity_at_least("bairc", 3);  // Companion: he mends 1 injury tier at the hub
 
     // §6 variety: re-roll the floor seed for the NEXT run. Previously run_seed was
     // set once per session (obj_floor_controller Create) and never changed, so every
@@ -2685,7 +2706,8 @@ function maren_combine_rune(id, tier) {
 
 // Flat gold charged to socket OR unsocket a rune (small service fee). Unlike the
 // forge costs this is a fixed 30g, not CHA-discounted, so the prompt is predictable.
-function rune_socket_cost() { return 30; }
+// Maren affinity perk: fee halved at Friend, waived at Companion (maren_fee_mult).
+function rune_socket_cost() { return floor(30 * maren_fee_mult()); }
 
 // Split cost (gold only - split RETURNS dust). Gold is CHA-discounted.
 function rune_split_cost() { return { gold: cha_price(20) }; }
@@ -2770,6 +2792,7 @@ function sable_salvage_gear_at(combined_index) {
     if (combined_index < 0 || combined_index >= array_length(_list)) return -1;
     var _e    = _list[combined_index];
     var _dust = sable_salvage_gear_dust(_e.item.rarity);
+    if (affinity_at_least("sable", 2)) _dust = round(_dust * 1.10);   // Friend perk: +10% dust
     if (!variable_global_exists("rune_dust")) global.rune_dust = 0;
     global.rune_dust += _dust;
     if (_e.source == "carried") array_delete(global.carried_items, _e.index, 1);
@@ -2784,6 +2807,7 @@ function sable_salvage_rune_at(rune_inv_index) {
     if (rune_inv_index < 0 || rune_inv_index >= array_length(global.rune_inventory)) return -1;
     var _r    = global.rune_inventory[rune_inv_index];
     var _dust = sable_salvage_rune_dust(_r.tier);
+    if (affinity_at_least("sable", 2)) _dust = round(_dust * 1.10);   // Friend perk: +10% dust
     if (!variable_global_exists("rune_dust")) global.rune_dust = 0;
     global.rune_dust += _dust;
     array_delete(global.rune_inventory, rune_inv_index, 1);
@@ -2804,9 +2828,22 @@ function sable_brew_catalog() {
         { id:"goldfinger", name:"Goldfinger Elixir", effect:"gold_find_pot", value:7, desc:"Gold drops +7% until 2 bosses are slain",       gold_val:65, dust:30, gold:cha_price(45) },
         { id:"faerie",     name:"Faerie's Tear",     effect:"loot_find_pot", value:8, desc:"Loot drop chance +8% until 2 bosses are slain", gold_val:65, dust:35, gold:cha_price(50) },
     ];
+    // (Sable Companion perk applies below via the catalog wrapper.)
+}
+// Catalog with the Companion-perk discount applied (single source for display + charge).
+function sable_brew_catalog_priced() {
+    var _c = sable_brew_catalog();
+    var _m = sable_cost_mult();
+    if (_m < 1.0) {
+        for (var _i = 0; _i < array_length(_c); _i++) {
+            _c[_i].gold = floor(_c[_i].gold * _m);
+            _c[_i].dust = floor(_c[_i].dust * _m);
+        }
+    }
+    return _c;
 }
 function sable_brew_get(id) {
-    var _c = sable_brew_catalog();
+    var _c = sable_brew_catalog_priced();
     for (var _i = 0; _i < array_length(_c); _i++) if (_c[_i].id == id) return _c[_i];
     return undefined;
 }
@@ -2815,10 +2852,17 @@ function sable_brew(id) {
     var _b = sable_brew_get(id);
     if (_b == undefined) return "Unknown recipe.";
     if (!variable_global_exists("consumable_inventory")) global.consumable_inventory = [];
-    if (global.gold < _b.gold) return "Need " + string(_b.gold) + "g.";
-    if (!variable_global_exists("rune_dust") || global.rune_dust < _b.dust) return "Need " + string(_b.dust) + " dust.";
-    global.gold      -= _b.gold;
-    global.rune_dust -= _b.dust;
+    // Sable Lover perk (Private Reserve): the first brew after each run is on the house.
+    var _free = affinity_at_least("sable", 4)
+        && variable_global_exists("sable_free_brew") && global.sable_free_brew;
+    if (!_free) {
+        if (global.gold < _b.gold) return "Need " + string(_b.gold) + "g.";
+        if (!variable_global_exists("rune_dust") || global.rune_dust < _b.dust) return "Need " + string(_b.dust) + " dust.";
+        global.gold      -= _b.gold;
+        global.rune_dust -= _b.dust;
+    } else {
+        global.sable_free_brew = false;
+    }
     array_push(global.consumable_inventory, create_consumable(_b.name, _b.effect, _b.value, _b.desc, _b.gold_val));
     save_game();
     return "";
@@ -2837,7 +2881,10 @@ function sable_upgrade_map() {
         { from:"Warden's Tonic",        to:"Phoenix Tonic" },
     ];
 }
-function sable_upgrade_cost() { return { gold: cha_price(20), dust: 10 }; }
+function sable_upgrade_cost() {
+    var _m = sable_cost_mult();   // Sable Companion perk: -20%
+    return { gold: floor(cha_price(20) * _m), dust: floor(10 * _m) };
+}
 
 // Standard consumables held 3+ times that have an upgrade target. [{from,to,count}].
 function sable_upgrade_groups() {
@@ -2988,8 +3035,9 @@ function vael_buy_skin(id) {
     if (_sk == undefined) return "Unknown skin.";
     if (vael_skin_owned(id)) return "Already owned.";
     if (!vael_skin_unlocked(_sk)) return "Locked - " + vael_skin_req_text(_sk);
-    if (global.gold < _sk.gold) return "Need " + string(_sk.gold) + "g.";
-    global.gold -= _sk.gold;
+    var _vprice = floor(_sk.gold * affinity_discount_mult("vael"));   // Friend perk: 15% off
+    if (global.gold < _vprice) return "Need " + string(_vprice) + "g.";
+    global.gold -= _vprice;
     if (!variable_global_exists("unlocked_skins")) global.unlocked_skins = [];
     array_push(global.unlocked_skins, id);
     global.player_skin = id;   // auto-equip
@@ -3339,7 +3387,7 @@ function curse_has_bonus_drops()      { return curse_active("devilspact"); }    
 
 // Stable NPC ids (index-independent so roster growth - e.g. Bairc - can't shift keys).
 function affinity_npc_ids() {
-    return ["dorn", "sable", "maren", "vex", "petra", "vael"];
+    return ["dorn", "sable", "maren", "vex", "petra", "vael", "bairc"];   // bairc wired Phase 4a
 }
 
 // Cumulative score needed to REACH each tier (index = tier). TUNABLE.
@@ -3467,8 +3515,11 @@ function affinity_refresh_gate(id) {
             _e.tier = 1;                 // Stranger -> Acquaintance: auto, no confirm
             global.heart_pending = 1;    // tier-up heart burst (blue)
             _e.gate_ready = false;
+            journal_badge_npc(id);       // Journal: relationship moved (Phase 4a)
+            ledger_add(id, "milestone", "We're past nodding terms now - acquaintances.");
             affinity_refresh_gate(id);   // score may already clear the next gate
         } else {
+            if (!_e.gate_ready) journal_badge_npc(id);   // newly ready -> badge once
             _e.gate_ready = true;        // awaits the deepen-bond confirm
         }
     } else {
@@ -3489,6 +3540,7 @@ function affinity_add(id, amount) {
     _e.score    += _gain;
     _e.run_gain += _gain;
     affinity_refresh_gate(id);
+    quest_tick("use_function", id, 1);   // quest objective: N interactions with this NPC
 }
 
 // Cross a ready gate (the one-click "deepen bond" confirm - placeholder for the
@@ -3509,6 +3561,8 @@ function affinity_try_advance(id) {
 
     _e.tier = _target;
     global.heart_pending = _target;     // tier-up heart burst (blue tiers 1-3, red Lover)
+    journal_badge_npc(id);              // Journal: tier crossed (Phase 4a)
+    ledger_add(id, "milestone", "We grew closer - " + affinity_tier_name_for(_target) + " now.");
     affinity_refresh_gate(id);          // re-evaluate (score may reach the next gate)
     return "";
 }
@@ -3523,6 +3577,270 @@ function affinity_reset_run_gain() {
         }
     }
 }
+
+// =============================================================================
+// PHASE 4a - QUEST DATA LAYER + JOURNAL (PHASE4A_SPEC.md). The quest layer is the
+// plumbing the Journal surfaces; gate quests swap in at 4c (gates stay one-click).
+// State model: quest DEFINITIONS live in quest_catalog() (code-authored); only
+// {id, status, progress} persists per save (global.quests). Objective templates:
+// clear_floors / kill_family / boss_kill / pet_stage / socket_rune / use_function.
+// =============================================================================
+
+// The authored quest set. 4a ships 3 placeholder starter hunts to prove the loop.
+function quest_catalog() {
+    return [
+        { id:"hunt_dorn_floors", kind:"hunt", npc:"dorn", name:"The Warden's Due",
+          obj_type:"clear_floors", obj_target:3, obj_param:"",
+          reward:{ gold:150, feed:"", feed_n:0, rune_id:"", rune_tier:0 },
+          flavor:"\"Vault won't clear itself. Bring me proof you've been below - three floors' worth - and I'll make it worth your time.\"",
+          objective:"Clear 3 dungeon floors" },
+        { id:"hunt_bairc_adolescent", kind:"hunt", npc:"bairc", name:"A Good Start",
+          obj_type:"pet_stage", obj_target:PET_STAGE_ADOLESCENT, obj_param:"",
+          reward:{ gold:0, feed:"prime", feed_n:2, rune_id:"", rune_tier:0 },
+          flavor:"\"...raise one. Just to Adolescent. You'll see why I do this.\"",
+          objective:"Raise any creature to Adolescent" },
+        { id:"hunt_maren_sockets", kind:"hunt", npc:"maren", name:"Proof of Craft",
+          obj_type:"socket_rune", obj_target:2, obj_param:"",
+          reward:{ gold:0, feed:"", feed_n:0, rune_id:"vitality", rune_tier:1 },
+          flavor:"\"Runes remember the hands that set them. Set two, and I'll trust yours with something better.\"",
+          objective:"Socket 2 runes with Maren" },
+    ];
+}
+
+function quest_def(id) {
+    var _c = quest_catalog();
+    for (var _i = 0; _i < array_length(_c); _i++) if (_c[_i].id == id) return _c[_i];
+    return undefined;
+}
+
+// Guarantee global.quests holds one state row per catalog entry (append-migrates when
+// the catalog grows; orphaned rows from removed quests are left inert). Idempotent.
+function quest_state_ensure() {
+    if (!variable_global_exists("quests") || !is_array(global.quests)) global.quests = [];
+    var _c = quest_catalog();
+    for (var _i = 0; _i < array_length(_c); _i++) {
+        var _found = false;
+        for (var _j = 0; _j < array_length(global.quests); _j++)
+            if (global.quests[_j].id == _c[_i].id) { _found = true; break; }
+        if (!_found) array_push(global.quests, { id:_c[_i].id, status:"available", progress:0 });
+    }
+    return global.quests;
+}
+
+function quest_state(id) {
+    var _q = quest_state_ensure();
+    for (var _i = 0; _i < array_length(_q); _i++) if (_q[_i].id == id) return _q[_i];
+    return undefined;
+}
+
+// True when an ACTIVE quest has met its target (awaiting hub turn-in).
+function quest_is_complete(id) {
+    var _s = quest_state(id); var _d = quest_def(id);
+    if (_s == undefined || _d == undefined) return false;
+    return _s.status == "active" && _s.progress >= _d.obj_target;
+}
+
+// Advance every ACTIVE quest matching this objective type (+ param, when the quest
+// specifies one). pet_stage is level-reached (max), the rest are counters (sum).
+// Newly-completed quests badge their Journal entry + queue a hub notice.
+function quest_tick(obj_type, param, amount) {
+    var _q = quest_state_ensure();
+    for (var _i = 0; _i < array_length(_q); _i++) {
+        var _s = _q[_i];
+        if (_s.status != "active") continue;
+        var _d = quest_def(_s.id);
+        if (_d == undefined || _d.obj_type != obj_type) continue;
+        if (_d.obj_param != "" && _d.obj_param != param) continue;
+        var _was = _s.progress;
+        if (obj_type == "pet_stage") _s.progress = max(_s.progress, min(amount, _d.obj_target));
+        else                         _s.progress = min(_d.obj_target, _s.progress + amount);
+        if (_s.progress != _was) {
+            journal_badge_quest(_s.id);
+            if (_s.progress >= _d.obj_target && variable_global_exists("pet_find_notice")) {
+                var _qmsg = "Quest complete: " + _d.name + " - return to " + npc_display_name(_d.npc) + ".";
+                global.pet_find_notice = (global.pet_find_notice != "")
+                    ? (global.pet_find_notice + "   " + _qmsg) : _qmsg;
+            }
+        }
+    }
+}
+
+// Start an AVAILABLE quest. Hub-only (caller enforces the room). "" ok / reason.
+function quest_start(id) {
+    var _s = quest_state(id);
+    if (_s == undefined)          return "Unknown quest.";
+    if (_s.status == "active")    return "Already underway.";
+    if (_s.status == "done")      return "Already done.";
+    _s.status = "active";
+    journal_badge_quest(id);
+    return "";
+}
+
+// Turn in a completed quest at the hub: grants the reward, logs the ledger entry.
+// "" ok / reason. Caller saves.
+function quest_turn_in(id) {
+    var _s = quest_state(id); var _d = quest_def(id);
+    if (_s == undefined || _d == undefined) return "Unknown quest.";
+    if (_s.status != "active")              return "Not underway.";
+    if (_s.progress < _d.obj_target)        return "Not finished yet.";
+    _s.status = "done";
+    var _r = _d.reward;
+    var _parts = [];
+    if (_r.gold > 0) { global.gold += _r.gold; array_push(_parts, string(_r.gold) + "g"); }
+    if (_r.feed != "" && _r.feed_n > 0) {
+        var _fd = pet_feed_get(_r.feed);
+        variable_struct_set(pet_feed_pouch(), _r.feed, pet_feed_pouch_count(_r.feed) + _r.feed_n);
+        array_push(_parts, string(_r.feed_n) + "x " + ((_fd != undefined) ? _fd.name : _r.feed));
+    }
+    if (_r.rune_id != "" && _r.rune_tier > 0) {
+        if (!variable_global_exists("rune_inventory")) global.rune_inventory = [];
+        var _rn = rune_make(_r.rune_id, _r.rune_tier);
+        array_push(global.rune_inventory, _rn);
+        array_push(_parts, _rn.name + " rune");
+    }
+    var _rtxt = "their thanks";
+    if (array_length(_parts) > 0) {
+        _rtxt = _parts[0];
+        for (var _pi = 1; _pi < array_length(_parts); _pi++) _rtxt += ", " + _parts[_pi];
+    }
+    ledger_add(_d.npc, "quest", "Finished \"" + _d.name + "\" - earned " + _rtxt + ".");
+    journal_badge_npc(_d.npc);
+    journal_badge_quest(id);
+    return "";
+}
+
+// Quests grouped for the Journal Quests tab: {active:[], available:[], done:[]} of ids.
+function quest_groups() {
+    var _q = quest_state_ensure();
+    var _g = { active: [], available: [], done: [] };
+    for (var _i = 0; _i < array_length(_q); _i++) {
+        var _s = _q[_i];
+        if (quest_def(_s.id) == undefined) continue;   // orphaned row
+        if      (_s.status == "active")    array_push(_g.active, _s.id);
+        else if (_s.status == "available") array_push(_g.available, _s.id);
+        else                               array_push(_g.done, _s.id);
+    }
+    return _g;
+}
+// The NPC's turn-in-ready / startable quest for the hub-panel [Q] affordance.
+function quest_for_npc(npc_id) {
+    var _q = quest_state_ensure();
+    var _avail = "";
+    for (var _i = 0; _i < array_length(_q); _i++) {
+        var _d = quest_def(_q[_i].id);
+        if (_d == undefined || _d.npc != npc_id) continue;
+        if (quest_is_complete(_q[_i].id)) return _q[_i].id;          // turn-in beats start
+        if (_q[_i].status == "available" && _avail == "") _avail = _q[_i].id;
+    }
+    return _avail;
+}
+
+// --- Journal badges (dirty flags; cleared when the player VIEWS the entry) ---------
+function journal_badges() {
+    if (!variable_global_exists("journal_badges") || !is_struct(global.journal_badges))
+        global.journal_badges = { npcs: {}, quests: {} };
+    return global.journal_badges;
+}
+function journal_badge_npc(id)      { variable_struct_set(journal_badges().npcs, id, true); }
+function journal_badge_quest(id)    { variable_struct_set(journal_badges().quests, id, true); }
+function journal_npc_badged(id)     { var _b = journal_badges().npcs;   return variable_struct_exists(_b, id)   && variable_struct_get(_b, id); }
+function journal_quest_badged(id)   { var _b = journal_badges().quests; return variable_struct_exists(_b, id) && variable_struct_get(_b, id); }
+function journal_clear_npc(id)      { variable_struct_set(journal_badges().npcs, id, false); }
+function journal_clear_quest(id)    { variable_struct_set(journal_badges().quests, id, false); }
+function journal_any_badge() {
+    var _b = journal_badges();
+    var _nk = variable_struct_get_names(_b.npcs);
+    for (var _i = 0; _i < array_length(_nk); _i++) if (variable_struct_get(_b.npcs, _nk[_i])) return true;
+    var _qk = variable_struct_get_names(_b.quests);
+    for (var _j = 0; _j < array_length(_qk); _j++) if (variable_struct_get(_b.quests, _qk[_j])) return true;
+    return false;
+}
+
+// --- Interaction ledger (per-NPC journal sections; 4a logs tier crossings + quest
+// turn-ins, gifts append in 4b). Entries: { kind, text, run } newest LAST. ----------
+function npc_ledger(id) {
+    if (!variable_global_exists("npc_ledger") || !is_struct(global.npc_ledger)) global.npc_ledger = {};
+    if (!variable_struct_exists(global.npc_ledger, id)) variable_struct_set(global.npc_ledger, id, []);
+    return variable_struct_get(global.npc_ledger, id);
+}
+function ledger_add(id, kind, text) {
+    var _l = npc_ledger(id);
+    array_push(_l, { kind: kind, text: text, run: variable_global_exists("run_count") ? global.run_count : 0 });
+    if (array_length(_l) > 30) array_delete(_l, 0, array_length(_l) - 30);   // keep it bounded
+}
+
+// --- Journal display helpers -------------------------------------------------------
+function npc_display_name(id) {
+    switch (id) {
+        case "dorn":  return "Dorn";
+        case "sable": return "Sable";
+        case "maren": return "Maren";
+        case "vex":   return "Vex";
+        case "petra": return "Petra";
+        case "vael":  return "Vael";
+        case "bairc": return "Bairc";
+    }
+    return id;
+}
+// Longer in-voice journal blurb per NPC (the profile pane's lore paragraph).
+function journal_npc_blurb(id) {
+    switch (id) {
+        case "dorn":  return "The blacksmith. Speaks in grunts and prices, but every piece he sells has outlived its last three owners. He respects people who come back from below.";
+        case "sable": return "The alchemist. Cheerfully melts treasure into dust and dust into miracles. I suspect she'd salvage me if I stood still long enough.";
+        case "maren": return "The runesmith. Face half-wrapped, eyes that read your gear before you speak. The runes hum differently when she touches them.";
+        case "vex":   return "The trainer. Blindfolded, and still counts every mistake in my footwork. Pays out strength for coin, and doesn't flatter.";
+        case "petra": return "The merchant. Knows what everything is worth, including favors. Her ledger has pages she shows no one - yet.";
+        case "vael":  return "The aesthete. Needles in her hair and opinions about my silhouette. Says the way you look coming out of the dark matters more than what you carried up.";
+        case "bairc": return "The creature keeper. The town keeps its distance from him; the creatures don't. He remembers every animal anyone has ever brought him.";
+    }
+    return "";
+}
+// True when this NPC counts as MET for the Journal list.
+function journal_npc_met(id) {
+    if (id == "bairc") return bairc_active();
+    var _e = affinity_entry(id);
+    return (_e != undefined) && (_e.score > 0 || _e.tier > 0);
+}
+// Met NPC ids in roster order (the Relationships tab's left list).
+function journal_met_ids() {
+    var _out = []; var _ids = affinity_npc_ids();
+    for (var _i = 0; _i < array_length(_ids); _i++)
+        if (journal_npc_met(_ids[_i])) array_push(_out, _ids[_i]);
+    return _out;
+}
+// Quest ids flattened in display order: Active, then Available, then Completed
+// (the Quests tab's left list; mirror this order in the draw).
+function journal_quest_rows() {
+    var _g = quest_groups();
+    var _out = [];
+    for (var _a = 0; _a < array_length(_g.active); _a++)    array_push(_out, _g.active[_a]);
+    for (var _v = 0; _v < array_length(_g.available); _v++) array_push(_out, _g.available[_v]);
+    for (var _d = 0; _d < array_length(_g.done); _d++)      array_push(_out, _g.done[_d]);
+    return _out;
+}
+
+// --- Phase 4a perk read helpers (PHASE4A_SPEC.md §5, M-approved) --------------------
+// Generic Friend-discount multiplier (Dorn gear / Vex upgrades 10%, Vael skins 15%).
+function affinity_discount_mult(id) {
+    if (!affinity_at_least(id, 2)) return 1.0;
+    return (id == "vael") ? 0.85 : 0.90;
+}
+// Bairc Stranger early-warmth: pet-feed lines at Petra cost 10% less once he's awake.
+function bairc_feed_price_mult() { return bairc_active() ? 0.90 : 1.0; }
+// Bairc Friend: +1 stable capacity. (Replaces raw PET_STABLE_CAPACITY reads.)
+function pet_stable_capacity() { return PET_STABLE_CAPACITY + (affinity_at_least("bairc", 2) ? 1 : 0); }
+// Sable Companion: brews/upgrades cost 20% less (gold AND dust).
+function sable_cost_mult() { return affinity_at_least("sable", 3) ? 0.80 : 1.0; }
+// Maren: socket fee halved at Friend, waived at Companion.
+function maren_fee_mult() {
+    if (affinity_at_least("maren", 3)) return 0;
+    if (affinity_at_least("maren", 2)) return 0.5;
+    return 1.0;
+}
+// Vex Friend: 10% off his gold prices (applied on top of the CHA discount).
+function vex_price(g) { return floor(g * affinity_discount_mult("vex")); }
+// Vex Companion: a potency rank sacrifices 4 stat points instead of 5.
+function vex_potency_points() { return affinity_at_least("vex", 3) ? 4 : 5; }
 
 // =============================================================================
 // PETRA TREASURE TRADER (Phase 1). Async gear-laundering: give 3 same-tier items,
@@ -3746,6 +4064,9 @@ function floor_clear_credit(awk) {
     }
     // Tick down the exotic find-buff potions (Goldfinger / Faerie's Tear): one boss slain.
     potion_buffs_on_boss_clear();
+    // Phase 4a quests: a boss-clear is one cleared floor + one boss kill.
+    quest_tick("clear_floors", "", 1);
+    quest_tick("boss_kill", "", 1);
     // Note: pet Stage growth is banked per-RUN (at end_run via pet_run_complete), not
     // per-floor - "complete a run" is the gate (design §5), so nothing pet-Stage here.
 }
@@ -3975,12 +4296,13 @@ function pet_stabled_count() {
     return _n;
 }
 function pet_stable_overflow() {
-    return max(0, pet_stabled_count() - PET_STABLE_CAPACITY);
+    return max(0, pet_stabled_count() - pet_stable_capacity());   // capacity incl. Bairc Friend perk
 }
 // Crowding multiplier for feed applied to THIS pet (the active companion always eats
 // at 100% - it lives at your side, not in the stable).
 function pet_feed_crowd_mult(pet) {
     if (is_struct(pet) && pet_active() == pet) return 1.0;
+    if (affinity_at_least("bairc", 4)) return 1.0;   // Lover perk: his full attention - crowding never bites
     switch (pet_stable_overflow()) {
         case 0: return 1.0;
         case 1: return 0.75;
@@ -4040,7 +4362,8 @@ function petra_buy_list() {
     var _feeds = pet_feed_shop_list();
     for (var _f = 0; _f < array_length(_feeds); _f++) {
         var _fd = _feeds[_f];
-        array_push(_list, { kind:"feed", it:_fd, price:cha_price(_fd.gold), special:false });
+        // Bairc Stranger perk (early warmth): feed costs 10% less once he's awake.
+        array_push(_list, { kind:"feed", it:_fd, price:floor(cha_price(_fd.gold) * bairc_feed_price_mult()), special:false });
     }
     return _list;
 }
@@ -4089,6 +4412,7 @@ function pet_run_complete(result) {
             if (_p.raised) _p.splash_pending = true;
             else           pet_assign_splash(_p);
         }
+        quest_tick("pet_stage", "", _p.stage);                 // Phase 4a quest objective
         return _p;                                             // evolved this run
     }
     return undefined;
