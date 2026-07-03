@@ -1026,7 +1026,9 @@ function ui_draw_bairc_capstone() {
     var _n_pets = pet_count();
     var _pet    = (_n_pets > 0) ? global.pet_roster[clamp(_gc.bairc_cursor, 0, _n_pets - 1)] : undefined;
     if (!is_struct(_pet)) return;
-    var _pool = pet_archetype_capstones(_pet.archetype);
+    // Mode: Stage-3 capstone pick, or the Stage-4 Awakened SPLASH pick (off-archetype pool).
+    var _splash = variable_instance_exists(_gc, "bairc_capstone_mode") && _gc.bairc_capstone_mode == "splash";
+    var _pool = _splash ? pet_splash_pool(_pet.archetype) : pet_archetype_capstones(_pet.archetype);
     var _np   = array_length(_pool);
     if (_np == 0) return;
     var _sel = clamp(_gc.bairc_capstone_sel, 0, _np - 1);
@@ -1044,10 +1046,14 @@ function ui_draw_bairc_capstone() {
     draw_set_halign(fa_center); draw_set_valign(fa_top);
     draw_set_font(fnt_ui_title);
     draw_set_color(make_color_rgb(230, 210, 150));
-    draw_text((_px1 + _px2) / 2, _py1 + 34, "Choose " + _pet.name + "'s Gift");
+    draw_text((_px1 + _px2) / 2, _py1 + 34, _splash
+        ? ("Choose " + _pet.name + "'s Awakened Splash")
+        : ("Choose " + _pet.name + "'s Gift"));
     draw_set_font(fnt_ui_small);
     draw_set_color(make_color_rgb(150, 160, 185));
-    draw_text((_px1 + _px2) / 2, _py1 + 92, "A permanent " + pet_archetype_name(_pet.archetype) + " capstone - choose well.");
+    draw_text((_px1 + _px2) / 2, _py1 + 92, _splash
+        ? ("The crossing: one permanent touch of ANOTHER archetype - choose well.")
+        : ("A permanent " + pet_archetype_name(_pet.archetype) + " capstone - choose well."));
 
     // Cards.
     var _cy1 = _py1 + 150, _cy2 = _py2 - 130;
@@ -1397,6 +1403,14 @@ function ui_draw_bairc_screen() {
             var _st_h  = [78, 90, 100, 112, 116];   // station display height by stage 0-4
             var _th    = _st_h[clamp(_p.stage, 0, 4)] * pet_stage_scale(_p);
             var _psc   = _th / max(1, sprite_get_height(_psp));
+            // Awakened aura: pulsing archetype-tinted halo behind the station sprite.
+            var _paura = pet_aura_color(_p);
+            if (_paura >= 0) {
+                var _pap = 0.20 + 0.10 * sin(current_time / 340);
+                gpu_set_blendmode(bm_add);
+                draw_sprite_ext(_psp, pet_anim_frame(_psp), _spx, _spb + 2, _psc * 1.08, _psc * 1.08, 0, _paura, _pap);
+                gpu_set_blendmode(bm_normal);
+            }
             draw_sprite_ext(_psp, pet_anim_frame(_psp), _spx, _spb, _psc, _psc, 0, c_white, 1);
         } else {
             draw_set_color(make_color_rgb(28, 32, 44));
@@ -1427,13 +1441,17 @@ function ui_draw_bairc_screen() {
             // Growth row + ticked bar (or the grown/READY status).
             if (_p.stage >= pet_max_stage()) {
                 draw_set_color(make_color_rgb(210, 180, 120));
-                draw_text(_dx, _dy + 168, "Fully grown (Adult).");
+                draw_text(_dx, _dy + 168, "Fully grown (Awakened).");
             } else {
                 var _need  = pet_growth_needed(_p.stage);
                 var _ready = pet_growth_ready(_p);
+                // The Adult -> Awakened crossing has its own gate (full clear @ A5, Soul-bound).
+                var _ready_txt = (_p.stage == PET_STAGE_ADULT)
+                    ? "READY - full-clear at Awakening A5, Soul-bound, to Awaken"
+                    : ("READY - complete a run to reach " + pet_stage_name(_p.stage + 1));
                 draw_set_color(_ready ? make_color_rgb(120, 210, 150) : make_color_rgb(170, 180, 200));
                 draw_text(_dx, _dy + 168, _ready
-                    ? ("READY - complete a run to reach " + pet_stage_name(_p.stage + 1))
+                    ? _ready_txt
                     : ("Growth to " + pet_stage_name(_p.stage + 1) + ":  " + string(_p.growth) + " / " + string(_need)));
                 var _bx = _dx, _gby = _dy + 196, _bw = 420, _bh = 16;
                 draw_set_color(make_color_rgb(40, 44, 56));
@@ -1538,12 +1556,17 @@ function ui_draw_bairc_screen() {
             _after += 36;
         }
 
-        // Capstone pick prompt (a raised Adult owes its permanent gift). Adults show no
-        // feed menu (stage == max), so this slot is free.
+        // Capstone pick prompt (a raised Adult owes its permanent gift), or the Awakened
+        // splash pick once it crosses. Same [G] key, same modal (bairc_capstone_mode).
         if (pet_capstone_can_pick(_p)) {
             draw_set_font(fnt_ui);
             draw_set_color(make_color_rgb(235, 205, 120));
             draw_text(_dx, _after, "[G] Choose its Gift  -  ready to pick a capstone");
+            _after += 44;
+        } else if (pet_splash_can_pick(_p)) {
+            draw_set_font(fnt_ui);
+            draw_set_color(make_color_rgb(235, 205, 120));
+            draw_text(_dx, _after, "[G] Choose its Splash  -  the Awakened crossing awaits");
             _after += 44;
         }
 
@@ -1850,6 +1873,10 @@ function ui_draw_pet_detail(pet) {
         if (pet.stage < PET_STAGE_ADULT) {
             draw_set_font(fnt_ui_small); draw_set_color(make_color_rgb(150, 160, 190));
             draw_text(_lx, max(_cyL, _cyR) + 6, "On reaching Adult it gains a capstone ability.");
+        } else if (pet.stage == PET_STAGE_ADULT) {
+            // Tease the last rung: the Stage-4 crossing and its gate (design 2026-07-03).
+            draw_set_font(fnt_ui_small); draw_set_color(make_color_rgb(150, 160, 190));
+            draw_text(_lx, max(_cyL, _cyR) + 6, "Beyond lies the Awakened crossing - full-clear at Awakening A5, Soul-bound.");
         }
     }
 

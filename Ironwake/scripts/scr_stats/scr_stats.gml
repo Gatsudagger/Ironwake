@@ -2041,7 +2041,7 @@ function handle_enemy_drops(enemy_type) {
     // loot-tier bonus from active curses (devil's bargain - better loot for risk).
     var _drop_asc = (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0) + curse_loot_asc_bonus();
     // Faerie's Tear potion + active Boon pet: extra equipment-drop chance (percentage points).
-    var _loot_pot = potion_loot_bonus_pts() + pet_active_boon_loot_pts() + pet_active_lck_loot_pts() + pet_active_egg_bonus("loot");
+    var _loot_pot = potion_loot_bonus_pts() + pet_active_boon_loot_pts() + pet_active_lck_loot_pts() + pet_active_splash_loot_pts() + pet_active_egg_bonus("loot");
 
     // Rune drops (additive to gear/consumable). Standard: none. Elite: ~6% Tier I.
     // Boss: guaranteed, with a 20% chance to be Tier II. Tier III is craft-only.
@@ -3804,14 +3804,28 @@ function pet_growth_needed(stage) {
         case PET_STAGE_BABY:       return 4;
         case PET_STAGE_ADOLESCENT: return 6;
         case PET_STAGE_YOUNGADULT: return 9;
-        case PET_STAGE_ADULT:      return 12;   // -> Awakened (Stage 4 effects TBD; capped at Adult for now)
+        case PET_STAGE_ADULT:      return 12;   // -> Awakened (crossing further gated, see pet_awaken_gate_ok)
     }
     return 0;
 }
 
-// The highest stage a pet can currently reach. Awakened (4) is design-TBD (crossover),
-// so growth caps at Adult until that pass ships.
-function pet_max_stage() { return PET_STAGE_ADULT; }
+// The highest stage a pet can reach. Awakened (4) shipped 2026-07-03: crossing it
+// takes MORE than a full bar - see pet_awaken_gate_ok (full clear at A5, Soul-bound).
+function pet_max_stage() { return PET_STAGE_AWAKENED; }
+
+// Adult -> Awakened crossing gate (design 2026-07-03): beyond the full growth bar, the
+// evolution run itself must be a FULL CLEAR (result 1) at Awakening 5 with the pet
+// Soul-bound (Bond tier 3, 18 bond). Pets Awaken THROUGH the Awakening - the lore made
+// mechanical. Bar-full Adults sit READY indefinitely until a qualifying run crosses them.
+function pet_awaken_gate_ok(pet, result) {
+    if (result != 1) return false;                                   // full clear only
+    var _asc = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
+    return (_asc >= 5) && (pet_bond_tier(pet) >= 3);
+}
+// One-line requirement text for UI hints (Bairc feed message, run-end notice).
+function pet_awaken_requirements_text() {
+    return "full-clear a dungeon at Awakening A5 with it active and Soul-bound";
+}
 
 // True when the growth bar is full - the pet is READY but still needs an active run to cross.
 function pet_growth_ready(pet) {
@@ -3986,7 +4000,12 @@ function pet_feed_effective_growth(pet, f) {
 function pet_feed_apply(pet, feed_id) {
     if (!is_struct(pet) || pet.is_egg)   return "An egg can't be fed - hatch it first.";
     if (pet.stage >= pet_max_stage())     return pet.name + " is fully grown.";
-    if (pet_growth_ready(pet))            return pet.name + "'s growth is FULL - feed can't help further. Complete a run with it active to evolve.";
+    if (pet_growth_ready(pet)) {
+        // Adults need the Awakened gate, not just any run - say so at the feed trough.
+        if (pet.stage == PET_STAGE_ADULT)
+            return pet.name + "'s growth is FULL - to Awaken it, " + pet_awaken_requirements_text() + ".";
+        return pet.name + "'s growth is FULL - feed can't help further. Complete a run with it active to evolve.";
+    }
     var _f = pet_feed_get(feed_id);
     if (_f == undefined)                  return "";
     if (pet_feed_pouch_count(feed_id) <= 0) return "You have no " + _f.name + " - buy some from Petra.";
@@ -4045,13 +4064,30 @@ function pet_run_complete(result) {
     _gain += pet_active_egg_bonus("growth");                   // Ley egg: matures faster
     _p.growth += _gain;
     if (_p.growth >= pet_growth_needed(_p.stage)) {
+        // Adult -> Awakened is harder than a full bar: the crossing run must ALSO pass
+        // pet_awaken_gate_ok (full clear @ A5, Soul-bound). Hold at READY and say why.
+        if (_p.stage == PET_STAGE_ADULT && !pet_awaken_gate_ok(_p, result)) {
+            _p.growth = pet_growth_needed(_p.stage);
+            if (variable_global_exists("pet_find_notice")) {
+                var _gate_msg = _p.name + " strains toward its final form - "
+                    + pet_awaken_requirements_text() + " to Awaken it.";
+                global.pet_find_notice = (global.pet_find_notice != "")
+                    ? (global.pet_find_notice + "   " + _gate_msg) : _gate_msg;
+            }
+            return undefined;
+        }
         _p.stage += 1;
         _p.growth = 0;
-        if (_p.stage >= PET_STAGE_ADULT) {
+        if (_p.stage == PET_STAGE_ADULT) {
             // Raised pets CHOOSE their capstone at Bairc (flagged pending, no effect until
             // picked); found/wild creatures auto-roll one on the spot. See pet_capstone_*.
             if (_p.raised) _p.capstone_pending = true;
             else           pet_assign_capstone(_p);
+        }
+        if (_p.stage == PET_STAGE_AWAKENED) {
+            // Same pick/roll split for the Awakened SPLASH (one off-archetype effect).
+            if (_p.raised) _p.splash_pending = true;
+            else           pet_assign_splash(_p);
         }
         return _p;                                             // evolved this run
     }
@@ -4151,6 +4187,7 @@ function pet_boon_gold_pct_for(stage) {
         case PET_STAGE_ADOLESCENT: return 0.05;
         case PET_STAGE_YOUNGADULT: return 0.08;
         case PET_STAGE_ADULT:      return 0.12;
+        case PET_STAGE_AWAKENED:   return 0.15;   // final rung (TBD - balance)
     }
     return 0;
 }
@@ -4158,6 +4195,7 @@ function pet_boon_loot_pts_for(stage) {
     switch (stage) {
         case PET_STAGE_YOUNGADULT: return 3;   // the 2nd boon unlocks at Young Adult
         case PET_STAGE_ADULT:      return 5;
+        case PET_STAGE_AWAKENED:   return 6;   // final rung (TBD - balance)
     }
     return 0;
 }
@@ -4590,6 +4628,12 @@ function pet_kit_catalog() {
         { arch:PET_ARCH_GUARDIAN, id:"warding", name:"Warding",       kind:"Trait",   stage:2, effect:"shield", val:0.25, desc:"Raises stronger wards - +25% to its shields." },
         { arch:PET_ARCH_GUARDIAN, id:"guardian_angel", name:"Guardian Angel", kind:"Ability", stage:3, effect:"both", val:0, desc:"Capstone: each turn it heals AND shields you, never just one." },
         { arch:PET_ARCH_GUARDIAN, id:"bulwark", name:"Bulwark",       kind:"Ability", stage:3, effect:"shield", val:0.50, desc:"Capstone: an immovable ward - +50% to its shields." },
+        // AWAKENED SPLASH (stage 4, design 2026-07-03): the crossover layer. One signature
+        // splash per archetype; an Awakened pet takes exactly ONE, and only from a
+        // DIFFERENT archetype (pet_splash_pool) - a Warrior tastes Fortune, never more Warrior.
+        { arch:PET_ARCH_BOON,      id:"gilded_soul", name:"Gilded Soul", kind:"Splash", stage:4, effect:"splash_fortune", val:0.06, val2:2, desc:"Awakened splash: a Fortune's touch - +6% gold and +2% loot find while active." },
+        { arch:PET_ARCH_COMBATANT, id:"feral_echo",  name:"Feral Echo",  kind:"Splash", stage:4, effect:"splash_echo",    val:10,   desc:"Awakened splash: a Warrior's instinct - it lashes out as each combat begins." },
+        { arch:PET_ARCH_GUARDIAN,  id:"vigil",       name:"Vigil",       kind:"Splash", stage:4, effect:"splash_vigil",   val:14,   desc:"Awakened splash: a Guardian's watch - once per combat, it shields you the first time you fall below 40% HP." },
     ];
 }
 
@@ -4600,10 +4644,20 @@ function pet_kit_get(id) {
 }
 
 // The Stage-3 capstone pool for an archetype (entries the player picks / rolls from).
+// stage == 3 exactly: the stage-4 SPLASH entries live in pet_splash_pool, not here.
 function pet_archetype_capstones(arch) {
     var _c = pet_kit_catalog(); var _out = [];
     for (var _i = 0; _i < array_length(_c); _i++)
-        if (_c[_i].arch == arch && _c[_i].stage >= 3) array_push(_out, _c[_i]);
+        if (_c[_i].arch == arch && _c[_i].stage == 3) array_push(_out, _c[_i]);
+    return _out;
+}
+
+// The Awakened SPLASH pool for a pet's archetype: the stage-4 entries of the OTHER two
+// archetypes (crossover is the point - its own archetype's splash is off the menu).
+function pet_splash_pool(arch) {
+    var _c = pet_kit_catalog(); var _out = [];
+    for (var _i = 0; _i < array_length(_c); _i++)
+        if (_c[_i].arch != arch && _c[_i].stage == 4) array_push(_out, _c[_i]);
     return _out;
 }
 
@@ -4621,6 +4675,11 @@ function pet_kit(pet) {
     if (pet.stage >= PET_STAGE_ADULT && variable_struct_exists(pet, "kit_capstone") && pet.kit_capstone != "") {
         var _cap = pet_kit_get(pet.kit_capstone);
         if (_cap != undefined) array_push(_out, _cap);
+    }
+    // Awakened SPLASH (stage 4): the one off-archetype effect, once chosen/rolled.
+    if (pet.stage >= PET_STAGE_AWAKENED && variable_struct_exists(pet, "kit_splash") && pet.kit_splash != "") {
+        var _spl = pet_kit_get(pet.kit_splash);
+        if (_spl != undefined) array_push(_out, _spl);
     }
     return _out;
 }
@@ -4686,9 +4745,80 @@ function pet_capstone_pending_count() {
     return _n;
 }
 
+// --- Awakened SPLASH pick (design 2026-07-03): raised pets choose their one off-archetype
+// effect at Bairc, wild pets auto-roll - the same split as the Stage-3 capstone. Safe
+// getters tolerate pets saved before these fields existed. ------------------------------
+function pet_splash_is_pending(pet) {
+    return is_struct(pet) && variable_struct_exists(pet, "splash_pending") && pet.splash_pending;
+}
+function pet_splash_is_locked(pet) {
+    return is_struct(pet) && variable_struct_exists(pet, "splash_locked") && pet.splash_locked;
+}
+
+// True when the selected pet is a raised Awakened still owing its splash choice.
+function pet_splash_can_pick(pet) {
+    if (!is_struct(pet) || pet.is_egg) return false;
+    return pet.raised && pet.stage >= PET_STAGE_AWAKENED && pet_splash_is_pending(pet);
+}
+
+// Lock in a raised pet's chosen splash (by id, validated against its pool). Permanent.
+function pet_splash_choose(pet, splash_id) {
+    if (!pet_splash_can_pick(pet)) return false;
+    var _pool = pet_splash_pool(pet.archetype); var _ok = false;
+    for (var _i = 0; _i < array_length(_pool); _i++) if (_pool[_i].id == splash_id) { _ok = true; break; }
+    if (!_ok) return false;
+    pet.kit_splash     = splash_id;
+    pet.splash_pending = false;
+    pet.splash_locked  = true;
+    return true;
+}
+
+// Auto-roll a splash (found/wild creatures crossing to Awakened). No-op if already set.
+function pet_assign_splash(pet) {
+    if (!is_struct(pet)) return;
+    if (variable_struct_exists(pet, "kit_splash") && pet.kit_splash != "") return;
+    var _pool = pet_splash_pool(pet.archetype);
+    if (array_length(_pool) > 0) pet.kit_splash = _pool[irandom(array_length(_pool) - 1)].id;
+    pet.splash_locked  = true;
+    pet.splash_pending = false;
+}
+
+// Count of pets awaiting a splash pick (Bairc badge / notice, mirrors capstone count).
+function pet_splash_pending_count() {
+    var _r = pet_roster(); var _n = 0;
+    for (var _i = 0; _i < array_length(_r); _i++) if (pet_splash_can_pick(_r[_i])) _n++;
+    return _n;
+}
+
+// Active pet's Gilded-Soul economy splash (flat, archetype-agnostic - a Warrior or
+// Guardian carrying the Fortune splash). Added alongside the Boon/LCK bonuses at the
+// gold and loot roll sites; zero for everyone else.
+function pet_active_splash_gold_pct() {
+    var _p = pet_active();
+    if (_p == undefined || _p.is_egg) return 0;
+    return pet_kit_mods(_p).splash_gold;
+}
+function pet_active_splash_loot_pts() {
+    var _p = pet_active();
+    if (_p == undefined || _p.is_egg) return 0;
+    return pet_kit_mods(_p).splash_loot;
+}
+
+// Awakened aura tint (combat/hub draws): gold Fortune / red Warrior / blue Guardian,
+// or -1 when the pet is not Awakened (callers skip the aura entirely).
+function pet_aura_color(pet) {
+    if (!is_struct(pet) || pet.is_egg || pet.stage < PET_STAGE_AWAKENED) return -1;
+    switch (pet.archetype) {
+        case PET_ARCH_COMBATANT: return make_color_rgb(255, 115, 90);
+        case PET_ARCH_GUARDIAN:  return make_color_rgb(110, 170, 255);
+    }
+    return make_color_rgb(255, 205, 95);   // Fortune
+}
+
 // Aggregate the additive effect mods from a pet's unlocked kit.
 function pet_kit_mods(pet) {
-    var _m = { dmg:0, heal:0, shield:0, gold:0, loot:0, execute:0, both:false };
+    var _m = { dmg:0, heal:0, shield:0, gold:0, loot:0, execute:0, both:false,
+               splash_gold:0, splash_loot:0, echo:0, vigil:0 };
     var _k = pet_kit(pet);
     for (var _i = 0; _i < array_length(_k); _i++) {
         var _e = _k[_i];
@@ -4700,6 +4830,11 @@ function pet_kit_mods(pet) {
             case "loot":    _m.loot    += _e.val; break;
             case "execute": _m.execute += _e.val; break;
             case "both":    _m.both     = true;   break;
+            // Awakened splash keys - kept SEPARATE from gold/loot so the Boon-gated
+            // economy path (pet_active_boon_*) never double-counts them.
+            case "splash_fortune": _m.splash_gold += _e.val; _m.splash_loot += _e.val2; break;
+            case "splash_echo":    _m.echo  += _e.val; break;
+            case "splash_vigil":   _m.vigil += _e.val; break;
         }
     }
     return _m;
@@ -4859,6 +4994,9 @@ function pet_make(species_id, source, archetype, stage, is_egg) {
         kit_capstone:   "",                              // Stage-3 capstone id (rolled wild / picked raised); see pet_kit_catalog
         capstone_pending: false,                         // RAISED pet reached Adult, awaiting the player's capstone pick at Bairc
         capstone_locked:  false,                         // capstone decided (rolled for found, chosen for raised) - never changes
+        kit_splash:     "",                              // Stage-4 Awakened splash id (one off-archetype effect); see pet_splash_pool
+        splash_pending: false,                           // RAISED pet Awakened, awaiting the player's splash pick at Bairc
+        splash_locked:  false,                           // splash decided - never changes
         is_egg:         is_egg,
         egg_type:       _egg,                             // RNG egg-type benefit kept after hatch (§3)
         awk_at_acquire: _awk,

@@ -660,6 +660,11 @@ array_push(combat_log,
 // Floating damage/heal numbers - each entry: { value, x, y, timer, col }
 damage_popups = [];
 
+// Awakened splash hooks (Stage 4 crossover): Vigil arms fresh each combat, and a
+// Feral Echo pet lashes out once right now, before anyone takes a turn.
+global.pet_vigil_used = false;
+combat_pet_echo_open(combat_state, player, combat_log, damage_popups);
+
 // Attack slide animation - attacker lunges toward target over 20 frames
 attack_anim_timer     = 0;
 attack_anim_src_x     = 0;

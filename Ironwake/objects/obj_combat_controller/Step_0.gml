@@ -47,6 +47,11 @@ if (_lmx >= 30 && _lmx <= 1200 && _lmy >= 735 && _lmy <= 945) {
 // -----------------------------------------------------------------------------
 if (combat_over) exit;
 
+// Vigil (Awakened Guardian splash): polled every live-combat frame so it catches any
+// damage source the moment the player first drops below 40% HP. Fires at most once
+// per combat (global.pet_vigil_used, reset in Create); no-op for everyone else.
+combat_pet_vigil_check(player, combat_log, damage_popups);
+
 
 // -----------------------------------------------------------------------------
 // 1b. LOOT SCREEN - intercepts all input after combat while items are shown

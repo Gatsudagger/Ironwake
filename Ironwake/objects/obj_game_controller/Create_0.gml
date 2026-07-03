@@ -938,6 +938,7 @@ bairc_intro_armed      = false;  // ignores the interact keypress that opened it
 bairc_capstone_open    = false;  // capstone PICK modal (raised Adult choosing its Stage-3 gift)
 bairc_capstone_sel     = 0;      // highlighted capstone card (0/1)
 bairc_capstone_confirm = false;  // two-step lock: Yes/No confirm after choosing
+bairc_capstone_mode    = "cap";  // "cap" = Stage-3 capstone | "splash" = Awakened Stage-4 splash (same modal, different pool)
 bairc_release_confirm  = false;  // "Donate" modal: entrust the highlighted creature to Bairc's garden
 bairc_lore_open        = false;  // one-time lore-fragment dialogue (bond milestones / first donation, §10)
 bairc_lore_armed       = false;  // same 1-frame arm as the intro so the opening keypress can't skip it

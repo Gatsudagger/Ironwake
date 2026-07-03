@@ -1954,6 +1954,14 @@ if (instance_exists(obj_game_controller)) {
                 if (_hsp >= 0) {
                     var _fw = (_px1 - _px0) - 26, _fh = (_py1 - _py0) - 22;
                     var _hsc = min(_fw / max(1, sprite_get_width(_hsp)), _fh / max(1, sprite_get_height(_hsp)));
+                    // Awakened aura: pulsing archetype-tinted halo behind the portrait (Stage 4).
+                    var _haura = pet_aura_color(_hp);
+                    if (_haura >= 0) {
+                        var _hap = 0.20 + 0.10 * sin(current_time / 340);
+                        gpu_set_blendmode(bm_add);
+                        draw_sprite_ext(_hsp, pet_anim_frame(_hsp), (_px0 + _px1) / 2, _py1 - 9, _hsc * 1.08, _hsc * 1.08, 0, _haura, _hap);
+                        gpu_set_blendmode(bm_normal);
+                    }
                     draw_sprite_ext(_hsp, pet_anim_frame(_hsp), (_px0 + _px1) / 2, _py1 - 11, _hsc, _hsc, 0, c_white, 1);
                 }
 

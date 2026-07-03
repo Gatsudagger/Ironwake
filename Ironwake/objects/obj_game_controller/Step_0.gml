@@ -1093,10 +1093,15 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open) {
     // A/D highlights a card, Enter opens a Yes/No confirm, Enter again locks it. Esc backs
     // out (confirm -> selection -> close). Swallows all other input while up.
     if (bairc_capstone_open) {
-        var _cp_pet  = (_bp_n > 0) ? global.pet_roster[bairc_cursor] : undefined;
-        var _cp_pool = (is_struct(_cp_pet)) ? pet_archetype_capstones(_cp_pet.archetype) : [];
+        // Serves BOTH permanent picks: the Stage-3 capstone and the Stage-4 Awakened
+        // splash (bairc_capstone_mode switches the pool + lock fn; same two-step UX).
+        var _cp_pet    = (_bp_n > 0) ? global.pet_roster[bairc_cursor] : undefined;
+        var _cp_splash = (bairc_capstone_mode == "splash");
+        var _cp_pool   = [];
+        if (is_struct(_cp_pet)) _cp_pool = _cp_splash ? pet_splash_pool(_cp_pet.archetype) : pet_archetype_capstones(_cp_pet.archetype);
         var _cp_n    = array_length(_cp_pool);
-        if (!pet_capstone_can_pick(_cp_pet) || _cp_n == 0) { bairc_capstone_open = false; exit; }
+        var _cp_ok   = _cp_splash ? pet_splash_can_pick(_cp_pet) : pet_capstone_can_pick(_cp_pet);
+        if (!_cp_ok || _cp_n == 0) { bairc_capstone_open = false; exit; }
 
         if (!bairc_capstone_confirm) {
             if (nav_left())  bairc_capstone_sel = wrap_index(bairc_capstone_sel - 1, _cp_n);
@@ -1109,9 +1114,12 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open) {
         } else {
             // Yes/No confirm - permanent choice.
             if (keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_return)) {
-                var _pick = _cp_pool[clamp(bairc_capstone_sel, 0, _cp_n - 1)];
-                if (pet_capstone_choose(_cp_pet, _pick.id)) {
-                    bairc_notification = _cp_pet.name + " takes up " + _pick.name + " - its path is set.";
+                var _pick   = _cp_pool[clamp(bairc_capstone_sel, 0, _cp_n - 1)];
+                var _locked = _cp_splash ? pet_splash_choose(_cp_pet, _pick.id) : pet_capstone_choose(_cp_pet, _pick.id);
+                if (_locked) {
+                    bairc_notification = _cp_splash
+                        ? (_cp_pet.name + " draws " + _pick.name + " into itself - the crossing is complete.")
+                        : (_cp_pet.name + " takes up " + _pick.name + " - its path is set.");
                     audio_play_sound(Check_1, 1, false);
                     if (room == rm_hub || room == rm_character_select) save_game();
                 }
@@ -1209,9 +1217,16 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open) {
             }
         }
 
-        // G: choose the raised Adult's permanent Stage-3 capstone (opens the pick modal).
+        // G: choose the raised pet's permanent pick - Stage-3 capstone first, then the
+        // Stage-4 Awakened splash once it crosses (same modal, bairc_capstone_mode).
         if (keyboard_check_pressed(ord("G"))) {
             if (pet_capstone_can_pick(_bp)) {
+                bairc_capstone_mode    = "cap";
+                bairc_capstone_open    = true;
+                bairc_capstone_sel     = 0;
+                bairc_capstone_confirm = false;
+            } else if (pet_splash_can_pick(_bp)) {
+                bairc_capstone_mode    = "splash";
                 bairc_capstone_open    = true;
                 bairc_capstone_sel     = 0;
                 bairc_capstone_confirm = false;
@@ -1219,7 +1234,7 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open) {
                 bairc_notification = "Only creatures you raised from an egg choose their gift.";
             } else if (!_bp.is_egg && _bp.stage < PET_STAGE_ADULT) {
                 bairc_notification = _bp.name + " must reach adulthood before choosing a gift.";
-            } else if (pet_capstone_is_locked(_bp)) {
+            } else if (pet_splash_is_locked(_bp) || pet_capstone_is_locked(_bp)) {
                 bairc_notification = _bp.name + "'s path is already set.";
             }
         }

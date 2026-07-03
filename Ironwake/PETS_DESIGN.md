@@ -4,7 +4,7 @@
 **Status:** DESIGN COMPLETE — not yet implemented
 **Build phase:** **Phase 2–3** (after Petra TT). Phase 2 = non-combat (Bairc net-new NPC, hatch, Companion Gate tab, feed via Petra, Stage evolution reusing Phase-1 banking hook + persistence). Phase 3 = combat/corruption/injury. See `BUILD_ORDER.md`.
 **Depends on:** event/shrine/curse room system, 3-AP combat, trait system, hybrid affix system, Petra merchant, Gate loadout screen, full-clear extraction logic
-**Stage-4 (Awakened) effects:** TBD — flagged placeholder, design pass after 0–3 ships and tests
+**Stage-4 (Awakened) effects:** DESIGNED + BUILT 2026-07-03 — see §4a (splash crossover, A5 full-clear + Soul-bound gate, aura art treatment)
 
 ---
 
@@ -103,11 +103,23 @@ Archetype is fixed from acquisition through Stage 3. **Crossover is only possibl
 | 1 | Adolescent | 1 minor passive | 1 minor passive | 1 minor passive |
 | 2 | Young Adult | 2 minor boons (e.g. +5% gold find) | own turn, 1 AP, limited ability selection | passive auto-buff/heal companion |
 | 3 | Adult | 1 permanent passive (chosen at evolution, locked) + strong boons | own turn, 2 AP, 2 abilities | stronger auto-heal/buff + 1 permanent passive |
-| 4 | Awakened | **TBD — crossover unlocked** | **TBD — crossover unlocked** | **TBD — crossover unlocked** |
+| 4 | Awakened | splash crossover (§4a) | splash crossover (§4a) | splash crossover (§4a) |
 
 \* *Stage 0 = no effect, except for a reserved signature pet/trait (see §11 Future Hooks).*
 
 **Stage 3 permanent passive** is chosen at evolution into Stage 3 and **cannot be reselected** — a committed build decision.
+
+### 4a. Stage 4 "Awakened" — the crossing (LOCKED 2026-07-03, BUILT)
+
+*(Archetype names below use the live build's rename: Boon→**Fortune**, Combatant→**Warrior**, Guardian unchanged.)*
+
+- **Gate (all three, on the evolution run itself):** the full 12 run-progress bar **+ Bond tier 3 (Soul-bound, 18 bond) + the crossing run must be a FULL CLEAR at Awakening 5** with the pet active. Extraction does not count. A bar-full Adult sits READY indefinitely until a qualifying run crosses it. The lore made mechanical: pets Awaken *through* the Awakening. (`pet_awaken_gate_ok`)
+- **Crossover = SPLASH:** at the crossing the pet takes **exactly one effect from a DIFFERENT archetype's splash pool** — a second locked build decision mirroring the Stage-3 capstone (raised/signature pets **pick** at Bairc via the same [G] modal; wild pets **auto-roll**). One signature splash per archetype (v1 pool; data-driven, can grow):
+  - **Fortune — "Gilded Soul":** +6% gold and +2% loot find (flat, deliberately below a real Fortune pet's boon).
+  - **Warrior — "Feral Echo":** at the start of each combat the pet lashes out once at a random living enemy (modest PWR-scaled strike, no crits/riders).
+  - **Guardian — "Vigil":** once per combat, the first time the player drops below 40% HP, the pet instantly raises an SPR-scaled ward.
+- **Stats:** no special handling — `pet_stat_breakdown` scales with stage, so Awakened gets the natural +1 primary-stat rung; Fortune's base boon tables gained a Stage-4 row (15% gold / 6 loot pts, TBD-balance).
+- **Art:** reuses the Adult frame with a **pulsing additive aura** tinted by archetype (gold Fortune / red Warrior / blue Guardian) in combat, the Bairc station, and the Gate companion card. A true 4th sprite per species is deferred (PixelLab budget); the sprite-key slot is data-reserved (`pet_sprite_key` maps Awakened→adult).
 
 **Combat presence:** the active pet's sprite is **always visible** beside the player for all archetypes (sells the lore — it's *with* you). Only **Combatant** pets take a turn (after the player's turn). Boon/Guardian pets are present but do not act on their own initiative.
 
@@ -222,7 +234,7 @@ Captured for intent; **not** committed scope.
 
 | Item | Status |
 |---|---|
-| Stage 4 (Awakened) crossover effects | TBD — design pass after 0–3 ships |
+| Stage 4 (Awakened) crossover effects | LOCKED + BUILT 2026-07-03 — see §4a |
 | Stable soft-cap threshold & upkeep curve | TBD — playtest |
 | Injury ladder tiers & permadeath threshold | TBD — playtest |
 | Corruption "push" risk model | TBD — lean carried-risk |

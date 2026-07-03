@@ -960,7 +960,7 @@ function combat_on_enemy_defeated(target, player, combat_log) {
     if (boon_active("greed")) _gold_drop = round(_gold_drop * (1 + boon_value("greed")));
     _gold_drop = round(_gold_drop * curse_gold_mult());
     _gold_drop = round(_gold_drop * potion_gold_mult());   // Goldfinger Elixir (+gold, 2-boss buff)
-    _gold_drop = round(_gold_drop * (1 + pet_active_boon_gold_pct() + pet_active_lck_gold_pct() + pet_active_egg_bonus("gold")));   // Fortune pet gift + universal LCK + Gilded-egg hatchling
+    _gold_drop = round(_gold_drop * (1 + pet_active_boon_gold_pct() + pet_active_lck_gold_pct() + pet_active_splash_gold_pct() + pet_active_egg_bonus("gold")));   // Fortune pet gift + universal LCK + Gilded-Soul splash + Gilded-egg hatchling
     add_gold(_gold_drop);
     global.current_run_kills++;
     array_push(combat_log, "Gained " + string(_gold_drop) + "g!");
@@ -1130,6 +1130,7 @@ function combat_pet_act(combat_state, player, combat_log, damage_popups) {
 
     if (_p.archetype == PET_ARCH_GUARDIAN) {
         // One per turn normally (heal if hurt, else ward); a fulfilled Guardian does BOTH.
+        // (Awakened splash hooks live in combat_pet_echo_open / combat_pet_vigil_check.)
         var _egg_mend = pet_active_egg_bonus("mend");
         var _smult    = pet_stat_mult(_p, "spr");   // SPR stat modifies heal & shield
         var _heal_amt = max(1, round((_adult ? 10 : 5) * _imult * _cmult * _smult * (1 + _kit.heal + _egg_mend)));
@@ -1158,4 +1159,64 @@ function combat_pet_act(combat_state, player, combat_log, damage_popups) {
     }
 
     return false;
+}
+
+// ---------------------------------------------------------------------------
+// AWAKENED SPLASH combat hooks (Stage 4 crossover, design 2026-07-03)
+// ---------------------------------------------------------------------------
+// combat_pet_echo_open(combat_state, player, combat_log, damage_popups)
+// Feral Echo (Warrior splash on a non-Warrior pet): as combat begins, the pet lashes
+// out once at a random living enemy - a modest PWR-scaled strike. Called from the
+// combat controller Create, after the log/popup arrays exist. Injury tier 2+ benches
+// the pet (same rule as its turn); the strike never crits and carries no riders.
+function combat_pet_echo_open(combat_state, player, combat_log, damage_popups) {
+    var _p = pet_active();
+    if (_p == undefined || _p.is_egg || _p.stage < PET_STAGE_AWAKENED) return false;
+    var _kit = pet_kit_mods(_p);
+    if (_kit.echo <= 0) return false;
+    var _imult = pet_injury_mult(_p.injured);
+    if (_imult <= 0) return false;
+    // Pick a random living enemy (it lashes out, it doesn't aim).
+    var _live = [], _slots = [];
+    var _slot = 0;
+    for (var _i = 0; _i < array_length(combat_state.combatants); _i++) {
+        var _c = combat_state.combatants[_i];
+        if (_c.is_player || _c.is_defeated) continue;
+        array_push(_live, _c); array_push(_slots, _slot);
+        _slot++;
+    }
+    if (array_length(_live) == 0) return false;
+    var _pick = irandom(array_length(_live) - 1);
+    var _t = _live[_pick];
+    var _base = max(1, round(_kit.echo * _imult * pet_corruption_mult(_p) * pet_bond_mult(_p) * pet_stat_mult(_p, "pow")));
+    var _dmg  = combat_resolve_damage(_base, 0, _t.armor, _t.el_resist);
+    if (_dmg < 1) _dmg = 1;
+    combat_apply_damage(_t, _dmg);
+    array_push(combat_log, _p.name + "'s Feral Echo lashes " + _t.name + " for " + string(_dmg) + " as battle begins!");
+    array_push(damage_popups, { value: _dmg, x: 1620 + _slots[_pick] * (-120), y: 233 + _slots[_pick] * 105 - 105, timer: 50, col: make_color_rgb(255, 150, 110) });
+    if (_t.HP <= 0) combat_on_enemy_defeated(_t, player, combat_log);
+    global.pet_lunge_t0 = current_time;   // reuse the procedural lunge (combat draw)
+    return true;
+}
+
+// combat_pet_vigil_check(player, combat_log, damage_popups)
+// Vigil (Guardian splash on a non-Guardian pet): ONCE per combat, the first time the
+// player is below 40% HP, the pet instantly raises an SPR-scaled ward. Polled each
+// step by the combat controller (catches any damage source); global.pet_vigil_used
+// is reset on combat entry.
+function combat_pet_vigil_check(player, combat_log, damage_popups) {
+    if (variable_global_exists("pet_vigil_used") && global.pet_vigil_used) return false;
+    if (player.HP <= 0 || player.HP >= player.max_HP * 0.40) return false;
+    var _p = pet_active();
+    if (_p == undefined || _p.is_egg || _p.stage < PET_STAGE_AWAKENED) return false;
+    var _kit = pet_kit_mods(_p);
+    if (_kit.vigil <= 0) return false;
+    var _imult = pet_injury_mult(_p.injured);
+    if (_imult <= 0) return false;
+    global.pet_vigil_used = true;
+    var _sh = max(1, round(_kit.vigil * _imult * pet_corruption_mult(_p) * pet_bond_mult(_p) * pet_stat_mult(_p, "spr")));
+    player.shield_hp += _sh;
+    array_push(combat_log, _p.name + " keeps its Vigil - a ward flares around you (+" + string(_sh) + " shield).");
+    array_push(damage_popups, { value: _sh, x: 360, y: 402, timer: 50, col: make_color_rgb(140, 190, 255) });
+    return true;
 }
