@@ -3851,6 +3851,16 @@ function pet_feed_preferred_catalog() {
         { id:"pref_nightowl",    species:"nightowl",    name:"Twilight Vole",       growth:7, gold:100, perk:"none", blurb:"caught at dusk - the only hour a nightowl deigns to hunt" },
         { id:"pref_bonehound",   species:"bonehound",   name:"Grave-Marrow Bone",   growth:7, gold:100, perk:"none", blurb:"old bone, older marrow - a bonehound gnaws it for days" },
         { id:"pref_hollow_pup",  species:"hollow_pup",  name:"Hearthmilk Sop",      growth:7, gold:100, perk:"none", blurb:"warm bread in sweet milk - it makes the hollow eyes shine" },
+        // Boss-signature species (every species has a favorite - design §5).
+        { id:"pref_vaultling",       species:"vaultling",       name:"Runedust Gravel",     growth:7, gold:100, perk:"none", blurb:"crushed ward-stone - it chews the glow right out of it" },
+        { id:"pref_marrow_adder",    species:"marrow_adder",    name:"Gilded Knucklebones", growth:7, gold:100, perk:"none", blurb:"dice cut from a king's hand - it swallows them crown-first" },
+        { id:"pref_gaolwyrm",        species:"gaolwyrm",        name:"Iron Key Shavings",   growth:7, gold:100, perk:"none", blurb:"filed from old prison locks - it gnaws the wards clean off" },
+        { id:"pref_cinder_newt",     species:"cinder_newt",     name:"Smoldercoal Grubs",   growth:7, gold:100, perk:"none", blurb:"grubs roasted alive in their own shells, still smoking" },
+        { id:"pref_magma_leech",     species:"magma_leech",     name:"Slagheart Ore",       growth:7, gold:100, perk:"none", blurb:"a lump of forge-slag, warm at the core - it drinks the heat" },
+        { id:"pref_golemite",        species:"golemite",        name:"Emberstone Chips",    growth:7, gold:100, perk:"none", blurb:"chips of colossus stone, cracked to glowing - kin eating kin" },
+        { id:"pref_rimefox",         species:"rimefox",         name:"Frostbitten Hare",    growth:7, gold:100, perk:"none", blurb:"taken by the cold mid-leap - a rimefox eats nothing warmer" },
+        { id:"pref_crypt_bat",       species:"crypt_bat",       name:"Tombmoth Wings",      growth:7, gold:100, perk:"none", blurb:"dry as parchment - they crunch in the dark for hours" },
+        { id:"pref_hoarfrost_drake", species:"hoarfrost_drake", name:"Glacier-Chilled Roe", growth:7, gold:100, perk:"none", blurb:"fish eggs frozen solid - it savors them one crystal at a time" },
     ];
 }
 // The preferred-feed def for a species (undefined if none authored).
@@ -3937,13 +3947,45 @@ function pet_feed_owned_list() {
     return _out;
 }
 
+// --- Stable soft-cap (design §6, numbers agreed 2026-07-03): Bairc comfortably keeps
+// PET_STABLE_CAPACITY stabled creatures (the ACTIVE companion is exempt; eggs count).
+// Past that his attention spreads thin and feed loses potency on STABLED pets only:
+// 75% / 50% / 25% (floor) at +1 / +2 / +3-or-more over. Donation is the release valve -
+// dropping back to capacity restores full potency. No hard cap, no gold upkeep.
+#macro PET_STABLE_CAPACITY 8
+
+function pet_stabled_count() {
+    var _n = pet_count();
+    if (variable_global_exists("active_pet") && global.active_pet >= 0 && global.active_pet < _n) _n -= 1;
+    return _n;
+}
+function pet_stable_overflow() {
+    return max(0, pet_stabled_count() - PET_STABLE_CAPACITY);
+}
+// Crowding multiplier for feed applied to THIS pet (the active companion always eats
+// at 100% - it lives at your side, not in the stable).
+function pet_feed_crowd_mult(pet) {
+    if (is_struct(pet) && pet_active() == pet) return 1.0;
+    switch (pet_stable_overflow()) {
+        case 0: return 1.0;
+        case 1: return 0.75;
+        case 2: return 0.5;
+    }
+    return 0.25;
+}
+// The growth a feed item would actually grant this pet right now (min 1 - never wasted).
+function pet_feed_effective_growth(pet, f) {
+    return max(1, round(f.growth * pet_feed_crowd_mult(pet)));
+}
+
 // Apply an owned feed (by id) to a pet - spends one from the pouch (no gold). Fills growth
 // toward (clamped at) the next-stage threshold; feed makes a pet READY but never crosses on
-// its own. Premium perks fire here. Returns "" on success, else an error message.
+// its own. Premium perks fire here; crowding (soft cap above) shrinks the growth granted.
+// Returns "" on success, else an error message.
 function pet_feed_apply(pet, feed_id) {
     if (!is_struct(pet) || pet.is_egg)   return "An egg can't be fed - hatch it first.";
     if (pet.stage >= pet_max_stage())     return pet.name + " is fully grown.";
-    if (pet_growth_ready(pet))            return pet.name + " is already ready - take it on a run.";
+    if (pet_growth_ready(pet))            return pet.name + "'s growth is FULL - feed can't help further. Complete a run with it active to evolve.";
     var _f = pet_feed_get(feed_id);
     if (_f == undefined)                  return "";
     if (pet_feed_pouch_count(feed_id) <= 0) return "You have no " + _f.name + " - buy some from Petra.";
@@ -3952,7 +3994,7 @@ function pet_feed_apply(pet, feed_id) {
         return "Only a " + pet_species_get(_f.species).name + " will eat that.";
     variable_struct_set(pet_feed_pouch(), feed_id, pet_feed_pouch_count(feed_id) - 1);
     var _need  = pet_growth_needed(pet.stage);
-    pet.growth = min(_need, pet.growth + _f.growth);
+    pet.growth = min(_need, pet.growth + pet_feed_effective_growth(pet, _f));
     // Premium perk.
     if (_f.perk == "mend" && pet.injured > 0) {
         pet.injured = max(0, pet.injured - 1);

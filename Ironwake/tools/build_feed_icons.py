@@ -17,14 +17,37 @@ FEEDS = [
  ("hearty_roast", "6b911be8-0ed3-42a0-82dd-ed849e0798e7"),
 ]
 
+# Preferred-feed icons (M-approved 2026-07-03): 17 species favourites, built from the
+# review-pick PNGs staged in _art_staging/pets_signature_review/feed_icons. feed ids are
+# pref_<species>, so the sprites resolve via the existing spr_pet_feed_<id> lookup.
+PREF_SRC = os.path.join("_art_staging", "pets_signature_review", "feed_icons")
+PREFS = [
+ ("pref_luna_moth",       "00_luna_moth_nectar.png"),
+ ("pref_bone_stag",       "01_bone_stag_bale.png"),
+ ("pref_saber_hound",     "02_saber_hound_haunch.png"),
+ ("pref_gloomtoad",       "03_gloomtoad_clutch.png"),
+ ("pref_wyrmling",        "04_wyrmling_heart.png"),
+ ("pref_nightowl",        "05_nightowl_vole.png"),
+ ("pref_bonehound",       "06_bonehound_bone.png"),
+ ("pref_hollow_pup",      "07_hollow_pup_sop.png"),
+ ("pref_vaultling",       "08_vaultling_gravel.png"),
+ ("pref_marrow_adder",    "09_marrow_adder_knucklebones.png"),
+ ("pref_gaolwyrm",        "10_gaolwyrm_shavings.png"),
+ ("pref_cinder_newt",     "11_cinder_newt_grubs.png"),
+ ("pref_magma_leech",     "12_magma_leech_ore.png"),
+ ("pref_golemite",        "13_golemite_chips.png"),
+ ("pref_rimefox",         "14_rimefox_hare.png"),
+ ("pref_crypt_bat",       "15_crypt_bat_wings.png"),
+ ("pref_hoarfrost_drake", "roe_candidate_12.png"),
+]
+
 def dl(url):
     req = urllib.request.Request(url, headers={"User-Agent":"Mozilla/5.0"})
     return Image.open(io.BytesIO(urllib.request.urlopen(req, timeout=60).read())).convert("RGBA")
 
-def build(name, url):
+def build(name, im):
     root = os.path.join("sprites", name)
     os.makedirs(root, exist_ok=True)
-    im = dl(url)
     W, H = im.size
     layer_guid = str(uuid.uuid4())
     fg = str(uuid.uuid4()); kg = str(uuid.uuid4())
@@ -128,5 +151,10 @@ def build(name, url):
     print(f"OK {name}: {W}x{H}")
 
 if __name__ == "__main__":
-    for fid, oid in FEEDS:
-        build("spr_pet_feed_" + fid, STATIC.format(proj=PROJECT, id=oid))
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == "prefs":
+        for fid, fn in PREFS:
+            build("spr_pet_feed_" + fid, Image.open(os.path.join(PREF_SRC, fn)).convert("RGBA"))
+    else:
+        for fid, oid in FEEDS:
+            build("spr_pet_feed_" + fid, dl(STATIC.format(proj=PROJECT, id=oid)))

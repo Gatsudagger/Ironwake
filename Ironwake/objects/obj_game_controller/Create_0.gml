@@ -86,6 +86,13 @@ global.__sprite_includes = [
     // Pet feed item icons (Petra shop + Bairc feed menu). Resolved by spr_pet_feed_<id>.
     spr_pet_feed_scraps, spr_pet_feed_forage, spr_pet_feed_prime,
     spr_pet_feed_mending_mash, spr_pet_feed_purgeroot, spr_pet_feed_hearty_roast,
+    // Species-preferred feed icons (ids pref_<species>, all 17 species).
+    spr_pet_feed_pref_luna_moth,   spr_pet_feed_pref_bone_stag,    spr_pet_feed_pref_saber_hound,
+    spr_pet_feed_pref_gloomtoad,   spr_pet_feed_pref_wyrmling,     spr_pet_feed_pref_nightowl,
+    spr_pet_feed_pref_bonehound,   spr_pet_feed_pref_hollow_pup,   spr_pet_feed_pref_vaultling,
+    spr_pet_feed_pref_marrow_adder, spr_pet_feed_pref_gaolwyrm,    spr_pet_feed_pref_cinder_newt,
+    spr_pet_feed_pref_magma_leech, spr_pet_feed_pref_golemite,     spr_pet_feed_pref_rimefox,
+    spr_pet_feed_pref_crypt_bat,   spr_pet_feed_pref_hoarfrost_drake,
     // Boss-signature species (Ashen Vault trio) - 3 stages x south/east animated idle.
     spr_pet_vaultling_baby_s,        spr_pet_vaultling_baby_e,
     spr_pet_vaultling_youngadult_s,  spr_pet_vaultling_youngadult_e,

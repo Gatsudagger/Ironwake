@@ -1243,10 +1243,13 @@ function ui_draw_bairc_screen() {
     draw_set_color(make_color_rgb(52, 58, 80));
     draw_rectangle(_lp_x0, _lp_y0, _lp_x1, _lp_y1, true);
 
-    // Column headers
+    // Column headers. The counter reads stabled/capacity (active companion exempt) and
+    // turns amber when Bairc's stable is crowded - feed potency drops (soft cap, §6).
     draw_set_font(fnt_ui_small);
-    draw_set_color(make_color_rgb(150, 200, 140));
-    draw_text(_list_x, _list_y - 36, "STABLE  (" + string(_n) + ")");
+    var _stb_ovf = pet_stable_overflow();
+    draw_set_color(_stb_ovf > 0 ? make_color_rgb(230, 160, 90) : make_color_rgb(150, 200, 140));
+    draw_text(_list_x, _list_y - 36, "STABLE  (" + string(pet_stabled_count()) + "/" + string(PET_STABLE_CAPACITY) + ")"
+        + (_stb_ovf > 0 ? "  -  crowded" : ""));
 
     if (_n == 0) {
         draw_set_font(fnt_ui);
@@ -1557,8 +1560,22 @@ function ui_draw_bairc_screen() {
             draw_set_color(make_color_rgb(52, 58, 80));
             draw_rectangle(_dx - 14, _fy0, _dx + _dw, _fy1, true);
             draw_set_font(fnt_ui_small);
+            var _crowd = pet_feed_crowd_mult(_p);
             draw_set_color(make_color_rgb(150, 200, 140));
             draw_text(_dx, _fy0 + 12, "FEED  -  fills growth  (buy from Petra)");
+            // Right-side status note: growth-full beats the crowding warning (it is the
+            // reason the rows below are greyed - feed can't help until a run evolves it).
+            if (_fready) {
+                draw_set_halign(fa_right);
+                draw_set_color(make_color_rgb(120, 210, 150));
+                draw_text(_dx + _dw - 14, _fy0 + 12, "growth FULL - run to evolve");
+                draw_set_halign(fa_left);
+            } else if (_crowd < 1.0) {
+                draw_set_halign(fa_right);
+                draw_set_color(make_color_rgb(230, 160, 90));
+                draw_text(_dx + _dw - 14, _fy0 + 12, "crowded stable - feed at " + string(round(_crowd * 100)) + "%");
+                draw_set_halign(fa_left);
+            }
             var _rows_y = _fy0 + 46;
             if (array_length(_owned) == 0) {
                 draw_set_color(make_color_rgb(120, 124, 138));
@@ -1592,7 +1609,10 @@ function ui_draw_bairc_screen() {
                 }
                 draw_set_font(fnt_ui);
                 draw_set_color(_fav && _can ? make_color_rgb(235, 210, 140) : (_can ? make_color_rgb(222, 228, 240) : make_color_rgb(110, 114, 128)));
-                draw_text(_txt_x, _fby + 8, "[" + string(_fi + 1) + "]  " + _ff.name + "   +" + string(_ff.growth) + (_fav ? "   - its favorite!" : ""));
+                // Crowded stable: show what the feed ACTUALLY grants ("+3 -> +2").
+                var _fg_eff = pet_feed_effective_growth(_p, _ff);
+                var _fg_txt = (_fg_eff < _ff.growth) ? ("+" + string(_ff.growth) + " -> +" + string(_fg_eff)) : ("+" + string(_ff.growth));
+                draw_text(_txt_x, _fby + 8, "[" + string(_fi + 1) + "]  " + _ff.name + "   " + _fg_txt + (_fav ? "   - its favorite!" : ""));
                 draw_set_font(fnt_ui_small);
                 draw_set_halign(fa_right);
                 draw_set_color(_can ? make_color_rgb(150, 205, 150) : make_color_rgb(90, 110, 96));
@@ -3371,7 +3391,9 @@ function ui_draw_label_fit(cx, cy, str, box_w, box_h) {
 // "object-fit: cover"). Use for portraits/art instead of draw_sprite_stretched,
 // which squashes the image to the box aspect ratio.
 // ---------------------------------------------------------------------------
-function ui_draw_sprite_cover(spr, subimg, x, y, w, h, alpha) {
+// v_anchor picks WHERE the vertical crop bites: 0.5 = centered (default), 0 = keep the
+// TOP of the art (portraits whose head reaches the canvas edge - centered crop scalps them).
+function ui_draw_sprite_cover(spr, subimg, x, y, w, h, alpha, v_anchor = 0.5) {
     if (!sprite_exists(spr)) return;
     var _sw = sprite_get_width(spr);
     var _sh = sprite_get_height(spr);
@@ -3379,8 +3401,8 @@ function ui_draw_sprite_cover(spr, subimg, x, y, w, h, alpha) {
     var _scale = max(w / _sw, h / _sh);       // cover: largest scale that fills the box
     var _src_w = min(_sw, w / _scale);         // source sub-rect that maps onto the box
     var _src_h = min(_sh, h / _scale);
-    var _src_l = (_sw - _src_w) * 0.5;         // centered crop
-    var _src_t = (_sh - _src_h) * 0.5;
+    var _src_l = (_sw - _src_w) * 0.5;         // centered crop (horizontal)
+    var _src_t = (_sh - _src_h) * v_anchor;
     // draw_sprite_part_ext positions by the part's top-left and ignores origin.
     draw_sprite_part_ext(spr, subimg, _src_l, _src_t, _src_w, _src_h, x, y, _scale, _scale, c_white, alpha);
 }

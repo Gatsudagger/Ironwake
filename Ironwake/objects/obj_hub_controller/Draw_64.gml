@@ -554,7 +554,9 @@ if (selected_npc < array_length(_port_sprites)) {
     var _np_spr = asset_get_index("spr_npc_bairc_portrait");   // M-supplied profile art
     if (_np_spr < 0) _np_spr = asset_get_index("spr_npc_bairc_idle");
     if (_np_spr >= 0) {
-        ui_draw_sprite_cover(_np_spr, 0, _pp_x, _pp_y, _pp_w, _pp_h, portrait_fade_alpha);
+        // v_anchor 0: his portrait is full-bleed 512px - a centered cover-crop in this
+        // wider box scalped the top of his head, so the crop bites the bottom instead.
+        ui_draw_sprite_cover(_np_spr, 0, _pp_x, _pp_y, _pp_w, _pp_h, portrait_fade_alpha, 0);
     } else {
         draw_set_halign(fa_center); draw_set_valign(fa_middle);
         draw_set_font(fnt_ui_title); draw_set_color(make_color_rgb(120, 130, 160));
