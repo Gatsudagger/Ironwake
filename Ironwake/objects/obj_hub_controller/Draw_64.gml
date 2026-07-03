@@ -1977,6 +1977,12 @@ if (instance_exists(obj_game_controller)) {
                 var _gx0 = _cx0 + _ipad, _gx1 = _cx1 - _ipad, _gy0 = _py1 + 26;
                 var _ceff = pet_effect_text(_hp);
                 if (_ceff == "") _ceff = "No passive yet - it grows into its gifts.";
+                // The egg gift is part of what it grants - spell its effect out here;
+                // the header chip alone names it without saying what it does.
+                if (_egl != "") {
+                    var _ceg = pet_egg_type_get(_hp.egg_type);
+                    if (_ceg != undefined) _ceff += "\n" + _egl + " - " + _ceg.desc;
+                }
                 draw_set_font(fnt_ui);
                 var _ew = (_gx1 - _gx0) - 28;
                 var _eh = string_height_ext(_ceff, 30, _ew);

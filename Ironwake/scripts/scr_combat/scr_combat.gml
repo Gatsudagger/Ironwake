@@ -322,6 +322,12 @@ function combat_estimate_hit(ability, caster, target) {
 // Returns the actual damage dealt (accounting for the HP floor).
 // ---------------------------------------------------------------------------
 function combat_apply_damage(target_struct, damage) {
+    // Universal pet PWR role: an active creature's presence unsettles foes - the player
+    // takes -0.5%/pt PWR damage (cap 8%). Heals (negative damage) pass untouched.
+    if (damage > 0 && variable_struct_exists(target_struct, "is_player") && target_struct.is_player) {
+        var _guard = pet_active_pwr_guard();
+        if (_guard > 0) damage = max(1, round(damage * (1 - _guard)));
+    }
     var prev_hp         = target_struct.HP;
     target_struct.HP    = max(0, target_struct.HP - damage);
     var actual_dealt    = prev_hp - target_struct.HP;
@@ -954,7 +960,7 @@ function combat_on_enemy_defeated(target, player, combat_log) {
     if (boon_active("greed")) _gold_drop = round(_gold_drop * (1 + boon_value("greed")));
     _gold_drop = round(_gold_drop * curse_gold_mult());
     _gold_drop = round(_gold_drop * potion_gold_mult());   // Goldfinger Elixir (+gold, 2-boss buff)
-    _gold_drop = round(_gold_drop * (1 + pet_active_boon_gold_pct() + pet_active_egg_bonus("gold")));   // active Boon pet + Gilded-egg hatchling
+    _gold_drop = round(_gold_drop * (1 + pet_active_boon_gold_pct() + pet_active_lck_gold_pct() + pet_active_egg_bonus("gold")));   // Fortune pet gift + universal LCK + Gilded-egg hatchling
     add_gold(_gold_drop);
     global.current_run_kills++;
     array_push(combat_log, "Gained " + string(_gold_drop) + "g!");

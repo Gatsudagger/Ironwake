@@ -86,6 +86,26 @@ global.__sprite_includes = [
     // Pet feed item icons (Petra shop + Bairc feed menu). Resolved by spr_pet_feed_<id>.
     spr_pet_feed_scraps, spr_pet_feed_forage, spr_pet_feed_prime,
     spr_pet_feed_mending_mash, spr_pet_feed_purgeroot, spr_pet_feed_hearty_roast,
+    // Boss-signature species (Ashen Vault trio) - 3 stages x south/east animated idle.
+    spr_pet_vaultling_baby_s,        spr_pet_vaultling_baby_e,
+    spr_pet_vaultling_youngadult_s,  spr_pet_vaultling_youngadult_e,
+    spr_pet_vaultling_adult_s,       spr_pet_vaultling_adult_e,
+    spr_pet_marrow_adder_baby_s,     spr_pet_marrow_adder_baby_e,
+    spr_pet_marrow_adder_youngadult_s, spr_pet_marrow_adder_youngadult_e,
+    spr_pet_marrow_adder_adult_s,    spr_pet_marrow_adder_adult_e,
+    spr_pet_gaolwyrm_baby_s,         spr_pet_gaolwyrm_baby_e,
+    spr_pet_gaolwyrm_youngadult_s,   spr_pet_gaolwyrm_youngadult_e,
+    spr_pet_gaolwyrm_adult_s,        spr_pet_gaolwyrm_adult_e,
+    // Boss-signature species (Scorched Depths trio) - 3 stages x south/east animated idle.
+    spr_pet_cinder_newt_baby_s,      spr_pet_cinder_newt_baby_e,
+    spr_pet_cinder_newt_youngadult_s, spr_pet_cinder_newt_youngadult_e,
+    spr_pet_cinder_newt_adult_s,     spr_pet_cinder_newt_adult_e,
+    spr_pet_magma_leech_baby_s,      spr_pet_magma_leech_baby_e,
+    spr_pet_magma_leech_youngadult_s, spr_pet_magma_leech_youngadult_e,
+    spr_pet_magma_leech_adult_s,     spr_pet_magma_leech_adult_e,
+    spr_pet_golemite_baby_s,         spr_pet_golemite_baby_e,
+    spr_pet_golemite_youngadult_s,   spr_pet_golemite_youngadult_e,
+    spr_pet_golemite_adult_s,        spr_pet_golemite_adult_e,
     // Keeper species brought to 3-stage animated (new directional/young-adult sprites).
     spr_pet_bonehound_youngadult_s, spr_pet_bonehound_youngadult_e,
     spr_pet_hollow_pup_baby_s,       spr_pet_hollow_pup_baby_e,

@@ -2040,7 +2040,7 @@ function handle_enemy_drops(enemy_type) {
     // loot-tier bonus from active curses (devil's bargain - better loot for risk).
     var _drop_asc = (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0) + curse_loot_asc_bonus();
     // Faerie's Tear potion + active Boon pet: extra equipment-drop chance (percentage points).
-    var _loot_pot = potion_loot_bonus_pts() + pet_active_boon_loot_pts() + pet_active_egg_bonus("loot");
+    var _loot_pot = potion_loot_bonus_pts() + pet_active_boon_loot_pts() + pet_active_lck_loot_pts() + pet_active_egg_bonus("loot");
 
     // Rune drops (additive to gear/consumable). Standard: none. Elite: ~6% Tier I.
     // Boss: guaranteed, with a 20% chance to be Tier II. Tier III is craft-only.
@@ -3768,8 +3768,8 @@ function floor_clear_credit(awk) {
 
 function pet_archetype_name(a) {
     switch (a) {
-        case PET_ARCH_BOON:      return "Boon";
-        case PET_ARCH_COMBATANT: return "Combatant";
+        case PET_ARCH_BOON:      return "Fortune";
+        case PET_ARCH_COMBATANT: return "Warrior";
         case PET_ARCH_GUARDIAN:  return "Guardian";
     }
     return "Unknown";
@@ -4159,14 +4159,29 @@ function pet_stat_talent(pet, which) {
 }
 // A creature's current value for a stat (weak; primary grows +1/stage, secondaries +1 per 2).
 // A Devoted bond (tier 2) adds +1 to the governing stat - loyalty made numeric.
-function pet_stat(pet, which) {
-    if (!is_struct(pet)) return 0;
+// SIGNATURE pets (boss eggs) add +1 per 2 Awakening at acquisition to the governing stat
+// (ceil: +1 at A1-2, +2 at A3-4, +3 at A5) - the §3.1 Awakening-scaled ceiling.
+// The point-source breakdown is its own function (the stat hover tooltip itemises it);
+// pet_stat just sums it so the two can never disagree.
+function pet_stat_breakdown(pet, which) {
+    var _bd = { base:0, stage:0, talent:0, bond:0, signature:0 };
+    if (!is_struct(pet)) return _bd;
     var _stage  = pet.is_egg ? 0 : pet.stage;
     var _is_pri = (which == pet_stat_primary(pet.archetype));
-    var _base   = _is_pri ? 3 : 1;
-    var _growth = _is_pri ? _stage : (_stage div 2);
-    if (_is_pri && pet_bond_tier(pet) >= 2) _growth += 1;   // Devoted bond bonus
-    return _base + _growth + pet_stat_talent(pet, which);
+    _bd.base   = _is_pri ? 3 : 1;
+    _bd.stage  = _is_pri ? _stage : (_stage div 2);
+    _bd.talent = pet_stat_talent(pet, which);
+    if (_is_pri && pet_bond_tier(pet) >= 2) _bd.bond = 1;   // Devoted bond bonus
+    if (_is_pri && pet_is_signature(pet)) {
+        var _awk = variable_struct_exists(pet, "awk_at_acquire") ? pet.awk_at_acquire : 0;
+        _bd.signature = ceil(_awk / 2);
+    }
+    return _bd;
+}
+function pet_stat(pet, which) {
+    if (!is_struct(pet)) return 0;
+    var _bd = pet_stat_breakdown(pet, which);
+    return _bd.base + _bd.stage + _bd.talent + _bd.bond + _bd.signature;
 }
 // The effectiveness multiplier a stat grants (1.0 for eggs).
 function pet_stat_mult(pet, which) {
@@ -4182,6 +4197,31 @@ function pet_active_stat_mult(which) {
 function pet_stat_name(which) {
     switch (which) { case "pow": return "PWR"; case "spr": return "SPR"; case "lck": return "LCK"; }
     return "";
+}
+
+// --- UNIVERSAL stat roles (2026-07-03 rework): every stat matters on every creature,
+// on top of the governing stat's type-gift scaling. Agreed numbers:
+//   PWR - presence: the player takes -0.5%/pt damage while it is active (cap 8%).
+//   SPR - hardy spirit: 5%/pt chance to resist gaining an injury tier (cap 50%).
+//   LCK - fortune: +0.5%/pt gold and +0.3/pt loot find for ANY active creature.
+function pet_active_pwr_guard() {
+    var _p = pet_active();
+    if (_p == undefined || _p.is_egg) return 0;
+    return min(0.08, pet_stat(_p, "pow") * 0.005);
+}
+function pet_spr_injury_resist(pet) {
+    if (!is_struct(pet) || pet.is_egg) return 0;
+    return min(50, pet_stat(pet, "spr") * 5);
+}
+function pet_active_lck_gold_pct() {
+    var _p = pet_active();
+    if (_p == undefined || _p.is_egg) return 0;
+    return pet_stat(_p, "lck") * 0.005;
+}
+function pet_active_lck_loot_pts() {
+    var _p = pet_active();
+    if (_p == undefined || _p.is_egg) return 0;
+    return pet_stat(_p, "lck") * 0.3;
 }
 
 // --- Bond / Loyalty (Pets §5 Axis 3): rises from carrying a pet ACTIVE through survived
@@ -4282,14 +4322,14 @@ function pet_effect_text_base(pet) {
             var _lm = pet_stat_mult(pet, "lck");   // LCK modifies gold/loot
             var _g = round(pet_boon_gold_pct_for(pet.stage) * 100 * _lm);
             var _l = round(pet_boon_loot_pts_for(pet.stage) * _lm);
-            if (_g <= 0 && _l <= 0) return "Too young to grant a boon yet.";
-            var _s = "Boon: ";
+            if (_g <= 0 && _l <= 0) return "Too young to grant its gift yet.";
+            var _s = "Fortune: ";
             if (_g > 0) _s += "+" + string(_g) + "% gold";
             if (_l > 0) _s += (_g > 0 ? ", " : "") + "+" + string(_l) + "% loot find";
             return _s;
         case PET_ARCH_COMBATANT:
-            if (pet.stage < PET_STAGE_YOUNGADULT) return "Combatant: too young to fight (acts from Young Adult).";
-            return "Combatant: strikes an enemy each turn for " + string(round((pet.stage >= PET_STAGE_ADULT ? 16 : 8) * pet_stat_mult(pet, "pow"))) + ".";
+            if (pet.stage < PET_STAGE_YOUNGADULT) return "Warrior: too young to fight (acts from Young Adult).";
+            return "Warrior: strikes an enemy each turn for " + string(round((pet.stage >= PET_STAGE_ADULT ? 16 : 8) * pet_stat_mult(pet, "pow"))) + ".";
         case PET_ARCH_GUARDIAN:
             if (pet.stage < PET_STAGE_YOUNGADULT) return "Guardian: too young to protect (acts from Young Adult).";
             var _sm = pet_stat_mult(pet, "spr");   // SPR modifies heal/shield
@@ -4297,6 +4337,19 @@ function pet_effect_text_base(pet) {
                  + " (if hurt) or shields " + string(round((pet.stage >= PET_STAGE_ADULT ? 12 : 7) * _sm)) + ".";
     }
     return "";
+}
+
+// Body text for the tagged-block UI: the archetype pill IS the tag, so the body drops
+// the "Fortune:/Warrior:/Guardian:" prefix pet_effect_text bakes in (found mid-string too,
+// so the injured variants stay intact).
+function pet_effect_body(pet) {
+    var _t = pet_effect_text(pet);
+    var _prefixes = ["Fortune: ", "Warrior: ", "Guardian: "];
+    for (var _i = 0; _i < array_length(_prefixes); _i++) {
+        var _pp = string_pos(_prefixes[_i], _t);
+        if (_pp > 0) _t = string_delete(_t, _pp, string_length(_prefixes[_i]));
+    }
+    return _t;
 }
 
 // --- Creature profile builders (Pets §5) --------------------------------------
@@ -4318,7 +4371,7 @@ function pet_passive_list(pet) {
     // Egg-type passive (kept after hatch).
     if (variable_struct_exists(pet, "egg_type") && pet.egg_type != "") {
         var _et = pet_egg_type_get(pet.egg_type);
-        if (_et != undefined) array_push(_out, { name: "Egg Type: " + _et.name, desc: _et.desc });
+        if (_et != undefined) array_push(_out, { name: _et.name + "  (egg gift)", desc: _et.desc });
     }
     // Boon archetype: the gold/loot boon is a passive (LCK-modified).
     if (pet.archetype == PET_ARCH_BOON) {
@@ -4392,6 +4445,9 @@ function pet_on_run_end(result) {
     var _p = pet_active();
     if (_p == undefined || _p.is_egg) return "";
     if (result == -1) {
+        // Universal SPR role: hardy spirit - a chance to shrug the injury off entirely.
+        if (irandom(99) < pet_spr_injury_resist(_p))
+            return _p.name + " shrugged off the fall, unharmed (hardy spirit).";
         _p.injured += 1;
         if (_p.injured >= PET_INJURY_DEATH) {
             var _lost = _p.name;
@@ -4527,7 +4583,8 @@ function pet_kit(pet) {
 }
 
 // Auto-roll a Stage-3 capstone (found/wild creatures). No-op if one is already set.
-// Boss-egg (signature) would curate later. Raised pets use pet_capstone_choose instead.
+// Boss-egg (signature) pets hatch raised=true, so they take the pick path (curated kit,
+// design §3.1) via pet_capstone_choose like any raised pet.
 function pet_assign_capstone(pet) {
     if (!is_struct(pet)) return;
     if (variable_struct_exists(pet, "kit_capstone") && pet.kit_capstone != "") return;
@@ -4605,9 +4662,10 @@ function pet_kit_mods(pet) {
     return _m;
 }
 
-// Species catalog. Archetype is rolled SEPARATELY at acquisition (design §3), so a
-// species is cosmetic + a future signature/sprite hook, NOT an archetype lock. The
-// boss-signature roster (one species per boss) is content-pass TBD (design §12).
+// GENERIC species catalog. Archetype is rolled SEPARATELY at acquisition (design §3), so a
+// species is cosmetic + a sprite hook, NOT an archetype lock. Random rolls (events, shrines,
+// curses, starter) draw ONLY from this list - boss-signature species live in their own
+// catalog below and can never appear from a non-boss source.
 function pet_species_catalog() {
     return [
         { id:"luna_moth",   name:"Luna Moth",   blurb:"a pale grub that dreams of moonlit wings" },
@@ -4621,9 +4679,37 @@ function pet_species_catalog() {
     ];
 }
 
+// SIGNATURE species - one per boss, found nowhere else (design §3.1). Keyed by the
+// dungeon + floor of the boss whose egg drops it; `boss` is the display name for
+// "kin of ..." UI lines. Only pet_try_boss_egg hands these out.
+function pet_species_signature_catalog() {
+    return [
+        { id:"vaultling",       name:"Vaultling",       boss:"Vault Sentinel",       dungeon:"ashen_vault",     floor:1, blurb:"a rune-sealed stone beetle, still humming with the Vault's wards" },
+        { id:"marrow_adder",    name:"Marrow Adder",    boss:"Bone Sovereign",       dungeon:"ashen_vault",     floor:2, blurb:"a serpent of linked vertebrae, wearing a crown far too small" },
+        { id:"gaolwyrm",        name:"Gaolwyrm",        boss:"Malgrath the Warden",  dungeon:"ashen_vault",     floor:3, blurb:"a chain-wrapped lizard whose tail ends in a key" },
+        { id:"cinder_newt",     name:"Cinder Newt",     boss:"Forge Tyrant",         dungeon:"scorched_depths", floor:1, blurb:"an ember-bellied salamander that naps in cooling coals" },
+        { id:"magma_leech",     name:"Magma Leech",     boss:"Molten Revenant",      dungeon:"scorched_depths", floor:2, blurb:"it inches along, dripping slag that cools into pearls" },
+        { id:"golemite",        name:"Golemite",        boss:"The Ashen Colossus",   dungeon:"scorched_depths", floor:3, blurb:"a fist-sized shard of the Colossus, still trying to be tall" },
+        { id:"rimefox",         name:"Rimefox",         boss:"Glacial Warden",       dungeon:"tundra_tomb",     floor:1, blurb:"a frost-furred kit whose breath never melts" },
+        { id:"crypt_bat",       name:"Crypt Bat",       boss:"Tomb Archon",          dungeon:"tundra_tomb",     floor:2, blurb:"tattered wings that never miss in the dark" },
+        { id:"hoarfrost_drake", name:"Hoarfrost Drake", boss:"The Eternal Frost",    dungeon:"tundra_tomb",     floor:3, blurb:"an ice-scaled drakeling dreaming of the long winter" },
+    ];
+}
+
+// The signature species a given boss drops ("" if the slot is unmapped - the egg then
+// falls back to a generic species roll, so an unmapped boss can never break the drop).
+function pet_boss_signature_species(dungeon, fl) {
+    var _c = pet_species_signature_catalog();
+    for (var _i = 0; _i < array_length(_c); _i++)
+        if (_c[_i].dungeon == dungeon && _c[_i].floor == fl) return _c[_i].id;
+    return "";
+}
+
 function pet_species_get(id) {
     var _c = pet_species_catalog();
     for (var _i = 0; _i < array_length(_c); _i++) if (_c[_i].id == id) return _c[_i];
+    var _s = pet_species_signature_catalog();
+    for (var _i = 0; _i < array_length(_s); _i++) if (_s[_i].id == id) return _s[_i];
     return { id:id, name:"Creature", blurb:"" };
 }
 
@@ -4636,6 +4722,11 @@ function pet_species_random() {
 // `named` field, so a raw `pet.named` read throws - always go through this.
 function pet_named(pet) {
     return is_struct(pet) && variable_struct_exists(pet, "named") && pet.named;
+}
+
+// Safe read of the boss-signature flag (same early-save caveat as pet_named).
+function pet_is_signature(pet) {
+    return is_struct(pet) && variable_struct_exists(pet, "signature") && pet.signature;
 }
 
 // Save cleanup: pets from the retired humanoid species (the anthropomorphic "mothmen"
@@ -4656,7 +4747,8 @@ function pet_migrate_retired_species() {
     for (var _i = 0; _i < array_length(global.pet_roster); _i++) {
         var _p = global.pet_roster[_i];
         if (!is_struct(_p) || !variable_struct_exists(_p, "species")) continue;
-        if (!variable_struct_exists(_p, "named")) _p.named = false;   // backfill pre-naming pets so raw reads never throw
+        if (!variable_struct_exists(_p, "named"))     _p.named     = false;   // backfill pre-naming pets so raw reads never throw
+        if (!variable_struct_exists(_p, "signature")) _p.signature = false;   // backfill pre-signature pets (scr_ui reads it raw)
         if (variable_struct_exists(_map, _p.species)) {
             _p.species = variable_struct_get(_map, _p.species);
             if (!variable_struct_exists(_p, "named") || !_p.named) {
@@ -4727,7 +4819,7 @@ function pet_make(species_id, source, archetype, stage, is_egg) {
         is_egg:         is_egg,
         egg_type:       _egg,                             // RNG egg-type benefit kept after hatch (§3)
         awk_at_acquire: _awk,
-        signature:      (source == "egg_boss"),          // boss-egg => curated Stage-3 kit (later)
+        signature:      (source == "egg_boss"),          // boss-egg => unique species + awk stat ceiling (§3.1)
         // sprite-state (animation shelved; fields reserved per design §6/§13)
         sprite_name:    "spr_pet_" + species_id,
         sprite_state:   "idle",
@@ -4853,8 +4945,8 @@ function pet_egg_count() {
 // Grant a pet from a source ("egg_event"/"egg_shrine"/"egg_curse"/"egg_boss"). ~15%
 // of non-boss sources yield a FOUND creature (already alive, Stage 1-2) instead of an
 // egg (design §3.2) - rarer, no full raise-history. Returns the granted pet/egg.
-function pet_grant_from_source(source) {
-    var _species = pet_species_random();
+function pet_grant_from_source(source, species_override = "") {
+    var _species = (species_override != "") ? species_override : pet_species_random();
     var _pet;
     if (source != "egg_boss" && irandom(99) < 15) {
         _pet = pet_make(_species, "found", -1, 1 + irandom(1), false);   // found, Stage 1-2
@@ -4959,11 +5051,15 @@ function pet_egg_label(pet) {
 }
 
 // Boss-clear pet roll. Rare even at max difficulty; odds rise with Awakening but never
-// approach guaranteed (design §3.1). Returns the granted pet, or undefined.
+// approach guaranteed (design §3.1). The egg carries the slain boss's SIGNATURE species
+// (one per boss, found nowhere else); duplicates are allowed - a later, higher-Awakening
+// kill yields a stronger copy of the same kin. Returns the granted pet, or undefined.
 function pet_try_boss_egg(awk) {
     var _chance = min(14, 4 + 2 * awk);                  // 4% A0 -> cap 14%
-    if (irandom(99) < _chance) return pet_grant_from_source("egg_boss");
-    return undefined;
+    if (irandom(99) >= _chance) return undefined;
+    var _dung  = variable_global_exists("selected_dungeon") ? global.selected_dungeon : "ashen_vault";
+    var _floor = variable_global_exists("current_floor")    ? global.current_floor    : 1;
+    return pet_grant_from_source("egg_boss", pet_boss_signature_species(_dung, _floor));
 }
 
 // Grant a pet egg/creature from a Shrine (blessing) or Curse altar, appending a themed

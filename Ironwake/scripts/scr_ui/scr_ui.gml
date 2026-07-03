@@ -796,7 +796,23 @@ function ui_room_icon_sprite(room_type) {
 // regular input does not bleed through while overlays are active.
 // gc Step is intentionally excluded - it must keep running to handle overlays.
 // ---------------------------------------------------------------------------
+// True while any typed-text entry is capturing keyboard_string (pet naming at Bairc,
+// hero naming at char select). Global hotkeys must stand down while this is true, or
+// typing a name with 'i' in it opens the inventory (M's bug report 2026-07-03).
+function text_entry_active() {
+    if (instance_exists(obj_game_controller)) {
+        var _gc = instance_find(obj_game_controller, 0);
+        if (variable_instance_exists(_gc, "bairc_naming") && _gc.bairc_naming) return true;
+    }
+    if (instance_exists(obj_char_select)) {
+        var _cs = instance_find(obj_char_select, 0);
+        if (variable_instance_exists(_cs, "naming_active") && _cs.naming_active) return true;
+    }
+    return false;
+}
+
 function ui_input_blocked() {
+    if (text_entry_active())  return true;  // typing a name - every hotkey stands down
     if (tutorial_is_active()) return true;  // onboarding coach-mark is modal
     if (!instance_exists(obj_game_controller)) return false;
     var _gc = instance_find(obj_game_controller, 0);
@@ -1100,6 +1116,89 @@ function ui_bairc_pill(_x, _y, _txt, _col) {
     return _x + _w;
 }
 
+// Floating equipment-style tooltip explaining a creature stat (PWR/SPR/LCK): what it
+// governs, the live effect on THIS creature, and where each point comes from (mirrors
+// pet_stat_breakdown, so it can never disagree with the real math). Follows the
+// char-menu stat popup pattern; self-sizes and clamps to the screen.
+function ui_draw_pet_stat_tooltip(mx, my, pet, which) {
+    var _val = pet_stat(pet, which);
+    var _gov = (which == pet_stat_primary(pet.archetype));
+    var _lines = [];   // { txt, col }
+    array_push(_lines, { txt: pet_stat_name(which) + "  " + string(_val), col: c_white });
+    // Universal role: every stat does this on EVERY creature (mirrors the pet_active_*
+    // helpers in scr_stats - keep the numbers in sync).
+    switch (which) {
+        case "pow":
+            array_push(_lines, { txt: "Presence: you take " + string_format(min(8, _val * 0.5), 0, 1) + "% less damage.", col: make_color_rgb(180, 200, 235) });
+            break;
+        case "spr":
+            array_push(_lines, { txt: "Hardy spirit: " + string(min(50, _val * 5)) + "% chance to shrug off an injury.", col: make_color_rgb(180, 200, 235) });
+            break;
+        default:
+            array_push(_lines, { txt: "Fortune: +" + string_format(_val * 0.5, 0, 1) + "% gold, +" + string_format(_val * 0.3, 0, 1) + " loot find.", col: make_color_rgb(180, 200, 235) });
+            break;
+    }
+    var _arch_of = (which == "pow") ? "Warrior" : ((which == "spr") ? "Guardian" : "Fortune");
+    var _gift    = (which == "pow") ? "strike damage" : ((which == "spr") ? "heals & shields" : "boon (gold & loot)");
+    if (_gov) {
+        array_push(_lines, { txt: "Governing stat: its " + _gift + " scales +" + string(round(_val * PET_STAT_COEFF * 100))
+                                + "%  (each point = +" + string(round(PET_STAT_COEFF * 100)) + "%).", col: make_color_rgb(150, 210, 160) });
+        var _bd  = pet_stat_breakdown(pet, which);
+        var _src = "Base " + string(_bd.base) + "   Stage +" + string(_bd.stage) + "   Talent +" + string(_bd.talent);
+        if (_bd.bond > 0)      _src += "   Bond +" + string(_bd.bond);
+        if (_bd.signature > 0) _src += "   Signature +" + string(_bd.signature);
+        array_push(_lines, { txt: _src, col: make_color_rgb(170, 178, 198) });
+    }
+    array_push(_lines, { txt: "Grows fastest on " + _arch_of + " creatures.", col: make_color_rgb(140, 145, 165) });
+    draw_set_font(fnt_ui_small);
+    var _w = 0;
+    for (var _i = 0; _i < array_length(_lines); _i++) _w = max(_w, string_width(_lines[_i].txt));
+    _w += 36;
+    var _h  = 24 + array_length(_lines) * 30;
+    var _tx = mx + 24, _ty = my + 12;
+    if (_tx + _w > GUI_W - 6) _tx = GUI_W - _w - 6;
+    if (_ty + _h > GUI_H - 6) _ty = GUI_H - _h - 6;
+    draw_set_alpha(0.95);
+    draw_set_color(make_color_rgb(18, 20, 32));
+    draw_rectangle(_tx, _ty, _tx + _w, _ty + _h, false);
+    draw_set_alpha(1.0);
+    draw_set_color(make_color_rgb(120, 140, 190));
+    draw_rectangle(_tx, _ty, _tx + _w, _ty + _h, true);
+    var _ly = _ty + 12;
+    for (var _i = 0; _i < array_length(_lines); _i++) {
+        draw_set_color(_lines[_i].col);
+        draw_text(_tx + 18, _ly, _lines[_i].txt);
+        _ly += 30;
+    }
+    draw_set_color(c_white);
+}
+
+// Three compact PWR/SPR/LCK chips (governing stat gold, hovered chip's border lightens).
+// Returns the stat key under the mouse ("" if none) so the CALLER can pop
+// ui_draw_pet_stat_tooltip after everything else - tooltips must draw last.
+function ui_draw_pet_stat_chips(_x, _y, _pet, _chip_w, _chip_h) {
+    var _pri  = pet_stat_primary(_pet.archetype);
+    var _keys = ["pow", "spr", "lck"];
+    var _mx = device_mouse_x_to_gui(0), _my = device_mouse_y_to_gui(0);
+    var _hover = "";
+    for (var _i = 0; _i < 3; _i++) {
+        var _cx  = _x + _i * (_chip_w + 12);
+        var _hot = (_keys[_i] == _pri);
+        var _hov = (_mx >= _cx && _mx <= _cx + _chip_w && _my >= _y && _my <= _y + _chip_h);
+        if (_hov) _hover = _keys[_i];
+        draw_set_color(_hot ? make_color_rgb(32, 30, 20) : make_color_rgb(18, 20, 30));
+        draw_rectangle(_cx, _y, _cx + _chip_w, _y + _chip_h, false);
+        draw_set_color(_hov ? make_color_rgb(200, 215, 245) : (_hot ? make_color_rgb(210, 175, 90) : make_color_rgb(50, 56, 76)));
+        draw_rectangle(_cx, _y, _cx + _chip_w, _y + _chip_h, true);
+        draw_set_halign(fa_center); draw_set_valign(fa_middle);
+        draw_set_font(fnt_ui_small);
+        draw_set_color(_hot ? make_color_rgb(232, 202, 122) : make_color_rgb(170, 178, 198));
+        draw_text(_cx + _chip_w / 2, _y + _chip_h / 2, pet_stat_name(_keys[_i]) + "  " + string(pet_stat(_pet, _keys[_i])));
+        draw_set_halign(fa_left); draw_set_valign(fa_top);
+    }
+    return _hover;
+}
+
 function ui_draw_bairc_screen() {
     if (!instance_exists(obj_game_controller)) return;
     var _gc = instance_find(obj_game_controller, 0);
@@ -1206,12 +1305,19 @@ function ui_draw_bairc_screen() {
         draw_text((_pl_x0 + _pl_x1) / 2, _pl_y0 + 5, _pill_txt);
         draw_set_halign(fa_left);
 
-        // Line 2: species (+ archetype and any injury/corruption tags), muted.
+        // Line 2: type (+ species only when a custom name hides it, + egg gift + any
+        // injury/corruption tags), muted. Raised so it can't kiss the row border.
         draw_set_font(fnt_ui_small);
         draw_set_color(make_color_rgb(150, 160, 185));
-        draw_text(_tx, _ry + 46, _pet.is_egg
-            ? ("unhatched  -  " + pet_archetype_name(_pet.archetype))
-            : ("(" + pet_species_get(_pet.species).name + ")   " + pet_archetype_name(_pet.archetype) + pet_injury_tag(_pet) + pet_corruption_tag(_pet)));
+        var _l2 = pet_archetype_name(_pet.archetype);
+        if (pet_named(_pet)) _l2 = pet_species_get(_pet.species).name + "  -  " + _l2;
+        if (_pet.is_egg) _l2 = "unhatched  -  " + _l2;
+        else {
+            var _regl = pet_egg_label(_pet);
+            if (_regl != "") _l2 += "  -  " + _regl;
+            _l2 += pet_injury_tag(_pet) + pet_corruption_tag(_pet);
+        }
+        draw_text(_tx, _ry + 40, _l2);
     }
 
     // HIS GARDEN - every creature ever entrusted to Bairc wanders the plot beneath the
@@ -1258,178 +1364,211 @@ function ui_draw_bairc_screen() {
     draw_set_color(make_color_rgb(52, 58, 80));
     draw_rectangle(_dx - 24, _dy - 20, _x1 + 1516, _y2 - 60, true);
 
+    var _stat_hover = "";   // stat chip under the mouse; its tooltip draws LAST (on top)
     if (_n > 0) {
         var _p = _roster[_cur];
         draw_set_font(fnt_ui_title);
         draw_set_color(c_white);
         draw_text(_dx, _dy, _p.is_egg ? (_p.name + " Egg") : _p.name);
 
-        // Stage + archetype pill row (with injury / signature badges when they apply).
-        var _plx = ui_bairc_pill(_dx, _dy + 52, _p.is_egg ? "Unhatched egg" : pet_stage_name(_p.stage), make_color_rgb(228, 190, 90));
-        _plx = ui_bairc_pill(_plx + 12, _dy + 52, pet_archetype_name(_p.archetype), pet_arch_color(_p.archetype));
-        if (!_p.is_egg && _p.injured > 0) _plx = ui_bairc_pill(_plx + 12, _dy + 52, "INJURED", make_color_rgb(220, 120, 90));
-        if (_p.signature)                 _plx = ui_bairc_pill(_plx + 12, _dy + 52, "SIGNATURE", make_color_rgb(200, 160, 235));
+        // STATUS pills only (ACTIVE / INJURED / SIGNATURE), spaced to the right of the
+        // name - identity facts (species/type/stage) are labelled rows in the PROFILE
+        // box below, Pokemon-style, so nothing reads as a floating unexplained label.
+        var _plx = _dx + string_width(_p.is_egg ? (_p.name + " Egg") : _p.name) + 34;
+        if (global.active_pet == _cur)    _plx = ui_bairc_pill(_plx, _dy + 6, "ACTIVE", make_color_rgb(120, 210, 150)) + 12;
+        if (!_p.is_egg && _p.injured > 0) _plx = ui_bairc_pill(_plx, _dy + 6, "INJURED", make_color_rgb(220, 120, 90)) + 12;
+        if (_p.signature)                 _plx = ui_bairc_pill(_plx, _dy + 6, "SIGNATURE", make_color_rgb(200, 160, 235)) + 12;
 
-        // Pet sprite (or a framed placeholder until per-stage pet art is generated).
+        // ---- PROFILE box: Species / Type / Life Stage / Growth / Bond rows ----
+        var _pa_y0 = _dy + 64, _pa_y1 = _dy + 254;
+        draw_set_color(make_color_rgb(15, 17, 24));
+        draw_rectangle(_dx - 14, _pa_y0, _dx + _dw, _pa_y1, false);
+        draw_set_color(make_color_rgb(52, 58, 80));
+        draw_rectangle(_dx - 14, _pa_y0, _dx + _dw, _pa_y1, true);
+
+        // Pet sprite (or a framed placeholder until per-stage pet art is generated),
+        // bottom-anchored inside the profile box's right side.
         var _psp = pet_sprite(_p, "s");
-        var _spx = _dx + _dw - 60, _spy = _dy + 44;   // top-right of the detail area, clear of the actor column
+        var _spx = _dx + _dw - 90, _spb = _pa_y1 - 12;
         if (_psp >= 0) {
-            // Normalize to a per-stage display height (art is authored at varied native
-            // sizes), bottom-anchored at the placeholder box floor since the animated
-            // sprites use a bottom-centre origin. Adolescent gets a small size bump.
             var _st_h  = [78, 90, 100, 112, 116];   // station display height by stage 0-4
             var _th    = _st_h[clamp(_p.stage, 0, 4)] * pet_stage_scale(_p);
             var _psc   = _th / max(1, sprite_get_height(_psp));
-            draw_sprite_ext(_psp, pet_anim_frame(_psp), _spx, _spy + 84, _psc, _psc, 0, c_white, 1);
+            draw_sprite_ext(_psp, pet_anim_frame(_psp), _spx, _spb, _psc, _psc, 0, c_white, 1);
         } else {
             draw_set_color(make_color_rgb(28, 32, 44));
-            draw_rectangle(_spx - 48, _spy - 8, _spx + 48, _spy + 84, false);
+            draw_rectangle(_spx - 48, _spb - 92, _spx + 48, _spb, false);
             draw_set_color(make_color_rgb(70, 80, 105));
-            draw_rectangle(_spx - 48, _spy - 8, _spx + 48, _spy + 84, true);
+            draw_rectangle(_spx - 48, _spb - 92, _spx + 48, _spb, true);
             draw_set_halign(fa_center); draw_set_font(fnt_ui_small);
             draw_set_color(make_color_rgb(120, 130, 160));
-            draw_text(_spx, _spy + 28, _p.is_egg ? "egg" : ("Stage " + string(_p.stage)));
+            draw_text(_spx, _spb - 60, _p.is_egg ? "egg" : ("Stage " + string(_p.stage)));
             draw_set_halign(fa_left);
         }
 
-        // Growth bar / status (not for eggs).
+        // Identity rows: grey label column, coloured value column.
+        draw_set_font(fnt_ui_small);
+        var _idr = [
+            ["Species:",    pet_species_get(_p.species).name,                         make_color_rgb(220, 226, 238)],
+            ["Type:",       pet_archetype_name(_p.archetype),                         pet_arch_color(_p.archetype)],
+            ["Life Stage:", _p.is_egg ? "Egg (unhatched)" : pet_stage_name(_p.stage), make_color_rgb(228, 190, 90)],
+        ];
+        for (var _ri = 0; _ri < 3; _ri++) {
+            draw_set_color(make_color_rgb(150, 160, 185));
+            draw_text(_dx, _dy + 76 + _ri * 30, _idr[_ri][0]);
+            draw_set_color(_idr[_ri][2]);
+            draw_text(_dx + 158, _dy + 76 + _ri * 30, _idr[_ri][1]);
+        }
+
         if (!_p.is_egg) {
-            draw_set_font(fnt_ui_small);
+            // Growth row + ticked bar (or the grown/READY status).
             if (_p.stage >= pet_max_stage()) {
                 draw_set_color(make_color_rgb(210, 180, 120));
-                draw_text(_dx, _dy + 100, "Fully grown (Adult).");
+                draw_text(_dx, _dy + 168, "Fully grown (Adult).");
             } else {
                 var _need  = pet_growth_needed(_p.stage);
                 var _ready = pet_growth_ready(_p);
                 draw_set_color(_ready ? make_color_rgb(120, 210, 150) : make_color_rgb(170, 180, 200));
-                draw_text(_dx, _dy + 92, _ready
+                draw_text(_dx, _dy + 168, _ready
                     ? ("READY - complete a run to reach " + pet_stage_name(_p.stage + 1))
                     : ("Growth to " + pet_stage_name(_p.stage + 1) + ":  " + string(_p.growth) + " / " + string(_need)));
-                // Growth bar: thicker, with a tick per growth point so the fill reads
-                // as discrete meals/runs rather than an opaque gauge.
-                var _bx = _dx, _by = _dy + 122, _bw = 420, _bh = 20;
+                var _bx = _dx, _gby = _dy + 196, _bw = 420, _bh = 16;
                 draw_set_color(make_color_rgb(40, 44, 56));
-                draw_rectangle(_bx, _by, _bx + _bw, _by + _bh, false);
+                draw_rectangle(_bx, _gby, _bx + _bw, _gby + _bh, false);
                 draw_set_color(_ready ? make_color_rgb(120, 210, 150) : make_color_rgb(210, 190, 130));
-                draw_rectangle(_bx, _by, _bx + _bw * (_p.growth / max(1, _need)), _by + _bh, false);
+                draw_rectangle(_bx, _gby, _bx + _bw * (_p.growth / max(1, _need)), _gby + _bh, false);
                 draw_set_color(make_color_rgb(24, 27, 36));
                 for (var _tk = 1; _tk < _need; _tk++) {
                     var _tkx = _bx + _bw * (_tk / _need);
-                    draw_line(_tkx, _by + 2, _tkx, _by + _bh - 2);
+                    draw_line(_tkx, _gby + 2, _tkx, _gby + _bh - 2);
                 }
                 draw_set_color(make_color_rgb(90, 96, 110));
-                draw_rectangle(_bx, _by, _bx + _bw, _by + _bh, true);
+                draw_rectangle(_bx, _gby, _bx + _bw, _gby + _bh, true);
             }
-        }
-
-        // Bond row (hatched creatures): tier name + three milestone pips + progress to the
-        // next tier (§5 Axis 3). Eggs keep the archetype flavor line in this slot instead.
-        draw_set_font(fnt_ui_small);
-        if (!_p.is_egg) {
+            // Bond row: tier name + three milestone pips + progress (§5 Axis 3).
             var _bt   = pet_bond_tier(_p);
             draw_set_color(make_color_rgb(226, 150, 150));
             var _btxt = "Bond:  " + pet_bond_tier_name(_bt);
-            draw_text(_dx, _dy + 158, _btxt);
+            draw_text(_dx, _dy + 224, _btxt);
             var _bpx = _dx + string_width(_btxt) + 20;
             for (var _bi = 0; _bi < 3; _bi++) {
-                var _bcx = _bpx + _bi * 27 + 8, _bcy = _dy + 158 + 15;
+                var _bcx = _bpx + _bi * 27 + 8, _bcy = _dy + 224 + 15;
                 if (_bi < _bt) { draw_set_color(make_color_rgb(226, 130, 130)); draw_circle(_bcx, _bcy, 8, false); }
                 else           { draw_set_color(make_color_rgb(96, 74, 84));   draw_circle(_bcx, _bcy, 8, true);  }
             }
             var _bnext = pet_bond_next_at(_p);
             draw_set_color(make_color_rgb(140, 132, 150));
-            draw_text(_bpx + 3 * 27 + 16, _dy + 158, (_bnext > 0)
+            draw_text(_bpx + 3 * 27 + 16, _dy + 224, (_bnext > 0)
                 ? (string(pet_bond(_p)) + " / " + string(_bnext) + "  (deepens on survived runs)")
                 : "its heart is yours entirely");
         } else {
-            draw_set_color(make_color_rgb(190, 160, 240));
-            draw_text(_dx, _dy + 158, "Archetype: " + pet_archetype_name(_p.archetype));
-        }
-        // Compact stat line (PWR/SPR/LCK, governing stat gold); eggs keep the flavor blurb.
-        if (!_p.is_egg) {
-            var _spri = pet_stat_primary(_p.archetype);
-            var _skk  = ["pow", "spr", "lck"];
-            var _sxx  = _dx;
-            for (var _sj = 0; _sj < 3; _sj++) {
-                var _shot = (_skk[_sj] == _spri);
-                draw_set_color(_shot ? make_color_rgb(232, 202, 122) : make_color_rgb(170, 178, 198));
-                var _stxt = pet_stat_name(_skk[_sj]) + " " + string(pet_stat(_p, _skk[_sj]));
-                draw_text(_sxx, _dy + 190, _stxt);
-                _sxx += string_width(_stxt) + 36;
-            }
-        } else {
+            // Eggs: what the creature inside will do, in the growth/bond rows' place.
             draw_set_color(make_color_rgb(180, 188, 206));
-            draw_text_ext(_dx, _dy + 190, pet_archetype_blurb(_p.archetype), 28, _dw);
+            draw_text_ext(_dx, _dy + 172, pet_archetype_blurb(_p.archetype), 28, _dw - 200);
         }
 
-        // Standing passive (Boon economy boon, or the per-turn action a Combatant/Guardian
-        // performs). Prefixed "Passive:" so the highlighted profile reads like a stat sheet.
-        var _eff = pet_effect_text(_p);
-        if (_eff != "") {
-            draw_set_color(make_color_rgb(120, 210, 150));
-            draw_text_ext(_dx, _dy + 226, "Passive:  " + _eff, 26, _dw);
-        }
+        // Stat chips (PWR/SPR/LCK, governing gold). Hovering one explains it - the
+        // tooltip itself draws at the end of the screen so nothing overdraws it.
+        if (!_p.is_egg) _stat_hover = ui_draw_pet_stat_chips(_dx, _dy + 266, _p, 128, 42);
 
-        // Corruption status takes the origin line's place when a pet is corrupted.
-        var _cst = pet_corr_state(_p);
+        // ---- GRANTS box: what this creature does for you - type gift, egg gift,
+        // corruption state, origin, signature kinship. A plain labelled header (no
+        // floating type tags - the Type: row above explains the type); the outline is
+        // drawn after the content, once its height is known.
+        draw_set_font(fnt_ui_small);
+        var _gb_y0 = _p.is_egg ? (_dy + 266) : (_dy + 322);
+        draw_set_color(make_color_rgb(120, 200, 140));
+        draw_text(_dx, _gb_y0 + 12, "GRANTS");
+        var _by  = _gb_y0 + 46;
+        var _eff = pet_effect_body(_p);
+        if (!_p.is_egg && _eff != "") {
+            draw_set_color(make_color_rgb(150, 210, 150));
+            draw_text_ext(_dx, _by, _eff, 26, _dw - 14);
+            _by += string_height_ext(_eff, 26, _dw - 14) + 10;
+        }
+        var _cst  = pet_corr_state(_p);
+        var _elab = pet_egg_label(_p);
         if (_cst == "pushing") {
             draw_set_color(make_color_rgb(205, 120, 225));
-            draw_text(_dx, _dy + 256, "Corrupting " + string(pet_corr_runs(_p)) + "/3  -  costs you -20% max HP, -10% dmg.");
+            draw_text(_dx, _by + 2, "Corrupting " + string(pet_corr_runs(_p)) + "/3  -  costs you -20% max HP, -10% dmg.");
             draw_set_color(make_color_rgb(150, 210, 150));
-            draw_text(_dx, _dy + 286, "[C] Cure now (keep +" + string(pet_corr_runs(_p) * 15) + "%, forfeit grand power)");
+            draw_text(_dx, _by + 32, "[C] Cure now (keep +" + string(pet_corr_runs(_p) * 15) + "%, forfeit grand power)");
+            _by += 66;
         } else if (_cst == "fulfilled") {
             draw_set_color(make_color_rgb(210, 120, 230));
-            draw_text(_dx, _dy + 256, "FULLY CORRUPTED  -  grand power unleashed (+45%).");
+            draw_text(_dx, _by + 2, "FULLY CORRUPTED  -  grand power unleashed (+45%).");
+            _by += 34;
         } else {
-            // Egg Type + its carried boon takes this slot for raised-from-egg creatures
-            // (the most useful line); found creatures show their origin flavor instead.
-            var _elab = pet_egg_label(_p);
-            if (!_p.is_egg && _elab != "") {
+            if (_elab != "") {
+                // The egg's carried gift - shown on the egg itself AND the hatchling that keeps it.
+                var _etd = pet_egg_type_get(_p.egg_type);
+                var _egtxt = _elab + " - " + ((_etd == undefined) ? "" : _etd.desc) + "  (egg gift)";
                 draw_set_color(make_color_rgb(228, 190, 90));
-                draw_text(_dx, _dy + 256, "Egg Type:  " + _elab);
-                draw_set_color(make_color_rgb(188, 180, 156));
-                draw_text_ext(_dx + 14, _dy + 288, pet_egg_passive_text(_p), 24, _dw - 14);
+                draw_text_ext(_dx, _by, _egtxt, 26, _dw - 14);
+                _by += string_height_ext(_egtxt, 26, _dw - 14) + 10;
             } else {
                 var _origin = _p.raised ? "Hatched and raised by you." : "Found already living in the dark.";
                 if (_cst == "cured") _origin = "Purged of corruption (+" + string(pet_corr_runs(_p) * 15) + "% retained).";
                 draw_set_color(make_color_rgb(150, 160, 185));
-                draw_text(_dx, _dy + 256, _origin);
-                if (_p.signature) {
-                    draw_set_color(make_color_rgb(210, 180, 120));
-                    draw_text(_dx, _dy + 286, "A signature creature - a boss's own kin.");
-                }
+                draw_text(_dx, _by + 2, _origin);
+                _by += 32;
+            }
+            if (_p.signature) {
+                draw_set_color(make_color_rgb(210, 180, 120));
+                var _sig_sp = pet_species_get(_p.species);
+                draw_text(_dx, _by + 2, variable_struct_exists(_sig_sp, "boss")
+                    ? ("A signature creature - kin of " + _sig_sp.boss + ".")
+                    : "A signature creature - a boss's own kin.");
+                _by += 32;
             }
         }
+        draw_set_color(make_color_rgb(52, 58, 80));
+        draw_rectangle(_dx - 14, _gb_y0, _dx + _dw, _by + 6, true);
+        var _after = _by + 24;
 
-        // Action hint for the highlighted creature.
-        draw_set_color(make_color_rgb(120, 210, 150));
-        var _act = _p.is_egg ? "[Enter] Hatch this egg"
-                 : ((global.active_pet == _cur) ? "Active companion" : "[Enter] Set as active companion");
-        draw_text(_dx, _dy + 326, _act);
+        // Eggs keep an explicit hatch prompt (their one action here); live creatures'
+        // set-active/donate/etc. hints live in the shared footer + ACTIVE pill.
+        if (_p.is_egg) {
+            draw_set_font(fnt_ui_small);
+            draw_set_color(make_color_rgb(120, 210, 150));
+            draw_text(_dx, _after, "[Enter] Hatch this egg");
+            _after += 36;
+        }
 
         // Capstone pick prompt (a raised Adult owes its permanent gift). Adults show no
         // feed menu (stage == max), so this slot is free.
         if (pet_capstone_can_pick(_p)) {
             draw_set_font(fnt_ui);
             draw_set_color(make_color_rgb(235, 205, 120));
-            draw_text(_dx, _dy + 360, "[G] Choose its Gift  -  ready to pick a capstone");
+            draw_text(_dx, _after, "[G] Choose its Gift  -  ready to pick a capstone");
+            _after += 44;
         }
 
-        // Feed menu (live creatures that aren't fully grown): OWNED feed from the pouch,
-        // bought at Petra. One card per owned feed type; number key applies it here.
+        // ---- FEED box (live creatures that aren't fully grown): OWNED feed from the
+        // pouch, bought at Petra; number key applies it. Outlined like the other groups;
+        // row count adapts to the space the boxes above left (overflow shows "+N more" -
+        // hotkeys 1-6 still address the full pouch list, as with the old 6-row cap).
         if (!_p.is_egg && _p.stage < pet_max_stage()) {
             var _owned  = pet_feed_owned_list();
-            var _fy     = _dy + 360;
             var _fready = pet_growth_ready(_p);
+            var _fy0    = _after, _fy1 = _y2 - 66;
+            draw_set_color(make_color_rgb(15, 17, 24));
+            draw_rectangle(_dx - 14, _fy0, _dx + _dw, _fy1, false);
+            draw_set_color(make_color_rgb(52, 58, 80));
+            draw_rectangle(_dx - 14, _fy0, _dx + _dw, _fy1, true);
             draw_set_font(fnt_ui_small);
             draw_set_color(make_color_rgb(150, 200, 140));
-            draw_text(_dx, _fy, "FEED  -  fills growth  (buy from Petra)");
+            draw_text(_dx, _fy0 + 12, "FEED  -  fills growth  (buy from Petra)");
+            var _rows_y = _fy0 + 46;
             if (array_length(_owned) == 0) {
-                draw_set_font(fnt_ui_small);
                 draw_set_color(make_color_rgb(120, 124, 138));
-                draw_text(_dx, _fy + 34, "Feed pouch empty - visit Petra the Trader.");
+                draw_text(_dx, _rows_y, "Feed pouch empty - visit Petra the Trader.");
             }
-            var _fmax = min(array_length(_owned), 6);   // one row per hotkey [1-6]
+            // Fit as many 54px rows as the box allows (max 6 = the hotkey range),
+            // reserving a line for the overflow note when the pouch is deeper.
+            var _avail = _fy1 - _rows_y - 10;
+            var _fmax  = min(array_length(_owned), min(6, _avail div 54));
+            if (array_length(_owned) > _fmax) _fmax = min(_fmax, max(1, (_avail - 30) div 54));
             for (var _fi = 0; _fi < _fmax; _fi++) {
                 var _ff  = _owned[_fi];
                 var _cnt = pet_feed_pouch_count(_ff.id);
@@ -1437,12 +1576,12 @@ function ui_draw_bairc_screen() {
                 var _is_pref = variable_struct_exists(_ff, "species");
                 var _fav     = _is_pref && (_ff.species == _p.species);
                 var _can     = (_cnt > 0) && !_fready && (!_is_pref || _fav);
-                var _fby = _fy + 32 + _fi * 54;
+                var _fby = _rows_y + _fi * 54;
                 var _fbh = 48;
                 draw_set_color(_fav && _can ? make_color_rgb(40, 36, 22) : (_can ? make_color_rgb(26, 36, 30) : make_color_rgb(20, 22, 28)));
-                draw_rectangle(_dx, _fby, _dx + _dw, _fby + _fbh, false);
+                draw_rectangle(_dx, _fby, _dx + _dw - 14, _fby + _fbh, false);
                 draw_set_color(_fav && _can ? make_color_rgb(210, 175, 90) : (_can ? make_color_rgb(90, 170, 110) : make_color_rgb(44, 50, 60)));
-                draw_rectangle(_dx, _fby, _dx + _dw, _fby + _fbh, true);
+                draw_rectangle(_dx, _fby, _dx + _dw - 14, _fby + _fbh, true);
                 // Feed icon (left), name + growth, owned count (right).
                 var _ffic = pet_feed_icon(_ff.id);
                 var _txt_x = _dx + 14;
@@ -1457,13 +1596,13 @@ function ui_draw_bairc_screen() {
                 draw_set_font(fnt_ui_small);
                 draw_set_halign(fa_right);
                 draw_set_color(_can ? make_color_rgb(150, 205, 150) : make_color_rgb(90, 110, 96));
-                draw_text(_dx + _dw - 16, _fby + 14, "x" + string(_cnt));
+                draw_text(_dx + _dw - 30, _fby + 14, "x" + string(_cnt));
                 draw_set_halign(fa_left);
             }
             if (array_length(_owned) > _fmax) {
                 draw_set_font(fnt_ui_small);
                 draw_set_color(make_color_rgb(120, 124, 138));
-                draw_text(_dx, _fy + 32 + _fmax * 54 + 6, "+" + string(array_length(_owned) - _fmax) + " more in the pouch");
+                draw_text(_dx, _rows_y + _fmax * 54 + 4, "+" + string(array_length(_owned) - _fmax) + " more in the pouch");
             }
         }
     }
@@ -1484,6 +1623,12 @@ function ui_draw_bairc_screen() {
     draw_set_halign(fa_left); draw_set_valign(fa_top);
     draw_set_color(c_white);
     draw_set_font(-1);
+
+    // Stat hover tooltip - drawn after the actor column and footer so it tops everything;
+    // the modals below dim the whole screen, so they rightly cover it when open.
+    if (_stat_hover != "" && _n > 0) {
+        ui_draw_pet_stat_tooltip(device_mouse_x_to_gui(0), device_mouse_y_to_gui(0), _roster[_cur], _stat_hover);
+    }
 
     // Tab detail popup over the station (the highlighted creature's full kit breakdown).
     if (variable_instance_exists(_gc, "bairc_detail_open") && _gc.bairc_detail_open && _n > 0) {
@@ -1551,6 +1696,7 @@ function ui_draw_bairc_screen() {
 // ---------------------------------------------------------------------------
 function ui_draw_pet_detail(pet) {
     if (!is_struct(pet)) return;
+    var _pd_stat_hover = "";   // stat chip under the mouse; tooltip drawn last
     draw_set_alpha(0.84); draw_set_color(c_black);
     draw_rectangle(0, 0, GUI_W, GUI_H, false);
     draw_set_alpha(1.0);
@@ -1582,9 +1728,9 @@ function ui_draw_pet_detail(pet) {
     draw_set_font(fnt_ui); draw_set_color(make_color_rgb(190, 160, 240));
     draw_text(_htx, _y + 62, pet_stage_name(pet.stage) + "   -   " + pet_archetype_name(pet.archetype));
     draw_set_font(fnt_ui_small); draw_set_color(make_color_rgb(150, 160, 190));
-    var _egglab  = pet_egg_label(pet);
+    // (The egg gift moved from this header into PASSIVES & TRAITS, where its effect
+    // text sits under it - a bare "Gilded Egg" here communicated nothing.)
     var _flavtag = (pet.raised ? "Raised from the egg." : "Found already living.")
-                 + (_egglab != "" ? "   -   " + _egglab : "")
                  + pet_injury_tag(pet) + pet_corruption_tag(pet);
     draw_text_ext(_htx, _y + 100, _flavtag, 26, _rx - _htx);
 
@@ -1598,39 +1744,42 @@ function ui_draw_pet_detail(pet) {
         // ---- STATS ----
         draw_set_font(fnt_ui_small); draw_set_color(make_color_rgb(120, 200, 140));
         draw_text(_lx, _y, "STATS"); _y += 34;
-        // Stage + growth.
+        // Growth + bond (the stage itself already sits in the header - don't repeat it).
         draw_set_font(fnt_ui); draw_set_color(make_color_rgb(210, 214, 230));
-        var _statline = pet_stage_name(pet.stage);
-        if (pet.stage < pet_max_stage()) _statline += "      Growth " + string(pet.growth) + " / " + string(pet_growth_needed(pet.stage)) + "  to " + pet_stage_name(pet.stage + 1);
-        else                              _statline += "      Fully grown";
+        var _statline = (pet.stage < pet_max_stage())
+            ? ("Growth " + string(pet.growth) + " / " + string(pet_growth_needed(pet.stage)) + "  to " + pet_stage_name(pet.stage + 1))
+            : "Fully grown";
         _statline += "      Bond: " + pet_bond_tier_name(pet_bond_tier(pet));
         draw_text(_lx, _y, _statline); _y += 42;
         // Three stat chips (the governing stat for this archetype is highlighted gold).
+        // Hovering a chip pops the stat's explanation tooltip (drawn last, at the bottom
+        // of this function, so nothing overdraws it).
         var _skeys = ["pow", "spr", "lck"];
         var _pri   = pet_stat_primary(pet.archetype);
         var _cw    = (_rx - _lx) / 3;
+        var _pd_mx = device_mouse_x_to_gui(0), _pd_my = device_mouse_y_to_gui(0);
         for (var _si = 0; _si < 3; _si++) {
             var _sk  = _skeys[_si];
             var _cx0 = _lx + _si * _cw;
             var _hot = (_sk == _pri);
+            var _hov = (_pd_mx >= _cx0 && _pd_mx <= _cx0 + _cw - 14 && _pd_my >= _y && _pd_my <= _y + 84);
+            if (_hov) _pd_stat_hover = _sk;
             draw_set_color(_hot ? make_color_rgb(32, 30, 20) : make_color_rgb(18, 20, 30));
-            draw_rectangle(_cx0, _y, _cx0 + _cw - 14, _y + 76, false);
-            draw_set_color(_hot ? make_color_rgb(210, 175, 90) : make_color_rgb(50, 56, 76));
-            draw_rectangle(_cx0, _y, _cx0 + _cw - 14, _y + 76, true);
+            draw_rectangle(_cx0, _y, _cx0 + _cw - 14, _y + 84, false);
+            draw_set_color(_hov ? make_color_rgb(200, 215, 245) : (_hot ? make_color_rgb(210, 175, 90) : make_color_rgb(50, 56, 76)));
+            draw_rectangle(_cx0, _y, _cx0 + _cw - 14, _y + 84, true);
             draw_set_halign(fa_center);
             draw_set_font(fnt_ui_small); draw_set_color(_hot ? make_color_rgb(232, 202, 122) : make_color_rgb(150, 160, 185));
-            draw_text(_cx0 + (_cw - 14) / 2, _y + 8, pet_stat_name(_sk));
-            // Big number vertically centred (valign middle) so it can't clip the chip border.
+            draw_text(_cx0 + (_cw - 14) / 2, _y + 6, pet_stat_name(_sk));
+            // Big number vertically centred in the chip's LOWER half (taller chip + lower
+            // centre so the title-font digits can't collide with the abbreviation above).
             draw_set_font(fnt_ui_title); draw_set_valign(fa_middle); draw_set_color(c_white);
-            draw_text(_cx0 + (_cw - 14) / 2, _y + 48, string(pet_stat(pet, _sk)));
+            draw_text(_cx0 + (_cw - 14) / 2, _y + 56, string(pet_stat(pet, _sk)));
             draw_set_valign(fa_top); draw_set_halign(fa_left);
         }
-        _y += 90;
+        _y += 98;
         draw_set_font(fnt_ui_small); draw_set_color(make_color_rgb(140, 150, 175));
-        var _gov = "LCK governs its gold & loot find.";
-        if      (_pri == "pow") _gov = "PWR governs its strike damage.";
-        else if (_pri == "spr") _gov = "SPR governs its healing & shields.";
-        draw_text(_lx, _y, _gov); _y += 40;
+        draw_text(_lx, _y, pet_stat_name(_pri) + " governs its gift - and every stat helps any creature. Hover a chip for details."); _y += 40;
 
         // ---- PASSIVES (left column) & ABILITIES (right column) ----
         draw_set_color(make_color_rgb(60, 64, 90)); draw_line(_lx, _y, _rx, _y); _y += 16;
@@ -1688,6 +1837,10 @@ function ui_draw_pet_detail(pet) {
     draw_set_font(fnt_ui_small); draw_set_color(make_color_rgb(150, 160, 190));
     draw_text_outline((_x1 + _x2) / 2, _y2 - 39, "[Tab] or [Esc] - Close");
     draw_set_halign(fa_left); draw_set_valign(fa_top);
+
+    // Hovered stat chip's explanation - very last, so it tops the whole popup.
+    if (_pd_stat_hover != "") ui_draw_pet_stat_tooltip(device_mouse_x_to_gui(0), device_mouse_y_to_gui(0), pet, _pd_stat_hover);
+
     draw_set_color(c_white); draw_set_font(-1);
 }
 
