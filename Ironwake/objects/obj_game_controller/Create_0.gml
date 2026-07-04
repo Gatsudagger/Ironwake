@@ -120,6 +120,7 @@ global.__sprite_includes = [
     spr_pet_hollow_pup_adult_s,      spr_pet_hollow_pup_adult_e,
     // Bairc hub sprite (now animated) + portrait - referenced by string via asset_get_index.
     spr_npc_bairc_idle, spr_npc_bairc_action, spr_npc_bairc_portrait,
+    spr_tavern_board,   // Tavern Requests panel art (asset_get_index string ref, Phase 4b)
     spr_hub_background,
     spr_title_background,
     spr_title_foreground,
@@ -944,10 +945,21 @@ bairc_lore_open        = false;  // one-time lore-fragment dialogue (bond milest
 bairc_lore_armed       = false;  // same 1-frame arm as the intro so the opening keypress can't skip it
 
 // --- JOURNAL (Phase 4a): J-key overlay, hub + floor map. Two tabs (Relationships /
-// Quests), master-detail; actions hub-only. See PHASE4A_SPEC.md. ---
+// Quests), master-detail. VIEW/TRACK ONLY (Phase 4b UX) - quest actions live at the
+// Tavern Requests board. See PHASE4A_SPEC.md / PHASE4B_SPEC.md. ---
 journal_open    = false;
 journal_tab     = 0;    // 0 = Relationships, 1 = Quests
 journal_cursor  = 0;    // Relationships: met-NPC row | Quests: flattened grouped row
+
+// --- TAVERN REQUESTS board (Phase 4b UX): hub NPC-list row 8. Quests are read,
+// accepted and turned in here (diegetic; the Journal only tracks). ---
+tavern_board_open   = false;
+tavern_board_cursor = 0;
+tavern_board_note   = "";   // one-line feedback under the list (accepted / turned in / reasons)
+
+// --- GIFT RESULT POPUP (Phase 4b UX): set by gift_give (global.gift_popup struct),
+// dismissed on any confirm key; shows reaction, bond delta, tier + progress bar. ---
+global.gift_popup = undefined;
 
 // Full-screen hatch cutscene (shake -> crack -> reveal). Launched from the Bairc
 // Enter-on-egg action; drawn over the Bairc screen by hatch_cutscene_draw().

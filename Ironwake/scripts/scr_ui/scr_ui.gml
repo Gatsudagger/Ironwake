@@ -828,6 +828,7 @@ function ui_input_blocked() {
     if (variable_instance_exists(_gc, "level_alloc_open") && _gc.level_alloc_open) return true;
     if (variable_instance_exists(_gc, "loadout_open")     && _gc.loadout_open)     return true;
     if (variable_instance_exists(_gc, "journal_open")     && _gc.journal_open)     return true;   // J Journal (Phase 4a)
+    if (variable_instance_exists(_gc, "tavern_board_open") && _gc.tavern_board_open) return true; // Tavern Requests board (Phase 4b)
     return false;
 }
 
@@ -1254,12 +1255,32 @@ function ui_draw_journal() {
             draw_set_color(make_color_rgb(185, 190, 205));
             draw_text_ext(_px, _by3, journal_npc_blurb(_pid), 27, _det_x2 - _px - 10);
             _by3 += string_height_ext(journal_npc_blurb(_pid), 27, _det_x2 - _px - 10) + 22;
-            // Gift tastes - schema slots; nothing revealed until gifting lands (4b).
+            // Gift tastes (Phase 4b live): revealed cells show the category, the rest
+            // stay ??? - counts make the collection progress visible without spoiling.
             draw_set_color(make_color_rgb(120, 200, 140));
             draw_text(_px, _by3, "TASTES"); _by3 += 30;
+            var _tcats  = ["weapons", "armor", "jewelry", "potions", "runes", "feed"];
+            var _tnames = ["Weapons", "Armor", "Jewelry", "Potions", "Runes", "Pet Feed"];
+            var _tline1 = "", _tline2 = "";
+            var _bands  = ["loved", "liked", "neutral", "disliked", "hated"];
+            var _blabel = ["Loves", "Likes", "Shrugs at", "Dislikes", "Hates"];
+            for (var _tb = 0; _tb < 5; _tb++) {
+                var _cell = "";
+                var _hidden = 0;
+                for (var _tc = 0; _tc < 6; _tc++) {
+                    if (gift_taste(_pid, _tcats[_tc]) != _bands[_tb]) continue;
+                    if (gift_taste_known(_pid, _tcats[_tc])) _cell += (_cell != "" ? ", " : "") + _tnames[_tc];
+                    else _hidden++;
+                }
+                if (_hidden > 0) _cell += (_cell != "" ? ", " : "") + "???";
+                if (_cell == "") continue;   // no categories in this band
+                var _frag = _blabel[_tb] + ": " + _cell;
+                if (_tb < 2) _tline1 += (_tline1 != "" ? "      " : "") + _frag;
+                else         _tline2 += (_tline2 != "" ? "      " : "") + _frag;
+            }
             draw_set_color(make_color_rgb(140, 145, 165));
-            draw_text(_px, _by3, "Loves ???     Likes ???     Dislikes ???     (learn by gifting - soon)");
-            _by3 += 44;
+            draw_text(_px, _by3, _tline1); _by3 += 28;
+            draw_text(_px, _by3, _tline2); _by3 += 40;
             // Interaction ledger (newest last; show the most recent 6).
             draw_set_color(make_color_rgb(120, 200, 140));
             draw_text(_px, _by3, "MY NOTES"); _by3 += 30;
@@ -1355,20 +1376,19 @@ function ui_draw_journal() {
             draw_set_color(make_color_rgb(170, 176, 195));
             draw_text_ext(_dx2, _dy2, _sd.flavor, 27, _det_x2 - _dx2 - 10);
             _dy2 += string_height_ext(_sd.flavor, 27, _det_x2 - _dx2 - 10) + 30;
-            // Status / action line (actions are hub-only - greyed elsewhere, never hidden).
+            // Status line (view-only since Phase 4b - the Tavern board owns the actions).
             if (_ss.status == "done") {
                 draw_set_color(make_color_rgb(130, 136, 155));
-                draw_text(_dx2, _dy2, "Done.");
+                draw_text(_dx2, _dy2, "Fulfilled.");
             } else if (quest_is_complete(_sid)) {
-                draw_set_color(_at_hub ? make_color_rgb(120, 220, 140) : make_color_rgb(110, 120, 110));
-                draw_text(_dx2, _dy2, _at_hub ? "[Enter] Turn in - see " + npc_display_name(_sd.npc) + "."
-                                              : "Ready to turn in - return to " + npc_display_name(_sd.npc) + " at the hub.");
+                draw_set_color(make_color_rgb(120, 220, 140));
+                draw_text(_dx2, _dy2, "Done - report to the tavern's request board.");
             } else if (_ss.status == "active") {
                 draw_set_color(make_color_rgb(140, 145, 165));
                 draw_text(_dx2, _dy2, "Underway - progress ticks as you play.");
             } else {
-                draw_set_color(_at_hub ? make_color_rgb(228, 205, 140) : make_color_rgb(120, 116, 100));
-                draw_text(_dx2, _dy2, _at_hub ? "[Enter] Accept" : "Accept at the hub.");
+                draw_set_color(make_color_rgb(228, 205, 140));
+                draw_text(_dx2, _dy2, "Posted at the tavern's request board.");
             }
         }
     }
@@ -1376,8 +1396,162 @@ function ui_draw_journal() {
     // Footer.
     draw_set_halign(fa_center); draw_set_valign(fa_bottom);
     draw_set_font(fnt_ui_small); draw_set_color(make_color_rgb(150, 160, 190));
-    draw_text((_x1 + _x2) / 2, _y2 - 30, "W/S: Rows     Q/E: Tab     "
-        + (_at_hub ? "Enter: Act     " : "(actions at the hub)     ") + "J / Esc: Close");
+    draw_text((_x1 + _x2) / 2, _y2 - 30, "W/S: Rows     Q/E: Tab     J / Esc: Close");
+    draw_set_halign(fa_left); draw_set_valign(fa_top);
+    draw_set_alpha(1.0); draw_set_color(c_white); draw_set_font(-1);
+}
+
+// ---------------------------------------------------------------------------
+// GIFT RESULT POPUP (Phase 4b UX): reaction line + bond delta + live tier and
+// progress bar. Modal over the giver's window; gc dismisses on any confirm key.
+// ---------------------------------------------------------------------------
+function ui_draw_gift_popup() {
+    if (!variable_global_exists("gift_popup") || global.gift_popup == undefined) return;
+    var _gp  = global.gift_popup;
+    var _pos = (_gp.delta >= 0);
+
+    draw_set_alpha(0.55); draw_set_color(c_black);
+    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+    draw_set_alpha(1.0);
+    var _w = 860, _h = 380;
+    var _x1 = GUI_CX - _w / 2, _y1 = GUI_CY - _h / 2, _x2 = _x1 + _w, _y2 = _y1 + _h;
+    draw_set_color(make_color_rgb(20, 19, 28));
+    draw_rectangle(_x1, _y1, _x2, _y2, false);
+    ui_draw_gothic_frame(_x1, _y1, _x2, _y2, 30);
+    draw_set_color(_pos ? make_color_rgb(120, 200, 140) : make_color_rgb(210, 110, 100));
+    draw_rectangle(_x1, _y1, _x2, _y1 + 4, false);
+
+    draw_set_halign(fa_center); draw_set_valign(fa_top);
+    draw_set_font(fnt_ui);
+    draw_set_color(make_color_rgb(228, 215, 180));
+    draw_text(GUI_CX, _y1 + 30, npc_display_name(_gp.npc));
+    // Reaction line, wrapped.
+    draw_set_font(fnt_ui_small);
+    draw_set_color(make_color_rgb(205, 208, 222));
+    draw_text_ext(GUI_CX, _y1 + 84, _gp.line, 27, _w - 120);
+    // Bond delta.
+    draw_set_font(fnt_ui);
+    draw_set_color(_pos ? make_color_rgb(120, 220, 140) : make_color_rgb(225, 110, 100));
+    draw_text(GUI_CX, _y1 + 186, (_gp.delta >= 0 ? "Bond +" : "Bond ") + string(_gp.delta));
+    // Tier + live progress bar (diegetic - the bar, never the number).
+    draw_set_font(fnt_ui_small);
+    draw_set_color(make_color_rgb(210, 190, 130));
+    draw_text(GUI_CX, _y1 + 240, affinity_tier_name(_gp.npc)
+        + (affinity_gate_ready(_gp.npc) ? "   -   ready to grow closer" : ""));
+    var _bw = 420, _bx = GUI_CX - _bw / 2, _by = _y1 + 282, _bh = 14;
+    draw_set_color(make_color_rgb(40, 44, 56));
+    draw_rectangle(_bx, _by, _bx + _bw, _by + _bh, false);
+    draw_set_color(make_color_rgb(210, 190, 130));
+    draw_rectangle(_bx, _by, _bx + _bw * affinity_progress_frac(_gp.npc), _by + _bh, false);
+    draw_set_color(make_color_rgb(90, 96, 110));
+    draw_rectangle(_bx, _by, _bx + _bw, _by + _bh, true);
+
+    draw_set_color(make_color_rgb(140, 145, 165));
+    draw_text(GUI_CX, _y2 - 48, "Enter / Esc - close");
+    draw_set_halign(fa_left); draw_set_valign(fa_top);
+    draw_set_alpha(1.0); draw_set_color(c_white); draw_set_font(-1);
+}
+
+// ---------------------------------------------------------------------------
+// TAVERN REQUESTS BOARD (Phase 4b UX): the diegetic quest surface - a posting
+// board. List of requests grouped Active / Available / Fulfilled; Enter takes an
+// available job or turns in a finished one. The Journal only TRACKS quests.
+// ---------------------------------------------------------------------------
+function ui_draw_tavern_board() {
+    if (!instance_exists(obj_game_controller)) return;
+    var _gc = instance_find(obj_game_controller, 0);
+    if (!variable_instance_exists(_gc, "tavern_board_open") || !_gc.tavern_board_open) return;
+
+    draw_set_alpha(0.86); draw_set_color(c_black);
+    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+    draw_set_alpha(1.0);
+    var _x1 = 240, _y1 = 66, _x2 = 1680, _y2 = 1020;
+    // Board backdrop: the tavern-board art fills the panel (cover-crop), darkened so
+    // the parchment rows stay readable. Wooden tones as the pre-import fallback.
+    // NOTE: spr_tavern_board is a NEW resource - GameMaker must RELOAD the project
+    // once to pick it up; until then the fallback draws.
+    var _tb_bg = asset_get_index("spr_tavern_board");
+    if (_tb_bg >= 0) {
+        ui_draw_sprite_cover(_tb_bg, 0, _x1, _y1, _x2 - _x1, _y2 - _y1, 1.0);
+        draw_set_alpha(0.52); draw_set_color(c_black);
+        draw_rectangle(_x1, _y1, _x2, _y2, false);
+        draw_set_alpha(1.0);
+    } else {
+        draw_set_color(make_color_rgb(38, 26, 18));
+        draw_rectangle(_x1, _y1, _x2, _y2, false);
+    }
+    draw_set_color(make_color_rgb(24, 16, 11));
+    draw_rectangle(_x1 + 18, _y1 + 18, _x2 - 18, _y2 - 18, true);
+    ui_draw_gothic_frame(_x1, _y1, _x2, _y2, 36);
+
+    draw_set_halign(fa_center); draw_set_valign(fa_top);
+    draw_set_font(fnt_ui_title);
+    draw_set_color(make_color_rgb(230, 210, 160));
+    draw_text((_x1 + _x2) / 2, _y1 + 33, "TAVERN REQUESTS");
+    draw_set_font(fnt_ui_small);
+    draw_set_color(make_color_rgb(170, 150, 120));
+    draw_text((_x1 + _x2) / 2, _y1 + 87, "Jobs, hunts and favors posted by the townsfolk.");
+    draw_set_halign(fa_left);
+
+    var _rows = journal_quest_rows();
+    var _n    = array_length(_rows);
+    var _cur  = clamp(_gc.tavern_board_cursor, 0, max(0, _n - 1));
+    var _lx = _x1 + 66, _rx = _x2 - 66;
+    var _qy = _y1 + 144;
+    if (_n == 0) {
+        draw_set_font(fnt_ui); draw_set_color(make_color_rgb(160, 140, 115));
+        draw_text(_lx, _qy, "The board is bare.");
+    }
+    var _last_status = "";
+    for (var _i = 0; _i < _n; _i++) {
+        var _qid = _rows[_i];
+        var _qd  = quest_def(_qid);
+        var _qs  = quest_state(_qid);
+        if (_qs.status != _last_status) {
+            _last_status = _qs.status;
+            draw_set_font(fnt_ui_small);
+            draw_set_color(make_color_rgb(150, 190, 130));
+            draw_text(_lx, _qy, (_qs.status == "active") ? "TAKEN BY YOU" : ((_qs.status == "available") ? "POSTED" : "FULFILLED"));
+            _qy += 33;
+        }
+        var _hot = (_i == _cur);
+        // Pinned-note row: parchment tint, brighter when highlighted.
+        draw_set_color(_hot ? make_color_rgb(62, 50, 34) : make_color_rgb(46, 36, 26));
+        draw_rectangle(_lx - 12, _qy, _rx + 12, _qy + 96, false);
+        draw_set_color(_hot ? make_color_rgb(220, 190, 130) : make_color_rgb(80, 64, 46));
+        draw_rectangle(_lx - 12, _qy, _rx + 12, _qy + 96, true);
+        // "Pin"
+        draw_set_color(make_color_rgb(180, 60, 50));
+        draw_circle(_lx + 6, _qy + 12, 5, false);
+        draw_set_font(fnt_ui);
+        draw_set_color(_qs.status == "done" ? make_color_rgb(140, 125, 105) : (_hot ? make_color_rgb(240, 228, 200) : make_color_rgb(205, 190, 165)));
+        draw_text(_lx + 24, _qy + 9, _qd.name);
+        draw_set_font(fnt_ui_small);
+        draw_set_color(make_color_rgb(160, 145, 120));
+        var _sub = npc_display_name(_qd.npc) + "   -   " + _qd.objective;
+        if (_qs.status == "active") _sub += "   (" + string(min(_qs.progress, _qd.obj_target)) + " / " + string(_qd.obj_target)
+            + (quest_is_complete(_qid) ? "  -  DONE" : "") + ")";
+        draw_text(_lx + 24, _qy + 48, _sub);
+        draw_set_halign(fa_right);
+        draw_set_color(make_color_rgb(185, 200, 160));
+        draw_text(_rx, _qy + 9, journal_quest_reward_text(_qd));
+        draw_set_halign(fa_left);
+        if (journal_quest_badged(_qid)) {
+            draw_set_color(make_color_rgb(235, 180, 80));
+            draw_circle(_rx + 2, _qy + 60, 7, false);
+        }
+        _qy += 108;
+    }
+
+    // Feedback + footer.
+    draw_set_halign(fa_center); draw_set_valign(fa_bottom);
+    draw_set_font(fnt_ui_small);
+    if (_gc.tavern_board_note != "") {
+        draw_set_color(make_color_rgb(230, 210, 150));
+        draw_text((_x1 + _x2) / 2, _y2 - 72, _gc.tavern_board_note);
+    }
+    draw_set_color(make_color_rgb(160, 145, 120));
+    draw_text((_x1 + _x2) / 2, _y2 - 30, "W/S: Browse     Enter: Take / Turn in     Esc: Leave");
     draw_set_halign(fa_left); draw_set_valign(fa_top);
     draw_set_alpha(1.0); draw_set_color(c_white); draw_set_font(-1);
 }
@@ -1946,7 +2120,7 @@ function ui_draw_bairc_screen() {
     draw_set_halign(fa_center);
     draw_set_font(fnt_ui_small);
     draw_set_color(make_color_rgb(150, 160, 190));
-    draw_text((_x1 + 1500) / 2, _y2 - 42, "[W/S] Browse  [1-6] Feed  [G] Gift  [N] Name  [C] Cure  [R] Donate  [Tab] Details  [Enter] Hatch/Active  [Esc] Leave");
+    draw_text((_x1 + 1500) / 2, _y2 - 42, "[W/S] Browse  [1-6] Feed  [G] Its Gift  [F] Gift Bairc  [N] Name  [C] Cure  [R] Donate  [Tab] Details  [Enter] Hatch/Active  [Esc] Leave");
     draw_set_halign(fa_left); draw_set_valign(fa_top);
     draw_set_color(c_white);
     draw_set_font(-1);
@@ -6982,8 +7156,13 @@ function ui_draw_shop_screen() {
     if (_is_petra) {
         var _buy_list = petra_buy_list();
         var _buy_n    = array_length(_buy_list);
-        // Window the list so a long buy list (consumables + feeds) never runs off-panel.
-        var _max_vis  = 6;
+        // COMPACT rows (87px vs Dorn's 117) so Petra's whole typical stock - 4
+        // consumables + special + 4 feeds - fits on ONE page with no scrolling
+        // (M 2026-07-03: the "more wares below" hint read as clutter). The window
+        // only engages past 8 entries (several discovered preferred feeds).
+        var _prh      = 84;
+        var _prgap    = 6;
+        var _max_vis  = 9;    // 4 consumables + limited special + 3 basics + premium all fit
         var _win0     = 0;
         if (_buy_n > _max_vis) _win0 = clamp(_gc.shop_index - _max_vis + 2, 0, _buy_n - _max_vis);
         var _win1     = min(_buy_n, _win0 + _max_vis);
@@ -6993,75 +7172,75 @@ function ui_draw_shop_screen() {
             var _it      = _entry.it;
             var _price   = _entry.price;
             var _is_feed = (_entry.kind == "feed");
-            var _ry      = _ry0 + (_ri - _win0) * (_rh + _rgap);
+            var _ry      = _ry0 + (_ri - _win0) * (_prh + _prgap);
             var _is_sel  = (_ri == _gc.shop_index);
 
             draw_set_alpha(_is_sel ? 1.0 : 0.55);
             draw_set_color(_is_sel ? make_color_rgb(16, 42, 50) : make_color_rgb(14, 18, 28));
-            draw_rectangle(_rx0, _ry, _rx0 + _rw, _ry + _rh, false);
+            draw_rectangle(_rx0, _ry, _rx0 + _rw, _ry + _prh, false);
             draw_set_alpha(1.0);
             // Feed rows take a warm accent to read as a different category from consumables.
             var _acc_on  = _is_feed ? make_color_rgb(150, 200, 110) : make_color_rgb(55, 170, 170);
             var _acc_off = _is_feed ? make_color_rgb(70, 96, 50)     : make_color_rgb(38, 75, 85);
             draw_set_color(_is_sel ? _acc_on : _acc_off);
-            draw_rectangle(_rx0, _ry, _rx0 + _rw, _ry + _rh, true);
+            draw_rectangle(_rx0, _ry, _rx0 + _rw, _ry + _prh, true);
 
             if (_is_feed) {
                 // Feed icon (falls back to a +N growth badge if the sprite isn't imported).
                 var _fic = pet_feed_icon(_it.id);
                 if (_fic >= 0) {
-                    var _fis = 60 / max(1, max(sprite_get_width(_fic), sprite_get_height(_fic)));
-                    draw_sprite_ext(_fic, 0, _rx0 + 45, _ry + 45, _fis, _fis, 0, c_white, 1);
+                    var _fis = 58 / max(1, max(sprite_get_width(_fic), sprite_get_height(_fic)));
+                    draw_sprite_ext(_fic, 0, _rx0 + 44, _ry + 43, _fis, _fis, 0, c_white, 1);
                 } else {
                     draw_set_color(make_color_rgb(30, 40, 24));
-                    draw_rectangle(_rx0 + 15, _ry + 15, _rx0 + 75, _ry + 75, false);
+                    draw_rectangle(_rx0 + 15, _ry + 14, _rx0 + 73, _ry + 72, false);
                     draw_set_color(make_color_rgb(150, 200, 110));
-                    draw_rectangle(_rx0 + 15, _ry + 15, _rx0 + 75, _ry + 75, true);
+                    draw_rectangle(_rx0 + 15, _ry + 14, _rx0 + 73, _ry + 72, true);
                     draw_set_halign(fa_center); draw_set_font(fnt_ui);
-                    draw_text(_rx0 + 45, _ry + 22, "+" + string(_it.growth));
+                    draw_text(_rx0 + 44, _ry + 18, "+" + string(_it.growth));
                     draw_set_font(fnt_ui_small); draw_set_color(make_color_rgb(120, 150, 100));
-                    draw_text(_rx0 + 45, _ry + 50, "grow");
+                    draw_text(_rx0 + 44, _ry + 44, "grow");
                     draw_set_halign(fa_left);
                 }
             } else {
-                ui_draw_consumable_icon(_rx0 + 15, _ry + 15, 60, _it);
+                ui_draw_consumable_icon(_rx0 + 15, _ry + 14, 58, _it);
             }
 
             // Name
             draw_set_font(fnt_ui);
             draw_set_color(_is_feed ? make_color_rgb(180, 220, 130) : make_color_rgb(80, 210, 210));
-            draw_text(_rx0 + 90, _ry + 15, _it.name);
+            draw_text(_rx0 + 90, _ry + 9, _it.name);
 
             // Description / blurb
             draw_set_font(fnt_ui_small);
             draw_set_color(make_color_rgb(130, 160, 170));
-            draw_text(_rx0 + 90, _ry + 57, _is_feed ? _it.blurb : _it.description);
+            draw_text(_rx0 + 90, _ry + 49, _is_feed ? _it.blurb : _it.description);
 
             draw_set_halign(fa_right);
             if (_is_feed) {
                 // Owned-in-pouch count (top-right).
                 draw_set_font(fnt_ui_small);
                 draw_set_color(make_color_rgb(150, 200, 140));
-                draw_text(_rx0 + _rw - 24, _ry + 15, "Owned: " + string(pet_feed_pouch_count(_it.id)));
+                draw_text(_rx0 + _rw - 24, _ry + 9, "Owned: " + string(pet_feed_pouch_count(_it.id)));
             } else if (_entry.special) {
                 draw_set_font(fnt_ui);
                 draw_set_color(make_color_rgb(255, 155, 30));
-                draw_text(_rx0 + _rw - 225, _ry + 15, "[LIMITED - " + string(global.petra_special_qty) + " left]");
+                draw_text(_rx0 + _rw - 225, _ry + 9, "[LIMITED - " + string(global.petra_special_qty) + " left]");
             }
 
             // Price (right-aligned)
             var _can_afford = (global.gold >= _price);
             draw_set_font(fnt_ui);
             draw_set_color(_can_afford ? c_yellow : make_color_rgb(180, 80, 80));
-            draw_text(_rx0 + _rw - 24, _ry + 57, string(_price) + "g");
+            draw_text(_rx0 + _rw - 24, _ry + 47, string(_price) + "g");
             draw_set_halign(fa_left);
         }
 
-        // Scroll indicators when the list is windowed.
+        // Scroll indicators - only when the list genuinely exceeds one page (8+).
         draw_set_halign(fa_center); draw_set_font(fnt_ui_small);
-        draw_set_color(make_color_rgb(150, 200, 200));
-        if (_win0 > 0)        draw_text(_rx0 + _rw / 2, _ry0 - 20, "^ more above");
-        if (_win1 < _buy_n)   draw_text(_rx0 + _rw / 2, _ry0 + _max_vis * (_rh + _rgap) - 6, "v more below");
+        draw_set_color(make_color_rgb(120, 160, 160));
+        if (_win0 > 0)        draw_text(_rx0 + _rw / 2, _ry0 - 20, "^  " + string(_win0) + " more above  -  scroll with W");
+        if (_win1 < _buy_n)   draw_text(_rx0 + _rw / 2, _ry0 + _max_vis * (_prh + _prgap) - 4, "v  " + string(_buy_n - _win1) + " more  -  scroll with S");
         draw_set_halign(fa_left);
 
     // -------------------------------------------------------------------------
@@ -7159,7 +7338,7 @@ function ui_draw_shop_screen() {
     draw_set_halign(fa_center);
     draw_set_font(fnt_ui_small);
     draw_set_color(make_color_rgb(75, 85, 105));
-    draw_text_outline(960, 1026, "W/S: Navigate   Q/E: Buy/Sell   Enter: Buy   Esc: Close     Purchases go to your stash.");
+    draw_text_outline(960, 1026, "W/S: Navigate   Q/E: Buy/Sell   Enter: Buy   F: Gift   Esc: Close     Purchases go to your stash.");
     draw_set_halign(fa_left);
     draw_set_valign(fa_top);
     draw_set_alpha(1.0);
@@ -8083,7 +8262,7 @@ function ui_draw_trainer_screen() {
     draw_set_halign(fa_center);
     draw_set_font(fnt_ui_small);
     draw_set_color(make_color_rgb(70, 75, 100));
-    draw_text_outline(960, 1026, "W/S: Navigate    Q/E: Section    Enter: Buy / Select    Tab: Examine    Esc: Close");
+    draw_text_outline(960, 1026, "W/S: Navigate    Q/E: Section    Enter: Buy / Select    Tab: Examine    F: Gift    Esc: Close");
     draw_set_halign(fa_left);
 
     // Ornate gothic rim around the whole overlay (matches the other NPC shops).
@@ -8648,7 +8827,7 @@ function ui_draw_maren_screen() {
     draw_set_halign(fa_center);
     draw_set_font(fnt_ui_small);
     draw_set_color(make_color_rgb(70, 70, 95));
-    draw_text_outline(960, 1026, "W/S: Navigate    Q/E: Tab    Enter: Select    Esc: Back / Close");
+    draw_text_outline(960, 1026, "W/S: Navigate    Q/E: Tab    Enter: Select    F: Gift    Esc: Back / Close");
     draw_set_halign(fa_left);
 
     // Ornate gothic rim around the whole overlay. Opening (30,30)-(1890,1050) keeps the
@@ -8938,7 +9117,7 @@ function ui_draw_sable_screen() {
     draw_set_halign(fa_center);
     draw_set_font(fnt_ui_small);
     draw_set_color(make_color_rgb(70, 95, 78));
-    draw_text_outline(960, 1026, "W/S: Navigate    Q/E: Tab    Enter: Select    Esc: Back / Close");
+    draw_text_outline(960, 1026, "W/S: Navigate    Q/E: Tab    Enter: Select    F: Gift    Esc: Back / Close");
     draw_set_halign(fa_left);
 
     // Ornate gothic rim around the whole overlay (see Maren screen for geometry notes).
@@ -9166,7 +9345,7 @@ function ui_draw_vael_screen() {
     draw_set_halign(fa_center);
     draw_set_font(fnt_ui_small);
     draw_set_color(make_color_rgb(90, 75, 100));
-    draw_text_outline(960, 1026, "W/S: Navigate    Enter: Buy / Wear    Q/E: Switch tab    Esc: Close");
+    draw_text_outline(960, 1026, "W/S: Navigate    Enter: Buy / Wear    Q/E: Switch tab    F: Gift    Esc: Close");
     draw_set_halign(fa_left);
 
     // Ornate gothic rim around the whole overlay (see Maren screen for geometry notes).
@@ -9336,8 +9515,8 @@ function ui_draw_item_picker() {
             draw_set_color(make_color_rgb(120, 150, 210));
             draw_rectangle(_lx0, _ry, _lx1, _ry + 51, true);
         }
-        // Small inline icon.
-        if (is_struct(_c.item)) ui_draw_item_icon(_lx0 + 6, _ry + 5, 42, _c.item);
+        // Small inline icon (gear only - gift-picker sources 10+ aren't gear structs).
+        if (is_struct(_c.item) && _c.source < 10) ui_draw_item_icon(_lx0 + 6, _ry + 5, 42, _c.item);
         draw_set_halign(fa_left); draw_set_valign(fa_top);
         draw_set_color(item_rarity_color(_c.rarity));
         draw_text(_lx0 + 60, _ry + 12, _c.label);
@@ -9359,7 +9538,27 @@ function ui_draw_item_picker() {
     // --- Right: detail pane for the selected item ----------------------------
     var _cur = _p.candidates[_p.cursor];
     var _it  = _cur.item;
-    if (is_struct(_it)) {
+    // Gift-picker non-gear candidates (consumables 10 / runes 11 / feed 12 / trinkets
+    // 13) get a SIMPLE pane - the gear pane below reads slots/affixes they don't have.
+    if (_cur.source >= 10) {
+        var _gdy = _py + 129;
+        draw_set_halign(fa_left); draw_set_valign(fa_top);
+        draw_set_font(fnt_ui);
+        draw_set_color(_cur.source == 13 ? make_color_rgb(255, 200, 80) : c_white);
+        draw_text_ext(_dx, _gdy, _cur.label, -1, _dr - _dx);
+        _gdy += string_height_ext(_cur.label, -1, _dr - _dx) + 15;
+        draw_set_font(fnt_ui_small);
+        if (_cur.source == 13) {
+            draw_set_color(make_color_rgb(200, 180, 140));
+            draw_text_ext(_dx, _gdy, _cur.item.flavor + ".", 27, _dr - _dx);
+            _gdy += string_height_ext(_cur.item.flavor + ".", 27, _dr - _dx) + 15;
+            draw_set_color(make_color_rgb(150, 160, 185));
+            draw_text_ext(_dx, _gdy, "A signature gift - someone in town would treasure this.", 27, _dr - _dx);
+        } else if (is_struct(_it) && variable_struct_exists(_it, "desc")) {
+            draw_set_color(make_color_rgb(170, 176, 195));
+            draw_text_ext(_dx, _gdy, _it.desc, 27, _dr - _dx);
+        }
+    } else if (is_struct(_it)) {
         var _rar  = variable_struct_exists(_it, "rarity") ? _it.rarity : 0;
         var _rcol = item_rarity_color(_rar);
         var _dy   = _py + 129;

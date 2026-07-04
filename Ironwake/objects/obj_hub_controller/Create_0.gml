@@ -52,7 +52,8 @@ npc_names = [
     "Vex the Trainer",
     "Petra the Merchant",
     "Vael the Aesthete",
-    "Bairc the Creature Keeper"
+    "Bairc the Creature Keeper",
+    "Tavern Requests"
 ];
 
 // One-line summaries shown in the NPC list rows
@@ -63,14 +64,16 @@ npc_descriptions = [
     "Permanent stat upgrades, ability unlocks, and trait slot expansion.",
     "Consumables and supplies for your next run. Press Space to browse Petra's wares.",
     "Cosmetic transmog - buy and wear character skins. Press Space to visit the atelier.",
-    "Tends and raises the creatures you find below. Press Space to visit his garden."
+    "Tends and raises the creatures you find below. Press Space to visit his garden.",
+    "Postings from the townsfolk - jobs, hunts and favors. Press Space to read the board."
 ];
 
 // All seven hub NPCs are permanently present from the start (design decision -
 // no unlock gating). Bairc is PRESENT but DORMANT until you find your first pet/egg
 // (handled at interaction, not here). Not persisted: re-initialized every hub load so
-// no save can re-lock an NPC. Keep this array all-true.
-npc_unlocked = [true, true, true, true, true, true, true];
+// no save can re-lock an NPC. Keep this array all-true. Row 8 = the Tavern Requests
+// board (Phase 4b UX: quests are accepted/turned in at the board, not the Journal).
+npc_unlocked = [true, true, true, true, true, true, true, true];
 
 
 // -----------------------------------------------------------------------------

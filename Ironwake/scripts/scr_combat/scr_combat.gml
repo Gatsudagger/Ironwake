@@ -423,10 +423,11 @@ function combat_evasion_chance(target) {
 // so it no longer acts as a per-combat heal that inflated HP each fight.
 // ---------------------------------------------------------------------------
 function combat_apply_start_traits(player) {
-    // Crimson Reserve: Bloodwarden only - start combat with +20 Blood
+    // Crimson Reserve: Bloodwarden only - start combat with 4 Blood (of 10).
+    // Audit fix 2026-07-03: was +20 vs a 10-cap bar, i.e. a mislabeled full bar.
     if (player.class_id == 1 && variable_struct_exists(player, "blood")
         && trait_active("Crimson Reserve")) {
-        player.blood = min(player.blood_max, player.blood + 20);
+        player.blood = min(player.blood_max, player.blood + 4);
     }
 
     // Phantom Step: first enemy attack each combat auto-misses

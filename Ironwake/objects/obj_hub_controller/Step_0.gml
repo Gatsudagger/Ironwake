@@ -16,6 +16,14 @@
 // the dismiss (see SYSTEMS_ONBOARDING.md); here we just block all hub input.
 if (tutorial_is_active()) exit;
 
+// Gift picker (Phase 4b): gc drives the modal; the hub freezes while ANY item picker
+// is up. The gift RESULT surfaces as the popup (ui_draw_gift_popup), so the one-shot
+// resolved flag just gets cleared here.
+if (variable_global_exists("item_picker")) {
+    if (global.item_picker.resolved_purpose == "gift") global.item_picker.resolved_purpose = "";
+    if (global.item_picker.open) exit;
+}
+
 // -----------------------------------------------------------------------------
 // 0. AUDIO SETTINGS OVERLAY - captures all input while open; O opens it
 // -----------------------------------------------------------------------------
@@ -776,6 +784,12 @@ if (keyboard_check_pressed(vk_space) || keyboard_check_pressed(vk_enter) || keyb
                     _gc_interact.bairc_cursor       = 0;
                     _gc_interact.bairc_notification = "";
                 }
+            } else if (selected_npc == 7) {
+                // Tavern Requests board (Phase 4b UX): quests are read, accepted and
+                // turned in HERE - the Journal only tracks them.
+                _gc_interact.tavern_board_open   = true;
+                _gc_interact.tavern_board_cursor = 0;
+                _gc_interact.tavern_board_note   = "";
             } else {
                 notification = npc_names[selected_npc] + ": Coming Soon.";
             }
@@ -792,7 +806,7 @@ if (keyboard_check_pressed(vk_space) || keyboard_check_pressed(vk_enter) || keyb
 // reached a gate (affinity_gate_ready), B crosses it. Auto-gated by the
 // ui_input_blocked() exit above, so it never fires while a shop screen is open.
 // -----------------------------------------------------------------------------
-if (keyboard_check_pressed(ord("B")) && selected_npc < array_length(npc_names) && !show_history && !show_gallery) {
+if (keyboard_check_pressed(ord("B")) && selected_npc < array_length(affinity_npc_ids()) && !show_history && !show_gallery) {
     var _bond_ids = affinity_npc_ids();
     var _bond_id  = _bond_ids[selected_npc];
     if (affinity_gate_ready(_bond_id)) {
@@ -806,24 +820,8 @@ if (keyboard_check_pressed(ord("B")) && selected_npc < array_length(npc_names) &
     }
 }
 
-// Q: start / turn in the selected NPC's quest from their hub row (Phase 4a). The
-// Journal's Quests tab offers the same actions; this is the at-the-counter shortcut.
-if (keyboard_check_pressed(ord("Q")) && selected_npc < array_length(npc_names) && !show_history && !show_gallery) {
-    var _qn_ids = affinity_npc_ids();
-    var _qn_qid = quest_for_npc(_qn_ids[selected_npc]);
-    if (_qn_qid != "") {
-        var _qn_d = quest_def(_qn_qid);
-        if (quest_is_complete(_qn_qid)) {
-            var _qres = quest_turn_in(_qn_qid);
-            notification = (_qres == "") ? ("Quest complete: " + _qn_d.name + " - reward collected!") : _qres;
-            if (_qres == "") { audio_play_sound(Check_1, 1, false); save_game(); }
-        } else {
-            var _qres2 = quest_start(_qn_qid);
-            notification = (_qres2 == "") ? ("Quest accepted: " + _qn_d.name + " - " + _qn_d.objective + ".") : _qres2;
-            if (_qres2 == "") save_game();
-        }
-    }
-}
+// (Gifting moved INSIDE each NPC's engagement window - press F there. Quests are
+// accepted/turned in at the Tavern Requests board, row 8. Phase 4b UX pass, M.)
 
 
 // -----------------------------------------------------------------------------

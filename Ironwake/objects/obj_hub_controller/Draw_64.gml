@@ -482,14 +482,16 @@ if (selected_npc < array_length(_aff_ids)) {
     }
 }
 
-// Quest affordance (Phase 4a): the row NPC has a startable / turn-in-ready quest.
-var _dq_ids = affinity_npc_ids();
-if (selected_npc < array_length(_dq_ids)) {
-    var _dq_qid = quest_for_npc(_dq_ids[selected_npc]);
-    if (_dq_qid != "") {
+// Board affordance (Phase 4b): the Tavern Requests row flags turn-in-ready jobs.
+if (selected_npc == 7) {
+    var _dq_rows = journal_quest_rows();
+    var _dq_ready = 0;
+    for (var _dqi = 0; _dqi < array_length(_dq_rows); _dqi++)
+        if (quest_is_complete(_dq_rows[_dqi])) _dq_ready++;
+    if (_dq_ready > 0) {
         draw_set_halign(fa_right);
-        draw_set_color(quest_is_complete(_dq_qid) ? make_color_rgb(120, 220, 140) : make_color_rgb(228, 205, 140));
-        draw_text(_dp_x + _dp_w - 24, _ddy + 138, quest_is_complete(_dq_qid) ? "[Q] Turn in quest" : "[Q] Quest available");
+        draw_set_color(make_color_rgb(120, 220, 140));
+        draw_text(_dp_x + _dp_w - 24, _ddy + 138, string(_dq_ready) + " ready to turn in");
         draw_set_halign(fa_left);
     }
 }
@@ -560,7 +562,7 @@ var _port_sprites = [
 // currently chosen dungeon (was blank before).
 if (selected_npc < array_length(_port_sprites)) {
     ui_draw_sprite_cover(_port_sprites[selected_npc], 0, _pp_x, _pp_y, _pp_w, _pp_h, portrait_fade_alpha);
-} else if (selected_npc < array_length(npc_names)) {
+} else if (selected_npc == 6) {
     // NPC beyond the authored portrait set (Bairc): use his hub sprite if imported,
     // else a captioned placeholder so the panel never falls through to the gate art.
     var _np_spr = asset_get_index("spr_npc_bairc_portrait");   // M-supplied profile art
@@ -574,6 +576,35 @@ if (selected_npc < array_length(_port_sprites)) {
         draw_set_font(fnt_ui_title); draw_set_color(make_color_rgb(120, 130, 160));
         draw_text(_pp_x + _pp_w / 2, _pp_y + _pp_h / 2, npc_names[selected_npc]);
         draw_set_halign(fa_left); draw_set_valign(fa_top); draw_set_font(-1);
+    }
+} else if (selected_npc < array_length(npc_names)) {
+    // TAVERN REQUESTS row (Phase 4b): the panel becomes the tavern's posting board.
+    // Uses spr_tavern_board art once imported; until then a drawn board placeholder.
+    var _tb_spr = asset_get_index("spr_tavern_board");
+    if (_tb_spr >= 0) {
+        ui_draw_sprite_cover(_tb_spr, 0, _pp_x, _pp_y, _pp_w, _pp_h, portrait_fade_alpha);
+    } else {
+        // Wooden board + pinned notes placeholder.
+        draw_set_alpha(portrait_fade_alpha);
+        draw_set_color(make_color_rgb(52, 36, 24));
+        draw_rectangle(_pp_x, _pp_y, _pp_x + _pp_w, _pp_y + _pp_h, false);
+        draw_set_color(make_color_rgb(30, 20, 13));
+        draw_rectangle(_pp_x + 18, _pp_y + 18, _pp_x + _pp_w - 18, _pp_y + _pp_h - 18, true);
+        for (var _tn = 0; _tn < 5; _tn++) {
+            var _nx = _pp_x + 48 + (_tn mod 3) * 176 + ((_tn div 3) * 40);
+            var _ny = _pp_y + 66 + (_tn div 3) * 190 + ((_tn mod 3) * 14);
+            draw_set_color(make_color_rgb(206, 188, 150));
+            draw_rectangle(_nx, _ny, _nx + 128, _ny + 150, false);
+            draw_set_color(make_color_rgb(120, 100, 70));
+            for (var _tl = 0; _tl < 5; _tl++) draw_line(_nx + 14, _ny + 30 + _tl * 24, _nx + 114, _ny + 30 + _tl * 24);
+            draw_set_color(make_color_rgb(180, 60, 50));
+            draw_circle(_nx + 64, _ny + 10, 5, false);
+        }
+        draw_set_halign(fa_center); draw_set_valign(fa_middle);
+        draw_set_font(fnt_ui_title); draw_set_color(make_color_rgb(226, 205, 160));
+        draw_text(_pp_x + _pp_w / 2, _pp_y + _pp_h - 45, "Tavern Requests");
+        draw_set_halign(fa_left); draw_set_valign(fa_top); draw_set_font(-1);
+        draw_set_alpha(1.0);
     }
 } else {
     // Enter Dungeon preview - the chest+monster "gate" art (now imported).
@@ -1034,7 +1065,8 @@ if (instance_exists(obj_game_controller) && variable_global_exists("pending_perm
     var _gc_hub_d = instance_find(obj_game_controller, 0);
 
     // Banner - centered in the open zone below the NPC list, with blink. The list is
-    // 7 rows since Bairc joined (last row ends y762), so the banner sits under that.
+    // 8 rows since the Tavern Requests board joined (last row ends y858), so the
+    // banner sits under that.
     if (global.pending_perm_points > 0 && !_gc_hub_d.perm_alloc_open) {
         var _blink_on = ((current_time mod 900) < 500);
         draw_set_alpha(_blink_on ? 1.0 : 0.28);
@@ -1042,7 +1074,7 @@ if (instance_exists(obj_game_controller) && variable_global_exists("pending_perm
         var _ban_w = 720;
         var _ban_h = 78;
         var _ban_x = GUI_CX - _ban_w / 2;
-        var _ban_y = 806;
+        var _ban_y = 872;
 
         draw_set_color(make_color_rgb(50, 38, 8));
         draw_rectangle(_ban_x, _ban_y, _ban_x + _ban_w, _ban_y + _ban_h, false);
@@ -2071,6 +2103,7 @@ ui_draw_bairc_lore();       // queued one-time lore fragment, over the garden (d
 ui_draw_bairc_capstone();   // raised-Adult capstone pick modal, over the Bairc screen
 hatch_cutscene_draw();   // full-screen egg-hatch sequence, over the Bairc screen
 ui_draw_journal();       // J-key Journal overlay (Phase 4a) - over hub content, under pause
+ui_draw_tavern_board();  // Tavern Requests board (Phase 4b) - the quest action surface
 ui_draw_character_menu();
 
 // Comparison panel - drawn above all overlays
@@ -2131,6 +2164,7 @@ ui_draw_pause_menu();
 
 // Item-sacrifice picker modal - topmost (Vex stat/trait trade)
 ui_draw_item_picker();
+ui_draw_gift_popup();    // gift reaction + bond delta/progress (Phase 4b) - over the picker layer
 
 // Onboarding coach-mark - drawn last so it sits on top of the hub (see SYSTEMS_ONBOARDING.md).
 ui_draw_tutorial_tip();

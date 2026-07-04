@@ -409,6 +409,21 @@ function end_run(result) {
     // Phase 4a affinity perks that recharge per run:
     global.sable_free_brew   = affinity_at_least("sable", 4);   // Lover: first brew after a run is free
     global.bairc_mend_pending = affinity_at_least("bairc", 3);  // Companion: he mends 1 injury tier at the hub
+    // Phase 4b gifts: the one-per-run latch resets; trinkets found this run are
+    // EXTRACTION-GATED - a survived run banks them, death loses them (M 2026-07-03).
+    global.gift_given = false;
+    var _rtk = run_trinkets();
+    if (array_length(_rtk) > 0) {
+        if (result >= 0) {
+            for (var _rt = 0; _rt < array_length(_rtk); _rt++) array_push(gift_trinkets(), _rtk[_rt]);
+        } else if (variable_global_exists("pet_find_notice")) {
+            var _tk0 = gift_trinket_get(_rtk[0]);
+            var _tk_msg = "The " + ((_tk0 != undefined) ? _tk0.name : "gift") + " was lost with you.";
+            global.pet_find_notice = (global.pet_find_notice != "")
+                ? (global.pet_find_notice + "   " + _tk_msg) : _tk_msg;
+        }
+        global.run_trinkets = [];
+    }
 
     // §6 variety: re-roll the floor seed for the NEXT run. Previously run_seed was
     // set once per session (obj_floor_controller Create) and never changed, so every
@@ -3657,7 +3672,7 @@ function quest_tick(obj_type, param, amount) {
         if (_s.progress != _was) {
             journal_badge_quest(_s.id);
             if (_s.progress >= _d.obj_target && variable_global_exists("pet_find_notice")) {
-                var _qmsg = "Quest complete: " + _d.name + " - return to " + npc_display_name(_d.npc) + ".";
+                var _qmsg = "Request complete: " + _d.name + " - report to the tavern board.";
                 global.pet_find_notice = (global.pet_find_notice != "")
                     ? (global.pet_find_notice + "   " + _qmsg) : _qmsg;
             }
@@ -3817,6 +3832,332 @@ function journal_quest_rows() {
     for (var _v = 0; _v < array_length(_g.available); _v++) array_push(_out, _g.available[_v]);
     for (var _d = 0; _d < array_length(_g.done); _d++)      array_push(_out, _g.done[_d]);
     return _out;
+}
+
+// =============================================================================
+// PHASE 4b - GIFTS (PHASE4B_SPEC.md). One deliberate gift per run: [F] at the hub
+// NPC row opens the item picker (purpose "gift") over EVERYTHING giftable - gear,
+// consumables, runes, pet feed, and the 7 signature TRINKETS (rare boss drops,
+// extraction-gated). Tastes are per-NPC CATEGORY tables; giving reveals the cell
+// in the Journal's taste grid. Bad gifts genuinely hurt.
+// =============================================================================
+
+// Category of a giftable: "weapons" / "armor" / "jewelry" / "potions" / "runes" / "feed".
+function gift_item_category(it) {
+    if (!is_struct(it)) return "armor";
+    var _slot = variable_struct_exists(it, "slot") ? it.slot : "";
+    if (_slot == "weapon" || _slot == "ranged")  return "weapons";
+    if (_slot == "ring"   || _slot == "amulet")  return "jewelry";
+    return "armor";   // chest / helm / gloves / boots / offhand
+}
+
+// The 5-band taste table (spec §3, M-approved). Anything unlisted is Neutral.
+function gift_taste(npc_id, cat) {
+    switch (npc_id) {
+        case "dorn":
+            if (cat == "weapons") return "loved";
+            if (cat == "armor")   return "liked";
+            if (cat == "potions") return "disliked";
+            if (cat == "feed")    return "hated";
+            break;
+        case "sable":
+            if (cat == "potions") return "loved";
+            if (cat == "runes")   return "liked";
+            if (cat == "armor")   return "disliked";
+            if (cat == "weapons") return "hated";
+            break;
+        case "maren":
+            if (cat == "runes")   return "loved";
+            if (cat == "jewelry") return "liked";
+            if (cat == "potions") return "disliked";
+            if (cat == "feed")    return "hated";
+            break;
+        case "vex":
+            if (cat == "armor")   return "loved";
+            if (cat == "weapons") return "liked";
+            if (cat == "jewelry") return "disliked";
+            if (cat == "feed")    return "hated";
+            break;
+        case "petra":
+            if (cat == "jewelry") return "loved";
+            if (cat == "weapons") return "liked";
+            if (cat == "feed")    return "disliked";
+            if (cat == "runes")   return "hated";
+            break;
+        case "vael":
+            if (cat == "jewelry") return "loved";
+            if (cat == "armor")   return "liked";
+            if (cat == "runes")   return "disliked";
+            if (cat == "feed")    return "hated";
+            break;
+        case "bairc":
+            if (cat == "feed")    return "loved";
+            if (cat == "potions") return "liked";
+            if (cat == "jewelry") return "disliked";
+            if (cat == "weapons") return "hated";
+            break;
+    }
+    return "neutral";
+}
+function gift_band_value(band) {
+    switch (band) {
+        case "loved":    return 10;
+        case "liked":    return 5;
+        case "disliked": return -5;
+        case "hated":    return -10;
+    }
+    return 1;   // neutral
+}
+
+// --- Signature trinkets (spec §4): rare boss drops, +25 (bypass-cap) to THEIR NPC,
+// polite +1 to anyone else. Extraction-gated: found ones ride global.run_trinkets
+// and only bank into global.gift_trinkets on a survived run. -----------------------
+function gift_trinket_catalog() {
+    return [
+        { id:"meteoric_ingot",  name:"Meteoric Ingot",         npc:"dorn",  flavor:"star-metal Dorn has only ever read about" },
+        { id:"grimoire_page",   name:"Sealed Grimoire Page",   npc:"sable", flavor:"a recipe in a dead alchemist's hand" },
+        { id:"singing_rune",    name:"Singing Runestone",      npc:"maren", flavor:"a rune that hums, faintly off-key" },
+        { id:"champion_wraps",  name:"Champion's Hand-Wraps",  npc:"vex",   flavor:"worn by someone who never lost" },
+        { id:"appraisal_lens",  name:"Flawless Appraisal Lens",npc:"petra", flavor:"it shows the true price of anything" },
+        { id:"duskweave_bolt",  name:"Bolt of Duskweave",      npc:"vael",  flavor:"cloth that drinks the light" },
+        { id:"egg_shard",       name:"Orphaned Egg Shard",     npc:"bairc", flavor:"still warm, long after it should be" },
+    ];
+}
+function gift_trinket_get(id) {
+    var _c = gift_trinket_catalog();
+    for (var _i = 0; _i < array_length(_c); _i++) if (_c[_i].id == id) return _c[_i];
+    return undefined;
+}
+function gift_trinkets() {   // OWNED (banked) trinket ids
+    if (!variable_global_exists("gift_trinkets") || !is_array(global.gift_trinkets)) global.gift_trinkets = [];
+    return global.gift_trinkets;
+}
+function run_trinkets() {    // found THIS run; banked or lost at end_run
+    if (!variable_global_exists("run_trinkets") || !is_array(global.run_trinkets)) global.run_trinkets = [];
+    return global.run_trinkets;
+}
+// Boss-clear roll (3%, TUNABLE): a random trinket joins the run pouch. Returns the
+// catalog entry for the caller's combat-log line, or undefined.
+function gift_try_boss_trinket() {
+    if (irandom(99) >= 3) return undefined;
+    var _c = gift_trinket_catalog();
+    var _tk = _c[irandom(array_length(_c) - 1)];
+    array_push(run_trinkets(), _tk.id);
+    return _tk;
+}
+
+// --- Taste discovery (the Journal grid): a given gift permanently reveals that
+// NPC x category cell; tiers add free hints (Acquaintance -> Loved, Friend -> Hated).
+function npc_tastes_known() {
+    if (!variable_global_exists("npc_tastes_known") || !is_struct(global.npc_tastes_known)) global.npc_tastes_known = {};
+    return global.npc_tastes_known;
+}
+function gift_reveal(npc_id, cat) {
+    var _k = npc_tastes_known();
+    if (!variable_struct_exists(_k, npc_id)) variable_struct_set(_k, npc_id, {});
+    variable_struct_set(variable_struct_get(_k, npc_id), cat, true);
+}
+function gift_taste_known(npc_id, cat) {
+    var _k = npc_tastes_known();
+    if (variable_struct_exists(_k, npc_id)
+        && variable_struct_exists(variable_struct_get(_k, npc_id), cat)) return true;
+    var _band = gift_taste(npc_id, cat);
+    if (_band == "loved" && affinity_at_least(npc_id, 1)) return true;   // Acquaintance hint
+    if (_band == "hated" && affinity_at_least(npc_id, 2)) return true;   // Friend hint
+    return false;
+}
+
+// --- Reaction lines (7 NPCs x 5 bands, hand-authored) -------------------------------
+function gift_reaction_line(npc_id, band) {
+    switch (npc_id) {
+        case "dorn": switch (band) {
+            case "loved":    return "Dorn turns it over twice. \"Now THAT'S steel. I'll remember this.\"";
+            case "liked":    return "\"Solid work. I can respect it.\"";
+            case "neutral":  return "Dorn grunts. It disappears under the counter.";
+            case "disliked": return "\"What am I meant to do with this? Drink it?\"";
+            case "hated":    return "\"...is this ANIMAL FEED?\" He doesn't look up for a while.";
+        } break;
+        case "sable": switch (band) {
+            case "loved":    return "Sable uncorks it on the spot. \"Oh, you GET me.\"";
+            case "liked":    return "\"Ooh - I can melt this into something wonderful.\"";
+            case "neutral":  return "\"Aw. Thoughtful-ish!\"";
+            case "disliked": return "\"It's very... heavy. And metal. Thank you?\"";
+            case "hated":    return "Sable holds the weapon like a dead rat. \"Why.\"";
+        } break;
+        case "maren": switch (band) {
+            case "loved":    return "Maren goes very still. \"It sings. You heard it too, didn't you?\"";
+            case "liked":    return "\"Fine settings. The stones will like living here.\"";
+            case "neutral":  return "Maren nods once. High praise, probably.";
+            case "disliked": return "\"I don't drink while I work. I'm always working.\"";
+            case "hated":    return "Her eyes say you have made a terrible mistake.";
+        } break;
+        case "vex": switch (band) {
+            case "loved":    return "Vex runs a thumb along the plate. \"Protect the body. You listened.\"";
+            case "liked":    return "\"Balanced. Someone could do damage with this.\"";
+            case "neutral":  return "\"Hm.\" He pockets it without ceremony.";
+            case "disliked": return "\"Sparkle is for people who want to be seen. I don't.\"";
+            case "hated":    return "\"I am BLINDFOLDED, not a stable.\"";
+        } break;
+        case "petra": switch (band) {
+            case "loved":    return "Petra's eyes light up like a ledger balancing. \"Darling, you shouldn't have. Do it again sometime.\"";
+            case "liked":    return "\"Mm, this would fetch a pretty price. Mine now.\"";
+            case "neutral":  return "\"How sweet.\" It's already been appraised.";
+            case "disliked": return "\"It smells like a barn, sweetheart.\"";
+            case "hated":    return "\"Rocks. You brought me rocks I can't even SELL.\"";
+        } break;
+        case "vael": switch (band) {
+            case "loved":    return "Vael drapes it against the light. \"Finally. Someone with EYES.\"";
+            case "liked":    return "\"Good lines. I can work with good lines.\"";
+            case "neutral":  return "\"It's... functional.\" The word costs her something.";
+            case "disliked": return "\"A rock. You brought the aesthete a rock.\"";
+            case "hated":    return "Vael refuses to touch it. \"Take it OUTSIDE.\"";
+        } break;
+        case "bairc": switch (band) {
+            case "loved":    return "Bairc says nothing, but the creatures crowd the fence to watch him smile.";
+            case "liked":    return "\"...they get sick, sometimes. This helps. Thank you.\"";
+            case "neutral":  return "Bairc accepts it with both hands, carefully.";
+            case "disliked": return "\"I have no use for shining things.\" He gives it to a magpie.";
+            case "hated":    return "Bairc looks at the weapon, then at you, longer.";
+        } break;
+    }
+    return "It is accepted.";
+}
+// Short ledger tag per band (the journal note beside what you gave).
+function gift_band_tag(band) {
+    switch (band) {
+        case "loved":    return "they loved it";
+        case "liked":    return "they liked it";
+        case "disliked": return "they didn't care for it";
+        case "hated":    return "they hated it";
+    }
+    return "polite thanks";
+}
+
+// --- Candidates for the gift picker: gear (stash 0 / pack 1), consumables (10),
+// unsocketed runes (11), feed pouch (12, idx = pouch id string), trinkets (13, idx
+// into gift_trinkets). Each carries gcat for the taste lookup. Trinkets list first.
+function gift_candidates() {
+    var _out = [];
+    var _tks = gift_trinkets();
+    for (var _t = 0; _t < array_length(_tks); _t++) {
+        var _tk = gift_trinket_get(_tks[_t]);
+        if (_tk != undefined) array_push(_out, { source:13, idx:_t, item:_tk, label:_tk.name + "  [Gift]", rarity:4, value:0, gcat:"trinket" });
+    }
+    if (variable_global_exists("pet_feed_pouch")) {
+        var _fk = variable_struct_get_names(pet_feed_pouch());
+        for (var _f = 0; _f < array_length(_fk); _f++) {
+            if (pet_feed_pouch_count(_fk[_f]) <= 0) continue;
+            var _fd = pet_feed_get(_fk[_f]);
+            if (_fd != undefined) array_push(_out, { source:12, idx:0, item:_fk[_f], label:_fd.name + "  (feed)", rarity:0, value:_fd.gold, gcat:"feed" });
+        }
+    }
+    if (variable_global_exists("consumable_inventory")) {
+        for (var _c = 0; _c < array_length(global.consumable_inventory); _c++) {
+            var _cn = global.consumable_inventory[_c];
+            array_push(_out, { source:10, idx:_c, item:_cn, label:_cn.name + "  (potion)", rarity:0, value:variable_struct_exists(_cn, "gold_value") ? _cn.gold_value : 0, gcat:"potions" });
+        }
+    }
+    if (variable_global_exists("rune_inventory")) {
+        for (var _r = 0; _r < array_length(global.rune_inventory); _r++) {
+            var _rn = global.rune_inventory[_r];
+            array_push(_out, { source:11, idx:_r, item:_rn, label:_rn.name + " " + rune_tier_roman(_rn.tier) + "  (rune)", rarity:_rn.tier - 1, value:0, gcat:"runes" });
+        }
+    }
+    for (var _s = 0; _s < 2; _s++) {
+        var _arr = (_s == 0) ? global.equipment_stash : global.carried_items;
+        if (!is_array(_arr)) continue;
+        for (var _i = 0; _i < array_length(_arr); _i++) {
+            var _it = _arr[_i];
+            if (!is_struct(_it)) continue;
+            array_push(_out, { source:_s, idx:_i, item:_it,
+                label:(variable_struct_exists(_it, "name") ? _it.name : "item"),
+                rarity:variable_struct_exists(_it, "rarity") ? _it.rarity : 0,
+                value:variable_struct_exists(_it, "gold_value") ? _it.gold_value : 0,
+                gcat:gift_item_category(_it) });
+        }
+    }
+    return _out;
+}
+
+// Remove a gift candidate from its source pool (the gift-purpose counterpart of
+// item_picker_remove_selected, which only knows the two gear arrays).
+function gift_remove_candidate(c) {
+    switch (c.source) {
+        case 0: case 1:
+            var _arr = (c.source == 0) ? global.equipment_stash : global.carried_items;
+            for (var _i = 0; _i < array_length(_arr); _i++)
+                if (_arr[_i] == c.item) { array_delete(_arr, _i, 1); return true; }
+            return false;
+        case 10:
+            for (var _j = 0; _j < array_length(global.consumable_inventory); _j++)
+                if (global.consumable_inventory[_j] == c.item) { array_delete(global.consumable_inventory, _j, 1); return true; }
+            return false;
+        case 11:
+            for (var _k = 0; _k < array_length(global.rune_inventory); _k++)
+                if (global.rune_inventory[_k] == c.item) { array_delete(global.rune_inventory, _k, 1); return true; }
+            return false;
+        case 12:
+            if (pet_feed_pouch_count(c.item) > 0) {
+                variable_struct_set(pet_feed_pouch(), c.item, pet_feed_pouch_count(c.item) - 1);
+                return true;
+            }
+            return false;
+        case 13:
+            var _tks = gift_trinkets();
+            for (var _m = 0; _m < array_length(_tks); _m++)
+                if (_tks[_m] == c.item.id) { array_delete(_tks, _m, 1); return true; }
+            return false;
+    }
+    return false;
+}
+
+// Resolve a confirmed gift: band + delta, affinity (bad gifts always land; good ones
+// ride the soft cap except a matched trinket, which bypasses like a quest chunk),
+// discovery, ledger, the one-per-run latch. Returns the reaction line.
+function gift_give(npc_id, c) {
+    var _e = affinity_entry(npc_id);
+    if (_e == undefined) return "";
+    var _band, _delta;
+    if (c.source == 13) {
+        if (c.item.npc == npc_id) { _band = "loved"; _delta = 25; }
+        else                      { _band = "neutral"; _delta = 1; }
+    } else {
+        _band  = gift_taste(npc_id, c.gcat);
+        _delta = gift_band_value(_band);
+        if (_delta > 0) _delta += max(0, c.rarity);   // rarity sweetener: +1 per tier above Common
+        gift_reveal(npc_id, c.gcat);
+    }
+    if (_delta >= 0) {
+        if (c.source == 13 && _delta > 1) {           // matched trinket: bypass the soft cap
+            _e.score += _delta;
+            npc_actor_play_action();
+            affinity_refresh_gate(npc_id);
+        } else {
+            affinity_add(npc_id, _delta);
+        }
+    } else {
+        _e.score = max(0, _e.score + _delta);         // bad gifts always hurt (no cap)
+        affinity_refresh_gate(npc_id);
+    }
+    global.gift_given = true;
+    ledger_add(npc_id, "gift", "Gave " + c.label + " - " + gift_band_tag(_band) + ".");
+    journal_badge_npc(npc_id);
+    // Result POPUP (Phase 4b UX, M): reaction + bond delta + live tier/progress.
+    // Dismiss handled in obj_game_controller Step; drawn by ui_draw_gift_popup.
+    global.gift_popup = { npc: npc_id, line: gift_reaction_line(npc_id, _band), delta: _delta, band: _band };
+    return global.gift_popup.line;
+}
+
+// Open the gift picker for the NPC whose engagement window is up (Phase 4b UX:
+// gifts are given in person, not from the hub list). "" ok / reason for the
+// caller's notification line.
+function gift_try_open(npc_id, npc_label) {
+    if (variable_global_exists("gift_given") && global.gift_given)
+        return "You've already given a gift - bring another after your next run.";
+    var _c = gift_candidates();
+    if (array_length(_c) == 0) return "You have nothing to give.";
+    item_picker_open("gift", { npc: npc_id, npc_name: npc_label }, _c);
+    return "";
 }
 
 // --- Phase 4a perk read helpers (PHASE4A_SPEC.md §5, M-approved) --------------------
@@ -5849,6 +6190,8 @@ function item_picker_prompt() {
         case "vex_stat":  return "Choose an item to trade to Vex for the upgrade";
         case "shrine_boon": return "Choose an item to sacrifice at the shrine";
         case "alch_rebirth": return "Choose a class item to reforge (cost scales with rarity)";
+        case "gift": return "Choose a gift for " + (variable_struct_exists(global.item_picker.context, "npc_name")
+            ? global.item_picker.context.npc_name : "them");
     }
     return "Choose an item";
 }
@@ -5856,6 +6199,7 @@ function item_picker_verb() {
     switch (global.item_picker.purpose) {
         case "shrine_boon":  return "Sacrifice";
         case "alch_rebirth": return "Reforge";
+        case "gift":         return "Give";
     }
     return "Trade away";
 }
@@ -5866,6 +6210,27 @@ function item_picker_resolve() {
     var _p    = global.item_picker;
     var _ctx  = _p.context;
     var _msg  = "";
+
+    // GIFT (Phase 4b): candidates span five pools, so removal is its own path
+    // (gift_remove_candidate) - the shared remover below only knows the gear arrays.
+    if (_p.purpose == "gift") {
+        var _gsel = (_p.cursor >= 0 && _p.cursor < array_length(_p.candidates))
+                    ? _p.candidates[_p.cursor] : undefined;
+        if (_gsel == undefined) {
+            _p.resolved_purpose = "gift"; _p.result_msg = "Nothing chosen.";
+            item_picker_close(); return;
+        }
+        var _gnpc = _ctx.npc;
+        if (!gift_remove_candidate(_gsel)) {
+            _p.resolved_purpose = "gift"; _p.result_msg = "It seems to have gone missing.";
+            item_picker_close(); return;
+        }
+        _p.resolved_purpose = "gift";
+        _p.result_msg = gift_give(_gnpc, _gsel);
+        save_game();
+        item_picker_close();
+        return;
+    }
 
     // Alchemical Rebirth needs the item's data + an affordability gate BEFORE removal,
     // so it never destroys the item when the player can't pay.

@@ -931,9 +931,10 @@ if (player_turn) {
                             }
                         }
 
-                        // Arcane Surge: abilities costing 4+ AP deal +25% damage (Arcanist only)
+                        // Arcane Surge: 3-AP (committed-cast) abilities deal +25% damage (Arcanist
+                        // only). Audit fix 2026-07-03: was >= 4, which no ability costs - a no-op.
                         if (player.class_id == 0 && trait_active("Arcane Surge")
-                            && variable_struct_exists(ab, "energy_cost") && ab.energy_cost >= 4) {
+                            && variable_struct_exists(ab, "energy_cost") && ab.energy_cost >= 3) {
                             _final_dmg = floor(_final_dmg * (1 + 0.25 * trait_potency_mult("Arcane Surge")));
                         }
                         // Berserker Rage: below 40% HP deal +20% damage (Bloodwarden only)
@@ -1511,7 +1512,9 @@ if (player_turn) {
                         + string(ab.effect_duration) + " turns.");
                 }
 
-                // --- Second Wind: restore 1 secondary resource (heal handled above) ---
+                // --- Second Wind: restore 1 secondary resource (heal handled above) +
+                // CLEANSE the newest debuff (audit §6 rework: the game's only self-cleanse,
+                // so it stops being a strictly-worse Field Dressing). ---
                 if (ab.name == "Second Wind") {
                     if (variable_struct_exists(player, "souls")) {
                         player.souls = min(player.souls_max, player.souls + 1);
@@ -1522,6 +1525,12 @@ if (player_turn) {
                     } else if (variable_struct_exists(player, "preparation")) {
                         player.preparation = min(player.preparation_max, player.preparation + 1);
                         array_push(combat_log, "Second Wind: +1 Preparation.");
+                    }
+                    if (variable_struct_exists(player, "status_effects") && array_length(player.status_effects) > 0) {
+                        var _sw_cl = player.status_effects[array_length(player.status_effects) - 1];
+                        array_delete(player.status_effects, array_length(player.status_effects) - 1, 1);
+                        array_push(combat_log, "Second Wind shakes off "
+                            + (variable_struct_exists(_sw_cl, "type") ? _sw_cl.type : "an affliction") + ".");
                     }
                 }
 

@@ -1120,6 +1120,11 @@ if (combat_over) {
                     array_push(combat_log, "Among the remains: a " + _boss_egg.name + " egg! Bairc can raise it.");
                     global.pet_find_notice = "You recovered a " + _boss_egg.name + " egg - visit Bairc.";
                 }
+                // Signature gift trinket roll (Phase 4b, 3%): extraction-gated keepsake.
+                var _boss_tk = gift_try_boss_trinket();
+                if (_boss_tk != undefined) {
+                    array_push(combat_log, "Among the remains: " + _boss_tk.name + " - " + _boss_tk.flavor + ". A gift begging for its owner.");
+                }
                 if (global.current_floor >= 3) {
                     // Full dungeon clear - end run as victory
                     global.just_cleared_boss = false;

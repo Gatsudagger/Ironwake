@@ -58,7 +58,7 @@ if (tutorial_is_active()) {
 // drives the Shrine picker (no double-stepping). See SYSTEMS_ITEM_PICKER.md.
 if (variable_global_exists("item_picker") && global.item_picker.open
     && (global.item_picker.purpose == "vex_trait" || global.item_picker.purpose == "vex_stat"
-        || global.item_picker.purpose == "alch_rebirth")) {
+        || global.item_picker.purpose == "alch_rebirth" || global.item_picker.purpose == "gift")) {
     item_picker_step();
     exit;
 }
@@ -73,9 +73,57 @@ if (variable_global_exists("item_picker") && global.item_picker.resolved_purpose
     }
 }
 
+// --- GIFT RESULT POPUP (Phase 4b UX): modal over the giver's window; any confirm
+// key dismisses. Owns all input while up.
+if (variable_global_exists("gift_popup") && global.gift_popup != undefined) {
+    if (keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_return)
+        || keyboard_check_pressed(vk_space) || keyboard_check_pressed(vk_escape)
+        || keyboard_check_pressed(ord("F")) || mouse_check_button_pressed(mb_left)) {
+        global.gift_popup = undefined;
+    }
+    exit;
+}
+
+// --- TAVERN REQUESTS BOARD (Phase 4b UX): the quest action surface. W/S rows,
+// Enter accepts an available request / turns in a finished one, Esc closes.
+if (tavern_board_open) {
+    if (keyboard_check_pressed(vk_escape)) { tavern_board_open = false; exit; }
+    var _tb = journal_quest_rows();
+    var _tbn = array_length(_tb);
+    if (_tbn > 0) {
+        if (nav_up())   { tavern_board_cursor = wrap_index(tavern_board_cursor - 1, _tbn); tavern_board_note = ""; }
+        if (nav_down()) { tavern_board_cursor = wrap_index(tavern_board_cursor + 1, _tbn); tavern_board_note = ""; }
+        tavern_board_cursor = clamp(tavern_board_cursor, 0, _tbn - 1);
+        if (keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_space)) {
+            var _tbid = _tb[tavern_board_cursor];
+            var _tbd  = quest_def(_tbid);
+            journal_clear_quest(_tbid);
+            if (quest_is_complete(_tbid)) {
+                var _tbres = quest_turn_in(_tbid);
+                if (_tbres == "") {
+                    tavern_board_note = "\"" + _tbd.name + "\" fulfilled - " + journal_quest_reward_text(_tbd) + " collected.";
+                    audio_play_sound(Check_1, 1, false);
+                    save_game();
+                } else tavern_board_note = _tbres;
+            } else if (quest_state(_tbid) != undefined && quest_state(_tbid).status == "available") {
+                var _tbres2 = quest_start(_tbid);
+                if (_tbres2 == "") {
+                    tavern_board_note = "Taken: \"" + _tbd.name + "\" - " + _tbd.objective + ".";
+                    save_game();
+                } else tavern_board_note = _tbres2;
+            } else if (quest_state(_tbid) != undefined && quest_state(_tbid).status == "active") {
+                tavern_board_note = "Still underway - " + _tbd.objective + ".";
+            } else {
+                tavern_board_note = "Already fulfilled.";
+            }
+        }
+    }
+    exit;
+}
+
 // --- JOURNAL (Phase 4a): J toggles the overlay at the hub / on the floor map. While
 // open it owns all input (ui_input_blocked() reports true, freezing every room
-// controller). Viewing works both places; ACTIONS (start / turn in) are hub-only.
+// controller). VIEW/TRACK ONLY (Phase 4b) - actions live at the Tavern board.
 if (journal_open) {
     if (keyboard_check_pressed(ord("J")) || keyboard_check_pressed(vk_escape)) { journal_open = false; exit; }
     if (keyboard_check_pressed(ord("Q")) || keyboard_check_pressed(ord("E"))) {
@@ -100,14 +148,8 @@ if (journal_open) {
             journal_cursor = clamp(journal_cursor, 0, _jqn - 1);
             var _jrow = _jq[journal_cursor];
             journal_clear_quest(_jrow);               // badges clear on VIEW
-            if ((keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_space))
-                && room == rm_hub) {
-                if (quest_is_complete(_jrow)) {
-                    if (quest_turn_in(_jrow) == "") { audio_play_sound(Check_1, 1, false); save_game(); }
-                } else if (quest_state(_jrow) != undefined && quest_state(_jrow).status == "available") {
-                    if (quest_start(_jrow) == "") save_game();
-                }
-            }
+            // (View-only since Phase 4b: accepting/turning in happens at the Tavern
+            // Requests board - taking jobs out of your own diary felt wrong. - M)
         }
     }
     exit;
@@ -308,6 +350,45 @@ if (keyboard_check_pressed(ord("B"))) {
     if (_bond_npc != "" && affinity_gate_ready(_bond_npc)) {
         affinity_try_advance(_bond_npc);
         if (room == rm_hub || room == rm_character_select) save_game();
+    }
+}
+
+// =============================================================================
+// F = GIVE A GIFT, inside the open NPC's engagement window (Phase 4b UX, M: gifting
+// from the hub list felt out of place - you hand it over in person). One shared
+// handler for all seven windows; guarded against every sub-modal that owns input.
+// =============================================================================
+if (keyboard_check_pressed(ord("F")) && room == rm_hub && !text_entry_active()
+    && !(variable_global_exists("item_picker") && global.item_picker.open)) {
+    var _gift_npc = "", _gift_notify = -1;   // -1 = none; else which notification var
+    if (shop_open != -1 && !stash_mode_open) {
+        _gift_npc = (shop_open == 0) ? "petra" : "dorn"; _gift_notify = 0;
+    } else if (trainer_open && !trainer_statpick_open && !vex_detail_open) {
+        _gift_npc = "vex"; _gift_notify = 1;
+    } else if (variable_instance_exists(id, "maren_open") && maren_open && maren_confirm == undefined) {
+        _gift_npc = "maren"; _gift_notify = 2;
+    } else if (variable_instance_exists(id, "sable_open") && sable_open) {
+        _gift_npc = "sable"; _gift_notify = 3;
+    } else if (variable_instance_exists(id, "vael_open") && vael_open) {
+        _gift_npc = "vael"; _gift_notify = 4;
+    } else if (variable_instance_exists(id, "bairc_open") && bairc_open
+        && !bairc_naming && !bairc_capstone_open && !bairc_release_confirm
+        && !bairc_detail_open && !hatch_active) {
+        _gift_npc = "bairc"; _gift_notify = 5;
+    }
+    if (_gift_npc != "") {
+        var _gmsg = gift_try_open(_gift_npc, npc_display_name(_gift_npc));
+        if (_gmsg != "") {
+            switch (_gift_notify) {
+                case 0: shop_notification    = _gmsg; break;
+                case 1: trainer_notification = _gmsg; break;
+                case 2: maren_notification   = _gmsg; break;
+                case 3: sable_notification   = _gmsg; break;
+                case 4: vael_notification    = _gmsg; break;
+                case 5: bairc_notification   = _gmsg; break;
+            }
+        }
+        exit;
     }
 }
 
@@ -734,16 +815,26 @@ if (shop_open != -1 && !stash_mode_open) {
         }
         // Row clicks - select cursor only (Enter buys/sells)
         if (shop_tab == 0) {
-            var _shrows;
             if (shop_open == 0) {
-                _shrows = 4 + ((global.petra_stock_special != undefined && global.petra_special_qty > 0) ? 1 : 0);
+                // Petra: COMPACT windowed rows (87px + 6 gap, 8 visible) covering the FULL
+                // buy list incl. feeds. Audit fix 2026-07-03: the old hit-test only spanned
+                // the 4-5 consumable rows at Dorn's 126px pitch, so feed rows misclicked.
+                var _shp_n    = array_length(petra_buy_list());
+                var _shp_vis  = min(9, _shp_n);
+                var _shp_win0 = (_shp_n > 9) ? clamp(shop_index - 9 + 2, 0, _shp_n - 9) : 0;
+                for (var _shri = 0; _shri < _shp_vis; _shri++) {
+                    var _shry = 189 + _shri * 90;
+                    if (_shmx >= 150 && _shmx < 1500 && _shmy >= _shry && _shmy < _shry + 84) {
+                        shop_index = _shp_win0 + _shri; shop_notification = ""; break;
+                    }
+                }
             } else {
-                _shrows = array_length(global.dorn_stock);
-            }
-            for (var _shri = 0; _shri < _shrows; _shri++) {
-                var _shry = 189 + _shri * 126;
-                if (_shmx >= 150 && _shmx < 1770 && _shmy >= _shry && _shmy < _shry+117) {
-                    shop_index = _shri; shop_notification = ""; break;
+                var _shrows = array_length(global.dorn_stock);
+                for (var _shri = 0; _shri < _shrows; _shri++) {
+                    var _shry = 189 + _shri * 126;
+                    if (_shmx >= 150 && _shmx < 1770 && _shmy >= _shry && _shmy < _shry+117) {
+                        shop_index = _shri; shop_notification = ""; break;
+                    }
                 }
             }
         }

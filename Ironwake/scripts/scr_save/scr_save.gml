@@ -133,6 +133,10 @@ function save_game() {
         quests:          (variable_global_exists("quests")          && is_array(global.quests))           ? global.quests          : [],
         journal_badges:  (variable_global_exists("journal_badges")  && is_struct(global.journal_badges))  ? global.journal_badges  : undefined,
         npc_ledger:      (variable_global_exists("npc_ledger")      && is_struct(global.npc_ledger))      ? global.npc_ledger      : undefined,
+        // Phase 4b: gifts - owned trinkets, revealed tastes, the one-per-run latch.
+        gift_trinkets:    (variable_global_exists("gift_trinkets")    && is_array(global.gift_trinkets))     ? global.gift_trinkets    : [],
+        npc_tastes_known: (variable_global_exists("npc_tastes_known") && is_struct(global.npc_tastes_known)) ? global.npc_tastes_known : undefined,
+        gift_given:       (variable_global_exists("gift_given"))                                             ? global.gift_given       : false,
 
         // Petra Treasure Trader order (cross-run persistent; undefined = none)
         petra_order:    variable_global_exists("petra_order")    ? global.petra_order    : undefined,
@@ -257,6 +261,11 @@ function new_game_reset() {
     global.quests         = [];
     global.journal_badges = { npcs: {}, quests: {} };
     global.npc_ledger     = {};
+    // Phase 4b: gifts - clean slate.
+    global.gift_trinkets    = [];
+    global.run_trinkets     = [];
+    global.npc_tastes_known = {};
+    global.gift_given       = false;
 
     // Petra Treasure Trader - no open order on a new character.
     global.petra_order = undefined;
@@ -488,6 +497,11 @@ function load_game() {
     global.journal_badges = (variable_struct_exists(_s, "journal_badges") && is_struct(_s.journal_badges)) ? _s.journal_badges : { npcs: {}, quests: {} };
     global.npc_ledger     = (variable_struct_exists(_s, "npc_ledger")     && is_struct(_s.npc_ledger))     ? _s.npc_ledger     : {};
     quest_state_ensure();   // append-migrate rows for quests added since this save
+    // Phase 4b: gifts (older saves -> empty defaults). run_trinkets is run-scoped: empty.
+    global.gift_trinkets    = (variable_struct_exists(_s, "gift_trinkets")    && is_array(_s.gift_trinkets))     ? _s.gift_trinkets    : [];
+    global.npc_tastes_known = (variable_struct_exists(_s, "npc_tastes_known") && is_struct(_s.npc_tastes_known)) ? _s.npc_tastes_known : {};
+    global.gift_given       = (variable_struct_exists(_s, "gift_given"))                                          ? _s.gift_given       : false;
+    global.run_trinkets     = [];
 
     // Petra Treasure Trader order (cross-run persistent). Absent/!struct -> no order.
     global.petra_order = (variable_struct_exists(_s, "petra_order") && is_struct(_s.petra_order))

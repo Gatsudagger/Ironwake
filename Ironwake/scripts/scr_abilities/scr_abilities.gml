@@ -286,7 +286,7 @@ var _arc_d = [
       f: "A quick elemental blast that also fills your Soul reserve. Cheap to cast - spam it to fuel bigger spells on the next turn." },
     { s: "1 AP: 8 drain dmg, heal 8, +1 Soul. 2-turn CD.",
       f: "A guaranteed drain that heals as much as it deals and banks 1 Soul, bypassing armor entirely. Now 1 AP on a 2-turn cooldown - cheap sustain you can't spam every turn." },
-    { s: "Spend 1 Soul. Deal 28 elemental dmg.",
+    { s: "Spend 1 Soul. Deal 38 elemental dmg.",
       f: "Your big nuke. Costs 1 Soul for a massive elemental hit with a strong arcane crit chance. Save it for tough or high-HP enemies." },
     { s: "0 AP cost. Gain +2 Soul instantly.",
       f: "Costs zero AP - cast it for free and keep your other abilities available this turn. One use per turn. Save it to top off your Soul reserve before an Arcane Burst." },
@@ -417,11 +417,11 @@ var _bw_d = [
       f: "A melee hit that opens a bleed wound. The 12 total bleed damage adds up - strong opener on high-HP targets or bosses." },
     { s: "Spend 2 Blood. Heal 14 HP. Free action.",
       f: "A zero-energy burst heal that costs only Blood. Perfect for recovering mid-fight when your Blood reserve is stocked." },
-    { s: "Deal 18 physical dmg. Target deals 30% less dmg for 3 turns.",
+    { s: "Deal 24 physical dmg. Target deals 30% less dmg for 3 turns.",
       f: "A heavy hit that also cuts the target's damage output. Use it on the hardest-hitting enemy to reduce the pressure on yourself." },
     { s: "Spend 1 Blood. Drain 8 HP. Reduce target max HP by 8.",
       f: "Permanently lowers the enemy's maximum HP for this combat. Combine with Gore Strike's bleed to whittle down a boss faster." },
-    { s: "Return 5 dmg to each attacker per hit for 4 turns.",
+    { s: "Return 8 dmg to each attacker per hit for 4 turns.",
       f: "A thorns buff that punishes every incoming attack. Pairs well with Iron Skin - you reduce their damage while they take damage for hitting you." },
     { s: "Spend 3 Blood. Survive one lethal hit at 1 HP this turn.",
       f: "An emergency safety net that guarantees you survive one killing blow per cast. Burn it the moment death is imminent." },
@@ -503,9 +503,10 @@ global.abilities_shadowstrider = [
         /*effect_type*/"debuff", /*effect_value*/0.25, /*duration*/3, // -25% dmg + slow
         /*self*/false),
 
-    // 6: Spike Trap - heavy trap; guaranteed on trigger; bleed stacks twice
+    // 6: Spike Trap - the BLEED trap (audit §6: was 3AP+2P, strictly dominated by
+    // Death Snare at the same cost; now the cheap DoT-build trap vs Snare's control).
     ability_define("Spike Trap",
-        /*energy*/3, /*secondary*/2,
+        /*energy*/2, /*secondary*/1,
         /*damage*/26, /*dtype*/0,       // physical
         /*acc*/-1, /*guaranteed*/true,
         /*crit_type*/1, /*base_crit*/10, // precision (DEX)
@@ -555,13 +556,13 @@ var _ss_d = [
       f: "A group accuracy debuff that buys you breathing room. Cast it before a risky turn or when you need to set up traps without taking a beating." },
     { s: "Deal 10 physical dmg. Target deals 25% less dmg for 3 turns.",
       f: "A reliable hit with a lasting damage debuff. Reduces the most dangerous enemy's output for several turns - use it early." },
-    { s: "Spend 2 Prep. Trap fires: 22 dmg + bleed 6/turn x 4 turns.",
-      f: "Your most powerful trap. Heavy damage and a punishing bleed - the Preparation cost is worth it on elites and the boss." },
+    { s: "Spend 1 Prep. Trap fires: 26 dmg + bleed 6/turn x 4 turns.",
+      f: "The bleed trap: heavy damage and a punishing wound at a lean cost. Feeds Rupture-style payoffs and bleed builds; take Death Snare when you need the stun instead." },
     { s: "All hits on target deal +8 bonus dmg for up to 4 turns.",
       f: "A mark that amplifies every attack landing on the target. Apply it early and then stack Snipe and traps on top to maximize the window." },
     { s: "Spend 2 Prep. Next hit above 10 dmg is halved.",
       f: "No energy cost - just Preparation. Hold it in reserve for telegraphed heavy hits. Has no effect on weak attacks below 10 damage." },
-    { s: "Spend 2 Prep. Trap: 28 dmg + Stun for 2 turns.",
+    { s: "Spend 2 Prep. Trap: 32 dmg + Stun for 2 turns.",
       f: "The apex trap. Guaranteed massive damage and a 2-turn stun that shuts down ANY enemy - melee or ranged, attacker or caster. Save your Preparation for elites and bosses." },
 ];
 for (var _i = 0; _i < 10; _i++) {
@@ -589,8 +590,8 @@ var _gen_d = [
       f:"A dependable physical strike any class can throw every turn. Cheap and accurate - your fallback when resources run dry." },
     { s:"Heal 14 HP. 2-turn cooldown.",
       f:"A quick 1-AP patch-up - restores 14 HP on a 2-turn cooldown (no longer once per combat). No setup, no resource; top yourself off between bigger plays." },
-    { s:"Heal 10 HP and restore 1 secondary resource.",
-      f:"Recovers HP and refunds 1 Soul / Blood / Preparation. Great for stretching a long fight when both bars run low." },
+    { s:"Heal 10 HP, restore 1 resource, shake off newest debuff.",
+      f:"Recovers HP, refunds 1 Soul / Blood / Preparation, and cleanses the most recent affliction on you - the only self-cleanse in the game. Your answer to poison, burns and hexes." },
     { s:"+1 AP this turn (once per combat).",
       f:"Costs no AP and instantly grants an extra action point - but only once per fight. Save it for the turn you need a burst of tempo." },
 ];
@@ -620,14 +621,14 @@ for (var _i = 0; _i < 3; _i++) {
 // --- BLOODWARDEN extras (indices 10-12) ---
 array_push(global.abilities_bloodwarden,
     ability_define("Sanguine Pact", 1,0,  0,0,   -1,true,  -1,0, "status",0,0,  true),
-    ability_define("Bonebreaker",   3,0,  14,0,  78,false, 0,12, "debuff",5,3,  false),
+    ability_define("Bonebreaker",   3,0,  18,0,  78,false, 0,12, "debuff",5,3,  false),   // audit fix: data said 14, tooltip said 18 - 18 is right for a 3-AP hit
     ability_define("Crimson Apex",  3,3,  22,3,  82,false, 0,12, "heal",20,0,   false));
 var _bw_x = [
     { s:"Spend 8 HP to gain 3 Blood.",
       f:"Bleed yourself to fuel your Blood reserve when you need resources faster than combat provides them. Don't cast it low on HP." },
     { s:"Deal 18 physical dmg. Target takes +5 dmg for 3 turns.",
       f:"A bone-shattering blow that shreds the target's defenses, leaving them to take +5 from every follow-up. Strong elite opener." },
-    { s:"Spend 3 Blood. Deal 22 blood dmg and heal 18 HP. Ultimate.",
+    { s:"Spend 3 Blood. Deal 22 blood dmg and heal 20 HP. Ultimate.",
       f:"Your apex strike - a massive blood blow that returns a huge heal on impact. Swings a losing fight back in your favor." },
 ];
 for (var _i = 0; _i < 3; _i++) {
@@ -645,7 +646,7 @@ var _ss_x = [
       f:"A rapid flurry of strikes with a sky-high crit chance - your most reliable burst once it's unlocked." },
     { s:"~(50% + WIS) chance to dodge the next attack; your next hit deals +12 dmg.",
       f:"Slip out of sight for a (50% + WIS*2)% chance - capped 85% - to dodge the next attack, then explode from cover for bonus damage on your following strike. Stun halves the dodge odds." },
-    { s:"Spend 2 Prep. Deal 14 dmg, +5 per debuff on target. Ultimate.",
+    { s:"Spend 2 Prep. Deal 12 dmg, +5 per debuff on target. Ultimate.",
       f:"Rewards setup - the more debuffs, traps, and marks stacked on the target, the more this carves off. Your payoff finisher." },
 ];
 for (var _i = 0; _i < 3; _i++) {
@@ -736,7 +737,7 @@ array_push(global.abilities_shadowstrider,
         /*self*/false));
 global.abilities_shadowstrider[13].desc_short = "Deal 5 physical dmg. Expose target (+4 dmg/hit, 2t).";
 global.abilities_shadowstrider[13].desc_full  = "A quick cut that Exposes the target - every follow-up hit lands for +4 for 2 turns. Your cheapest setup; chain it into Snipe, Flurry, or Assassinate.";
-global.abilities_shadowstrider[14].desc_short = "Spend 2 Prep. Deal 24 dmg, DOUBLED if target below 30% HP.";
+global.abilities_shadowstrider[14].desc_short = "Spend 2 Prep. Deal 26 dmg, DOUBLED if target below 30% HP.";
 global.abilities_shadowstrider[14].desc_full  = "A precision finisher: heavy damage that deals DOUBLE against a target below 30% HP. Save it for the kill - when the execute lands it's your biggest single hit.";
 
 
@@ -866,7 +867,7 @@ function ability_category(ab) {
         case "Soulfire":     case "Arcane Burst":  case "Soul Nova":     case "Arcane Echo":
         case "Singularity":  case "Rift":          case "Scorch":        case "Poison Dart":
         case "Crippling Shot": case "Mana Sever":  case "Vital Theft":   case "Soulbind":
-        case "Bear Trap":    case "Spike Trap":    case "Death Trap":
+        case "Bear Trap":    case "Spike Trap":    case "Death Snare":
             return "offense";
 
         // defense - self-protection
@@ -1337,14 +1338,14 @@ global.traits_all = [
         0, "total_boss_kills", 2, "ley_tap"),
 
     trait_define("Arcane Surge",
-        "Abilities costing 4 or more AP deal +25% damage (Arcanist only).",
+        "Abilities costing 3 AP deal +25% damage (Arcanist only).",
         0, "total_boss_kills", 4, "arcane_surge"),
 
     // -------------------------------------------------------------------------
     // CLASS: BLOODWARDEN (class_req 1) - unlocked via boss kills
     // -------------------------------------------------------------------------
     trait_define("Crimson Reserve",
-        "Start each combat with +20 Blood (Bloodwarden only).",
+        "Start each combat with 4 Blood (Bloodwarden only).",
         1, "boss_kill", 1, "crimson_reserve"),
 
     trait_define("Vampiric Edge",
