@@ -52,6 +52,7 @@ if (showing_treasure) {
     if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)
         || keyboard_check_pressed(vk_space) || mouse_check_button_pressed(mb_left)) {
         showing_treasure = false;
+        treasure_item2   = undefined;   // clear so hunt/vendor popups reusing this overlay never show it
         current_rooms[selected_room].cleared = true;
         global.floor_rooms_cleared[selected_room] = true;
     }
@@ -319,23 +320,32 @@ if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter) || key
         showing_treasure = true;
         treasure_timer   = 0;
 
-        treasure_item = undefined;
-        if (trait_active("Treasure Hunter") || irandom(99) < 40) {
+        treasure_item  = undefined;
+        treasure_item2 = undefined;
+        // Treasure Hunter (audit §6 rework): the trait adds one GUARANTEED extra item on
+        // top of the normal 40% roll - so 1 item always, 2 when the roll also hits.
+        var _t_item_rolls = (irandom(99) < 40 ? 1 : 0) + (trait_active("Treasure Hunter") ? 1 : 0);
+        if (_t_item_rolls > 0) {
             if (!variable_global_exists("run_items_found"))      global.run_items_found      = [];
             if (!variable_global_exists("consumable_inventory")) global.consumable_inventory = [];
             if (!variable_global_exists("carried_items"))        global.carried_items        = [];
-            if (irandom(99) < 70) {
-                var _tc = roll_consumable_weighted(global.consumables_standard);
-                array_push(global.run_items_found, _tc);
-                consumable_award(_tc);
-                treasure_item = _tc;
-            } else {
-                var _te_asc = (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0) + curse_loot_asc_bonus();
-                var _te = drop_equipment(drop_weights("chest", _te_asc));
-                array_push(global.run_items_found, _te);
-                array_push(global.carried_items, _te);
-                discover_item(item_base_name(_te));
-                treasure_item = _te;
+            for (var _tri = 0; _tri < _t_item_rolls; _tri++) {
+                var _t_found = undefined;
+                if (irandom(99) < 70) {
+                    var _tc = roll_consumable_weighted(global.consumables_standard);
+                    array_push(global.run_items_found, _tc);
+                    consumable_award(_tc);
+                    _t_found = _tc;
+                } else {
+                    var _te_asc = (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0) + curse_loot_asc_bonus();
+                    var _te = drop_equipment(drop_weights("chest", _te_asc));
+                    array_push(global.run_items_found, _te);
+                    array_push(global.carried_items, _te);
+                    discover_item(item_base_name(_te));
+                    _t_found = _te;
+                }
+                if (treasure_item == undefined) treasure_item = _t_found;
+                else                            treasure_item2 = _t_found;
             }
         }
 

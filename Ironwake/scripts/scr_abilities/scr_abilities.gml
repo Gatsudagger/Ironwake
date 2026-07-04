@@ -234,7 +234,8 @@ global.abilities_arcanist = [
         /*effect_type*/"status", /*effect_value*/2, /*duration*/2, // 2 charges; absorbs 2 attacks
         /*self*/true),
 
-    // 5: Curse - WIS crit improves status quality; debuffs incoming damage
+    // 5: Curse - Hexed (audit §6): +4 dmg taken, detonations on the target doubled
+    // + spread +2 dmg-taken to all other enemies. The Control piece of a detonation build.
     ability_define("Curse",
         /*energy*/2, /*secondary*/0,
         /*damage*/0, /*dtype*/2,        // void
@@ -1104,6 +1105,11 @@ function ability_effect_full(ab) {
         case "stun":       _s = "Stuns the target for " + ability_turns(_ed) + " (any enemy can't act)."; break;
         case "root":       _s = "Roots the target for " + ability_turns(_ed) + " (melee enemies skip; ranged still attack)."; break;
         case "vulnerable": _s = "Target takes +" + string(_ev) + " damage per hit for " + ability_turns(_ed) + "."; break;
+        case "hexed":
+            _s = "Hexes the target for " + ability_turns(_ed) + ": it takes +" + string(_ev)
+               + " damage per hit, detonation reactions on it are DOUBLED, and each detonation"
+               + " spreads +2 damage-taken to all other enemies.";
+            break;
         case "firemark":
             // Scorch's mark: every follow-up hit deals +N TRUE FIRE damage (reduced by
             // the target's elemental resist). Banks a Soul on cast. Badges [Fire+].
@@ -1276,11 +1282,11 @@ global.traits_all = [
         -1, "dungeon_clears_total", 2, "quick_recovery"),
 
     trait_define("Treasure Hunter",
-        "Treasure rooms always contain at least one item.",
+        "Treasure rooms contain one additional item.",
         -1, "dungeon_clears_total", 3, "treasure_hunter"),
 
     trait_define("Lucky Find",
-        "+5% consumable drop chance from all enemies.",
+        "Consumables have a 20% chance to not be consumed when used.",
         -1, "full_clear", 1, "lucky_find"),
 
     trait_define("Battle Hardened",
@@ -1364,7 +1370,7 @@ global.traits_all = [
         2, "boss_kill", 1, "phantom_step"),
 
     trait_define("Shadow Meld",
-        "After dodging an attack, gain +15 bonus dodge for 1 turn (Shadowstrider only).",
+        "After dodging an attack, your next attack is a guaranteed critical hit (Shadowstrider only).",
         2, "total_boss_kills", 2, "shadow_meld"),
 
     trait_define("Serrated Strikes",
@@ -1385,8 +1391,8 @@ function trait_colloquial(effect_id) {
         case "scavenger":        return "You have a nose for coin. Everything that pays out, pays out a bit more.";
         case "thick_skin":       return "You're simply harder to kill. A flat slab of extra health that's always there.";
         case "quick_recovery":   return "You rest well. Every campfire patches you up more than it would anyone else.";
-        case "treasure_hunter":  return "You know where the good stuff hides. A treasure room never comes up empty for you.";
-        case "lucky_find":       return "Fallen enemies tend to leave a little something behind - potions drop a touch more often.";
+        case "treasure_hunter":  return "You know where the good stuff hides - every treasure room turns up something extra for you.";
+        case "lucky_find":       return "Waste not - one swallow in five, the bottle is somehow still full afterward.";
         case "battle_hardened":  return "Every boss you put down toughens you for good. The deeper you go, the more punishment you can take - forever.";
         case "salvager":         return "When it all goes wrong, you cling to more of your gear. Dying costs you less of what you were carrying.";
         case "iron_will":        return "You grit your teeth through the first hex, poison, or stun each fight like it's nothing.";
@@ -1404,7 +1410,7 @@ function trait_colloquial(effect_id) {
         case "vampiric_edge":    return "Your bleeds and poisons feed you back - every tick of them mends a little of your own flesh. (Bloodwarden)";
         case "berserker_rage":   return "Cornered and bloodied is exactly where you want to be - the closer to death, the harder you hit. (Bloodwarden)";
         case "phantom_step":     return "You're a ghost on the first beat - the opening attack of every fight simply passes through you. (Shadowstrider)";
-        case "shadow_meld":      return "Slip a blow and you melt further into the dark, even harder to touch for a moment. (Shadowstrider)";
+        case "shadow_meld":      return "Slip a blow and answer from the dark - the next strike you land finds something vital. (Shadowstrider)";
         case "serrated_strikes": return "Your edges are wicked - every physical hit leaves a free, lingering bleed. (Shadowstrider)";
     }
     return "";

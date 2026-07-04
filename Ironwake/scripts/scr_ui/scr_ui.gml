@@ -2537,6 +2537,7 @@ function status_icon_style(se) {
                 return { label: "PSN",   color: make_color_rgb( 90, 200,  90) };
             return { label: "DOT",   color: make_color_rgb(210, 160,  60) };
         case "vulnerable": return { label: "VUL",  color: make_color_rgb(185,  65, 120) };
+        case "hexed":      return { label: "HEX",  color: make_color_rgb(150,  70, 200) };
         // Scorch's mark: every hit on the target deals bonus TRUE FIRE damage. Distinct
         // from VUL (which is typeless) - its own badge so the player reads it as fire.
         case "firemark":   return { label: "Fire+", color: make_color_rgb(225, 130,  40) };
@@ -2808,6 +2809,7 @@ function status_tooltip_desc(se) {
     else switch (_k) {
         case "dot":        _base = "Damage over time: " + string(_val) + " " + (_el != "" ? _el + " " : "") + "damage each turn."; break;
         case "vulnerable": _base = "Exposed: takes +" + string(_val) + " damage per hit."; break;
+        case "hexed":      _base = "Hexed: takes +" + string(_val) + " damage per hit; detonations on it are DOUBLED and spread +2 damage-taken to all other enemies."; break;
         case "firemark":   _base = "Seared: every hit on it deals +" + string(_val) + " fire damage."; break;
         case "weaken":     _base = "Weakened: deals " + string(round(_val * 100)) + "% less damage."; break;
         case "blind":      _base = "Blinded: -" + string(round(_val * 100)) + "% accuracy."; break;
@@ -4571,6 +4573,8 @@ function ui_draw_combat_overlay(combat_state, player, ability_array, selected_ab
                         if (_dp.key != "" && _dp.idx >= 0 && _dp.idx < array_length(_pv_tgt.status_effects)) {
                             // Strip the "Detonate: " prefix - the "+ DETONATE" header below says it.
                             _det_txt = string_replace_all(status_detonation_text(_pv_tgt.status_effects[_dp.idx]), "Detonate: ", "");
+                            // Hexed target: the reaction's numeric bonus is doubled.
+                            if (combat_status_total(_pv_tgt, "hexed") > 0) _det_txt = "HEXED x2! " + _det_txt;
                         }
                     }
 
@@ -5204,6 +5208,7 @@ function ui_compendium_sections() {
             title: "Status Reactions",
             entries: [
                 { term: "Detonators",   text: "Snipe, Assassinate, Arcane Burst and Soul Nova are DETONATORS - when they hit a target carrying a status, they trigger a reaction based on that status (and usually consume it). Set up the status, then detonate. Elemental weapons (Flaming/Frostbound/Storm-touched) are an easy way to apply burn/frost/shock for these." },
+                { term: "Hexed",        text: "Curse marks a foe Hexed: it takes +4 damage per hit, any detonation on it has its bonus DOUBLED, and each detonation spreads +2 damage-taken to every other enemy. The Control piece of a detonation build." },
                 { term: "Poison",       text: "Detonating poison applies Mortality: the target's healing is cut for 4 turns. Utility, not burst - answers self-healing foes." },
                 { term: "Bleed",        text: "Detonating bleed bursts every remaining bleed tick at once for bonus damage." },
                 { term: "Burn",         text: "Detonating a burning target strikes with +40% critical chance." },

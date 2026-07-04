@@ -448,8 +448,8 @@ function combat_apply_start_traits(player) {
         player.HP      = min(player.HP + global.perm_hp_battle_hardened, player.max_HP);
     }
 
-    // Shadow Meld: initialize per-combat dodge bonus tracker
-    player.shadow_meld_bonus = 0;
+    // Shadow Meld (audit §6 rework): after a dodge, the next attack is a guaranteed crit.
+    player.shadow_meld_crit = false;
 
     // Aspect-rune flagship per-combat flags (Quickcast / Echo).
     player.rune_first_spell_used = false;   // Quickcast: first spell each combat costs -1 AP
@@ -537,7 +537,12 @@ function ability_status_kind(ability) {
             // target's el_resist), NOT the typeless `vulnerable` sum. Still detonates as
             // vulnerable (see combat_detonator_pick) so the Arcane Burst combo survives.
             return "firemark";
-        case "Curse": case "Bonebreaker": case "Marked for Death":
+        case "Curse":
+            // Hexed (audit §6 rework): still +4 damage taken per hit (summed alongside
+            // vulnerable in the damage chain), but ALSO doubles any detonation reaction
+            // on the bearer and spreads +2 dmg-taken to all other enemies when one fires.
+            return "hexed";
+        case "Bonebreaker": case "Marked for Death":
             return "vulnerable";
         case "Marrow Crush": case "Crippling Shot":
             return "weaken";

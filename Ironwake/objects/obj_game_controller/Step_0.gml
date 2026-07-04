@@ -2254,7 +2254,15 @@ if (mouse_check_button_pressed(mb_left)) {
                             _mused = consumable_use_out_of_combat(_mit);
                         }
                         if (_mused) {
-                            array_delete(global.consumable_inventory, _mreal_idx, 1);
+                            // Lucky Find (audit §6 rework): 20% chance the item is not consumed.
+                            if (trait_active("Lucky Find") && irandom(99) < 20) {
+                                if (instance_exists(obj_combat_controller)) {
+                                    array_push(instance_find(obj_combat_controller, 0).combat_log,
+                                        "Lucky Find - " + _mit.name + " is not consumed!");
+                                }
+                            } else {
+                                array_delete(global.consumable_inventory, _mreal_idx, 1);
+                            }
                             var _mg2 = array_length(consumables_grouped());
                             consumable_submenu_cursor = min(_mci, max(0, _mg2 - 1));
                             if (_mg2 == 0) consumable_submenu_open = false;
@@ -2613,7 +2621,15 @@ if (menu_tab == 3) {
                     _used = consumable_use_out_of_combat(_item);
                 }
                 if (_used) {
-                    array_delete(global.consumable_inventory, _real_idx, 1);
+                    // Lucky Find (audit §6 rework): 20% chance the item is not consumed.
+                    if (trait_active("Lucky Find") && irandom(99) < 20) {
+                        if (instance_exists(obj_combat_controller)) {
+                            array_push(instance_find(obj_combat_controller, 0).combat_log,
+                                "Lucky Find - " + _item.name + " is not consumed!");
+                        }
+                    } else {
+                        array_delete(global.consumable_inventory, _real_idx, 1);
+                    }
                     var _cg2 = array_length(consumables_grouped());
                     consumable_submenu_cursor = min(consumable_submenu_cursor, max(0, _cg2 - 1));
                     if (_cg2 == 0) {

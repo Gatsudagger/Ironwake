@@ -2112,7 +2112,8 @@ function handle_enemy_drops(enemy_type) {
         // Consumable drop chance tapers off with awakening (10% - 1%/tier, min 5%)
         // so higher tiers lean on boons/shops instead of drowning in heals.
         var _cons_chance = max(5, 10 - _drop_asc);
-        if (trait_active("Lucky Find")) _cons_chance += 5;   // Lucky Find: +5%
+        // (Lucky Find reworked, audit §6: now a 20% chance consumables aren't consumed
+        //  on use - the old +5% drop bonus here is gone.)
         if (!curse_blocks_consumables() && irandom(99) < _cons_chance) {   // Famine curse: no consumable drops
             var _c = roll_consumable_weighted(global.consumables_standard);
             array_push(global.run_items_found, _c);
@@ -2129,9 +2130,8 @@ function handle_enemy_drops(enemy_type) {
         }
 
     } else if (enemy_type == "elite") {
-        // Awakening taper (60% - 4%/tier, min 40%) + Lucky Find +5%.
+        // Awakening taper (60% - 4%/tier, min 40%).
         var _elite_cons_chance = max(40, 60 - _drop_asc * 4);
-        if (trait_active("Lucky Find")) _elite_cons_chance += 5;
         if (!curse_blocks_consumables() && irandom(99) < _elite_cons_chance) {   // Famine curse: no consumable drops
             var _c = roll_consumable_weighted(global.consumables_elite);
             array_push(global.run_items_found, _c);
@@ -2513,6 +2513,7 @@ function maren_socket_rune(slot_index, rune_inv_index) {
     var _rn = global.rune_inventory[rune_inv_index];
     array_push(_it.runes, rune_make(_rn.id, _rn.tier));
     array_delete(global.rune_inventory, rune_inv_index, 1);
+    quest_tick("socket_rune", "", 1);   // Phase 4a quest objective (Maren "Proof of Craft")
     save_game();
     return true;
 }
@@ -2633,6 +2634,7 @@ function maren_aspect_socket(rune_inv_index) {
     if (_def == undefined || _def.domain != "aspect") return false;
     array_push(global.aspect_runes, rune_make(_rn.id, _rn.tier));
     array_delete(global.rune_inventory, rune_inv_index, 1);
+    quest_tick("socket_rune", "", 1);   // Phase 4a quest objective (Maren "Proof of Craft")
     save_game();
     return true;
 }

@@ -390,7 +390,12 @@ if (player_turn) {
                     }
                     // AP-restore items are free; everything else costs 1 AP.
                     if (!_q_is_ap) player.energy -= 1;
-                    array_delete(global.consumable_inventory, _real_idx, 1);
+                    // Lucky Find (audit §6 rework): 20% chance the item is not consumed.
+                    if (trait_active("Lucky Find") && irandom(99) < 20) {
+                        array_push(combat_log, "Lucky Find - " + _citem.name + " is not consumed!");
+                    } else {
+                        array_delete(global.consumable_inventory, _real_idx, 1);
+                    }
                     if (instance_exists(obj_game_controller)) {
                         instance_find(obj_game_controller, 0).items_used_this_turn++;
                     }
@@ -709,10 +714,16 @@ if (player_turn) {
                         || ab.name == "Assassinate" || ab.name == "Arcane Burst" || ab.name == "Soul Nova"));
                     var _react           = _detonator ? combat_detonator_pick(target) : { key: "", idx: -1 };
                     var _react_key       = _react.key;
+                    // Hexed (Curse rework, audit §6): a detonation on a hexed target has its
+                    // numeric bonus DOUBLED, and (post-damage) spreads +2 dmg-taken to every
+                    // other living enemy. The hex itself is a 3-turn window, not consumed.
+                    var _hexed    = (_react_key != "" && combat_status_total(target, "hexed") > 0);
+                    var _hex_mult = _hexed ? 2 : 1;
+                    if (_hexed) array_push(combat_log, "Hexed! The reaction is doubled!");
                     var _react_crit_bonus = 0;      // fed into the crit roll
                     var _react_force_hit  = false;  // Blind reaction: cannot miss
                     switch (_react_key) {
-                        case "burn":  _react_crit_bonus = 40;  break;   // +40% crit chance
+                        case "burn":  _react_crit_bonus = 40 * _hex_mult;  break;   // +40% crit chance (+80% hexed)
                         case "stun":  _react_crit_bonus = 999; break;   // guaranteed crit
                         case "blind": _react_force_hit  = true; break;
                     }
@@ -724,7 +735,7 @@ if (player_turn) {
                             var _shc = combat_state.combatants[_shi];
                             if (!_shc.is_player && !_shc.is_defeated && _shc != target) { _shock_has_others = true; break; }
                         }
-                        if (!_shock_has_others) _react_crit_bonus += 25;
+                        if (!_shock_has_others) _react_crit_bonus += 25 * _hex_mult;
                     }
 
                     // --- Hit roll ---
@@ -751,9 +762,18 @@ if (player_turn) {
                         if (ab.crit_type != -1) {
                             // Surge aspect rune + Duelist boon add crit chance.
                             var _wpn_crit = (variable_struct_exists(player, "weapon_crit_bonus")) ? player.weapon_crit_bonus : 0;
+                            // Shadow Meld (audit §6 rework): a primed dodge guarantees the crit on
+                            // the next DAMAGING attack, then is spent (first target of an AoE).
+                            var _sm_crit = variable_struct_exists(player, "shadow_meld_crit")
+                                           && player.shadow_meld_crit && ab.base_damage > 0;
+                            if (_sm_crit) {
+                                player.shadow_meld_crit = false;
+                                array_push(combat_log, "Shadow Meld: strike from the shadows - guaranteed crit!");
+                            }
                             _crit_result = combat_roll_crit(
                                 player.stats,
-                                ab.base_crit + rune_aspect_spell_crit(ab) + boon_value("duelist") + _wpn_crit + _react_crit_bonus,
+                                ab.base_crit + rune_aspect_spell_crit(ab) + boon_value("duelist") + _wpn_crit + _react_crit_bonus
+                                    + (_sm_crit ? 999 : 0),
                                 ab.crit_type
                             );
                         }
@@ -814,12 +834,12 @@ if (player_turn) {
                         // Snipe +20). Burn/Stun resolve via the crit roll above; Blind via the hit
                         // roll; Poison/Void/consume resolve post-damage. (P1)
                         if (_react_key == "root" || _react_key == "frost") {
-                            _dmg = round(_dmg * 1.3);
-                            array_push(combat_log, ab.name + " shatters a held foe (+30%)!");
+                            _dmg = round(_dmg * (1 + 0.30 * _hex_mult));
+                            array_push(combat_log, ab.name + " shatters a held foe (+" + string(30 * _hex_mult) + "%)!");
                         } else if (_react_key == "weaken") {
-                            _dmg = round(_dmg * 1.15);
+                            _dmg = round(_dmg * (1 + 0.15 * _hex_mult));
                         } else if (_react_key == "vulnerable") {
-                            _dmg += 12;
+                            _dmg += 12 * _hex_mult;
                         } else if (_react_key == "bleed") {
                             var _react_bt = 0;
                             for (var _rbi = 0; _rbi < array_length(target.status_effects); _rbi++) {
@@ -830,8 +850,8 @@ if (player_turn) {
                                 }
                             }
                             if (_react_bt > 0) {
-                                _dmg += _react_bt * 5;
-                                array_push(combat_log, ab.name + " detonates bleed (+" + string(_react_bt * 5) + ")!");
+                                _dmg += _react_bt * 5 * _hex_mult;
+                                array_push(combat_log, ab.name + " detonates bleed (+" + string(_react_bt * 5 * _hex_mult) + ")!");
                             }
                         }
 
@@ -915,7 +935,8 @@ if (player_turn) {
                         // Vulnerable: target takes extra flat damage from every DAMAGING hit
                         // (summed). Pure-debuff abilities (base damage 0) must NOT pick this up -
                         // they only apply their own debuff.
-                        if (_deals_damage) _final_dmg += combat_status_total(target, "vulnerable");
+                        if (_deals_damage) _final_dmg += combat_status_total(target, "vulnerable")
+                                                       + combat_status_total(target, "hexed");   // Hexed keeps Curse's flat dmg-taken
 
                         // Scorch firemark: every damaging hit deals bonus TRUE FIRE damage,
                         // routed through the target's elemental resist (real fire, unlike the
@@ -1039,7 +1060,7 @@ if (player_turn) {
                         }
                         // ===== Detonation reaction - post-damage (P1) =====
                         if (_react_key == "void" && _final_dmg > 0) {
-                            var _react_ls = combat_heal_after_mortality(player, round(_final_dmg * 0.3));
+                            var _react_ls = combat_heal_after_mortality(player, round(_final_dmg * 0.3 * _hex_mult));
                             if (_react_ls > 0) {
                                 player.HP = min(player.max_HP, player.HP + _react_ls);
                                 array_push(damage_popups, { value: _react_ls, x: 330, y: 360, timer: 45, col: c_lime });
@@ -1049,14 +1070,14 @@ if (player_turn) {
                         if (_react_key == "poison" && !target.is_defeated && variable_struct_exists(target, "status_effects")) {
                             array_push(target.status_effects, {
                                 name: "Mortality", effect_type: "debuff", kind: "mortality",
-                                effect_value: 0.4, duration: 4, element: "", source: "player"
+                                effect_value: min(0.8, 0.4 * _hex_mult), duration: 4, element: "", source: "player"
                             });
                             array_push(combat_log, ab.name + " spreads the poison - " + target.name + "'s healing is suppressed!");
                         }
                         // Shock arc (§C): chain ~33% of the hit to every OTHER living enemy.
                         // (If the target was alone, the +25% crit applied above instead.)
                         if (_react_key == "shock" && _final_dmg > 0) {
-                            var _arc_dmg = max(1, round(_final_dmg * 0.33));
+                            var _arc_dmg = max(1, round(_final_dmg * 0.33 * _hex_mult));
                             for (var _ari = 0; _ari < array_length(combat_state.combatants); _ari++) {
                                 var _arc_c = combat_state.combatants[_ari];
                                 if (_arc_c.is_player || _arc_c.is_defeated || _arc_c == target) continue;
@@ -1089,6 +1110,31 @@ if (player_turn) {
                                 if (!_rdrop) array_push(_rk_kept, _rcs);
                             }
                             target.status_effects = _rk_kept;
+                        }
+
+                        // Hexed spread: each detonation during the hex window marks every OTHER
+                        // living enemy with +2 damage-taken for 2 turns. Re-detonations REFRESH
+                        // the mark rather than stacking it, so repeat combos can't snowball.
+                        if (_hexed) {
+                            var _hx_spread = false;
+                            for (var _hxi = 0; _hxi < array_length(combat_state.combatants); _hxi++) {
+                                var _hxc = combat_state.combatants[_hxi];
+                                if (_hxc.is_player || _hxc.is_defeated || _hxc == target) continue;
+                                if (!variable_struct_exists(_hxc, "status_effects")) continue;
+                                var _hx_found = false;
+                                for (var _hxj = 0; _hxj < array_length(_hxc.status_effects); _hxj++) {
+                                    var _hxs = _hxc.status_effects[_hxj];
+                                    if (variable_struct_exists(_hxs, "name") && _hxs.name == "Hex Spread") {
+                                        _hxs.duration = 2; _hx_found = true; break;
+                                    }
+                                }
+                                if (!_hx_found) array_push(_hxc.status_effects, {
+                                    name: "Hex Spread", effect_type: "debuff", kind: "vulnerable",
+                                    effect_value: 2, duration: 2, element: "", source: "player"
+                                });
+                                _hx_spread = true;
+                            }
+                            if (_hx_spread) array_push(combat_log, "The hex spreads - other enemies take +2 damage per hit!");
                         }
 
                         // Void Scepter (class weapon): a spell crit refunds 1 AP (once per cast).
@@ -1373,6 +1419,7 @@ if (player_turn) {
                                 switch (_status_kind) {
                                     case "dot":        _kind_phrase = (ability_status_element(ab) != "" ? ability_status_element(ab) : "DoT") + " " + string(_status_ev) + "/turn"; break;
                                     case "vulnerable": _kind_phrase = "Exposed (+" + string(_status_ev) + " dmg taken/hit)"; break;
+                                    case "hexed":      _kind_phrase = "Hexed (+" + string(_status_ev) + " dmg taken/hit; detonations doubled + spread)"; break;
                                     case "firemark":   _kind_phrase = "Searing (+" + string(_status_ev) + " fire dmg/hit)"; break;
                                     case "weaken":     _kind_phrase = "Weakened (-" + string(round(_status_ev * 100)) + "% dmg)"; break;
                                     case "blind":      _kind_phrase = "Blinded (-" + string(round(_status_ev * 100)) + "% acc)"; break;
@@ -1953,19 +2000,17 @@ if (player_turn) {
         // --- Primary attack hit roll ---
         // Enemies don't have a full stats struct; pass a minimal anonymous struct
         // with only the DEX field that combat_roll_hit() needs.
-        var _shadow_meld_bonus = (variable_struct_exists(player, "shadow_meld_bonus")) ? player.shadow_meld_bonus : 0;
-        player.shadow_meld_bonus = 0; // consume bonus whether hit or miss
-        var _effective_dodge = player.dodge + _shadow_meld_bonus;
-        var _hit = combat_roll_hit(_enemy_acc + 9, _effective_dodge, false);
+        var _hit = combat_roll_hit(_enemy_acc + 9, player.dodge, false);
 
         if (_hit != "hit") {
             array_push(combat_log, (_hit == "dodge")
                 ? ("You dodged " + actor.name + "'s attack!")
                 : (actor.name + " attacked but missed!"));
-            // Shadow Meld: grant +15 dodge for next turn after successfully dodging
-            if (player.class_id == 2 && trait_active("Shadow Meld")) {
-                player.shadow_meld_bonus = 15;
-                array_push(combat_log, "Shadow Meld: +15 dodge until next attack!");
+            // Shadow Meld (audit §6 rework): a successful dodge primes a guaranteed crit
+            // on your next damaging attack (dodge feeds offense, not more dodge).
+            if (_hit == "dodge" && player.class_id == 2 && trait_active("Shadow Meld")) {
+                player.shadow_meld_crit = true;
+                array_push(combat_log, "Shadow Meld: you slip into the dark - your next attack is a guaranteed CRIT!");
             }
 
         } else {

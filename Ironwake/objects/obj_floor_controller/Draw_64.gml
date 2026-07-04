@@ -435,9 +435,29 @@ if (showing_treasure) {
         draw_text(_pop_cx, _pop_cy + 138, "No other items found.");
     }
 
+    // Treasure Hunter's bonus item - one compact line (name + tag) below the first.
+    var _enter_y = _pop_cy + 252;
+    if (treasure_item2 != undefined) {
+        var _t2_is_cons = variable_struct_exists(treasure_item2, "item_category")
+                          && treasure_item2.item_category == "consumable";
+        draw_set_font(fnt_ui);
+        if (_t2_is_cons) {
+            draw_set_color(make_color_rgb(80, 200, 200));
+            draw_text(_pop_cx, _pop_cy + 252, "+ " + treasure_item2.name + "  [CONSUMABLE]");
+        } else {
+            draw_set_color(item_rarity_color(treasure_item2.rarity));
+            draw_text(_pop_cx, _pop_cy + 252,
+                "+ " + treasure_item2.name + "  [" + item_rarity_name(treasure_item2.rarity) + "]");
+        }
+        draw_set_font(fnt_ui_small);
+        draw_set_color(make_color_rgb(180, 160, 90));
+        draw_text(_pop_cx, _pop_cy + 288, "Treasure Hunter: bonus item!");
+        _enter_y = _pop_cy + 330;
+    }
+
     draw_set_font(fnt_ui_small);
     draw_set_color(c_ltgray);
-    draw_text(_pop_cx, _pop_cy + 252, "Press Enter to continue");
+    draw_text(_pop_cx, _enter_y, "Press Enter to continue");
 
     treasure_timer++;
 
