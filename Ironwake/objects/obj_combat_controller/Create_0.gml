@@ -129,6 +129,10 @@ player = {
     bloodthorn_active:   false,
     bloodthorn_duration: 0,
     bloodthorn_value:    0,
+    // Audit §6 build 2026-07-03: the previously-unimplemented defensive trio.
+    undying_active:      false,       // Undying: cheat death once (cast-armed)
+    evasive_roll_armed:  false,       // Evasive Roll: halve the next hit above 10
+    soulbind_enemy:      undefined,   // Soulbind: bound enemy ref (combat-long)
 
     // Typed status layer (vulnerable/weaken/blind/mortality/stun/dot) + shield pool.
     // Lets debuffs land on the player too; shield_hp absorbs damage before HP.

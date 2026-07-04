@@ -1267,9 +1267,23 @@ if (player_turn) {
                             array_push(combat_log, "Anchor rune: " + target.name + " is Weakened!");
                         }
 
+                        // --- Soulbind: bind this enemy's fate to yours (audit §6 build -
+                        // reflect 40% of damage you take AND heal you the same; combat-long).
+                        if (ab.name == "Soulbind" && !target.is_defeated) {
+                            player.soulbind_enemy = target;
+                            array_push(combat_log, "Soulbind: " + target.name + "'s fate is tied to yours.");
+                        }
+
                         // --- Defeat check on target (shared kill handler) ---
                         if (target.HP <= 0) {
                             combat_on_enemy_defeated(target, player, combat_log);
+                        }
+
+                        // --- Momentum (audit §6): Strike refunds its AP when it fells the
+                        // target - the humble general attack becomes a tempo chaff-clearer.
+                        if (ab.name == "Strike" && target.is_defeated) {
+                            player.energy += 1;
+                            array_push(combat_log, "Momentum! Strike's AP returns.");
                         }
 
                         // --- Echo: 50% second instance to this target (first AoE only) ---
@@ -1510,6 +1524,20 @@ if (player_turn) {
                         player.name + " raises Bloodthorn Aura - reflects "
                         + string(ab.effect_value) + " damage per hit for "
                         + string(ab.effect_duration) + " turns.");
+                }
+
+                // --- Undying: arm the cheat-death (audit §6 build - consumed at the
+                // lethal gate in combat_try_last_stand; fires before Last Stand). ---
+                if (ab.name == "Undying") {
+                    player.undying_active = true;
+                    array_push(combat_log, "UNDYING armed - the next killing blow will not take you.");
+                }
+
+                // --- Evasive Roll: arm the reactive halve (audit §6 build - consumed
+                // by the next incoming hit above 10 damage; absorbing it refunds 1 Prep). ---
+                if (ab.name == "Evasive Roll") {
+                    player.evasive_roll_armed = true;
+                    array_push(combat_log, "Evasive Roll ready - the next heavy hit will be halved.");
                 }
 
                 // --- Second Wind: restore 1 secondary resource (heal handled above) +
@@ -1967,6 +1995,16 @@ if (player_turn) {
             if (curse_incoming_mult() != 1.0) _final_dmg = max(1, round(_final_dmg * curse_incoming_mult()));
             // Blink softening: 2nd/3rd charge takes 50%/25%-reduced damage if the hit lands.
             if (_incoming_mult < 1.0) _final_dmg = max(1, round(_final_dmg * _incoming_mult));
+            // Evasive Roll (audit §6 build): the armed roll halves the next hit above 10,
+            // and a clean absorb refunds 1 Preparation.
+            if (player.evasive_roll_armed && _final_dmg > 10) {
+                _final_dmg = ceil(_final_dmg / 2);
+                player.evasive_roll_armed = false;
+                if (variable_struct_exists(player, "preparation")) {
+                    player.preparation = min(player.preparation_max, player.preparation + 1);
+                }
+                array_push(combat_log, "Evasive Roll! The blow is halved (+1 Preparation).");
+            }
             // How much the player's defenses shaved off this swing (armor/Iron Skin/etc.),
             // measured before Soul Shield (which logs its own absorb line separately).
             var _dmg_blocked = max(0, _gross_incoming - _final_dmg);
@@ -2030,6 +2068,24 @@ if (player_turn) {
                 }
             }
 
+            // --- Soulbind: the bound enemy shares your pain - 40% reflected AND the
+            // stolen vitality heals you (audit §6 lifelink build). Combat-long. ---
+            if (player.soulbind_enemy != undefined && _final_dmg > 0) {
+                var _sb = player.soulbind_enemy;
+                if (is_struct(_sb) && !_sb.is_defeated) {
+                    var _sb_dmg = max(1, round(_final_dmg * 0.4));
+                    combat_apply_damage(_sb, _sb_dmg);
+                    _sb.hit_flash = max(_sb.hit_flash, 10);
+                    var _sb_before = player.HP;
+                    player.HP = min(player.max_HP, player.HP + _sb_dmg);
+                    array_push(combat_log, "Soulbind: " + _sb.name + " suffers " + string(_sb_dmg) + " of your pain"
+                        + ((player.HP > _sb_before) ? (" - you recover " + string(player.HP - _sb_before) + " HP") : "") + "!");
+                    if (_sb.HP <= 0) combat_on_enemy_defeated(_sb, player, combat_log);
+                } else {
+                    player.soulbind_enemy = undefined;   // the bond died with them
+                }
+            }
+
             // --- Blood generation on taking a hit (Bloodwarden) ---
             if (player.class_id == 1 && variable_struct_exists(player, "blood")) {
                 player.blood = min(player.blood_max, player.blood + 1);
@@ -2068,6 +2124,15 @@ if (player_turn) {
                 if (pet_egg_ward_mult() != 1.0) _final_dmg2 = max(1, round(_final_dmg2 * pet_egg_ward_mult()));   // Warding egg
                 if (curse_incoming_mult() != 1.0) _final_dmg2 = max(1, round(_final_dmg2 * curse_incoming_mult()));
                 if (_incoming_mult < 1.0) _final_dmg2 = max(1, round(_final_dmg2 * _incoming_mult));  // Blink softening
+                // Evasive Roll: covers the double strike too (audit §6 build).
+                if (player.evasive_roll_armed && _final_dmg2 > 10) {
+                    _final_dmg2 = ceil(_final_dmg2 / 2);
+                    player.evasive_roll_armed = false;
+                    if (variable_struct_exists(player, "preparation")) {
+                        player.preparation = min(player.preparation_max, player.preparation + 1);
+                    }
+                    array_push(combat_log, "Evasive Roll! The blow is halved (+1 Preparation).");
+                }
                 var _dmg_blocked2 = max(0, _gross_incoming2 - _final_dmg2);
                 // Soul Shield absorbs the second strike too.
                 if (variable_struct_exists(player, "shield_hp") && player.shield_hp > 0 && _final_dmg2 > 0) {
@@ -2102,6 +2167,23 @@ if (player_turn) {
                     if (player.bloodthorn_duration <= 0) {
                         player.bloodthorn_active = false;
                         array_push(combat_log, "Bloodthorn Aura fades.");
+                    }
+                }
+
+                // --- Soulbind lifelink covers the double strike too (audit §6 build). ---
+                if (player.soulbind_enemy != undefined && _final_dmg2 > 0) {
+                    var _sb2 = player.soulbind_enemy;
+                    if (is_struct(_sb2) && !_sb2.is_defeated) {
+                        var _sb2_dmg = max(1, round(_final_dmg2 * 0.4));
+                        combat_apply_damage(_sb2, _sb2_dmg);
+                        _sb2.hit_flash = max(_sb2.hit_flash, 8);
+                        var _sb2_before = player.HP;
+                        player.HP = min(player.max_HP, player.HP + _sb2_dmg);
+                        array_push(combat_log, "Soulbind: " + _sb2.name + " suffers " + string(_sb2_dmg) + " of your pain"
+                            + ((player.HP > _sb2_before) ? (" - you recover " + string(player.HP - _sb2_before) + " HP") : "") + "!");
+                        if (_sb2.HP <= 0) combat_on_enemy_defeated(_sb2, player, combat_log);
+                    } else {
+                        player.soulbind_enemy = undefined;
                     }
                 }
 

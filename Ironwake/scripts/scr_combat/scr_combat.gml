@@ -488,6 +488,19 @@ function combat_check_phantom_step(player, combat_log) {
 // ---------------------------------------------------------------------------
 function combat_try_last_stand(player, combat_log) {
     if (player.HP > 0) return false;
+    // UNDYING fires first (Bloodwarden cast, armed per-cast - spend it before the
+    // once-per-run trait). Audit §6 build: on trigger you surge back to 25% max HP
+    // and your defiance grants 3 Blood. This function is the single lethal gate,
+    // so every damage source (attacks, spells, DoTs) passes through here.
+    if (variable_struct_exists(player, "undying_active") && player.undying_active) {
+        player.undying_active = false;
+        player.HP = max(1, floor(player.max_HP * 0.25));
+        if (variable_struct_exists(player, "blood")) {
+            player.blood = min(player.blood_max, player.blood + 3);
+        }
+        array_push(combat_log, "UNDYING! Your blood refuses the wound - you surge back to " + string(player.HP) + " HP (+3 Blood).");
+        return true;
+    }
     if (!trait_active("Last Stand")) return false;
     if (variable_global_exists("last_stand_used") && global.last_stand_used) return false;
 

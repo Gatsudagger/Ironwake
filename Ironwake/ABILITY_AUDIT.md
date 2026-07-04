@@ -130,7 +130,9 @@ Numbers TBD-balance; the point is each gets a hook no other ability has.
 
 ## 8. Ranked plan (my recommendation)
 
-**Quick wins (bug-tier, do first):** §4 all four items — Arcane Surge condition, Crimson Reserve value, Death Trap/Snare case, stale desc numbers sweep.
+**Quick wins (bug-tier, do first):** §4 all items — Arcane Surge condition, Crimson Reserve value, Death Trap/Snare case, stale desc numbers sweep. **[DONE 2026-07-03]**
+**Also DONE 2026-07-03:** the unimplemented trio built as their §6 versions (Undying = cheat-death → 25% HP + 3 Blood at the shared lethal gate; Soulbind = 40% lifelink reflect on both enemy strike paths; Evasive Roll = halve >10 + 1 Prep refund), Strike = Momentum AP-refund-on-kill, Second Wind = +cleanse, Spike Trap = 2AP+1P, Arcane Echo = tooltip now discloses its (already-implemented!) 50% splash-to-all — the "redundant nuke" verdict was really an undocumented identity.
+**Still open:** Curse detonation-hex rework, Lucky Find / Shadow Meld / Treasure Hunter trait fixes, enemy intent (INTENT_SPEC.md), flavor pass.
 **High leverage (one system, huge fun-per-effort):** enemy intent icons — it retroactively justifies every Defense/Control pick in the game.
 **Content pass:** §6 reworks (≈10 abilities/traits, all data + one rider each) — kills every dead pick without nerfing anything.
 **Charm pass:** §7 items 1–3 (flavor lines, barks, keyword glossary).

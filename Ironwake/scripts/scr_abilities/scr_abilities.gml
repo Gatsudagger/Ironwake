@@ -300,8 +300,8 @@ var _arc_d = [
       f: "No upfront damage, but 24 total if the target lives long enough. Best on tough enemies you plan to wear down over several turns." },
     { s: "Spend 2 Souls. Deal 20 elemental dmg to all enemies.",
       f: "An AoE nuke that hits every enemy at once. High Soul cost - save it for multi-enemy fights or finishing off a weakened group." },
-    { s: "Spend 1 Soul. Reflect 40% of damage taken at target.",
-      f: "A combat-long bond that returns 40% of every hit you receive to the bound enemy. Best in long fights where you're taking sustained damage." },
+    { s: "Spend 1 Soul. Bound foe takes 40% of dmg you take; heals YOU same.",
+      f: "A combat-long lifelink: the bound enemy suffers 40% of every hit you receive, and the stolen vitality heals you for the same amount. Bind the biggest thing in the room and let it regret hurting you." },
 ];
 for (var _i = 0; _i < 10; _i++) {
     global.abilities_arcanist[_i].desc_short = _arc_d[_i].s;
@@ -423,8 +423,8 @@ var _bw_d = [
       f: "Permanently lowers the enemy's maximum HP for this combat. Combine with Gore Strike's bleed to whittle down a boss faster." },
     { s: "Return 8 dmg to each attacker per hit for 4 turns.",
       f: "A thorns buff that punishes every incoming attack. Pairs well with Iron Skin - you reduce their damage while they take damage for hitting you." },
-    { s: "Spend 3 Blood. Survive one lethal hit at 1 HP this turn.",
-      f: "An emergency safety net that guarantees you survive one killing blow per cast. Burn it the moment death is imminent." },
+    { s: "Spend 3 Blood. Survive the next lethal blow: surge to 25% HP +3 Blood.",
+      f: "Arm your defiance: the next killing blow fails, you surge back to a quarter of your health, and the refusal itself grants 3 Blood. Fires before Last Stand - cast it when death is one hit away." },
     { s: "Target heals 50% less for 5 turns.",
       f: "Neutralizes enemy healing for extended fights. Low energy cost and a wide 5-turn window - cast it early on any regenerating enemy." },
     { s: "Spend 2 Blood. Each ability also drains 6 HP for 2 turns.",
@@ -560,8 +560,8 @@ var _ss_d = [
       f: "The bleed trap: heavy damage and a punishing wound at a lean cost. Feeds Rupture-style payoffs and bleed builds; take Death Snare when you need the stun instead." },
     { s: "All hits on target deal +8 bonus dmg for up to 4 turns.",
       f: "A mark that amplifies every attack landing on the target. Apply it early and then stack Snipe and traps on top to maximize the window." },
-    { s: "Spend 2 Prep. Next hit above 10 dmg is halved.",
-      f: "No energy cost - just Preparation. Hold it in reserve for telegraphed heavy hits. Has no effect on weak attacks below 10 damage." },
+    { s: "Spend 2 Prep. Next hit above 10 dmg is halved; absorb refunds 1 Prep.",
+      f: "No energy cost - just Preparation, and a clean absorb pays 1 back. Hold it in reserve for heavy hits; it ignores weak attacks below 10 damage." },
     { s: "Spend 2 Prep. Trap: 32 dmg + Stun for 2 turns.",
       f: "The apex trap. Guaranteed massive damage and a 2-turn stun that shuts down ANY enemy - melee or ranged, attacker or caster. Save your Preparation for elites and bosses." },
 ];
@@ -586,8 +586,8 @@ global.abilities_general = [
     ability_define("Adrenaline Rush", 0,0,  0,0,   -1,true,  -1,0, "status",1,0,  true),
 ];
 var _gen_d = [
-    { s:"Deal 10 physical dmg. Reliable, cheap attack.",
-      f:"A dependable physical strike any class can throw every turn. Cheap and accurate - your fallback when resources run dry." },
+    { s:"Deal 10 physical dmg. Momentum: refunds its AP on a kill.",
+      f:"A dependable strike any class can throw - and when it fells the target, its AP comes back. The chaff-clearer that keeps your turn moving." },
     { s:"Heal 14 HP. 2-turn cooldown.",
       f:"A quick 1-AP patch-up - restores 14 HP on a 2-turn cooldown (no longer once per combat). No setup, no resource; top yourself off between bigger plays." },
     { s:"Heal 10 HP, restore 1 resource, shake off newest debuff.",
@@ -608,8 +608,8 @@ array_push(global.abilities_arcanist,
 var _arc_x = [
     { s:"Deal 10 void dmg. Silence target 3 turns (can't cast).",
       f:"Sever the target's mana: a silenced enemy can't take spell actions for 3 turns. Shuts down casters and ranged spellcasters cold - useless on pure melee bruisers, who don't cast anyway." },
-    { s:"Spend 1 Soul. Deal 14 elemental dmg, +4 per Soul held.",
-      f:"An elemental echo that grows with your Soul reserve. The fuller your Souls when you cast, the harder it detonates." },
+    { s:"Spend 1 Soul. 14 elem dmg +4/Soul held; 50% echoes to ALL others.",
+      f:"An elemental echo that grows with your Soul reserve - and half its damage rings out to every other enemy. Your soul-fuelled mini-AoE: keep Souls banked and cast it into a crowd." },
     { s:"Spend 3 Souls. Deal 32 elemental dmg. Ultimate.",
       f:"Collapse your hoarded Souls into a single devastating arcane detonation - your highest-damage finisher." },
 ];
@@ -1071,13 +1071,13 @@ function ability_effect_full(ab) {
         case "Second Wind":     _b = "Also restore 1 secondary resource (Soul / Blood / Prep)."; break;
         case "Blink":           _b = "Fully dodge the next attack; the 2nd hit after takes 50% less and the 3rd 25% less. 2-turn cooldown."; break;
         case "Shadow Step":     _b = "~(50% + WIS) chance to dodge each of the next 3 attacks. 2-turn cooldown."; break;
-        case "Evasive Roll":    _b = "Halve the next incoming hit above 10 damage."; break;
+        case "Evasive Roll":    _b = "Halve the next incoming hit above 10 damage; a clean absorb refunds 1 Preparation."; break;
         case "Vanish":          _b = "~(50% + WIS) chance to dodge the next attack; your next strike deals +12 damage."; break;
         case "Bloodthorn Aura": _b = "Reflect " + string(_ev) + " damage to attackers for " + ability_turns(_ed) + "."; break;
-        case "Undying":         _b = "Survive one otherwise-lethal blow at 1 HP this turn."; break;
+        case "Undying":         _b = "Survive the next lethal blow: surge back to 25% max HP and gain 3 Blood."; break;
         case "Vital Theft":     _b = "Steal " + string(_ev) + " max HP from the target for this combat."; break;
         case "Bloodfeast":      _b = "Each ability also drains " + string(_ev) + " HP for " + ability_turns(_ed) + "."; break;
-        case "Soulbind":        _b = "Reflect " + string(round(_ev * 100)) + "% of damage you take back to the target (whole combat)."; break;
+        case "Soulbind":        _b = "Lifelink: the bound foe takes " + string(round(_ev * 100)) + "% of damage you take, and it heals you the same (whole combat)."; break;
     }
     if (_b != "") array_push(_parts, _b);
 
@@ -1191,7 +1191,7 @@ function ability_summary(ab) {
             case "Undying":         _tag = "Cheat death"; break;
             case "Vital Theft":     _tag = "Steal " + string(_ev) + " maxHP"; break;
             case "Bloodfeast":      _tag = "Drain rider " + string(_ed) + "t"; break;
-            case "Soulbind":        _tag = "Reflect " + string(round(_ev * 100)) + "%"; break;
+            case "Soulbind":        _tag = "Lifelink " + string(round(_ev * 100)) + "%"; break;
         }
     }
     if (_tag != "") array_push(_p, _tag);
