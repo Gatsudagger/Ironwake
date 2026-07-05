@@ -35,6 +35,11 @@ CFG = [
  ("golemite","baby","obj","98bd9339-44f4-4fa5-b708-c8dec6d9abe7"),
  ("golemite","youngadult","obj","9022ee9f-deb8-4e23-bbef-53e8a61b8473"),
  ("golemite","adult","obj","3afb6884-0612-46d3-bc47-9d5a4d07b9f1"),
+ # Tundra Tomb trio (batch 3, 2026-07-04): rimefox approved + imported; crypt_bat +
+ # hoarfrost_drake deferred to the next PixelLab cycle (bases alone are ~105 gens each).
+ ("rimefox","baby","obj","7135cc3c-6b2d-473a-a37e-e8f2a95eff0d"),
+ ("rimefox","youngadult","obj","d9ec9ac4-15a0-4419-9c2c-eaed7ece2265"),
+ ("rimefox","adult","obj","0fe9d60f-b9f8-4149-9ddd-63d5cd5b6029"),
 ]
 
 def fetch_zip(kind, cid):

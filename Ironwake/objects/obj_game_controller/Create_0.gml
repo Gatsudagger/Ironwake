@@ -113,6 +113,11 @@ global.__sprite_includes = [
     spr_pet_golemite_baby_s,         spr_pet_golemite_baby_e,
     spr_pet_golemite_youngadult_s,   spr_pet_golemite_youngadult_e,
     spr_pet_golemite_adult_s,        spr_pet_golemite_adult_e,
+    // Boss-signature species (Tundra Tomb, batch 3) - rimefox imported 2026-07-04;
+    // crypt_bat + hoarfrost_drake deferred to the next PixelLab cycle.
+    spr_pet_rimefox_baby_s,          spr_pet_rimefox_baby_e,
+    spr_pet_rimefox_youngadult_s,    spr_pet_rimefox_youngadult_e,
+    spr_pet_rimefox_adult_s,         spr_pet_rimefox_adult_e,
     // Keeper species brought to 3-stage animated (new directional/young-adult sprites).
     spr_pet_bonehound_youngadult_s, spr_pet_bonehound_youngadult_e,
     spr_pet_hollow_pup_baby_s,       spr_pet_hollow_pup_baby_e,
@@ -277,6 +282,8 @@ global.current_run_gold  = 0;
 global.current_run_kills = 0;
 if (!variable_global_exists("run_boons")) global.run_boons = [];   // active boons this run (Shrine tribute)
 if (!variable_global_exists("run_curses")) global.run_curses = []; // active curses this run (devil's bargain)
+if (!variable_global_exists("run_borrowed_ability")) global.run_borrowed_ability = "";   // Borrowed Memory (expression #6)
+if (!variable_global_exists("run_borrowed_class"))   global.run_borrowed_class   = "";
 // Sable exotic find-buff potions (last until 2 bosses slain; see scr_stats potion_* fns).
 if (!variable_global_exists("gold_potion_bosses")) global.gold_potion_bosses = 0;
 if (!variable_global_exists("gold_potion_mult"))   global.gold_potion_mult   = 0;
@@ -710,7 +717,7 @@ global.floor_rooms_cleared = [];
 // -----------------------------------------------------------------------------
 menu_open            = false;
 menu_tab             = 0;
-tab_names            = ["Stats", "Equipment", "Abilities", "Consumables", "Compendium"];
+tab_names            = ["Stats", "Equipment", "Abilities", "Consumables"];   // Compendium -> Journal (2026-07-04)
 items_used_this_turn = 0;
 
 // Compendium (Help) tab state - index of the selected section in the left list
@@ -834,6 +841,7 @@ global.ui_ability_detail_max_scroll = 0;  // published by ui_draw_ability_detail
 global.combat_log_breakdowns = true;       // hover a damage log line for a DnD-style math breakdown (Task 1; flip false to disable)
 vex_detail_open     = false;   // Tab detail popup over the Vex ability/trait list
 loadout_cursor     = 0;
+loadout_scroll     = 0;    // stateful list window top (edge-scrolling; self-corrects from cursor)
 loadout_selected   = [];   // up to 4 ability name strings being built this session
 loadout_full_timer = 0;    // countdown for "Loadout full" / "Slots full" flash (frames)
 loadout_locked_timer = 0;  // countdown for "ability is locked - unlock at Vex" flash (frames)
@@ -979,8 +987,18 @@ if (!variable_global_exists("player_gender"))  global.player_gender  = "m";
 vael_open            = false;
 vael_cursor          = 0;
 vael_notification    = "";
-vael_tab             = 0;   // 0 = Skins (transmog), 1 = Portrait (100g portrait change)
+vael_tab             = 0;   // 0 = Skins (transmog), 1 = Portrait (100g portrait change), 2 = Tints (spell palettes)
 vael_portrait_cursor = 0;   // browse index into global.portrait_sprites on the Portrait tab
+vael_tint_cursor     = 0;   // row index into vael_tint_catalog() on the Tints tab
+
+// Ability mastery pick modal (expression #2; opened with M on the loadout Abilities tab)
+mastery_pick_open    = false;
+mastery_pick_ability = "";   // ability NAME whose pending notch is being spent
+mastery_pick_cursor  = 0;    // 0/1 = which of the two micro-mods is highlighted
+
+// Knucklebones (expression #1; opened with K at the Tavern Requests board)
+kb_open = false;
+kb      = undefined;   // live game struct (kb_new_game)
 
 // -----------------------------------------------------------------------------
 // 13b. VEX THE TRAINER - permanent upgrades bought with gold (+items for stats)

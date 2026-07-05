@@ -267,6 +267,97 @@ function enemy_should_telegraph(enemy, turn_number) {
 }
 
 // =============================================================================
+// ENEMY INTENT (INTENT_SPEC.md). Every enemy decides its NEXT action one turn
+// early - at combat start and again at the end of each of its turns - and
+// stores it on `actor.intent`. The telegraph is BINDING: the combat engine
+// executes the stored plan instead of re-rolling at execution time, so the
+// chip the player read during their turn is always honest.
+//
+// intent = {
+//   kind   "attack" / "spell" / "heal" / "control"   (chip icon + tint)
+//   eab    the committed enemy_ability struct, or undefined = basic attack
+//   label  effect word for non-damage intents ("Stun", "Mend", "Wound"...)
+//   lo/hi  approximate post-mitigation damage band (equal for fixed spells)
+//   x2     true when a double_strike second hit rides along
+//   pulse  frames left of the "intent changed" flash (set on re-rolls)
+// }
+// =============================================================================
+
+// Deterministic estimate of what one enemy swing/cast would deal to the player
+// AFTER the standard mitigation chain (mirrors the engine's damage path minus
+// Soul Shield / Blink / Evasive Roll, which are reactive and roll-dependent).
+function enemy_intent_estimate(actor, raw, dtype, player) {
+    // Weaken on the enemy reduces its outgoing damage (max of stacks).
+    var _wk = combat_status_max(actor, "weaken");
+    if (_wk > 0) raw = max(1, round(raw * (1 - _wk)));
+    var _d = combat_resolve_damage(raw, dtype, player.armor, player.el_resist);
+    _d += combat_status_total(player, "vulnerable");
+    _d = max(0, _d - player.damage_reduction);
+    _d = max(1, _d - player.equip_armor);
+    if (dtype == 0 && variable_struct_exists(player, "derived") && player.derived.phys_dmg_reduction > 0) {
+        _d = max(1, ceil(_d * (1.0 - (player.derived.phys_dmg_reduction / 100.0))));
+    }
+    if (boon_active("warding"))         _d = max(1, round(_d * boon_incoming_mult()));
+    if (pet_egg_ward_mult() != 1.0)     _d = max(1, round(_d * pet_egg_ward_mult()));
+    if (curse_incoming_mult() != 1.0)   _d = max(1, round(_d * curse_incoming_mult()));
+    return _d;
+}
+
+// Effect word shown on non-damage intent chips.
+function enemy_intent_status_word(eab) {
+    switch (eab.status_kind) {
+        case "stun":       return "Stun";
+        case "root":       return "Root";
+        case "silence":    return "Silence";
+        case "blind":      return "Blind";
+        case "weaken":     return "Weaken";
+        case "vulnerable": return "Expose";
+        case "mortality":  return "Wither";
+    }
+    return (eab.kind == "dot") ? "Wound" : "Afflict";
+}
+
+// Roll and store the enemy's next action. next_round = the round the action
+// will happen in (drives the telegraph-spike check for basic attacks).
+// is_reroll pulses the chip so a mid-combat change is visible.
+function enemy_roll_intent(actor, player, next_round, is_reroll) {
+    if (actor.is_defeated) { actor.intent = undefined; return; }
+    var _eab = enemy_pick_ability(actor);
+    var _it  = { kind: "attack", eab: _eab, label: "", lo: 0, hi: 0,
+                 x2: false, pulse: (is_reroll ? 30 : 0) };
+    if (_eab == undefined) {
+        // Basic attack: damage +/- 2 swing variance; telegraph-spike aware.
+        var _spike = (actor.telegraph_turn > 0 && (next_round mod actor.telegraph_turn) == 0);
+        var _raw   = _spike ? actor.telegraph_damage : actor.damage;
+        _it.lo = enemy_intent_estimate(actor, max(1, _raw - 2), 0, player);
+        _it.hi = enemy_intent_estimate(actor, _raw + 2, 0, player);
+        _it.x2 = (actor.mechanic_type == "double_strike");
+    } else if (_eab.kind == "spell") {
+        _it.kind = "spell";
+        var _est = enemy_intent_estimate(actor, _eab.value, _eab.dtype, player);
+        _it.lo = _est; _it.hi = _est;
+    } else if (_eab.kind == "heal") {
+        _it.kind = "heal";  _it.label = "Mend";
+    } else {
+        // control / debuff / dot -> the chains chip (amber) with an effect word.
+        _it.kind = "control";  _it.label = enemy_intent_status_word(_eab);
+    }
+    actor.intent = _it;
+}
+
+// Live check: would the enemy's telegraphed action be cancelled by a control
+// status RIGHT NOW? Mirrors the engine's control gate exactly (stun = anything,
+// root = melee foes, silence = spellcaster foes). "" = free to act.
+function enemy_intent_blocked(c) {
+    var _reach = variable_struct_exists(c, "reach") ? c.reach : "melee";
+    var _kind  = variable_struct_exists(c, "kind")  ? c.kind  : "attack";
+    if (combat_has_status(c, "stun"))                       return "stunned";
+    if (combat_has_status(c, "root")    && _reach == "melee") return "rooted";
+    if (combat_has_status(c, "silence") && _kind  == "spell") return "silenced";
+    return "";
+}
+
+// =============================================================================
 // PHASE 1: ASHEN VAULT ROSTER
 // Templates - always pass through enemy_clone() before combat use.
 // =============================================================================
@@ -575,3 +666,50 @@ global.enemies_tundra_tomb_elite = [
         /*mechanic*/"retribution", /*value*/4, /*turns*/0
     ),
 ];
+
+// =============================================================================
+// BESTIARY (Journal tab, 2026-07-04) - brief authored lore per species, grouped
+// by dungeon family. Display-only: names match the combat sprite map / enemy
+// templates so the reader recognises what it just fought.
+// =============================================================================
+function bestiary_catalog() {
+    return [
+        // --- Ashen Vault -----------------------------------------------------
+        { name:"Ashen Skeleton",      family:"Ashen Vault",    kind:"Standard", lore:"Vault soldiers who burned at their posts and kept standing. The ash fused to their bones like a second armor; they still march the old patrol routes, saluting doors that no longer exist." },
+        { name:"Skeleton Archer",     family:"Ashen Vault",    kind:"Standard", lore:"Their eyes went first, so they listen. An arrow loosed by a skeleton archer follows breath, heartbeat, the creak of leather - closing your mouth will not save you." },
+        { name:"Vault Crawler",       family:"Ashen Vault",    kind:"Standard", lore:"Something between a spider and a bad memory. Crawlers nest in the spaces behind the walls and drink the marrow of whatever the Vault kills - patient, plentiful, always hungry." },
+        { name:"Dungeon Wraith",      family:"Ashen Vault",    kind:"Standard", lore:"The Vault's grief given a shape. Wraiths drift the corridors repeating the last hour of their lives; interrupt the performance and they remember, briefly and violently, that you are alive and they are not." },
+        { name:"Stone Golem",         family:"Ashen Vault",    kind:"Elite",    lore:"Cut from the Vault's own foundation stones and wound with binding-runes. A golem does not hate you. It has simply been told, in a language older than mercy, that nothing leaves." },
+        { name:"Vault Guardian",      family:"Ashen Vault",    kind:"Elite",    lore:"The Vault's last professional soldiers, oath-bound past death. Their shields still carry the sigil of a kingdom no map remembers - they defend its treasury all the same." },
+        { name:"Vault Wraith",        family:"Ashen Vault",    kind:"Elite",    lore:"Older and colder than the common wraith - a keeper of the Vault's inner doors. It knew the treasury's inventory by heart, and it counts you now among the items to be shelved." },
+        { name:"Vault Sentinel",      family:"Ashen Vault",    kind:"Elite",    lore:"Watchtowers on legs, forged to sound an alarm no one is left to answer. A sentinel's gaze sweeps the dark on a fixed rhythm learned over centuries; the rhythm is a lie it hopes you'll trust." },
+        { name:"Grave Stalker",       family:"Ashen Vault",    kind:"Elite",    lore:"It learned to hunt by watching adventurers die: where they look, when they rest, what they reach for last. The stalker is the Vault's memory of every mistake ever made inside it." },
+        { name:"Bone Sovereign",      family:"Ashen Vault",    kind:"Boss",     lore:"The king the Vault was built to keep - or to keep in. The Sovereign wears a crown of fused vertebrae and holds court over everything that has ever died down here, which is everything." },
+        { name:"Malgrath the Warden", family:"Ashen Vault",    kind:"Boss",     lore:"The Vault's first and last jailer. Malgrath swore no prisoner would leave and, when the end came, applied the oath to himself. He is not angry that you came. He is pleased the count is going up." },
+        { name:"Bone Colossus",       family:"Ashen Vault",    kind:"Boss",     lore:"When the Vault's dead grew too many to walk singly, they walked together. The Colossus is a congregation - hundreds of skeletons in one towering consensus, disagreeing only about which hand should crush you." },
+        // --- Scorched Depths -------------------------------------------------
+        { name:"Cinder Imp",          family:"Scorched Depths", kind:"Standard", lore:"Sparks that got ideas. Imps pour out of the deep vents in giggling swarms, setting fires they are too small to survive - martyrs to arson, endlessly replaced." },
+        { name:"Magma Slug",          family:"Scorched Depths", kind:"Standard", lore:"It eats stone and leaves roads of glass. Miners once followed slug-trails to rich veins; the slugs, in time, learned to follow the miners." },
+        { name:"Ash Wraith",          family:"Scorched Depths", kind:"Standard", lore:"When the Depths burned, some souls rose with the smoke and never came down. An ash wraith is a held breath of the great fire - disturb it and it exhales." },
+        { name:"Lava Spitter",        family:"Scorched Depths", kind:"Standard", lore:"A squat, gulping thing that sips from magma pools and holds the mouthful for hours. It has one trick and one virtue: it never misses twice at the same target." },
+        { name:"Fire Drake",          family:"Scorched Depths", kind:"Elite",    lore:"Too young to be called dragons, too proud to be called anything else. Drakes claim a gallery of the Depths each and pay for the territory in cinders." },
+        { name:"Smoldering Revenant", family:"Scorched Depths", kind:"Elite",    lore:"A knight who walked into the fire to retrieve something - no account agrees on what - and walked out changed. It is still searching. It has decided you might be carrying it." },
+        { name:"Cinder Golem",        family:"Scorched Depths", kind:"Elite",    lore:"Built by the forge-priests to tend flames no living hand could. The priests are gone; the tending continues. You are, as far as the golem is concerned, unscheduled fuel." },
+        { name:"Infernal Revenant",   family:"Scorched Depths", kind:"Elite",    lore:"The smoldering ones that stopped smoldering and started burning. An infernal revenant no longer remembers what it lost in the fire - only that someone must owe it." },
+        { name:"Forge Tyrant",        family:"Scorched Depths", kind:"Boss",     lore:"Master of the great forge at the world's waist. Every weapon in the Depths bears his mark, and he considers every one of them - including the one on your belt - a loan." },
+        { name:"Molten Revenant",     family:"Scorched Depths", kind:"Boss",     lore:"The first soul the great fire took, and the one it kept closest. The Molten Revenant is grief hot enough to pour - the Depths' own heart, walking." },
+        { name:"The Ashen Colossus",  family:"Scorched Depths", kind:"Boss",     lore:"They say the Depths burned because something enormous lay down to sleep in them. The Colossus is what wakes when the deepest floors go quiet - so the deepest floors are never quiet." },
+        // --- Tundra Tomb -----------------------------------------------------
+        { name:"Ice Specter",         family:"Tundra Tomb",    kind:"Standard", lore:"Cold that learned to want. Specters drift the tomb-halls tracing frost-flowers on the sarcophagi, and unravel with a shriek anything warm enough to remind them." },
+        { name:"Frost Shard",         family:"Tundra Tomb",    kind:"Standard", lore:"Fragments of the Tomb's shattered ward-glacier, still obeying the last order the wards were given: sharpen, and hold. They travel in glittering, humming clusters." },
+        { name:"Frozen Thrall",       family:"Tundra Tomb",    kind:"Standard", lore:"Grave-servants sealed in with their masters, preserved mid-errand by the cold. A thrall will finish its final task - carrying, digging, killing - the moment anyone wakes it." },
+        { name:"Snowbound Wraith",    family:"Tundra Tomb",    kind:"Standard", lore:"Pilgrims who died within sight of the Tomb's doors and were never let in. They press against the living like a draft under a door - desperate, envious, cold beyond argument." },
+        { name:"Glacial Lurker",      family:"Tundra Tomb",    kind:"Elite",    lore:"It swims through packed ice the way eels swim through water. You will hear the creak of its passage in the walls a full room before it decides which floor to come up through." },
+        { name:"Pale Archivist",      family:"Tundra Tomb",    kind:"Elite",    lore:"The Tomb's librarian, cataloguing the dead in ledgers of frost. It finds the living genuinely upsetting - entries that keep editing themselves - and moves swiftly to correct the record." },
+        { name:"Glacial Beast",       family:"Tundra Tomb",    kind:"Elite",    lore:"Something the builders walled in rather than fought. Centuries of cold slowed its heart to one beat an hour; every intruder since has been an alarm clock." },
+        { name:"Frozen Sentinel",     family:"Tundra Tomb",    kind:"Elite",    lore:"Armored watchmen grown into the ice they stood in. Only the eyes still move - until you are close enough to matter." },
+        { name:"Glacial Warden",      family:"Tundra Tomb",    kind:"Boss",     lore:"Keeper of the Tomb's sealed vaults, crowned in hoarfrost. The Warden's rounds have not varied in a thousand years; you are the first thing worth changing them for." },
+        { name:"Tomb Archon",         family:"Tundra Tomb",    kind:"Boss",     lore:"The Tomb was built to honor the Archon; the cold was its idea. It presides from a throne of black ice, judging the frozen dead - and finds most of them, and all of the living, wanting." },
+        { name:"The Eternal Frost",   family:"Tundra Tomb",    kind:"Boss",     lore:"Not a creature so much as the Tomb's winter given a will. Where it walks, torches gutter and time itself slows to a crawl. The dead call it mercy. The living rarely get to call it anything." },
+    ];
+}

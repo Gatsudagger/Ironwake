@@ -2,9 +2,9 @@
   "$GMSprite":"v2",
   "%Name":"spr_dungeon_gate",
   "bboxMode":0,
-  "bbox_bottom":287,
+  "bbox_bottom":895,
   "bbox_left":0,
-  "bbox_right":319,
+  "bbox_right":1599,
   "bbox_top":0,
   "collisionKind":1,
   "collisionTolerance":0,
@@ -16,7 +16,7 @@
   ],
   "gridX":0,
   "gridY":0,
-  "height":288,
+  "height":896,
   "HTile":false,
   "layers":[
     {"$GMImageLayer":"","%Name":"12787ba9-68fb-48f8-b6bc-f5f79b919b83","blendMode":0,"displayName":"default","isLocked":false,"name":"12787ba9-68fb-48f8-b6bc-f5f79b919b83","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
@@ -86,5 +86,5 @@
   },
   "type":0,
   "VTile":false,
-  "width":320,
+  "width":1600,
 }

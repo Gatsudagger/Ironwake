@@ -219,6 +219,42 @@ if (instance_exists(obj_game_controller)) {
             _gc_ld.ability_detail_scroll = 0;
             exit;
         }
+
+        // --- Mastery pick modal (expression #2). While open it owns all input. ---
+        if (_gc_ld.mastery_pick_open) {
+            if (keyboard_check_pressed(vk_escape)) { _gc_ld.mastery_pick_open = false; exit; }
+            if (nav_up() || nav_down()) _gc_ld.mastery_pick_cursor = 1 - _gc_ld.mastery_pick_cursor;
+            if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)) {
+                var _mp_ab = undefined;
+                for (var _mpi = 0; _mpi < _ld_pool_sz; _mpi++) {
+                    if (_ld_pool[_mpi].name == _gc_ld.mastery_pick_ability) { _mp_ab = _ld_pool[_mpi]; break; }
+                }
+                if (_mp_ab != undefined) {
+                    var _mp_opts = ability_mastery_options(_mp_ab);
+                    var _mp_res  = ability_mastery_pick(_mp_ab.name, _mp_opts[_gc_ld.mastery_pick_cursor].id);
+                    if (_mp_res == "") {
+                        notification = _mp_ab.name + " mastered: " + _mp_opts[_gc_ld.mastery_pick_cursor].label
+                            + ((ability_mastery_pending(_mp_ab.name) > 0) ? "   (another notch awaits)" : "");
+                        if (room == rm_hub || room == rm_character_select) save_game();
+                    } else notification = _mp_res;
+                }
+                _gc_ld.mastery_pick_open = false;
+            }
+            exit;
+        }
+        // M on a pool row with an unspent notch opens the pick modal.
+        if (keyboard_check_pressed(ord("M")) && _gc_ld.loadout_tab == 0 && _gc_ld.loadout_cursor < _ld_pool_sz) {
+            var _mn = _ld_pool[_gc_ld.loadout_cursor].name;
+            if (ability_mastery_pending(_mn) > 0) {
+                _gc_ld.mastery_pick_open    = true;
+                _gc_ld.mastery_pick_ability = _mn;
+                _gc_ld.mastery_pick_cursor  = 0;
+                exit;
+            } else {
+                notification = _mn + ": " + string(ability_casts(_mn)) + " casts - next notch at "
+                    + ((ability_notches_earned(_mn) < 1) ? "25" : ((ability_notches_earned(_mn) < 2) ? "75" : "max (2/2)"));
+            }
+        }
         // Companion-tab pet-kit detail popup (Tab). While up, only Tab/Esc closes it.
         if (_gc_ld.companion_detail_open) {
             if (keyboard_check_pressed(vk_tab) || keyboard_check_pressed(vk_escape)) _gc_ld.companion_detail_open = false;
@@ -368,6 +404,14 @@ if (instance_exists(obj_game_controller)) {
                     : -1;                                // "None" row
                 if (room == rm_hub || room == rm_character_select) save_game();
             }
+
+            // B: cycle the highlighted pet's combat stance (expression #3). No-op for
+            // Fortune pets (they have no combat turn) and the "None" row.
+            if (keyboard_check_pressed(ord("B")) && _gc_ld.loadout_cursor < array_length(_eq_pets)) {
+                var _st_pet = global.pet_roster[_eq_pets[_gc_ld.loadout_cursor]];
+                var _st_new = pet_stance_cycle(_st_pet);
+                if (_st_new != "" && (room == rm_hub || room == rm_character_select)) save_game();
+            }
         }
 
         // Mouse: loadout tab buttons, ability/trait rows, confirm bar
@@ -386,7 +430,13 @@ if (instance_exists(obj_game_controller)) {
             if (_gc_ld.loadout_tab == 0) {
                 // Ability rows: x=60-1050, windowed list (matches Draw_64 scroll)
                 var _ld_max_vis = 10;
-                var _ld_scroll  = loadout_list_scroll(_gc_ld.loadout_cursor, _ld_pool_sz, _ld_max_vis);
+                // Stateful EDGE scrolling (matches Draw_64): the view only moves when
+                // the cursor would leave the window, instead of pinning the cursor to
+                // the 2nd-from-bottom row mid-list like loadout_list_scroll did.
+                var _ld_scroll = variable_instance_exists(_gc_ld, "loadout_scroll") ? _gc_ld.loadout_scroll : 0;
+                _ld_scroll = clamp(_ld_scroll, _gc_ld.loadout_cursor - (_ld_max_vis - 1), _gc_ld.loadout_cursor);
+                _ld_scroll = clamp(_ld_scroll, 0, max(0, _ld_pool_sz - _ld_max_vis));
+                _gc_ld.loadout_scroll = _ld_scroll;
                 for (var _ldvis = 0; _ldvis < min(_ld_max_vis, _ld_pool_sz - _ld_scroll); _ldvis++) {
                     var _ldai = _ld_scroll + _ldvis;
                     var _ldry = 83 + _ldvis * 74;
@@ -801,10 +851,11 @@ if (keyboard_check_pressed(vk_space) || keyboard_check_pressed(vk_enter) || keyb
 
 
 // -----------------------------------------------------------------------------
-// 2b. DEEPEN BOND (thin affinity, Phase 0.5) - one-click placeholder gate that a
-// real gate quest will replace in Phase 4. When the selected NPC's relationship has
-// reached a gate (affinity_gate_ready), B crosses it. Auto-gated by the
-// ui_input_blocked() exit above, so it never fires while a shop screen is open.
+// 2b. DEEPEN BOND (4c: routes through the NPC's GATE QUEST). When the selected
+// NPC's relationship has reached a gate (affinity_gate_ready), B either crosses
+// it (quest already cleared / re-climb) or STARTS the gate quest - the returned
+// message is the ask. Auto-gated by the ui_input_blocked() exit above, so it
+// never fires while a shop screen is open.
 // -----------------------------------------------------------------------------
 if (keyboard_check_pressed(ord("B")) && selected_npc < array_length(affinity_npc_ids()) && !show_history && !show_gallery) {
     var _bond_ids = affinity_npc_ids();
@@ -813,10 +864,10 @@ if (keyboard_check_pressed(ord("B")) && selected_npc < array_length(affinity_npc
         var _adv = affinity_try_advance(_bond_id);
         if (_adv == "") {
             notification = npc_names[selected_npc] + ": your bond deepens to " + affinity_tier_name(_bond_id) + ".";
-            if (room == rm_hub || room == rm_character_select) save_game();
         } else {
-            notification = _adv;   // a scarcity-cap block reason
+            notification = _adv;   // gate-quest ask / progress reminder
         }
+        if (room == rm_hub || room == rm_character_select) save_game();
     }
 }
 

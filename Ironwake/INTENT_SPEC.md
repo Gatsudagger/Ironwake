@@ -2,7 +2,13 @@
 
 **Source:** ABILITY_AUDIT.md §5 (highest-leverage missing feature; approved by M 2026-07-03).
 **Goal:** every enemy telegraphs its NEXT action so Defense/Control loadout picks become informed decisions. This is the Slay-the-Spire lesson: reactive abilities are only fun when you can see what's coming.
-**Status:** DRAFT — build after the §6 rework pass.
+**Status:** BUILT 2026-07-04 (needs M F5). Implementation notes:
+- `enemy_roll_intent` / `enemy_intent_estimate` / `enemy_intent_blocked` in scr_enemies.gml; chips render via `ui_draw_intent_chip` (scr_ui) above each HP bar (bar row pitch 78→108; the click hit-test in Step matches).
+- Binding contract: execution reads `actor.intent.eab`; re-rolls fire at every action-consuming turn end (ability used, attack resolved, or whiffed vs Blink/Vanish/Shadow Step/Phantom Step). A controlled skip KEEPS the intent (chip greys with strike-through while the control holds).
+- Text chips v1 (no icon sprites): red "ATK ~lo-hi" (+" x2" for double_strike), purple "CAST ~N", green "MEND", amber effect word (Stun/Root/Silence/Blind/Weaken/Expose/Wither/Wound). Bands are post-mitigation estimates (armor/resist/flat/percent layers; shields and reactive layers excluded).
+- Telegraph-spike aware: a basic-attack intent uses telegraph_damage on spike rounds (the old red banner remains as drama on the turn before).
+- Onboarding: "intent" coach-mark added to the combat tip cascade (after targeting, before inspect).
+- v1 skips (per §5 + no current content): AoE marker (no player+pet-hitting enemy moves yet), boss "?" ambiguity, A4+ magnitude hiding.
 
 ## 1. What shows
 

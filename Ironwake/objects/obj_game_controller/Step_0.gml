@@ -84,11 +84,108 @@ if (variable_global_exists("gift_popup") && global.gift_popup != undefined) {
     exit;
 }
 
+// --- KNUCKLEBONES (expression #1): the tavern dice game, opened with K at the
+// board. While open it owns all input. Phases: stake -> play -> over.
+if (variable_instance_exists(id, "kb_open") && kb_open) {
+    var _g = kb;
+
+    if (_g.phase == "stake") {
+        if (keyboard_check_pressed(vk_escape)) { kb_open = false; exit; }
+        var _stakes = [10, 25, 50];
+        var _si = 1;
+        for (var _s = 0; _s < 3; _s++) if (_stakes[_s] == _g.stake) _si = _s;
+        if (nav_left())  { _si = wrap_index(_si - 1, 3); _g.stake = _stakes[_si]; }
+        if (nav_right()) { _si = wrap_index(_si + 1, 3); _g.stake = _stakes[_si]; }
+        if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)) {
+            if (global.gold < _g.stake) { _g.msg = "You can't cover the stake."; exit; }
+            global.gold -= _g.stake;
+            _g.phase = "play";
+            _g.msg   = "";
+        }
+        exit;
+    }
+
+    if (_g.phase == "over") {
+        if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)
+            || keyboard_check_pressed(vk_escape)) { kb_open = false; }
+        exit;
+    }
+
+    // phase "play"
+    if (keyboard_check_pressed(vk_escape)) {   // concede - the stake stays on the table
+        _g.phase  = "over";
+        _g.result = "conceded";
+        _g.msg    = "You push back from the table. The stake stays.";
+        exit;
+    }
+    if (_g.my_turn) {
+        if (nav_left())  _g.cursor = wrap_index(_g.cursor - 1, 3);
+        if (nav_right()) _g.cursor = wrap_index(_g.cursor + 1, 3);
+        if ((keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter))
+            && kb_col_count(_g.mine, _g.cursor) < 3) {
+            kb_place(_g.mine, _g.cursor, _g.die);
+            kb_destroy(_g.foes, _g.cursor, _g.die);
+            if (kb_board_full(_g.mine) || kb_board_full(_g.foes)) {
+                _g.phase = "over";
+            } else {
+                _g.my_turn   = false;
+                // Sable's charm-cheat: best of two dice, delivered with a smile.
+                _g.foe_die   = irandom(5) + 1;
+                if (_g.foe == "sable") _g.foe_die = max(_g.foe_die, irandom(5) + 1);
+                _g.foe_timer = 45;
+            }
+        }
+    } else {
+        _g.foe_timer--;
+        if (_g.foe_timer <= 0) {
+            var _pick = kb_ai_pick(_g);
+            if (_pick >= 0) {
+                kb_place(_g.foes, _pick, _g.foe_die);
+                kb_destroy(_g.mine, _pick, _g.foe_die);
+            }
+            if (_pick < 0 || kb_board_full(_g.mine) || kb_board_full(_g.foes)) {
+                _g.phase = "over";
+            } else {
+                _g.my_turn = true;
+                _g.die     = irandom(5) + 1;
+            }
+        }
+    }
+    // Resolve the finished game once (payout + affinity + ledger).
+    if (_g.phase == "over" && _g.result == "") {
+        var _pm = kb_total(_g.mine), _pf = kb_total(_g.foes);
+        if (_pm > _pf) {
+            _g.result = "win";
+            global.gold += _g.stake * 2;
+            affinity_add(_g.foe, 2);   // a good game warms the table
+            ledger_add(_g.foe, "milestone", "Beat them at knucklebones for " + string(_g.stake) + "g. They'll want revenge.");
+            _g.msg = "You win " + string(_g.stake * 2) + "g! " + npc_display_name(_g.foe) + " eyes the dice suspiciously.";
+        } else if (_pf > _pm) {
+            _g.result = "loss";
+            ledger_add(_g.foe, "milestone", "Lost " + string(_g.stake) + "g to them at knucklebones.");
+            _g.msg = npc_display_name(_g.foe) + " sweeps up your " + string(_g.stake) + "g without gloating. Much.";
+        } else {
+            _g.result = "tie";
+            global.gold += _g.stake;
+            _g.msg = "Dead even. The stake slides back across the table.";
+        }
+        if (room == rm_hub || room == rm_character_select) save_game();
+    }
+    exit;
+}
+
 // --- TAVERN REQUESTS BOARD (Phase 4b UX): the quest action surface. W/S rows,
 // Enter accepts an available request / turns in a finished one, Esc closes.
 if (tavern_board_open) {
     if (keyboard_check_pressed(vk_escape)) { tavern_board_open = false; exit; }
-    var _tb = journal_quest_rows();
+    if (keyboard_check_pressed(ord("K"))) {
+        // Knucklebones: tonight's opponent rotates with the run count.
+        var _kb_ids = affinity_npc_ids();
+        kb_open = true;
+        kb = kb_new_game(_kb_ids[(variable_global_exists("run_count") ? global.run_count : 0) mod array_length(_kb_ids)]);
+        exit;
+    }
+    var _tb = tavern_board_rows();   // active + available only - fulfilled live in the Journal
     var _tbn = array_length(_tb);
     if (_tbn > 0) {
         if (nav_up())   { tavern_board_cursor = wrap_index(tavern_board_cursor - 1, _tbn); tavern_board_note = ""; }
@@ -101,7 +198,10 @@ if (tavern_board_open) {
             if (quest_is_complete(_tbid)) {
                 var _tbres = quest_turn_in(_tbid);
                 if (_tbres == "") {
-                    tavern_board_note = "\"" + _tbd.name + "\" fulfilled - " + journal_quest_reward_text(_tbd) + " collected.";
+                    tavern_board_note = quest_is_gate(_tbd)
+                        ? ("\"" + _tbd.name + "\" fulfilled - your bond with " + npc_display_name(_tbd.npc)
+                           + " deepens: " + affinity_tier_name_for(_tbd.gate_tier) + ".")
+                        : ("\"" + _tbd.name + "\" fulfilled - " + journal_quest_reward_text(_tbd) + " collected.");
                     audio_play_sound(Check_1, 1, false);
                     save_game();
                 } else tavern_board_note = _tbres;
@@ -126,9 +226,39 @@ if (tavern_board_open) {
 // controller). VIEW/TRACK ONLY (Phase 4b) - actions live at the Tavern board.
 if (journal_open) {
     if (keyboard_check_pressed(ord("J")) || keyboard_check_pressed(vk_escape)) { journal_open = false; exit; }
-    if (keyboard_check_pressed(ord("Q")) || keyboard_check_pressed(ord("E"))) {
-        journal_tab = (journal_tab + 1) mod 2;   // two tabs: either key flips
-        journal_cursor = 0;
+    // Five tabs since the 2026-07-04 consolidation: Relationships / Quests /
+    // Compendium / Item Codex / Bestiary. Q back, E forward.
+    if (keyboard_check_pressed(ord("E"))) { journal_tab = (journal_tab + 1) mod 5; journal_cursor = 0; }
+    if (keyboard_check_pressed(ord("Q"))) { journal_tab = (journal_tab + 4) mod 5; journal_cursor = 0; }
+    if (journal_tab == 2) {
+        // Compendium (moved here from the character menu): browse sections.
+        var _jc_count = array_length(ui_compendium_sections());
+        if (nav_down()) compendium_section = wrap_index(compendium_section + 1, _jc_count);
+        if (nav_up())   compendium_section = wrap_index(compendium_section - 1, _jc_count);
+        exit;
+    }
+    if (journal_tab == 3) {
+        // Item Codex (moved here from the hub G screen): Enter opens the full
+        // gallery at camp (it needs the hub's splash panes); view-only elsewhere.
+        if ((keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_return))
+            && room == rm_hub && instance_exists(obj_hub_controller)) {
+            var _jh = instance_find(obj_hub_controller, 0);
+            _jh.show_gallery        = true;
+            _jh.gallery_scroll      = 0;
+            _jh.gallery_cursor      = -1;
+            _jh.gallery_detail_item = undefined;
+            journal_open = false;
+        }
+        exit;
+    }
+    if (journal_tab == 4) {
+        // Bestiary: browse species lore.
+        var _jb_n = array_length(bestiary_catalog());
+        if (_jb_n > 0) {
+            if (nav_up())   journal_cursor = wrap_index(journal_cursor - 1, _jb_n);
+            if (nav_down()) journal_cursor = wrap_index(journal_cursor + 1, _jb_n);
+        }
+        exit;
     }
     if (journal_tab == 0) {
         var _jm = journal_met_ids();
@@ -315,16 +445,21 @@ if (level_alloc_open) {
             variable_struct_get(global.run_stat_bonuses, _chosen_key) + 1);
         global.pending_stat_points--;
         level_alloc_pending_stat = -1;
-        // Update live player stats if in combat - CON recalcs HP only on confirm
+        // Update live player stats if in combat - CON recalcs HP only on confirm.
+        // BUG FIX (2026-07-04): this used to OVERWRITE max_HP with the bare
+        // stats_derive value, silently dropping gear +HP, Thick Skin and boon/curse
+        // multipliers (the "HP bar snaps to base HP after combat" report) - and the
+        // clamped current HP was then saved as the carried run HP, so HP was really
+        // lost. Apply only the CON DELTA on top of the true combat max instead.
         if (instance_exists(obj_combat_controller)) {
             var _ctrl = instance_find(obj_combat_controller, 0);
+            var _hp_derived_before = stats_derive(_ctrl.player.stats).HP;
             variable_struct_set(_ctrl.player.stats, _chosen_key,
                 variable_struct_get(_ctrl.player.stats, _chosen_key) + 1);
             if (_chosen_key == "CON") {
-                var _nd = stats_derive(_ctrl.player.stats);
-                var _hg = _nd.HP - _ctrl.player.max_HP;
-                _ctrl.player.max_HP = _nd.HP;
-                _ctrl.player.HP = min(_ctrl.player.max_HP, _ctrl.player.HP + max(0, _hg));
+                var _hg = stats_derive(_ctrl.player.stats).HP - _hp_derived_before;
+                _ctrl.player.max_HP += max(0, _hg);
+                _ctrl.player.HP      = min(_ctrl.player.max_HP, _ctrl.player.HP + max(0, _hg));
             }
         }
         if (global.pending_stat_points <= 0) level_alloc_open = false;
@@ -348,7 +483,14 @@ if (keyboard_check_pressed(ord("B"))) {
     else if (variable_instance_exists(id, "sable_open")   && sable_open)   _bond_npc = "sable";
     else if (variable_instance_exists(id, "vael_open")    && vael_open)    _bond_npc = "vael";
     if (_bond_npc != "" && affinity_gate_ready(_bond_npc)) {
-        affinity_try_advance(_bond_npc);
+        // 4c: advancing may START the gate quest instead of crossing - surface the
+        // ask on the hub notification line (visible when the screen closes) and on
+        // Vael's own notification line when hers is the open screen.
+        var _adv_msg = affinity_try_advance(_bond_npc);
+        if (_adv_msg != "" && _adv_msg != "Not ready.") {
+            if (_bond_npc == "vael") vael_notification = _adv_msg;
+            if (instance_exists(obj_hub_controller)) instance_find(obj_hub_controller, 0).notification = _adv_msg;
+        }
         if (room == rm_hub || room == rm_character_select) save_game();
     }
 }
@@ -1310,8 +1452,27 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open) {
         if (nav_down()) { bairc_cursor = wrap_index(bairc_cursor + 1, _bp_n); bairc_notification = ""; }
 
         var _bp = global.pet_roster[bairc_cursor];
+        // I: identify a mysterious egg (paid). Until identified, the egg can't hatch
+        // and its species/type read "??" (design 2026-07-04).
+        if (keyboard_check_pressed(ord("I")) && _bp.is_egg && !pet_egg_identified(_bp)) {
+            var _id_cost = pet_egg_identify_cost();
+            if (global.gold >= _id_cost) {
+                global.gold -= _id_cost;
+                _bp.identified = true;
+                bairc_notification = "Bairc turns it over in his hands... a "
+                    + pet_species_get(_bp.species).name + " egg - " + pet_archetype_name(_bp.archetype) + ".";
+                audio_play_sound(Check_1, 1, false);
+                affinity_add("bairc", 2);   // function-use drip (identification)
+                if (room == rm_hub || room == rm_character_select) save_game();
+            } else {
+                bairc_notification = "Identifying costs " + string(_id_cost) + "g - you're short.";
+            }
+        }
         if (keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_space)) {
-            if (_bp.is_egg) {
+            if (_bp.is_egg && !pet_egg_identified(_bp)) {
+                bairc_notification = "Bairc shakes his head - identify it first ([I], "
+                    + string(pet_egg_identify_cost()) + "g). No telling what would crawl out.";
+            } else if (_bp.is_egg) {
                 hatch_cutscene_start(_bp);   // full-screen shake -> crack -> reveal; hatches at the reveal
                 affinity_add("bairc", 2);    // function-use drip (hatching together)
             } else {
@@ -1909,16 +2070,18 @@ if (variable_instance_exists(id, "vael_open") && vael_open) {
         exit;
     }
 
-    // --- Tab switching (Q/E or click the tab headers; geometry matches ui_draw_vael_screen) ---
+    // --- Tab switching (Q/E step left/right or click the tab headers; geometry
+    //     matches ui_draw_vael_screen). 0 Skins / 1 Portrait / 2 Tints. ---
     var _vt_prev = vael_tab;
-    if (keyboard_check_pressed(ord("Q"))) vael_tab = 0;
-    if (keyboard_check_pressed(ord("E"))) vael_tab = 1;
+    if (keyboard_check_pressed(ord("Q"))) vael_tab = max(0, vael_tab - 1);
+    if (keyboard_check_pressed(ord("E"))) vael_tab = min(2, vael_tab + 1);
     if (mouse_check_button_pressed(mb_left)) {
         var _vtm_x = device_mouse_x_to_gui(0);
         var _vtm_y = device_mouse_y_to_gui(0);
         if (_vtm_y >= 87 && _vtm_y <= 135) {
             if (_vtm_x >= 840 - 108 && _vtm_x <= 840 + 108) vael_tab = 0;
             if (_vtm_x >= 1080 - 108 && _vtm_x <= 1080 + 108) vael_tab = 1;
+            if (_vtm_x >= 1320 - 108 && _vtm_x <= 1320 + 108) vael_tab = 2;
         }
     }
     if (vael_tab != _vt_prev) {
@@ -1945,6 +2108,51 @@ if (variable_instance_exists(id, "vael_open") && vael_open) {
                 affinity_add("vael", 2);   // function-use drip (portrait change)
             } else {
                 vael_notification = "Not enough gold - you need 100g.";
+            }
+        }
+        exit;
+    }
+
+    // --- Tints tab: per-school spell palettes (expression #4). List geometry mirrors
+    //     the Skins tab exactly (x300..1160, y225, row 72, 10 visible). ---
+    if (vael_tab == 2) {
+        var _t_cat  = vael_tint_catalog();
+        var _t_rows = max(1, array_length(_t_cat));
+
+        if (nav_up())   { vael_tint_cursor = wrap_index(vael_tint_cursor - 1, _t_rows); vael_notification = ""; }
+        if (nav_down()) { vael_tint_cursor = wrap_index(vael_tint_cursor + 1, _t_rows); vael_notification = ""; }
+        vael_tint_cursor = clamp(vael_tint_cursor, 0, _t_rows - 1);
+
+        var _t_act = (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter));
+        if (mouse_check_button_pressed(mb_left)) {
+            var _tmx = device_mouse_x_to_gui(0);
+            var _tmy = device_mouse_y_to_gui(0);
+            if (_tmx >= 300 && _tmx < 1160) {
+                var _t_vis    = 10;
+                var _t_scroll = vael_list_scroll(vael_tint_cursor, _t_rows, _t_vis);
+                var _t_vrow   = floor((_tmy - 225) / 72);
+                if (_t_vrow >= 0 && _t_vrow < _t_vis) {
+                    var _t_row = _t_scroll + _t_vrow;
+                    if (_t_row >= 0 && _t_row < _t_rows) { vael_tint_cursor = _t_row; _t_act = true; }
+                }
+            }
+        }
+
+        if (_t_act) {
+            var _tsel = _t_cat[vael_tint_cursor];
+            if (vael_tint_owned(_tsel.id)) {
+                if (school_tint_id(_tsel.school) == _tsel.id) {
+                    // Enter on the equipped tint reverts the school to its base color.
+                    vael_equip_tint("default", _tsel.school);
+                    vael_notification = school_label(_tsel.school) + " restored to its true color.";
+                } else {
+                    var _teq = vael_equip_tint(_tsel.id);
+                    vael_notification = (_teq == "") ? ("Your " + string_lower(school_label(_tsel.school)) + " now burns " + _tsel.name + ".") : _teq;
+                }
+            } else {
+                var _tbuy = vael_buy_tint(_tsel.id);
+                vael_notification = (_tbuy == "") ? ("Purchased & equipped " + _tsel.name + "!") : _tbuy;
+                if (_tbuy == "") affinity_add("vael", 2);   // function-use drip (cosmetic purchase)
             }
         }
         exit;
@@ -2001,15 +2209,21 @@ if (keyboard_check_pressed(vk_escape)) {
     exit;
 }
 
-// Q/E cycle tabs (no wrap - clamped to 0-4)
+// Q/E cycle tabs (no wrap - clamped to 0-3; Compendium moved to the Journal 2026-07-04)
 if (!equip_picker_open && !consumable_submenu_open) {
     if (keyboard_check_pressed(ord("Q"))) {
         menu_tab          = max(0, menu_tab - 1);
         equip_picker_open = false;
     }
     if (keyboard_check_pressed(ord("E"))) {
-        menu_tab          = min(4, menu_tab + 1);
+        menu_tab          = min(3, menu_tab + 1);
         equip_picker_open = false;
+    }
+
+    // T on the Stats tab: cycle the equipped epithet through earned titles
+    // (expression #5). The header line redraws immediately - that's the feedback.
+    if (menu_tab == 0 && keyboard_check_pressed(ord("T"))) {
+        epithet_cycle();
     }
 }
 
@@ -2034,8 +2248,8 @@ if (mouse_check_button_pressed(mb_left)) {
     var _mmx = device_mouse_x_to_gui(0);
     var _mmy = device_mouse_y_to_gui(0);
 
-    // --- Tab bar: tab t starts at x = 306+t*264, y=30, w=252, h=66 (5 tabs, centered) ---
-    for (var _mt = 0; _mt < 5; _mt++) {
+    // --- Tab bar: tab t starts at x = 306+t*264, y=30, w=252, h=66 (4 tabs, centered) ---
+    for (var _mt = 0; _mt < 4; _mt++) {
         var _tx = 306 + _mt * 264;
         if (_mmx >= _tx && _mmx < _tx+252 && _mmy >= 30 && _mmy < 96) {
             menu_tab                = _mt;

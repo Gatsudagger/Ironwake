@@ -829,6 +829,7 @@ function ui_input_blocked() {
     if (variable_instance_exists(_gc, "loadout_open")     && _gc.loadout_open)     return true;
     if (variable_instance_exists(_gc, "journal_open")     && _gc.journal_open)     return true;   // J Journal (Phase 4a)
     if (variable_instance_exists(_gc, "tavern_board_open") && _gc.tavern_board_open) return true; // Tavern Requests board (Phase 4b)
+    if (variable_instance_exists(_gc, "kb_open") && _gc.kb_open) return true;                     // Knucklebones (expression #1)
     return false;
 }
 
@@ -1125,6 +1126,10 @@ function journal_npc_portrait(id) {
 
 // One-line reward description for a quest def (mirrors quest_turn_in's grants).
 function journal_quest_reward_text(def) {
+    // Gate quests (4c): the reward is the relationship tier itself.
+    if (variable_struct_exists(def, "kind") && def.kind == "gate") {
+        return npc_display_name(def.npc) + " -> " + affinity_tier_name_for(def.gate_tier);
+    }
     var _r = def.reward; var _out = "";
     if (_r.gold > 0) _out += string(_r.gold) + "g";
     if (_r.feed != "" && _r.feed_n > 0) {
@@ -1158,11 +1163,11 @@ function ui_draw_journal() {
     draw_set_color(make_color_rgb(228, 215, 180));
     draw_text(_x1 + 45, _y1 + 36, "Journal");
 
-    // Tab chips.
-    var _tabs = ["RELATIONSHIPS", "QUESTS"];
+    // Tab chips (5 since the 2026-07-04 consolidation).
+    var _tabs = ["RELATIONSHIPS", "QUESTS", "COMPENDIUM", "ITEM CODEX", "BESTIARY"];
     var _tx = _x1 + 340;
-    draw_set_font(fnt_ui);
-    for (var _t = 0; _t < 2; _t++) {
+    draw_set_font(fnt_ui_small);
+    for (var _t = 0; _t < 5; _t++) {
         var _hot = (_gc.journal_tab == _t);
         var _tw  = string_width(_tabs[_t]) + 48;
         draw_set_color(_hot ? make_color_rgb(52, 48, 66) : make_color_rgb(26, 26, 34));
@@ -1314,7 +1319,7 @@ function ui_draw_journal() {
                     + string(min(_pqs.progress, _pqd.obj_target)) + " / " + string(_pqd.obj_target) + ")");
             }
         }
-    } else {
+    } else if (_gc.journal_tab == 1) {
         // ============ QUESTS ============
         var _rows = journal_quest_rows();
         var _qn   = array_length(_rows);
@@ -1390,6 +1395,103 @@ function ui_draw_journal() {
                 draw_set_color(make_color_rgb(228, 205, 140));
                 draw_text(_dx2, _dy2, "Posted at the tavern's request board.");
             }
+        }
+    } else if (_gc.journal_tab == 2) {
+        // ============ COMPENDIUM (moved from the character menu, 2026-07-04) ======
+        var _cs   = ui_compendium_sections();
+        var _csel = clamp(_gc.compendium_section, 0, array_length(_cs) - 1);
+        for (var _ci = 0; _ci < array_length(_cs); _ci++) {
+            var _cy  = _top + _ci * 66;
+            var _chot = (_ci == _csel);
+            draw_set_color(_chot ? make_color_rgb(40, 42, 58) : make_color_rgb(20, 21, 30));
+            draw_rectangle(_list_x1 - 6, _cy, _list_x2 + 6, _cy + 56, false);
+            draw_set_color(_chot ? make_color_rgb(210, 185, 120) : make_color_rgb(52, 56, 76));
+            draw_rectangle(_list_x1 - 6, _cy, _list_x2 + 6, _cy + 56, true);
+            draw_set_font(fnt_ui);
+            draw_set_color(_chot ? c_white : make_color_rgb(180, 186, 205));
+            draw_text(_list_x1 + 12, _cy + 12, _cs[_ci].title);
+        }
+        // Detail: the section's entries (term + text lines).
+        var _cdy = _top + 6;
+        draw_set_font(fnt_ui);
+        draw_set_color(make_color_rgb(228, 205, 140));
+        draw_text(_det_x1, _cdy, _cs[_csel].title); _cdy += 48;
+        draw_set_font(fnt_ui_small);
+        var _ces = _cs[_csel].entries;
+        for (var _ce = 0; _ce < array_length(_ces); _ce++) {
+            if (_cdy > _bot - 40) break;
+            var _cent = _ces[_ce];
+            draw_set_color(make_color_rgb(200, 210, 235));
+            draw_text(_det_x1, _cdy, _cent.term);
+            draw_set_color(make_color_rgb(160, 166, 186));
+            var _ctw = _det_x2 - _det_x1 - 260;
+            draw_text_ext(_det_x1 + 250, _cdy, _cent.text, 25, _ctw);
+            _cdy += max(33, string_height_ext(_cent.text, 25, _ctw) + 12);
+        }
+    } else if (_gc.journal_tab == 3) {
+        // ============ ITEM CODEX (moved from the hub G screen, 2026-07-04) ========
+        var _disc_n = variable_global_exists("items_discovered") ? array_length(global.items_discovered) : 0;
+        draw_set_font(fnt_ui);
+        draw_set_color(c_white);
+        draw_text(_list_x1, _top + 12, "Item Codex");
+        draw_set_font(fnt_ui_small);
+        draw_set_color(make_color_rgb(180, 186, 205));
+        draw_text(_list_x1, _top + 64, "Discovered entries: " + string(_disc_n));
+        draw_set_color(make_color_rgb(160, 166, 186));
+        draw_text_ext(_det_x1, _top + 6,
+            "Every base item you have found or bought, with lore, stat ranges and splash art."
+            + "\n\nThe full gallery needs the camp's light to read by.", 30, _det_x2 - _det_x1 - 10);
+        draw_set_color(_at_hub ? make_color_rgb(120, 220, 140) : make_color_rgb(150, 156, 175));
+        draw_text(_det_x1, _top + 180, _at_hub
+            ? "[ Enter ]  Open the full Item Codex"
+            : "Available at camp (open the Journal there).");
+    } else {
+        // ============ BESTIARY (new 2026-07-04): per-species lore ================
+        var _bst  = bestiary_catalog();
+        var _bn   = array_length(_bst);
+        var _bcur = clamp(_gc.journal_cursor, 0, max(0, _bn - 1));
+        var _brow = 46;
+        var _bvis = max(1, floor((_bot - _top - 10) / _brow));
+        var _bfirst = clamp(_bcur - (_bvis - 1), 0, max(0, _bn - _bvis));
+        if (_bcur < _bfirst) _bfirst = _bcur;
+        var _blast  = min(_bn, _bfirst + _bvis);
+        var _lastfam = "";
+        for (var _bi = _bfirst; _bi < _blast; _bi++) {
+            var _be = _bst[_bi];
+            var _by = _top + (_bi - _bfirst) * _brow;
+            var _bhot = (_bi == _bcur);
+            draw_set_color(_bhot ? make_color_rgb(40, 42, 58) : make_color_rgb(20, 21, 30));
+            draw_rectangle(_list_x1 - 6, _by, _list_x2 + 6, _by + _brow - 6, false);
+            draw_set_color(_bhot ? make_color_rgb(210, 185, 120) : make_color_rgb(52, 56, 76));
+            draw_rectangle(_list_x1 - 6, _by, _list_x2 + 6, _by + _brow - 6, true);
+            draw_set_font(fnt_ui_small);
+            draw_set_color(_bhot ? c_white : make_color_rgb(190, 195, 212));
+            draw_text(_list_x1 + 10, _by + 8, _be.name);
+            draw_set_halign(fa_right);
+            draw_set_color(make_color_rgb(130, 136, 158));
+            draw_text(_list_x2 - 6, _by + 8, _be.family);
+            draw_set_halign(fa_left);
+        }
+        if (_bfirst > 0) {
+            draw_set_color(make_color_rgb(120, 140, 170));
+            draw_text(_list_x1, _top - 30, "^ more");
+        }
+        if (_blast < _bn) {
+            draw_set_color(make_color_rgb(120, 140, 170));
+            draw_text(_list_x1, _bot - 30 + 6, "v " + string(_bn - _blast) + " more");
+        }
+        // Detail pane: name, family, lore.
+        if (_bn > 0) {
+            var _bd  = _bst[_bcur];
+            var _bdy = _top + 6;
+            draw_set_font(fnt_ui);
+            draw_set_color(c_white);
+            draw_text(_det_x1, _bdy, _bd.name); _bdy += 46;
+            draw_set_font(fnt_ui_small);
+            draw_set_color(make_color_rgb(210, 190, 130));
+            draw_text(_det_x1, _bdy, _bd.family + "  -  " + _bd.kind); _bdy += 44;
+            draw_set_color(make_color_rgb(170, 176, 195));
+            draw_text_ext(_det_x1, _bdy, _bd.lore, 28, _det_x2 - _det_x1 - 10);
         }
     }
 
@@ -1493,7 +1595,9 @@ function ui_draw_tavern_board() {
     draw_text((_x1 + _x2) / 2, _y1 + 87, "Jobs, hunts and favors posted by the townsfolk.");
     draw_set_halign(fa_left);
 
-    var _rows = journal_quest_rows();
+    // Board rows = active + available only. Fulfilled requests come off the board
+    // (their notes are "taken down") and live in the Journal's Completed group.
+    var _rows = tavern_board_rows();
     var _n    = array_length(_rows);
     var _cur  = clamp(_gc.tavern_board_cursor, 0, max(0, _n - 1));
     var _lx = _x1 + 66, _rx = _x2 - 66;
@@ -1511,7 +1615,7 @@ function ui_draw_tavern_board() {
             _last_status = _qs.status;
             draw_set_font(fnt_ui_small);
             draw_set_color(make_color_rgb(150, 190, 130));
-            draw_text(_lx, _qy, (_qs.status == "active") ? "TAKEN BY YOU" : ((_qs.status == "available") ? "POSTED" : "FULFILLED"));
+            draw_text(_lx, _qy, (_qs.status == "active") ? "TAKEN BY YOU" : "POSTED");
             _qy += 33;
         }
         var _hot = (_i == _cur);
@@ -1551,7 +1655,152 @@ function ui_draw_tavern_board() {
         draw_text((_x1 + _x2) / 2, _y2 - 72, _gc.tavern_board_note);
     }
     draw_set_color(make_color_rgb(160, 145, 120));
-    draw_text((_x1 + _x2) / 2, _y2 - 30, "W/S: Browse     Enter: Take / Turn in     Esc: Leave");
+    draw_text((_x1 + _x2) / 2, _y2 - 30, "W/S: Browse     Enter: Take / Turn in     K: Knucklebones     Esc: Leave     (fulfilled: Journal, J)");
+    draw_set_halign(fa_left); draw_set_valign(fa_top);
+    draw_set_alpha(1.0); draw_set_color(c_white); draw_set_font(-1);
+}
+
+// ---------------------------------------------------------------------------
+// ui_draw_knucklebones() - the tavern dice game (expression #1). Two 3x3 boards,
+// opponent on top; geometry is self-contained. Input lives in the gc Step kb
+// block; this only renders gc.kb.
+// ---------------------------------------------------------------------------
+function ui_draw_knucklebones() {
+    if (!instance_exists(obj_game_controller)) return;
+    var _gc = instance_find(obj_game_controller, 0);
+    if (!variable_instance_exists(_gc, "kb_open") || !_gc.kb_open || _gc.kb == undefined) return;
+    var _g = _gc.kb;
+
+    draw_set_alpha(0.88); draw_set_color(c_black);
+    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+    draw_set_alpha(1.0);
+    var _x0 = 510, _y0 = 54, _x1 = 1410, _y1 = 1026;
+    draw_set_color(make_color_rgb(30, 22, 15));
+    draw_rectangle(_x0, _y0, _x1, _y1, false);
+    ui_draw_gothic_frame(_x0, _y0, _x1, _y1, 30);
+
+    draw_set_halign(fa_center); draw_set_valign(fa_top);
+    draw_set_font(fnt_ui_title);
+    draw_set_color(make_color_rgb(230, 210, 160));
+    draw_text(GUI_CX, _y0 + 21, "KNUCKLEBONES");
+    draw_set_font(fnt_ui_small);
+    draw_set_color(make_color_rgb(170, 150, 120));
+    draw_text(GUI_CX, _y0 + 78, npc_display_name(_g.foe) + " sits across from you.   " + kb_foe_line(_g.foe));
+
+    // --- Stake phase: pick the wager ---
+    if (_g.phase == "stake") {
+        draw_set_font(fnt_ui);
+        draw_set_color(c_white);
+        draw_text(GUI_CX, 420, "The stake:");
+        draw_set_font(fnt_ui_title);
+        draw_set_color(make_color_rgb(240, 205, 110));
+        draw_text(GUI_CX, 480, "< " + string(_g.stake) + "g >");
+        draw_set_font(fnt_ui_small);
+        draw_set_color(make_color_rgb(160, 150, 130));
+        draw_text(GUI_CX, 570, "Winner takes double. Equal dice in a column multiply; matching their column smashes their dice.");
+        if (_g.msg != "") { draw_set_color(make_color_rgb(220, 140, 120)); draw_text(GUI_CX, 630, _g.msg); }
+        draw_set_color(make_color_rgb(150, 140, 120));
+        draw_text(GUI_CX, _y1 - 60, "A/D: Stake     Enter: Sit down     Esc: Not tonight");
+        draw_set_halign(fa_left); draw_set_valign(fa_top); draw_set_font(-1);
+        return;
+    }
+
+    // --- Boards. Foe on top (their slot 0 nearest the middle), player below. ---
+    var _cell = 92, _gap = 10;
+    var _colx = [GUI_CX - (_cell + _gap) - _cell / 2, GUI_CX - _cell / 2, GUI_CX + (_cell + _gap) + _cell / 2 - _cell];
+    var _foe_y0  = 150;   // foe cells grow DOWN toward the middle
+    var _mine_y0 = 610;
+
+    for (var _c = 0; _c < 3; _c++) {
+        // Foe column (drawn top-down, slot 2 at top so slot 0 sits by the middle).
+        for (var _r = 0; _r < 3; _r++) {
+            var _fv = _g.foes[_c][2 - _r];
+            var _fx = _colx[_c], _fy = _foe_y0 + _r * (_cell + 6);
+            draw_set_color((_fv > 0) ? make_color_rgb(64, 48, 40) : make_color_rgb(38, 30, 24));
+            draw_rectangle(_fx, _fy, _fx + _cell, _fy + _cell, false);
+            draw_set_color(make_color_rgb(90, 70, 52));
+            draw_rectangle(_fx, _fy, _fx + _cell, _fy + _cell, true);
+            if (_fv > 0) {
+                draw_set_font(fnt_ui_title);
+                draw_set_color(make_color_rgb(235, 215, 180));
+                draw_set_valign(fa_middle);
+                draw_text(_fx + _cell / 2, _fy + _cell / 2, string(_fv));
+                draw_set_valign(fa_top);
+            }
+        }
+        // Foe column score (just under their stack, above the divider).
+        draw_set_font(fnt_ui_small);
+        draw_set_color(make_color_rgb(190, 160, 120));
+        draw_text(_colx[_c] + _cell / 2, _foe_y0 + 3 * (_cell + 6) + 3, string(kb_col_score(_g.foes, _c)));
+
+        // Player column score above their stack.
+        draw_set_color(make_color_rgb(190, 200, 160));
+        draw_text(_colx[_c] + _cell / 2, _mine_y0 - 30, string(kb_col_score(_g.mine, _c)));
+        // Player cursor chevron.
+        if (_g.phase == "play" && _g.my_turn && _g.cursor == _c) {
+            draw_set_font(fnt_ui);
+            draw_set_color(make_color_rgb(255, 205, 90));
+            draw_text(_colx[_c] + _cell / 2, _mine_y0 - 63, "v");
+        }
+        // Player column (slot 0 at top, growing down).
+        for (var _r2 = 0; _r2 < 3; _r2++) {
+            var _mv = _g.mine[_c][_r2];
+            var _mx = _colx[_c], _my = _mine_y0 + _r2 * (_cell + 6);
+            draw_set_color((_mv > 0) ? make_color_rgb(40, 52, 44) : make_color_rgb(26, 32, 28));
+            draw_rectangle(_mx, _my, _mx + _cell, _my + _cell, false);
+            draw_set_color(make_color_rgb(70, 96, 76));
+            draw_rectangle(_mx, _my, _mx + _cell, _my + _cell, true);
+            if (_mv > 0) {
+                draw_set_font(fnt_ui_title);
+                draw_set_color(make_color_rgb(200, 235, 205));
+                draw_set_valign(fa_middle);
+                draw_text(_mx + _cell / 2, _my + _cell / 2, string(_mv));
+                draw_set_valign(fa_top);
+            }
+        }
+    }
+
+    // --- Middle band: totals + whose turn + the live die ---
+    draw_set_font(fnt_ui);
+    draw_set_halign(fa_left);
+    draw_set_color(make_color_rgb(200, 170, 130));
+    draw_text(_x0 + 45, 500, npc_display_name(_g.foe) + ":  " + string(kb_total(_g.foes)));
+    draw_set_color(make_color_rgb(170, 220, 180));
+    draw_text(_x0 + 45, 540, "You:  " + string(kb_total(_g.mine)));
+    draw_set_halign(fa_right);
+    draw_set_color(make_color_rgb(240, 205, 110));
+    draw_text(_x1 - 45, 500, "Stake: " + string(_g.stake) + "g");
+    draw_set_halign(fa_center);
+
+    if (_g.phase == "play") {
+        var _die_v = _g.my_turn ? _g.die : _g.foe_die;
+        var _dx = GUI_CX + 300, _dy = 495;
+        draw_set_color(_g.my_turn ? make_color_rgb(46, 58, 48) : make_color_rgb(64, 48, 40));
+        draw_rectangle(_dx, _dy, _dx + 66, _dy + 66, false);
+        draw_set_color(make_color_rgb(240, 230, 200));
+        draw_rectangle(_dx, _dy, _dx + 66, _dy + 66, true);
+        draw_set_font(fnt_ui_title);
+        draw_set_valign(fa_middle);
+        draw_text(_dx + 33, _dy + 33, string(_die_v));
+        draw_set_valign(fa_top);
+        draw_set_font(fnt_ui_small);
+        draw_set_color(make_color_rgb(160, 150, 130));
+        draw_text(_dx + 33, _dy + 75, _g.my_turn ? "your die" : "their die");
+        draw_set_color(make_color_rgb(150, 140, 120));
+        draw_text(GUI_CX, _y1 - 60, _g.my_turn
+            ? "A/D: Column     Enter: Place     Esc: Concede"
+            : (npc_display_name(_g.foe) + " considers..."));
+    } else {   // over
+        draw_set_font(fnt_ui);
+        var _col_res = (_g.result == "win") ? make_color_rgb(150, 230, 150)
+                     : ((_g.result == "tie") ? make_color_rgb(220, 210, 160) : make_color_rgb(225, 140, 120));
+        draw_set_color(_col_res);
+        draw_text(GUI_CX, _y1 - 96, _g.msg);
+        draw_set_font(fnt_ui_small);
+        draw_set_color(make_color_rgb(150, 140, 120));
+        draw_text(GUI_CX, _y1 - 54, "Enter: Leave the table");
+    }
+
     draw_set_halign(fa_left); draw_set_valign(fa_top);
     draw_set_alpha(1.0); draw_set_color(c_white); draw_set_font(-1);
 }
@@ -1832,16 +2081,21 @@ function ui_draw_bairc_screen() {
     draw_rectangle(_dx - 24, _dy - 20, _x1 + 1516, _y2 - 60, true);
 
     var _stat_hover = "";   // stat chip under the mouse; its tooltip draws LAST (on top)
+    var _growth_hover_txt = "";   // READY-bar hover: full evolve requirement, tooltip drawn last
     if (_n > 0) {
         var _p = _roster[_cur];
+        var _p_known = pet_egg_identified(_p);   // false only for unidentified eggs
+        var _p_title = !_p_known
+            ? ("Mysterious " + (pet_egg_label(_p) != "" ? pet_egg_label(_p) : "Egg"))
+            : (_p.is_egg ? (_p.name + " Egg") : _p.name);
         draw_set_font(fnt_ui_title);
         draw_set_color(c_white);
-        draw_text(_dx, _dy, _p.is_egg ? (_p.name + " Egg") : _p.name);
+        draw_text(_dx, _dy, _p_title);
 
         // STATUS pills only (ACTIVE / INJURED / SCION), spaced to the right of the
         // name - identity facts (species/type/stage) are labelled rows in the PROFILE
         // box below, Pokemon-style, so nothing reads as a floating unexplained label.
-        var _plx = _dx + string_width(_p.is_egg ? (_p.name + " Egg") : _p.name) + 34;
+        var _plx = _dx + string_width(_p_title) + 34;
         if (global.active_pet == _cur)    _plx = ui_bairc_pill(_plx, _dy + 6, "ACTIVE", make_color_rgb(120, 210, 150)) + 12;
         if (!_p.is_egg && _p.injured > 0) _plx = ui_bairc_pill(_plx, _dy + 6, "INJURED", make_color_rgb(220, 120, 90)) + 12;
         if (_p.signature)                 _plx = ui_bairc_pill(_plx, _dy + 6, "SCION", make_color_rgb(200, 160, 235)) + 12;
@@ -1883,11 +2137,17 @@ function ui_draw_bairc_screen() {
 
         // Identity rows: grey label column, coloured value column.
         draw_set_font(fnt_ui_small);
-        var _idr = [
-            ["Species:",    pet_species_get(_p.species).name,                         make_color_rgb(220, 226, 238)],
-            ["Type:",       pet_archetype_name(_p.archetype),                         pet_arch_color(_p.archetype)],
-            ["Life Stage:", _p.is_egg ? "Egg (unhatched)" : pet_stage_name(_p.stage), make_color_rgb(228, 190, 90)],
-        ];
+        var _idr = !_p_known
+            ? [ // Unidentified egg: only the shell is visible. Pay Bairc to learn the rest.
+                ["Species:",    "??",                                                     make_color_rgb(140, 146, 165)],
+                ["Type:",       "??",                                                     make_color_rgb(140, 146, 165)],
+                ["Life Stage:", "Egg (unidentified - [I] Identify, " + string(pet_egg_identify_cost()) + "g)", make_color_rgb(200, 170, 240)],
+              ]
+            : [
+                ["Species:",    pet_species_get(_p.species).name,                         make_color_rgb(220, 226, 238)],
+                ["Type:",       pet_archetype_name(_p.archetype),                         pet_arch_color(_p.archetype)],
+                ["Life Stage:", _p.is_egg ? "Egg (unhatched)" : pet_stage_name(_p.stage), make_color_rgb(228, 190, 90)],
+              ];
         for (var _ri = 0; _ri < 3; _ri++) {
             draw_set_color(make_color_rgb(150, 160, 185));
             draw_text(_dx, _dy + 76 + _ri * 30, _idr[_ri][0]);
@@ -1904,14 +2164,25 @@ function ui_draw_bairc_screen() {
                 var _need  = pet_growth_needed(_p.stage);
                 var _ready = pet_growth_ready(_p);
                 // The Adult -> Awakened crossing has its own gate (full clear @ A5, Soul-bound).
-                var _ready_txt = (_p.stage == PET_STAGE_ADULT)
-                    ? "READY - full-clear at Awakening A5, Soul-bound, to Awaken"
-                    : ("READY - complete a run to reach " + pet_stage_name(_p.stage + 1));
+                // The full ACTIVE-companion requirement is a HOVER TOOLTIP on the bar now
+                // (M 2026-07-04: the spelled-out line ran across the pet sprite). The line
+                // itself stays short; the (hover) nudge marks that there's more to read.
+                var _p_is_active = (variable_global_exists("active_pet") && pet_active() == _p);
                 draw_set_color(_ready ? make_color_rgb(120, 210, 150) : make_color_rgb(170, 180, 200));
                 draw_text(_dx, _dy + 168, _ready
-                    ? _ready_txt
+                    ? ("READY " + ((_p.stage == PET_STAGE_ADULT) ? "to Awaken" : ("to become " + pet_stage_name(_p.stage + 1))) + "  (hover)")
                     : ("Growth to " + pet_stage_name(_p.stage + 1) + ":  " + string(_p.growth) + " / " + string(_need)));
                 var _bx = _dx, _gby = _dy + 196, _bw = 420, _bh = 16;
+                // Hover capture: the READY line + the bar row both count as the hot zone.
+                if (_ready) {
+                    var _ghmx = device_mouse_x_to_gui(0), _ghmy = device_mouse_y_to_gui(0);
+                    if (_ghmx >= _dx && _ghmx <= _dx + _bw && _ghmy >= _dy + 162 && _ghmy <= _gby + _bh + 4) {
+                        _growth_hover_txt = (_p.stage == PET_STAGE_ADULT)
+                            ? "To Awaken: full-clear a dungeon at Awakening A5 with this creature as your ACTIVE companion while it is Soul-bound (Bond 18)."
+                            : ("To reach " + pet_stage_name(_p.stage + 1) + ": complete a run with it as your ACTIVE companion."
+                               + (_p_is_active ? "" : "  It is NOT active now - equip it at the dungeon gate > Companion."));
+                    }
+                }
                 draw_set_color(make_color_rgb(40, 44, 56));
                 draw_rectangle(_bx, _gby, _bx + _bw, _gby + _bh, false);
                 draw_set_color(_ready ? make_color_rgb(120, 210, 150) : make_color_rgb(210, 190, 130));
@@ -2129,6 +2400,26 @@ function ui_draw_bairc_screen() {
     // the modals below dim the whole screen, so they rightly cover it when open.
     if (_stat_hover != "" && _n > 0) {
         ui_draw_pet_stat_tooltip(device_mouse_x_to_gui(0), device_mouse_y_to_gui(0), _roster[_cur], _stat_hover);
+    }
+
+    // READY-bar hover tooltip: the full evolve requirement, wrapped (drawn last, on top).
+    if (_growth_hover_txt != "") {
+        var _gt_mx = device_mouse_x_to_gui(0), _gt_my = device_mouse_y_to_gui(0);
+        draw_set_font(fnt_ui_small);
+        var _gt_w = 520;
+        var _gt_h = string_height_ext(_growth_hover_txt, 27, _gt_w - 36) + 36;
+        var _gt_x = min(_gt_mx + 24, GUI_W - _gt_w - 12);
+        var _gt_y = min(_gt_my + 18, GUI_H - _gt_h - 12);
+        draw_set_alpha(0.96);
+        draw_set_color(make_color_rgb(18, 20, 32));
+        draw_rectangle(_gt_x, _gt_y, _gt_x + _gt_w, _gt_y + _gt_h, false);
+        draw_set_alpha(1.0);
+        draw_set_color(make_color_rgb(120, 210, 150));
+        draw_rectangle(_gt_x, _gt_y, _gt_x + _gt_w, _gt_y + _gt_h, true);
+        draw_set_color(make_color_rgb(210, 218, 230));
+        draw_text_ext(_gt_x + 18, _gt_y + 18, _growth_hover_txt, 27, _gt_w - 36);
+        draw_set_font(-1);
+        draw_set_color(c_white);
     }
 
     // Tab detail popup over the station (the highlighted creature's full kit breakdown).
@@ -2713,11 +3004,20 @@ function ui_draw_status_fx(cx, top_y, draw_h, status_effects) {
 // Each badge is 48x24px with a 5px gap; duration shown in small text below.
 // (48 wide fits 4-char labels like "STUN"/"WEAK" at fnt_ui_small without clipping.)
 // ---------------------------------------------------------------------------
-function ui_draw_status_icon_row(x, y, icon_list) {
+function ui_draw_status_icon_row(x, y, icon_list, max_w = -1) {
     var _iw  = 48;
     var _ih  = 24;
     var _gap = 5;
     var _ix  = x;
+    // Width cap: when max_w is given and the badges won't fit, draw as many as fit
+    // (reserving one slot) then a "+N" overflow badge - the row never runs into
+    // neighbouring UI. Hover the enemy's bar to inspect everything it carries.
+    var _n_draw = array_length(icon_list);
+    var _n_over = 0;
+    if (max_w > 0) {
+        var _fit = max(1, floor((max_w + _gap) / (_iw + _gap)));
+        if (_n_draw > _fit) { _n_draw = _fit - 1; _n_over = array_length(icon_list) - _n_draw; }
+    }
     // Mouse (GUI space) for hover-to-explain. The hovered status is stashed in a
     // global and drawn as a tooltip later by obj_combat_controller (so it lands on
     // top of every bar/row). Reset each combat Draw frame.
@@ -2726,7 +3026,7 @@ function ui_draw_status_icon_row(x, y, icon_list) {
     draw_set_halign(fa_center);
     draw_set_valign(fa_middle);
     draw_set_font(fnt_ui_small);
-    for (var _i = 0; _i < array_length(icon_list); _i++) {
+    for (var _i = 0; _i < _n_draw; _i++) {
         var _ic = icon_list[_i];
         // Hover hit-test (badge rect). Only entries carrying their source `se` are
         // explainable (ad-hoc buff badges without one are skipped).
@@ -2751,6 +3051,16 @@ function ui_draw_status_icon_row(x, y, icon_list) {
             draw_text(_ix + _iw * 0.5, y + _ih + 11, string(_ic.duration));
         }
         _ix += _iw + _gap;
+    }
+    if (_n_over > 0) {
+        draw_set_alpha(0.88);
+        draw_set_color(make_color_rgb(70, 75, 95));
+        draw_roundrect(_ix, y, _ix + _iw, y + _ih, false);
+        draw_set_alpha(1.0);
+        draw_set_color(make_color_rgb(10, 10, 18));
+        draw_roundrect(_ix, y, _ix + _iw, y + _ih, true);
+        draw_set_color(c_white);
+        draw_text(_ix + _iw * 0.5, y + _ih * 0.5, "+" + string(_n_over));
     }
     draw_set_font(-1);
     draw_set_halign(fa_left);
@@ -2951,7 +3261,9 @@ function ui_draw_enemy_inspect_tooltip(mx, my, enemy) {
 // ---------------------------------------------------------------------------
 function ui_draw_enemy_status_icons(x, y, status_effects) {
     if (array_length(status_effects) == 0) exit;
-    ui_draw_status_icon_row(x, y, status_icons_from(status_effects));
+    // Capped to the HP-bar width so a heavily-debuffed enemy's row can't collide
+    // with the neighbouring column or the row below (overflow shows as "+N").
+    ui_draw_status_icon_row(x, y, status_icons_from(status_effects), 400);
 }
 
 // ---------------------------------------------------------------------------
@@ -3253,9 +3565,11 @@ function ui_draw_secondary_resource(x, y, current, maximum, resource_name, color
 // Names are truncated to 8 characters to fit the box.
 // ---------------------------------------------------------------------------
 function ui_draw_turn_queue(x, y, combat_state) {
-    var box_width  = 120;
-    var box_height = 48;
-    var box_gap    = 9;
+    // Compact boxes: the old 120x48 strip at y15 reached down to y63 and sat on
+    // top of the first enemy row's intent chips (top ~y56). 36 tall clears them.
+    var box_width  = 100;
+    var box_height = 36;
+    var box_gap    = 6;
 
     var count = array_length(combat_state.combatants);
 
@@ -3442,6 +3756,72 @@ function ui_draw_ability_buttons(x, y, ability_array, selected_index, caster) {
     draw_set_font(-1);
     draw_set_halign(fa_left);
     draw_set_valign(fa_top);
+}
+
+// ---------------------------------------------------------------------------
+// ui_draw_intent_chip(x, bottom_y, c) - the enemy's telegraphed NEXT action
+// (INTENT_SPEC.md), drawn as a compact plate above its HP bar. Left edge at x;
+// bottom_y = the chip's bottom edge. Tint by kind: red attack (with approx
+// damage band), purple spell, green heal, amber control/debuff. While a control
+// status would cancel the action the chip greys out with a strike-through.
+// A re-rolled intent pulses briefly so the change is visible.
+// ---------------------------------------------------------------------------
+function ui_draw_intent_chip(x, bottom_y, c) {
+    if (!variable_struct_exists(c, "intent") || c.intent == undefined) return;
+    var _it = c.intent;
+
+    var _txt = "";
+    var _col = make_color_rgb(225, 90, 75);              // attack red
+    switch (_it.kind) {
+        case "attack":
+            _txt = "ATK " + ((_it.lo == _it.hi) ? ("~" + string(_it.lo))
+                                                 : ("~" + string(_it.lo) + "-" + string(_it.hi)));
+            if (_it.x2) _txt += "  x2";
+            break;
+        case "spell":
+            _col = make_color_rgb(180, 120, 235);        // spell purple
+            _txt = "CAST ~" + string(_it.lo);
+            break;
+        case "heal":
+            _col = make_color_rgb(105, 205, 125);        // heal/buff green
+            _txt = string_upper(_it.label);
+            break;
+        default:                                          // control / debuff / dot
+            _col = make_color_rgb(228, 178, 62);         // control amber
+            _txt = string_upper(_it.label);
+            break;
+    }
+
+    var _blocked = (enemy_intent_blocked(c) != "");
+    if (_blocked) _col = make_color_rgb(118, 124, 136);  // greyed: action cancelled
+
+    // Re-roll pulse: brief scale-up so a changed telegraph catches the eye.
+    var _sc = 1.0;
+    if (_it.pulse > 0) { _sc = 1.0 + 0.22 * (_it.pulse / 30.0); _it.pulse--; }
+
+    draw_set_font(fnt_ui_small);
+    var _tw  = string_width(_txt)  * _sc;
+    var _th  = string_height(_txt) * _sc;
+    var _pad = 9;
+    var _x0 = x, _x1 = x + _tw + _pad * 2;
+    var _y1 = bottom_y, _y0 = bottom_y - _th - 8;
+    var _cy = (_y0 + _y1) * 0.5;
+
+    draw_set_alpha(0.75);
+    draw_set_color(make_color_rgb(12, 12, 18));
+    draw_rectangle(_x0, _y0, _x1, _y1, false);
+    draw_set_alpha(1.0);
+    draw_set_color(_col);
+    draw_rectangle(_x0, _y0, _x1, _y1, true);
+
+    draw_set_halign(fa_center);
+    draw_set_valign(fa_middle);
+    draw_text_transformed((_x0 + _x1) * 0.5, _cy, _txt, _sc, _sc, 0);
+    if (_blocked) draw_line_width(_x0 + 5, _cy, _x1 - 5, _cy, 3);   // strike-through
+
+    draw_set_halign(fa_left);
+    draw_set_valign(fa_top);
+    draw_set_font(-1);
 }
 
 // ---------------------------------------------------------------------------
@@ -4552,7 +4932,7 @@ function ui_draw_combat_overlay(combat_state, player, ability_array, selected_ab
                 var _pv_idx = clamp(_cc_pv.selected_target, 0, array_length(_pv_live) - 1);
                 for (var _pvi = 0; _pvi < array_length(_pv_live); _pvi++) {
                     var _bx = (_pvi mod 2 == 0) ? 990 : 1485;
-                    var _by = 96 + (_pvi div 2) * 78;
+                    var _by = 96 + (_pvi div 2) * 132;   // keep in sync with Draw_64 _bar_row_gap (was stale 78 - hover previewed the WRONG enemy)
                     if (_pv_mx >= _bx && _pv_mx < _bx + 400 && _pv_my >= _by && _pv_my < _by + 42) {
                         _pv_idx = _pvi;
                         break;
@@ -4656,8 +5036,9 @@ function ui_draw_combat_overlay(combat_state, player, ability_array, selected_ab
 
 function ui_draw_combat_hud(combat_state, player, ability_array, selected_ability_index, log_array, draw_log = true) {
 
-    // --- Turn queue (top-center) ---
-    ui_draw_turn_queue(600, 15, combat_state);
+    // --- Turn queue (top-center, shifted LEFT so a 5-wide queue ends before the
+    // enemy bar column at x990 instead of crossing the intent chips) ---
+    ui_draw_turn_queue(430, 10, combat_state);
 
     // --- Player HP bar (top-left) ---
     ui_draw_hp_bar(30, 30, 375, 36, player.HP, player.max_HP, "HP");
@@ -5283,7 +5664,9 @@ function ui_draw_character_menu() {
     var menu_tab = _gc.menu_tab;
     var items_used_this_turn = _gc.items_used_this_turn;
 
-    var tab_names = ["Stats", "Equipment", "Abilities", "Consumables", "Compendium"];
+    // Compendium moved to the Journal (J) 2026-07-04 - menu_tab 4 code is retained
+    // below but unreachable (tab wrap uses this array's length).
+    var tab_names = ["Stats", "Equipment", "Abilities", "Consumables"];
 
     draw_set_alpha(1.0);
     draw_set_color(c_white);
@@ -5376,7 +5759,7 @@ function ui_draw_character_menu() {
             class_id:  global.chosen_class,
             stats:     _stats_view,
             HP:        (variable_global_exists("run_current_hp") && global.run_current_hp > 0)
-                           ? global.run_current_hp
+                           ? min(global.run_current_hp, _sv_max_hp)   // clamp: gear may have changed since capture
                            : _sv_max_hp,
             max_HP:    _sv_max_hp,
             abilities: abilities_resolve_player_loadout(global.chosen_class),
@@ -5438,6 +5821,26 @@ function ui_draw_character_menu() {
             draw_text(_lvl_x, _content_y + 9, _lvl_txt);
             draw_set_color(c_white);
             draw_text(_pad, _content_y + 66, "HP: " + string(_player.HP) + " / " + string(_player.max_HP));
+
+            // ---- Epithet (expression #5): equipped title + [T] picker hint ----
+            // Sits right of the HP readout on the same line; earned-count in the hint
+            // so a fresh character knows titles exist before earning one.
+            var _ep_txt = player_epithet_text();
+            var _ep_n   = epithet_unlocked_count();
+            draw_set_font(fnt_ui_small);
+            if (_ep_txt != "") {
+                draw_set_color(make_color_rgb(205, 170, 235));
+                draw_text(_lvl_x, _content_y + 69, "\"" + _ep_txt + "\"");
+                draw_set_color(make_color_rgb(110, 100, 130));
+                draw_text(_lvl_x + string_width("\"" + _ep_txt + "\"") + 30, _content_y + 72, "[T] change title (" + string(_ep_n) + " earned)");
+            } else {
+                draw_set_color(make_color_rgb(110, 100, 130));
+                draw_text(_lvl_x, _content_y + 72, (_ep_n > 0)
+                    ? "[T] choose a title (" + string(_ep_n) + " earned)"
+                    : "Untitled - deeds in the dark earn titles");
+            }
+            draw_set_font(fnt_ui);
+            draw_set_color(c_white);
 
             // ---- Stat grid (two compact columns) ----
             // The shown value is the TOTAL (base + gear). Hovering a stat pops a small
@@ -5626,6 +6029,15 @@ function ui_draw_character_menu() {
                     draw_text(_rx + 24, _by + 24, ui_truncate(_bb.desc, 540));
                     _by += 57; _rows++; _any = true;
                 }
+            }
+            // Borrowed Memory (expression #6): the run-scoped other-class ability.
+            if (variable_global_exists("run_borrowed_ability") && global.run_borrowed_ability != ""
+                && _rows < _rowmx) {
+                draw_set_color(make_color_rgb(170, 150, 230));
+                draw_text(_rx, _by, "+ Borrowed Memory: " + global.run_borrowed_ability);
+                draw_set_color(make_color_rgb(125, 115, 160));
+                draw_text(_rx + 24, _by + 24, ui_truncate("A " + global.run_borrowed_class + " ability, yours until this run ends.", 540));
+                _by += 57; _rows++; _any = true;
             }
             // Active run curses (devil's bargain) - red, with penalty text.
             if (variable_global_exists("run_curses") && array_length(global.run_curses) > 0) {
@@ -6010,20 +6422,37 @@ function ui_draw_character_menu() {
             }
         }
 
-        // The creatures-found strip itself (display-only - the pets live at Bairc's,
-        // this is just the receipt).
+        // Found eggs/creatures rendered as ITEM-STYLE rows (display-only - they live
+        // at Bairc's). Mysterious eggs show a code-drawn egg icon; details stay "??"
+        // until Bairc identifies them (design 2026-07-04, replaces the label strip).
         if (_rfp_n > 0) {
             draw_set_color(make_color_rgb(60, 66, 90));
             draw_line(_fc_x1 + 16, _fc_ly2, _fc_x2 - 16, _fc_ly2);
-            draw_set_font(fnt_ui_small);
-            draw_set_color(make_color_rgb(190, 160, 240));
-            draw_text(_fc_x1 + 24, _fc_ly2 + 10, "CREATURES FOUND  -  waiting with Bairc");
-            draw_set_color(make_color_rgb(205, 210, 224));
-            for (var _ri = 0; _ri < _rfp_show; _ri++)
-                draw_text(_fc_x1 + 36, _fc_ly2 + 40 + _ri * 30, _rfp[_ri]);
-            if (_rfp_n > _rfp_show) {
+            for (var _ri = 0; _ri < _rfp_show; _ri++) {
+                var _egy = _fc_ly2 + 8 + _ri * 30;
+                // Row plate (matches the pack item rows above, slimmer)
+                draw_set_color(make_color_rgb(20, 18, 32));
+                draw_rectangle(_fc_x1 + 16, _egy, _fc_x2 - 16, _egy + 27, false);
+                // Code-drawn egg icon: shell + highlight (no sprite dependency)
+                var _egcx = _fc_x1 + 32, _egcy = _egy + 14;
+                draw_set_color(make_color_rgb(214, 202, 176));
+                draw_ellipse(_egcx - 7, _egcy - 10, _egcx + 7, _egcy + 10, false);
+                draw_set_color(make_color_rgb(245, 240, 226));
+                draw_ellipse(_egcx - 3, _egcy - 7, _egcx + 1, _egcy - 2, false);
+                draw_set_color(make_color_rgb(90, 80, 66));
+                draw_ellipse(_egcx - 7, _egcy - 10, _egcx + 7, _egcy + 10, true);
+                draw_set_font(fnt_ui_small);
+                draw_set_color(make_color_rgb(200, 175, 245));
+                draw_text(_fc_x1 + 52, _egy + 3, ui_truncate(_rfp[_ri], _fc_x2 - _fc_x1 - 200));
+                draw_set_halign(fa_right);
                 draw_set_color(make_color_rgb(120, 124, 138));
-                draw_text(_fc_x1 + 36, _fc_ly2 + 40 + _rfp_show * 30, "+" + string(_rfp_n - _rfp_show) + " more");
+                draw_text(_fc_x2 - 24, _egy + 3, "-> Bairc");
+                draw_set_halign(fa_left);
+            }
+            if (_rfp_n > _rfp_show) {
+                draw_set_font(fnt_ui_small);
+                draw_set_color(make_color_rgb(120, 124, 138));
+                draw_text(_fc_x1 + 36, _fc_ly2 + 10 + _rfp_show * 30, "+" + string(_rfp_n - _rfp_show) + " more");
             }
         }
 
@@ -9164,11 +9593,11 @@ function ui_draw_vael_screen() {
     ui_draw_npc_bond("vael", 90, 45);
     ui_draw_npc_column("vael");   // sprite column (skin preview box narrowed to clear it)
 
-    // --- Tabs: Skins | Portrait (geometry MUST match the Vael input block) ---
+    // --- Tabs: Skins | Portrait | Tints (geometry MUST match the Vael input block) ---
     var _vtab = variable_instance_exists(_gc, "vael_tab") ? _gc.vael_tab : 0;
-    var _vtab_names = ["Skins", "Portrait"];
+    var _vtab_names = ["Skins", "Portrait", "Tints"];
     draw_set_font(fnt_ui);
-    for (var _vt = 0; _vt < 2; _vt++) {
+    for (var _vt = 0; _vt < 3; _vt++) {
         var _vtx   = 840 + _vt * 240;
         var _vt_on = (_vt == _vtab);
         draw_set_color(_vt_on ? make_color_rgb(60, 46, 86) : make_color_rgb(26, 22, 34));
@@ -9181,10 +9610,14 @@ function ui_draw_vael_screen() {
         draw_set_halign(fa_left);
     }
 
-    // The Portrait tab is self-contained - draw it and return early, so the skins
-    // list + detail panel below only run for tab 0.
+    // The Portrait and Tints tabs are self-contained - draw them and return early,
+    // so the skins list + detail panel below only run for tab 0.
     if (_vtab == 1) {
         ui_draw_vael_portrait_tab(_gc);
+        return;
+    }
+    if (_vtab == 2) {
+        ui_draw_vael_tints_tab(_gc);
         return;
     }
 
@@ -9355,6 +9788,147 @@ function ui_draw_vael_screen() {
 
     // Ornate gothic rim around the whole overlay (see Maren screen for geometry notes).
     // The skin detail panel (x1260..1875) sits inside the opening; the rim band is outside.
+    ui_draw_gothic_frame(30, 30, 1890, 1050, 30);
+
+    draw_set_valign(fa_top);
+    draw_set_alpha(1.0);
+    draw_set_font(-1);
+}
+
+// ---------------------------------------------------------------------------
+// ui_draw_vael_tints_tab(gc)
+// Tints tab of the Vael overlay (expression #4) - purchased spell palettes that
+// recolor a school everywhere school_color() is consulted, plus the cast VFX
+// blend in combat. List geometry mirrors the Skins tab and MUST match the Tints
+// input block in obj_game_controller Step (x300..1160, y225, row 72, 10 visible).
+// ---------------------------------------------------------------------------
+function ui_draw_vael_tints_tab(_gc) {
+    draw_set_font(fnt_ui_small);
+    draw_set_color(make_color_rgb(160, 140, 175));
+    draw_text(300, 165, "Spell tints - recolor a school's log words, numbers and cast flare. Enter on an equipped tint reverts it.");
+
+    var _catalog = vael_tint_catalog();
+    var _count   = array_length(_catalog);
+    var _cursor  = clamp(_gc.vael_tint_cursor, 0, _count - 1);
+
+    var _vis    = 10;
+    var _scroll = vael_list_scroll(_cursor, _count, _vis);
+    var _list_y = 225;
+    var _row_h  = 72;
+
+    for (var _v = 0; _v < _vis; _v++) {
+        var _i = _scroll + _v;
+        if (_i >= _count) break;
+        var _tn = _catalog[_i];
+        var _ry = _list_y + _v * _row_h;
+        var _is_cur   = (_i == _cursor);
+        var _owned    = vael_tint_owned(_tn.id);
+        var _equipped = (school_tint_id(_tn.school) == _tn.id);
+
+        draw_set_color(_is_cur ? make_color_rgb(45, 38, 66) : make_color_rgb(20, 18, 30));
+        draw_rectangle(300, _ry, 1160, _ry + 66, false);
+        draw_set_color(_is_cur ? make_color_rgb(150, 110, 220) : make_color_rgb(45, 42, 62));
+        draw_rectangle(300, _ry, 1160, _ry + 66, true);
+        var _ty = _ry + 15;
+
+        // Color swatch: the tint itself, ringed in the school's BASE color so the
+        // before/after reads at a glance.
+        draw_set_color(_tn.color);
+        draw_circle(345, _ry + 33, 17, false);
+        draw_set_color(school_base_color(_tn.school));
+        draw_circle(345, _ry + 33, 21, true);
+
+        // Name + school tag
+        draw_set_font(fnt_ui);
+        draw_set_color(_equipped ? make_color_rgb(180, 240, 180) : make_color_rgb(210, 200, 220));
+        draw_text(387, _ty, _tn.name);
+        draw_set_font(fnt_ui_small);
+        draw_set_color(_tn.color);
+        draw_text(720, _ty + 3, school_label(_tn.school));
+
+        // Right-side status
+        draw_set_halign(fa_right);
+        if (_equipped) {
+            draw_set_color(make_color_rgb(150, 230, 150)); draw_text(1145, _ty, "EQUIPPED");
+        } else if (_owned) {
+            draw_set_color(make_color_rgb(160, 200, 240)); draw_text(1145, _ty, "OWNED");
+        } else {
+            var _tdisc = floor(_tn.gold * affinity_discount_mult("vael"));   // Friend perk: 15% off
+            draw_set_color((global.gold >= _tdisc) ? make_color_rgb(230, 210, 150) : make_color_rgb(170, 120, 120));
+            draw_text(1145, _ty, string(_tdisc) + "g");
+        }
+        draw_set_halign(fa_left);
+    }
+
+    if (_count > _vis) {
+        draw_set_halign(fa_center);
+        draw_set_font(fnt_ui_small);
+        draw_set_color(make_color_rgb(110, 95, 130));
+        draw_text(750, _list_y + _vis * _row_h + 3,
+            string(_scroll + 1) + "-" + string(min(_scroll + _vis, _count)) + " of " + string(_count) + "   (W/S)");
+        draw_set_halign(fa_left);
+    }
+
+    // ----- Detail / preview panel (matches the skins panel box) -----
+    var _sel = _catalog[_cursor];
+    draw_set_color(make_color_rgb(18, 14, 22));
+    draw_rectangle(1190, 225, 1510, 930, false);
+    draw_set_color(make_color_rgb(70, 55, 90));
+    draw_rectangle(1190, 225, 1510, 930, true);
+
+    // Big swatch + a sample combat-log line rendered in the tint so the buyer sees
+    // exactly what changes.
+    draw_set_color(_sel.color);
+    draw_circle(1350, 375, 60, false);
+    draw_set_color(school_base_color(_sel.school));
+    draw_circle(1350, 375, 66, true);
+
+    draw_set_halign(fa_center);
+    draw_set_font(fnt_ui_small);
+    draw_set_color(make_color_rgb(150, 140, 165));
+    draw_text(1350, 480, "Base " + school_label(_sel.school) + ":");
+    draw_set_color(school_base_color(_sel.school));
+    draw_text(1350, 516, school_label(_sel.school) + " strike (+12)!");
+    draw_set_color(make_color_rgb(150, 140, 165));
+    draw_text(1350, 573, "Tinted:");
+    draw_set_color(_sel.color);
+    draw_text(1350, 609, school_label(_sel.school) + " strike (+12)!");
+
+    // Name + description
+    draw_set_font(fnt_ui);
+    draw_set_color(make_color_rgb(225, 205, 235));
+    draw_text(1350, 705, _sel.name);
+    draw_set_font(fnt_ui_small);
+    draw_set_color(make_color_rgb(150, 140, 165));
+    draw_text_ext(1350, 753, _sel.desc, -1, 290);
+
+    // Status line
+    draw_set_font(fnt_ui);
+    if (school_tint_id(_sel.school) == _sel.id) {
+        draw_set_color(make_color_rgb(150, 230, 150)); draw_text(1350, 882, "Equipped - Enter to revert");
+    } else if (vael_tint_owned(_sel.id)) {
+        draw_set_color(make_color_rgb(160, 200, 240)); draw_text(1350, 882, "Owned - Enter to equip");
+    } else {
+        var _sdisc = floor(_sel.gold * affinity_discount_mult("vael"));
+        draw_set_color((global.gold >= _sdisc) ? make_color_rgb(230, 210, 150) : make_color_rgb(190, 130, 130));
+        draw_text(1350, 882, string(_sdisc) + "g - Enter to buy");
+    }
+    draw_set_halign(fa_left);
+
+    // Notification + controls + rim (same shell as the skins tab)
+    if (_gc.vael_notification != "") {
+        draw_set_halign(fa_center);
+        draw_set_font(fnt_ui);
+        draw_set_color(make_color_rgb(220, 190, 230));
+        draw_text(960, 999, _gc.vael_notification);
+        draw_set_halign(fa_left);
+    }
+    draw_set_halign(fa_center);
+    draw_set_font(fnt_ui_small);
+    draw_set_color(make_color_rgb(90, 75, 100));
+    draw_text_outline(960, 1026, "W/S: Navigate    Enter: Buy / Equip / Revert    Q/E: Switch tab    F: Gift    Esc: Close");
+    draw_set_halign(fa_left);
+
     ui_draw_gothic_frame(30, 30, 1890, 1050, 30);
 
     draw_set_valign(fa_top);

@@ -42,6 +42,11 @@ if (variable_global_exists("item_picker") && global.item_picker.resolved_purpose
         var _se2 = pet_grant_altar_egg("egg_shrine");
         shrine_notification += _se2.is_egg ? "  An egg rests in the rubble..." : ("  A " + _se2.name + " stirs in the rubble...");
     }
+    // Sacrifice celebration: sparkle flutter + result popup over the floor map.
+    shrine_celebrate_timer = 150;
+    shrine_celebrate_title = "OFFERING ACCEPTED";
+    shrine_celebrate_sub   = shrine_notification;
+    shrine_celebrate_seed  = irandom(10000);
 }
 
 
@@ -186,6 +191,11 @@ if (showing_shrine) {
                         var _se = pet_grant_altar_egg("egg_shrine");
                         shrine_notification += _se.is_egg ? "  An egg rests in the rubble..." : ("  A " + _se.name + " stirs in the rubble...");
                     }
+                    // Claim celebration (gold/dust tribute path).
+                    shrine_celebrate_timer = 150;
+                    shrine_celebrate_title = "BOON CLAIMED";
+                    shrine_celebrate_sub   = shrine_notification;
+                    shrine_celebrate_seed  = irandom(10000);
                 } else {
                     shrine_notification = _res;
                 }
@@ -255,6 +265,74 @@ if (showing_event_choice) {
 if (keyboard_check_pressed(vk_escape)) {
     pause_menu_open();
     exit;
+}
+
+// -----------------------------------------------------------------------------
+// 3a. ESCAPE ITEMS (Genie Lamp / Devil Wine) - G on the idle map opens a confirm.
+// Lamp: free extraction with all loot. Wine: same, but PERMANENTLY lose 3 random
+// stat points (subtracted from base stats, floor 1). Both route through end_run(0)
+// so extraction bookkeeping (loot -> stash, boss credits already banked) is shared.
+// -----------------------------------------------------------------------------
+if (escape_confirm_open) {
+    if (keyboard_check_pressed(vk_escape) || mouse_check_button_pressed(mb_right)
+        || keyboard_check_pressed(ord("G"))) {
+        escape_confirm_open = false;
+    } else if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)
+        || keyboard_check_pressed(vk_space)) {
+        var _esc_ok = (escape_confirm_idx >= 0
+            && escape_confirm_idx < array_length(global.consumable_inventory));
+        if (_esc_ok) {
+            var _esc_it   = global.consumable_inventory[escape_confirm_idx];
+            var _esc_wine = (_esc_it.effect_type == "escape_wine");
+            array_delete(global.consumable_inventory, escape_confirm_idx, 1);
+            if (_esc_wine) {
+                // Permanently drain 3 random stat points from the BASE character
+                // stats (never below 1 each). The toll is the whole point.
+                var _dw_keys = ["STR", "DEX", "CON", "INT", "WIS", "CHA"];
+                var _dw_lost = "";
+                repeat (3) {
+                    var _dw_pool = [];
+                    for (var _dk = 0; _dk < 6; _dk++) {
+                        if (variable_struct_get(global.chosen_stats, _dw_keys[_dk]) > 1)
+                            array_push(_dw_pool, _dw_keys[_dk]);
+                    }
+                    if (array_length(_dw_pool) == 0) break;
+                    var _dw_k = _dw_pool[irandom(array_length(_dw_pool) - 1)];
+                    variable_struct_set(global.chosen_stats, _dw_k,
+                        variable_struct_get(global.chosen_stats, _dw_k) - 1);
+                    _dw_lost += (_dw_lost == "" ? "" : ", ") + _dw_k;
+                }
+                if (variable_global_exists("pet_find_notice")) {
+                    var _dw_msg = "The Devil Wine takes its due: -1 " + _dw_lost + " (permanent).";
+                    global.pet_find_notice = (global.pet_find_notice != "")
+                        ? (global.pet_find_notice + "   " + _dw_msg) : _dw_msg;
+                }
+            }
+            escape_confirm_open = false;
+            end_run(0);   // extraction: keep gold, carried loot -> stash, pet banks growth
+            save_game();
+            global.current_floor       = 1;
+            global.floor_rooms_cleared = [];
+            global.floor_map_floor     = -1;
+            room_goto(rm_hub);
+        } else {
+            escape_confirm_open = false;
+        }
+    }
+    exit;
+}
+if (keyboard_check_pressed(ord("G")) && variable_global_exists("consumable_inventory")) {
+    // Prefer the free Lamp; fall back to Devil Wine.
+    escape_confirm_idx = -1;
+    for (var _gi = 0; _gi < array_length(global.consumable_inventory); _gi++) {
+        if (global.consumable_inventory[_gi].effect_type == "escape_lamp") { escape_confirm_idx = _gi; break; }
+    }
+    if (escape_confirm_idx < 0) {
+        for (var _gi2 = 0; _gi2 < array_length(global.consumable_inventory); _gi2++) {
+            if (global.consumable_inventory[_gi2].effect_type == "escape_wine") { escape_confirm_idx = _gi2; break; }
+        }
+    }
+    if (escape_confirm_idx >= 0) escape_confirm_open = true;
 }
 
 var _nav_reach = floor_compute_reachable(current_rooms);
@@ -353,11 +431,19 @@ if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter) || key
             + " room=" + string(selected_room) + " type=treasure gold=" + string(treasure_gold));
 
     } else if (_room.type == "rest") {
-        // Grant a pending heal picked up by obj_combat_controller on next combat enter
-        if (!variable_global_exists("pending_rest_heal")) global.pending_rest_heal = 0;
-        global.pending_rest_heal += (trait_active("Quick Recovery") ? round(25 * trait_potency_mult("Quick Recovery")) : 15);
+        // Grant a pending heal picked up by obj_combat_controller on next combat enter.
+        // Awakening-scaled (design 2026-07-04): flat = base + 4/tier, plus 5% of max HP
+        // resolved at APPLY time (combat start) where the geared max_HP is known.
+        if (!variable_global_exists("pending_rest_heal"))     global.pending_rest_heal     = 0;
+        if (!variable_global_exists("pending_rest_heal_pct")) global.pending_rest_heal_pct = 0;
+        var _rest_tier = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
+        var _rest_flat = (trait_active("Quick Recovery") ? round(25 * trait_potency_mult("Quick Recovery")) : 15)
+                       + 4 * _rest_tier;
+        global.pending_rest_heal     += _rest_flat;
+        global.pending_rest_heal_pct += 5;
         event_title  = "REST SITE";
-        event_body   = "You find a sheltered alcove and catch\nyour breath in the darkness.\n\n+15 HP restored at the start of\nyour next combat.";
+        event_body   = "You find a sheltered alcove and catch\nyour breath in the darkness.\n\n+" + string(_rest_flat)
+                     + " HP (+5% of your max HP)\nrestored at the start of\nyour next combat.";
         event_color  = make_color_rgb(80, 200, 120);
         showing_event = true;
         event_timer   = 0;

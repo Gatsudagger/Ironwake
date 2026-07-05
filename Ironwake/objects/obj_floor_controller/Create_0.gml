@@ -34,6 +34,12 @@ if (!variable_global_exists("run_seed")) {
 returning_from_combat = variable_global_exists("just_cleared_room") && global.just_cleared_room;
 if (returning_from_combat) global.just_cleared_room = false;
 
+// Onboarding: the first time the player is carrying meaningful FOUND gold on the
+// floor map, teach the at-risk rule (one-time; pairs with the HUD's amber bracket).
+if (variable_global_exists("current_run_gold") && global.current_run_gold >= 40) {
+    tutorial_try_show("gold_risk");
+}
+
 // Fresh run start: normalize the consumable pack to its carry cap, auto-
 // depositing any excess (e.g. bought past the cap in the hub) into the stash.
 // Mid-run re-entries skip this so pickups during the dive aren't disturbed.
@@ -447,6 +453,16 @@ shrine_notification = "";
 // approach, the kind is revealed - and a CURSE altar then traps them (no Esc, must
 // embrace a curse). See the shrine block in Step_0 / Draw_64.
 shrine_revealed    = false;
+// Claim celebration: sparkle flutter + "what just happened" popup after a boon is
+// claimed / an item is sacrificed. Purely visual; drawn over the floor map.
+shrine_celebrate_timer = 0;    // frames remaining (150 = ~2.5s)
+shrine_celebrate_title = "";
+shrine_celebrate_sub   = "";
+shrine_celebrate_seed  = 0;    // varies the sparkle pattern per celebration
+
+// Escape-item confirm (Genie Lamp / Devil Wine, used from the idle floor map via G)
+escape_confirm_open = false;
+escape_confirm_idx  = -1;      // index into global.consumable_inventory
 
 // Event room - interactive stat-gated choice overlay (see SYSTEMS_EVENTS.md)
 showing_event_choice = false;

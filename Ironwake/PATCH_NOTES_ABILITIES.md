@@ -45,9 +45,29 @@ Plain-language summary of everything from the ability audit, approved by M. Full
 - **Any class w/ Treasure Hunter:** open a treasure room → always at least one item, sometimes two (second shown as "+ Name [Rarity]" line).
 - **Maren:** take Proof of Craft, socket 2 runes (unsocket/resocket counts) → 2/2 + tavern-board notice.
 
+## ROUND 4 (2026-07-04) — Enemy Intent system (`INTENT_SPEC.md`)
+
+Every enemy now telegraphs its NEXT action on a chip above its health bar, and the telegraph is **binding** — the enemy does what the chip says:
+
+- **Red "ATK ~12-16"** — basic attack with the approximate damage you'd actually take (post-armor). Telegraph-spike attacks show the big number. "x2" = double-strike foes.
+- **Purple "CAST ~12"** — a damaging spell.
+- **Green "MEND"** — it will heal itself.
+- **Amber effect word** ("STUN", "SILENCE", "WOUND"...) — a control/debuff move.
+- **Control payoff:** Stun anything, Root a melee foe, or Silence a caster and its chip **greys out with a strike-through** — that move is cancelled. The foe keeps the same intent for its next turn, so the grey-out reads as "you bought a turn."
+- If an enemy's action is spent on a whiff (Blink/Vanish/Shadow Step/Phantom Step), it re-rolls and the new chip **pulses** so the change is visible.
+- One-time "Enemy Intent" coach-mark joins the combat tip cascade.
+
+### Test list (F5)
+- Enter any combat → every living enemy has a chip above its HP bar from turn one.
+- Watch an "ATK ~N-M" enemy attack → the damage you take lands inside (or near) the band.
+- Watch a "MEND"/amber chip enemy → it does exactly what it telegraphed.
+- Stun/root/silence a foe whose chip applies → chip greys + strike-through, enemy skips, chip un-greys next turn.
+- Dodge via Blink/Vanish → that enemy's chip pulses with a fresh intent.
+- Click enemy HP bars still selects targets (bar rows moved 30px apart for the chips).
+
 ## QUEUED — approved, not yet built
 
-1. **Enemy intent system** (`INTENT_SPEC.md`) — every enemy telegraphs its next move with an icon + damage band; control abilities visibly cancel telegraphed actions. The biggest fun-per-effort feature on the list.
+1. ~~Enemy intent system~~ **BUILT (round 4, above).**
 2. **Flavor pass** — one lore line per ability (past-lives voice), cast barks for ultimates, a keyword glossary (Sear / Exposed / Mark / Bleed...) in the Compendium.
 3. **Expression picks** (`EXPRESSION_IDEAS.md`, in recommended order): school-tinted spell VFX sold by Vael → earned titles/epithets → borrowed-memory run abilities from shrines → pet combat stances → per-ability mastery notches → Knucklebones dice game at the tavern.
 

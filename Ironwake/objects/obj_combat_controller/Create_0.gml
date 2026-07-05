@@ -163,10 +163,19 @@ if (variable_global_exists("run_current_hp") && global.run_current_hp > 0) {
     global.run_current_hp = player.max_HP;
 }
 
-// Apply rest-site heal (granted by floor rest rooms)
+// Apply rest-site heal (granted by floor rest rooms). The % component is resolved
+// HERE against the geared max_HP (the floor room can't know it yet).
+var _rest_total = 0;
 if (variable_global_exists("pending_rest_heal") && global.pending_rest_heal > 0) {
-    player.HP = min(player.HP + global.pending_rest_heal, player.max_HP);
+    _rest_total += global.pending_rest_heal;
     global.pending_rest_heal = 0;
+}
+if (variable_global_exists("pending_rest_heal_pct") && global.pending_rest_heal_pct > 0) {
+    _rest_total += round(player.max_HP * global.pending_rest_heal_pct / 100);
+    global.pending_rest_heal_pct = 0;
+}
+if (_rest_total > 0) {
+    player.HP = min(player.HP + _rest_total, player.max_HP);
 }
 
 // Apply trap damage (dealt by floor trap rooms)
@@ -197,6 +206,12 @@ switch (_class_id) {
 // Build abilities from the player's confirmed loadout, or fall back to class defaults.
 // Shared resolver (also used by the out-of-combat character menu) so the two never drift.
 player.abilities = abilities_resolve_player_loadout(_class_id);
+
+// Borrowed Memory (expression #6): a run-scoped extra ability from another class's
+// pool, granted by rare event outcomes. Appended after the loadout so it gets the
+// next button/hotkey; duplicates are impossible (it never comes from the own pool).
+var _borrowed = borrowed_memory_resolve();
+if (_borrowed != undefined) array_push(player.abilities, ability_mastery_resolve(_borrowed));
 
 // Per-combat ability cooldown counters (turns), one slot per loadout ability.
 // Decremented at the start of each player turn; set when a cooldown ability
@@ -486,10 +501,22 @@ if (_enemy_type == "boss") {
 } else if (_enemy_type == "elite") {
     if (irandom(99) < (25 + _enc_floor * 12)) _enc_count = 3;          // elite + 1, sometimes 2
 } else {
-    var _enc_roll = irandom(99) + (_enc_floor - 1) * 18;              // deeper floors lean larger
-    if (_enc_roll < 45)      _enc_count = 2;
-    else if (_enc_roll < 80) _enc_count = 3;
-    else                     _enc_count = 4;
+    // Awakening-shifted pack weights (design 2026-07-04): 4-packs were too common
+    // everywhere. Low tiers fight mostly 2-3; big packs (and rare 5-packs) become a
+    // high-Awakening signature. Deeper floors still nudge the roll toward larger.
+    var _enc_asc = clamp(variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0, 0, 5);
+    var _enc_w   = [ [55, 35, 10, 0],     // A0: 2s and 3s, 4-pack rare
+                     [50, 40, 10, 0],     // A1
+                     [35, 40, 25, 0],     // A2: 3 common, 4 picks up
+                     [30, 45, 25, 0],     // A3
+                     [18, 38, 38, 6],     // A4: 4-pack ~40%, 5-pack appears
+                     [12, 38, 42, 8] ];   // A5
+    var _enc_row  = _enc_w[_enc_asc];
+    var _enc_roll = irandom(99) + (_enc_floor - 1) * 8;
+    if      (_enc_roll < _enc_row[0])                             _enc_count = 2;
+    else if (_enc_roll < _enc_row[0] + _enc_row[1])               _enc_count = 3;
+    else if (_enc_roll < _enc_row[0] + _enc_row[1] + _enc_row[2]) _enc_count = 4;
+    else                                                          _enc_count = (_enc_row[3] > 0) ? 5 : 4;
 }
 
 var enemies = [enemy1, enemy2];
@@ -573,6 +600,13 @@ var _combatants = [player];
 for (var _ei = 0; _ei < array_length(enemies); _ei++) array_push(_combatants, enemies[_ei]);
 combat_state = combat_init(_combatants);
 
+// Enemy INTENT opening roll (INTENT_SPEC.md): every foe telegraphs its first
+// action from turn one - chips draw above their heads in Draw_64.
+for (var _ii = 0; _ii < array_length(combat_state.combatants); _ii++) {
+    var _ic = combat_state.combatants[_ii];
+    if (!_ic.is_player) enemy_roll_intent(_ic, player, 1, false);
+}
+
 
 // -----------------------------------------------------------------------------
 // 4. CONTROLLER VARIABLES (continued)
@@ -592,6 +626,9 @@ loot_screen_scroll = 0;
 
 // Boss floor-completion XP bonus granted at most once per combat
 boss_bonus_granted = false;
+
+// Genie Lamp drop roll (very rare escape item, elite/boss kills only) - once per combat
+genie_lamp_rolled = false;
 
 
 // -----------------------------------------------------------------------------
@@ -691,6 +728,7 @@ vfx_timer_max = 0;
 vfx_spr       = -1;
 vfx_x         = 0;
 vfx_y         = 0;
+vfx_school    = "";   // school of the cast that spawned the VFX ("" = untinted); spell tints blend it
 
 // Hit flash counters on each combatant struct (counts down from 15)
 player.hit_flash = 0;

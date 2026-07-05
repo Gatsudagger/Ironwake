@@ -676,15 +676,21 @@ draw_set_halign(fa_center);
 draw_set_valign(fa_bottom);
 draw_set_font(fnt_ui_small);
 draw_set_color(c_gray);
-var _foot_txt = "W/S: Navigate   Enter / Space: Interact   J: Journal   H: History   T: Stash   G: Item Codex   P: Upgrade   O: Settings";
+var _foot_txt = "W/S: Navigate   Enter / Space: Interact   J: Journal (Quests / Codex / Bestiary)   H: History   T: Stash   P: Upgrade   O: Settings";
 draw_text_outline(GUI_CX, 1073, _foot_txt);
-// Amber pulse dot beside "J: Journal" while anything in the Journal is unread.
+// Unread-Journal cue: overdraw the "J: Journal" segment in flashing gold (M 2026-07-04:
+// the old floating pulse dot read as disjoint clutter). Alpha pulse over the same
+// pixels; same font/valign as the footer so it registers exactly.
 if (journal_any_badge()) {
-    var _jb_x = GUI_CX - string_width(_foot_txt) / 2 + string_width("W/S: Navigate   Enter / Space: Interact   J: Journal") + 12;
-    draw_set_alpha(0.55 + 0.35 * sin(current_time / 300));
-    draw_set_color(make_color_rgb(235, 180, 80));
-    draw_circle(_jb_x, 1060, 6, false);
+    var _jseg_pre = "W/S: Navigate   Enter / Space: Interact   ";
+    var _jseg     = "J: Journal";
+    var _jb_x = GUI_CX - string_width(_foot_txt) / 2 + string_width(_jseg_pre);
+    draw_set_halign(fa_left);
+    draw_set_alpha(0.55 + 0.45 * sin(current_time / 300));
+    draw_set_color(make_color_rgb(245, 195, 80));
+    draw_text_outline(_jb_x, 1073, _jseg);
     draw_set_alpha(1.0);
+    draw_set_halign(fa_center);
 }
 
 // Reset draw state - font back to default so the not-yet-rescaled overlays below
@@ -937,6 +943,14 @@ if (show_history) {
     draw_set_font(fnt_ui_title);
     draw_set_color(c_white);
     draw_text(GUI_CX, 45, "RUN HISTORY");
+
+    // Equipped epithet (expression #5) under the title - the ledger knows your name.
+    var _rh_ep = player_epithet_text();
+    if (_rh_ep != "") {
+        draw_set_font(fnt_ui_small);
+        draw_set_color(make_color_rgb(200, 170, 230));
+        draw_text(GUI_CX, 105, "\"" + _rh_ep + "\"");
+    }
 
     // Column headers
     draw_set_halign(fa_left);
@@ -1497,7 +1511,12 @@ if (instance_exists(obj_game_controller)) {
 
             // Left panel: ability rows (windowed - the pool exceeds the screen)
             var _ov_max_vis = 10;
-            var _ov_scroll  = loadout_list_scroll(_gc_ov.loadout_cursor, _ov_pool_sz, _ov_max_vis);
+            // Stateful EDGE scrolling (kept in sync with Step_0): scroll only when the
+            // cursor crosses the window's top/bottom edge.
+            var _ov_scroll = variable_instance_exists(_gc_ov, "loadout_scroll") ? _gc_ov.loadout_scroll : 0;
+            _ov_scroll = clamp(_ov_scroll, _gc_ov.loadout_cursor - (_ov_max_vis - 1), _gc_ov.loadout_cursor);
+            _ov_scroll = clamp(_ov_scroll, 0, max(0, _ov_pool_sz - _ov_max_vis));
+            _gc_ov.loadout_scroll = _ov_scroll;
             for (var _ai = _ov_scroll; _ai < min(_ov_pool_sz, _ov_scroll + _ov_max_vis); _ai++) {
                 var _ab     = _ov_pool[_ai];
                 var _ry     = _list_y0 + (_ai - _ov_scroll) * (_row_h + _row_gap);
@@ -1511,7 +1530,7 @@ if (instance_exists(obj_game_controller)) {
 
                 draw_set_alpha(_is_cur ? 1.0 : (_ab_unlocked ? 0.6 : 0.4));
                 draw_set_color(_in_sel   ? make_color_rgb(16, 45, 22)
-                            : (_is_cur  ? make_color_rgb(22, 32, 65)
+                            : (_is_cur  ? make_color_rgb(30, 44, 88)
                                         : make_color_rgb(14, 16, 28)));
                 draw_rectangle(_lx, _ry, _lx + 990, _ry + _row_h, false);
                 draw_set_alpha(1.0);
@@ -1519,6 +1538,21 @@ if (instance_exists(obj_game_controller)) {
                             : (_is_cur ? make_color_rgb(60, 90, 185)
                                        : make_color_rgb(35, 40, 65)));
                 draw_rectangle(_lx, _ry, _lx + 990, _ry + _row_h, true);
+                // Cursor row: thick pulsing gold frame + chevron so the selection can't
+                // be missed (the old single 1px blue border read as "just another row").
+                if (_is_cur) {
+                    var _cur_pulse = 0.65 + 0.35 * (0.5 + 0.5 * sin(current_time / 200));
+                    draw_set_alpha(_cur_pulse);
+                    draw_set_color(make_color_rgb(255, 205, 90));
+                    draw_rectangle(_lx - 1, _ry - 1, _lx + 991, _ry + _row_h + 1, true);
+                    draw_rectangle(_lx - 2, _ry - 2, _lx + 992, _ry + _row_h + 2, true);
+                    draw_rectangle(_lx - 3, _ry - 3, _lx + 993, _ry + _row_h + 3, true);
+                    draw_set_font(fnt_ui);
+                    draw_set_valign(fa_middle);
+                    draw_text(_lx - 26, _ry + _row_h * 0.5, ">");
+                    draw_set_valign(fa_top);
+                    draw_set_alpha(1.0);
+                }
 
                 // Role-category accent bar on the left edge (offense red / defense blue /
                 // support green / control purple) - SYSTEMS_ABILITY_SYNERGY.md.
@@ -1544,6 +1578,19 @@ if (instance_exists(obj_game_controller)) {
                 draw_set_halign(fa_right);
                 draw_set_color(c_yellow);
                 draw_text(_lx + 972, _ry + 6, "[" + string(_ab.energy_cost) + " AP]");
+                // Mastery (expression #2): unspent notch = pulsing gold call-to-action;
+                // spent picks = quiet pip count on the row's lower right.
+                var _mast_pend  = ability_mastery_pending(_ab.name);
+                var _mast_picks = array_length(ability_mastery_picks(_ab.name));
+                if (_mast_pend > 0) {
+                    draw_set_alpha(0.6 + 0.4 * (0.5 + 0.5 * sin(current_time / 250)));
+                    draw_set_color(make_color_rgb(255, 205, 90));
+                    draw_text(_lx + 972, _ry + 39, "NOTCH!  [M]");
+                    draw_set_alpha(1.0);
+                } else if (_mast_picks > 0) {
+                    draw_set_color(make_color_rgb(200, 170, 100));
+                    draw_text(_lx + 972, _ry + 39, "Mastery " + string(_mast_picks) + "/2");
+                }
                 draw_set_halign(fa_left);
 
                 if (!_ab_unlocked) {
@@ -1678,17 +1725,30 @@ if (instance_exists(obj_game_controller)) {
 
             // --- Confirm / counter bar: y=998-1043 ---
             // Cursor==pool_sz is the active confirm position; bar highlights when reached.
-            var _conf_sel = (_gc_ov.loadout_cursor == _ov_pool_sz && _ov_sel_cnt == _loadout_max);
+            var _conf_cur = (_gc_ov.loadout_cursor == _ov_pool_sz);
+            var _conf_sel = (_conf_cur && _ov_sel_cnt == _loadout_max);
             draw_set_color(_gc_ov.loadout_full_timer > 0 ? make_color_rgb(40, 10, 10)
                          : (_conf_sel                      ? make_color_rgb(16, 70, 25)
+                         : (_conf_cur                      ? make_color_rgb(45, 38, 14)
                          : (_ov_sel_cnt == _loadout_max    ? make_color_rgb(14, 48, 18)
-                                                           : make_color_rgb(14, 16, 28))));
+                                                           : make_color_rgb(14, 16, 28)))));
             draw_rectangle(_desc_x, 998, _desc_x + _desc_w, 1043, false);
             draw_set_color(_gc_ov.loadout_full_timer > 0 ? make_color_rgb(155, 40, 40)
                          : (_conf_sel                      ? make_color_rgb(50, 185, 75)
+                         : (_conf_cur                      ? make_color_rgb(220, 175, 70)
                          : (_ov_sel_cnt == _loadout_max    ? make_color_rgb(35, 95, 45)
-                                                           : make_color_rgb(35, 40, 65))));
+                                                           : make_color_rgb(35, 40, 65)))));
             draw_rectangle(_desc_x, 998, _desc_x + _desc_w, 1043, true);
+            // Focused confirm bar gets the same thick pulsing frame as the ability
+            // cursor - focus is unmistakable whether it's on a row or on this bar.
+            if (_conf_cur) {
+                var _cf_pulse = 0.65 + 0.35 * (0.5 + 0.5 * sin(current_time / 200));
+                draw_set_alpha(_cf_pulse);
+                draw_set_color(_conf_sel ? make_color_rgb(120, 235, 140) : make_color_rgb(255, 205, 90));
+                draw_rectangle(_desc_x - 1, 997, _desc_x + _desc_w + 1, 1044, true);
+                draw_rectangle(_desc_x - 2, 996, _desc_x + _desc_w + 2, 1045, true);
+                draw_set_alpha(1.0);
+            }
 
             draw_set_font(fnt_ui_small);
             draw_set_halign(fa_center);
@@ -1712,12 +1772,53 @@ if (instance_exists(obj_game_controller)) {
 
             // --- Controls hint: y=1050 ---
             draw_set_color(make_color_rgb(65, 75, 100));
-            draw_text_outline(GUI_CX, 1050, "W/S: Navigate   Q/E: Switch Tab   Enter: Toggle   Tab: Details   Space: Confirm   Esc: Cancel");
+            draw_text_outline(GUI_CX, 1050, "W/S: Navigate   Q/E: Switch Tab   Enter: Toggle   Tab: Details   M: Mastery   Space: Confirm   Esc: Cancel");
             draw_set_halign(fa_left);
 
             // --- Tab ability-detail popup, drawn over the loadout (P7) ---
             if (_gc_ov.ability_detail_open && _gc_ov.loadout_cursor < _ov_pool_sz) {
                 ui_draw_ability_detail(_ov_pool[_gc_ov.loadout_cursor], "Tab", _gc_ov.ability_detail_scroll);
+            }
+
+            // --- Mastery pick modal (expression #2), over everything on this tab ---
+            if (_gc_ov.mastery_pick_open) {
+                var _mp_ab2 = undefined;
+                for (var _mpj = 0; _mpj < _ov_pool_sz; _mpj++) {
+                    if (_ov_pool[_mpj].name == _gc_ov.mastery_pick_ability) { _mp_ab2 = _ov_pool[_mpj]; break; }
+                }
+                if (_mp_ab2 != undefined) {
+                    draw_set_alpha(0.75); draw_set_color(c_black);
+                    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+                    draw_set_alpha(1.0);
+                    var _mx0 = 560, _my0 = 330, _mx1 = 1360, _my1 = 750;
+                    draw_set_color(make_color_rgb(22, 22, 36));
+                    draw_rectangle(_mx0, _my0, _mx1, _my1, false);
+                    draw_set_color(make_color_rgb(255, 205, 90));
+                    draw_rectangle(_mx0, _my0, _mx1, _my1, true);
+                    draw_set_halign(fa_center);
+                    draw_set_font(fnt_ui_title);
+                    draw_set_color(make_color_rgb(255, 215, 120));
+                    draw_text(GUI_CX, _my0 + 30, "MASTERY: " + _mp_ab2.name);
+                    draw_set_font(fnt_ui_small);
+                    draw_set_color(make_color_rgb(170, 175, 195));
+                    draw_text(GUI_CX, _my0 + 96, string(ability_casts(_mp_ab2.name)) + " lifetime casts - its edge is yours to choose. Permanent.");
+                    var _mp_o = ability_mastery_options(_mp_ab2);
+                    for (var _mo = 0; _mo < 2; _mo++) {
+                        var _oy  = _my0 + 150 + _mo * 108;
+                        var _on  = (_gc_ov.mastery_pick_cursor == _mo);
+                        draw_set_color(_on ? make_color_rgb(52, 44, 26) : make_color_rgb(28, 28, 44));
+                        draw_rectangle(_mx0 + 60, _oy, _mx1 - 60, _oy + 84, false);
+                        draw_set_color(_on ? make_color_rgb(255, 205, 90) : make_color_rgb(60, 62, 90));
+                        draw_rectangle(_mx0 + 60, _oy, _mx1 - 60, _oy + 84, true);
+                        draw_set_font(fnt_ui);
+                        draw_set_color(_on ? c_white : make_color_rgb(175, 180, 200));
+                        draw_text(GUI_CX, _oy + 24, _mp_o[_mo].label);
+                    }
+                    draw_set_font(fnt_ui_small);
+                    draw_set_color(make_color_rgb(120, 125, 150));
+                    draw_text(GUI_CX, _my1 - 48, "W/S: Choose     Enter: Commit     Esc: Not yet");
+                    draw_set_halign(fa_left);
+                }
             }
 
         // =====================================================================
@@ -2060,6 +2161,25 @@ if (instance_exists(obj_game_controller)) {
                 draw_set_font(fnt_ui); draw_set_color(make_color_rgb(210, 230, 214));
                 draw_text_ext(_gx0 + 14, _gy0 + 46, _ceff, 30, _ew);
 
+                // STANCE box (expression #3): Warriors/Guardians only - the behavioral
+                // dial for its combat turn, cycled with [B] right here on this tab.
+                var _hst = pet_stance(_hp);
+                if (_hst != "") {
+                    var _sty0 = _gy1 + 20;
+                    var _sty1 = min(_cy1 - 54, _sty0 + 112);
+                    draw_set_color(make_color_rgb(26, 24, 36));
+                    draw_rectangle(_gx0, _sty0, _gx1, _sty1, false);
+                    draw_set_color(make_color_rgb(110, 96, 150));
+                    draw_rectangle(_gx0, _sty0, _gx1, _sty1, true);
+                    draw_set_font(fnt_ui_small); draw_set_color(make_color_rgb(170, 150, 220));
+                    draw_text(_gx0 + 14, _sty0 + 12, "STANCE   [B] change");
+                    draw_set_font(fnt_ui); draw_set_color(make_color_rgb(222, 214, 240));
+                    draw_text(_gx0 + 14, _sty0 + 46, pet_stance_label(_hst));
+                    draw_set_font(fnt_ui_small); draw_set_color(make_color_rgb(150, 150, 175));
+                    draw_text_ext(_gx0 + 14 + string_width(pet_stance_label(_hst)) + 24, _sty0 + 52,
+                        pet_stance_desc(_hst), 26, (_gx1 - _gx0) - 52 - string_width(pet_stance_label(_hst)));
+                }
+
                 // Footer hint inside the card.
                 draw_set_font(fnt_ui_small); draw_set_color(make_color_rgb(150, 160, 190));
                 draw_text(_cx0 + _ipad, _cy1 - 42, "[Tab] full kit & details");
@@ -2075,7 +2195,7 @@ if (instance_exists(obj_game_controller)) {
 
             draw_set_halign(fa_center);
             draw_set_color(make_color_rgb(65, 75, 100));
-            draw_text_outline(GUI_CX, 1050, "W/S: Navigate   Q/E: Switch Tab   Tab: Details   Enter: Set Active   Esc: Cancel");
+            draw_text_outline(GUI_CX, 1050, "W/S: Navigate   Q/E: Switch Tab   Tab: Details   Enter: Set Active   B: Stance   Esc: Cancel");
             draw_set_halign(fa_left);
 
             // Tab pet-kit detail popup over the Companion tab.
@@ -2104,6 +2224,7 @@ ui_draw_bairc_capstone();   // raised-Adult capstone pick modal, over the Bairc 
 hatch_cutscene_draw();   // full-screen egg-hatch sequence, over the Bairc screen
 ui_draw_journal();       // J-key Journal overlay (Phase 4a) - over hub content, under pause
 ui_draw_tavern_board();  // Tavern Requests board (Phase 4b) - the quest action surface
+ui_draw_knucklebones();  // Knucklebones dice game (expression #1) - over the board
 ui_draw_character_menu();
 
 // Comparison panel - drawn above all overlays

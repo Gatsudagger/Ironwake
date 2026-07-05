@@ -122,6 +122,15 @@ function save_game() {
         unlocked_skins: variable_global_exists("unlocked_skins") ? global.unlocked_skins : [],
         player_gender:  variable_global_exists("player_gender")  ? global.player_gender  : "m",
 
+        // Vael spell tints (expression #4) + epithet (expression #5)
+        unlocked_tints: variable_global_exists("unlocked_tints") ? global.unlocked_tints : [],
+        school_tints:   variable_global_exists("school_tints")   ? global.school_tints   : {},
+        player_epithet: variable_global_exists("player_epithet") ? global.player_epithet : "",
+
+        // Ability mastery (expression #2): lifetime casts + spent notch picks
+        ability_casts:   variable_global_exists("ability_casts")   ? global.ability_casts   : {},
+        ability_mastery: variable_global_exists("ability_mastery") ? global.ability_mastery : {},
+
         // Boons (run-scoped)
         run_boons:      variable_global_exists("run_boons")      ? global.run_boons      : [],
         run_curses:     variable_global_exists("run_curses")     ? global.run_curses     : [],
@@ -299,9 +308,20 @@ function new_game_reset() {
     global.unlocked_skins = [];
     global.player_gender  = "m";
 
+    // Spell tints + epithet
+    global.unlocked_tints = [];
+    global.school_tints   = {};
+    global.player_epithet = "";
+
+    // Ability mastery
+    global.ability_casts   = {};
+    global.ability_mastery = {};
+
     // Run modifiers
     global.run_boons  = [];
     global.run_curses = [];
+    global.run_borrowed_ability = "";   // Borrowed Memory (run-scoped)
+    global.run_borrowed_class   = "";
     global.gold_potion_bosses = 0;   // exotic find-buff potions never carry across a load
     global.loot_potion_bosses = 0;
 
@@ -559,6 +579,19 @@ function load_game() {
         global.unlocked_skins = _s.unlocked_skins;
     }
     if (variable_struct_exists(_s, "player_gender"))  global.player_gender  = _s.player_gender;
+    if (variable_struct_exists(_s, "unlocked_tints") && is_array(_s.unlocked_tints)) {
+        global.unlocked_tints = _s.unlocked_tints;
+    }
+    if (variable_struct_exists(_s, "school_tints") && is_struct(_s.school_tints)) {
+        global.school_tints = _s.school_tints;
+    }
+    if (variable_struct_exists(_s, "player_epithet")) global.player_epithet = _s.player_epithet;
+    if (variable_struct_exists(_s, "ability_casts") && is_struct(_s.ability_casts)) {
+        global.ability_casts = _s.ability_casts;
+    }
+    if (variable_struct_exists(_s, "ability_mastery") && is_struct(_s.ability_mastery)) {
+        global.ability_mastery = _s.ability_mastery;
+    }
     // Boons and curses are run-scoped (cleared in end_run). A save can only hold
     // non-empty values if it was written mid-run (boon_grant/curse_grant save on
     // pickup); since loading always lands in the hub between runs, restoring them
@@ -566,6 +599,8 @@ function load_game() {
     // none - this is the fresh-run reset the abandoned-run case needs.
     global.run_boons  = [];
     global.run_curses = [];
+    global.run_borrowed_ability = "";   // Borrowed Memory: run-scoped, same reasoning
+    global.run_borrowed_class   = "";
     global.gold_potion_bosses = 0;   // exotic find-buff potions never carry across a load
     global.loot_potion_bosses = 0;
     if (variable_struct_exists(_s, "tutorial_seen") && is_struct(_s.tutorial_seen)) {

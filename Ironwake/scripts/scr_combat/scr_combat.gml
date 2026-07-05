@@ -291,6 +291,10 @@ function combat_estimate_hit(ability, caster, target) {
 
     var _dtype = variable_struct_exists(ability, "damage_type") ? ability.damage_type : 0;
     var _dmg   = ability.base_damage;
+    // Real-target context (combat preview) vs bare-struct context (loadout tooltip):
+    // every player/target-specific component below is gated on the structs actually
+    // carrying the fields, so the tooltip caller ({derived:..}, {}) skips them all.
+    var _live_tgt = is_struct(target) && variable_struct_exists(target, "HP");
 
     if (variable_struct_exists(caster, "derived")) {
         var _d = caster.derived;
@@ -300,17 +304,92 @@ function combat_estimate_hit(ability, caster, target) {
         else if (_dtype == 3) _dmg += _d.elem_dmg_bonus + _d.cha_dmg_bonus;
     }
 
+    // --- Deterministic pre-crit riders (mirror obj_combat_controller cast order) ---
+    if (ability.name == "Arcane Echo" && variable_struct_exists(caster, "souls"))
+        _dmg += caster.souls * 4;
+    if (ability.name == "Killing Spree" && _live_tgt && variable_struct_exists(target, "status_effects"))
+        _dmg += array_length(target.status_effects) * 6;
+    if (ability.name == "Flurry" && _live_tgt && variable_struct_exists(target, "status_effects"))
+        _dmg += array_length(target.status_effects) * 3;
+    if (ability.name == "Soul Nova" && variable_struct_exists(caster, "souls"))
+        _dmg += min(caster.souls, 4) * 7;
+    // Vanish ambush: primed and this is a damaging cast -> +12 on the next strike.
+    if (variable_struct_exists(caster, "vanish_bonus") && caster.vanish_bonus)
+        _dmg += 12;
+    // Assassinate execute: doubles vs a target under 30% HP (fully deterministic).
+    if (ability.name == "Assassinate" && _live_tgt && target.max_HP > 0
+        && (target.HP / target.max_HP) < 0.30)
+        _dmg *= 2;
+    // Weaken on the caster shrinks the outgoing hit.
+    if (_live_tgt && variable_struct_exists(caster, "status_effects")) {
+        var _est_wk = combat_status_max(caster, "weaken");
+        if (_est_wk > 0) _dmg = max(1, round(_dmg * (1 - _est_wk)));
+    }
+
     var _armor  = (is_struct(target) && variable_struct_exists(target, "armor"))     ? target.armor     : 0;
     var _resist = (is_struct(target) && variable_struct_exists(target, "el_resist")) ? target.el_resist : 0;
-    var _final  = combat_resolve_damage(_dmg, _dtype, _armor, _resist);
+    var _final;
+    if (ability.name == "Flurry") {
+        // Three independently-mitigated strikes (armor bites each hit).
+        _final = 3 * combat_resolve_damage(max(1, round(_dmg / 3)), _dtype, _armor, _resist);
+    } else {
+        _final = combat_resolve_damage(_dmg, _dtype, _armor, _resist);
+    }
 
-    // Truly-flat weapon component (added post-mitigation in the real cast).
+    // --- Post-mitigation flat riders the target is carrying ---
+    if (_live_tgt && variable_struct_exists(target, "status_effects")) {
+        _final += combat_status_total(target, "vulnerable") + combat_status_total(target, "hexed");
+        var _est_fm = combat_status_total(target, "firemark");
+        if (_est_fm > 0) _final += combat_resolve_damage(_est_fm, 1, _armor, _resist);
+    }
+
+    // --- Deterministic multipliers (player-caster only; guarded for tooltip callers) ---
+    if (variable_struct_exists(caster, "class_id") && variable_struct_exists(caster, "HP")) {
+        if (caster.class_id == 0 && trait_active("Arcane Surge")
+            && variable_struct_exists(ability, "energy_cost") && ability.energy_cost >= 3)
+            _final = floor(_final * (1 + 0.25 * trait_potency_mult("Arcane Surge")));
+        if (caster.class_id == 1 && trait_active("Berserker Rage")
+            && caster.HP <= floor(caster.max_HP * 0.40))
+            _final = floor(_final * (1 + 0.20 * trait_potency_mult("Berserker Rage")));
+    }
+    var _est_aspect = rune_aspect_damage_pct(ability);
+    if (_live_tgt && _est_aspect > 0) _final = round(_final * (1 + _est_aspect));
+    if (_live_tgt) {
+        var _est_thf = (target.max_HP > 0) ? (target.HP / target.max_HP) : 1;
+        var _est_bm  = boon_damage_mult(_est_thf);
+        if (_est_bm != 1.0) _final = max(1, round(_final * _est_bm));
+        var _est_corr = pet_corruption_player_dmg_mult();
+        if (_est_corr != 1.0) _final = max(1, round(_final * _est_corr));
+    }
+    if (variable_struct_exists(caster, "spell_dmg_bonus") && caster.spell_dmg_bonus > 0
+        && ability_class_is_spell(ability_attack_class(ability)))
+        _final = max(1, round(_final * (1 + caster.spell_dmg_bonus)));
+
+    // Truly-flat weapon / elemental-affix / school components (each mitigated the
+    // same way the real cast resolves them, instead of the old raw add).
     if (variable_struct_exists(caster, "derived")) {
         var _ac = ability_attack_class(ability);
-        if (ability_class_is_melee(_ac) && variable_struct_exists(caster.derived, "melee_dmg_bonus"))
-            _final += caster.derived.melee_dmg_bonus;
-        else if (ability_class_is_ranged(_ac) && variable_struct_exists(caster.derived, "ranged_dmg_bonus"))
-            _final += caster.derived.ranged_dmg_bonus;
+        var _est_wf = 0;
+        if (ability_class_is_melee(_ac) && variable_struct_exists(caster.derived, "melee_dmg_bonus")) {
+            _est_wf = caster.derived.melee_dmg_bonus;
+            if (_live_tgt && variable_struct_exists(caster.derived, "melee_elem") && caster.derived.melee_elem != undefined
+                && caster.derived.melee_elem.dmg > 0)
+                _final += combat_resolve_damage(caster.derived.melee_elem.dmg, 1, _armor, _resist);
+        } else if (ability_class_is_ranged(_ac) && variable_struct_exists(caster.derived, "ranged_dmg_bonus")) {
+            _est_wf = caster.derived.ranged_dmg_bonus;
+            if (_live_tgt && variable_struct_exists(caster.derived, "ranged_elem") && caster.derived.ranged_elem != undefined
+                && caster.derived.ranged_elem.dmg > 0)
+                _final += combat_resolve_damage(caster.derived.ranged_elem.dmg, 1, _armor, _resist);
+        }
+        if (_est_wf > 0) _final += _live_tgt ? combat_resolve_damage(_est_wf, 0, _armor, _resist) : _est_wf;
+        // School-damage gear affix for this ability's school.
+        if (_live_tgt && variable_struct_exists(caster.derived, "school_dmg")) {
+            var _est_sch = ability_school(ability);
+            if (_est_sch != "" && variable_struct_exists(caster.derived.school_dmg, _est_sch)) {
+                var _est_sb = variable_struct_get(caster.derived.school_dmg, _est_sch);
+                if (_est_sb > 0) _final += combat_resolve_damage(_est_sb, _dtype, _armor, _resist);
+            }
+        }
     }
 
     return max(1, round(_final));
@@ -1103,8 +1182,13 @@ function combat_pet_act(combat_state, player, combat_log, damage_popups) {
     var _fulfilled = pet_is_fulfilled(_p);       // fully corrupted -> grand archetype ability
     var _kit = pet_kit_mods(_p);                 // named-kit modifiers (traits/abilities, Pets §5)
 
+    var _stance = pet_stance(_p);   // combat stance (expression #3), set at the Gate
+
     if (_p.archetype == PET_ARCH_COMBATANT) {
         var _base = max(1, round((_adult ? 16 : 8) * _imult * _cmult * pet_stat_mult(_p, "pow") * (1 + _kit.dmg + pet_active_egg_bonus("dmg"))));
+        // Guarded stance trades striking power for the intercept chance (rolled in the
+        // enemy-attack path in obj_combat_controller Step).
+        if (_stance == "guarded") _base = max(1, round(_base * 0.5));
         var _exec = (_kit.execute > 0) ? (1 + _kit.execute) : 1;   // Executioner capstone vs low-HP foes
 
         if (_fulfilled) {
@@ -1128,7 +1212,9 @@ function combat_pet_act(combat_state, player, combat_log, damage_popups) {
             return _any;
         }
 
-        // Strike the lowest-HP living enemy (helps secure kills).
+        // Target: lowest-HP living enemy (helps secure kills) - or, in ASSIST stance,
+        // the enemy the player currently has targeted (falls back to lowest-HP when
+        // the selection can't be resolved, e.g. the target just died).
         var _best = undefined, _bslot = -1, _live = 0;
         for (var _bi = 0; _bi < array_length(combat_state.combatants); _bi++) {
             var _bc = combat_state.combatants[_bi];
@@ -1136,12 +1222,48 @@ function combat_pet_act(combat_state, player, combat_log, damage_popups) {
             if (_best == undefined || _bc.HP < _best.HP) { _best = _bc; _bslot = _live; }
             _live++;
         }
+        if (_stance == "assist" && instance_exists(obj_combat_controller)) {
+            var _acc  = instance_find(obj_combat_controller, 0);
+            var _want = variable_instance_exists(_acc, "selected_target") ? _acc.selected_target : -1;
+            var _ai = 0;
+            for (var _asi = 0; _asi < array_length(combat_state.combatants); _asi++) {
+                var _ac = combat_state.combatants[_asi];
+                if (_ac.is_player || _ac.is_defeated) continue;
+                if (_ai == _want) { _best = _ac; _bslot = _ai; break; }
+                _ai++;
+            }
+        }
         if (_best == undefined) return false;
         var _emul = (_best.max_HP > 0 && _best.HP < _best.max_HP * 0.30) ? _exec : 1;
         var _dmg = combat_resolve_damage(round(_base * _emul), 0, _best.armor, _best.el_resist);
         if (_dmg < 1) _dmg = 1;
         combat_apply_damage(_best, _dmg);
-        array_push(combat_log, _p.name + " strikes " + _best.name + " for " + string(_dmg) + "!");
+        if (_stance == "assist" && _best.HP > 0) {
+            // Pack Tactics rider: leave the shared target Exposed (+2 dmg/hit, 2 turns).
+            // Refresh an existing mark instead of stacking a second copy.
+            var _pt_found = false;
+            for (var _pti = 0; _pti < array_length(_best.status_effects); _pti++) {
+                if (_best.status_effects[_pti].name == "Pack Tactics") {
+                    _best.status_effects[_pti].duration = 2;
+                    _pt_found = true;
+                    break;
+                }
+            }
+            if (!_pt_found) {
+                array_push(_best.status_effects, {
+                    name:         "Pack Tactics",
+                    effect_type:  "debuff",
+                    kind:         "vulnerable",
+                    effect_value: 2,
+                    duration:     2,
+                    element:      "",
+                    source:       "pet"
+                });
+            }
+            array_push(combat_log, _p.name + " harries " + _best.name + " with you for " + string(_dmg) + " - Pack Tactics (+2 dmg taken/hit)!");
+        } else {
+            array_push(combat_log, _p.name + " strikes " + _best.name + " for " + string(_dmg) + "!");
+        }
         array_push(damage_popups, { value: _dmg, x: 1620 + _bslot * (-120), y: 233 + _bslot * 105 - 105, timer: 50, col: make_color_rgb(150, 215, 150) });
         if (_best.HP <= 0) combat_on_enemy_defeated(_best, player, combat_log);
         global.pet_lunge_t0 = current_time;   // procedural lunge (combat draw)
@@ -1155,9 +1277,30 @@ function combat_pet_act(combat_state, player, combat_log, damage_popups) {
         var _smult    = pet_stat_mult(_p, "spr");   // SPR stat modifies heal & shield
         var _heal_amt = max(1, round((_adult ? 10 : 5) * _imult * _cmult * _smult * (1 + _kit.heal + _egg_mend)));
         var _sh_amt   = max(1, round((_adult ? 12 : 7) * _imult * _cmult * _smult * (1 + _kit.shield + _egg_mend)));
+
+        // CLEANSER stance: strip the newest affliction first - that IS the turn when
+        // it finds one; otherwise fall through to the balanced heal/ward heuristic.
+        if (_stance == "cleanser") {
+            var _cl = combat_cleanse(player, "one");
+            if (_cl > 0) {
+                array_push(combat_log, _p.name + " draws the affliction out of you.");
+                return true;
+            }
+        }
+
         // Guardian Angel capstone (_kit.both) also makes it heal AND shield, like fulfilled.
         var _do_heal   = _fulfilled || _kit.both || (player.HP < player.max_HP * 0.70);
         var _do_shield = _fulfilled || _kit.both || (player.HP >= player.max_HP * 0.70);
+        // Mender/Warder stances override the 70% heuristic (never the do-both cases).
+        if (!_fulfilled && !_kit.both) {
+            if (_stance == "mender") {
+                _do_heal   = (player.HP < player.max_HP);
+                _do_shield = !_do_heal;   // ward when there is nothing to mend
+            } else if (_stance == "warder") {
+                _do_heal   = false;
+                _do_shield = true;
+            }
+        }
         var _did = false;
         if (_do_heal) {
             var _before = player.HP;
@@ -1165,14 +1308,14 @@ function combat_pet_act(combat_state, player, combat_log, damage_popups) {
             var _gain = player.HP - _before;
             if (_gain > 0) {
                 array_push(combat_log, _p.name + " tends your wounds (+" + string(_gain) + " HP).");
-                array_push(damage_popups, { value: _gain, x: 360, y: 360, timer: 50, col: make_color_rgb(120, 220, 140) });
+                array_push(damage_popups, { value: _gain, x: 475, y: 545, timer: 50, col: make_color_rgb(120, 220, 140) });
                 _did = true;
             }
         }
         if (_do_shield) {
             player.shield_hp += _sh_amt;
             array_push(combat_log, _p.name + " raises a ward (+" + string(_sh_amt) + " shield).");
-            array_push(damage_popups, { value: _sh_amt, x: 360, y: 402, timer: 50, col: make_color_rgb(120, 185, 235) });
+            array_push(damage_popups, { value: _sh_amt, x: 475, y: 600, timer: 50, col: make_color_rgb(120, 185, 235) });
             _did = true;
         }
         return _did;
@@ -1237,6 +1380,6 @@ function combat_pet_vigil_check(player, combat_log, damage_popups) {
     var _sh = max(1, round(_kit.vigil * _imult * pet_corruption_mult(_p) * pet_bond_mult(_p) * pet_stat_mult(_p, "spr")));
     player.shield_hp += _sh;
     array_push(combat_log, _p.name + " keeps its Vigil - a ward flares around you (+" + string(_sh) + " shield).");
-    array_push(damage_popups, { value: _sh, x: 360, y: 402, timer: 50, col: make_color_rgb(140, 190, 255) });
+    array_push(damage_popups, { value: _sh, x: 475, y: 600, timer: 50, col: make_color_rgb(140, 190, 255) });
     return true;
 }

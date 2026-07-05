@@ -328,7 +328,7 @@ switch (_sel.type) {
     case "treasure_rare":
         _det_desc = "An ancient sealed chamber.\nNo enemies present.\nGuaranteed uncommon+ equipment."; break;
     case "rest":
-        _det_desc = "A sheltered alcove.\nYou may rest and recover here.\n+15 HP at start of next combat."; break;
+        _det_desc = "A sheltered alcove.\nYou may rest and recover here.\n+" + string(15 + 4 * (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0)) + " HP +5% max HP at next combat."; break;
     case "event":
         _det_desc = "A choice awaits - risk and\nreward in equal measure.\nYour stats may tip the odds."; break;
     case "boss":
@@ -356,7 +356,7 @@ if (_sel.cleared) {
 if (!_sel.cleared) {
     if (_sel.type == "rest") {
         draw_set_color(_COL_REST);
-        draw_text(_ddx, _ddy + 300, "+15 HP (applied next combat)");
+        draw_text(_ddx, _ddy + 300, "+" + string(15 + 4 * (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0)) + " HP +5% max (next combat)");
     } else if (_sel.type == "event") {
         draw_set_color(_COL_EVENT);
         draw_text(_ddx, _ddy + 300, "An uncertain encounter.");
@@ -564,6 +564,12 @@ if (showing_shrine) {
     draw_set_color(make_color_rgb(210, 200, 150));
     draw_text(GUI_CX, 198, "Gold: " + string(_sg) + "      Rune Dust: " + string(_sdu));
 
+    // Hover-inspect capture for the suggested "[3] Sacrifice ..." item; drawn last
+    // (after the gothic frame) so the tooltip sits on top of everything.
+    var _shrine_tip_item = undefined;
+    var _shrine_tip_x    = 0;
+    var _shrine_tip_y    = 0;
+
     var _sn = array_length(shrine_offers);
     if (_sn == 0) {
         draw_set_font(fnt_ui);
@@ -615,9 +621,24 @@ if (showing_shrine) {
                 draw_set_color(_dust_ok ? make_color_rgb(150, 220, 150) : make_color_rgb(150, 110, 110));
                 draw_text(540, _ry + 102, "[2] " + string(_dc) + " dust");
                 draw_set_color((_ipick != undefined) ? make_color_rgb(150, 220, 150) : make_color_rgb(150, 110, 110));
-                draw_text(780, _ry + 102, (_ipick != undefined)
+                var _ip_txt = (_ipick != undefined)
                     ? ("[3] Sacrifice " + _ipick.item.name + " (" + item_rarity_name(_ipick.item.rarity) + ")")
-                    : "[3] No item valuable enough");
+                    : "[3] No item valuable enough";
+                draw_text(780, _ry + 102, _ip_txt);
+                // Hover-inspect the suggested sacrifice: the full item tooltip so the
+                // player knows EXACTLY what they'd be giving up (picker still lets them
+                // choose a different item after pressing 3).
+                if (_ipick != undefined) {
+                    var _shx = device_mouse_x_to_gui(0);
+                    var _shy = device_mouse_y_to_gui(0);
+                    draw_set_font(fnt_ui_small);
+                    if (_shx >= 780 && _shx <= 780 + string_width(_ip_txt)
+                        && _shy >= _ry + 96 && _shy <= _ry + 132) {
+                        _shrine_tip_item = _ipick.item;
+                        _shrine_tip_x    = _shx;
+                        _shrine_tip_y    = _shy;
+                    }
+                }
             }
         }
         draw_set_halign(fa_center);
@@ -638,6 +659,11 @@ if (showing_shrine) {
 
     // Ornate gothic rim (title y84, offer rows x330..1590, hint y990 - all inside the opening).
     ui_draw_gothic_frame(30, 30, 1890, 1050, 30);
+
+    // Sacrifice hover tooltip - topmost, follows the cursor like the equipment screens.
+    if (_shrine_tip_item != undefined) {
+        ui_draw_item_tooltip(min(_shrine_tip_x + 24, 1300), min(_shrine_tip_y + 18, 500), _shrine_tip_item, undefined);
+    }
 
     draw_set_halign(fa_left);
     draw_set_valign(fa_top);
@@ -788,9 +814,115 @@ draw_set_valign(fa_top);
 draw_set_color(make_color_rgb(225, 95, 95));
 draw_text(30, 30, "HP: " + string(_hud_hp) + " / " + string(_hud_max_hp));
 draw_set_color(c_yellow);
-draw_text(30, 66, "Gold: " + string(global.gold) + "g");
+// Split the readout: banked total vs gold FOUND THIS RUN (the at-risk share you
+// lose most of on death). "Gold: 812g (+130g this run - at risk)".
+var _hud_run_gold = variable_global_exists("current_run_gold") ? global.current_run_gold : 0;
+if (_hud_run_gold > 0) {
+    draw_text(30, 66, "Gold: " + string(global.gold) + "g");
+    draw_set_color(make_color_rgb(225, 180, 90));
+    draw_text(30 + string_width("Gold: " + string(global.gold) + "g") + 14, 66,
+              "(+" + string(_hud_run_gold) + "g this run - at risk)");
+} else {
+    draw_text(30, 66, "Gold: " + string(global.gold) + "g");
+}
 draw_set_color(c_white);
 draw_set_font(-1);
+
+// -----------------------------------------------------------------------------
+// ESCAPE ITEM (Genie Lamp / Devil Wine): carry hint + confirm popup.
+// -----------------------------------------------------------------------------
+var _esc_have = undefined;
+if (variable_global_exists("consumable_inventory")) {
+    for (var _ehi = 0; _ehi < array_length(global.consumable_inventory); _ehi++) {
+        var _eh_t = global.consumable_inventory[_ehi].effect_type;
+        if (_eh_t == "escape_lamp") { _esc_have = global.consumable_inventory[_ehi]; break; }
+        if (_eh_t == "escape_wine" && _esc_have == undefined) _esc_have = global.consumable_inventory[_ehi];
+    }
+}
+if (_esc_have != undefined && !showing_event && !showing_shrine && !showing_treasure
+    && !showing_event_choice && !escape_confirm_open) {
+    draw_set_font(fnt_ui_small);
+    draw_set_color(make_color_rgb(170, 150, 220));
+    draw_text(30, 102, "[G] Use " + _esc_have.name + "  (escape with your loot)");
+    draw_set_color(c_white);
+    draw_set_font(-1);
+}
+if (escape_confirm_open && escape_confirm_idx >= 0
+    && escape_confirm_idx < array_length(global.consumable_inventory)) {
+    var _ec_it   = global.consumable_inventory[escape_confirm_idx];
+    var _ec_wine = (_ec_it.effect_type == "escape_wine");
+    draw_set_alpha(0.65); draw_set_color(c_black);
+    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+    draw_set_alpha(0.96); draw_set_color(_ec_wine ? make_color_rgb(34, 14, 16) : make_color_rgb(20, 22, 36));
+    draw_rectangle(510, 360, 1410, 690, false);
+    draw_set_alpha(1.0); draw_set_color(_ec_wine ? make_color_rgb(200, 80, 80) : make_color_rgb(150, 140, 220));
+    draw_rectangle(510, 360, 1410, 690, true);
+    draw_set_halign(fa_center); draw_set_valign(fa_top);
+    draw_set_font(fnt_ui);
+    draw_set_color(c_white);
+    draw_text(960, 393, _ec_wine ? "Drink the Devil Wine?" : "Rub the Genie Lamp?");
+    draw_set_font(fnt_ui_small);
+    draw_set_color(make_color_rgb(190, 195, 215));
+    draw_text_ext(960, 456, _ec_wine
+        ? "You extract to camp with ALL your loot and found gold...\nbut PERMANENTLY lose 3 random stat points. The wine always collects."
+        : "A lazy plume of smoke swallows you.\nYou extract to camp with ALL your loot and found gold. No cost - this once.", 30, 780);
+    draw_set_color(make_color_rgb(150, 160, 185));
+    draw_text_outline(960, 621, "Enter: Confirm      Esc / G: Cancel");
+    draw_set_halign(fa_left); draw_set_valign(fa_top);
+    draw_set_font(-1);
+}
+
+// -----------------------------------------------------------------------------
+// SHRINE CLAIM CELEBRATION - sparkle flutter + "what just happened" popup.
+// Procedural (no particle system): each sparkle's path derives from its index +
+// the per-claim seed, so no state array is needed. Fades over the last 40 frames.
+// -----------------------------------------------------------------------------
+if (shrine_celebrate_timer > 0) {
+    shrine_celebrate_timer--;
+    var _cel_t     = 150 - shrine_celebrate_timer;              // frames since claim
+    var _cel_fade  = min(1, shrine_celebrate_timer / 40);       // tail fade-out
+    var _cel_cx    = GUI_CX;
+    var _cel_cy    = 430;
+
+    // Popup panel
+    var _cel_w = max(720, string_width(shrine_celebrate_sub) + 120);
+    draw_set_alpha(0.92 * _cel_fade);
+    draw_set_color(make_color_rgb(26, 22, 12));
+    draw_rectangle(_cel_cx - _cel_w / 2, _cel_cy - 78, _cel_cx + _cel_w / 2, _cel_cy + 66, false);
+    draw_set_alpha(_cel_fade);
+    draw_set_color(make_color_rgb(230, 190, 90));
+    draw_rectangle(_cel_cx - _cel_w / 2, _cel_cy - 78, _cel_cx + _cel_w / 2, _cel_cy + 66, true);
+    draw_set_halign(fa_center); draw_set_valign(fa_top);
+    draw_set_font(fnt_ui);
+    draw_set_color(make_color_rgb(255, 225, 140));
+    draw_text(_cel_cx, _cel_cy - 57, shrine_celebrate_title);
+    draw_set_font(fnt_ui_small);
+    draw_set_color(make_color_rgb(215, 220, 235));
+    draw_text_ext(_cel_cx, _cel_cy - 9, shrine_celebrate_sub, 27, _cel_w - 60);
+    draw_set_halign(fa_left); draw_set_valign(fa_top);
+
+    // Sparkle flutter: 26 golden motes rising and drifting around the panel.
+    gpu_set_blendmode(bm_add);
+    for (var _sp = 0; _sp < 26; _sp++) {
+        var _ph   = (shrine_celebrate_seed * 0.37 + _sp * 12.9898) mod (2 * pi);
+        var _rate = 0.7 + 0.5 * ((_sp * 7 + shrine_celebrate_seed) mod 10) / 10;
+        var _sx   = _cel_cx + sin(_ph + _cel_t * 0.017 * _rate) * (120 + (_sp mod 8) * 46);
+        var _sy   = _cel_cy + 40 - _cel_t * (0.9 + _rate) + cos(_ph * 3 + _cel_t * 0.05) * 26;
+        var _tw   = 0.35 + 0.65 * abs(sin(_ph * 5 + _cel_t * 0.21 * _rate));   // twinkle
+        draw_set_alpha(_tw * _cel_fade * 0.9);
+        draw_set_color((_sp mod 3 == 0) ? c_white : make_color_rgb(255, 214, 110));
+        var _sr = 2 + (_sp mod 3);
+        draw_circle(_sx, _sy, _sr, false);
+        // 4-point star cross on the larger motes
+        if (_sp mod 3 == 2) {
+            draw_line(_sx - _sr * 2.4, _sy, _sx + _sr * 2.4, _sy);
+            draw_line(_sx, _sy - _sr * 2.4, _sx, _sy + _sr * 2.4);
+        }
+    }
+    gpu_set_blendmode(bm_normal);
+    draw_set_alpha(1.0);
+    draw_set_color(c_white);
+}
 
 ui_draw_character_menu();
 

@@ -156,14 +156,19 @@ function abilities_resolve_player_loadout(class_id) {
             if (_lname == "") continue;
             for (var _ai = 0; _ai < array_length(_pool); _ai++) {
                 if (_pool[_ai].name == _lname) {
-                    array_push(_out, _pool[_ai]);
+                    // Mastery (expression #2): hand out a mod-adjusted copy when picks exist.
+                    array_push(_out, ability_mastery_resolve(_pool[_ai]));
                     break;
                 }
             }
         }
         if (array_length(_out) >= 4 && array_length(_out) <= _max) return _out;
     }
-    return abilities_get_loadout(class_id);
+    // Fallback class defaults get mastery too (same name-keyed picks).
+    var _def = abilities_get_loadout(class_id);
+    var _dout = [];
+    for (var _di = 0; _di < array_length(_def); _di++) array_push(_dout, ability_mastery_resolve(_def[_di]));
+    return _dout;
 }
 
 // =============================================================================
@@ -993,9 +998,10 @@ function school_label(school) {
     return string_upper(string_char_at(school, 1)) + string_copy(school, 2, string_length(school) - 1);
 }
 
-// school_color(school) - canonical tint for each element/school. Used by the
-// combat-log color coding and any school-tagged UI text.
-function school_color(school) {
+// school_base_color(school) - the UNTINTED canonical color for each element/school.
+// The Vael Tints tab shows this as the "before" swatch; everything else should go
+// through school_color() below so purchased tints apply.
+function school_base_color(school) {
     switch (school) {
         case "fire":   return make_color_rgb(235, 110,  45);
         case "frost":  return make_color_rgb( 95, 180, 235);
@@ -1007,6 +1013,19 @@ function school_color(school) {
         case "poison": return make_color_rgb( 95, 200,  95);
     }
     return c_white;
+}
+
+// school_color(school) - canonical tint for each element/school. Used by the
+// combat-log color coding and any school-tagged UI text.
+// A purchased spell tint (Vael Tints tab, expression #4) fully replaces the
+// school's color everywhere this function is consulted.
+function school_color(school) {
+    var _tid = school_tint_id(school);
+    if (_tid != "default") {
+        var _t = vael_tint_get(_tid);
+        if (_t != undefined) return _t.color;
+    }
+    return school_base_color(school);
 }
 
 // ability_school_list() - the eight schools in canonical order (Compendium +
@@ -1618,6 +1637,173 @@ function abilities_class_pool(class_id) {
         }
     }
     return _out;
+}
+
+// =============================================================================
+// ABILITY MASTERY NOTCHES (expression #2, EXPRESSION_IDEAS.md). Lifetime casts
+// are tracked per ability NAME (per save slot); at 25 and 75 casts the ability
+// earns a NOTCH, and each notch is spent on ONE of two micro-mods (permanent).
+// Picks may repeat (stack) or differ - "your Snipe isn't my Snipe".
+// Storage: global.ability_casts { name: count }, global.ability_mastery
+// { name: [mod_id, ...] } - both saved. Mods are applied by handing out
+// MODIFIED COPIES of the pool structs at loadout resolve, so the dynamic
+// descriptions (built from live fields) update themselves and the global pools
+// are never mutated.
+// =============================================================================
+
+function ability_mastery_thresholds() { return [25, 75]; }
+
+function ability_casts(name) {
+    if (!variable_global_exists("ability_casts") || !is_struct(global.ability_casts)) return 0;
+    return variable_struct_exists(global.ability_casts, name) ? variable_struct_get(global.ability_casts, name) : 0;
+}
+
+// Notches earned so far (0-2) from lifetime casts.
+function ability_notches_earned(name) {
+    var _c = ability_casts(name);
+    var _th = ability_mastery_thresholds();
+    var _n = 0;
+    for (var _i = 0; _i < array_length(_th); _i++) if (_c >= _th[_i]) _n++;
+    return _n;
+}
+
+// The mod ids already picked for this ability (array, newest last).
+function ability_mastery_picks(name) {
+    if (!variable_global_exists("ability_mastery") || !is_struct(global.ability_mastery)) return [];
+    return variable_struct_exists(global.ability_mastery, name) ? variable_struct_get(global.ability_mastery, name) : [];
+}
+
+// Notches earned but not yet spent on a pick.
+function ability_mastery_pending(name) {
+    return max(0, ability_notches_earned(name) - array_length(ability_mastery_picks(name)));
+}
+
+// Count one cast (called from the combat controller at cast commit). Pushes a
+// log line when a notch threshold is crossed so the moment lands in the fight.
+function ability_mastery_count_cast(name, combat_log) {
+    if (!variable_global_exists("ability_casts") || !is_struct(global.ability_casts)) global.ability_casts = {};
+    var _before = ability_notches_earned(name);
+    variable_struct_set(global.ability_casts, name, ability_casts(name) + 1);
+    if (ability_notches_earned(name) > _before && is_array(combat_log)) {
+        array_push(combat_log, "MASTERY NOTCH earned: " + name + "!  (pick its edge at the loadout)");
+    }
+}
+
+// The two micro-mods this ability's notches choose between. Generic, derived
+// from the ability's shape (a hand-tuned table can override later):
+//   damaging        -> +3 damage  vs  +5 accuracy (+4% crit when it can't miss)
+//   timed effect    -> +2 effect  vs  +1 turn
+//   instant effect  -> +2 effect  vs  +20% effect
+// Returns [{ id, label }, { id, label }].
+function ability_mastery_options(ab) {
+    if (ab.base_damage > 0) {
+        var _b = (ab.guaranteed_hit || ab.base_acc >= 100)
+            ? { id:"crit", label:"+4% crit chance" }
+            : { id:"acc",  label:"+5 accuracy" };
+        return [ { id:"dmg", label:"+3 base damage" }, _b ];
+    }
+    if (ab.effect_duration > 0) {
+        return [ { id:"val",  label:"+2 effect strength" },
+                 { id:"dur",  label:"+1 turn duration" } ];
+    }
+    return [ { id:"val",  label:"+2 effect strength" },
+             { id:"valp", label:"+20% effect strength" } ];
+}
+
+function ability_mastery_mod_label(ab, mod_id) {
+    var _o = ability_mastery_options(ab);
+    for (var _i = 0; _i < array_length(_o); _i++) if (_o[_i].id == mod_id) return _o[_i].label;
+    return mod_id;
+}
+
+// Spend a pending notch on a mod. "" ok / reason.
+function ability_mastery_pick(name, mod_id) {
+    if (ability_mastery_pending(name) <= 0) return "No notch to spend.";
+    if (!variable_global_exists("ability_mastery") || !is_struct(global.ability_mastery)) global.ability_mastery = {};
+    if (!variable_struct_exists(global.ability_mastery, name)) variable_struct_set(global.ability_mastery, name, []);
+    array_push(variable_struct_get(global.ability_mastery, name), mod_id);
+    return "";
+}
+
+// Return the ability itself when unmastered, or a field-adjusted shallow COPY
+// when picks exist (pools stay pristine; dynamic descriptions read the copy).
+function ability_mastery_resolve(ab) {
+    var _picks = ability_mastery_picks(ab.name);
+    if (array_length(_picks) == 0) return ab;
+    var _c = {};
+    var _keys = variable_struct_get_names(ab);
+    for (var _k = 0; _k < array_length(_keys); _k++) {
+        variable_struct_set(_c, _keys[_k], variable_struct_get(ab, _keys[_k]));
+    }
+    for (var _i = 0; _i < array_length(_picks); _i++) {
+        switch (_picks[_i]) {
+            case "dmg":  _c.base_damage     += 3; break;
+            case "acc":  _c.base_acc        += 5; break;
+            case "crit": _c.base_crit       += 4; break;
+            case "val":  _c.effect_value    += 2; break;
+            case "dur":  _c.effect_duration += 1; break;
+            case "valp": _c.effect_value     = ceil(_c.effect_value * 1.2); break;
+        }
+    }
+    return _c;
+}
+
+// =============================================================================
+// BORROWED MEMORIES (expression #6, EXPRESSION_IDEAS.md). Rare event outcomes
+// grant a TEMPORARY extra ability for THIS RUN ONLY, drawn from the OTHER two
+// classes' pools - "a memory that isn't yours". Run-scoped like boons:
+// global.run_borrowed_ability (name) + run_borrowed_class (flavor), cleared in
+// end_run and on load. The combat controller appends the resolved ability after
+// the normal loadout, so it gets a button/hotkey like any other.
+// =============================================================================
+
+// Pick a random borrowable ability from the two classes that are NOT class_id.
+// Skips abilities that cost or generate a class secondary resource (Souls /
+// Blood / Preparation) - off-class those are dead buttons.
+function borrowed_memory_roll(class_id) {
+    var _pools = [global.abilities_arcanist, global.abilities_bloodwarden, global.abilities_shadowstrider];
+    var _names = ["Arcanist", "Bloodwarden", "Shadowstrider"];
+    var _own   = clamp(class_id, 0, 2);
+    var _cands = [];
+    var _srcs  = [];
+    for (var _c = 0; _c < 3; _c++) {
+        if (_c == _own) continue;
+        var _p = _pools[_c];
+        for (var _i = 0; _i < array_length(_p); _i++) {
+            var _ab = _p[_i];
+            if (_ab.secondary_cost > 0) continue;
+            if (_ab.effect_type == "resource") continue;
+            array_push(_cands, _ab);
+            array_push(_srcs, _names[_c]);
+        }
+    }
+    if (array_length(_cands) == 0) return undefined;
+    var _k = irandom(array_length(_cands) - 1);
+    return { ability: _cands[_k], from_class: _srcs[_k] };
+}
+
+// Grant a borrowed memory for this run (replaces any previous one). Returns the
+// granted ability's name ("" when the roll found nothing).
+function borrowed_memory_grant() {
+    var _cid  = variable_global_exists("chosen_class") ? global.chosen_class : 0;
+    var _roll = borrowed_memory_roll(_cid);
+    if (_roll == undefined) return "";
+    global.run_borrowed_ability = _roll.ability.name;
+    global.run_borrowed_class   = _roll.from_class;
+    return _roll.ability.name;
+}
+
+// Resolve the granted name back to its ability struct (searched across ALL class
+// pools - it is by definition not in the player's own). undefined when none.
+function borrowed_memory_resolve() {
+    if (!variable_global_exists("run_borrowed_ability") || global.run_borrowed_ability == "") return undefined;
+    var _pools = [global.abilities_arcanist, global.abilities_bloodwarden, global.abilities_shadowstrider];
+    for (var _c = 0; _c < 3; _c++) {
+        for (var _i = 0; _i < array_length(_pools[_c]); _i++) {
+            if (_pools[_c][_i].name == global.run_borrowed_ability) return _pools[_c][_i];
+        }
+    }
+    return undefined;
 }
 
 // ---------------------------------------------------------------------------

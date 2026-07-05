@@ -235,6 +235,21 @@ function end_run(result) {
         global.pet_find_notice = (global.pet_find_notice != "")
             ? (global.pet_find_notice + "   " + _evo_msg) : _evo_msg;
     }
+    // A READY pet that was NOT the active companion banks nothing - say so on the
+    // hub return instead of leaving the player wondering why nothing evolved.
+    if (result >= 0 && variable_global_exists("pet_roster") && variable_global_exists("pet_find_notice")) {
+        var _act_p = pet_active();
+        for (var _rni = 0; _rni < array_length(global.pet_roster); _rni++) {
+            var _rnp = global.pet_roster[_rni];
+            if (_rnp.is_egg || _rnp == _act_p) continue;
+            if (_rnp.stage < pet_max_stage() && pet_growth_ready(_rnp) && _rnp.stage != PET_STAGE_ADULT) {
+                var _rn_msg = _rnp.name + " was ready to evolve but stayed behind - equip it as your companion (dungeon gate > Companion) and complete a run.";
+                global.pet_find_notice = (global.pet_find_notice != "")
+                    ? (global.pet_find_notice + "   " + _rn_msg) : _rn_msg;
+                break;   // one reminder is enough
+            }
+        }
+    }
     // Injury / permadeath / recovery for the carried pet (§8). Surfaced on hub return.
     var _pet_inj = pet_on_run_end(result);
     if (_pet_inj != "" && variable_global_exists("pet_find_notice")) {
@@ -384,6 +399,7 @@ function end_run(result) {
         floor_reached:      global.current_floor,
         end_level:          _end_level,
         ascendance:         (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0),
+        dungeon:            (variable_global_exists("selected_dungeon") ? global.selected_dungeon : ""),
         perm_points_earned: _perm_earned,
         items_found:        []
     };
@@ -394,6 +410,8 @@ function end_run(result) {
     global.current_run_gold    = 0;
     global.current_run_kills   = 0;
     global.run_current_hp      = 0;
+    global.run_borrowed_ability = "";   // Borrowed Memory is run-scoped (expression #6)
+    global.run_borrowed_class   = "";
     global.run_souls           = 0;
     global.run_blood           = 0;
     global.run_preparation     = 0;
@@ -2844,6 +2862,10 @@ function sable_brew_catalog() {
         // NOT stackable, cleared on death. See potion_* in this file.
         { id:"goldfinger", name:"Goldfinger Elixir", effect:"gold_find_pot", value:7, desc:"Gold drops +7% until 2 bosses are slain",       gold_val:65, dust:30, gold:cha_price(45) },
         { id:"faerie",     name:"Faerie's Tear",     effect:"loot_find_pot", value:8, desc:"Loot drop chance +8% until 2 bosses are slain", gold_val:65, dust:35, gold:cha_price(50) },
+        // Devil Wine (design 2026-07-04): the RELIABLE escape. Drunk from the floor
+        // map [G]: permanently lose 3 random stat points, extract with all run loot.
+        // The Genie Lamp (rare elite/boss drop) is the free version of this bargain.
+        { id:"devil_wine", name:"Devil Wine", effect:"escape_wine", value:0, desc:"Drink on the floor map [G]: PERMANENTLY lose 3 random stat points and extract to camp with all your loot", gold_val:400, dust:50, gold:cha_price(1200) },
     ];
     // (Sable Companion perk applies below via the catalog wrapper.)
 }
@@ -3098,6 +3120,232 @@ function player_combat_sprite(class_id) {
 function player_sprite_frame(spr) {
     if (spr == -1 || !sprite_exists(spr)) return 0;
     return (sprite_get_number(spr) >= 8) ? 1 : 0;
+}
+
+// =============================================================================
+// VAEL - SPELL TINTS (expression #4, EXPRESSION_IDEAS.md). Purchased palettes that
+// recolor a school everywhere school_color() is consulted (combat-log school words
+// and their numbers, ability-detail accents, loadout school text) plus a blended
+// cast-VFX tint in combat. Pure cosmetics; a late-game gold sink for Vael.
+// Owned tint ids live in global.unlocked_tints; the equipped tint per school lives
+// in global.school_tints (struct school -> tint id, absent/"default" = base color).
+// =============================================================================
+
+// Two palettes per school. `color` fully replaces school_color(school) while equipped.
+function vael_tint_catalog() {
+    return [
+        { id:"fire_ghost",   school:"fire",   name:"Ghostflame",      color:make_color_rgb(110, 230, 150), gold:250, desc:"Fire that burns green and cold - grave-light made weapon." },
+        { id:"fire_white",   school:"fire",   name:"Whitehot",        color:make_color_rgb(210, 230, 255), gold:300, desc:"Heat past color. The forge's last word." },
+        { id:"frost_black",  school:"frost",  name:"Black Ice",       color:make_color_rgb(110, 115, 220), gold:250, desc:"The deep dark of a lake that never thaws." },
+        { id:"frost_aurora", school:"frost",  name:"Aurora",          color:make_color_rgb( 95, 230, 190), gold:300, desc:"Cold that dances the way the north sky does." },
+        { id:"shock_void",   school:"shock",  name:"Voidspark",       color:make_color_rgb(200, 150, 255), gold:250, desc:"Lightning struck through somewhere emptier." },
+        { id:"shock_storm",  school:"shock",  name:"Stormglow",       color:make_color_rgb( 90, 220, 235), gold:300, desc:"The sea-storm's teeth, bottled." },
+        { id:"arcane_rose",  school:"arcane", name:"Roseweave",       color:make_color_rgb(235, 120, 180), gold:250, desc:"Spellwork with a silk lining." },
+        { id:"arcane_gilt",  school:"arcane", name:"Gilded Art",      color:make_color_rgb(235, 190,  90), gold:300, desc:"Magic that spends like money." },
+        { id:"blood_ichor",  school:"blood",  name:"Black Ichor",     color:make_color_rgb(170,  45, 105), gold:250, desc:"What runs in the veins of older things." },
+        { id:"blood_ember",  school:"blood",  name:"Burning Blood",   color:make_color_rgb(240, 110,  70), gold:300, desc:"Fever given an edge." },
+        { id:"void_pale",    school:"void",   name:"Hungering Pale",  color:make_color_rgb(215, 215, 235), gold:250, desc:"The void seen from inside. It is not black." },
+        { id:"void_nebula",  school:"void",   name:"Nebula",          color:make_color_rgb(225, 110, 235), gold:300, desc:"Starving dark, dressed for the occasion." },
+        { id:"shadow_moon",  school:"shadow", name:"Moonlit",         color:make_color_rgb(170, 195, 240), gold:250, desc:"Shadows cast by a kinder light." },
+        { id:"shadow_ember", school:"shadow", name:"Embershade",      color:make_color_rgb(205, 140,  95), gold:300, desc:"Dark warmed at a dying fire." },
+        { id:"poison_bloom", school:"poison", name:"Plaguebloom",     color:make_color_rgb(215, 220,  90), gold:250, desc:"Sickness in flower." },
+        { id:"poison_abyss", school:"poison", name:"Abyssal Rot",     color:make_color_rgb( 85, 190, 215), gold:300, desc:"What festers where light gives up." },
+    ];
+}
+
+function vael_tint_get(id) {
+    var _c = vael_tint_catalog();
+    for (var _i = 0; _i < array_length(_c); _i++) if (_c[_i].id == id) return _c[_i];
+    return undefined;
+}
+
+function vael_tint_owned(id) {
+    if (!variable_global_exists("unlocked_tints")) return false;
+    for (var _i = 0; _i < array_length(global.unlocked_tints); _i++)
+        if (global.unlocked_tints[_i] == id) return true;
+    return false;
+}
+
+// The tint id equipped for a school ("default" = base palette).
+function school_tint_id(school) {
+    if (!variable_global_exists("school_tints")) return "default";
+    if (!variable_struct_exists(global.school_tints, school)) return "default";
+    return variable_struct_get(global.school_tints, school);
+}
+
+// Buy a tint with gold (auto-equips for its school). "" on success else reason.
+function vael_buy_tint(id) {
+    var _t = vael_tint_get(id);
+    if (_t == undefined) return "Unknown tint.";
+    if (vael_tint_owned(id)) return "Already owned.";
+    var _price = floor(_t.gold * affinity_discount_mult("vael"));   // Friend perk: 15% off
+    if (global.gold < _price) return "Need " + string(_price) + "g.";
+    global.gold -= _price;
+    if (!variable_global_exists("unlocked_tints")) global.unlocked_tints = [];
+    array_push(global.unlocked_tints, id);
+    if (!variable_global_exists("school_tints")) global.school_tints = {};
+    variable_struct_set(global.school_tints, _t.school, id);   // auto-equip
+    save_game();
+    return "";
+}
+
+// Equip an owned tint for its school, or pass "default" + a school to revert. "" or reason.
+function vael_equip_tint(id, school = "") {
+    if (!variable_global_exists("school_tints")) global.school_tints = {};
+    if (id == "default") {
+        if (school != "") variable_struct_set(global.school_tints, school, "default");
+        save_game();
+        return "";
+    }
+    var _t = vael_tint_get(id);
+    if (_t == undefined) return "Unknown tint.";
+    if (!vael_tint_owned(id)) return "Not owned.";
+    variable_struct_set(global.school_tints, _t.school, id);
+    save_game();
+    return "";
+}
+
+// Blend color for cast VFX: the equipped tint's color, or c_white (no tint) on the
+// default palette so untinted VFX render exactly as authored.
+function school_vfx_blend(school) {
+    if (school == "") return c_white;
+    var _tid = school_tint_id(school);
+    if (_tid == "default") return c_white;
+    var _t = vael_tint_get(_tid);
+    return (_t == undefined) ? c_white : _t.color;
+}
+
+// =============================================================================
+// EPITHETS (expression #5, EXPRESSION_IDEAS.md). One equippable earned title,
+// shown on the character menu header, the run-history screen and the combat
+// result screen. Unlocks are LIVE checks against what the game already tracks
+// (run history, clears, pets, affinity, permanent level) - nothing new is
+// recorded, so every milestone rewards retroactively. Equipped id persists in
+// global.player_epithet ("" = untitled); once equipped it stays yours even if
+// the underlying state later changes (a lost pet doesn't strip the title).
+// =============================================================================
+
+function epithet_catalog() {
+    return [
+        { id:"gravebreaker", name:"the Gravebreaker",    req:"Clear a full dungeon" },
+        { id:"survivor",     name:"the Survivor",        req:"Finish 25 runs" },
+        { id:"deathless",    name:"the Deathless",       req:"10 full clears without a death between them" },
+        { id:"vaultbreaker", name:"Vaultbreaker",        req:"Full-clear the Ashen Vault at A5" },
+        { id:"flamewalker",  name:"Flamewalker",         req:"Full-clear the Scorched Depths at A5" },
+        { id:"tombwarden",   name:"Tombwarden",          req:"Full-clear the Tundra Tomb at A5" },
+        { id:"soulbound",    name:"the Soul-bound",      req:"Raise a pet to Soul-bound (Bond 18)" },
+        { id:"awakener",     name:"the Awakener",        req:"Raise a pet to the Awakened stage" },
+        { id:"beloved",      name:"the Beloved",         req:"Reach Lover with someone in Ironwake" },
+        { id:"slayer",       name:"Slayer of Hundreds",  req:"500 lifetime kills" },
+        { id:"goldhand",     name:"the Goldhanded",      req:"Earn 10,000 lifetime gold in the dungeons" },
+        { id:"legend",       name:"the Legend",          req:"Reach permanent level 10" },
+    ];
+}
+
+function epithet_get(id) {
+    var _c = epithet_catalog();
+    for (var _i = 0; _i < array_length(_c); _i++) if (_c[_i].id == id) return _c[_i];
+    return undefined;
+}
+
+// Live milestone check. Run-history-based checks guard missing fields (records
+// written before a field existed simply don't count toward it).
+function epithet_unlocked(id) {
+    var _hist = variable_global_exists("run_history") ? global.run_history : [];
+    var _hn   = array_length(_hist);
+    switch (id) {
+        case "gravebreaker":
+            return variable_global_exists("dungeon_clears_total") && global.dungeon_clears_total >= 1;
+        case "survivor":
+            return variable_global_exists("run_count") && global.run_count >= 25;
+        case "deathless": {
+            // 10 full clears with no death between them (extractions don't break the run).
+            var _streak = 0;
+            for (var _i = 0; _i < _hn; _i++) {
+                if (_hist[_i].result == 1)       _streak++;
+                else if (_hist[_i].result == -1) _streak = 0;
+                if (_streak >= 10) return true;
+            }
+            return false;
+        }
+        case "vaultbreaker": return epithet_a5_clear("ashen_vault");
+        case "flamewalker":  return epithet_a5_clear("scorched_depths");
+        case "tombwarden":   return epithet_a5_clear("tundra_tomb");
+        case "soulbound": {
+            var _r = pet_roster();
+            for (var _i = 0; _i < array_length(_r); _i++)
+                if (!_r[_i].is_egg && pet_bond(_r[_i]) >= 18) return true;
+            return false;
+        }
+        case "awakener": {
+            var _r2 = pet_roster();
+            for (var _i = 0; _i < array_length(_r2); _i++)
+                if (!_r2[_i].is_egg && _r2[_i].stage >= PET_STAGE_AWAKENED) return true;
+            return false;
+        }
+        case "beloved":
+            return affinity_count_at_tier(4) >= 1;
+        case "slayer": {
+            var _k = 0;
+            for (var _i = 0; _i < _hn; _i++) _k += _hist[_i].kills;
+            return _k >= 500;
+        }
+        case "goldhand": {
+            var _g = 0;
+            for (var _i = 0; _i < _hn; _i++) _g += _hist[_i].gold_earned;
+            return _g >= 10000;
+        }
+        case "legend":
+            return player_permanent_level() >= 10;
+    }
+    return false;
+}
+
+// A victorious A5 full clear of one dungeon anywhere in the run history. The
+// `dungeon` field was added to run records 2026-07-04; older records lack it
+// and can't count (they also predate anyone clearing A5, so nothing is lost).
+function epithet_a5_clear(dungeon_key) {
+    if (!variable_global_exists("run_history")) return false;
+    for (var _i = 0; _i < array_length(global.run_history); _i++) {
+        var _r = global.run_history[_i];
+        if (variable_struct_exists(_r, "dungeon") && _r.dungeon == dungeon_key
+            && _r.result == 1 && _r.ascendance >= 5 && _r.floor_reached >= 3) return true;
+    }
+    return false;
+}
+
+// Display name of the equipped epithet ("" when untitled / unknown id).
+function player_epithet_text() {
+    if (!variable_global_exists("player_epithet") || global.player_epithet == "") return "";
+    var _e = epithet_get(global.player_epithet);
+    return (_e == undefined) ? "" : _e.name;
+}
+
+// Cycle to the next unlocked epithet (T on the character menu Stats tab). The
+// ring is [untitled] -> each unlocked catalog entry in order -> back. Returns
+// the new display text ("Untitled" when cleared) for the caller's notification.
+function epithet_cycle() {
+    var _cat = epithet_catalog();
+    var _ring = [""];
+    for (var _i = 0; _i < array_length(_cat); _i++)
+        if (epithet_unlocked(_cat[_i].id)) array_push(_ring, _cat[_i].id);
+    var _cur = variable_global_exists("player_epithet") ? global.player_epithet : "";
+    var _at  = 0;
+    for (var _j = 0; _j < array_length(_ring); _j++) if (_ring[_j] == _cur) { _at = _j; break; }
+    global.player_epithet = _ring[(_at + 1) mod array_length(_ring)];
+    // Saves are hub-gated (see scr_save notes): the char menu also opens mid-run,
+    // and save_game() would bank in-run state. Elsewhere the pick rides the next
+    // hub save; the title itself is already applied for this session either way.
+    if (instance_exists(obj_hub_controller)) save_game();
+    return (global.player_epithet == "") ? "Untitled" : player_epithet_text();
+}
+
+// How many epithets are currently earned (for the picker hint).
+function epithet_unlocked_count() {
+    var _cat = epithet_catalog();
+    var _n = 0;
+    for (var _i = 0; _i < array_length(_cat); _i++) if (epithet_unlocked(_cat[_i].id)) _n++;
+    return _n;
 }
 
 // =============================================================================
@@ -3556,32 +3804,141 @@ function affinity_add(id, amount) {
     var _gain = min(amount, _room);
     _e.score    += _gain;
     _e.run_gain += _gain;
+    _e.idle_clears = 0;   // 4c neglect: any function-use is attention paid
     affinity_refresh_gate(id);
     quest_tick("use_function", id, 1);   // quest objective: N interactions with this NPC
 }
 
-// Cross a ready gate (the one-click "deepen bond" confirm - placeholder for the
-// Phase-4 gate quest). Enforces scarcity caps as hard blocks. Returns "" on success
-// else a reason string for the UI. Caller saves on success.
+// [B] Deepen at a ready gate (4c: routes through the GATE QUEST, PHASE4C_SPEC.md).
+//   quest available -> starts it (this IS the player-elected pursue for Lover);
+//   quest active    -> progress reminder;
+//   quest done      -> free one-click recross (re-climb after neglect/demotion -
+//                      neglect never re-quests; slot demotion resets the quest so
+//                      that path DOES land in "available" again).
+// Returns "" when the tier actually crossed, else a message for the notification
+// line (starting a quest is a message, not a cross).
 function affinity_try_advance(id) {
     var _e = affinity_entry(id);
     if (_e == undefined)         return "Unknown.";
     if (!affinity_gate_ready(id)) return "Not ready.";   // live check (also applies auto-cross)
     var _target = _e.tier + 1;
 
-    if (_target == 4 && affinity_count_at_tier(4) >= affinity_max_lovers()) {
-        return "Your heart belongs to another.";
+    var _gnames = ["", "", "friend", "companion", "lover"];
+    var _qid = "gate_" + id + "_" + _gnames[_target];
+    var _qs  = quest_state(_qid);
+    if (_qs == undefined || _qs.status == "done") {
+        // No authored gate quest (future NPCs) or already cleared once: cross free.
+        affinity_gate_cross(id, _target);
+        return "";
     }
-    if (_target == 3 && affinity_count_at_tier(3) >= affinity_max_companions()) {
-        return "You can't commit to more right now.";
+    var _qd = quest_def(_qid);
+    if (_qs.status == "active") {
+        return "\"" + _qd.name + "\" is underway - " + _qd.objective + ".";
     }
+    quest_start(_qid);
+    ledger_add(id, "quest", "They asked something of you first: \"" + _qd.name + "\".");
+    return npc_display_name(id) + " asks: " + _qd.objective + "   (\"" + _qd.name + "\" - on the board & Journal)";
+}
 
-    _e.tier = _target;
-    global.heart_pending = _target;     // tier-up heart burst (blue tiers 1-3, red Lover)
-    journal_badge_npc(id);              // Journal: tier crossed (Phase 4a)
-    ledger_add(id, "milestone", "We grew closer - " + affinity_tier_name_for(_target) + " now.");
+// Cross a tier NOW (gate-quest turn-in, done-quest recross, or future-NPC fallback).
+// Applies the 4c scarcity side effects instead of hard blocks: a 3rd Companion
+// slot-demotes the lowest existing Companion (re-quest required); a 2nd Lover is
+// BETRAYAL - the old Lover drops to soured Acquaintance and must be re-courted.
+function affinity_gate_cross(id, target) {
+    var _e = affinity_entry(id);
+    if (_e == undefined) return;
+    if (target == 3) affinity_slot_demote_for(id);
+    if (target == 4) affinity_betrayal_for(id);
+    if (_e.tier < target) _e.tier = target;
+    global.heart_pending = target;      // tier-up heart burst (blue tiers 1-3, red Lover)
+    journal_badge_npc(id);
+    ledger_add(id, "milestone", "We grew closer - " + affinity_tier_name_for(target) + " now.");
     affinity_refresh_gate(id);          // re-evaluate (score may reach the next gate)
-    return "";
+}
+
+// Reset a gate quest so it must be re-cleared (slot demotion / betrayal only).
+function quest_reset_gate(id) {
+    var _s = quest_state(id);
+    if (_s == undefined) return;
+    _s.status   = "available";
+    _s.progress = 0;
+}
+
+// A 3rd Companion incoming: demote the lowest-score OTHER Companion to Friend and
+// reset their Companion gate quest (the §5 "teeth"). No-op below the cap.
+function affinity_slot_demote_for(new_id) {
+    var _ids = affinity_npc_ids();
+    var _others = [];
+    for (var _i = 0; _i < array_length(_ids); _i++) {
+        if (_ids[_i] == new_id) continue;
+        var _o = affinity_entry(_ids[_i]);
+        if (_o != undefined && _o.tier == 3) array_push(_others, _ids[_i]);
+    }
+    if (array_length(_others) < affinity_max_companions()) return;
+    var _low = _others[0];
+    for (var _j = 1; _j < array_length(_others); _j++) {
+        if (affinity_entry(_others[_j]).score < affinity_entry(_low).score) _low = _others[_j];
+    }
+    var _le = affinity_entry(_low);
+    _le.tier = 2;
+    quest_reset_gate("gate_" + _low + "_companion");
+    affinity_refresh_gate(_low);
+    ledger_add(_low, "milestone", "You committed to another. Things cooled between you - Friend again.");
+    journal_badge_npc(_low);
+    var _dmsg = npc_display_name(_low) + " steps back to make room - Companion no more.";
+    if (variable_global_exists("pet_find_notice")) {
+        global.pet_find_notice = (global.pet_find_notice != "") ? (global.pet_find_notice + "   " + _dmsg) : _dmsg;
+    }
+}
+
+// A 2nd Lover incoming: betrayal. The old Lover drops to soured Acquaintance
+// (score slashed to the tier floor) and ALL their gate quests reset - a full
+// re-courting if the player ever wants back in.
+function affinity_betrayal_for(new_id) {
+    var _ids = affinity_npc_ids();
+    for (var _i = 0; _i < array_length(_ids); _i++) {
+        if (_ids[_i] == new_id) continue;
+        var _o = affinity_entry(_ids[_i]);
+        if (_o == undefined || _o.tier != 4) continue;
+        _o.tier  = 1;
+        _o.score = affinity_thresholds()[1];
+        _o.gate_ready = false;
+        quest_reset_gate("gate_" + _ids[_i] + "_friend");
+        quest_reset_gate("gate_" + _ids[_i] + "_companion");
+        quest_reset_gate("gate_" + _ids[_i] + "_lover");
+        ledger_add(_ids[_i], "milestone", "You chose another. Something in them closes for good measure.");
+        journal_badge_npc(_ids[_i]);
+        var _bmsg = npc_display_name(_ids[_i]) + "'s heart breaks - you are strangers with history now.";
+        if (variable_global_exists("pet_find_notice")) {
+            global.pet_find_notice = (global.pet_find_notice != "") ? (global.pet_find_notice + "   " + _bmsg) : _bmsg;
+        }
+    }
+}
+
+// Neglect decay (4c, design §6): ticked once per floor-clear. 6 idle clears of
+// grace per NPC, then -2 score per further clear. Hitting zero costs exactly one
+// tier ("drifting apart"). Companion+ is frozen - commitment doesn't rot. Neglect
+// NEVER resets a gate quest; re-climbing is points-only (the done quest recrosses
+// free via affinity_try_advance).
+function affinity_neglect_tick() {
+    if (!variable_global_exists("npc_affinity") || !is_struct(global.npc_affinity)) return;
+    var _ids = affinity_npc_ids();
+    for (var _i = 0; _i < array_length(_ids); _i++) {
+        var _e = affinity_entry(_ids[_i]);
+        if (_e == undefined) continue;
+        if (!variable_struct_exists(_e, "idle_clears")) _e.idle_clears = 0;   // migrate old saves
+        if (_e.tier >= 3) { _e.idle_clears = 0; continue; }   // Companion & Lover are safe
+        _e.idle_clears += 1;
+        if (_e.idle_clears > 6 && _e.score > 0) {
+            _e.score = max(0, _e.score - 2);
+            if (_e.score == 0 && _e.tier > 0) {
+                _e.tier -= 1;
+                ledger_add(_ids[_i], "milestone", "Too long a stranger - you've drifted apart.");
+                journal_badge_npc(_ids[_i]);
+            }
+            affinity_refresh_gate(_ids[_i]);
+        }
+    }
 }
 
 // Reset the per-run grind cap for every NPC (NOT score/tier). Called from end_run.
@@ -3621,7 +3978,148 @@ function quest_catalog() {
           reward:{ gold:0, feed:"", feed_n:0, rune_id:"vitality", rune_tier:1 },
           flavor:"\"Runes remember the hands that set them. Set two, and I'll trust yours with something better.\"",
           objective:"Socket 2 runes with Maren" },
+
+        // =====================================================================
+        // AFFINITY GATE QUESTS (Phase 4c, PHASE4C_SPEC.md). kind:"gate" +
+        // gate_tier 2/3/4 = Friend/Companion/Lover. Hidden until the NPC's score
+        // has the gate READY (quest_visible); turning in crosses the tier via
+        // affinity_gate_cross - the relationship IS the reward (reward struct
+        // stays zeroed). No reward = no farm; each is one-time per climb.
+        // =====================================================================
+        // --- Dorn (Blacksmith) ---
+        { id:"gate_dorn_friend", kind:"gate", gate_tier:2, npc:"dorn", name:"Working Steel",
+          obj_type:"use_function", obj_target:3, obj_param:"dorn",
+          reward:{ gold:0, feed:"", feed_n:0, rune_id:"", rune_tier:0 },
+          flavor:"\"Buy, sell, sharpen - doesn't matter which. Show me you're a regular, not a tourist.\"",
+          objective:"Do business with Dorn 3 times" },
+        { id:"gate_dorn_companion", kind:"gate", gate_tier:3, npc:"dorn", name:"Boss-Forged",
+          obj_type:"boss_kill", obj_target:2, obj_param:"",
+          reward:{ gold:0, feed:"", feed_n:0, rune_id:"", rune_tier:0 },
+          flavor:"\"My steel's been down there with you. Fell two of the deep's masters and we're partners, not customers.\"",
+          objective:"Slay 2 bosses" },
+        { id:"gate_dorn_lover", kind:"gate", gate_tier:4, npc:"dorn", name:"The Quenching",
+          obj_type:"clear_floors", obj_target:6, obj_param:"",
+          reward:{ gold:0, feed:"", feed_n:0, rune_id:"", rune_tier:0 },
+          flavor:"\"Six floors. Come back whole every time, and I'll show you what I keep in the back of the forge.\"",
+          objective:"Clear 6 dungeon floors" },
+        // --- Sable (Alchemist) ---
+        { id:"gate_sable_friend", kind:"gate", gate_tier:2, npc:"sable", name:"Field Reagents",
+          obj_type:"kill_family", obj_target:8, obj_param:"",
+          reward:{ gold:0, feed:"", feed_n:0, rune_id:"", rune_tier:0 },
+          flavor:"\"Everything that dies down there is an ingredient, darling. Go make me some ingredients.\"",
+          objective:"Slay 8 foes" },
+        { id:"gate_sable_companion", kind:"gate", gate_tier:3, npc:"sable", name:"Repeat Customer",
+          obj_type:"use_function", obj_target:5, obj_param:"sable",
+          reward:{ gold:0, feed:"", feed_n:0, rune_id:"", rune_tier:0 },
+          flavor:"\"Five more visits. Not for the gold - I just like watching you pretend you came for the potions.\"",
+          objective:"Use Sable's services 5 times" },
+        { id:"gate_sable_lover", kind:"gate", gate_tier:4, npc:"sable", name:"The Slow Poison",
+          obj_type:"boss_kill", obj_target:3, obj_param:"",
+          reward:{ gold:0, feed:"", feed_n:0, rune_id:"", rune_tier:0 },
+          flavor:"\"Three floor-lords' worth of ichor. It's for something personal. So are you.\"",
+          objective:"Slay 3 bosses" },
+        // --- Maren (Runesmith) ---
+        { id:"gate_maren_friend", kind:"gate", gate_tier:2, npc:"maren", name:"First Setting",
+          obj_type:"socket_rune", obj_target:1, obj_param:"",
+          reward:{ gold:0, feed:"", feed_n:0, rune_id:"", rune_tier:0 },
+          flavor:"\"Set one with me. Watch what your hands do when they mean it.\"",
+          objective:"Socket a rune with Maren" },
+        { id:"gate_maren_companion", kind:"gate", gate_tier:3, npc:"maren", name:"Steady Hands",
+          obj_type:"socket_rune", obj_target:3, obj_param:"",
+          reward:{ gold:0, feed:"", feed_n:0, rune_id:"", rune_tier:0 },
+          flavor:"\"Three more settings. Runes remember. So do I.\"",
+          objective:"Socket 3 runes with Maren" },
+        { id:"gate_maren_lover", kind:"gate", gate_tier:4, npc:"maren", name:"What the Runes Say",
+          obj_type:"boss_kill", obj_target:2, obj_param:"",
+          reward:{ gold:0, feed:"", feed_n:0, rune_id:"", rune_tier:0 },
+          flavor:"\"The deep lords carry old script in their bones. Bring me two readings... and come back. That part matters more.\"",
+          objective:"Slay 2 bosses" },
+        // --- Vex (Trainer) ---
+        { id:"gate_vex_friend", kind:"gate", gate_tier:2, npc:"vex", name:"Student's Dues",
+          obj_type:"use_function", obj_target:3, obj_param:"vex",
+          reward:{ gold:0, feed:"", feed_n:0, rune_id:"", rune_tier:0 },
+          flavor:"\"Train with me three times. Talent I can't teach; showing up I insist on.\"",
+          objective:"Train with Vex 3 times" },
+        { id:"gate_vex_companion", kind:"gate", gate_tier:3, npc:"vex", name:"Proof of Practice",
+          obj_type:"kill_family", obj_target:10, obj_param:"",
+          reward:{ gold:0, feed:"", feed_n:0, rune_id:"", rune_tier:0 },
+          flavor:"\"Ten foes, no excuses. I don't bond with theory.\"",
+          objective:"Slay 10 foes" },
+        { id:"gate_vex_lover", kind:"gate", gate_tier:4, npc:"vex", name:"The Last Lesson",
+          obj_type:"clear_floors", obj_target:6, obj_param:"",
+          reward:{ gold:0, feed:"", feed_n:0, rune_id:"", rune_tier:0 },
+          flavor:"\"Six floors. When there's nothing left I can teach you... there's something I've been meaning to say.\"",
+          objective:"Clear 6 dungeon floors" },
+        // --- Petra (Treasure Trader) ---
+        { id:"gate_petra_friend", kind:"gate", gate_tier:2, npc:"petra", name:"Good Custom",
+          obj_type:"use_function", obj_target:3, obj_param:"petra",
+          reward:{ gold:0, feed:"", feed_n:0, rune_id:"", rune_tier:0 },
+          flavor:"\"Trade with me thrice and I'll stop quoting you the stranger's rate. In more ways than one.\"",
+          objective:"Trade with Petra 3 times" },
+        { id:"gate_petra_companion", kind:"gate", gate_tier:3, npc:"petra", name:"A Trader's Eye",
+          obj_type:"gift_good", obj_target:2, obj_param:"petra",
+          reward:{ gold:0, feed:"", feed_n:0, rune_id:"", rune_tier:0 },
+          flavor:"\"Anyone can buy. Show me you know what I'd actually WANT - twice.\"",
+          objective:"Give Petra 2 gifts she likes or loves" },
+        { id:"gate_petra_lover", kind:"gate", gate_tier:4, npc:"petra", name:"First Pick",
+          obj_type:"boss_kill", obj_target:2, obj_param:"",
+          reward:{ gold:0, feed:"", feed_n:0, rune_id:"", rune_tier:0 },
+          flavor:"\"The best finds sit behind the worst doors. Open two of them for me and everything I have is yours first.\"",
+          objective:"Slay 2 bosses" },
+        // --- Vael (Aesthete) ---
+        { id:"gate_vael_friend", kind:"gate", gate_tier:2, npc:"vael", name:"An Eye for It",
+          obj_type:"use_function", obj_target:2, obj_param:"vael",
+          reward:{ gold:0, feed:"", feed_n:0, rune_id:"", rune_tier:0 },
+          flavor:"\"Let me dress you twice. The dark deserves an audience worth looking at.\"",
+          objective:"Use Vael's services twice" },
+        { id:"gate_vael_companion", kind:"gate", gate_tier:3, npc:"vael", name:"Curated Taste",
+          obj_type:"gift_good", obj_target:2, obj_param:"vael",
+          reward:{ gold:0, feed:"", feed_n:0, rune_id:"", rune_tier:0 },
+          flavor:"\"Bring me two things I don't hate. It is a higher bar than you think.\"",
+          objective:"Give Vael 2 gifts she likes or loves" },
+        { id:"gate_vael_lover", kind:"gate", gate_tier:4, npc:"vael", name:"The Unveiling",
+          obj_type:"clear_floors", obj_target:5, obj_param:"",
+          reward:{ gold:0, feed:"", feed_n:0, rune_id:"", rune_tier:0 },
+          flavor:"\"Five floors, and come back with the dark still in your eyes. I want to paint it. Among other things.\"",
+          objective:"Clear 5 dungeon floors" },
+        // --- Bairc (Creature Keeper) ---
+        { id:"gate_bairc_friend", kind:"gate", gate_tier:2, npc:"bairc", name:"Small Kindnesses",
+          obj_type:"use_function", obj_target:3, obj_param:"bairc",
+          reward:{ gold:0, feed:"", feed_n:0, rune_id:"", rune_tier:0 },
+          flavor:"\"...you keep coming back. The creatures notice. Three more visits and, well. I notice too.\"",
+          objective:"Tend creatures with Bairc 3 times" },
+        { id:"gate_bairc_companion", kind:"gate", gate_tier:3, npc:"bairc", name:"Raised Right",
+          obj_type:"pet_stage", obj_target:PET_STAGE_ADULT, obj_param:"",
+          reward:{ gold:0, feed:"", feed_n:0, rune_id:"", rune_tier:0 },
+          flavor:"\"Raise one all the way. Anyone can pity a hatchling - staying is the thing.\"",
+          objective:"Raise any creature to Adult" },
+        { id:"gate_bairc_lover", kind:"gate", gate_tier:4, npc:"bairc", name:"Come Home Safe",
+          obj_type:"boss_kill", obj_target:2, obj_param:"",
+          reward:{ gold:0, feed:"", feed_n:0, rune_id:"", rune_tier:0 },
+          flavor:"\"Two of the deep's worst. Not for proof. I just... need to know the dark gives you back.\"",
+          objective:"Slay 2 bosses" },
     ];
+}
+
+// A quest def is a gate quest when kind == "gate" (4c). Small helper - several
+// surfaces branch on it.
+function quest_is_gate(d) {
+    return (d != undefined) && variable_struct_exists(d, "kind") && d.kind == "gate";
+}
+
+// Visibility filter (4c): hunts always show; a gate quest hides until its NPC has
+// banked the points (gate READY) and sits exactly one tier below the gate - then
+// it appears on the board/Journal as the key to the next tier. Active/done gates
+// always show (progress + history).
+function quest_visible(id) {
+    var _d = quest_def(id);
+    if (_d == undefined) return false;
+    if (!quest_is_gate(_d)) return true;
+    var _s = quest_state(id);
+    if (_s != undefined && _s.status != "available") return true;
+    var _e = affinity_entry(_d.npc);
+    if (_e == undefined) return false;
+    return affinity_gate_ready(_d.npc) && (_e.tier + 1 == _d.gate_tier);
 }
 
 function quest_def(id) {
@@ -3701,6 +4199,14 @@ function quest_turn_in(id) {
     if (_s.status != "active")              return "Not underway.";
     if (_s.progress < _d.obj_target)        return "Not finished yet.";
     _s.status = "done";
+    // Gate quests (4c): turning in crosses the tier - THAT is the reward. The
+    // material-reward path below is skipped (gate rewards are authored zeroed).
+    if (quest_is_gate(_d)) {
+        affinity_gate_cross(_d.npc, _d.gate_tier);
+        ledger_add(_d.npc, "quest", "You did what they asked - \"" + _d.name + "\".");
+        journal_badge_quest(id);
+        return "";
+    }
     var _r = _d.reward;
     var _parts = [];
     if (_r.gold > 0) { global.gold += _r.gold; array_push(_parts, string(_r.gold) + "g"); }
@@ -3733,6 +4239,7 @@ function quest_groups() {
     for (var _i = 0; _i < array_length(_q); _i++) {
         var _s = _q[_i];
         if (quest_def(_s.id) == undefined) continue;   // orphaned row
+        if (!quest_visible(_s.id)) continue;           // 4c: gate quests hide until ready
         if      (_s.status == "active")    array_push(_g.active, _s.id);
         else if (_s.status == "available") array_push(_g.available, _s.id);
         else                               array_push(_g.done, _s.id);
@@ -3746,6 +4253,7 @@ function quest_for_npc(npc_id) {
     for (var _i = 0; _i < array_length(_q); _i++) {
         var _d = quest_def(_q[_i].id);
         if (_d == undefined || _d.npc != npc_id) continue;
+        if (!quest_visible(_q[_i].id)) continue;                     // 4c: hidden gates don't prompt
         if (quest_is_complete(_q[_i].id)) return _q[_i].id;          // turn-in beats start
         if (_q[_i].status == "available" && _avail == "") _avail = _q[_i].id;
     }
@@ -3833,6 +4341,17 @@ function journal_quest_rows() {
     for (var _a = 0; _a < array_length(_g.active); _a++)    array_push(_out, _g.active[_a]);
     for (var _v = 0; _v < array_length(_g.available); _v++) array_push(_out, _g.available[_v]);
     for (var _d = 0; _d < array_length(_g.done); _d++)      array_push(_out, _g.done[_d]);
+    return _out;
+}
+
+// Rows for the TAVERN BOARD only: active + available. Fulfilled requests come off
+// the board (M 2026-07-04 - same-screen completed rows got messy); the Journal's
+// Quests tab keeps the full ledger including its Completed group.
+function tavern_board_rows() {
+    var _g = quest_groups();
+    var _out = [];
+    for (var _a = 0; _a < array_length(_g.active); _a++)    array_push(_out, _g.active[_a]);
+    for (var _v = 0; _v < array_length(_g.available); _v++) array_push(_out, _g.available[_v]);
     return _out;
 }
 
@@ -4142,11 +4661,14 @@ function gift_give(npc_id, c) {
         affinity_refresh_gate(npc_id);
     }
     global.gift_given = true;
+    _e.idle_clears = 0;   // 4c neglect: a gift is attention paid (even a bad one)
     ledger_add(npc_id, "gift", "Gave " + c.label + " - " + gift_band_tag(_band) + ".");
     journal_badge_npc(npc_id);
     // Result POPUP (Phase 4b UX, M): reaction + bond delta + live tier/progress.
     // Dismiss handled in obj_game_controller Step; drawn by ui_draw_gift_popup.
     global.gift_popup = { npc: npc_id, line: gift_reaction_line(npc_id, _band), delta: _delta, band: _band };
+    // Gate-quest objective (4c): a Loved/Liked gift to this NPC counts.
+    if (_band == "loved" || _band == "liked") quest_tick("gift_good", npc_id, 1);
     return global.gift_popup.line;
 }
 
@@ -4410,12 +4932,128 @@ function floor_clear_credit(awk) {
     // Phase 4a quests: a boss-clear is one cleared floor + one boss kill.
     quest_tick("clear_floors", "", 1);
     quest_tick("boss_kill", "", 1);
+    // Phase 4c: neglect decay ticks on the same clock (6 idle floor-clears of grace).
+    affinity_neglect_tick();
     // Note: pet Stage growth is banked per-RUN (at end_run via pet_run_complete), not
     // per-floor - "complete a run" is the gate (design §5), so nothing pet-Stage here.
 }
 
 // =============================================================================
-// PETS (Creature subsystem) - Phase 2 Slice 1+2: data model, acquisition, hatch.
+// KNUCKLEBONES (expression #1, EXPRESSION_IDEAS.md). The tavern dice game,
+// Cult-of-the-Lamb rules: two 3x3 boards, alternate placing a rolled d6 into one
+// of your three columns; equal dice in a column MULTIPLY (each counts value x
+// count); placing a die destroys all matching dice in the opponent's same
+// column; first full board ends it, higher total wins. Opponent = one hub NPC
+// per game (rotates with run_count), each with a placement personality. Small
+// gold stakes; a win pays double and warms the NPC (+2 affinity drip).
+// Opened with [K] at the Tavern Requests board (gc.kb_open / gc.kb).
+// =============================================================================
+
+function kb_new_game(foe_id) {
+    return {
+        foe: foe_id, stake: 25, phase: "stake",   // stake -> play -> over
+        mine: [[0,0,0],[0,0,0],[0,0,0]],          // [col][slot], 0 = empty
+        foes: [[0,0,0],[0,0,0],[0,0,0]],
+        die: irandom(5) + 1, foe_die: 0,
+        my_turn: true, cursor: 0, foe_timer: 0,
+        result: "", msg: ""
+    };
+}
+
+function kb_col_count(board, c) {
+    var _n = 0;
+    for (var _i = 0; _i < 3; _i++) if (board[c][_i] > 0) _n++;
+    return _n;
+}
+
+// Column score: each distinct value v with n copies scores v * n * n.
+function kb_col_score(board, c) {
+    var _s = 0;
+    for (var _v = 1; _v <= 6; _v++) {
+        var _n = 0;
+        for (var _i = 0; _i < 3; _i++) if (board[c][_i] == _v) _n++;
+        _s += _v * _n * _n;
+    }
+    return _s;
+}
+
+function kb_total(board) {
+    return kb_col_score(board, 0) + kb_col_score(board, 1) + kb_col_score(board, 2);
+}
+
+function kb_board_full(board) {
+    for (var _c = 0; _c < 3; _c++) if (kb_col_count(board, _c) < 3) return false;
+    return true;
+}
+
+function kb_place(board, c, v) {
+    for (var _i = 0; _i < 3; _i++) if (board[c][_i] == 0) { board[c][_i] = v; return; }
+}
+
+// Remove every die of value v from column c, compacting survivors downward.
+function kb_destroy(board, c, v) {
+    var _keep = [];
+    for (var _i = 0; _i < 3; _i++) if (board[c][_i] > 0 && board[c][_i] != v) array_push(_keep, board[c][_i]);
+    for (var _j = 0; _j < 3; _j++) board[c][_j] = (_j < array_length(_keep)) ? _keep[_j] : 0;
+}
+
+// AI column pick. Every candidate is scored gain + wD*destroyed - wR*self-dup
+// risk; the weights ARE the personality (Dorn plays safe, Vex is pure value,
+// Maren hunts demolitions, Bairc fears reprisal, Vael keeps it pretty-random).
+// Sable's charm-cheat happens at roll time (best of two dice), not here.
+function kb_ai_pick(g) {
+    var _wD = 1.0, _wR = 0.0, _jit = 0;
+    switch (g.foe) {
+        case "dorn":  _wD = 0.5; _wR = 1.0; break;
+        case "vex":   _wD = 1.0; _wR = 0.0; break;
+        case "sable": _wD = 1.0; _wR = 0.2; break;
+        case "petra": _wD = 1.2; _wR = 0.0; break;
+        case "maren": _wD = 2.0; _wR = 0.0; break;
+        case "vael":  _wD = 0.5; _wR = 0.0; _jit = 6; break;
+        case "bairc": _wD = 0.3; _wR = 1.5; break;
+    }
+    var _best = -1, _best_s = -99999;
+    for (var _c = 0; _c < 3; _c++) {
+        if (kb_col_count(g.foes, _c) >= 3) continue;
+        // Simulate the placement on a COPY of the column (never touch the live board).
+        var _gain = 0;
+        var _sim = [g.foes[_c][0], g.foes[_c][1], g.foes[_c][2]];
+        var _before2 = kb_col_score(g.foes, _c);
+        for (var _i = 0; _i < 3; _i++) if (_sim[_i] == 0) { _sim[_i] = g.foe_die; break; }
+        var _after2 = 0;
+        for (var _v = 1; _v <= 6; _v++) {
+            var _n = 0;
+            for (var _k = 0; _k < 3; _k++) if (_sim[_k] == _v) _n++;
+            _after2 += _v * _n * _n;
+        }
+        _gain = _after2 - _before2;
+        // Damage done: player's dice of this value in the same column vanish.
+        var _destroyed = 0, _pn = 0;
+        for (var _p = 0; _p < 3; _p++) if (g.mine[_c][_p] == g.foe_die) _pn++;
+        _destroyed = g.foe_die * _pn * _pn;
+        // Risk: duplicates in the AI's own column invite the same demolition.
+        var _dup = 0;
+        for (var _d = 0; _d < 3; _d++) if (_sim[_d] == g.foe_die) _dup++;
+        var _risk = (_dup >= 2) ? g.foe_die * _dup : 0;
+        var _score = _gain + _wD * _destroyed - _wR * _risk + ((_jit > 0) ? irandom(_jit) : 0);
+        if (_score > _best_s) { _best_s = _score; _best = _c; }
+    }
+    return _best;
+}
+
+// One in-character table line per opponent (drawn under their name).
+function kb_foe_line(id) {
+    switch (id) {
+        case "dorn":  return "Plays it like he forges - no wasted heat.";
+        case "sable": return "Shuffles the dice a touch too skillfully.";
+        case "maren": return "Places each die like it's being socketed.";
+        case "vex":   return "Never bluffs. Never has to.";
+        case "petra": return "Treats every roll like a negotiation.";
+        case "vael":  return "Cares how the board LOOKS, somehow wins anyway.";
+        case "bairc": return "Apologizes when he takes your dice.";
+    }
+    return "";
+}
 // See PETS_DESIGN.md. Feed/growth, evolution, the Companion Gate tab and all combat
 // are LATER slices; their fields are reserved here so saves stay forward-compatible.
 // Naming: PET_STAGE_AWAKENED (4) is deliberately distinct from global.awakening_level
@@ -4476,6 +5114,71 @@ function pet_growth_needed(stage) {
 // The highest stage a pet can reach. Awakened (4) shipped 2026-07-03: crossing it
 // takes MORE than a full bar - see pet_awaken_gate_ok (full clear at A5, Soul-bound).
 function pet_max_stage() { return PET_STAGE_AWAKENED; }
+
+// =============================================================================
+// PET COMBAT STANCES (expression #3, EXPRESSION_IDEAS.md). A per-pet behavioral
+// dial for the archetypes that act in combat, set with [B] on the Gate's
+// Companion tab. Stored as pet.stance (roster saves wholesale, so it persists;
+// pets from older saves default to the first stance). Fortune pets have none.
+//   Warrior:  aggressive (default strike) / guarded (-50% strike, 25% chance to
+//             intercept 35% of blows on you) / assist (strikes YOUR target and
+//             leaves it Exposed - Pack Tactics rider)
+//   Guardian: balanced (heal <70% else ward) / mender (heal first) /
+//             warder (ward first) / cleanser (strip your newest debuff first)
+// =============================================================================
+
+function pet_stance_list(pet) {
+    if (!is_struct(pet) || pet.is_egg) return [];
+    if (pet.archetype == PET_ARCH_COMBATANT) return ["aggressive", "guarded", "assist"];
+    if (pet.archetype == PET_ARCH_GUARDIAN)  return ["balanced", "mender", "warder", "cleanser"];
+    return [];
+}
+
+// The pet's current stance, validated against its archetype's list ("" = none).
+function pet_stance(pet) {
+    var _l = pet_stance_list(pet);
+    if (array_length(_l) == 0) return "";
+    if (!variable_struct_exists(pet, "stance") || pet.stance == "") return _l[0];
+    for (var _i = 0; _i < array_length(_l); _i++) if (_l[_i] == pet.stance) return pet.stance;
+    return _l[0];
+}
+
+// Cycle to the next stance; returns the new id ("" when the pet has no stances).
+function pet_stance_cycle(pet) {
+    var _l = pet_stance_list(pet);
+    if (array_length(_l) == 0) return "";
+    var _cur = pet_stance(pet);
+    var _at  = 0;
+    for (var _i = 0; _i < array_length(_l); _i++) if (_l[_i] == _cur) { _at = _i; break; }
+    pet.stance = _l[(_at + 1) mod array_length(_l)];
+    return pet.stance;
+}
+
+function pet_stance_label(id) {
+    switch (id) {
+        case "aggressive": return "Aggressive";
+        case "guarded":    return "Guarded";
+        case "assist":     return "Assist";
+        case "balanced":   return "Balanced";
+        case "mender":     return "Mender";
+        case "warder":     return "Warder";
+        case "cleanser":   return "Cleanser";
+    }
+    return "";
+}
+
+function pet_stance_desc(id) {
+    switch (id) {
+        case "aggressive": return "Strikes the weakest foe at full power.";
+        case "guarded":    return "Half strike damage; 25% chance to intercept part of blows aimed at you.";
+        case "assist":     return "Strikes YOUR target and leaves it Exposed (Pack Tactics).";
+        case "balanced":   return "Heals you when hurt, wards you when healthy.";
+        case "mender":     return "Always tends your wounds first.";
+        case "warder":     return "Always raises a ward.";
+        case "cleanser":   return "Strips your newest affliction before anything else.";
+    }
+    return "";
+}
 
 // Adult -> Awakened crossing gate (design 2026-07-03): beyond the full growth bar, the
 // evolution run itself must be a FULL CLEAR (result 1) at Awakening 5 with the pet
@@ -5782,6 +6485,17 @@ function hatch_cutscene_step() {
     }
 }
 
+// True when an egg's contents are known (species/type visible, hatchable).
+// Eggs found in the dungeon arrive UNIDENTIFIED - pay Bairc to identify them.
+// Back-compat: eggs saved before this feature carry no flag and count as known.
+function pet_egg_identified(pet) {
+    if (!is_struct(pet) || !pet.is_egg) return true;
+    return !variable_struct_exists(pet, "identified") || pet.identified;
+}
+
+// Gold cost to have Bairc identify an egg.
+function pet_egg_identify_cost() { return cha_price(75); }
+
 // Number of unhatched eggs currently held.
 function pet_egg_count() {
     var _r = pet_roster(); var _n = 0;
@@ -5804,10 +6518,19 @@ function pet_grant_from_source(source, species_override = "") {
     // ~12% of finds arrive CORRUPTED (§7): they start PUSHING (carried debuff, but gains a
     // permanent +15% each completed run, fully corrupting after 3). You can cure anytime.
     if (irandom(99) < 12) { _pet.corrupted = true; _pet.corruption_state = "pushing"; }
-    // Record for the run-scoped "creatures found" strip in the equipment Found column -
-    // pets go straight to Bairc, so this is the only in-run place the loot is visible.
+    // Dungeon-found EGGS arrive unidentified - everything but the shell is "??"
+    // until Bairc is paid to identify (design 2026-07-04). Found LIVE creatures
+    // are self-evidently what they are.
+    if (_pet.is_egg) _pet.identified = false;
+    // Record for the run-scoped found strip in the equipment Found column - pets go
+    // straight to Bairc, so this is the only in-run place the loot is visible.
     if (!variable_global_exists("run_found_pets")) global.run_found_pets = [];
-    array_push(global.run_found_pets, _pet.is_egg ? (pet_species_get(_pet.species).name + " Egg") : _pet.name);
+    if (_pet.is_egg) {
+        var _mys_lbl = pet_egg_label(_pet);
+        array_push(global.run_found_pets, "Mysterious " + ((_mys_lbl != "") ? _mys_lbl : "Egg"));
+    } else {
+        array_push(global.run_found_pets, _pet.name);
+    }
     return pet_add(_pet);
 }
 
@@ -5942,6 +6665,9 @@ function pet_row_label(pet) {
     if (!is_struct(pet)) return "";
     if (pet.is_egg) {
         var _el = pet_egg_label(pet);
+        if (!pet_egg_identified(pet)) {
+            return "Mysterious " + ((_el != "") ? _el : "Egg") + "  -  (?? - Bairc can identify)";
+        }
         return pet.name + " Egg" + (_el != "" ? "  -  " + _el : "") + "  (" + pet_archetype_name(pet.archetype) + ")";
     }
     var _tag = pet.raised ? "" : "  (found)";
@@ -5963,9 +6689,11 @@ function tutorial_catalog() {
         { id:"ascendance", title:"Awakening Tiers",     body:"Higher Awakening tiers make enemies tougher but drop better, rarer loot. Raise the tier when you want more risk for more reward - start low and work up." },
         { id:"combat_ap",  title:"Action Points (AP)",  body:"Each turn you have 3 AP. Abilities cost AP to use; a basic attack is free. Spend your AP wisely, then end your turn to let the enemy act." },
         { id:"targeting",  title:"Choosing a Target",   body:"When several foes are present, Tab or click to pick who you hit. The glowing rune beneath an enemy marks your current target." },
+        { id:"intent",     title:"Enemy Intent",        body:"Every enemy telegraphs its next move on the chip above its health bar: red for an attack (with the rough damage you'd take), purple for a spell, green for a heal, amber for a status effect. Intents are honest - and if you Stun, Root or Silence a foe, its chip greys out: that move is cancelled." },
         { id:"inspect",    title:"Inspect Your Foes",   body:"Mouse over an enemy (or its health bar) to inspect it. You'll see whether it fights at Melee or Ranged and with Phys or Spell - and which controls stop it: Root halts melee, Silence stops spells, Stun stops anything. Ranged foes ignore Root, so a trap won't keep them off you." },
         { id:"vex",        title:"Vex the Trainer",     body:"Vex teaches new abilities and traits for gold (and the occasional item). Learn abilities here, then slot them on the loadout screen before a run." },
         { id:"shrine",     title:"Altars",              body:"A shrine is an altar. A Blessing altar sells boons for tribute; a Cursed altar lets you take on a curse - a run-long penalty - in exchange for far better spoils. Choose how greedy you dare to be." },
+        { id:"gold_risk",  title:"Gold at Risk",        body:"Gold you FIND during a run is at risk - die and you lose most of it (a quarter is returned as mercy). Gold banked before the run is always safe at camp. The number in brackets on your HUD is what you're gambling: extract to keep it all." },
     ];
 }
 
@@ -6435,6 +7163,8 @@ function event_effect_phrase(fx) {
         array_push(_p, "a rune");
     if (variable_struct_exists(fx, "boon") && fx.boon != "")
         array_push(_p, "a BOON");
+    if (variable_struct_exists(fx, "memory") && fx.memory)
+        array_push(_p, "a borrowed ability (this run)");
     if (variable_struct_exists(fx, "pet_egg") && fx.pet_egg != "")
         array_push(_p, "a creature");
     if (array_length(_p) == 0) return "nothing";
@@ -6582,6 +7312,15 @@ function event_apply_effects(fx) {
             ? ("You recovered a " + _pe.name + " egg - visit Bairc.")
             : ("A " + _pe.name + " follows you home - visit Bairc.");
     }
+    // Borrowed Memory (expression #6) - a temporary other-class ability, this run only
+    if (variable_struct_exists(fx, "memory") && fx.memory) {
+        var _bm = borrowed_memory_grant();
+        if (_bm != "") {
+            array_push(_sum, "BORROWED MEMORY: " + _bm + " (" + global.run_borrowed_class + " - this run)");
+        } else {
+            array_push(_sum, "the memory slips away...");
+        }
+    }
     // Boon (rare jackpot) - "random" picks an unowned boon, else a specific id
     if (variable_struct_exists(fx, "boon") && fx.boon != "") {
         var _bid = fx.boon;
@@ -6681,6 +7420,34 @@ function event_catalog() {
             { label: "Leave it undisturbed", hint: "Some things should be left to rest",
               cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
               outcomes: [ { weight: 100, text: "You leave the nest to the dark.", effects: {} } ] }
+        ]
+    });
+
+    // --- The Stranger's Memory (Borrowed Memories, expression #6) ----------
+    // Grants a run-scoped ability from ANOTHER class's pool - the past-lives
+    // lore hook. INT path is the safe read; the greedy path can bite.
+    array_push(_cat, {
+        id: "strangers_memory",
+        title: "The Stranger's Memory",
+        body: "A body long past naming sits against the wall, and something of what it knew still hangs in the air - a gesture, a word, a stance that was never yours.",
+        color: make_color_rgb(150, 130, 220),
+        choices: [
+            { label: "Study the memory", hint: "INT check - success: borrow its ability this run - failure: it fades",
+              cost_gold: 0, req_stat: "", req_amount: 0, resolve: "check",
+              check_stat: "INT", check_base: 50, check_per: 6, check_ref: 5,
+              success: { text: "The gesture settles into your hands as if they had always known it.",
+                         effects: { memory: true } },
+              fail:    { text: "You reach for it and it scatters like breath on glass.",
+                         effects: { dust: 8 } } },
+            { label: "Drink it in whole", hint: "No check - the memory takes something back",
+              cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+              outcomes: [ { weight: 70, text: "It floods in - power, and the cold of a stranger's dying.",
+                            effects: { memory: true, hp: -12 } },
+                          { weight: 30, text: "Only the dying comes through.",
+                            effects: { hp: -18, dust: 12 } } ] },
+            { label: "Let the dead keep it", hint: "Walk away - no risk, no reward",
+              cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+              outcomes: [ { weight: 100, text: "You leave what remains of them intact.", effects: {} } ] }
         ]
     });
 

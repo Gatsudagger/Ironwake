@@ -1,0 +1,214 @@
+==============================================================
+ IRONWAKE - REVIEW CHECKLIST  2026-07-04
+ Everything below is BUILT and UNCOMMITTED. One F5 covers it
+ all (plus yesterday's Phase 4b gifts + enemy-intent build,
+ which is still uncommitted too).
+==============================================================
+
+--- COMBAT UI --------------------------------------------------
+[ ] Damage/heal numbers now pop over the PLAYER SPRITE (center
+    chest), not off to the left. Includes heals, shields,
+    reflected hits, enemy double-strikes.
+[ ] Pet no longer hidden by the combat log - it stands slightly
+    higher, reading as a depth row behind you.
+[ ] Turn-order strip is smaller and moved left - it no longer
+    covers the intent (ATK) chips on the first enemy row.
+[ ] Enemy rows re-pitched (108 -> 132): stacked enemies' debuff
+    badges no longer collide with the nameplate below. Debuff
+    rows cap at the bar width with a "+N" overflow badge.
+[ ] BONUS BUG FIX: the hit-preview hover boxes still used the
+    OLD row pitch (78) - hovering could preview the WRONG
+    enemy. Now synced. This was part of your Snipe confusion.
+[ ] POTENTIAL DAMAGE preview is now honest: includes Vanish
+    +12, aspect rune %, Arcane Echo/Killing Spree/Soul Nova/
+    Flurry riders, Assassinate execute, your Weaken, target
+    vulnerable/hexed/firemark, trait & boon multipliers, and
+    weapon/school components are mitigated like the real hit.
+    Crit variance is still "approx." by design.
+[ ] Combat-log hover breakdown now lists "Vanish ambush +12",
+    "Target armor/resist -X", "Vulnerable/Hexed +X", and the
+    Power line no longer double-counts crit inflation. Lines
+    should now visibly sum to the total.
+[ ] Hit chance: VERIFIED NO BUG. Display math exactly matches
+    the roll (Acc% then Dodge%). 91% = ~1 miss in 11. Left as-is.
+
+--- LOADOUT SCREEN ---------------------------------------------
+[ ] Ability list scrolls at the WINDOW EDGES now (top row up /
+    bottom row down), not at 2nd-from-bottom.
+[ ] Cursor row has a thick pulsing GOLD frame + chevron.
+[ ] Confirm bar glows amber when focused (green when ready) -
+    no more guessing whether you're on a row or the button.
+
+--- SYSTEM FIXES -----------------------------------------------
+[ ] POST-COMBAT HP BAR BUG: FOUND + FIXED, and it was NOT just
+    visual. Putting a level-up point into CON overwrote your
+    max HP with the BARE stat value - wiping gear +HP, Thick
+    Skin and boon/curse mults - and the clamped HP was saved as
+    your carried run HP (real HP loss). Now applies only the
+    CON delta. This fired exactly at the extract/descend prompt.
+[ ] Unequip HP rule: VERIFIED already correct in the engine -
+    run HP is stored as a number and only clamped when above
+    the new max (20/40 minus a +10HP piece = 20/30). Equipping
+    never raises current HP, so no heal-cheat exists. Fixed one
+    display spot (Stats tab) that showed unclamped HP.
+[ ] Pet "Luna didn't evolve": wiring is correct - the catch is
+    the pet must be your ACTIVE COMPANION on that run (and the
+    run must end in extract/clear, not death). The READY text
+    now says so + tells you where to equip it, and if a ready
+    pet stayed home you get an explicit notice on hub return.
+    -> Try: equip Luna at dungeon gate > Companion, do a run.
+[ ] Rest sites scale: 15 + 4/Awakening tier + 5% of max HP
+    (A4 @ 200 HP = ~41). Room text + node preview updated.
+[ ] Enemy pack sizes: awakening-shifted. A0-1 mostly 2-3
+    (4-pack ~10%), A2-3 4-pack ~25%, A4-5 4-pack ~40% with
+    occasional 5-PACKS. Deeper floors still nudge larger.
+[ ] Gold HUD on runs: "Gold: 812g (+130g this run - at risk)"
+    - the amber bracket is what you found this run. One-time
+    tutorial tip ("Gold at Risk") fires on the floor map once
+    you carry 40g+ found gold.
+    >> DESIGN NOTE: a deposit option is NOT needed - gold you
+    had BEFORE the run is already safe on death (you only lose
+    75% of run-found gold). If you want deposits to matter,
+    we'd have to put ALL carried gold at risk. Say the word.
+
+--- SHRINES ----------------------------------------------------
+[ ] Boon rows: hover the "[3] Sacrifice <item>" line for the
+    FULL item tooltip before committing. (Pressing 3 still
+    opens the picker where you choose the exact item.)
+[ ] Claiming a boon (any payment) triggers a celebration:
+    golden sparkle flutter + "BOON CLAIMED / OFFERING ACCEPTED"
+    popup on the floor map saying exactly what you got and gave.
+
+--- NEW ITEMS --------------------------------------------------
+[ ] GENIE LAMP: ~1.5% drop from ELITE/BOSS kills only. Shows in
+    the combat log when it drops. On the floor map press G ->
+    confirm -> free extraction with ALL loot + found gold.
+    Boss credits already banked stay banked.
+[ ] DEVIL WINE: Sable's Brew list, 1200g + 50 dust. Press G on
+    the floor map -> confirm -> extract with everything, but
+    PERMANENTLY lose 3 random stat points (never below 1).
+    The exact stats lost are reported on hub return.
+[ ] Escape items are blocked in combat (no wasted consume) and
+    the floor map shows a "[G] Use ..." hint while you carry one.
+
+--- EGGS / BAIRC -----------------------------------------------
+[ ] Dungeon-found eggs are now "Mysterious <Egg Type>" - the
+    equipment Found column shows them as item-style rows with
+    an egg icon. Species/Type read "??" at Bairc.
+[ ] Bairc: press I on a mysterious egg to IDENTIFY (75g, CHA
+    discount applies). Hatching is blocked until identified.
+    Old eggs from before today count as already identified.
+
+--- JOURNAL (J) ------------------------------------------------
+[ ] Journal now has 5 tabs: RELATIONSHIPS / QUESTS / COMPENDIUM
+    / ITEM CODEX / BESTIARY (Q/E to cycle).
+[ ] Compendium REMOVED from the character menu (now 4 tabs).
+[ ] Item Codex tab: Enter at camp opens the full gallery
+    (hub footer no longer lists G; the key still works).
+[ ] BESTIARY: all 33 species across the three dungeons with
+    fresh lore, grouped by dungeon, W/S to browse.
+
+--- ART (RESOLVED 7-04: stone gargoyle imported) ---------------
+[ ] Enter-Dungeon gate art: you picked a 3rd stone-gargoyle
+    version (proposals A/B rejected). Upscaled x4 and swapped
+    into spr_dungeon_gate - check the Enter Dungeon panel in
+    the hub.
+[ ] RIMEFOX imported (Tundra pet #1): 3 stages x south/east
+    animated idle, live everywhere pets draw. Find/hatch a
+    tundra egg or check the Bairc roster if you have one.
+    NOTE: real PixelLab costs ran ~105 gens per species (my
+    "42 for the trio" note was wrong) - 98 gens left, so
+    crypt_bat + hoarfrost_drake wait for the next cycle.
+
+--- EXPRESSIONS SLICE 1 (approved 7-04: tints + epithets) ------
+[ ] VAEL "TINTS" TAB (3rd tab, Q/E or click): 16 spell tints,
+    2 per school, 250-300g. Buying auto-equips; Enter on an
+    equipped tint reverts that school to its base color.
+    Recolors combat-log school words + tied numbers, ability
+    popup accents, loadout school text, AND blends the cast
+    VFX flare in combat. Detail panel shows before/after.
+[ ] EPITHETS: press T on the char menu Stats tab to cycle
+    earned titles (12 in the table: Gravebreaker, Deathless,
+    A5 per-dungeon clears, Soul-bound, the Beloved, Slayer of
+    Hundreds...). Shows by the level line, under the RUN
+    HISTORY title, and on the victory/defeat screen. All
+    retroactive - your existing history counts immediately.
+
+--- UI FEEDBACK ROUND (your 3 items, 7-04 evening) -------------
+[ ] Hub footer: unread-Journal cue is now the "J: Journal"
+    text itself flashing GOLD (pulse dot removed).
+[ ] Tavern board: FULFILLED group removed from the board -
+    completed requests live only in Journal > Quests
+    (Completed group). Footer hint points there.
+[ ] Bairc READY line: now short ("READY to become Young
+    Adult  (hover)"); the full active-companion requirement
+    is a wrapped tooltip when you mouse over the growth bar.
+
+--- EXPRESSIONS SLICE 2 (#6 + #3, same evening) ----------------
+[ ] BORROWED MEMORIES: new event "The Stranger's Memory"
+    (INT-check or pay-in-blood paths) grants ONE ability from
+    another class's pool for THIS RUN - it appears as an
+    extra combat button after your loadout, and is listed in
+    the char menu's Boons & Effects. Cleared at run end.
+    (Abilities needing another class's resource are excluded.)
+[ ] PET STANCES: on the Gate's Companion tab, [B] cycles the
+    highlighted pet's stance (STANCE box on the detail card).
+    Warrior: Aggressive / Guarded (-50% strike, 25% chance to
+    intercept 35% of hits on you) / Assist (hits YOUR target,
+    leaves it Exposed +2 - "Pack Tactics").
+    Guardian: Balanced / Mender / Warder / Cleanser (strips
+    your newest debuff first). Fortune pets have no stance.
+
+--- PHASE 4C: GATE QUESTS + DOWNWARD FORCES (7-04 late) --------
+[ ] GATE QUESTS: 21 authored (7 NPCs x Friend/Companion/Lover),
+    hidden until that NPC's bond is gate-READY. [B] Deepen now
+    STARTS the quest ("they ask something of you first");
+    finishing it on the tavern board / [B] again crosses the
+    tier. Re-climbs after neglect/demotion where the quest is
+    still cleared are one-click (no re-quest).
+    Try: get any NPC gate-ready and press B - the ask lands in
+    the notification + board + Journal (reward column shows
+    "NPC -> Tier").
+[ ] SLOT DEMOTION: completing a 3rd Companion gate demotes
+    your lowest-score Companion to Friend AND resets their
+    Companion quest (must re-clear). Hub notice + ledger.
+[ ] BETRAYAL: completing a 2nd Lover gate drops the old Lover
+    to soured Acquaintance (score slashed, ALL their gates
+    reset). Heartbreak notice + ledger.
+[ ] NEGLECT DECAY: NPCs below Companion lose 2 bond points
+    per floor-clear after 6 idle clears (any trade/gift with
+    them resets the clock). Score hitting 0 drops one tier
+    ("drifting apart" in their ledger). Companion+ never rots.
+    Spec: PHASE4C_SPEC.md.
+
+--- EXPRESSIONS SLICE 3 (#2 mastery + #1 Knucklebones) ---------
+[ ] ABILITY MASTERY: every player cast is now counted (per
+    ability, lifetime, saved). At 25 and 75 casts an ability
+    earns a NOTCH - the combat log announces it, and the
+    loadout row shows a pulsing gold "NOTCH! [M]". Press M on
+    that row to pick ONE of two permanent micro-mods (damage
+    abilities: +3 dmg vs +5 acc / +4% crit; timed effects:
+    +2 strength vs +1 turn; instant: +2 vs +20%). Picks stack
+    across both notches; "Mastery 1/2" shows after. Numbers in
+    tooltips/descriptions update live since they read the
+    modified ability. M on a row without a notch shows your
+    cast count + next threshold.
+[ ] KNUCKLEBONES: press K at the Tavern Requests board.
+    Cult-of-the-Lamb rules (3 columns, matching dice multiply,
+    matching their column smashes their dice). Opponent
+    rotates with run count; each NPC has a play personality
+    (Dorn safe, Maren demolition-hungry, Sable rolls best-of-
+    two "somehow", Vael random-flair, Bairc timid...). Stakes
+    10/25/50g, win pays double + warms them (+2 bond drip).
+    Esc mid-game concedes the stake.
+
+--- KNOWN NON-CHANGES / VERDICTS -------------------------------
+* Awakening does NOT scale the player anywhere in code - only
+  enemies (acc/heal/stats) and loot. Lower-awakening damage
+  feel is likely detonation uptime / your signature pet's
+  acquisition-tier bonus, not a bug.
+* Snipe 17-vs-52 screenshot: preview was for Stone Golem (high
+  armor), the 52 landed on Vault Crawler with Vanish primed +
+  aspect rune - plus the stale hover-pitch bug above. All of
+  it is addressed by the preview/breakdown fixes.
+==============================================================

@@ -35,7 +35,9 @@ var _bar_height  = 42;
 // column sits in a clear gutter instead of clipping the end of the left bar.
 var _bar_col_x   = [990, 1485];   // the two column origins (x)
 var _bar_row_y0  = 96;
-var _bar_row_gap = 78;           // bar + status-icon row per grid row
+var _bar_row_gap = 132;          // bar + status-icon row + intent chip per grid row
+                                 // (was 108: a row's debuff badges + duration text ran
+                                 // into the NEXT row's intent chip when stacked)
 
 var _living_idx = 0;
 var _count = array_length(combat_state.combatants);
@@ -70,6 +72,11 @@ for (var _i = 0; _i < _count; _i++) {
 
     ui_draw_hp_bar(_bar_x, _bar_y, _bar_width, _bar_height,
                    _c.HP, _c.max_HP, _c.name, true);
+
+    // Intent chip (INTENT_SPEC.md): the foe's telegraphed next action, drawn as a
+    // compact plate above the bar (clears the ornate frame at y-4). Greys out with
+    // a strike-through while a control status cancels the telegraphed move.
+    ui_draw_intent_chip(_bar_x, _bar_y - 10, _c);
 
     // Attack-class tag (reach/kind), right-aligned under the bar so the player can
     // see which control applies: ROOT blocks Melee, SILENCE blocks Spell, STUN all.
@@ -192,7 +199,10 @@ if (_pet_co != undefined && !_pet_co.is_egg) {
         var _petsc  = _peth_t / max(1, sprite_get_height(_petspr));
         // Player feet (origin top-left): centre-x + a step to the right, ground-line y.
         var _petx = _px_draw + sprite_get_width(_pspr) * _pscale * 0.5 + 120;
-        var _pety = _py_draw + sprite_get_height(_pspr) * _pscale * 0.94;
+        // Ground line clamped ABOVE the combat log (log top y735, drawn after sprites):
+        // at the player's true footing (y~789) the pet's lower half vanished behind the
+        // log panel. Standing it slightly higher reads as a depth row behind the player.
+        var _pety = min(_py_draw + sprite_get_height(_pspr) * _pscale * 0.94, 726);
 
         // Procedural attack lunge: on a Combatant strike (global.pet_lunge_t0), the pet
         // surges toward the enemies (right) and snaps back over ~260ms, with a squash-
@@ -373,7 +383,8 @@ if (vfx_timer > 0) {
     var _vfx_scale  = _vfx_target / max(1, sprite_get_width(vfx_spr));
     gpu_set_blendmode(bm_add);
     draw_set_alpha(_vfx_alpha);
-    draw_sprite_ext(vfx_spr, _vfx_frame, vfx_x + screen_shake_x, vfx_y + screen_shake_y, _vfx_scale, _vfx_scale, 0, c_white, 1.0);
+    // Spell tint (Vael): equipped palettes blend the cast VFX; default stays as authored.
+    draw_sprite_ext(vfx_spr, _vfx_frame, vfx_x + screen_shake_x, vfx_y + screen_shake_y, _vfx_scale, _vfx_scale, 0, school_vfx_blend(vfx_school), 1.0);
     gpu_set_blendmode(bm_normal);
     draw_set_alpha(1.0);
 }
@@ -946,6 +957,16 @@ if (combat_over) {
     draw_set_font(fnt_ui);
     draw_set_halign(fa_center);
     var _summary_y = _cy + 75;
+
+    // Epithet (expression #5): the fallen/triumphant get their title read out.
+    var _res_ep = player_epithet_text();
+    if (_res_ep != "") {
+        var _res_classes = ["Arcanist", "Bloodwarden", "Shadowstrider"];
+        var _res_cid = variable_global_exists("chosen_class") ? clamp(global.chosen_class, 0, 2) : 0;
+        draw_set_color(make_color_rgb(200, 170, 230));
+        draw_text(_cx, _summary_y, _res_classes[_res_cid] + ", " + _res_ep);
+        _summary_y += 42;
+    }
 
     draw_set_color(c_yellow);
     var _gold_suffix = "";

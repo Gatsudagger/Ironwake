@@ -120,6 +120,17 @@ if (_result == 1) {
             }
         }
     }
+    // Genie Lamp: ~1.5% drop from ELITE and BOSS kills only (design 2026-07-04).
+    // A free mid-run escape - rub it on the floor map [G] to extract with all loot.
+    if (!combat_over && !genie_lamp_rolled && variable_global_exists("next_enemy_type")
+        && (global.next_enemy_type == "boss" || global.next_enemy_type == "elite")) {
+        genie_lamp_rolled = true;
+        if (irandom(999) < 15) {
+            consumable_award(create_consumable("Genie Lamp", "escape_lamp", 0,
+                "Rub it on the floor map [G]: escape to camp with everything you found", 500));
+            array_push(combat_log, "A tarnished GENIE LAMP tumbles from the remains! (Floor map: [G] to use)");
+        }
+    }
     // Open level-up stat allocation if points are waiting
     if (!combat_over && global.pending_stat_points > 0
         && instance_exists(obj_game_controller)) {
@@ -220,9 +231,10 @@ if (player_turn) {
                 _foe_count++;
             }
             // Teach target-switching only in multi-foe fights; once that's handled (shown
-            // now, already seen, or single foe), teach inspect-on-hover. One tip at a time.
+            // now, already seen, or single foe), teach the intent chips, then
+            // inspect-on-hover. One tip at a time.
             if (!(_foe_count > 1 && tutorial_try_show("targeting"))) {
-                tutorial_try_show("inspect");
+                if (!tutorial_try_show("intent")) tutorial_try_show("inspect");
             }
         }
     }
@@ -311,7 +323,11 @@ if (player_turn) {
                 // AP-restore items ("energy") and the resource+AP brew ("resource_ap")
                 // cost no AP, so they work at 0 AP too (and their +AP is a real net gain).
                 var _q_is_ap = (_citem.effect_type == "energy" || _citem.effect_type == "resource_ap");
-                if (player.energy < 1 && !_q_is_ap) {
+                if (_citem.effect_type == "escape_lamp" || _citem.effect_type == "escape_wine") {
+                    // Escape items resolve on the FLOOR MAP (G key) - never mid-fight, and
+                    // they must not fall through the chain and get consumed for nothing.
+                    array_push(combat_log, _citem.name + " cannot be used mid-fight - use it from the floor map [G].");
+                } else if (player.energy < 1 && !_q_is_ap) {
                     array_push(combat_log, "Need 1 AP to use a consumable.");
                 } else {
                     if (_citem.effect_type == "heal") {
@@ -321,7 +337,7 @@ if (player_turn) {
                             + " - restored " + string(_qheal) + " HP!");
                         if (_qheal > 0) {
                             array_push(damage_popups,
-                                { value: _qheal, x: 330, y: 360, timer: 45, col: c_lime });
+                                { value: _qheal, x: 475, y: 545, timer: 45, col: c_lime });
                         }
                     } else if (_citem.effect_type == "energy") {
                         // Burst AP: no cap (can exceed the 3-AP turn limit) and no use cost.
@@ -475,13 +491,14 @@ if (player_turn) {
             }
         }
         // Enemy HP bars: 2-column grid matching Draw_64 - columns at x=990/1485 (w400)
-        // (width 420), living enemy i at row (i div 2), y=96+row*78, h=42.
+        // (width 420), living enemy i at row (i div 2), y=96+row*108, h=42.
+        // (Row pitch 78->108 with the intent-chip strip above each bar.)
         var _cbar_li = 0;
         for (var _cti = 0; _cti < array_length(combat_state.combatants); _cti++) {
             var _ctc = combat_state.combatants[_cti];
             if (!_ctc.is_player && !_ctc.is_defeated) {
                 var _cbar_x = (_cbar_li mod 2 == 0) ? 990 : 1485;
-                var _cbar_y = 96 + (_cbar_li div 2) * 78;
+                var _cbar_y = 96 + (_cbar_li div 2) * 132;   // keep in sync with Draw_64 _bar_row_gap
                 if (_cmx >= _cbar_x && _cmx < _cbar_x + 400 && _cmy >= _cbar_y && _cmy < _cbar_y + 42) {
                     selected_target = _cbar_li;
                 }
@@ -825,9 +842,11 @@ if (player_turn) {
                         // Vanish: the empowered strike out of stealth deals bonus damage.
                         // Only a real ATTACK spends the ambush bonus - casting a pure debuff
                         // (Marked for Death etc.) leaves it intact for your next damaging strike.
+                        var _vanish_fired = false;
                         if (_deals_damage && variable_struct_exists(player, "vanish_bonus") && player.vanish_bonus) {
                             _dmg += 12;
                             player.vanish_bonus = false;
+                            _vanish_fired = true;
                             array_push(combat_log, "Vanish: ambush strike for +12 damage!");
                         }
                         // Detonation reaction - pre-crit damage component (replaces the old flat
@@ -910,6 +929,8 @@ if (player_turn) {
                         // mitigated separately. Multi-hit identity: strong with crit scaling,
                         // softer vs heavy armor (armor bites each hit). (P2)
                         var _final_dmg;
+                        var _bd_mitig_loss  = 0;     // damage eaten by armor/resist (breakdown line)
+                        var _bd_dmg_precrit = _dmg;  // pre-crit accumulator (breakdown "Power & bonuses")
                         if (ab.name == "Flurry") {
                             var _fl_each = max(1, round(_dmg / 3));
                             _final_dmg = 0;
@@ -930,13 +951,18 @@ if (player_turn) {
                                 target.armor,
                                 target.el_resist
                             );
+                            _bd_mitig_loss = max(0, _dmg - _final_dmg);
                         }
 
                         // Vulnerable: target takes extra flat damage from every DAMAGING hit
                         // (summed). Pure-debuff abilities (base damage 0) must NOT pick this up -
                         // they only apply their own debuff.
-                        if (_deals_damage) _final_dmg += combat_status_total(target, "vulnerable")
-                                                       + combat_status_total(target, "hexed");   // Hexed keeps Curse's flat dmg-taken
+                        var _bd_vuln_flat = 0;   // vulnerable/hexed flat rider (breakdown line)
+                        if (_deals_damage) {
+                            _bd_vuln_flat = combat_status_total(target, "vulnerable")
+                                          + combat_status_total(target, "hexed");   // Hexed keeps Curse's flat dmg-taken
+                            _final_dmg += _bd_vuln_flat;
+                        }
 
                         // Scorch firemark: every damaging hit deals bonus TRUE FIRE damage,
                         // routed through the target's elemental resist (real fire, unlike the
@@ -1063,7 +1089,7 @@ if (player_turn) {
                             var _react_ls = combat_heal_after_mortality(player, round(_final_dmg * 0.3 * _hex_mult));
                             if (_react_ls > 0) {
                                 player.HP = min(player.max_HP, player.HP + _react_ls);
-                                array_push(damage_popups, { value: _react_ls, x: 330, y: 360, timer: 45, col: c_lime });
+                                array_push(damage_popups, { value: _react_ls, x: 475, y: 545, timer: 45, col: c_lime });
                                 array_push(combat_log, ab.name + " siphons " + string(_react_ls) + " HP from the void!");
                             }
                         }
@@ -1180,9 +1206,11 @@ if (player_turn) {
                         vfx_y         = _vfx_ey;
                         vfx_timer     = 20;
                         vfx_timer_max = 20;
+                        vfx_school    = ability_school(ab);   // spell-tint blend key
                         // Attack audio keyed to the ABILITY (damage type), not the class.
                         // See play_ability_cast_sfx / SYSTEMS_COMBAT_FX.md.
                         play_ability_cast_sfx(ab, player, true);
+                        ability_mastery_count_cast(ab.name, combat_log);   // expression #2
 
                         // --- Hit log - damaging abilities report damage; pure debuffs/utility
                         //     just report the cast (the debuff itself is logged when applied). ---
@@ -1200,11 +1228,19 @@ if (player_turn) {
                                 var _bd_lines = [];
                                 var _bd_base  = variable_struct_exists(ab, "base_damage") ? ab.base_damage : 0;
                                 array_push(_bd_lines, { label: "Ability base", val: string(_bd_base) });
-                                var _bd_bonus = _dmg - _bd_base;   // stat scaling + pre-crit riders
+                                // Split Vanish out of the lump so the ambush +12 reads as its own
+                                // line (it lands inside _dmg pre-crit, same as stat scaling).
+                                var _bd_bonus = _bd_dmg_precrit - _bd_base - (_vanish_fired ? 12 : 0);   // stat scaling + pre-crit riders
                                 if (_bd_bonus != 0)
                                     array_push(_bd_lines, { label: "Power & bonuses", val: (_bd_bonus > 0 ? "+" : "") + string(_bd_bonus) });
+                                if (_vanish_fired)
+                                    array_push(_bd_lines, { label: "Vanish ambush", val: "+12" });
                                 if (_crit_result.critted)
                                     array_push(_bd_lines, { label: "Critical hit", val: "x" + string(_crit_result.multiplier) });
+                                if (_bd_mitig_loss > 0)
+                                    array_push(_bd_lines, { label: "Target armor/resist", val: "-" + string(_bd_mitig_loss) });
+                                if (_bd_vuln_flat > 0)
+                                    array_push(_bd_lines, { label: "Vulnerable/Hexed", val: "+" + string(_bd_vuln_flat) });
                                 if (_wpn_flat > 0)
                                     array_push(_bd_lines, { label: ability_class_is_melee(_atk_class) ? "Melee weapon" : "Ranged weapon", val: "+" + string(_wpn_flat) + " physical" });
                                 if (_elem_aff != undefined && _elem_aff.dmg > 0)
@@ -1241,7 +1277,7 @@ if (player_turn) {
                             var _heal = min(player.max_HP - player.HP, _heal_amt);
                             player.HP += _heal;
                             if (_heal > 0) {
-                                array_push(damage_popups, { value: _heal, x: 330, y: 360, timer: 45, col: c_lime });
+                                array_push(damage_popups, { value: _heal, x: 475, y: 545, timer: 45, col: c_lime });
                             }
                             array_push(combat_log, player.name + " restored " + string(_heal) + " HP.");
                         }
@@ -1490,6 +1526,7 @@ if (player_turn) {
                 } else {
                     // Support cast - sound keyed to the effect kind (heal/shield/buff/...).
                     play_ability_cast_sfx(ab, player, false);
+                    ability_mastery_count_cast(ab.name, combat_log);   // expression #2
                     // Self-cast VFX over the player: heal spell for restores, otherwise a
                     // generic buff burst (shields, stat-ups, resource gains, self-debuffs).
                     vfx_spr       = (ab.effect_type == "heal") ? spr_vfx_heal : spr_vfx_buff;
@@ -1497,6 +1534,7 @@ if (player_turn) {
                     vfx_y         = 360;
                     vfx_timer     = 20;
                     vfx_timer_max = 20;
+                    vfx_school    = ability_school(ab);   // spell-tint blend key
                 }
 
                 if (ab.effect_type == "heal") {
@@ -1504,7 +1542,7 @@ if (player_turn) {
                     var _heal = min(player.max_HP - player.HP, _heal_amt);
                     player.HP += _heal;
                     if (_heal > 0) {
-                        array_push(damage_popups, { value: _heal, x: 330, y: 360, timer: 45, col: c_lime });
+                        array_push(damage_popups, { value: _heal, x: 475, y: 545, timer: 45, col: c_lime });
                     }
                     array_push(combat_log, player.name + " restored " + string(_heal) + " HP.");
                     // Field Dressing: 2-turn cooldown (was once-per-combat). The generic CD
@@ -1838,6 +1876,8 @@ if (player_turn) {
         }
 
         // --- Control: stun/root/silence may make the enemy skip its turn ---
+        // INTENT: the stored plan is KEPT (the foe still intends that move next
+        // turn) - the chip greys out while the control lasts, then un-greys.
         if (_was_controlled) {
             array_push(combat_log, actor.name + " " + _ctrl_reason + "!");
             combat_next_turn(combat_state);
@@ -1857,6 +1897,7 @@ if (player_turn) {
         if (player.blink_charges >= 3) {
             player.blink_charges = 2;
             array_push(combat_log, actor.name + "'s attack passes through thin air!");
+            enemy_roll_intent(actor, player, combat_state.round + 1, true);   // action spent on the whiff
             combat_next_turn(combat_state);
             player_turn      = combat_state.active.is_player;
             if (player_turn) { abilities_used_this_turn = []; if (instance_exists(obj_game_controller)) instance_find(obj_game_controller, 0).items_used_this_turn = 0; need_player_status_tick = true; }
@@ -1879,6 +1920,7 @@ if (player_turn) {
             if (player.untargetable_turns <= 0) player.is_untargetable = false;
             if (irandom(99) < combat_evasion_chance(player)) {
                 array_push(combat_log, actor.name + "'s attack passes through thin air!");
+                enemy_roll_intent(actor, player, combat_state.round + 1, true);   // action spent on the whiff
                 combat_next_turn(combat_state);
                 player_turn      = combat_state.active.is_player;
                 if (player_turn) { abilities_used_this_turn = []; if (instance_exists(obj_game_controller)) instance_find(obj_game_controller, 0).items_used_this_turn = 0; need_player_status_tick = true; }
@@ -1894,6 +1936,7 @@ if (player_turn) {
             player.shadow_step_charges--;
             if (irandom(99) < combat_evasion_chance(player)) {
                 array_push(combat_log, actor.name + "'s attack is dodged!");
+                enemy_roll_intent(actor, player, combat_state.round + 1, true);   // action spent on the whiff
                 combat_next_turn(combat_state);
                 player_turn      = combat_state.active.is_player;
                 if (player_turn) { abilities_used_this_turn = []; if (instance_exists(obj_game_controller)) instance_find(obj_game_controller, 0).items_used_this_turn = 0; need_player_status_tick = true; }
@@ -1906,6 +1949,7 @@ if (player_turn) {
 
         // --- Check Phantom Step (auto-miss the very first enemy attack each combat) ---
         if (combat_check_phantom_step(player, combat_log)) {
+            enemy_roll_intent(actor, player, combat_state.round + 1, true);   // action spent on the auto-miss
             combat_next_turn(combat_state);
             player_turn      = combat_state.active.is_player;
             if (player_turn) { abilities_used_this_turn = []; if (instance_exists(obj_game_controller)) instance_find(obj_game_controller, 0).items_used_this_turn = 0; need_player_status_tick = true; }
@@ -1917,7 +1961,13 @@ if (player_turn) {
         // If an ability procs it consumes the enemy's whole turn (instead of the basic
         // attack). Statuses applied to the player ride the existing typed-status layer;
         // duration gets +1 (except DoT) to survive the start-of-player-turn tick.
-        var _eab = enemy_pick_ability(actor);
+        // INTENT (INTENT_SPEC.md): the action was already rolled at the end of this
+        // enemy's previous turn (or at combat start) and telegraphed on its chip -
+        // execute the stored plan. Lazy fallback covers any enemy without one.
+        if (!variable_struct_exists(actor, "intent") || actor.intent == undefined) {
+            enemy_roll_intent(actor, player, combat_state.round, false);
+        }
+        var _eab = actor.intent.eab;
         if (_eab != undefined) {
             var _sa_slot = 0;
             for (var _sai = 0; _sai < array_length(combat_state.combatants); _sai++) {
@@ -1950,7 +2000,7 @@ if (player_turn) {
                 combat_apply_damage(player, _sdmg);
                 audio_play_sound(hurt, 1, false);
                 player.hit_flash = 15; screen_shake_timer = 12;
-                array_push(damage_popups, { value: _sdmg, x: 330, y: 360, timer: 50, col: make_color_rgb(255, 130, 60) });
+                array_push(damage_popups, { value: _sdmg, x: 475, y: 545, timer: 50, col: make_color_rgb(255, 130, 60) });
                 attack_anim_timer = 20; attack_anim_src_x = _sa_x; attack_anim_src_y = _sa_y;
                 attack_anim_dst_x = 435; attack_anim_dst_y = 465; attack_anim_is_player = false; attack_anim_enemy_idx = _sa_slot;
                 array_push(combat_log, actor.name + " " + ((_eab.msg != "") ? _eab.msg : "casts a spell") + " for " + string(_sdmg) + " damage!");
@@ -1976,7 +2026,8 @@ if (player_turn) {
                 }
             }
 
-            // Ability consumed the enemy's action - advance the turn.
+            // Ability consumed the enemy's action - roll its next intent, advance.
+            enemy_roll_intent(actor, player, combat_state.round + 1, true);
             combat_next_turn(combat_state);
             player_turn = combat_state.active.is_player;
             if (player_turn) { abilities_used_this_turn = []; if (instance_exists(obj_game_controller)) instance_find(obj_game_controller, 0).items_used_this_turn = 0; need_player_status_tick = true; }
@@ -2050,6 +2101,16 @@ if (player_turn) {
                 }
                 array_push(combat_log, "Evasive Roll! The blow is halved (+1 Preparation).");
             }
+            // Pet stance (expression #3): a GUARDED Warrior companion has a 25% chance
+            // to intercept part of any blow aimed at you (its own strikes are halved).
+            var _gpet = pet_active();
+            if (_gpet != undefined && !_gpet.is_egg && _gpet.stage >= PET_STAGE_YOUNGADULT
+                && _gpet.archetype == PET_ARCH_COMBATANT && pet_stance(_gpet) == "guarded"
+                && pet_injury_mult(_gpet.injured) > 0 && _final_dmg > 1 && irandom(99) < 25) {
+                var _gcut = max(1, round(_final_dmg * 0.35));
+                _final_dmg -= _gcut;
+                array_push(combat_log, _gpet.name + " intercepts the blow (-" + string(_gcut) + ")!");
+            }
             // How much the player's defenses shaved off this swing (armor/Iron Skin/etc.),
             // measured before Soul Shield (which logs its own absorb line separately).
             var _dmg_blocked = max(0, _gross_incoming - _final_dmg);
@@ -2075,7 +2136,7 @@ if (player_turn) {
             }
             var _ea_src_x = 1620 + _ea_slot * (-120);
             var _ea_src_y = 233  + _ea_slot * 105;
-            array_push(damage_popups, { value: _final_dmg, x: 330, y: 360, timer: 50, col: make_color_rgb(255, 80, 80) });
+            array_push(damage_popups, { value: _final_dmg, x: 475, y: 545, timer: 50, col: make_color_rgb(255, 80, 80) });
             attack_anim_timer     = 20;
             attack_anim_src_x     = _ea_src_x;
             attack_anim_src_y     = _ea_src_y;
@@ -2090,6 +2151,7 @@ if (player_turn) {
             vfx_y         = 450;
             vfx_timer     = 18;
             vfx_timer_max = 18;
+            vfx_school    = "";   // enemy hit spark - never tinted
             array_push(combat_log,
                 actor.name + " attacked for " + string(_final_dmg) + " damage!"
                 + ((_dmg_blocked > 0) ? ("  (" + string(_dmg_blocked) + " blocked)") : ""));
@@ -2191,7 +2253,7 @@ if (player_turn) {
                 audio_play_sound(hurt, 1, false);
                 player.hit_flash   = max(player.hit_flash, 12);
                 screen_shake_timer = max(screen_shake_timer, 8);
-                array_push(damage_popups, { value: _final_dmg2, x: 278, y: 338, timer: 50, col: make_color_rgb(255, 80, 80) });
+                array_push(damage_popups, { value: _final_dmg2, x: 475, y: 545, timer: 50, col: make_color_rgb(255, 80, 80) });
                 array_push(combat_log,
                     actor.name + " strikes again for " + string(_final_dmg2) + " damage!"
                     + ((_dmg_blocked2 > 0) ? ("  (" + string(_dmg_blocked2) + " blocked)") : ""));
@@ -2246,7 +2308,8 @@ if (player_turn) {
             }
         }
 
-        // --- Advance turn ---
+        // --- Advance turn (rolling this enemy's next intent first) ---
+        if (!actor.is_defeated) enemy_roll_intent(actor, player, combat_state.round + 1, true);
         combat_next_turn(combat_state);
         player_turn      = combat_state.active.is_player;
         if (player_turn) { abilities_used_this_turn = []; if (instance_exists(obj_game_controller)) instance_find(obj_game_controller, 0).items_used_this_turn = 0; need_player_status_tick = true; }
