@@ -5681,12 +5681,14 @@ function ui_draw_character_menu() {
     // before the tab bar so the tabs sit cleanly on top of the top band.
     ui_draw_gothic_frame(30, 30, 1890, 1050, 30);
 
-    // Tab bar at top - 5 tabs, centered (matches click zones in obj_game_controller Step)
+    // Tab bar at top (matches click zones in obj_game_controller Step). Count comes
+    // from tab_names so removing/adding a tab can't strand this loop again - the
+    // hardcoded 5 crashed here when the Compendium moved to the Journal (7-04).
     var _tab_w = 252;
     var _tab_h = 66;
     var _tab_y = 30;
     draw_set_font(fnt_ui);
-    for (var _t = 0; _t < 5; _t++) {
+    for (var _t = 0; _t < array_length(tab_names); _t++) {
         var _tx = 306 + _t * (_tab_w + 12);
         if (_t == menu_tab) {
             draw_set_color(make_color_rgb(30, 50, 90));
