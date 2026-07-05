@@ -67,3 +67,6 @@ Sound/
 
 # Editor / tooling backups
 *.bak
+
+# Python bytecode from the tools/ import scripts
+tools/__pycache__/
