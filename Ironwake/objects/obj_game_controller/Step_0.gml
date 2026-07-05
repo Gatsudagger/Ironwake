@@ -89,6 +89,15 @@ if (variable_global_exists("gift_popup") && global.gift_popup != undefined) {
 if (variable_instance_exists(id, "kb_open") && kb_open) {
     var _g = kb;
 
+    // Rules overlay: H toggles it in any phase; while up it owns all input so the
+    // table underneath is frozen (first-time players get it auto-opened).
+    if (keyboard_check_pressed(ord("H"))) { _g.help = !_g.help; exit; }
+    if (_g.help) {
+        if (keyboard_check_pressed(vk_escape) || keyboard_check_pressed(vk_return)
+            || keyboard_check_pressed(vk_enter)) _g.help = false;
+        exit;
+    }
+
     if (_g.phase == "stake") {
         if (keyboard_check_pressed(vk_escape)) { kb_open = false; exit; }
         var _stakes = [10, 25, 50];
@@ -183,6 +192,13 @@ if (tavern_board_open) {
         var _kb_ids = affinity_npc_ids();
         kb_open = true;
         kb = kb_new_game(_kb_ids[(variable_global_exists("run_count") ? global.run_count : 0) mod array_length(_kb_ids)]);
+        // First ever sit-down: open with the rules up (persistent flag, same store
+        // as the onboarding coach-marks; H re-opens them whenever).
+        if (!tutorial_seen_has("knucklebones")) {
+            kb.help = true;
+            tutorial_mark_seen("knucklebones");
+            save_game();
+        }
         exit;
     }
     var _tb = tavern_board_rows();   // active + available only - fulfilled live in the Journal

@@ -4956,6 +4956,7 @@ function kb_new_game(foe_id) {
         foes: [[0,0,0],[0,0,0],[0,0,0]],
         die: irandom(5) + 1, foe_die: 0,
         my_turn: true, cursor: 0, foe_timer: 0,
+        help: false,   // rules overlay (H; auto-opens on the very first sit-down)
         result: "", msg: ""
     };
 }

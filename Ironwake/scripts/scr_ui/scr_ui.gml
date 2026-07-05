@@ -1671,7 +1671,8 @@ function ui_draw_knucklebones() {
     if (!variable_instance_exists(_gc, "kb_open") || !_gc.kb_open || _gc.kb == undefined) return;
     var _g = _gc.kb;
 
-    draw_set_alpha(0.88); draw_set_color(c_black);
+    // Near-opaque dim so the tavern board / hub text can't ghost through at the edges.
+    draw_set_alpha(0.96); draw_set_color(c_black);
     draw_rectangle(0, 0, GUI_W, GUI_H, false);
     draw_set_alpha(1.0);
     var _x0 = 510, _y0 = 54, _x1 = 1410, _y1 = 1026;
@@ -1700,15 +1701,17 @@ function ui_draw_knucklebones() {
         draw_text(GUI_CX, 570, "Winner takes double. Equal dice in a column multiply; matching their column smashes their dice.");
         if (_g.msg != "") { draw_set_color(make_color_rgb(220, 140, 120)); draw_text(GUI_CX, 630, _g.msg); }
         draw_set_color(make_color_rgb(150, 140, 120));
-        draw_text(GUI_CX, _y1 - 60, "A/D: Stake     Enter: Sit down     Esc: Not tonight");
+        draw_text(GUI_CX, _y1 - 60, "A/D: Stake     Enter: Sit down     H: Rules     Esc: Not tonight");
         draw_set_halign(fa_left); draw_set_valign(fa_top); draw_set_font(-1);
+        ui_draw_knucklebones_rules(_g);
         return;
     }
 
-    // --- Boards. Foe on top (their slot 0 nearest the middle), player below. ---
+    // --- Boards. Foe on top (their slot 0 nearest the middle), player below.
+    //     Foe board starts at 174 so the subtitle line above clears it. ---
     var _cell = 92, _gap = 10;
     var _colx = [GUI_CX - (_cell + _gap) - _cell / 2, GUI_CX - _cell / 2, GUI_CX + (_cell + _gap) + _cell / 2 - _cell];
-    var _foe_y0  = 150;   // foe cells grow DOWN toward the middle
+    var _foe_y0  = 174;   // foe cells grow DOWN toward the middle
     var _mine_y0 = 610;
 
     for (var _c = 0; _c < 3; _c++) {
@@ -1767,9 +1770,10 @@ function ui_draw_knucklebones() {
     draw_text(_x0 + 45, 500, npc_display_name(_g.foe) + ":  " + string(kb_total(_g.foes)));
     draw_set_color(make_color_rgb(170, 220, 180));
     draw_text(_x0 + 45, 540, "You:  " + string(kb_total(_g.mine)));
+    // Stake sits ABOVE the die box on the right so the two never collide.
     draw_set_halign(fa_right);
     draw_set_color(make_color_rgb(240, 205, 110));
-    draw_text(_x1 - 45, 500, "Stake: " + string(_g.stake) + "g");
+    draw_text(_x1 - 45, 442, "Stake: " + string(_g.stake) + "g");
     draw_set_halign(fa_center);
 
     if (_g.phase == "play") {
@@ -1788,7 +1792,7 @@ function ui_draw_knucklebones() {
         draw_text(_dx + 33, _dy + 75, _g.my_turn ? "your die" : "their die");
         draw_set_color(make_color_rgb(150, 140, 120));
         draw_text(GUI_CX, _y1 - 60, _g.my_turn
-            ? "A/D: Column     Enter: Place     Esc: Concede"
+            ? "A/D: Column     Enter: Place     H: Rules     Esc: Concede"
             : (npc_display_name(_g.foe) + " considers..."));
     } else {   // over
         draw_set_font(fnt_ui);
@@ -1803,6 +1807,54 @@ function ui_draw_knucklebones() {
 
     draw_set_halign(fa_left); draw_set_valign(fa_top);
     draw_set_alpha(1.0); draw_set_color(c_white); draw_set_font(-1);
+
+    // Rules overlay last, over the whole table (auto-open on first sit-down; H toggles).
+    ui_draw_knucklebones_rules(_g);
+}
+
+// ---------------------------------------------------------------------------
+// ui_draw_knucklebones_rules(g) - the HOW TO PLAY panel. Drawn over the table
+// when g.help is up (input frozen by the gc Step kb block meanwhile).
+// ---------------------------------------------------------------------------
+function ui_draw_knucklebones_rules(_g) {
+    if (!_g.help) return;
+    draw_set_alpha(0.82); draw_set_color(c_black);
+    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+    draw_set_alpha(1.0);
+    var _hx0 = 480, _hy0 = 216, _hx1 = 1440, _hy1 = 864;
+    draw_set_color(make_color_rgb(26, 20, 14));
+    draw_rectangle(_hx0, _hy0, _hx1, _hy1, false);
+    draw_set_color(make_color_rgb(230, 200, 130));
+    draw_rectangle(_hx0, _hy0, _hx1, _hy1, true);
+
+    draw_set_halign(fa_center); draw_set_valign(fa_top);
+    draw_set_font(fnt_ui_title);
+    draw_set_color(make_color_rgb(235, 210, 150));
+    draw_text(GUI_CX, _hy0 + 27, "HOW TO PLAY");
+
+    draw_set_halign(fa_left);
+    draw_set_font(fnt_ui);
+    draw_set_color(make_color_rgb(215, 205, 185));
+    var _rl = [
+        "1.  You and your opponent take turns. Each turn you roll a die and",
+        "     place it in one of YOUR three columns (A/D to aim, Enter to place).",
+        "2.  Matching dice in one column MULTIPLY: two 4s score 16, three 4s 36.",
+        "3.  Your die also DESTROYS every die of the same value sitting in the",
+        "     opponent's matching column. Wreck their stacks; guard your own.",
+        "4.  When either board fills, the game ends - the higher total takes",
+        "     the whole pot (double the stake).",
+        "5.  A won game warms your opponent toward you. Esc concedes the stake."
+    ];
+    for (var _i = 0; _i < array_length(_rl); _i++) {
+        draw_text(_hx0 + 60, _hy0 + 111 + _i * 57, _rl[_i]);
+    }
+
+    draw_set_halign(fa_center);
+    draw_set_font(fnt_ui_small);
+    draw_set_color(make_color_rgb(150, 140, 120));
+    draw_text(GUI_CX, _hy1 - 51, "H / Enter / Esc: Back to the table");
+    draw_set_halign(fa_left); draw_set_valign(fa_top);
+    draw_set_color(c_white); draw_set_font(-1);
 }
 
 // Archetype accent colour (Boon gold / Combatant red / Guardian green) for chips & bars.
