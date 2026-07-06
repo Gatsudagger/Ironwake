@@ -299,10 +299,9 @@ function end_run(result) {
                     var _new_max = min(5, _cur_max + 1);
                     variable_struct_set(global.dungeon_ascendance_unlocked, _dung_key, _new_max);
                 }
-                // Bonus gold reward scales with ascendance tier
-                var _asc_gold_table = [0, 50, 100, 150, 200, 300];
-                var _asc_gold_bonus = _asc_gold_table[global.selected_ascendance];
-                add_gold(_asc_gold_bonus);
+                // Bonus gold reward scales with ascendance tier (table shared with
+                // the dungeon-select AWAKENING EFFECTS panel via awaken_clear_gold_bonus)
+                add_gold(awaken_clear_gold_bonus(global.selected_ascendance));
                 // Scale run gold by 15% per ascendance tier (already added via add_gold during run)
                 // - this bonus is on top, applied as a flat completion bonus
             }
@@ -427,6 +426,8 @@ function end_run(result) {
     global.floor_rooms_cleared = [];
     global.run_boons           = [];   // boons last one run only - clear for the next
     global.run_curses          = [];   // curses also last one run only (devil's bargain)
+    global.pending_fire_stacks = 0;    // dungeon floor passives don't carry across runs
+    global.pending_ap_penalty  = 0;
     potion_buffs_clear();              // Goldfinger / Faerie's Tear end with the run (incl. death)
     affinity_reset_run_gain();         // clear the per-run affinity grind cap (NOT score/tier)
     // Phase 4a affinity perks that recharge per run:

@@ -506,6 +506,7 @@ function ui_consumable_icon_sprite(cname) {
         // Once imported, the sprite must sit in global.__sprite_includes or the
         // compiler strips it (string-only refs; see the pet-sprite note there).
         case "Devil Wine":             return asset_get_index("spr_icon_consumable_devil_wine");
+        case "Genie Lamp":             return asset_get_index("spr_icon_consumable_genie_lamp");
     }
     return -1;
 }

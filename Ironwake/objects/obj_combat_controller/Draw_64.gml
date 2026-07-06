@@ -198,11 +198,15 @@ if (_pet_co != undefined && !_pet_co.is_egg) {
         var _peth_t = _pet_disp_h[clamp(_pet_co.stage, 0, 4)];
         var _petsc  = _peth_t / max(1, sprite_get_height(_petspr));
         // Player feet (origin top-left): centre-x + a step to the right, ground-line y.
-        var _petx = _px_draw + sprite_get_width(_pspr) * _pscale * 0.5 + 120;
+        // Anchored to the player's RESTING position (330/465 + screen shake), NOT the
+        // animated _px_draw/_py_draw - otherwise the pet visibly rides along on the
+        // player's attack lunge and hit-jitter despite not acting (it has its own
+        // pet_lunge_t0-driven lunge below for when it actually strikes).
+        var _petx = 330 + screen_shake_x + sprite_get_width(_pspr) * _pscale * 0.5 + 120;
         // Ground line clamped ABOVE the combat log (log top y735, drawn after sprites):
         // at the player's true footing (y~789) the pet's lower half vanished behind the
         // log panel. Standing it slightly higher reads as a depth row behind the player.
-        var _pety = min(_py_draw + sprite_get_height(_pspr) * _pscale * 0.94, 726);
+        var _pety = min(465 + screen_shake_y + sprite_get_height(_pspr) * _pscale * 0.94, 726);
 
         // Procedural attack lunge: on a Combatant strike (global.pet_lunge_t0), the pet
         // surges toward the enemies (right) and snaps back over ~260ms, with a squash-

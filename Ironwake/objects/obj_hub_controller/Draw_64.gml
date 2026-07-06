@@ -722,14 +722,9 @@ if (_gc_ds != noone && _gc_ds.dungeon_select_open) {
         make_color_rgb(80,  160, 220),
     ];
     var _asc_labels = ["Awakening A0 - Normal", "Awakening A1 - Hardened", "Awakening A2 - Brutal", "Awakening A3 - Relentless", "Awakening A4 - Nightmare", "Awakening A5 - Infernal"];
-    var _asc_desc   = [
-        "Standard difficulty. No modifiers.",
-        "Enemies have +10% HP and +5% damage.",
-        "Enemies have +20% HP and +10% damage.",
-        "Enemies have +35% HP and +20% damage. All floor passives active.",
-        "Enemies have +50% HP and +30% damage.",
-        "Enemies have +70% HP and +40% damage. Boss gains +25% on top."
-    ];
+    // Tier one-liner under the selector is DATA-DRIVEN from the same awaken_*
+    // helpers combat uses (the old hand-written percentages had drifted badly);
+    // the full breakdown lives in the AWAKENING EFFECTS panel on the right.
 
     // Dark cover
     draw_set_alpha(0.97);
@@ -757,12 +752,14 @@ if (_gc_ds != noone && _gc_ds.dungeon_select_open) {
     draw_set_font(fnt_ui_title);
     draw_set_color(make_color_rgb(120, 130, 160));
     draw_text(78, GUI_CY, "<");
-    draw_text(1842, GUI_CY, ">");
+    draw_text(1392, GUI_CY, ">");
 
-    // Draw order: sides first so center card renders on top
-    var _draw_order = [_left_i, _right_i, _cursor];
+    // Draw order: left preview first so the center card renders on top. The RIGHT
+    // flank no longer shows a preview card - it hosts the AWAKENING EFFECTS panel
+    // (drawn after this loop) instead.
+    var _draw_order = [_left_i, _cursor];
 
-    for (var _doi = 0; _doi < 3; _doi++) {
+    for (var _doi = 0; _doi < array_length(_draw_order); _doi++) {
         var _di  = _draw_order[_doi];
         var _dkey = _dungeons[_di];
         var _dcol = _dung_color[_di];
@@ -882,11 +879,17 @@ if (_gc_ds != noone && _gc_ds.dungeon_select_open) {
             draw_set_color(c_white);
             draw_text(_cx + _cw / 2, _asc_y + 21, _asc_labels[_gc_ds.dungeon_select_asc]);
 
-            // Tier description - below the selector box
+            // Tier description - below the selector box (computed, matches combat)
+            var _sel_a   = _gc_ds.dungeon_select_asc;
+            var _sel_txt = (_sel_a == 0)
+                ? "Standard difficulty. No modifiers. Full effects listed on the right."
+                : "Enemies: +" + string(round((awaken_hp_mult(_sel_a) - 1) * 100)) + "% HP, +"
+                    + string(round((awaken_dmg_mult(_sel_a) - 1) * 100))
+                    + "% damage. Full effects listed on the right.";
             draw_set_halign(fa_left);
             draw_set_font(fnt_ui_small);
             draw_set_color(make_color_rgb(140, 150, 185));
-            draw_text_ext(_body_x, _asc_y + 84, _asc_desc[_gc_ds.dungeon_select_asc], 30, _body_w);
+            draw_text_ext(_body_x, _asc_y + 84, _sel_txt, 30, _body_w);
 
             // Confirm bar
             var _conf_y = _cy + _ch - 87;
@@ -911,6 +914,138 @@ if (_gc_ds != noone && _gc_ds.dungeon_select_open) {
         }
 
         draw_set_alpha(1.0);
+    }
+
+    // -------------------------------------------------------------------------
+    // AWAKENING EFFECTS panel (right flank) - the comprehensive readout of what
+    // the selected tier changes for the selected dungeon. Every number comes from
+    // the same awaken_* helpers combat consumes, so this can never go stale.
+    // -------------------------------------------------------------------------
+    var _fx_x1 = 1464, _fx_x2 = 1893, _fx_y1 = 123, _fx_y2 = 1040;
+    var _fx_a    = _gc_ds.dungeon_select_asc;
+    var _fx_dkey = _dungeons[_cursor];
+    var _fx_tcol = (_fx_a == 0) ? make_color_rgb(150, 160, 190)
+                 : (_fx_a >= 4  ? make_color_rgb(255, 70, 70)
+                                : make_color_rgb(255, 200, 50));
+
+    draw_set_color(make_color_rgb(14, 16, 28));
+    draw_rectangle(_fx_x1, _fx_y1, _fx_x2, _fx_y2, false);
+    draw_set_color(_fx_tcol);
+    draw_rectangle(_fx_x1, _fx_y1, _fx_x2, _fx_y1 + 6, false);
+    draw_rectangle(_fx_x1, _fx_y1, _fx_x2, _fx_y2, true);
+
+    var _fxx = _fx_x1 + 21;
+    var _fxw = (_fx_x2 - _fx_x1) - 42;
+    var _fxy = _fx_y1 + 24;
+
+    draw_set_halign(fa_center);
+    draw_set_font(fnt_ui);
+    draw_set_color(_fx_tcol);
+    draw_text(_fx_x1 + (_fx_x2 - _fx_x1) / 2, _fxy, "AWAKENING EFFECTS");
+    _fxy += 42;
+    draw_set_font(fnt_ui_small);
+    draw_set_color(make_color_rgb(180, 188, 215));
+    draw_text(_fx_x1 + (_fx_x2 - _fx_x1) / 2, _fxy, _asc_labels[_fx_a]);
+    _fxy += 48;
+    draw_set_halign(fa_left);
+
+    // ---- ENEMIES ----
+    draw_set_color(make_color_rgb(235, 110, 90));
+    draw_text(_fxx, _fxy, "ENEMIES"); _fxy += 33;
+    draw_set_color(make_color_rgb(200, 206, 228));
+    if (_fx_a == 0) {
+        draw_text(_fxx, _fxy, "No stat bonus - baseline foes."); _fxy += 30;
+    } else {
+        draw_text(_fxx, _fxy, "HP +" + string(round((awaken_hp_mult(_fx_a) - 1) * 100))
+            + "%    Damage +" + string(round((awaken_dmg_mult(_fx_a) - 1) * 100)) + "%");
+        _fxy += 30;
+    }
+    if (awaken_enemy_acc_bonus(_fx_a) > 0) {
+        draw_text(_fxx, _fxy, "Accuracy +" + string(awaken_enemy_acc_bonus(_fx_a))
+            + " (dodge builds get hit more)");
+        _fxy += 30;
+    }
+    if (awaken_enemy_heal_mult(_fx_a) > 1.0) {
+        draw_text(_fxx, _fxy, "Self-healing +"
+            + string(round((awaken_enemy_heal_mult(_fx_a) - 1) * 100)) + "%");
+        _fxy += 30;
+    }
+    var _fx_packs = ["Packs: mostly 2-3 foes, 4s rare",
+                     "Packs: mostly 2-3 foes, 4s rare",
+                     "Packs: 4-strong turn common",
+                     "Packs: 4-strong turn common",
+                     "Packs: 4s common, 5s appear",
+                     "Packs: 4s common, 5s appear"];
+    draw_text(_fxx, _fxy, _fx_packs[_fx_a]); _fxy += 30;
+    if (_fx_a >= 5) {
+        draw_set_color(make_color_rgb(255, 110, 110));
+        draw_text(_fxx, _fxy, "Bosses: +25% HP & damage on top"); _fxy += 30;
+    }
+    _fxy += 12;
+
+    // ---- REWARDS ----
+    draw_set_color(make_color_rgb(110, 210, 130));
+    draw_text(_fxx, _fxy, "REWARDS"); _fxy += 33;
+    draw_set_color(make_color_rgb(200, 206, 228));
+    // Loot rarity pips: drop weights lerp from A0 to A5, so tier = filled pips.
+    draw_text(_fxx, _fxy, "Loot rarity:");
+    var _fx_px = _fxx + string_width("Loot rarity:") + 15;
+    for (var _fp = 0; _fp < 5; _fp++) {
+        draw_set_color((_fp < _fx_a) ? make_color_rgb(228, 190, 90) : make_color_rgb(45, 50, 72));
+        draw_rectangle(_fx_px + _fp * 24, _fxy + 5, _fx_px + _fp * 24 + 16, _fxy + 21, false);
+    }
+    _fxy += 30;
+    draw_set_color(make_color_rgb(200, 206, 228));
+    draw_text(_fxx, _fxy, "Full-clear bonus: +" + string(awaken_clear_gold_bonus(_fx_a)) + "g");
+    _fxy += 30;
+    draw_text(_fxx, _fxy, "Rest alcoves heal +" + string(15 + 4 * _fx_a) + " HP");
+    _fxy += 42;
+
+    // ---- DUNGEON PASSIVE (selected dungeon at this tier) ----
+    draw_set_color(_dung_color[_cursor]);
+    draw_text(_fxx, _fxy, string_upper(_dung_names[_cursor]) + " PASSIVE"); _fxy += 33;
+    draw_set_color(make_color_rgb(200, 206, 228));
+    var _fx_pass = "";
+    if (_fx_dkey == "scorched_depths") {
+        var _fx_heat = (_fx_a >= 1) ? 4 : 2;
+        _fx_pass = "Searing air: each room entered opens the next combat with a burn - "
+            + string(_fx_heat) + " fire damage per turn for 2 turns.";
+    } else if (_fx_dkey == "tundra_tomb") {
+        _fx_pass = (_fx_a >= 3)
+            ? "Numbing cold on EVERY floor: -1 AP on your first turn of each combat."
+            : "Numbing cold on odd floors: -1 AP on your first turn of each combat.";
+    } else {
+        _fx_pass = "No environmental passive - the Vault's dead do not meddle.";
+    }
+    draw_text_ext(_fxx, _fxy, _fx_pass, 27, _fxw);
+    _fxy += string_height_ext(_fx_pass, 27, _fxw) + 24;
+
+    // ---- A0 -> A5 mini-table (selected row highlighted, locked tiers dimmed) ----
+    draw_set_color(make_color_rgb(60, 64, 90));
+    draw_line(_fxx, _fxy, _fx_x2 - 21, _fxy);
+    _fxy += 15;
+    var _fx_unl = variable_global_exists("dungeon_ascendance_unlocked")
+        ? variable_struct_get(global.dungeon_ascendance_unlocked, _fx_dkey) : 0;
+    for (var _ft = 0; _ft <= 5; _ft++) {
+        var _ft_sel  = (_ft == _fx_a);
+        var _ft_lock = (_ft > _fx_unl);
+        if (_ft_sel) {
+            draw_set_color(make_color_rgb(34, 38, 20));
+            draw_rectangle(_fxx - 6, _fxy - 3, _fx_x2 - 15, _fxy + 25, false);
+            draw_set_color(make_color_rgb(255, 205, 90));
+            draw_rectangle(_fxx - 6, _fxy - 3, _fx_x2 - 15, _fxy + 25, true);
+        }
+        draw_set_color(_ft_lock ? make_color_rgb(70, 76, 100)
+                     : (_ft_sel ? c_white : make_color_rgb(150, 158, 185)));
+        draw_text(_fxx, _fxy, "A" + string(_ft));
+        var _ft_hp  = round((awaken_hp_mult(_ft)  - 1) * 100);
+        var _ft_dmg = round((awaken_dmg_mult(_ft) - 1) * 100);
+        draw_text(_fxx + 55,  _fxy, (_ft_hp  > 0) ? ("+" + string(_ft_hp)  + "% HP")  : "-");
+        draw_text(_fxx + 175, _fxy, (_ft_dmg > 0) ? ("+" + string(_ft_dmg) + "% dmg") : "-");
+        draw_set_halign(fa_right);
+        draw_text(_fx_x2 - 27, _fxy, _ft_lock ? "LOCKED" : ("+" + string(awaken_clear_gold_bonus(_ft)) + "g"));
+        draw_set_halign(fa_left);
+        _fxy += 31;
     }
 
     // Footer
@@ -1871,6 +2006,21 @@ if (instance_exists(obj_game_controller)) {
                             : (_is_cur ? make_color_rgb(100, 60, 180)
                                        : make_color_rgb(35, 40, 65)));
                 draw_rectangle(_lx, _ry, _lx + 990, _ry + _tr_row_h, true);
+                // Cursor row: thick pulsing gold frame + chevron, mirroring the
+                // ABILITIES tab cursor so the selection can't be missed.
+                if (_is_cur) {
+                    var _tcur_pulse = 0.65 + 0.35 * (0.5 + 0.5 * sin(current_time / 200));
+                    draw_set_alpha(_tcur_pulse);
+                    draw_set_color(make_color_rgb(255, 205, 90));
+                    draw_rectangle(_lx - 1, _ry - 1, _lx + 991, _ry + _tr_row_h + 1, true);
+                    draw_rectangle(_lx - 2, _ry - 2, _lx + 992, _ry + _tr_row_h + 2, true);
+                    draw_rectangle(_lx - 3, _ry - 3, _lx + 993, _ry + _tr_row_h + 3, true);
+                    draw_set_font(fnt_ui);
+                    draw_set_valign(fa_middle);
+                    draw_text(_lx - 26, _ry + _tr_row_h * 0.5, ">");
+                    draw_set_valign(fa_top);
+                    draw_set_alpha(1.0);
+                }
 
                 // Left accent bar on the active cursor / selected rows.
                 if (_is_cur || _in_sel) {

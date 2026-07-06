@@ -115,6 +115,13 @@ function combat_next_turn(combat_state) {
     // Fully restore energy at the start of each turn
     actor.energy = 3;
 
+    // Tundra Tomb floor passive: the pending chill docks AP from the player's FIRST
+    // turn of this combat (set in obj_combat_controller Create; never below 1 AP).
+    if (actor.is_player && variable_struct_exists(actor, "chill_ap_penalty") && actor.chill_ap_penalty > 0) {
+        actor.energy = max(1, actor.energy - actor.chill_ap_penalty);
+        actor.chill_ap_penalty = 0;
+    }
+
     // Shadowstrider gains 1 Preparation at turn start when no trap is active
     if (actor.is_player && actor.class_id == 2) {
         if (!actor.trap_active) {
@@ -458,13 +465,37 @@ function combat_check_blink(target, combat_log) {
 }
 
 // ---------------------------------------------------------------------------
+// awaken_hp_mult(asc) / awaken_dmg_mult(asc)
+// Enemy HP / damage multipliers per Awakening tier. SINGLE SOURCE OF TRUTH -
+// used by both the combat spawn scaling (obj_combat_controller Create) and the
+// dungeon-select AWAKENING EFFECTS panel, so the advertised numbers can never
+// drift from what combat actually applies.
+// ---------------------------------------------------------------------------
+function awaken_hp_mult(asc) {
+    var _tbl = [1.00, 1.20, 1.45, 1.75, 2.10, 2.55];
+    return _tbl[clamp(asc, 0, array_length(_tbl) - 1)];
+}
+function awaken_dmg_mult(asc) {
+    var _tbl = [1.00, 1.15, 1.35, 1.60, 1.90, 2.30];
+    return _tbl[clamp(asc, 0, array_length(_tbl) - 1)];
+}
+
+// awaken_clear_gold_bonus(asc) - flat gold paid on a full-run completion at this
+// tier (end_run victory path + dungeon-select panel; same single-source rule).
+function awaken_clear_gold_bonus(asc) {
+    var _tbl = [0, 50, 100, 150, 200, 300];
+    return _tbl[clamp(asc, 0, array_length(_tbl) - 1)];
+}
+
+// ---------------------------------------------------------------------------
 // awaken_enemy_acc_bonus()
 // Flat accuracy points added to every enemy hit roll, scaling with the run's
 // Awakening tier. Stops stacked DODGE/DEX from trivializing high Awakenings -
 // at A4/A5 even an evasion build gets hit. Added to _enemy_acc in combat.
 // ---------------------------------------------------------------------------
-function awaken_enemy_acc_bonus() {
-    var _asc = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
+function awaken_enemy_acc_bonus(asc = undefined) {
+    var _asc = (asc != undefined) ? asc
+        : (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0);
     var _tbl = [0, 0, 5, 10, 18, 28];
     _asc = clamp(_asc, 0, array_length(_tbl) - 1);
     return _tbl[_asc];
@@ -473,8 +504,9 @@ function awaken_enemy_acc_bonus() {
 // awaken_enemy_heal_mult() - enemy healing scales with Awakening (mirrors the dmg
 // curve). At high tiers, self-healing foes punish slow damage and reward burst /
 // anti-heal (mortality) / consumables. See SYSTEMS_VIABILITY_PASS.md (P6c).
-function awaken_enemy_heal_mult() {
-    var _asc = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
+function awaken_enemy_heal_mult(asc = undefined) {
+    var _asc = (asc != undefined) ? asc
+        : (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0);
     var _tbl = [1.0, 1.15, 1.35, 1.6, 1.9, 2.3];
     _asc = clamp(_asc, 0, array_length(_tbl) - 1);
     return _tbl[_asc];

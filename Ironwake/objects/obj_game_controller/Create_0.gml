@@ -32,6 +32,8 @@ global.__sprite_includes = [
     // Devil Wine icon: referenced only by string in ui_consumable_icon_sprite
     // (asset_get_index), so it must be listed or the compiler strips it.
     spr_icon_consumable_devil_wine,
+    // Genie Lamp icon: same string-ref pattern as Devil Wine above.
+    spr_icon_consumable_genie_lamp,
     // Pet sprites are referenced only by string (pet_sprite -> asset_get_index), so they
     // must be listed here or the compiler strips them. (Pets Phase 2 art backlog.)
     spr_pet_cryptling_baby,

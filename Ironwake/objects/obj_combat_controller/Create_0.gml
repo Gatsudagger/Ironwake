@@ -529,10 +529,10 @@ while (array_length(enemies) < _enc_count) {
 // Apply ascendance stat multipliers (index 0 = the boss/elite/main; gets _boss_extra)
 var _asc = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
 if (_asc > 0) {
-    var _hp_table  = [1.00, 1.20, 1.45, 1.75, 2.10, 2.55];
-    var _dmg_table = [1.00, 1.15, 1.35, 1.60, 1.90, 2.30];
-    var _hp_mult   = _hp_table[_asc];
-    var _dmg_mult  = _dmg_table[_asc];
+    // Tables live in awaken_hp_mult/awaken_dmg_mult (scr_combat) - shared with the
+    // dungeon-select AWAKENING EFFECTS panel so display and combat never drift.
+    var _hp_mult   = awaken_hp_mult(_asc);
+    var _dmg_mult  = awaken_dmg_mult(_asc);
     var _boss_extra = (_enemy_type == "boss" && _asc >= 5) ? 1.25 : 1.0;
     for (var _ei = 0; _ei < array_length(enemies); _ei++) {
         var _e  = enemies[_ei];
@@ -695,6 +695,47 @@ enemy_turn_delay = 60;
 array_push(combat_log,
     "Combat begins! " + combat_state.combatants[0].name + " acts first."
 );
+
+// -----------------------------------------------------------------------------
+// 5b. DUNGEON FLOOR PASSIVES - consume the pending room-entry effects.
+// obj_floor_controller Create accrues these per room (Scorched heat / Tundra cold,
+// escalating with Awakening); they land here at the start of the NEXT combat.
+// -----------------------------------------------------------------------------
+
+// Scorched Depths: searing air = a fire DoT on the player at combat start.
+// Per stack it mirrors the weapon burn affix rate (dmg/turn for 2 turns); capped
+// so several combat-free rooms in a row can't snowball into a one-shot.
+if (variable_global_exists("pending_fire_stacks") && global.pending_fire_stacks > 0) {
+    var _heat_stacks = min(global.pending_fire_stacks, 3);
+    global.pending_fire_stacks = 0;
+    if (!variable_struct_exists(player, "status_effects")) player.status_effects = [];
+    array_push(player.status_effects, {
+        name:         "Scorching Air",
+        effect_type:  "dot",
+        kind:         "dot",
+        effect_value: 2 * _heat_stacks,
+        duration:     2,
+        element:      "fire",
+        source:       "dungeon"
+    });
+    array_push(combat_log, "The searing air clings to you - " + string(2 * _heat_stacks)
+        + " fire damage per turn for 2 turns!");
+}
+
+// Tundra Tomb: the pending chill numbs the player's FIRST turn (-1/-2 AP, never
+// below 1). Applied via chill_ap_penalty, consumed in combat_next_turn when the
+// player's turn starts; if the player opens the fight, dock the energy directly.
+if (variable_global_exists("pending_ap_penalty") && global.pending_ap_penalty > 0) {
+    var _chill_pen = min(global.pending_ap_penalty, 2);
+    global.pending_ap_penalty = 0;
+    player.chill_ap_penalty = _chill_pen;
+    if (combat_state.active.is_player) {
+        player.energy = max(1, player.energy - _chill_pen);
+        player.chill_ap_penalty = 0;
+    }
+    array_push(combat_log, "The tomb-cold numbs your limbs - -" + string(_chill_pen)
+        + " AP on your first turn!");
+}
 
 
 // -----------------------------------------------------------------------------
