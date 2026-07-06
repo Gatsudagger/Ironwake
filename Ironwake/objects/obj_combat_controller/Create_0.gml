@@ -630,6 +630,9 @@ boss_bonus_granted = false;
 // Genie Lamp drop roll (very rare escape item, elite/boss kills only) - once per combat
 genie_lamp_rolled = false;
 
+// Board challenge-request ticks (flawless/clean/swift) fire at most once per victory
+board_ticks_granted = false;
+
 
 // -----------------------------------------------------------------------------
 // 4. CONTROLLER VARIABLES

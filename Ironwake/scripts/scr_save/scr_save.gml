@@ -142,6 +142,11 @@ function save_game() {
         quests:          (variable_global_exists("quests")          && is_array(global.quests))           ? global.quests          : [],
         journal_badges:  (variable_global_exists("journal_badges")  && is_struct(global.journal_badges))  ? global.journal_badges  : undefined,
         npc_ledger:      (variable_global_exists("npc_ledger")      && is_struct(global.npc_ledger))      ? global.npc_ledger      : undefined,
+        // Tavern board requests (BOARD_REQUESTS_SPEC.md): generated defs must persist
+        // (unlike the code-authored catalog), plus the id sequence + Reforge Chits.
+        board_requests:  (variable_global_exists("board_requests")  && is_array(global.board_requests))   ? global.board_requests  : [],
+        board_seq:       variable_global_exists("board_seq")     ? global.board_seq     : 0,
+        reforge_chits:   variable_global_exists("reforge_chits") ? global.reforge_chits : 0,
         // Phase 4b: gifts - owned trinkets, revealed tastes, the one-per-run latch.
         gift_trinkets:    (variable_global_exists("gift_trinkets")    && is_array(global.gift_trinkets))     ? global.gift_trinkets    : [],
         npc_tastes_known: (variable_global_exists("npc_tastes_known") && is_struct(global.npc_tastes_known)) ? global.npc_tastes_known : undefined,
@@ -270,6 +275,10 @@ function new_game_reset() {
     global.quests         = [];
     global.journal_badges = { npcs: {}, quests: {} };
     global.npc_ledger     = {};
+    // Tavern board requests: empty - board_bootstrap() stocks it on first board open.
+    global.board_requests = [];
+    global.board_seq      = 0;
+    global.reforge_chits  = 0;
     // Phase 4b: gifts - clean slate.
     global.gift_trinkets    = [];
     global.run_trinkets     = [];
@@ -517,6 +526,11 @@ function load_game() {
     global.journal_badges = (variable_struct_exists(_s, "journal_badges") && is_struct(_s.journal_badges)) ? _s.journal_badges : { npcs: {}, quests: {} };
     global.npc_ledger     = (variable_struct_exists(_s, "npc_ledger")     && is_struct(_s.npc_ledger))     ? _s.npc_ledger     : {};
     quest_state_ensure();   // append-migrate rows for quests added since this save
+    // Tavern board requests (older saves lack these keys -> empty; board_bootstrap()
+    // stocks the board the first time it is opened).
+    global.board_requests = (variable_struct_exists(_s, "board_requests") && is_array(_s.board_requests)) ? _s.board_requests : [];
+    global.board_seq      = (variable_struct_exists(_s, "board_seq"))     ? _s.board_seq     : 0;
+    global.reforge_chits  = (variable_struct_exists(_s, "reforge_chits")) ? _s.reforge_chits : 0;
     // Phase 4b: gifts (older saves -> empty defaults). run_trinkets is run-scoped: empty.
     global.gift_trinkets    = (variable_struct_exists(_s, "gift_trinkets")    && is_array(_s.gift_trinkets))     ? _s.gift_trinkets    : [];
     global.npc_tastes_known = (variable_struct_exists(_s, "npc_tastes_known") && is_struct(_s.npc_tastes_known)) ? _s.npc_tastes_known : {};

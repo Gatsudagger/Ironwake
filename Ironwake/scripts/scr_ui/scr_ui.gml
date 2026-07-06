@@ -501,6 +501,11 @@ function ui_consumable_icon_sprite(cname) {
         case "Ley Battery":            return spr_icon_consumable_ley_battery;
         case "Goldfinger Elixir":      return spr_icon_consumable_goldfinger_elixir;
         case "Faerie's Tear":          return spr_icon_consumable_faeries_tear;
+        // Devil Wine: string-ref so the game compiles before/without the sprite
+        // import (asset_get_index returns -1, matching this function's contract).
+        // Once imported, the sprite must sit in global.__sprite_includes or the
+        // compiler strips it (string-only refs; see the pet-sprite note there).
+        case "Devil Wine":             return asset_get_index("spr_icon_consumable_devil_wine");
     }
     return -1;
 }
@@ -1140,6 +1145,10 @@ function journal_quest_reward_text(def) {
         var _rd = rune_get(_r.rune_id);
         _out += (_out != "" ? ", " : "") + ((_rd != undefined) ? _rd.name : _r.rune_id) + " " + rune_tier_roman(_r.rune_tier) + " rune";
     }
+    // Board-request extras (BOARD_REQUESTS_SPEC.md): dust / item roll / Reforge Chit.
+    if (variable_struct_exists(_r, "dust") && _r.dust > 0) _out += (_out != "" ? ", " : "") + string(_r.dust) + " dust";
+    if (variable_struct_exists(_r, "item") && _r.item)     _out += (_out != "" ? " " : "") + "+ item";
+    if (variable_struct_exists(_r, "chit") && _r.chit > 0) _out += (_out != "" ? " " : "") + "+ Reforge Chit";
     return (_out == "") ? "Their thanks" : _out;
 }
 
@@ -1619,17 +1628,22 @@ function ui_draw_tavern_board() {
             _qy += 33;
         }
         var _hot = (_i == _cur);
-        // Pinned-note row: parchment tint, brighter when highlighted.
-        draw_set_color(_hot ? make_color_rgb(62, 50, 34) : make_color_rgb(46, 36, 26));
+        var _is_board = quest_is_board(_qd);
+        var _is_urgent = _is_board && _qd.urgent;
+        // Pinned-note row: parchment tint, brighter when highlighted; urgent offers
+        // get an ember-red cast so they read as "grab this before it's gone".
+        if (_is_urgent) draw_set_color(_hot ? make_color_rgb(74, 42, 30) : make_color_rgb(56, 30, 22));
+        else            draw_set_color(_hot ? make_color_rgb(62, 50, 34) : make_color_rgb(46, 36, 26));
         draw_rectangle(_lx - 12, _qy, _rx + 12, _qy + 96, false);
-        draw_set_color(_hot ? make_color_rgb(220, 190, 130) : make_color_rgb(80, 64, 46));
+        if (_is_urgent) draw_set_color(_hot ? make_color_rgb(235, 120, 80) : make_color_rgb(140, 62, 44));
+        else            draw_set_color(_hot ? make_color_rgb(220, 190, 130) : make_color_rgb(80, 64, 46));
         draw_rectangle(_lx - 12, _qy, _rx + 12, _qy + 96, true);
         // "Pin"
-        draw_set_color(make_color_rgb(180, 60, 50));
+        draw_set_color(_is_urgent ? make_color_rgb(235, 80, 55) : make_color_rgb(180, 60, 50));
         draw_circle(_lx + 6, _qy + 12, 5, false);
         draw_set_font(fnt_ui);
         draw_set_color(_qs.status == "done" ? make_color_rgb(140, 125, 105) : (_hot ? make_color_rgb(240, 228, 200) : make_color_rgb(205, 190, 165)));
-        draw_text(_lx + 24, _qy + 9, _qd.name);
+        draw_text(_lx + 24, _qy + 9, (_is_urgent ? "URGENT: " : "") + _qd.name);
         draw_set_font(fnt_ui_small);
         draw_set_color(make_color_rgb(160, 145, 120));
         var _sub = npc_display_name(_qd.npc) + "   -   " + _qd.objective;
@@ -1639,6 +1653,17 @@ function ui_draw_tavern_board() {
         draw_set_halign(fa_right);
         draw_set_color(make_color_rgb(185, 200, 160));
         draw_text(_rx, _qy + 9, journal_quest_reward_text(_qd));
+        // Expiry tag (board requests): run-count clock, red when this is the last run.
+        // A fulfilled-awaiting-turn-in request never rots, so no tag once it's DONE.
+        if (_is_board && !quest_is_complete(_qid)) {
+            if (_qd.expires <= 1) {
+                draw_set_color(make_color_rgb(235, 110, 80));
+                draw_text(_rx, _qy + 48, "THIS RUN ONLY");
+            } else {
+                draw_set_color(make_color_rgb(200, 170, 110));
+                draw_text(_rx, _qy + 48, string(_qd.expires) + " runs left");
+            }
+        }
         draw_set_halign(fa_left);
         if (journal_quest_badged(_qid)) {
             draw_set_color(make_color_rgb(235, 180, 80));
@@ -3948,6 +3973,10 @@ function ui_draw_log_line(x, y, str, max_w) {
     var _COL_DODGE = make_color_rgb( 95, 210, 220);
     var _COL_GOLD  = make_color_rgb(240, 200,  70);
     var _COL_DUST  = make_color_rgb( 90, 195, 185);
+
+    // Companion (pet) actions are tagged "[Companion]" at the push sites and tinted
+    // wholesale in the pet's green, so its turn reads at a glance among enemy lines.
+    if (string_pos("[Companion]", str) == 1) _COL_BASE = make_color_rgb(150, 215, 150);
 
     var _words = string_split_words_log(str);
     var _n = array_length(_words);
@@ -7822,9 +7851,14 @@ function ui_draw_shop_screen() {
         }
     }
 
-    // Buy tab footer (raised to clear the bottom rim band)
+    // Buy tab footer (raised to clear the bottom rim band). Dorn also honors
+    // Reforge Chits ([R], BOARD_REQUESTS_SPEC.md §7) - show the count when held.
     draw_set_halign(fa_center);
     draw_set_font(fnt_ui_small);
+    if (!_is_petra && variable_global_exists("reforge_chits") && global.reforge_chits > 0) {
+        draw_set_color(make_color_rgb(220, 185, 110));
+        draw_text_outline(960, 993, "R: Rework an item's affixes   (Reforge Chits: " + string(global.reforge_chits) + ")");
+    }
     draw_set_color(make_color_rgb(75, 85, 105));
     draw_text_outline(960, 1026, "W/S: Navigate   Q/E: Buy/Sell   Enter: Buy   F: Gift   Esc: Close     Purchases go to your stash.");
     draw_set_halign(fa_left);

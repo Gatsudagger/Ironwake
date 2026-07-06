@@ -21,7 +21,11 @@
 ## 2. Scarcity enforcement (replaces the hard blocks)
 
 - **Companion (cap 2):** the 3rd Companion gate can be pursued & completed; completing it **slot-demotes the lowest-score existing Companion** to Friend and **resets their Companion gate quest** (re-quest required, §5 "teeth"). Hub notice + ledger both sides.
-- **Lover (cap 1):** pursuing a second Lover is **betrayal**: completing the new Lover gate drops the old Lover to **soured Acquaintance** (tier 1, score slashed to the tier floor), resets ALL their gate quests (full re-court), ledger heartbreak entry + notice.
+- **Lover (cap 1):** pursuing a second Lover is **betrayal**: completing the new Lover gate drops the old Lover per their **severity band** (`affinity_betrayal_severity`, added 2026-07-05 color pass):
+  - **harsh** (Vael, Sable): tier 1 at **score 0**, ALL gate quests reset — full re-court from nothing.
+  - **standard** (Dorn, Vex, Petra): tier 1 at the Acquaintance floor (15), ALL gate quests reset (the v1 curve).
+  - **soft** (Maren, Bairc): tier 2 at the Friend floor (45); only the Companion/Lover gates reset — the friendship survives.
+  - Every NPC gets a voice-matched ledger heartbreak entry + hub notice (`affinity_betrayal_lines`).
 - The old `affinity_try_advance` hard blocks are removed — the costs above are the enforcement now.
 
 ## 3. Neglect decay
@@ -39,5 +43,5 @@
 ## 5. Not built (deliberate)
 
 - Per-NPC quest-abandon consequences — no abandon action exists in the quest layer.
-- Per-NPC betrayal severity curves — v1 uses one severity; per-NPC color goes in with the flavor pass.
+- ~~Per-NPC betrayal severity curves~~ — BUILT 2026-07-05 (severity bands + per-NPC lines, see §2).
 - Theft/story betrayal triggers — no such actions exist yet; only the romance-switch trigger is live.

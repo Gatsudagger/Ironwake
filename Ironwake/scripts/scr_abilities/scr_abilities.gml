@@ -183,7 +183,9 @@ function abilities_resolve_player_loadout(class_id) {
 // Playstyle: build Souls on kills, spend for high-damage/utility spells.
 // -----------------------------------------------------------------------------
 // desc_short: one readable line shown in the list row (<=50 chars)
-// desc_full:  1-2 sentences for the description box - what it does and when to use it
+// desc_full:  evocative action line, then "\n" + "- " technical breakdown lines
+//             (what it does and when to use it). Rendered via draw_text_ext, so
+//             the embedded newlines are safe at both draw sites.
 global.abilities_arcanist = [
     // 0: Soulfire - aggressive generator: hits hard AND builds Souls each cast.
     //    Niche: spam for damage and soul generation; pairs with Arcane Burst.
@@ -287,27 +289,30 @@ global.abilities_arcanist = [
 ];
 
 // Plain-English descriptions for Arcanist abilities
+// Format (flavor pass 7-05): evocative action line, then "\n" + "- " technical
+// breakdown lines. School words Capitalized; dtype-1 descs name the resolved
+// school (Fire/Arcane), not "elemental".
 var _arc_d = [
-    { s: "Deal 15 elemental dmg. Gain +2 Soul.",
-      f: "A quick elemental blast that also fills your Soul reserve. Cheap to cast - spam it to fuel bigger spells on the next turn." },
-    { s: "1 AP: 8 drain dmg, heal 8, +1 Soul. 2-turn CD.",
-      f: "A guaranteed drain that heals as much as it deals and banks 1 Soul, bypassing armor entirely. Now 1 AP on a 2-turn cooldown - cheap sustain you can't spam every turn." },
-    { s: "Spend 1 Soul. Deal 38 elemental dmg.",
-      f: "Your big nuke. Costs 1 Soul for a massive elemental hit with a strong arcane crit chance. Save it for tough or high-HP enemies." },
-    { s: "0 AP cost. Gain +2 Soul instantly.",
-      f: "Costs zero AP - cast it for free and keep your other abilities available this turn. One use per turn. Save it to top off your Soul reserve before an Arcane Burst." },
+    { s: "Deal 15 Fire dmg. Gain +2 Souls.",
+      f: "Hurl a gout of soulfire that feeds on what it burns.\n- 15 Fire damage. Banks +2 Souls on cast.\n- Cheap to cast - spam it to fuel bigger spells next turn." },
+    { s: "1 AP: 8 Void dmg, heal 8, +1 Soul. 2-turn CD.",
+      f: "Pull the life out of a foe in one cold breath.\n- Guaranteed 8 Void damage that ignores all armor. Heals you 8 and banks 1 Soul.\n- 1 AP on a 2-turn cooldown - steady sustain, not spam." },
+    { s: "Spend 1 Soul. Deal 38 Arcane dmg.",
+      f: "Collapse a stored Soul into one roaring detonation of Arcane force.\n- Spend 1 Soul: 38 Arcane damage with a high crit ceiling.\n- Save it for elites and high-HP enemies." },
+    { s: "0 AP cost. Gain +2 Souls instantly.",
+      f: "Reach out and gather the loose souls the fight has shaken free.\n- Costs no AP: +2 Souls on the spot, once per turn.\n- Top off the reserve before an Arcane Burst or Soul Nova." },
     { s: "Fully dodge the next attack; soften the 2 after. 2-turn CD.",
-      f: "Phase out: the next enemy attack is fully evaded automatically. The two attacks after that still land but for 50% then 25% less damage. A charge is spent per attacking enemy, so it spans a swarm. 2-turn cooldown." },
-    { s: "Target takes +4 dmg from all hits for 3 turns.",
-      f: "A debuff that amplifies all incoming damage to the target. Strong when you have multiple damage sources or DoTs ticking per turn." },
+      f: "Step sideways out of the world and let the blow pass through where you stood.\n- Next incoming attack: fully dodged. The two after: 50% then 25% less damage.\n- One charge is spent per attacking enemy, so it spans a swarm. 2-turn cooldown." },
+    { s: "Hex: target takes +4 dmg for 3 turns; detonations x2.",
+      f: "Whisper a Shadow hex that opens every seam in their defenses.\n- Hexed: +4 damage taken from all hits for 3 turns.\n- Detonations against the hexed target hit twice as hard and spread +2 damage-taken to every other enemy." },
     { s: "Spend 1 Soul. Absorb 10 incoming dmg.",
-      f: "Converts 1 Soul into a 10 HP damage buffer. Cheap protection - cast it when your Soul bar is stocked and you expect a big hit." },
-    { s: "Apply poison: 6 dmg/turn for 4 turns.",
-      f: "No upfront damage, but 24 total if the target lives long enough. Best on tough enemies you plan to wear down over several turns." },
-    { s: "Spend 2 Souls. Deal 20 elemental dmg to all enemies.",
-      f: "An AoE nuke that hits every enemy at once. High Soul cost - save it for multi-enemy fights or finishing off a weakened group." },
-    { s: "Spend 1 Soul. Bound foe takes 40% of dmg you take; heals YOU same.",
-      f: "A combat-long lifelink: the bound enemy suffers 40% of every hit you receive, and the stolen vitality heals you for the same amount. Bind the biggest thing in the room and let it regret hurting you." },
+      f: "Weave a spent Soul into a pale ward around you.\n- Spend 1 Soul: a shield absorbs the next 10 damage.\n- Cheap cover when the reserve is stocked and a big hit is coming." },
+    { s: "Void rot: 6 dmg/turn for 4 turns.",
+      f: "Set decay loose in their flesh and let time do the killing.\n- Void DoT: 6 damage per turn for 4 turns (24 total).\n- Feeds Void detonations - bursting it heals you for 30% of the hit." },
+    { s: "Spend 2 Souls. Deal 20 Arcane dmg to ALL enemies.",
+      f: "Tear a rift above the field and let the Arcane pour through onto everything.\n- Spend 2 Souls: 20 Arcane damage to every enemy at once.\n- Best into packs, or to finish a weakened group." },
+    { s: "Spend 1 Soul. Foe takes 40% of dmg YOU take; heals you.",
+      f: "Stitch a Shadow thread between your fate and theirs.\n- Combat-long: the bound enemy suffers 40% of every hit you receive, and you heal the same amount.\n- Bind the biggest thing in the room and let it regret hurting you." },
 ];
 for (var _i = 0; _i < 10; _i++) {
     global.abilities_arcanist[_i].desc_short = _arc_d[_i].s;
@@ -415,26 +420,26 @@ global.abilities_bloodwarden = [
 
 // Plain-English descriptions for Bloodwarden abilities
 var _bw_d = [
-    { s: "Deal 10 blood dmg. Heal 8 HP. 80% accuracy.",
-      f: "Your bread-and-butter sustain skill. Blood damage scales with INT, and you heal every cast. Low energy cost - use it freely." },
-    { s: "Reduce all incoming dmg by 4 for 3 turns.",
-      f: "A flat damage reduction buff on a timer. Cast it before a heavy hit or telegraph - 4 damage off every incoming hit for 3 full turns." },
+    { s: "Deal 10 Blood dmg. Heal 8 HP.",
+      f: "Open a vein and drink the fight back into yourself.\n- 10 Blood damage, and you heal 8 on the hit.\n- Cheap bread-and-butter sustain - use it freely." },
+    { s: "Take -4 dmg from every hit for 3 turns.",
+      f: "Set your feet and let your hide turn to metal.\n- Every incoming hit deals 4 less damage for 3 turns.\n- Cast it before a heavy turn or a telegraphed blow." },
     { s: "Deal 14 physical dmg. Bleed: 3 dmg/turn for 4 turns.",
-      f: "A melee hit that opens a bleed wound. The 12 total bleed damage adds up - strong opener on high-HP targets or bosses." },
+      f: "Rip a jagged wound that keeps bleeding long after the blow lands.\n- 14 physical damage + Bleed 3/turn for 4 turns (12 total).\n- Strong opener on high-HP targets and bosses; feeds Rupture." },
     { s: "Spend 2 Blood. Heal 14 HP. Free action.",
-      f: "A zero-energy burst heal that costs only Blood. Perfect for recovering mid-fight when your Blood reserve is stocked." },
-    { s: "Deal 24 physical dmg. Target deals 30% less dmg for 3 turns.",
-      f: "A heavy hit that also cuts the target's damage output. Use it on the hardest-hitting enemy to reduce the pressure on yourself." },
-    { s: "Spend 1 Blood. Drain 8 HP. Reduce target max HP by 8.",
-      f: "Permanently lowers the enemy's maximum HP for this combat. Combine with Gore Strike's bleed to whittle down a boss faster." },
-    { s: "Return 8 dmg to each attacker per hit for 4 turns.",
-      f: "A thorns buff that punishes every incoming attack. Pairs well with Iron Skin - you reduce their damage while they take damage for hitting you." },
-    { s: "Spend 3 Blood. Survive the next lethal blow: surge to 25% HP +3 Blood.",
-      f: "Arm your defiance: the next killing blow fails, you surge back to a quarter of your health, and the refusal itself grants 3 Blood. Fires before Last Stand - cast it when death is one hit away." },
+      f: "Command your own blood to close the wound.\n- Costs no AP: spend 2 Blood, heal 14 HP.\n- Mid-fight recovery whenever the reserve is stocked." },
+    { s: "Deal 24 physical dmg. Target deals -30% dmg for 3 turns.",
+      f: "Bring the full weight of the blow down where the bone is.\n- 24 physical damage. The target deals 30% less damage for 3 turns.\n- Put it on the hardest hitter and take the pressure off yourself." },
+    { s: "Spend 1 Blood. 8 Blood dmg. Target max HP -8.",
+      f: "Steal the strength out of a foe and keep it from coming back.\n- 8 Blood damage; the target's maximum HP drops by 8 for the combat.\n- Stack with bleeds to gut a boss's health pool faster." },
+    { s: "Attackers take 8 dmg per hit for 4 turns.",
+      f: "Grow a lattice of thorns from your own spilled blood.\n- Every enemy that hits you takes 8 damage back, for 4 turns.\n- Pair with Iron Skin: they hit softer and bleed for trying." },
+    { s: "Spend 3 Blood. Lethal blow: survive at 25% HP, +3 Blood.",
+      f: "Plant your feet on the near side of the grave and refuse.\n- The next killing blow fails: you surge back to 25% HP and gain 3 Blood.\n- Fires before Last Stand. Cast it when death is one hit away." },
     { s: "Target heals 50% less for 5 turns.",
-      f: "Neutralizes enemy healing for extended fights. Low energy cost and a wide 5-turn window - cast it early on any regenerating enemy." },
-    { s: "Spend 2 Blood. Each ability also drains 6 HP for 2 turns.",
-      f: "A short vampiric burst that adds a drain rider to every ability you cast for 2 turns. Stack with Blood Leech for maximum sustain." },
+      f: "Press a Poisoned palm to them and let the sickness settle in.\n- The target receives 50% less healing for 5 turns.\n- Cast it early on anything that regenerates." },
+    { s: "Spend 2 Blood. Abilities drain +6 HP for 2 turns.",
+      f: "Give your hunger the reins for a few heartbeats.\n- For 2 turns, every ability you cast also drains 6 HP from its target.\n- Stack with Blood Leech for maximum sustain." },
 ];
 for (var _i = 0; _i < 10; _i++) {
     global.abilities_bloodwarden[_i].desc_short = _bw_d[_i].s;
@@ -550,26 +555,26 @@ global.abilities_shadowstrider = [
 
 // Plain-English descriptions for Shadowstrider abilities
 var _ss_d = [
-    { s: "Deal 14 physical dmg. +20 bonus dmg if target is debuffed.",
-      f: "High accuracy and a strong precision crit. Deals a big bonus on debuffed targets - set up Marked for Death or Smoke Bomb first, then fire." },
-    { s: "Spend 1 Prep. Trap: 16 dmg + Root (melee enemy loses a turn).",
-      f: "A guaranteed-hit trap that roots the target. A rooted MELEE enemy can't reach you and skips its turn - but ranged enemies still attack through it (use Death Snare's stun for those)." },
-    { s: "~(50% + WIS) chance to dodge each of the next 3 attacks. 2-turn CD.",
-      f: "A reactive evasion on a 1-energy budget. Each of the next 3 incoming attacks has a (50% + WIS*2)% chance - capped at 85% - to be dodged; otherwise it connects. Stun halves the odds. 2-turn cooldown. Strong against a pack." },
+    { s: "Deal 14 physical dmg. +20 if target is debuffed.",
+      f: "One breath, one line, one shot that was always going to land.\n- 14 physical damage, high accuracy, strong Precision crit.\n- +20 damage against a debuffed target - mark first, then fire." },
+    { s: "Spend 1 Prep. Trap: 16 dmg + Root (melee loses a turn).",
+      f: "Set steel jaws where the next foot falls.\n- Guaranteed trap hit: 16 physical damage + Root for 1 turn.\n- A Rooted MELEE enemy can't reach you and skips its turn; ranged foes still fire - use Death Snare's Stun for those." },
+    { s: "~(50% + WIS) chance to dodge the next 3 attacks. 2-turn CD.",
+      f: "Walk half a step behind your own shadow and let the blows guess.\n- Each of the next 3 incoming attacks has a (50% + WIS*2)% dodge chance, capped at 85%. Stun halves the odds.\n- 1 AP on a 2-turn cooldown - strong against a pack." },
     { s: "Deal 6 physical dmg. Poison: 5 dmg/turn for 4 turns.",
-      f: "Low upfront damage but 20 total over time. Cheap to cast - apply it early and let the poison tick while you use other abilities." },
-    { s: "Spend 1 Prep. All enemies hit 40% less often for 2 turns.",
-      f: "A group accuracy debuff that buys you breathing room. Cast it before a risky turn or when you need to set up traps without taking a beating." },
-    { s: "Deal 10 physical dmg. Target deals 25% less dmg for 3 turns.",
-      f: "A reliable hit with a lasting damage debuff. Reduces the most dangerous enemy's output for several turns - use it early." },
-    { s: "Spend 1 Prep. Trap fires: 26 dmg + bleed 6/turn x 4 turns.",
-      f: "The bleed trap: heavy damage and a punishing wound at a lean cost. Feeds Rupture-style payoffs and bleed builds; take Death Snare when you need the stun instead." },
-    { s: "All hits on target deal +8 bonus dmg for up to 4 turns.",
-      f: "A mark that amplifies every attack landing on the target. Apply it early and then stack Snipe and traps on top to maximize the window." },
-    { s: "Spend 2 Prep. Next hit above 10 dmg is halved; absorb refunds 1 Prep.",
-      f: "No energy cost - just Preparation, and a clean absorb pays 1 back. Hold it in reserve for heavy hits; it ignores weak attacks below 10 damage." },
+      f: "Flick a needle of something patient into their neck.\n- 6 physical damage + Poison 5/turn for 4 turns (20 total).\n- Cheap - apply it early and let it tick while you work." },
+    { s: "Spend 1 Prep. ALL enemies hit 40% less often for 2 turns.",
+      f: "Drop the room into a grey blindness only you can read.\n- Every enemy's accuracy drops 40% for 2 turns.\n- Buy a safe turn to set traps or catch your breath." },
+    { s: "Deal 10 physical dmg. Target deals -25% dmg for 3 turns.",
+      f: "Put the shot where they carry their strength.\n- 10 physical damage. The target deals 25% less damage for 3 turns.\n- Take the most dangerous enemy down a notch early." },
+    { s: "Spend 1 Prep. Trap: 26 dmg + Bleed 6/turn for 4 turns.",
+      f: "Line the floor with points that keep cutting on the way out.\n- Guaranteed trap hit: 26 physical damage + Bleed 6/turn for 4 turns.\n- The DoT-build trap - feeds bleed payoffs; take Death Snare when you need the Stun instead." },
+    { s: "All hits on target deal +8 dmg. 4 turns / 3 hits.",
+      f: "Chalk an ending on their back that only your weapons can read.\n- Marked: every hit on the target deals +8, for up to 4 turns or 3 hits.\n- Apply it first, then stack Snipe and traps into the window." },
+    { s: "Spend 2 Prep. Halve next hit over 10 dmg; refund 1 Prep.",
+      f: "Keep your knees bent and your plans loose.\n- Costs no AP: the next hit above 10 damage is halved, and a clean absorb refunds 1 Prep.\n- Hold it for the heavy hits - it ignores weak attacks." },
     { s: "Spend 2 Prep. Trap: 32 dmg + Stun for 2 turns.",
-      f: "The apex trap. Guaranteed massive damage and a 2-turn stun that shuts down ANY enemy - melee or ranged, attacker or caster. Save your Preparation for elites and bosses." },
+      f: "Build the last mistake they will ever step into.\n- Guaranteed trap hit: 32 physical damage + Stun for 2 turns.\n- The Stun shuts down ANY enemy, melee or ranged. Save the Prep for elites and bosses." },
 ];
 for (var _i = 0; _i < 10; _i++) {
     global.abilities_shadowstrider[_i].desc_short = _ss_d[_i].s;
@@ -592,14 +597,14 @@ global.abilities_general = [
     ability_define("Adrenaline Rush", 0,0,  0,0,   -1,true,  -1,0, "status",1,0,  true),
 ];
 var _gen_d = [
-    { s:"Deal 10 physical dmg. Momentum: refunds its AP on a kill.",
-      f:"A dependable strike any class can throw - and when it fells the target, its AP comes back. The chaff-clearer that keeps your turn moving." },
+    { s:"Deal 10 physical dmg. Refunds its AP on a kill.",
+      f:"A plain, honest blow - the kind that keeps a turn moving.\n- 10 physical damage. Momentum: if it kills, the AP comes back.\n- The chaff-clearer any class can carry." },
     { s:"Heal 14 HP. 2-turn cooldown.",
-      f:"A quick 1-AP patch-up - restores 14 HP on a 2-turn cooldown (no longer once per combat). No setup, no resource; top yourself off between bigger plays." },
-    { s:"Heal 10 HP, restore 1 resource, shake off newest debuff.",
-      f:"Recovers HP, refunds 1 Soul / Blood / Preparation, and cleanses the most recent affliction on you - the only self-cleanse in the game. Your answer to poison, burns and hexes." },
+      f:"Cinch the wound tight and keep moving.\n- 1 AP: restore 14 HP, on a 2-turn cooldown.\n- No setup, no resource - patch up between bigger plays." },
+    { s:"Heal 10 HP, +1 resource, shake off newest debuff.",
+      f:"Spit, straighten up, and shake the worst of it off.\n- Heals 10 HP, refunds 1 Soul / Blood / Prep, and cleanses your newest affliction.\n- The only self-cleanse in the game - your answer to Poison, burns, and hexes." },
     { s:"+1 AP this turn (once per combat).",
-      f:"Costs no AP and instantly grants an extra action point - but only once per fight. Save it for the turn you need a burst of tempo." },
+      f:"Let the fear do something useful for once.\n- Costs no AP: gain +1 AP on the spot. Once per fight.\n- Spend it on the turn that decides the fight." },
 ];
 for (var _i = 0; _i < array_length(global.abilities_general); _i++) {
     global.abilities_general[_i].desc_short = _gen_d[_i].s;
@@ -612,12 +617,12 @@ array_push(global.abilities_arcanist,
     ability_define("Arcane Echo", 3,1,  14,1,  85,false, 2,10, "damage",0,0,  false),
     ability_define("Singularity", 3,3,  32,1,  88,false, 2,10, "damage",0,0,  false));
 var _arc_x = [
-    { s:"Deal 10 void dmg. Silence target 3 turns (can't cast).",
-      f:"Sever the target's mana: a silenced enemy can't take spell actions for 3 turns. Shuts down casters and ranged spellcasters cold - useless on pure melee bruisers, who don't cast anyway." },
-    { s:"Spend 1 Soul. 14 elem dmg +4/Soul held; 50% echoes to ALL others.",
-      f:"An elemental echo that grows with your Soul reserve - and half its damage rings out to every other enemy. Your soul-fuelled mini-AoE: keep Souls banked and cast it into a crowd." },
-    { s:"Spend 3 Souls. Deal 32 elemental dmg. Ultimate.",
-      f:"Collapse your hoarded Souls into a single devastating arcane detonation - your highest-damage finisher." },
+    { s:"Deal 10 Void dmg. Silence target 3 turns (can't cast).",
+      f:"Cut the thread between a caster and their power.\n- 10 Void damage. Silenced: no spell actions for 3 turns.\n- Shuts down casters cold; wasted on pure melee bruisers." },
+    { s:"Spend 1 Soul. 14 Arcane +4/Soul held; 50% echoes to ALL.",
+      f:"Ring one note of Arcane thunder and let the walls answer.\n- Spend 1 Soul: 14 Arcane damage, +4 per Soul still held.\n- Half the damage echoes to every other enemy - cast it into a crowd with a full reserve." },
+    { s:"Spend 3 Souls. Deal 32 Arcane dmg. Ultimate.",
+      f:"Fold your hoarded Souls into a point of light that refuses to stay small.\n- Spend 3 Souls: 32 Arcane damage in one detonation.\n- Your highest-damage finisher - bank Souls, then end something with them." },
 ];
 for (var _i = 0; _i < 3; _i++) {
     global.abilities_arcanist[10 + _i].desc_short = _arc_x[_i].s;
@@ -631,11 +636,11 @@ array_push(global.abilities_bloodwarden,
     ability_define("Crimson Apex",  3,3,  22,3,  82,false, 0,12, "heal",20,0,   false));
 var _bw_x = [
     { s:"Spend 8 HP to gain 3 Blood.",
-      f:"Bleed yourself to fuel your Blood reserve when you need resources faster than combat provides them. Don't cast it low on HP." },
+      f:"Cut your own palm and pay the reserve in advance.\n- Trade 8 HP for 3 Blood on the spot.\n- Fuel when combat is too slow to provide it - never cast it low on HP." },
     { s:"Deal 18 physical dmg. Target takes +5 dmg for 3 turns.",
-      f:"A bone-shattering blow that shreds the target's defenses, leaving them to take +5 from every follow-up. Strong elite opener." },
-    { s:"Spend 3 Blood. Deal 22 blood dmg and heal 20 HP. Ultimate.",
-      f:"Your apex strike - a massive blood blow that returns a huge heal on impact. Swings a losing fight back in your favor." },
+      f:"Swing through the armor and into the frame beneath it.\n- 18 physical damage. The shattered guard takes +5 from every hit for 3 turns.\n- Strong elite opener - break them, then pile on." },
+    { s:"Spend 3 Blood. Deal 22 Blood dmg, heal 20 HP. Ultimate.",
+      f:"Their blood, your wound, one motion - the high mark of the art.\n- Spend 3 Blood: 22 Blood damage and a 20 HP heal on impact.\n- Swings a losing fight back in your favor." },
 ];
 for (var _i = 0; _i < 3; _i++) {
     global.abilities_bloodwarden[10 + _i].desc_short = _bw_x[_i].s;
@@ -648,12 +653,12 @@ array_push(global.abilities_shadowstrider,
     ability_define("Vanish",        1,0,  0,0,   -1,true,  -1,0, "status",1,1,  true),
     ability_define("Killing Spree", 3,2,  12,0,  86,false, 1,12, "damage",0,0,  false));
 var _ss_x = [
-    { s:"Deal 16 physical dmg. High precision crit.",
-      f:"A rapid flurry of strikes with a sky-high crit chance - your most reliable burst once it's unlocked." },
-    { s:"~(50% + WIS) chance to dodge the next attack; your next hit deals +12 dmg.",
-      f:"Slip out of sight for a (50% + WIS*2)% chance - capped 85% - to dodge the next attack, then explode from cover for bonus damage on your following strike. Stun halves the dodge odds." },
-    { s:"Spend 2 Prep. Deal 12 dmg, +5 per debuff on target. Ultimate.",
-      f:"Rewards setup - the more debuffs, traps, and marks stacked on the target, the more this carves off. Your payoff finisher." },
+    { s:"3 strikes, 16 total dmg. +3 per debuff on target.",
+      f:"Three cuts in the space most people spend on one.\n- 16 physical damage split across 3 strikes, each rolling its own crit. +3 damage per debuff or DoT on the target.\n- Loves crit scaling; bites softer into heavy armor." },
+    { s:"~(50% + WIS) dodge next attack; your next hit +12 dmg.",
+      f:"Be somewhere else. Then be the knife.\n- (50% + WIS*2)% chance, capped at 85%, to dodge the next attack; Stun halves the odds.\n- Your next hit deals +12 - vanish, then punish." },
+    { s:"Spend 2 Prep. 12 dmg +5 per debuff on target. Ultimate.",
+      f:"Collect on every weakness you've sold them.\n- Spend 2 Prep: 12 physical damage, +5 per debuff, mark, and trap effect on the target.\n- The payoff finisher - the deeper the setup, the deeper it cuts." },
 ];
 for (var _i = 0; _i < 3; _i++) {
     global.abilities_shadowstrider[10 + _i].desc_short = _ss_x[_i].s;
@@ -689,10 +694,10 @@ array_push(global.abilities_arcanist,
         /*crit_type*/2, /*base_crit*/8, // arcane (INT)
         /*effect_type*/"damage", /*effect_value*/0, /*duration*/0,
         /*self*/false));
-global.abilities_arcanist[13].desc_short = "8 fire dmg. Sear [Fire+]: +3 fire/hit 2t. +1 Soul.";
-global.abilities_arcanist[13].desc_full  = "A cheap fire primer: 8 fire damage, then a Searing mark [Fire+] that makes every follow-up hit deal +3 fire damage for 2 turns, and banks 1 Soul. Open with this, then detonate with Arcane Burst or Soul Nova.";
-global.abilities_arcanist[14].desc_short = "Spend up to 4 Souls. Deal 8 elem +7 per Soul spent.";
-global.abilities_arcanist[14].desc_full  = "Dump your banked Souls into one flexible blast - up to 4 Souls for +7 damage each. Cheaper and more flexible than Arcane Burst; rewards a turn or two of Soul generation.";
+global.abilities_arcanist[13].desc_short = "8 Fire dmg. Sear [Fire+]: +3 Fire/hit 2t. +1 Soul.";
+global.abilities_arcanist[13].desc_full  = "Drag a burning thumb across the target and leave the mark smoldering.\n- 8 Fire damage, +1 Soul. Sear [Fire+]: every follow-up hit deals +3 Fire for 2 turns.\n- Open with this, then detonate with Arcane Burst or Soul Nova.";
+global.abilities_arcanist[14].desc_short = "Spend up to 4 Souls. Deal 8 Arcane +7 per Soul.";
+global.abilities_arcanist[14].desc_full  = "Crack your reserve open and release everything at once.\n- 8 Arcane damage, +7 per Soul consumed (up to 4).\n- Cheaper and more flexible than Arcane Burst - rewards a turn of Soul generation.";
 
 // --- BLOODWARDEN: Cleave (free filler) + Rupture (Vex payoff) ---
 array_push(global.abilities_bloodwarden,
@@ -717,9 +722,9 @@ array_push(global.abilities_bloodwarden,
         /*effect_type*/"damage", /*effect_value*/0, /*duration*/0,
         /*self*/false));
 global.abilities_bloodwarden[13].desc_short = "Deal 9 physical dmg to ALL enemies. Cheap sweep.";
-global.abilities_bloodwarden[13].desc_full  = "A 1-AP sweeping strike that hits every enemy - your cheap clear-the-chaff tool. Less per-target than a focused hit, but it softens a whole pack and opens bleeds across the board.";
-global.abilities_bloodwarden[14].desc_short = "Detonate all bleeds on target: +5 dmg per remaining tick.";
-global.abilities_bloodwarden[14].desc_full  = "Burst every bleed and poison on the target at once - 8 blood damage plus 5 for each remaining tick, consuming the stacks. Build bleeds with Gore Strike, then Rupture for a payoff hit.";
+global.abilities_bloodwarden[13].desc_full  = "Turn the swing wide and let everything standing catch an edge.\n- 1 AP: 9 physical damage to every enemy.\n- Less per target than a focused hit, but it softens a whole pack at once.";
+global.abilities_bloodwarden[14].desc_short = "Detonate all bleeds: 8 Blood dmg +5 per remaining tick.";
+global.abilities_bloodwarden[14].desc_full  = "Seize every open wound at once and tear them all wider.\n- 8 Blood damage, +5 per remaining Bleed/Poison tick on the target; the stacks are consumed.\n- Build with Gore Strike or Spike Trap, then cash out.";
 
 // --- SHADOWSTRIDER: Throat Slit (free primer) + Assassinate (Vex payoff) ---
 array_push(global.abilities_shadowstrider,
@@ -742,9 +747,9 @@ array_push(global.abilities_shadowstrider,
         /*effect_type*/"damage", /*effect_value*/0, /*duration*/0,
         /*self*/false));
 global.abilities_shadowstrider[13].desc_short = "Deal 5 physical dmg. Expose target (+4 dmg/hit, 2t).";
-global.abilities_shadowstrider[13].desc_full  = "A quick cut that Exposes the target - every follow-up hit lands for +4 for 2 turns. Your cheapest setup; chain it into Snipe, Flurry, or Assassinate.";
-global.abilities_shadowstrider[14].desc_short = "Spend 2 Prep. Deal 26 dmg, DOUBLED if target below 30% HP.";
-global.abilities_shadowstrider[14].desc_full  = "A precision finisher: heavy damage that deals DOUBLE against a target below 30% HP. Save it for the kill - when the execute lands it's your biggest single hit.";
+global.abilities_shadowstrider[13].desc_full  = "A shallow cut in exactly the wrong place to have one.\n- 5 physical damage. Exposed: every follow-up hit deals +4 for 2 turns.\n- Your cheapest setup - chain it into Snipe, Flurry, or Assassinate.";
+global.abilities_shadowstrider[14].desc_short = "Spend 2 Prep. 26 dmg, DOUBLED if target below 30% HP.";
+global.abilities_shadowstrider[14].desc_full  = "The job was never the fight. The job was this moment.\n- Spend 2 Prep: 26 physical damage, DOUBLED against a target below 30% HP.\n- Read the board and save it for the kill turn - your biggest single hit.";
 
 
 // =============================================================================

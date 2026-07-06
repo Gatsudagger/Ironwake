@@ -120,6 +120,19 @@ if (_result == 1) {
             }
         }
     }
+    // Board challenge requests (BOARD_REQUESTS_SPEC.md §6) - scored once per victory.
+    // Swift uses the threshold-tick trick: victory on round n ticks every T >= n so a
+    // def with obj_param T completes exactly when n <= T.
+    if (!combat_over && !board_ticks_granted) {
+        board_ticks_granted = true;
+        if (!combat_state.player_took_damage) quest_tick("flawless_fight", "", 1);
+        if (!combat_state.used_consumable)    quest_tick("clean_fight", "", 1);
+        if (variable_global_exists("next_enemy_type") && global.next_enemy_type == "boss") {
+            for (var _bst = clamp(combat_state.round, 1, 12); _bst <= 12; _bst++) {
+                quest_tick("boss_swift", string(_bst), 1);
+            }
+        }
+    }
     // Genie Lamp: ~1.5% drop from ELITE and BOSS kills only (design 2026-07-04).
     // A free mid-run escape - rub it on the floor map [G] to extract with all loot.
     if (!combat_over && !genie_lamp_rolled && variable_global_exists("next_enemy_type")
@@ -202,7 +215,11 @@ if (player_turn) {
                 if (player.ability_cd[_cdi] > 0) player.ability_cd[_cdi]--;
             }
         }
+        var _hp_pre_tick = player.HP;
         combat_tick_statuses(player, combat_log);
+        // Board "flawless" requests: DoT ticks count as taking damage (the Blood
+        // Price self-drain below deliberately does NOT - it's the player's curse).
+        if (player.HP < _hp_pre_tick) combat_state.player_took_damage = true;
         // Blood Price curse: lose a flat amount of HP at the start of each turn.
         var _bp_drain = curse_turn_hp_drain();
         if (_bp_drain > 0) {
@@ -330,6 +347,7 @@ if (player_turn) {
                 } else if (player.energy < 1 && !_q_is_ap) {
                     array_push(combat_log, "Need 1 AP to use a consumable.");
                 } else {
+                    combat_state.used_consumable = true;   // board "clean fights" requests
                     if (_citem.effect_type == "heal") {
                         var _qheal = min(player.max_HP - player.HP, _citem.effect_value);
                         player.HP += _qheal;
@@ -1997,6 +2015,7 @@ if (player_turn) {
             } else if (_eab.kind == "spell") {
                 var _sdmg = combat_mitigate_player(player, _eab.value, _eab.dtype, combat_log);
                 if (_incoming_mult < 1.0) _sdmg = max(1, round(_sdmg * _incoming_mult));  // Blink softening
+                if (_sdmg > 0) combat_state.player_took_damage = true;
                 combat_apply_damage(player, _sdmg);
                 audio_play_sound(hurt, 1, false);
                 player.hit_flash = 15; screen_shake_timer = 12;
@@ -2109,7 +2128,7 @@ if (player_turn) {
                 && pet_injury_mult(_gpet.injured) > 0 && _final_dmg > 1 && irandom(99) < 25) {
                 var _gcut = max(1, round(_final_dmg * 0.35));
                 _final_dmg -= _gcut;
-                array_push(combat_log, _gpet.name + " intercepts the blow (-" + string(_gcut) + ")!");
+                array_push(combat_log, "[Companion] " + _gpet.name + " intercepts the blow (-" + string(_gcut) + ")!");
             }
             // How much the player's defenses shaved off this swing (armor/Iron Skin/etc.),
             // measured before Soul Shield (which logs its own absorb line separately).
@@ -2122,6 +2141,9 @@ if (player_turn) {
                 array_push(combat_log, "Soul Shield absorbs " + string(_sa) + " damage.");
             }
 
+            // Board "flawless" requests count HP damage only - a full Soul Shield
+            // absorb keeps the fight untouched (defense play stays rewarded).
+            if (_final_dmg > 0) combat_state.player_took_damage = true;
             combat_apply_damage(player, _final_dmg);
             // Player takes a hit - gendered human "damage" grunt (snd_player_hurt[_f]),
             // falling back to the library `hurt` until the pack is imported.
@@ -2249,6 +2271,7 @@ if (player_turn) {
                     array_push(combat_log, "Soul Shield absorbs " + string(_sa2) + " damage.");
                 }
 
+                if (_final_dmg2 > 0) combat_state.player_took_damage = true;
                 combat_apply_damage(player, _final_dmg2);
                 audio_play_sound(hurt, 1, false);
                 player.hit_flash   = max(player.hit_flash, 12);

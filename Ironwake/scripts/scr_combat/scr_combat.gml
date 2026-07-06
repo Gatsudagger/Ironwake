@@ -86,6 +86,10 @@ function combat_init(combatant_array) {
         turn_index:   0,               // index of the combatant currently acting
         round:        1,               // increments each time the queue wraps
         active:       sorted[0],       // convenience reference to current actor
+        // Board challenge templates (BOARD_REQUESTS_SPEC.md §6): set during the
+        // fight, read once at the victory block (flawless_fight / clean_fight).
+        player_took_damage: false,
+        used_consumable:    false,
     };
 }
 
@@ -1206,7 +1210,7 @@ function combat_pet_act(combat_state, player, combat_log, damage_popups) {
                 _slot++; _any = true;
             }
             if (_any) {
-                array_push(combat_log, _p.name + " erupts - corrupted cleave hits all foes for " + string(_base) + "!");
+                array_push(combat_log, "[Companion] " + _p.name + " erupts - corrupted cleave hits all foes for " + string(_base) + "!");
                 global.pet_lunge_t0 = current_time;   // procedural lunge (combat draw)
             }
             return _any;
@@ -1260,9 +1264,9 @@ function combat_pet_act(combat_state, player, combat_log, damage_popups) {
                     source:       "pet"
                 });
             }
-            array_push(combat_log, _p.name + " harries " + _best.name + " with you for " + string(_dmg) + " - Pack Tactics (+2 dmg taken/hit)!");
+            array_push(combat_log, "[Companion] " + _p.name + " harries " + _best.name + " with you for " + string(_dmg) + " - Pack Tactics (+2 dmg taken/hit)!");
         } else {
-            array_push(combat_log, _p.name + " strikes " + _best.name + " for " + string(_dmg) + "!");
+            array_push(combat_log, "[Companion] " + _p.name + " strikes " + _best.name + " for " + string(_dmg) + "!");
         }
         array_push(damage_popups, { value: _dmg, x: 1620 + _bslot * (-120), y: 233 + _bslot * 105 - 105, timer: 50, col: make_color_rgb(150, 215, 150) });
         if (_best.HP <= 0) combat_on_enemy_defeated(_best, player, combat_log);
@@ -1283,7 +1287,7 @@ function combat_pet_act(combat_state, player, combat_log, damage_popups) {
         if (_stance == "cleanser") {
             var _cl = combat_cleanse(player, "one");
             if (_cl > 0) {
-                array_push(combat_log, _p.name + " draws the affliction out of you.");
+                array_push(combat_log, "[Companion] " + _p.name + " draws the affliction out of you.");
                 return true;
             }
         }
@@ -1307,14 +1311,14 @@ function combat_pet_act(combat_state, player, combat_log, damage_popups) {
             player.HP = min(player.max_HP, player.HP + _heal_amt);
             var _gain = player.HP - _before;
             if (_gain > 0) {
-                array_push(combat_log, _p.name + " tends your wounds (+" + string(_gain) + " HP).");
+                array_push(combat_log, "[Companion] " + _p.name + " tends your wounds (+" + string(_gain) + " HP).");
                 array_push(damage_popups, { value: _gain, x: 475, y: 545, timer: 50, col: make_color_rgb(120, 220, 140) });
                 _did = true;
             }
         }
         if (_do_shield) {
             player.shield_hp += _sh_amt;
-            array_push(combat_log, _p.name + " raises a ward (+" + string(_sh_amt) + " shield).");
+            array_push(combat_log, "[Companion] " + _p.name + " raises a ward (+" + string(_sh_amt) + " shield).");
             array_push(damage_popups, { value: _sh_amt, x: 475, y: 600, timer: 50, col: make_color_rgb(120, 185, 235) });
             _did = true;
         }
@@ -1355,7 +1359,7 @@ function combat_pet_echo_open(combat_state, player, combat_log, damage_popups) {
     var _dmg  = combat_resolve_damage(_base, 0, _t.armor, _t.el_resist);
     if (_dmg < 1) _dmg = 1;
     combat_apply_damage(_t, _dmg);
-    array_push(combat_log, _p.name + "'s Feral Echo lashes " + _t.name + " for " + string(_dmg) + " as battle begins!");
+    array_push(combat_log, "[Companion] " + _p.name + "'s Feral Echo lashes " + _t.name + " for " + string(_dmg) + " as battle begins!");
     array_push(damage_popups, { value: _dmg, x: 1620 + _slots[_pick] * (-120), y: 233 + _slots[_pick] * 105 - 105, timer: 50, col: make_color_rgb(255, 150, 110) });
     if (_t.HP <= 0) combat_on_enemy_defeated(_t, player, combat_log);
     global.pet_lunge_t0 = current_time;   // reuse the procedural lunge (combat draw)
@@ -1379,7 +1383,7 @@ function combat_pet_vigil_check(player, combat_log, damage_popups) {
     global.pet_vigil_used = true;
     var _sh = max(1, round(_kit.vigil * _imult * pet_corruption_mult(_p) * pet_bond_mult(_p) * pet_stat_mult(_p, "spr")));
     player.shield_hp += _sh;
-    array_push(combat_log, _p.name + " keeps its Vigil - a ward flares around you (+" + string(_sh) + " shield).");
+    array_push(combat_log, "[Companion] " + _p.name + " keeps its Vigil - a ward flares around you (+" + string(_sh) + " shield).");
     array_push(damage_popups, { value: _sh, x: 475, y: 600, timer: 50, col: make_color_rgb(140, 190, 255) });
     return true;
 }

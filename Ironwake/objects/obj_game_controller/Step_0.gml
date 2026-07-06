@@ -58,7 +58,8 @@ if (tutorial_is_active()) {
 // drives the Shrine picker (no double-stepping). See SYSTEMS_ITEM_PICKER.md.
 if (variable_global_exists("item_picker") && global.item_picker.open
     && (global.item_picker.purpose == "vex_trait" || global.item_picker.purpose == "vex_stat"
-        || global.item_picker.purpose == "alch_rebirth" || global.item_picker.purpose == "gift")) {
+        || global.item_picker.purpose == "alch_rebirth" || global.item_picker.purpose == "gift"
+        || global.item_picker.purpose == "chit_reforge")) {
     item_picker_step();
     exit;
 }
@@ -69,6 +70,9 @@ if (variable_global_exists("item_picker") && global.item_picker.resolved_purpose
         global.item_picker.resolved_purpose = "";   // consume the one-shot
     } else if (_rp == "alch_rebirth") {
         sable_notification = global.item_picker.result_msg;
+        global.item_picker.resolved_purpose = "";
+    } else if (_rp == "chit_reforge") {
+        shop_notification = global.item_picker.result_msg;   // Dorn's window shows the result
         global.item_picker.resolved_purpose = "";
     }
 }
@@ -566,6 +570,23 @@ if (shop_open != -1 && !stash_mode_open) {
         shop_tab = (shop_tab + _shop_ntabs - 1) mod _shop_ntabs;
         sell_index = 0; sell_scroll = 0; sell_confirm_name = ""; shop_notification = "";
         petra_trade_confirm = false; petra_trade_selected = []; petra_trade_notification = "";
+    }
+
+    // Dorn honors Reforge Chits (BOARD_REQUESTS_SPEC.md §7): [R] opens the affix
+    // reroll picker. The item is reworked IN PLACE - same base, same rarity, new
+    // affixes - and nothing is consumed but the chit.
+    if (shop_open == 1 && keyboard_check_pressed(ord("R"))) {
+        board_requests_ensure();
+        if (global.reforge_chits < 1) {
+            shop_notification = "No Reforge Chits - the tavern board pays them for the harder requests.";
+        } else {
+            var _rf_cands = item_picker_candidates_affixed();
+            if (array_length(_rf_cands) == 0) {
+                shop_notification = "Nothing you hold carries affixes to rework (equipped gear must be unequipped).";
+            } else {
+                item_picker_open("chit_reforge", {}, _rf_cands);
+            }
+        }
     }
 
     // =========================================================================

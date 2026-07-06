@@ -29,6 +29,9 @@ video_apply();
 // dead-code-eliminated - forces the compiler to include them in the build.
 // (If a sprite is ever renamed/removed, update this list to match.)
 global.__sprite_includes = [
+    // Devil Wine icon: referenced only by string in ui_consumable_icon_sprite
+    // (asset_get_index), so it must be listed or the compiler strips it.
+    spr_icon_consumable_devil_wine,
     // Pet sprites are referenced only by string (pet_sprite -> asset_get_index), so they
     // must be listed here or the compiler strips them. (Pets Phase 2 art backlog.)
     spr_pet_cryptling_baby,

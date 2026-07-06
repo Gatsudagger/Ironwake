@@ -226,6 +226,11 @@ function end_run(result) {
     global.last_run_gold   = global.current_run_gold;
     global.last_run_kills  = global.current_run_kills;
 
+    // Tavern board requests (BOARD_REQUESTS_SPEC.md): score run-scoped proofs
+    // (haul) BEFORE the expiry countdown, then age + refill the board.
+    board_run_scoring(result);
+    board_run_end();
+
     // Phase 2 pets: the ACTIVE pet banks Stage growth for completing this run and may
     // EVOLVE (completing a run is the gate feed alone can't open; clear > extract >
     // death). Surfaced on the next hub visit via the pet notice. (PETS_DESIGN.md §5)
@@ -3891,26 +3896,71 @@ function affinity_slot_demote_for(new_id) {
     }
 }
 
-// A 2nd Lover incoming: betrayal. The old Lover drops to soured Acquaintance
-// (score slashed to the tier floor) and ALL their gate quests reset - a full
-// re-courting if the player ever wants back in.
+// Per-NPC betrayal severity band (4c color pass; PHASE4C_SPEC §5). How hard a
+// jilted Lover falls:
+//   "harsh"    - pride burns: Acquaintance with NOTHING kept (score 0, full re-court).
+//   "standard" - soured Acquaintance at the tier floor, full re-court (the v1 curve).
+//   "soft"     - hurt, not hateful: the Friendship survives (Friend floor); only the
+//                Companion and Lover gates must be re-earned.
+function affinity_betrayal_severity(id) {
+    switch (id) {
+        case "vael": case "sable":  return "harsh";
+        case "maren": case "bairc": return "soft";
+    }
+    return "standard";   // dorn / vex / petra
+}
+
+// Voice-matched heartbreak text (4c color pass): ledger entry (second person, matches
+// the milestone style) + hub notice (third person, one line). Fallback for future NPCs.
+function affinity_betrayal_lines(id) {
+    switch (id) {
+        case "dorn":  return { ledger: "You chose another. He went back to the anvil and let the hammer answer for him.",
+                               notice: "Dorn says nothing. The forge just rings louder than it needs to." };
+        case "sable": return { ledger: "You chose another. She smiled like a sealed vial - something saved in it for later.",
+                               notice: "Sable's smile no longer reaches her eyes. \"Strangers, then, darling.\"" };
+        case "maren": return { ledger: "You chose another. She set down the graver, quiet - the runes had already told her.",
+                               notice: "Maren keeps her voice level. The friendship holds; the rest is closed." };
+        case "vex":   return { ledger: "You chose another. He called it a lesson and, for once, took his own advice.",
+                               notice: "Vex nods once, like a match conceded. Training continues. Nothing else does." };
+        case "petra": return { ledger: "You chose another. Every price between you went back up, and so did she.",
+                               notice: "Petra quotes you the stranger's rate now - with interest." };
+        case "vael":  return { ledger: "You chose another. She looked at you like a piece she had badly overpaid for.",
+                               notice: "Vael has decided you were never her taste. The sittings are over." };
+        case "bairc": return { ledger: "You chose another. He didn't shout. He just went back to the pens, and didn't ask you to follow.",
+                               notice: "Bairc keeps to the pens now. The creatures still like you. He needs time." };
+    }
+    return { ledger: "You chose another. Something in them closes for good measure.",
+             notice: npc_display_name(id) + "'s heart breaks - you are strangers with history now." };
+}
+
+// A 2nd Lover incoming: betrayal. How far the old Lover falls depends on who they
+// are (affinity_betrayal_severity):
+//   harsh    - tier 1 at score 0, ALL gate quests reset (full re-court from nothing)
+//   standard - tier 1 at the Acquaintance floor, ALL gate quests reset
+//   soft     - tier 2 at the Friend floor; only the Companion/Lover gates reset
 function affinity_betrayal_for(new_id) {
     var _ids = affinity_npc_ids();
     for (var _i = 0; _i < array_length(_ids); _i++) {
         if (_ids[_i] == new_id) continue;
         var _o = affinity_entry(_ids[_i]);
         if (_o == undefined || _o.tier != 4) continue;
-        _o.tier  = 1;
-        _o.score = affinity_thresholds()[1];
+        var _sev = affinity_betrayal_severity(_ids[_i]);
+        if (_sev == "soft") {
+            _o.tier  = 2;
+            _o.score = affinity_thresholds()[2];
+        } else {
+            _o.tier  = 1;
+            _o.score = (_sev == "harsh") ? 0 : affinity_thresholds()[1];
+            quest_reset_gate("gate_" + _ids[_i] + "_friend");
+        }
         _o.gate_ready = false;
-        quest_reset_gate("gate_" + _ids[_i] + "_friend");
         quest_reset_gate("gate_" + _ids[_i] + "_companion");
         quest_reset_gate("gate_" + _ids[_i] + "_lover");
-        ledger_add(_ids[_i], "milestone", "You chose another. Something in them closes for good measure.");
+        var _lines = affinity_betrayal_lines(_ids[_i]);
+        ledger_add(_ids[_i], "milestone", _lines.ledger);
         journal_badge_npc(_ids[_i]);
-        var _bmsg = npc_display_name(_ids[_i]) + "'s heart breaks - you are strangers with history now.";
         if (variable_global_exists("pet_find_notice")) {
-            global.pet_find_notice = (global.pet_find_notice != "") ? (global.pet_find_notice + "   " + _bmsg) : _bmsg;
+            global.pet_find_notice = (global.pet_find_notice != "") ? (global.pet_find_notice + "   " + _lines.notice) : _lines.notice;
         }
     }
 }
@@ -4038,7 +4088,7 @@ function quest_catalog() {
         { id:"gate_vex_friend", kind:"gate", gate_tier:2, npc:"vex", name:"Student's Dues",
           obj_type:"use_function", obj_target:3, obj_param:"vex",
           reward:{ gold:0, feed:"", feed_n:0, rune_id:"", rune_tier:0 },
-          flavor:"\"Train with me three times. Talent I can't teach; showing up I insist on.\"",
+          flavor:"\"Train with me three times. Talent I can't teach. Showing up, I can insist on.\"",
           objective:"Train with Vex 3 times" },
         { id:"gate_vex_companion", kind:"gate", gate_tier:3, npc:"vex", name:"Proof of Practice",
           obj_type:"kill_family", obj_target:10, obj_param:"",
@@ -4070,7 +4120,7 @@ function quest_catalog() {
         { id:"gate_vael_friend", kind:"gate", gate_tier:2, npc:"vael", name:"An Eye for It",
           obj_type:"use_function", obj_target:2, obj_param:"vael",
           reward:{ gold:0, feed:"", feed_n:0, rune_id:"", rune_tier:0 },
-          flavor:"\"Let me dress you twice. The dark deserves an audience worth looking at.\"",
+          flavor:"\"Let me dress you twice. The dark stares back - give it something worth staring at.\"",
           objective:"Use Vael's services twice" },
         { id:"gate_vael_companion", kind:"gate", gate_tier:3, npc:"vael", name:"Curated Taste",
           obj_type:"gift_good", obj_target:2, obj_param:"vael",
@@ -4125,7 +4175,7 @@ function quest_visible(id) {
 function quest_def(id) {
     var _c = quest_catalog();
     for (var _i = 0; _i < array_length(_c); _i++) if (_c[_i].id == id) return _c[_i];
-    return undefined;
+    return board_request_def(id);   // procedural board requests (BOARD_REQUESTS_SPEC.md)
 }
 
 // Guarantee global.quests holds one state row per catalog entry (append-migrates when
@@ -4221,6 +4271,22 @@ function quest_turn_in(id) {
         array_push(global.rune_inventory, _rn);
         array_push(_parts, _rn.name + " rune");
     }
+    // Board-request extras (BOARD_REQUESTS_SPEC.md): dust / item roll / Reforge Chit.
+    if (variable_struct_exists(_r, "dust") && _r.dust > 0) {
+        if (!variable_global_exists("rune_dust")) global.rune_dust = 0;
+        global.rune_dust += _r.dust;
+        array_push(_parts, string(_r.dust) + " rune dust");
+    }
+    if (variable_struct_exists(_r, "item") && _r.item) {
+        var _bi = drop_equipment(drop_weights("vault", highest_awakening_unlocked()));
+        array_push(global.equipment_stash, _bi);
+        array_push(_parts, _bi.name + " (stashed)");
+    }
+    if (variable_struct_exists(_r, "chit") && _r.chit > 0) {
+        board_requests_ensure();
+        global.reforge_chits += _r.chit;
+        array_push(_parts, string(_r.chit) + " Reforge Chit (Dorn honors these)");
+    }
     var _rtxt = "their thanks";
     if (array_length(_parts) > 0) {
         _rtxt = _parts[0];
@@ -4229,6 +4295,9 @@ function quest_turn_in(id) {
     ledger_add(_d.npc, "quest", "Finished \"" + _d.name + "\" - earned " + _rtxt + ".");
     journal_badge_npc(_d.npc);
     journal_badge_quest(id);
+    // Board requests are ephemeral: the fulfilled notice comes down entirely
+    // (def + state row removed; the run-end refill re-stocks the slot).
+    if (quest_is_board(_d)) board_retire(id);
     return "";
 }
 
@@ -4348,11 +4417,262 @@ function journal_quest_rows() {
 // the board (M 2026-07-04 - same-screen completed rows got messy); the Journal's
 // Quests tab keeps the full ledger including its Completed group.
 function tavern_board_rows() {
+    board_bootstrap();   // first-open stock for new chars + pre-board saves
     var _g = quest_groups();
     var _out = [];
     for (var _a = 0; _a < array_length(_g.active); _a++)    array_push(_out, _g.active[_a]);
     for (var _v = 0; _v < array_length(_g.available); _v++) array_push(_out, _g.available[_v]);
     return _out;
+}
+
+// One-time stock: a board that has never generated anything (fresh character or
+// pre-board save) fills to capacity the first time it is looked at. Afterwards
+// the refresh clock is run-end only (board_run_end).
+function board_bootstrap() {
+    board_requests_ensure();
+    if (global.board_seq == 0 && array_length(global.board_requests) == 0) board_refill();
+}
+
+// =============================================================================
+// TAVERN BOARD REQUESTS (procedural; BOARD_REQUESTS_SPEC.md). RNG-rolled jobs
+// posted alongside the authored catalog. Their definitions are GENERATED and
+// therefore PERSISTED (global.board_requests + global.board_seq), unlike the
+// code-authored quest_catalog(); quest_def() consults both. State rows share
+// global.quests (pushed at generation, removed at retirement) so saves stay
+// lean. Board size scales with the highest unlocked Awakening; requests expire
+// on a run-count clock (end_run -> board_run_end). Board requests are ephemeral:
+// no Journal Completed history - the notice comes down.
+// =============================================================================
+
+function board_requests_ensure() {
+    if (!variable_global_exists("board_requests") || !is_array(global.board_requests)) global.board_requests = [];
+    if (!variable_global_exists("board_seq")      || !is_real(global.board_seq))       global.board_seq = 0;
+    if (!variable_global_exists("reforge_chits")  || !is_real(global.reforge_chits))   global.reforge_chits = 0;
+    return global.board_requests;
+}
+
+// Board capacity: the town posts more work as your Awakenings prove you can take it.
+function board_slot_count() {
+    var _a = highest_awakening_unlocked();
+    return 2 + ((_a >= 1) ? 1 : 0) + ((_a >= 3) ? 1 : 0) + ((_a >= 5) ? 1 : 0);
+}
+
+function board_request_def(id) {
+    var _b = board_requests_ensure();
+    for (var _i = 0; _i < array_length(_b); _i++) if (_b[_i].id == id) return _b[_i];
+    return undefined;
+}
+
+function quest_is_board(d) {
+    return (d != undefined) && variable_struct_exists(d, "kind") && d.kind == "board";
+}
+
+function board_has_urgent() {
+    var _b = board_requests_ensure();
+    for (var _i = 0; _i < array_length(_b); _i++) if (_b[_i].urgent) return true;
+    return false;
+}
+
+// Remove a board request's shared state row (retirement / expiry).
+function board_state_remove(id) {
+    if (!variable_global_exists("quests") || !is_array(global.quests)) return;
+    var _keep = [];
+    for (var _i = 0; _i < array_length(global.quests); _i++)
+        if (global.quests[_i].id != id) array_push(_keep, global.quests[_i]);
+    global.quests = _keep;
+}
+
+// Retire a board request entirely (turn-in): def off the board, state row gone.
+function board_retire(id) {
+    var _b = board_requests_ensure();
+    var _keep = [];
+    for (var _i = 0; _i < array_length(_b); _i++) if (_b[_i].id != id) array_push(_keep, _b[_i]);
+    global.board_requests = _keep;
+    board_state_remove(id);
+}
+
+// Family display bits for cull requests (families = enemy_sound_family buckets).
+function board_cull_families() {
+    return [
+        { fam:"wraith",    label:"the Restless",    kind:"wraith-kind" },
+        { fam:"construct", label:"the Stoneborn",   kind:"construct" },
+        { fam:"beast",     label:"the Deep Beasts", kind:"beast" },
+        { fam:"fire",      label:"the Cinderkin",   kind:"fire-touched" },
+        { fam:"ice",       label:"the Pale Shards", kind:"frost-touched" },
+        { fam:"undead",    label:"the Hollow-born", kind:"undead" },
+    ];
+}
+
+// Build one rolled request def (sans id). All numbers scale with the highest
+// unlocked Awakening; see BOARD_REQUESTS_SPEC.md §4 for the tuning table.
+function board_build_template(t, a, scale, urgent) {
+    var _gold = 0, _dust = 0, _chit = 0;
+    var _npc = "vex", _name = "", _obj_type = "", _obj_target = 1, _obj_param = "", _objective = "", _flavor = "";
+    switch (t) {
+        case "cull": {
+            var _fams = board_cull_families();
+            var _f = _fams[irandom(array_length(_fams) - 1)];
+            var _n = 6 + 2 * a;
+            _gold = round(60 * scale);
+            var _cp = ["vex", "dorn", "sable"]; _npc = _cp[irandom(2)];
+            _name = "Cull " + _f.label;
+            _obj_type = "kill_family"; _obj_target = _n; _obj_param = _f.fam;
+            _objective = "Slay " + string(_n) + " " + _f.kind + " foes";
+            _flavor = "\"They are getting bold down there. Thin them.\"";
+        } break;
+        case "depth": {
+            var _k = irandom(a);
+            var _n = 2 + min(a, 2);
+            _gold = round(80 * scale); _dust = 4 + 2 * a;
+            var _dp = ["petra", "vael", "maren"]; _npc = _dp[irandom(2)];
+            _name = "Depth Proof";
+            _obj_type = "clear_floors_at"; _obj_target = _n; _obj_param = string(_k);
+            _objective = "Clear " + string(_n) + " floors" + ((_k > 0) ? (" at Awakening " + string(_k) + "+") : "");
+            _flavor = "\"Proof of depth, on the seal's terms. The town pays for certainty.\"";
+        } break;
+        case "bounty": {
+            var _k = irandom(a);
+            var _n = 1 + irandom(1);
+            _gold = round(110 * scale); _dust = 6 + 2 * a;
+            var _bp = ["dorn", "petra"]; _npc = _bp[irandom(1)];
+            _name = "Floor-Lord Bounty";
+            _obj_type = "boss_kill_at"; _obj_target = _n; _obj_param = string(_k);
+            _objective = "Slay " + string(_n) + ((_n == 1) ? " boss" : " bosses") + ((_k > 0) ? (" at Awakening " + string(_k) + "+") : "");
+            _flavor = "\"The floor-lords hold what the town needs. Collect.\"";
+        } break;
+        case "haul": {
+            var _g = 150 * (1 + a);
+            _gold = round(90 * scale);
+            _npc = "petra";
+            _name = "A Heavy Purse";
+            _obj_type = "run_haul"; _obj_target = 1; _obj_param = string(_g);
+            _objective = "End a run carrying " + string(_g) + "+ gold";
+            _flavor = "\"Come back rich for once. It does the town good to see it.\"";
+        } break;
+        case "craft": {
+            var _n = 2 + min(a, 2);
+            _gold = round(70 * scale); _dust = 3 + a;
+            _npc = "maren";
+            _name = "Settings Wanted";
+            _obj_type = "socket_rune"; _obj_target = _n; _obj_param = "";
+            _objective = "Socket " + string(_n) + " runes with Maren";
+            _flavor = "\"Work for steady hands. The runes will know if you rush.\"";
+        } break;
+        case "flawless": {
+            var _n = 1 + min(a, 1);
+            _gold = round(80 * scale); _chit = 1;
+            _npc = "vex";
+            _name = "Untouched";
+            _obj_type = "flawless_fight"; _obj_target = _n; _obj_param = "";
+            _objective = "Win " + string(_n) + ((_n == 1) ? " fight" : " fights") + " taking no damage";
+            _flavor = "\"Win without bleeding. If you can't, don't sign.\"";
+        } break;
+        case "swift": {
+            var _tn = max(4, 7 - ceil(a / 2));
+            _gold = round(90 * scale); _chit = 1;
+            var _sp = ["vex", "dorn"]; _npc = _sp[irandom(1)];
+            _name = "Swift Execution";
+            _obj_type = "boss_swift"; _obj_target = 1; _obj_param = string(_tn);
+            _objective = "Slay a boss in " + string(_tn) + " turns or fewer";
+            _flavor = "\"The longer a floor-lord stands, the more it learns. Be quick.\"";
+        } break;
+        case "clean": {
+            _gold = round(70 * scale); _chit = 1;
+            _npc = "sable";
+            _name = "On Your Own Feet";
+            _obj_type = "clean_fight"; _obj_target = 3; _obj_param = "";
+            _objective = "Win 3 fights without using consumables";
+            _flavor = "\"No bottles, darling. Just you and your hands.\"";
+        } break;
+    }
+    // Item roll: urgent always; otherwise 25% on non-challenge (non-chit) templates.
+    var _item = urgent || (_chit == 0 && irandom(99) < 25);
+    if (urgent) _gold *= 2;
+    return {
+        id:"", kind:"board", template:t, urgent:urgent, expires:(urgent ? 1 : 3),
+        npc:_npc, name:_name, obj_type:_obj_type, obj_target:_obj_target, obj_param:_obj_param,
+        reward:{ gold:_gold, feed:"", feed_n:0, rune_id:"", rune_tier:0, dust:_dust, item:_item, chit:_chit },
+        flavor:_flavor, objective:_objective
+    };
+}
+
+// Roll one request, avoiding a template+param already posted (8 tries, then accept).
+function board_generate_request(urgent) {
+    board_requests_ensure();
+    var _a     = highest_awakening_unlocked();
+    var _scale = 1 + 0.5 * _a;
+    var _pool  = ["cull", "cull", "depth", "bounty", "haul", "craft", "flawless", "swift", "clean"];
+    var _def   = undefined;
+    for (var _try = 0; _try < 8; _try++) {
+        var _t = _pool[irandom(array_length(_pool) - 1)];
+        var _cand = board_build_template(_t, _a, _scale, urgent);
+        var _dupe = false;
+        for (var _i = 0; _i < array_length(global.board_requests); _i++) {
+            var _e = global.board_requests[_i];
+            if (_e.template == _cand.template && _e.obj_param == _cand.obj_param) { _dupe = true; break; }
+        }
+        _def = _cand;
+        if (!_dupe) break;
+    }
+    global.board_seq += 1;
+    _def.id = "board_" + string(global.board_seq);
+    return _def;
+}
+
+// Fill empty slots up to capacity. The A5 fifth slot keeps one urgent offer
+// posted; from A2+ each normal refill has a 15% urgent chance. Idempotent -
+// safe to call at load (older-save migration) and after retirement.
+function board_refill() {
+    var _b   = board_requests_ensure();
+    var _a   = highest_awakening_unlocked();
+    var _cap = board_slot_count();
+    while (array_length(_b) < _cap) {
+        var _urgent = false;
+        if (_a >= 5 && !board_has_urgent() && array_length(_b) == _cap - 1) _urgent = true;
+        else if (_a >= 2 && irandom(99) < 15) _urgent = true;
+        var _d = board_generate_request(_urgent);
+        array_push(_b, _d);
+        array_push(global.quests, { id:_d.id, status:"available", progress:0 });
+    }
+}
+
+// Run-scoped scoring, called from end_run BEFORE the expiry countdown so a
+// request fulfilled by this very run doesn't rot at the same moment. Death
+// forfeits run-scoped proofs (a haul needs a walk-out).
+function board_run_scoring(result) {
+    var _b = board_requests_ensure();
+    if (result < 0) return;
+    for (var _i = 0; _i < array_length(_b); _i++) {
+        var _d = _b[_i];
+        if (_d.obj_type == "run_haul" && global.current_run_gold >= real(_d.obj_param)) {
+            quest_tick("run_haul", _d.obj_param, 1);
+        }
+    }
+}
+
+// Run-end lifecycle: fulfilled requests never rot; everything else counts down,
+// taken or not. Expired notes come off the board (with a notice if the player
+// had taken one), then the board refills to capacity.
+function board_run_end() {
+    var _b = board_requests_ensure();
+    var _keep = [];
+    for (var _i = 0; _i < array_length(_b); _i++) {
+        var _d = _b[_i];
+        var _s = quest_state(_d.id);
+        var _fulfilled = (_s != undefined && _s.status == "active" && _s.progress >= _d.obj_target);
+        if (!_fulfilled) _d.expires -= 1;
+        if (_d.expires <= 0 && !_fulfilled) {
+            if (_s != undefined && _s.status == "active" && variable_global_exists("pet_find_notice")) {
+                var _xmsg = "The request \"" + _d.name + "\" expired - the notice came down.";
+                global.pet_find_notice = (global.pet_find_notice != "") ? (global.pet_find_notice + "   " + _xmsg) : _xmsg;
+            }
+            board_state_remove(_d.id);
+            continue;
+        }
+        array_push(_keep, _d);
+    }
+    global.board_requests = _keep;
+    board_refill();
 }
 
 // =============================================================================
@@ -4932,6 +5252,12 @@ function floor_clear_credit(awk) {
     // Phase 4a quests: a boss-clear is one cleared floor + one boss kill.
     quest_tick("clear_floors", "", 1);
     quest_tick("boss_kill", "", 1);
+    // Board depth/bounty templates (BOARD_REQUESTS_SPEC.md §5): "at Awakening >= K"
+    // defs store obj_param = string(K); tick every K this run's awakening satisfies.
+    for (var _bk = 0; _bk <= clamp(awk, 0, 5); _bk++) {
+        quest_tick("clear_floors_at", string(_bk), 1);
+        quest_tick("boss_kill_at",    string(_bk), 1);
+    }
     // Phase 4c: neglect decay ticks on the same clock (6 idle floor-clears of grace).
     affinity_neglect_tick();
     // Note: pet Stage growth is banked per-RUN (at end_run via pet_run_complete), not
@@ -6857,6 +7183,53 @@ function item_picker_candidates_class_specific() {
     return _out;
 }
 
+// --- Reforge Chit (Dorn; BOARD_REQUESTS_SPEC.md §7) ---------------------------
+// Every held item carrying rolled affixes (stash + pack; equipped gear must be
+// unequipped first). The chit rerolls affixes IN PLACE - nothing is consumed.
+function item_picker_candidates_affixed() {
+    var _out = [];
+    var _in_hub = (room == rm_hub || room == rm_character_select);
+    for (var _s = 0; _s < 2; _s++) {
+        if (_s == 0 && !_in_hub) continue;
+        var _arr = (_s == 0) ? global.equipment_stash : global.carried_items;
+        for (var _i = 0; _i < array_length(_arr); _i++) {
+            var _it = _arr[_i];
+            if (!is_struct(_it)) continue;
+            if (!variable_struct_exists(_it, "affixes") || array_length(_it.affixes) == 0) continue;
+            // base_name is required to rebuild the display name cleanly (pre-codex
+            // items lack it and would keep their old affixed name as the base).
+            if (!variable_struct_exists(_it, "base_name")) continue;
+            var _rar = variable_struct_exists(_it, "rarity") ? _it.rarity : 0;
+            var _val = variable_struct_exists(_it, "gold_value") ? _it.gold_value : 0;
+            var _nm  = variable_struct_exists(_it, "name") ? _it.name : "item";
+            array_push(_out, { source:_s, idx:_i, item:_it, label:_nm, rarity:_rar, value:_val });
+        }
+    }
+    array_sort(_out, function(a, b) {
+        if (a.rarity != b.rarity) return a.rarity - b.rarity;
+        return a.value - b.value;
+    });
+    return _out;
+}
+
+// Reroll an item's affixes in place at its same rarity and affix count. Base
+// stats, sockets and set runes are untouched - only the affix rows, the affixed
+// display name, and the affixes' share of gold_value change. (Affix effects are
+// read live from item.affixes, so a swap needs no stat unwinding.)
+function chit_reforge_item(item) {
+    if (!variable_struct_exists(item, "affixes")) return false;
+    var _count = array_length(item.affixes);
+    if (_count == 0) return false;
+    var _bn = item_base_name(item);
+    // Un-apply the old affixes' contributions (name + the +20%/affix value scale).
+    item.gold_value = max(1, round(item.gold_value / power(1.2, _count)));
+    item.affixes    = [];
+    item.name       = _bn;
+    var _r = variable_struct_exists(item, "rarity") ? item.rarity : 1;
+    apply_affixes_to_item(item, roll_affixes(min(_r, 3), _count, [item.stat_name], item.slot, _bn));
+    return true;
+}
+
 // Rebirth cost by the sacrificed item's rarity -> { dust, gold }.
 function alch_rebirth_cost(rarity) {
     if (rarity >= 3) return { dust: 10, gold: 500 };   // epic
@@ -6921,6 +7294,7 @@ function item_picker_prompt() {
         case "vex_stat":  return "Choose an item to trade to Vex for the upgrade";
         case "shrine_boon": return "Choose an item to sacrifice at the shrine";
         case "alch_rebirth": return "Choose a class item to reforge (cost scales with rarity)";
+        case "chit_reforge": return "Choose an item - Dorn reworks its affixes (1 Reforge Chit)";
         case "gift": return "Choose a gift for " + (variable_struct_exists(global.item_picker.context, "npc_name")
             ? global.item_picker.context.npc_name : "them");
     }
@@ -6930,6 +7304,7 @@ function item_picker_verb() {
     switch (global.item_picker.purpose) {
         case "shrine_boon":  return "Sacrifice";
         case "alch_rebirth": return "Reforge";
+        case "chit_reforge": return "Rework";
         case "gift":         return "Give";
     }
     return "Trade away";
@@ -6959,6 +7334,34 @@ function item_picker_resolve() {
         _p.resolved_purpose = "gift";
         _p.result_msg = gift_give(_gnpc, _gsel);
         save_game();
+        item_picker_close();
+        return;
+    }
+
+    // Reforge Chit (Dorn): the item is MODIFIED in place, never removed. The chit
+    // is the whole cost; a failed reroll (no affixes) spends nothing.
+    if (_p.purpose == "chit_reforge") {
+        var _csel = (_p.cursor >= 0 && _p.cursor < array_length(_p.candidates))
+                    ? _p.candidates[_p.cursor] : undefined;
+        if (_csel == undefined) {
+            _p.resolved_purpose = "chit_reforge"; _p.result_msg = "Nothing chosen.";
+            item_picker_close(); return;
+        }
+        board_requests_ensure();
+        if (global.reforge_chits < 1) {
+            _p.resolved_purpose = "chit_reforge"; _p.result_msg = "No Reforge Chits - the tavern board pays them.";
+            item_picker_close(); return;
+        }
+        var _old_cname = _csel.label;
+        if (!chit_reforge_item(_csel.item)) {
+            _p.resolved_purpose = "chit_reforge"; _p.result_msg = "That item has no affixes to rework.";
+            item_picker_close(); return;
+        }
+        global.reforge_chits -= 1;
+        save_game();
+        _p.resolved_purpose = "chit_reforge";
+        _p.result_msg = "Dorn reworks " + _old_cname + " into " + _csel.item.name + "!   ("
+            + string(global.reforge_chits) + ((global.reforge_chits == 1) ? " chit" : " chits") + " left)";
         item_picker_close();
         return;
     }
