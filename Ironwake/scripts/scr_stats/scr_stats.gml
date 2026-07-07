@@ -1467,10 +1467,12 @@ function key_nav(_key) {
 function nav_tick() {
     if (!variable_global_exists("ui_tick_enabled") || global.ui_tick_enabled) play_sfx_var("snd_ui_move", -1);
 }
-function nav_up()    { var _a = key_nav(vk_up);    var _b = key_nav(ord("W")); if (_a || _b) nav_tick(); return _a || _b; }
-function nav_down()  { var _a = key_nav(vk_down);  var _b = key_nav(ord("S")); if (_a || _b) nav_tick(); return _a || _b; }
-function nav_left()  { var _a = key_nav(vk_left);  var _b = key_nav(ord("A")); if (_a || _b) nav_tick(); return _a || _b; }
-function nav_right() { var _a = key_nav(vk_right); var _b = key_nav(ord("D")); if (_a || _b) nav_tick(); return _a || _b; }
+// Gamepad: pad_nav (scr_input) folds dpad + left stick in with the same
+// hold-repeat cadence, so controllers inherit every menu's QoL nav for free.
+function nav_up()    { var _a = key_nav(vk_up);    var _b = key_nav(ord("W")); var _c = pad_nav(gp_padu); if (_a || _b || _c) nav_tick(); return _a || _b || _c; }
+function nav_down()  { var _a = key_nav(vk_down);  var _b = key_nav(ord("S")); var _c = pad_nav(gp_padd); if (_a || _b || _c) nav_tick(); return _a || _b || _c; }
+function nav_left()  { var _a = key_nav(vk_left);  var _b = key_nav(ord("A")); var _c = pad_nav(gp_padl); if (_a || _b || _c) nav_tick(); return _a || _b || _c; }
+function nav_right() { var _a = key_nav(vk_right); var _b = key_nav(ord("D")); var _c = pad_nav(gp_padr); if (_a || _b || _c) nav_tick(); return _a || _b || _c; }
 
 // wrap_index(i, n) - cursor wrap so top<->bottom (and left<->right) cycle.
 function wrap_index(i, n) {
