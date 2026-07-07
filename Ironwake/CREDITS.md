@@ -24,8 +24,10 @@ Last verified 2026-07-07 (itch pages fetched live; quotes are from the pack page
 |---|---|---|---|
 | **Chequered Ink — 400 Sounds Pack** (ci.itch.io) | Most snd_* SFX (UI, combat, economy, stings) | Commercial OK, credit optional, no raw redistribution | ✅ |
 | **TomMusic — Free Fantasy SFX Pack** (tommusic.itch.io) | Sword/spell/chest/gate SFX + ambience beds (rain/cave/torch) | Commercial OK, credit optional, no raw redistribution | ✅ |
-| **Music tracks** — Viking_March, Rainy_Memories, MusicBox1, Game_Over, _2_dungeon_INITIAL/LOOP, _3_critical_INITIAL/LOOP, _14_BOSS_y_LOOP, _15_game_over_INITIAL | Title/hub/dungeon/combat/boss/defeat music | ❓ **PROVENANCE UNKNOWN — M: where did these come from?** Nothing in C:\Asset_Library matches; they predate the audit trail | ⚠️ **BLOCKER until identified** — music is the most-litigated asset class |
-| **Legacy SFX** — utility2, Check_1, Chimes__Ascending_, Success_1/2, spell1, Magic, attack1, grunt, teleport, die5, hurt, Obscure, Strings_1, Harp_2__Descending_, Trainer_2__Sullen_ | Remaining fallback/cast/shop sounds | ❓ Same question — look like a marketplace/freebie set | ⚠️ identify OR retire (sound pass can replace the rest from the two cleared packs) |
+| **Sara Garrard (sonatina.itch.io) — "Shadows/Infinity: Battle Zone"** | _2_dungeon_INITIAL/LOOP, _3_critical_INITIAL/LOOP, _14_BOSS_y_LOOP, _15_game_over_INITIAL (identified 2026-07-07 via embedded vorbis tags: ARTIST=Sara Garrard, ALBUM=Shadows/Infinity: Battle Zone, 2022) | Commercial use OK incl. monetized games; **credit Sara Garrard required**; on itch, link sonatina.itch.io on the game page; donation appreciated, not required. Full terms ship in the pack download | ⚠️ **credit required** — covered by Credits screen. Locate M's pack download for the full terms file (for the Steam context) |
+| **Music tracks, still unidentified** — Viking_March (Cubase BWF render, project "vik", 2022-09-29), Rainy_Memories (untagged wav), MusicBox1 (FL Studio 21 render), Game_Over (353 KB — byte-size-identical format to Check_1, likely same pack as the legacy SFX) | Title / hub / pet-musicbox / defeat sting | ❓ Titles don't surface on itch search; no embedded artist tags | ⚠️ **M: open itch.io → your Library ("My purchases") and skim for the music/SFX packs** — that list is the definitive cross-reference; licenses verified same-day once named. Fallback: replace before EA |
+| **Legacy SFX** — utility2, Check_1, Chimes__Ascending_, Success_1/2, spell1, Magic, attack1, grunt, teleport, die5, hurt, Obscure, Strings_1, Harp_2__Descending_ | Remaining fallback/cast/shop sounds | ❓ Old ffmpeg-converted set (Lavf54 = ~2013 tooling), generic names, no tags | ⚠️ identify via M's itch library OR retire (sound-pass epilogue replaces the last live uses from the two cleared packs) |
+| **MidJourney (M's own generations)** | 6 hub NPC portraits (Trainer_2__Sullen_ etc., 1024×1024 painterly) — likely also the 60 char-creation portraits (verify) | MidJourney paid-plan terms: subscriber owns/has commercial rights to generations | ✅ (AI — disclose) |
 
 ## Fonts
 
@@ -39,12 +41,13 @@ Last verified 2026-07-07 (itch pages fetched live; quotes are from the pack page
 
 > Ironwake contains pre-generated AI content. Some 2D art assets (character sprites, portraits,
 > item illustrations, backgrounds, and icon sets) were created using AI image-generation tools
-> (PixelLab; and licensed third-party icon packs produced with Stable Diffusion). All AI-generated
-> assets were reviewed, curated, and integrated by the developer. The game does not generate any
-> content with AI at runtime, and no live AI models are accessed by the game.
+> (PixelLab and MidJourney, plus licensed third-party icon packs produced with Stable Diffusion).
+> All AI-generated assets were reviewed, curated, and integrated by the developer. The game does
+> not generate any content with AI at runtime, and no live AI models are accessed by the game.
 
 ## In-game credits screen — minimum required lines
 
+- "Music by Sara Garrard" + link to sonatina.itch.io on the itch game page *(required by the Battle Zone license)*
 - "Icons by Batareya" *(required by the 250 Magical Icons license)*
 - "Pixel art effects - unTied Games" *(required by the Gigapack license)*
 - Recommended courtesy: PixelLab, Chequered Ink, TomMusic, CraftPix, CaptainSkeleto (if kept),
