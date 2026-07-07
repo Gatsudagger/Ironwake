@@ -58,11 +58,23 @@ function input_detail() {
     return keyboard_check_pressed(vk_tab);
 }
 
-// "Press any key" (cutscene/splash skip). Gamepad backend later maps this to
-// any face button; touch to any tap.
+// "Press any key" (cutscene/splash skip, popup dismiss). Gamepad backend later
+// maps this to any face button; touch to any tap.
 function input_any() {
     return keyboard_check_pressed(vk_anykey);
 }
+
+// Held variant - used by arming patterns that wait for ALL input released
+// before accepting the next press (Bairc dialog pages).
+function input_any_held() {
+    return keyboard_check(vk_anykey);
+}
+
+// Single-press directional (arrows OR A/D, NO hold-repeat, no menu tick) -
+// steppers and focus swaps that want exactly one move per press. Repeating
+// directional nav lives in nav_* (scr_stats).
+function input_dir_left()  { return keyboard_check_pressed(vk_left)  || keyboard_check_pressed(ord("A")); }
+function input_dir_right() { return keyboard_check_pressed(vk_right) || keyboard_check_pressed(ord("D")); }
 
 // Screen-local letter hotkeys (T stash, H history, O settings, ...). A single
 // funnel so the gamepad chunk can surface them contextually and the touch

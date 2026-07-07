@@ -44,7 +44,7 @@ if (global.tutorial_dismiss_pending) {
     global.tutorial_dismiss_pending = false;
 }
 if (tutorial_is_active()) {
-    if (keyboard_check_pressed(vk_anykey) || mouse_check_button_pressed(mb_any)) {
+    if (input_any() || mouse_check_button_pressed(mb_any)) {
         global.tutorial_dismiss_pending = true;   // clear next frame, not now
     }
     exit;
@@ -80,9 +80,9 @@ if (variable_global_exists("item_picker") && global.item_picker.resolved_purpose
 // --- GIFT RESULT POPUP (Phase 4b UX): modal over the giver's window; any confirm
 // key dismisses. Owns all input while up.
 if (variable_global_exists("gift_popup") && global.gift_popup != undefined) {
-    if (keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_return)
-        || keyboard_check_pressed(vk_space) || keyboard_check_pressed(vk_escape)
-        || keyboard_check_pressed(ord("F")) || mouse_check_button_pressed(mb_left)) {
+    if (input_confirm()
+        || input_confirm_alt() || input_cancel()
+        || input_hotkey("F") || mouse_check_button_pressed(mb_left)) {
         global.gift_popup = undefined;
     }
     exit;
@@ -95,21 +95,20 @@ if (variable_instance_exists(id, "kb_open") && kb_open) {
 
     // Rules overlay: H toggles it in any phase; while up it owns all input so the
     // table underneath is frozen (first-time players get it auto-opened).
-    if (keyboard_check_pressed(ord("H"))) { _g.help = !_g.help; exit; }
+    if (input_hotkey("H")) { _g.help = !_g.help; exit; }
     if (_g.help) {
-        if (keyboard_check_pressed(vk_escape) || keyboard_check_pressed(vk_return)
-            || keyboard_check_pressed(vk_enter)) _g.help = false;
+        if (input_cancel() || input_confirm()) _g.help = false;
         exit;
     }
 
     if (_g.phase == "stake") {
-        if (keyboard_check_pressed(vk_escape)) { kb_open = false; exit; }
+        if (input_cancel()) { kb_open = false; exit; }
         var _stakes = [10, 25, 50];
         var _si = 1;
         for (var _s = 0; _s < 3; _s++) if (_stakes[_s] == _g.stake) _si = _s;
         if (nav_left())  { _si = wrap_index(_si - 1, 3); _g.stake = _stakes[_si]; }
         if (nav_right()) { _si = wrap_index(_si + 1, 3); _g.stake = _stakes[_si]; }
-        if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)) {
+        if (input_confirm()) {
             if (global.gold < _g.stake) { _g.msg = "You can't cover the stake."; audio_play_sound(snd_ui_error, 1, false); exit; }
             global.gold -= _g.stake;
             _g.phase = "play";
@@ -120,8 +119,8 @@ if (variable_instance_exists(id, "kb_open") && kb_open) {
     }
 
     if (_g.phase == "over") {
-        if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)
-            || keyboard_check_pressed(vk_escape)) {
+        if (input_confirm()
+            || input_cancel()) {
             if (kb_tourney != undefined) {
                 // HIGH TABLE bracket flow (dice v2): win advances, tie replays the
                 // same seat, anything else forfeits the buy-in.
@@ -167,7 +166,7 @@ if (variable_instance_exists(id, "kb_open") && kb_open) {
     }
 
     // phase "play"
-    if (keyboard_check_pressed(vk_escape)) {   // concede - the stake stays on the table
+    if (input_cancel()) {   // concede - the stake stays on the table
         _g.phase  = "over";
         _g.result = "conceded";
         _g.msg    = "You push back from the table. The stake stays.";
@@ -176,7 +175,7 @@ if (variable_instance_exists(id, "kb_open") && kb_open) {
     if (_g.my_turn) {
         if (nav_left())  _g.cursor = wrap_index(_g.cursor - 1, 3);
         if (nav_right()) _g.cursor = wrap_index(_g.cursor + 1, 3);
-        if ((keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter))
+        if ((input_confirm())
             && kb_col_count(_g.mine, _g.cursor) < 3) {
             var _foes_before = kb_col_count(_g.foes, _g.cursor);
             kb_place(_g.mine, _g.cursor, _g.die);
@@ -242,8 +241,8 @@ if (variable_instance_exists(id, "kb_open") && kb_open) {
 // --- TAVERN REQUESTS BOARD (Phase 4b UX): the quest action surface. W/S rows,
 // Enter accepts an available request / turns in a finished one, Esc closes.
 if (tavern_board_open) {
-    if (keyboard_check_pressed(vk_escape)) { tavern_board_open = false; audio_play_sound(snd_ui_cancel, 1, false); exit; }
-    if (keyboard_check_pressed(ord("K"))) {
+    if (input_cancel()) { tavern_board_open = false; audio_play_sound(snd_ui_cancel, 1, false); exit; }
+    if (input_hotkey("K")) {
         // Knucklebones: tonight's opponent rotates with the run count.
         var _kb_ids = affinity_npc_ids();
         kb_open = true;
@@ -260,7 +259,7 @@ if (tavern_board_open) {
     // HIGH TABLE tournament (dice v2): [T] when the invitation stands. 100g buy-in,
     // three opponents back-to-back, winner takes the pot. Sitting down consumes the
     // invitation - the 5-run clock is already re-armed (kb_tourney_run_end).
-    if (keyboard_check_pressed(ord("T"))) {
+    if (input_hotkey("T")) {
         kb_tourney_ensure();
         if (!global.kb_tourney_ready) {
             tavern_board_note = "The High Table isn't set tonight. (every 5th run - "
@@ -291,12 +290,12 @@ if (tavern_board_open) {
         // v2: [R] rerolls the highlighted POSTED request for gold (cost doubles per
         // use, resets when the board ages at run end). scr_stats board_reroll owns
         // all the validation; it returns the note either way.
-        if (keyboard_check_pressed(ord("R"))) {
+        if (input_hotkey("R")) {
             var _rrid = _tb[tavern_board_cursor];
             tavern_board_note = board_reroll(_rrid);
             save_game();
         }
-        if (keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_space)) {
+        if (input_confirm() || input_confirm_alt()) {
             var _tbid = _tb[tavern_board_cursor];
             var _tbd  = quest_def(_tbid);
             journal_clear_quest(_tbid);
@@ -331,11 +330,11 @@ if (tavern_board_open) {
 // open it owns all input (ui_input_blocked() reports true, freezing every room
 // controller). VIEW/TRACK ONLY (Phase 4b) - actions live at the Tavern board.
 if (journal_open) {
-    if (keyboard_check_pressed(ord("J")) || keyboard_check_pressed(vk_escape)) { journal_open = false; exit; }
+    if (input_hotkey("J") || input_cancel()) { journal_open = false; exit; }
     // Five tabs since the 2026-07-04 consolidation: Relationships / Quests /
     // Compendium / Item Codex / Bestiary. Q back, E forward.
-    if (keyboard_check_pressed(ord("E"))) { journal_tab = (journal_tab + 1) mod 5; journal_cursor = 0; }
-    if (keyboard_check_pressed(ord("Q"))) { journal_tab = (journal_tab + 4) mod 5; journal_cursor = 0; }
+    if (input_tab_next()) { journal_tab = (journal_tab + 1) mod 5; journal_cursor = 0; }
+    if (input_tab_prev()) { journal_tab = (journal_tab + 4) mod 5; journal_cursor = 0; }
     if (journal_tab == 2) {
         // Compendium (moved here from the character menu): browse sections.
         var _jc_count = array_length(ui_compendium_sections());
@@ -346,7 +345,7 @@ if (journal_open) {
     if (journal_tab == 3) {
         // Item Codex (moved here from the hub G screen): Enter opens the full
         // gallery at camp (it needs the hub's splash panes); view-only elsewhere.
-        if ((keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_return))
+        if ((input_confirm())
             && room == rm_hub && instance_exists(obj_hub_controller)) {
             var _jh = instance_find(obj_hub_controller, 0);
             _jh.show_gallery        = true;
@@ -390,7 +389,7 @@ if (journal_open) {
     }
     exit;
 }
-if (keyboard_check_pressed(ord("J")) && (room == rm_hub || room == rm_dungeon_floor)
+if (input_hotkey("J") && (room == rm_hub || room == rm_dungeon_floor)
     && !ui_input_blocked() && !global.ui_overlay_latch
     && (!variable_global_exists("pause_open") || !global.pause_open)) {
     journal_open   = true;
@@ -400,7 +399,7 @@ if (keyboard_check_pressed(ord("J")) && (room == rm_hub || room == rm_dungeon_fl
 }
 
 // Close comparison panel on ESC (checked before other handlers)
-if (comparison_open && keyboard_check_pressed(vk_escape)) {
+if (comparison_open && input_cancel()) {
     comparison_open     = false;
     comparison_item     = undefined;
     comparison_equipped = undefined;
@@ -422,7 +421,7 @@ if (equip_notif_timer > 0) {
 // check equipment/status mid-fight. Combat item USE is a separate quick-menu on the
 // C key (obj_combat_controller) - distinct key, so the two don't conflict. Stands
 // down while a name is being typed (text_entry_active - the letter is just a letter).
-if (!stash_mode_open && !loadout_open && !text_entry_active() && keyboard_check_pressed(ord("I"))) {
+if (!stash_mode_open && !loadout_open && !text_entry_active() && input_hotkey("I")) {
     menu_open = !menu_open;
     menu_tab  = 0;
     equip_picker_open       = false;
@@ -558,12 +557,12 @@ if (level_alloc_open) {
     if (nav_down()) level_alloc_index = wrap_index(level_alloc_index + 1, 6);
 
     // Enter: set or move the provisional stat choice - does NOT commit yet
-    if ((keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)) && global.pending_stat_points > 0) {
+    if ((input_confirm()) && global.pending_stat_points > 0) {
         level_alloc_pending_stat = level_alloc_index;
     }
 
     // Space: commit the provisional choice permanently
-    if (keyboard_check_pressed(vk_space)
+    if (input_confirm_alt()
         && level_alloc_pending_stat >= 0 && global.pending_stat_points > 0) {
         var _alloc_keys = ["STR", "DEX", "CON", "INT", "WIS", "CHA"];
         var _chosen_key = _alloc_keys[level_alloc_pending_stat];
@@ -600,7 +599,7 @@ if (level_alloc_open) {
 // screen is open). Maps the currently-open NPC screen to its affinity id. No-ops
 // when no NPC screen is open (B stays free for the hub list / combat).
 // =============================================================================
-if (keyboard_check_pressed(ord("B"))) {
+if (input_hotkey("B")) {
     var _bond_npc = "";
     if (shop_open == 0)                                                    _bond_npc = "petra";
     else if (shop_open == 1)                                               _bond_npc = "dorn";
@@ -626,7 +625,7 @@ if (keyboard_check_pressed(ord("B"))) {
 // from the hub list felt out of place - you hand it over in person). One shared
 // handler for all seven windows; guarded against every sub-modal that owns input.
 // =============================================================================
-if (keyboard_check_pressed(ord("F")) && room == rm_hub && !text_entry_active()
+if (input_hotkey("F") && room == rm_hub && !text_entry_active()
     && !(variable_global_exists("item_picker") && global.item_picker.open)) {
     var _gift_npc = "", _gift_notify = -1;   // -1 = none; else which notification var
     if (shop_open != -1 && !stash_mode_open) {
@@ -667,12 +666,12 @@ if (shop_open != -1 && !stash_mode_open) {
 
     // Q/E: cycle tabs. Petra (shop_open == 0) has a 3rd "Treasure Trader" tab; Dorn has 2.
     var _shop_ntabs = (shop_open == 0) ? 3 : 2;
-    if (keyboard_check_pressed(ord("E"))) {
+    if (input_tab_next()) {
         shop_tab = (shop_tab + 1) mod _shop_ntabs;
         sell_index = 0; sell_scroll = 0; sell_confirm_name = ""; shop_notification = "";
         petra_trade_confirm = false; petra_trade_selected = []; petra_trade_notification = "";
     }
-    if (keyboard_check_pressed(ord("Q"))) {
+    if (input_tab_prev()) {
         shop_tab = (shop_tab + _shop_ntabs - 1) mod _shop_ntabs;
         sell_index = 0; sell_scroll = 0; sell_confirm_name = ""; shop_notification = "";
         petra_trade_confirm = false; petra_trade_selected = []; petra_trade_notification = "";
@@ -681,7 +680,7 @@ if (shop_open != -1 && !stash_mode_open) {
     // Dorn honors Reforge Chits (BOARD_REQUESTS_SPEC.md §7): [R] opens the affix
     // reroll picker. The item is reworked IN PLACE - same base, same rarity, new
     // affixes - and nothing is consumed but the chit.
-    if (shop_open == 1 && keyboard_check_pressed(ord("R"))) {
+    if (shop_open == 1 && input_hotkey("R")) {
         board_requests_ensure();
         if (global.reforge_chits < 1) {
             shop_notification = "No Reforge Chits - the tavern board pays them for the harder requests.";
@@ -777,7 +776,7 @@ if (shop_open != -1 && !stash_mode_open) {
             }
 
             // ESC: cancel pending confirm, or close shop
-            if (keyboard_check_pressed(vk_escape)) {
+            if (input_cancel()) {
                 if (sell_confirm_name != "") {
                     sell_confirm_name = "";
                     shop_notification = "";
@@ -792,7 +791,7 @@ if (shop_open != -1 && !stash_mode_open) {
             }
 
             // ENTER: sell common/uncommon immediately; start confirm for rare+
-            if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)) {
+            if (input_confirm()) {
                 if (sell_confirm_name == "") {
                     if (_needs_confirm) {
                         sell_confirm_name = _cur_item.name;
@@ -817,7 +816,7 @@ if (shop_open != -1 && !stash_mode_open) {
             }
 
             // SPACE: complete the rare-item sale after confirm
-            if (keyboard_check_pressed(vk_space) && sell_confirm_name != "") {
+            if (input_confirm_alt() && sell_confirm_name != "") {
                 if (_cur_src == 0)      array_delete(global.equipment_stash,       _src_idx, 1);
                 else if (_cur_src == 1) array_delete(global.consumable_stash,      _src_idx, 1);
                 else if (_cur_src == 2) array_delete(global.carried_items,         _src_idx, 1);
@@ -834,7 +833,7 @@ if (shop_open != -1 && !stash_mode_open) {
 
         } else {
             // Empty sell list
-            if (keyboard_check_pressed(vk_escape)) {
+            if (input_cancel()) {
                 shop_open         = -1;
                 shop_tab          = 0;
                 sell_index        = 0;
@@ -854,7 +853,7 @@ if (shop_open != -1 && !stash_mode_open) {
     // =========================================================================
     if (shop_tab == 2) {
         // Esc/Backspace: cancel a pending confirm first, else close the shop.
-        if (keyboard_check_pressed(vk_escape) || keyboard_check_pressed(vk_backspace)) {
+        if (input_cancel() || input_back()) {
             if (petra_trade_confirm) {
                 petra_trade_confirm      = false;
                 petra_trade_notification = "";
@@ -869,13 +868,13 @@ if (shop_open != -1 && !stash_mode_open) {
         // --- An order exists: collect (ready) or cancel (in progress) ---
         if (petra_order_active()) {
             if (global.petra_order.status == "ready") {
-                if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_space)) {
+                if (input_confirm() || input_confirm_alt()) {
                     petra_trade_notification = petra_collect();
                     petra_trade_confirm = false;
                 }
             } else {
                 // In progress: C cancels (two-step confirm).
-                if (keyboard_check_pressed(ord("C"))) {
+                if (input_hotkey("C")) {
                     if (!petra_trade_confirm) {
                         petra_trade_confirm = true;
                         petra_trade_notification = "Cancel the order? You may recover only some inputs - gold is NOT refunded.  C: confirm   Esc: keep";
@@ -893,13 +892,13 @@ if (shop_open != -1 && !stash_mode_open) {
 
         // Pending no-takeback preview: Space confirms+places; any move cancels it.
         if (petra_trade_confirm) {
-            if (keyboard_check_pressed(vk_space)) {
+            if (input_confirm_alt()) {
                 var _res = petra_place_order(petra_trade_selected, petra_trade_lever);
                 if (_res == "") { petra_trade_notification = "Order placed! Earn it by clearing floors."; petra_trade_selected = []; }
                 else            { petra_trade_notification = _res; }
                 petra_trade_confirm = false;
             }
-            if (nav_up() || nav_down() || keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_tab)) {
+            if (nav_up() || nav_down() || input_confirm() || input_detail()) {
                 petra_trade_confirm = false; petra_trade_notification = "";
             }
             exit;
@@ -915,13 +914,13 @@ if (shop_open != -1 && !stash_mode_open) {
         }
 
         // Tab toggles the dust roll-bias lever (Lever A).
-        if (keyboard_check_pressed(vk_tab)) {
+        if (input_detail()) {
             petra_trade_lever        = !petra_trade_lever;
             petra_trade_notification = petra_trade_lever ? "Roll-bias ON - spends dust for better affix odds." : "Roll-bias off.";
         }
 
         // Enter toggles selection of the highlighted item (max 3, all same tier).
-        if ((keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)) && _stash_n > 0) {
+        if ((input_confirm()) && _stash_n > 0) {
             var _ci    = petra_trade_cursor;
             var _found = -1;
             for (var _si = 0; _si < array_length(petra_trade_selected); _si++) {
@@ -953,7 +952,7 @@ if (shop_open != -1 && !stash_mode_open) {
         }
 
         // Space: when 3 are chosen, open the no-takeback preview.
-        if (keyboard_check_pressed(vk_space)) {
+        if (input_confirm_alt()) {
             if (array_length(petra_trade_selected) != 3) {
                 petra_trade_notification = "Select 3 same-tier items first (Enter to toggle).";
             } else {
@@ -990,7 +989,7 @@ if (shop_open != -1 && !stash_mode_open) {
         if (nav_down()) { shop_index = wrap_index(shop_index + 1, _buy_n); shop_notification = ""; }
         shop_index = clamp(shop_index, 0, _buy_n - 1);
 
-        if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)) {
+        if (input_confirm()) {
             var _entry  = _buy_list[shop_index];
             var _sprice = _entry.price;
             if (global.gold < _sprice) {
@@ -1044,7 +1043,7 @@ if (shop_open != -1 && !stash_mode_open) {
             if (_next < _dorn_len) shop_index = _next;
         }
 
-        if ((keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)) && _dorn_len > 0
+        if ((input_confirm()) && _dorn_len > 0
             && !global.dorn_stock[shop_index].sold) {
             var _dentry = global.dorn_stock[shop_index];
             var _dprice = cha_price(_dentry.price);
@@ -1075,7 +1074,7 @@ if (shop_open != -1 && !stash_mode_open) {
         }
     }
 
-    if (keyboard_check_pressed(vk_backspace) || keyboard_check_pressed(vk_escape)) {
+    if (input_back() || input_cancel()) {
         shop_open         = -1;
         shop_tab          = 0;
         shop_index        = 0;
@@ -1152,10 +1151,10 @@ if (trainer_open) {
 
     // --- Tab: examine the highlighted ability (tab 2) or trait (tab 3) before buying.
     if (vex_detail_open) {
-        if (keyboard_check_pressed(vk_tab) || keyboard_check_pressed(vk_escape)) vex_detail_open = false;
+        if (input_detail() || input_cancel()) vex_detail_open = false;
         exit;
     }
-    if (keyboard_check_pressed(vk_tab)) {
+    if (input_detail()) {
         if (trainer_tab == 2 && trainer_cursor < array_length(class_vex_purchasable(_tr_class))) {
             vex_detail_open = true; exit;
         } else if (trainer_tab == 3 && trainer_cursor < array_length(trait_vex_purchasable(_tr_class))) {
@@ -1180,7 +1179,7 @@ if (trainer_open) {
         for (var _ti = 0; _ti < 6; _ti++) _sp_total += trainer_statpick_alloc[_ti];
 
         // Esc / right-click - cancel a pending confirm first, else close the picker.
-        if (keyboard_check_pressed(vk_escape) || keyboard_check_pressed(vk_backspace)
+        if (input_cancel() || input_back()
             || mouse_check_button_pressed(mb_right)) {
             if (trainer_statpick_confirm) { trainer_statpick_confirm = false; }
             else { trainer_statpick_open = false; trainer_notification = ""; }
@@ -1192,9 +1191,9 @@ if (trainer_open) {
         if (nav_down()) trainer_statpick_cursor = wrap_index(trainer_statpick_cursor + 1, 6);
 
         // A/D or Left/Right (and the on-row - / + buttons) adjust the highlighted stat.
-        var _dec     = keyboard_check_pressed(vk_left)  || keyboard_check_pressed(ord("A"));
-        var _inc     = keyboard_check_pressed(vk_right) || keyboard_check_pressed(ord("D"));
-        var _do_conf = keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_space);
+        var _dec     = input_dir_left();
+        var _inc     = input_dir_right();
+        var _do_conf = input_confirm() || input_confirm_alt();
 
         // Mouse: rows + on-row -/+ buttons + the confirm bar. Geometry MUST match
         // ui_draw_trainer_statpick() (scr_ui).
@@ -1273,18 +1272,18 @@ if (trainer_open) {
     var _commit = false;  // confirm a pending sacrifice (Space / confirm bar click)
 
     // Esc / Backspace - cancel a pending confirm first, otherwise close the screen
-    if (keyboard_check_pressed(vk_escape) || keyboard_check_pressed(vk_backspace)) {
+    if (input_cancel() || input_back()) {
         if (trainer_confirm) { trainer_confirm = false; trainer_notification = ""; }
         else                 { trainer_open = false; trainer_statpick_open = false; trainer_notification = ""; }
         exit;
     }
 
     // Q/E - switch section tabs (5 tabs: Stats | Trait Slots | Abilities | Traits | Potency)
-    if (keyboard_check_pressed(ord("Q"))) {
+    if (input_tab_prev()) {
         trainer_tab = (trainer_tab - 1 + 5) mod 5;
         trainer_cursor = 0; trainer_confirm = false; trainer_notification = "";
     }
-    if (keyboard_check_pressed(ord("E"))) {
+    if (input_tab_next()) {
         trainer_tab = (trainer_tab + 1) mod 5;
         trainer_cursor = 0; trainer_confirm = false; trainer_notification = "";
     }
@@ -1295,8 +1294,8 @@ if (trainer_open) {
     trainer_cursor = clamp(trainer_cursor, 0, max(0, _tr_rows - 1));
 
     // Enter = act, Space = commit a sacrifice
-    if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)) _act = true;
-    if (keyboard_check_pressed(vk_space)) _commit = true;
+    if (input_confirm()) _act = true;
+    if (input_confirm_alt()) _commit = true;
 
     // Mouse: tab bar, row select / second-click acts, confirm bar
     if (mouse_check_button_pressed(mb_left)) {
@@ -1450,8 +1449,8 @@ if (trainer_open) {
 // =============================================================================
 if (variable_instance_exists(id, "bairc_intro_open") && bairc_intro_open) {
     if (!bairc_intro_armed) {
-        if (!keyboard_check(vk_anykey) && !mouse_check_button(mb_left)) bairc_intro_armed = true;
-    } else if (keyboard_check_pressed(vk_anykey) || mouse_check_button_pressed(mb_left)) {
+        if (!input_any_held() && !mouse_check_button(mb_left)) bairc_intro_armed = true;
+    } else if (input_any() || mouse_check_button_pressed(mb_left)) {
         bairc_intro_open   = false;
         bairc_open         = true;   // now open the station
         bairc_cursor       = 0;
@@ -1467,8 +1466,8 @@ if (variable_instance_exists(id, "bairc_intro_open") && bairc_intro_open) {
 // =============================================================================
 if (variable_instance_exists(id, "bairc_lore_open") && bairc_lore_open) {
     if (!bairc_lore_armed) {
-        if (!keyboard_check(vk_anykey) && !mouse_check_button(mb_left)) bairc_lore_armed = true;
-    } else if (keyboard_check_pressed(vk_anykey) || mouse_check_button_pressed(mb_left)) {
+        if (!input_any_held() && !mouse_check_button(mb_left)) bairc_lore_armed = true;
+    } else if (input_any() || mouse_check_button_pressed(mb_left)) {
         bairc_lore_open = false;
         var _lq = bairc_lore_queue();
         if (array_length(_lq) > 0) array_delete(_lq, 0, 1);   // consumed
@@ -1498,7 +1497,7 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open) {
     // First name is free; renaming costs 20 dust. Swallows all other input while up.
     if (bairc_naming) {
         if (string_length(keyboard_string) > 16) keyboard_string = string_copy(keyboard_string, 1, 16);
-        if (keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_return)) {
+        if (input_confirm()) {
             var _nm = string_trim(keyboard_string);
             if (_nm != "" && _bp_n > 0) {
                 var _np      = global.pet_roster[bairc_cursor];
@@ -1516,7 +1515,7 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open) {
             }
             bairc_naming = false;
         }
-        if (keyboard_check_pressed(vk_escape)) bairc_naming = false;
+        if (input_cancel()) bairc_naming = false;
         exit;
     }
 
@@ -1538,13 +1537,13 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open) {
             if (nav_left())  bairc_capstone_sel = wrap_index(bairc_capstone_sel - 1, _cp_n);
             if (nav_right()) bairc_capstone_sel = wrap_index(bairc_capstone_sel + 1, _cp_n);
             bairc_capstone_sel = clamp(bairc_capstone_sel, 0, _cp_n - 1);
-            if (keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_space)) {
+            if (input_confirm() || input_confirm_alt()) {
                 bairc_capstone_confirm = true;
             }
-            if (keyboard_check_pressed(vk_escape)) bairc_capstone_open = false;
+            if (input_cancel()) bairc_capstone_open = false;
         } else {
             // Yes/No confirm - permanent choice.
-            if (keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_return)) {
+            if (input_confirm()) {
                 var _pick   = _cp_pool[clamp(bairc_capstone_sel, 0, _cp_n - 1)];
                 var _locked = _cp_splash ? pet_splash_choose(_cp_pet, _pick.id) : pet_capstone_choose(_cp_pet, _pick.id);
                 if (_locked) {
@@ -1558,7 +1557,7 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open) {
                 bairc_capstone_open    = false;
                 bairc_capstone_confirm = false;
             }
-            if (keyboard_check_pressed(vk_escape)) bairc_capstone_confirm = false;   // back to selection
+            if (input_cancel()) bairc_capstone_confirm = false;   // back to selection
         }
         exit;
     }
@@ -1567,7 +1566,7 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open) {
     // creature to Bairc's garden. Enter confirms, Esc keeps it. Swallows all other input.
     if (bairc_release_confirm) {
         if (_bp_n == 0) { bairc_release_confirm = false; exit; }
-        if (keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_return)) {
+        if (input_confirm()) {
             var _rl = pet_donate(bairc_cursor);
             if (_rl != "") {
                 bairc_notification = "Bairc takes " + _rl + " gently. It has a home in his garden now.";
@@ -1578,21 +1577,21 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open) {
             }
             bairc_release_confirm = false;
         }
-        if (keyboard_check_pressed(vk_escape)) bairc_release_confirm = false;
+        if (input_cancel()) bairc_release_confirm = false;
         exit;
     }
 
     // Tab pet-kit detail popup: while up, only Tab/Esc (close) - swallow all else.
     if (bairc_detail_open) {
-        if (keyboard_check_pressed(vk_tab) || keyboard_check_pressed(vk_escape)) bairc_detail_open = false;
+        if (input_detail() || input_cancel()) bairc_detail_open = false;
         exit;
     }
-    if (keyboard_check_pressed(vk_tab) && _bp_n > 0) {
+    if (input_detail() && _bp_n > 0) {
         bairc_detail_open = true;
         exit;
     }
 
-    if (keyboard_check_pressed(vk_escape)) {
+    if (input_cancel()) {
         bairc_open = false;
         exit;
     }
@@ -1603,7 +1602,7 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open) {
         var _bp = global.pet_roster[bairc_cursor];
         // I: identify a mysterious egg (paid). Until identified, the egg can't hatch
         // and its species/type read "??" (design 2026-07-04).
-        if (keyboard_check_pressed(ord("I")) && _bp.is_egg && !pet_egg_identified(_bp)) {
+        if (input_hotkey("I") && _bp.is_egg && !pet_egg_identified(_bp)) {
             var _id_cost = pet_egg_identify_cost();
             if (global.gold >= _id_cost) {
                 global.gold -= _id_cost;
@@ -1617,7 +1616,7 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open) {
                 bairc_notification = "Identifying costs " + string(_id_cost) + "g - you're short.";
             }
         }
-        if (keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_space)) {
+        if (input_confirm() || input_confirm_alt()) {
             if (_bp.is_egg && !pet_egg_identified(_bp)) {
                 bairc_notification = "Bairc shakes his head - identify it first ([I], "
                     + string(pet_egg_identify_cost()) + "g). No telling what would crawl out.";
@@ -1637,12 +1636,12 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open) {
         // pet - no gold here. Feed FILLS the growth bar; an active run still evolves it.
         var _owned    = pet_feed_owned_list();
         var _feed_key = -1;
-        if      (keyboard_check_pressed(ord("1"))) _feed_key = 0;
-        else if (keyboard_check_pressed(ord("2"))) _feed_key = 1;
-        else if (keyboard_check_pressed(ord("3"))) _feed_key = 2;
-        else if (keyboard_check_pressed(ord("4"))) _feed_key = 3;
-        else if (keyboard_check_pressed(ord("5"))) _feed_key = 4;
-        else if (keyboard_check_pressed(ord("6"))) _feed_key = 5;
+        if      (input_hotkey("1")) _feed_key = 0;
+        else if (input_hotkey("2")) _feed_key = 1;
+        else if (input_hotkey("3")) _feed_key = 2;
+        else if (input_hotkey("4")) _feed_key = 3;
+        else if (input_hotkey("5")) _feed_key = 4;
+        else if (input_hotkey("6")) _feed_key = 5;
         if (_feed_key >= 0) {
             if (_feed_key >= array_length(_owned)) {
                 if (!_bp.is_egg && pet_feed_pouch_total() <= 0)
@@ -1663,7 +1662,7 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open) {
 
         // C: cure a pushed corrupted pet (keeps the gains so far, drops the debuff,
         // forfeits the grand ability).
-        if (keyboard_check_pressed(ord("C"))) {
+        if (input_hotkey("C")) {
             var _cure = pet_corruption_cure(_bp);
             if (_cure != "") {
                 bairc_notification = _cure;
@@ -1674,7 +1673,7 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open) {
 
         // G: choose the raised pet's permanent pick - Stage-3 capstone first, then the
         // Stage-4 Awakened splash once it crosses (same modal, bairc_capstone_mode).
-        if (keyboard_check_pressed(ord("G"))) {
+        if (input_hotkey("G")) {
             if (pet_capstone_can_pick(_bp)) {
                 bairc_capstone_mode    = "cap";
                 bairc_capstone_open    = true;
@@ -1695,12 +1694,12 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open) {
         }
 
         // R: donate the highlighted creature to Bairc's garden (opens a confirm; permanent).
-        if (keyboard_check_pressed(ord("R"))) {
+        if (input_hotkey("R")) {
             bairc_release_confirm = true;
         }
 
         // N: name / rename the highlighted creature (first name free, rename 20 dust).
-        if (keyboard_check_pressed(ord("N"))) {
+        if (input_hotkey("N")) {
             if (_bp.is_egg) {
                 bairc_notification = "You can name it once it hatches.";
             } else if (pet_named(_bp) && global.rune_dust < 20) {
@@ -1735,13 +1734,13 @@ if (variable_instance_exists(id, "maren_open") && maren_open) {
     // --- Confirm modal: a pending gold-costing / destructive action awaiting a yes/no.
     //     Takes input priority over the whole screen. Enter confirms, Esc cancels. ---
     if (maren_confirm != undefined) {
-        if (keyboard_check_pressed(vk_escape) || keyboard_check_pressed(vk_backspace)
+        if (input_cancel() || input_back()
             || mouse_check_button_pressed(mb_right)) {
             maren_confirm = undefined;
             maren_notification = "Cancelled.";
             exit;
         }
-        if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)) {
+        if (input_confirm()) {
             var _cf = maren_confirm;
             maren_confirm = undefined;
 
@@ -1843,7 +1842,7 @@ if (variable_instance_exists(id, "maren_open") && maren_open) {
     }
 
     // Esc / Backspace - step back one phase, else close the screen
-    if (keyboard_check_pressed(vk_escape) || keyboard_check_pressed(vk_backspace)) {
+    if (input_cancel() || input_back()) {
         if (maren_tab == 0 && maren_phase == 2)      { maren_phase = 1; maren_cursor = 0; maren_scroll = 0; }
         else if (maren_tab == 0 && maren_phase == 1) { maren_phase = 0; maren_item_sel = -1; maren_cursor = 0; maren_scroll = 0; }
         else if (maren_tab == 1 && maren_phase == 1) { maren_phase = 0; maren_cursor = 0; maren_scroll = 0; }
@@ -1855,8 +1854,8 @@ if (variable_instance_exists(id, "maren_open") && maren_open) {
 
     // Q/E (or <-/->) - switch tab (4 tabs; Q/<- left, E/-> right; resets the active flow)
     var _maren_tabchg = 0;
-    if (keyboard_check_pressed(ord("E")) || keyboard_check_pressed(vk_right)) _maren_tabchg = 1;
-    else if (keyboard_check_pressed(ord("Q")) || keyboard_check_pressed(vk_left)) _maren_tabchg = -1;
+    if (input_tab_next() || keyboard_check_pressed(vk_right)) _maren_tabchg = 1;
+    else if (input_tab_prev() || keyboard_check_pressed(vk_left)) _maren_tabchg = -1;
     if (_maren_tabchg != 0) {
         maren_tab = (maren_tab + _maren_tabchg + 4) mod 4;
         maren_phase = 0; maren_item_sel = -1; maren_cursor = 0; maren_scroll = 0; maren_notification = "";
@@ -1877,7 +1876,7 @@ if (variable_instance_exists(id, "maren_open") && maren_open) {
     maren_scroll = clamp(maren_scroll, 0, max(0, _m_rows - _m_vis));
 
     // Mouse - tab bar (x=445+t*200, y=70, w=190, h=40) + row select acts immediately
-    var _m_act = (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter));
+    var _m_act = (input_confirm());
     if (mouse_check_button_pressed(mb_left)) {
         var _mmx = device_mouse_x_to_gui(0);
         var _mmy = device_mouse_y_to_gui(0);
@@ -2087,7 +2086,7 @@ if (variable_instance_exists(id, "sable_open") && sable_open) {
 
     // Esc / Backspace - cancel a pending salvage confirm first, then step back
     // (Salvage sub-list -> menu), else close.
-    if (keyboard_check_pressed(vk_escape) || keyboard_check_pressed(vk_backspace)) {
+    if (input_cancel() || input_back()) {
         if (sable_confirm) { sable_confirm = false; sable_notification = ""; exit; }
         if (sable_tab == 0 && sable_phase > 0) { sable_phase = 0; sable_cursor = 0; }
         else                                    { sable_open = false; }
@@ -2097,8 +2096,8 @@ if (variable_instance_exists(id, "sable_open") && sable_open) {
 
     // Q/E (or <-/->) - switch tab (3 tabs; Q/<- left, E/-> right)
     var _sable_tabchg = 0;
-    if (keyboard_check_pressed(ord("E")) || keyboard_check_pressed(vk_right)) _sable_tabchg = 1;
-    else if (keyboard_check_pressed(ord("Q")) || keyboard_check_pressed(vk_left)) _sable_tabchg = -1;
+    if (input_tab_next() || keyboard_check_pressed(vk_right)) _sable_tabchg = 1;
+    else if (input_tab_prev() || keyboard_check_pressed(vk_left)) _sable_tabchg = -1;
     if (_sable_tabchg != 0) {
         sable_tab = (sable_tab + _sable_tabchg + 4) mod 4;
         sable_phase = 0; sable_cursor = 0; sable_notification = ""; sable_confirm = false;
@@ -2111,7 +2110,7 @@ if (variable_instance_exists(id, "sable_open") && sable_open) {
     sable_cursor = clamp(sable_cursor, 0, max(0, _s_rows - 1));
 
     // Mouse - tab bar (x=345+t*200) + row select
-    var _s_act = (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter));
+    var _s_act = (input_confirm());
     if (mouse_check_button_pressed(mb_left)) {
         var _smx = device_mouse_x_to_gui(0);
         var _smy = device_mouse_y_to_gui(0);
@@ -2227,7 +2226,7 @@ if (variable_instance_exists(id, "vael_open") && vael_open) {
     var _v_cat  = vael_skin_catalog();
     var _v_rows = max(1, array_length(_v_cat));
 
-    if (keyboard_check_pressed(vk_escape) || keyboard_check_pressed(vk_backspace)) {
+    if (input_cancel() || input_back()) {
         vael_open = false; vael_notification = "";
         exit;
     }
@@ -2235,8 +2234,8 @@ if (variable_instance_exists(id, "vael_open") && vael_open) {
     // --- Tab switching (Q/E step left/right or click the tab headers; geometry
     //     matches ui_draw_vael_screen). 0 Skins / 1 Portrait / 2 Tints. ---
     var _vt_prev = vael_tab;
-    if (keyboard_check_pressed(ord("Q"))) vael_tab = max(0, vael_tab - 1);
-    if (keyboard_check_pressed(ord("E"))) vael_tab = min(2, vael_tab + 1);
+    if (input_tab_prev()) vael_tab = max(0, vael_tab - 1);
+    if (input_tab_next()) vael_tab = min(2, vael_tab + 1);
     if (mouse_check_button_pressed(mb_left)) {
         var _vtm_x = device_mouse_x_to_gui(0);
         var _vtm_y = device_mouse_y_to_gui(0);
@@ -2258,7 +2257,7 @@ if (variable_instance_exists(id, "vael_open") && vael_open) {
         if (nav_right()) { vael_portrait_cursor = wrap_index(vael_portrait_cursor + 1, _p_cnt); vael_notification = ""; }
         vael_portrait_cursor = clamp(vael_portrait_cursor, 0, _p_cnt - 1);
 
-        if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)) {
+        if (input_confirm()) {
             // Vael Companion perk: portrait changes are free ("for you? always").
             var _pcost = affinity_at_least("vael", 3) ? 0 : 100;
             if (vael_portrait_cursor == global.chosen_portrait) {
@@ -2286,7 +2285,7 @@ if (variable_instance_exists(id, "vael_open") && vael_open) {
         if (nav_down()) { vael_tint_cursor = wrap_index(vael_tint_cursor + 1, _t_rows); vael_notification = ""; }
         vael_tint_cursor = clamp(vael_tint_cursor, 0, _t_rows - 1);
 
-        var _t_act = (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter));
+        var _t_act = (input_confirm());
         if (mouse_check_button_pressed(mb_left)) {
             var _tmx = device_mouse_x_to_gui(0);
             var _tmy = device_mouse_y_to_gui(0);
@@ -2325,7 +2324,7 @@ if (variable_instance_exists(id, "vael_open") && vael_open) {
     if (nav_down()) { vael_cursor = wrap_index(vael_cursor + 1, _v_rows); vael_notification = ""; }
     vael_cursor = clamp(vael_cursor, 0, max(0, _v_rows - 1));
 
-    var _v_act = (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter));
+    var _v_act = (input_confirm());
     if (mouse_check_button_pressed(mb_left)) {
         var _vmx = device_mouse_x_to_gui(0);
         var _vmy = device_mouse_y_to_gui(0);
@@ -2360,7 +2359,7 @@ if (variable_instance_exists(id, "vael_open") && vael_open) {
 if (!menu_open) exit;
 
 // Escape: close picker/submenu first; only close whole menu if none are open
-if (keyboard_check_pressed(vk_escape)) {
+if (input_cancel()) {
     if (equip_picker_open) {
         equip_picker_open = false;
         equip_msg         = "";
@@ -2374,12 +2373,12 @@ if (keyboard_check_pressed(vk_escape)) {
 
 // Q/E cycle tabs (no wrap - clamped to 0-3; Compendium moved to the Journal 2026-07-04)
 if (!equip_picker_open && !consumable_submenu_open) {
-    if (keyboard_check_pressed(ord("Q"))) {
+    if (input_tab_prev()) {
         if (menu_tab > 0) audio_play_sound(snd_page, 1, false);
         menu_tab          = max(0, menu_tab - 1);
         equip_picker_open = false;
     }
-    if (keyboard_check_pressed(ord("E"))) {
+    if (input_tab_next()) {
         if (menu_tab < 3) audio_play_sound(snd_page, 1, false);
         menu_tab          = min(3, menu_tab + 1);
         equip_picker_open = false;
@@ -2387,7 +2386,7 @@ if (!equip_picker_open && !consumable_submenu_open) {
 
     // T on the Stats tab: cycle the equipped epithet through earned titles
     // (expression #5). The header line redraws immediately - that's the feedback.
-    if (menu_tab == 0 && keyboard_check_pressed(ord("T"))) {
+    if (menu_tab == 0 && input_hotkey("T")) {
         epithet_cycle();
     }
 }
@@ -2693,8 +2692,8 @@ if (menu_tab == 1) {
                 if (_srow >= 0 && _srow < EQUIP_SLOT_COUNT) equip_slot_selected = _srow;
             }
         }
-        if (keyboard_check_pressed(ord("D")) || keyboard_check_pressed(vk_right)) equip_found_focus = true;   // lateral swap (works even if pack empty)
-        if (keyboard_check_pressed(ord("A")) || keyboard_check_pressed(vk_left))  equip_found_focus = false;
+        if (input_dir_right()) equip_found_focus = true;   // lateral swap (works even if pack empty)
+        if (input_dir_left())  equip_found_focus = false;
 
         if (equip_found_focus) {
             if (_found_n > 0 && nav_up())   equip_found_cursor = wrap_index(equip_found_cursor - 1, _found_n);
@@ -2702,7 +2701,7 @@ if (menu_tab == 1) {
             equip_found_cursor = clamp(equip_found_cursor, 0, max(0, _found_n - 1));
 
             // Enter equips the highlighted found item into its slot.
-            if ((keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)) && _found_n > 0) {
+            if ((input_confirm()) && _found_n > 0) {
                 var _fitem = _found[equip_found_cursor].item;
                 var _fsrc  = _found[equip_found_cursor].idx;
                 var _fsrctype = variable_struct_exists(_found[equip_found_cursor], "src") ? _found[equip_found_cursor].src : 1; // 0 stash / 1 pack
@@ -2761,13 +2760,13 @@ if (menu_tab == 1) {
         _sel_inv = equip_display_to_inv(equip_slot_selected);
 
         // Enter opens the item picker for this slot
-        if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)) {
+        if (input_confirm()) {
             equip_picker_open  = true;
             equip_picker_index = 0;
         }
 
         // U unequips the selected slot
-        if (keyboard_check_pressed(ord("U"))) {
+        if (input_hotkey("U")) {
             var _old = global.inventory[_sel_inv];
             if (_old != undefined) {
                 global.inventory[_sel_inv] = undefined;
@@ -2812,11 +2811,11 @@ if (menu_tab == 1) {
         if (nav_up())   { if (_picker_count > 0) equip_picker_index = wrap_index(equip_picker_index - 1, _picker_count); equip_msg = ""; }
         if (nav_down()) { if (_picker_count > 0) equip_picker_index = wrap_index(equip_picker_index + 1, _picker_count); equip_msg = ""; }
 
-        if ((keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)) && _picker_count == 0) {
+        if ((input_confirm()) && _picker_count == 0) {
             equip_picker_open = false;
             equip_msg         = "";
         }
-        if ((keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)) && _picker_count > 0) {
+        if ((input_confirm()) && _picker_count > 0) {
             var _chosen   = _picker_items[equip_picker_index];
 
             // Class restriction check
@@ -2874,7 +2873,7 @@ if (menu_tab == 1) {
             } // end class_req else block
         }
 
-        if (keyboard_check_pressed(vk_escape) || keyboard_check_pressed(vk_backspace)) {
+        if (input_cancel() || input_back()) {
             equip_picker_open = false;
             equip_msg = "";
         }
@@ -2898,12 +2897,12 @@ if (menu_tab == 3) {
         if (nav_down()) consumable_submenu_cursor = wrap_index(consumable_submenu_cursor + 1, _cons_cnt);
 
         // Close without using
-        if (keyboard_check_pressed(vk_escape)) {
+        if (input_cancel()) {
             consumable_submenu_open = false;
         }
 
         // Use selected item
-        if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)) {
+        if (input_confirm()) {
             var _can_use = true;
             // AP-restore items ("energy") and the resource+AP brew ("resource_ap") cost
             // no AP, so they stay usable at 0 AP.
@@ -3021,7 +3020,7 @@ if (menu_tab == 3) {
 
     } else {
         // Submenu closed - Enter opens it (only when items exist)
-        if ((keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter))
+        if ((input_confirm())
             && array_length(global.consumable_inventory) > 0) {
             consumable_submenu_open   = true;
             consumable_submenu_cursor = 0;

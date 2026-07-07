@@ -1503,7 +1503,7 @@ function consumable_overflow_step() {
     if (nav_down()) _cur = wrap_index(_cur + 1, _options);
     global.consumable_overflow_cursor = _cur;
 
-    if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)) {
+    if (input_confirm()) {
         var _new = global.consumable_overflow[0];
         if (_cur < array_length(_groups)) {
             // Discard one of the chosen held consumable, take the new one.
@@ -7017,8 +7017,7 @@ function hatch_cutscene_step() {
 
         case 2: // REVEAL - baby scales in; wait for the player to dismiss (min hold first)
             if (hatch_t >= HATCH_REVEAL_MIN &&
-                (keyboard_check_pressed(vk_enter)  || keyboard_check_pressed(vk_return)
-              || keyboard_check_pressed(vk_space)  || keyboard_check_pressed(vk_escape))) {
+                (input_confirm() || input_confirm_alt() || input_cancel())) {
                 if (!hatch_done) { pet_hatch(hatch_pet); hatch_done = true; }
                 bairc_notification = hatch_pet.name + " hatches - a "
                     + pet_archetype_name(hatch_pet.archetype) + " baby!";
@@ -7659,7 +7658,7 @@ function item_picker_step() {
     var _p = global.item_picker;
     var _n = array_length(_p.candidates);
 
-    if (keyboard_check_pressed(vk_escape) || keyboard_check_pressed(vk_backspace)
+    if (input_cancel() || input_back()
         || mouse_check_button_pressed(mb_right)) {
         if (_p.confirm) _p.confirm = false;
         else            item_picker_close();
@@ -7667,8 +7666,7 @@ function item_picker_step() {
     }
 
     if (_n == 0) {   // nothing qualifies (shouldn't happen - caller pre-checks) - let any key close
-        if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)
-            || keyboard_check_pressed(vk_space)) item_picker_close();
+        if (input_confirm() || input_confirm_alt()) item_picker_close();
         return;
     }
 
@@ -7700,8 +7698,7 @@ function item_picker_step() {
     _p.cursor = clamp(_p.cursor, 0, _n - 1);
     _p.scroll = loadout_list_scroll(_p.cursor, _n, 8);
 
-    var _act = (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)
-        || keyboard_check_pressed(vk_space));
+    var _act = (input_confirm() || input_confirm_alt());
 
     // Mouse: row select / re-click acts; clicking the armed confirm bar commits.
     if (mouse_check_button_pressed(mb_left)) {
@@ -8583,8 +8580,7 @@ function audio_settings_handle_input() {
 
     var _left    = nav_left();
     var _right   = nav_right();
-    var _confirm = keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_return)
-                || keyboard_check_pressed(vk_space);
+    var _confirm = input_confirm() || input_confirm_alt();
 
     switch (global.settings_cursor) {
         case 0: // Music
@@ -8628,7 +8624,7 @@ function audio_settings_handle_input() {
     }
 
     // Esc / O always closes (Enter is reserved for the toggle/action rows above).
-    if (keyboard_check_pressed(vk_escape) || keyboard_check_pressed(ord("O"))) {
+    if (input_cancel() || input_hotkey("O")) {
         global.settings_open = false;
         audio_play_sound(snd_ui_cancel, 1, false);
         audio_settings_save();
@@ -8680,13 +8676,12 @@ function pause_menu_step() {
     if (_hover != -1) global.pause_cursor = _hover;
 
     // Esc / Backspace resumes.
-    if (keyboard_check_pressed(vk_escape) || keyboard_check_pressed(vk_backspace)) {
+    if (input_cancel() || input_back()) {
         global.pause_open = false;
         return true;
     }
 
-    var _confirm = keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)
-                 || keyboard_check_pressed(vk_space) || (mouse_check_button_pressed(mb_left) && _hover != -1);
+    var _confirm = input_confirm() || input_confirm_alt() || (mouse_check_button_pressed(mb_left) && _hover != -1);
     if (_confirm) {
         switch (global.pause_cursor) {
             case 0:  // Resume
