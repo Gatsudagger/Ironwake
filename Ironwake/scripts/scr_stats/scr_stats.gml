@@ -305,6 +305,23 @@ function end_run(result) {
                 add_gold(awaken_clear_gold_bonus(global.selected_ascendance));
                 // Scale run gold by 15% per ascendance tier (already added via add_gold during run)
                 // - this bonus is on top, applied as a flat completion bonus
+
+                // WIN STATE (WIN_STATE_SPEC.md): an Awakening-V full clear marks this
+                // dungeon; the third mark arms the ending, which plays on hub arrival.
+                if (global.selected_ascendance >= 5) {
+                    if (!variable_global_exists("dungeon_a5_clears")) {
+                        global.dungeon_a5_clears = { ashen_vault: false, scorched_depths: false, tundra_tomb: false };
+                    }
+                    variable_struct_set(global.dungeon_a5_clears, _dung_key, true);
+                    if (!variable_global_exists("ironwake_stands")) global.ironwake_stands = false;
+                    if (!global.ironwake_stands
+                        && global.dungeon_a5_clears.ashen_vault
+                        && global.dungeon_a5_clears.scorched_depths
+                        && global.dungeon_a5_clears.tundra_tomb) {
+                        global.ironwake_stands = true;
+                        global.ending_pending  = true;
+                    }
+                }
             }
         }
 
@@ -3960,6 +3977,7 @@ function affinity_betrayal_for(new_id) {
             quest_reset_gate("gate_" + _ids[_i] + "_friend");
         }
         _o.gate_ready = false;
+        _o.betrayed   = true;   // permanent mark - the ending's absence beat reads this
         quest_reset_gate("gate_" + _ids[_i] + "_companion");
         quest_reset_gate("gate_" + _ids[_i] + "_lover");
         var _lines = affinity_betrayal_lines(_ids[_i]);
@@ -3970,6 +3988,39 @@ function affinity_betrayal_for(new_id) {
             global.pet_find_notice = (global.pet_find_notice != "") ? (global.pet_find_notice + "   " + _lines.notice) : _lines.notice;
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// ENDING FAREWELLS (WIN_STATE_SPEC.md). One line per NPC, two voice bands:
+// tier 1-2 (warm but at arm's length) vs tier 3-4 (intimate). Tier 0 and
+// betrayed NPCs don't speak - their absence is its own beat.
+// ---------------------------------------------------------------------------
+function ending_farewell_line(id, tier) {
+    var _hi = (tier >= 3);
+    switch (id) {
+        case "dorn":  return _hi
+            ? "\"Whatever you carried down there, you carried us with it. The forge stays warm for you.\""
+            : "Dorn folds his arms. \"Held together, did you. Good iron.\"";
+        case "sable": return _hi
+            ? "\"Come by the cauldron tonight. The good bottle - the label I don't show anyone.\""
+            : "\"So the dark blinks first. I'd have bet on you. I did bet on you.\"";
+        case "maren": return _hi
+            ? "\"I set a piece of myself in you long ago. It held. It always held.\""
+            : "Maren nods once. \"The runes read true. So did you.\"";
+        case "vex":   return _hi
+            ? "Vex looks away first. \"Best student I ever had. Don't make me say it twice.\""
+            : "\"Hmph. Guess the drills stuck.\"";
+        case "petra": return _hi
+            ? "\"Every coin I counted, I was counting on you coming back. Welcome home.\""
+            : "\"Free stock for the one who saved the town. Within reason.\"";
+        case "vael":  return _hi
+            ? "\"You are the finest work this town ever produced. I merely framed you.\""
+            : "\"How dreadfully heroic. Whatever will I brood about now?\"";
+        case "bairc": return _hi
+            ? "\"Every story in this hall ends at the same table. Yours starts there tonight. Drinks are mine.\""
+            : "\"There's a page in the codex I kept blank. It gets your name.\"";
+    }
+    return "";
 }
 
 // Neglect decay (4c, design §6): ticked once per floor-clear. 6 idle clears of

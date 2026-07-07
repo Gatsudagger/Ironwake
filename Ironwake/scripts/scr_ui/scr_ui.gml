@@ -8422,6 +8422,75 @@ function ui_draw_stash_screen() {
 
 
 // ---------------------------------------------------------------------------
+// ui_draw_credits_page()
+// Shared full-screen asset-credits page: scrim, header, sections, thank-you,
+// gothic rim. Callers add their own key-legend footer. Drawn by the title
+// screen's CREDITS menu option AND the ending's credits stage (WIN_STATE_SPEC).
+// Content of record: CREDITS.md.
+// ---------------------------------------------------------------------------
+function ui_draw_credits_page() {
+    draw_set_alpha(0.84);
+    draw_set_color(make_color_rgb(6, 7, 12));
+    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+    draw_set_alpha(1.0);
+
+    draw_set_halign(fa_center);
+    draw_set_valign(fa_top);
+    draw_set_font(fnt_ui_title);
+    draw_set_color(make_color_rgb(130, 195, 255));
+    draw_text(960, 84, "CREDITS");
+
+    draw_set_alpha(0.4);
+    draw_set_color(make_color_rgb(60, 100, 160));
+    draw_rectangle(585, 176, 1335, 179, false);
+    draw_set_alpha(1.0);
+
+    var _cred = [
+        ["MUSIC", [
+            "Sara Garrard - \"Shadows/Infinity: Battle Zone\" & \"Infinity Crystal\"  (sonatina.itch.io)",
+            "Alex Coldfire - \"Viking March\" & \"Rainy Memories\""]],
+        ["SOUND", [
+            "Chequered Ink - 400 Sounds Pack",
+            "TomMusic - Free Fantasy SFX & Ambience"]],
+        ["ICONS & EFFECTS", [
+            "Batareya - ability, trait & item icon packs",
+            "unTied Games - pixel art effects",
+            "CraftPix - potion & mineral icons",
+            "CaptainSkeleto - magic tome icons",
+            "Medieval Weapons Pack - shield icons"]],
+        ["FONTS", [
+            "EB Garamond & Cinzel Decorative - SIL Open Font License"]],
+        ["ART TOOLS", [
+            "Character, item & world art created with PixelLab & MidJourney"]],
+    ];
+
+    var _cy = 214;
+    for (var _cs = 0; _cs < array_length(_cred); _cs++) {
+        draw_set_font(fnt_ui);
+        draw_set_color(make_color_rgb(228, 190, 90));
+        draw_text(960, _cy, _cred[_cs][0]);
+        _cy += 46;
+        var _crows = _cred[_cs][1];
+        for (var _cr = 0; _cr < array_length(_crows); _cr++) {
+            draw_set_font(fnt_ui_small);
+            draw_set_color(make_color_rgb(200, 205, 220));
+            draw_text(960, _cy, _crows[_cr]);
+            _cy += 37;
+        }
+        _cy += 22;
+    }
+
+    draw_set_font(fnt_ui_small);
+    draw_set_color(make_color_rgb(150, 160, 185));
+    draw_text(960, _cy + 6, "Thank you to every creator who shares their work.");
+
+    draw_set_font(-1);
+    ui_draw_gothic_frame(30, 30, 1890, 1050, 30);
+    draw_set_halign(fa_left);
+    draw_set_alpha(1.0);
+}
+
+// ---------------------------------------------------------------------------
 // _cmp_stat_name(st)  - readable display name for an affix stat_type string
 // ---------------------------------------------------------------------------
 function _cmp_stat_name(st) {

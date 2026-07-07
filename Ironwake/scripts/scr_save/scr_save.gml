@@ -40,6 +40,7 @@ function get_slot_preview(slot_num) {
         gold:                 variable_struct_exists(_s, "gold")                 ? _s.gold                 : 0,
         best_floor:           variable_struct_exists(_s, "best_floor")           ? _s.best_floor           : 0,
         dungeon_clears_total: variable_struct_exists(_s, "dungeon_clears_total") ? _s.dungeon_clears_total : 0,
+        ironwake_stands:      variable_struct_exists(_s, "ironwake_stands")      ? _s.ironwake_stands      : false,
     };
 }
 
@@ -194,6 +195,10 @@ function save_game() {
         dungeon_ascendance_unlocked: variable_global_exists("dungeon_ascendance_unlocked") ? global.dungeon_ascendance_unlocked : { ashen_vault: 0, scorched_depths: 0, tundra_tomb: 0 },
         dungeon_clears:              variable_global_exists("dungeon_clears")              ? global.dungeon_clears              : { ashen_vault: 0, scorched_depths: 0, tundra_tomb: 0 },
         dungeon_clears_total:        variable_global_exists("dungeon_clears_total")        ? global.dungeon_clears_total        : 0,
+        // Win state (WIN_STATE_SPEC.md): per-dungeon Awakening-V clears + the ending flags
+        dungeon_a5_clears:           variable_global_exists("dungeon_a5_clears")           ? global.dungeon_a5_clears           : { ashen_vault: false, scorched_depths: false, tundra_tomb: false },
+        ironwake_stands:             variable_global_exists("ironwake_stands")             ? global.ironwake_stands             : false,
+        ending_pending:              variable_global_exists("ending_pending")              ? global.ending_pending              : false,
         total_boss_kills:            variable_global_exists("total_boss_kills")            ? global.total_boss_kills            : 0,
         highest_run_level:           variable_global_exists("highest_run_level")           ? global.highest_run_level           : 1,
         perm_hp_battle_hardened:     variable_global_exists("perm_hp_battle_hardened")     ? global.perm_hp_battle_hardened     : 0,
@@ -364,6 +369,9 @@ function new_game_reset() {
     global.dungeon_ascendance_unlocked = { ashen_vault: 0, scorched_depths: 0, tundra_tomb: 0 };
     global.dungeon_clears              = { ashen_vault: 0, scorched_depths: 0, tundra_tomb: 0 };
     global.dungeon_clears_total        = 0;
+    global.dungeon_a5_clears           = { ashen_vault: false, scorched_depths: false, tundra_tomb: false };
+    global.ironwake_stands             = false;
+    global.ending_pending              = false;
     global.total_boss_kills            = 0;
     global.highest_run_level           = 1;
     global.perm_hp_battle_hardened     = 0;
@@ -694,6 +702,22 @@ function load_game() {
             }
         }
     }
+
+    // Win state (WIN_STATE_SPEC.md) - pre-ending saves default to all-false
+    if (variable_struct_exists(_s, "dungeon_a5_clears") && is_struct(_s.dungeon_a5_clears)) {
+        if (!variable_global_exists("dungeon_a5_clears")) {
+            global.dungeon_a5_clears = { ashen_vault: false, scorched_depths: false, tundra_tomb: false };
+        }
+        var _wkeys = ["ashen_vault", "scorched_depths", "tundra_tomb"];
+        for (var _wi = 0; _wi < array_length(_wkeys); _wi++) {
+            if (variable_struct_exists(_s.dungeon_a5_clears, _wkeys[_wi])) {
+                variable_struct_set(global.dungeon_a5_clears, _wkeys[_wi],
+                    variable_struct_get(_s.dungeon_a5_clears, _wkeys[_wi]));
+            }
+        }
+    }
+    if (variable_struct_exists(_s, "ironwake_stands")) global.ironwake_stands = _s.ironwake_stands;
+    if (variable_struct_exists(_s, "ending_pending"))  global.ending_pending  = _s.ending_pending;
 
     // New progression counters
     if (variable_struct_exists(_s, "dungeon_clears_total"))    global.dungeon_clears_total    = _s.dungeon_clears_total;

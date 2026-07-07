@@ -12,6 +12,26 @@
 //   Escape       - dismiss last-run summary or close history
 // =============================================================================
 
+// ENDING SEQUENCE (WIN_STATE_SPEC.md) - fully modal; any confirm key advances the
+// stage. Stage layout mirrors the Draw block: intro, one per speaker, absence beat
+// (only if someone was betrayed), dawn, epilogue, credits, finale.
+if (ending_active) {
+    if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)
+    ||  keyboard_check_pressed(vk_space)  || keyboard_check_pressed(vk_escape)) {
+        var _end_total = 1 + array_length(ending_speakers)
+                       + ((ending_absent > 0) ? 1 : 0) + 4;   // dawn + epilogue + credits + finale
+        ending_stage++;
+        if (ending_stage >= _end_total) {
+            ending_active = false;
+            global.ending_pending = false;
+            save_game();
+        } else {
+            audio_play_sound(snd_page, 1, false);
+        }
+    }
+    exit;
+}
+
 // Onboarding coach-mark is modal - freeze the hub entirely while one is up. gc owns
 // the dismiss (see SYSTEMS_ONBOARDING.md); here we just block all hub input.
 if (tutorial_is_active()) exit;

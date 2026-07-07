@@ -129,6 +129,32 @@ audio_play_sound(Rainy_Memories, 1, true);
 audio_apply_volumes();   // honor saved Music/SFX volumes for this session's sounds
 ambience_set([snd_amb_rain, snd_amb_torch]);
 
+// -----------------------------------------------------------------------------
+// ENDING SEQUENCE (WIN_STATE_SPEC.md) - armed by end_run when the third
+// Awakening-V dungeon clear lands; plays once, on this hub arrival.
+// Speakers = every NPC at Acquaintance+ who was never betrayed; betrayed
+// keepers are counted for the absence beat instead.
+// -----------------------------------------------------------------------------
+ending_active   = false;
+ending_stage    = 0;
+ending_speakers = [];
+ending_absent   = 0;
+if (variable_global_exists("ending_pending") && global.ending_pending) {
+    affinity_ensure();
+    var _end_ids = affinity_npc_ids();
+    for (var _ei = 0; _ei < array_length(_end_ids); _ei++) {
+        var _ee = affinity_entry(_end_ids[_ei]);
+        if (_ee != undefined && variable_struct_exists(_ee, "betrayed") && _ee.betrayed) {
+            ending_absent++;
+            continue;
+        }
+        var _et = affinity_tier(_end_ids[_ei]);
+        if (_et >= 1) array_push(ending_speakers, { id: _end_ids[_ei], tier: _et });
+    }
+    ending_active = true;
+    audio_play_sound(snd_sting_victory, 1, false);
+}
+
 // NPC portrait animation state
 portrait_prev_npc   = 0;
 portrait_slide_y    = 0.0;

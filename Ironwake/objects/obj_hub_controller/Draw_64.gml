@@ -2485,3 +2485,139 @@ ui_draw_gift_popup();    // gift reaction + bond delta/progress (Phase 4b) - ove
 
 // Onboarding coach-mark - drawn last so it sits on top of the hub (see SYSTEMS_ONBOARDING.md).
 ui_draw_tutorial_tip();
+
+// =============================================================================
+// ENDING SEQUENCE (WIN_STATE_SPEC.md) - drawn over the whole hub. Stage layout
+// mirrors the Step block: intro, speakers, absence (conditional), dawn,
+// epilogue, credits (shared page), finale.
+// =============================================================================
+if (ending_active) {
+    var _en      = array_length(ending_speakers);
+    var _eabs    = (ending_absent > 0) ? 1 : 0;
+    var _st_abs  = 1 + _en;            // meaningful only when _eabs == 1
+    var _st_dawn = 1 + _en + _eabs;
+    var _st_epi  = _st_dawn + 1;
+    var _st_cred = _st_epi + 1;
+
+    draw_set_valign(fa_top);
+
+    if (ending_stage == _st_cred) {
+        ui_draw_credits_page();
+    } else if (ending_stage == _st_dawn) {
+        // Dawn: no dark scrim - the hub itself brightens under a warm wash.
+        draw_set_alpha(0.42);
+        draw_rectangle_color(0, 0, GUI_W, GUI_H,
+            make_color_rgb(255, 196, 120), make_color_rgb(255, 196, 120),
+            make_color_rgb(40, 28, 30),    make_color_rgb(40, 28, 30), false);
+        draw_set_alpha(0.16);
+        draw_set_color(c_white);
+        draw_rectangle(0, 0, GUI_W, GUI_H, false);
+        draw_set_alpha(1.0);
+        draw_set_halign(fa_center);
+        draw_set_font(fnt_ui_title);
+        draw_set_color(make_color_rgb(255, 226, 160));
+        draw_text(960, 330, "DAWN");
+        draw_set_font(fnt_ui);
+        draw_set_color(c_white);
+        draw_text(960, 470, "For the first time in living memory,");
+        draw_text(960, 514, "dawn breaks over Ironwake.");
+    } else {
+        // Dark stage backdrop for every text/portrait beat
+        draw_set_alpha(0.88);
+        draw_set_color(make_color_rgb(6, 7, 12));
+        draw_rectangle(0, 0, GUI_W, GUI_H, false);
+        draw_set_alpha(1.0);
+        draw_set_halign(fa_center);
+
+        if (ending_stage == 0) {
+            draw_set_font(fnt_ui_title);
+            draw_set_color(make_color_rgb(130, 195, 255));
+            draw_text(960, 300, "THE GATE STANDS QUIET");
+            draw_set_font(fnt_ui);
+            draw_set_color(c_white);
+            draw_text(960, 450, "Three dungeons. Five Awakenings each.");
+            draw_text(960, 494, "The keepers of Ironwake have gathered.");
+        } else if (ending_stage >= 1 && ending_stage < 1 + _en) {
+            var _sp = ending_speakers[ending_stage - 1];
+            var _port = -1;
+            switch (_sp.id) {
+                case "dorn":  _port = Blacksmith_1__Dark_Gritty_; break;
+                case "sable": _port = Alcehmist_2__Flirty_;       break;
+                case "maren": _port = Runesmith_3__Facewrap_;     break;
+                case "vex":   _port = Trainer_2__Sullen_;         break;
+                case "petra": _port = Merchant_7__Voluptuous_;    break;
+                case "vael":  _port = Aesthete_2__Gothic_;        break;
+                case "bairc": _port = asset_get_index("spr_npc_bairc_portrait"); break;
+            }
+            if (_port != -1 && sprite_exists(_port)) {
+                ui_draw_sprite_cover(_port, 0, 730, 150, 460, 460, 1.0);
+                ui_draw_gothic_frame(730, 150, 1190, 610, 15);
+            }
+            draw_set_font(fnt_ui);
+            draw_set_color(make_color_rgb(228, 190, 90));
+            draw_text(960, 660, npc_display_name(_sp.id) + "  -  " + affinity_tier_name_for(_sp.tier));
+            draw_set_color(c_white);
+            draw_text_ext(960, 724, ending_farewell_line(_sp.id, _sp.tier), 40, 1240);
+        } else if (_eabs == 1 && ending_stage == _st_abs) {
+            draw_set_font(fnt_ui);
+            draw_set_color(make_color_rgb(170, 150, 170));
+            draw_text(960, 420, "Not every face is here.");
+            draw_text(960, 480, "The town remembers that, too.");
+        } else if (ending_stage == _st_epi) {
+            draw_set_font(fnt_ui_title);
+            draw_set_color(make_color_rgb(228, 190, 90));
+            draw_text(960, 170, "IRONWAKE STANDS");
+            // Deepest bond + companion, both guarded - epilogue never crashes on
+            // a bondless / petless save.
+            var _deep_name = "", _deep_tier = 0;
+            var _eids2 = affinity_npc_ids();
+            for (var _di = 0; _di < array_length(_eids2); _di++) {
+                var _dt = affinity_tier(_eids2[_di]);
+                if (_dt > _deep_tier) { _deep_tier = _dt; _deep_name = npc_display_name(_eids2[_di]); }
+            }
+            var _pet_line = "None hatched";
+            var _ep = pet_active();
+            if (is_struct(_ep) && variable_struct_exists(_ep, "name")) {
+                _pet_line = _ep.name + "  (" + pet_stage_name(_ep.stage) + ")";
+            }
+            var _epi_rows = [
+                ["Runs taken",        string(global.run_count)],
+                ["Full clears",       string(variable_global_exists("dungeon_clears_total") ? global.dungeon_clears_total : 0)],
+                ["Monsters felled",   string(global.total_kills)],
+                ["Deepest bond",      (_deep_tier > 0) ? (_deep_name + "  (" + affinity_tier_name_for(_deep_tier) + ")") : "A town of strangers"],
+                ["Companion",         _pet_line],
+            ];
+            var _ey = 350;
+            for (var _ri = 0; _ri < array_length(_epi_rows); _ri++) {
+                draw_set_font(fnt_ui);
+                draw_set_halign(fa_right);
+                draw_set_color(make_color_rgb(150, 160, 185));
+                draw_text(920, _ey, _epi_rows[_ri][0]);
+                draw_set_halign(fa_left);
+                draw_set_color(c_white);
+                draw_text(1000, _ey, _epi_rows[_ri][1]);
+                _ey += 62;
+            }
+            draw_set_halign(fa_center);
+        } else {
+            // Finale
+            draw_set_font(fnt_ui_title);
+            draw_set_color(make_color_rgb(130, 195, 255));
+            draw_text(960, 330, "THE AWAKENINGS CONTINUE");
+            draw_set_font(fnt_ui);
+            draw_set_color(c_white);
+            draw_text(960, 480, "Ironwake stands. The gate stays open - for you.");
+        }
+
+        ui_draw_gothic_frame(30, 30, 1890, 1050, 30);
+    }
+
+    draw_set_halign(fa_center);
+    draw_set_font(fnt_ui_small);
+    draw_set_color(make_color_rgb(100, 110, 135));
+    ui_draw_key_legend(960, 1002, "Enter: Continue");
+    draw_set_halign(fa_left);
+    draw_set_valign(fa_top);
+    draw_set_alpha(1.0);
+    draw_set_font(-1);
+}
