@@ -8,7 +8,7 @@ if (variable_global_exists("settings_open") && global.settings_open) {
     exit;
 }
 // Open settings with O once past the intro cutscene.
-if (phase != "cutscene" && keyboard_check_pressed(ord("O"))) {
+if (phase != "cutscene" && input_hotkey("O")) {
     audio_settings_init();
     global.settings_open = true;
     exit;
@@ -18,7 +18,7 @@ if (phase == "cutscene") {
     skip_timer++;
 
     // Any key after the grace period skips straight to the title screen
-    if (skip_timer > skip_hold && keyboard_check_pressed(vk_anykey)) {
+    if (skip_timer > skip_hold && input_any()) {
         phase = "title";
         exit;
     }
@@ -77,8 +77,7 @@ if (phase == "cutscene") {
         if (nav_up())   selected = wrap_index(selected - 1, 3);
         if (nav_down()) selected = wrap_index(selected + 1, 3);
 
-        if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)
-        ||  keyboard_check_pressed(vk_space)) {
+        if (input_confirm() || input_confirm_alt()) {
             var _any_save_t = (slot_previews[0] != undefined
                             || slot_previews[1] != undefined
                             || slot_previews[2] != undefined);
@@ -101,14 +100,13 @@ if (phase == "cutscene") {
 
 } else if (phase == "credits") {
     // Asset credits overlay - any dismiss key returns to the title menu.
-    if (keyboard_check_pressed(vk_escape) || keyboard_check_pressed(vk_backspace)
-    ||  keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)) {
+    if (input_cancel() || input_back() || input_confirm()) {
         phase = "title";
     }
 
 } else if (phase == "slot_picker") {
 
-    if (keyboard_check_pressed(vk_escape)) {
+    if (input_cancel()) {
         phase        = "title";
         slot_confirm = false;
         exit;
@@ -118,8 +116,7 @@ if (phase == "cutscene") {
     if (nav_left())  { slot_selected = wrap_index(slot_selected - 1, 3); slot_confirm = false; }
     if (nav_right()) { slot_selected = wrap_index(slot_selected + 1, 3); slot_confirm = false; }
 
-    if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)
-    ||  keyboard_check_pressed(vk_space)) {
+    if (input_confirm() || input_confirm_alt()) {
         var _preview = slot_previews[slot_selected];
 
         if (slot_mode == "load_game") {

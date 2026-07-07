@@ -68,7 +68,7 @@ if (naming_active) {
         keyboard_string = string_copy(keyboard_string, 1, 16);
     }
 
-    if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)) {
+    if (input_confirm()) {
         var _name = string_trim(keyboard_string);
         if (_name == "") _name = "Hero";
         global.player_name  = _name;
@@ -81,7 +81,7 @@ if (naming_active) {
         exit;
     }
 
-    if (keyboard_check_pressed(vk_escape)) {
+    if (input_cancel()) {
         naming_active    = false;
         keyboard_string  = "";
     }
@@ -100,7 +100,7 @@ if (portrait_active) {
     if (nav_left())  selected_portrait = wrap_index(selected_portrait - 1, _portrait_count);
     if (nav_right()) selected_portrait = wrap_index(selected_portrait + 1, _portrait_count);
 
-    if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_space)) {
+    if (input_confirm() || input_confirm_alt()) {
         global.chosen_portrait = selected_portrait;
         save_game();
         confirmed = true;
@@ -132,7 +132,7 @@ if (_class_changed) {
 // 1b. GENDER TOGGLE - Q / E flips the chosen class's combat-sprite gender.
 // Cosmetic only; both options shown on the selected class panel.
 // -----------------------------------------------------------------------------
-if (keyboard_check_pressed(ord("Q")) || keyboard_check_pressed(ord("E"))) {
+if (input_tab_prev() || input_tab_next()) {
     selected_gender = (selected_gender == "m") ? "f" : "m";
 }
 
@@ -149,7 +149,7 @@ if (nav_down()) selected_stat = wrap_index(selected_stat + 1, 6);
 // stats_apply_points handles clamping; we read free_points back from the
 // struct so the display stays in sync with the actual pool.
 // -----------------------------------------------------------------------------
-if (keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_space) || keyboard_check_pressed(ord("Z"))) {
+if (input_confirm() || input_confirm_alt() || input_hotkey("Z")) {
     if (free_points > 0) {
         stats_apply_points(working_stats, _stat_names[selected_stat], 1);
         free_points = working_stats.free_points;
@@ -162,7 +162,7 @@ if (keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_space) || keyb
 // stats_apply_points prevents the stat from dropping below its class preset
 // floor, so no additional guard is needed here.
 // -----------------------------------------------------------------------------
-if (keyboard_check_pressed(ord("X"))) {
+if (input_hotkey("X")) {
     stats_apply_points(working_stats, _stat_names[selected_stat], -1);
     free_points = working_stats.free_points;
 }
@@ -172,7 +172,7 @@ if (keyboard_check_pressed(ord("X"))) {
 // 5. CONFIRM - Space
 // Opens the name-entry overlay instead of immediately going to rm_hub.
 // -----------------------------------------------------------------------------
-if ((keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_space)) && !confirmed && !naming_active) {
+if ((input_confirm() || input_confirm_alt()) && !confirmed && !naming_active) {
     if (free_points == 0) {
         naming_active   = true;
         keyboard_string = "";

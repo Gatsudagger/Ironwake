@@ -58,6 +58,12 @@ function input_detail() {
     return keyboard_check_pressed(vk_tab);
 }
 
+// "Press any key" (cutscene/splash skip). Gamepad backend later maps this to
+// any face button; touch to any tap.
+function input_any() {
+    return keyboard_check_pressed(vk_anykey);
+}
+
 // Screen-local letter hotkeys (T stash, H history, O settings, ...). A single
 // funnel so the gamepad chunk can surface them contextually and the touch
 // backend can render them as buttons straight from the key-legend footers.
