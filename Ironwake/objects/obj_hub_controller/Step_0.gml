@@ -609,14 +609,15 @@ if (show_history) {
 
 
 // -----------------------------------------------------------------------------
-// 0c. ITEM GALLERY OVERLAY - G to toggle, intercepts input while open
+// 0c. ITEM GALLERY OVERLAY - intercepts input while open. G no longer OPENS it
+// from the hub (M 2026-07-06): the Item Codex lives in the Journal now
+// (J -> Item Codex -> Enter). G still closes an open gallery for old muscle
+// memory; Esc works too.
 // -----------------------------------------------------------------------------
 var _loadout_is_open_step = instance_exists(obj_game_controller)
     && instance_find(obj_game_controller, 0).loadout_open;
-if (!_loadout_is_open_step && keyboard_check_pressed(ord("G"))) {
-    show_gallery        = !show_gallery;
-    gallery_scroll      = 0;
-    gallery_cursor      = -1;
+if (!_loadout_is_open_step && keyboard_check_pressed(ord("G")) && show_gallery) {
+    show_gallery        = false;
     gallery_detail_item = undefined;
 }
 

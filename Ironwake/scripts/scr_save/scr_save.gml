@@ -147,6 +147,13 @@ function save_game() {
         board_requests:  (variable_global_exists("board_requests")  && is_array(global.board_requests))   ? global.board_requests  : [],
         board_seq:       variable_global_exists("board_seq")     ? global.board_seq     : 0,
         reforge_chits:   variable_global_exists("reforge_chits") ? global.reforge_chits : 0,
+        // Board v2: special-posting cadence must survive reload (rerolls_used is
+        // board-age-scoped and resets every run end - not worth persisting).
+        board_special_countdown: variable_global_exists("board_special_countdown") ? global.board_special_countdown : 5,
+        // Dice v2: High Table cadence + a standing invitation both survive reload
+        // (an ACTIVE bracket doesn't - quitting mid-tournament forfeits).
+        kb_tourney_countdown: variable_global_exists("kb_tourney_countdown") ? global.kb_tourney_countdown : 5,
+        kb_tourney_ready:     variable_global_exists("kb_tourney_ready")     ? global.kb_tourney_ready     : false,
         // Phase 4b: gifts - owned trinkets, revealed tastes, the one-per-run latch.
         gift_trinkets:    (variable_global_exists("gift_trinkets")    && is_array(global.gift_trinkets))     ? global.gift_trinkets    : [],
         npc_tastes_known: (variable_global_exists("npc_tastes_known") && is_struct(global.npc_tastes_known)) ? global.npc_tastes_known : undefined,
@@ -279,6 +286,11 @@ function new_game_reset() {
     global.board_requests = [];
     global.board_seq      = 0;
     global.reforge_chits  = 0;
+    // Board v2 + dice v2 cadences: fresh clocks, no standing invitation.
+    global.board_special_countdown = 5;
+    global.board_rerolls_used      = 0;
+    global.kb_tourney_countdown    = 5;
+    global.kb_tourney_ready        = false;
     // Phase 4b: gifts - clean slate.
     global.gift_trinkets    = [];
     global.run_trinkets     = [];
@@ -531,6 +543,12 @@ function load_game() {
     global.board_requests = (variable_struct_exists(_s, "board_requests") && is_array(_s.board_requests)) ? _s.board_requests : [];
     global.board_seq      = (variable_struct_exists(_s, "board_seq"))     ? _s.board_seq     : 0;
     global.reforge_chits  = (variable_struct_exists(_s, "reforge_chits")) ? _s.reforge_chits : 0;
+    // Board v2 (older saves -> fresh 5-run cadence); the reroll ladder always loads reset.
+    global.board_special_countdown = (variable_struct_exists(_s, "board_special_countdown")) ? _s.board_special_countdown : 5;
+    global.board_rerolls_used      = 0;
+    // Dice v2: High Table cadence (older saves -> fresh 5-run clock, no invitation).
+    global.kb_tourney_countdown = (variable_struct_exists(_s, "kb_tourney_countdown")) ? _s.kb_tourney_countdown : 5;
+    global.kb_tourney_ready     = (variable_struct_exists(_s, "kb_tourney_ready"))     ? _s.kb_tourney_ready     : false;
     // Phase 4b: gifts (older saves -> empty defaults). run_trinkets is run-scoped: empty.
     global.gift_trinkets    = (variable_struct_exists(_s, "gift_trinkets")    && is_array(_s.gift_trinkets))     ? _s.gift_trinkets    : [];
     global.npc_tastes_known = (variable_struct_exists(_s, "npc_tastes_known") && is_struct(_s.npc_tastes_known)) ? _s.npc_tastes_known : {};

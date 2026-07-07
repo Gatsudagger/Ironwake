@@ -32,6 +32,68 @@ function draw_text_outline(x, y, str, outline_col = c_black, fill_col = undefine
     draw_text(x, y, str);
 }
 
+// ---------------------------------------------------------------------------
+// ui_draw_key_legend(cx, y, txt, label_col)
+// Footer key-legend renderer (M 2026-07-06): draws a centred hint line with
+// the KEY tokens in outlined gold and the labels dim, so the legend reads as
+// quick reference instead of a jumble. Segments split on runs of 2+ spaces;
+// within a segment the key is a leading "[...]" chunk or everything up to the
+// first ":" (parenthesised asides stay all-dim). Sets fnt_ui_small and leaves
+// halign fa_left. Honors the caller's valign.
+// ---------------------------------------------------------------------------
+function ui_draw_key_legend(cx, y, txt, label_col = undefined) {
+    if (label_col == undefined) label_col = make_color_rgb(150, 158, 182);
+    var _key_col = make_color_rgb(255, 205, 90);
+    draw_set_font(fnt_ui_small);
+    draw_set_halign(fa_left);
+
+    // Split into segments on runs of 2+ spaces.
+    var _segs  = [];
+    var _len   = string_length(txt);
+    var _start = 1, _i = 1;
+    while (_i <= _len) {
+        if (string_char_at(txt, _i) == " " && _i < _len && string_char_at(txt, _i + 1) == " ") {
+            if (_i > _start) array_push(_segs, string_copy(txt, _start, _i - _start));
+            while (_i <= _len && string_char_at(txt, _i) == " ") _i++;
+            _start = _i;
+        } else {
+            _i++;
+        }
+    }
+    if (_start <= _len) array_push(_segs, string_copy(txt, _start, _len - _start + 1));
+
+    // Split each segment into key / label; measure for centring.
+    var _parts = [];
+    var _gap   = 34;
+    var _total = 0;
+    for (var _s = 0; _s < array_length(_segs); _s++) {
+        var _seg = _segs[_s];
+        var _key = "", _lab = _seg;
+        if (string_char_at(_seg, 1) == "[") {
+            var _cb = string_pos("]", _seg);
+            if (_cb > 0) { _key = string_copy(_seg, 1, _cb); _lab = string_delete(_seg, 1, _cb); }
+        } else if (string_char_at(_seg, 1) != "(") {
+            var _cp = string_pos(":", _seg);
+            if (_cp > 0 && _cp <= 16) { _key = string_copy(_seg, 1, _cp); _lab = string_delete(_seg, 1, _cp); }
+        }
+        array_push(_parts, { key: _key, lab: _lab });
+        _total += string_width(_key) + string_width(_lab) + ((_s > 0) ? _gap : 0);
+    }
+
+    var _x = cx - _total / 2;
+    for (var _p = 0; _p < array_length(_parts); _p++) {
+        var _pt = _parts[_p];
+        if (_pt.key != "") {
+            draw_set_color(_key_col);
+            draw_text_outline(_x, y, _pt.key);
+            _x += string_width(_pt.key);
+        }
+        draw_set_color(label_col);
+        draw_text(_x, y, _pt.lab);
+        _x += string_width(_pt.lab) + _gap;
+    }
+}
+
 // draw_text_ext_outline(x, y, str, sep, w, [outline_col], [fill_col])
 // Wrapped (draw_text_ext) variant of draw_text_outline - for multi-line flavor /
 // lore text that needs both word-wrap and a legibility outline (e.g. the camp line).
@@ -148,6 +210,36 @@ function ui_str_hash(s) {
         _h = ((_h * 31) + ord(string_char_at(s, _i))) & 0x7fffffff;
     }
     return _h;
+}
+
+// ---------------------------------------------------------------------------
+// ui_sentence(s) - sentence-case a flavor/description fragment for STANDALONE
+// display: capitalize the first letter (skipping leading quotes/spaces) and
+// append a period when the text doesn't already end in punctuation. The
+// authored catalog strings stay lowercase fragments; this normalizes them only
+// at the render sites where they stand alone as their own line. (Sentence-cap
+// copy-edit, deferred 2026-06-30, executed 2026-07-06. Ability descriptions
+// are deliberately NOT routed through this - the 07-05 flavor pass hand-set
+// their formatting.)
+// ---------------------------------------------------------------------------
+function ui_sentence(s) {
+    if (!is_string(s) || s == "") return s;
+    var _len = string_length(s);
+    // First letter: skip leading quote marks and whitespace.
+    var _i = 1;
+    while (_i <= _len) {
+        var _c = string_char_at(s, _i);
+        if (_c != "\"" && _c != "'" && _c != " ") break;
+        _i++;
+    }
+    if (_i <= _len) {
+        s = string_copy(s, 1, _i - 1) + string_upper(string_char_at(s, _i))
+            + string_copy(s, _i + 1, _len - _i);
+    }
+    // Terminal punctuation (closing quotes/parens count as already terminated).
+    var _last = string_char_at(s, string_length(s));
+    if (string_pos(_last, ".!?\"')") == 0) s += ".";
+    return s;
 }
 
 // ---------------------------------------------------------------------------
@@ -408,6 +500,20 @@ function ui_draw_item_icon(x, y, sz, item) {
             case "heartstone_aegis":  _spr = spr_icon_legendary_heartstone_aegis;  break;
             case "crown_hollow_king": _spr = spr_icon_legendary_crown_hollow_king; break;
             case "thief_of_hours":    _spr = spr_icon_legendary_thief_of_hours;    break;
+        }
+    }
+
+    // Named-unique overrides (2026-07-06 icon pass): dedicated art for authored
+    // caster/ranged pieces that the keyword resolvers could only serve generically.
+    // Base name (affix prefixes/suffixes stripped); string-refs live in
+    // global.__sprite_includes so the compiler keeps the sprites.
+    if (_spr == -1) {
+        switch (item_base_name(item)) {
+            case "Void Scepter":      _spr = asset_get_index("spr_icon_unique_void_scepter");      break;
+            case "Stormcaller Staff": _spr = asset_get_index("spr_icon_unique_stormcaller_staff"); break;
+            case "Runed Scepter":     _spr = asset_get_index("spr_icon_unique_runed_scepter");     break;
+            case "Crystal Wand":      _spr = asset_get_index("spr_icon_unique_crystal_wand");      break;
+            case "Vaultwood Bow":     _spr = asset_get_index("spr_icon_unique_vaultwood_bow");     break;
         }
     }
 
@@ -1508,7 +1614,7 @@ function ui_draw_journal() {
     // Footer.
     draw_set_halign(fa_center); draw_set_valign(fa_bottom);
     draw_set_font(fnt_ui_small); draw_set_color(make_color_rgb(150, 160, 190));
-    draw_text((_x1 + _x2) / 2, _y2 - 30, "W/S: Rows     Q/E: Tab     J / Esc: Close");
+    ui_draw_key_legend((_x1 + _x2) / 2, _y2 - 30, "W/S: Rows     Q/E: Tab     J / Esc: Close");
     draw_set_halign(fa_left); draw_set_valign(fa_top);
     draw_set_alpha(1.0); draw_set_color(c_white); draw_set_font(-1);
 }
@@ -1601,8 +1707,16 @@ function ui_draw_tavern_board() {
     draw_set_color(make_color_rgb(230, 210, 160));
     draw_text((_x1 + _x2) / 2, _y1 + 33, "TAVERN REQUESTS");
     draw_set_font(fnt_ui_small);
-    draw_set_color(make_color_rgb(170, 150, 120));
-    draw_text((_x1 + _x2) / 2, _y1 + 87, "Jobs, hunts and favors posted by the townsfolk.");
+    // High Table invitation (dice v2) replaces the subtitle while it stands.
+    kb_tourney_ensure();
+    if (global.kb_tourney_ready) {
+        draw_set_color(make_color_rgb(255, 205, 90));
+        draw_text((_x1 + _x2) / 2, _y1 + 87, "The HIGH TABLE is set - [T] to sit. "
+            + string(kb_tourney_buyin()) + "g buy-in, three seats, one pot.");
+    } else {
+        draw_set_color(make_color_rgb(170, 150, 120));
+        draw_text((_x1 + _x2) / 2, _y1 + 87, "Jobs, hunts and favors posted by the townsfolk.");
+    }
     draw_set_halign(fa_left);
 
     // Board rows = active + available only. Fulfilled requests come off the board
@@ -1630,21 +1744,26 @@ function ui_draw_tavern_board() {
         }
         var _hot = (_i == _cur);
         var _is_board = quest_is_board(_qd);
-        var _is_urgent = _is_board && _qd.urgent;
+        var _is_urgent  = _is_board && _qd.urgent;
+        var _is_special = _is_board && board_is_special(_qd);
         // Pinned-note row: parchment tint, brighter when highlighted; urgent offers
-        // get an ember-red cast so they read as "grab this before it's gone".
-        if (_is_urgent) draw_set_color(_hot ? make_color_rgb(74, 42, 30) : make_color_rgb(56, 30, 22));
-        else            draw_set_color(_hot ? make_color_rgb(62, 50, 34) : make_color_rgb(46, 36, 26));
+        // get an ember-red cast so they read as "grab this before it's gone"; the
+        // rotating SPECIAL posting (v2) gets a gilded cast + wax-gold pin.
+        if      (_is_special) draw_set_color(_hot ? make_color_rgb(72, 58, 22)  : make_color_rgb(54, 44, 18));
+        else if (_is_urgent)  draw_set_color(_hot ? make_color_rgb(74, 42, 30)  : make_color_rgb(56, 30, 22));
+        else                  draw_set_color(_hot ? make_color_rgb(62, 50, 34)  : make_color_rgb(46, 36, 26));
         draw_rectangle(_lx - 12, _qy, _rx + 12, _qy + 96, false);
-        if (_is_urgent) draw_set_color(_hot ? make_color_rgb(235, 120, 80) : make_color_rgb(140, 62, 44));
-        else            draw_set_color(_hot ? make_color_rgb(220, 190, 130) : make_color_rgb(80, 64, 46));
+        if      (_is_special) draw_set_color(_hot ? make_color_rgb(255, 205, 90) : make_color_rgb(170, 130, 50));
+        else if (_is_urgent)  draw_set_color(_hot ? make_color_rgb(235, 120, 80) : make_color_rgb(140, 62, 44));
+        else                  draw_set_color(_hot ? make_color_rgb(220, 190, 130) : make_color_rgb(80, 64, 46));
         draw_rectangle(_lx - 12, _qy, _rx + 12, _qy + 96, true);
         // "Pin"
-        draw_set_color(_is_urgent ? make_color_rgb(235, 80, 55) : make_color_rgb(180, 60, 50));
+        draw_set_color(_is_special ? make_color_rgb(255, 205, 90)
+                     : (_is_urgent ? make_color_rgb(235, 80, 55) : make_color_rgb(180, 60, 50)));
         draw_circle(_lx + 6, _qy + 12, 5, false);
         draw_set_font(fnt_ui);
         draw_set_color(_qs.status == "done" ? make_color_rgb(140, 125, 105) : (_hot ? make_color_rgb(240, 228, 200) : make_color_rgb(205, 190, 165)));
-        draw_text(_lx + 24, _qy + 9, (_is_urgent ? "URGENT: " : "") + _qd.name);
+        draw_text(_lx + 24, _qy + 9, (_is_special ? "SPECIAL: " : (_is_urgent ? "URGENT: " : "")) + _qd.name);
         draw_set_font(fnt_ui_small);
         draw_set_color(make_color_rgb(160, 145, 120));
         var _sub = npc_display_name(_qd.npc) + "   -   " + _qd.objective;
@@ -1680,8 +1799,9 @@ function ui_draw_tavern_board() {
         draw_set_color(make_color_rgb(230, 210, 150));
         draw_text((_x1 + _x2) / 2, _y2 - 72, _gc.tavern_board_note);
     }
-    draw_set_color(make_color_rgb(160, 145, 120));
-    draw_text((_x1 + _x2) / 2, _y2 - 30, "W/S: Browse     Enter: Take / Turn in     K: Knucklebones     Esc: Leave     (fulfilled: Journal, J)");
+    ui_draw_key_legend((_x1 + _x2) / 2, _y2 - 30, "W/S: Browse    Enter: Take / Turn in    R: Reroll ("
+        + string(board_reroll_cost()) + "g)    K: Knucklebones    T: High Table    Esc: Leave    (done: Journal, J)",
+        make_color_rgb(160, 145, 120));
     draw_set_halign(fa_left); draw_set_valign(fa_top);
     draw_set_alpha(1.0); draw_set_color(c_white); draw_set_font(-1);
 }
@@ -1708,11 +1828,24 @@ function ui_draw_knucklebones() {
 
     draw_set_halign(fa_center); draw_set_valign(fa_top);
     draw_set_font(fnt_ui_title);
-    draw_set_color(make_color_rgb(230, 210, 160));
-    draw_text(GUI_CX, _y0 + 21, "KNUCKLEBONES");
-    draw_set_font(fnt_ui_small);
-    draw_set_color(make_color_rgb(170, 150, 120));
-    draw_text(GUI_CX, _y0 + 78, npc_display_name(_g.foe) + " sits across from you.   " + kb_foe_line(_g.foe));
+    // High Table bracket (dice v2): gild the title and show the match count.
+    var _kb_ht = variable_instance_exists(_gc, "kb_tourney") ? _gc.kb_tourney : undefined;
+    if (_kb_ht != undefined) {
+        draw_set_color(make_color_rgb(255, 205, 90));
+        draw_text(GUI_CX, _y0 + 21, "THE HIGH TABLE");
+        draw_set_font(fnt_ui_small);
+        draw_set_color(make_color_rgb(220, 185, 110));
+        draw_text(GUI_CX, _y0 + 66, "Match " + string(_kb_ht.stage + 1) + " of 3   -   pot: "
+            + string(kb_tourney_pot()) + "g + a curiosity");
+        draw_set_color(make_color_rgb(170, 150, 120));
+        draw_text(GUI_CX, _y0 + 96, npc_display_name(_g.foe) + " sits across from you.   " + kb_foe_line(_g.foe));
+    } else {
+        draw_set_color(make_color_rgb(230, 210, 160));
+        draw_text(GUI_CX, _y0 + 21, "KNUCKLEBONES");
+        draw_set_font(fnt_ui_small);
+        draw_set_color(make_color_rgb(170, 150, 120));
+        draw_text(GUI_CX, _y0 + 78, npc_display_name(_g.foe) + " sits across from you.   " + kb_foe_line(_g.foe));
+    }
 
     // --- Stake phase: pick the wager ---
     if (_g.phase == "stake") {
@@ -1727,7 +1860,9 @@ function ui_draw_knucklebones() {
         draw_text(GUI_CX, 570, "Winner takes double. Equal dice in a column multiply; matching their column smashes their dice.");
         if (_g.msg != "") { draw_set_color(make_color_rgb(220, 140, 120)); draw_text(GUI_CX, 630, _g.msg); }
         draw_set_color(make_color_rgb(150, 140, 120));
-        draw_text(GUI_CX, _y1 - 60, "A/D: Stake     Enter: Sit down     H: Rules     Esc: Not tonight");
+        ui_draw_key_legend(GUI_CX, _y1 - 60, "A/D: Stake     Enter: Sit down     H: Rules     Esc: Not tonight",
+            make_color_rgb(150, 140, 120));
+        draw_set_halign(fa_center);
         draw_set_halign(fa_left); draw_set_valign(fa_top); draw_set_font(-1);
         ui_draw_knucklebones_rules(_g);
         return;
@@ -1817,9 +1952,13 @@ function ui_draw_knucklebones() {
         draw_set_color(make_color_rgb(160, 150, 130));
         draw_text(_dx + 33, _dy + 75, _g.my_turn ? "your die" : "their die");
         draw_set_color(make_color_rgb(150, 140, 120));
-        draw_text(GUI_CX, _y1 - 60, _g.my_turn
-            ? "A/D: Column     Enter: Place     H: Rules     Esc: Concede"
-            : (npc_display_name(_g.foe) + " considers..."));
+        if (_g.my_turn) {
+            ui_draw_key_legend(GUI_CX, _y1 - 60, "A/D: Column     Enter: Place     H: Rules     Esc: Concede",
+                make_color_rgb(150, 140, 120));
+            draw_set_halign(fa_center);
+        } else {
+            draw_text(GUI_CX, _y1 - 60, npc_display_name(_g.foe) + " considers...");
+        }
     } else {   // over
         draw_set_font(fnt_ui);
         var _col_res = (_g.result == "win") ? make_color_rgb(150, 230, 150)
@@ -1878,7 +2017,8 @@ function ui_draw_knucklebones_rules(_g) {
     draw_set_halign(fa_center);
     draw_set_font(fnt_ui_small);
     draw_set_color(make_color_rgb(150, 140, 120));
-    draw_text(GUI_CX, _hy1 - 51, "H / Enter / Esc: Back to the table");
+    ui_draw_key_legend(GUI_CX, _hy1 - 51, "H / Enter / Esc: Back to the table");
+    draw_set_halign(fa_center);
     draw_set_halign(fa_left); draw_set_valign(fa_top);
     draw_set_color(c_white); draw_set_font(-1);
 }
@@ -2368,7 +2508,7 @@ function ui_draw_bairc_screen() {
         if (pet_capstone_can_pick(_p)) {
             draw_set_font(fnt_ui);
             draw_set_color(make_color_rgb(235, 205, 120));
-            draw_text(_dx, _after, "[G] Choose its Gift  -  ready to pick a capstone");
+            draw_text(_dx, _after, "[G] Choose its Capstone  -  a permanent gift awaits");
             _after += 44;
         } else if (pet_splash_can_pick(_p)) {
             draw_set_font(fnt_ui);
@@ -2469,7 +2609,19 @@ function ui_draw_bairc_screen() {
     draw_set_halign(fa_center);
     draw_set_font(fnt_ui_small);
     draw_set_color(make_color_rgb(150, 160, 190));
-    draw_text((_x1 + 1500) / 2, _y2 - 42, "[W/S] Browse  [1-6] Feed  [G] Its Gift  [F] Gift Bairc  [N] Name  [C] Cure  [R] Donate  [Tab] Details  [Enter] Hatch/Active  [Esc] Leave");
+    // [G] only appears when the selected pet actually owes a pick, with the exact
+    // word for it - keeps the footer short (it was crowding the panel) and clear
+    // (the old always-on "[G] Its Gift" read as nonsense out of context).
+    var _bfoot = "[W/S] Browse  [1-6] Feed";
+    if (_n > 0) {
+        var _fp = _roster[_cur];
+        if (is_struct(_fp) && !_fp.is_egg) {
+            if (variable_struct_exists(_fp, "capstone_pending") && _fp.capstone_pending)   _bfoot += "  [G] Capstone";
+            else if (variable_struct_exists(_fp, "splash_pending") && _fp.splash_pending)  _bfoot += "  [G] Splash";
+        }
+    }
+    _bfoot += "  [F] Gift Bairc  [N] Name  [C] Cure  [R] Donate  [Tab] Details  [Enter] Hatch/Active  [Esc] Leave";
+    ui_draw_key_legend((_x1 + 1500) / 2, _y2 - 42, _bfoot);
     draw_set_halign(fa_left); draw_set_valign(fa_top);
     draw_set_color(c_white);
     draw_set_font(-1);
@@ -3370,6 +3522,7 @@ function ui_draw_item_tooltip(ttx, tty, item, compared_item) {
         _flavor = item.effect_desc;
     else if (variable_struct_exists(item, "description"))
         _flavor = item.description;
+    _flavor = ui_sentence(_flavor);   // authored fragments stand alone here
 
     var _has_unique  = variable_struct_exists(item, "unique_desc")  && item.unique_desc  != "";
     var _has_compare = (compared_item != undefined);
@@ -4990,7 +5143,7 @@ function ui_draw_settings_overlay() {
     draw_set_halign(fa_center);
     draw_set_font(fnt_ui_small);
     draw_set_color(make_color_rgb(150, 160, 185));
-    draw_text_outline(GUI_CX, _py + _ph - 42, "W/S: Select    A/D or <-/->: Adjust / Toggle / Enter    Esc/O: Close");
+    ui_draw_key_legend(GUI_CX, _py + _ph - 42, "W/S: Select    A/D or <-/->: Adjust / Toggle / Enter    Esc/O: Close");
 
     draw_set_halign(fa_left);
     draw_set_valign(fa_top);
@@ -6545,11 +6698,11 @@ function ui_draw_character_menu() {
         draw_set_font(fnt_ui_small);
         draw_set_color(make_color_rgb(80, 90, 110));
         if (_gc.equip_picker_open) {
-            draw_text_outline(960, 1035, "W/S: Navigate   Enter: Equip   Esc: Cancel");
+            ui_draw_key_legend(960, 1035, "W/S: Navigate   Enter: Equip   Esc: Cancel");
         } else if (_ff) {
-            draw_text_outline(960, 1035, "W/S: Browse Pack   Enter: Equip   A/<-: Back to Slots   Click 'Sort' to reorder");
+            ui_draw_key_legend(960, 1035, "W/S: Browse Pack   Enter: Equip   A/<-: Back to Slots   (click 'Sort' to reorder)");
         } else {
-            draw_text_outline(960, 1035, "W/S: Slots   Enter: Equip   U: Unequip   D/->: Browse Found Items");
+            ui_draw_key_legend(960, 1035, "W/S: Slots   Enter: Equip   U: Unequip   D/->: Browse Found Items");
         }
         draw_set_halign(fa_left);
 
@@ -6869,7 +7022,7 @@ function ui_draw_character_menu() {
         draw_set_halign(fa_center);
         draw_set_font(fnt_ui_small);
         draw_set_color(make_color_rgb(80, 90, 110));
-        draw_text_outline(960, 1035, "W/S: Browse Abilities    Q/E: Switch Tab    I / Esc: Close");
+        ui_draw_key_legend(960, 1035, "W/S: Browse Abilities    Q/E: Switch Tab    I / Esc: Close");
         draw_set_halign(fa_left);
     } else if (menu_tab == 2) {
         draw_set_font(fnt_ui);
@@ -7076,13 +7229,13 @@ function ui_draw_character_menu() {
     if (menu_tab == 0) {
         draw_set_halign(fa_center);
         draw_set_color(make_color_rgb(80, 90, 110));
-        draw_text_outline(960, 1035, "Q/E: Switch Tab   I / Esc: Close");
+        ui_draw_key_legend(960, 1035, "Q/E: Switch Tab   I / Esc: Close");
         draw_set_halign(fa_left);
     }
     if (menu_tab == 4) {
         draw_set_halign(fa_center);
         draw_set_color(make_color_rgb(80, 90, 110));
-        draw_text_outline(960, 1035, "W/S: Browse Sections   Q/E: Switch Tab   I / Esc: Close");
+        ui_draw_key_legend(960, 1035, "W/S: Browse Sections   Q/E: Switch Tab   I / Esc: Close");
         draw_set_halign(fa_left);
     }
     if (menu_tab == 3) {
@@ -7090,17 +7243,17 @@ function ui_draw_character_menu() {
         if (_gc.consumable_submenu_open && array_length(global.consumable_inventory) > 0) {
             if (_no_ap) {
                 draw_set_color(make_color_rgb(200, 80, 80));
-                draw_text_outline(960, 1035, "W/S: Navigate   Need 1 AP to use   Esc: Cancel");
+                ui_draw_key_legend(960, 1035, "W/S: Navigate   Need 1 AP to use   Esc: Cancel");
             } else if (_limit_reached) {
                 draw_set_color(make_color_rgb(200, 80, 80));
-                draw_text_outline(960, 1035, "W/S: Navigate   1 per turn limit   Esc: Cancel");
+                ui_draw_key_legend(960, 1035, "W/S: Navigate   1 per turn limit   Esc: Cancel");
             } else {
                 draw_set_color(make_color_rgb(80, 90, 110));
-                draw_text_outline(960, 1035, "W/S: Navigate   Enter: Use [-1 AP]   Esc: Cancel");
+                ui_draw_key_legend(960, 1035, "W/S: Navigate   Enter: Use [-1 AP]   Esc: Cancel");
             }
         } else {
             draw_set_color(make_color_rgb(100, 200, 100));
-            draw_text_outline(960, 1035, "Enter: Browse Items   Q/E: Switch Tab   I: Close");
+            ui_draw_key_legend(960, 1035, "Enter: Browse Items   Q/E: Switch Tab   I: Close");
         }
         draw_set_halign(fa_left);
     }
@@ -7439,12 +7592,12 @@ function ui_draw_shop_screen() {
                         draw_text(_sell_tx, _ry + 75, _it.unique_desc);
                     } else if (_it.effect_desc != "") {
                         draw_set_color(make_color_rgb(95, 105, 130));
-                        draw_text(_sell_tx, _ry + 75, _it.effect_desc);
+                        draw_text(_sell_tx, _ry + 75, ui_sentence(_it.effect_desc));
                     }
                 } else {
                     var _cdesc = variable_struct_exists(_it, "description") ? _it.description : "";
                     draw_set_color(make_color_rgb(130, 140, 155));
-                    draw_text(_sell_tx, _ry + 45, _cdesc);
+                    draw_text(_sell_tx, _ry + 45, ui_sentence(_cdesc));
                 }
                 // Right side: source tag + sell price + class restriction if any
                 draw_set_halign(fa_right);
@@ -7489,9 +7642,9 @@ function ui_draw_shop_screen() {
         draw_set_font(fnt_ui_small);
         draw_set_color(make_color_rgb(75, 85, 105));
         if (_gc.sell_confirm_name != "") {
-            draw_text(960, 1026, "SPACE to confirm   ESC to cancel");
+            ui_draw_key_legend(960, 1026, "Space: Confirm   Esc: Cancel");
         } else {
-            draw_text_outline(960, 1026, "W/S: Navigate   Q/E: Buy/Sell   Enter: Sell   Esc: Close");
+            ui_draw_key_legend(960, 1026, "W/S: Navigate   Q/E: Buy/Sell   Enter: Sell   Esc: Close");
         }
         draw_set_halign(fa_left);
         draw_set_valign(fa_top);
@@ -7544,7 +7697,7 @@ function ui_draw_shop_screen() {
 
             draw_set_font(fnt_ui_small);
             draw_set_color(make_color_rgb(160, 140, 180));
-            draw_text_outline(960, 1026, _ready
+            ui_draw_key_legend(960, 1026, _ready
                 ? "Enter: Collect    Q/E: Switch Tab    Esc: Close"
                 : "C: Cancel order    Q/E: Switch Tab    Esc: Close");
             draw_set_halign(fa_left);
@@ -7559,11 +7712,16 @@ function ui_draw_shop_screen() {
                 if (is_struct(_f0) && variable_struct_exists(_f0, "rarity")) _sel_rar = _f0.rarity;
             }
 
-            // Instruction
-            draw_set_halign(fa_center);
-            draw_set_font(fnt_ui_small);
-            draw_set_color(make_color_rgb(150, 130, 170));
-            draw_text(960, 162, "Choose 3 items of the SAME tier to trade up - their affixes are destroyed.");
+            // Instruction - yields its line while a notification is showing (the
+            // "Collected: ..." message draws at y156 and was overlapping this).
+            if (_gc.shop_notification == "") {
+                draw_set_halign(fa_center);
+                draw_set_font(fnt_ui_small);
+                draw_set_color(make_color_rgb(150, 130, 170));
+                draw_text(960, 162, "Choose 3 items of the SAME tier to trade up - their affixes are destroyed.");
+            } else {
+                draw_set_halign(fa_center);
+            }
 
             // Chosen summary + output preview
             draw_set_font(fnt_ui);
@@ -7643,7 +7801,7 @@ function ui_draw_shop_screen() {
             draw_set_color(_gc.petra_trade_lever ? make_color_rgb(120, 200, 220) : make_color_rgb(110, 105, 125));
             draw_text(960, 1002, _gc.petra_trade_lever ? "[Tab] Roll-bias: ON (spends dust for better odds)" : "[Tab] Roll-bias: off");
             draw_set_color(make_color_rgb(160, 140, 180));
-            draw_text_outline(960, 1032, "W/S: Move    Enter: Select    Tab: Roll-bias    Space: Place    Q/E: Tab    Esc: Close");
+            ui_draw_key_legend(960, 1032, "W/S: Move    Enter: Select    Tab: Roll-bias    Space: Place    Q/E: Tab    Esc: Close");
             draw_set_halign(fa_left);
         }
 
@@ -7732,7 +7890,7 @@ function ui_draw_shop_screen() {
             // Description / blurb
             draw_set_font(fnt_ui_small);
             draw_set_color(make_color_rgb(130, 160, 170));
-            draw_text(_rx0 + 90, _ry + 49, _is_feed ? _it.blurb : _it.description);
+            draw_text(_rx0 + 90, _ry + 49, ui_sentence(_is_feed ? _it.blurb : _it.description));
 
             draw_set_halign(fa_right);
             if (_is_feed) {
@@ -7861,7 +8019,7 @@ function ui_draw_shop_screen() {
         draw_text_outline(960, 993, "R: Rework an item's affixes   (Reforge Chits: " + string(global.reforge_chits) + ")");
     }
     draw_set_color(make_color_rgb(75, 85, 105));
-    draw_text_outline(960, 1026, "W/S: Navigate   Q/E: Buy/Sell   Enter: Buy   F: Gift   Esc: Close     Purchases go to your stash.");
+    ui_draw_key_legend(960, 1026, "W/S: Navigate   Q/E: Buy/Sell   Enter: Buy   F: Gift   Esc: Close     (purchases go to your stash)");
     draw_set_halign(fa_left);
     draw_set_valign(fa_top);
     draw_set_alpha(1.0);
@@ -7947,7 +8105,7 @@ function ui_draw_consumable_overflow() {
     draw_set_halign(fa_center);
     draw_set_font(fnt_ui_small);
     draw_set_color(c_gray);
-    draw_text(_px + _pw / 2, _py + _ph - 40, "W/S: Navigate    Enter: Confirm");
+    ui_draw_key_legend(_px + _pw / 2, _py + _ph - 40, "W/S: Navigate    Enter: Confirm");
 
     draw_set_halign(fa_left);
     draw_set_valign(fa_top);
@@ -8146,7 +8304,7 @@ function ui_draw_stash_screen() {
     draw_set_halign(fa_center);
     draw_set_font(fnt_ui_small);
     draw_set_color(c_gray);
-    draw_text_outline(960, 1026, "Q/E: Switch Side   W/S: Navigate   Enter: Move Item   Esc: Close");
+    ui_draw_key_legend(960, 1026, "Q/E: Switch Side   W/S: Navigate   Enter: Move Item   Esc: Close");
     draw_set_halign(fa_left);
     draw_set_valign(fa_top);
 
@@ -8785,7 +8943,7 @@ function ui_draw_trainer_screen() {
     draw_set_halign(fa_center);
     draw_set_font(fnt_ui_small);
     draw_set_color(make_color_rgb(70, 75, 100));
-    draw_text_outline(960, 1026, "W/S: Navigate    Q/E: Section    Enter: Buy / Select    Tab: Examine    F: Gift    Esc: Close");
+    ui_draw_key_legend(960, 1026, "W/S: Navigate    Q/E: Section    Enter: Buy / Select    Tab: Examine    F: Gift    Esc: Close");
     draw_set_halign(fa_left);
 
     // Ornate gothic rim around the whole overlay (matches the other NPC shops).
@@ -8912,11 +9070,11 @@ function ui_draw_trainer_statpick() {
         draw_set_font(fnt_ui_small); draw_set_color(c_white);
         draw_text_ext(_px + _pw / 2, _py + _ph - 96, "Sacrifice these " + string(vex_potency_points()) + " points permanently? Cannot be undone.", -1, _pw - 60);
         draw_set_color(c_ltgray);
-        draw_text_outline(_px + _pw / 2, _py + _ph - 36, "Enter: confirm     Esc: back");
+        ui_draw_key_legend(_px + _pw / 2, _py + _ph - 36, "Enter: Confirm     Esc: Back");
     } else {
         draw_set_halign(fa_center);
         draw_set_font(fnt_ui_small); draw_set_color(c_ltgray);
-        draw_text_ext(_px + _pw / 2, _py + _ph - 45, "W/S: Stat    A/D or -/+: Adjust    Enter: Confirm    Esc: Cancel", -1, _pw - 48);
+        ui_draw_key_legend(_px + _pw / 2, _py + _ph - 45, "W/S: Stat    A/D or -/+: Adjust    Enter: Confirm    Esc: Cancel");
     }
 
     draw_set_halign(fa_left); draw_set_valign(fa_top);
@@ -9350,7 +9508,7 @@ function ui_draw_maren_screen() {
     draw_set_halign(fa_center);
     draw_set_font(fnt_ui_small);
     draw_set_color(make_color_rgb(70, 70, 95));
-    draw_text_outline(960, 1026, "W/S: Navigate    Q/E: Tab    Enter: Select    F: Gift    Esc: Back / Close");
+    ui_draw_key_legend(960, 1026, "W/S: Navigate    Q/E: Tab    Enter: Select    F: Gift    Esc: Back / Close");
     draw_set_halign(fa_left);
 
     // Ornate gothic rim around the whole overlay. Opening (30,30)-(1890,1050) keeps the
@@ -9393,7 +9551,7 @@ function ui_draw_maren_screen() {
 
         draw_set_font(fnt_ui_small);
         draw_set_color(c_ltgray);
-        draw_text(GUI_CX, _cby1 - 48, "Enter: Confirm        Esc: Cancel");
+        ui_draw_key_legend(GUI_CX, _cby1 - 48, "Enter: Confirm        Esc: Cancel");
         draw_set_halign(fa_left);
         draw_set_valign(fa_top);
     }
@@ -9640,7 +9798,7 @@ function ui_draw_sable_screen() {
     draw_set_halign(fa_center);
     draw_set_font(fnt_ui_small);
     draw_set_color(make_color_rgb(70, 95, 78));
-    draw_text_outline(960, 1026, "W/S: Navigate    Q/E: Tab    Enter: Select    F: Gift    Esc: Back / Close");
+    ui_draw_key_legend(960, 1026, "W/S: Navigate    Q/E: Tab    Enter: Select    F: Gift    Esc: Back / Close");
     draw_set_halign(fa_left);
 
     // Ornate gothic rim around the whole overlay (see Maren screen for geometry notes).
@@ -9686,16 +9844,19 @@ function ui_draw_vael_screen() {
     var _vtab = variable_instance_exists(_gc, "vael_tab") ? _gc.vael_tab : 0;
     var _vtab_names = ["Skins", "Portrait", "Tints"];
     draw_set_font(fnt_ui);
+    // Tab group centred on x960 (matching the centred title above) and dropped to
+    // y96 so the title's descenders clear the tab tops (M 2026-07-06: the group
+    // sat centred on 1080 and its top row touched "Vael the Aesthete").
     for (var _vt = 0; _vt < 3; _vt++) {
-        var _vtx   = 840 + _vt * 240;
+        var _vtx   = 960 + (_vt - 1) * 240;
         var _vt_on = (_vt == _vtab);
         draw_set_color(_vt_on ? make_color_rgb(60, 46, 86) : make_color_rgb(26, 22, 34));
-        draw_rectangle(_vtx - 108, 87, _vtx + 108, 135, false);
+        draw_rectangle(_vtx - 108, 96, _vtx + 108, 144, false);
         draw_set_color(_vt_on ? make_color_rgb(160, 120, 230) : make_color_rgb(60, 54, 78));
-        draw_rectangle(_vtx - 108, 87, _vtx + 108, 135, true);
+        draw_rectangle(_vtx - 108, 96, _vtx + 108, 144, true);
         draw_set_halign(fa_center);
         draw_set_color(_vt_on ? c_white : make_color_rgb(150, 140, 165));
-        draw_text(_vtx, 99, _vtab_names[_vt]);
+        draw_text(_vtx, 108, _vtab_names[_vt]);
         draw_set_halign(fa_left);
     }
 
@@ -9872,7 +10033,7 @@ function ui_draw_vael_screen() {
     draw_set_halign(fa_center);
     draw_set_font(fnt_ui_small);
     draw_set_color(make_color_rgb(90, 75, 100));
-    draw_text_outline(960, 1026, "W/S: Navigate    Enter: Buy / Wear    Q/E: Switch tab    F: Gift    Esc: Close");
+    ui_draw_key_legend(960, 1026, "W/S: Navigate    Enter: Buy / Wear    Q/E: Switch tab    F: Gift    Esc: Close");
     draw_set_halign(fa_left);
 
     // Ornate gothic rim around the whole overlay (see Maren screen for geometry notes).
@@ -10015,7 +10176,7 @@ function ui_draw_vael_tints_tab(_gc) {
     draw_set_halign(fa_center);
     draw_set_font(fnt_ui_small);
     draw_set_color(make_color_rgb(90, 75, 100));
-    draw_text_outline(960, 1026, "W/S: Navigate    Enter: Buy / Equip / Revert    Q/E: Switch tab    F: Gift    Esc: Close");
+    ui_draw_key_legend(960, 1026, "W/S: Navigate    Enter: Buy / Equip / Revert    Q/E: Switch tab    F: Gift    Esc: Close");
     draw_set_halign(fa_left);
 
     ui_draw_gothic_frame(30, 30, 1890, 1050, 30);
@@ -10090,7 +10251,7 @@ function ui_draw_vael_portrait_tab(_gc) {
     // Controls (raised to clear the bottom rim band)
     draw_set_font(fnt_ui_small);
     draw_set_color(make_color_rgb(90, 75, 100));
-    draw_text_outline(960, 1026, "A/D: Browse    Q/E: Switch tab    Enter: Set (100g)    Esc: Close");
+    ui_draw_key_legend(960, 1026, "A/D: Browse    Q/E: Switch tab    Enter: Set (100g)    Esc: Close");
     draw_set_halign(fa_left);
 
     // Ornate gothic rim around the whole overlay (matches the skins tab + Maren/Sable).
@@ -10211,20 +10372,36 @@ function ui_draw_item_picker() {
     if (_cur.source >= 10) {
         var _gdy = _py + 129;
         draw_set_halign(fa_left); draw_set_valign(fa_top);
+        // Trinket icon badge (2026-07-06 icon pass): resolved by catalog id, gold
+        // border to match the signature-gift text. Label shifts right beside it.
+        var _tk_x = _dx;
+        if (_cur.source == 13 && is_struct(_cur.item) && variable_struct_exists(_cur.item, "id")) {
+            var _tk_spr = asset_get_index("spr_icon_trinket_" + _cur.item.id);
+            if (_tk_spr >= 0) {
+                draw_set_color(make_color_rgb(20, 18, 12));
+                draw_rectangle(_dx, _gdy, _dx + 96, _gdy + 96, false);
+                var _tk_sc = 96 / max(1, sprite_get_width(_tk_spr));
+                draw_sprite_ext(_tk_spr, 0, _dx, _gdy, _tk_sc, _tk_sc, 0, c_white, 1.0);
+                draw_set_color(make_color_rgb(255, 200, 80));
+                draw_rectangle(_dx, _gdy, _dx + 96, _gdy + 96, true);
+                _tk_x = _dx + 114;
+            }
+        }
         draw_set_font(fnt_ui);
         draw_set_color(_cur.source == 13 ? make_color_rgb(255, 200, 80) : c_white);
-        draw_text_ext(_dx, _gdy, _cur.label, -1, _dr - _dx);
-        _gdy += string_height_ext(_cur.label, -1, _dr - _dx) + 15;
+        draw_text_ext(_tk_x, _gdy, _cur.label, -1, _dr - _tk_x);
+        _gdy += max(string_height_ext(_cur.label, -1, _dr - _tk_x), (_tk_x > _dx) ? 96 : 0) + 15;
         draw_set_font(fnt_ui_small);
         if (_cur.source == 13) {
             draw_set_color(make_color_rgb(200, 180, 140));
-            draw_text_ext(_dx, _gdy, _cur.item.flavor + ".", 27, _dr - _dx);
-            _gdy += string_height_ext(_cur.item.flavor + ".", 27, _dr - _dx) + 15;
+            var _tk_flav = ui_sentence(_cur.item.flavor);
+            draw_text_ext(_dx, _gdy, _tk_flav, 27, _dr - _dx);
+            _gdy += string_height_ext(_tk_flav, 27, _dr - _dx) + 15;
             draw_set_color(make_color_rgb(150, 160, 185));
             draw_text_ext(_dx, _gdy, "A signature gift - someone in town would treasure this.", 27, _dr - _dx);
         } else if (is_struct(_it) && variable_struct_exists(_it, "desc")) {
             draw_set_color(make_color_rgb(170, 176, 195));
-            draw_text_ext(_dx, _gdy, _it.desc, 27, _dr - _dx);
+            draw_text_ext(_dx, _gdy, ui_sentence(_it.desc), 27, _dr - _dx);
         }
     } else if (is_struct(_it)) {
         var _rar  = variable_struct_exists(_it, "rarity") ? _it.rarity : 0;
@@ -10307,11 +10484,11 @@ function ui_draw_item_picker() {
         draw_text(_px + _pw / 2, _cby0 + 14,
             item_picker_verb() + " " + _cur.label + "? This cannot be undone.");
         draw_set_color(c_ltgray);
-        draw_text_outline(_px + _pw / 2, _py + _ph - 36, "Enter: confirm     Esc: back");
+        ui_draw_key_legend(_px + _pw / 2, _py + _ph - 36, "Enter: Confirm     Esc: Back");
     } else {
         draw_set_halign(fa_center);
         draw_set_font(fnt_ui_small); draw_set_color(c_ltgray);
-        draw_text_outline(_px + _pw / 2, _py + _ph - 36, "W/S: Select     Enter: choose     Esc: cancel");
+        ui_draw_key_legend(_px + _pw / 2, _py + _ph - 36, "W/S: Select     Enter: Choose     Esc: Cancel");
     }
 
     draw_set_halign(fa_left); draw_set_valign(fa_top);

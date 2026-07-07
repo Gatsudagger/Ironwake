@@ -120,7 +120,45 @@ if (variable_instance_exists(id, "kb_open") && kb_open) {
 
     if (_g.phase == "over") {
         if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)
-            || keyboard_check_pressed(vk_escape)) { kb_open = false; }
+            || keyboard_check_pressed(vk_escape)) {
+            if (kb_tourney != undefined) {
+                // HIGH TABLE bracket flow (dice v2): win advances, tie replays the
+                // same seat, anything else forfeits the buy-in.
+                if (_g.result == "win") {
+                    kb_tourney.stage += 1;
+                    if (kb_tourney.stage >= 3) {
+                        // Champion: the pot plus a curiosity, straight to the pouch.
+                        global.gold += kb_tourney_pot();
+                        var _ht_prize = kb_tourney_prize_roll();
+                        tavern_board_note = "HIGH TABLE CHAMPION! You sweep the "
+                            + string(kb_tourney_pot()) + "g pot and claim " + _ht_prize + ".";
+                        kb_tourney = undefined;
+                        kb_open = false;
+                        save_game();
+                    } else {
+                        var _ht_next = kb_tourney.opponents[kb_tourney.stage];
+                        kb = kb_new_game(_ht_next);
+                        kb.phase = "play";   // buy-in already paid - no per-match stake
+                        kb.stake = 0;
+                        kb.msg   = "Match " + string(kb_tourney.stage + 1) + " of 3 - "
+                            + npc_display_name(_ht_next) + " takes the seat.";
+                    }
+                } else if (_g.result == "tie") {
+                    var _ht_same = kb_tourney.opponents[kb_tourney.stage];
+                    kb = kb_new_game(_ht_same);
+                    kb.phase = "play";
+                    kb.stake = 0;
+                    kb.msg   = "Dead even - " + npc_display_name(_ht_same) + " racks the dice again.";
+                } else {
+                    tavern_board_note = "The High Table keeps your " + string(kb_tourney_buyin())
+                        + "g. The invitation won't come again for a while.";
+                    kb_tourney = undefined;
+                    kb_open = false;
+                }
+            } else {
+                kb_open = false;
+            }
+        }
         exit;
     }
 
@@ -205,12 +243,43 @@ if (tavern_board_open) {
         }
         exit;
     }
+    // HIGH TABLE tournament (dice v2): [T] when the invitation stands. 100g buy-in,
+    // three opponents back-to-back, winner takes the pot. Sitting down consumes the
+    // invitation - the 5-run clock is already re-armed (kb_tourney_run_end).
+    if (keyboard_check_pressed(ord("T"))) {
+        kb_tourney_ensure();
+        if (!global.kb_tourney_ready) {
+            tavern_board_note = "The High Table isn't set tonight. (every 5th run - "
+                + string(global.kb_tourney_countdown) + " to go)";
+        } else if (global.gold < kb_tourney_buyin()) {
+            tavern_board_note = "The High Table wants a " + string(kb_tourney_buyin()) + "g buy-in.";
+        } else {
+            global.gold -= kb_tourney_buyin();
+            global.kb_tourney_ready = false;
+            kb_tourney = { stage: 0, opponents: kb_tourney_roll_opponents() };
+            kb_open = true;
+            kb = kb_new_game(kb_tourney.opponents[0]);
+            kb.phase = "play";   // buy-in covers the bracket - no per-match stake
+            kb.stake = 0;
+            kb.msg   = "Match 1 of 3 - " + npc_display_name(kb_tourney.opponents[0]) + " takes the seat.";
+            save_game();
+            exit;
+        }
+    }
     var _tb = tavern_board_rows();   // active + available only - fulfilled live in the Journal
     var _tbn = array_length(_tb);
     if (_tbn > 0) {
         if (nav_up())   { tavern_board_cursor = wrap_index(tavern_board_cursor - 1, _tbn); tavern_board_note = ""; }
         if (nav_down()) { tavern_board_cursor = wrap_index(tavern_board_cursor + 1, _tbn); tavern_board_note = ""; }
         tavern_board_cursor = clamp(tavern_board_cursor, 0, _tbn - 1);
+        // v2: [R] rerolls the highlighted POSTED request for gold (cost doubles per
+        // use, resets when the board ages at run end). scr_stats board_reroll owns
+        // all the validation; it returns the note either way.
+        if (keyboard_check_pressed(ord("R"))) {
+            var _rrid = _tb[tavern_board_cursor];
+            tavern_board_note = board_reroll(_rrid);
+            save_game();
+        }
         if (keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_space)) {
             var _tbid = _tb[tavern_board_cursor];
             var _tbd  = quest_def(_tbid);
@@ -2115,10 +2184,10 @@ if (variable_instance_exists(id, "vael_open") && vael_open) {
     if (mouse_check_button_pressed(mb_left)) {
         var _vtm_x = device_mouse_x_to_gui(0);
         var _vtm_y = device_mouse_y_to_gui(0);
-        if (_vtm_y >= 87 && _vtm_y <= 135) {
-            if (_vtm_x >= 840 - 108 && _vtm_x <= 840 + 108) vael_tab = 0;
-            if (_vtm_x >= 1080 - 108 && _vtm_x <= 1080 + 108) vael_tab = 1;
-            if (_vtm_x >= 1320 - 108 && _vtm_x <= 1320 + 108) vael_tab = 2;
+        if (_vtm_y >= 96 && _vtm_y <= 144) {
+            if (_vtm_x >= 720 - 108 && _vtm_x <= 720 + 108) vael_tab = 0;
+            if (_vtm_x >= 960 - 108 && _vtm_x <= 960 + 108) vael_tab = 1;
+            if (_vtm_x >= 1200 - 108 && _vtm_x <= 1200 + 108) vael_tab = 2;
         }
     }
     if (vael_tab != _vt_prev) {

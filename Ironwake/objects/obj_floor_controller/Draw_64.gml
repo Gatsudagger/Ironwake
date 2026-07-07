@@ -537,7 +537,8 @@ if (showing_shrine) {
     draw_set_color(make_color_rgb(200, 160, 120));
     draw_text(GUI_CX, 500, "Approach and you are committed - a curse, once revealed, will not release you.");
     draw_set_color(c_ltgray);
-    draw_text(GUI_CX, 990, "Space / Enter: Approach the altar      Esc: Leave (forgo it)");
+    ui_draw_key_legend(GUI_CX, 990, "Space / Enter: Approach the altar      Esc: Leave (forgo it)");
+    draw_set_halign(fa_center);
     ui_draw_gothic_frame(30, 30, 1890, 1050, 30);
     draw_set_halign(fa_left);
     draw_set_valign(fa_top);
@@ -649,13 +650,12 @@ if (showing_shrine) {
         draw_set_color(_is_curse ? make_color_rgb(225, 150, 150) : make_color_rgb(225, 200, 150));
         draw_text(GUI_CX, 834, shrine_notification);
     }
-    draw_set_font(fnt_ui_small);
-    draw_set_color(c_ltgray);
-    draw_text(GUI_CX, 990, _is_curse
+    ui_draw_key_legend(GUI_CX, 990, _is_curse
         ? ((_sn == 0)
-            ? "No curse remains - Esc: Leave"
+            ? "No curse remains  -  Esc: Leave"
             : "W/S: Select     Enter: Embrace the curse  (the altar will not release you)")
         : "W/S: Select     1: Gold     2: Dust     3: Item     Esc: Leave");
+    draw_set_halign(fa_center);
 
     // Ornate gothic rim (title y84, offer rows x330..1590, hint y990 - all inside the opening).
     ui_draw_gothic_frame(30, 30, 1890, 1050, 30);
@@ -692,12 +692,12 @@ if (showing_event_choice && event_active != undefined) {
     draw_text(960, 72, _ev.title);
     draw_set_font(fnt_ui);
     draw_set_color(make_color_rgb(185, 192, 208));
-    draw_text_ext(GUI_CX, 150, _ev.body, -1, 1140);
+    draw_text_ext(GUI_CX, 150, ui_sentence(_ev.body), -1, 1140);
 
     if (event_phase == "result") {
         draw_set_font(fnt_ui);
         draw_set_color(make_color_rgb(215, 220, 235));
-        draw_text_ext(GUI_CX, 450, event_result_text, -1, 1230);
+        draw_text_ext(GUI_CX, 450, ui_sentence(event_result_text), -1, 1230);
         draw_set_font(fnt_ui_small);
         draw_set_color(c_ltgray);
         draw_text(GUI_CX, 972, "Press Enter to continue");
@@ -722,10 +722,10 @@ if (showing_event_choice && event_active != undefined) {
             // Label + hint
             draw_set_font(fnt_ui);
             draw_set_color(_unlocked ? make_color_rgb(236, 240, 250) : make_color_rgb(110, 112, 122));
-            draw_text(360, _ry + 18, _ch.label);
+            draw_text(360, _ry + 18, ui_sentence(_ch.label));
             draw_set_font(fnt_ui_small);
             draw_set_color(_unlocked ? make_color_rgb(178, 186, 204) : make_color_rgb(92, 94, 104));
-            draw_text(360, _ry + 72, _ch.hint);
+            draw_text(360, _ry + 72, ui_sentence(_ch.hint));
 
             // Generated mechanics line under the lore hint: odds + what each
             // outcome actually grants, so the player understands the bet.
@@ -758,7 +758,7 @@ if (showing_event_choice && event_active != undefined) {
         draw_set_halign(fa_center);
         draw_set_font(fnt_ui_small);
         draw_set_color(c_ltgray);
-        draw_text_outline(GUI_CX, 972, "W/S: Select     Enter: Choose");
+        ui_draw_key_legend(GUI_CX, 972, "W/S: Select     Enter: Choose");
     }
 
     // Ornate gothic rim (choice rows x330..1590, hint y972 - all inside the opening).
@@ -867,7 +867,7 @@ if (escape_confirm_open && escape_confirm_idx >= 0
         ? "You extract to camp with ALL your loot and found gold...\nbut PERMANENTLY lose 3 random stat points. The wine always collects."
         : "A lazy plume of smoke swallows you.\nYou extract to camp with ALL your loot and found gold. No cost - this once.", 30, 780);
     draw_set_color(make_color_rgb(150, 160, 185));
-    draw_text_outline(960, 621, "Enter: Confirm      Esc / G: Cancel");
+    ui_draw_key_legend(960, 621, "Enter: Confirm      Esc / G: Cancel");
     draw_set_halign(fa_left); draw_set_valign(fa_top);
     draw_set_font(-1);
 }

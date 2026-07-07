@@ -621,14 +621,11 @@ if (player_turn && !combat_over) {
             draw_text(_qtx, _qry + 12, _qlabel);
             draw_set_font(fnt_ui_small);
             draw_set_color(_is_cur ? make_color_rgb(120, 210, 160) : make_color_rgb(80, 110, 95));
-            draw_text(_qtx, _qry + 48, _qitem.description);
+            draw_text(_qtx, _qry + 48, ui_sentence(_qitem.description));
         }
 
         // Footer hint
-        draw_set_font(fnt_ui_small);
-        draw_set_halign(fa_center);
-        draw_set_color(make_color_rgb(70, 85, 110));
-        draw_text(_px + _pw / 2, _py + _ph - 42,
+        ui_draw_key_legend(_px + _pw / 2, _py + _ph - 42,
             (_qcount > 0) ? "W/S: Navigate   Enter/Click: Use   C/Esc: Close" : "C/Esc: Close");
         draw_set_font(-1);
         draw_set_halign(fa_left);
@@ -761,9 +758,9 @@ if (instance_exists(obj_game_controller)) {
         draw_set_halign(fa_center);
         draw_set_color(make_color_rgb(80, 90, 110));
         if (_has_pend) {
-            draw_text_outline(960, _alloc_footer_y, "W/S: Navigate   Enter: Change selection   Space: Confirm");
+            ui_draw_key_legend(960, _alloc_footer_y, "W/S: Navigate   Enter: Change selection   Space: Confirm");
         } else {
-            draw_text_outline(960, _alloc_footer_y, "W/S: Navigate   Enter: Choose stat");
+            ui_draw_key_legend(960, _alloc_footer_y, "W/S: Navigate   Enter: Choose stat");
         }
         draw_set_font(-1);
         draw_set_halign(fa_left);
@@ -825,7 +822,7 @@ if (show_loot_screen) {
             draw_text(456, _iy + 8, _item.name);
             draw_set_font(fnt_ui_small);
             draw_set_color(make_color_rgb(140, 200, 200));
-            draw_text(456, _iy + 42, _item.description);
+            draw_text(456, _iy + 42, ui_sentence(_item.description));
             draw_set_halign(fa_right);
             draw_set_color(make_color_rgb(80, 200, 200));
             draw_text(1530, _iy + 8, "[CONSUMABLE]");

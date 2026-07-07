@@ -230,6 +230,7 @@ function end_run(result) {
     // (haul) BEFORE the expiry countdown, then age + refill the board.
     board_run_scoring(result);
     board_run_end();
+    kb_tourney_run_end();   // High Table cadence (dice v2): every 5th completed run
 
     // Phase 2 pets: the ACTIVE pet banks Stage growth for completing this run and may
     // EVOLVE (completing a run is the gate feed alone can't open; clear > extract >
@@ -4449,7 +4450,43 @@ function board_requests_ensure() {
     if (!variable_global_exists("board_requests") || !is_array(global.board_requests)) global.board_requests = [];
     if (!variable_global_exists("board_seq")      || !is_real(global.board_seq))       global.board_seq = 0;
     if (!variable_global_exists("reforge_chits")  || !is_real(global.reforge_chits))   global.reforge_chits = 0;
+    // v2: paid rerolls (cost doubles per use, resets when the board ages at run end)
+    // and the rotating SPECIAL posting (every 5 runs, boosted challenge request).
+    if (!variable_global_exists("board_rerolls_used")      || !is_real(global.board_rerolls_used))      global.board_rerolls_used = 0;
+    if (!variable_global_exists("board_special_countdown") || !is_real(global.board_special_countdown)) global.board_special_countdown = 5;
     return global.board_requests;
+}
+
+// True for the rotating special posting (older-save defs lack the field).
+function board_is_special(d) {
+    return (d != undefined) && variable_struct_exists(d, "special") && d.special;
+}
+
+// v2 paid reroll: replace one POSTED (untaken) request with a fresh roll.
+// 30g, doubling per use within one board age-cycle (30/60/120...).
+function board_reroll_cost() {
+    board_requests_ensure();
+    return 30 * power(2, global.board_rerolls_used);
+}
+function board_reroll(id) {
+    var _b = board_requests_ensure();
+    var _d = board_request_def(id);
+    if (_d == undefined || !quest_is_board(_d)) return "Only the board's own postings can be rerolled.";
+    if (board_is_special(_d))                   return "The special posting stands - the town insists.";
+    var _s = quest_state(id);
+    if (_s == undefined || _s.status != "available") return "You've already taken that job - see it through or let it rot.";
+    var _cost = board_reroll_cost();
+    if (global.gold < _cost) return "Not enough gold - the barkeep wants " + string(_cost) + "g to re-pin the slot.";
+    global.gold -= _cost;
+    global.board_rerolls_used += 1;
+    // Preserve the slot's urgency so the A5 always-one-urgent guarantee survives.
+    var _was_urgent = _d.urgent;
+    board_retire(id);
+    var _new = board_generate_request(_was_urgent);
+    array_push(global.board_requests, _new);
+    array_push(global.quests, { id:_new.id, status:"available", progress:0 });
+    return "Re-pinned for " + string(_cost) + "g: \"" + _new.name + "\" - " + _new.objective
+        + ". (next reroll " + string(board_reroll_cost()) + "g)";
 }
 
 // Board capacity: the town posts more work as your Awakenings prove you can take it.
@@ -4590,11 +4627,29 @@ function board_build_template(t, a, scale, urgent) {
     var _item = urgent || (_chit == 0 && irandom(99) < 25);
     if (urgent) _gold *= 2;
     return {
-        id:"", kind:"board", template:t, urgent:urgent, expires:(urgent ? 1 : 3),
+        id:"", kind:"board", template:t, urgent:urgent, special:false, expires:(urgent ? 1 : 3),
         npc:_npc, name:_name, obj_type:_obj_type, obj_target:_obj_target, obj_param:_obj_param,
         reward:{ gold:_gold, feed:"", feed_n:0, rune_id:"", rune_tier:0, dust:_dust, item:_item, chit:_chit },
         flavor:_flavor, objective:_objective
     };
+}
+
+// v2 SPECIAL posting (every 5 runs): always a challenge template, boosted rewards
+// (x1.5 gold, guaranteed item roll on top of its Reforge Chit), 2-run lifespan.
+// Rides ABOVE board capacity (refill ignores it) and can't be rerolled.
+function board_generate_special() {
+    board_requests_ensure();
+    var _a     = highest_awakening_unlocked();
+    var _scale = 1 + 0.5 * _a;
+    var _pool  = ["flawless", "swift", "clean"];
+    var _d     = board_build_template(_pool[irandom(array_length(_pool) - 1)], _a, _scale, false);
+    _d.special      = true;
+    _d.expires      = 2;
+    _d.reward.gold  = round(_d.reward.gold * 1.5);
+    _d.reward.item  = true;
+    global.board_seq += 1;
+    _d.id = "board_" + string(global.board_seq);
+    return _d;
 }
 
 // Roll one request, avoiding a template+param already posted (8 tries, then accept).
@@ -4627,9 +4682,14 @@ function board_refill() {
     var _b   = board_requests_ensure();
     var _a   = highest_awakening_unlocked();
     var _cap = board_slot_count();
-    while (array_length(_b) < _cap) {
+    // The SPECIAL posting rides above capacity - don't let it starve a normal slot.
+    var _normal_count = 0;
+    for (var _nc = 0; _nc < array_length(_b); _nc++) if (!board_is_special(_b[_nc])) _normal_count++;
+    while (_normal_count < _cap) {
+        _normal_count++;
         var _urgent = false;
-        if (_a >= 5 && !board_has_urgent() && array_length(_b) == _cap - 1) _urgent = true;
+        // A5 guarantee: the LAST normal slot filled becomes urgent when none is posted.
+        if (_a >= 5 && !board_has_urgent() && _normal_count == _cap) _urgent = true;
         else if (_a >= 2 && irandom(99) < 15) _urgent = true;
         var _d = board_generate_request(_urgent);
         array_push(_b, _d);
@@ -4673,6 +4733,27 @@ function board_run_end() {
         array_push(_keep, _d);
     }
     global.board_requests = _keep;
+    // v2: reroll cost ladder resets as the board ages; the SPECIAL posting lands
+    // every 5th run (challenge template, boosted rewards, 2-run lifespan).
+    global.board_rerolls_used = 0;
+    global.board_special_countdown -= 1;
+    if (global.board_special_countdown <= 0) {
+        global.board_special_countdown = 5;
+        // Never stack two specials (a 2-run special can straddle a 5-run boundary
+        // only if countdown drift ever occurs - cheap guard).
+        var _has_special = false;
+        for (var _sp = 0; _sp < array_length(global.board_requests); _sp++)
+            if (board_is_special(global.board_requests[_sp])) { _has_special = true; break; }
+        if (!_has_special) {
+            var _spd = board_generate_special();
+            array_push(global.board_requests, _spd);
+            array_push(global.quests, { id:_spd.id, status:"available", progress:0 });
+            if (variable_global_exists("pet_find_notice")) {
+                var _spmsg = "A sealed SPECIAL posting hangs on the tavern board: \"" + _spd.name + "\".";
+                global.pet_find_notice = (global.pet_find_notice != "") ? (global.pet_find_notice + "   " + _spmsg) : _spmsg;
+            }
+        }
+    }
     board_refill();
 }
 
@@ -5367,6 +5448,73 @@ function kb_ai_pick(g) {
         if (_score > _best_s) { _best_s = _score; _best = _c; }
     }
     return _best;
+}
+
+// =============================================================================
+// HIGH TABLE TOURNAMENT (dice expression v2, M-approved 2026-07-06): every 5th
+// completed run the tavern sets the High Table. 100g buy-in, three opponents
+// back-to-back; win all three for the 400g pot plus a curiosity (an unowned
+// signature trinket, or +100g when the collection is complete). A tie replays
+// the same opponent; a loss or concession forfeits the buy-in. The invitation
+// WAITS once set - it doesn't expire, and the 5-run clock only restarts after
+// the bracket is actually played.
+// =============================================================================
+
+function kb_tourney_buyin() { return 100; }
+function kb_tourney_pot()   { return 400; }
+
+function kb_tourney_ensure() {
+    if (!variable_global_exists("kb_tourney_countdown") || !is_real(global.kb_tourney_countdown)) global.kb_tourney_countdown = 5;
+    if (!variable_global_exists("kb_tourney_ready")) global.kb_tourney_ready = false;
+}
+
+// Run-end tick (called from end_run beside board_run_end).
+function kb_tourney_run_end() {
+    kb_tourney_ensure();
+    if (global.kb_tourney_ready) return;   // the table stands set until someone sits
+    global.kb_tourney_countdown -= 1;
+    if (global.kb_tourney_countdown <= 0) {
+        global.kb_tourney_countdown = 5;
+        global.kb_tourney_ready = true;
+        if (variable_global_exists("pet_find_notice")) {
+            var _htmsg = "The HIGH TABLE is set at the tavern - three opponents, one pot. ([T] at the board)";
+            global.pet_find_notice = (global.pet_find_notice != "") ? (global.pet_find_notice + "   " + _htmsg) : _htmsg;
+        }
+    }
+}
+
+// Three distinct opponents drawn from the table regulars.
+function kb_tourney_roll_opponents() {
+    var _ids = affinity_npc_ids();
+    // Fisher-Yates on a copy, take the first three.
+    var _pool = [];
+    for (var _i = 0; _i < array_length(_ids); _i++) array_push(_pool, _ids[_i]);
+    for (var _j = array_length(_pool) - 1; _j > 0; _j--) {
+        var _k = irandom(_j);
+        var _t = _pool[_j]; _pool[_j] = _pool[_k]; _pool[_k] = _t;
+    }
+    return [_pool[0], _pool[1], _pool[2]];
+}
+
+// Championship curiosity: a random UNOWNED signature trinket (banked directly -
+// won at the hub, no extraction needed), or +100g if the set is complete.
+// Returns the summary fragment for the victory message.
+function kb_tourney_prize_roll() {
+    var _cat = gift_trinket_catalog();
+    var _owned = gift_trinkets();
+    var _open = [];
+    for (var _i = 0; _i < array_length(_cat); _i++) {
+        var _own = false;
+        for (var _o = 0; _o < array_length(_owned); _o++) if (_owned[_o] == _cat[_i].id) { _own = true; break; }
+        if (!_own) array_push(_open, _cat[_i]);
+    }
+    if (array_length(_open) > 0) {
+        var _pick = _open[irandom(array_length(_open) - 1)];
+        array_push(gift_trinkets(), _pick.id);
+        return "the " + _pick.name;
+    }
+    global.gold += 100;
+    return "another 100g (your curiosity shelf is full)";
 }
 
 // One in-character table line per opponent (drawn under their name).

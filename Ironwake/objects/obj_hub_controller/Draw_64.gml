@@ -1053,7 +1053,8 @@ if (_gc_ds != noone && _gc_ds.dungeon_select_open) {
     draw_set_valign(fa_bottom);
     draw_set_font(fnt_ui_small);
     draw_set_color(make_color_rgb(75, 82, 110));
-    draw_text_outline(GUI_CX, 1073, "A / D: Cycle Dungeon     Q / E: Awakening     Enter: Confirm     Esc: Back");
+    draw_set_valign(fa_bottom);
+    ui_draw_key_legend(GUI_CX, 1073, "A / D: Cycle Dungeon     Q / E: Awakening     Enter: Confirm     Esc: Back");
     draw_set_font(-1);
     draw_set_halign(fa_left);
     draw_set_valign(fa_top);
@@ -1195,9 +1196,9 @@ if (show_history) {
     // Scroll / close hint
     draw_set_color(make_color_rgb(120, 130, 150));
     if (_history_count > 8) {
-        draw_text_outline(GUI_CX, 1035, "W/S to scroll   Esc to close");
+        ui_draw_key_legend(GUI_CX, 1035, "W/S: Scroll   Esc: Close");
     } else {
-        draw_text_outline(GUI_CX, 1035, "Esc to close");
+        ui_draw_key_legend(GUI_CX, 1035, "Esc: Close");
     }
 
     draw_set_font(-1);
@@ -1293,7 +1294,7 @@ if (instance_exists(obj_game_controller) && variable_global_exists("pending_perm
         draw_set_halign(fa_center);
         draw_set_font(fnt_ui_small);
         draw_set_color(make_color_rgb(80, 90, 110));
-        draw_text_outline(GUI_CX, 938, "W/S: Navigate   Enter: Spend Point   Esc: Back");
+        ui_draw_key_legend(GUI_CX, 938, "W/S: Navigate   Enter: Spend Point   Esc: Back");
         draw_set_font(-1);
         draw_set_halign(fa_left);
         draw_set_valign(fa_top);
@@ -1506,7 +1507,7 @@ if (show_gallery) {
             if (variable_struct_exists(_d, "effect_desc") && _d.effect_desc != "") {
                 draw_set_font(fnt_ui_small);
                 draw_set_color(make_color_rgb(110, 122, 150));
-                var _flav = "\"" + _d.effect_desc + "\"";
+                var _flav = "\"" + ui_sentence(_d.effect_desc) + "\"";
                 draw_text_ext(_dx, _ly, _flav, -1, _txw);
                 _ly += string_height_ext(_flav, -1, _txw) + 9;
             }
@@ -1564,7 +1565,7 @@ if (show_gallery) {
     draw_set_font(fnt_ui_small);
     draw_set_halign(fa_center);
     draw_set_color(make_color_rgb(60, 68, 100));
-    draw_text_outline(GUI_CX, 1044, "W/S: Navigate   Enter: Inspect   G / Esc: Close Gallery");
+    ui_draw_key_legend(GUI_CX, 1044, "W/S: Navigate   Enter: Inspect   G / Esc: Close Gallery");
     draw_set_halign(fa_left);
     draw_set_alpha(1.0);
     draw_set_font(-1);
@@ -1907,7 +1908,7 @@ if (instance_exists(obj_game_controller)) {
 
             // --- Controls hint: y=1050 ---
             draw_set_color(make_color_rgb(65, 75, 100));
-            draw_text_outline(GUI_CX, 1050, "W/S: Navigate   Q/E: Switch Tab   Enter: Toggle   Tab: Details   M: Mastery   Space: Confirm   Esc: Cancel");
+            ui_draw_key_legend(GUI_CX, 1050, "W/S: Navigate   Q/E: Switch Tab   Enter: Toggle   Tab: Details   M: Mastery   Space: Confirm   Esc: Cancel");
             draw_set_halign(fa_left);
 
             // --- Tab ability-detail popup, drawn over the loadout (P7) ---
@@ -1951,7 +1952,8 @@ if (instance_exists(obj_game_controller)) {
                     }
                     draw_set_font(fnt_ui_small);
                     draw_set_color(make_color_rgb(120, 125, 150));
-                    draw_text(GUI_CX, _my1 - 48, "W/S: Choose     Enter: Commit     Esc: Not yet");
+                    ui_draw_key_legend(GUI_CX, _my1 - 48, "W/S: Choose     Enter: Commit     Esc: Not yet");
+                    draw_set_halign(fa_center);
                     draw_set_halign(fa_left);
                 }
             }
@@ -2167,7 +2169,7 @@ if (instance_exists(obj_game_controller)) {
 
             // --- Controls hint: y=1050 ---
             draw_set_color(make_color_rgb(65, 75, 100));
-            draw_text_outline(GUI_CX, 1050, "W/S: Navigate   Q/E: Switch Tab   Enter: Toggle Trait   Esc: Cancel");
+            ui_draw_key_legend(GUI_CX, 1050, "W/S: Navigate   Q/E: Switch Tab   Enter: Toggle Trait   Esc: Cancel");
             draw_set_halign(fa_left);
 
         // =====================================================================
@@ -2345,7 +2347,7 @@ if (instance_exists(obj_game_controller)) {
 
             draw_set_halign(fa_center);
             draw_set_color(make_color_rgb(65, 75, 100));
-            draw_text_outline(GUI_CX, 1050, "W/S: Navigate   Q/E: Switch Tab   Tab: Details   Enter: Set Active   B: Stance   Esc: Cancel");
+            ui_draw_key_legend(GUI_CX, 1050, "W/S: Navigate   Q/E: Switch Tab   Tab: Details   Enter: Set Active   B: Stance   Esc: Cancel");
             draw_set_halign(fa_left);
 
             // Tab pet-kit detail popup over the Companion tab.

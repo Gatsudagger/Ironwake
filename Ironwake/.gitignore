@@ -70,3 +70,6 @@ Sound/
 
 # Python bytecode from the tools/ import scripts
 tools/__pycache__/
+
+# Art staged for M's review (working files, not game assets)
+_for_review/

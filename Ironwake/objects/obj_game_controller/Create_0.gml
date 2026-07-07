@@ -34,6 +34,21 @@ global.__sprite_includes = [
     spr_icon_consumable_devil_wine,
     // Genie Lamp icon: same string-ref pattern as Devil Wine above.
     spr_icon_consumable_genie_lamp,
+    // Unique-item icon pass (2026-07-06): trinket icons resolve by string from the
+    // gift-picker pane, and the 5 named-weapon overrides resolve by string in
+    // ui_draw_item_icon - all must be listed or the compiler strips them.
+    spr_icon_trinket_appraisal_lens,
+    spr_icon_trinket_champion_wraps,
+    spr_icon_trinket_duskweave_bolt,
+    spr_icon_trinket_egg_shard,
+    spr_icon_trinket_grimoire_page,
+    spr_icon_trinket_meteoric_ingot,
+    spr_icon_trinket_singing_rune,
+    spr_icon_unique_crystal_wand,
+    spr_icon_unique_runed_scepter,
+    spr_icon_unique_stormcaller_staff,
+    spr_icon_unique_vaultwood_bow,
+    spr_icon_unique_void_scepter,
     // Pet sprites are referenced only by string (pet_sprite -> asset_get_index), so they
     // must be listed here or the compiler strips them. (Pets Phase 2 art backlog.)
     spr_pet_cryptling_baby,
@@ -1004,6 +1019,9 @@ mastery_pick_cursor  = 0;    // 0/1 = which of the two micro-mods is highlighted
 // Knucklebones (expression #1; opened with K at the Tavern Requests board)
 kb_open = false;
 kb      = undefined;   // live game struct (kb_new_game)
+// High Table tournament (dice v2): undefined = not running; else
+// { stage: 0..2, opponents: [id,id,id] }. Not persisted - quitting forfeits.
+kb_tourney = undefined;
 
 // -----------------------------------------------------------------------------
 // 13b. VEX THE TRAINER - permanent upgrades bought with gold (+items for stats)
