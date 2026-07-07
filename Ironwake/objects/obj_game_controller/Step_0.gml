@@ -447,7 +447,9 @@ if (stash_mode_open) {
                                              : array_length(global.consumable_stash);
     var _cur_count   = (stash_mode_side == 0) ? _left_count : _right_count;
 
-    if (keyboard_check_pressed(ord("Q")) || keyboard_check_pressed(ord("E"))) {
+    // Rewired to scr_input (INPUT_ABSTRACTION_SPEC.md chunk 1 template) - keyboard
+    // behavior is identical; gamepad/touch backends land later behind the same calls.
+    if (input_tab_prev() || input_tab_next()) {
         stash_mode_tab   = 1 - stash_mode_tab;
         stash_mode_index = 0;   // side is kept: tab-flipping in the stash column stays there
         audio_play_sound(snd_page, 1, false);
@@ -465,7 +467,7 @@ if (stash_mode_open) {
     if (nav_up())   stash_mode_index = wrap_index(stash_mode_index - 1, _cur_count);
     if (nav_down()) stash_mode_index = wrap_index(stash_mode_index + 1, _cur_count);
 
-    if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)) {
+    if (input_confirm()) {
         // The tab picks the array pair, the side picks the direction.
         if (stash_mode_side == 0) {
             if (stash_mode_tab == 0 && stash_mode_index < array_length(global.carried_items)) {
@@ -494,7 +496,7 @@ if (stash_mode_open) {
         if (room == rm_hub || room == rm_character_select) save_game();
     }
 
-    if (keyboard_check_pressed(vk_escape) || keyboard_check_pressed(vk_backspace)) {
+    if (input_cancel() || input_back()) {
         stash_mode_open = false;
     }
 
