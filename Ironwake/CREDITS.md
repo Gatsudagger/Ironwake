@@ -25,7 +25,9 @@ Last verified 2026-07-07 (itch pages fetched live; quotes are from the pack page
 | **Chequered Ink — 400 Sounds Pack** (ci.itch.io) | Most snd_* SFX (UI, combat, economy, stings) | Commercial OK, credit optional, no raw redistribution | ✅ |
 | **TomMusic — Free Fantasy SFX Pack** (tommusic.itch.io) | Sword/spell/chest/gate SFX + ambience beds (rain/cave/torch) | Commercial OK, credit optional, no raw redistribution | ✅ |
 | **Sara Garrard (sonatina.itch.io) — "Shadows/Infinity: Battle Zone"** | _2_dungeon_INITIAL/LOOP, _3_critical_INITIAL/LOOP, _14_BOSS_y_LOOP, _15_game_over_INITIAL (identified 2026-07-07 via embedded vorbis tags: ARTIST=Sara Garrard, ALBUM=Shadows/Infinity: Battle Zone, 2022) | Commercial use OK incl. monetized games; **credit Sara Garrard required**; on itch, link sonatina.itch.io on the game page; donation appreciated, not required. Full terms ship in the pack download | ⚠️ **credit required** — covered by Credits screen. Locate M's pack download for the full terms file (for the Steam context) |
-| **Music tracks, still unidentified** — Viking_March (Cubase BWF render, project "vik", 2022-09-29), Rainy_Memories (untagged wav), MusicBox1 (FL Studio 21 render), Game_Over (353 KB — byte-size-identical format to Check_1, likely same pack as the legacy SFX) | Title / hub / pet-musicbox / defeat sting | ❓ Titles don't surface on itch search; no embedded artist tags | ⚠️ **M: open itch.io → your Library ("My purchases") and skim for the music/SFX packs** — that list is the definitive cross-reference; licenses verified same-day once named. Fallback: replace before EA |
+| **Alex Coldfire — "12 Instrumental Game Soundtracks (Visual Novel/Action)"** (alex-coldfire.itch.io/12-soundtracks; identified by M 2026-07-07, track list verified on page) | Viking_March (title), Rainy_Memories (hub) | **CC BY-ND 4.0**: free in commercial projects; "you must **credit me (Alex Coldfire)** as the author in the game's credits and in the author section on all relevant pages"; **no major changes to tracks**; no resale | ⚠️ **credit required** (game credits + store pages) — covered by Credits screen; use tracks as-is |
+| **Sara Garrard — "RPG music pack: INFINITY CRYSTAL"** (sonatina.itch.io/infinity-crystal; M identified 2026-07-07) | Game_Over (defeat sting) | Same terms as Battle Zone: commercial OK, credit Sara Garrard + itch-page link, donation optional | ✅ covered by existing Sara Garrard credit |
+| **MusicBox1** (FL Studio 21 render) | Pet/music-box theme | ❓ M: standalone free itch download, author not yet recalled | ⚠️ last unidentified track — name the creator when found, or replace |
 | **Legacy SFX** — utility2, Check_1, Chimes__Ascending_, Success_1/2, spell1, Magic, attack1, grunt, teleport, die5, hurt, Obscure, Strings_1, Harp_2__Descending_ | Remaining fallback/cast/shop sounds | ❓ Old ffmpeg-converted set (Lavf54 = ~2013 tooling), generic names, no tags | ⚠️ identify via M's itch library OR retire (sound-pass epilogue replaces the last live uses from the two cleared packs) |
 | **MidJourney (M's own generations)** | ALL NPC artwork + ALL portraits (6 hub NPC portraits, 60 char-creation portraits, Vael portrait carousel) — confirmed by M 2026-07-07 | MidJourney paid-plan terms: subscriber owns/has commercial rights to generations | ✅ (AI — disclose) |
 
@@ -47,7 +49,8 @@ Last verified 2026-07-07 (itch pages fetched live; quotes are from the pack page
 
 ## In-game credits screen — minimum required lines
 
-- "Music by Sara Garrard" + link to sonatina.itch.io on the itch game page *(required by the Battle Zone license)*
+- "Music by Sara Garrard" + link to sonatina.itch.io on the itch game page *(required by the Battle Zone / Infinity Crystal licenses)*
+- "Music by Alex Coldfire" — in game credits AND the author/credits section of store pages *(required by CC BY-ND 4.0)*
 - "Icons by Batareya" *(required by the 250 Magical Icons license)*
 - "Pixel art effects - unTied Games" *(required by the Gigapack license)*
 - Recommended courtesy: PixelLab, Chequered Ink, TomMusic, CraftPix, CaptainSkeleto (if kept),

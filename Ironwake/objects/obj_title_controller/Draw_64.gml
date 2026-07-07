@@ -497,7 +497,8 @@ if (phase == "cutscene") {
 
     var _cred = [
         ["MUSIC", [
-            "Sara Garrard - \"Shadows/Infinity: Battle Zone\"  (sonatina.itch.io)"]],
+            "Sara Garrard - \"Shadows/Infinity: Battle Zone\" & \"Infinity Crystal\"  (sonatina.itch.io)",
+            "Alex Coldfire - \"Viking March\" & \"Rainy Memories\""]],
         ["SOUND", [
             "Chequered Ink - 400 Sounds Pack",
             "TomMusic - Free Fantasy SFX & Ambience"]],
