@@ -313,11 +313,11 @@ if (phase == "cutscene") {
                   || slot_previews[1] != undefined
                   || slot_previews[2] != undefined);
 
-    var _options = ["NEW GAME", "LOAD GAME"];
-    for (var _i = 0; _i < 2; _i++) {
+    var _options = ["NEW GAME", "LOAD GAME", "CREDITS"];
+    for (var _i = 0; _i < 3; _i++) {
         var _oy     = 585 + _i * 93;
         var _is_sel = (_i == selected);
-        var _avail  = (_i == 0) || _any_save;
+        var _avail  = (_i != 1) || _any_save;
 
         if (_is_sel && _avail) {
             if (blink < 30) {
@@ -468,6 +468,80 @@ if (phase == "cutscene") {
         draw_text(_arrow_x, _card_y + _card_h + 21, "^");
     }
 
+    draw_set_alpha(1.0);
+    draw_set_font(-1);
+
+// -----------------------------------------------------------------------
+// CREDITS PHASE - asset credits, out of appreciation for every creator.
+// Sources + license notes of record live in CREDITS.md.
+// -----------------------------------------------------------------------
+} else if (phase == "credits") {
+
+    // Dim scrim over the vista so the text reads
+    draw_set_alpha(0.84);
+    draw_set_color(make_color_rgb(6, 7, 12));
+    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+    draw_set_alpha(1.0);
+
+    draw_set_halign(fa_center);
+    draw_set_valign(fa_top);
+    draw_set_font(fnt_ui_title);
+    draw_set_color(make_color_rgb(130, 195, 255));
+    draw_text(960, 84, "CREDITS");
+
+    // Decorative line under the header, echoing the title screen's divider
+    draw_set_alpha(0.4);
+    draw_set_color(make_color_rgb(60, 100, 160));
+    draw_rectangle(585, 176, 1335, 179, false);
+    draw_set_alpha(1.0);
+
+    var _cred = [
+        ["MUSIC", [
+            "Sara Garrard - \"Shadows/Infinity: Battle Zone\"  (sonatina.itch.io)"]],
+        ["SOUND", [
+            "Chequered Ink - 400 Sounds Pack",
+            "TomMusic - Free Fantasy SFX & Ambience"]],
+        ["ICONS & EFFECTS", [
+            "Batareya - ability, trait & item icon packs",
+            "unTied Games - pixel art effects",
+            "CraftPix - potion & mineral icons",
+            "CaptainSkeleto - magic tome icons",
+            "Medieval Weapons Pack - shield icons"]],
+        ["FONTS", [
+            "EB Garamond & Cinzel Decorative - SIL Open Font License"]],
+        ["ART TOOLS", [
+            "Character, item & world art created with PixelLab & MidJourney"]],
+    ];
+
+    var _cy = 214;
+    for (var _s = 0; _s < array_length(_cred); _s++) {
+        draw_set_font(fnt_ui);
+        draw_set_color(make_color_rgb(228, 190, 90));
+        draw_text(960, _cy, _cred[_s][0]);
+        _cy += 46;
+        var _rows = _cred[_s][1];
+        for (var _r = 0; _r < array_length(_rows); _r++) {
+            draw_set_font(fnt_ui_small);
+            draw_set_color(make_color_rgb(200, 205, 220));
+            draw_text(960, _cy, _rows[_r]);
+            _cy += 37;
+        }
+        _cy += 22;
+    }
+
+    draw_set_font(fnt_ui_small);
+    draw_set_color(make_color_rgb(150, 160, 185));
+    draw_text(960, _cy + 6, "Thank you to every creator who shares their work.");
+
+    draw_set_color(make_color_rgb(100, 110, 135));
+    ui_draw_key_legend(960, 1002, "Esc: Back");
+    draw_set_halign(fa_center);
+
+    // Ornate rim to match the game's other full-screen overlays
+    draw_set_font(-1);
+    ui_draw_gothic_frame(30, 30, 1890, 1050, 30);
+
+    draw_set_halign(fa_left);
     draw_set_alpha(1.0);
     draw_set_font(-1);
 }

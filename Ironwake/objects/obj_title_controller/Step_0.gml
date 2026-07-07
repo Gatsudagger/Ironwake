@@ -74,8 +74,8 @@ if (phase == "cutscene") {
     blink     = (blink + 1) mod 60;
 
     if (can_input) {
-        if (nav_up())   selected = wrap_index(selected - 1, 2);
-        if (nav_down()) selected = wrap_index(selected + 1, 2);
+        if (nav_up())   selected = wrap_index(selected - 1, 3);
+        if (nav_down()) selected = wrap_index(selected + 1, 3);
 
         if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)
         ||  keyboard_check_pressed(vk_space)) {
@@ -92,8 +92,18 @@ if (phase == "cutscene") {
                 slot_selected = 0;
                 slot_confirm  = false;
                 phase         = "slot_picker";
+            } else if (selected == 2) {
+                phase = "credits";
+                audio_play_sound(snd_page, 1, false);
             }
         }
+    }
+
+} else if (phase == "credits") {
+    // Asset credits overlay - any dismiss key returns to the title menu.
+    if (keyboard_check_pressed(vk_escape) || keyboard_check_pressed(vk_backspace)
+    ||  keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)) {
+        phase = "title";
     }
 
 } else if (phase == "slot_picker") {
