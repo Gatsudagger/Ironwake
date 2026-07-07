@@ -16,8 +16,7 @@
 // stage. Stage layout mirrors the Draw block: intro, one per speaker, absence beat
 // (only if someone was betrayed), dawn, epilogue, credits, finale.
 if (ending_active) {
-    if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)
-    ||  keyboard_check_pressed(vk_space)  || keyboard_check_pressed(vk_escape)) {
+    if (input_confirm() || input_confirm_alt() || input_cancel()) {
         var _end_total = 1 + array_length(ending_speakers)
                        + ((ending_absent > 0) ? 1 : 0) + 4;   // dawn + epilogue + credits + finale
         ending_stage++;
@@ -53,7 +52,7 @@ if (variable_global_exists("settings_open") && global.settings_open) {
 }
 var _dsel_open = false;
 if (instance_exists(obj_game_controller)) _dsel_open = instance_find(obj_game_controller, 0).dungeon_select_open;
-if (keyboard_check_pressed(ord("O")) && !ui_input_blocked() && !show_history && !_dsel_open) {
+if (input_hotkey("O") && !ui_input_blocked() && !show_history && !_dsel_open) {
     audio_settings_init();
     global.settings_open = true;
     exit;
@@ -65,7 +64,7 @@ if (keyboard_check_pressed(ord("O")) && !ui_input_blocked() && !show_history && 
 // is open; otherwise Esc opens it when nothing else is up.
 // -----------------------------------------------------------------------------
 if (pause_menu_step()) exit;
-if (keyboard_check_pressed(vk_escape) && !ui_input_blocked() && !global.ui_overlay_latch
+if (input_cancel() && !ui_input_blocked() && !global.ui_overlay_latch
     && !_dsel_open && !show_history && !show_last_run && !show_gallery) {
     pause_menu_open();
     exit;
@@ -99,16 +98,15 @@ if (instance_exists(obj_game_controller)) {
         var _cur_dk   = _dungeon_keys[_gc_dsel.dungeon_select_cursor];
         var _cur_max_asc = variable_global_exists("dungeon_ascendance_unlocked")
             ? variable_struct_get(global.dungeon_ascendance_unlocked, _cur_dk) : 0;
-        if (keyboard_check_pressed(ord("Q"))) {
+        if (input_tab_prev()) {
             _gc_dsel.dungeon_select_asc = max(0, _gc_dsel.dungeon_select_asc - 1);
         }
-        if (keyboard_check_pressed(ord("E"))) {
+        if (input_tab_next()) {
             _gc_dsel.dungeon_select_asc = min(_cur_max_asc, _gc_dsel.dungeon_select_asc + 1);
         }
 
         // Enter: confirm dungeon + ascendance, open loadout
-        if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)
-                || keyboard_check_pressed(vk_space)) {
+        if (input_confirm() || input_confirm_alt()) {
             global.selected_dungeon    = _dungeon_keys[_gc_dsel.dungeon_select_cursor];
             global.selected_ascendance = _gc_dsel.dungeon_select_asc;
             _gc_dsel.dungeon_select_open = false;
@@ -173,7 +171,7 @@ if (instance_exists(obj_game_controller)) {
         }
 
         // Esc: close dungeon select without entering
-        if (keyboard_check_pressed(vk_escape)) {
+        if (input_cancel()) {
             _gc_dsel.dungeon_select_open = false;
         }
 
@@ -211,18 +209,18 @@ if (instance_exists(obj_game_controller)) {
         // --- Tab ability-detail popup (P7) ---
         // While the popup is up, only Tab/Esc (close) - swallow all other loadout input.
         if (_gc_ld.ability_detail_open) {
-            if (keyboard_check_pressed(vk_tab) || keyboard_check_pressed(vk_escape)) {
+            if (input_detail() || input_cancel()) {
                 _gc_ld.ability_detail_open = false;
                 exit;
             }
             // Q/E cycle to the prev/next ability in the pool so the in-depth breakdowns
             // can be read sequentially without closing the popup (mirrors W/S list nav).
             if (_ld_pool_sz > 0) {
-                if (keyboard_check_pressed(ord("Q"))) {
+                if (input_tab_prev()) {
                     _gc_ld.loadout_cursor = wrap_index(_gc_ld.loadout_cursor - 1, _ld_pool_sz);
                     _gc_ld.ability_detail_scroll = 0;
                 }
-                if (keyboard_check_pressed(ord("E"))) {
+                if (input_tab_next()) {
                     _gc_ld.loadout_cursor = wrap_index(_gc_ld.loadout_cursor + 1, _ld_pool_sz);
                     _gc_ld.ability_detail_scroll = 0;
                 }
@@ -234,7 +232,7 @@ if (instance_exists(obj_game_controller)) {
             exit;
         }
         // Tab opens the full breakdown for the highlighted ability (Abilities tab, on a row).
-        if (keyboard_check_pressed(vk_tab) && _gc_ld.loadout_tab == 0 && _gc_ld.loadout_cursor < _ld_pool_sz) {
+        if (input_detail() && _gc_ld.loadout_tab == 0 && _gc_ld.loadout_cursor < _ld_pool_sz) {
             _gc_ld.ability_detail_open   = true;
             _gc_ld.ability_detail_scroll = 0;
             exit;
@@ -242,9 +240,9 @@ if (instance_exists(obj_game_controller)) {
 
         // --- Mastery pick modal (expression #2). While open it owns all input. ---
         if (_gc_ld.mastery_pick_open) {
-            if (keyboard_check_pressed(vk_escape)) { _gc_ld.mastery_pick_open = false; exit; }
+            if (input_cancel()) { _gc_ld.mastery_pick_open = false; exit; }
             if (nav_up() || nav_down()) _gc_ld.mastery_pick_cursor = 1 - _gc_ld.mastery_pick_cursor;
-            if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)) {
+            if (input_confirm()) {
                 var _mp_ab = undefined;
                 for (var _mpi = 0; _mpi < _ld_pool_sz; _mpi++) {
                     if (_ld_pool[_mpi].name == _gc_ld.mastery_pick_ability) { _mp_ab = _ld_pool[_mpi]; break; }
@@ -263,7 +261,7 @@ if (instance_exists(obj_game_controller)) {
             exit;
         }
         // M on a pool row with an unspent notch opens the pick modal.
-        if (keyboard_check_pressed(ord("M")) && _gc_ld.loadout_tab == 0 && _gc_ld.loadout_cursor < _ld_pool_sz) {
+        if (input_hotkey("M") && _gc_ld.loadout_tab == 0 && _gc_ld.loadout_cursor < _ld_pool_sz) {
             var _mn = _ld_pool[_gc_ld.loadout_cursor].name;
             if (ability_mastery_pending(_mn) > 0) {
                 _gc_ld.mastery_pick_open    = true;
@@ -277,10 +275,10 @@ if (instance_exists(obj_game_controller)) {
         }
         // Companion-tab pet-kit detail popup (Tab). While up, only Tab/Esc closes it.
         if (_gc_ld.companion_detail_open) {
-            if (keyboard_check_pressed(vk_tab) || keyboard_check_pressed(vk_escape)) _gc_ld.companion_detail_open = false;
+            if (input_detail() || input_cancel()) _gc_ld.companion_detail_open = false;
             exit;
         }
-        if (keyboard_check_pressed(vk_tab) && _gc_ld.loadout_tab == 2) {
+        if (input_detail() && _gc_ld.loadout_tab == 2) {
             var _cd_eq = 0;
             for (var _cdi = 0; _cdi < pet_count(); _cdi++) if (!global.pet_roster[_cdi].is_egg) _cd_eq++;
             if (_gc_ld.loadout_cursor < _cd_eq) { _gc_ld.companion_detail_open = true; exit; }
@@ -291,10 +289,10 @@ if (instance_exists(obj_game_controller)) {
         if (variable_instance_exists(_gc_ld, "loadout_locked_timer") && _gc_ld.loadout_locked_timer > 0) _gc_ld.loadout_locked_timer--;
 
         // Q/E cycle the three tabs: Abilities (0) / Traits (1) / Companion (2).
-        if (keyboard_check_pressed(ord("E"))) { _gc_ld.loadout_tab = (_gc_ld.loadout_tab + 1) mod 3; _gc_ld.loadout_cursor = 0; audio_play_sound(snd_page, 1, false); }
-        if (keyboard_check_pressed(ord("Q"))) { _gc_ld.loadout_tab = (_gc_ld.loadout_tab + 2) mod 3; _gc_ld.loadout_cursor = 0; audio_play_sound(snd_page, 1, false); }
+        if (input_tab_next()) { _gc_ld.loadout_tab = (_gc_ld.loadout_tab + 1) mod 3; _gc_ld.loadout_cursor = 0; audio_play_sound(snd_page, 1, false); }
+        if (input_tab_prev()) { _gc_ld.loadout_tab = (_gc_ld.loadout_tab + 2) mod 3; _gc_ld.loadout_cursor = 0; audio_play_sound(snd_page, 1, false); }
 
-        if (keyboard_check_pressed(vk_escape)) {
+        if (input_cancel()) {
             _gc_ld.loadout_open = false;
             exit;
         }
@@ -309,7 +307,7 @@ if (instance_exists(obj_game_controller)) {
             if (nav_down()) _gc_ld.loadout_cursor = wrap_index(_gc_ld.loadout_cursor + 1, _ld_max_cur + 1);
 
             // Space or Enter at confirm row: commit and enter dungeon
-            if ((keyboard_check_pressed(vk_space) || keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter))
+            if ((input_confirm() || input_confirm_alt())
                 && _gc_ld.loadout_cursor == _ld_pool_sz && _ld_sel_cnt == _loadout_max) {
                 var _tr_sel_c = _gc_ld.traits_selected;
                 // 50g per previously-filled trait slot that is being changed
@@ -329,7 +327,7 @@ if (instance_exists(obj_game_controller)) {
                 }
             }
 
-            if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)) {
+            if (input_confirm()) {
                 if (_gc_ld.loadout_cursor < _ld_pool_sz) {
                     var _ld_ab_name = _ld_pool[_gc_ld.loadout_cursor].name;
                     var _ld_in_sel  = false;
@@ -393,7 +391,7 @@ if (instance_exists(obj_game_controller)) {
 
             // Enter toggles only unlocked rows; a locked row already tells the
             // player it's a Vex purchase, so it just sits inert.
-            if ((keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter))
+            if ((input_confirm())
                 && _tr_cnt > 0 && _tr_all[_gc_ld.traits_cursor].unlocked) {
                 var _hov_tr_name = _tr_all[_gc_ld.traits_cursor].tr.name;
                 var _tr_in_sel   = false;
@@ -427,7 +425,7 @@ if (instance_exists(obj_game_controller)) {
             if (nav_up())   _gc_ld.loadout_cursor = wrap_index(_gc_ld.loadout_cursor - 1, _comp_rows);
             if (nav_down()) _gc_ld.loadout_cursor = wrap_index(_gc_ld.loadout_cursor + 1, _comp_rows);
 
-            if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)) {
+            if (input_confirm()) {
                 global.active_pet = (_gc_ld.loadout_cursor < array_length(_eq_pets))
                     ? _eq_pets[_gc_ld.loadout_cursor]   // equip the highlighted pet
                     : -1;                                // "None" row
@@ -436,7 +434,7 @@ if (instance_exists(obj_game_controller)) {
 
             // B: cycle the highlighted pet's combat stance (expression #3). No-op for
             // Fortune pets (they have no combat turn) and the "None" row.
-            if (keyboard_check_pressed(ord("B")) && _gc_ld.loadout_cursor < array_length(_eq_pets)) {
+            if (input_hotkey("B") && _gc_ld.loadout_cursor < array_length(_eq_pets)) {
                 var _st_pet = global.pet_roster[_eq_pets[_gc_ld.loadout_cursor]];
                 var _st_new = pet_stance_cycle(_st_pet);
                 if (_st_new != "" && (room == rm_hub || room == rm_character_select)) save_game();
@@ -576,7 +574,7 @@ if (instance_exists(obj_game_controller)) {
     var _gc_hub = instance_find(obj_game_controller, 0);
 
     // T: open stash screen (not while perm alloc or gallery is open)
-    if (!_gc_hub.perm_alloc_open && !show_gallery && keyboard_check_pressed(ord("T"))) {
+    if (!_gc_hub.perm_alloc_open && !show_gallery && input_hotkey("T")) {
         _gc_hub.stash_mode_open  = true;
         _gc_hub.stash_mode_index = 0;
         _gc_hub.stash_mode_side  = 0;
@@ -586,7 +584,7 @@ if (instance_exists(obj_game_controller)) {
 
     // P: open permanent stat allocation (only when points are available)
     if (variable_global_exists("pending_perm_points") && global.pending_perm_points > 0
-        && keyboard_check_pressed(ord("P"))) {
+        && input_hotkey("P")) {
         _gc_hub.perm_alloc_open  = true;
         _gc_hub.perm_alloc_index = 0;
         exit;
@@ -596,7 +594,7 @@ if (instance_exists(obj_game_controller)) {
     if (_gc_hub.perm_alloc_open) {
         if (nav_up())   _gc_hub.perm_alloc_index = wrap_index(_gc_hub.perm_alloc_index - 1, 6);
         if (nav_down()) _gc_hub.perm_alloc_index = wrap_index(_gc_hub.perm_alloc_index + 1, 6);
-        if ((keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)) && global.pending_perm_points > 0) {
+        if ((input_confirm()) && global.pending_perm_points > 0) {
             var _perm_stat_keys = ["perm_str_bonus", "perm_dex_bonus", "perm_con_bonus",
                                    "perm_int_bonus", "perm_wis_bonus", "perm_cha_bonus"];
             var _pkey = _perm_stat_keys[_gc_hub.perm_alloc_index];
@@ -606,7 +604,7 @@ if (instance_exists(obj_game_controller)) {
                 _gc_hub.perm_alloc_open = false;
             }
         }
-        if (keyboard_check_pressed(vk_escape) || keyboard_check_pressed(vk_backspace)) {
+        if (input_cancel() || input_back()) {
             _gc_hub.perm_alloc_open = false;
         }
         // Mouse: click a perm stat row to select it; click already-selected to spend
@@ -638,7 +636,7 @@ if (instance_exists(obj_game_controller)) {
 // -----------------------------------------------------------------------------
 // 0. RUN HISTORY OVERLAY - intercepts navigation input while open
 // -----------------------------------------------------------------------------
-if (keyboard_check_pressed(ord("H"))) {
+if (input_hotkey("H")) {
     show_history   = !show_history;
     history_scroll = 0;
 }
@@ -649,7 +647,7 @@ if (show_history) {
         var _max_scroll = max(0, array_length(global.run_history) - 5);
         history_scroll = min(_max_scroll, history_scroll + 1);
     }
-    if (keyboard_check_pressed(vk_escape)) {
+    if (input_cancel()) {
         show_history = false;
     }
     exit; // block NPC navigation while viewing history
@@ -664,7 +662,7 @@ if (show_history) {
 // -----------------------------------------------------------------------------
 var _loadout_is_open_step = instance_exists(obj_game_controller)
     && instance_find(obj_game_controller, 0).loadout_open;
-if (!_loadout_is_open_step && keyboard_check_pressed(ord("G")) && show_gallery) {
+if (!_loadout_is_open_step && input_hotkey("G") && show_gallery) {
     show_gallery        = false;
     gallery_detail_item = undefined;
 }
@@ -699,7 +697,7 @@ if (show_gallery) {
     }
 
     // Enter/click on a discovered item opens detail
-    if ((keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter))
+    if ((input_confirm())
         && gallery_cursor >= 0 && gallery_cursor < _gal_count) {
         var _sel = _gal_all[gallery_cursor];
         var _disc = false;
@@ -781,7 +779,7 @@ if (show_gallery) {
         }
     }
 
-    if (keyboard_check_pressed(vk_escape)) {
+    if (input_cancel()) {
         if (instance_exists(obj_game_controller)
                 && instance_find(obj_game_controller, 0).comparison_open) {
             var _gcesc = instance_find(obj_game_controller, 0);
@@ -812,7 +810,7 @@ if (nav_down()) { selected_npc = wrap_index(selected_npc + 1, _npc_slots); notif
 // -----------------------------------------------------------------------------
 // 2. INTERACT WITH SELECTED NPC
 // -----------------------------------------------------------------------------
-if (keyboard_check_pressed(vk_space) || keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_return)) {
+if (input_confirm() || input_confirm_alt()) {
     if (selected_npc < array_length(npc_names) && npc_unlocked[selected_npc]) {
         if (instance_exists(obj_game_controller)) {
             var _gc_interact = instance_find(obj_game_controller, 0);
@@ -906,7 +904,7 @@ if (keyboard_check_pressed(vk_space) || keyboard_check_pressed(vk_enter) || keyb
 // message is the ask. Auto-gated by the ui_input_blocked() exit above, so it
 // never fires while a shop screen is open.
 // -----------------------------------------------------------------------------
-if (keyboard_check_pressed(ord("B")) && selected_npc < array_length(affinity_npc_ids()) && !show_history && !show_gallery) {
+if (input_hotkey("B") && selected_npc < array_length(affinity_npc_ids()) && !show_history && !show_gallery) {
     var _bond_ids = affinity_npc_ids();
     var _bond_id  = _bond_ids[selected_npc];
     if (affinity_gate_ready(_bond_id)) {
@@ -929,7 +927,7 @@ if (keyboard_check_pressed(ord("B")) && selected_npc < array_length(affinity_npc
 // Opens dungeon selection overlay; loadout opens after dungeon is chosen.
 // -----------------------------------------------------------------------------
 if (!show_gallery && selected_npc == array_length(npc_names)
-    && (keyboard_check_pressed(vk_space) || keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_return))) {
+    && (input_confirm() || input_confirm_alt())) {
     if (instance_exists(obj_game_controller)) {
         var _gc_e = instance_find(obj_game_controller, 0);
 
@@ -961,7 +959,7 @@ if (!show_gallery && selected_npc == array_length(npc_names)
 // -----------------------------------------------------------------------------
 // 4. DISMISS LAST RUN SUMMARY
 // -----------------------------------------------------------------------------
-if (keyboard_check_pressed(vk_escape)) {
+if (input_cancel()) {
     if (show_last_run) {
         show_last_run = false;
     }
