@@ -1,18 +1,18 @@
 {
   "$GMSound":"v2",
-  "%Name":"Success_1__subtle_",
+  "%Name":"snd_player_grunt_2",
   "audioGroupId":{
     "name":"audiogroup_default",
     "path":"audiogroups/audiogroup_default",
   },
   "bitDepth":1,
-  "channelFormat":0,
+  "channelFormat":1,
   "compression":0,
   "compressionQuality":4,
   "conversionMode":0,
-  "duration":2.3749886,
+  "duration":0.371519,
   "exportDir":"",
-  "name":"Success_1__subtle_",
+  "name":"snd_player_grunt_2",
   "parent":{
     "name":"Ironwake",
     "path":"Ironwake.yyp",
@@ -21,6 +21,6 @@
   "resourceType":"GMSound",
   "resourceVersion":"2.0",
   "sampleRate":44100,
-  "soundFile":"Success_1__subtle_.wav",
+  "soundFile":"snd_player_grunt_2.wav",
   "volume":1.0,
 }

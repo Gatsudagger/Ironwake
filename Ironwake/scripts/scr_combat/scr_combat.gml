@@ -1011,36 +1011,16 @@ function play_enemy_sfx(preferred_name, fallback_snd) {
     play_sfx_var(preferred_name, fallback_snd);
 }
 
-// enemy_death_sound(name) - themed death sound for an enemy.
+// enemy_death_sound(name) - themed death sound for an enemy. All 7 family slots
+// are imported (sound pass Batch 1), so the old per-family library fallbacks are
+// gone - those legacy assets were retired in Batch 4 (unidentified licenses).
 function enemy_death_sound(name) {
-    var _f = enemy_sound_family(name);
-    var _fb;
-    switch (_f) {
-        case "wraith":    _fb = teleport; break;   // ethereal fade
-        case "construct": _fb = grunt;    break;   // heavy crumble
-        case "beast":     _fb = grunt;    break;   // animal grunt
-        case "fire":      _fb = Magic;    break;   // sizzle/whoosh
-        case "ice":       _fb = teleport; break;   // shatter-ish
-        case "boss":      _fb = die5;     break;   // loud yell
-        default:          _fb = die5;     break;   // undead
-    }
-    play_enemy_sfx("snd_death_" + _f, _fb);
+    play_enemy_sfx("snd_death_" + enemy_sound_family(name), -1);
 }
 
 // enemy_attack_sound(name) - themed attack/cast sound for an enemy's offensive action.
 function enemy_attack_sound(name) {
-    var _f = enemy_sound_family(name);
-    var _fb;
-    switch (_f) {
-        case "wraith":    _fb = Magic;   break;
-        case "construct": _fb = attack1; break;
-        case "beast":     _fb = grunt;   break;
-        case "fire":      _fb = Magic;   break;
-        case "ice":       _fb = spell1;  break;
-        case "boss":      _fb = grunt;   break;
-        default:          _fb = attack1; break;   // undead
-    }
-    play_enemy_sfx("snd_attack_" + _f, _fb);
+    play_enemy_sfx("snd_attack_" + enemy_sound_family(name), -1);
 }
 
 // play_ability_cast_sfx(ab, caster, is_offensive) - PLAYER cast audio keyed to the
@@ -1054,30 +1034,30 @@ function play_ability_cast_sfx(ab, caster, is_offensive) {
     var _dtype = variable_struct_exists(ab, "damage_type") ? ab.damage_type : 0;
 
     if (!is_offensive) {
-        // Support cast - keyed to what it grants. New snd_cast_* slots (Helton Yan
-        // pack) with the old library sounds as fallbacks until imported.
+        // Support cast - keyed to what it grants. All snd_cast_* slots imported
+        // (Batch 1); the legacy library fallbacks were retired in Batch 4.
         switch (_etype) {
-            case "heal":     play_sfx_var("snd_cast_heal",   Magic);               break; // bright twinkle
-            case "shield":   play_sfx_var("snd_cast_shield", Success_1__subtle_);  break; // defensive ward
-            case "resource": play_sfx_var("snd_cast_buff",   utility2);            break; // arcane gain
-            case "debuff":   play_sfx_var("snd_cast_debuff", Harp_2__Descending_); break; // ominous
-            default:         play_sfx_var("snd_cast_buff",   utility2);            break; // generic self-buff
+            case "heal":     play_sfx_var("snd_cast_heal",   -1); break; // bright twinkle
+            case "shield":   play_sfx_var("snd_cast_shield", -1); break; // defensive ward
+            case "resource": play_sfx_var("snd_cast_buff",   -1); break; // arcane gain
+            case "debuff":   play_sfx_var("snd_cast_debuff", -1); break; // ominous
+            default:         play_sfx_var("snd_cast_buff",   -1); break; // generic self-buff
         }
         return;
     }
 
     // Offensive cast - texture by damage type (0 phys - 1 elem - 2 drain/void - 3 blood).
     switch (_dtype) {
-        case 0:  play_player_vocal("snd_player_atk", attack1); break;         // human weapon strike (gendered)
-        case 1:  play_sfx_var("snd_cast_elem",  spell1);  break;             // elemental cast
-        case 2:  play_sfx_var("snd_cast_void",  Obscure); break;             // dark whoosh
-        case 3:  play_sfx_var("snd_cast_blood", grunt);
-                 audio_play_sound(attack1, 1, false); break;                 // blood (visceral)
-        default: play_sfx_var("snd_cast_arcane", Strings_1);                 // arcane / other
+        case 0:  play_player_vocal("snd_player_atk", -1); break;      // human weapon strike (gendered)
+        case 1:  play_sfx_var("snd_cast_elem",  -1); break;           // elemental cast
+        case 2:  play_sfx_var("snd_cast_void",  -1); break;           // dark whoosh
+        case 3:  play_sfx_var("snd_cast_blood", -1);
+                 audio_play_sound(snd_player_atk, 1, false); break;   // blood (squelch + strike impact)
+        default: play_sfx_var("snd_cast_arcane", -1);                 // arcane / other
     }
     // Class flavor: the Bloodwarden grunts with effort on physical strikes.
     if (variable_struct_exists(caster, "class_id") && caster.class_id == 1 && _dtype == 0) {
-        audio_play_sound(grunt, 1, false);
+        play_sfx_var("snd_player_grunt", -1);
     }
 }
 

@@ -1544,7 +1544,7 @@ if (player_turn) {
                 // --- Self-targeted ability ---
                 array_push(combat_log, player.name + " used " + ab.name + ".");
                 if (ab.name == "Blink" || ab.name == "Shadow Step") {
-                    audio_play_sound(teleport, 1, false);   // movement keeps its whoosh
+                    audio_play_sound(snd_move_whoosh, 1, false);   // movement keeps its whoosh
                 } else {
                     // Support cast - sound keyed to the effect kind (heal/shield/buff/...).
                     play_ability_cast_sfx(ab, player, false);
@@ -2021,7 +2021,7 @@ if (player_turn) {
                 if (_incoming_mult < 1.0) _sdmg = max(1, round(_sdmg * _incoming_mult));  // Blink softening
                 if (_sdmg > 0) combat_state.player_took_damage = true;
                 combat_apply_damage(player, _sdmg);
-                audio_play_sound(hurt, 1, false);
+                play_player_vocal("snd_player_hurt", -1);
                 player.hit_flash = 15; screen_shake_timer = 12;
                 array_push(damage_popups, { value: _sdmg, x: 475, y: 545, timer: 50, col: make_color_rgb(255, 130, 60) });
                 attack_anim_timer = 20; attack_anim_src_x = _sa_x; attack_anim_src_y = _sa_y;
@@ -2149,9 +2149,8 @@ if (player_turn) {
             // absorb keeps the fight untouched (defense play stays rewarded).
             if (_final_dmg > 0) combat_state.player_took_damage = true;
             combat_apply_damage(player, _final_dmg);
-            // Player takes a hit - gendered human "damage" grunt (snd_player_hurt[_f]),
-            // falling back to the library `hurt` until the pack is imported.
-            play_player_vocal("snd_player_hurt", hurt);
+            // Player takes a hit - gendered human "damage" grunt (snd_player_hurt[_f]).
+            play_player_vocal("snd_player_hurt", -1);
             // VFX: hit flash, popup, enemy attack slide, screen shake
             player.hit_flash   = 15;
             screen_shake_timer = 12;
@@ -2277,7 +2276,7 @@ if (player_turn) {
 
                 if (_final_dmg2 > 0) combat_state.player_took_damage = true;
                 combat_apply_damage(player, _final_dmg2);
-                audio_play_sound(hurt, 1, false);
+                play_player_vocal("snd_player_hurt", -1);
                 player.hit_flash   = max(player.hit_flash, 12);
                 screen_shake_timer = max(screen_shake_timer, 8);
                 array_push(damage_popups, { value: _final_dmg2, x: 475, y: 545, timer: 50, col: make_color_rgb(255, 80, 80) });

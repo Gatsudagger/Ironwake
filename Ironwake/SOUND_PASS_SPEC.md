@@ -177,5 +177,13 @@ transition, so no music stop-site needed changes. Trim map lives in `audio_apply
 3. **Batch 3** — DONE 2026-07-07: ambience (G) + retired 6 unused legacy assets (Check_2,
    Harp_1__Ascending_, Miscellaneous_1__Atmospheric_, Selection, Strings_2, Success_3 — zero
    .gml references; removed from .yyp, folders deleted by `tools/import_sounds_batch3.py`).
+4. **Batch 4 (license epilogue)** — DONE 2026-07-07: retired the remaining 15 UNIDENTIFIED
+   legacy sounds (utility2, Check_1, Chimes__Ascending_, Success_1__subtle_, Success_2, spell1,
+   Magic, attack1, grunt, teleport, die5, hurt, Obscure, Strings_1, Harp_2__Descending_ — see
+   CREDITS.md). Dead fallback args in scr_combat → -1; live sites rewired: blood-cast impact
+   layer → snd_player_atk, Bloodwarden effort → NEW snd_player_grunt/_2 (400 pack man_2/man_8),
+   Blink/Shadow Step whoosh → NEW snd_move_whoosh (whoosh_2 — NOTE shares source wav with
+   snd_attack_wraith, flag if samey), raw player-hurt sites → play_player_vocal("snd_player_hurt").
+   `tools/import_sounds_batch4.py`. MusicBox1 KEPT (M identified: standalone free itch download).
 Each batch: M auditions shortlist → approve picks → import (.wav → snd_* assets, `audio_sfx_assets()`
 registration, new call sites in .gml) → M F5s.

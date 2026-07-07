@@ -1,18 +1,18 @@
 {
   "$GMSound":"v2",
-  "%Name":"hurt",
+  "%Name":"snd_move_whoosh",
   "audioGroupId":{
     "name":"audiogroup_default",
     "path":"audiogroups/audiogroup_default",
   },
   "bitDepth":1,
-  "channelFormat":0,
+  "channelFormat":1,
   "compression":0,
   "compressionQuality":4,
   "conversionMode":0,
-  "duration":1.0710204,
+  "duration":0.766259,
   "exportDir":"",
-  "name":"hurt",
+  "name":"snd_move_whoosh",
   "parent":{
     "name":"Ironwake",
     "path":"Ironwake.yyp",
@@ -21,6 +21,6 @@
   "resourceType":"GMSound",
   "resourceVersion":"2.0",
   "sampleRate":44100,
-  "soundFile":"hurt.wav",
+  "soundFile":"snd_move_whoosh.wav",
   "volume":1.0,
 }

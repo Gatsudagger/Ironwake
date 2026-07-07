@@ -1,18 +1,18 @@
 {
   "$GMSound":"v2",
-  "%Name":"Strings_1",
+  "%Name":"snd_player_grunt",
   "audioGroupId":{
     "name":"audiogroup_default",
     "path":"audiogroups/audiogroup_default",
   },
   "bitDepth":1,
-  "channelFormat":0,
+  "channelFormat":1,
   "compression":0,
   "compressionQuality":4,
   "conversionMode":0,
-  "duration":6.25,
+  "duration":0.371519,
   "exportDir":"",
-  "name":"Strings_1",
+  "name":"snd_player_grunt",
   "parent":{
     "name":"Ironwake",
     "path":"Ironwake.yyp",
@@ -21,6 +21,6 @@
   "resourceType":"GMSound",
   "resourceVersion":"2.0",
   "sampleRate":44100,
-  "soundFile":"Strings_1.wav",
+  "soundFile":"snd_player_grunt.wav",
   "volume":1.0,
 }

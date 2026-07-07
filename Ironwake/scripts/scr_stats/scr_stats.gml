@@ -8419,12 +8419,8 @@ function ambience_set(_list) {
 // that are actually played - see the note on audio_music_assets above.)
 function audio_sfx_assets() {
     return [
-        utility2, Check_1, Chimes__Ascending_, Success_2,
-        spell1, Magic, attack1, grunt, teleport, die5, hurt,
-        // Ability-cast fallbacks (play_ability_cast_sfx in scr_combat) - these play
-        // until the snd_cast_* pack is imported, so they MUST be gain-controlled too
-        // or they stay at full volume (the Void Drain / void-cast "immune sound" bug).
-        Obscure, Strings_1, Success_1__subtle_, Harp_2__Descending_,
+        // (The pre-sound-pass library set - utility2/Check_1/spell1/hurt/etc. -
+        // was retired in Batch 4: unidentified licenses, all uses rewired.)
         // Sound pass Batch 1 (SOUND_PASS_SPEC.md) - every import must be listed
         // here or it plays at full volume, ignoring the SFX slider.
         snd_ui_move, snd_ui_confirm, snd_ui_cancel, snd_ui_error,
@@ -8446,6 +8442,8 @@ function audio_sfx_assets() {
         snd_confirm_major, snd_npc_confirm, snd_sell,
         // Batch 2 - economy/items
         snd_gold, snd_potion, snd_forge, snd_rune_socket, snd_page, snd_chest, snd_gate,
+        // Batch 4 - legacy-retirement replacements
+        snd_player_grunt, snd_player_grunt_2, snd_move_whoosh,
     ];
 }
 
