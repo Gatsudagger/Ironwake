@@ -470,6 +470,7 @@ event_active         = undefined;  // the rolled event struct
 event_cursor         = 0;
 event_phase          = "choose";   // "choose" | "result"
 event_result_text    = "";
+event_coins          = [];         // gold-burst particles on a gold-yielding result
 
 
 // -----------------------------------------------------------------------------
@@ -478,3 +479,9 @@ event_result_text    = "";
 audio_apply_volumes();   // honor saved Music/SFX volumes
 audio_play_sound(_2_dungeon_INITIAL, 1, false);
 dungeon_music_looping = false;
+
+// The portcullis grinds open once per descent - fresh run arrivals on floor 1
+// only, never on floor advances or returns from combat.
+if (global.current_floor == 1 && !returning_from_combat) {
+    audio_play_sound(snd_gate, 1, false);
+}

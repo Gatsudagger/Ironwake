@@ -243,10 +243,28 @@ if (showing_event_choice) {
             var _cost = event_choice_cost(_ch);
             if (_cost > 0) global.gold = max(0, global.gold - _cost);
 
+            global.event_gold_gained = 0;
             var _out     = event_resolve_choice(_ch);
             var _rewards = event_apply_effects(_out.effects);
             event_result_text = _out.text + (_rewards != "" ? "\n\n" + _rewards : "");
             event_phase = "result";
+            // Gold-yielding result: spawn the coin burst (coins tossed up from the
+            // panel centre that fall and settle into a pile - drawn in Draw_64).
+            event_coins = [];
+            if (global.event_gold_gained > 0) {
+                var _nc = min(6 + (global.event_gold_gained div 10), 24);
+                for (var _ci = 0; _ci < _nc; _ci++) {
+                    array_push(event_coins, {
+                        x: GUI_CX + random_range(-40, 40),
+                        y: 640,
+                        vx: random_range(-4.2, 4.2),
+                        vy: random_range(-9, -4),
+                        spin: random_range(0, pi * 2),
+                        slot: _ci,           // index into the pile rest positions
+                        grounded: false
+                    });
+                }
+            }
             show_debug_message("[FLOOR DEBUG] event=" + event_active.id
                 + " choice=" + _ch.label + " result=" + _out.text);
         }
@@ -396,6 +414,8 @@ if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter) || key
         treasure_gold = irandom(_room.gold_max - _room.gold_min) + _room.gold_min;
         add_gold(treasure_gold);
         showing_treasure = true;
+        audio_play_sound(snd_chest, 1, false);
+        if (treasure_gold > 0) audio_play_sound(snd_gold, 1, false);
         treasure_timer   = 0;
 
         treasure_item  = undefined;
@@ -465,6 +485,8 @@ if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter) || key
         treasure_item  = _th_c;
         treasure_timer = 0;
         showing_treasure = true;
+        audio_play_sound(snd_chest, 1, false);
+        if (treasure_gold > 0) audio_play_sound(snd_gold, 1, false);
         show_debug_message("[FLOOR DEBUG] room=" + string(selected_room) + " type=treasure_heal gold=" + string(_th_gold));
 
     } else if (_room.type == "treasure_vault") {
@@ -483,6 +505,8 @@ if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter) || key
         treasure_item  = _tv_e;
         treasure_timer = 0;
         showing_treasure = true;
+        audio_play_sound(snd_chest, 1, false);
+        if (treasure_gold > 0) audio_play_sound(snd_gold, 1, false);
         show_debug_message("[FLOOR DEBUG] room=" + string(selected_room) + " type=treasure_vault gold=" + string(_tv_gold));
 
     } else if (_room.type == "treasure_rare") {
@@ -501,6 +525,8 @@ if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter) || key
         treasure_item  = _tr_e;
         treasure_timer = 0;
         showing_treasure = true;
+        audio_play_sound(snd_chest, 1, false);
+        if (treasure_gold > 0) audio_play_sound(snd_gold, 1, false);
         show_debug_message("[FLOOR DEBUG] room=" + string(selected_room) + " type=treasure_rare gold=" + string(_tr_gold));
 
     } else if (_room.type == "event") {
@@ -510,6 +536,7 @@ if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter) || key
         event_phase       = "choose";
         event_result_text = "";
         showing_event_choice = true;
+        audio_play_sound(snd_sting_mystery, 1, false);   // something odd in this room...
         show_debug_message("[FLOOR DEBUG] room=" + string(selected_room) + " type=event id=" + event_active.id);
 
     } else if (_room.type == "shrine") {

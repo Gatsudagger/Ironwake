@@ -110,10 +110,11 @@ if (variable_instance_exists(id, "kb_open") && kb_open) {
         if (nav_left())  { _si = wrap_index(_si - 1, 3); _g.stake = _stakes[_si]; }
         if (nav_right()) { _si = wrap_index(_si + 1, 3); _g.stake = _stakes[_si]; }
         if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)) {
-            if (global.gold < _g.stake) { _g.msg = "You can't cover the stake."; exit; }
+            if (global.gold < _g.stake) { _g.msg = "You can't cover the stake."; audio_play_sound(snd_ui_error, 1, false); exit; }
             global.gold -= _g.stake;
             _g.phase = "play";
             _g.msg   = "";
+            play_sfx_var("snd_dice_shake", -1);   // dice hit the cup
         }
         exit;
     }
@@ -134,6 +135,7 @@ if (variable_instance_exists(id, "kb_open") && kb_open) {
                             + string(kb_tourney_pot()) + "g pot and claim " + _ht_prize + ".";
                         kb_tourney = undefined;
                         kb_open = false;
+                        audio_play_sound(snd_kb_payout, 1, false);   // the pot slides over
                         save_game();
                     } else {
                         var _ht_next = kb_tourney.opponents[kb_tourney.stage];
@@ -142,6 +144,7 @@ if (variable_instance_exists(id, "kb_open") && kb_open) {
                         kb.stake = 0;
                         kb.msg   = "Match " + string(kb_tourney.stage + 1) + " of 3 - "
                             + npc_display_name(_ht_next) + " takes the seat.";
+                        play_sfx_var("snd_dice_shake", -1);
                     }
                 } else if (_g.result == "tie") {
                     var _ht_same = kb_tourney.opponents[kb_tourney.stage];
@@ -149,6 +152,7 @@ if (variable_instance_exists(id, "kb_open") && kb_open) {
                     kb.phase = "play";
                     kb.stake = 0;
                     kb.msg   = "Dead even - " + npc_display_name(_ht_same) + " racks the dice again.";
+                    play_sfx_var("snd_dice_shake", -1);
                 } else {
                     tavern_board_note = "The High Table keeps your " + string(kb_tourney_buyin())
                         + "g. The invitation won't come again for a while.";
@@ -174,8 +178,11 @@ if (variable_instance_exists(id, "kb_open") && kb_open) {
         if (nav_right()) _g.cursor = wrap_index(_g.cursor + 1, 3);
         if ((keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter))
             && kb_col_count(_g.mine, _g.cursor) < 3) {
+            var _foes_before = kb_col_count(_g.foes, _g.cursor);
             kb_place(_g.mine, _g.cursor, _g.die);
             kb_destroy(_g.foes, _g.cursor, _g.die);
+            play_sfx_var("snd_dice_place", -1);
+            if (kb_col_count(_g.foes, _g.cursor) < _foes_before) audio_play_sound(snd_kb_capture, 1, false);
             if (kb_board_full(_g.mine) || kb_board_full(_g.foes)) {
                 _g.phase = "over";
             } else {
@@ -184,6 +191,7 @@ if (variable_instance_exists(id, "kb_open") && kb_open) {
                 _g.foe_die   = irandom(5) + 1;
                 if (_g.foe == "sable") _g.foe_die = max(_g.foe_die, irandom(5) + 1);
                 _g.foe_timer = 45;
+                play_sfx_var("snd_dice_roll", -1);   // the foe's die tumbles out
             }
         }
     } else {
@@ -191,14 +199,18 @@ if (variable_instance_exists(id, "kb_open") && kb_open) {
         if (_g.foe_timer <= 0) {
             var _pick = kb_ai_pick(_g);
             if (_pick >= 0) {
+                var _mine_before = kb_col_count(_g.mine, _pick);
                 kb_place(_g.foes, _pick, _g.foe_die);
                 kb_destroy(_g.mine, _pick, _g.foe_die);
+                play_sfx_var("snd_dice_place", -1);
+                if (kb_col_count(_g.mine, _pick) < _mine_before) audio_play_sound(snd_kb_capture, 1, false);
             }
             if (_pick < 0 || kb_board_full(_g.mine) || kb_board_full(_g.foes)) {
                 _g.phase = "over";
             } else {
                 _g.my_turn = true;
                 _g.die     = irandom(5) + 1;
+                play_sfx_var("snd_dice_roll", -1);   // your next die tumbles out
             }
         }
     }
@@ -211,10 +223,12 @@ if (variable_instance_exists(id, "kb_open") && kb_open) {
             affinity_add(_g.foe, 2);   // a good game warms the table
             ledger_add(_g.foe, "milestone", "Beat them at knucklebones for " + string(_g.stake) + "g. They'll want revenge.");
             _g.msg = "You win " + string(_g.stake * 2) + "g! " + npc_display_name(_g.foe) + " eyes the dice suspiciously.";
+            audio_play_sound(snd_kb_payout, 1, false);     // coins slide your way
         } else if (_pf > _pm) {
             _g.result = "loss";
             ledger_add(_g.foe, "milestone", "Lost " + string(_g.stake) + "g to them at knucklebones.");
             _g.msg = npc_display_name(_g.foe) + " sweeps up your " + string(_g.stake) + "g without gloating. Much.";
+            audio_play_sound(snd_kb_payout_2, 1, false);   // ...and away from you
         } else {
             _g.result = "tie";
             global.gold += _g.stake;
@@ -228,7 +242,7 @@ if (variable_instance_exists(id, "kb_open") && kb_open) {
 // --- TAVERN REQUESTS BOARD (Phase 4b UX): the quest action surface. W/S rows,
 // Enter accepts an available request / turns in a finished one, Esc closes.
 if (tavern_board_open) {
-    if (keyboard_check_pressed(vk_escape)) { tavern_board_open = false; exit; }
+    if (keyboard_check_pressed(vk_escape)) { tavern_board_open = false; audio_play_sound(snd_ui_cancel, 1, false); exit; }
     if (keyboard_check_pressed(ord("K"))) {
         // Knucklebones: tonight's opponent rotates with the run count.
         var _kb_ids = affinity_npc_ids();
@@ -253,6 +267,7 @@ if (tavern_board_open) {
                 + string(global.kb_tourney_countdown) + " to go)";
         } else if (global.gold < kb_tourney_buyin()) {
             tavern_board_note = "The High Table wants a " + string(kb_tourney_buyin()) + "g buy-in.";
+            audio_play_sound(snd_ui_error, 1, false);
         } else {
             global.gold -= kb_tourney_buyin();
             global.kb_tourney_ready = false;
@@ -262,6 +277,7 @@ if (tavern_board_open) {
             kb.phase = "play";   // buy-in covers the bracket - no per-match stake
             kb.stake = 0;
             kb.msg   = "Match 1 of 3 - " + npc_display_name(kb_tourney.opponents[0]) + " takes the seat.";
+            play_sfx_var("snd_dice_shake", -1);
             save_game();
             exit;
         }
@@ -291,13 +307,14 @@ if (tavern_board_open) {
                         ? ("\"" + _tbd.name + "\" fulfilled - your bond with " + npc_display_name(_tbd.npc)
                            + " deepens: " + affinity_tier_name_for(_tbd.gate_tier) + ".")
                         : ("\"" + _tbd.name + "\" fulfilled - " + journal_quest_reward_text(_tbd) + " collected.");
-                    audio_play_sound(Check_1, 1, false);
+                    audio_play_sound(snd_sting_quest, 1, false);
                     save_game();
                 } else tavern_board_note = _tbres;
             } else if (quest_state(_tbid) != undefined && quest_state(_tbid).status == "available") {
                 var _tbres2 = quest_start(_tbid);
                 if (_tbres2 == "") {
                     tavern_board_note = "Taken: \"" + _tbd.name + "\" - " + _tbd.objective + ".";
+                    audio_play_sound(snd_ui_confirm, 1, false);
                     save_game();
                 } else tavern_board_note = _tbres2;
             } else if (quest_state(_tbid) != undefined && quest_state(_tbid).status == "active") {
@@ -378,6 +395,7 @@ if (keyboard_check_pressed(ord("J")) && (room == rm_hub || room == rm_dungeon_fl
     && (!variable_global_exists("pause_open") || !global.pause_open)) {
     journal_open   = true;
     journal_cursor = 0;
+    audio_play_sound(snd_page, 1, false);
     exit;
 }
 
@@ -772,6 +790,7 @@ if (shop_open != -1 && !stash_mode_open) {
                         global.gold       += _sell_price;
                         sell_index         = clamp(sell_index, 0, max(0, _sl_count - 2));
                         shop_notification  = "Sold for +" + string(_sell_price) + "g!";
+                        audio_play_sound(snd_sell, 1, false);
                         // Persist the sale (gold + removed item) right away.
                         if (room == rm_hub || room == rm_character_select) save_game();
                     }
@@ -788,6 +807,7 @@ if (shop_open != -1 && !stash_mode_open) {
                 global.gold       += _sell_price;
                 sell_index         = clamp(sell_index, 0, max(0, _sl_count - 2));
                 shop_notification  = "Sold for +" + string(_sell_price) + "g!";
+                audio_play_sound(snd_sell, 1, false);
                 sell_confirm_name  = "";
                 // Persist the sale (gold + removed item) right away.
                 if (room == rm_hub || room == rm_character_select) save_game();
@@ -956,12 +976,13 @@ if (shop_open != -1 && !stash_mode_open) {
             var _sprice = _entry.price;
             if (global.gold < _sprice) {
                 shop_notification = "Not enough gold!";
+                audio_play_sound(snd_ui_error, 1, false);
             } else if (_entry.kind == "feed") {
                 // Pet feed -> feed pouch (applied later at Bairc).
                 global.gold -= _sprice;
                 pet_feed_pouch_add(_entry.it.id, 1);
                 affinity_add("petra", 2);
-                audio_play_sound(utility2, 1, false);
+                audio_play_sound(snd_buy, 1, false);
                 shop_notification = _entry.it.name + " added to your feed pouch (Bairc feeds it).";
                 if (room == rm_hub || room == rm_character_select) save_game();
             } else {
@@ -980,7 +1001,7 @@ if (shop_open != -1 && !stash_mode_open) {
                         shop_index = min(shop_index, array_length(petra_buy_list()) - 1);
                     }
                 }
-                audio_play_sound(utility2, 1, false);
+                audio_play_sound(snd_buy, 1, false);
                 shop_notification = "Purchased - added to consumable stash.";
                 // Persist the purchase (gold spent + new consumable) right away.
                 if (room == rm_hub || room == rm_character_select) save_game();
@@ -1014,7 +1035,7 @@ if (shop_open != -1 && !stash_mode_open) {
                 affinity_add("dorn", 2);   // function-use drip (gear buy)
                 discover_item(item_base_name(_dentry.item));
                 global.dorn_stock[shop_index].sold = true;
-                audio_play_sound(utility2, 1, false);
+                audio_play_sound(snd_buy, 1, false);
                 shop_notification = "Purchased - added to equipment stash.";
                 // Persist the purchase (gold spent + new gear) right away.
                 if (room == rm_hub || room == rm_character_select) save_game();
@@ -1030,6 +1051,7 @@ if (shop_open != -1 && !stash_mode_open) {
                 }
             } else {
                 shop_notification = "Not enough gold!";
+                audio_play_sound(snd_ui_error, 1, false);
             }
         }
     }
@@ -1301,6 +1323,7 @@ if (trainer_open) {
         var _stat_cost  = vex_price(cha_price(200));   // Vex Friend perk: 10% off
         if (global.gold < _stat_cost) {
             trainer_notification = "Not enough gold - a stat costs " + string(_stat_cost) + "g + a Rare item.";
+            audio_play_sound(snd_ui_error, 1, false);
         } else if (!trainer_has_rare_item()) {
             trainer_notification = "You need a Rare or better item in your stash/pack to trade.";
         } else {
@@ -1320,6 +1343,7 @@ if (trainer_open) {
             var _slot_cost = vex_price(cha_price((_bts == 0) ? 800 : 2000));   // Vex Friend perk: 10% off
             if (global.gold < _slot_cost) {
                 trainer_notification = "Not enough gold - the next slot costs " + string(_slot_cost) + "g.";
+                audio_play_sound(snd_ui_error, 1, false);
             } else {
                 global.gold -= _slot_cost;
                 global.bonus_trait_slots = _bts + 1;
@@ -1465,7 +1489,7 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open) {
                     _np.name  = _nm;
                     _np.named = true;
                     bairc_notification = "\"" + _nm + "\" - this name will now be known to them...";
-                    audio_play_sound(Check_1, 1, false);
+                    audio_play_sound(snd_npc_confirm, 1, false);
                     if (room == rm_hub || room == rm_character_select) save_game();
                 } else {
                     bairc_notification = "Renaming costs 20 dust.";
@@ -1508,7 +1532,7 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open) {
                     bairc_notification = _cp_splash
                         ? (_cp_pet.name + " draws " + _pick.name + " into itself - the crossing is complete.")
                         : (_cp_pet.name + " takes up " + _pick.name + " - its path is set.");
-                    audio_play_sound(Check_1, 1, false);
+                    audio_play_sound(snd_npc_confirm, 1, false);
                     affinity_add("bairc", 2);   // function-use drip (gift/splash pick)
                     if (room == rm_hub || room == rm_character_select) save_game();
                 }
@@ -1528,7 +1552,7 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open) {
             var _rl = pet_donate(bairc_cursor);
             if (_rl != "") {
                 bairc_notification = "Bairc takes " + _rl + " gently. It has a home in his garden now.";
-                audio_play_sound(Check_1, 1, false);
+                audio_play_sound(snd_npc_confirm, 1, false);
                 affinity_add("bairc", 2);   // function-use drip (donation)
                 bairc_cursor = clamp(bairc_cursor, 0, max(0, pet_count() - 1));
                 if (room == rm_hub || room == rm_character_select) save_game();
@@ -1567,7 +1591,7 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open) {
                 _bp.identified = true;
                 bairc_notification = "Bairc turns it over in his hands... a "
                     + pet_species_get(_bp.species).name + " egg - " + pet_archetype_name(_bp.archetype) + ".";
-                audio_play_sound(Check_1, 1, false);
+                audio_play_sound(snd_npc_confirm, 1, false);
                 affinity_add("bairc", 2);   // function-use drip (identification)
                 if (room == rm_hub || room == rm_character_select) save_game();
             } else {
@@ -1584,7 +1608,7 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open) {
             } else {
                 global.active_pet  = bairc_cursor;
                 bairc_notification = _bp.name + " is now your active companion.";
-                audio_play_sound(Check_1, 1, false);
+                audio_play_sound(snd_npc_confirm, 1, false);
                 affinity_add("bairc", 2);    // function-use drip (companion chosen)
                 if (room == rm_hub || room == rm_character_select) save_game();
             }
@@ -1609,7 +1633,7 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open) {
                 if (_fr == "") {
                     bairc_notification = _bp.name + " enjoys the " + _owned[_feed_key].name + "."
                         + (pet_growth_ready(_bp) ? "  Ready to grow - take it on a run!" : "");
-                    audio_play_sound(Check_1, 1, false);
+                    audio_play_sound(snd_npc_confirm, 1, false);
                     affinity_add("bairc", 2);   // function-use drip (feeding)
                     if (room == rm_hub || room == rm_character_select) save_game();
                 } else {
@@ -1624,7 +1648,7 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open) {
             var _cure = pet_corruption_cure(_bp);
             if (_cure != "") {
                 bairc_notification = _cure;
-                audio_play_sound(Check_1, 1, false);
+                audio_play_sound(snd_npc_confirm, 1, false);
                 if (room == rm_hub || room == rm_character_select) save_game();
             }
         }
@@ -1703,22 +1727,24 @@ if (variable_instance_exists(id, "maren_open") && maren_open) {
             maren_confirm = undefined;
 
             if (_cf.action == "socket") {
-                if (global.gold < _cf.cost) { maren_notification = "Need " + string(_cf.cost) + "g."; exit; }
+                if (global.gold < _cf.cost) { maren_notification = "Need " + string(_cf.cost) + "g."; audio_play_sound(snd_ui_error, 1, false); exit; }
                 if (maren_socket_rune(maren_item_sel, _cf.rune_inv)) {
                     global.gold -= _cf.cost; affinity_add("maren", 2); save_game();   // function-use drip (socket)
                     maren_notification = "Socketed " + _cf.name + " " + rune_tier_roman(_cf.tier)
                         + ".  (-" + string(_cf.cost) + "g)";
+                    audio_play_sound(snd_rune_socket, 1, false);
                 } else {
                     maren_notification = "That item has no open sockets.";
                 }
                 maren_phase = 1; maren_cursor = 0; maren_scroll = 0;
 
             } else if (_cf.action == "unsocket") {
-                if (global.gold < _cf.cost) { maren_notification = "Need " + string(_cf.cost) + "g."; exit; }
+                if (global.gold < _cf.cost) { maren_notification = "Need " + string(_cf.cost) + "g."; audio_play_sound(snd_ui_error, 1, false); exit; }
                 if (maren_unsocket_rune(maren_item_sel, _cf.rune_idx)) {
                     global.gold -= _cf.cost; save_game();
                     maren_notification = "Removed " + _cf.name + " " + rune_tier_roman(_cf.tier)
                         + " (returned to inventory).  (-" + string(_cf.cost) + "g)";
+                    audio_play_sound(snd_rune_socket, 1, false);
                     maren_cursor = clamp(maren_cursor, 0, max(0, (_m_item != undefined ? _m_item.socket_count : 1) - 1));
                 } else {
                     maren_notification = "Could not remove that rune.";
@@ -1730,6 +1756,7 @@ if (variable_instance_exists(id, "maren_open") && maren_open) {
                 maren_notification = (_sres == "")
                     ? ("Split " + _sr_name + " " + rune_tier_roman(_sr_tier) + ".")
                     : _sres;
+                if (_sres == "") audio_play_sound(snd_sell, 1, false);   // breaking down = the salvage rattle
                 maren_cursor = clamp(maren_cursor, 0, max(0, array_length(global.rune_inventory) - 1));
 
             } else if (_cf.action == "combine") {
@@ -1737,14 +1764,16 @@ if (variable_instance_exists(id, "maren_open") && maren_open) {
                 maren_notification = (_cres == "")
                     ? ("Forged " + _cf.name + " " + rune_tier_roman(_cf.grp_tier + 1) + "!")
                     : _cres;
+                if (_cres == "") audio_play_sound(snd_forge, 1, false);
                 maren_cursor = 0; maren_scroll = 0;
 
             } else if (_cf.action == "aspect_socket") {
-                if (global.gold < _cf.cost) { maren_notification = "Need " + string(_cf.cost) + "g."; exit; }
+                if (global.gold < _cf.cost) { maren_notification = "Need " + string(_cf.cost) + "g."; audio_play_sound(snd_ui_error, 1, false); exit; }
                 if (maren_aspect_socket(_cf.rune_inv)) {
                     global.gold -= _cf.cost; affinity_add("maren", 2); save_game();   // function-use drip (aspect socket)
                     maren_notification = "Socketed " + _cf.name + " " + rune_tier_roman(_cf.tier)
                         + ".  (-" + string(_cf.cost) + "g)";
+                    audio_play_sound(snd_rune_socket, 1, false);
                 } else {
                     maren_notification = "No open Aspect slot.";
                 }
@@ -1868,6 +1897,7 @@ if (variable_instance_exists(id, "maren_open") && maren_open) {
                     var _ucost = rune_socket_cost();
                     if (global.gold < _ucost) {
                         maren_notification = "Removing a rune costs " + string(_ucost) + "g - not enough gold.";
+                        audio_play_sound(snd_ui_error, 1, false);
                     } else {
                         maren_confirm = {
                             action: "unsocket", cost: _ucost, rune_idx: maren_cursor,
@@ -1890,6 +1920,7 @@ if (variable_instance_exists(id, "maren_open") && maren_open) {
                     var _scost = rune_socket_cost();
                     if (global.gold < _scost) {
                         maren_notification = "Socketing costs " + string(_scost) + "g - not enough gold.";
+                        audio_play_sound(snd_ui_error, 1, false);
                     } else {
                         maren_confirm = {
                             action: "socket", cost: _scost, rune_inv: _ri,
@@ -1911,6 +1942,7 @@ if (variable_instance_exists(id, "maren_open") && maren_open) {
                     var _aucost = rune_socket_cost();
                     if (global.gold < _aucost) {
                         maren_notification = "Removing a rune costs " + string(_aucost) + "g - not enough gold.";
+                        audio_play_sound(snd_ui_error, 1, false);
                     } else {
                         maren_confirm = {
                             action: "aspect_unsocket", cost: _aucost, slot_idx: maren_cursor,
@@ -1940,6 +1972,7 @@ if (variable_instance_exists(id, "maren_open") && maren_open) {
                     var _ascost = rune_socket_cost();
                     if (global.gold < _ascost) {
                         maren_notification = "Socketing costs " + string(_ascost) + "g - not enough gold.";
+                        audio_play_sound(snd_ui_error, 1, false);
                     } else {
                         maren_confirm = {
                             action: "aspect_socket", cost: _ascost, rune_inv: _ai,
@@ -2109,6 +2142,7 @@ if (variable_instance_exists(id, "sable_open") && sable_open) {
                         sable_confirm = false;
                         var _gd = sable_salvage_gear_at(_gsel);
                         sable_notification = (_gd >= 0) ? ("Salvaged " + _gname + " for " + string(_gd) + " dust.") : "Could not salvage.";
+                        if (_gd >= 0) audio_play_sound(snd_sell, 1, false);
                         if (_gd >= 0) affinity_add("sable", 2);   // function-use drip (salvage)
                         sable_cursor = clamp(sable_cursor, 0, max(0, array_length(sable_salvageable_gear()) - 1));
                     }
@@ -2125,6 +2159,7 @@ if (variable_instance_exists(id, "sable_open") && sable_open) {
                         sable_confirm = false;
                         var _rd = sable_salvage_rune_at(_rsel);
                         sable_notification = (_rd >= 0) ? ("Scrapped " + _rname + " for " + string(_rd) + " dust.") : "Could not scrap.";
+                        if (_rd >= 0) audio_play_sound(snd_sell, 1, false);
                         if (_rd >= 0) affinity_add("sable", 2);   // function-use drip (scrap)
                         sable_cursor = clamp(sable_cursor, 0, max(0, array_length(global.rune_inventory) - 1));
                     }
@@ -2136,6 +2171,7 @@ if (variable_instance_exists(id, "sable_open") && sable_open) {
                 var _bdef = _s_brew[_bsel];
                 var _bres = sable_brew(_bdef.id);
                 sable_notification = (_bres == "") ? ("Brewed " + _bdef.name + "!") : _bres;
+                if (_bres == "") audio_play_sound(snd_npc_confirm, 1, false);
                 if (_bres == "") affinity_add("sable", 2);   // function-use drip (brew)
             }
         } else if (sable_tab == 2) {
@@ -2144,6 +2180,7 @@ if (variable_instance_exists(id, "sable_open") && sable_open) {
                 var _ug = _s_groups[_usel];
                 var _ures = sable_upgrade(_ug.from);
                 sable_notification = (_ures == "") ? ("Upgraded 3x " + _ug.from + " into " + _ug.to + "!") : _ures;
+                if (_ures == "") audio_play_sound(snd_npc_confirm, 1, false);
                 if (_ures == "") affinity_add("sable", 2);   // function-use drip (upgrade)
                 sable_cursor = 0;
             }
@@ -2214,6 +2251,7 @@ if (variable_instance_exists(id, "vael_open") && vael_open) {
                 affinity_add("vael", 2);   // function-use drip (portrait change)
             } else {
                 vael_notification = "Not enough gold - you need 100g.";
+                audio_play_sound(snd_ui_error, 1, false);
             }
         }
         exit;
@@ -2318,10 +2356,12 @@ if (keyboard_check_pressed(vk_escape)) {
 // Q/E cycle tabs (no wrap - clamped to 0-3; Compendium moved to the Journal 2026-07-04)
 if (!equip_picker_open && !consumable_submenu_open) {
     if (keyboard_check_pressed(ord("Q"))) {
+        if (menu_tab > 0) audio_play_sound(snd_page, 1, false);
         menu_tab          = max(0, menu_tab - 1);
         equip_picker_open = false;
     }
     if (keyboard_check_pressed(ord("E"))) {
+        if (menu_tab < 3) audio_play_sound(snd_page, 1, false);
         menu_tab          = min(3, menu_tab + 1);
         equip_picker_open = false;
     }
@@ -2358,6 +2398,7 @@ if (mouse_check_button_pressed(mb_left)) {
     for (var _mt = 0; _mt < 4; _mt++) {
         var _tx = 306 + _mt * 264;
         if (_mmx >= _tx && _mmx < _tx+252 && _mmy >= 30 && _mmy < 96) {
+            if (menu_tab != _mt) audio_play_sound(snd_page, 1, false);
             menu_tab                = _mt;
             equip_picker_open       = false;
             consumable_submenu_open = false;
@@ -2464,7 +2505,7 @@ if (mouse_check_button_pressed(mb_left)) {
                         }
                         equip_notif_msg   = "Equipped " + _mchosen.name + "  ->  " + string_upper(_mpslname);
                         equip_notif_timer = 150;
-                        audio_play_sound(Check_1, 1, false);
+                        audio_play_sound(snd_equip, 1, false);
                         equip_picker_open = false;
                         // Persist the equip - but only in the hub, where both the slot
                         // and the source (stash) are saved. Mid-run equips stay unsaved
@@ -2687,7 +2728,7 @@ if (menu_tab == 1) {
                     equip_notif_msg   = "Equipped " + _fitem.name + "  ->  " + string_upper(_fitem.slot);
                     equip_notif_timer = 150;
                     equip_msg         = "";
-                    audio_play_sound(Check_1, 1, false);
+                    audio_play_sound(snd_equip, 1, false);
                     if (_fhub) save_game();
                     // List rebuilds next frame (stash + pack); just keep the cursor non-negative,
                     // the draw/Step re-clamp to the new length.
@@ -2806,7 +2847,7 @@ if (menu_tab == 1) {
             }
             equip_notif_msg   = "Equipped " + _chosen.name + "  ->  " + string_upper(_slot_name);
             equip_notif_timer = 150;
-            audio_play_sound(Check_1, 1, false);
+            audio_play_sound(snd_equip, 1, false);
             equip_picker_open = false;
             // Persist the equip only in the hub (see unequip/Maren notes above):
             // mid-run the source is the un-saved carried pack.

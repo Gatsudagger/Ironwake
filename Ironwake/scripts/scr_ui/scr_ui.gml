@@ -2196,11 +2196,20 @@ function ui_draw_bairc_screen() {
         var _ry  = _list_y + _i * _row_h;
         var _sel = (_i == _cur);
         var _pet = _roster[_i];
+        var _is_active = (variable_global_exists("active_pet") && global.active_pet == _i && !_pet.is_egg);
 
         draw_set_color(_sel ? make_color_rgb(34, 42, 56) : make_color_rgb(20, 23, 32));
         draw_rectangle(_list_x, _ry, _list_x + _list_w, _ry + _row_h - 10, false);
         draw_set_color(_sel ? make_color_rgb(90, 150, 210) : make_color_rgb(44, 52, 70));
         draw_rectangle(_list_x, _ry, _list_x + _list_w, _ry + _row_h - 10, true);
+
+        // Active companion: the same steady bright-green double frame the loadout
+        // COMPANION tab uses, so "equipped" reads identically on both screens.
+        if (_is_active) {
+            draw_set_color(make_color_rgb(120, 230, 150));
+            draw_rectangle(_list_x, _ry, _list_x + _list_w, _ry + _row_h - 10, true);
+            draw_rectangle(_list_x + 1, _ry + 1, _list_x + _list_w - 1, _ry + _row_h - 11, true);
+        }
 
         // Archetype accent bar down the row's left edge (gold Boon / red Combatant /
         // green Guardian) so the roster reads at a glance.
@@ -2221,13 +2230,13 @@ function ui_draw_bairc_screen() {
         }
 
         var _tx = _ibx1 + 14;
-        var _is_active = (variable_global_exists("active_pet") && global.active_pet == _i && !_pet.is_egg);
 
-        // Line 1: name (left, gold when it is the active companion) + stage/egg-type PILL (right).
+        // Line 1: name (left, green when it is the active companion - matches the
+        // loadout screen; the old "* " asterisk marker is gone) + stage/egg-type PILL (right).
         draw_set_font(fnt_ui);
-        draw_set_color(_is_active ? make_color_rgb(235, 205, 120)
+        draw_set_color(_is_active ? make_color_rgb(150, 235, 170)
                      : (_pet.is_egg ? make_color_rgb(210, 195, 130) : make_color_rgb(220, 226, 238)));
-        draw_text(_tx, _ry + 10, (_is_active ? "* " : "") + (_pet.is_egg ? (_pet.name + " Egg") : _pet.name));
+        draw_text(_tx, _ry + 10, (_pet.is_egg ? (_pet.name + " Egg") : _pet.name));
         var _pill_txt = _pet.is_egg ? pet_egg_label(_pet) : pet_stage_name(_pet.stage);
         draw_set_font(fnt_ui_small);
         var _pl_w  = string_width(_pill_txt) + 22;
@@ -2241,6 +2250,15 @@ function ui_draw_bairc_screen() {
         draw_set_color(_pet.is_egg ? make_color_rgb(225, 205, 140) : make_color_rgb(170, 220, 170));
         draw_text((_pl_x0 + _pl_x1) / 2, _pl_y0 + 5, _pill_txt);
         draw_set_halign(fa_left);
+
+        // Line 2 right edge: ACTIVE tag for the equipped companion (loadout parity).
+        if (_is_active) {
+            draw_set_halign(fa_right);
+            draw_set_font(fnt_ui_small);
+            draw_set_color(make_color_rgb(120, 230, 150));
+            draw_text(_list_x + _list_w - 12, _ry + 46, "ACTIVE");
+            draw_set_halign(fa_left);
+        }
 
         // Line 2: type (+ species only when a custom name hides it, + egg gift + any
         // injury/corruption tags), muted. Raised so it can't kiss the row border.
@@ -4060,14 +4078,14 @@ function ui_draw_intent_chip(x, bottom_y, c) {
 
 // ---------------------------------------------------------------------------
 // ui_draw_telegraph_warning(enemy_name, message)
-// Draws a red banner sized to its text and centered at y=900 - NOT full screen
-// width, so it clears the combat log at the bottom-left.
+// Draws a red banner sized to its text, centered, parked just ABOVE the combat
+// log panel (log top = y735) and drawn after it so it can never be buried.
 // Only called when enemy_should_telegraph() returns true for any enemy.
 // ---------------------------------------------------------------------------
 function ui_draw_telegraph_warning(enemy_name, message) {
     var room_w      = GUI_W;
     var banner_h    = 54;
-    var banner_y    = 900;
+    var banner_y    = 669;   // bottom edge 12px above the log panel top (735)
 
     // Fall back to a generic wind-up warning when an enemy has no authored message
     // (most bosses set telegraph_turn/damage but inherit an empty message from their
@@ -4992,8 +5010,8 @@ function ui_draw_settings_overlay() {
     draw_rectangle(0, 0, GUI_W, GUI_H, false);
     draw_set_alpha(1.0);
 
-    // Panel (tall enough for: Music, SFX, Fullscreen, Tutorial Tips, Reset Tutorial)
-    var _pw = 840, _ph = 678;
+    // Panel (tall enough for: Music, SFX, Menu Tick, Fullscreen, Tutorial Tips, Reset Tutorial)
+    var _pw = 840, _ph = 762;
     var _px = GUI_CX - _pw / 2;
     var _py = GUI_CY - _ph / 2;
     draw_set_color(make_color_rgb(18, 22, 36));
@@ -5055,9 +5073,41 @@ function ui_draw_settings_overlay() {
         draw_text(_bar_x + _bar_w + 24, _by + _bar_h / 2, string(round(_vols[_i] * 100)) + "%");
     }
 
-    // --- Third row: Fullscreen toggle ---
-    var _fry = _row_y + 2 * _row_h;
-    var _fsel = (global.settings_cursor == 2);
+    // --- Third row: Menu Tick (nav glass ping) toggle ---
+    var _tick_on = (!variable_global_exists("ui_tick_enabled")) || global.ui_tick_enabled;
+    var _ky   = _row_y + 2 * _row_h;
+    var _ksel = (global.settings_cursor == 2);
+    if (_ksel) {
+        draw_set_alpha(0.20);
+        draw_set_color(make_color_rgb(80, 140, 220));
+        draw_rectangle(_px + 30, _ky - 21, _px + _pw - 30, _ky + 45, false);
+        draw_set_alpha(1.0);
+    }
+    draw_set_halign(fa_left);
+    draw_set_valign(fa_middle);
+    draw_set_font(fnt_ui);
+    draw_set_color(_ksel ? c_white : make_color_rgb(170, 180, 200));
+    draw_text(_px + 60, _ky + 12, (_ksel ? "> " : "  ") + "Menu Tick");
+    var _kpx = _bar_x;
+    var _kpy = _ky + 3;
+    var _kpw = 138;
+    var _kph = _bar_h + 6;
+    draw_set_color(_tick_on ? make_color_rgb(50, 130, 90) : make_color_rgb(45, 50, 66));
+    draw_rectangle(_kpx, _kpy, _kpx + _kpw, _kpy + _kph, false);
+    draw_set_color(_ksel ? make_color_rgb(120, 190, 255) : make_color_rgb(70, 85, 110));
+    draw_rectangle(_kpx, _kpy, _kpx + _kpw, _kpy + _kph, true);
+    draw_set_halign(fa_center);
+    draw_set_color(c_white);
+    draw_text(_kpx + _kpw / 2, _kpy + _kph / 2, _tick_on ? "ON" : "OFF");
+    draw_set_halign(fa_left);
+    draw_set_font(fnt_ui_small);
+    draw_set_color(make_color_rgb(140, 150, 170));
+    draw_text(_kpx + _kpw + 24, _kpy + _kph / 2, "(menu navigation sound)");
+    draw_set_font(fnt_ui);
+
+    // --- Fourth row: Fullscreen toggle ---
+    var _fry = _ky + 84;
+    var _fsel = (global.settings_cursor == 3);
     if (_fsel) {
         draw_set_alpha(0.20);
         draw_set_color(make_color_rgb(80, 140, 220));
@@ -5088,10 +5138,10 @@ function ui_draw_settings_overlay() {
     draw_set_color(make_color_rgb(140, 150, 170));
     draw_text(_pill_x + _pill_w + 24, _pill_y + _pill_h / 2, "(F11)");
 
-    // --- Fourth row: Tutorial Tips on/off toggle ---
+    // --- Fifth row: Tutorial Tips on/off toggle ---
     var _tut_on = (!variable_global_exists("tutorial_enabled")) || global.tutorial_enabled;
     var _try    = _fry + 84;
-    var _tsel   = (global.settings_cursor == 3);
+    var _tsel   = (global.settings_cursor == 4);
     if (_tsel) {
         draw_set_alpha(0.20);
         draw_set_color(make_color_rgb(80, 140, 220));
@@ -5116,9 +5166,9 @@ function ui_draw_settings_overlay() {
     draw_set_color(c_white);
     draw_text(_tpx + _tpw / 2, _tpy + _tph / 2, _tut_on ? "ON" : "OFF");
 
-    // --- Fifth row: Reset Tutorial (re-show every tip) ---
+    // --- Sixth row: Reset Tutorial (re-show every tip) ---
     var _rry  = _try + 72;
-    var _rsel = (global.settings_cursor == 4);
+    var _rsel = (global.settings_cursor == 5);
     if (_rsel) {
         draw_set_alpha(0.20);
         draw_set_color(make_color_rgb(80, 140, 220));
@@ -5270,6 +5320,17 @@ function ui_draw_combat_overlay(combat_state, player, ability_array, selected_ab
 
     // --- Combat log (bottom strip) ---
     ui_draw_combat_log(30, 735, 1170, 210, log_array);
+
+    // --- Telegraph warning - drawn AFTER the log so it always sits on top,
+    // centered and parked just above the log panel (log top = y735).
+    var _tg_count = array_length(combat_state.combatants);
+    for (var _tgi = 0; _tgi < _tg_count; _tgi++) {
+        var _tgc = combat_state.combatants[_tgi];
+        if (!_tgc.is_player && enemy_should_telegraph(_tgc, combat_state.round)) {
+            ui_draw_telegraph_warning(_tgc.name, _tgc.telegraph_message);
+            break; // Only one warning banner at a time
+        }
+    }
 }
 
 function ui_draw_combat_hud(combat_state, player, ability_array, selected_ability_index, log_array, draw_log = true) {
@@ -5453,18 +5514,9 @@ function ui_draw_combat_hud(combat_state, player, ability_array, selected_abilit
     // the enemy HP bars - it needs selected_target from obj_combat_controller
     // directly and cannot be drawn here without passing it as a parameter.
 
-    // --- Telegraph warning (top overlay - check all enemies) ---
-    // Uses the combat engine's turn counter stored in combat_state.round as
-    // a proxy for turn_number. Replace with your actual per-enemy turn counter
-    // if you track those separately.
-    var combatant_count = array_length(combat_state.combatants);
-    for (var i = 0; i < combatant_count; i++) {
-        var c = combat_state.combatants[i];
-        if (!c.is_player && enemy_should_telegraph(c, combat_state.round)) {
-            ui_draw_telegraph_warning(c.name, c.telegraph_message);
-            break; // Only one warning banner at a time
-        }
-    }
+    // NOTE: The telegraph warning banner moved to ui_draw_combat_overlay (after
+    // the combat log draw) - here it rendered BEFORE the log and got buried
+    // under it (M's screenshot 2026-07-07).
 }
 
 // ---------------------------------------------------------------------------

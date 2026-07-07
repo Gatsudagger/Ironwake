@@ -101,7 +101,7 @@ if (_result == 1) {
         var _boss_xp_gained = grant_xp(25);
         array_push(combat_log, "Floor completion: +25 XP!");
         if (_boss_xp_gained > 0) {
-            audio_play_sound(Chimes__Ascending_, 1, false);
+            audio_play_sound(snd_sting_levelup, 1, false);
             array_push(combat_log, "LEVEL UP! Now level " + string(global.run_level) + ".");
         }
         // Traits no longer auto-unlock on boss kills - they are bought from Vex
@@ -170,7 +170,10 @@ if (_result == 1) {
     if (!combat_over) {
         combat_over   = true;
         combat_result = 1;
-        audio_play_sound(Success_2, 1, false);
+        // Victory hierarchy: boss (floor-completing) wins get the grand harpsichord
+        // flourish, ordinary fights a light music-box chime so it never wears thin.
+        var _is_boss_win = variable_global_exists("next_enemy_type") && global.next_enemy_type == "boss";
+        audio_play_sound(_is_boss_win ? snd_sting_victory : snd_sting_floor, 1, false);
         array_push(combat_log, "Victory! All enemies defeated.");
     }
     exit;
@@ -179,7 +182,7 @@ if (_result == 1) {
 if (_result == -1) {
     combat_over   = true;
     combat_result = -1;
-    audio_play_sound(Game_Over, 1, false);
+    audio_play_sound(snd_sting_defeat, 1, false);
     array_push(combat_log, "Defeated...");
     // Close stash if open when combat ends
     if (instance_exists(obj_game_controller)) {
@@ -348,6 +351,7 @@ if (player_turn) {
                     array_push(combat_log, "Need 1 AP to use a consumable.");
                 } else {
                     combat_state.used_consumable = true;   // board "clean fights" requests
+                    audio_play_sound(snd_potion, 1, false);
                     if (_citem.effect_type == "heal") {
                         var _qheal = min(player.max_HP - player.HP, _citem.effect_value);
                         player.HP += _qheal;
@@ -1849,7 +1853,7 @@ if (player_turn) {
                     var _dot_xp_lvls  = grant_xp(_dot_xp_amt);
                     array_push(combat_log, "Gained " + string(_dot_xp_amt) + " XP!");
                     if (_dot_xp_lvls > 0) {
-                        audio_play_sound(Chimes__Ascending_, 1, false);
+                        audio_play_sound(snd_sting_levelup, 1, false);
                         array_push(combat_log, "LEVEL UP! Now level " + string(global.run_level) + ".");
                     }
                     // --- Soul Siphon on DoT kill (Arcanist only) ---

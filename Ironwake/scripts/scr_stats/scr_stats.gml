@@ -1446,10 +1446,14 @@ function key_nav(_key) {
     variable_struct_set(global.nav_timers, _k, 0);
     return false;
 }
-function nav_up()    { var _a = key_nav(vk_up);    var _b = key_nav(ord("W")); return _a || _b; }
-function nav_down()  { var _a = key_nav(vk_down);  var _b = key_nav(ord("S")); return _a || _b; }
-function nav_left()  { var _a = key_nav(vk_left);  var _b = key_nav(ord("A")); return _a || _b; }
-function nav_right() { var _a = key_nav(vk_right); var _b = key_nav(ord("D")); return _a || _b; }
+// The tick respects the Settings "Menu Tick" toggle (global.ui_tick_enabled).
+function nav_tick() {
+    if (!variable_global_exists("ui_tick_enabled") || global.ui_tick_enabled) play_sfx_var("snd_ui_move", -1);
+}
+function nav_up()    { var _a = key_nav(vk_up);    var _b = key_nav(ord("W")); if (_a || _b) nav_tick(); return _a || _b; }
+function nav_down()  { var _a = key_nav(vk_down);  var _b = key_nav(ord("S")); if (_a || _b) nav_tick(); return _a || _b; }
+function nav_left()  { var _a = key_nav(vk_left);  var _b = key_nav(ord("A")); if (_a || _b) nav_tick(); return _a || _b; }
+function nav_right() { var _a = key_nav(vk_right); var _b = key_nav(ord("D")); if (_a || _b) nav_tick(); return _a || _b; }
 
 // wrap_index(i, n) - cursor wrap so top<->bottom (and left<->right) cycle.
 function wrap_index(i, n) {
@@ -3961,6 +3965,7 @@ function affinity_betrayal_for(new_id) {
         var _lines = affinity_betrayal_lines(_ids[_i]);
         ledger_add(_ids[_i], "milestone", _lines.ledger);
         journal_badge_npc(_ids[_i]);
+        audio_play_sound(snd_sting_heartbreak, 1, false);   // a music box winding down
         if (variable_global_exists("pet_find_notice")) {
             global.pet_find_notice = (global.pet_find_notice != "") ? (global.pet_find_notice + "   " + _lines.notice) : _lines.notice;
         }
@@ -4480,9 +4485,10 @@ function board_reroll(id) {
     global.gold -= _cost;
     global.board_rerolls_used += 1;
     // Preserve the slot's urgency so the A5 always-one-urgent guarantee survives.
-    var _was_urgent = _d.urgent;
+    var _was_urgent   = _d.urgent;
+    var _old_template = _d.template;   // captured BEFORE retirement - the new roll must differ
     board_retire(id);
-    var _new = board_generate_request(_was_urgent);
+    var _new = board_generate_request(_was_urgent, _old_template);
     array_push(global.board_requests, _new);
     array_push(global.quests, { id:_new.id, status:"available", progress:0 });
     return "Re-pinned for " + string(_cost) + "g: \"" + _new.name + "\" - " + _new.objective
@@ -4561,11 +4567,15 @@ function board_build_template(t, a, scale, urgent) {
         case "depth": {
             var _k = irandom(a);
             var _n = 2 + min(a, 2);
+            // Urgent postings expire after ONE run and a run is 3 floors - an
+            // urgent 4-floor ask is literally impossible (M hit one, 2026-07-07).
+            if (urgent) _n = min(_n, 3);
             _gold = round(80 * scale); _dust = 4 + 2 * a;
             var _dp = ["petra", "vael", "maren"]; _npc = _dp[irandom(2)];
             _name = "Depth Proof";
             _obj_type = "clear_floors_at"; _obj_target = _n; _obj_param = string(_k);
-            _objective = "Clear " + string(_n) + " floors" + ((_k > 0) ? (" at Awakening " + string(_k) + "+") : "");
+            _objective = "Clear " + string(_n) + " floors" + ((_k > 0) ? (" at Awakening " + string(_k) + "+") : "")
+                + ((_n > 3) ? " (progress carries between runs)" : "");   // a run is 3 floors - say so when the ask exceeds one run
             _flavor = "\"Proof of depth, on the seal's terms. The town pays for certainty.\"";
         } break;
         case "bounty": {
@@ -4653,11 +4663,19 @@ function board_generate_special() {
 }
 
 // Roll one request, avoiding a template+param already posted (8 tries, then accept).
-function board_generate_request(urgent) {
+// avoid_template: hard-excluded from the roll pool - a REROLL must never hand back
+// the template it just replaced (paying gold for the same job is self-defeating).
+function board_generate_request(urgent, avoid_template = "") {
     board_requests_ensure();
     var _a     = highest_awakening_unlocked();
     var _scale = 1 + 0.5 * _a;
     var _pool  = ["cull", "cull", "depth", "bounty", "haul", "craft", "flawless", "swift", "clean"];
+    if (avoid_template != "") {
+        var _fpool = [];
+        for (var _fi = 0; _fi < array_length(_pool); _fi++)
+            if (_pool[_fi] != avoid_template) array_push(_fpool, _pool[_fi]);
+        if (array_length(_fpool) > 0) _pool = _fpool;
+    }
     var _def   = undefined;
     for (var _try = 0; _try < 8; _try++) {
         var _t = _pool[irandom(array_length(_pool) - 1)];
@@ -6939,7 +6957,7 @@ function hatch_cutscene_step() {
                     if (!hatch_done) {                    // shell broken -> hatch into a baby
                         pet_hatch(hatch_pet);
                         hatch_done = true;
-                        audio_play_sound(Check_1, 1, false);
+                        audio_play_sound(snd_pet_hatch, 1, false);
                     }
                     hatch_phase = 2; hatch_t = 0;
                 }
@@ -7511,6 +7529,7 @@ function item_picker_resolve() {
         _p.resolved_purpose = "chit_reforge";
         _p.result_msg = "Dorn reworks " + _old_cname + " into " + _csel.item.name + "!   ("
             + string(global.reforge_chits) + ((global.reforge_chits == 1) ? " chit" : " chits") + " left)";
+        audio_play_sound(snd_forge, 1, false);
         item_picker_close();
         return;
     }
@@ -7530,6 +7549,7 @@ function item_picker_resolve() {
         if (_have_gold < _cost.gold || _have_dust < _cost.dust) {
             _p.resolved_purpose = "alch_rebirth";
             _p.result_msg = "Not enough - need " + string(_cost.dust) + " dust + " + string(_cost.gold) + "g.";
+            audio_play_sound(snd_ui_error, 1, false);
             item_picker_close(); return;
         }
         var _new = alch_rebirth_make(_sel.item);
@@ -7549,6 +7569,7 @@ function item_picker_resolve() {
         save_game();
         _p.resolved_purpose = "alch_rebirth";
         _p.result_msg = "Reforged " + _old_name + " into " + _new.name + "!";
+        audio_play_sound(snd_confirm_major, 1, false);   // a rebirth deserves the chime
         item_picker_close();
         return;
     }
@@ -7809,7 +7830,12 @@ function event_apply_effects(fx) {
 
     // Gold
     if (variable_struct_exists(fx, "gold") && fx.gold != 0) {
-        if (fx.gold > 0) { add_gold(fx.gold); array_push(_sum, "+" + string(fx.gold) + " gold"); }
+        if (fx.gold > 0) {
+            add_gold(fx.gold);
+            array_push(_sum, "+" + string(fx.gold) + " gold");
+            audio_play_sound(snd_gold, 1, false);
+            global.event_gold_gained = fx.gold;   // the floor controller reads this to spawn the coin burst
+        }
         else { global.gold = max(0, global.gold - abs(fx.gold)); array_push(_sum, string(fx.gold) + " gold"); }
     }
     // HP (deferred to next combat)
@@ -8369,6 +8395,27 @@ function audio_sfx_assets() {
         // until the snd_cast_* pack is imported, so they MUST be gain-controlled too
         // or they stay at full volume (the Void Drain / void-cast "immune sound" bug).
         Obscure, Strings_1, Success_1__subtle_, Harp_2__Descending_,
+        // Sound pass Batch 1 (SOUND_PASS_SPEC.md) - every import must be listed
+        // here or it plays at full volume, ignoring the SFX slider.
+        snd_ui_move, snd_ui_confirm, snd_ui_cancel, snd_ui_error,
+        snd_ui_toggle_on, snd_ui_toggle_off,
+        snd_dice_roll, snd_dice_roll_2, snd_dice_roll_3, snd_dice_shake,
+        snd_dice_place, snd_dice_place_2, snd_kb_capture, snd_kb_payout, snd_kb_payout_2,
+        snd_player_atk, snd_player_atk_2, snd_player_atk_3, snd_miss, snd_miss_2,
+        snd_player_hurt, snd_player_hurt_2,
+        snd_attack_undead, snd_death_undead, snd_attack_wraith, snd_death_wraith,
+        snd_attack_construct, snd_death_construct, snd_attack_beast, snd_attack_beast_2,
+        snd_death_beast, snd_attack_fire, snd_death_fire, snd_attack_ice, snd_death_ice,
+        snd_attack_boss, snd_attack_boss_2, snd_death_boss,
+        snd_cast_elem, snd_cast_elem_2, snd_cast_void, snd_cast_blood, snd_cast_blood_2,
+        snd_cast_arcane, snd_cast_arcane_2, snd_cast_heal, snd_cast_shield,
+        snd_cast_buff, snd_cast_buff_2, snd_cast_debuff,
+        snd_sting_levelup, snd_sting_floor, snd_sting_victory, snd_sting_defeat,
+        snd_sting_quest, snd_sting_mystery, snd_sting_heartbreak,
+        snd_equip, snd_buy, snd_pet_hatch,
+        snd_confirm_major, snd_npc_confirm, snd_sell,
+        // Batch 2 - economy/items
+        snd_gold, snd_potion, snd_forge, snd_rune_socket, snd_page, snd_chest, snd_gate,
     ];
 }
 
@@ -8379,9 +8426,10 @@ function audio_settings_init() {
     if (!variable_global_exists("music_volume")) global.music_volume = 0.7;
     if (!variable_global_exists("sfx_volume"))   global.sfx_volume   = 0.8;
     if (!variable_global_exists("settings_open"))        global.settings_open        = false;
-    if (!variable_global_exists("settings_cursor"))      global.settings_cursor      = 0;   // 0 Music, 1 SFX, 2 Fullscreen, 3 Tutorial, 4 Reset
+    if (!variable_global_exists("settings_cursor"))      global.settings_cursor      = 0;   // 0 Music, 1 SFX, 2 Menu Tick, 3 Fullscreen, 4 Tutorial, 5 Reset
     if (!variable_global_exists("settings_reset_flash")) global.settings_reset_flash = 0;
     if (!variable_global_exists("tutorial_enabled"))     global.tutorial_enabled     = true;
+    if (!variable_global_exists("ui_tick_enabled"))      global.ui_tick_enabled      = true;   // the menu-nav glass ping
 
     if (!variable_global_exists("settings_loaded")) {
         global.settings_loaded = true;
@@ -8391,6 +8439,7 @@ function audio_settings_init() {
         // Tutorial-tips preference lives here too so it persists from the title
         // (where no save slot is loaded). 1 = enabled (default), 0 = disabled.
         global.tutorial_enabled = (ini_read_real("ui", "tutorial_tips", 1) >= 0.5);
+        global.ui_tick_enabled  = (ini_read_real("ui", "menu_tick", 1) >= 0.5);
         ini_close();
     }
 }
@@ -8402,6 +8451,8 @@ function audio_settings_save() {
     ini_write_real("audio", "sfx",   global.sfx_volume);
     ini_write_real("ui", "tutorial_tips",
         ((!variable_global_exists("tutorial_enabled")) || global.tutorial_enabled) ? 1 : 0);
+    ini_write_real("ui", "menu_tick",
+        ((!variable_global_exists("ui_tick_enabled")) || global.ui_tick_enabled) ? 1 : 0);
     ini_close();
 }
 
@@ -8414,6 +8465,10 @@ function audio_apply_volumes() {
     for (var _i = 0; _i < array_length(_music); _i++) audio_sound_gain(_music[_i], _mv, 0);
     var _sfx = audio_sfx_assets();
     for (var _i = 0; _i < array_length(_sfx); _i++) audio_sound_gain(_sfx[_i], _sv, 0);
+    // Per-asset trims (applied after the flat pass): sounds that master louder
+    // than the rest of the bus. The nav ping fires constantly - keep it well
+    // under the one-shot effects (M: "feels louder than other effects").
+    audio_sound_gain(snd_ui_move, _sv * 0.45, 0);
 }
 
 // Adjust one category by delta (e.g. ±0.05), clamp, and re-apply immediately.
@@ -8437,10 +8492,10 @@ function audio_settings_handle_input() {
         global.settings_reset_flash--;
     }
 
-    // Rows: 0 Music, 1 SFX, 2 Fullscreen, 3 Tutorial Tips, 4 Reset Tutorial.
-    if (nav_up())   global.settings_cursor = wrap_index(global.settings_cursor - 1, 5);
-    if (nav_down()) global.settings_cursor = wrap_index(global.settings_cursor + 1, 5);
-    global.settings_cursor = clamp(global.settings_cursor, 0, 4);
+    // Rows: 0 Music, 1 SFX, 2 Menu Tick, 3 Fullscreen, 4 Tutorial Tips, 5 Reset Tutorial.
+    if (nav_up())   global.settings_cursor = wrap_index(global.settings_cursor - 1, 6);
+    if (nav_down()) global.settings_cursor = wrap_index(global.settings_cursor + 1, 6);
+    global.settings_cursor = clamp(global.settings_cursor, 0, 5);
 
     var _left    = nav_left();
     var _right   = nav_right();
@@ -8456,17 +8511,29 @@ function audio_settings_handle_input() {
             if (_left)  audio_settings_adjust(1, -0.05);
             if (_right) audio_settings_adjust(1,  0.05);
         break;
-        case 2: // Fullscreen
-            if (_left || _right || _confirm) video_toggle_fullscreen();
-        break;
-        case 3: // Tutorial Tips on/off
+        case 2: // Menu Tick (the nav glass ping) on/off
             if (_left || _right || _confirm) {
-                if (!variable_global_exists("tutorial_enabled")) global.tutorial_enabled = true;
-                global.tutorial_enabled = !global.tutorial_enabled;
+                global.ui_tick_enabled = !global.ui_tick_enabled;
+                // Turning it ON previews the tick itself; OFF gets the toggle thunk.
+                audio_play_sound(global.ui_tick_enabled ? snd_ui_move : snd_ui_toggle_off, 1, false);
                 audio_settings_save();
             }
         break;
-        case 4: // Reset Tutorial - clear seen flags so every tip shows again
+        case 3: // Fullscreen
+            if (_left || _right || _confirm) {
+                video_toggle_fullscreen();
+                audio_play_sound(window_get_fullscreen() ? snd_ui_toggle_on : snd_ui_toggle_off, 1, false);
+            }
+        break;
+        case 4: // Tutorial Tips on/off
+            if (_left || _right || _confirm) {
+                if (!variable_global_exists("tutorial_enabled")) global.tutorial_enabled = true;
+                global.tutorial_enabled = !global.tutorial_enabled;
+                audio_play_sound(global.tutorial_enabled ? snd_ui_toggle_on : snd_ui_toggle_off, 1, false);
+                audio_settings_save();
+            }
+        break;
+        case 5: // Reset Tutorial - clear seen flags so every tip shows again
             if (_left || _right || _confirm) {
                 tutorial_reset_all();
                 global.tutorial_enabled   = true;   // resetting implies you want the tips back
@@ -8479,6 +8546,7 @@ function audio_settings_handle_input() {
     // Esc / O always closes (Enter is reserved for the toggle/action rows above).
     if (keyboard_check_pressed(vk_escape) || keyboard_check_pressed(ord("O"))) {
         global.settings_open = false;
+        audio_play_sound(snd_ui_cancel, 1, false);
         audio_settings_save();
     }
     return true;

@@ -687,10 +687,14 @@ if (showing_shrine) {
 // 6c. EVENT ROOM - interactive stat-gated choice overlay (see SYSTEMS_EVENTS.md)
 // -----------------------------------------------------------------------------
 if (showing_event_choice && event_active != undefined) {
-    draw_set_alpha(0.95);
-    draw_set_color(c_black);
-    draw_rectangle(0, 0, GUI_W, GUI_H, false);
-    draw_set_alpha(1.0);
+    // Atmosphere: the dungeon's own backdrop, heavily scrimmed, instead of a
+    // flat black void (M: "event screens are incredibly barren", 2026-07-07).
+    if (!dungeon_bg_draw("combat", 0.84)) {
+        draw_set_alpha(0.95);
+        draw_set_color(c_black);
+        draw_rectangle(0, 0, GUI_W, GUI_H, false);
+        draw_set_alpha(1.0);
+    }
 
     var _ev = event_active;
 
@@ -702,14 +706,71 @@ if (showing_event_choice && event_active != undefined) {
     draw_text(962, 74, _ev.title);
     draw_set_color(_ev.color);
     draw_text(960, 72, _ev.title);
+
+    // Divider under the title: twin rules meeting a small diamond, in the
+    // event's accent color (echoes the codex/journal headers).
+    draw_set_alpha(0.9);
+    draw_set_color(_ev.color);
+    draw_rectangle(GUI_CX - 280, 143, GUI_CX - 26, 145, false);
+    draw_rectangle(GUI_CX + 26,  143, GUI_CX + 280, 145, false);
+    var _dvy = 144;
+    draw_triangle(GUI_CX - 12, _dvy, GUI_CX, _dvy - 9, GUI_CX + 12, _dvy, false);
+    draw_triangle(GUI_CX - 12, _dvy, GUI_CX, _dvy + 9, GUI_CX + 12, _dvy, false);
+    draw_set_alpha(1.0);
+
     draw_set_font(fnt_ui);
     draw_set_color(make_color_rgb(185, 192, 208));
-    draw_text_ext(GUI_CX, 150, ui_sentence(_ev.body), -1, 1140);
+    draw_text_ext(GUI_CX, 168, ui_sentence(_ev.body), -1, 1140);
 
     if (event_phase == "result") {
+        // Framed result panel (same visual language as the choice rows).
+        var _rp_x0 = 480, _rp_x1 = 1440, _rp_y0 = 372, _rp_y1 = 876;
+        draw_set_alpha(0.88);
+        draw_set_color(make_color_rgb(20, 22, 32));
+        draw_rectangle(_rp_x0, _rp_y0, _rp_x1, _rp_y1, false);
+        draw_set_alpha(1.0);
+        draw_set_color(_ev.color);
+        draw_rectangle(_rp_x0, _rp_y0, _rp_x1, _rp_y1, true);
+        draw_rectangle(_rp_x0 + 4, _rp_y0 + 4, _rp_x1 - 4, _rp_y1 - 4, true);
+
         draw_set_font(fnt_ui);
         draw_set_color(make_color_rgb(215, 220, 235));
-        draw_text_ext(GUI_CX, 450, ui_sentence(event_result_text), -1, 1230);
+        draw_text_ext(GUI_CX, _rp_y0 + 48, ui_sentence(event_result_text), -1, _rp_x1 - _rp_x0 - 120);
+
+        // Coin burst: coins tossed up, falling with gravity, one bounce-free
+        // settle into a pyramid pile on the panel floor. Pure draw-side sim.
+        if (array_length(event_coins) > 0) {
+            var _floor_y = _rp_y1 - 66;
+            for (var _cn = 0; _cn < array_length(event_coins); _cn++) {
+                var _co = event_coins[_cn];
+                if (!_co.grounded) {
+                    _co.vy  += 0.45;
+                    _co.x   += _co.vx;
+                    _co.y   += _co.vy;
+                    _co.spin += 0.35;
+                    // Pyramid rest slot from the coin's index: rows of 7/5/4/3/2/2...
+                    var _rows  = [7, 5, 4, 3, 2, 2, 1];
+                    var _ri    = 0, _acc = 0, _slot = _co.slot;
+                    while (_ri < array_length(_rows) - 1 && _slot >= _acc + _rows[_ri]) { _acc += _rows[_ri]; _ri++; }
+                    var _in_row = _slot - _acc;
+                    var _rest_y = _floor_y - _ri * 13;
+                    var _rest_x = GUI_CX + (_in_row - (_rows[_ri] - 1) / 2) * 26 + ((_ri mod 2 == 1) ? 7 : -7);
+                    if (_co.vy > 0 && _co.y >= _rest_y) {
+                        _co.x = _rest_x; _co.y = _rest_y; _co.grounded = true;
+                    }
+                }
+                // Coin: dark bronze rim, gold face, top-left glint. Airborne coins
+                // squash on x with their spin so they read as tumbling discs.
+                var _cxs = _co.grounded ? 1.0 : max(0.25, abs(cos(_co.spin)));
+                draw_set_color(make_color_rgb(96, 62, 18));
+                draw_ellipse(_co.x - 10 * _cxs, _co.y - 9, _co.x + 10 * _cxs, _co.y + 9, false);
+                draw_set_color(make_color_rgb(232, 186, 74));
+                draw_ellipse(_co.x - 8 * _cxs, _co.y - 7, _co.x + 8 * _cxs, _co.y + 7, false);
+                draw_set_color(make_color_rgb(255, 232, 150));
+                draw_ellipse(_co.x - 4 * _cxs, _co.y - 5, _co.x - 4 * _cxs + 4, _co.y - 1, false);
+            }
+        }
+
         draw_set_font(fnt_ui_small);
         draw_set_color(c_ltgray);
         draw_text(GUI_CX, 972, "Press Enter to continue");

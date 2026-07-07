@@ -271,8 +271,8 @@ if (instance_exists(obj_game_controller)) {
         if (variable_instance_exists(_gc_ld, "loadout_locked_timer") && _gc_ld.loadout_locked_timer > 0) _gc_ld.loadout_locked_timer--;
 
         // Q/E cycle the three tabs: Abilities (0) / Traits (1) / Companion (2).
-        if (keyboard_check_pressed(ord("E"))) { _gc_ld.loadout_tab = (_gc_ld.loadout_tab + 1) mod 3; _gc_ld.loadout_cursor = 0; }
-        if (keyboard_check_pressed(ord("Q"))) { _gc_ld.loadout_tab = (_gc_ld.loadout_tab + 2) mod 3; _gc_ld.loadout_cursor = 0; }
+        if (keyboard_check_pressed(ord("E"))) { _gc_ld.loadout_tab = (_gc_ld.loadout_tab + 1) mod 3; _gc_ld.loadout_cursor = 0; audio_play_sound(snd_page, 1, false); }
+        if (keyboard_check_pressed(ord("Q"))) { _gc_ld.loadout_tab = (_gc_ld.loadout_tab + 2) mod 3; _gc_ld.loadout_cursor = 0; audio_play_sound(snd_page, 1, false); }
 
         if (keyboard_check_pressed(vk_escape)) {
             _gc_ld.loadout_open = false;
@@ -303,6 +303,7 @@ if (instance_exists(obj_game_controller)) {
                     commit_player_traits(_tr_sel_c);
                     _gc_ld.loadout_open      = false;
                     _gc_ld.loadout_confirmed = true;
+                    audio_play_sound(snd_confirm_major, 1, false);   // committing to the descent
                     audio_stop_sound(Rainy_Memories);
                     room_goto(rm_dungeon_floor);
                 }
@@ -430,9 +431,9 @@ if (instance_exists(obj_game_controller)) {
             // Three tab buttons (y=9-51), centred: ABILITIES / TRAITS / COMPANION.
             // Ranges match the Draw_64 tab-bar loop (_tx0=479, width 315, gap 9).
             if (_ldmy >= 9 && _ldmy < 51) {
-                if      (_ldmx >= 479  && _ldmx < 794)  { _gc_ld.loadout_tab = 0; _gc_ld.loadout_cursor = 0; }
-                else if (_ldmx >= 803  && _ldmx < 1118) { _gc_ld.loadout_tab = 1; _gc_ld.loadout_cursor = 0; }
-                else if (_ldmx >= 1127 && _ldmx < 1442) { _gc_ld.loadout_tab = 2; _gc_ld.loadout_cursor = 0; }
+                if      (_ldmx >= 479  && _ldmx < 794)  { if (_gc_ld.loadout_tab != 0) audio_play_sound(snd_page, 1, false); _gc_ld.loadout_tab = 0; _gc_ld.loadout_cursor = 0; }
+                else if (_ldmx >= 803  && _ldmx < 1118) { if (_gc_ld.loadout_tab != 1) audio_play_sound(snd_page, 1, false); _gc_ld.loadout_tab = 1; _gc_ld.loadout_cursor = 0; }
+                else if (_ldmx >= 1127 && _ldmx < 1442) { if (_gc_ld.loadout_tab != 2) audio_play_sound(snd_page, 1, false); _gc_ld.loadout_tab = 2; _gc_ld.loadout_cursor = 0; }
             }
 
             if (_gc_ld.loadout_tab == 0) {
@@ -481,6 +482,7 @@ if (instance_exists(obj_game_controller)) {
                         commit_player_traits(_ltr);
                         _gc_ld.loadout_open      = false;
                         _gc_ld.loadout_confirmed = true;
+                        audio_play_sound(snd_confirm_major, 1, false);   // committing to the descent
                         audio_stop_sound(Rainy_Memories);
                         room_goto(rm_dungeon_floor);
                     }

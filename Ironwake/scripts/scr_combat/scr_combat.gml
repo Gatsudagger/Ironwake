@@ -1123,7 +1123,7 @@ function combat_on_enemy_defeated(target, player, combat_log) {
     var _xp_lvls  = grant_xp(_xp_amt);
     array_push(combat_log, "Gained " + string(_xp_amt) + " XP!");
     if (_xp_lvls > 0) {
-        audio_play_sound(Chimes__Ascending_, 1, false);
+        audio_play_sound(snd_sting_levelup, 1, false);
         array_push(combat_log, "LEVEL UP! Now level " + string(global.run_level) + ".");
     }
 
