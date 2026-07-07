@@ -12,31 +12,6 @@
 //   Escape       - dismiss last-run summary or close history
 // =============================================================================
 
-// TEMP TEST LEVER (WIN_STATE_SPEC.md) - F9 plays the full ending sequence using
-// the save's REAL bonds/pet, but touches NONE of the win-state globals: nothing
-// is stamped into the save (the finale's save_game() writes no new flags), the
-// slot sigil stays off, and the real trigger still works later.
-// >>> REMOVE THIS BLOCK after M F5-verifies the sequence. <<<
-if (!ending_active && keyboard_check_pressed(vk_f9)) {
-    affinity_ensure();
-    ending_stage    = 0;
-    ending_speakers = [];
-    ending_absent   = 0;
-    var _tids = affinity_npc_ids();
-    for (var _ti = 0; _ti < array_length(_tids); _ti++) {
-        var _te = affinity_entry(_tids[_ti]);
-        if (_te != undefined && variable_struct_exists(_te, "betrayed") && _te.betrayed) {
-            ending_absent++;
-            continue;
-        }
-        var _tt = affinity_tier(_tids[_ti]);
-        if (_tt >= 1) array_push(ending_speakers, { id: _tids[_ti], tier: _tt });
-    }
-    ending_active = true;
-    audio_play_sound(snd_sting_victory, 1, false);
-    exit;
-}
-
 // ENDING SEQUENCE (WIN_STATE_SPEC.md) - fully modal; any confirm key advances the
 // stage. Stage layout mirrors the Draw block: intro, one per speaker, absence beat
 // (only if someone was betrayed), dawn, epilogue, credits, finale.
