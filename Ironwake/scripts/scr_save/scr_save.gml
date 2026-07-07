@@ -8,6 +8,13 @@
 // load_game() - call once at the end of obj_game_controller Create_0.
 // =============================================================================
 
+// Save-format version, stamped into every save (pre-Steam hardening, 2026-07-07).
+// Saves written before the stamp read as version 0. Loading is field-tolerant in
+// both directions (unknown fields ignored, missing fields defaulted), so bump this
+// ONLY when a field's MEANING changes and add the fix-up in load_game's migration
+// block - never repurpose an old field name without one.
+#macro SAVE_FORMAT_VERSION 1
+
 // ---------------------------------------------------------------------------
 // get_slot_preview(slot_num)
 // Reads a save slot file and returns a lightweight preview struct, or
@@ -41,6 +48,10 @@ function save_game() {
     if (!variable_global_exists("save_slot") || global.save_slot < 0) return;
 
     var _save = {
+        // Format stamp + write time (see SAVE_FORMAT_VERSION at the top of this file)
+        save_version: SAVE_FORMAT_VERSION,
+        saved_at:     date_datetime_string(date_current_datetime()),
+
         // Economy
         gold:        global.gold,
         player_name: global.player_name,
@@ -406,6 +417,19 @@ function load_game() {
     var _s;
     try { _s = json_parse(_json); } catch (_e) { return; }
     if (!is_struct(_s)) return;
+
+    // --- Save-format versioning / migrations ---
+    // Pre-stamp saves read as v0; every guarded read below already tolerates them.
+    // When SAVE_FORMAT_VERSION bumps past 1, put the per-version fix-ups here
+    // (if (_save_ver < 2) { ... } etc.) so old slots upgrade in one place.
+    var _save_ver = variable_struct_exists(_s, "save_version") ? _s.save_version : 0;
+    if (_save_ver > SAVE_FORMAT_VERSION) {
+        // Newer save than this build understands (e.g. a rolled-back patch).
+        // The tolerant loads below still read every field they know; log it so
+        // player bug reports carry the mismatch.
+        show_debug_message("load_game: slot save v" + string(_save_ver)
+            + " newer than game save format v" + string(SAVE_FORMAT_VERSION));
+    }
 
     // Economy
     if (variable_struct_exists(_s, "gold"))        global.gold        = _s.gold;
