@@ -9,7 +9,7 @@
   "canGenerateBitmap":true,
   "charset":0,
   "first":0,
-  "fontName":"Centaur",
+  "fontName":"EB Garamond",
   "glyphOperations":0,
   "glyphs":{
     "32":{"character":32,"h":27,"offset":0,"shift":6,"w":6,"x":2,"y":2,},

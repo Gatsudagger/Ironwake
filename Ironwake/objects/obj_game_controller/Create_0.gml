@@ -773,6 +773,7 @@ consumable_submenu_cursor = 0;
 stash_mode_open  = false;   // full stash deposit/withdraw screen
 stash_mode_side  = 0;       // 0 = carried column, 1 = stash column
 stash_mode_index = 0;
+stash_mode_tab   = 0;       // 0 = equipment, 1 = consumables (Q/E)
 
 
 // -----------------------------------------------------------------------------

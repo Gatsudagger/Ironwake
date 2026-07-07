@@ -9,7 +9,7 @@
   "canGenerateBitmap":true,
   "charset":0,
   "first":0,
-  "fontName":"Castellar",
+  "fontName":"Cinzel Decorative",
   "glyphOperations":0,
   "glyphs":{
     "32":{"character":32,"h":64,"offset":0,"shift":19,"w":19,"x":2,"y":2,},

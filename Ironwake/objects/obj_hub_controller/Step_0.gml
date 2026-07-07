@@ -560,6 +560,7 @@ if (instance_exists(obj_game_controller)) {
         _gc_hub.stash_mode_open  = true;
         _gc_hub.stash_mode_index = 0;
         _gc_hub.stash_mode_side  = 0;
+        _gc_hub.stash_mode_tab   = 0;   // always land on Equipment
         exit;
     }
 

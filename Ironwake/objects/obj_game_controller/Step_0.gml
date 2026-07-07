@@ -438,15 +438,26 @@ if (!stash_mode_open && !loadout_open && !text_entry_active() && keyboard_check_
 // STASH SCREEN - runs before the menu_open guard so it fires when menu is closed
 // =============================================================================
 if (stash_mode_open) {
-    var _left_count  = array_length(global.carried_items) + array_length(global.consumable_inventory);
-    var _right_count = array_length(global.equipment_stash) + array_length(global.consumable_stash);
+    // Category tabs: 0 = equipment, 1 = consumables. Q/E flip the tab (matching
+    // the journal/Maren/loadout idiom); both columns show only that category, so
+    // the two item families no longer interleave in one long list.
+    var _left_count  = (stash_mode_tab == 0) ? array_length(global.carried_items)
+                                             : array_length(global.consumable_inventory);
+    var _right_count = (stash_mode_tab == 0) ? array_length(global.equipment_stash)
+                                             : array_length(global.consumable_stash);
     var _cur_count   = (stash_mode_side == 0) ? _left_count : _right_count;
 
-    if (keyboard_check_pressed(vk_left)  || keyboard_check_pressed(ord("Q"))) {
+    if (keyboard_check_pressed(ord("Q")) || keyboard_check_pressed(ord("E"))) {
+        stash_mode_tab   = 1 - stash_mode_tab;
+        stash_mode_index = 0;   // side is kept: tab-flipping in the stash column stays there
+        audio_play_sound(snd_page, 1, false);
+    }
+    // nav_left/right = arrows AND A/D, like every other two-column screen.
+    if (nav_left()) {
         stash_mode_side  = 0;
         stash_mode_index = 0;
     }
-    if (keyboard_check_pressed(vk_right) || keyboard_check_pressed(ord("E"))) {
+    if (nav_right()) {
         stash_mode_side  = 1;
         stash_mode_index = 0;
     }
@@ -455,34 +466,27 @@ if (stash_mode_open) {
     if (nav_down()) stash_mode_index = wrap_index(stash_mode_index + 1, _cur_count);
 
     if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)) {
+        // The tab picks the array pair, the side picks the direction.
         if (stash_mode_side == 0) {
-            var _ceq = array_length(global.carried_items);
-            if (stash_mode_index < _ceq) {
+            if (stash_mode_tab == 0 && stash_mode_index < array_length(global.carried_items)) {
                 var _it = global.carried_items[stash_mode_index];
                 array_delete(global.carried_items, stash_mode_index, 1);
                 array_push(global.equipment_stash, _it);
-            } else {
-                var _ci = stash_mode_index - _ceq;
-                if (_ci < array_length(global.consumable_inventory)) {
-                    var _it = global.consumable_inventory[_ci];
-                    array_delete(global.consumable_inventory, _ci, 1);
-                    array_push(global.consumable_stash, _it);
-                }
+            } else if (stash_mode_tab == 1 && stash_mode_index < array_length(global.consumable_inventory)) {
+                var _it = global.consumable_inventory[stash_mode_index];
+                array_delete(global.consumable_inventory, stash_mode_index, 1);
+                array_push(global.consumable_stash, _it);
             }
             stash_mode_index = clamp(stash_mode_index, 0, max(0, _left_count - 2));
         } else {
-            var _seq = array_length(global.equipment_stash);
-            if (stash_mode_index < _seq) {
+            if (stash_mode_tab == 0 && stash_mode_index < array_length(global.equipment_stash)) {
                 var _it = global.equipment_stash[stash_mode_index];
                 array_delete(global.equipment_stash, stash_mode_index, 1);
                 array_push(global.carried_items, _it);
-            } else {
-                var _ci = stash_mode_index - _seq;
-                if (_ci < array_length(global.consumable_stash)) {
-                    var _it = global.consumable_stash[_ci];
-                    array_delete(global.consumable_stash, _ci, 1);
-                    array_push(global.consumable_inventory, _it);
-                }
+            } else if (stash_mode_tab == 1 && stash_mode_index < array_length(global.consumable_stash)) {
+                var _it = global.consumable_stash[stash_mode_index];
+                array_delete(global.consumable_stash, stash_mode_index, 1);
+                array_push(global.consumable_inventory, _it);
             }
             stash_mode_index = clamp(stash_mode_index, 0, max(0, _right_count - 2));
         }
@@ -494,32 +498,45 @@ if (stash_mode_open) {
         stash_mode_open = false;
     }
 
-    // Mouse: click a column to switch side; click an item row to select it.
-    // Geometry mirrors ui_draw_stash_screen (cols at x45/x1020 width 855, list
-    // top y185, row height 75) including the scroll window so clicks map to the
-    // right entry even when the list is scrolled.
+    // Mouse: click a tab to switch category, a column to switch side, an item
+    // row to select it. Geometry mirrors ui_draw_stash_screen (tabs at
+    // x660/x975 y138..190; cols at x45/x1020 width 855, list top y249, row
+    // height 75) including the scroll window so clicks map to the right entry
+    // even when the list is scrolled.
     if (mouse_check_button_pressed(mb_left)) {
         var _smx = device_mouse_x_to_gui(0);
         var _smy = device_mouse_y_to_gui(0);
-        var _list_top    = 185;
+        var _list_top    = 249;
         var _row_h       = 75;
         var _max_bot     = 1020;
         var _rows_vis    = max(1, floor((_max_bot - _list_top) / _row_h));
+        // Category tabs
+        if (_smy >= 138 && _smy < 190) {
+            if (_smx >= 660 && _smx < 945 && stash_mode_tab != 0) {
+                stash_mode_tab = 0; stash_mode_index = 0;
+                audio_play_sound(snd_page, 1, false);
+            } else if (_smx >= 975 && _smx < 1260 && stash_mode_tab != 1) {
+                stash_mode_tab = 1; stash_mode_index = 0;
+                audio_play_sound(snd_page, 1, false);
+            }
+        }
         // Switch to left side
-        if (_smx >= 45 && _smx < 900 && _smy >= 140 && _smy < _max_bot) {
+        if (_smx >= 45 && _smx < 900 && _smy >= 204 && _smy < _max_bot) {
             if (stash_mode_side != 0) { stash_mode_side = 0; stash_mode_index = 0; }
             else if (_smy >= _list_top) {
-                var _lcnt   = array_length(global.carried_items) + array_length(global.consumable_inventory);
+                var _lcnt   = (stash_mode_tab == 0) ? array_length(global.carried_items)
+                                                    : array_length(global.consumable_inventory);
                 var _lscr   = clamp(stash_mode_index - floor(_rows_vis / 2), 0, max(0, _lcnt - _rows_vis));
                 var _lrow   = _lscr + floor((_smy - _list_top) / _row_h);
                 if (_lrow >= 0 && _lrow < _lcnt) stash_mode_index = _lrow;
             }
         }
         // Switch to right side
-        if (_smx >= 1020 && _smx < 1875 && _smy >= 140 && _smy < _max_bot) {
+        if (_smx >= 1020 && _smx < 1875 && _smy >= 204 && _smy < _max_bot) {
             if (stash_mode_side != 1) { stash_mode_side = 1; stash_mode_index = 0; }
             else if (_smy >= _list_top) {
-                var _rcnt   = array_length(global.equipment_stash) + array_length(global.consumable_stash);
+                var _rcnt   = (stash_mode_tab == 0) ? array_length(global.equipment_stash)
+                                                    : array_length(global.consumable_stash);
                 var _rscr   = clamp(stash_mode_index - floor(_rows_vis / 2), 0, max(0, _rcnt - _rows_vis));
                 var _rrow   = _rscr + floor((_smy - _list_top) / _row_h);
                 if (_rrow >= 0 && _rrow < _rcnt) stash_mode_index = _rrow;

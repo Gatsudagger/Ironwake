@@ -8201,36 +8201,37 @@ function ui_draw_stash_screen() {
     draw_text(960, 102, "Equipped gear is always safe.   Carried items are lost on death (1 random salvage).");
     draw_set_halign(fa_left);
 
-    var _ly      = 140;
+    // Category tab bar (Q/E) - equipment and consumables get separate adjacent
+    // tabs instead of interleaving in one long list. Geometry is mirrored by
+    // the mouse handling in obj_game_controller Step (tabs x660/x975 y138..190).
+    var _tab = _gc.stash_mode_tab;
+    var _tab_labels = ["EQUIPMENT", "CONSUMABLES"];
+    draw_set_font(fnt_ui);
+    for (var _t = 0; _t < 2; _t++) {
+        var _tx = 660 + _t * 315;   // 285 wide + 30 gap, pair centered on x960
+        var _on = (_tab == _t);
+        draw_set_color(_on ? make_color_rgb(30, 50, 80) : make_color_rgb(18, 22, 38));
+        draw_rectangle(_tx, 138, _tx + 285, 190, false);
+        draw_set_color(_on ? make_color_rgb(80, 160, 220) : make_color_rgb(45, 55, 75));
+        draw_rectangle(_tx, 138, _tx + 285, 190, true);
+        draw_set_halign(fa_center);
+        draw_set_valign(fa_middle);
+        draw_set_color(_on ? c_white : make_color_rgb(150, 150, 170));
+        draw_text(_tx + 143, 164, _tab_labels[_t]);
+    }
+    draw_set_halign(fa_left);
+    draw_set_valign(fa_top);
+
+    var _ly      = 204;
     var _col_w   = 855;
     var _row_h   = 75;
     var _max_bot = 1020;
     var _list_top = _ly + 45;
     var _rows_visible = max(1, floor((_max_bot - _list_top) / _row_h));
 
-    // Build left list: carried equipment then consumable_inventory
-    var _left_items = [];
-    var _left_types = [];  // 0 = equipment, 1 = consumable
-    for (var _i = 0; _i < array_length(global.carried_items); _i++) {
-        array_push(_left_items, global.carried_items[_i]);
-        array_push(_left_types, 0);
-    }
-    for (var _i = 0; _i < array_length(global.consumable_inventory); _i++) {
-        array_push(_left_items, global.consumable_inventory[_i]);
-        array_push(_left_types, 1);
-    }
-
-    // Build right list: equipment_stash then consumable_stash
-    var _right_items = [];
-    var _right_types = [];
-    for (var _i = 0; _i < array_length(global.equipment_stash); _i++) {
-        array_push(_right_items, global.equipment_stash[_i]);
-        array_push(_right_types, 0);
-    }
-    for (var _i = 0; _i < array_length(global.consumable_stash); _i++) {
-        array_push(_right_items, global.consumable_stash[_i]);
-        array_push(_right_types, 1);
-    }
+    // Both columns show only the active tab's category.
+    var _left_items  = (_tab == 0) ? global.carried_items   : global.consumable_inventory;
+    var _right_items = (_tab == 0) ? global.equipment_stash : global.consumable_stash;
 
     var _left_active  = (_gc.stash_mode_side == 0);
     var _right_active = (_gc.stash_mode_side == 1);
@@ -8265,16 +8266,16 @@ function ui_draw_stash_screen() {
         draw_rectangle(_lx + 6, _item_y, _lx + _col_w - 6, _item_y + _row_h - 3, false);
         draw_set_alpha(1.0);
 
-        var _col = (_left_types[_i] == 1) ? make_color_rgb(80, 220, 220) : item_rarity_color(_it.rarity);
-        if (_left_types[_i] == 0) ui_draw_item_icon(_lx + 12, _item_y + 8, 30, _it);
-        else                      ui_draw_consumable_icon(_lx + 12, _item_y + 8, 30, _it);
+        var _col = (_tab == 1) ? make_color_rgb(80, 220, 220) : item_rarity_color(_it.rarity);
+        if (_tab == 0) ui_draw_item_icon(_lx + 12, _item_y + 8, 30, _it);
+        else           ui_draw_consumable_icon(_lx + 12, _item_y + 8, 30, _it);
         var _stl_tx = _lx + 51;
         draw_set_font(fnt_ui);
         draw_set_color(_col);
         draw_text(_stl_tx, _item_y + 8, _it.name);
         draw_set_font(fnt_ui_small);
         draw_set_color(make_color_rgb(140, 150, 170));
-        draw_text(_stl_tx, _item_y + 39, (_left_types[_i] == 1) ? _it.description : ui_item_stat_str(_it));
+        draw_text(_stl_tx, _item_y + 39, (_tab == 1) ? _it.description : ui_item_stat_str(_it));
 
         _item_y += _row_h;
     }
@@ -8296,7 +8297,7 @@ function ui_draw_stash_screen() {
     if (array_length(_left_items) == 0) {
         draw_set_font(fnt_ui);
         draw_set_color(make_color_rgb(70, 80, 100));
-        draw_text(_lx + 18, _ly + 57, "Nothing in pack.");
+        draw_text(_lx + 18, _ly + 57, (_tab == 0) ? "No equipment in pack." : "No consumables in pack.");
     }
 
     // ---- RIGHT COLUMN ----
@@ -8326,16 +8327,16 @@ function ui_draw_stash_screen() {
         draw_rectangle(_rx + 6, _item_y, _rx + _col_w - 6, _item_y + _row_h - 3, false);
         draw_set_alpha(1.0);
 
-        var _col = (_right_types[_i] == 1) ? make_color_rgb(80, 220, 220) : item_rarity_color(_it.rarity);
-        if (_right_types[_i] == 0) ui_draw_item_icon(_rx + 12, _item_y + 8, 30, _it);
-        else                       ui_draw_consumable_icon(_rx + 12, _item_y + 8, 30, _it);
+        var _col = (_tab == 1) ? make_color_rgb(80, 220, 220) : item_rarity_color(_it.rarity);
+        if (_tab == 0) ui_draw_item_icon(_rx + 12, _item_y + 8, 30, _it);
+        else           ui_draw_consumable_icon(_rx + 12, _item_y + 8, 30, _it);
         var _str_tx = _rx + 51;
         draw_set_font(fnt_ui);
         draw_set_color(_col);
         draw_text(_str_tx, _item_y + 8, _it.name);
         draw_set_font(fnt_ui_small);
         draw_set_color(make_color_rgb(140, 150, 170));
-        draw_text(_str_tx, _item_y + 39, (_right_types[_i] == 1) ? _it.description : ui_item_stat_str(_it));
+        draw_text(_str_tx, _item_y + 39, (_tab == 1) ? _it.description : ui_item_stat_str(_it));
 
         _item_y += _row_h;
     }
@@ -8356,14 +8357,14 @@ function ui_draw_stash_screen() {
     if (array_length(_right_items) == 0) {
         draw_set_font(fnt_ui);
         draw_set_color(make_color_rgb(70, 80, 100));
-        draw_text(_rx + 18, _ly + 57, "Nothing in stash.");
+        draw_text(_rx + 18, _ly + 57, (_tab == 0) ? "No equipment in stash." : "No consumables in stash.");
     }
 
     // Footer (raised to clear the bottom rim band)
     draw_set_halign(fa_center);
     draw_set_font(fnt_ui_small);
     draw_set_color(c_gray);
-    ui_draw_key_legend(960, 1026, "Q/E: Switch Side   W/S: Navigate   Enter: Move Item   Esc: Close");
+    ui_draw_key_legend(960, 1026, "Q/E: Category   A/D: Switch Side   W/S: Navigate   Enter: Move Item   Esc: Close");
     draw_set_halign(fa_left);
     draw_set_valign(fa_top);
 
@@ -8375,8 +8376,10 @@ function ui_draw_stash_screen() {
     var _hmx_st = device_mouse_x_to_gui(0);
     var _hmy_st = device_mouse_y_to_gui(0);
     var _st_hover = undefined;
-    var _hy_l = _ly + 45;
-    for (var _sthi = 0; _sthi < array_length(_left_items) && _st_hover == undefined; _sthi++) {
+    // Start at each column's scroll offset so hover matches the drawn rows
+    // (scanning from 0 misattributed tooltips whenever a list was scrolled).
+    var _hy_l = _list_top;
+    for (var _sthi = _left_scroll; _sthi < array_length(_left_items) && _st_hover == undefined; _sthi++) {
         if (_hy_l + _row_h > _max_bot) break;
         if (_hmx_st >= _lx + 6 && _hmx_st < _lx + _col_w - 6
                 && _hmy_st >= _hy_l && _hmy_st < _hy_l + _row_h - 3) {
@@ -8385,8 +8388,8 @@ function ui_draw_stash_screen() {
         _hy_l += _row_h;
     }
     if (_st_hover == undefined) {
-        var _hy_r = _ly + 45;
-        for (var _sthi = 0; _sthi < array_length(_right_items); _sthi++) {
+        var _hy_r = _list_top;
+        for (var _sthi = _right_scroll; _sthi < array_length(_right_items); _sthi++) {
             if (_hy_r + _row_h > _max_bot) break;
             if (_hmx_st >= _rx + 6 && _hmx_st < _rx + _col_w - 6
                     && _hmy_st >= _hy_r && _hmy_st < _hy_r + _row_h - 3) {
