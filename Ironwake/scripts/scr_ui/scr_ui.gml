@@ -2003,15 +2003,18 @@ function ui_draw_knucklebones_rules(_g) {
     var _rl = [
         "1.  You and your opponent take turns. Each turn you roll a die and",
         "     place it in one of YOUR three columns (A/D to aim, Enter to place).",
-        "2.  Matching dice in one column MULTIPLY: two 4s score 16, three 4s 36.",
-        "3.  Your die also DESTROYS every die of the same value sitting in the",
-        "     opponent's matching column. Wreck their stacks; guard your own.",
+        "2.  Matching dice in a column MULTIPLY each other: EACH matching die",
+        "     counts its value x the number of matches. Two 4s count 8 apiece",
+        "     (16 total); three 4s count 12 apiece (36 total).",
+        "3.  Placing a die DESTROYS every opponent die of the same value in the",
+        "     facing column - those points simply vanish (nothing moves to your",
+        "     side). Wreck their stacks, but stacking your own invites reprisal.",
         "4.  When either board fills, the game ends - the higher total takes",
         "     the whole pot (double the stake).",
         "5.  A won game warms your opponent toward you. Esc concedes the stake."
     ];
     for (var _i = 0; _i < array_length(_rl); _i++) {
-        draw_text(_hx0 + 60, _hy0 + 111 + _i * 57, _rl[_i]);
+        draw_text(_hx0 + 60, _hy0 + 93 + _i * 45, _rl[_i]);
     }
 
     draw_set_halign(fa_center);
@@ -7962,9 +7965,13 @@ function ui_draw_shop_screen() {
                 if (_dorn_cr != -1) {
                     var _dorn_cr_names = ["Arcanist", "Bloodwarden", "Shadowstrider"];
                     var _dorn_my_cl    = variable_global_exists("chosen_class") ? global.chosen_class : -1;
+                    // Measure the name while fnt_ui (its draw font) is still set -
+                    // measuring after the switch to fnt_ui_small landed the tag
+                    // mid-name on long items ("Vaultstone Wand of Gre[Arcanist...").
+                    var _dorn_name_w = string_width(_entry.item.name);
                     draw_set_font(fnt_ui_small);
                     draw_set_color((_dorn_cr == _dorn_my_cl) ? make_color_rgb(210, 175, 90) : make_color_rgb(225, 80, 80));
-                    draw_text(_rx0 + 75 + string_width(_entry.item.name) + 18, _ry + 15,
+                    draw_text(_rx0 + 75 + _dorn_name_w + 18, _ry + 15,
                         "[" + _dorn_cr_names[clamp(_dorn_cr, 0, 2)] + " only]");
                     draw_set_font(fnt_ui);
                 }
@@ -9139,6 +9146,179 @@ function ui_draw_gem_glyph(_cx, _cy, _r, _col) {
     draw_line(_cx - _wx, _cy, _cx + _wx, _cy);
 }
 
+// Code-drawn "gear dissolving to dust" glyph, style-matched to ui_draw_gem_glyph
+// (flat facets + highlight). A sword lying DIAGONALLY (hilt up-right, tip
+// down-left, so the whole silhouette reads) whose lower half is mid-dissolve:
+// the blade breaks into drifting fragments and square motes that sink and fade.
+// Sable Salvage-Gear badge.
+function ui_draw_dissolve_glyph(_cx, _cy, _r, _col) {
+    var _top = merge_color(_col, c_white, 0.50);
+    var _dk  = merge_color(_col, c_black, 0.40);
+    var _c   = 0.70711;
+    // Blade axis (t: hilt -1 .. tip +1) and across-axis (w) unit vectors.
+    var _ax = -_c, _ay = _c, _px = _c, _py = _c;
+
+    // Pommel disc at the hilt end, with a small bright stud.
+    var _pmx = _cx + _ax * (-0.92 * _r), _pmy = _cy + _ay * (-0.92 * _r);
+    draw_set_color(_dk);
+    draw_circle(_pmx, _pmy, _r * 0.13, false);
+    draw_set_color(_top);
+    draw_circle(_pmx, _pmy, _r * 0.05, false);
+
+    // Grip: slim quad from the pommel to the guard.
+    var _g0 = -0.84 * _r, _g1 = -0.56 * _r, _gw = 0.06 * _r;
+    draw_set_color(_dk);
+    draw_triangle(_cx + _ax*_g0 + _px*(-_gw), _cy + _ay*_g0 + _py*(-_gw),
+                  _cx + _ax*_g0 + _px*( _gw), _cy + _ay*_g0 + _py*( _gw),
+                  _cx + _ax*_g1 + _px*( _gw), _cy + _ay*_g1 + _py*( _gw), false);
+    draw_triangle(_cx + _ax*_g0 + _px*(-_gw), _cy + _ay*_g0 + _py*(-_gw),
+                  _cx + _ax*_g1 + _px*( _gw), _cy + _ay*_g1 + _py*( _gw),
+                  _cx + _ax*_g1 + _px*(-_gw), _cy + _ay*_g1 + _py*(-_gw), false);
+
+    // Crossguard: bar across the axis, lit on its upper edge.
+    var _c0 = -0.56 * _r, _c1 = -0.44 * _r, _cw = 0.42 * _r;
+    draw_set_color(_col);
+    draw_triangle(_cx + _ax*_c0 + _px*(-_cw), _cy + _ay*_c0 + _py*(-_cw),
+                  _cx + _ax*_c0 + _px*( _cw), _cy + _ay*_c0 + _py*( _cw),
+                  _cx + _ax*_c1 + _px*( _cw), _cy + _ay*_c1 + _py*( _cw), false);
+    draw_triangle(_cx + _ax*_c0 + _px*(-_cw), _cy + _ay*_c0 + _py*(-_cw),
+                  _cx + _ax*_c1 + _px*( _cw), _cy + _ay*_c1 + _py*( _cw),
+                  _cx + _ax*_c1 + _px*(-_cw), _cy + _ay*_c1 + _py*(-_cw), false);
+    draw_set_color(_top);
+    draw_line(_cx + _ax*_c0 + _px*(-_cw), _cy + _ay*_c0 + _py*(-_cw),
+              _cx + _ax*_c0 + _px*( _cw), _cy + _ay*_c0 + _py*( _cw));
+
+    // Blade, intact from the guard to just past centre: two-tone (lit edge on
+    // one side, steel on the other), tapering toward the break.
+    var _b0 = -0.44 * _r, _b1 = 0.14 * _r;
+    var _bw0 = 0.15 * _r, _bw1 = 0.11 * _r;
+    draw_set_color(_col);
+    draw_triangle(_cx + _ax*_b0 + _px*(-_bw0), _cy + _ay*_b0 + _py*(-_bw0),
+                  _cx + _ax*_b0,               _cy + _ay*_b0,
+                  _cx + _ax*_b1,               _cy + _ay*_b1, false);
+    draw_triangle(_cx + _ax*_b0 + _px*(-_bw0), _cy + _ay*_b0 + _py*(-_bw0),
+                  _cx + _ax*_b1,               _cy + _ay*_b1,
+                  _cx + _ax*_b1 + _px*(-_bw1), _cy + _ay*_b1 + _py*(-_bw1), false);
+    draw_set_color(_top);
+    draw_triangle(_cx + _ax*_b0,               _cy + _ay*_b0,
+                  _cx + _ax*_b0 + _px*( _bw0), _cy + _ay*_b0 + _py*( _bw0),
+                  _cx + _ax*_b1 + _px*( _bw1), _cy + _ay*_b1 + _py*( _bw1), false);
+    draw_triangle(_cx + _ax*_b0,               _cy + _ay*_b0,
+                  _cx + _ax*_b1 + _px*( _bw1), _cy + _ay*_b1 + _py*( _bw1),
+                  _cx + _ax*_b1,               _cy + _ay*_b1, false);
+
+    // Below the break the blade continues as detached, fading fragments.
+    var _fr = [
+        { t0: 0.22, t1: 0.40, w: 0.095, a: 0.85 },
+        { t0: 0.50, t1: 0.62, w: 0.075, a: 0.60 },
+        { t0: 0.72, t1: 0.80, w: 0.050, a: 0.35 }
+    ];
+    for (var _fi = 0; _fi < array_length(_fr); _fi++) {
+        var _f  = _fr[_fi];
+        var _f0 = _f.t0 * _r, _f1 = _f.t1 * _r, _fw = _f.w * _r;
+        draw_set_alpha(_f.a);
+        draw_set_color((_fi mod 2 == 0) ? _col : _top);
+        draw_triangle(_cx + _ax*_f0 + _px*(-_fw), _cy + _ay*_f0 + _py*(-_fw),
+                      _cx + _ax*_f0 + _px*( _fw), _cy + _ay*_f0 + _py*( _fw),
+                      _cx + _ax*_f1 + _px*( _fw), _cy + _ay*_f1 + _py*( _fw), false);
+        draw_triangle(_cx + _ax*_f0 + _px*(-_fw), _cy + _ay*_f0 + _py*(-_fw),
+                      _cx + _ax*_f1 + _px*( _fw), _cy + _ay*_f1 + _py*( _fw),
+                      _cx + _ax*_f1 + _px*(-_fw), _cy + _ay*_f1 + _py*(-_fw), false);
+    }
+    draw_set_alpha(1.0);
+
+    // Motes shear off the dissolve zone and sink straight down, fading (loop).
+    for (var _mi = 0; _mi < 6; _mi++) {
+        var _mt = frac(current_time / 1500 + _mi / 6);
+        var _mr = frac(sin((_mi + 1) * 91.7) * 4371.23);
+        var _mtt = (0.20 + _mr * 0.55) * _r;                 // spawn along the broken zone
+        var _mx = _cx + _ax * _mtt + (_mr * 2 - 1) * _r * 0.08;
+        var _my = _cy + _ay * _mtt + _mt * _r * 0.65;
+        var _ms = max(1.5, _r * 0.10 * (1 - _mt * 0.6));
+        draw_set_alpha(0.9 * (1 - _mt));
+        draw_set_color((_mi mod 2 == 0) ? _col : _top);
+        draw_rectangle(_mx - _ms * 0.5, _my - _ms * 0.5, _mx + _ms * 0.5, _my + _ms * 0.5, false);
+    }
+    draw_set_alpha(1.0);
+}
+
+// Code-drawn "rune shattering" glyph, same facet language: the gem split down
+// the middle, each half fully faceted (bright top facet, body, dark underside,
+// and a lit fresh-break face along the crack), halves shoved apart with a gap
+// that breathes; stray shards ring the break with pulsing glints.
+// Sable Salvage-Runes badge.
+function ui_draw_shatter_glyph(_cx, _cy, _r, _col) {
+    var _top = merge_color(_col, c_white, 0.50);
+    var _lit = merge_color(_col, c_white, 0.28);
+    var _dk  = merge_color(_col, c_black, 0.40);
+    var _g   = _r * (0.13 + 0.035 * sin(current_time / 600));   // crack gap breathes
+    var _wx  = _r * 0.78;
+
+    // ---- Left half (displaced down-left) ----
+    var _lx = _cx - _g, _ly = _cy + _g * 0.55;
+    // Top facet (catches light), body, dark underside - mirrors the intact gem.
+    draw_set_color(_lit);
+    draw_triangle(_lx, _ly - _r, _lx - _wx * 0.5, _ly - _r * 0.30, _lx, _ly - _r * 0.30, false);
+    draw_set_color(_col);
+    draw_triangle(_lx - _wx * 0.5, _ly - _r * 0.30, _lx - _wx, _ly, _lx, _ly, false);
+    draw_triangle(_lx - _wx * 0.5, _ly - _r * 0.30, _lx, _ly, _lx, _ly - _r * 0.30, false);
+    draw_set_color(_dk);
+    draw_triangle(_lx - _wx, _ly, _lx, _ly, _lx - _r * 0.10, _ly + _r * 0.72, false);
+    // Fresh-break face: thin bright sliver along the crack edge.
+    draw_set_color(_top);
+    draw_triangle(_lx, _ly - _r, _lx, _ly + _r * 0.55, _lx - _r * 0.07, _ly - _r * 0.15, false);
+
+    // ---- Right half (displaced up-right) ----
+    var _rx = _cx + _g, _ry = _cy - _g * 0.55;
+    draw_set_color(_top);
+    draw_triangle(_rx, _ry - _r, _rx + _wx * 0.5, _ry - _r * 0.30, _rx, _ry - _r * 0.30, false);
+    draw_set_color(_lit);
+    draw_triangle(_rx + _wx * 0.5, _ry - _r * 0.30, _rx + _wx, _ry, _rx, _ry, false);
+    draw_triangle(_rx + _wx * 0.5, _ry - _r * 0.30, _rx, _ry, _rx, _ry - _r * 0.30, false);
+    draw_set_color(_col);
+    draw_triangle(_rx + _wx, _ry, _rx, _ry, _rx + _r * 0.10, _ry + _r * 0.72, false);
+    // Fresh-break face on this side too.
+    draw_set_color(_top);
+    draw_triangle(_rx, _ry - _r, _rx, _ry + _r * 0.55, _rx + _r * 0.07, _ry - _r * 0.15, false);
+
+    // ---- Shards ringing the break: varied sizes/orientations, fading outward ----
+    var _shd = [
+        { x: -0.92, y: -0.62, s: 0.16, f: 0, a: 0.95 },
+        { x:  0.88, y: -0.72, s: 0.13, f: 1, a: 0.85 },
+        { x:  1.00, y:  0.35, s: 0.17, f: 2, a: 0.80 },
+        { x: -1.05, y:  0.30, s: 0.11, f: 1, a: 0.65 },
+        { x:  0.35, y:  0.95, s: 0.10, f: 0, a: 0.55 }
+    ];
+    for (var _si = 0; _si < array_length(_shd); _si++) {
+        var _s  = _shd[_si];
+        var _sx = _cx + _s.x * _r, _sy = _cy + _s.y * _r, _ss = _s.s * _r;
+        draw_set_alpha(_s.a);
+        draw_set_color(_s.f == 0 ? _top : (_s.f == 1 ? _col : _lit));
+        // Orientation varies with the index so they read as tumbling pieces.
+        if (_si mod 3 == 0) {
+            draw_triangle(_sx, _sy - _ss, _sx + _ss, _sy + _ss * 0.4, _sx - _ss * 0.5, _sy + _ss, false);
+        } else if (_si mod 3 == 1) {
+            draw_triangle(_sx - _ss, _sy, _sx + _ss * 0.6, _sy - _ss * 0.7, _sx + _ss * 0.4, _sy + _ss, false);
+        } else {
+            draw_triangle(_sx + _ss, _sy - _ss * 0.3, _sx - _ss * 0.4, _sy - _ss, _sx - _ss * 0.2, _sy + _ss * 0.9, false);
+        }
+    }
+    draw_set_alpha(1.0);
+
+    // ---- Glints: two tiny sparkles pulsing near the break ----
+    for (var _gi = 0; _gi < 2; _gi++) {
+        var _ga = 0.5 + 0.5 * sin(current_time / 450 + _gi * 2.4);
+        var _gx = _cx + (_gi == 0 ? -_r * 0.30 : _r * 0.42);
+        var _gy = _cy + (_gi == 0 ? -_r * 0.70 : _r * 0.55);
+        draw_set_alpha(_ga * 0.9);
+        draw_set_color(c_white);
+        draw_rectangle(_gx - 1, _gy - 1, _gx + 1, _gy + 1, false);
+        draw_set_alpha(_ga * 0.4);
+        draw_rectangle(_gx - 2.5, _gy - 2.5, _gx + 2.5, _gy + 2.5, false);
+    }
+    draw_set_alpha(1.0);
+}
+
 // Draws a rune as an equipment-style entry: gem icon, then the rune NAME on the top
 // line and its STAT EFFECT below (mirroring how gear rows read). _ty is the row text
 // baseline returned by ui_maren_row. Optionally tags the rune's domain on the right.
@@ -9196,9 +9376,14 @@ function ui_draw_maren_screen() {
     draw_text(960, 36, "Maren the Runesmith");
     draw_set_halign(fa_right);
     draw_set_font(fnt_ui_small);
-    draw_set_color(make_color_rgb(200, 180, 130));
     var _dust = variable_global_exists("rune_dust") ? global.rune_dust : 0;
-    draw_text(1860, 48, "Rune Dust: " + string(_dust));
+    // "Rune Dust:" label in light purple, value stays gold (M 2026-07-07,
+    // every NPC dust readout - contrasts the gold like the resource itself).
+    var _dust_num = " " + string(_dust);
+    draw_set_color(make_color_rgb(200, 180, 130));
+    draw_text(1860, 48, _dust_num);
+    draw_set_color(make_color_rgb(195, 155, 255));
+    draw_text(1860 - string_width(_dust_num), 48, "Rune Dust:");
     // Player gold, under the dust readout
     draw_set_color(c_yellow);
     draw_text(1860, 84, "Gold: " + string(global.gold) + "g");
@@ -9229,7 +9414,8 @@ function ui_draw_maren_screen() {
 
     var _row_y0 = 285;
     var _list_x = 300;
-    var _list_x2 = 1620;
+    var _list_x2 = 1500;   // ui_maren_row boxes end at 1500 - 1620 left the right-
+                           // aligned hints/costs hanging outside their row borders
     var _cursor = _gc.maren_cursor;
     var _scroll = _gc.maren_scroll;          // first visible row (list windowing)
     var _vis    = maren_visible_rows();
@@ -9584,9 +9770,16 @@ function ui_draw_sable_screen() {
     draw_text(960, 36, "Sable the Alchemist");
     draw_set_halign(fa_right);
     draw_set_font(fnt_ui_small);
-    draw_set_color(make_color_rgb(200, 180, 130));
     var _dust = variable_global_exists("rune_dust") ? global.rune_dust : 0;
-    draw_text(1860, 48, "Rune Dust: " + string(_dust) + "    Gold: " + string(global.gold));
+    // "Rune Dust:" label in light purple, values stay gold (M 2026-07-07).
+    var _sd_gold = "    Gold: " + string(global.gold);
+    var _sd_dnum = " " + string(_dust);
+    draw_set_color(make_color_rgb(200, 180, 130));
+    draw_text(1860, 48, _sd_gold);
+    var _sd_x = 1860 - string_width(_sd_gold);
+    draw_text(_sd_x, 48, _sd_dnum);
+    draw_set_color(make_color_rgb(195, 155, 255));
+    draw_text(_sd_x - string_width(_sd_dnum), 48, "Rune Dust:");
     draw_set_halign(fa_left);
 
     // Bond readout - watch salvage/brew raise the relationship live.
@@ -9612,6 +9805,71 @@ function ui_draw_sable_screen() {
     draw_set_valign(fa_top);
     draw_set_font(fnt_ui);
 
+    // Rotating alchemist quip (M 2026-07-06): one line of Sable flavor, new each run.
+    var _sq = [
+        "Everything melts down to something useful.",
+        "Careful with the green ones. Or don't be - I need the notes.",
+        "Dust is just potential with the shape burned off.",
+        "Three of anything is a recipe. One of anything is a shame.",
+        "If it hums, brew it. If it screams, label it.",
+        "The cauldron remembers every recipe. Unfortunately, so do I."
+    ];
+    var _sq_i = (variable_global_exists("run_count") ? global.run_count : 0) mod array_length(_sq);
+    draw_set_halign(fa_center);
+    draw_set_font(fnt_ui_small);
+    draw_set_color(make_color_rgb(110, 150, 125));
+    draw_text(960, 186, "\"" + _sq[_sq_i] + "\"");
+    draw_set_halign(fa_left);
+    draw_set_font(fnt_ui);
+
+    // Soft gold shimmer for dust PAYOUTS (gains glitter; costs stay flat).
+    var _dust_shimmer = merge_color(make_color_rgb(200, 180, 130), make_color_rgb(255, 235, 160),
+        0.5 + 0.5 * sin(current_time / 400));
+
+    // --- Ever-present cauldron, bottom-left (M 2026-07-07): living set-dressing on
+    // EVERY tab - things go in, things come out. Sits in the free strip left of the
+    // rows (x<300) so no list length can overlap it. Static sprite + code-driven
+    // bubble/wisp loop; a true PixelLab animation can replace the overlay next cycle.
+    var _cld = asset_get_index("spr_sable_cauldron");
+    if (_cld != -1) {
+        var _cld_s  = 1.6;
+        var _cld_cx = 168;
+        var _cld_cy = 1042 - sprite_get_height(_cld) * _cld_s * 0.5;   // centre origin
+        var _cld_n  = sprite_get_number(_cld);
+        // 210ms/frame (~1.9s loop) - 125ms read as speed-running the boil (M).
+        var _cld_f  = (_cld_n > 1) ? floor(current_time / 210) mod _cld_n : 0;
+        draw_sprite_ext(_cld, _cld_f, _cld_cx, _cld_cy, _cld_s, _cld_s, 0, c_white, 1);
+
+        // Code-drawn bubble/wisp loop: FALLBACK only, for a single-frame sprite.
+        // Once the PixelLab bubbling animation is imported the sprite carries its
+        // own smoke and this whole block stays dormant.
+        if (_cld_n <= 1) {
+            // Liquid surface band (sprite-space: the brew sits just above centre).
+            var _liq_y = _cld_cy - sprite_get_height(_cld) * _cld_s * 0.17;
+            var _liq_w = sprite_get_width(_cld) * _cld_s * 0.26;
+
+            // Bubbles: five staggered surface pops, each respawning at a hashed x.
+            for (var _cbi = 0; _cbi < 5; _cbi++) {
+                var _cbt = frac(current_time / 1100 + _cbi * 0.2);
+                var _cbc = floor(current_time / 1100 + _cbi * 0.2);
+                var _cbr = frac(sin(_cbc * 12.9898 + _cbi * 78.233) * 43758.5453);
+                draw_set_alpha((1 - _cbt) * 0.55);
+                draw_set_color(make_color_rgb(150, 200, 255));
+                draw_circle(_cld_cx + (_cbr * 2 - 1) * _liq_w,
+                    _liq_y - _cbt * 6 * _cld_s, (1 + 3 * _cbt) * _cld_s, true);
+            }
+            // Wisps: translucent vapor puffs drifting up off the rim, swaying.
+            for (var _cwi = 0; _cwi < 4; _cwi++) {
+                var _cwt = frac(current_time / 2600 + _cwi / 4);
+                draw_set_alpha((1 - _cwt) * 0.16);
+                draw_set_color(make_color_rgb(170, 210, 255));
+                draw_circle(_cld_cx + sin(current_time / 700 + _cwi * 2.1) * _liq_w * 0.6,
+                    _liq_y - 4 * _cld_s - _cwt * 90 * _cld_s, (4 + 10 * _cwt) * _cld_s, false);
+            }
+            draw_set_alpha(1.0);
+        }
+    }
+
     var _row_y0 = 285;
     var _list_x = 300;
     var _list_x2 = 1500;   // narrowed from 1620 to clear the right-hand NPC sprite column
@@ -9622,12 +9880,30 @@ function ui_draw_sable_screen() {
         if (_gc.sable_phase == 0) {
             draw_set_color(make_color_rgb(140, 160, 145));
             draw_text(_list_x, 225, "Salvage unwanted loot into rune dust:");
-            var _menu = ["Salvage Gear   (unequipped pack + stash)",
-                         "Salvage Runes & Aspects   (unsocketed - fully scrapped)"];
+            // Equipment-style menu rows (icon + title + blurb) instead of bare text.
+            var _menu = [
+                { title: "Salvage Gear",
+                  desc:  "Unequipped pack & stash pieces melt down to rune dust." },
+                { title: "Salvage Runes & Aspects",
+                  desc:  "Unsocketed runes scrapped whole - nothing comes back." }
+            ];
             for (var _sm = 0; _sm < 2; _sm++) {
                 var _tys = ui_maren_row(_sm, _sm == _cursor);
+                var _sry = _tys - 15;
+                // Badges in ONE style (the gem glyph's flat-facet language): a sword
+                // dissolving to motes for gear, a shattering rune for runes.
+                if (_sm == 0) {
+                    ui_draw_dissolve_glyph(_list_x + 6 + 24, _sry + 9 + 22, 22, make_color_rgb(160, 175, 200));
+                } else {
+                    ui_draw_shatter_glyph(_list_x + 6 + 24, _sry + 9 + 24, 20, make_color_rgb(140, 110, 220));
+                }
+                draw_set_font(fnt_ui);
                 draw_set_color(make_color_rgb(190, 220, 195));
-                draw_text(_list_x + 24, _tys, _menu[_sm]);
+                draw_text(_list_x + 72, _sry + 4, _menu[_sm].title);
+                draw_set_font(fnt_ui_small);
+                draw_set_color(make_color_rgb(130, 150, 138));
+                draw_text(_list_x + 72, _sry + 38, _menu[_sm].desc);
+                draw_set_font(fnt_ui);
             }
         } else if (_gc.sable_phase == 1) {
             // Gear list (WINDOWED - pack + stash can exceed the panel height). Keep
@@ -9646,10 +9922,12 @@ function ui_draw_sable_screen() {
                 for (var _gi = _gfirst; _gi < _glast; _gi++) {
                     var _it  = _gear[_gi].item;
                     var _tyg = ui_maren_row(_gi - _gfirst, _gi == _cursor);
+                    // Icon badge like Dorn's shop rows (M 2026-07-06: bare text lists).
+                    ui_draw_item_icon(_list_x + 6, _tyg - 6, 48, _it);
                     draw_set_color(item_rarity_color(_it.rarity));
-                    draw_text(_list_x + 24, _tyg, _it.name + "  (" + item_rarity_name(_it.rarity) + ")");
+                    draw_text(_list_x + 72, _tyg, _it.name + "  (" + item_rarity_name(_it.rarity) + ")");
                     draw_set_halign(fa_right);
-                    draw_set_color(make_color_rgb(200, 180, 130));
+                    draw_set_color(_dust_shimmer);
                     draw_text(_list_x2 - 24, _tyg, "+" + string(sable_salvage_gear_dust(_it.rarity)) + " Dust  [" + _gear[_gi].source + "]");
                     draw_set_halign(fa_left);
                 }
@@ -9674,7 +9952,7 @@ function ui_draw_sable_screen() {
                     var _tyr = ui_maren_row(_ri - _rfirst, _ri == _cursor);
                     ui_draw_rune_entry(_list_x, _tyr, _rn);
                     draw_set_halign(fa_right);
-                    draw_set_color(make_color_rgb(200, 180, 130));
+                    draw_set_color(_dust_shimmer);
                     draw_text(_list_x2 - 24, _tyr, "+" + string(sable_salvage_rune_dust(_rn.tier)) + " Dust");
                     draw_set_halign(fa_left);
                 }
@@ -9700,19 +9978,91 @@ function ui_draw_sable_screen() {
             draw_text(_list_x2 - 24, _tyb + 12, string(_b.gold) + "g  +  " + string(_b.dust) + " Dust");
             draw_set_halign(fa_left);
         }
+
     } else if (_gc.sable_tab == 2) {
-        // -------- UPGRADE TAB --------
+        // -------- UPGRADE TAB (Potion Fusion) --------
+        // Presented like the Rebirth tab: accent title + a framed how-it-works
+        // diagram, with the fusable rows below (M 2026-07-07: was bare text).
         var _groups = sable_upgrade_groups();
         var _ucost = sable_upgrade_cost();
+
+        draw_set_font(fnt_ui);
+        var _uf_title = "Potion Fusion";
+        draw_text_outline(_list_x, 225, _uf_title, make_color_rgb(20, 52, 30), make_color_rgb(150, 230, 170));
         draw_set_color(make_color_rgb(140, 160, 145));
-        draw_text(_list_x, 225, "Fuse 3 identical potions into their improved form (" + string(_ucost.gold) + "g + " + string(_ucost.dust) + " Dust):");
+        draw_text(_list_x + string_width(_uf_title) + 12, 225, "- fuse three identical potions into their improved form:");
+        draw_set_halign(fa_right);
+        draw_set_font(fnt_ui_small);
+        draw_set_color(make_color_rgb(200, 180, 130));
+        draw_text(_list_x2, 231, string(_ucost.gold) + "g  +  " + string(_ucost.dust) + " Dust per fuse");
+        draw_set_halign(fa_left);
+
+        // How-it-works panel: three dim source slots -> one glowing result slot.
+        var _up_y1 = 256, _up_y2 = 340;
+        draw_set_alpha(0.30);
+        draw_set_color(make_color_rgb(18, 28, 24));
+        draw_roundrect(_list_x, _up_y1, _list_x2, _up_y2, false);
+        draw_set_alpha(1.0);
+        draw_set_color(make_color_rgb(90, 130, 110));
+        draw_roundrect(_list_x, _up_y1, _list_x2, _up_y2, true);
+
+        var _dg_y = (_up_y1 + _up_y2) / 2;
+        var _dg_x = _list_x + 30;
+        for (var _d3 = 0; _d3 < 3; _d3++) {
+            var _sx0 = _dg_x + _d3 * 40;
+            draw_set_color(make_color_rgb(14, 20, 17));
+            draw_rectangle(_sx0, _dg_y - 15, _sx0 + 30, _dg_y + 15, false);
+            draw_set_color(make_color_rgb(60, 84, 70));
+            draw_rectangle(_sx0, _dg_y - 15, _sx0 + 30, _dg_y + 15, true);
+            // Tiny flask silhouette: bulb + neck.
+            draw_set_color(make_color_rgb(110, 170, 130));
+            draw_circle(_sx0 + 15, _dg_y + 3, 6, false);
+            draw_rectangle(_sx0 + 13, _dg_y - 9, _sx0 + 17, _dg_y - 3, false);
+        }
+        draw_set_font(fnt_ui);
+        draw_set_color(make_color_rgb(150, 200, 160));
+        draw_text(_dg_x + 132, _dg_y - 16, "->");
+        // Result slot: larger, breathing double border, brighter flask.
+        var _rs_x = _dg_x + 175;
+        draw_set_color(make_color_rgb(16, 26, 20));
+        draw_rectangle(_rs_x, _dg_y - 19, _rs_x + 38, _dg_y + 19, false);
+        draw_set_alpha(0.6 + 0.4 * (0.5 + 0.5 * sin(current_time / 500)));
+        draw_set_color(make_color_rgb(140, 230, 170));
+        draw_rectangle(_rs_x, _dg_y - 19, _rs_x + 38, _dg_y + 19, true);
+        draw_rectangle(_rs_x - 1, _dg_y - 20, _rs_x + 39, _dg_y + 20, true);
+        draw_set_alpha(1.0);
+        draw_set_color(make_color_rgb(170, 235, 190));
+        draw_circle(_rs_x + 19, _dg_y + 4, 8, false);
+        draw_rectangle(_rs_x + 16, _dg_y - 12, _rs_x + 22, _dg_y - 4, false);
+        // Explanation, right of the diagram.
+        draw_set_font(fnt_ui_small);
+        draw_set_color(make_color_rgb(150, 175, 158));
+        draw_text(_rs_x + 75, _dg_y - 26, "Three of a kind becomes one improved draught - stronger effect, one pack slot.");
+        draw_set_color(make_color_rgb(115, 135, 122));
+        draw_text(_rs_x + 75, _dg_y + 4, "Standard potions only. Brew or buy duplicates, then fuse them here.");
+        draw_set_font(fnt_ui);
+
+        // Empty state: a ghost row instead of a floating sentence.
         if (array_length(_groups) == 0) {
-            draw_set_color(make_color_rgb(120, 130, 122));
-            draw_text(_list_x, _row_y0 + 12, "No potion held 3+ times with an upgrade. (Standard potions only.)");
+            draw_set_alpha(0.55);
+            draw_set_color(make_color_rgb(16, 22, 19));
+            draw_rectangle(_list_x, 364, _list_x2, 430, false);
+            draw_set_color(make_color_rgb(52, 70, 60));
+            draw_rectangle(_list_x, 364, _list_x2, 430, true);
+            draw_set_alpha(1.0);
+            draw_set_halign(fa_center);
+            draw_set_font(fnt_ui);
+            draw_set_color(make_color_rgb(110, 130, 118));
+            draw_text((_list_x + _list_x2) / 2, 374, "No potion held three times over - nothing to fuse yet.");
+            draw_set_font(fnt_ui_small);
+            draw_set_color(make_color_rgb(85, 100, 90));
+            draw_text((_list_x + _list_x2) / 2, 406, "Brew or buy duplicates of a standard potion, then bring them back.");
+            draw_set_halign(fa_left);
+            draw_set_font(fnt_ui);
         }
         for (var _ui = 0; _ui < array_length(_groups); _ui++) {
             var _g   = _groups[_ui];
-            var _tyu = ui_maren_row(_ui, _ui == _cursor);
+            var _tyu = ui_maren_row(_ui, _ui == _cursor, 364);
             var _uaff = (global.gold >= _ucost.gold) && (_dust >= _ucost.dust);
             var _ucol = _uaff ? make_color_rgb(190, 220, 195) : make_color_rgb(120, 130, 122);
             // Show the RESULT potion equipment-style (icon + name + effect); the recipe
@@ -9724,10 +10074,30 @@ function ui_draw_sable_screen() {
                 draw_set_color(_ucol);
                 draw_text(_list_x + 24, _tyu, _g.to);
             }
+            // Fusion preview (M 2026-07-06): the recipe drawn as icons - three
+            // source potions, an arrow, the improved result - instead of a sentence.
+            var _fus_src = undefined;
+            for (var _fi = 0; _fi < array_length(global.consumable_inventory); _fi++) {
+                if (global.consumable_inventory[_fi].name == _g.from) { _fus_src = global.consumable_inventory[_fi]; break; }
+            }
+            var _fus_x = _list_x2 - 24 - 170;   // [34px x3, 26px pitch] + arrow + 44px result
+            var _fus_y = _tyu - 4;
+            if (_fus_src != undefined) {
+                for (var _fi3 = 0; _fi3 < 3; _fi3++) {
+                    ui_draw_consumable_icon(_fus_x + _fi3 * 26, _fus_y, 34, _fus_src);
+                }
+            }
+            draw_set_font(fnt_ui);
+            draw_set_color(make_color_rgb(150, 200, 160));
+            draw_text(_fus_x + 96, _fus_y + 4, "->");
+            if (_utmpl != undefined) {
+                ui_draw_consumable_icon(_fus_x + 126, _fus_y - 5, 44, _utmpl);
+            }
+            // Held count, left of the icon block.
             draw_set_halign(fa_right);
             draw_set_font(fnt_ui_small);
             draw_set_color(make_color_rgb(180, 195, 205));
-            draw_text(_list_x2 - 24, _tyu + 12, "Fuse 3x " + _g.from + "   (have " + string(_g.count) + ")");
+            draw_text(_fus_x - 15, _tyu + 12, "have " + string(_g.count));
             draw_set_halign(fa_left);
         }
     } else {

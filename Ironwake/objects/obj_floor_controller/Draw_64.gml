@@ -562,8 +562,20 @@ if (showing_shrine) {
     var _sg  = global.gold;
     var _sdu = variable_global_exists("rune_dust") ? global.rune_dust : 0;
     draw_set_font(fnt_ui_small);
+    // Centered line drawn in segments: "Rune Dust:" label light purple, values
+    // stay gold (M 2026-07-07, matches the NPC screens' dust readouts).
+    var _sh_g = "Gold: " + string(_sg) + "      ";
+    var _sh_l = "Rune Dust:";
+    var _sh_v = " " + string(_sdu);
+    var _sh_x = GUI_CX - (string_width(_sh_g) + string_width(_sh_l) + string_width(_sh_v)) * 0.5;
+    draw_set_halign(fa_left);
     draw_set_color(make_color_rgb(210, 200, 150));
-    draw_text(GUI_CX, 198, "Gold: " + string(_sg) + "      Rune Dust: " + string(_sdu));
+    draw_text(_sh_x, 198, _sh_g);
+    draw_set_color(make_color_rgb(195, 155, 255));
+    draw_text(_sh_x + string_width(_sh_g), 198, _sh_l);
+    draw_set_color(make_color_rgb(210, 200, 150));
+    draw_text(_sh_x + string_width(_sh_g) + string_width(_sh_l), 198, _sh_v);
+    draw_set_halign(fa_center);
 
     // Hover-inspect capture for the suggested "[3] Sacrifice ..." item; drawn last
     // (after the gothic frame) so the tooltip sits on top of everything.

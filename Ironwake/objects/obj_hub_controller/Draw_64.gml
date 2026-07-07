@@ -1591,10 +1591,13 @@ if (instance_exists(obj_game_controller)) {
         }
 
         // Shared layout constants
-        // list fits 10 rows (74px each) from y=83, leaving the bottom zone for desc/confirm/hints
+        // list fits 10 rows (74px each) from y=106, leaving the bottom zone for
+        // desc/confirm/hints. 106 (not 83): the fnt_ui headers at y=60 are 33px
+        // tall and the cursor's gold frame juts 3px above the row - anything
+        // higher and the header text collides with a highlighted top row.
         var _lx      = 60;
         var _rx      = 1125;
-        var _list_y0 = 83;
+        var _list_y0 = 106;
         var _row_h   = 69;
         var _row_gap = 5;   // 74px per row
 
@@ -1963,7 +1966,10 @@ if (instance_exists(obj_game_controller)) {
         // =====================================================================
         } else if (_gc_ov.loadout_tab == 1) {
 
-            // Build available (unlocked, class-filtered) and locked lists
+            // Build the merged trait list: unlocked first, then locked - ONE
+            // edge-scrolled window the cursor walks end to end (same pattern as
+            // the ABILITIES tab; the old separate locked strip overflowed the
+            // description box once ~9 traits were unlocked).
             var _tr_avail  = [];
             var _tr_locked = [];
             for (var _tri = 0; _tri < array_length(global.traits_all); _tri++) {
@@ -1976,29 +1982,44 @@ if (instance_exists(obj_game_controller)) {
                     array_push(_tr_locked, _tr);
                 }
             }
+            var _tr_all = [];
+            for (var _tmi = 0; _tmi < array_length(_tr_avail);  _tmi++) array_push(_tr_all, { tr: _tr_avail[_tmi],  unlocked: true  });
+            for (var _tmj = 0; _tmj < array_length(_tr_locked); _tmj++) array_push(_tr_all, { tr: _tr_locked[_tmj], unlocked: false });
+            var _tr_cnt       = array_length(_tr_all);
             var _tr_avail_cnt = array_length(_tr_avail);
             var _tr_sel_cnt   = array_length(_gc_ov.traits_selected);
 
             // Panel headers
             draw_set_font(fnt_ui);
             draw_set_color(make_color_rgb(150, 120, 210));
-            draw_text(_lx, 60, "AVAILABLE TRAITS  (" + string(_tr_avail_cnt) + ")");
+            draw_text(_lx, 60, "AVAILABLE TRAITS  (" + string(_tr_avail_cnt) + " / " + string(_tr_cnt) + ")");
             draw_text(_rx, 60, "SELECTED TRAITS  (" + string(_tr_sel_cnt) + " / " + string(max_trait_slots()) + ")");
 
-            // Available trait rows (cursor navigates these)
+            // Trait rows: stateful EDGE scrolling (kept in sync with Step_0),
+            // 8 rows visible (96px pitch from y=106 ends at 874, clearing the
+            // y=900 description box).
             var _tr_row_h   = 90;
             var _tr_row_gap = 6;
-            for (var _tai = 0; _tai < _tr_avail_cnt; _tai++) {
-                var _tr     = _tr_avail[_tai];
-                var _ry     = _list_y0 + _tai * (_tr_row_h + _tr_row_gap);
+            var _tr_max_vis = 8;
+            var _tr_scroll  = variable_instance_exists(_gc_ov, "traits_scroll") ? _gc_ov.traits_scroll : 0;
+            _tr_scroll = clamp(_tr_scroll, _gc_ov.traits_cursor - (_tr_max_vis - 1), _gc_ov.traits_cursor);
+            _tr_scroll = clamp(_tr_scroll, 0, max(0, _tr_cnt - _tr_max_vis));
+            _gc_ov.traits_scroll = _tr_scroll;
+            for (var _tai = _tr_scroll; _tai < min(_tr_cnt, _tr_scroll + _tr_max_vis); _tai++) {
+                var _te     = _tr_all[_tai];
+                var _tr     = _te.tr;
+                var _tr_unl = _te.unlocked;
+                var _ry     = _list_y0 + (_tai - _tr_scroll) * (_tr_row_h + _tr_row_gap);
                 var _is_cur = (_tai == _gc_ov.traits_cursor);
 
                 var _in_sel = false;
-                for (var _si = 0; _si < _tr_sel_cnt; _si++) {
-                    if (_gc_ov.traits_selected[_si] == _tr.name) { _in_sel = true; break; }
+                if (_tr_unl) {
+                    for (var _si = 0; _si < _tr_sel_cnt; _si++) {
+                        if (_gc_ov.traits_selected[_si] == _tr.name) { _in_sel = true; break; }
+                    }
                 }
 
-                draw_set_alpha(_is_cur ? 1.0 : 0.65);
+                draw_set_alpha(_is_cur ? 1.0 : (_tr_unl ? 0.65 : 0.4));
                 draw_set_color(_in_sel  ? make_color_rgb(28, 14, 52)
                             : (_is_cur ? make_color_rgb(30, 18, 58)
                                        : make_color_rgb(14, 16, 28)));
@@ -2006,7 +2027,8 @@ if (instance_exists(obj_game_controller)) {
                 draw_set_alpha(1.0);
                 draw_set_color(_in_sel  ? make_color_rgb(140, 70, 210)
                             : (_is_cur ? make_color_rgb(100, 60, 180)
-                                       : make_color_rgb(35, 40, 65)));
+                            : (_tr_unl ? make_color_rgb(35, 40, 65)
+                                       : make_color_rgb(28, 32, 48))));
                 draw_rectangle(_lx, _ry, _lx + 990, _ry + _tr_row_h, true);
                 // Cursor row: thick pulsing gold frame + chevron, mirroring the
                 // ABILITIES tab cursor so the selection can't be missed.
@@ -2030,45 +2052,43 @@ if (instance_exists(obj_game_controller)) {
                     draw_rectangle(_lx, _ry, _lx + 5, _ry + _tr_row_h, false);
                 }
 
-                // Trait icon badge (left of the text); cursor row shows it full, others dimmed.
-                draw_set_alpha(_is_cur ? 1.0 : 0.78);
+                // Trait icon badge (left of the text); locked rows dim it hard.
+                draw_set_alpha(_tr_unl ? (_is_cur ? 1.0 : 0.78) : 0.4);
                 ui_draw_trait_icon(_lx + 14, _ry + 13, 64, _tr);
                 draw_set_alpha(1.0);
 
-                var _tr_name_suf = _in_sel ? "  [SELECTED]" : "";
+                var _tr_name_suf = _in_sel ? "  [SELECTED]" : (!_tr_unl ? "  [LOCKED]" : "");
                 draw_set_font(fnt_ui);
-                draw_set_color(_in_sel  ? make_color_rgb(190, 130, 255)
+                draw_set_color(!_tr_unl ? make_color_rgb(125, 112, 78)
+                            : (_in_sel  ? make_color_rgb(190, 130, 255)
                             : (_is_cur ? c_white
-                                       : make_color_rgb(170, 175, 210)));
+                                       : make_color_rgb(170, 175, 210))));
                 draw_text(_lx + 92, _ry + 8, _tr.name + _tr_name_suf);
                 draw_set_font(fnt_ui_small);
-                draw_set_color(_is_cur ? make_color_rgb(155, 165, 200) : make_color_rgb(80, 88, 118));
-                draw_text_ext(_lx + 92, _ry + 41, _tr.description, -1, 880);
+                if (!_tr_unl) {
+                    // Real unlock path since the Vex rework: bought from Vex for
+                    // gold + a rarity-matched item (the old milestone text was stale).
+                    var _tr_cost = trait_unlock_cost(_tr.name);
+                    draw_set_color(make_color_rgb(150, 120, 60));
+                    draw_text(_lx + 92, _ry + 41, "Locked - Vex sells it: " + string(_tr_cost.gold) + "g + a " + _tr_cost.item_label + " item");
+                } else {
+                    draw_set_color(_is_cur ? make_color_rgb(155, 165, 200) : make_color_rgb(80, 88, 118));
+                    draw_text_ext(_lx + 92, _ry + 41, _tr.description, -1, 880);
+                }
             }
 
-            // Locked trait rows (greyed, no cursor, show unlock condition)
-            var _lock_y0 = _list_y0 + _tr_avail_cnt * (_tr_row_h + _tr_row_gap) + 15;
-            for (var _tli = 0; _tli < array_length(_tr_locked); _tli++) {
-                var _tr  = _tr_locked[_tli];
-                var _ry  = _lock_y0 + _tli * 57;
-                draw_set_alpha(0.45);
-                draw_set_color(make_color_rgb(14, 16, 28));
-                draw_rectangle(_lx, _ry, _lx + 990, _ry + 51, false);
-                draw_set_color(make_color_rgb(28, 32, 48));
-                draw_rectangle(_lx, _ry, _lx + 990, _ry + 51, true);
-                // Dimmed icon (alpha already 0.45 from the locked-row block above).
-                ui_draw_trait_icon(_lx + 9, _ry + 8, 36, _tr);
-                draw_set_font(fnt_ui_small);
-                draw_set_color(make_color_rgb(80, 85, 108));
-                draw_text(_lx + 56, _ry + 5, _tr.name + "  [LOCKED]");
-                var _cond = "";
-                if      (_tr.unlock_type == "full_clear")  _cond = "Unlock: Complete a full 3-floor run";
-                else if (_tr.unlock_type == "char_level")  _cond = "Unlock: Reach level " + string(_tr.unlock_value) + " in a run";
-                else if (_tr.unlock_type == "boss_kill")   _cond = "Unlock: Defeat Malgrath the Warden";
-                draw_set_color(make_color_rgb(55, 60, 78));
-                draw_text(_lx + 56, _ry + 27, _cond);
-                draw_set_alpha(1.0);
+            // Scroll indicators when the merged list overflows the window
+            draw_set_font(fnt_ui_small);
+            draw_set_halign(fa_center);
+            draw_set_color(make_color_rgb(110, 120, 150));
+            if (_tr_scroll > 0) {
+                draw_text(_lx + 495, _list_y0 - 21, "^ " + string(_tr_scroll) + " more above");
             }
+            var _tr_below = _tr_cnt - (_tr_scroll + _tr_max_vis);
+            if (_tr_below > 0) {
+                draw_text(_lx + 495, _list_y0 + _tr_max_vis * (_tr_row_h + _tr_row_gap) - 6, "v " + string(_tr_below) + " more below");
+            }
+            draw_set_halign(fa_left);
 
             // Right panel: trait slots (base 2 + bought + Crown)
             var _tr_slot_max = max_trait_slots();
@@ -2122,12 +2142,15 @@ if (instance_exists(obj_game_controller)) {
             draw_rectangle(_desc_x, 900, _desc_x + _desc_w, 990, true);
 
             draw_set_halign(fa_left);
-            if (_tr_avail_cnt > 0) {
-                var _dtr = _tr_avail[_gc_ov.traits_cursor];
+            if (_tr_cnt > 0 && _gc_ov.traits_cursor < _tr_cnt) {
+                var _dte = _tr_all[_gc_ov.traits_cursor];
+                var _dtr = _dte.tr;
+                draw_set_alpha(_dte.unlocked ? 1.0 : 0.4);
                 ui_draw_trait_icon(_desc_x + 13, 913, 64, _dtr);
+                draw_set_alpha(1.0);
                 draw_set_font(fnt_ui);
-                draw_set_color(make_color_rgb(200, 155, 255));
-                draw_text(_desc_x + 90, 911, _dtr.name);
+                draw_set_color(_dte.unlocked ? make_color_rgb(200, 155, 255) : make_color_rgb(125, 112, 78));
+                draw_text(_desc_x + 90, 911, _dtr.name + (_dte.unlocked ? "" : "  [LOCKED - see Vex]"));
                 draw_set_font(fnt_ui_small);
                 draw_set_color(make_color_rgb(155, 130, 210));
                 draw_text_ext(_desc_x + 90, 942, _dtr.description, -1, _desc_w - 105);
@@ -2201,6 +2224,15 @@ if (instance_exists(obj_game_controller)) {
                 draw_set_color(_sel ? make_color_rgb(90, 180, 120) : make_color_rgb(40, 50, 62));
                 draw_rectangle(_lx, _ry, _lx + 660, _ry + _crh - 10, true);
 
+                // Equipped companion: steady bright-green double frame + left accent
+                // bar. Steady (not pulsing) so it can't be mistaken for the cursor.
+                if (_active) {
+                    draw_set_color(make_color_rgb(120, 230, 150));
+                    draw_rectangle(_lx, _ry, _lx + 660, _ry + _crh - 10, true);
+                    draw_rectangle(_lx + 1, _ry + 1, _lx + 659, _ry + _crh - 11, true);
+                    draw_rectangle(_lx, _ry, _lx + 6, _ry + _crh - 10, false);
+                }
+
                 // Icon box (creature sprite shrunk to fit); blank for the "None" row.
                 var _ibs  = _crh - 22;
                 var _ibx0 = _lx + 8, _iby0 = _ry + 6, _ibx1 = _ibx0 + _ibs, _iby1 = _iby0 + _ibs;
@@ -2213,7 +2245,14 @@ if (instance_exists(obj_game_controller)) {
                 if (_is_none) {
                     draw_set_font(fnt_ui);
                     draw_set_color(make_color_rgb(170, 176, 190));
-                    draw_text(_ctx, _ry + 24, (_active ? "* " : "") + "No companion");
+                    draw_text(_ctx, _ry + 24, "No companion");
+                    if (_active) {
+                        draw_set_halign(fa_right);
+                        draw_set_font(fnt_ui_small);
+                        draw_set_color(make_color_rgb(120, 230, 150));
+                        draw_text(_lx + 660 - 16, _ry + 28, "ACTIVE");
+                        draw_set_halign(fa_left);
+                    }
                 } else {
                     var _cp   = global.pet_roster[_ridx];
                     var _cisp = pet_sprite(_cp, "s");
@@ -2221,14 +2260,19 @@ if (instance_exists(obj_game_controller)) {
                         var _cisc = min((_ibs - 10) / max(1, sprite_get_width(_cisp)), (_ibs - 8) / max(1, sprite_get_height(_cisp)));
                         draw_sprite_ext(_cisp, pet_anim_frame(_cisp), (_ibx0 + _ibx1) / 2, _iby1 - 5, _cisc, _cisc, 0, c_white, 1);
                     }
-                    // Line 1: name (+ active marker) + stage on the right.
+                    // Line 1: name (green when equipped) + stage on the right.
                     draw_set_font(fnt_ui);
-                    draw_set_color(make_color_rgb(220, 226, 238));
-                    draw_text(_ctx, _ry + 10, (_active ? "* " : "") + _cp.name);
+                    draw_set_color(_active ? make_color_rgb(150, 235, 170) : make_color_rgb(220, 226, 238));
+                    draw_text(_ctx, _ry + 10, _cp.name);
                     draw_set_halign(fa_right);
                     draw_set_font(fnt_ui_small);
                     draw_set_color(make_color_rgb(150, 200, 140));
                     draw_text(_lx + 660 - 16, _ry + 14, pet_stage_name(_cp.stage));
+                    // Line 2 right edge: ACTIVE tag for the equipped companion.
+                    if (_active) {
+                        draw_set_color(make_color_rgb(120, 230, 150));
+                        draw_text(_lx + 660 - 16, _ry + 46, "ACTIVE");
+                    }
                     draw_set_halign(fa_left);
                     // Line 2: species + archetype + tags, muted.
                     draw_set_font(fnt_ui_small);
@@ -2239,7 +2283,7 @@ if (instance_exists(obj_game_controller)) {
 
             // Right: framed companion detail card - a portrait box + header band +
             // GRANTS box + egg-gift chip, so nothing floats or overlaps.
-            var _cx0 = _rx, _cx1 = 1836, _cy0 = 100, _cy1 = 900;
+            var _cx0 = _rx, _cx1 = 1836, _cy0 = _list_y0, _cy1 = 900;
             if (_ccur < array_length(_eqp)) {
                 var _hp = global.pet_roster[_eqp[_ccur]];
 

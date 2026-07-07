@@ -647,6 +647,7 @@
     {"id":{"name":"spr_portrait_shadow_m8","path":"sprites/spr_portrait_shadow_m8/spr_portrait_shadow_m8.yy",},},
     {"id":{"name":"spr_portrait_shadow_m9","path":"sprites/spr_portrait_shadow_m9/spr_portrait_shadow_m9.yy",},},
     {"id":{"name":"spr_portrait_shadow_plaguehunter","path":"sprites/spr_portrait_shadow_plaguehunter/spr_portrait_shadow_plaguehunter.yy",},},
+    {"id":{"name":"spr_sable_cauldron","path":"sprites/spr_sable_cauldron/spr_sable_cauldron.yy",},},
     {"id":{"name":"spr_shadowstrider_f","path":"sprites/spr_shadowstrider_f/spr_shadowstrider_f.yy",},},
     {"id":{"name":"spr_shadowstrider","path":"sprites/spr_shadowstrider/spr_shadowstrider.yy",},},
     {"id":{"name":"spr_skeleton_archer","path":"sprites/spr_skeleton_archer/spr_skeleton_archer.yy",},},

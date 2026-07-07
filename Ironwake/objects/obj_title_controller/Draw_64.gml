@@ -206,8 +206,14 @@ if (phase == "cutscene") {
 
     draw_set_font(fnt_ui);
     var _num_panels = array_length(cutscene_panels);
-    var _sep        = 48;   // line separation WITHIN a panel
+    var _sep        = 48;   // VISUAL line separation WITHIN a panel (layout math)
     var _gap        = 33;   // extra space BETWEEN panels
+    // Crawl scaled up + faux-bold double-pass (M 2026-07-06). sep/wrap passed to
+    // draw_text_ext_transformed are in FONT space and scale with it, so divide
+    // out the scale to keep the visual 48px spacing / 1350px wrap unchanged.
+    var _isc  = 1.15;
+    var _fsep = _sep / _isc;
+    var _fw   = 1350 / _isc;
 
     // Each panel is a multi-line string (\n). Measure real heights so a 3-line
     // panel can't overlap the next one, and center the whole block vertically.
@@ -227,9 +233,10 @@ if (phase == "cutscene") {
     // All completed panels - fully visible, advanced by each panel's real height
     for (var _i = 0; _i < panel_idx; _i++) {
         draw_set_color(c_black);
-        draw_text_ext(962, _cy + 2, cutscene_panels[_i], _sep, 1350);
+        draw_text_ext_transformed(962, _cy + 2, cutscene_panels[_i], _fsep, _fw, _isc, _isc, 0);
         draw_set_color(make_color_rgb(205, 208, 220));
-        draw_text_ext(960, _cy, cutscene_panels[_i], _sep, 1350);
+        draw_text_ext_transformed(960, _cy, cutscene_panels[_i], _fsep, _fw, _isc, _isc, 0);
+        draw_text_ext_transformed(961.5, _cy, cutscene_panels[_i], _fsep, _fw, _isc, _isc, 0);
         _cy += _heights[_i] + _gap;
     }
 
@@ -237,9 +244,10 @@ if (phase == "cutscene") {
     if (panel_idx < _num_panels) {
         var _visible = string_copy(cutscene_panels[panel_idx], 1, floor(typed_chars));
         draw_set_color(c_black);
-        draw_text_ext(962, _cy + 2, _visible, _sep, 1350);
+        draw_text_ext_transformed(962, _cy + 2, _visible, _fsep, _fw, _isc, _isc, 0);
         draw_set_color(make_color_rgb(205, 208, 220));
-        draw_text_ext(960, _cy, _visible, _sep, 1350);
+        draw_text_ext_transformed(960, _cy, _visible, _fsep, _fw, _isc, _isc, 0);
+        draw_text_ext_transformed(961.5, _cy, _visible, _fsep, _fw, _isc, _isc, 0);
     }
 
     draw_set_alpha(1.0);
@@ -266,19 +274,25 @@ if (phase == "cutscene") {
     draw_set_font(fnt_ui_title);
     draw_set_alpha(title_alpha);
 
-    // Glow layer (color underlay)
+    // Scaled up + faux-bold double-pass (M 2026-07-06: the wordmark read too
+    // quiet). Fonts are IDE assets, so bold = each layer drawn twice, 2px apart.
+    var _tsc = 1.3;
+
+    // Glow layer (color underlay, a touch larger so it halos the bold face)
     draw_set_alpha(title_alpha * 0.18);
     draw_set_color(make_color_rgb(60, 120, 200));
-    draw_text(960, 300, "IRONWAKE");
+    draw_text_transformed(960, 297, "IRONWAKE", _tsc * 1.04, _tsc * 1.04, 0);
 
     // Shadow
     draw_set_alpha(title_alpha);
     draw_set_color(make_color_rgb(15, 40, 70));
-    draw_text(966, 306, "IRONWAKE");
+    draw_text_transformed(966, 306, "IRONWAKE", _tsc, _tsc, 0);
+    draw_text_transformed(968, 306, "IRONWAKE", _tsc, _tsc, 0);
 
     // Main title
     draw_set_color(make_color_rgb(130, 195, 255));
-    draw_text(960, 300, "IRONWAKE");
+    draw_text_transformed(960, 300, "IRONWAKE", _tsc, _tsc, 0);
+    draw_text_transformed(962, 300, "IRONWAKE", _tsc, _tsc, 0);
 
     // Subtitle (black outline so it stays legible over the lit vista)
     draw_set_font(fnt_ui_small);

@@ -839,9 +839,12 @@ if (show_loot_screen) {
             if (_loot_cr != -1) {
                 var _loot_cr_names = ["Arcanist", "Bloodwarden", "Shadowstrider"];
                 var _loot_my_cl    = variable_global_exists("chosen_class") ? global.chosen_class : -1;
+                // Measure the name in fnt_ui (its draw font) BEFORE the switch to
+                // fnt_ui_small, or the tag lands mid-name on long items.
+                var _loot_name_w = string_width(_item.name);
                 draw_set_font(fnt_ui_small);
                 draw_set_color((_loot_cr == _loot_my_cl) ? make_color_rgb(210, 175, 90) : make_color_rgb(225, 80, 80));
-                draw_text(456 + string_width(_item.name) + 18, _iy + 9,
+                draw_text(456 + _loot_name_w + 18, _iy + 9,
                     "[" + _loot_cr_names[clamp(_loot_cr, 0, 2)] + " only]");
                 draw_set_font(fnt_ui);
             }

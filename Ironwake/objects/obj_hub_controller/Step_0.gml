@@ -345,7 +345,8 @@ if (instance_exists(obj_game_controller)) {
                 array_delete(_gc_ld.traits_selected, array_length(_gc_ld.traits_selected) - 1, 1);
             }
 
-            // Build available (unlocked, class-filtered) and locked trait lists
+            // Build the merged trait list (unlocked first, then locked) - must
+            // mirror the Draw_64 traits tab exactly: cursor and mouse share indices.
             var _tr_avail  = [];
             var _tr_locked = [];
             for (var _tri = 0; _tri < array_length(global.traits_all); _tri++) {
@@ -358,15 +359,22 @@ if (instance_exists(obj_game_controller)) {
                     array_push(_tr_locked, _tr);
                 }
             }
-            var _tr_avail_cnt = array_length(_tr_avail);
-            var _tr_sel_cnt   = array_length(_gc_ld.traits_selected);
+            var _tr_all = [];
+            for (var _tmi = 0; _tmi < array_length(_tr_avail);  _tmi++) array_push(_tr_all, { tr: _tr_avail[_tmi],  unlocked: true  });
+            for (var _tmj = 0; _tmj < array_length(_tr_locked); _tmj++) array_push(_tr_all, { tr: _tr_locked[_tmj], unlocked: false });
+            var _tr_cnt     = array_length(_tr_all);
+            var _tr_sel_cnt = array_length(_gc_ld.traits_selected);
 
-            if (nav_up())   _gc_ld.traits_cursor = wrap_index(_gc_ld.traits_cursor - 1, _tr_avail_cnt);
-            if (nav_down()) _gc_ld.traits_cursor = wrap_index(_gc_ld.traits_cursor + 1, _tr_avail_cnt);
+            if (_tr_cnt > 0) {
+                if (nav_up())   _gc_ld.traits_cursor = wrap_index(_gc_ld.traits_cursor - 1, _tr_cnt);
+                if (nav_down()) _gc_ld.traits_cursor = wrap_index(_gc_ld.traits_cursor + 1, _tr_cnt);
+            }
 
+            // Enter toggles only unlocked rows; a locked row already tells the
+            // player it's a Vex purchase, so it just sits inert.
             if ((keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter))
-                && _tr_avail_cnt > 0) {
-                var _hov_tr_name = _tr_avail[_gc_ld.traits_cursor].name;
+                && _tr_cnt > 0 && _tr_all[_gc_ld.traits_cursor].unlocked) {
+                var _hov_tr_name = _tr_all[_gc_ld.traits_cursor].tr.name;
                 var _tr_in_sel   = false;
                 var _tr_sel_idx  = -1;
                 for (var _si = 0; _si < _tr_sel_cnt; _si++) {
@@ -439,7 +447,7 @@ if (instance_exists(obj_game_controller)) {
                 _gc_ld.loadout_scroll = _ld_scroll;
                 for (var _ldvis = 0; _ldvis < min(_ld_max_vis, _ld_pool_sz - _ld_scroll); _ldvis++) {
                     var _ldai = _ld_scroll + _ldvis;
-                    var _ldry = 83 + _ldvis * 74;
+                    var _ldry = 106 + _ldvis * 74;   // matches Draw_64 _list_y0
                     if (_ldmx >= 60 && _ldmx < 1050 && _ldmy >= _ldry && _ldmy < _ldry+69) {
                         var _ldname = _ld_pool[_ldai].name;
                         var _ldin   = false;
@@ -478,18 +486,36 @@ if (instance_exists(obj_game_controller)) {
                     }
                 }
             } else if (_gc_ld.loadout_tab == 1) {
-                // Traits tab - available trait rows
-                var _ldtr_avail = [];
+                // Traits tab - merged unlocked+locked rows, windowed (mirrors the
+                // Draw_64 list: 106 + 96px pitch, 90px tall, 8 visible, edge scroll).
+                var _ldtr_avail  = [];
+                var _ldtr_locked = [];
                 for (var _ltta = 0; _ltta < array_length(global.traits_all); _ltta++) {
                     var _ltt = global.traits_all[_ltta];
                     if (_ltt.class_req != -1 && _ltt.class_req != _ld_class) continue;
-                    if (variable_struct_get(global.traits_unlocked, _ltt.effect_id)) array_push(_ldtr_avail, _ltt);
+                    if (variable_struct_get(global.traits_unlocked, _ltt.effect_id)) {
+                        array_push(_ldtr_avail, _ltt);
+                    } else {
+                        array_push(_ldtr_locked, _ltt);
+                    }
                 }
+                var _ldtr_all = [];
+                for (var _ldm1 = 0; _ldm1 < array_length(_ldtr_avail);  _ldm1++) array_push(_ldtr_all, { tr: _ldtr_avail[_ldm1],  unlocked: true  });
+                for (var _ldm2 = 0; _ldm2 < array_length(_ldtr_locked); _ldm2++) array_push(_ldtr_all, { tr: _ldtr_locked[_ldm2], unlocked: false });
+                var _ldtr_cnt = array_length(_ldtr_all);
                 var _ldtr_max = max_trait_slots();
-                for (var _ldtai = 0; _ldtai < array_length(_ldtr_avail); _ldtai++) {
-                    var _ldrty = 83 + _ldtai * 84;
-                    if (_ldmx >= 60 && _ldmx < 1050 && _ldmy >= _ldrty && _ldmy < _ldrty+78) {
-                        var _ldtrname = _ldtr_avail[_ldtai].name;
+                var _ldt_max_vis = 8;
+                var _ldt_scroll = variable_instance_exists(_gc_ld, "traits_scroll") ? _gc_ld.traits_scroll : 0;
+                _ldt_scroll = clamp(_ldt_scroll, _gc_ld.traits_cursor - (_ldt_max_vis - 1), _gc_ld.traits_cursor);
+                _ldt_scroll = clamp(_ldt_scroll, 0, max(0, _ldtr_cnt - _ldt_max_vis));
+                _gc_ld.traits_scroll = _ldt_scroll;
+                for (var _ldtv = 0; _ldtv < min(_ldt_max_vis, _ldtr_cnt - _ldt_scroll); _ldtv++) {
+                    var _ldtai = _ldt_scroll + _ldtv;
+                    var _ldrty = 106 + _ldtv * 96;
+                    if (_ldmx >= 60 && _ldmx < 1050 && _ldmy >= _ldrty && _ldmy < _ldrty+90) {
+                        _gc_ld.traits_cursor = _ldtai;
+                        if (!_ldtr_all[_ldtai].unlocked) break;   // locked: cursor only
+                        var _ldtrname = _ldtr_all[_ldtai].tr.name;
                         var _ldtrin   = false;
                         var _ldtrsi   = -1;
                         var _ldtrsc   = array_length(_gc_ld.traits_selected);
@@ -503,7 +529,6 @@ if (instance_exists(obj_game_controller)) {
                         } else {
                             _gc_ld.loadout_full_timer = 60;
                         }
-                        _gc_ld.traits_cursor = _ldtai;
                         break;
                     }
                 }

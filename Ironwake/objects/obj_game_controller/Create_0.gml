@@ -34,6 +34,9 @@ global.__sprite_includes = [
     spr_icon_consumable_devil_wine,
     // Genie Lamp icon: same string-ref pattern as Devil Wine above.
     spr_icon_consumable_genie_lamp,
+    // Sable Brew-tab cauldron centrepiece: resolved by string in ui_draw_sable_screen
+    // (asset_get_index guard so the tab worked pre-import), so it must be listed.
+    spr_sable_cauldron,
     // Unique-item icon pass (2026-07-06): trinket icons resolve by string from the
     // gift-picker pane, and the 5 named-weapon overrides resolve by string in
     // ui_draw_item_icon - all must be listed or the compiler strips them.
