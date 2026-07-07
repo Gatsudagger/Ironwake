@@ -1085,7 +1085,7 @@ if (combat_over) {
         }
 
         // Input: Extract
-        var _do_extract = keyboard_check_pressed(ord("E"))
+        var _do_extract = input_hotkey("E")
             || (mouse_check_button_pressed(mb_left) && _hover_extract);
         if (_do_extract) {
             audio_stop_sound(MusicBox1);
@@ -1098,8 +1098,7 @@ if (combat_over) {
         }
 
         // Input: Continue
-        var _do_continue = keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)
-            || keyboard_check_pressed(vk_space)
+        var _do_continue = input_confirm() || input_confirm_alt()
             || (mouse_check_button_pressed(mb_left) && _hover_continue);
         if (_do_continue) {
             boss_extract_open = false;
@@ -1120,8 +1119,7 @@ if (combat_over) {
     // Victory returns to the floor map and marks the room cleared.
     // Defeat calls end_run(-1) to claw back run gold and returns to the hub.
     // -------------------------------------------------------------------------
-    if (keyboard_check_pressed(ord("R")) || keyboard_check_pressed(vk_enter)
-        || keyboard_check_pressed(vk_space) || mouse_check_button_pressed(mb_left)) {
+    if (input_hotkey("R") || input_confirm() || input_confirm_alt() || mouse_check_button_pressed(mb_left)) {
         if (combat_result == 1) {
             // Save HP and secondary resources to carry into the next room
             global.run_current_hp = player.HP;

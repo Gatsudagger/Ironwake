@@ -16,7 +16,7 @@ if (ui_input_blocked()) exit;
 // Esc opens it only when no combat sub-overlay owns Esc (loot screen, the [I]
 // consumable quick-menu) and the fight is still live. See pause_menu_step (scr_stats).
 if (pause_menu_step()) exit;
-if (keyboard_check_pressed(vk_escape) && !combat_over && !show_loot_screen && !consumable_quick_open && !ability_detail_open) {
+if (input_cancel() && !combat_over && !show_loot_screen && !consumable_quick_open && !ability_detail_open) {
     pause_menu_open();
     exit;
 }
@@ -62,8 +62,7 @@ if (show_loot_screen) {
         var _max_scroll = max(0, array_length(global.run_items_found) - 5);
         loot_screen_scroll = min(_max_scroll, loot_screen_scroll + 1);
     }
-    if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)
-        || keyboard_check_pressed(vk_space) || keyboard_check_pressed(ord("R"))
+    if (input_confirm() || input_confirm_alt() || input_hotkey("R")
         || (mouse_check_button_pressed(mb_left) && device_mouse_y_to_gui(0) >= 960)) {
         show_loot_screen = false;
         combat_over   = true;
@@ -272,7 +271,7 @@ if (player_turn) {
     // C key or ITEMS button click to toggle. The menu always opens - when the
     // run buffer is empty it shows "No consumables held." rather than doing
     // nothing (stash consumables stay hub-only; the buffers stay separate).
-    if (keyboard_check_pressed(ord("C"))) {
+    if (input_hotkey("C")) {
         consumable_quick_open = !consumable_quick_open;
         if (consumable_quick_open) consumable_quick_cursor = 0;
     }
@@ -294,14 +293,14 @@ if (player_turn) {
         if (_qcount == 0) {
             // Empty state: the menu stays open showing "No consumables held.";
             // Esc closes it (C is handled by the toggle above).
-            if (keyboard_check_pressed(vk_escape)) consumable_quick_open = false;
+            if (input_cancel()) consumable_quick_open = false;
         } else {
             // Navigation (hold-repeat + wrap)
             if (nav_up())   consumable_quick_cursor = wrap_index(consumable_quick_cursor - 1, _qcount);
             if (nav_down()) consumable_quick_cursor = wrap_index(consumable_quick_cursor + 1, _qcount);
             // Esc closes. (C is handled by the toggle above - checking it here too
             // would re-close it in the same frame it opens, so it's intentionally absent.)
-            if (keyboard_check_pressed(vk_escape)) {
+            if (input_cancel()) {
                 consumable_quick_open = false;
                 exit;
             }
@@ -309,7 +308,7 @@ if (player_turn) {
             // Determine if use was triggered (keyboard or mouse click on a row)
             var _use_item = false;
             var _use_idx  = consumable_quick_cursor;
-            if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)) {
+            if (input_confirm()) {
                 _use_item = true;
             }
             if (mouse_check_button_pressed(mb_left)) {
@@ -459,12 +458,12 @@ if (player_turn) {
     // swallowed.
     // -------------------------------------------------------------------------
     if (ability_detail_open) {
-        if (keyboard_check_pressed(ord("V")) || keyboard_check_pressed(vk_escape)) {
+        if (input_hotkey("V") || input_cancel()) {
             ability_detail_open = false;
         }
         exit;
     }
-    if (keyboard_check_pressed(ord("V")) && array_length(player.abilities) > 0) {
+    if (input_hotkey("V") && array_length(player.abilities) > 0) {
         ability_detail_open = true;
         exit;
     }
@@ -477,7 +476,7 @@ if (player_turn) {
     }
 
     // --- Tab key cycles through living enemies ---
-    if (keyboard_check_pressed(vk_tab)) {
+    if (input_detail()) {
         var _living_count = 0;
         for (var _i = 0; _i < array_length(combat_state.combatants); _i++) {
             var _c = combat_state.combatants[_i];
@@ -492,7 +491,7 @@ if (player_turn) {
     var _should_cast = false;
     var _hk_max = min(array_length(player.abilities), 9);
     for (var _hk = 0; _hk < _hk_max; _hk++) {
-        if (keyboard_check_pressed(ord(string(_hk + 1)))) {
+        if (input_hotkey(string(_hk + 1))) {
             selected_ability = _hk;
             _should_cast = true;
         }
@@ -552,7 +551,7 @@ if (player_turn) {
     }
 
     // --- T key: End Turn manually ---
-    if (keyboard_check_pressed(ord("T"))) {
+    if (input_hotkey("T")) {
         if (player.energy > 0) {
             array_push(combat_log, "Turn ended - " + string(player.energy) + " AP unspent.");
         }
@@ -574,7 +573,7 @@ if (player_turn) {
     }
 
     // --- Cast attempt (Space, Enter, click, or 1-4 hotkey) ---
-    if (keyboard_check_pressed(vk_space) || keyboard_check_pressed(vk_enter) || _should_cast) {
+    if (input_confirm_alt() || input_confirm() || _should_cast) {
 
         var ab = player.abilities[selected_ability];
 
