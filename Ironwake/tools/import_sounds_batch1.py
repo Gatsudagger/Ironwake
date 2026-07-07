@@ -183,16 +183,19 @@ def main():
         created.append(name)
 
     # Register in Ironwake.yyp: sounds are listed sorted case-insensitively, and
-    # every snd_* name lands between "Selection" and "spell1".
+    # every snd_* name lands right before "spell1". (Historical note: the anchor
+    # was "Selection", retired by Batch 3 - anchor on spell1 and insert BEFORE it
+    # so a re-run still works.)
     added = 0
     lines = yyp.split("\n")
-    anchor = next(i for i, l in enumerate(lines)
-                  if '"path":"sounds/Selection/Selection.yy"' in l)
     new_entries = [
         '    {{"id":{{"name":"{0}","path":"sounds/{0}/{0}.yy",}},}},'.format(n)
         for n in sorted(MANIFEST) if '"name":"{}","path":"sounds/'.format(n) not in yyp
     ]
-    lines[anchor + 1:anchor + 1] = new_entries
+    if new_entries:
+        anchor = next(i for i, l in enumerate(lines)
+                      if '"path":"sounds/spell1/spell1.yy"' in l)
+        lines[anchor:anchor] = new_entries
     added = len(new_entries)
     if added:
         with open(yyp_path, "w", encoding="utf-8", newline="\n") as f:

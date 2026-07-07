@@ -27,6 +27,7 @@ audio_apply_volumes();
 
 // Intro and title screen music - loops until the player starts a new game
 audio_play_sound(Viking_March, 1, true);
+ambience_set([]);   // no ambience bed under the title track
 skip_timer   = 0;
 skip_hold    = 40;           // frames before any-key-skip is accepted
 

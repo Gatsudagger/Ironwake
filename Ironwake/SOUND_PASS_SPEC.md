@@ -156,15 +156,17 @@ Pick ONE instrument family as the game's "voice" for identity (fam = that prefix
 Family candidates, gothic-appropriate: **harpsichord**, **music_box** (matches existing MusicBox1),
 grand_piano, vibraphone. (Also available: 8_bit, brass, sitar, steel_drums, synth_bass, xylophone.)
 
-### G. Ambience — TomMusic `BGS Loops\` (Beach/Cave/Forest/Inside × clear/Rain/Storm)
-| Place | Candidate loop |
+### G. Ambience — TomMusic `BGS Loops\` — DONE (Batch 3, 2026-07-07)
+| Place | Shipped loop (asset) |
 |---|---|
-| Hub (rainy — matches Rainy_Memories) | Forest Night Rain, Inside Day Rain (tavern feel) |
-| Dungeon floors (under _2_dungeon music) | Cave, Cave Rain |
-| Torch crackle at gate/braziers | Torch Loop (TomMusic `SFX\Torch`) — quiet global layer |
-Open design point: do loops ride the MUSIC slider (register in `audio_music_assets()`, zero new UI)
-or get a third AMBIENCE slider? Also note per-asset loudness varies between packs — plan a small
-trim map (asset→gain multiplier) inside `audio_apply_volumes()` if audition reveals level jumps.
+| Hub (rainy — matches Rainy_Memories) | Forest Night Rain (`snd_amb_rain`, 0.50× music) |
+| Dungeon floors (under _2_dungeon music) | Cave (`snd_amb_cave`, 0.55× music) |
+| Torch crackle, hub gate + floor braziers | Torch Loop (`snd_amb_torch`, 0.30× music) |
+Resolved: loops ride the MUSIC slider (M, 07-07 — registered in `audio_music_assets()`, zero new
+UI). Imported as OGG (60s/60s/10s beds — wav triples the weight) via `tools/import_sounds_batch3.py`.
+Layering: each room controller's Create declares its full bed via `ambience_set([...])` (scr_stats)
+— hub = rain+torch, floor = cave+torch, title/combat = none; shared members keep playing across the
+transition, so no music stop-site needed changes. Trim map lives in `audio_apply_volumes()`.
 
 ---
 
@@ -172,6 +174,8 @@ trim map (asset→gain multiplier) inside `audio_apply_volumes()` if audition re
 1. **Batch 1 — biggest bang**: UI core (A) + dice (B) + combat/casts (C+D). Kills the Check_1
    monotony, un-silences whiffs and Knucklebones, gives all 7 enemy families a voice.
 2. **Batch 2**: economy/items (E) + stings (F).
-3. **Batch 3**: ambience (G) + retire unused legacy assets.
+3. **Batch 3** — DONE 2026-07-07: ambience (G) + retired 6 unused legacy assets (Check_2,
+   Harp_1__Ascending_, Miscellaneous_1__Atmospheric_, Selection, Strings_2, Success_3 — zero
+   .gml references; removed from .yyp, folders deleted by `tools/import_sounds_batch3.py`).
 Each batch: M auditions shortlist → approve picks → import (.wav → snd_* assets, `audio_sfx_assets()`
 registration, new call sites in .gml) → M F5s.

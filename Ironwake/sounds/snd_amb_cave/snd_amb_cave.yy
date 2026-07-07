@@ -1,18 +1,18 @@
 {
   "$GMSound":"v2",
-  "%Name":"Selection",
+  "%Name":"snd_amb_cave",
   "audioGroupId":{
     "name":"audiogroup_default",
     "path":"audiogroups/audiogroup_default",
   },
   "bitDepth":1,
-  "channelFormat":0,
+  "channelFormat":1,
   "compression":0,
   "compressionQuality":4,
   "conversionMode":0,
-  "duration":2.1249886,
+  "duration":60.0,
   "exportDir":"",
-  "name":"Selection",
+  "name":"snd_amb_cave",
   "parent":{
     "name":"Ironwake",
     "path":"Ironwake.yyp",
@@ -21,6 +21,6 @@
   "resourceType":"GMSound",
   "resourceVersion":"2.0",
   "sampleRate":44100,
-  "soundFile":"Selection.wav",
+  "soundFile":"snd_amb_cave.ogg",
   "volume":1.0,
 }

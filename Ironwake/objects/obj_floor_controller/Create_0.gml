@@ -479,6 +479,7 @@ event_coins          = [];         // gold-burst particles on a gold-yielding re
 audio_apply_volumes();   // honor saved Music/SFX volumes
 audio_play_sound(_2_dungeon_INITIAL, 1, false);
 dungeon_music_looping = false;
+ambience_set([snd_amb_cave, snd_amb_torch]);   // cave air + brazier crackle under the music
 
 // The portcullis grinds open once per descent - fresh run arrivals on floor 1
 // only, never on floor advances or returns from combat.

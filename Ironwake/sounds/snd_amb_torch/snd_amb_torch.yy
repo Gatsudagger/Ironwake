@@ -1,18 +1,18 @@
 {
   "$GMSound":"v2",
-  "%Name":"Success_3",
+  "%Name":"snd_amb_torch",
   "audioGroupId":{
     "name":"audiogroup_default",
     "path":"audiogroups/audiogroup_default",
   },
   "bitDepth":1,
-  "channelFormat":0,
+  "channelFormat":1,
   "compression":0,
   "compressionQuality":4,
   "conversionMode":0,
-  "duration":2.6860092,
+  "duration":10.0,
   "exportDir":"",
-  "name":"Success_3",
+  "name":"snd_amb_torch",
   "parent":{
     "name":"Ironwake",
     "path":"Ironwake.yyp",
@@ -21,6 +21,6 @@
   "resourceType":"GMSound",
   "resourceVersion":"2.0",
   "sampleRate":44100,
-  "soundFile":"Success_3.wav",
+  "soundFile":"snd_amb_torch.ogg",
   "volume":1.0,
 }

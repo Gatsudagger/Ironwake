@@ -124,9 +124,10 @@ gallery_scroll      = 0;    // top visible row index
 gallery_cursor      = -1;   // highlighted row (-1 = none)
 gallery_detail_item = undefined;   // item struct shown in detail panel (undefined = closed)
 
-// Hub music
+// Hub music + ambience bed (night rain outside, torch crackle at the gate)
 audio_play_sound(Rainy_Memories, 1, true);
 audio_apply_volumes();   // honor saved Music/SFX volumes for this session's sounds
+ambience_set([snd_amb_rain, snd_amb_torch]);
 
 // NPC portrait animation state
 portrait_prev_npc   = 0;

@@ -8382,7 +8382,37 @@ function audio_music_assets() {
         Viking_March, Rainy_Memories, MusicBox1, Game_Over,
         _2_dungeon_INITIAL, _2_dungeon_LOOP, _3_critical_LOOP,
         _14_BOSS_y_LOOP, _15_game_over_INITIAL,
+        // Sound pass Batch 3 - ambience beds (M routed these under the Music
+        // slider rather than a third slider, 07-07)
+        snd_amb_rain, snd_amb_cave, snd_amb_torch,
     ];
+}
+
+// -----------------------------------------------------------------------------
+// ROOM AMBIENCE LAYER (sound pass Batch 3)
+// A quiet looping bed under the music: rain in the hub, cave air on dungeon
+// floors, torch crackle at both. Each room controller's Create declares its
+// FULL layer via ambience_set([...]) - anything left playing from the previous
+// room that isn't in the new set gets stopped there, so the scattered
+// audio_stop_sound sites for music never need to know about ambience.
+// -----------------------------------------------------------------------------
+function ambience_all_assets() {
+    return [snd_amb_rain, snd_amb_cave, snd_amb_torch];
+}
+
+// _list: the ambience assets this room wants (may be empty). Already-playing
+// members keep playing (no restart pop when hub <-> floor share the torch bed).
+function ambience_set(_list) {
+    var _all = ambience_all_assets();
+    for (var _i = 0; _i < array_length(_all); _i++) {
+        var _snd = _all[_i];
+        var _want = false;
+        for (var _j = 0; _j < array_length(_list); _j++) {
+            if (_list[_j] == _snd) { _want = true; break; }
+        }
+        if (_want && !audio_is_playing(_snd)) audio_play_sound(_snd, 0, true);
+        else if (!_want && audio_is_playing(_snd)) audio_stop_sound(_snd);
+    }
 }
 
 // One-shot effects / UI stings - controlled by the SFX slider. (Only sounds
@@ -8469,6 +8499,11 @@ function audio_apply_volumes() {
     // than the rest of the bus. The nav ping fires constantly - keep it well
     // under the one-shot effects (M: "feels louder than other effects").
     audio_sound_gain(snd_ui_move, _sv * 0.45, 0);
+    // Ambience beds sit well UNDER the music track, and the torch crackle is
+    // a texture, not a sound you should notice. Tune here if F5 flags levels.
+    audio_sound_gain(snd_amb_rain,  _mv * 0.50, 0);
+    audio_sound_gain(snd_amb_cave,  _mv * 0.55, 0);
+    audio_sound_gain(snd_amb_torch, _mv * 0.30, 0);
 }
 
 // Adjust one category by delta (e.g. ±0.05), clamp, and re-apply immediately.

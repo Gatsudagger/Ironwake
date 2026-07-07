@@ -778,8 +778,10 @@ vfx_school    = "";   // school of the cast that spawned the VFX ("" = untinted)
 player.hit_flash = 0;
 for (var _ei = 0; _ei < array_length(enemies); _ei++) enemies[_ei].hit_flash = 0;
 
-// Battle music - boss gets its own track, everything else gets the combat loop
+// Battle music - boss gets its own track, everything else gets the combat loop.
+// Ambience beds stay on the floor: combat wants its full dramatic range.
 audio_apply_volumes();   // honor saved Music/SFX volumes
+ambience_set([]);
 if (_enemy_type == "boss") {
     audio_play_sound(_14_BOSS_y_LOOP, 1, true);
 } else {

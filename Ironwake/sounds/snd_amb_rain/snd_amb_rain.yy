@@ -1,18 +1,18 @@
 {
   "$GMSound":"v2",
-  "%Name":"Miscellaneous_1__Atmospheric_",
+  "%Name":"snd_amb_rain",
   "audioGroupId":{
     "name":"audiogroup_default",
     "path":"audiogroups/audiogroup_default",
   },
   "bitDepth":1,
-  "channelFormat":0,
+  "channelFormat":1,
   "compression":0,
   "compressionQuality":4,
   "conversionMode":0,
-  "duration":3.8749886,
+  "duration":60.0,
   "exportDir":"",
-  "name":"Miscellaneous_1__Atmospheric_",
+  "name":"snd_amb_rain",
   "parent":{
     "name":"Ironwake",
     "path":"Ironwake.yyp",
@@ -21,6 +21,6 @@
   "resourceType":"GMSound",
   "resourceVersion":"2.0",
   "sampleRate":44100,
-  "soundFile":"Miscellaneous_1__Atmospheric_.wav",
+  "soundFile":"snd_amb_rain.ogg",
   "volume":1.0,
 }
