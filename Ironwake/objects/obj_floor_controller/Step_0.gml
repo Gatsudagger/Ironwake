@@ -54,8 +54,7 @@ if (variable_global_exists("item_picker") && global.item_picker.resolved_purpose
 // 1. TREASURE POPUP - intercepts all input until dismissed
 // -----------------------------------------------------------------------------
 if (showing_treasure) {
-    if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)
-        || keyboard_check_pressed(vk_space) || mouse_check_button_pressed(mb_left)) {
+    if (input_confirm() || input_confirm_alt() || mouse_check_button_pressed(mb_left)) {
         showing_treasure = false;
         treasure_item2   = undefined;   // clear so hunt/vendor popups reusing this overlay never show it
         current_rooms[selected_room].cleared = true;
@@ -69,8 +68,7 @@ if (showing_treasure) {
 // 2. EVENT POPUP (rest / trap) - intercepts all input until dismissed
 // -----------------------------------------------------------------------------
 if (showing_event) {
-    if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)
-        || keyboard_check_pressed(vk_space) || mouse_check_button_pressed(mb_left)) {
+    if (input_confirm() || input_confirm_alt() || mouse_check_button_pressed(mb_left)) {
         showing_event = false;
         current_rooms[selected_room].cleared = true;
         global.floor_rooms_cleared[selected_room] = true;
@@ -101,13 +99,13 @@ if (showing_shrine) {
     //     (forgoing any boon AND any curse), or APPROACH to commit. Approaching is the
     //     gamble - it reveals the kind, and a curse altar then springs its trap. ------
     if (!shrine_revealed) {
-        if (keyboard_check_pressed(vk_escape) || keyboard_check_pressed(vk_backspace)) {
+        if (input_cancel() || input_back()) {
             showing_shrine = false;
             current_rooms[selected_room].cleared = true;
             global.floor_rooms_cleared[selected_room] = true;
             exit;
         }
-        if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_space)) {
+        if (input_confirm() || input_confirm_alt()) {
             shrine_revealed     = true;   // commit - reveal blessing/curse
             shrine_cursor       = 0;
             shrine_notification = "";
@@ -118,7 +116,7 @@ if (showing_shrine) {
     // --- Revealed. Leaving is allowed for a BLESSING altar (tribute is optional), but a
     //     CURSE altar will not release the player - they must embrace a curse. The
     //     _sh_n==0 guard keeps a degenerate empty-curse altar from soft-locking. ------
-    if (keyboard_check_pressed(vk_escape) || keyboard_check_pressed(vk_backspace)) {
+    if (input_cancel() || input_back()) {
         if (shrine_kind != "curse" || _sh_n == 0) {
             showing_shrine = false;
             current_rooms[selected_room].cleared = true;
@@ -136,7 +134,7 @@ if (showing_shrine) {
         if (shrine_kind == "curse") {
             // Curse altar - accept the selected curse for free (the difficulty is
             // the cost). Enter/Space binds it for the rest of the run.
-            if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_space)) {
+            if (input_confirm() || input_confirm_alt()) {
                 var _cid = shrine_offers[shrine_cursor];
                 var _res = curse_accept(_cid);
                 if (_res == "") {
@@ -157,9 +155,9 @@ if (showing_shrine) {
         } else {
             // Blessing altar - pay tribute (gold / dust / item) for a boon.
             var _pay_method = "";
-            if (keyboard_check_pressed(ord("1"))) _pay_method = "gold";
-            else if (keyboard_check_pressed(ord("2"))) _pay_method = "dust";
-            else if (keyboard_check_pressed(ord("3"))) _pay_method = "item";
+            if (input_hotkey("1")) _pay_method = "gold";
+            else if (input_hotkey("2")) _pay_method = "dust";
+            else if (input_hotkey("3")) _pay_method = "item";
 
             if (_pay_method == "item") {
                 // Item tribute now opens the shared picker (select + confirm) instead of
@@ -213,8 +211,7 @@ if (showing_shrine) {
 if (showing_event_choice) {
     // Result phase - any key closes the overlay and marks the room cleared.
     if (event_phase == "result") {
-        if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)
-            || keyboard_check_pressed(vk_space) || mouse_check_button_pressed(mb_left)) {
+        if (input_confirm() || input_confirm_alt() || mouse_check_button_pressed(mb_left)) {
             showing_event_choice = false;
             current_rooms[selected_room].cleared = true;
             global.floor_rooms_cleared[selected_room] = true;
@@ -237,7 +234,7 @@ if (showing_event_choice) {
     }
 
     // Confirm the selected choice.
-    if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_space)) {
+    if (input_confirm() || input_confirm_alt()) {
         var _ch = event_active.choices[event_cursor];
         if (event_choice_unlocked(_ch)) {
             var _cost = event_choice_cost(_ch);
@@ -280,7 +277,7 @@ if (showing_event_choice) {
 // -----------------------------------------------------------------------------
 // Esc opens the pause menu - only reachable here, with no popup active (every
 // treasure/event/shrine block above exits first), so it never steals Esc from them.
-if (keyboard_check_pressed(vk_escape)) {
+if (input_cancel()) {
     pause_menu_open();
     exit;
 }
@@ -292,11 +289,10 @@ if (keyboard_check_pressed(vk_escape)) {
 // so extraction bookkeeping (loot -> stash, boss credits already banked) is shared.
 // -----------------------------------------------------------------------------
 if (escape_confirm_open) {
-    if (keyboard_check_pressed(vk_escape) || mouse_check_button_pressed(mb_right)
-        || keyboard_check_pressed(ord("G"))) {
+    if (input_cancel() || mouse_check_button_pressed(mb_right)
+        || input_hotkey("G")) {
         escape_confirm_open = false;
-    } else if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter)
-        || keyboard_check_pressed(vk_space)) {
+    } else if (input_confirm() || input_confirm_alt()) {
         var _esc_ok = (escape_confirm_idx >= 0
             && escape_confirm_idx < array_length(global.consumable_inventory));
         if (_esc_ok) {
@@ -339,7 +335,7 @@ if (escape_confirm_open) {
     }
     exit;
 }
-if (keyboard_check_pressed(ord("G")) && variable_global_exists("consumable_inventory")) {
+if (input_hotkey("G") && variable_global_exists("consumable_inventory")) {
     // Prefer the free Lamp; fall back to Devil Wine.
     escape_confirm_idx = -1;
     for (var _gi = 0; _gi < array_length(global.consumable_inventory); _gi++) {
@@ -402,7 +398,7 @@ if (_go_up || _go_down) {
 // -----------------------------------------------------------------------------
 // 4. ENTER ROOM
 // -----------------------------------------------------------------------------
-if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_space)) {
+if (input_confirm() || input_confirm_alt()) {
     var _room = current_rooms[selected_room];
 
     // Enter only if reachable now (handles cleared + sibling-lock); see scr_stats.
@@ -579,7 +575,7 @@ if (keyboard_check_pressed(vk_return) || keyboard_check_pressed(vk_enter) || key
 // -----------------------------------------------------------------------------
 // 5. EXTRACT TO CAMP - only after floor boss is defeated
 // -----------------------------------------------------------------------------
-if (keyboard_check_pressed(ord("E"))) {
+if (input_hotkey("E")) {
     var _boss_cleared = false;
     for (var _bi = 0; _bi < array_length(current_rooms); _bi++) {
         if (current_rooms[_bi].type == "boss" && current_rooms[_bi].cleared) {
