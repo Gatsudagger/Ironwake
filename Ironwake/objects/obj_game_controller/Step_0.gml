@@ -1663,11 +1663,13 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open) {
                 bairc_notification = "Identifying costs " + string(_id_cost) + "g - you're short.";
             }
         }
-        // Chunk 7b: on a gamepad, A opens the action submenu instead of the direct
-        // set-active/hatch (which becomes the menu's first entry, tag "bairc:confirm").
-        // Keyboard Enter/Space keep their direct behavior - the device check routes.
+        // Chunk 7b/8d: on a gamepad OR touch, confirm opens the action submenu
+        // instead of the direct set-active/hatch (which becomes the menu's first
+        // entry, tag "bairc:confirm"). On touch the confirm arrives as a
+        // simulated Enter from tapping the selected roster row. Keyboard
+        // Enter/Space keep their direct behavior - the device check routes.
         var _bc_conf = input_confirm() || input_confirm_alt();
-        if (_bc_conf && input_device() == 1) {
+        if (_bc_conf && input_device() >= 1) {
             bairc_pad_menu_open   = true;
             bairc_pad_menu_level  = 0;
             bairc_pad_menu_cursor = 0;

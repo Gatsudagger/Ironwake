@@ -2363,6 +2363,27 @@ function ui_draw_bairc_screen() {
         draw_text(_tx, _ry + 40, _l2);
     }
 
+    // Touch (8d, M 07-08 "cant hatch egg"): tap a roster row to select it; tap
+    // the SELECTED row again to open the action menu (Hatch / Set Active /
+    // Feed... - same submenu the gamepad uses). Gated off while any Bairc
+    // modal owns input so a behind-the-modal tap can't double-act.
+    if (input_device() == 2 && _n > 0 && mouse_check_button_pressed(mb_left)
+        && !_gc.bairc_pad_menu_open && !_gc.bairc_detail_open && !_gc.bairc_naming
+        && !_gc.bairc_release_confirm && !_gc.bairc_capstone_open && !_gc.hatch_active) {
+        var _brx = device_mouse_x_to_gui(0);
+        var _bry = device_mouse_y_to_gui(0);
+        if (_brx >= _list_x && _brx <= _list_x + _list_w) {
+            for (var _bri = 0; _bri < _n; _bri++) {
+                var _bry0 = _list_y + _bri * _row_h;
+                if (_bry >= _bry0 && _bry <= _bry0 + _row_h - 10) {
+                    if (_bri == _cur) touch_press(vk_enter);
+                    else _gc.bairc_cursor = _bri;
+                    break;
+                }
+            }
+        }
+    }
+
     // HIS GARDEN - every creature ever entrusted to Bairc wanders the plot beneath the
     // stable (design §6/§11: donation is visible care, not deletion). Skipped when a big
     // roster needs the room.
@@ -2884,8 +2905,30 @@ function ui_draw_bairc_screen() {
         }
         draw_set_font(fnt_ui_small); draw_set_color(make_color_rgb(150, 158, 182));
         ui_draw_key_legend(GUI_CX, _pmy + _pmh - 34,
-            (_gc.bairc_pad_menu_level == 1) ? "[A] Feed  [B] Back" : "[A] Select  [B] Close",
+            (input_device() == 2)
+                ? "Tap an action  -  tap outside to close"
+                : ((_gc.bairc_pad_menu_level == 1) ? "[A] Feed  [B] Back" : "[A] Select  [B] Close"),
             undefined, false);
+        // Touch (8d): tap an entry to pick it (cursor + simulated Enter); tap
+        // anywhere outside the panel to back out (simulated Esc).
+        if (input_device() == 2 && mouse_check_button_pressed(mb_left)) {
+            var _pmmx = device_mouse_x_to_gui(0);
+            var _pmmy = device_mouse_y_to_gui(0);
+            var _pm_hit = false;
+            for (var _pt = 0; _pt < _pmn; _pt++) {
+                var _pty = _pmy + 62 + _pt * 48;
+                if (_pmmx >= _pmx + 18 && _pmmx <= _pmx + _pmw - 18
+                    && _pmmy >= _pty - 6 && _pmmy <= _pty + 36) {
+                    _gc.bairc_pad_menu_cursor = _pt;
+                    touch_press(vk_enter);
+                    _pm_hit = true;
+                    break;
+                }
+            }
+            if (!_pm_hit && (_pmmx < _pmx || _pmmx > _pmx + _pmw || _pmmy < _pmy || _pmmy > _pmy + _pmh)) {
+                touch_press(vk_escape);
+            }
+        }
         draw_set_halign(fa_left); draw_set_valign(fa_top); draw_set_color(c_white); draw_set_font(-1);
     }
 }

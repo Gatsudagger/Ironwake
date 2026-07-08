@@ -7018,8 +7018,10 @@ function hatch_cutscene_step() {
             break;
 
         case 2: // REVEAL - baby scales in; wait for the player to dismiss (min hold first)
+            // (touch, 8d: a tap dismisses too - the reveal was Enter/Esc-only)
             if (hatch_t >= HATCH_REVEAL_MIN &&
-                (input_confirm() || input_confirm_alt() || input_cancel())) {
+                (input_confirm() || input_confirm_alt() || input_cancel()
+                 || (input_device() == 2 && mouse_check_button_pressed(mb_left)))) {
                 if (!hatch_done) { pet_hatch(hatch_pet); hatch_done = true; }
                 bairc_notification = hatch_pet.name + " hatches - a "
                     + pet_archetype_name(hatch_pet.archetype) + " baby!";
