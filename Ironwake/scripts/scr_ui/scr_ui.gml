@@ -2791,6 +2791,12 @@ function ui_draw_bairc_screen() {
         draw_set_font(fnt_ui_small); draw_set_color(make_color_rgb(150, 160, 190));
         draw_text(GUI_CX, _ny1 + 208, (pet_named(_np) ? "Rename: 20 dust" : "First name: free")
             + "        [Enter] Confirm     [Esc] Cancel");
+        // Deck/controller players have no physical keyboard - point at the Steam OSK
+        // (STEAM_DECK_NOTES.md; same hint as the char-create naming modal).
+        if (input_device() == 1) {
+            draw_set_color(make_color_rgb(100, 110, 130));
+            draw_text(GUI_CX, _ny1 + 248, "No keyboard? Steam + X opens the on-screen keyboard.");
+        }
         draw_set_halign(fa_left); draw_set_valign(fa_top); draw_set_color(c_white); draw_set_font(-1);
     }
 

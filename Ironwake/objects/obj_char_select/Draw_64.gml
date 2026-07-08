@@ -337,6 +337,13 @@ if (naming_active) {
     draw_set_font(fnt_ui_small);
     draw_set_color(make_color_rgb(130, 135, 145));
     draw_text_outline(960, 597, "Enter to confirm       Escape to go back");
+    // Deck/controller players have no physical keyboard - point at the Steam OSK
+    // (STEAM_DECK_NOTES.md: the manual Steam+X path is the EA answer; the automatic
+    // floating-keyboard call is a post-EA Steamworks-extension chunk).
+    if (input_device() == 1) {
+        draw_set_color(make_color_rgb(100, 110, 130));
+        draw_text_outline(960, 636, "No keyboard? Steam + X opens the on-screen keyboard.");
+    }
 }
 
 
