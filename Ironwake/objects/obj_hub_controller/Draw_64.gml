@@ -872,28 +872,39 @@ if (_gc_ds != noone && _gc_ds.dungeon_select_open) {
             draw_set_color(_dcol);
             draw_rectangle(_cx + 21, _asc_y, _cx + _cw - 21, _asc_y + 66, true);
 
-            // Q / E arrows
+            // Q / E arrows (touch shows framed < > stepper buttons instead of keys)
             var _can_left  = (_gc_ds.dungeon_select_asc > 0);
             var _can_right = (_gc_ds.dungeon_select_asc < _unlocked_asc);
+            var _asc_touch = (input_device() == 2);
+            if (_asc_touch) {
+                draw_set_color(_can_left ? make_color_rgb(120, 130, 160) : make_color_rgb(40, 48, 70));
+                draw_rectangle(_cx + 21, _asc_y, _cx + 105, _asc_y + 66, true);
+                draw_set_color(_can_right ? make_color_rgb(120, 130, 160) : make_color_rgb(40, 48, 70));
+                draw_rectangle(_cx + _cw - 105, _asc_y, _cx + _cw - 21, _asc_y + 66, true);
+            }
             draw_set_halign(fa_center);
             draw_set_color(_can_left  ? c_white : make_color_rgb(40, 48, 70));
-            draw_text(_cx + 48, _asc_y + 20, "Q");
+            draw_text(_asc_touch ? (_cx + 63) : (_cx + 48), _asc_y + 20, _asc_touch ? "<" : "Q");
             draw_set_color(_can_right ? c_white : make_color_rgb(40, 48, 70));
-            draw_text(_cx + _cw - 60, _asc_y + 20, "E");
+            draw_text(_asc_touch ? (_cx + _cw - 63) : (_cx + _cw - 60), _asc_y + 20, _asc_touch ? ">" : "E");
 
             // Tier label (centered in the selector box)
             draw_set_color(c_white);
             draw_text(_cx + _cw / 2, _asc_y + 21, _asc_labels[_gc_ds.dungeon_select_asc]);
 
-            // Touch (8c): carousel arrows = A/D, awakening selector halves = Q/E,
-            // tapping the card art above the selector = Enter (EMBARK). All
-            // simulated keys through the unchanged Step handlers; touch only.
+            // Touch (8d, M 07-08 "needs cleaner"): visible affordances - framed
+            // carousel arrows, awakening steppers (drawn above), and the green
+            // Confirm bar (drawn below) is the tap target for EMBARK. Steppers
+            // are exact button zones now, not invisible box halves.
             if (input_device() == 2) {
-                if      (touch_tapped(18, GUI_CY - 150, 200, GUI_CY + 150))   touch_press(ord("A"));
-                else if (touch_tapped(1300, GUI_CY - 150, 1482, GUI_CY + 150)) touch_press(ord("D"));
-                else if (touch_tapped(_cx + 21, _asc_y, _cx + _cw / 2, _asc_y + 66))        touch_press(ord("Q"));
-                else if (touch_tapped(_cx + _cw / 2, _asc_y, _cx + _cw - 21, _asc_y + 66))  touch_press(ord("E"));
-                else if (touch_tapped(_cx, _cy, _cx + _cw, _asc_y - 6))        touch_press(vk_enter);
+                draw_set_color(make_color_rgb(120, 130, 160));
+                draw_rectangle(24, GUI_CY - 66, 132, GUI_CY + 90, true);
+                draw_rectangle(1338, GUI_CY - 66, 1446, GUI_CY + 90, true);
+                if      (touch_tapped(18, GUI_CY - 90, 200, GUI_CY + 114))    touch_press(ord("A"));
+                else if (touch_tapped(1300, GUI_CY - 90, 1482, GUI_CY + 114)) touch_press(ord("D"));
+                else if (touch_tapped(_cx + 21, _asc_y, _cx + 105, _asc_y + 66))            touch_press(ord("Q"));
+                else if (touch_tapped(_cx + _cw - 105, _asc_y, _cx + _cw - 21, _asc_y + 66)) touch_press(ord("E"));
+                else if (touch_tapped(_cx + 21, _cy + _ch - 87, _cx + _cw - 21, _cy + _ch - 21)) touch_press(vk_enter);
             }
 
             // Tier description - below the selector box (computed, matches combat)
@@ -917,7 +928,9 @@ if (_gc_ds != noone && _gc_ds.dungeon_select_open) {
             draw_set_halign(fa_center);
             draw_set_font(fnt_ui);
             draw_set_color(c_white);
-            draw_text(_cx + _cw / 2, _conf_y + 20, "[ Enter ]  Confirm & Choose Loadout");
+            draw_text(_cx + _cw / 2, _conf_y + 20, (input_device() == 2)
+                ? "EMBARK  -  Choose Loadout"
+                : "[ Enter ]  Confirm & Choose Loadout");
 
         } else {
             // Side cards: text below art

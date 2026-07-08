@@ -116,12 +116,15 @@ function ui_draw_key_legend(cx, y, txt, label_col = undefined, translate = true)
 // top-right; tapping fires a simulated Esc, so each screen's EXISTING cancel
 // handler reacts (shop closes, modal backs out, hub opens the pause menu).
 // ---------------------------------------------------------------------------
-function ui_draw_touch_back() {
+function ui_draw_touch_back(_top = 108) {
+    // default y=108 clears the gold/dust readouts that live top-right on the
+    // vendor screens (M 07-08: the chip covered them); combat passes 24 to stay
+    // above the enemy-bar grid and shifts its awakening label left instead.
     touch_sim_pump();
     if (input_device() != 2) return;
     var _s  = 78;
-    var _x1 = GUI_W - _s - 24, _y1 = 24;
-    var _x2 = GUI_W - 24,      _y2 = 24 + _s;
+    var _x1 = GUI_W - _s - 24, _y1 = _top;
+    var _x2 = GUI_W - 24,      _y2 = _top + _s;
     draw_set_alpha(0.72); draw_set_color(make_color_rgb(14, 16, 24));
     draw_rectangle(_x1, _y1, _x2, _y2, false);
     draw_set_alpha(1.0);
@@ -133,7 +136,7 @@ function ui_draw_touch_back() {
     draw_text((_x1 + _x2) / 2, (_y1 + _y2) / 2 + 2, "X");
     draw_set_halign(fa_left); draw_set_valign(fa_top);
     draw_set_color(c_white); draw_set_font(-1);
-    if (touch_tapped(_x1 - 12, _y1 - 12, _x2 + 12, _y2 + 12)) touch_press(vk_escape);
+    if (touch_tapped(_x1, _y1, _x2, _y2)) touch_press(vk_escape);
 }
 
 // draw_text_ext_outline(x, y, str, sep, w, [outline_col], [fill_col])

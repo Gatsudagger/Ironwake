@@ -268,30 +268,53 @@ draw_set_font(fnt_ui_small);
 draw_set_color(make_color_rgb(200, 210, 230));
 draw_text(_alloc_cx, _box_y + _box_h + 21, _stat_descs[selected_stat]);
 
-// Allocation key hints below the stat boxes
+// Allocation key hints below the stat boxes (keyboard/pad-speak - hidden on touch,
+// where tapping a stat box adds the point directly)
 draw_set_color(make_color_rgb(140, 145, 155));
-draw_text_outline(_alloc_cx, _box_y + _box_h + 51, (input_device() == 1)
-    ? "A: Add point        LT: Remove point"
-    : "Enter / Space: Add point        X: Remove point");
+if (input_device() == 2) {
+    draw_text_outline(_alloc_cx, _box_y + _box_h + 51, "Tap a stat to spend a point");
+} else {
+    draw_text_outline(_alloc_cx, _box_y + _box_h + 51, (input_device() == 1)
+        ? "A: Add point        LT: Remove point"
+        : "Enter / Space: Add point        X: Remove point");
+}
 
 
 // -----------------------------------------------------------------------------
 // 5. BOTTOM INSTRUCTION BAR
+// Touch (8d, M 07-08): the continue affordance was an invisible bottom-bar tap
+// zone - on touch it becomes a real CONFIRM button drawn inside the SAME zone
+// the Step click handler already accepts (y 1005..1073), so no new input code.
 // -----------------------------------------------------------------------------
 var _inst_y = 1020;
 
-// Navigation hint
 draw_set_font(fnt_ui_small);
-draw_set_color(make_color_rgb(130, 135, 145));
-draw_text_outline(960, _inst_y, "A / D: Class    Q / E: Gender    W / S: Stat    Enter / Space: Confirm");
-
-// Readiness prompt
-if (free_points > 0) {
-    draw_set_color(c_yellow);
-    draw_text(960, _inst_y + 33, "Allocate all points before confirming");
+if (input_device() == 2) {
+    if (free_points > 0) {
+        draw_set_color(c_yellow);
+        draw_text(960, _inst_y + 12, "Allocate all points to continue");
+    } else {
+        draw_set_color(make_color_rgb(18, 40, 22));
+        draw_rectangle(960 - 195, 1008, 960 + 195, 1071, false);
+        draw_set_color(c_green);
+        draw_rectangle(960 - 195, 1008, 960 + 195, 1071, true);
+        draw_set_font(fnt_ui);
+        draw_set_color(c_white);
+        draw_text(960, 1027, "CONFIRM");
+    }
 } else {
-    draw_set_color(c_green);
-    draw_text(960, _inst_y + 33, "Ready!  Press Space to begin");
+    // Navigation hint
+    draw_set_color(make_color_rgb(130, 135, 145));
+    draw_text_outline(960, _inst_y, "A / D: Class    Q / E: Gender    W / S: Stat    Enter / Space: Confirm");
+
+    // Readiness prompt
+    if (free_points > 0) {
+        draw_set_color(c_yellow);
+        draw_text(960, _inst_y + 33, "Allocate all points before confirming");
+    } else {
+        draw_set_color(c_green);
+        draw_text(960, _inst_y + 33, "Ready!  Press Space to begin");
+    }
 }
 
 // -----------------------------------------------------------------------------

@@ -537,7 +537,20 @@ if (showing_shrine) {
     draw_set_color(make_color_rgb(200, 160, 120));
     draw_text(GUI_CX, 500, "Approach and you are committed - a curse, once revealed, will not release you.");
     draw_set_color(c_ltgray);
-    ui_draw_key_legend(GUI_CX, 990, "Space / Enter: Approach the altar      Esc: Leave (forgo it)");
+    // Touch (8d): explicit APPROACH button; X chip = leave. Keyboard keeps the legend.
+    if (input_device() == 2) {
+        draw_set_color(make_color_rgb(38, 32, 20));
+        draw_rectangle(GUI_CX - 210, 906, GUI_CX + 210, 972, false);
+        draw_set_color(make_color_rgb(200, 160, 120));
+        draw_rectangle(GUI_CX - 210, 906, GUI_CX + 210, 972, true);
+        draw_set_font(fnt_ui);
+        draw_set_color(c_white);
+        draw_set_halign(fa_center);
+        draw_text(GUI_CX, 924, "APPROACH THE ALTAR");
+        if (touch_tapped(GUI_CX - 210, 906, GUI_CX + 210, 972)) touch_press(vk_enter);
+    } else {
+        ui_draw_key_legend(GUI_CX, 990, "Space / Enter: Approach the altar      Esc: Leave (forgo it)");
+    }
     draw_set_halign(fa_center);
     ui_draw_gothic_frame(30, 30, 1890, 1050, 30);
     draw_set_halign(fa_left);
@@ -655,6 +668,31 @@ if (showing_shrine) {
             }
         }
         draw_set_halign(fa_center);
+
+        // Touch (8d, M 07-08 "no confirmation to click"): tap an offer row to
+        // select it; on the SELECTED row a blessing pays via its [1]/[2]/[3]
+        // price labels (simulated digit keys), a curse row is embraced by
+        // tapping it again (simulated Enter). Rows: y = 294 + i*162, h 144.
+        if (input_device() == 2 && mouse_check_button_pressed(mb_left)) {
+            var _tsx = device_mouse_x_to_gui(0);
+            var _tsy = device_mouse_y_to_gui(0);
+            for (var _tsi = 0; _tsi < _sn; _tsi++) {
+                var _tsy0 = 294 + _tsi * 162;
+                if (_tsx >= 330 && _tsx <= 1590 && _tsy >= _tsy0 && _tsy <= _tsy0 + 144) {
+                    if (_tsi != shrine_cursor) {
+                        shrine_cursor       = _tsi;
+                        shrine_notification = "";
+                    } else if (_is_curse) {
+                        touch_press(vk_enter);
+                    } else if (_tsy >= _tsy0 + 90) {
+                        if      (_tsx >= 345 && _tsx < 540)  touch_press(ord("1"));
+                        else if (_tsx >= 540 && _tsx < 780)  touch_press(ord("2"));
+                        else if (_tsx >= 780 && _tsx < 1575) touch_press(ord("3"));
+                    }
+                    break;
+                }
+            }
+        }
     }
 
     if (shrine_notification != "") {
@@ -662,11 +700,21 @@ if (showing_shrine) {
         draw_set_color(_is_curse ? make_color_rgb(225, 150, 150) : make_color_rgb(225, 200, 150));
         draw_text(GUI_CX, 834, shrine_notification);
     }
-    ui_draw_key_legend(GUI_CX, 990, _is_curse
-        ? ((_sn == 0)
-            ? "No curse remains  -  Esc: Leave"
-            : "W/S: Select     Enter: Embrace the curse  (the altar will not release you)")
-        : "W/S: Select     1: Gold     2: Dust     3: Item     Esc: Leave");
+    if (input_device() == 2) {
+        // Touch instruction line (the offer rows + price labels are the buttons)
+        draw_set_font(fnt_ui_small);
+        draw_set_color(c_ltgray);
+        draw_text(GUI_CX, 990, _is_curse
+            ? ((_sn == 0) ? "No curse remains - X to leave"
+                          : "Tap a curse to choose it - tap again to embrace  (the altar will not release you)")
+            : "Tap a boon to choose it - then tap a price to pay");
+    } else {
+        ui_draw_key_legend(GUI_CX, 990, _is_curse
+            ? ((_sn == 0)
+                ? "No curse remains  -  Esc: Leave"
+                : "W/S: Select     Enter: Embrace the curse  (the altar will not release you)")
+            : "W/S: Select     1: Gold     2: Dust     3: Item     Esc: Leave");
+    }
     draw_set_halign(fa_center);
 
     // Ornate gothic rim (title y84, offer rows x330..1590, hint y990 - all inside the opening).

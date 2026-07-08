@@ -121,7 +121,8 @@ draw_set_font(fnt_ui_small);
 draw_set_halign(fa_right);
 draw_set_valign(fa_top);
 draw_set_color(_awk_asc > 0 ? make_color_rgb(225, 150, 70) : make_color_rgb(120, 130, 150));
-draw_text(1905, 12, awakening_label());
+// Touch: the X chip owns the top-right corner - the label slides left of it.
+draw_text((input_device() == 2) ? 1785 : 1905, 12, awakening_label());
 draw_set_font(-1);
 draw_set_halign(fa_left);
 
@@ -675,7 +676,9 @@ if (instance_exists(obj_game_controller)) {
         } else {
             _pts_str = string(global.pending_stat_points) + " points";
         }
-        if (_has_pend) {
+        if (input_device() == 2) {
+            draw_text_outline(960, 158, "Allocate " + _pts_str + "   (tap a stat, then CONFIRM)");
+        } else if (_has_pend) {
             draw_text(960, 158, "Allocate " + _pts_str + "   (Enter: change choice   Space: confirm)");
         } else {
             draw_text_outline(960, 158, "Allocate " + _pts_str + "   (W/S: Navigate   Enter: choose stat)");
@@ -764,14 +767,45 @@ if (instance_exists(obj_game_controller)) {
             draw_text_ext(_bx_l + _bx_padx, _sy + 42, _alloc_stat_hints[_si], _hint_lh, _hint_w);
         }
 
+        // Touch (8d, M 07-08 softlock): tap a stat row to choose it (sets the
+        // cursor + fires the same Enter path), CONFIRM button commits (Space).
         var _alloc_footer_y = _alloc_y0 + 6 * _row_step + 12;
+        if (input_device() == 2) {
+            if (mouse_check_button_pressed(mb_left)) {
+                var _amx = device_mouse_x_to_gui(0);
+                var _amy = device_mouse_y_to_gui(0);
+                if (_amx >= _bx_l && _amx <= _bx_r && _amy >= _alloc_y0 && _amy < _alloc_y0 + 6 * _row_step) {
+                    var _ati = (_amy - _alloc_y0) div _row_step;
+                    if (_ati >= 0 && _ati < 6 && (_amy - _alloc_y0) - _ati * _row_step <= _bx_h) {
+                        _gc_alloc_draw.level_alloc_index = _ati;
+                        touch_press(vk_enter);
+                    }
+                }
+            }
+            if (_has_pend) {
+                var _cbx1 = 960 - 195, _cby1 = _alloc_footer_y - 6;
+                var _cbx2 = 960 + 195, _cby2 = _cby1 + 63;
+                draw_set_color(make_color_rgb(22, 42, 20));
+                draw_rectangle(_cbx1, _cby1, _cbx2, _cby2, false);
+                draw_set_color(c_lime);
+                draw_rectangle(_cbx1, _cby1, _cbx2, _cby2, true);
+                draw_set_font(fnt_ui);
+                draw_set_halign(fa_center); draw_set_valign(fa_middle);
+                draw_set_color(c_white);
+                draw_text(960, (_cby1 + _cby2) / 2, "CONFIRM");
+                draw_set_valign(fa_top);
+                if (touch_tapped(_cbx1, _cby1, _cbx2, _cby2)) touch_press(vk_space);
+            }
+        }
         draw_set_font(fnt_ui_small);
         draw_set_halign(fa_center);
         draw_set_color(make_color_rgb(80, 90, 110));
-        if (_has_pend) {
-            ui_draw_key_legend(960, _alloc_footer_y, "W/S: Navigate   Enter: Change selection   Space: Confirm");
-        } else {
-            ui_draw_key_legend(960, _alloc_footer_y, "W/S: Navigate   Enter: Choose stat");
+        if (input_device() != 2) {
+            if (_has_pend) {
+                ui_draw_key_legend(960, _alloc_footer_y, "W/S: Navigate   Enter: Change selection   Space: Confirm");
+            } else {
+                ui_draw_key_legend(960, _alloc_footer_y, "W/S: Navigate   Enter: Choose stat");
+            }
         }
         draw_set_font(-1);
         draw_set_halign(fa_left);
@@ -1217,4 +1251,6 @@ ui_draw_pause_menu();
 ui_draw_tutorial_tip();
 
 // Touch (8c): universal Back chip + simulated-key pump - always LAST (topmost).
-ui_draw_touch_back();
+// Combat keeps the top corner (y24): the enemy-bar grid starts at y96, so the
+// default y108 would land on it; the awakening label moves left on touch instead.
+ui_draw_touch_back(24);
