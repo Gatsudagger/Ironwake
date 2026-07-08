@@ -277,14 +277,17 @@ if (showing_event_choice) {
 // -----------------------------------------------------------------------------
 // Esc opens the pause menu - only reachable here, with no popup active (every
 // treasure/event/shrine block above exits first), so it never steals Esc from them.
-if (input_cancel()) {
+// Exception: the escape-item confirm lives BELOW this block, so it must be gated
+// here too - its legend promises "Esc: Cancel", but Esc was opening the pause
+// menu over the popup instead (found 07-08 wiring the touch path).
+if (input_cancel() && !escape_confirm_open) {
     pause_menu_open();
     exit;
 }
 
 // -----------------------------------------------------------------------------
 // 3a. ESCAPE ITEMS (Genie Lamp / Devil Wine) - G on the idle map opens a confirm.
-// Lamp: free extraction with all loot. Wine: same, but PERMANENTLY lose 3 random
+// Lamp: free extraction with all loot. Wine: same, but PERMANENTLY lose 2 random
 // stat points (subtracted from base stats, floor 1). Both route through end_run(0)
 // so extraction bookkeeping (loot -> stash, boss credits already banked) is shared.
 // -----------------------------------------------------------------------------
@@ -300,11 +303,12 @@ if (escape_confirm_open) {
             var _esc_wine = (_esc_it.effect_type == "escape_wine");
             array_delete(global.consumable_inventory, escape_confirm_idx, 1);
             if (_esc_wine) {
-                // Permanently drain 3 random stat points from the BASE character
+                // Permanently drain 2 random stat points from the BASE character
                 // stats (never below 1 each). The toll is the whole point.
+                // (Was 3 - M 07-08: "too strong of a loss".)
                 var _dw_keys = ["STR", "DEX", "CON", "INT", "WIS", "CHA"];
                 var _dw_lost = "";
-                repeat (3) {
+                repeat (2) {
                     var _dw_pool = [];
                     for (var _dk = 0; _dk < 6; _dk++) {
                         if (variable_struct_get(global.chosen_stats, _dw_keys[_dk]) > 1)
@@ -335,6 +339,17 @@ if (escape_confirm_open) {
     }
     exit;
 }
+// Onboarding: the first time the player stands on the floor map CARRYING an
+// escape item, teach it (M 07-08: "tutorial message when you find a lamp or
+// devil wine"). Fired here - not at loot/purchase time - so the tip appears
+// exactly where its instructions apply (the G key / LAMP-WINE chip exist here).
+if (!tutorial_seen_has("escape_item") && variable_global_exists("consumable_inventory")) {
+    for (var _oti = 0; _oti < array_length(global.consumable_inventory); _oti++) {
+        var _ott = global.consumable_inventory[_oti].effect_type;
+        if (_ott == "escape_lamp" || _ott == "escape_wine") { tutorial_try_show("escape_item"); break; }
+    }
+}
+
 if (input_hotkey("G") && variable_global_exists("consumable_inventory")) {
     // Prefer the free Lamp; fall back to Devil Wine.
     escape_confirm_idx = -1;

@@ -455,9 +455,14 @@ if (showing_treasure) {
         _enter_y = _pop_cy + 330;
     }
 
-    draw_set_font(fnt_ui_small);
-    draw_set_color(c_ltgray);
-    draw_text(_pop_cx, _enter_y, "Press Enter to continue");
+    if (input_device() == 2) {
+        // Touch: framed CONTINUE button (M 07-08, same as rest/event popups).
+        ui_draw_touch_continue(_pop_cx, _enter_y - 12);
+    } else {
+        draw_set_font(fnt_ui_small);
+        draw_set_color(c_ltgray);
+        draw_text(_pop_cx, _enter_y, "Press Enter to continue");
+    }
 
     treasure_timer++;
 
@@ -496,9 +501,15 @@ if (showing_event) {
     draw_set_color(make_color_rgb(190, 195, 215));
     draw_text_ext(_ecx, _ecy + 68, event_body, -1, 900);
 
-    draw_set_font(fnt_ui_small);
-    draw_set_color(c_ltgray);
-    draw_text(_ecx, _ecy + 300, "Press Enter to continue");
+    if (input_device() == 2) {
+        // Touch: framed CONTINUE button instead of keyboard prompt text
+        // (M 07-08, heal/rest/trap rooms).
+        ui_draw_touch_continue(_ecx, _ecy + 288);
+    } else {
+        draw_set_font(fnt_ui_small);
+        draw_set_color(c_ltgray);
+        draw_text(_ecx, _ecy + 300, "Press Enter to continue");
+    }
 
     event_timer++;
 
@@ -819,9 +830,15 @@ if (showing_event_choice && event_active != undefined) {
             }
         }
 
-        draw_set_font(fnt_ui_small);
-        draw_set_color(c_ltgray);
-        draw_text(GUI_CX, 972, "Press Enter to continue");
+        if (input_device() == 2) {
+            // Touch: framed CONTINUE button (M 07-08) - result also closes on
+            // any tap, the button is the visible control.
+            ui_draw_touch_continue(GUI_CX, 900);
+        } else {
+            draw_set_font(fnt_ui_small);
+            draw_set_color(c_ltgray);
+            draw_text(GUI_CX, 972, "Press Enter to continue");
+        }
     } else {
         draw_set_font(fnt_ui_small);
         draw_set_color(make_color_rgb(210, 200, 150));
@@ -876,10 +893,35 @@ if (showing_event_choice && event_active != undefined) {
             }
             draw_set_halign(fa_left);
         }
+
+        // Touch (8d follow-up, M 07-08 SOFTLOCK: "event room doesnt register my
+        // touches"): tap a choice row to select it, tap the selected row again
+        // to choose it (simulated Enter - the existing confirm handler pays the
+        // cost/rolls the check). Locked rows ignore taps. Same idiom as the
+        // shrine offer rows. Rows: y = 315 + i*165, h 147, x 330..1590.
+        if (input_device() == 2 && mouse_check_button_pressed(mb_left)) {
+            var _tex = device_mouse_x_to_gui(0);
+            var _tey = device_mouse_y_to_gui(0);
+            for (var _ti = 0; _ti < _en; _ti++) {
+                var _ty0 = 315 + _ti * 165;
+                if (_tex >= 330 && _tex <= 1590 && _tey >= _ty0 && _tey <= _ty0 + 147) {
+                    if (event_choice_unlocked(_ev.choices[_ti])) {
+                        if (_ti != event_cursor) event_cursor = _ti;
+                        else                     touch_press(vk_enter);
+                    }
+                    break;
+                }
+            }
+        }
+
         draw_set_halign(fa_center);
         draw_set_font(fnt_ui_small);
         draw_set_color(c_ltgray);
-        ui_draw_key_legend(GUI_CX, 972, "W/S: Select     Enter: Choose");
+        if (input_device() == 2) {
+            draw_text(GUI_CX, 972, "Tap a choice - tap it again to commit");
+        } else {
+            ui_draw_key_legend(GUI_CX, 972, "W/S: Select     Enter: Choose");
+        }
     }
 
     // Ornate gothic rim (choice rows x330..1590, hint y972 - all inside the opening).
@@ -902,25 +944,30 @@ for (var _fi = 0; _fi < array_length(current_rooms); _fi++) {
     }
 }
 
-draw_set_font(fnt_ui_small);
-draw_set_halign(fa_center);
-draw_set_valign(fa_bottom);
+// Touch: the chip bar (JOURNAL/HERO/.../EXTRACT) replaces this keyboard footer
+// outright - both drew in the same bottom strip (M 07-08: "chips clearly on
+// top of the keyboard legend").
+if (input_device() != 2) {
+    draw_set_font(fnt_ui_small);
+    draw_set_halign(fa_center);
+    draw_set_valign(fa_bottom);
 
-draw_set_color(c_gray);
-draw_text(GUI_CX, 1073, "WASD / Arrow Keys: Move between rooms   Enter: Enter Room");
-
-if (_boss_cleared) {
     draw_set_color(c_gray);
-    draw_text_outline(GUI_CX, 1047, "E: Extract to Camp");
-} else {
-    draw_set_color(make_color_rgb(45, 50, 60));
-    draw_text(GUI_CX, 1047, "E: Extract  [Defeat the boss first]");
-}
+    draw_text(GUI_CX, 1073, "WASD / Arrow Keys: Move between rooms   Enter: Enter Room");
 
-draw_set_halign(fa_left);
-draw_set_valign(fa_top);
-draw_set_alpha(1.0);
-draw_set_font(-1);
+    if (_boss_cleared) {
+        draw_set_color(c_gray);
+        draw_text_outline(GUI_CX, 1047, "E: Extract to Camp");
+    } else {
+        draw_set_color(make_color_rgb(45, 50, 60));
+        draw_text(GUI_CX, 1047, "E: Extract  [Defeat the boss first]");
+    }
+
+    draw_set_halign(fa_left);
+    draw_set_valign(fa_top);
+    draw_set_alpha(1.0);
+    draw_set_font(-1);
+}
 
 // Player HP + gold readout (top-left). Drawn AFTER the event/shrine overlays (which
 // dim the whole screen) so it stays visible during them - many events gamble HP and
@@ -985,10 +1032,22 @@ if (escape_confirm_open && escape_confirm_idx >= 0
     draw_set_font(fnt_ui_small);
     draw_set_color(make_color_rgb(190, 195, 215));
     draw_text_ext(960, 456, _ec_wine
-        ? "You extract to camp with ALL your loot and found gold...\nbut PERMANENTLY lose 3 random stat points. The wine always collects."
+        ? "You extract to camp with ALL your loot and found gold...\nbut PERMANENTLY lose 2 random stat points. The wine always collects."
         : "A lazy plume of smoke swallows you.\nYou extract to camp with ALL your loot and found gold. No cost - this once.", 30, 780);
     draw_set_color(make_color_rgb(150, 160, 185));
-    ui_draw_key_legend(960, 621, "Enter: Confirm      Esc / G: Cancel");
+    if (input_device() == 2) {
+        // Touch: tap the panel to drink/rub, tap outside to cancel (the popup
+        // was Enter-only - unconfirmable from the G chip on a phone).
+        draw_text(960, 621, "Tap here to confirm - tap outside to cancel");
+        if (mouse_check_button_pressed(mb_left)) {
+            var _ecmx = device_mouse_x_to_gui(0);
+            var _ecmy = device_mouse_y_to_gui(0);
+            if (_ecmx >= 510 && _ecmx <= 1410 && _ecmy >= 360 && _ecmy <= 690) touch_press(vk_enter);
+            else                                                               touch_press(vk_escape);
+        }
+    } else {
+        ui_draw_key_legend(960, 621, "Enter: Confirm      Esc / G: Cancel");
+    }
     draw_set_halign(fa_left); draw_set_valign(fa_top);
     draw_set_font(-1);
 }

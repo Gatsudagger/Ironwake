@@ -1641,8 +1641,13 @@ if (instance_exists(obj_game_controller)) {
         draw_rectangle(0, 0, GUI_W, GUI_H, false);
 
         // --- Tab bar ---
+        // Touch (M 07-08 device test: "tapping repeatedly ... only registers
+        // sometimes"): the 42px-tall tabs are half a fingertip on glass, so on
+        // touch the drawn tabs grow to 90px (the Step hit zones grow with them)
+        // and the pressed tab brightens the moment the finger lands.
+        var _tab_touch = (input_device() == 2);
         var _tab_y  = 9;
-        var _tab_h  = 42;
+        var _tab_h  = _tab_touch ? 90 : 42;
         var _tab_w  = 315;
         var _mid    = GUI_CX;
 
@@ -1654,21 +1659,33 @@ if (instance_exists(obj_game_controller)) {
         var _tab_gap   = 9;
         var _tab_tot   = 3 * _tab_w + 2 * _tab_gap;
         var _tab_x0    = _mid - _tab_tot / 2;
+        var _tab_pmx   = device_mouse_x_to_gui(0);
+        var _tab_pmy   = device_mouse_y_to_gui(0);
+        var _tab_pdn   = _tab_touch && mouse_check_button(mb_left);
         draw_set_font(fnt_ui);
         draw_set_halign(fa_center);
         for (var _tbi = 0; _tbi < 3; _tbi++) {
             var _tbx = _tab_x0 + _tbi * (_tab_w + _tab_gap);
             var _ton = (_gc_ov.loadout_tab == _tbi);
-            draw_set_color(_ton ? _tab_bgon[_tbi] : make_color_rgb(11, 13, 22));
+            var _tpr = _tab_pdn && _tab_pmx >= _tbx && _tab_pmx < _tbx + _tab_w
+                                && _tab_pmy >= 0    && _tab_pmy < _tab_y + _tab_h + 12;
+            draw_set_color(_tpr ? make_color_rgb(52, 44, 26) : (_ton ? _tab_bgon[_tbi] : make_color_rgb(11, 13, 22)));
             draw_rectangle(_tbx, _tab_y, _tbx + _tab_w, _tab_y + _tab_h, false);
-            draw_set_color(_ton ? _tab_acc[_tbi] : make_color_rgb(32, 38, 65));
+            draw_set_color(_tpr ? make_color_rgb(245, 195, 80) : (_ton ? _tab_acc[_tbi] : make_color_rgb(32, 38, 65)));
             draw_rectangle(_tbx, _tab_y, _tbx + _tab_w, _tab_y + _tab_h, true);
             draw_set_color(_ton ? c_white : make_color_rgb(75, 85, 120));
-            draw_text(_tbx + _tab_w / 2, _tab_y + 11, _tab_names[_tbi]);
+            draw_text(_tbx + _tab_w / 2, _tab_y + (_tab_touch ? 33 : 11), _tab_names[_tbi]);
         }
         draw_set_font(fnt_ui_small);
         draw_set_color(make_color_rgb(55, 62, 88));
-        draw_text_outline(_mid, _tab_y + _tab_h + 6, "Q / E switch tabs");
+        if (_tab_touch) {
+            // Touch hint (M 07-08: asked for a drag hint + swipe tabs) - replaces
+            // the keyboard-speak line. Drawn in the free strip BELOW the confirm
+            // bar (the taller touch tabs leave no room above the list at y106).
+            draw_text_outline(_mid, 1048, "Swipe sideways to switch tabs - drag to scroll - hold a row for details");
+        } else {
+            draw_text_outline(_mid, _tab_y + _tab_h + 6, "Q / E switch tabs");
+        }
         draw_set_halign(fa_left);
 
         // =====================================================================
@@ -1680,7 +1697,16 @@ if (instance_exists(obj_game_controller)) {
             draw_set_font(fnt_ui);
             draw_set_color(make_color_rgb(130, 150, 200));
             draw_text(_lx, 60, "CLASS ABILITIES");
-            draw_text(_rx, 60, "YOUR LOADOUT");
+            // Touch: the 90px tabs cover (_rx, 60) - the header moves to the free
+            // strip right of the COMPANION tab (M 07-08: "all overlap with the
+            // companion tab"). Same treatment on all three tabs.
+            if (input_device() == 2) {
+                draw_set_font(fnt_ui_small);
+                draw_text(1460, 66, "YOUR LOADOUT");
+                draw_set_font(fnt_ui);
+            } else {
+                draw_text(_rx, 60, "YOUR LOADOUT");
+            }
 
             // Left panel: ability rows (windowed - the pool exceeds the screen)
             var _ov_max_vis = 10;
@@ -1945,7 +1971,7 @@ if (instance_exists(obj_game_controller)) {
 
             // --- Controls hint: y=1050 ---
             draw_set_color(make_color_rgb(65, 75, 100));
-            ui_draw_key_legend(GUI_CX, 1050, "W/S: Navigate   Q/E: Switch Tab   Enter: Toggle   Tab: Details   M: Mastery   Space: Confirm   Esc: Cancel");
+            if (input_device() != 2) ui_draw_key_legend(GUI_CX, 1050, "W/S: Navigate   Q/E: Switch Tab   Enter: Toggle   Tab: Details   M: Mastery   Space: Confirm   Esc: Cancel");
             draw_set_halign(fa_left);
 
             // --- Tab ability-detail popup, drawn over the loadout (P7) ---
@@ -2027,7 +2053,14 @@ if (instance_exists(obj_game_controller)) {
             draw_set_font(fnt_ui);
             draw_set_color(make_color_rgb(150, 120, 210));
             draw_text(_lx, 60, "AVAILABLE TRAITS  (" + string(_tr_avail_cnt) + " / " + string(_tr_cnt) + ")");
-            draw_text(_rx, 60, "SELECTED TRAITS  (" + string(_tr_sel_cnt) + " / " + string(max_trait_slots()) + ")");
+            // Touch: header clears the 90px COMPANION tab (see abilities tab note).
+            if (input_device() == 2) {
+                draw_set_font(fnt_ui_small);
+                draw_text(1460, 66, "SELECTED  (" + string(_tr_sel_cnt) + " / " + string(max_trait_slots()) + ")");
+                draw_set_font(fnt_ui);
+            } else {
+                draw_text(_rx, 60, "SELECTED TRAITS  (" + string(_tr_sel_cnt) + " / " + string(max_trait_slots()) + ")");
+            }
 
             // Trait rows: stateful EDGE scrolling (kept in sync with Step_0),
             // 8 rows visible (96px pitch from y=106 ends at 874, clearing the
@@ -2226,7 +2259,7 @@ if (instance_exists(obj_game_controller)) {
 
             // --- Controls hint: y=1050 ---
             draw_set_color(make_color_rgb(65, 75, 100));
-            ui_draw_key_legend(GUI_CX, 1050, "W/S: Navigate   Q/E: Switch Tab   Enter: Toggle Trait   Esc: Cancel");
+            if (input_device() != 2) ui_draw_key_legend(GUI_CX, 1050, "W/S: Navigate   Q/E: Switch Tab   Enter: Toggle Trait   Esc: Cancel");
             draw_set_halign(fa_left);
 
         // =====================================================================
@@ -2243,7 +2276,14 @@ if (instance_exists(obj_game_controller)) {
             draw_set_font(fnt_ui);
             draw_set_color(make_color_rgb(150, 210, 160));
             draw_text(_lx, 60, "YOUR CREATURES  (" + string(array_length(_eqp)) + ")");
-            draw_text(_rx, 60, "COMPANION");
+            // Touch: header clears the 90px COMPANION tab (see abilities tab note).
+            if (input_device() == 2) {
+                draw_set_font(fnt_ui_small);
+                draw_text(1460, 66, "ACTIVE");
+                draw_set_font(fnt_ui);
+            } else {
+                draw_text(_rx, 60, "COMPANION");
+            }
 
             var _crh = 78;
             for (var _ri = 0; _ri < _crows; _ri++) {
@@ -2425,7 +2465,7 @@ if (instance_exists(obj_game_controller)) {
 
             draw_set_halign(fa_center);
             draw_set_color(make_color_rgb(65, 75, 100));
-            ui_draw_key_legend(GUI_CX, 1050, "W/S: Navigate   Q/E: Switch Tab   Tab: Details   Enter: Set Active   B: Stance   Esc: Cancel");
+            if (input_device() != 2) ui_draw_key_legend(GUI_CX, 1050, "W/S: Navigate   Q/E: Switch Tab   Tab: Details   Enter: Set Active   B: Stance   Esc: Cancel");
             draw_set_halign(fa_left);
 
             // Tab pet-kit detail popup over the Companion tab.

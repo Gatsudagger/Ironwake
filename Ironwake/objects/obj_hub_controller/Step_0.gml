@@ -443,8 +443,11 @@ if (instance_exists(obj_game_controller)) {
 
         // Touch (8d): drag over the list scrolls it - simulated arrow steps ride
         // the existing edge-scroll logic; pitch matches the active tab's rows.
+        // A HORIZONTAL swipe anywhere across the overlay body flips the tab
+        // (M 07-08 device test) - simulated Q/E into the existing tab handler.
         if (input_device() == 2) {
             touch_drag_rows(60, 106, 1050, 880, (_gc_ld.loadout_tab == 1) ? 96 : 74);
+            touch_swipe_tab(60, 106, 1860, 980);
         }
 
         // Mouse: loadout tab buttons, ability/trait rows, confirm bar.
@@ -457,12 +460,24 @@ if (instance_exists(obj_game_controller)) {
             var _ldmx = _ld_tap ? touch_tap_x() : (_ld_lp ? touch_lp_x() : device_mouse_x_to_gui(0));
             var _ldmy = _ld_tap ? touch_tap_y() : (_ld_lp ? touch_lp_y() : device_mouse_y_to_gui(0));
 
-            // Three tab buttons (y=9-51), centred: ABILITIES / TRAITS / COMPANION.
+            // Three tab buttons, centred: ABILITIES / TRAITS / COMPANION.
             // Ranges match the Draw_64 tab-bar loop (_tx0=479, width 315, gap 9).
-            if (!_ld_lp && _ldmy >= 9 && _ldmy < 51) {
-                if      (_ldmx >= 479  && _ldmx < 794)  { if (_gc_ld.loadout_tab != 0) audio_play_sound(snd_page, 1, false); _gc_ld.loadout_tab = 0; _gc_ld.loadout_cursor = 0; }
-                else if (_ldmx >= 803  && _ldmx < 1118) { if (_gc_ld.loadout_tab != 1) audio_play_sound(snd_page, 1, false); _gc_ld.loadout_tab = 1; _gc_ld.loadout_cursor = 0; }
-                else if (_ldmx >= 1127 && _ldmx < 1442) { if (_gc_ld.loadout_tab != 2) audio_play_sound(snd_page, 1, false); _gc_ld.loadout_tab = 2; _gc_ld.loadout_cursor = 0; }
+            // Touch (M 07-08: "only registers sometimes"): Draw grows the tabs to
+            // 90px on touch, so the hit band grows to the full strip above the
+            // list (y 0..105) and the 9px gaps between tabs stop eating taps.
+            var _ld_touch  = (input_device() == 2);
+            var _ld_tab_y0 = _ld_touch ? 0   : 9;
+            var _ld_tab_y1 = _ld_touch ? 105 : 51;
+            // Touch bands are contiguous (479/799/1123); desktop keeps the exact
+            // original rects so PC mouse behavior is unchanged.
+            var _ld_t0_x1  = _ld_touch ? 799  : 794;
+            var _ld_t1_x0  = _ld_touch ? 799  : 803;
+            var _ld_t1_x1  = _ld_touch ? 1123 : 1118;
+            var _ld_t2_x0  = _ld_touch ? 1123 : 1127;
+            if (!_ld_lp && _ldmy >= _ld_tab_y0 && _ldmy < _ld_tab_y1) {
+                if      (_ldmx >= 479      && _ldmx < _ld_t0_x1) { if (_gc_ld.loadout_tab != 0) audio_play_sound(snd_page, 1, false); _gc_ld.loadout_tab = 0; _gc_ld.loadout_cursor = 0; }
+                else if (_ldmx >= _ld_t1_x0 && _ldmx < _ld_t1_x1) { if (_gc_ld.loadout_tab != 1) audio_play_sound(snd_page, 1, false); _gc_ld.loadout_tab = 1; _gc_ld.loadout_cursor = 0; }
+                else if (_ldmx >= _ld_t2_x0 && _ldmx < 1442)      { if (_gc_ld.loadout_tab != 2) audio_play_sound(snd_page, 1, false); _gc_ld.loadout_tab = 2; _gc_ld.loadout_cursor = 0; }
             }
 
             if (_gc_ld.loadout_tab == 0) {

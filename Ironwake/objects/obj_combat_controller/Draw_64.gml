@@ -315,6 +315,13 @@ for (var _ei = 0; _ei < _ecnt; _ei++) {
             && _my_gui >= _ey && _my_gui <= _ey + _isp_h) {
             _inspect_target = _ec;
         }
+        // Touch (M 07-08 device test): tapping the enemy MODEL retargets, not
+        // just its HP bar - same living-enemy index the bar tap in Step sets.
+        // Fires on tap-RELEASE (gesture) so a drag over the cluster can't retarget.
+        if (input_device() == 2
+            && touch_tap_in(_ex - 15, _ey - 15, _ex + _isp_w + 15, _ey + _isp_h + 15)) {
+            selected_target = _espr_idx;
+        }
     }
 
     // Attack slide for the enemy that is currently attacking
@@ -813,6 +820,11 @@ if (instance_exists(obj_game_controller)) {
         draw_set_alpha(1.0);
 
         ui_draw_character_menu();
+        // Early exit skips ui_draw_touch_back at the bottom of this Draw, so pump
+        // the simulated-key releaser here or touch keys stay held for the whole
+        // overlay - the SECOND row tap then fires no Enter edge and the alloc
+        // goes deaf (M 07-08: "stayed on the stat screen ... never proceeded").
+        touch_sim_pump();
         exit;
     }
 }
@@ -936,6 +948,7 @@ if (show_loot_screen) {
     draw_set_valign(fa_top);
     draw_set_alpha(1.0);
     ui_draw_character_menu();
+    touch_sim_pump();   // early exit skips the bottom-of-Draw pump (see alloc note)
     exit;
 }
 
@@ -948,6 +961,7 @@ if (show_loot_screen) {
 if (!combat_over && consumable_overflow_pending()
     && array_length(combat_living_enemies(combat_state)) == 0) {
     ui_draw_consumable_overflow();
+    touch_sim_pump();   // early exit skips the bottom-of-Draw pump (see alloc note)
     exit;
 }
 
@@ -1157,6 +1171,7 @@ if (combat_over) {
             exit;
         }
 
+        touch_sim_pump();   // early exit skips the bottom-of-Draw pump (see alloc note)
         exit; // block normal R-key handler while popup is open
     }
 

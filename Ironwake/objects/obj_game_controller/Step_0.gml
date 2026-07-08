@@ -473,6 +473,9 @@ if (stash_mode_open) {
         stash_mode_index = 0;   // side is kept: tab-flipping in the stash column stays there
         audio_play_sound(snd_page, 1, false);
     }
+    // Touch (M 07-08): sideways swipe across the item columns flips the
+    // EQUIPMENT/CONSUMABLES tab - simulated Q/E into the handler above.
+    if (input_device() == 2) touch_swipe_tab(45, 249, 1875, 960);
     // nav_left/right = arrows AND A/D, like every other two-column screen.
     if (nav_left()) {
         stash_mode_side  = 0;

@@ -521,12 +521,22 @@ if (player_turn) {
         var _cmy = _cb_tap ? touch_tap_y() : (_cb_lp ? touch_lp_y() : device_mouse_y_to_gui(0));
 
         // Ability buttons: x=240+i*252, y=990-1065, w=240, h=75
+        // Touch two-step (M 07-08 device test: single tap-release still cast by
+        // accident coming out of a scroll): first tap only SELECTS/highlights
+        // the ability, tapping the selected ability again casts it. Desktop
+        // mouse keeps single-click cast - byte-identical for device 0/1.
         for (var _cbi = 0; _cbi < array_length(player.abilities); _cbi++) {
             var _cbx = 240 + _cbi * 252;
             if (_cmx >= _cbx && _cmx < _cbx+240 && _cmy >= 990 && _cmy < 1065) {
-                selected_ability = _cbi;
-                if (_cb_lp) touch_press(ord("V"));   // examine, don't cast
-                else        _should_cast = true;
+                if (_cb_lp) {
+                    selected_ability = _cbi;
+                    touch_press(ord("V"));   // examine, don't cast
+                } else if (_cb_tap && selected_ability != _cbi) {
+                    selected_ability = _cbi; // first tap: select only
+                } else {
+                    selected_ability = _cbi;
+                    _should_cast = true;     // second tap (or desktop click): cast
+                }
                 break;
             }
         }

@@ -2893,9 +2893,10 @@ function sable_brew_catalog() {
         { id:"goldfinger", name:"Goldfinger Elixir", effect:"gold_find_pot", value:7, desc:"Gold drops +7% until 2 bosses are slain",       gold_val:65, dust:30, gold:cha_price(45) },
         { id:"faerie",     name:"Faerie's Tear",     effect:"loot_find_pot", value:8, desc:"Loot drop chance +8% until 2 bosses are slain", gold_val:65, dust:35, gold:cha_price(50) },
         // Devil Wine (design 2026-07-04): the RELIABLE escape. Drunk from the floor
-        // map [G]: permanently lose 3 random stat points, extract with all run loot.
+        // map [G]: permanently lose 2 random stat points, extract with all run loot.
+        // (Toll was 3 at ship; M softened it 2026-07-08: "too strong of a loss".)
         // The Genie Lamp (rare elite/boss drop) is the free version of this bargain.
-        { id:"devil_wine", name:"Devil Wine", effect:"escape_wine", value:0, desc:"Drink on the floor map [G]: PERMANENTLY lose 3 random stat points and extract to camp with all your loot", gold_val:400, dust:50, gold:cha_price(1200) },
+        { id:"devil_wine", name:"Devil Wine", effect:"escape_wine", value:0, desc:"Drink on the floor map [G]: PERMANENTLY lose 2 random stat points and extract to camp with all your loot", gold_val:400, dust:50, gold:cha_price(1200) },
     ];
     // (Sable Companion perk applies below via the catalog wrapper.)
 }
@@ -7233,7 +7234,7 @@ function pet_row_label(pet) {
 function tutorial_catalog() {
     return [
         { id:"hub",        title:"The Ironwake Camp",   body:"This is your hub between runs. Visit the camp's merchants and trainers, manage gear and abilities, then approach the dungeon gate to descend. Anything you bank here carries between runs." },
-        { id:"loadout",    title:"Prepare to Descend",  body:"Before each run, equip your gear and choose which abilities and traits to bring. You can only take a limited set into the dungeon, so build around how you want to fight." },
+        { id:"loadout",    title:"Prepare to Descend",  body:"Before each run, equip your gear and choose which abilities and traits to bring. You can only take a limited set into the dungeon, so build around how you want to fight. Note the THREE TABS at the top - ABILITIES, TRAITS and COMPANION are picked separately, and it's easy to descend having forgotten your traits. Check all three before you commit." },
         { id:"ascendance", title:"Awakening Tiers",     body:"Higher Awakening tiers make enemies tougher but drop better, rarer loot. Raise the tier when you want more risk for more reward - start low and work up." },
         { id:"combat_ap",  title:"Action Points (AP)",  body:"Each turn you have 3 AP. Abilities cost AP to use; a basic attack is free. Spend your AP wisely, then end your turn to let the enemy act." },
         { id:"targeting",  title:"Choosing a Target",   body:"When several foes are present, Tab or click to pick who you hit. The glowing rune beneath an enemy marks your current target." },
@@ -7242,6 +7243,7 @@ function tutorial_catalog() {
         { id:"vex",        title:"Vex the Trainer",     body:"Vex teaches new abilities and traits for gold (and the occasional item). Learn abilities here, then slot them on the loadout screen before a run." },
         { id:"shrine",     title:"Altars",              body:"A shrine is an altar. A Blessing altar sells boons for tribute; a Cursed altar lets you take on a curse - a run-long penalty - in exchange for far better spoils. Choose how greedy you dare to be." },
         { id:"gold_risk",  title:"Gold at Risk",        body:"Gold you FIND during a run is at risk - die and you lose most of it (a quarter is returned as mercy). Gold banked before the run is always safe at camp. The number in brackets on your HUD is what you're gambling: extract to keep it all." },
+        { id:"escape_item", title:"A Way Out",          body:"You carry an escape item. On the floor map, press G (or tap the LAMP / WINE button) to use it: the Genie Lamp whisks you back to camp with ALL your loot, free. Devil Wine does the same - but drains 2 random stat points. WARNING: the Wine's toll is PERMANENT - those points are gone from your hero on every future run, not just this one. Cash out a greedy run before the dungeon takes it back." },
     ];
 }
 

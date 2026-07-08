@@ -126,14 +126,23 @@ function ui_draw_touch_back(_top = 108) {
     touch_sim_pump();
     if (input_device() != 2) return;
     var _ctx = __input_ctx();
+    // Event choice = forced (Esc is dead there); a close chip would promise an
+    // exit that can't happen, so draw nothing (M softlocked on it 07-08).
+    if (_ctx == "event") return;
     var _is_menu = (_ctx == "hub" || _ctx == "floor" || _ctx == "combat" || _ctx == "loot");
     var _s  = 78;
     var _x1 = GUI_W - _s - 24, _y1 = _top;
     var _x2 = GUI_W - 24,      _y2 = _top + _s;
-    draw_set_alpha(0.72); draw_set_color(make_color_rgb(14, 16, 24));
+    // Pressed-state: acknowledge the finger the moment it lands on the chip
+    // (no hover/key-click on glass - an unacknowledged tap reads as a miss).
+    var _bk_press = mouse_check_button(mb_left)
+        && device_mouse_x_to_gui(0) >= _x1 && device_mouse_x_to_gui(0) <= _x2
+        && device_mouse_y_to_gui(0) >= _y1 && device_mouse_y_to_gui(0) <= _y2;
+    draw_set_alpha(_bk_press ? 0.92 : 0.72);
+    draw_set_color(_bk_press ? make_color_rgb(52, 44, 26) : make_color_rgb(14, 16, 24));
     draw_rectangle(_x1, _y1, _x2, _y2, false);
     draw_set_alpha(1.0);
-    draw_set_color(make_color_rgb(150, 130, 90));
+    draw_set_color(_bk_press ? make_color_rgb(245, 195, 80) : make_color_rgb(150, 130, 90));
     draw_rectangle(_x1, _y1, _x2, _y2, true);
     if (_is_menu) {
         // three-bar menu glyph (drawn, not a font glyph - Castellar has no such char)
@@ -179,8 +188,30 @@ function ui_draw_touch_chips() {
         case "floor":
             array_push(_chips, { lbl: "JOURNAL", key: ord("J"), hot: journal_any_badge() });
             array_push(_chips, { lbl: "HERO",    key: ord("I"), hot: false });
-            array_push(_chips, { lbl: "LAMP",    key: ord("G"), hot: false });
-            array_push(_chips, { lbl: "EXTRACT", key: ord("E"), hot: false });
+            // Escape-item chip only when one is actually carried (mirrors the
+            // "[G] Use ..." keyboard hint; a dead LAMP button confused M 07-08).
+            // Named after the item so DEVIL WINE doesn't masquerade as a lamp.
+            if (variable_global_exists("consumable_inventory")) {
+                var _esc_lbl = "";
+                for (var _eci = 0; _eci < array_length(global.consumable_inventory); _eci++) {
+                    var _ect = global.consumable_inventory[_eci].effect_type;
+                    if (_ect == "escape_lamp") { _esc_lbl = "LAMP"; break; }   // lamp wins over wine
+                    if (_ect == "escape_wine" && _esc_lbl == "") _esc_lbl = "WINE";
+                }
+                if (_esc_lbl != "") array_push(_chips, { lbl: _esc_lbl, key: ord("G"), hot: false });
+            }
+            // EXTRACT only once the floor boss is dead - the E key is a no-op
+            // before that (M 07-08: "why is there an extract button?"). Mirrors
+            // the keyboard footer's [Defeat the boss first] gate.
+            var _fc_x = instance_exists(obj_floor_controller) ? instance_find(obj_floor_controller, 0) : noone;
+            if (_fc_x != noone) {
+                for (var _bci = 0; _bci < array_length(_fc_x.current_rooms); _bci++) {
+                    if (_fc_x.current_rooms[_bci].type == "boss" && _fc_x.current_rooms[_bci].cleared) {
+                        array_push(_chips, { lbl: "EXTRACT", key: ord("E"), hot: false });
+                        break;
+                    }
+                }
+            }
             break;
         case "board":
             array_push(_chips, { lbl: "KNUCKLEBONES", key: ord("K"), hot: false });
@@ -201,22 +232,59 @@ function ui_draw_touch_chips() {
     var _cx = GUI_CX - _tot / 2;
     var _cy = GUI_H - _ch_h - 9;
     draw_set_halign(fa_center); draw_set_valign(fa_middle);
+    var _pmx = device_mouse_x_to_gui(0), _pmy = device_mouse_y_to_gui(0);
+    var _pdn = mouse_check_button(mb_left);
     for (var _i = 0; _i < array_length(_chips); _i++) {
         var _c = _chips[_i];
         var _flash = _c.hot && ((current_time div 400) mod 2 == 0);
-        draw_set_alpha(0.82);
-        draw_set_color(make_color_rgb(14, 16, 24));
+        // Pressed-state: brighten while the finger is down on this chip so the
+        // tap is visibly acknowledged (no hover on glass).
+        var _press = _pdn && _pmx >= _cx && _pmx <= _cx + _c.w
+                          && _pmy >= _cy && _pmy <= _cy + _ch_h;
+        draw_set_alpha(_press ? 0.95 : 0.82);
+        draw_set_color(_press ? make_color_rgb(52, 44, 26) : make_color_rgb(14, 16, 24));
         draw_rectangle(_cx, _cy, _cx + _c.w, _cy + _ch_h, false);
         draw_set_alpha(1.0);
-        draw_set_color(_flash ? make_color_rgb(245, 195, 80) : make_color_rgb(110, 100, 75));
+        draw_set_color((_flash || _press) ? make_color_rgb(245, 195, 80) : make_color_rgb(110, 100, 75));
         draw_rectangle(_cx, _cy, _cx + _c.w, _cy + _ch_h, true);
-        draw_set_color(_flash ? make_color_rgb(245, 195, 80) : make_color_rgb(215, 200, 165));
+        draw_set_color((_flash || _press) ? make_color_rgb(245, 195, 80) : make_color_rgb(215, 200, 165));
         draw_text(_cx + _c.w / 2, _cy + _ch_h / 2 + 1, _c.lbl);
         if (touch_tapped(_cx, _cy, _cx + _c.w, _cy + _ch_h)) touch_press(_c.key);
         _cx += _c.w + _gap;
     }
     draw_set_halign(fa_left); draw_set_valign(fa_top);
     draw_set_color(c_white); draw_set_font(-1);
+}
+
+// ---------------------------------------------------------------------------
+// ui_draw_touch_continue(cx, y) - framed CONTINUE button for touch, replacing
+// "Press Enter to continue" prompt text (M 07-08: "should be a bordered bigger
+// button than ambiguous text"). Draws a 420x72 gold-framed button with the
+// pressed-state flash; tapping it fires a simulated Enter. Most owning popups
+// also close on tap-anywhere - the button is the visible control either way.
+// Caller is responsible for gating on input_device() == 2.
+// ---------------------------------------------------------------------------
+function ui_draw_touch_continue(_cx, _cy, _lbl = "CONTINUE") {
+    var _w  = 420, _h = 72;
+    var _x1 = _cx - _w / 2, _y1 = _cy;
+    var _x2 = _cx + _w / 2, _y2 = _cy + _h;
+    var _pr = mouse_check_button(mb_left)
+        && device_mouse_x_to_gui(0) >= _x1 && device_mouse_x_to_gui(0) <= _x2
+        && device_mouse_y_to_gui(0) >= _y1 && device_mouse_y_to_gui(0) <= _y2;
+    draw_set_alpha(_pr ? 0.95 : 0.85);
+    draw_set_color(_pr ? make_color_rgb(52, 44, 26) : make_color_rgb(20, 22, 34));
+    draw_rectangle(_x1, _y1, _x2, _y2, false);
+    draw_set_alpha(1.0);
+    draw_set_color(_pr ? make_color_rgb(245, 195, 80) : make_color_rgb(150, 130, 90));
+    draw_rectangle(_x1, _y1, _x2, _y2, true);
+    draw_rectangle(_x1 + 3, _y1 + 3, _x2 - 3, _y2 - 3, true);
+    draw_set_font(fnt_ui);
+    draw_set_halign(fa_center); draw_set_valign(fa_middle);
+    draw_set_color(_pr ? make_color_rgb(245, 195, 80) : make_color_rgb(228, 215, 180));
+    draw_text(_cx, (_y1 + _y2) / 2 + 1, _lbl);
+    draw_set_halign(fa_left); draw_set_valign(fa_top);
+    draw_set_color(c_white); draw_set_font(-1);
+    if (touch_tapped(_x1, _y1, _x2, _y2)) touch_press(vk_enter);
 }
 
 // draw_text_ext_outline(x, y, str, sep, w, [outline_col], [fill_col])

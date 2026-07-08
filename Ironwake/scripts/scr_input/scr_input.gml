@@ -227,6 +227,10 @@ function __input_ctx() {
     if (instance_exists(obj_floor_controller)) {
         var _fc = instance_find(obj_floor_controller, 0);
         if (_fc.showing_shrine) return "shrine";
+        // Event choice overlay is a FORCED choice (Esc is dead until resolved):
+        // floor chips/hotkeys must not bleed into it (M 07-08: LAMP chip drew
+        // over the Whispering Mirror and the X chip promised an exit it can't do).
+        if (_fc.showing_event_choice) return "event";
         return "floor";
     }
     if (instance_exists(obj_hub_controller))   return "hub";
@@ -442,7 +446,7 @@ function touch_gesture_update() {
     if (!variable_global_exists("tg")) {
         global.tg = { held: false, ox: 0, oy: 0, px: 0, py: 0, dx: 0, dy: 0,
                       drag: false, t0: 0, tap: false, tapx: 0, tapy: 0,
-                      lp: false, lp_done: false };
+                      lp: false, lp_done: false, axis: "", sw_done: false };
     }
     var _g = global.tg;
     _g.tap = false;
@@ -454,6 +458,7 @@ function touch_gesture_update() {
     var _my = device_mouse_y_to_gui(0);
     if (mouse_check_button_pressed(mb_left)) {
         _g.held = true;  _g.drag = false;  _g.lp_done = false;
+        _g.axis = "";    _g.sw_done = false;
         _g.ox = _mx;  _g.oy = _my;  _g.px = _mx;  _g.py = _my;
         _g.t0 = current_time;
         global.touch_drag_acc = 0;
@@ -461,7 +466,13 @@ function touch_gesture_update() {
         _g.dx = _mx - _g.px;
         _g.dy = _my - _g.py;
         _g.px = _mx;  _g.py = _my;
-        if (!_g.drag && point_distance(_g.ox, _g.oy, _mx, _my) > 27) _g.drag = true;
+        if (!_g.drag && point_distance(_g.ox, _g.oy, _mx, _my) > 27) {
+            _g.drag = true;
+            // Dominant axis at classification time: a horizontal drag is a tab
+            // swipe candidate and must NOT feed vertical row-scroll (and vice
+            // versa) - otherwise a sloppy swipe also steps the list.
+            _g.axis = (abs(_mx - _g.ox) >= abs(_my - _g.oy)) ? "h" : "v";
+        }
         if (!_g.drag && !_g.lp_done && current_time - _g.t0 >= 450) {
             _g.lp      = true;
             _g.lp_done = true;
@@ -496,12 +507,13 @@ function touch_lp_in(_x1, _y1, _x2, _y2) {
          && global.tg.oy >= _y1 && global.tg.oy <= _y2);
 }
 
-// Per-frame vertical drag delta, only while a drag that STARTED inside the
-// rect is in progress (so a drag can't scroll a list it didn't begin on).
+// Per-frame vertical drag delta, only while a VERTICAL drag that STARTED
+// inside the rect is in progress (so a drag can't scroll a list it didn't
+// begin on, and a horizontal tab-swipe can't leak row steps).
 function touch_drag_dy(_x1, _y1, _x2, _y2) {
     if (!variable_global_exists("tg")) return 0;
     var _g = global.tg;
-    if (!_g.held || !_g.drag) return 0;
+    if (!_g.held || !_g.drag || _g.axis != "v") return 0;
     if (_g.ox < _x1 || _g.ox > _x2 || _g.oy < _y1 || _g.oy > _y2) return 0;
     return _g.dy;
 }
@@ -509,11 +521,30 @@ function touch_drag_dy(_x1, _y1, _x2, _y2) {
 // Drag-to-cursor: converts vertical drag inside a rect into simulated arrow
 // presses (one row per _pitch px, max one per frame). The consumer's EXISTING
 // nav handlers do the rest, including their edge-scroll - zero list rewrites.
+// Direction: these are CURSOR lists (the highlight moves, the content mostly
+// doesn't), so finger down = cursor down - M device-tested the content-follows-
+// finger mapping 07-08 and called it inverted.
 function touch_drag_rows(_x1, _y1, _x2, _y2, _pitch) {
     var _dy = touch_drag_dy(_x1, _y1, _x2, _y2);
     if (_dy == 0) return;
     if (!variable_global_exists("touch_drag_acc")) global.touch_drag_acc = 0;
     global.touch_drag_acc += _dy;
-    if (global.touch_drag_acc >= _pitch)       { touch_press(vk_up);   global.touch_drag_acc -= _pitch; }
-    else if (global.touch_drag_acc <= -_pitch) { touch_press(vk_down); global.touch_drag_acc += _pitch; }
+    if (global.touch_drag_acc >= _pitch)       { touch_press(vk_down); global.touch_drag_acc -= _pitch; }
+    else if (global.touch_drag_acc <= -_pitch) { touch_press(vk_up);   global.touch_drag_acc += _pitch; }
+}
+
+// Horizontal swipe -> tab flip (M 07-08 device test: "swiping sideways to
+// toggle between tabs would be helpful"). Fires ONCE per gesture when a
+// horizontal-axis drag that began inside the rect travels 120px: simulated
+// Q/E so each screen's EXISTING input_tab_prev/next handler flips the tab.
+// Phone convention: swipe LEFT reveals the tab to the RIGHT (next).
+function touch_swipe_tab(_x1, _y1, _x2, _y2) {
+    if (!variable_global_exists("tg")) return;
+    var _g = global.tg;
+    if (!_g.held || !_g.drag || _g.axis != "h" || _g.sw_done) return;
+    if (_g.ox < _x1 || _g.ox > _x2 || _g.oy < _y1 || _g.oy > _y2) return;
+    var _tdx = _g.px - _g.ox;
+    if (abs(_tdx) < 120) return;
+    _g.sw_done = true;
+    touch_press((_tdx < 0) ? ord("E") : ord("Q"));
 }
