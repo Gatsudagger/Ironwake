@@ -270,7 +270,9 @@ draw_text(_alloc_cx, _box_y + _box_h + 21, _stat_descs[selected_stat]);
 
 // Allocation key hints below the stat boxes
 draw_set_color(make_color_rgb(140, 145, 155));
-draw_text_outline(_alloc_cx, _box_y + _box_h + 51, "Enter / Space: Add point        X: Remove point");
+draw_text_outline(_alloc_cx, _box_y + _box_h + 51, (input_device() == 1)
+    ? "A: Add point        LT: Remove point"
+    : "Enter / Space: Add point        X: Remove point");
 
 
 // -----------------------------------------------------------------------------

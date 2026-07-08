@@ -490,7 +490,7 @@ if (player_turn && !combat_over) {
     draw_set_font(fnt_ui);
     draw_set_halign(fa_center);
     draw_set_color(_ap_col);
-    draw_text(960, 954, "T: End Turn   " + string(player.energy) + " AP remaining");
+    draw_text(960, 954, ((input_device() == 1) ? "RT: End Turn   " : "T: End Turn   ") + string(player.energy) + " AP remaining");
     draw_set_font(-1);
     draw_set_halign(fa_left);
 }
@@ -539,7 +539,7 @@ if (player_turn && !combat_over) {
     draw_set_font(fnt_ui_small);
     draw_set_halign(fa_center);
     draw_set_valign(fa_middle);
-    var _title = "[ C ] ITEMS";
+    var _title = (input_device() == 1) ? "[ LT ] ITEMS" : "[ C ] ITEMS";
     draw_set_color(_tcol);
     draw_text(_cx, _iby + _ibh / 2 - 12, _title);
     draw_set_color(_scol);
@@ -1060,7 +1060,9 @@ if (combat_over) {
         draw_text(1254, 579, "Floor " + string(global.current_floor + 1) + "  *  Harder enemies");
 
         draw_set_color(make_color_rgb(70, 80, 110));
-        draw_text_outline(_cx, 645, "E: Extract     Enter / Space: Continue to next floor");
+        draw_text_outline(_cx, 645, (input_device() == 1)
+            ? "RT: Extract     A: Continue to next floor"
+            : "E: Extract     Enter / Space: Continue to next floor");
 
         draw_set_font(-1);
         draw_set_halign(fa_left);
@@ -1192,7 +1194,7 @@ if (instance_exists(obj_game_controller)) {
 // if both somehow coexist (they don't - the Esc guard closes this first).
 if (player_turn && !combat_over && ability_detail_open) {
     var _ad_idx = clamp(selected_ability, 0, array_length(player.abilities) - 1);
-    ui_draw_ability_detail(player.abilities[_ad_idx], "V");
+    ui_draw_ability_detail(player.abilities[_ad_idx], (input_device() == 1) ? "R3" : "V");
 }
 
 // Pause / Esc menu + its Settings sub-screen (combat doesn't otherwise host the

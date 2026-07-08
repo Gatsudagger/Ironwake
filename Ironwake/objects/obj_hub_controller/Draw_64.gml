@@ -469,7 +469,7 @@ if (selected_npc < array_length(_aff_ids)) {
     draw_text(_ddx, _ddy + 100, "Bond: " + affinity_tier_name(_aff_id));
     if (_aff_rdy) {
         draw_set_color(c_aqua);
-        draw_text(_ddx + 200, _ddy + 100, "[B] Deepen bond");
+        draw_text(_ddx + 200, _ddy + 100, (input_device() == 1) ? "[R3] Deepen bond" : "[B] Deepen bond");
     } else if (_aff_tier < 4) {
         // thin progress bar toward the next gate
         var _bx = _ddx, _by = _ddy + 124, _bw = 320, _bh = 8;
@@ -676,14 +676,20 @@ draw_set_halign(fa_center);
 draw_set_valign(fa_bottom);
 draw_set_font(fnt_ui_small);
 draw_set_color(c_gray);
-var _foot_txt = "W/S: Navigate   Enter / Space: Interact   J: Journal (Quests / Codex / Bestiary)   H: History   T: Stash   P: Upgrade   O: Settings";
+// Chunk 7b: on a gamepad the footer shows the pad chips instead (same layout;
+// see __input_pad_hotkey_map in scr_input for the M-approved assignments).
+var _hub_pad_ui = (input_device() == 1);
+var _foot_txt = _hub_pad_ui
+    ? "D-Pad: Navigate   A: Interact   LT: Journal (Quests / Codex / Bestiary)   Y: History   RT: Stash   L3: Upgrade   Select: Settings"
+    : "W/S: Navigate   Enter / Space: Interact   J: Journal (Quests / Codex / Bestiary)   H: History   T: Stash   P: Upgrade   O: Settings";
 draw_text_outline(GUI_CX, 1073, _foot_txt);
 // Unread-Journal cue: overdraw the "J: Journal" segment in flashing gold (M 2026-07-04:
 // the old floating pulse dot read as disjoint clutter). Alpha pulse over the same
 // pixels; same font/valign as the footer so it registers exactly.
 if (journal_any_badge()) {
-    var _jseg_pre = "W/S: Navigate   Enter / Space: Interact   ";
-    var _jseg     = "J: Journal";
+    var _jseg_pre = _hub_pad_ui ? "D-Pad: Navigate   A: Interact   "
+                                : "W/S: Navigate   Enter / Space: Interact   ";
+    var _jseg     = _hub_pad_ui ? "LT: Journal" : "J: Journal";
     var _jb_x = GUI_CX - string_width(_foot_txt) / 2 + string_width(_jseg_pre);
     draw_set_halign(fa_left);
     draw_set_alpha(0.55 + 0.45 * sin(current_time / 300));
@@ -1916,7 +1922,7 @@ if (instance_exists(obj_game_controller)) {
 
             // --- Tab ability-detail popup, drawn over the loadout (P7) ---
             if (_gc_ov.ability_detail_open && _gc_ov.loadout_cursor < _ov_pool_sz) {
-                ui_draw_ability_detail(_ov_pool[_gc_ov.loadout_cursor], "Tab", _gc_ov.ability_detail_scroll);
+                ui_draw_ability_detail(_ov_pool[_gc_ov.loadout_cursor], (input_device() == 1) ? "Y" : "Tab", _gc_ov.ability_detail_scroll);
             }
 
             // --- Mastery pick modal (expression #2), over everything on this tab ---
@@ -2368,7 +2374,7 @@ if (instance_exists(obj_game_controller)) {
                     draw_set_color(make_color_rgb(110, 96, 150));
                     draw_rectangle(_gx0, _sty0, _gx1, _sty1, true);
                     draw_set_font(fnt_ui_small); draw_set_color(make_color_rgb(170, 150, 220));
-                    draw_text(_gx0 + 14, _sty0 + 12, "STANCE   [B] change");
+                    draw_text(_gx0 + 14, _sty0 + 12, (input_device() == 1) ? "STANCE   [RT] change" : "STANCE   [B] change");
                     draw_set_font(fnt_ui); draw_set_color(make_color_rgb(222, 214, 240));
                     draw_text(_gx0 + 14, _sty0 + 46, pet_stance_label(_hst));
                     draw_set_font(fnt_ui_small); draw_set_color(make_color_rgb(150, 150, 175));

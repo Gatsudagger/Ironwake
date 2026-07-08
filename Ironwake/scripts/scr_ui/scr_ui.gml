@@ -41,7 +41,7 @@ function draw_text_outline(x, y, str, outline_col = c_black, fill_col = undefine
 // first ":" (parenthesised asides stay all-dim). Sets fnt_ui_small and leaves
 // halign fa_left. Honors the caller's valign.
 // ---------------------------------------------------------------------------
-function ui_draw_key_legend(cx, y, txt, label_col = undefined) {
+function ui_draw_key_legend(cx, y, txt, label_col = undefined, translate = true) {
     if (label_col == undefined) label_col = make_color_rgb(150, 158, 182);
     var _key_col = make_color_rgb(255, 205, 90);
     draw_set_font(fnt_ui_small);
@@ -63,22 +63,37 @@ function ui_draw_key_legend(cx, y, txt, label_col = undefined) {
     if (_start <= _len) array_push(_segs, string_copy(txt, _start, _len - _start + 1));
 
     // Split each segment into key / label; measure for centring.
-    var _parts = [];
-    var _gap   = 34;
-    var _total = 0;
+    // Gamepad (chunk 7b): key tokens are translated to pad text chips via
+    // input_legend_key (scr_input); segments whose action has no pad binding
+    // are hidden. Keyboard/mouse rendering is byte-identical to before.
+    // Callers that already built a pad string pass translate = false.
+    var _pad_ui = (input_device() == 1) && translate;
+    var _parts  = [];
+    var _gap    = 34;
+    var _total  = 0;
     for (var _s = 0; _s < array_length(_segs); _s++) {
         var _seg = _segs[_s];
         var _key = "", _lab = _seg;
+        var _bracketed = false;
         if (string_char_at(_seg, 1) == "[") {
             var _cb = string_pos("]", _seg);
-            if (_cb > 0) { _key = string_copy(_seg, 1, _cb); _lab = string_delete(_seg, 1, _cb); }
+            if (_cb > 0) { _key = string_copy(_seg, 1, _cb); _lab = string_delete(_seg, 1, _cb); _bracketed = true; }
         } else if (string_char_at(_seg, 1) != "(") {
             var _cp = string_pos(":", _seg);
             if (_cp > 0 && _cp <= 16) { _key = string_copy(_seg, 1, _cp); _lab = string_delete(_seg, 1, _cp); }
         }
+        if (_pad_ui && _key != "") {
+            var _kin = _bracketed
+                ? string_copy(_key, 2, string_length(_key) - 2)    // strip [ ]
+                : string_copy(_key, 1, string_length(_key) - 1);   // strip trailing :
+            var _pk = input_legend_key(_kin);
+            if (_pk == "") continue;   // no pad equivalent - hide the segment
+            _key = _bracketed ? ("[" + _pk + "]") : (_pk + ":");
+        }
         array_push(_parts, { key: _key, lab: _lab });
-        _total += string_width(_key) + string_width(_lab) + ((_s > 0) ? _gap : 0);
+        _total += string_width(_key) + string_width(_lab);
     }
+    _total += _gap * max(0, array_length(_parts) - 1);
 
     var _x = cx - _total / 2;
     for (var _p = 0; _p < array_length(_parts); _p++) {
@@ -943,6 +958,49 @@ function ui_input_blocked() {
     if (variable_instance_exists(_gc, "tavern_board_open") && _gc.tavern_board_open) return true; // Tavern Requests board (Phase 4b)
     if (variable_instance_exists(_gc, "kb_open") && _gc.kb_open) return true;                     // Knucklebones (expression #1)
     return false;
+}
+
+// ---------------------------------------------------------------------------
+// bairc_pad_menu_items(pet, level)
+// Entries for the gamepad action submenu at Bairc (chunk 7b). Level 0 lists the
+// highlighted creature's actions; level 1 lists the owned feeds. Each entry is
+// { label, tag } - the tag is the synthetic hotkey injected on pick ("bairc:N"),
+// consumed by the unchanged letter handlers in obj_game_controller/Step.
+// "feed_menu" descends a level; "" is a disabled info row. Shared by the Step
+// handler (counts/tags) and the Draw modal (labels) so they can never disagree.
+// ---------------------------------------------------------------------------
+function bairc_pad_menu_items(_pet, _level) {
+    var _items = [];
+    if (_level == 1) {
+        var _owned = pet_feed_owned_list();
+        var _fmax  = min(6, array_length(_owned));   // matches the 1-6 keyboard range
+        for (var _i = 0; _i < _fmax; _i++) {
+            var _cnt = pet_feed_pouch_count(_owned[_i].id);
+            array_push(_items, { label: _owned[_i].name + "  x" + string(_cnt),
+                                 tag:   "bairc:feed" + string(_i + 1) });
+        }
+        if (array_length(_items) == 0) {
+            array_push(_items, { label: "No feed on hand - visit Petra", tag: "" });
+        }
+        return _items;
+    }
+    if (_pet.is_egg && !pet_egg_identified(_pet)) {
+        array_push(_items, { label: "Identify Egg (" + string(pet_egg_identify_cost()) + "g)", tag: "bairc:I" });
+    } else if (_pet.is_egg) {
+        array_push(_items, { label: "Hatch", tag: "bairc:confirm" });
+    } else {
+        array_push(_items, { label: "Set Active Companion", tag: "bairc:confirm" });
+        array_push(_items, { label: "Feed...", tag: "feed_menu" });
+        if (pet_capstone_can_pick(_pet) || pet_splash_can_pick(_pet)) {
+            array_push(_items, { label: "Choose Its Gift", tag: "bairc:G" });
+        }
+        if (pet_corr_state(_pet) == "pushing") {
+            array_push(_items, { label: "Cure Corruption", tag: "bairc:C" });
+        }
+        array_push(_items, { label: pet_named(_pet) ? "Rename (20 dust)" : "Name", tag: "bairc:N" });
+    }
+    array_push(_items, { label: "Donate to the Garden", tag: "bairc:R" });
+    return _items;
 }
 
 // ---------------------------------------------------------------------------
@@ -2633,16 +2691,23 @@ function ui_draw_bairc_screen() {
     // [G] only appears when the selected pet actually owes a pick, with the exact
     // word for it - keeps the footer short (it was crowding the panel) and clear
     // (the old always-on "[G] Its Gift" read as nonsense out of context).
-    var _bfoot = "[W/S] Browse  [1-6] Feed";
-    if (_n > 0) {
-        var _fp = _roster[_cur];
-        if (is_struct(_fp) && !_fp.is_egg) {
-            if (variable_struct_exists(_fp, "capstone_pending") && _fp.capstone_pending)   _bfoot += "  [G] Capstone";
-            else if (variable_struct_exists(_fp, "splash_pending") && _fp.splash_pending)  _bfoot += "  [G] Splash";
+    // Chunk 7b: on a gamepad the letters live in the A action submenu, so the
+    // footer collapses to the four real buttons instead of a wall of dead keys.
+    var _bfoot;
+    if (input_device() == 1) {
+        _bfoot = "[D-Pad] Browse  [A] Actions  [RT] Gift Bairc  [Y] Details  [B] Leave";
+    } else {
+        _bfoot = "[W/S] Browse  [1-6] Feed";
+        if (_n > 0) {
+            var _fp = _roster[_cur];
+            if (is_struct(_fp) && !_fp.is_egg) {
+                if (variable_struct_exists(_fp, "capstone_pending") && _fp.capstone_pending)   _bfoot += "  [G] Capstone";
+                else if (variable_struct_exists(_fp, "splash_pending") && _fp.splash_pending)  _bfoot += "  [G] Splash";
+            }
         }
+        _bfoot += "  [F] Gift Bairc  [N] Name  [C] Cure  [R] Donate  [Tab] Details  [Enter] Hatch/Active  [Esc] Leave";
     }
-    _bfoot += "  [F] Gift Bairc  [N] Name  [C] Cure  [R] Donate  [Tab] Details  [Enter] Hatch/Active  [Esc] Leave";
-    ui_draw_key_legend((_x1 + 1500) / 2, _y2 - 42, _bfoot);
+    ui_draw_key_legend((_x1 + 1500) / 2, _y2 - 42, _bfoot, undefined, false);
     draw_set_halign(fa_left); draw_set_valign(fa_top);
     draw_set_color(c_white);
     draw_set_font(-1);
@@ -2726,6 +2791,49 @@ function ui_draw_bairc_screen() {
         draw_set_font(fnt_ui_small); draw_set_color(make_color_rgb(150, 160, 190));
         draw_text(GUI_CX, _ny1 + 208, (pet_named(_np) ? "Rename: 20 dust" : "First name: free")
             + "        [Enter] Confirm     [Esc] Cancel");
+        draw_set_halign(fa_left); draw_set_valign(fa_top); draw_set_color(c_white); draw_set_font(-1);
+    }
+
+    // Gamepad action submenu (chunk 7b): the highlighted creature's actions,
+    // opened with A on a roster row (obj_game_controller/Step owns the input).
+    // Level 1 is the feed list. Drawn last so it tops the tooltips.
+    if (variable_instance_exists(_gc, "bairc_pad_menu_open") && _gc.bairc_pad_menu_open && _n > 0) {
+        var _pmp = _roster[_cur];
+        var _pmi = bairc_pad_menu_items(_pmp, _gc.bairc_pad_menu_level);
+        var _pmn = array_length(_pmi);
+        var _pmw = 480;
+        var _pmh = 108 + _pmn * 48;
+        var _pmx = GUI_CX - _pmw / 2;
+        var _pmy = GUI_CY - _pmh / 2;
+        draw_set_alpha(0.55); draw_set_color(c_black);
+        draw_rectangle(0, 0, GUI_W, GUI_H, false);
+        draw_set_alpha(0.96); draw_set_color(make_color_rgb(14, 16, 24));
+        draw_rectangle(_pmx, _pmy, _pmx + _pmw, _pmy + _pmh, false);
+        draw_set_alpha(1.0);
+        ui_draw_gothic_frame(_pmx, _pmy, _pmx + _pmw, _pmy + _pmh, 24);
+        draw_set_halign(fa_center); draw_set_valign(fa_top);
+        draw_set_font(fnt_ui); draw_set_color(make_color_rgb(228, 205, 140));
+        draw_text(GUI_CX, _pmy + 20, (_gc.bairc_pad_menu_level == 1)
+            ? ("Feed " + (_pmp.is_egg ? "the egg" : _pmp.name))
+            : (_pmp.is_egg ? (_pmp.name + " Egg") : _pmp.name));
+        for (var _pr = 0; _pr < _pmn; _pr++) {
+            var _pit    = _pmi[_pr];
+            var _pry    = _pmy + 62 + _pr * 48;
+            var _is_cur = (_pr == _gc.bairc_pad_menu_cursor);
+            if (_is_cur) {
+                draw_set_color(make_color_rgb(46, 42, 28));
+                draw_rectangle(_pmx + 18, _pry - 6, _pmx + _pmw - 18, _pry + 36, false);
+                draw_set_color(make_color_rgb(255, 224, 120));
+                draw_rectangle(_pmx + 18, _pry - 6, _pmx + _pmw - 18, _pry + 36, true);
+            }
+            draw_set_color((_pit.tag == "") ? make_color_rgb(110, 114, 128)
+                          : (_is_cur ? c_white : make_color_rgb(200, 208, 222)));
+            draw_text(GUI_CX, _pry, _pit.label);
+        }
+        draw_set_font(fnt_ui_small); draw_set_color(make_color_rgb(150, 158, 182));
+        ui_draw_key_legend(GUI_CX, _pmy + _pmh - 34,
+            (_gc.bairc_pad_menu_level == 1) ? "[A] Feed  [B] Back" : "[A] Select  [B] Close",
+            undefined, false);
         draw_set_halign(fa_left); draw_set_valign(fa_top); draw_set_color(c_white); draw_set_font(-1);
     }
 }

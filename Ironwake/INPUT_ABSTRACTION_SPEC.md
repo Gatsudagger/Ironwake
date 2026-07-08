@@ -43,6 +43,35 @@ Design rules:
 7. Gamepad backend + glyph footers + Steam Input config.
 8. (Android phase) touch backend + on-screen buttons from legends + 20:9 safe areas.
 
+## Chunk 7b - contextual pad hotkeys + device-aware legends (shipped 2026-07-07)
+M-approved via scoping questions: curated per-screen table, text-chip glyphs, XInput +
+Steam default template (no Steam Input SDK work), action submenu for over-subscribed
+screens. Start/Select assignment per M: **Start = Character Menu** ("players associate
+Start with in-game menus"), **Select = Settings**.
+
+- `__input_ctx()` (scr_input) derives the owning screen from controller/gc state each
+  call - no call-site changes; a wrong context can only mis-route a PAD button.
+- `__input_pad_hotkey_map()` - the curated table. Uniform rule: an action keeps its
+  button everywhere it exists. Journal=LT, Char Menu=Start, Settings=Select, Bond-Ask=R3,
+  Gift=RT, Extract=RT. Hub: Stash=RT, History=Y, Upgrade=L3. Combat: End Turn=RT,
+  Consumables=LT, Ability Detail=R3 (Y = target cycle via input_detail). Board: KB=RT,
+  High Table=LT, Reroll=R3. Shrine pay: X/Y/RT = gold/dust/item. Two chars may share a
+  button in one context only when their handlers are tab-exclusive (loadout M/B, char-menu
+  T/U, shop R/C).
+- Legends: `ui_draw_key_legend` translates key tokens on pad via `input_legend_key`
+  (W/S->D-Pad, Enter->A, Space->X, Esc->B, Tab->Y, Q/E->LB/RB, letters via the ctx map;
+  unmapped segments hide). Pre-built pad strings pass `translate = false`. Raw-drawn
+  footers (hub main+J-flash, combat End Turn/loot/ITEMS, char-select alloc, bond/stance
+  chips) got device branches.
+- **Bairc pad action submenu** (M: "pressing confirm goes into the list"): pad-A on a
+  roster row opens Set Active/Hatch (first entry), Feed... (level-1 owned-feed list),
+  Identify, Gift pick, Cure (when pushing), Name, Donate. Picks call `input_inject`
+  with a namespaced tag ("bairc:N") consumed by the UNCHANGED letter handlers via
+  `input_inject_take` next step (100ms expiry). Keyboard Enter keeps direct behavior
+  (device check routes). This is the reusable pattern for any future over-subscribed
+  screen and previews the touch action sheet.
+
 ## Non-goals now
 Key REMAP ui (near-free later once everything routes through scr_input), touch backend
-implementation (Android phase), Steam Deck verification checklist (needs gamepad done).
+implementation (Android phase - see ANDROID_PORT_PLAN.md), Steam Input Action Set SDK
+integration (default Steam Input template suffices; can be added post-EA).

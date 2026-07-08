@@ -1581,6 +1581,37 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open) {
         exit;
     }
 
+    // Gamepad action submenu (chunk 7b, M 2026-07-07: "pressing confirm goes into
+    // the list and you select there"): opened by pad-A on a roster row (below).
+    // Picking an entry injects a namespaced synthetic hotkey ("bairc:N") that the
+    // UNCHANGED letter handlers further down consume on the next step - keyboard
+    // behavior is untouched. Level 1 lists the owned feeds (Feed... entry).
+    if (bairc_pad_menu_open) {
+        if (_bp_n == 0) { bairc_pad_menu_open = false; exit; }
+        var _pm_pet   = global.pet_roster[clamp(bairc_cursor, 0, _bp_n - 1)];
+        var _pm_items = bairc_pad_menu_items(_pm_pet, bairc_pad_menu_level);
+        var _pm_n     = array_length(_pm_items);
+        bairc_pad_menu_cursor = clamp(bairc_pad_menu_cursor, 0, max(0, _pm_n - 1));
+        if (nav_up())   bairc_pad_menu_cursor = wrap_index(bairc_pad_menu_cursor - 1, _pm_n);
+        if (nav_down()) bairc_pad_menu_cursor = wrap_index(bairc_pad_menu_cursor + 1, _pm_n);
+        if (input_cancel() || input_back()) {
+            if (bairc_pad_menu_level == 1) { bairc_pad_menu_level = 0; bairc_pad_menu_cursor = 0; }
+            else bairc_pad_menu_open = false;
+            exit;
+        }
+        if ((input_confirm() || input_confirm_alt()) && _pm_n > 0) {
+            var _pm_pick = _pm_items[bairc_pad_menu_cursor];
+            if (_pm_pick.tag == "feed_menu") {
+                bairc_pad_menu_level  = 1;
+                bairc_pad_menu_cursor = 0;
+            } else if (_pm_pick.tag != "") {
+                input_inject(_pm_pick.tag);
+                bairc_pad_menu_open = false;
+            }
+        }
+        exit;
+    }
+
     // Tab pet-kit detail popup: while up, only Tab/Esc (close) - swallow all else.
     if (bairc_detail_open) {
         if (input_detail() || input_cancel()) bairc_detail_open = false;
@@ -1602,7 +1633,7 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open) {
         var _bp = global.pet_roster[bairc_cursor];
         // I: identify a mysterious egg (paid). Until identified, the egg can't hatch
         // and its species/type read "??" (design 2026-07-04).
-        if (input_hotkey("I") && _bp.is_egg && !pet_egg_identified(_bp)) {
+        if ((input_hotkey("I") || input_inject_take("bairc:I")) && _bp.is_egg && !pet_egg_identified(_bp)) {
             var _id_cost = pet_egg_identify_cost();
             if (global.gold >= _id_cost) {
                 global.gold -= _id_cost;
@@ -1616,7 +1647,15 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open) {
                 bairc_notification = "Identifying costs " + string(_id_cost) + "g - you're short.";
             }
         }
-        if (input_confirm() || input_confirm_alt()) {
+        // Chunk 7b: on a gamepad, A opens the action submenu instead of the direct
+        // set-active/hatch (which becomes the menu's first entry, tag "bairc:confirm").
+        // Keyboard Enter/Space keep their direct behavior - the device check routes.
+        var _bc_conf = input_confirm() || input_confirm_alt();
+        if (_bc_conf && input_device() == 1) {
+            bairc_pad_menu_open   = true;
+            bairc_pad_menu_level  = 0;
+            bairc_pad_menu_cursor = 0;
+        } else if (_bc_conf || input_inject_take("bairc:confirm")) {
             if (_bp.is_egg && !pet_egg_identified(_bp)) {
                 bairc_notification = "Bairc shakes his head - identify it first ([I], "
                     + string(pet_egg_identify_cost()) + "g). No telling what would crawl out.";
@@ -1636,12 +1675,12 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open) {
         // pet - no gold here. Feed FILLS the growth bar; an active run still evolves it.
         var _owned    = pet_feed_owned_list();
         var _feed_key = -1;
-        if      (input_hotkey("1")) _feed_key = 0;
-        else if (input_hotkey("2")) _feed_key = 1;
-        else if (input_hotkey("3")) _feed_key = 2;
-        else if (input_hotkey("4")) _feed_key = 3;
-        else if (input_hotkey("5")) _feed_key = 4;
-        else if (input_hotkey("6")) _feed_key = 5;
+        if      (input_hotkey("1") || input_inject_take("bairc:feed1")) _feed_key = 0;
+        else if (input_hotkey("2") || input_inject_take("bairc:feed2")) _feed_key = 1;
+        else if (input_hotkey("3") || input_inject_take("bairc:feed3")) _feed_key = 2;
+        else if (input_hotkey("4") || input_inject_take("bairc:feed4")) _feed_key = 3;
+        else if (input_hotkey("5") || input_inject_take("bairc:feed5")) _feed_key = 4;
+        else if (input_hotkey("6") || input_inject_take("bairc:feed6")) _feed_key = 5;
         if (_feed_key >= 0) {
             if (_feed_key >= array_length(_owned)) {
                 if (!_bp.is_egg && pet_feed_pouch_total() <= 0)
@@ -1662,7 +1701,7 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open) {
 
         // C: cure a pushed corrupted pet (keeps the gains so far, drops the debuff,
         // forfeits the grand ability).
-        if (input_hotkey("C")) {
+        if (input_hotkey("C") || input_inject_take("bairc:C")) {
             var _cure = pet_corruption_cure(_bp);
             if (_cure != "") {
                 bairc_notification = _cure;
@@ -1673,7 +1712,7 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open) {
 
         // G: choose the raised pet's permanent pick - Stage-3 capstone first, then the
         // Stage-4 Awakened splash once it crosses (same modal, bairc_capstone_mode).
-        if (input_hotkey("G")) {
+        if (input_hotkey("G") || input_inject_take("bairc:G")) {
             if (pet_capstone_can_pick(_bp)) {
                 bairc_capstone_mode    = "cap";
                 bairc_capstone_open    = true;
@@ -1694,12 +1733,12 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open) {
         }
 
         // R: donate the highlighted creature to Bairc's garden (opens a confirm; permanent).
-        if (input_hotkey("R")) {
+        if (input_hotkey("R") || input_inject_take("bairc:R")) {
             bairc_release_confirm = true;
         }
 
         // N: name / rename the highlighted creature (first name free, rename 20 dust).
-        if (input_hotkey("N")) {
+        if (input_hotkey("N") || input_inject_take("bairc:N")) {
             if (_bp.is_egg) {
                 bairc_notification = "You can name it once it hatches.";
             } else if (pet_named(_bp) && global.rune_dust < 20) {

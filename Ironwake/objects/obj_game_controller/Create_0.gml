@@ -975,6 +975,9 @@ bairc_capstone_mode    = "cap";  // "cap" = Stage-3 capstone | "splash" = Awaken
 bairc_release_confirm  = false;  // "Donate" modal: entrust the highlighted creature to Bairc's garden
 bairc_lore_open        = false;  // one-time lore-fragment dialogue (bond milestones / first donation, §10)
 bairc_lore_armed       = false;  // same 1-frame arm as the intro so the opening keypress can't skip it
+bairc_pad_menu_open    = false;  // gamepad action submenu (chunk 7b): A on a roster row lists the
+bairc_pad_menu_cursor  = 0;      //   creature's actions (Set Active/Hatch, Feed..., Gift, Name, ...);
+bairc_pad_menu_level   = 0;      //   0 = action list, 1 = feed list. Keyboard keeps the direct letters.
 
 // --- JOURNAL (Phase 4a): J-key overlay, hub + floor map. Two tabs (Relationships /
 // Quests), master-detail. VIEW/TRACK ONLY (Phase 4b UX) - quest actions live at the
