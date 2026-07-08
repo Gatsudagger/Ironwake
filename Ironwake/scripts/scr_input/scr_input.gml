@@ -418,10 +418,102 @@ function touch_sim_pump() {
     global.touch_sim_frame += 1;
 }
 
-// Tap (mouse pressed-edge) inside a GUI-space rect.
+// Tap (mouse pressed-edge) inside a GUI-space rect. PRESS-fired - right for
+// buttons/chips. Lists that must distinguish tap-from-drag use the gesture
+// system below instead (touch_tap_in fires on clean RELEASE).
 function touch_tapped(_x1, _y1, _x2, _y2) {
     if (!mouse_check_button_pressed(mb_left)) return false;
     var _mx = device_mouse_x_to_gui(0);
     var _my = device_mouse_y_to_gui(0);
     return (_mx >= _x1 && _mx <= _x2 && _my >= _y1 && _my <= _y2);
+}
+
+// =============================================================================
+// CHUNK 8d - touch gesture classifier: TAP vs DRAG vs LONG-PRESS
+// Updated ONCE per frame at the top of obj_game_controller's Step (gc runs in
+// every gameplay room). One finger = one gesture:
+//   - moves > 27px from origin      -> DRAG   (touch_drag_dy feeds scrolling)
+//   - held >= 450ms without moving  -> LONG-PRESS (fires once, at the origin)
+//   - released early without moving -> TAP    (fires at the release position)
+// Consumers that only care about buttons keep using the press-fired
+// touch_tapped above; lists use these so a scroll can't select.
+// =============================================================================
+function touch_gesture_update() {
+    if (!variable_global_exists("tg")) {
+        global.tg = { held: false, ox: 0, oy: 0, px: 0, py: 0, dx: 0, dy: 0,
+                      drag: false, t0: 0, tap: false, tapx: 0, tapy: 0,
+                      lp: false, lp_done: false };
+    }
+    var _g = global.tg;
+    _g.tap = false;
+    _g.lp  = false;
+    _g.dx  = 0;
+    _g.dy  = 0;
+    if (input_device() != 2) { _g.held = false; _g.drag = false; return; }
+    var _mx = device_mouse_x_to_gui(0);
+    var _my = device_mouse_y_to_gui(0);
+    if (mouse_check_button_pressed(mb_left)) {
+        _g.held = true;  _g.drag = false;  _g.lp_done = false;
+        _g.ox = _mx;  _g.oy = _my;  _g.px = _mx;  _g.py = _my;
+        _g.t0 = current_time;
+        global.touch_drag_acc = 0;
+    } else if (_g.held && mouse_check_button(mb_left)) {
+        _g.dx = _mx - _g.px;
+        _g.dy = _my - _g.py;
+        _g.px = _mx;  _g.py = _my;
+        if (!_g.drag && point_distance(_g.ox, _g.oy, _mx, _my) > 27) _g.drag = true;
+        if (!_g.drag && !_g.lp_done && current_time - _g.t0 >= 450) {
+            _g.lp      = true;
+            _g.lp_done = true;
+        }
+    } else if (_g.held) {   // released this frame
+        _g.held = false;
+        if (!_g.drag && !_g.lp_done && current_time - _g.t0 < 450) {
+            _g.tap  = true;
+            _g.tapx = _mx;
+            _g.tapy = _my;
+        }
+        _g.drag = false;
+    }
+}
+
+function touch_tap()   { return variable_global_exists("tg") && global.tg.tap; }
+function touch_tap_x() { return global.tg.tapx; }
+function touch_tap_y() { return global.tg.tapy; }
+function touch_lp()    { return variable_global_exists("tg") && global.tg.lp; }
+function touch_lp_x()  { return global.tg.ox; }
+function touch_lp_y()  { return global.tg.oy; }
+
+function touch_tap_in(_x1, _y1, _x2, _y2) {
+    if (!touch_tap()) return false;
+    return (global.tg.tapx >= _x1 && global.tg.tapx <= _x2
+         && global.tg.tapy >= _y1 && global.tg.tapy <= _y2);
+}
+
+function touch_lp_in(_x1, _y1, _x2, _y2) {
+    if (!touch_lp()) return false;
+    return (global.tg.ox >= _x1 && global.tg.ox <= _x2
+         && global.tg.oy >= _y1 && global.tg.oy <= _y2);
+}
+
+// Per-frame vertical drag delta, only while a drag that STARTED inside the
+// rect is in progress (so a drag can't scroll a list it didn't begin on).
+function touch_drag_dy(_x1, _y1, _x2, _y2) {
+    if (!variable_global_exists("tg")) return 0;
+    var _g = global.tg;
+    if (!_g.held || !_g.drag) return 0;
+    if (_g.ox < _x1 || _g.ox > _x2 || _g.oy < _y1 || _g.oy > _y2) return 0;
+    return _g.dy;
+}
+
+// Drag-to-cursor: converts vertical drag inside a rect into simulated arrow
+// presses (one row per _pitch px, max one per frame). The consumer's EXISTING
+// nav handlers do the rest, including their edge-scroll - zero list rewrites.
+function touch_drag_rows(_x1, _y1, _x2, _y2, _pitch) {
+    var _dy = touch_drag_dy(_x1, _y1, _x2, _y2);
+    if (_dy == 0) return;
+    if (!variable_global_exists("touch_drag_acc")) global.touch_drag_acc = 0;
+    global.touch_drag_acc += _dy;
+    if (global.touch_drag_acc >= _pitch)       { touch_press(vk_up);   global.touch_drag_acc -= _pitch; }
+    else if (global.touch_drag_acc <= -_pitch) { touch_press(vk_down); global.touch_drag_acc += _pitch; }
 }

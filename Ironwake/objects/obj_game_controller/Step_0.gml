@@ -1,3 +1,7 @@
+// Touch gesture classifier (8d): updated once per frame, before anything reads
+// taps/drags/long-presses. No-op on non-touch devices.
+touch_gesture_update();
+
 // Latch whether any gc-managed overlay/modal is open at the START of this Step,
 // BEFORE the ESC-close handlers below clear their flags. The hub's pause-menu
 // trigger checks this so the same Esc press that closes an overlay (inventory,

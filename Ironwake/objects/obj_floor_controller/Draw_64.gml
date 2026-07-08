@@ -1,4 +1,4 @@
-// =============================================================================
+﻿// =============================================================================
 // obj_floor_controller - Draw GUI event
 // Draws the branching dungeon floor map at native 1920x1080.
 // Layout:
@@ -175,7 +175,7 @@ for (var _i = 0; _i < _count; _i++) {
 
     // Room name (single line, clipped to the box)
     var _name_str = _room.name;
-    if (_room.cleared) _name_str = "✓ " + _name_str;
+    if (_room.cleared) _name_str = "âœ“ " + _name_str;
     draw_set_halign(fa_left);
     draw_set_valign(fa_middle);
     var _name_col = make_color_rgb(110, 120, 140); // future
@@ -1064,5 +1064,6 @@ ui_draw_pause_menu();
 // Onboarding coach-mark - drawn last so it sits on top of the floor + shrine overlay.
 ui_draw_tutorial_tip();
 
-// Touch (8c): universal Back chip + simulated-key pump - always LAST (topmost).
+// Touch (8d): action-chip bar, then the Back/menu chip + key pump - always LAST (topmost).
+ui_draw_touch_chips();
 ui_draw_touch_back();

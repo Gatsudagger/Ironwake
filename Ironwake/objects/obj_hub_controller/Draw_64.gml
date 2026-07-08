@@ -1,4 +1,4 @@
-// =============================================================================
+﻿// =============================================================================
 // obj_hub_controller - Draw GUI event
 // Draws the full hub screen at the native 1920x1080 GUI.
 // Draw order:
@@ -158,7 +158,7 @@ draw_set_color(make_color_rgb(20, 25, 45));
 draw_rectangle(_pi_x, _pi_y, _pi_x + _pi_w, _pi_y + _pi_h, false);
 draw_set_alpha(1.0);
 // Gothic frame FIRST so the blue border below stays on top (the frame's edge art
-// would otherwise paint over the left border — same fix as the NPC detail panel).
+// would otherwise paint over the left border â€” same fix as the NPC detail panel).
 ui_draw_gothic_frame(_pi_x, _pi_y, _pi_x + _pi_w, _pi_y + _pi_h);
 draw_set_color(make_color_rgb(60, 90, 160));
 draw_rectangle(_pi_x, _pi_y, _pi_x + _pi_w, _pi_y + _pi_h, true);
@@ -432,7 +432,7 @@ draw_set_alpha(0.9);
 draw_set_color(make_color_rgb(20, 25, 45));
 draw_rectangle(_dp_x, _dp_y, _dp_x + _dp_w, _dp_y + _dp_h, false);
 draw_set_alpha(1.0);
-// Gothic frame FIRST, then the blue border on top — otherwise the frame's left-edge
+// Gothic frame FIRST, then the blue border on top â€” otherwise the frame's left-edge
 // art paints over the 1px blue border and it vanishes on that side only.
 ui_draw_gothic_frame(_dp_x, _dp_y, _dp_x + _dp_w, _dp_y + _dp_h, 30);   // ornate NPC detail frame
 draw_set_color(make_color_rgb(80, 160, 220));
@@ -678,25 +678,29 @@ draw_set_font(fnt_ui_small);
 draw_set_color(c_gray);
 // Chunk 7b: on a gamepad the footer shows the pad chips instead (same layout;
 // see __input_pad_hotkey_map in scr_input for the M-approved assignments).
-var _hub_pad_ui = (input_device() == 1);
-var _foot_txt = _hub_pad_ui
-    ? "D-Pad: Navigate   A: Interact   LT: Journal (Quests / Codex / Bestiary)   Y: History   RT: Stash   L3: Upgrade   Select: Settings"
-    : "W/S: Navigate   Enter / Space: Interact   J: Journal (Quests / Codex / Bestiary)   H: History   T: Stash   P: Upgrade   O: Settings";
-draw_text_outline(GUI_CX, 1073, _foot_txt);
-// Unread-Journal cue: overdraw the "J: Journal" segment in flashing gold (M 2026-07-04:
-// the old floating pulse dot read as disjoint clutter). Alpha pulse over the same
-// pixels; same font/valign as the footer so it registers exactly.
-if (journal_any_badge()) {
-    var _jseg_pre = _hub_pad_ui ? "D-Pad: Navigate   A: Interact   "
-                                : "W/S: Navigate   Enter / Space: Interact   ";
-    var _jseg     = _hub_pad_ui ? "LT: Journal" : "J: Journal";
-    var _jb_x = GUI_CX - string_width(_foot_txt) / 2 + string_width(_jseg_pre);
-    draw_set_halign(fa_left);
-    draw_set_alpha(0.55 + 0.45 * sin(current_time / 300));
-    draw_set_color(make_color_rgb(245, 195, 80));
-    draw_text_outline(_jb_x, 1073, _jseg);
-    draw_set_alpha(1.0);
-    draw_set_halign(fa_center);
+// Chunk 8d: on TOUCH the footer is replaced by the tappable action-chip bar
+// (ui_draw_touch_chips, drawn at the end of this event) - no text here.
+if (input_device() != 2) {
+    var _hub_pad_ui = (input_device() == 1);
+    var _foot_txt = _hub_pad_ui
+        ? "D-Pad: Navigate   A: Interact   LT: Journal (Quests / Codex / Bestiary)   Y: History   RT: Stash   L3: Upgrade   Select: Settings"
+        : "W/S: Navigate   Enter / Space: Interact   J: Journal (Quests / Codex / Bestiary)   H: History   T: Stash   P: Upgrade   O: Settings";
+    draw_text_outline(GUI_CX, 1073, _foot_txt);
+    // Unread-Journal cue: overdraw the "J: Journal" segment in flashing gold (M 2026-07-04:
+    // the old floating pulse dot read as disjoint clutter). Alpha pulse over the same
+    // pixels; same font/valign as the footer so it registers exactly.
+    if (journal_any_badge()) {
+        var _jseg_pre = _hub_pad_ui ? "D-Pad: Navigate   A: Interact   "
+                                    : "W/S: Navigate   Enter / Space: Interact   ";
+        var _jseg     = _hub_pad_ui ? "LT: Journal" : "J: Journal";
+        var _jb_x = GUI_CX - string_width(_foot_txt) / 2 + string_width(_jseg_pre);
+        draw_set_halign(fa_left);
+        draw_set_alpha(0.55 + 0.45 * sin(current_time / 300));
+        draw_set_color(make_color_rgb(245, 195, 80));
+        draw_text_outline(_jb_x, 1073, _jseg);
+        draw_set_alpha(1.0);
+        draw_set_halign(fa_center);
+    }
 }
 
 // Reset draw state - font back to default so the not-yet-rescaled overlays below
@@ -2445,7 +2449,7 @@ ui_draw_sable_screen();
 ui_draw_vael_screen();
 ui_draw_bairc_screen();
 ui_draw_bairc_intro();      // first-talk dialogue popup (before the station opens)
-ui_draw_bairc_lore();       // queued one-time lore fragment, over the garden (design §10)
+ui_draw_bairc_lore();       // queued one-time lore fragment, over the garden (design Â§10)
 ui_draw_bairc_capstone();   // raised-Adult capstone pick modal, over the Bairc screen
 hatch_cutscene_draw();   // full-screen egg-hatch sequence, over the Bairc screen
 ui_draw_journal();       // J-key Journal overlay (Phase 4a) - over hub content, under pause
@@ -2652,5 +2656,6 @@ if (ending_active) {
     draw_set_font(-1);
 }
 
-// Touch (8c): universal Back chip + simulated-key pump - always LAST (topmost).
+// Touch (8d): action-chip bar, then the Back/menu chip + key pump - always LAST (topmost).
+ui_draw_touch_chips();
 ui_draw_touch_back();

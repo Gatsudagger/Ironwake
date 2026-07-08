@@ -40,6 +40,19 @@ if (_lmx >= 30 && _lmx <= 1200 && _lmy >= 735 && _lmy <= 945) {
     if (mouse_wheel_up())   combat_log_scroll = min(_log_max, combat_log_scroll + 1);
     if (mouse_wheel_down()) combat_log_scroll = max(0, combat_log_scroll - 1);
 }
+// Touch (8d, punch item 9): drag the log panel to scroll it - one row per
+// 29px (the log line height). Tap-in-place keeps the line-inspect popup.
+if (input_device() == 2) {
+    var _lg_dy = touch_drag_dy(30, 735, 1200, 945);
+    if (_lg_dy != 0) {
+        if (!variable_global_exists("log_drag_acc")) global.log_drag_acc = 0;
+        global.log_drag_acc += _lg_dy;
+        var _lg_vis = floor((210 - 24) / 29);
+        var _lg_max = max(0, _log_len - _lg_vis);
+        if (global.log_drag_acc >= 29)       { combat_log_scroll = min(_lg_max, combat_log_scroll + 1); global.log_drag_acc -= 29; }
+        else if (global.log_drag_acc <= -29) { combat_log_scroll = max(0, combat_log_scroll - 1);       global.log_drag_acc += 29; }
+    }
+}
 
 
 // -----------------------------------------------------------------------------
@@ -498,16 +511,22 @@ if (player_turn) {
     }
 
     // --- Mouse input ---
-    if (mouse_check_button_pressed(mb_left)) {
-        var _cmx = device_mouse_x_to_gui(0);
-        var _cmy = device_mouse_y_to_gui(0);
+    // Touch (8d): abilities cast on TAP-RELEASE (a drag can't cast) and a
+    // LONG-PRESS examines the ability instead (simulated V -> detail popup).
+    // Desktop mouse keeps press semantics - byte-identical for device 0/1.
+    var _cb_tap = (input_device() == 2) && touch_tap();
+    var _cb_lp  = (input_device() == 2) && touch_lp();
+    if ((input_device() != 2 && mouse_check_button_pressed(mb_left)) || _cb_tap || _cb_lp) {
+        var _cmx = _cb_tap ? touch_tap_x() : (_cb_lp ? touch_lp_x() : device_mouse_x_to_gui(0));
+        var _cmy = _cb_tap ? touch_tap_y() : (_cb_lp ? touch_lp_y() : device_mouse_y_to_gui(0));
 
         // Ability buttons: x=240+i*252, y=990-1065, w=240, h=75
         for (var _cbi = 0; _cbi < array_length(player.abilities); _cbi++) {
             var _cbx = 240 + _cbi * 252;
             if (_cmx >= _cbx && _cmx < _cbx+240 && _cmy >= 990 && _cmy < 1065) {
                 selected_ability = _cbi;
-                _should_cast = true;
+                if (_cb_lp) touch_press(ord("V"));   // examine, don't cast
+                else        _should_cast = true;
                 break;
             }
         }
@@ -526,8 +545,10 @@ if (player_turn) {
                 _cbar_li++;
             }
         }
-        // End Turn button (around the "T: End Turn" prompt at y=954, x center)
-        if (_cmx >= 660 && _cmx < 1260 && _cmy >= 936 && _cmy < 972) {
+        // End Turn button (around the "T: End Turn" prompt at y=954, x center).
+        // NOT on touch - the framed END TURN button (Draw) fires a simulated T
+        // there; running this inline zone too would end the turn twice.
+        if (input_device() != 2 && _cmx >= 660 && _cmx < 1260 && _cmy >= 936 && _cmy < 972) {
             // Inline end-turn - mirrors the T-key block below
             if (player.energy > 0) {
                 array_push(combat_log, "Turn ended - " + string(player.energy) + " AP unspent.");

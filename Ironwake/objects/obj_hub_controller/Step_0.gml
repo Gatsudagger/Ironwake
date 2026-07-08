@@ -441,14 +441,25 @@ if (instance_exists(obj_game_controller)) {
             }
         }
 
-        // Mouse: loadout tab buttons, ability/trait rows, confirm bar
-        if (mouse_check_button_pressed(mb_left)) {
-            var _ldmx = device_mouse_x_to_gui(0);
-            var _ldmy = device_mouse_y_to_gui(0);
+        // Touch (8d): drag over the list scrolls it - simulated arrow steps ride
+        // the existing edge-scroll logic; pitch matches the active tab's rows.
+        if (input_device() == 2) {
+            touch_drag_rows(60, 106, 1050, 880, (_gc_ld.loadout_tab == 1) ? 96 : 74);
+        }
+
+        // Mouse: loadout tab buttons, ability/trait rows, confirm bar.
+        // Touch (8d): rows act on TAP-RELEASE so a drag can never select, and a
+        // LONG-PRESS opens the row's detail popup. Desktop mouse keeps press
+        // semantics - this branch is byte-identical for device 0/1.
+        var _ld_tap = (input_device() == 2) && touch_tap();
+        var _ld_lp  = (input_device() == 2) && touch_lp();
+        if ((input_device() != 2 && mouse_check_button_pressed(mb_left)) || _ld_tap || _ld_lp) {
+            var _ldmx = _ld_tap ? touch_tap_x() : (_ld_lp ? touch_lp_x() : device_mouse_x_to_gui(0));
+            var _ldmy = _ld_tap ? touch_tap_y() : (_ld_lp ? touch_lp_y() : device_mouse_y_to_gui(0));
 
             // Three tab buttons (y=9-51), centred: ABILITIES / TRAITS / COMPANION.
             // Ranges match the Draw_64 tab-bar loop (_tx0=479, width 315, gap 9).
-            if (_ldmy >= 9 && _ldmy < 51) {
+            if (!_ld_lp && _ldmy >= 9 && _ldmy < 51) {
                 if      (_ldmx >= 479  && _ldmx < 794)  { if (_gc_ld.loadout_tab != 0) audio_play_sound(snd_page, 1, false); _gc_ld.loadout_tab = 0; _gc_ld.loadout_cursor = 0; }
                 else if (_ldmx >= 803  && _ldmx < 1118) { if (_gc_ld.loadout_tab != 1) audio_play_sound(snd_page, 1, false); _gc_ld.loadout_tab = 1; _gc_ld.loadout_cursor = 0; }
                 else if (_ldmx >= 1127 && _ldmx < 1442) { if (_gc_ld.loadout_tab != 2) audio_play_sound(snd_page, 1, false); _gc_ld.loadout_tab = 2; _gc_ld.loadout_cursor = 0; }
@@ -468,6 +479,11 @@ if (instance_exists(obj_game_controller)) {
                     var _ldai = _ld_scroll + _ldvis;
                     var _ldry = 106 + _ldvis * 74;   // matches Draw_64 _list_y0
                     if (_ldmx >= 60 && _ldmx < 1050 && _ldmy >= _ldry && _ldmy < _ldry+69) {
+                        if (_ld_lp) {   // long-press: open the ability's detail popup
+                            _gc_ld.loadout_cursor = _ldai;
+                            touch_press(vk_tab);
+                            break;
+                        }
                         var _ldname = _ld_pool[_ldai].name;
                         var _ldin   = false;
                         var _ldsi   = -1;
@@ -488,7 +504,7 @@ if (instance_exists(obj_game_controller)) {
                     }
                 }
                 // Confirm bar: x=60-1860, y=998-1043, requires 4 abilities selected
-                if (_ldmx >= 60 && _ldmx < 1860 && _ldmy >= 998 && _ldmy < 1043 && _ld_sel_cnt == _loadout_max) {
+                if (!_ld_lp && _ldmx >= 60 && _ldmx < 1860 && _ldmy >= 998 && _ldmy < 1043 && _ld_sel_cnt == _loadout_max) {
                     var _ltr = _gc_ld.traits_selected;
                     var _mc_cost = trait_respec_cost(_ltr);
                     if (_mc_cost > 0 && global.gold < _mc_cost) {
@@ -534,6 +550,7 @@ if (instance_exists(obj_game_controller)) {
                     var _ldrty = 106 + _ldtv * 96;
                     if (_ldmx >= 60 && _ldmx < 1050 && _ldmy >= _ldrty && _ldmy < _ldrty+90) {
                         _gc_ld.traits_cursor = _ldtai;
+                        if (_ld_lp) break;                        // long-press: cursor only (no Tab popup here)
                         if (!_ldtr_all[_ldtai].unlocked) break;   // locked: cursor only
                         var _ldtrname = _ldtr_all[_ldtai].tr.name;
                         var _ldtrin   = false;

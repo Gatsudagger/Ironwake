@@ -120,8 +120,13 @@ function ui_draw_touch_back(_top = 108) {
     // default y=108 clears the gold/dust readouts that live top-right on the
     // vendor screens (M 07-08: the chip covered them); combat passes 24 to stay
     // above the enemy-bar grid and shifts its awakening label left instead.
+    // Glyph is context-aware (M 07-08 "X opens settings reads wrong"): at a
+    // TOP-LEVEL screen Esc opens the pause menu, so the chip shows a menu
+    // glyph (three bars); inside an overlay Esc closes it, so it shows X.
     touch_sim_pump();
     if (input_device() != 2) return;
+    var _ctx = __input_ctx();
+    var _is_menu = (_ctx == "hub" || _ctx == "floor" || _ctx == "combat" || _ctx == "loot");
     var _s  = 78;
     var _x1 = GUI_W - _s - 24, _y1 = _top;
     var _x2 = GUI_W - 24,      _y2 = _top + _s;
@@ -130,13 +135,88 @@ function ui_draw_touch_back(_top = 108) {
     draw_set_alpha(1.0);
     draw_set_color(make_color_rgb(150, 130, 90));
     draw_rectangle(_x1, _y1, _x2, _y2, true);
-    draw_set_font(fnt_ui);
+    if (_is_menu) {
+        // three-bar menu glyph (drawn, not a font glyph - Castellar has no such char)
+        draw_set_color(make_color_rgb(228, 205, 140));
+        var _bcx = (_x1 + _x2) / 2, _bcy = (_y1 + _y2) / 2;
+        for (var _b = -1; _b <= 1; _b++) {
+            draw_rectangle(_bcx - 18, _bcy + _b * 15 - 3, _bcx + 18, _bcy + _b * 15 + 3, false);
+        }
+    } else {
+        draw_set_font(fnt_ui);
+        draw_set_halign(fa_center); draw_set_valign(fa_middle);
+        draw_set_color(make_color_rgb(228, 205, 140));
+        draw_text((_x1 + _x2) / 2, (_y1 + _y2) / 2 + 2, "X");
+        draw_set_halign(fa_left); draw_set_valign(fa_top);
+        draw_set_color(c_white); draw_set_font(-1);
+    }
+    if (touch_tapped(_x1, _y1, _x2, _y2)) touch_press(vk_escape);
+}
+
+// ---------------------------------------------------------------------------
+// ui_draw_touch_chips() - the per-context ACTION CHIP bar (chunk 8d: the key
+// legends' touch replacement - punch items 2/10). Touch only. Draws tappable
+// chips along the bottom for the actions that have no on-screen path (the
+// keyboard letter hotkeys); a tap fires the same simulated key the legend
+// would name. Contexts derive from __input_ctx, same as the pad map.
+// Call from the room controller's Draw GUI right before ui_draw_touch_back.
+// ---------------------------------------------------------------------------
+function ui_draw_touch_chips() {
+    if (input_device() != 2) return;
+    var _ctx   = __input_ctx();
+    var _chips = [];
+    switch (_ctx) {
+        case "hub":
+            array_push(_chips, { lbl: "STASH",    key: ord("T"), hot: false });
+            array_push(_chips, { lbl: "JOURNAL",  key: ord("J"), hot: journal_any_badge() });
+            array_push(_chips, { lbl: "HERO",     key: ord("I"), hot: false });
+            array_push(_chips, { lbl: "HISTORY",  key: ord("H"), hot: false });
+            if (variable_global_exists("pending_perm_points") && global.pending_perm_points > 0) {
+                array_push(_chips, { lbl: "UPGRADE", key: ord("P"), hot: true });
+            }
+            array_push(_chips, { lbl: "SETTINGS", key: ord("O"), hot: false });
+            break;
+        case "floor":
+            array_push(_chips, { lbl: "JOURNAL", key: ord("J"), hot: journal_any_badge() });
+            array_push(_chips, { lbl: "HERO",    key: ord("I"), hot: false });
+            array_push(_chips, { lbl: "LAMP",    key: ord("G"), hot: false });
+            array_push(_chips, { lbl: "EXTRACT", key: ord("E"), hot: false });
+            break;
+        case "board":
+            array_push(_chips, { lbl: "KNUCKLEBONES", key: ord("K"), hot: false });
+            array_push(_chips, { lbl: "HIGH TABLE",   key: ord("T"), hot: false });
+            array_push(_chips, { lbl: "REROLL",       key: ord("R"), hot: false });
+            break;
+        default: return;   // other screens: direct taps + the X chip cover them
+    }
+
+    draw_set_font(fnt_ui_small);
+    // measure, then draw centred along the bottom edge
+    var _pad_x = 27, _gap = 15, _ch_h = 57;
+    var _tot = 0;
+    for (var _i = 0; _i < array_length(_chips); _i++) {
+        _chips[_i].w = string_width(_chips[_i].lbl) + _pad_x * 2;
+        _tot += _chips[_i].w + ((_i > 0) ? _gap : 0);
+    }
+    var _cx = GUI_CX - _tot / 2;
+    var _cy = GUI_H - _ch_h - 9;
     draw_set_halign(fa_center); draw_set_valign(fa_middle);
-    draw_set_color(make_color_rgb(228, 205, 140));
-    draw_text((_x1 + _x2) / 2, (_y1 + _y2) / 2 + 2, "X");
+    for (var _i = 0; _i < array_length(_chips); _i++) {
+        var _c = _chips[_i];
+        var _flash = _c.hot && ((current_time div 400) mod 2 == 0);
+        draw_set_alpha(0.82);
+        draw_set_color(make_color_rgb(14, 16, 24));
+        draw_rectangle(_cx, _cy, _cx + _c.w, _cy + _ch_h, false);
+        draw_set_alpha(1.0);
+        draw_set_color(_flash ? make_color_rgb(245, 195, 80) : make_color_rgb(110, 100, 75));
+        draw_rectangle(_cx, _cy, _cx + _c.w, _cy + _ch_h, true);
+        draw_set_color(_flash ? make_color_rgb(245, 195, 80) : make_color_rgb(215, 200, 165));
+        draw_text(_cx + _c.w / 2, _cy + _ch_h / 2 + 1, _c.lbl);
+        if (touch_tapped(_cx, _cy, _cx + _c.w, _cy + _ch_h)) touch_press(_c.key);
+        _cx += _c.w + _gap;
+    }
     draw_set_halign(fa_left); draw_set_valign(fa_top);
     draw_set_color(c_white); draw_set_font(-1);
-    if (touch_tapped(_x1, _y1, _x2, _y2)) touch_press(vk_escape);
 }
 
 // draw_text_ext_outline(x, y, str, sep, w, [outline_col], [fill_col])
@@ -1845,6 +1925,12 @@ function ui_draw_tavern_board() {
         else if (_is_urgent)  draw_set_color(_hot ? make_color_rgb(235, 120, 80) : make_color_rgb(140, 62, 44));
         else                  draw_set_color(_hot ? make_color_rgb(220, 190, 130) : make_color_rgb(80, 64, 46));
         draw_rectangle(_lx - 12, _qy, _rx + 12, _qy + 96, true);
+        // Touch (8d, punch item 4): tap a note to highlight it, tap the
+        // highlighted note again to take / turn in (simulated Enter).
+        if (input_device() == 2 && touch_tapped(_lx - 12, _qy, _rx + 12, _qy + 96)) {
+            if (_i == _cur) touch_press(vk_enter);
+            else { _gc.tavern_board_cursor = _i; _cur = _i; }
+        }
         // "Pin"
         draw_set_color(_is_special ? make_color_rgb(255, 205, 90)
                      : (_is_urgent ? make_color_rgb(235, 80, 55) : make_color_rgb(180, 60, 50)));
@@ -1887,9 +1973,18 @@ function ui_draw_tavern_board() {
         draw_set_color(make_color_rgb(230, 210, 150));
         draw_text((_x1 + _x2) / 2, _y2 - 72, _gc.tavern_board_note);
     }
-    ui_draw_key_legend((_x1 + _x2) / 2, _y2 - 30, "W/S: Browse    Enter: Take / Turn in    R: Reroll ("
-        + string(board_reroll_cost()) + "g)    K: Knucklebones    T: High Table    Esc: Leave    (done: Journal, J)",
-        make_color_rgb(160, 145, 120));
+    if (input_device() == 2) {
+        // Touch: rows are tappable (tap again = take/turn in); the chip bar
+        // (ui_draw_touch_chips "board" ctx) carries Knucklebones/Table/Reroll.
+        draw_set_font(fnt_ui_small);
+        draw_set_color(make_color_rgb(160, 145, 120));
+        draw_set_halign(fa_center);
+        draw_text((_x1 + _x2) / 2, _y2 - 30, "Tap a note to read it  -  tap again to take / turn in");
+    } else {
+        ui_draw_key_legend((_x1 + _x2) / 2, _y2 - 30, "W/S: Browse    Enter: Take / Turn in    R: Reroll ("
+            + string(board_reroll_cost()) + "g)    K: Knucklebones    T: High Table    Esc: Leave    (done: Journal, J)",
+            make_color_rgb(160, 145, 120));
+    }
     draw_set_halign(fa_left); draw_set_valign(fa_top);
     draw_set_alpha(1.0); draw_set_color(c_white); draw_set_font(-1);
 }
