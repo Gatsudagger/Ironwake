@@ -100,6 +100,14 @@ if (portrait_active) {
     if (nav_left())  selected_portrait = wrap_index(selected_portrait - 1, _portrait_count);
     if (nav_right()) selected_portrait = wrap_index(selected_portrait + 1, _portrait_count);
 
+    // Touch (8c): the X chip (simulated Esc) steps back to naming. Touch-gated -
+    // the PC keyboard flow (no back from portrait) is unchanged.
+    if (input_device() == 2 && input_cancel()) {
+        portrait_active = false;
+        naming_active   = true;
+        exit;
+    }
+
     if (input_confirm() || input_confirm_alt()) {
         global.chosen_portrait = selected_portrait;
         save_game();

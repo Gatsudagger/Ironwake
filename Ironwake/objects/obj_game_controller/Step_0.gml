@@ -12,6 +12,22 @@ if (keyboard_check_pressed(vk_f11)) {
     video_toggle_fullscreen();
 }
 
+// Android (8c): pop the OS on-screen keyboard whenever a typed-text modal is
+// capturing keyboard_string (hero naming at char create, pet naming at Bairc)
+// and dismiss it when the modal closes. One pump - text_entry_active() already
+// tracks every naming modal, and gc runs in all the rooms that have one.
+if (os_type == os_android) {
+    var _osk_want = text_entry_active();
+    if (!variable_global_exists("osk_shown")) global.osk_shown = false;
+    if (_osk_want && !global.osk_shown) {
+        keyboard_virtual_show(kbv_type_default, kbv_returnkey_default, kbv_autocapitalize_sentences, false);
+        global.osk_shown = true;
+    } else if (!_osk_want && global.osk_shown) {
+        keyboard_virtual_hide();
+        global.osk_shown = false;
+    }
+}
+
 // HTML5 / itch: keep the canvas matched to the live browser/itch frame so it always
 // fills it. The frame resizes on fullscreen-launch and window-resize, and GM's HTML5
 // scaling won't upscale a fixed canvas to a bigger frame, so we re-size to the browser

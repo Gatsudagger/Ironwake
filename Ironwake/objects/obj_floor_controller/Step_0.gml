@@ -610,6 +610,13 @@ if (mouse_check_button_pressed(mb_left)) {
         var _mnx = _mr.px - 98;
         var _mny = _mr.py - 48;
         if (_mx >= _mnx && _mx < _mnx + 195 && _my >= _mny && _my < _mny + 96) {
+            // Touch (8c): tapping the ALREADY-selected node enters it (simulated
+            // Enter -> the unchanged ENTER ROOM handler next step). First tap
+            // selects, second tap commits - guards against travel mis-taps.
+            if (input_device() == 2 && selected_room == _mi
+                && floor_room_enterable(current_rooms, _mi)) {
+                touch_press(vk_enter);
+            }
             selected_room = _mi;
             break;
         }

@@ -885,6 +885,17 @@ if (_gc_ds != noone && _gc_ds.dungeon_select_open) {
             draw_set_color(c_white);
             draw_text(_cx + _cw / 2, _asc_y + 21, _asc_labels[_gc_ds.dungeon_select_asc]);
 
+            // Touch (8c): carousel arrows = A/D, awakening selector halves = Q/E,
+            // tapping the card art above the selector = Enter (EMBARK). All
+            // simulated keys through the unchanged Step handlers; touch only.
+            if (input_device() == 2) {
+                if      (touch_tapped(18, GUI_CY - 150, 200, GUI_CY + 150))   touch_press(ord("A"));
+                else if (touch_tapped(1300, GUI_CY - 150, 1482, GUI_CY + 150)) touch_press(ord("D"));
+                else if (touch_tapped(_cx + 21, _asc_y, _cx + _cw / 2, _asc_y + 66))        touch_press(ord("Q"));
+                else if (touch_tapped(_cx + _cw / 2, _asc_y, _cx + _cw - 21, _asc_y + 66))  touch_press(ord("E"));
+                else if (touch_tapped(_cx, _cy, _cx + _cw, _asc_y - 6))        touch_press(vk_enter);
+            }
+
             // Tier description - below the selector box (computed, matches combat)
             var _sel_a   = _gc_ds.dungeon_select_asc;
             var _sel_txt = (_sel_a == 0)
@@ -2627,3 +2638,6 @@ if (ending_active) {
     draw_set_alpha(1.0);
     draw_set_font(-1);
 }
+
+// Touch (8c): universal Back chip + simulated-key pump - always LAST (topmost).
+ui_draw_touch_back();

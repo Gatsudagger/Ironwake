@@ -489,8 +489,19 @@ if (player_turn && !combat_over) {
     }
     draw_set_font(fnt_ui);
     draw_set_halign(fa_center);
-    draw_set_color(_ap_col);
-    draw_text(960, 954, ((input_device() == 1) ? "RT: End Turn   " : "T: End Turn   ") + string(player.energy) + " AP remaining");
+    // Touch (8c): the End Turn line becomes a real button - framed so it reads
+    // as tappable; a tap fires a simulated T through the unchanged handler.
+    if (input_device() == 2) {
+        draw_set_color(make_color_rgb(20, 24, 36));
+        draw_rectangle(750, 924, 1170, 984, false);
+        draw_set_color(_ap_col);
+        draw_rectangle(750, 924, 1170, 984, true);
+        draw_text(960, 940, "END TURN   " + string(player.energy) + " AP remaining");
+        if (touch_tapped(750, 924, 1170, 984)) touch_press(ord("T"));
+    } else {
+        draw_set_color(_ap_col);
+        draw_text(960, 954, ((input_device() == 1) ? "RT: End Turn   " : "T: End Turn   ") + string(player.energy) + " AP remaining");
+    }
     draw_set_font(-1);
     draw_set_halign(fa_left);
 }
@@ -1204,3 +1215,6 @@ ui_draw_pause_menu();
 
 // Onboarding coach-mark - drawn last so it sits on top of the combat scene.
 ui_draw_tutorial_tip();
+
+// Touch (8c): universal Back chip + simulated-key pump - always LAST (topmost).
+ui_draw_touch_back();

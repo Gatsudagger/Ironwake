@@ -390,3 +390,38 @@ function __str_trim(_s) {
     while (string_length(_s) > 0 && string_char_at(_s, string_length(_s)) == " ") _s = string_delete(_s, string_length(_s), 1);
     return _s;
 }
+
+// =============================================================================
+// CHUNK 8c (minimal) - touch backbone: simulated keypresses
+// A tapped chip/zone calls touch_press(key): keyboard_key_press makes the
+// EXISTING keyboard handler react - the io-level twin of the pad's synthetic
+// hotkeys. touch_sim_pump() (called once per frame from ui_draw_touch_back,
+// which every room controller draws last) releases keys pressed in EARLIER
+// frames, so each tap lands exactly one clean pressed-edge.
+// =============================================================================
+function touch_press(_key) {
+    if (!variable_global_exists("touch_sim_keys"))  global.touch_sim_keys  = [];
+    if (!variable_global_exists("touch_sim_frame")) global.touch_sim_frame = 0;
+    keyboard_key_press(_key);
+    array_push(global.touch_sim_keys, { key: _key, frame: global.touch_sim_frame });
+}
+
+function touch_sim_pump() {
+    if (!variable_global_exists("touch_sim_keys"))  global.touch_sim_keys  = [];
+    if (!variable_global_exists("touch_sim_frame")) global.touch_sim_frame = 0;
+    for (var _i = array_length(global.touch_sim_keys) - 1; _i >= 0; _i--) {
+        if (global.touch_sim_keys[_i].frame < global.touch_sim_frame) {
+            keyboard_key_release(global.touch_sim_keys[_i].key);
+            array_delete(global.touch_sim_keys, _i, 1);
+        }
+    }
+    global.touch_sim_frame += 1;
+}
+
+// Tap (mouse pressed-edge) inside a GUI-space rect.
+function touch_tapped(_x1, _y1, _x2, _y2) {
+    if (!mouse_check_button_pressed(mb_left)) return false;
+    var _mx = device_mouse_x_to_gui(0);
+    var _my = device_mouse_y_to_gui(0);
+    return (_mx >= _x1 && _mx <= _x2 && _my >= _y1 && _my <= _y2);
+}

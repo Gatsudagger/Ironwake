@@ -109,6 +109,33 @@ function ui_draw_key_legend(cx, y, txt, label_col = undefined, translate = true)
     }
 }
 
+// ---------------------------------------------------------------------------
+// ui_draw_touch_back() - universal Back/close chip (chunk 8c minimal).
+// Call LAST in every room controller's Draw GUI event, on every device (it
+// also pumps the touch key releaser). On touch devices it draws an X button
+// top-right; tapping fires a simulated Esc, so each screen's EXISTING cancel
+// handler reacts (shop closes, modal backs out, hub opens the pause menu).
+// ---------------------------------------------------------------------------
+function ui_draw_touch_back() {
+    touch_sim_pump();
+    if (input_device() != 2) return;
+    var _s  = 78;
+    var _x1 = GUI_W - _s - 24, _y1 = 24;
+    var _x2 = GUI_W - 24,      _y2 = 24 + _s;
+    draw_set_alpha(0.72); draw_set_color(make_color_rgb(14, 16, 24));
+    draw_rectangle(_x1, _y1, _x2, _y2, false);
+    draw_set_alpha(1.0);
+    draw_set_color(make_color_rgb(150, 130, 90));
+    draw_rectangle(_x1, _y1, _x2, _y2, true);
+    draw_set_font(fnt_ui);
+    draw_set_halign(fa_center); draw_set_valign(fa_middle);
+    draw_set_color(make_color_rgb(228, 205, 140));
+    draw_text((_x1 + _x2) / 2, (_y1 + _y2) / 2 + 2, "X");
+    draw_set_halign(fa_left); draw_set_valign(fa_top);
+    draw_set_color(c_white); draw_set_font(-1);
+    if (touch_tapped(_x1 - 12, _y1 - 12, _x2 + 12, _y2 + 12)) touch_press(vk_escape);
+}
+
 // draw_text_ext_outline(x, y, str, sep, w, [outline_col], [fill_col])
 // Wrapped (draw_text_ext) variant of draw_text_outline - for multi-line flavor /
 // lore text that needs both word-wrap and a legibility outline (e.g. the camp line).
@@ -2768,7 +2795,9 @@ function ui_draw_bairc_screen() {
     // Naming modal (typed text entry over the station).
     if (variable_instance_exists(_gc, "bairc_naming") && _gc.bairc_naming && _n > 0) {
         var _np = _roster[_cur];
-        var _nx1 = 540, _ny1 = 354, _nx2 = 1380, _ny2 = 666;
+        // Android (8c): lift the modal clear of the OS keyboard while it's up.
+        var _bn_off = (variable_global_exists("osk_shown") && global.osk_shown) ? -210 : 0;
+        var _nx1 = 540, _ny1 = 354 + _bn_off, _nx2 = 1380, _ny2 = 666 + _bn_off;
         draw_set_alpha(0.9); draw_set_color(c_black);
         draw_rectangle(0, 0, GUI_W, GUI_H, false); draw_set_alpha(1.0);
         draw_set_color(make_color_rgb(16, 18, 26));
@@ -2790,12 +2819,26 @@ function ui_draw_bairc_screen() {
         draw_text(GUI_CX, _ny1 + 138, _ntxt);
         draw_set_font(fnt_ui_small); draw_set_color(make_color_rgb(150, 160, 190));
         draw_text(GUI_CX, _ny1 + 208, (pet_named(_np) ? "Rename: 20 dust" : "First name: free")
-            + "        [Enter] Confirm     [Esc] Cancel");
+            + ((input_device() == 2) ? "" : "        [Enter] Confirm     [Esc] Cancel"));
         // Deck/controller players have no physical keyboard - point at the Steam OSK
         // (STEAM_DECK_NOTES.md; same hint as the char-create naming modal).
         if (input_device() == 1) {
             draw_set_color(make_color_rgb(100, 110, 130));
             draw_text(GUI_CX, _ny1 + 248, "No keyboard? Steam + X opens the on-screen keyboard.");
+        }
+        // Touch (8c): explicit DONE button (fires the same Enter path).
+        if (input_device() == 2) {
+            var _bdx1 = GUI_CX - 150, _bdy1 = _ny1 + 238;
+            var _bdx2 = GUI_CX + 150, _bdy2 = _bdy1 + 57;
+            draw_set_color(make_color_rgb(20, 34, 58));
+            draw_rectangle(_bdx1, _bdy1, _bdx2, _bdy2, false);
+            draw_set_color(make_color_rgb(90, 110, 150));
+            draw_rectangle(_bdx1, _bdy1, _bdx2, _bdy2, true);
+            draw_set_font(fnt_ui); draw_set_valign(fa_middle);
+            draw_set_color(c_white);
+            draw_text(GUI_CX, (_bdy1 + _bdy2) / 2, "DONE");
+            draw_set_valign(fa_top);
+            if (touch_tapped(_bdx1, _bdy1, _bdx2, _bdy2)) touch_press(vk_enter);
         }
         draw_set_halign(fa_left); draw_set_valign(fa_top); draw_set_color(c_white); draw_set_font(-1);
     }

@@ -18,7 +18,9 @@ if (phase == "cutscene") {
     skip_timer++;
 
     // Any key after the grace period skips straight to the title screen
-    if (skip_timer > skip_hold && input_any()) {
+    // (touch, 8c: a tap counts as the any-key)
+    if (skip_timer > skip_hold
+        && (input_any() || (input_device() == 2 && mouse_check_button_pressed(mb_left)))) {
         phase = "title";
         exit;
     }
@@ -77,6 +79,22 @@ if (phase == "cutscene") {
         if (nav_up())   selected = wrap_index(selected - 1, 3);
         if (nav_down()) selected = wrap_index(selected + 1, 3);
 
+        // Touch (8c): tap a menu row to highlight it, tap the highlighted row to
+        // activate (simulated Enter -> the unchanged handler below). Rows match
+        // the Draw layout: y = 585 + i*93, box 660..1260 (+/-33).
+        if (input_device() == 2 && mouse_check_button_pressed(mb_left)) {
+            var _tmx = device_mouse_x_to_gui(0);
+            var _tmy = device_mouse_y_to_gui(0);
+            for (var _ti = 0; _ti < 3; _ti++) {
+                var _toy = 585 + _ti * 93;
+                if (_tmx >= 660 && _tmx <= 1260 && _tmy >= _toy - 33 && _tmy <= _toy + 33) {
+                    if (selected == _ti) touch_press(vk_enter);
+                    else selected = _ti;
+                    break;
+                }
+            }
+        }
+
         if (input_confirm() || input_confirm_alt()) {
             var _any_save_t = (slot_previews[0] != undefined
                             || slot_previews[1] != undefined
@@ -115,6 +133,22 @@ if (phase == "cutscene") {
     // Left/right or A/D to change slot
     if (nav_left())  { slot_selected = wrap_index(slot_selected - 1, 3); slot_confirm = false; }
     if (nav_right()) { slot_selected = wrap_index(slot_selected + 1, 3); slot_confirm = false; }
+
+    // Touch (8c): tap a slot card to highlight, tap the highlighted card to
+    // confirm (simulated Enter keeps the overwrite two-step intact). Cards match
+    // the Draw layout: x = 150 + s*555, y 330..660, w 510.
+    if (input_device() == 2 && mouse_check_button_pressed(mb_left)) {
+        var _smx = device_mouse_x_to_gui(0);
+        var _smy = device_mouse_y_to_gui(0);
+        for (var _si = 0; _si < 3; _si++) {
+            var _scx = 150 + _si * 555;
+            if (_smx >= _scx && _smx <= _scx + 510 && _smy >= 330 && _smy <= 660) {
+                if (slot_selected == _si) touch_press(vk_enter);
+                else { slot_selected = _si; slot_confirm = false; }
+                break;
+            }
+        }
+    }
 
     if (input_confirm() || input_confirm_alt()) {
         var _preview = slot_previews[slot_selected];

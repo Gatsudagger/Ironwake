@@ -299,6 +299,11 @@ if (free_points > 0) {
 // Shown after Space is pressed with all points allocated.
 // -----------------------------------------------------------------------------
 if (naming_active) {
+    // Android (8c): the OS keyboard covers the lower half of the screen - lift
+    // the whole modal clear of it while it's up, and give touch an explicit
+    // DONE button (M 07-07: the OSK hid the box + continue was ambiguous).
+    var _ny_off = (variable_global_exists("osk_shown") && global.osk_shown) ? -270 : 0;
+
     // Dark overlay
     draw_set_alpha(0.88);
     draw_set_color(make_color_rgb(8, 10, 20));
@@ -310,11 +315,11 @@ if (naming_active) {
     draw_set_valign(fa_middle);
     draw_set_font(fnt_ui_title);
     draw_set_color(make_color_rgb(120, 190, 255));
-    draw_text(960, 405, "Name Your Hero");
+    draw_text(960, 405 + _ny_off, "Name Your Hero");
 
     // Input box
     var _box_x = 585;
-    var _box_y = 480;
+    var _box_y = 480 + _ny_off;
     var _box_w = 750;
     var _box_h = 78;
 
@@ -332,17 +337,30 @@ if (naming_active) {
     draw_set_valign(fa_middle);
     draw_text(_box_x + 21, _box_y + _box_h / 2, _display_name);
 
-    // Hints
+    // Hints (keyboard-speak - hidden on touch, where the DONE button sits here)
     draw_set_halign(fa_center);
     draw_set_font(fnt_ui_small);
     draw_set_color(make_color_rgb(130, 135, 145));
-    draw_text_outline(960, 597, "Enter to confirm       Escape to go back");
+    if (input_device() != 2) draw_text_outline(960, 597 + _ny_off, "Enter to confirm       Escape to go back");
     // Deck/controller players have no physical keyboard - point at the Steam OSK
     // (STEAM_DECK_NOTES.md: the manual Steam+X path is the EA answer; the automatic
     // floating-keyboard call is a post-EA Steamworks-extension chunk).
     if (input_device() == 1) {
         draw_set_color(make_color_rgb(100, 110, 130));
         draw_text_outline(960, 636, "No keyboard? Steam + X opens the on-screen keyboard.");
+    }
+    // Touch: explicit DONE button (fires the same Enter path).
+    if (input_device() == 2) {
+        var _dbx1 = 960 - 165, _dby1 = _box_y + _box_h + 27;
+        var _dbx2 = 960 + 165, _dby2 = _dby1 + 63;
+        draw_set_color(make_color_rgb(20, 34, 58));
+        draw_rectangle(_dbx1, _dby1, _dbx2, _dby2, false);
+        draw_set_color(make_color_rgb(80, 160, 220));
+        draw_rectangle(_dbx1, _dby1, _dbx2, _dby2, true);
+        draw_set_font(fnt_ui);
+        draw_set_color(c_white);
+        draw_text(960, (_dby1 + _dby2) / 2, "DONE");
+        if (touch_tapped(_dbx1, _dby1, _dbx2, _dby2)) touch_press(vk_enter);
     }
 }
 
@@ -399,10 +417,30 @@ if (portrait_active) {
     draw_set_halign(fa_center);
     draw_text(960, _main_y + _main_h + 30, string(selected_portrait + 1) + " / " + string(_portrait_count));
 
-    // Instructions
+    // Instructions (keyboard-speak - touch gets tap zones + a CONFIRM button)
     draw_set_font(fnt_ui_small);
     draw_set_color(make_color_rgb(130, 135, 145));
-    draw_text_outline(960, _main_y + _main_h + 72, "A / D: Browse       Enter / Space: Confirm");
+    if (input_device() != 2) draw_text_outline(960, _main_y + _main_h + 72, "A / D: Browse       Enter / Space: Confirm");
+
+    // Touch (8c, M 07-07): tap a side thumbnail to page one portrait per tap;
+    // explicit CONFIRM button below the counter continues to the hub.
+    if (input_device() == 2) {
+        if (touch_tapped(_main_x - _thumb_w - 60, _thumb_y - 24, _main_x - 12, _thumb_y + _thumb_h + 24)) {
+            touch_press(ord("A"));
+        } else if (touch_tapped(_main_x + _main_w + 12, _thumb_y - 24, _main_x + _main_w + _thumb_w + 60, _thumb_y + _thumb_h + 24)) {
+            touch_press(ord("D"));
+        }
+        var _pbx1 = 960 - 165, _pby1 = _main_y + _main_h + 63;
+        var _pbx2 = 960 + 165, _pby2 = _pby1 + 63;
+        draw_set_color(make_color_rgb(20, 34, 58));
+        draw_rectangle(_pbx1, _pby1, _pbx2, _pby2, false);
+        draw_set_color(make_color_rgb(80, 160, 220));
+        draw_rectangle(_pbx1, _pby1, _pbx2, _pby2, true);
+        draw_set_font(fnt_ui);
+        draw_set_color(c_white);
+        draw_text(960, (_pby1 + _pby2) / 2, "CONFIRM");
+        if (touch_tapped(_pbx1, _pby1, _pbx2, _pby2)) touch_press(vk_enter);
+    }
 }
 
 
@@ -412,3 +450,6 @@ draw_set_valign(fa_top);
 draw_set_alpha(1.0);
 draw_set_color(c_white);
 draw_set_font(-1);
+
+// Touch (8c): universal Back chip + simulated-key pump - always LAST (topmost).
+ui_draw_touch_back();

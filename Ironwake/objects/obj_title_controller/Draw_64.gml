@@ -510,3 +510,6 @@ draw_set_valign(fa_top);
 draw_set_alpha(1.0);
 draw_set_color(c_white);
 draw_set_font(-1);
+
+// Touch (8c): universal Back chip + simulated-key pump - always LAST (topmost).
+ui_draw_touch_back();

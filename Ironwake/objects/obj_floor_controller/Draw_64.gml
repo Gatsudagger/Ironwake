@@ -1015,3 +1015,6 @@ ui_draw_pause_menu();
 
 // Onboarding coach-mark - drawn last so it sits on top of the floor + shrine overlay.
 ui_draw_tutorial_tip();
+
+// Touch (8c): universal Back chip + simulated-key pump - always LAST (topmost).
+ui_draw_touch_back();
