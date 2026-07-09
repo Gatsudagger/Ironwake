@@ -90,10 +90,22 @@ show_last_run = (global.last_run_result != 0);
 // Drawn by Draw_64 as a small overlay near the bottom of the detail panel.
 // -----------------------------------------------------------------------------
 notification = "";
+// Re-validate equipped gear against stats WITHOUT the run's temporary gains
+// (run_stat_bonuses are cleared by now): an item equipped on borrowed mid-run
+// stats gets auto-unequipped to the stash instead of gaming the gate (M 07-08).
+var _eq_dropped = equip_validate_stat_reqs();
+if (array_length(_eq_dropped) > 0) {
+    var _eq_names = "";
+    for (var _eqi = 0; _eqi < array_length(_eq_dropped); _eqi++) {
+        _eq_names += (_eqi > 0 ? ", " : "") + _eq_dropped[_eqi];
+    }
+    notification = "Your temporary power has left you - unequipped to stash: " + _eq_names + ".";
+    if (variable_global_exists("save_slot") && global.save_slot >= 0) save_game();
+}
 // Surface a pet/egg recovered during the last run (set at boss-clear), once, on return.
 // Persist immediately so a creature found mid-run can't be lost before the next save.
 if (variable_global_exists("pet_find_notice") && global.pet_find_notice != "") {
-    notification = global.pet_find_notice;
+    notification = (notification != "" ? notification + "   " : "") + global.pet_find_notice;
     global.pet_find_notice = "";
     if (variable_global_exists("save_slot") && global.save_slot >= 0) save_game();
 }

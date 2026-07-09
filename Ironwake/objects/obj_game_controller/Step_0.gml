@@ -3,10 +3,10 @@
 touch_gesture_update();
 
 // Latch whether any gc-managed overlay/modal is open at the START of this Step,
-// BEFORE the ESC-close handlers below clear their flags. The hub's pause-menu
-// trigger checks this so the same Esc press that closes an overlay (inventory,
+// BEFORE the ESC-close handlers below clear their flags. The hub AND floor pause-
+// menu triggers check this so the same Esc press that closes an overlay (inventory,
 // stash, shops, trainers, item picker, comparison) can't also pop the pause menu.
-// (Floor/combat manage their own popups with early exits, so they don't need it.)
+// (Combat manages its own popups with early exits, so it doesn't need it.)
 global.ui_overlay_latch = ui_input_blocked()
     || (variable_global_exists("item_picker") && global.item_picker.open)
     || comparison_open;
@@ -350,7 +350,11 @@ if (tavern_board_open) {
 // open it owns all input (ui_input_blocked() reports true, freezing every room
 // controller). VIEW/TRACK ONLY (Phase 4b) - actions live at the Tavern board.
 if (journal_open) {
-    if (input_hotkey("J") || input_cancel()) { journal_open = false; exit; }
+    if (input_hotkey("J") || input_cancel()) {
+        journal_open = false;
+        journal_badges_sweep_orphans();   // stuck badges on delisted entries can't flash the chip forever
+        exit;
+    }
     // Five tabs since the 2026-07-04 consolidation: Relationships / Quests /
     // Compendium / Item Codex / Bestiary. Q back, E forward.
     if (input_tab_next()) { journal_tab = (journal_tab + 1) mod 5; journal_cursor = 0; }
@@ -414,6 +418,26 @@ if (input_hotkey("J") && (room == rm_hub || room == rm_dungeon_floor)
     && (!variable_global_exists("pause_open") || !global.pause_open)) {
     journal_open   = true;
     journal_cursor = 0;
+    audio_play_sound(snd_page, 1, false);
+    exit;
+}
+
+// --- P: COMPANION INSPECT (M 07-08) - the full pet profile (ui_draw_pet_detail)
+// as an overlay on the floor map and in combat. While open every room controller
+// freezes (pet_inspect_open reports through ui_input_blocked). No active
+// companion = no-op; the hub reaches the same profile via char menu > Companion.
+if (pet_inspect_open) {
+    if (input_hotkey("P") || input_cancel() || input_back() || input_detail()
+        || input_confirm()) {
+        pet_inspect_open = false;
+    }
+    exit;
+}
+if (input_hotkey("P") && (room == rm_dungeon_floor || instance_exists(obj_combat_controller))
+    && !ui_input_blocked() && !global.ui_overlay_latch
+    && (!variable_global_exists("pause_open") || !global.pause_open)
+    && pet_active() != undefined) {
+    pet_inspect_open = true;
     audio_play_sound(snd_page, 1, false);
     exit;
 }
@@ -631,12 +655,23 @@ if (input_hotkey("B")) {
     else if (variable_instance_exists(id, "sable_open")   && sable_open)   _bond_npc = "sable";
     else if (variable_instance_exists(id, "vael_open")    && vael_open)    _bond_npc = "vael";
     if (_bond_npc != "" && affinity_gate_ready(_bond_npc)) {
-        // 4c: advancing may START the gate quest instead of crossing - surface the
-        // ask on the hub notification line (visible when the screen closes) and on
-        // Vael's own notification line when hers is the open screen.
+        // 4c: advancing may START the gate quest instead of crossing. Show the
+        // result ON THE OPEN SCREEN's own notification line - the hub line is
+        // hidden behind the overlay, so pressing B looked like it did nothing and
+        // players only discovered the change later in the journal (M 07-08). A
+        // successful crossing ("" return) gets an explicit message too.
         var _adv_msg = affinity_try_advance(_bond_npc);
-        if (_adv_msg != "" && _adv_msg != "Not ready.") {
-            if (_bond_npc == "vael") vael_notification = _adv_msg;
+        if (_adv_msg == "") {
+            _adv_msg = npc_display_name(_bond_npc) + ": your bond deepens to " + affinity_tier_name(_bond_npc) + "!";
+        }
+        if (_adv_msg != "Not ready.") {
+            switch (_bond_npc) {
+                case "petra": case "dorn": shop_notification    = _adv_msg; break;
+                case "vex":                trainer_notification = _adv_msg; break;
+                case "maren":              maren_notification   = _adv_msg; break;
+                case "sable":              sable_notification   = _adv_msg; break;
+                case "vael":               vael_notification    = _adv_msg; break;
+            }
             if (instance_exists(obj_hub_controller)) instance_find(obj_hub_controller, 0).notification = _adv_msg;
         }
         if (room == rm_hub || room == rm_character_select) save_game();
@@ -913,16 +948,17 @@ if (shop_open != -1 && !stash_mode_open) {
         // --- No order: choose 3 same-tier stash items, then place ---
         var _stash_n = array_length(global.equipment_stash);
 
-        // Pending no-takeback preview: Space confirms+places; any move cancels it.
+        // PLACE-ORDER POPUP (M 07-08 redesign): the roll treatment is chosen here,
+        // AFTER the 3 inputs - W/S (or Tab) flips Standard <-> Roll-bias, Enter or
+        // Space confirms and places, Esc cancels (the shop Esc handler above clears
+        // petra_trade_confirm). Geometry lives in the scr_ui trade-tab popup.
         if (petra_trade_confirm) {
-            if (input_confirm_alt()) {
+            if (nav_up() || nav_down() || input_detail()) petra_trade_lever = !petra_trade_lever;
+            if (input_confirm() || input_confirm_alt()) {
                 var _res = petra_place_order(petra_trade_selected, petra_trade_lever);
                 if (_res == "") { petra_trade_notification = "Order placed! Earn it by clearing floors."; petra_trade_selected = []; }
                 else            { petra_trade_notification = _res; }
                 petra_trade_confirm = false;
-            }
-            if (nav_up() || nav_down() || input_confirm() || input_detail()) {
-                petra_trade_confirm = false; petra_trade_notification = "";
             }
             exit;
         }
@@ -936,11 +972,9 @@ if (shop_open != -1 && !stash_mode_open) {
             if (petra_trade_cursor >= petra_trade_scroll + 8) petra_trade_scroll = petra_trade_cursor - 7;
         }
 
-        // Tab toggles the dust roll-bias lever (Lever A).
-        if (input_detail()) {
-            petra_trade_lever        = !petra_trade_lever;
-            petra_trade_notification = petra_trade_lever ? "Roll-bias ON - spends dust for better affix odds." : "Roll-bias off.";
-        }
+        // (The Tab roll-bias lever moved INTO the place-order popup above - the
+        // always-on toggle was easy to miss and its notification overlapped the
+        // instruction line; M 07-08.)
 
         // Enter toggles selection of the highlighted item (max 3, all same tier).
         if ((input_confirm()) && _stash_n > 0) {
@@ -984,13 +1018,10 @@ if (shop_open != -1 && !stash_mode_open) {
                 if (_rung2 == undefined) {
                     petra_trade_notification = item_rarity_name(_r2) + " items can't be traded up.";
                 } else {
-                    var _gc_cost  = floor(_rung2.gold * petra_gold_mult());
-                    var _fl       = max(1, _rung2.cost_floors - petra_delivery_reduction());
-                    var _awk      = (_rung2.req_awk > 0) ? (" at A" + string(_rung2.req_awk) + "+") : "";
-                    var _dust_txt = petra_trade_lever ? ("  +" + string(_rung2.dust) + " dust") : "";
-                    petra_trade_notification = "Trade 3 " + item_rarity_name(_r2) + " -> " + item_rarity_name(_rung2.out_rarity)
-                        + "  for " + string(_gc_cost) + "g" + _dust_txt + ", " + string(_fl) + " floor" + (_fl == 1 ? "" : "s") + _awk
-                        + ".  Affixes destroyed. Space: confirm   Esc: cancel";
+                    // Open the place-order popup (details + roll-treatment choice
+                    // are drawn there; default = standard roll).
+                    petra_trade_notification = "";
+                    petra_trade_lever   = false;
                     petra_trade_confirm = true;
                 }
             }
@@ -1405,7 +1436,14 @@ if (trainer_open) {
             if (global.gold < _cost) {
                 trainer_notification = _ab.name + " costs " + string(_cost) + "g  (need "
                     + string(_cost - global.gold) + "g more).";
+                trainer_confirm = false;
+            } else if (!trainer_confirm) {
+                // Misclick guard (M 07-08): first press arms, second press buys.
+                // trainer_confirm resets on nav / tab change / Esc like tab 4's.
+                trainer_confirm = true;
+                trainer_notification = "Buy " + _ab.name + " for " + string(_cost) + "g?  Confirm to purchase.";
             } else {
+                trainer_confirm = false;
                 global.gold -= _cost;
                 if (!variable_global_exists("unlocked_abilities")) global.unlocked_abilities = [];
                 array_push(global.unlocked_abilities, _ab.name);
@@ -2435,7 +2473,7 @@ if (input_cancel()) {
     exit;
 }
 
-// Q/E cycle tabs (no wrap - clamped to 0-3; Compendium moved to the Journal 2026-07-04)
+// Q/E cycle tabs (no wrap - clamped to 0-4; tab 4 = Companion, M 07-08)
 if (!equip_picker_open && !consumable_submenu_open) {
     if (input_tab_prev()) {
         if (menu_tab > 0) audio_play_sound(snd_page, 1, false);
@@ -2443,8 +2481,8 @@ if (!equip_picker_open && !consumable_submenu_open) {
         equip_picker_open = false;
     }
     if (input_tab_next()) {
-        if (menu_tab < 3) audio_play_sound(snd_page, 1, false);
-        menu_tab          = min(3, menu_tab + 1);
+        if (menu_tab < 4) audio_play_sound(snd_page, 1, false);
+        menu_tab          = min(4, menu_tab + 1);
         equip_picker_open = false;
     }
 
@@ -2453,13 +2491,12 @@ if (!equip_picker_open && !consumable_submenu_open) {
     if (menu_tab == 0 && input_hotkey("T")) {
         epithet_cycle();
     }
-}
 
-// Compendium tab (4): W/S or Up/Down browse sections (hold-repeat + wrap)
-if (menu_tab == 4) {
-    var _comp_count = array_length(ui_compendium_sections());
-    if (nav_down()) compendium_section = wrap_index(compendium_section + 1, _comp_count);
-    if (nav_up())   compendium_section = wrap_index(compendium_section - 1, _comp_count);
+    // P jumps straight to the Companion tab (mirrors the floor/combat P overlay).
+    if (input_hotkey("P") && menu_tab != 4) {
+        menu_tab = 4;
+        audio_play_sound(snd_page, 1, false);
+    }
 }
 
 // Abilities tab (2): W/S browse the loadout (left list -> right breakdown).
@@ -2476,27 +2513,17 @@ if (mouse_check_button_pressed(mb_left)) {
     var _mmx = device_mouse_x_to_gui(0);
     var _mmy = device_mouse_y_to_gui(0);
 
-    // --- Tab bar: tab t starts at x = 306+t*264, y=30, w=252, h=66 (4 tabs, centered) ---
-    for (var _mt = 0; _mt < 4; _mt++) {
-        var _tx = 306 + _mt * 264;
+    // --- Tab bar: 5 tabs (tab 4 = Companion), w=252 gap=12, bar centered on
+    // GUI_W - geometry MUST match ui_draw_character_menu's _tab_x0. ---
+    var _tab_bar_x0 = (GUI_W - (5 * 264 - 12)) / 2;
+    for (var _mt = 0; _mt < 5; _mt++) {
+        var _tx = _tab_bar_x0 + _mt * 264;
         if (_mmx >= _tx && _mmx < _tx+252 && _mmy >= 30 && _mmy < 96) {
             if (menu_tab != _mt) audio_play_sound(snd_page, 1, false);
             menu_tab                = _mt;
             equip_picker_open       = false;
             consumable_submenu_open = false;
             break;
-        }
-    }
-
-    // --- Compendium tab (4): click a section in the left list ---
-    if (menu_tab == 4) {
-        var _comp_secs = ui_compendium_sections();
-        for (var _mcs = 0; _mcs < array_length(_comp_secs); _mcs++) {
-            var _csy = 135 + _mcs * 69;
-            if (_mmx >= 60 && _mmx < 450 && _mmy >= _csy && _mmy < _csy + 60) {
-                compendium_section = _mcs;
-                break;
-            }
         }
     }
 
@@ -2541,9 +2568,16 @@ if (mouse_check_button_pressed(mb_left)) {
             }
             // Selectable rows are pushed down one row when an item is worn in this
             // slot (the dimmed "[Equipped]" row occupies the top - see scr_ui picker).
-            var _mp_eq_off = (global.inventory[_msel_inv] != undefined) ? 108 : 0;
-            for (var _mri = 0; _mri < array_length(_mpitems); _mri++) {
-                var _mpry = 228 + _mp_eq_off + _mri * 108;
+            // The list is WINDOWED past what fits on screen - this scroll math MUST
+            // mirror ui_draw_character_menu's picker (_pk_scroll).
+            var _mp_eq_off    = (global.inventory[_msel_inv] != undefined) ? 108 : 0;
+            var _mp_count     = array_length(_mpitems);
+            var _mp_max_rows  = max(1, (1020 - (228 + _mp_eq_off)) div 108);
+            var _mp_scroll    = clamp(equip_picker_index - _mp_max_rows + 1, 0, max(0, _mp_count - _mp_max_rows));
+            var _mp_win_rows  = min(_mp_count - _mp_scroll, _mp_max_rows);
+            for (var _mwr = 0; _mwr < _mp_win_rows; _mwr++) {
+                var _mri  = _mp_scroll + _mwr;
+                var _mpry = 228 + _mp_eq_off + _mwr * 108;
                 if (_mmx >= 366 && _mmx < 1554 && _mmy >= _mpry && _mmy < _mpry+102) {
                     equip_picker_index = _mri;
                     var _mchosen  = _mpitems[_mri];
@@ -2697,11 +2731,11 @@ if (mouse_check_button_pressed(mb_left)) {
                             _mused = consumable_use_out_of_combat(_mit);
                         }
                         if (_mused) {
-                            // Lucky Find (audit §6 rework): 20% chance the item is not consumed.
-                            if (trait_active("Lucky Find") && irandom(99) < 20) {
+                            // Blessed Thirst (was Lucky Find): 20% chance the item is not consumed.
+                            if (trait_active("Blessed Thirst") && irandom(99) < 20) {
                                 if (instance_exists(obj_combat_controller)) {
                                     array_push(instance_find(obj_combat_controller, 0).combat_log,
-                                        "Lucky Find - " + _mit.name + " is not consumed!");
+                                        "Blessed Thirst - " + _mit.name + " is not consumed!");
                                 }
                             } else {
                                 array_delete(global.consumable_inventory, _mreal_idx, 1);
@@ -3064,11 +3098,11 @@ if (menu_tab == 3) {
                     _used = consumable_use_out_of_combat(_item);
                 }
                 if (_used) {
-                    // Lucky Find (audit §6 rework): 20% chance the item is not consumed.
-                    if (trait_active("Lucky Find") && irandom(99) < 20) {
+                    // Blessed Thirst (was Lucky Find): 20% chance the item is not consumed.
+                    if (trait_active("Blessed Thirst") && irandom(99) < 20) {
                         if (instance_exists(obj_combat_controller)) {
                             array_push(instance_find(obj_combat_controller, 0).combat_log,
-                                "Lucky Find - " + _item.name + " is not consumed!");
+                                "Blessed Thirst - " + _item.name + " is not consumed!");
                         }
                     } else {
                         array_delete(global.consumable_inventory, _real_idx, 1);

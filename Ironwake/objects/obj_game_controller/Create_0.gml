@@ -793,7 +793,8 @@ level_alloc_index        = 0;
 level_alloc_pending_stat = -1;  // -1 = nothing chosen yet; 0-5 = provisional stat index
 
 // Hub permanent stat allocation overlay
-perm_alloc_open  = false;
+perm_alloc_open    = false;
+perm_alloc_confirm = -1;   // armed row awaiting a second confirm (-1 = none) - permanent points deserve one
 perm_alloc_index = 0;
 
 
@@ -890,6 +891,7 @@ if (!variable_global_exists("traits_unlocked")) {
         scavenger:        true,
         thick_skin:       true,
         lucky_find:       false,
+        lucky_find_gold:  false,
         salvager:         false,
         soul_siphon:      false,
         crimson_reserve:  false,
@@ -984,6 +986,9 @@ bairc_pad_menu_level   = 0;      //   0 = action list, 1 = feed list. Keyboard k
 // Tavern Requests board. See PHASE4A_SPEC.md / PHASE4B_SPEC.md. ---
 journal_open    = false;
 journal_tab     = 0;    // 0 = Relationships, 1 = Quests
+// P companion-inspect overlay (floor + combat; M 07-08). Freezes all room
+// controllers via ui_input_blocked while open.
+pet_inspect_open = false;
 journal_cursor  = 0;    // Relationships: met-NPC row | Quests: flattened grouped row
 
 // --- TAVERN REQUESTS board (Phase 4b UX): hub NPC-list row 8. Quests are read,

@@ -16,7 +16,8 @@ if (ui_input_blocked()) exit;
 // Esc opens it only when no combat sub-overlay owns Esc (loot screen, the [I]
 // consumable quick-menu) and the fight is still live. See pause_menu_step (scr_stats).
 if (pause_menu_step()) exit;
-if (input_cancel() && !combat_over && !show_loot_screen && !consumable_quick_open && !ability_detail_open) {
+if (input_cancel() && !combat_over && !show_loot_screen && !consumable_quick_open && !ability_detail_open
+    && !consumable_overflow_pending()) {   // Esc in the discard modal disarms, never opens pause
     pause_menu_open();
     exit;
 }
@@ -78,11 +79,12 @@ if (show_loot_screen) {
     if (input_confirm() || input_confirm_alt() || input_hotkey("R")
         || (mouse_check_button_pressed(mb_left) && device_mouse_y_to_gui(0) >= 960)) {
         show_loot_screen = false;
-        combat_over   = true;
-        combat_result = 1;
-        // Clear run_items_found so the loot screen cannot re-trigger
+        // Clear run_items_found so the loot screen cannot re-trigger, then let the
+        // victory path below finish combat NEXT frame - it resolves any pack-full
+        // consumable-overflow discard first. Setting combat_over here skipped that
+        // modal; on the FINAL boss there is no floor screen after to catch it, so
+        // the queued item was silently lost (M 07-08).
         global.run_items_found = [];
-        array_push(combat_log, "Victory! All enemies defeated.");
     }
     exit;
 }
@@ -440,9 +442,9 @@ if (player_turn) {
                     }
                     // AP-restore items are free; everything else costs 1 AP.
                     if (!_q_is_ap) player.energy -= 1;
-                    // Lucky Find (audit §6 rework): 20% chance the item is not consumed.
-                    if (trait_active("Lucky Find") && irandom(99) < 20) {
-                        array_push(combat_log, "Lucky Find - " + _citem.name + " is not consumed!");
+                    // Blessed Thirst (was Lucky Find): 20% chance the item is not consumed.
+                    if (trait_active("Blessed Thirst") && irandom(99) < 20) {
+                        array_push(combat_log, "Blessed Thirst - " + _citem.name + " is not consumed!");
                     } else {
                         array_delete(global.consumable_inventory, _real_idx, 1);
                     }
@@ -768,12 +770,14 @@ if (player_turn) {
                     // weapon-damage block below). Both are applied as SEPARATE, TRULY-FLAT
                     // components after the crit roll (never crit-scaled) so weapons stay the
                     // damage FLOOR, not another multiplier (SYSTEMS_WEAPON_ROLES.md §B/§C):
-                    //  _wpn_flat = the weapon's flat damage, dealt as PHYSICAL (its own type,
-                    //              regardless of the ability's type - so a melee spell gets it
-                    //              as flat physical, not as the spell's element).
+                    //  _wpn_flat = the weapon's flat damage. Martial weapons deal it as
+                    //              PHYSICAL (its own type, regardless of the ability's type);
+                    //              caster ranged weapons (wands - _wpn_school != "") deal it
+                    //              as their rolled SCHOOL, resolved as elemental.
                     //  _elem_aff = the elemental affix (its own element + setup status).
-                    var _wpn_flat = 0;
-                    var _elem_aff = undefined;
+                    var _wpn_flat   = 0;
+                    var _wpn_school = "";
+                    var _elem_aff   = undefined;
 
                     // ===== Detonation reactions (P1, SYSTEMS_VIABILITY_PASS.md) =====
                     // A detonator ability reacts with the target's strongest status. Burn/Stun
@@ -877,6 +881,7 @@ if (player_turn) {
                                     if (variable_struct_exists(player.derived, "melee_elem")) _elem_aff = player.derived.melee_elem;
                                 } else if (ability_class_is_ranged(_reach_ac)) {
                                     _wpn_flat = player.derived.ranged_dmg_bonus;
+                                    if (variable_struct_exists(player.derived, "ranged_school")) _wpn_school = player.derived.ranged_school;
                                     if (variable_struct_exists(player.derived, "ranged_elem")) _elem_aff = player.derived.ranged_elem;
                                 }
                             }
@@ -941,6 +946,16 @@ if (player_turn) {
                                 _dmg += _nova_souls * 7;
                                 player.souls -= _nova_souls;
                                 array_push(combat_log, "Soul Nova consumes " + string(_nova_souls) + " Souls (+" + string(_nova_souls * 7) + " dmg)!");
+                            }
+                        }
+                        // Soul Rend (#26 melee kit): consume up to 2 Souls for +8 damage each.
+                        if (ab.name == "Soul Rend" && variable_struct_exists(player, "souls")) {
+                            var _rend_souls = min(player.souls, 2);
+                            if (_rend_souls > 0) {
+                                _dmg += _rend_souls * 8;
+                                player.souls -= _rend_souls;
+                                array_push(combat_log, "Soul Rend consumes " + string(_rend_souls)
+                                    + (_rend_souls == 1 ? " Soul" : " Souls") + " (+" + string(_rend_souls * 8) + " dmg)!");
                             }
                         }
                         // Assassinate: execute - DOUBLE damage to a target below 30% HP.
@@ -1091,8 +1106,17 @@ if (player_turn) {
                         // crit roll, never crit-scaled). Mitigated by armor like any physical
                         // hit, so it's the steady floor of weapon output, not a multiplier. (§B)
                         if (_deals_damage && _wpn_flat > 0) {
-                            var _wpn_hit = combat_resolve_damage(_wpn_flat, 0, target.armor, target.el_resist);
-                            if (_wpn_hit > 0) _final_dmg += _wpn_hit;
+                            // Caster ranged weapons (wands) deal this as their rolled
+                            // SCHOOL, resolved as elemental (vs el_resist); martial
+                            // weapons keep it physical (vs armor).
+                            var _wpn_is_school = (_wpn_school != "");
+                            var _wpn_hit = combat_resolve_damage(_wpn_flat, _wpn_is_school ? 1 : 0, target.armor, target.el_resist);
+                            if (_wpn_hit > 0) {
+                                _final_dmg += _wpn_hit;
+                                if (_wpn_is_school) {
+                                    array_push(combat_log, ab.name + " - " + school_label(_wpn_school) + " weapon damage (+" + string(_wpn_hit) + ")!");
+                                }
+                            }
                         }
 
                         // Elemental weapon affix: a small separate elemental hit on a damaging
@@ -1294,7 +1318,7 @@ if (player_turn) {
                                 if (_bd_vuln_flat > 0)
                                     array_push(_bd_lines, { label: "Vulnerable/Hexed", val: "+" + string(_bd_vuln_flat) });
                                 if (_wpn_flat > 0)
-                                    array_push(_bd_lines, { label: ability_class_is_melee(_atk_class) ? "Melee weapon" : "Ranged weapon", val: "+" + string(_wpn_flat) + " physical" });
+                                    array_push(_bd_lines, { label: ability_class_is_melee(_atk_class) ? "Melee weapon" : "Ranged weapon", val: "+" + string(_wpn_flat) + " " + (_wpn_school != "" ? string_lower(_wpn_school) : "physical") });
                                 if (_elem_aff != undefined && _elem_aff.dmg > 0)
                                     array_push(_bd_lines, { label: elem_element_name(_elem_aff.element) + " (weapon)", val: "+" + string(_elem_aff.dmg) });
                                 if (_aspect_dmg_pct > 0)
@@ -1371,7 +1395,7 @@ if (player_turn) {
                             var _res_amt = ab.effect_value;
                             if (variable_struct_exists(player, "souls")) {
                                 player.souls = min(player.souls_max, player.souls + _res_amt);
-                                array_push(combat_log, ab.name + ": +" + string(_res_amt) + " Souls.");
+                                array_push(combat_log, ab.name + ": +" + string(_res_amt) + (_res_amt == 1 ? " Soul." : " Souls."));
                             } else if (variable_struct_exists(player, "blood")) {
                                 player.blood = min(player.blood_max, player.blood + _res_amt);
                                 array_push(combat_log, ab.name + ": +" + string(_res_amt) + " Blood.");
@@ -1404,7 +1428,36 @@ if (player_turn) {
                         // --- Soulbind: bind this enemy's fate to yours (audit §6 build -
                         // reflect 40% of damage you take AND heal you the same; combat-long).
                         if (ab.name == "Soulbind" && !target.is_defeated) {
+                            // Re-binding: strip the marker badge off the previous bond target.
+                            var _old_sb = player.soulbind_enemy;
+                            if (is_struct(_old_sb) && _old_sb != target && variable_struct_exists(_old_sb, "status_effects")) {
+                                var _sb_kept = [];
+                                for (var _sbi = 0; _sbi < array_length(_old_sb.status_effects); _sbi++) {
+                                    var _sbse = _old_sb.status_effects[_sbi];
+                                    if (!(variable_struct_exists(_sbse, "kind") && _sbse.kind == "soulbind")) array_push(_sb_kept, _sbse);
+                                }
+                                _old_sb.status_effects = _sb_kept;
+                            }
                             player.soulbind_enemy = target;
+                            // Visible marker badge (duration -1 = combat-long; the enemy
+                            // status tick keeps negative durations forever). The lifelink
+                            // itself runs off player.soulbind_enemy - this is display only.
+                            var _sb_marked = false;
+                            for (var _sbj = 0; _sbj < array_length(target.status_effects); _sbj++) {
+                                var _sbm = target.status_effects[_sbj];
+                                if (variable_struct_exists(_sbm, "kind") && _sbm.kind == "soulbind") { _sb_marked = true; break; }
+                            }
+                            if (!_sb_marked) {
+                                array_push(target.status_effects, {
+                                    name:         "Soulbind",
+                                    effect_type:  "debuff",
+                                    kind:         "soulbind",
+                                    effect_value: 0.4,
+                                    duration:     -1,
+                                    element:      "",
+                                    source:       "player"
+                                });
+                            }
                             array_push(combat_log, "Soulbind: " + target.name + "'s fate is tied to yours.");
                         }
 
@@ -1895,12 +1948,17 @@ if (player_turn) {
                 }
             }
 
-            // Decrement duration; keep effect if turns remain
-            _se.duration--;
-            if (_se.duration > 0) {
+            // Decrement duration; keep effect if turns remain. Negative duration =
+            // COMBAT-LONG (e.g. Soulbind's bond marker): never ticks, never expires.
+            if (_se.duration < 0) {
                 array_push(_se_keep, _se);
             } else {
-                array_push(combat_log, _se.name + " wore off " + actor.name + ".");
+                _se.duration--;
+                if (_se.duration > 0) {
+                    array_push(_se_keep, _se);
+                } else {
+                    array_push(combat_log, _se.name + " wore off " + actor.name + ".");
+                }
             }
         }
         actor.status_effects = _se_keep;
@@ -2223,6 +2281,9 @@ if (player_turn) {
                 array_push(combat_log,
                     "Bloodthorn Aura: " + actor.name + " takes "
                     + string(player.bloodthorn_value) + " reflected damage!");
+                // Reflect can be the killing blow - run the shared kill handler
+                // (same rule as Soulbind below), or the enemy stands at 0 HP.
+                if (actor.HP <= 0 && !actor.is_defeated) combat_on_enemy_defeated(actor, player, combat_log);
                 player.bloodthorn_duration--;
                 if (player.bloodthorn_duration <= 0) {
                     player.bloodthorn_active = false;
@@ -2265,7 +2326,7 @@ if (player_turn) {
         // --- Double-strike mechanic ---
         // Fire a second independent hit roll using mechanic_value as the flat
         // per-hit damage (separate from the telegraphed damage path).
-        if (actor.mechanic_type == "double_strike") {
+        if (actor.mechanic_type == "double_strike" && !actor.is_defeated) {
             var _hit2 = combat_roll_hit(_enemy_acc + 9, player.dodge, false);
 
             if (_hit2 != "hit") {
@@ -2326,6 +2387,8 @@ if (player_turn) {
                     array_push(combat_log,
                         "Bloodthorn Aura: " + actor.name + " takes "
                         + string(player.bloodthorn_value) + " reflected damage!");
+                    // Reflect can be the killing blow here too.
+                    if (actor.HP <= 0 && !actor.is_defeated) combat_on_enemy_defeated(actor, player, combat_log);
                     player.bloodthorn_duration--;
                     if (player.bloodthorn_duration <= 0) {
                         player.bloodthorn_active = false;

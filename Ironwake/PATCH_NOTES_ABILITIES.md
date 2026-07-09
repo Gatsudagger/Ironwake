@@ -78,3 +78,22 @@ Every enemy now telegraphs its NEXT action on a chip above its health bar, and t
 - **Shadowstrider:** cast Evasive Roll, take a heavy hit → halved +1 Prep.
 - **Any class:** kill a weak enemy with Strike → "Momentum!" AP refund; Second Wind while poisoned → cleanse line.
 - **Petra:** full stock visible, no scroll hint, feed rows clickable.
+
+## #26 ARCANIST MELEE KIT (2026-07-08) — NEW, M-approved design
+
+Three melee SPELLS so a close-range Arcanist build exists. They ride the MELEE
+weapon's flat damage (not the wand's), and root/silence rules treat them as melee.
+All Vex-purchasable in a new premium tier above the 100/250/400 ladder, offense
+category (they feed the same-category AP discount).
+
+| Ability | Cost | What it does |
+|---|---|---|
+| **Blazing Palm** (Vex 500g) | 1 AP | 12 Fire melee spell. Banks **+1 Soul** on a landed hit. The close-range Soulfire. |
+| **Gravewrack Grip** (Vex 800g) | 2 AP | 16 Void melee drain — **always hits, ignores armor**, and **Roots 1 turn** (melee enemies skip; detonators shatter the root for +30%). |
+| **Soul Rend** (Vex 1200g) | 3 AP | 30 Arcane melee finisher. **Consumes up to 2 Souls for +8 damage each.** |
+
+**F5 checks:** buy all three at Vex (new 500/800/1200 prices; CHA/Friend discounts
+apply) → slot them → in combat: Blazing Palm logs "+1 Soul."; Gravewrack Grip never
+misses, the enemy shows Rooted and a melee enemy skips its turn; Soul Rend with 2+
+Souls logs "consumes 2 Souls (+16 dmg)" and the hit preview includes the bonus;
+while Rooted, a detonator (e.g. Arcane Burst) on that target logs the shatter (+30%).

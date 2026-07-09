@@ -1257,6 +1257,21 @@ if (player_turn && !combat_over && ability_detail_open) {
     ui_draw_ability_detail(player.abilities[_ad_idx], (input_device() == 1) ? "R3" : "V");
 }
 
+// P-key companion inspect (M 07-08) - the full pet profile as an overlay.
+if (instance_exists(obj_game_controller)) {
+    var _gc_pi = instance_find(obj_game_controller, 0);
+    if (variable_instance_exists(_gc_pi, "pet_inspect_open") && _gc_pi.pet_inspect_open
+        && pet_active() != undefined) {
+        ui_draw_pet_detail(pet_active());
+        draw_set_halign(fa_center);
+        draw_set_font(fnt_ui_small);
+        draw_set_color(make_color_rgb(140, 150, 175));
+        ui_draw_key_legend(GUI_CX, 1044, "P / Esc: Close");
+        draw_set_halign(fa_left);
+        draw_set_font(-1);
+    }
+}
+
 // Pause / Esc menu + its Settings sub-screen (combat doesn't otherwise host the
 // settings overlay) - topmost.
 if (variable_global_exists("settings_open") && global.settings_open) ui_draw_settings_overlay();

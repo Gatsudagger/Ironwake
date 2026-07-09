@@ -70,6 +70,9 @@ var _derived = stats_derive(_stats);
 // cast resolver can add it by the ability's reach class. Equipment-sourced, not stat-derived.
 _derived.melee_dmg_bonus  = _equip_bonus.melee_dmg_bonus;
 _derived.ranged_dmg_bonus = _equip_bonus.ranged_dmg_bonus;
+// Caster ranged weapons (wand/focus/...) deal their flat damage as this school
+// (rolled on the item) instead of physical; "" = a martial ranged weapon (bow).
+_derived.ranged_school = variable_struct_exists(_equip_bonus, "ranged_school") ? _equip_bonus.ranged_school : "";
 
 // Reach-gated elemental weapon affix (SYSTEMS_WEAPON_ROLES.md §C): on a damaging
 // ability of its reach class it adds a small elemental hit + a setup status.

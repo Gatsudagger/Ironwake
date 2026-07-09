@@ -757,12 +757,19 @@ if (_gc_ds != noone && _gc_ds.dungeon_select_open) {
     var _left_i   = (_cursor - 1 + 3) mod 3;
     var _right_i  = (_cursor + 1) mod 3;
 
-    // Side arrow hints
-    draw_set_halign(fa_center);
-    draw_set_font(fnt_ui_title);
-    draw_set_color(make_color_rgb(120, 130, 160));
-    draw_text(78, GUI_CY, "<");
-    draw_text(1392, GUI_CY, ">");
+    // Side arrows - drawn triangles instead of "<" ">" text (M 07-08: the glyphs
+    // read as placeholder), and the LEFT one sits just left of the selected card
+    // (x 528) mirroring the right (x 1392) - it used to float at the screen edge.
+    var _car_ly = GUI_CY + 12;
+    draw_set_color(make_color_rgb(26, 30, 46));
+    draw_triangle(549 + 3, _car_ly - 33 + 3, 549 + 3, _car_ly + 33 + 3, 501 + 3, _car_ly + 3, false);
+    draw_triangle(1371 - 3, _car_ly - 33 + 3, 1371 - 3, _car_ly + 33 + 3, 1419 + 3, _car_ly + 3, false);
+    draw_set_color(make_color_rgb(150, 165, 200));
+    draw_triangle(549, _car_ly - 33, 549, _car_ly + 33, 501, _car_ly, false);
+    draw_triangle(1371, _car_ly - 33, 1371, _car_ly + 33, 1419, _car_ly, false);
+    draw_set_color(make_color_rgb(70, 80, 110));
+    draw_triangle(549, _car_ly - 33, 549, _car_ly + 33, 501, _car_ly, true);
+    draw_triangle(1371, _car_ly - 33, 1371, _car_ly + 33, 1419, _car_ly, true);
 
     // Draw order: left preview first so the center card renders on top. The RIGHT
     // flank no longer shows a preview card - it hosts the AWAKENING EFFECTS panel
@@ -901,10 +908,12 @@ if (_gc_ds != noone && _gc_ds.dungeon_select_open) {
             // Confirm bar (drawn below) is the tap target for EMBARK. Steppers
             // are exact button zones now, not invisible box halves.
             if (input_device() == 2) {
+                // Frames follow the repositioned triangles (left now flanks the
+                // selected card at x 528, mirroring the right at 1392).
                 draw_set_color(make_color_rgb(120, 130, 160));
-                draw_rectangle(24, GUI_CY - 66, 132, GUI_CY + 90, true);
+                draw_rectangle(474, GUI_CY - 66, 582, GUI_CY + 90, true);
                 draw_rectangle(1338, GUI_CY - 66, 1446, GUI_CY + 90, true);
-                if      (touch_tapped(18, GUI_CY - 90, 200, GUI_CY + 114))    touch_press(ord("A"));
+                if      (touch_tapped(444, GUI_CY - 90, 600, GUI_CY + 114))   touch_press(ord("A"));
                 else if (touch_tapped(1300, GUI_CY - 90, 1482, GUI_CY + 114)) touch_press(ord("D"));
                 else if (touch_tapped(_cx + 21, _asc_y, _cx + 105, _asc_y + 66))            touch_press(ord("Q"));
                 else if (touch_tapped(_cx + _cw - 105, _asc_y, _cx + _cw - 21, _asc_y + 66)) touch_press(ord("E"));
@@ -1308,27 +1317,35 @@ if (instance_exists(obj_game_controller) && variable_global_exists("pending_perm
         for (var _si = 0; _si < 6; _si++) {
             var _sy     = 255 + _si * 108;
             var _is_sel = (_si == _gc_hub_d.perm_alloc_index);
+            var _is_arm = (_si == _gc_hub_d.perm_alloc_confirm);
             var _cur    = variable_global_get(_perm_glob_keys[_si]);
 
             draw_set_alpha(_is_sel ? 1.0 : 0.6);
-            draw_set_color(_is_sel ? make_color_rgb(50, 35, 10) : make_color_rgb(18, 22, 38));
+            draw_set_color(_is_arm ? make_color_rgb(30, 60, 30) : (_is_sel ? make_color_rgb(50, 35, 10) : make_color_rgb(18, 22, 38)));
             draw_rectangle(510, _sy, 1410, _sy + 87, false);
             draw_set_alpha(1.0);
-            draw_set_color(_is_sel ? make_color_rgb(220, 170, 50) : make_color_rgb(70, 60, 40));
+            draw_set_color(_is_arm ? make_color_rgb(110, 220, 130) : (_is_sel ? make_color_rgb(220, 170, 50) : make_color_rgb(70, 60, 40)));
             draw_rectangle(510, _sy, 1410, _sy + 87, true);
 
             draw_set_color(_is_sel ? c_white : make_color_rgb(140, 150, 170));
             draw_text(540, _sy + 27, _perm_stat_descs[_si] + "  (" + _perm_stat_names[_si] + ")");
             draw_set_halign(fa_right);
-            draw_set_color(make_color_rgb(255, 200, 50));
-            draw_text(1380, _sy + 27, "+" + string(_cur) + " permanent");
+            if (_is_arm) {
+                draw_set_color(make_color_rgb(110, 220, 130));
+                draw_text(1380, _sy + 27, "Confirm +1 " + _perm_stat_names[_si] + "?");
+            } else {
+                draw_set_color(make_color_rgb(255, 200, 50));
+                draw_text(1380, _sy + 27, "+" + string(_cur) + " permanent");
+            }
             draw_set_halign(fa_left);
         }
 
         draw_set_halign(fa_center);
         draw_set_font(fnt_ui_small);
         draw_set_color(make_color_rgb(80, 90, 110));
-        ui_draw_key_legend(GUI_CX, 938, "W/S: Navigate   Enter: Spend Point   Esc: Back");
+        ui_draw_key_legend(GUI_CX, 938, (_gc_hub_d.perm_alloc_confirm != -1)
+            ? "Enter: CONFIRM permanent point   Esc: Cancel"
+            : "W/S: Navigate   Enter: Select   Enter again: Confirm   Esc: Back");
         draw_set_font(-1);
         draw_set_halign(fa_left);
         draw_set_valign(fa_top);

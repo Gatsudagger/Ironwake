@@ -324,6 +324,8 @@ function combat_estimate_hit(ability, caster, target) {
         _dmg += array_length(target.status_effects) * 3;
     if (ability.name == "Soul Nova" && variable_struct_exists(caster, "souls"))
         _dmg += min(caster.souls, 4) * 7;
+    if (ability.name == "Soul Rend" && variable_struct_exists(caster, "souls"))
+        _dmg += min(caster.souls, 2) * 8;
     // Vanish ambush: primed and this is a damaging cast -> +12 on the next strike.
     if (variable_struct_exists(caster, "vanish_bonus") && caster.vanish_bonus)
         _dmg += 12;
@@ -669,6 +671,8 @@ function ability_status_kind(ability) {
             return "stun";
         case "Bear Trap":
             return "root";
+        case "Gravewrack Grip":
+            return "root";   // #26 melee kit - the guaranteed drain also holds them in place
         case "Mana Sever":
             return "silence";   // "sever mana" - target can't take spell actions
     }
@@ -1193,6 +1197,7 @@ function combat_pet_act(combat_state, player, combat_log, damage_popups) {
     if (_p == undefined || _p.is_egg || _p.stage < PET_STAGE_YOUNGADULT) return false;
     var _adult = (_p.stage >= PET_STAGE_ADULT);
     var _imult = pet_injury_mult(_p.injured);   // injury weakens (tier 1) or benches (tier 2+) the pet
+    _imult *= pet_hunger_mult(_p);              // hungry -25%; STARVING = benched (07-08)
     if (_imult <= 0) return false;
     var _cmult     = pet_corruption_mult(_p) * pet_bond_mult(_p);   // corruption +15%/run + Soul-bound +5% (§5 Axis 3)
     var _fulfilled = pet_is_fulfilled(_p);       // fully corrupted -> grand archetype ability
@@ -1354,6 +1359,7 @@ function combat_pet_echo_open(combat_state, player, combat_log, damage_popups) {
     var _kit = pet_kit_mods(_p);
     if (_kit.echo <= 0) return false;
     var _imult = pet_injury_mult(_p.injured);
+    _imult *= pet_hunger_mult(_p);   // hungry -25%; STARVING = benched (07-08)
     if (_imult <= 0) return false;
     // Pick a random living enemy (it lashes out, it doesn't aim).
     var _live = [], _slots = [];

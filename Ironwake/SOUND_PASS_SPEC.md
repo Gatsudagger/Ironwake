@@ -109,7 +109,7 @@ Naming: new asset = slot name below; variations get `_2`/`_3` (free via `play_sf
 | `snd_miss` ×2–3 | swipe.wav, whoosh_1, whoosh_2 (finally un-silences whiffs) |
 | `snd_player_hurt` ×3 | punch_2, slap, crunch_quick (packs have no female vocals — `_f` set stays empty for now) |
 | `snd_attack_undead` | bone_snap • `snd_death_undead`: crunch_splat |
-| `snd_attack_wraith` | ghost_long (400 `Other\`) • `snd_death_wraith`: whoosh_2 + ghost tail |
+| `snd_attack_wraith` | ~~ghost_long~~ → air_burst (400 `Environment\`, swapped in place 2026-07-08 — M: ghost_long "sounds like a ghost dying", wrong for a cast) • `snd_death_wraith`: whoosh_2 + ghost tail |
 | `snd_attack_construct` | metal_clang, harsh_thud • `snd_death_construct`: stone_push_short + metal_clang |
 | `snd_attack_beast` | crunch, kick • `snd_death_beast`: squelching_2 |
 | `snd_attack_fire` | Fireball 2 • `snd_death_fire`: Firespray 1 |
@@ -187,3 +187,9 @@ transition, so no music stop-site needed changes. Trim map lives in `audio_apply
    `tools/import_sounds_batch4.py`. MusicBox1 KEPT (M identified: standalone free itch download).
 Each batch: M auditions shortlist → approve picks → import (.wav → snd_* assets, `audio_sfx_assets()`
 registration, new call sites in .gml) → M F5s.
+
+## 4. Post-pass notes
+- 2026-07-08: `snd_attack_wraith` wav swapped in place ghost_long → air_burst (M: the old
+  sound reads as a ghost DYING, wrong for the wraith's Soul Drain cast). **EARMARK:
+  `400 Sounds Pack\Other\ghost_long.wav` is reserved as a ghost/wraith DEATH sound** — use it
+  when snd_death_wraith gets revisited (it also still backs one snd_cast_void variant).

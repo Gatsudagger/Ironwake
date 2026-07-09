@@ -753,6 +753,53 @@ global.abilities_shadowstrider[14].desc_full  = "The job was never the fight. Th
 
 
 // =============================================================================
+// #26 ARCANIST MELEE KIT (2026-07-08) - three melee SPELLS so a close-range
+// Arcanist build exists (melee weapon flat damage feeds these; root/silence
+// rules treat them as melee). Pushed at indices 15-17 so all earlier index
+// literals stay valid. Vex-gated at a new 500/800/1200 premium tier.
+// Riders live in obj_combat_controller/Step_0 (Soul Rend consumption) and the
+// generic resource path (Blazing Palm's +1 Soul on hit).
+// =============================================================================
+array_push(global.abilities_arcanist,
+    // 15: Blazing Palm - 1-AP melee Soul generator. The close-range Soulfire:
+    //     less damage than Soulfire's 15 but rides the melee weapon's flat
+    //     damage, so a bladed Arcanist out-fuels the ranged spam.
+    ability_define("Blazing Palm",
+        /*energy*/1, /*secondary*/0,
+        /*damage*/12, /*dtype*/1,        // elemental (school tag: fire)
+        /*acc*/86, /*guaranteed*/false,
+        /*crit_type*/2, /*base_crit*/8,  // arcane (INT)
+        /*effect_type*/"resource", /*effect_value*/1, /*duration*/0, // +1 Soul on a landed hit
+        /*self*/false),
+    // 16: Gravewrack Grip - guaranteed melee drain that Roots. The control
+    //     piece: kind override "root" in ability_status_kind; rooted melee
+    //     enemies skip, and detonators shatter the hold for +30%.
+    ability_define("Gravewrack Grip",
+        /*energy*/2, /*secondary*/0,
+        /*damage*/16, /*dtype*/2,        // drain - bypasses all mitigation
+        /*acc*/-1, /*guaranteed*/true,
+        /*crit_type*/-1, /*base_crit*/0,
+        /*effect_type*/"debuff", /*effect_value*/1, /*duration*/1, // Root 1 turn (kind override)
+        /*self*/false),
+    // 17: Soul Rend - the melee finisher. Consumes up to 2 Souls for +8 each
+    //     (rider in obj_combat_controller/Step_0, mirrored in combat_estimate_hit)
+    //     - a harder base hit than Soul Nova but a smaller Soul dump.
+    ability_define("Soul Rend",
+        /*energy*/3, /*secondary*/0,     // souls consumed by the rider, not secondary_cost
+        /*damage*/30, /*dtype*/1,        // elemental -> arcane (dtype default)
+        /*acc*/82, /*guaranteed*/false,
+        /*crit_type*/2, /*base_crit*/10, // arcane (INT)
+        /*effect_type*/"damage", /*effect_value*/0, /*duration*/0,
+        /*self*/false));
+global.abilities_arcanist[15].desc_short = "Melee: 12 Fire dmg. +1 Soul on hit.";
+global.abilities_arcanist[15].desc_full  = "Drive a burning palm into them at arm's length.\n- Melee spell: 12 Fire damage, +1 Soul on a landed hit. Your melee weapon's damage rides along.\n- Cheap fuel for the reserve when the fight closes in.";
+global.abilities_arcanist[16].desc_short = "Melee: 16 Void dmg, always hits. Root 1t.";
+global.abilities_arcanist[16].desc_full  = "Close a grave-cold hand around them and let the earth remember its claim.\n- Melee spell: guaranteed 16 Void damage that ignores all armor.\n- Roots the target for 1 turn - melee enemies skip their attack, and detonators shatter the hold for bonus damage.";
+global.abilities_arcanist[17].desc_short = "Melee: 30 Arcane dmg +8 per Soul consumed (max 2).";
+global.abilities_arcanist[17].desc_full  = "Take hold of whatever keeps them standing and tear it loose.\n- Melee spell: 30 Arcane damage, +8 per Soul consumed (up to 2).\n- The committed finisher - walk in with a stocked reserve and end something.";
+
+
+// =============================================================================
 // AoE TAGS - abilities that resolve against EVERY living enemy.
 // Default (tag absent) = single-target. aoe_falloff defaults to 1.0 (full
 // damage to all); combat reads `ab.is_aoe` and `ab.aoe_falloff`.
@@ -775,6 +822,7 @@ global.abilities_arcanist[0].school  = "fire";    // Soulfire     - elemental ->
 global.abilities_arcanist[5].school  = "shadow";  // Curse        - dark hex (no dmg; flavor)
 global.abilities_arcanist[9].school  = "shadow";  // Soulbind     - dark binding
 global.abilities_arcanist[13].school = "fire";    // Scorch       - burn primer
+global.abilities_arcanist[15].school = "fire";    // Blazing Palm - burning melee palm (#26)
 
 global.abilities_bloodwarden[8].school = "poison"; // Plague Touch - plague (no dmg; flavor)
 
@@ -799,6 +847,8 @@ function ability_attack_class(ab) {
         case "Flurry":      case "Killing Spree":
         // §3 rework melee additions
         case "Cleave":      case "Rupture":       case "Throat Slit":  case "Assassinate":
+        // #26 Arcanist melee kit - the melee SPELLS (dtype != 0 keeps them spells)
+        case "Blazing Palm": case "Gravewrack Grip": case "Soul Rend":
             _melee = true; break;
     }
     var _spell = (variable_struct_exists(ab, "damage_type") && ab.damage_type != 0);
@@ -879,6 +929,7 @@ function ability_category(ab) {
         case "Singularity":  case "Rift":          case "Scorch":        case "Poison Dart":
         case "Crippling Shot": case "Mana Sever":  case "Vital Theft":   case "Soulbind":
         case "Bear Trap":    case "Spike Trap":    case "Death Snare":
+        case "Blazing Palm": case "Gravewrack Grip": case "Soul Rend":   // #26 melee kit
             return "offense";
 
         // defense - self-protection
@@ -1083,9 +1134,13 @@ function ability_effect_full(ab) {
     var _b = "";
     switch (ab.name) {
         case "Soulfire":        _b = "Generate 2 Souls."; break;
+        case "Void Drain":      _b = "Banks +1 Soul on hit."; break;
         case "Soul Harvest":    _b = "Free 0-AP action: generate " + string(_ev) + " Souls."; break;
         case "Arcane Echo":     _b = "Deals +4 bonus damage per Soul you hold."; break;
         case "Soul Nova":       _b = "Consumes up to 4 Souls; +7 damage per Soul spent."; break;
+        case "Blazing Palm":    _b = "Banks +1 Soul on a landed hit."; break;
+        case "Gravewrack Grip": _b = "Cannot miss; void damage ignores armor."; break;
+        case "Soul Rend":       _b = "Consumes up to 2 Souls; +8 damage per Soul spent."; break;
         case "Flurry":          _b = "Strikes 3 times; each hit rolls its own crit. +3 damage per debuff on the target."; break;
         case "Rupture":         _b = "Detonates every bleed/poison on the target: +5 damage per remaining tick, consuming them."; break;
         case "Assassinate":     _b = "Execute: deals DOUBLE damage to a target below 30% HP."; break;
@@ -1196,7 +1251,9 @@ function ability_summary(ab) {
         case "blind":      _tag = "-" + string(round(_ev * 100)) + "% acc " + string(_ed) + "t"; break;
         case "mortality":  _tag = "-" + string(round(_ev * 100)) + "% heal " + string(_ed) + "t"; break;
         default:
-            if (_et == "heal")        _tag = "Heal " + string(_ev) + (ability_cooldown(ab) > 0 ? (" " + string(ability_cooldown(ab)) + "t CD") : "");
+            if (_et == "heal")        _tag = "Heal " + string(_ev)
+                                          + (ab.name == "Void Drain" ? ", +1 Soul" : "")
+                                          + (ability_cooldown(ab) > 0 ? (" " + string(ability_cooldown(ab)) + "t CD") : "");
             else if (_et == "shield") _tag = (_ed > 0) ? ("-" + string(_ev) + " dmg " + string(_ed) + "t") : ("Shield " + string(_ev));
     }
     if (_tag == "") {
@@ -1205,6 +1262,8 @@ function ability_summary(ab) {
             case "Soul Harvest":    _tag = "+" + string(_ev) + " Soul (0 AP)"; break;
             case "Arcane Echo":     _tag = "+4 per Soul"; break;
             case "Soul Nova":       _tag = "+7 per Soul (max 4)"; break;
+            case "Blazing Palm":    _tag = "+1 Soul on hit"; break;
+            case "Soul Rend":       _tag = "+8 per Soul (max 2)"; break;
             case "Arcane Burst":    _tag = "+40% vs Exposed"; break;
             case "Flurry":          _tag = "+3 per debuff"; break;
             case "Rupture":         _tag = "Detonate bleeds"; break;
@@ -1309,9 +1368,17 @@ global.traits_all = [
         "Treasure rooms contain one additional item.",
         -1, "dungeon_clears_total", 3, "treasure_hunter"),
 
-    trait_define("Lucky Find",
+    // Renamed from "Lucky Find" (M 07-08: the name lost its identity when the
+    // audit-§6 rework made it about consumables). effect_id stays "lucky_find"
+    // so existing unlocks carry over; equipped display names migrate in scr_save.
+    trait_define("Blessed Thirst",
         "Consumables have a 20% chance to not be consumed when used.",
         -1, "full_clear", 1, "lucky_find"),
+
+    // The NEW Lucky Find - the name's original fortune identity (and the clover).
+    trait_define("Lucky Find",
+        "+5% gold and +5% loot find from all sources.",
+        -1, "dungeon_clears_total", 3, "lucky_find_gold"),
 
     trait_define("Battle Hardened",
         "Each floor boss defeated permanently grants +3 max HP (up to +15).",
@@ -1532,6 +1599,10 @@ function ability_unlock_info(ability_name) {
         case "Rift":             return { type:"vex", cost:400, goal_type:"", goal_value:0 };
         case "Soulbind":         return { type:"vex", cost:400, goal_type:"", goal_value:0 };
         case "Singularity":      return { type:"vex", cost:400, goal_type:"", goal_value:0 };
+        // #26 Arcanist melee kit - premium tier above the 100/250/400 ladder
+        case "Blazing Palm":     return { type:"vex", cost:500,  goal_type:"", goal_value:0 };
+        case "Gravewrack Grip":  return { type:"vex", cost:800,  goal_type:"", goal_value:0 };
+        case "Soul Rend":        return { type:"vex", cost:1200, goal_type:"", goal_value:0 };
         // Bloodwarden
         case "Bloodthorn Aura":  return { type:"vex", cost:100, goal_type:"", goal_value:0 };
         case "Plague Touch":     return { type:"vex", cost:100, goal_type:"", goal_value:0 };
@@ -1861,7 +1932,7 @@ function trait_unlock_tier(trait_name) {
     switch (trait_name) {
         // Tier 1 - utility / economy
         case "Quick Recovery": case "Treasure Hunter": case "Lucky Find":
-        case "Salvager": case "Prospector":
+        case "Blessed Thirst": case "Salvager": case "Prospector":
             return 1;
         // Tier 3 - powerful / build-defining
         case "Focused Power": case "Chain Caster": case "Plaguebearer":

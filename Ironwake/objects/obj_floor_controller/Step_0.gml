@@ -246,21 +246,11 @@ if (showing_event_choice) {
             event_result_text = _out.text + (_rewards != "" ? "\n\n" + _rewards : "");
             event_phase = "result";
             // Gold-yielding result: spawn the coin burst (coins tossed up from the
-            // panel centre that fall and settle into a pile - drawn in Draw_64).
+            // panel centre that fall and settle into a pile - drawn in Draw_64
+            // via the shared ui_draw_coin_burst sim).
             event_coins = [];
             if (global.event_gold_gained > 0) {
-                var _nc = min(6 + (global.event_gold_gained div 10), 24);
-                for (var _ci = 0; _ci < _nc; _ci++) {
-                    array_push(event_coins, {
-                        x: GUI_CX + random_range(-40, 40),
-                        y: 640,
-                        vx: random_range(-4.2, 4.2),
-                        vy: random_range(-9, -4),
-                        spin: random_range(0, pi * 2),
-                        slot: _ci,           // index into the pile rest positions
-                        grounded: false
-                    });
-                }
+                event_coins = ui_seed_coin_burst(min(6 + (global.event_gold_gained div 10), 24), GUI_CX, 640);
             }
             show_debug_message("[FLOOR DEBUG] event=" + event_active.id
                 + " choice=" + _ch.label + " result=" + _out.text);
@@ -280,7 +270,12 @@ if (showing_event_choice) {
 // Exception: the escape-item confirm lives BELOW this block, so it must be gated
 // here too - its legend promises "Esc: Cancel", but Esc was opening the pause
 // menu over the popup instead (found 07-08 wiring the touch path).
-if (input_cancel() && !escape_confirm_open) {
+// gc-managed overlays (character menu [I], journal, stash...) are usable on the
+// floor and gc's Step runs FIRST, so the Esc that closes one has already cleared
+// its flag by the time we get here - global.ui_overlay_latch holds the start-of-
+// frame state so that same press can't also open the pause menu (hub idiom).
+if (input_cancel() && !escape_confirm_open
+    && !ui_input_blocked() && !global.ui_overlay_latch) {
     pause_menu_open();
     exit;
 }
@@ -462,25 +457,28 @@ if (input_confirm() || input_confirm_alt()) {
             + " room=" + string(selected_room) + " type=treasure gold=" + string(treasure_gold));
 
     } else if (_room.type == "rest") {
-        // Grant a pending heal picked up by obj_combat_controller on next combat enter.
-        // Awakening-scaled (design 2026-07-04): flat = base + 4/tier, plus 5% of max HP
-        // resolved at APPLY time (combat start) where the geared max_HP is known.
-        if (!variable_global_exists("pending_rest_heal"))     global.pending_rest_heal     = 0;
-        if (!variable_global_exists("pending_rest_heal_pct")) global.pending_rest_heal_pct = 0;
+        // Heal applies IMMEDIATELY so the floor HUD's HP readout moves (it reads
+        // run_current_hp; a deferred heal made rest sites look broken). Awakening-
+        // scaled: flat = base + 4/tier, plus 5% of the geared max HP, which
+        // out_of_combat_max_hp() can resolve here.
         var _rest_tier = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
         var _rest_flat = (trait_active("Quick Recovery") ? round(25 * trait_potency_mult("Quick Recovery")) : 15)
                        + 4 * _rest_tier;
-        global.pending_rest_heal     += _rest_flat;
-        global.pending_rest_heal_pct += 5;
+        var _rest_max  = out_of_combat_max_hp();
+        var _rest_amt  = _rest_flat + round(_rest_max * 0.05);
+        if (!variable_global_exists("run_current_hp") || global.run_current_hp <= 0) global.run_current_hp = _rest_max;
+        var _rest_before = global.run_current_hp;
+        global.run_current_hp = min(_rest_max, global.run_current_hp + _rest_amt);
+        var _rest_gain = global.run_current_hp - _rest_before;
         event_title  = "REST SITE";
-        event_body   = "You find a sheltered alcove and catch\nyour breath in the darkness.\n\n+" + string(_rest_flat)
-                     + " HP (+5% of your max HP)\nrestored at the start of\nyour next combat.";
+        event_body   = "You find a sheltered alcove and catch\nyour breath in the darkness.\n\n+" + string(_rest_gain)
+                     + " HP restored" + ((_rest_gain < _rest_amt) ? " (you were near full)" : "") + ".";
         event_color  = make_color_rgb(80, 200, 120);
         showing_event = true;
         event_timer   = 0;
 
         show_debug_message("[FLOOR DEBUG] floor=" + string(global.current_floor)
-            + " room=" + string(selected_room) + " type=rest  pending_heal=" + string(global.pending_rest_heal));
+            + " room=" + string(selected_room) + " type=rest  healed=" + string(_rest_gain));
 
     } else if (_room.type == "treasure_heal") {
         // Supply cache: guaranteed consumable + small gold

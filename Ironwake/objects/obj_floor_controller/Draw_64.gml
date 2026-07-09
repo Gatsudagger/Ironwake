@@ -328,7 +328,7 @@ switch (_sel.type) {
     case "treasure_rare":
         _det_desc = "An ancient sealed chamber.\nNo enemies present.\nGuaranteed uncommon+ equipment."; break;
     case "rest":
-        _det_desc = "A sheltered alcove.\nYou may rest and recover here.\n+" + string(15 + 4 * (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0)) + " HP +5% max HP at next combat."; break;
+        _det_desc = "A sheltered alcove.\nYou may rest and recover here.\n+" + string(15 + 4 * (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0)) + " HP +5% of max HP restored."; break;
     case "event":
         _det_desc = "A choice awaits - risk and\nreward in equal measure.\nYour stats may tip the odds."; break;
     case "boss":
@@ -356,7 +356,7 @@ if (_sel.cleared) {
 if (!_sel.cleared) {
     if (_sel.type == "rest") {
         draw_set_color(_COL_REST);
-        draw_text(_ddx, _ddy + 300, "+" + string(15 + 4 * (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0)) + " HP +5% max (next combat)");
+        draw_text(_ddx, _ddy + 300, "+" + string(15 + 4 * (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0)) + " HP +5% max restored");
     } else if (_sel.type == "event") {
         draw_set_color(_COL_EVENT);
         draw_text(_ddx, _ddy + 300, "An uncertain encounter.");
@@ -393,6 +393,18 @@ if (showing_treasure) {
     var _pop_cx = GUI_CX;
     var _pop_cy = 450 + _float_offset;
 
+    // #19 polish: coin burst on the chest moment - reuses the event-result sim.
+    // Seeded on the popup's first frame (treasure_timer resets to 0 on open);
+    // coins toss up from the gold line and settle into a pile below the text.
+    if (treasure_timer == 0) {
+        treasure_coins = (treasure_gold > 0)
+            ? ui_seed_coin_burst(min(6 + (treasure_gold div 10), 24), GUI_CX, 540)
+            : [];
+    }
+    if (array_length(treasure_coins) > 0) {
+        ui_draw_coin_burst(treasure_coins, 924);
+    }
+
     draw_set_font(fnt_ui_title);
     draw_set_halign(fa_center);
     draw_set_valign(fa_middle);
@@ -403,7 +415,10 @@ if (showing_treasure) {
 
     draw_set_font(fnt_ui);
     draw_set_color(c_white);
-    draw_text(_pop_cx, _pop_cy + 84, "You found " + string(treasure_gold) + " gold!");
+    var _tg_txt = "You found " + string(treasure_gold) + " gold!";
+    // Coin glyph beside the amount (#19 - M-approved icon, gen_reward_icons.py).
+    draw_sprite_stretched(spr_icon_gold, 0, _pop_cx - string_width(_tg_txt) * 0.5 - 44, _pop_cy + 66, 36, 36);
+    draw_text(_pop_cx, _pop_cy + 84, _tg_txt);
 
     if (treasure_item != undefined) {
         var _tr_is_cons = variable_struct_exists(treasure_item, "item_category")
@@ -591,14 +606,18 @@ if (showing_shrine) {
     var _sh_g = "Gold: " + string(_sg) + "      ";
     var _sh_l = "Rune Dust:";
     var _sh_v = " " + string(_sdu);
-    var _sh_x = GUI_CX - (string_width(_sh_g) + string_width(_sh_l) + string_width(_sh_v)) * 0.5;
+    // Inline coin/dust glyphs lead their readouts (#19 - M-approved icons).
+    var _sh_ic = 30;
+    var _sh_x = GUI_CX - (string_width(_sh_g) + string_width(_sh_l) + string_width(_sh_v) + _sh_ic * 2) * 0.5;
     draw_set_halign(fa_left);
+    draw_sprite_stretched(spr_icon_gold, 0, _sh_x, 197, 24, 24);
     draw_set_color(make_color_rgb(210, 200, 150));
-    draw_text(_sh_x, 198, _sh_g);
+    draw_text(_sh_x + _sh_ic, 198, _sh_g);
+    draw_sprite_stretched(spr_icon_dust, 0, _sh_x + _sh_ic + string_width(_sh_g), 197, 24, 24);
     draw_set_color(make_color_rgb(195, 155, 255));
-    draw_text(_sh_x + string_width(_sh_g), 198, _sh_l);
+    draw_text(_sh_x + _sh_ic * 2 + string_width(_sh_g), 198, _sh_l);
     draw_set_color(make_color_rgb(210, 200, 150));
-    draw_text(_sh_x + string_width(_sh_g) + string_width(_sh_l), 198, _sh_v);
+    draw_text(_sh_x + _sh_ic * 2 + string_width(_sh_g) + string_width(_sh_l), 198, _sh_v);
     draw_set_halign(fa_center);
 
     // Hover-inspect capture for the suggested "[3] Sacrifice ..." item; drawn last
@@ -654,9 +673,13 @@ if (showing_shrine) {
                 var _dust_ok = _sdu >= _dc;
                 var _ipick   = boon_item_tribute_pick(_bd.cost);
                 draw_set_color(_gold_ok ? make_color_rgb(150, 220, 150) : make_color_rgb(150, 110, 110));
-                draw_text(360, _ry + 102, "[1] " + string(_bd.cost) + "g");
+                var _p1_txt = "[1] " + string(_bd.cost) + "g";
+                draw_text(360, _ry + 102, _p1_txt);
+                draw_sprite_stretched(spr_icon_gold, 0, 360 + string_width(_p1_txt) + 8, _ry + 101, 24, 24);
                 draw_set_color(_dust_ok ? make_color_rgb(150, 220, 150) : make_color_rgb(150, 110, 110));
-                draw_text(540, _ry + 102, "[2] " + string(_dc) + " dust");
+                var _p2_txt = "[2] " + string(_dc) + " dust";
+                draw_text(540, _ry + 102, _p2_txt);
+                draw_sprite_stretched(spr_icon_dust, 0, 540 + string_width(_p2_txt) + 8, _ry + 101, 24, 24);
                 draw_set_color((_ipick != undefined) ? make_color_rgb(150, 220, 150) : make_color_rgb(150, 110, 110));
                 var _ip_txt = (_ipick != undefined)
                     ? ("[3] Sacrifice " + _ipick.item.name + " (" + item_rarity_name(_ipick.item.rarity) + ")")
@@ -757,6 +780,100 @@ if (showing_event_choice && event_active != undefined) {
 
     var _ev = event_active;
 
+    // --- Atmosphere layer (M 07-08, staged pass 1: code-drawn; splash art can
+    // layer on later for the best events) -------------------------------------
+    // 1) Corner vignette: subtractive gradients darken the edges smoothly.
+    gpu_set_blendmode(bm_subtract);
+    var _vg = make_color_rgb(70, 70, 78);
+    draw_rectangle_color(0, 0, GUI_W, 240, _vg, _vg, c_black, c_black, false);
+    draw_rectangle_color(0, GUI_H - 240, GUI_W, GUI_H, c_black, c_black, _vg, _vg, false);
+    draw_rectangle_color(0, 0, 300, GUI_H, _vg, c_black, c_black, _vg, false);
+    draw_rectangle_color(GUI_W - 300, 0, GUI_W, GUI_H, c_black, _vg, _vg, c_black, false);
+    gpu_set_blendmode(bm_normal);
+
+    // 1b) #16 stage 2: M-approved splash art for the four starred events, a
+    // cinematic band behind the title/body (400x224 source @2x, M approved all
+    // four 07-08). Subtractive fades dissolve the lower edge before the choice
+    // rows and the side edges into the scrim; a soft two-step subtractive band
+    // sits behind the flavor text so it stays readable over the bright
+    // centerpiece. Events without a panel keep the pure code-drawn pass.
+    var _splash = -1;
+    switch (_ev.id) {
+        case "merchants_ghost":   _splash = spr_event_splash_merchants_ghost;   break;
+        case "whispering_mirror": _splash = spr_event_splash_whispering_mirror; break;
+        case "cursed_idol":       _splash = spr_event_splash_cursed_idol;       break;
+        case "mysterious_font":   _splash = spr_event_splash_mysterious_font;   break;
+    }
+    if (_splash != -1) {
+        var _sp_x0 = GUI_CX - 400, _sp_y0 = 40, _sp_x1 = GUI_CX + 400, _sp_y1 = _sp_y0 + 448;
+        draw_sprite_stretched(_splash, 0, _sp_x0, _sp_y0, 800, 448);
+        gpu_set_blendmode(bm_subtract);
+        // Bottom dissolve (fades to the dark scrim before the rows at y315+).
+        draw_rectangle_color(_sp_x0, 300, _sp_x1, _sp_y1, c_black, c_black, c_white, c_white, false);
+        // Side fades so the band has no hard vertical cut.
+        draw_rectangle_color(_sp_x0, _sp_y0, _sp_x0 + 70, _sp_y1, c_white, c_black, c_black, c_white, false);
+        draw_rectangle_color(_sp_x1 - 70, _sp_y0, _sp_x1, _sp_y1, c_black, c_white, c_white, c_black, false);
+        // Readability band behind the body text (two nested steps = soft edge).
+        var _sc = make_color_rgb(55, 55, 60);
+        draw_rectangle_color(GUI_CX - 590, 150, GUI_CX + 590, 270, _sc, _sc, _sc, _sc, false);
+        draw_rectangle_color(GUI_CX - 560, 165, GUI_CX + 560, 255, _sc, _sc, _sc, _sc, false);
+        gpu_set_blendmode(bm_normal);
+    }
+
+    // 2) Giant faint drop-cap of the event's title, tinted its accent color - an
+    // illuminated-manuscript motif that is unique per event with no art budget.
+    draw_set_font(fnt_ui_title);
+    draw_set_halign(fa_center); draw_set_valign(fa_middle);
+    draw_set_alpha(0.10);
+    draw_set_color(_ev.color);
+    draw_text_transformed(GUI_CX, 560, string_char_at(_ev.title, 1), 9, 9, 0);
+    draw_set_alpha(1.0);
+    draw_set_valign(fa_top);
+
+    // 3) Ambient particles, style keyed by event id. STATELESS: every position/
+    // pulse derives from current_time + the particle index, nothing persisted.
+    var _pstyle = "mist";
+    switch (_ev.id) {
+        case "cursed_idol": case "runed_anvil":                        _pstyle = "embers";   break;
+        case "trapped_corridor": case "collapsed_shrine":              _pstyle = "falldust"; break;
+        case "strangers_memory": case "gamblers_cache": case "forked_omen":
+        case "arcane_locus": case "mysterious_font": case "whispering_mirror":
+                                                                       _pstyle = "glints";   break;
+        // wounded_wanderer / merchants_ghost / abandoned_nest / vagrant_oracle /
+        // starving_hound and any future event default to drifting mist.
+    }
+    var _at = current_time / 1000;
+    for (var _pi = 0; _pi < 18; _pi++) {
+        var _aph = (_pi * 137.5) mod 977;   // cheap per-particle phase scramble
+        if (_pstyle == "embers") {
+            var _aex = 120 + ((_aph * 1.83) mod (GUI_W - 240)) + sin(_at * 1.4 + _aph) * 22;
+            var _aey = GUI_H - ((_at * (34 + (_aph mod 27)) + _aph * 3) mod (GUI_H + 60));
+            draw_set_alpha(0.32 + 0.2 * sin(_at * 3 + _aph));
+            draw_set_color(merge_color(_ev.color, make_color_rgb(255, 170, 60), 0.5));
+            draw_circle(_aex, _aey, 2 + (_pi mod 2), false);
+        } else if (_pstyle == "falldust") {
+            var _afx = 90 + ((_aph * 2.11) mod (GUI_W - 180));
+            var _afy = ((_at * (26 + (_aph mod 19)) + _aph * 5) mod (GUI_H + 40)) - 20;
+            draw_set_alpha(0.22);
+            draw_set_color(make_color_rgb(150, 140, 120));
+            draw_circle(_afx, _afy, 1.5, false);
+        } else if (_pstyle == "glints") {
+            var _agx = 140 + ((_aph * 1.97) mod (GUI_W - 280));
+            var _agy = 150 + ((_aph * 3.31) mod (GUI_H - 300));
+            draw_set_alpha(0.28 * (0.5 + 0.5 * sin(_at * (2 + (_pi mod 3)) + _aph)));
+            draw_set_color(merge_color(_ev.color, c_white, 0.5));
+            draw_rectangle(_agx - 1, _agy - 4, _agx + 1, _agy + 4, false);
+            draw_rectangle(_agx - 4, _agy - 1, _agx + 4, _agy + 1, false);
+        } else {   // mist
+            var _amx = ((_at * (14 + (_aph mod 11)) + _aph * 7) mod (GUI_W + 500)) - 250;
+            var _amy = 220 + ((_aph * 2.63) mod (GUI_H - 420));
+            draw_set_alpha(0.05 + 0.02 * sin(_at + _aph));
+            draw_set_color(merge_color(_ev.color, make_color_rgb(200, 205, 220), 0.7));
+            draw_ellipse(_amx - 130, _amy - 30, _amx + 130, _amy + 30, false);
+        }
+    }
+    draw_set_alpha(1.0);
+
     // Title + flavor body
     draw_set_font(fnt_ui_title);
     draw_set_halign(fa_center);
@@ -796,38 +913,10 @@ if (showing_event_choice && event_active != undefined) {
         draw_set_color(make_color_rgb(215, 220, 235));
         draw_text_ext(GUI_CX, _rp_y0 + 48, ui_sentence(event_result_text), -1, _rp_x1 - _rp_x0 - 120);
 
-        // Coin burst: coins tossed up, falling with gravity, one bounce-free
-        // settle into a pyramid pile on the panel floor. Pure draw-side sim.
+        // Coin burst: shared draw-side sim (ui_draw_coin_burst, #19 polish -
+        // also runs on the treasure popup). Pile floor sits on the panel.
         if (array_length(event_coins) > 0) {
-            var _floor_y = _rp_y1 - 66;
-            for (var _cn = 0; _cn < array_length(event_coins); _cn++) {
-                var _co = event_coins[_cn];
-                if (!_co.grounded) {
-                    _co.vy  += 0.45;
-                    _co.x   += _co.vx;
-                    _co.y   += _co.vy;
-                    _co.spin += 0.35;
-                    // Pyramid rest slot from the coin's index: rows of 7/5/4/3/2/2...
-                    var _rows  = [7, 5, 4, 3, 2, 2, 1];
-                    var _ri    = 0, _acc = 0, _slot = _co.slot;
-                    while (_ri < array_length(_rows) - 1 && _slot >= _acc + _rows[_ri]) { _acc += _rows[_ri]; _ri++; }
-                    var _in_row = _slot - _acc;
-                    var _rest_y = _floor_y - _ri * 13;
-                    var _rest_x = GUI_CX + (_in_row - (_rows[_ri] - 1) / 2) * 26 + ((_ri mod 2 == 1) ? 7 : -7);
-                    if (_co.vy > 0 && _co.y >= _rest_y) {
-                        _co.x = _rest_x; _co.y = _rest_y; _co.grounded = true;
-                    }
-                }
-                // Coin: dark bronze rim, gold face, top-left glint. Airborne coins
-                // squash on x with their spin so they read as tumbling discs.
-                var _cxs = _co.grounded ? 1.0 : max(0.25, abs(cos(_co.spin)));
-                draw_set_color(make_color_rgb(96, 62, 18));
-                draw_ellipse(_co.x - 10 * _cxs, _co.y - 9, _co.x + 10 * _cxs, _co.y + 9, false);
-                draw_set_color(make_color_rgb(232, 186, 74));
-                draw_ellipse(_co.x - 8 * _cxs, _co.y - 7, _co.x + 8 * _cxs, _co.y + 7, false);
-                draw_set_color(make_color_rgb(255, 232, 150));
-                draw_ellipse(_co.x - 4 * _cxs, _co.y - 5, _co.x - 4 * _cxs + 4, _co.y - 1, false);
-            }
+            ui_draw_coin_burst(event_coins, _rp_y1 - 66);
         }
 
         if (input_device() == 2) {
@@ -953,7 +1042,7 @@ if (input_device() != 2) {
     draw_set_valign(fa_bottom);
 
     draw_set_color(c_gray);
-    draw_text(GUI_CX, 1073, "WASD / Arrow Keys: Move between rooms   Enter: Enter Room");
+    draw_text(GUI_CX, 1073, "WASD / Arrow Keys: Move between rooms   Enter: Enter Room   P: Companion");
 
     if (_boss_cleared) {
         draw_set_color(c_gray);
@@ -1114,6 +1203,21 @@ ui_draw_consumable_overflow();
 
 // J-key Journal overlay (Phase 4a) - view/track mid-run; actions are hub-only.
 ui_draw_journal();
+
+// P-key companion inspect (M 07-08) - the full pet profile as an overlay.
+if (instance_exists(obj_game_controller)) {
+    var _gc_pi = instance_find(obj_game_controller, 0);
+    if (variable_instance_exists(_gc_pi, "pet_inspect_open") && _gc_pi.pet_inspect_open
+        && pet_active() != undefined) {
+        ui_draw_pet_detail(pet_active());
+        draw_set_halign(fa_center);
+        draw_set_font(fnt_ui_small);
+        draw_set_color(make_color_rgb(140, 150, 175));
+        ui_draw_key_legend(GUI_CX, 1044, "P / Esc: Close");
+        draw_set_halign(fa_left);
+        draw_set_font(-1);
+    }
+}
 
 // Pause / Esc menu + its Settings sub-screen (drawn here since the floor doesn't
 // otherwise host the settings overlay during a run)

@@ -434,6 +434,7 @@ treasure_gold    = 0;
 treasure_timer   = 0;
 treasure_item    = undefined;
 treasure_item2   = undefined;   // Treasure Hunter's bonus item (treasure rooms only)
+treasure_coins   = [];          // gold-burst coins on the popup (#19 polish, shared sim)
 
 showing_event = false;
 event_title   = "";

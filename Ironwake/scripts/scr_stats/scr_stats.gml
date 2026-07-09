@@ -115,6 +115,8 @@ function add_gold(amount) {
     if (trait_active("Scavenger")) {
         amount = ceil(amount * (1 + 0.15 * trait_potency_mult("Scavenger")));
     }
+    // Lucky Find (the NEW one, 07-08 identity split): +5% gold from all sources.
+    if (trait_active("Lucky Find")) amount = ceil(amount * 1.05);
     // Gear "gold_find" affix (e.g. "of Greed"/"Lucky", +N%): boosts found gold.
     // apply_equipment_stats sums it across base stat + affixes + gear runes; a
     // throwaway struct is passed because we only need the returned gold_find total.
@@ -268,6 +270,23 @@ function end_run(result) {
         global.pet_find_notice = (global.pet_find_notice != "")
             ? (global.pet_find_notice + "   " + _pet_corr) : _pet_corr;
     }
+    // Hunger upkeep (07-08): the whole roster works up an appetite each run.
+    // Runs AFTER pet_run_complete so its gates read pre-drain hunger; a pet that
+    // just went hungry gets a heads-up before it starts underperforming.
+    pet_hunger_run_tick();
+    var _act_hp = pet_active();
+    if (_act_hp != undefined && !_act_hp.is_egg && variable_global_exists("pet_find_notice")) {
+        var _hst = pet_hunger_state(_act_hp);
+        if (_hst == "hungry" || _hst == "starving") {
+            var _hnote = (_hst == "starving")
+                ? (_act_hp.name + " is STARVING - it will not act at all until fed at Bairc.")
+                : (_act_hp.name + " is hungry - it fights at 3/4 strength and bonds with no one until fed.");
+            global.pet_find_notice = (global.pet_find_notice != "")
+                ? (global.pet_find_notice + "   " + _hnote) : _hnote;
+        }
+    }
+    // Treats reset with the run (max 2 per run, pet_treats_left).
+    global.pet_treats_run = 0;
 
     // Reset Last Stand for the next run (consumed at most once per run in combat)
     if (variable_global_exists("last_stand_used")) global.last_stand_used = false;
@@ -591,10 +610,17 @@ function item_stat_ranges_text(base_item) {
     // Weapons also carry flat reach-gated damage - show it so the codex reflects the
     // weapon-roles system (melee vs ranged, 1H vs 2H).
     if (_slot == "weapon" || _slot == "ranged_weapon") {
-        var _wd    = variable_struct_exists(base_item, "weapon_damage") ? base_item.weapon_damage : weapon_base_damage(_rar);
         var _reach = (_slot == "weapon") ? "melee" : "ranged";
         var _hands = (variable_struct_exists(base_item, "two_handed") && base_item.two_handed) ? "2H" : "1H";
-        _txt = "Weapon dmg +" + string(_wd) + " (" + _reach + ", " + _hands + ")\n" + _txt;
+        // Hand-tuned budgets (2H, legendaries) show their fixed value; everything
+        // else rolls from the rarity range, so the codex shows the range.
+        var _wd_txt;
+        if ((_hands == "2H") || _rar >= 4) {
+            _wd_txt = "+" + string(variable_struct_exists(base_item, "weapon_damage") ? base_item.weapon_damage : weapon_damage_max(_rar));
+        } else {
+            _wd_txt = "+" + string(weapon_damage_min(_rar)) + "-" + string(weapon_damage_max(_rar));
+        }
+        _txt = "Weapon dmg " + _wd_txt + " (" + _reach + ", " + _hands + ")\n" + _txt;
     }
 
     if (_rar == 4) {
@@ -628,15 +654,43 @@ function item_stat_ranges_text(base_item) {
 // abilities of the weapon's reach class, separate from any global +stat the weapon
 // also carries. First-pass / tunable.
 // ---------------------------------------------------------------------------
-function weapon_base_damage(rarity) {
+// Rarity range bounds (2026-07-08 rework: flat damage ROLLS per item instead of a
+// fixed value, so drops of one rarity differ - a high common roll can beat a low
+// uncommon one; higher rarities compensate with affixes/sockets). Maxes = the old
+// fixed values, so no roll exceeds what the tier used to give.
+function weapon_damage_min(rarity) {
     switch (rarity) {
-        case 0: return 3;    // Common
-        case 1: return 5;    // Uncommon
-        case 2: return 8;    // Rare
-        case 3: return 11;   // Epic
-        case 4: return 12;   // Legendary
+        case 0: return 1;   case 1: return 2;   case 2: return 4;
+        case 3: return 6;   case 4: return 8;
     }
     return 0;
+}
+function weapon_damage_max(rarity) {
+    switch (rarity) {
+        case 0: return 3;   case 1: return 5;   case 2: return 8;
+        case 3: return 11;  case 4: return 12;
+    }
+    return 0;
+}
+function weapon_base_damage(rarity) {
+    var _mn = weapon_damage_min(rarity);
+    if (_mn <= 0) return 0;
+    return irandom_range(_mn, weapon_damage_max(rarity));
+}
+
+// weapon_roll_school() - random magical school for a caster ranged weapon's base
+// damage, rolled ONCE per item at creation (wands/foci never deal phys; bows do).
+function weapon_roll_school() {
+    var _pool = ability_school_list();
+    return _pool[irandom(array_length(_pool) - 1)];
+}
+
+// weapon_is_caster_ranged(item) - wand/focus/scepter/staff/rod in the ranged slot:
+// the weapons whose base damage is school-typed. Keys off the same name families
+// as the INT stat requirement so the two never disagree.
+function weapon_is_caster_ranged(item) {
+    if (!is_struct(item) || !variable_struct_exists(item, "slot")) return false;
+    return (item.slot == "ranged_weapon" && weapon_required_stat(item) == "INT");
 }
 
 // ---------------------------------------------------------------------------
@@ -821,9 +875,10 @@ function elem_affix_describe(elem, slot = "") {
 // 3=epic, 4=legendary.
 // ---------------------------------------------------------------------------
 function create_item(name, slot, rarity, stat_name, stat_value, effect_desc, gold_value) {
-    // Weapon-slot items get a flat, reach-gated weapon_damage; all other gear = 0.
+    // Weapon-slot items get a flat, reach-gated weapon_damage (rolled from the
+    // rarity's range at creation); all other gear = 0.
     var _wpn_dmg = (slot == "weapon" || slot == "ranged_weapon") ? weapon_base_damage(rarity) : 0;
-    return {
+    var _it = {
         name:          name,
         base_name:     name,   // immutable identity for the codex (affixes mutate `name`)
         item_category: "equipment",
@@ -832,6 +887,7 @@ function create_item(name, slot, rarity, stat_name, stat_value, effect_desc, gol
         stat_name:     stat_name,
         stat_value:    stat_value,
         weapon_damage: _wpn_dmg,                          // flat reach-gated damage (weapons only)
+        wpn_school:    "",                                // caster ranged weapons: school of the base damage
         two_handed:    false,                             // 2H weapons lock the offhand slot (set post-create)
         elem_affix:    undefined,                         // elemental affix (SYSTEMS_WEAPON_ROLES.md §C); set post-create
         effect_desc:   effect_desc,
@@ -839,6 +895,10 @@ function create_item(name, slot, rarity, stat_name, stat_value, effect_desc, gol
         socket_count:  rune_sockets_for_rarity(rarity),   // rune sockets by rarity
         runes:         []                                  // socketed gear runes
     };
+    // Wands/foci/scepters/staves/rods deal their base damage as a MAGICAL school,
+    // rolled once per item - never phys (bows keep phys).
+    if (weapon_is_caster_ranged(_it)) _it.wpn_school = weapon_roll_school();
+    return _it;
 }
 
 // ---------------------------------------------------------------------------
@@ -1053,6 +1113,7 @@ function clone_item(src) {
         stat_name:     src.stat_name,
         stat_value:    src.stat_value,
         weapon_damage: variable_struct_exists(src, "weapon_damage") ? src.weapon_damage : 0,
+        wpn_school:    variable_struct_exists(src, "wpn_school")    ? src.wpn_school    : "",
         two_handed:    variable_struct_exists(src, "two_handed")    ? src.two_handed    : false,
         elem_affix:    _clone_elem_affix(src),
         effect_desc:   src.effect_desc,
@@ -1076,6 +1137,16 @@ function clone_item(src) {
             });
         }
     }
+    // Every caller clones a loot-table TEMPLATE, so weapons re-roll their flat
+    // damage (and caster school) per clone - otherwise the template's single roll
+    // would stamp every drop of that base identical. Hand-tuned budgets keep the
+    // authored value: 2H weapons and legendaries.
+    if ((_c.slot == "weapon" || _c.slot == "ranged_weapon") && !_c.two_handed && _c.rarity < 4) {
+        _c.weapon_damage = weapon_base_damage(_c.rarity);
+    }
+    // Caster ranged weapons roll a fresh school per drop (the template's own
+    // creation-time roll must not stamp every copy alike).
+    if (weapon_is_caster_ranged(_c)) _c.wpn_school = weapon_roll_school();
     // Deep-copy socketed runes so the clone never shares rune structs with src.
     if (variable_struct_exists(src, "runes")) {
         for (var _ri = 0; _ri < array_length(src.runes); _ri++) {
@@ -1493,29 +1564,42 @@ function consumable_overflow_pending() {
 }
 
 // Resolve input for the overflow modal. Returns true while still open.
+// TWO-STEP (M 07-08 redesign): Enter ARMS a choice - the chosen unit moves into
+// the DISCARDING panel on the right of the popup with an explicit "ONE of N"
+// line - and a second Enter commits. Moving the cursor or Esc disarms without
+// losing anything. Stacks were the fear: picking "Adrenaline Vial x4" never
+// looked like it discarded one, so now the panel says exactly what is lost.
 function consumable_overflow_step() {
     if (!consumable_overflow_pending()) return false;
     if (!variable_global_exists("consumable_overflow_cursor")) global.consumable_overflow_cursor = 0;
+    if (!variable_global_exists("consumable_overflow_armed"))  global.consumable_overflow_armed  = -1;
 
-    var _groups = consumables_grouped();
+    var _groups  = consumables_grouped();
     var _options = array_length(_groups) + 1;   // +1 = "Leave it behind"
     var _cur = global.consumable_overflow_cursor;
 
-    if (nav_up())   _cur = wrap_index(_cur - 1, _options);
-    if (nav_down()) _cur = wrap_index(_cur + 1, _options);
+    if (nav_up())   { _cur = wrap_index(_cur - 1, _options); global.consumable_overflow_armed = -1; }
+    if (nav_down()) { _cur = wrap_index(_cur + 1, _options); global.consumable_overflow_armed = -1; }
     global.consumable_overflow_cursor = _cur;
 
-    if (input_confirm()) {
-        var _new = global.consumable_overflow[0];
-        if (_cur < array_length(_groups)) {
-            // Discard one of the chosen held consumable, take the new one.
-            var _idx = _groups[_cur].first_index;
-            array_delete(global.consumable_inventory, _idx, 1);
-            array_push(global.consumable_inventory, _new);
+    if (input_cancel() || input_back()) global.consumable_overflow_armed = -1;
+
+    if (input_confirm() || input_confirm_alt()) {
+        if (global.consumable_overflow_armed != _cur) {
+            global.consumable_overflow_armed = _cur;   // arm - the DISCARDING panel previews the loss
+        } else {
+            var _new = global.consumable_overflow[0];
+            if (_cur < array_length(_groups)) {
+                // Discard ONE of the chosen held consumable, take the new one.
+                var _idx = _groups[_cur].first_index;
+                array_delete(global.consumable_inventory, _idx, 1);
+                array_push(global.consumable_inventory, _new);
+            }
+            // else: "Leave it behind" - the new item is simply dropped.
+            array_delete(global.consumable_overflow, 0, 1);
+            global.consumable_overflow_cursor = 0;
+            global.consumable_overflow_armed  = -1;
         }
-        // else: "Leave it behind" - the new item is simply dropped.
-        array_delete(global.consumable_overflow, 0, 1);
-        global.consumable_overflow_cursor = 0;
     }
     return consumable_overflow_pending();
 }
@@ -1620,13 +1704,23 @@ function item_is_two_handed(item) {
 // Backfill weapon-role fields on items deserialized from older saves (pre-Stage-1
 // weapon_damage / pre-Stage-2 two_handed). Without this an equipped weapon saved
 // before the field existed shows no "+N dmg (1H)" line. Safe to call on any item.
-function item_migrate_weapon_fields(it) {
+function item_migrate_weapon_fields(it, force_reroll = false) {
     if (it == undefined || !is_struct(it)) return;
     if (!variable_struct_exists(it, "slot")) return;
     if (it.slot == "weapon" || it.slot == "ranged_weapon") {
-        if (!variable_struct_exists(it, "weapon_damage") || it.weapon_damage == 0) {
-            var _rar = variable_struct_exists(it, "rarity") ? it.rarity : 0;
+        var _rar = variable_struct_exists(it, "rarity") ? it.rarity : 0;
+        var _missing = (!variable_struct_exists(it, "weapon_damage") || it.weapon_damage == 0);
+        // force_reroll = the v2 save migration: pre-v2 weapons carry the old FIXED
+        // flat damage - re-roll once into the rarity range. Hand-tuned budgets
+        // (2H weapons, legendaries) keep their authored value.
+        var _hand_tuned = (variable_struct_exists(it, "two_handed") && it.two_handed) || (_rar >= 4);
+        if (_missing || (force_reroll && !_hand_tuned)) {
             it.weapon_damage = weapon_base_damage(_rar);
+        }
+        // Caster ranged weapons saved before wpn_school existed: roll their school.
+        if (weapon_is_caster_ranged(it)
+            && (!variable_struct_exists(it, "wpn_school") || it.wpn_school == "")) {
+            it.wpn_school = weapon_roll_school();
         }
     }
     if (!variable_struct_exists(it, "two_handed")) it.two_handed = false;
@@ -1886,6 +1980,28 @@ function equip_stat_block_reason(item) {
     return item.name + " requires " + string(_req.value) + " " + _req.stat + ".";
 }
 
+// Re-validate every equipped item against the stats you actually have NOW and
+// auto-unequip failures to the stash. Mid-run stat gains satisfy the equip gate
+// while they last, but back at camp they're gone - keeping the item equipped
+// would let the gate be gamed permanently (M 07-08). Run at hub entry, where
+// run_stat_bonuses are already cleared. Returns the unequipped items' names
+// (the hub shows the "your temporary power has left you" notice when non-empty).
+function equip_validate_stat_reqs() {
+    var _dropped = [];
+    if (!variable_global_exists("inventory")) return _dropped;
+    for (var _i = 0; _i < array_length(global.inventory); _i++) {
+        var _it = global.inventory[_i];
+        if (_it == undefined) continue;
+        if (equip_stat_block_reason(_it) != "") {
+            global.inventory[_i] = undefined;
+            if (!variable_global_exists("equipment_stash")) global.equipment_stash = [];
+            array_push(global.equipment_stash, _it);
+            array_push(_dropped, _it.name);
+        }
+    }
+    return _dropped;
+}
+
 function apply_equipment_stats(stats_struct) {
     // Extended bonus struct: armor/el_resist (old), plus affix-driven special fields.
     // bonus_max_hp  - flat HP added directly to player.max_HP after derive
@@ -1896,7 +2012,7 @@ function apply_equipment_stats(stats_struct) {
     // stats_struct; summed into the cast resolver's _dmg per the ability's reach class
     // (SYSTEMS_WEAPON_ROLES.md §B). Melee weapon -> melee abilities, ranged weapon -> ranged.
     var _bonus = { armor: 0, el_resist: 0, bonus_max_hp: 0, crit_flat: 0, dodge_flat: 0, gold_find: 0,
-                   melee_dmg_bonus: 0, ranged_dmg_bonus: 0,
+                   melee_dmg_bonus: 0, ranged_dmg_bonus: 0, ranged_school: "",
                    melee_elem: undefined, ranged_elem: undefined,
                    // Flat "+X <school> damage" accumulator (SYSTEMS_ELEMENT_SCHOOLS.md §C).
                    // Keyed by the 8 schools; _equip_apply_stat routes "school_<name>" affixes
@@ -1918,7 +2034,14 @@ function apply_equipment_stats(stats_struct) {
         var _wd = variable_struct_exists(_it, "weapon_damage") ? _it.weapon_damage : 0;
         if (_wd != 0) {
             if (_it.slot == "weapon")             _bonus.melee_dmg_bonus  += _wd;
-            else if (_it.slot == "ranged_weapon") _bonus.ranged_dmg_bonus += _wd;
+            else if (_it.slot == "ranged_weapon") {
+                _bonus.ranged_dmg_bonus += _wd;
+                // Caster ranged weapon: its flat damage is school-typed (wands
+                // never deal phys) - combat reads this to resolve it as elemental.
+                if (variable_struct_exists(_it, "wpn_school") && _it.wpn_school != "") {
+                    _bonus.ranged_school = _it.wpn_school;
+                }
+            }
         }
 
         // Reach-gated elemental affix (one melee + one ranged weapon at most).
@@ -2028,7 +2151,9 @@ function roll_consumable(pool) {
 // roll_consumable_weighted(pool)
 // Like roll_consumable but down-weights healing so drops stop flooding with
 // salves. Heal / heal-over-time items get weight 1; every other (utility)
-// consumable gets weight 3. Used by DROP sources only - uniform roll_consumable
+// consumable gets weight 3. The big-AP Adrenaline Vial also drops to weight 1
+// (M 07-08: vials were piling up unused) while the humble Energy Tonic is
+// FAVORED at weight 4. Used by DROP sources only - uniform roll_consumable
 // is kept for shop stock where the player chooses what to buy.
 // ---------------------------------------------------------------------------
 function roll_consumable_weighted(pool) {
@@ -2038,7 +2163,11 @@ function roll_consumable_weighted(pool) {
     var _total   = 0;
     for (var _i = 0; _i < _n; _i++) {
         var _et = variable_struct_exists(pool[_i], "effect_type") ? pool[_i].effect_type : "";
-        _weights[_i] = (_et == "heal" || _et == "heal_dot") ? 1 : 3;
+        var _ev = variable_struct_exists(pool[_i], "effect_value") ? pool[_i].effect_value : 0;
+        if (_et == "heal" || _et == "heal_dot")   _weights[_i] = 1;
+        else if (_et == "energy" && _ev >= 3)     _weights[_i] = 1;   // Adrenaline Vial: rare
+        else if (_et == "energy")                 _weights[_i] = 4;   // Energy Tonic: common
+        else                                      _weights[_i] = 3;
         _total += _weights[_i];
     }
     if (_total <= 0) return pool[irandom(_n - 1)];
@@ -2126,6 +2255,9 @@ function handle_enemy_drops(enemy_type) {
     var _drop_asc = (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0) + curse_loot_asc_bonus();
     // Faerie's Tear potion + active Boon pet: extra equipment-drop chance (percentage points).
     var _loot_pot = potion_loot_bonus_pts() + pet_active_boon_loot_pts() + pet_active_lck_loot_pts() + pet_active_splash_loot_pts() + pet_active_egg_bonus("loot");
+    // Lucky Find trait (07-08 identity split): +5 loot-find points, same currency
+    // as the pet/potion loot bonuses (added to the equipment drop chances below).
+    if (trait_active("Lucky Find")) _loot_pot += 5;
 
     // Rune drops (additive to gear/consumable). Standard: none. Elite: ~6% Tier I.
     // Boss: guaranteed, with a 20% chance to be Tier II. Tier III is craft-only.
@@ -2181,7 +2313,12 @@ function handle_enemy_drops(enemy_type) {
         // Awakening taper (60% - 4%/tier, min 40%).
         var _elite_cons_chance = max(40, 60 - _drop_asc * 4);
         if (!curse_blocks_consumables() && irandom(99) < _elite_cons_chance) {   // Famine curse: no consumable drops
-            var _c = roll_consumable_weighted(global.consumables_elite);
+            // Consumable rarity scales with awakening (M 07-08): at low tiers most
+            // elite drops downgrade to the standard pool (A0: 60% -> A5: 0%), so
+            // elite-tier consumables are something you grow into.
+            var _elite_std_mix = max(0, 60 - _drop_asc * 12);
+            var _elite_pool = (irandom(99) < _elite_std_mix) ? global.consumables_standard : global.consumables_elite;
+            var _c = roll_consumable_weighted(_elite_pool);
             array_push(global.run_items_found, _c);
             var _fit = consumable_award(_c);
             return _c.name + " [Consumable]" + (_fit ? "" : " (PACK FULL)") + _rune_suffix;
@@ -2202,9 +2339,12 @@ function handle_enemy_drops(enemy_type) {
         array_push(global.carried_items, _item);
         discover_item(item_base_name(_item));
         var _result = _item.name + " [" + item_rarity_name(_item.rarity) + "]";
-        // 50% bonus consumable (suppressed by the Famine curse)
+        // 50% bonus consumable (suppressed by the Famine curse). Same awakening
+        // pool mix as elites, gentler (bosses stay a bit premium): A0 40% -> A5 0%.
         if (!curse_blocks_consumables() && irandom(99) < 50) {
-            var _c = roll_consumable_weighted(global.consumables_elite);
+            var _boss_std_mix = max(0, 40 - _drop_asc * 8);
+            var _boss_pool = (irandom(99) < _boss_std_mix) ? global.consumables_standard : global.consumables_elite;
+            var _c = roll_consumable_weighted(_boss_pool);
             array_push(global.run_items_found, _c);
             var _fit = consumable_award(_c);
             _result += " + " + _c.name + (_fit ? "" : " (PACK FULL)");
@@ -2369,7 +2509,11 @@ function rune_sockets_for_rarity(rarity) {
 function rune_catalog() {
     return [
         // ---- GEAR RUNES ----
-        { id:"vitality",   name:"Vitality",   domain:"gear",   stat_name:"bonus_max_hp", vals:[15,35,70], blurb:"+# Max HP" },
+        // Vitality rebalanced 15/35/70 -> 8/18/35 (M 07-08: it dwarfed Fortitude -
+        // Fortitude II's +2 CON = 6 HP vs the old Vitality I's 15). Pure HP still
+        // beats the CON-equivalent since it carries no stat-gate/derive value.
+        // Socketed runes read the catalog live, so existing saves adjust on load.
+        { id:"vitality",   name:"Vitality",   domain:"gear",   stat_name:"bonus_max_hp", vals:[8,18,35],  blurb:"+# Max HP" },
         { id:"might",      name:"Might",      domain:"gear",   stat_name:"STR",          vals:[1,2,4],    blurb:"+# STR" },
         { id:"finesse",    name:"Finesse",    domain:"gear",   stat_name:"DEX",          vals:[1,2,4],    blurb:"+# DEX" },
         { id:"fortitude",  name:"Fortitude",  domain:"gear",   stat_name:"CON",          vals:[1,2,4],    blurb:"+# CON" },
@@ -3455,20 +3599,17 @@ function item_tribute_value(rarity) {
     return 20;
 }
 
-// Lowest-value unequipped item whose tribute worth covers `cost`. Returns
-// {source, index, item} or undefined. (Auto-picked so the shrine needs no item picker.)
+// Lowest-value CARRIED item whose tribute worth covers `cost`. Returns
+// {source, index, item} or undefined. Legacy auto-pick path - the shrine now
+// routes through the item picker (item_picker_candidates_by_tribute), but keep
+// this PACK-ONLY too: the hub stash must never feed a mid-run altar, and an
+// equipped item (global.inventory) is never a candidate on any path.
 function boon_item_tribute_pick(cost) {
     var _best = undefined; var _best_val = 999999;
     if (variable_global_exists("carried_items")) {
         for (var _i = 0; _i < array_length(global.carried_items); _i++) {
             var _v = item_tribute_value(global.carried_items[_i].rarity);
             if (_v >= cost && _v < _best_val) { _best_val = _v; _best = { source:"carried", index:_i, item:global.carried_items[_i] }; }
-        }
-    }
-    if (variable_global_exists("equipment_stash")) {
-        for (var _i = 0; _i < array_length(global.equipment_stash); _i++) {
-            var _v = item_tribute_value(global.equipment_stash[_i].rarity);
-            if (_v >= cost && _v < _best_val) { _best_val = _v; _best = { source:"stash", index:_i, item:global.equipment_stash[_i] }; }
         }
     }
     return _best;
@@ -4409,6 +4550,31 @@ function journal_any_badge() {
     var _qk = variable_struct_get_names(_b.quests);
     for (var _j = 0; _j < array_length(_qk); _j++) if (variable_struct_get(_b.quests, _qk[_j])) return true;
     return false;
+}
+
+// Clear badges whose entry no longer appears in any viewable list. Badges clear
+// on VIEW (cursor on the row), so a badge on a quest that expired off the
+// board/journal - or an NPC not yet in the met list - could never clear and left
+// the J chip flashing with nothing visibly new. Run when the journal closes:
+// anything still listed keeps its badge until its row is actually viewed.
+function journal_badges_sweep_orphans() {
+    var _b = journal_badges();
+    var _met = journal_met_ids();
+    var _nk = variable_struct_get_names(_b.npcs);
+    for (var _i = 0; _i < array_length(_nk); _i++) {
+        if (!variable_struct_get(_b.npcs, _nk[_i])) continue;
+        var _found = false;
+        for (var _j = 0; _j < array_length(_met); _j++) if (_met[_j] == _nk[_i]) { _found = true; break; }
+        if (!_found) variable_struct_set(_b.npcs, _nk[_i], false);
+    }
+    var _rows = journal_quest_rows();
+    var _qk = variable_struct_get_names(_b.quests);
+    for (var _i = 0; _i < array_length(_qk); _i++) {
+        if (!variable_struct_get(_b.quests, _qk[_i])) continue;
+        var _found = false;
+        for (var _j = 0; _j < array_length(_rows); _j++) if (_rows[_j] == _qk[_i]) { _found = true; break; }
+        if (!_found) variable_struct_set(_b.quests, _qk[_i], false);
+    }
 }
 
 // --- Interaction ledger (per-NPC journal sections; 4a logs tier crossings + quest
@@ -5650,11 +5816,13 @@ function pet_stage_name(s) {
 // Feed adds growth instantly; an active run adds a baseline. The bar can be FILLED by
 // feed alone, but only an active-run completion CROSSES it (design §5). (TBD - playtest.)
 function pet_growth_needed(stage) {
+    // Doubled 07-08 (hunger design): the bar filled far too fast - M sat at max
+    // feed long before Awakening 5 was in reach.
     switch (stage) {
-        case PET_STAGE_BABY:       return 4;
-        case PET_STAGE_ADOLESCENT: return 6;
-        case PET_STAGE_YOUNGADULT: return 9;
-        case PET_STAGE_ADULT:      return 12;   // -> Awakened (crossing further gated, see pet_awaken_gate_ok)
+        case PET_STAGE_BABY:       return 8;
+        case PET_STAGE_ADOLESCENT: return 12;
+        case PET_STAGE_YOUNGADULT: return 18;
+        case PET_STAGE_ADULT:      return 24;   // -> Awakened (crossing further gated, see pet_awaken_gate_ok)
     }
     return 0;
 }
@@ -5748,15 +5916,83 @@ function pet_growth_ready(pet) {
     return pet.growth >= pet_growth_needed(pet.stage);
 }
 
+// --- HUNGER (M-approved design 2026-07-08): a 0-100 meter every living pet must
+// keep filled. Food refills it (feeding = upkeep, not just growth); every run
+// drains it (active companion -20, stabled -10). States: WELL-FED (70+) = run
+// growth banks; PECKISH (30-69) = growth won't bank; HUNGRY (<30) = the pet acts
+// at -25% and gains no bond; STARVING (0) = benched entirely until fed. Ending a
+// run with a full belly (100) earns +1 bonus bond. Lazy default 100 = pets from
+// older saves load fed (no migration). --------------------------------------
+function pet_hunger(pet) {
+    if (!is_struct(pet)) return 100;
+    if (!variable_struct_exists(pet, "hunger")) pet.hunger = 100;
+    return pet.hunger;
+}
+function pet_hunger_state(pet) {
+    var _h = pet_hunger(pet);
+    if (_h <= 0)  return "starving";
+    if (_h < 30)  return "hungry";
+    if (_h < 70)  return "peckish";
+    return "fed";
+}
+function pet_hunger_state_label(pet) {
+    switch (pet_hunger_state(pet)) {
+        case "starving": return "STARVING";
+        case "hungry":   return "Hungry";
+        case "peckish":  return "Peckish";
+    }
+    return "Well-fed";
+}
+// Effectiveness multiplier from hunger. 0 = benched: fold into the injury-mult
+// checks so a starving pet reuses the existing tier-2-injury benching paths.
+function pet_hunger_mult(pet) {
+    switch (pet_hunger_state(pet)) {
+        case "starving": return 0;
+        case "hungry":   return 0.75;
+    }
+    return 1.0;
+}
+// Run-end upkeep for the WHOLE roster: the active companion works up an appetite
+// (-20), stabled pets graze lighter (-10). Called from end_run AFTER
+// pet_run_complete, so the well-fed growth gate and the full-belly bond reward
+// both read PRE-drain hunger.
+function pet_hunger_run_tick() {
+    var _r = pet_roster();
+    var _act = pet_active();
+    for (var _i = 0; _i < array_length(_r); _i++) {
+        var _p = _r[_i];
+        if (!is_struct(_p) || _p.is_egg) continue;
+        pet_hunger(_p);   // ensure the field exists
+        _p.hunger = max(0, _p.hunger - ((_p == _act) ? 20 : 10));
+    }
+}
+
+// --- TREATS (07-08): bond-only delicacies, separate from food. Capped at 2 per
+// run (global.pet_treats_run, reset in end_run) so affection is earned at the
+// margin, never bulk-bought. Ride the feed pouch/shop plumbing (bond field > 0
+// marks a treat; pet_feed_apply branches on it).
+function pet_treat_catalog() {
+    return [
+        { id:"treat_honey",  name:"Honeycomb Treat", growth:0, bond:1, gold:45, perk:"none", blurb:"sticky, sweet, utterly beloved (+1 bond, 2 treats per run)" },
+        { id:"treat_marrow", name:"Candied Marrow",  growth:0, bond:1, gold:45, perk:"none", blurb:"a butcher's secret delicacy (+1 bond, 2 treats per run)" },
+    ];
+}
+function pet_treats_left() {
+    if (!variable_global_exists("pet_treats_run")) global.pet_treats_run = 0;
+    return max(0, 2 - global.pet_treats_run);
+}
+
 // --- FEED (design §12): feed is now BOUGHT AS ITEMS from Petra (gold) into a feed pouch,
 // then APPLIED to a pet at Bairc (no gold there). 3 basic tiers are always in Petra's stock;
 // one PREMIUM feed rotates each run (rolled in restock_shops) and carries a small perk. ---
 // perk: "none" | "mend" (heals 1 injury tier) | "purge" (cures a pushing corruption).
+// Repriced 07-08 with the hunger system: higher tiers are now slightly MORE
+// gold-efficient per growth (cheap spam was strictly optimal before).
 function pet_feed_catalog() {   // the 3 always-stocked basics
     return [
-        { id:"scraps", name:"Table Scraps",     growth:1, gold:12, perk:"none", blurb:"barely a meal, but it counts" },
-        { id:"forage", name:"Forager's Bundle", growth:2, gold:30, perk:"none", blurb:"roots, grubs and dried meat" },
-        { id:"prime",  name:"Prime Cut",        growth:4, gold:70, perk:"none", blurb:"the good stuff - it eats well today" },
+        { id:"scraps", name:"Table Scraps",     growth:1, gold:14, perk:"none", blurb:"barely a meal, but it counts" },
+        { id:"forage", name:"Forager's Bundle", growth:2, gold:26, perk:"none", blurb:"roots, grubs and dried meat" },
+        { id:"prime",  name:"Prime Cut",        growth:4, gold:48, perk:"none", blurb:"the good stuff - it eats well today" },
     ];
 }
 // Rotating premium feeds - one is stocked per run (global.petra_feed_premium id).
@@ -5814,7 +6050,7 @@ function pet_feed_icon(id) {
     return asset_get_index("spr_pet_feed_" + id);
 }
 
-// Resolve any feed def by id (basics + full premium pool + species-preferred).
+// Resolve any feed def by id (basics + full premium pool + species-preferred + treats).
 function pet_feed_get(id) {
     var _b = pet_feed_catalog();
     for (var _i = 0; _i < array_length(_b); _i++) if (_b[_i].id == id) return _b[_i];
@@ -5822,6 +6058,8 @@ function pet_feed_get(id) {
     for (var _j = 0; _j < array_length(_p); _j++) if (_p[_j].id == id) return _p[_j];
     var _pf = pet_feed_preferred_catalog();
     for (var _k = 0; _k < array_length(_pf); _k++) if (_pf[_k].id == id) return _pf[_k];
+    var _tr = pet_treat_catalog();
+    for (var _t = 0; _t < array_length(_tr); _t++) if (_tr[_t].id == id) return _tr[_t];
     return undefined;
 }
 // The feeds Petra sells right now: 3 basics + the current rotating premium + every
@@ -5830,6 +6068,9 @@ function pet_feed_get(id) {
 function pet_feed_shop_list() {
     var _list = pet_feed_catalog();
     array_push(_list, pet_feed_current_premium());
+    // Treats (07-08): always stocked, bond-only, 2 usable per run.
+    var _tcat = pet_treat_catalog();
+    for (var _tc = 0; _tc < array_length(_tcat); _tc++) array_push(_list, _tcat[_tc]);
     var _pc = pet_feed_preferred_catalog();
     for (var _i = 0; _i < array_length(_pc); _i++) {
         if (!pet_pref_is_discovered(_pc[_i].species)) continue;
@@ -5915,22 +6156,46 @@ function pet_feed_effective_growth(pet, f) {
 // Returns "" on success, else an error message.
 function pet_feed_apply(pet, feed_id) {
     if (!is_struct(pet) || pet.is_egg)   return "An egg can't be fed - hatch it first.";
-    if (pet.stage >= pet_max_stage())     return pet.name + " is fully grown.";
-    if (pet_growth_ready(pet)) {
-        // Adults need the Awakened gate, not just any run - say so at the feed trough.
-        if (pet.stage == PET_STAGE_ADULT)
-            return pet.name + "'s growth is FULL - to Awaken it, " + pet_awaken_requirements_text() + ".";
-        return pet.name + "'s growth is FULL - feed can't help further. Complete a run with it active to evolve.";
-    }
     var _f = pet_feed_get(feed_id);
     if (_f == undefined)                  return "";
     if (pet_feed_pouch_count(feed_id) <= 0) return "You have no " + _f.name + " - buy some from Petra.";
+
+    // TREATS (07-08): bond only, 2 per run - affection can't be bulk-bought.
+    if (variable_struct_exists(_f, "bond") && _f.bond > 0) {
+        if (pet_treats_left() <= 0) return "No more treats this run - " + pet.name + " has been spoiled enough.";
+        variable_struct_set(pet_feed_pouch(), feed_id, pet_feed_pouch_count(feed_id) - 1);
+        global.pet_treats_run = (variable_global_exists("pet_treats_run") ? global.pet_treats_run : 0) + 1;
+        var _tmsg = pet_bond_gain(pet, _f.bond);
+        if (_tmsg != "" && variable_global_exists("pet_find_notice")) {
+            global.pet_find_notice = (global.pet_find_notice != "")
+                ? (global.pet_find_notice + "   " + _tmsg) : _tmsg;
+        }
+        return "";
+    }
+
     // Species favorites are exactly that - no other creature will touch them.
     if (variable_struct_exists(_f, "species") && _f.species != pet.species)
         return "Only a " + pet_species_get(_f.species).name + " will eat that.";
+
+    // FOOD = upkeep first, growth second (hunger design 07-08). A pet with a full
+    // growth bar - or fully grown - still eats while its belly isn't full; only a
+    // WELL-FED pet with nothing left to grow refuses the meal.
+    var _grow_ok = (pet.stage < pet_max_stage()) && !pet_growth_ready(pet);
+    var _hungry  = (pet_hunger(pet) < 100);
+    if (!_grow_ok && !_hungry) {
+        if (pet.stage >= pet_max_stage()) return pet.name + " is fully grown and well-fed.";
+        if (pet.stage == PET_STAGE_ADULT)
+            return pet.name + " is well-fed and its growth is FULL - to Awaken it, " + pet_awaken_requirements_text() + ".";
+        return pet.name + " is well-fed and its growth is FULL - complete a run with it active to evolve.";
+    }
     variable_struct_set(pet_feed_pouch(), feed_id, pet_feed_pouch_count(feed_id) - 1);
-    var _need  = pet_growth_needed(pet.stage);
-    pet.growth = min(_need, pet.growth + pet_feed_effective_growth(pet, _f));
+    // Hunger restore scales with the meal's heft (scraps +20 ... favorites +80).
+    pet_hunger(pet);
+    pet.hunger = min(100, pet.hunger + 10 + _f.growth * 10);
+    if (_grow_ok) {
+        var _need  = pet_growth_needed(pet.stage);
+        pet.growth = min(_need, pet.growth + pet_feed_effective_growth(pet, _f));
+    }
     // Premium perk.
     if (_f.perk == "mend" && pet.injured > 0) {
         pet.injured = max(0, pet.injured - 1);
@@ -5970,14 +6235,29 @@ function pet_run_complete(result) {
     if (_p == undefined || _p.is_egg) return undefined;
     var _gain = (result == 1) ? 2 : ((result == 0) ? 1 : 0);   // clear / extract / death
     if (_gain <= 0) return undefined;                          // a death banks no growth (or bond)
+    // HUNGER gates (07-08): read PRE-drain (pet_hunger_run_tick runs after this).
+    // A hungry pet (<30) bonds with no one; a FULL belly (100) at run's end earns
+    // +1 bonus bond; growth only banks while WELL-FED (70+).
+    var _hstate   = pet_hunger_state(_p);
+    var _bond_amt = _gain + ((pet_hunger(_p) >= 100) ? 1 : 0);
+    if (_hstate == "hungry" || _hstate == "starving") _bond_amt = 0;
     // Bond banks the same raw amount (before egg boosts) and keeps rising after Adult -
     // §5 Axis 3. Milestone crossings surface on the next hub visit like evolutions do.
-    var _bond_msg = pet_bond_gain(_p, _gain);
+    var _bond_msg = (_bond_amt > 0) ? pet_bond_gain(_p, _bond_amt) : "";
     if (_bond_msg != "" && variable_global_exists("pet_find_notice")) {
         global.pet_find_notice = (global.pet_find_notice != "")
             ? (global.pet_find_notice + "   " + _bond_msg) : _bond_msg;
     }
     if (_p.stage >= pet_max_stage()) return undefined;         // fully grown: bond only
+    if (_hstate != "fed") {
+        // Growth needs a WELL-FED companion (70+). Say so on the hub return.
+        if (variable_global_exists("pet_find_notice")) {
+            var _hgm = _p.name + " was too hungry to grow from this run - keep it Well-fed (70+) at Bairc.";
+            global.pet_find_notice = (global.pet_find_notice != "")
+                ? (global.pet_find_notice + "   " + _hgm) : _hgm;
+        }
+        return undefined;
+    }
     _gain += pet_active_egg_bonus("growth");                   // Ley egg: matures faster
     _p.growth += _gain;
     if (_p.growth >= pet_growth_needed(_p.stage)) {
@@ -6121,7 +6401,7 @@ function pet_active_boon_gold_pct() {
     var _p = pet_active();
     if (_p == undefined || _p.is_egg || _p.archetype != PET_ARCH_BOON) return 0;
     var _base = pet_boon_gold_pct_for(_p.stage) + pet_kit_mods(_p).gold;   // base + named kit (prospector/windfall)
-    var _v = _base * pet_injury_mult(_p.injured) * pet_corruption_mult(_p) * pet_stat_mult(_p, "lck") * pet_bond_mult(_p);   // LCK stat + Soul-bound
+    var _v = _base * pet_injury_mult(_p.injured) * pet_corruption_mult(_p) * pet_stat_mult(_p, "lck") * pet_bond_mult(_p) * pet_hunger_mult(_p);   // LCK stat + Soul-bound + hunger (07-08)
     if (pet_is_fulfilled(_p)) _v += 0.05;   // grand boon: a big second helping of gold
     return _v;
 }
@@ -6129,7 +6409,7 @@ function pet_active_boon_loot_pts() {
     var _p = pet_active();
     if (_p == undefined || _p.is_egg || _p.archetype != PET_ARCH_BOON) return 0;
     var _base = pet_boon_loot_pts_for(_p.stage) + pet_kit_mods(_p).loot;   // base + named kit (lucky/treasure sense)
-    var _v = _base * pet_injury_mult(_p.injured) * pet_corruption_mult(_p) * pet_stat_mult(_p, "lck") * pet_bond_mult(_p);   // LCK stat + Soul-bound
+    var _v = _base * pet_injury_mult(_p.injured) * pet_corruption_mult(_p) * pet_stat_mult(_p, "lck") * pet_bond_mult(_p) * pet_hunger_mult(_p);   // LCK stat + Soul-bound + hunger (07-08)
     if (pet_is_fulfilled(_p)) _v += 3;       // grand boon: extra loot find
     return round(_v);
 }
@@ -6206,7 +6486,7 @@ function pet_stat_name(which) {
 function pet_active_pwr_guard() {
     var _p = pet_active();
     if (_p == undefined || _p.is_egg) return 0;
-    return min(0.08, pet_stat(_p, "pow") * 0.005);
+    return min(0.08, pet_stat(_p, "pow") * 0.005) * pet_hunger_mult(_p);   // hunger (07-08)
 }
 function pet_spr_injury_resist(pet) {
     if (!is_struct(pet) || pet.is_egg) return 0;
@@ -6215,12 +6495,12 @@ function pet_spr_injury_resist(pet) {
 function pet_active_lck_gold_pct() {
     var _p = pet_active();
     if (_p == undefined || _p.is_egg) return 0;
-    return pet_stat(_p, "lck") * 0.005;
+    return pet_stat(_p, "lck") * 0.005 * pet_hunger_mult(_p);   // hunger (07-08)
 }
 function pet_active_lck_loot_pts() {
     var _p = pet_active();
     if (_p == undefined || _p.is_egg) return 0;
-    return pet_stat(_p, "lck") * 0.3;
+    return pet_stat(_p, "lck") * 0.3 * pet_hunger_mult(_p);   // hunger (07-08)
 }
 
 // --- Bond / Loyalty (Pets §5 Axis 3): rises from carrying a pet ACTIVE through survived
@@ -7325,6 +7605,24 @@ function item_picker_close() {
     _p.candidates = [];
 }
 
+// item_sell_value(item) - what a vendor pays for this item BEFORE affinity
+// sweeteners: 40% of gold_value, with the shop's same rarity fallback ladder.
+// Sacrifice pickers show THIS as the item's gold figure, so "what am I giving
+// up" reads in the currency the player would actually get at Dorn/Petra
+// (M 07-08: the picker showed full gold_value, which matches no real number).
+function item_sell_value(item) {
+    var _gv = 0;
+    if (is_struct(item) && variable_struct_exists(item, "gold_value")) _gv = item.gold_value;
+    if (_gv == 0 && is_struct(item) && variable_struct_exists(item, "rarity")) {
+        if (item.rarity == 0)      _gv = 15;
+        else if (item.rarity == 1) _gv = 32;
+        else if (item.rarity == 2) _gv = 82;
+        else if (item.rarity == 3) _gv = 200;
+        else                       _gv = 400;
+    }
+    return max(1, floor(_gv * 0.4));
+}
+
 // Every held item (stash + pack) of at least min_rarity, sorted least-valuable
 // first (so the default cursor lands on the "safe" choice) but ALL selectable.
 // source 0 = global.equipment_stash, 1 = global.carried_items.
@@ -7341,7 +7639,7 @@ function item_picker_candidates_by_rarity(min_rarity) {
             if (!is_struct(_it)) continue;
             var _rar = variable_struct_exists(_it, "rarity") ? _it.rarity : 0;
             if (_rar < min_rarity) continue;
-            var _val = variable_struct_exists(_it, "gold_value") ? _it.gold_value : 0;
+            var _val = item_sell_value(_it);
             var _nm  = variable_struct_exists(_it, "name") ? _it.name : "item";
             array_push(_out, { source:_s, idx:_i, item:_it, label:_nm, rarity:_rar, value:_val });
         }
@@ -7365,7 +7663,7 @@ function item_picker_candidates_by_tribute(cost) {
         if (!is_struct(_it)) continue;
         var _rar = variable_struct_exists(_it, "rarity") ? _it.rarity : 0;
         if (item_tribute_value(_rar) < cost) continue;
-        var _val = variable_struct_exists(_it, "gold_value") ? _it.gold_value : 0;
+        var _val = item_sell_value(_it);
         var _nm  = variable_struct_exists(_it, "name") ? _it.name : "item";
         array_push(_out, { source:1, idx:_i, item:_it, label:_nm, rarity:_rar, value:_val });
     }
@@ -7892,12 +8190,16 @@ function event_apply_effects(fx) {
         }
         else { global.gold = max(0, global.gold - abs(fx.gold)); array_push(_sum, string(fx.gold) + " gold"); }
     }
-    // HP (deferred to next combat)
+    // HP - heals apply immediately (the floor HUD reads run_current_hp, so a
+    // deferred heal looks broken); trap DAMAGE stays deferred to next combat
+    // where armor and last-stand can respond.
     if (variable_struct_exists(fx, "hp") && fx.hp != 0) {
         if (fx.hp > 0) {
-            if (!variable_global_exists("pending_rest_heal")) global.pending_rest_heal = 0;
-            global.pending_rest_heal += fx.hp;
-            array_push(_sum, "+" + string(fx.hp) + " HP (next combat)");
+            var _ev_max = out_of_combat_max_hp();
+            if (!variable_global_exists("run_current_hp") || global.run_current_hp <= 0) global.run_current_hp = _ev_max;
+            var _ev_before = global.run_current_hp;
+            global.run_current_hp = min(_ev_max, global.run_current_hp + fx.hp);
+            array_push(_sum, "+" + string(global.run_current_hp - _ev_before) + " HP");
         } else {
             if (!variable_global_exists("pending_trap_damage")) global.pending_trap_damage = 0;
             global.pending_trap_damage += abs(fx.hp);
@@ -7908,7 +8210,17 @@ function event_apply_effects(fx) {
     if (variable_struct_exists(fx, "item") && fx.item != "") {
         if (!variable_global_exists("run_items_found")) global.run_items_found = [];
         if (!variable_global_exists("carried_items"))   global.carried_items   = [];
-        var _it = drop_equipment(drop_weights(fx.item, _asc));
+        var _ev_w = drop_weights(fx.item, _asc);
+        // Optional rarity floor (fx.item_min, rarity index): an event that CHARGES
+        // for gear or promises a tier must deliver at least that tier regardless of
+        // awakening - 79g for a 70%-common roll read as a scam (M 07-08). Weights
+        // below the floor pour into the floor tier.
+        if (variable_struct_exists(fx, "item_min") && fx.item_min > 0) {
+            var _ev_spill = 0;
+            for (var _ewi = 0; _ewi < fx.item_min; _ewi++) { _ev_spill += _ev_w[_ewi]; _ev_w[_ewi] = 0; }
+            _ev_w[fx.item_min] += _ev_spill;
+        }
+        var _it = drop_equipment(_ev_w);
         array_push(global.run_items_found, _it);
         array_push(global.carried_items, _it);
         array_push(_sum, _it.name + " [" + item_rarity_name(_it.rarity) + "]");
@@ -8204,15 +8516,15 @@ function event_catalog() {
         body: "A translucent peddler tips a spectral hat, wares shimmering on a phantom cart.",
         color: make_color_rgb(100, 160, 230),
         choices: [
-            { label: "Haggle & buy", hint: "Pay for a piece of gear (CHA lowers the price)",
+            { label: "Haggle & buy", hint: "Pay for a RARE piece of gear (CHA lowers the price)",
               cost_gold: _mg_cost[_fl], cha_cost: true, req_stat: "", req_amount: 0, resolve: "weighted",
               outcomes: [ { weight: 100, text: "Coin changes hands. The gear is solid.",
-                            effects: { item: "vault" } } ] },
+                            effects: { item: "vault", item_min: 2 } } ] },
             { label: "Intimidate", hint: "STR check - take the goods for free, or be lashed",
               cost_gold: 0, req_stat: "", req_amount: 0, resolve: "check",
               check_stat: "STR", check_base: 40, check_per: 6, check_ref: 6,
               success: { text: "The ghost flinches and lets you take a piece - free.",
-                         effects: { item: "vault" } },
+                         effects: { item: "vault", item_min: 2 } },
               fail:    { text: "The ghost recoils, then lashes out with spectral cold.",
                          effects: { hp: -_mg_dmg[_fl] } } },
             { label: "Decline", hint: "Wave the peddler off",
@@ -8290,7 +8602,7 @@ function event_catalog() {
             { label: "Heave the rubble aside", hint: "Requires STR 8 - muscle the stone off the cache",
               cost_gold: 0, req_stat: "STR", req_amount: 8, resolve: "weighted",
               outcomes: [ { weight: 100, text: "Stone grinds aside. A reliquary lies beneath.",
-                            effects: { item: "vault", gold: _cs_gold[_fl] } } ] },
+                            effects: { item: "vault", item_min: 2, gold: _cs_gold[_fl] } } ] },
             { label: "Squeeze through the gap", hint: "DEX check - slip in for supplies, or get pinned",
               cost_gold: 0, req_stat: "", req_amount: 0, resolve: "check",
               check_stat: "DEX", check_base: 50, check_per: 6, check_ref: 5,

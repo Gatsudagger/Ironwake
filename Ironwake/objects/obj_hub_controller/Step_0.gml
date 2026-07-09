@@ -622,43 +622,61 @@ if (instance_exists(obj_game_controller)) {
         exit;
     }
 
-    // Perm alloc input - runs when open; blocks everything below
+    // Perm alloc input - runs when open; blocks everything below.
+    // Spending is TWO-STEP (M 07-08: permanent loss deserves a confirm): the first
+    // Enter / click-on-selected ARMS the row (perm_alloc_confirm), the second
+    // commits. Moving the cursor or Esc disarms without spending.
     if (_gc_hub.perm_alloc_open) {
-        if (nav_up())   _gc_hub.perm_alloc_index = wrap_index(_gc_hub.perm_alloc_index - 1, 6);
-        if (nav_down()) _gc_hub.perm_alloc_index = wrap_index(_gc_hub.perm_alloc_index + 1, 6);
+        if (nav_up())   { _gc_hub.perm_alloc_index = wrap_index(_gc_hub.perm_alloc_index - 1, 6); _gc_hub.perm_alloc_confirm = -1; }
+        if (nav_down()) { _gc_hub.perm_alloc_index = wrap_index(_gc_hub.perm_alloc_index + 1, 6); _gc_hub.perm_alloc_confirm = -1; }
         if ((input_confirm()) && global.pending_perm_points > 0) {
-            var _perm_stat_keys = ["perm_str_bonus", "perm_dex_bonus", "perm_con_bonus",
-                                   "perm_int_bonus", "perm_wis_bonus", "perm_cha_bonus"];
-            var _pkey = _perm_stat_keys[_gc_hub.perm_alloc_index];
-            variable_global_set(_pkey, variable_global_get(_pkey) + 1);
-            global.pending_perm_points--;
-            if (global.pending_perm_points <= 0) {
-                _gc_hub.perm_alloc_open = false;
+            if (_gc_hub.perm_alloc_confirm != _gc_hub.perm_alloc_index) {
+                _gc_hub.perm_alloc_confirm = _gc_hub.perm_alloc_index;   // arm - confirm bar shows in Draw
+            } else {
+                var _perm_stat_keys = ["perm_str_bonus", "perm_dex_bonus", "perm_con_bonus",
+                                       "perm_int_bonus", "perm_wis_bonus", "perm_cha_bonus"];
+                var _pkey = _perm_stat_keys[_gc_hub.perm_alloc_index];
+                variable_global_set(_pkey, variable_global_get(_pkey) + 1);
+                global.pending_perm_points--;
+                _gc_hub.perm_alloc_confirm = -1;
+                if (global.pending_perm_points <= 0) {
+                    _gc_hub.perm_alloc_open = false;
+                }
             }
         }
         if (input_cancel() || input_back()) {
-            _gc_hub.perm_alloc_open = false;
+            if (_gc_hub.perm_alloc_confirm != -1) _gc_hub.perm_alloc_confirm = -1;   // disarm first
+            else                                  _gc_hub.perm_alloc_open   = false;
         }
-        // Mouse: click a perm stat row to select it; click already-selected to spend
+        // Mouse: click a row to select; click the selected row to arm; click the
+        // armed row to spend. Clicking anywhere else disarms.
         if (mouse_check_button_pressed(mb_left)) {
             var _pamx = device_mouse_x_to_gui(0);
             var _pamy = device_mouse_y_to_gui(0);
+            var _pa_hit = false;
             for (var _pai = 0; _pai < 6; _pai++) {
                 var _pay = 255 + _pai * 108;
                 if (_pamx >= 510 && _pamx < 1410 && _pamy >= _pay && _pamy < _pay+87) {
-                    if (_gc_hub.perm_alloc_index == _pai && global.pending_perm_points > 0) {
-                        // Second click on same row -> spend point
-                        var _pkeys = ["perm_str_bonus","perm_dex_bonus","perm_con_bonus",
-                                      "perm_int_bonus","perm_wis_bonus","perm_cha_bonus"];
-                        variable_global_set(_pkeys[_pai], variable_global_get(_pkeys[_pai]) + 1);
-                        global.pending_perm_points--;
-                        if (global.pending_perm_points <= 0) _gc_hub.perm_alloc_open = false;
-                    } else {
-                        _gc_hub.perm_alloc_index = _pai;
+                    _pa_hit = true;
+                    if (_gc_hub.perm_alloc_index != _pai) {
+                        _gc_hub.perm_alloc_index   = _pai;
+                        _gc_hub.perm_alloc_confirm = -1;
+                    } else if (global.pending_perm_points > 0) {
+                        if (_gc_hub.perm_alloc_confirm != _pai) {
+                            _gc_hub.perm_alloc_confirm = _pai;   // arm
+                        } else {
+                            var _pkeys = ["perm_str_bonus","perm_dex_bonus","perm_con_bonus",
+                                          "perm_int_bonus","perm_wis_bonus","perm_cha_bonus"];
+                            variable_global_set(_pkeys[_pai], variable_global_get(_pkeys[_pai]) + 1);
+                            global.pending_perm_points--;
+                            _gc_hub.perm_alloc_confirm = -1;
+                            if (global.pending_perm_points <= 0) _gc_hub.perm_alloc_open = false;
+                        }
                     }
                     break;
                 }
             }
+            if (!_pa_hit) _gc_hub.perm_alloc_confirm = -1;
         }
         exit;
     }

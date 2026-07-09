@@ -13,7 +13,10 @@
 // both directions (unknown fields ignored, missing fields defaulted), so bump this
 // ONLY when a field's MEANING changes and add the fix-up in load_game's migration
 // block - never repurpose an old field name without one.
-#macro SAVE_FORMAT_VERSION 1
+#macro SAVE_FORMAT_VERSION 2
+// v2 (2026-07-08): weapon flat damage became a per-item RANGE roll (was fixed per
+// rarity) and caster ranged weapons gained a rolled wpn_school. Loading a v1 save
+// re-rolls every non-hand-tuned weapon once (item_migrate_weapon_fields force flag).
 
 // ---------------------------------------------------------------------------
 // get_slot_preview(slot_num)
@@ -265,7 +268,7 @@ function new_game_reset() {
     global.player_traits   = ["", ""];
     global.traits_unlocked = {
         sense: true, scavenger: true, thick_skin: true,
-        lucky_find: false, salvager: false, soul_siphon: false,
+        lucky_find: false, lucky_find_gold: false, salvager: false, soul_siphon: false,
         crimson_reserve: false, phantom_step: false,
         quick_recovery: false, treasure_hunter: false, battle_hardened: false,
         iron_will: false, ley_tap: false, arcane_surge: false,
@@ -431,6 +434,9 @@ function load_game() {
     // When SAVE_FORMAT_VERSION bumps past 1, put the per-version fix-ups here
     // (if (_save_ver < 2) { ... } etc.) so old slots upgrade in one place.
     var _save_ver = variable_struct_exists(_s, "save_version") ? _s.save_version : 0;
+    // v2 migration: pre-v2 weapons carry the old fixed flat damage - re-roll them
+    // once into the rarity ranges (M 2026-07-08: migrate + re-roll all).
+    var _reroll_weapons = (_save_ver < 2);
     if (_save_ver > SAVE_FORMAT_VERSION) {
         // Newer save than this build understands (e.g. a rolled-back patch).
         // The tolerant loads below still read every field they know; log it so
@@ -501,6 +507,14 @@ function load_game() {
             // Always keep at least the two base slots so index access stays safe.
             while (array_length(global.player_traits) < 2) array_push(global.player_traits, "");
         }
+        // v2: "Lucky Find" was renamed "Blessed Thirst" (a new, different Lucky
+        // Find exists now). Pre-v2 saves that had it EQUIPPED carry the old
+        // display name - swap it so the no-consume effect keeps working.
+        if (_save_ver < 2) {
+            for (var _ti = 0; _ti < array_length(global.player_traits); _ti++) {
+                if (global.player_traits[_ti] == "Lucky Find") global.player_traits[_ti] = "Blessed Thirst";
+            }
+        }
     }
 
     // Vex the Trainer permanent purchases
@@ -543,7 +557,7 @@ function load_game() {
     if (variable_struct_exists(_s, "inventory") && is_array(_s.inventory)) {
         for (var _ii = 0; _ii < min(EQUIP_SLOT_COUNT, array_length(_s.inventory)); _ii++) {
             global.inventory[_ii] = _s.inventory[_ii];
-            item_migrate_weapon_fields(global.inventory[_ii]);   // backfill weapon_damage/two_handed
+            item_migrate_weapon_fields(global.inventory[_ii], _reroll_weapons);   // backfill weapon_damage/two_handed (+v2 range re-roll)
         }
     }
 
@@ -551,7 +565,7 @@ function load_game() {
     if (variable_struct_exists(_s, "equipment_stash") && is_array(_s.equipment_stash)) {
         global.equipment_stash = _s.equipment_stash;
         for (var _esi = 0; _esi < array_length(global.equipment_stash); _esi++) {
-            item_migrate_weapon_fields(global.equipment_stash[_esi]);
+            item_migrate_weapon_fields(global.equipment_stash[_esi], _reroll_weapons);
         }
     }
     if (variable_struct_exists(_s, "consumable_stash") && is_array(_s.consumable_stash)) {
@@ -618,7 +632,7 @@ function load_game() {
         for (var _dsi = 0; _dsi < array_length(global.dorn_stock); _dsi++) {
             var _de = global.dorn_stock[_dsi];
             if (is_struct(_de) && variable_struct_exists(_de, "item")) {
-                item_migrate_weapon_fields(_de.item);   // backfill weapon_damage/two_handed on shop gear
+                item_migrate_weapon_fields(_de.item, _reroll_weapons);   // backfill weapon_damage/two_handed on shop gear (+v2 range re-roll)
             }
         }
     }
