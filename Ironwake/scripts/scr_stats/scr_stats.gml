@@ -656,19 +656,21 @@ function item_stat_ranges_text(base_item) {
 // ---------------------------------------------------------------------------
 // Rarity range bounds (2026-07-08 rework: flat damage ROLLS per item instead of a
 // fixed value, so drops of one rarity differ - a high common roll can beat a low
-// uncommon one; higher rarities compensate with affixes/sockets). Maxes = the old
-// fixed values, so no roll exceeds what the tier used to give.
+// uncommon one; higher rarities compensate with affixes/sockets). 2026-07-09: Epic
+// and Legendary widened to 8-12 / 10-15 so the top tiers pull ahead; a high damage
+// roll inverse-lerp biases the item's OTHER rolled affixes toward their minimums
+// at creation time (see item_affix_bias) - big stick = leaner trimmings.
 function weapon_damage_min(rarity) {
     switch (rarity) {
         case 0: return 1;   case 1: return 2;   case 2: return 4;
-        case 3: return 6;   case 4: return 8;
+        case 3: return 8;   case 4: return 10;
     }
     return 0;
 }
 function weapon_damage_max(rarity) {
     switch (rarity) {
         case 0: return 3;   case 1: return 5;   case 2: return 8;
-        case 3: return 11;  case 4: return 12;
+        case 3: return 12;  case 4: return 15;
     }
     return 0;
 }
@@ -676,6 +678,21 @@ function weapon_base_damage(rarity) {
     var _mn = weapon_damage_min(rarity);
     if (_mn <= 0) return 0;
     return irandom_range(_mn, weapon_damage_max(rarity));
+}
+
+// weapon_damage_bias_t(item) - where the item's flat-damage roll landed within
+// its rarity range: 0 = min roll .. 1 = max roll. Non-weapons (and degenerate
+// ranges) return 0. Feeds the creation-time affix bias: the hotter the damage
+// roll, the closer the item's OTHER rolled affixes sit to their minimums, so a
+// max-damage weapon pays for it with lean trimmings.
+function weapon_damage_bias_t(item) {
+    if (!is_struct(item) || !variable_struct_exists(item, "slot")) return 0;
+    if (item.slot != "weapon" && item.slot != "ranged_weapon") return 0;
+    var _mn = weapon_damage_min(item.rarity);
+    var _mx = weapon_damage_max(item.rarity);
+    if (_mn <= 0 || _mx <= _mn) return 0;
+    var _d = variable_struct_exists(item, "weapon_damage") ? item.weapon_damage : _mn;
+    return clamp((_d - _mn) / (_mx - _mn), 0, 1);
 }
 
 // weapon_roll_school() - random magical school for a caster ranged weapon's base
@@ -780,7 +797,9 @@ function dungeon_bias_element() {
 // given rarity, or undefined if none rolled. Only uncommon/rare/epic roll, ~40%
 // chance (a notable but not guaranteed roll). The element is biased toward the
 // current dungeon's element (fire dungeon -> more burn weapons, etc.).
-function roll_elemental_affix(rarity) {
+// bias_t: creation-time inverse-lerp from the weapon's damage roll - a hot roll
+// halves the elemental rider at the extreme (same rule as stat affixes).
+function roll_elemental_affix(rarity, bias_t = 0) {
     if (rarity < 1 || rarity > 3) return undefined;   // common/legendary: no rolled elem affix
     if (irandom(99) >= 40) return undefined;          // ~40% chance
     var _elements = ["burn", "frost", "shock"];
@@ -793,9 +812,11 @@ function roll_elemental_affix(rarity) {
     }
     var _fam      = elem_affix_family(_element);
     if (_fam == undefined) return undefined;
+    var _edmg = elem_affix_damage(rarity);
+    if (bias_t > 0) _edmg = max(1, round(lerp(_edmg, max(1, ceil(_edmg * 0.5)), bias_t)));
     return {
         element:       _element,
-        dmg:           elem_affix_damage(rarity),
+        dmg:           _edmg,
         status_kind:   _fam.status_kind,
         status_value:  _fam.status_value,
         status_dur:    _fam.status_dur,
@@ -1140,8 +1161,10 @@ function clone_item(src) {
     // Every caller clones a loot-table TEMPLATE, so weapons re-roll their flat
     // damage (and caster school) per clone - otherwise the template's single roll
     // would stamp every drop of that base identical. Hand-tuned budgets keep the
-    // authored value: 2H weapons and legendaries.
-    if ((_c.slot == "weapon" || _c.slot == "ranged_weapon") && !_c.two_handed && _c.rarity < 4) {
+    // authored value: 2H weapons. (2026-07-09: legendaries now roll too - the
+    // 10-15 legendary range only exists per-drop; their AUTHORED affixes are
+    // fixed, so the damage-roll bias never touches them.)
+    if ((_c.slot == "weapon" || _c.slot == "ranged_weapon") && !_c.two_handed) {
         _c.weapon_damage = weapon_base_damage(_c.rarity);
     }
     // Caster ranged weapons roll a fresh school per drop (the template's own
@@ -1198,8 +1221,12 @@ function slot_is_caster_affix(slot, base_name) {
 // slot has SCHOOL_AFFIX_CHANCE% to roll a flat school-damage affix from
 // global.school_affix_pool instead of a stat affix. Dedup keys on stat_name, so
 // two DIFFERENT schools can appear on a 2-affix item but never two of the same.
+// bias_t (weapons only, from weapon_damage_bias_t): 0..1 inverse-lerp that pulls
+// stat-affix values toward their floor (half value, min 1) as the weapon's flat
+// damage roll approaches its rarity max. Caster slots are never weapon slots, so
+// the school branch never sees a nonzero bias.
 // ---------------------------------------------------------------------------
-function roll_affixes(rarity, count, exclude_stat_names, slot = "", base_name = "") {
+function roll_affixes(rarity, count, exclude_stat_names, slot = "", base_name = "", bias_t = 0) {
     if (!variable_global_exists("affix_pool")) return [];
     var _pool    = global.affix_pool;
     var _result  = [];
@@ -1258,6 +1285,9 @@ function roll_affixes(rarity, count, exclude_stat_names, slot = "", base_name = 
         if (rarity == 1)      _val = _af.u_val;
         else if (rarity == 2) _val = _af.r_val;
         else                  _val = _af.e_val;
+        // Creation-time inverse-lerp (weapons): a hot damage roll drags the affix
+        // toward its floor - max roll = other affixes near min.
+        if (bias_t > 0) _val = max(1, round(lerp(_val, max(1, ceil(_val * 0.5)), bias_t)));
 
         array_push(_result, {
             suffix:     _af.suffix,
@@ -1349,6 +1379,20 @@ function drop_weights(source, asc) {
 }
 
 // ---------------------------------------------------------------------------
+// boss_drop_weights(asc, fl) - boss rarity weights with the FLOOR folded in
+// (task #19): each floor past the first counts as one extra awakening tier on
+// the lerp, then hard floors cut the bottom tiers entirely - a floor-2 boss
+// never drops common, a floor-3 boss never drops below rare. Sits on top of the
+// awakening lerp (asc already carries any curse loot-tier bonus).
+// ---------------------------------------------------------------------------
+function boss_drop_weights(asc, fl) {
+    var _w = drop_weights("boss", asc + max(0, fl - 1));
+    if (fl >= 2) { _w[1] += _w[0]; _w[0] = 0; }   // hard floor: uncommon+
+    if (fl >= 3) { _w[2] += _w[1]; _w[1] = 0; }   // hard floor: rare+
+    return _w;
+}
+
+// ---------------------------------------------------------------------------
 // drop_equipment(rarity_weights, do_discover)
 // Full drop pipeline: pick rarity, clone a base item, roll and apply affixes.
 // rarity_weights: [common%, uncommon%, rare%, epic%, legendary%]
@@ -1403,8 +1447,12 @@ function drop_equipment(rarity_weights, do_discover = true) {
     else if (_eff_rarity == 2) _affix_count = (irandom(1) == 0) ? 1 : 2;
     else if (_eff_rarity == 3) _affix_count = 2;
 
+    // Inverse-lerp affix bias: the hotter this weapon's damage roll landed, the
+    // leaner its rolled affixes (0 for non-weapons). Creation-time only.
+    var _bias_t = weapon_damage_bias_t(_item);
+
     if (_affix_count > 0) {
-        var _affixes = roll_affixes(_eff_rarity, _affix_count, [_item.stat_name], _item.slot, _item.base_name);
+        var _affixes = roll_affixes(_eff_rarity, _affix_count, [_item.stat_name], _item.slot, _item.base_name, _bias_t);
         apply_affixes_to_item(_item, _affixes);
     }
 
@@ -1414,7 +1462,7 @@ function drop_equipment(rarity_weights, do_discover = true) {
     // doubled up or overwritten.
     var _base_has_elem = (variable_struct_exists(_item, "elem_affix") && _item.elem_affix != undefined);
     if ((_item.slot == "weapon" || _item.slot == "ranged_weapon") && !_base_has_elem) {
-        apply_elemental_affix_to_item(_item, roll_elemental_affix(_eff_rarity));
+        apply_elemental_affix_to_item(_item, roll_elemental_affix(_eff_rarity, _bias_t));
     }
 
     // Sockets follow the FINAL rarity (epic was bumped from a rare base above).
@@ -2333,8 +2381,10 @@ function handle_enemy_drops(enemy_type) {
         }
 
     } else if (enemy_type == "boss") {
-        // Guaranteed equipment - rarity weights scale with awakening (drop_weights).
-        var _item = drop_equipment(drop_weights("boss", _drop_asc));
+        // Guaranteed equipment - rarity weights scale with awakening AND floor
+        // (boss_drop_weights: F2 = uncommon+, F3 = rare+ hard floors).
+        var _boss_fl = variable_global_exists("current_floor") ? global.current_floor : 1;
+        var _item = drop_equipment(boss_drop_weights(_drop_asc, _boss_fl));
         array_push(global.run_items_found, _item);
         array_push(global.carried_items, _item);
         discover_item(item_base_name(_item));
@@ -2509,11 +2559,12 @@ function rune_sockets_for_rarity(rarity) {
 function rune_catalog() {
     return [
         // ---- GEAR RUNES ----
-        // Vitality rebalanced 15/35/70 -> 8/18/35 (M 07-08: it dwarfed Fortitude -
-        // Fortitude II's +2 CON = 6 HP vs the old Vitality I's 15). Pure HP still
-        // beats the CON-equivalent since it carries no stat-gate/derive value.
+        // Vitality follows the 2x rule (#21, M-approved 07-08): exactly double
+        // Fortitude's HP at every tier (CON = 3 HP each). Pure HP pays 2x because
+        // Fortitude's CON also counts for armor/shield stat-gates and event checks.
+        // (History: 15/35/70 -> stopgap 8/18/35 -> 6/12/24.)
         // Socketed runes read the catalog live, so existing saves adjust on load.
-        { id:"vitality",   name:"Vitality",   domain:"gear",   stat_name:"bonus_max_hp", vals:[8,18,35],  blurb:"+# Max HP" },
+        { id:"vitality",   name:"Vitality",   domain:"gear",   stat_name:"bonus_max_hp", vals:[6,12,24],  blurb:"+# Max HP" },
         { id:"might",      name:"Might",      domain:"gear",   stat_name:"STR",          vals:[1,2,4],    blurb:"+# STR" },
         { id:"finesse",    name:"Finesse",    domain:"gear",   stat_name:"DEX",          vals:[1,2,4],    blurb:"+# DEX" },
         { id:"fortitude",  name:"Fortitude",  domain:"gear",   stat_name:"CON",          vals:[1,2,4],    blurb:"+# CON" },
@@ -2569,7 +2620,7 @@ function rune_tier_roman(t) {
     return string(t);
 }
 
-// Full human-readable line, e.g. "Vitality II - +35 Max HP".
+// Full human-readable line, e.g. "Vitality II - +12 Max HP".
 // rune_inventory_sort() - sort the unsocketed rune pool alphabetically by name, then
 // by tier (ascending). Covers BOTH gear and aspect runes (they share global.rune_inventory),
 // so every list that reads it (Maren socket/aspect tabs, Sable salvage) shows a stable
@@ -2603,7 +2654,7 @@ function rune_title(rune) {
     return _nm + " " + rune_tier_roman(rune.tier);
 }
 
-// Rune stat-effect only, e.g. "+35 Max HP" (the "stat" line, like an item's stat str).
+// Rune stat-effect only, e.g. "+12 Max HP" (the "stat" line, like an item's stat str).
 function rune_effect(rune) {
     var _def = rune_get(rune.id);
     if (_def == undefined) return "";
@@ -2971,7 +3022,7 @@ function maren_craft_flagship(id) {
 // --- Salvage rates ---
 function sable_salvage_gear_dust(rarity) {
     switch (rarity) {
-        case 0: return 1; case 1: return 2; case 2: return 5; case 3: return 10; case 4: return 20;
+        case 0: return 1; case 1: return 3; case 2: return 12; case 3: return 30; case 4: return 75;
     }
     return 1;
 }
@@ -5438,10 +5489,11 @@ function petra_roll_one(rarity) {
     if (rarity == 1)      _ac = 1;
     else if (rarity == 2) _ac = (irandom(1) == 0) ? 1 : 2;
     else if (rarity == 3) _ac = 2;
-    if (_ac > 0) apply_affixes_to_item(_item, roll_affixes(rarity, _ac, [_item.stat_name], _item.slot, _item.base_name));
+    var _pb_t = weapon_damage_bias_t(_item);
+    if (_ac > 0) apply_affixes_to_item(_item, roll_affixes(rarity, _ac, [_item.stat_name], _item.slot, _item.base_name, _pb_t));
     var _be = (variable_struct_exists(_item, "elem_affix") && _item.elem_affix != undefined);
     if ((_item.slot == "weapon" || _item.slot == "ranged_weapon") && !_be) {
-        apply_elemental_affix_to_item(_item, roll_elemental_affix(rarity));
+        apply_elemental_affix_to_item(_item, roll_elemental_affix(rarity, _pb_t));
     }
     return _item;
 }
@@ -5886,7 +5938,7 @@ function pet_stance_label(id) {
 function pet_stance_desc(id) {
     switch (id) {
         case "aggressive": return "Strikes the weakest foe at full power.";
-        case "guarded":    return "Half strike damage; 25% chance to intercept part of blows aimed at you.";
+        case "guarded":    return "Half strike damage; 25% chance to intercept part of blows aimed at you - the pet takes that damage (at 0 HP it is injured and benched for the run). Press G in combat to call it off / send it back in.";
         case "assist":     return "Strikes YOUR target and leaves it Exposed (Pack Tactics).";
         case "balanced":   return "Heals you when hurt, wards you when healthy.";
         case "mender":     return "Always tends your wounds first.";
@@ -5894,6 +5946,24 @@ function pet_stance_desc(id) {
         case "cleanser":   return "Strips your newest affliction before anything else.";
     }
     return "";
+}
+
+// --- In-combat guard toggle (M 07-09, rides #20) -----------------------------
+// A GUARDED-stance Combatant can be CALLED OFF mid-fight (G in combat) so its
+// intercepts - which now cost its HP pool - don't grind it down every combat.
+// Lazy flag on the pet; cleared at run end (pet_on_run_end), so the Gate stance
+// choice stays the source of truth between runs. Its own strikes stay halved
+// while guarded regardless - this only gates the intercept roll.
+function pet_guard_off(pet) {
+    if (!is_struct(pet)) return false;
+    if (!variable_struct_exists(pet, "guard_off")) pet.guard_off = false;
+    return pet.guard_off;
+}
+// Flip the flag; returns the NEW state (true = called off).
+function pet_guard_toggle(pet) {
+    if (!is_struct(pet)) return false;
+    pet.guard_off = !pet_guard_off(pet);
+    return pet.guard_off;
 }
 
 // Adult -> Awakened crossing gate (design 2026-07-03): beyond the full growth bar, the
@@ -6182,7 +6252,8 @@ function pet_feed_apply(pet, feed_id) {
     // WELL-FED pet with nothing left to grow refuses the meal.
     var _grow_ok = (pet.stage < pet_max_stage()) && !pet_growth_ready(pet);
     var _hungry  = (pet_hunger(pet) < 100);
-    if (!_grow_ok && !_hungry) {
+    var _hurt    = (pet_hp(pet) < pet_max_hp(pet));   // #20: a wounded pet always eats
+    if (!_grow_ok && !_hungry && !_hurt) {
         if (pet.stage >= pet_max_stage()) return pet.name + " is fully grown and well-fed.";
         if (pet.stage == PET_STAGE_ADULT)
             return pet.name + " is well-fed and its growth is FULL - to Awaken it, " + pet_awaken_requirements_text() + ".";
@@ -6192,6 +6263,8 @@ function pet_feed_apply(pet, feed_id) {
     // Hunger restore scales with the meal's heft (scraps +20 ... favorites +80).
     pet_hunger(pet);
     pet.hunger = min(100, pet.hunger + 10 + _f.growth * 10);
+    // A meal also nurses the HP pool back to full (#20: heals between runs + via food).
+    pet_heal_full(pet);
     if (_grow_ok) {
         var _need  = pet_growth_needed(pet.stage);
         pet.growth = min(_need, pet.growth + pet_feed_effective_growth(pet, _f));
@@ -6314,6 +6387,28 @@ function pet_stage_scale(pet) {
         case PET_STAGE_ADULT:      return 1.00;   // adult frame, full size
     }
     return 1.0;
+}
+
+// pet_sprite_fit(spr, cx, feet_y, target_h, max_w) - placement for drawing a pet
+// sprite so its VISIBLE content (the sprite bbox, not the padded canvas) stands
+// target_h tall, feet at feet_y, centered on cx (#16: species art carries wildly
+// different canvas padding - bonehound was 20x43 art on a 144px canvas, so
+// canvas-fit sites drew it at a third of a luna moth's size). max_w > 0 caps the
+// visible width so wide quadrupeds can't bleed out of list boxes. Returns
+// { scale, x, y } for draw_sprite_ext (x/y already account for the origin).
+// Requires the true content bboxes written by tools/fix_pet_sprite_bboxes.py.
+function pet_sprite_fit(spr, cx, feet_y, target_h, max_w = -1) {
+    var _bl = sprite_get_bbox_left(spr),  _bt = sprite_get_bbox_top(spr);
+    var _br = sprite_get_bbox_right(spr), _bb = sprite_get_bbox_bottom(spr);
+    var _vw = max(1, _br - _bl + 1), _vh = max(1, _bb - _bt + 1);
+    var _s  = target_h / _vh;
+    if (max_w > 0) _s = min(_s, max_w / _vw);
+    var _ox = sprite_get_xoffset(spr), _oy = sprite_get_yoffset(spr);
+    return {
+        scale: _s,
+        x: cx     - ((_bl + _br + 1) * 0.5 - _ox) * _s,
+        y: feet_y - ((_bb + 1) - _oy) * _s,
+    };
 }
 
 // Resolve a pet's display sprite index (newest-art-wins, graceful fallback so the loop
@@ -6699,6 +6794,37 @@ function pet_ability_list(pet) {
     return _out;
 }
 
+// --- Pet HP pool (task #20) ---------------------------------------------------
+// Intercepting a blow (guarded stance) now DAMAGES the pet instead of being free.
+// Stage-scaled pool; stored as DAMAGE TAKEN (hp_dmg, lazy 0) so a stage-up grows
+// the pool without touching every evolution site. 0 HP = knocked out: the pet
+// gains an injury tier (existing ladder = benched rest of run) and its pool
+// refills between runs (pet_on_run_end) or when fed (pet_feed_apply).
+function pet_max_hp(pet) {
+    if (!is_struct(pet)) return 12;
+    switch (pet.stage) {
+        case PET_STAGE_BABY:       return 12;
+        case PET_STAGE_ADOLESCENT: return 18;
+        case PET_STAGE_YOUNGADULT: return 26;
+    }
+    return 36;   // adult + awakened
+}
+function pet_hp(pet) {
+    if (!is_struct(pet)) return 0;
+    if (!variable_struct_exists(pet, "hp_dmg")) pet.hp_dmg = 0;
+    return clamp(pet_max_hp(pet) - pet.hp_dmg, 0, pet_max_hp(pet));
+}
+// Apply damage to the pet's pool. Returns true when THIS hit knocked it out.
+function pet_take_damage(pet, amount) {
+    if (!is_struct(pet) || amount <= 0) return false;
+    var _was_up = pet_hp(pet) > 0;   // lazy-inits hp_dmg
+    pet.hp_dmg = min(pet.hp_dmg + amount, pet_max_hp(pet));
+    return _was_up && pet_hp(pet) <= 0;
+}
+function pet_heal_full(pet) {
+    if (is_struct(pet)) pet.hp_dmg = 0;
+}
+
 // --- Injury ladder & permadeath (Pets Phase 3, §8) ----------------------------
 // Dying while CARRYING a pet injures THAT pet (M's scope). Injuries stack across deaths
 // and WEAKEN the pet (worse each tier) until it stops acting, then permadeath at the top.
@@ -6723,6 +6849,8 @@ function pet_active_injury_mult() {
 function pet_on_run_end(result) {
     var _p = pet_active();
     if (_p == undefined || _p.is_egg) return "";
+    pet_heal_full(_p);     // the HP pool (#20) always refills between runs
+    _p.guard_off = false;  // called-off guard resumes next run (Gate stance rules)
     if (result == -1) {
         // Universal SPR role: hardy spirit - a chance to shrug the injury off entirely.
         if (irandom(99) < pet_spr_injury_resist(_p))
@@ -7747,7 +7875,9 @@ function chit_reforge_item(item) {
     item.affixes    = [];
     item.name       = _bn;
     var _r = variable_struct_exists(item, "rarity") ? item.rarity : 1;
-    apply_affixes_to_item(item, roll_affixes(min(_r, 3), _count, [item.stat_name], item.slot, _bn));
+    // Reforge re-CREATES the affix rows, so the weapon's damage-roll bias applies
+    // here too - otherwise reforging a max-roll weapon would sidestep the tradeoff.
+    apply_affixes_to_item(item, roll_affixes(min(_r, 3), _count, [item.stat_name], item.slot, _bn, weapon_damage_bias_t(item)));
     return true;
 }
 
@@ -7782,7 +7912,7 @@ function alch_rebirth_make(old_item) {
     if (_r == 1)      _ac = 1;
     else if (_r == 2) _ac = (irandom(1) == 0) ? 1 : 2;
     else if (_r >= 3) _ac = 2;
-    if (_ac > 0) apply_affixes_to_item(_item, roll_affixes(min(_r, 3), _ac, [_item.stat_name]));
+    if (_ac > 0) apply_affixes_to_item(_item, roll_affixes(min(_r, 3), _ac, [_item.stat_name], _item.slot, item_base_name(_item), weapon_damage_bias_t(_item)));
     _item.socket_count = rune_sockets_for_rarity(_item.rarity);
     return _item;
 }

@@ -464,8 +464,9 @@ if (equip_notif_timer > 0) {
 // `I` opens the full character menu everywhere, combat included, so the player can
 // check equipment/status mid-fight. Combat item USE is a separate quick-menu on the
 // C key (obj_combat_controller) - distinct key, so the two don't conflict. Stands
-// down while a name is being typed (text_entry_active - the letter is just a letter).
-if (!stash_mode_open && !loadout_open && !text_entry_active() && input_hotkey("I")) {
+// down while a name is being typed (text_entry_active - the letter is just a letter)
+// and while Bairc's Garden is open (#15: I there = Identify egg, not inventory).
+if (!stash_mode_open && !loadout_open && !bairc_open && !text_entry_active() && input_hotkey("I")) {
     menu_open = !menu_open;
     menu_tab  = 0;
     equip_picker_open       = false;

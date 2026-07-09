@@ -33,6 +33,7 @@ if (variable_global_exists("item_picker") && global.item_picker.open
 }
 if (variable_global_exists("item_picker") && global.item_picker.resolved_purpose == "shrine_boon") {
     shrine_notification = global.item_picker.result_msg;
+    shrine_notification_fail = false;
     showing_shrine = false;
     current_rooms[selected_room].cleared = true;
     global.floor_rooms_cleared[selected_room] = true;
@@ -109,6 +110,8 @@ if (showing_shrine) {
             shrine_revealed     = true;   // commit - reveal blessing/curse
             shrine_cursor       = 0;
             shrine_notification = "";
+            shrine_notification_fail = false;
+            shrine_curse_arm    = -1;
         }
         exit;
     }
@@ -124,32 +127,44 @@ if (showing_shrine) {
             exit;
         }
         shrine_notification = "The altar's grip holds you - you must embrace a curse to leave.";
+        shrine_notification_fail = true;
     }
 
     if (_sh_n > 0) {
-        if (nav_up())   { shrine_cursor = wrap_index(shrine_cursor - 1, _sh_n); shrine_notification = ""; }
-        if (nav_down()) { shrine_cursor = wrap_index(shrine_cursor + 1, _sh_n); shrine_notification = ""; }
+        if (nav_up())   { shrine_cursor = wrap_index(shrine_cursor - 1, _sh_n); shrine_notification = ""; shrine_notification_fail = false; shrine_curse_arm = -1; }
+        if (nav_down()) { shrine_cursor = wrap_index(shrine_cursor + 1, _sh_n); shrine_notification = ""; shrine_notification_fail = false; shrine_curse_arm = -1; }
         shrine_cursor = clamp(shrine_cursor, 0, _sh_n - 1);
 
         if (shrine_kind == "curse") {
             // Curse altar - accept the selected curse for free (the difficulty is
-            // the cost). Enter/Space binds it for the rest of the run.
+            // the cost). #7: arm-then-confirm - the first Enter on a row warns,
+            // the second Enter on the SAME row binds it for the rest of the run.
             if (input_confirm() || input_confirm_alt()) {
-                var _cid = shrine_offers[shrine_cursor];
-                var _res = curse_accept(_cid);
-                if (_res == "") {
-                    var _cd = curse_get(_cid);
-                    shrine_notification = "You embrace " + _cd.name + ". The altar is sated.";
-                    showing_shrine = false;
-                    current_rooms[selected_room].cleared = true;
-                    global.floor_rooms_cleared[selected_room] = true;
-                    // The sated altar sometimes leaves a (often corrupted) egg behind.
-                    if (irandom(99) < 25) {
-                        var _ce = pet_grant_altar_egg("egg_curse");
-                        shrine_notification += _ce.is_egg ? "  A dark egg festers in the ashes..." : ("  A " + _ce.name + " lurks in the dark...");
-                    }
+                if (shrine_curse_arm != shrine_cursor) {
+                    shrine_curse_arm = shrine_cursor;
+                    var _cad = curse_get(shrine_offers[shrine_cursor]);
+                    shrine_notification = "Embrace " + _cad.name + "? Confirm again to accept - a curse cannot be undone.";
+                    shrine_notification_fail = false;
                 } else {
-                    shrine_notification = _res;
+                    shrine_curse_arm = -1;
+                    var _cid = shrine_offers[shrine_cursor];
+                    var _res = curse_accept(_cid);
+                    if (_res == "") {
+                        var _cd = curse_get(_cid);
+                        shrine_notification = "You embrace " + _cd.name + ". The altar is sated.";
+                        shrine_notification_fail = false;
+                        showing_shrine = false;
+                        current_rooms[selected_room].cleared = true;
+                        global.floor_rooms_cleared[selected_room] = true;
+                        // The sated altar sometimes leaves a (often corrupted) egg behind.
+                        if (irandom(99) < 25) {
+                            var _ce = pet_grant_altar_egg("egg_curse");
+                            shrine_notification += _ce.is_egg ? "  A dark egg festers in the ashes..." : ("  A " + _ce.name + " lurks in the dark...");
+                        }
+                    } else {
+                        shrine_notification = _res;
+                        shrine_notification_fail = true;
+                    }
                 }
             }
         } else {
@@ -166,13 +181,16 @@ if (showing_shrine) {
                 var _bd2 = boon_get(_bid);
                 if (boon_active(_bid)) {
                     shrine_notification = "Already claimed.";
+                    shrine_notification_fail = true;
                 } else {
                     var _cands = item_picker_candidates_by_tribute(_bd2.cost);
                     if (array_length(_cands) == 0) {
                         shrine_notification = "No item valuable enough to sacrifice.";
+                        shrine_notification_fail = true;
                     } else {
                         item_picker_open("shrine_boon", { boon_id: _bid, cost: _bd2.cost }, _cands);
                         shrine_notification = "";
+                        shrine_notification_fail = false;
                     }
                 }
             } else if (_pay_method != "") {
@@ -181,6 +199,7 @@ if (showing_shrine) {
                 if (_res == "") {
                     var _bd = boon_get(_bid);
                     shrine_notification = "Claimed " + _bd.name + "! The altar crumbles.";
+                    shrine_notification_fail = false;
                     showing_shrine = false;
                     current_rooms[selected_room].cleared = true;
                     global.floor_rooms_cleared[selected_room] = true;
@@ -196,6 +215,7 @@ if (showing_shrine) {
                     shrine_celebrate_seed  = irandom(10000);
                 } else {
                     shrine_notification = _res;
+                    shrine_notification_fail = true;   // #13: can't-afford etc. read as failure
                 }
             }
         }
@@ -274,7 +294,7 @@ if (showing_event_choice) {
 // floor and gc's Step runs FIRST, so the Esc that closes one has already cleared
 // its flag by the time we get here - global.ui_overlay_latch holds the start-of-
 // frame state so that same press can't also open the pause menu (hub idiom).
-if (input_cancel() && !escape_confirm_open
+if (input_cancel() && !escape_confirm_open && !extract_confirm_open
     && !ui_input_blocked() && !global.ui_overlay_latch) {
     pause_menu_open();
     exit;
@@ -334,6 +354,27 @@ if (escape_confirm_open) {
     }
     exit;
 }
+// -----------------------------------------------------------------------------
+// 3b. EXTRACT CONFIRM (#3) - E opens this instead of extracting on the spot.
+// Enter confirms (end the run, keep loot); Esc / right-click / E again cancels.
+// -----------------------------------------------------------------------------
+if (extract_confirm_open) {
+    if (input_cancel() || mouse_check_button_pressed(mb_right)
+        || input_hotkey("E")) {
+        extract_confirm_open = false;
+    } else if (input_confirm() || input_confirm_alt()) {
+        extract_confirm_open = false;
+        audio_stop_sound(_2_dungeon_INITIAL);
+        audio_stop_sound(_2_dungeon_LOOP);
+        end_run(0);
+        global.current_floor       = 1;
+        global.floor_rooms_cleared = [];
+        global.floor_map_floor     = -1; // force map regen next run
+        room_goto(rm_hub);
+    }
+    exit;
+}
+
 // Onboarding: the first time the player stands on the floor map CARRYING an
 // escape item, teach it (M 07-08: "tutorial message when you find a lamp or
 // devil wine"). Fired here - not at loot/purchase time - so the tip appears
@@ -563,6 +604,8 @@ if (input_confirm() || input_confirm_alt()) {
         }
         shrine_cursor       = 0;
         shrine_notification = "";
+        shrine_notification_fail = false;
+        shrine_curse_arm    = -1;
         shrine_revealed     = false;   // veiled until the player approaches
         showing_shrine      = true;
         tutorial_try_show("shrine");   // first-altar coach-mark (see SYSTEMS_ONBOARDING.md)
@@ -596,15 +639,8 @@ if (input_hotkey("E")) {
             break;
         }
     }
-    if (_boss_cleared) {
-        audio_stop_sound(_2_dungeon_INITIAL);
-        audio_stop_sound(_2_dungeon_LOOP);
-        end_run(0);
-        global.current_floor       = 1;
-        global.floor_rooms_cleared = [];
-        global.floor_map_floor     = -1; // force map regen next run
-        room_goto(rm_hub);
-    }
+    // #3: open the confirm popup (block 3b) instead of extracting on the spot.
+    if (_boss_cleared) extract_confirm_open = true;
 }
 
 

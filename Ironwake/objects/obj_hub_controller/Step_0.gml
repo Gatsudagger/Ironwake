@@ -287,6 +287,7 @@ if (instance_exists(obj_game_controller)) {
         // Tick flash timers (shared between tabs - "slots full" / "locked ability")
         if (_gc_ld.loadout_full_timer > 0) _gc_ld.loadout_full_timer--;
         if (variable_instance_exists(_gc_ld, "loadout_locked_timer") && _gc_ld.loadout_locked_timer > 0) _gc_ld.loadout_locked_timer--;
+        if (variable_instance_exists(_gc_ld, "loadout_gold_timer") && _gc_ld.loadout_gold_timer > 0) _gc_ld.loadout_gold_timer--;
 
         // Q/E cycle the three tabs: Abilities (0) / Traits (1) / Companion (2).
         if (input_tab_next()) { _gc_ld.loadout_tab = (_gc_ld.loadout_tab + 1) mod 3; _gc_ld.loadout_cursor = 0; audio_play_sound(snd_page, 1, false); }
@@ -313,7 +314,10 @@ if (instance_exists(obj_game_controller)) {
                 // 50g per previously-filled trait slot that is being changed
                 var _respec_cost = trait_respec_cost(_tr_sel_c);
                 if (_respec_cost > 0 && global.gold < _respec_cost) {
-                    notification = "Trait respec costs " + string(_respec_cost) + "g  (need " + string(_respec_cost - global.gold) + "g more)";
+                    // #6: flash the shortfall INSIDE the loadout overlay - the hub
+                    // `notification` line is hidden behind it (read as silent fail).
+                    _gc_ld.loadout_gold_msg   = "Trait respec costs " + string(_respec_cost) + "g - you're " + string(_respec_cost - global.gold) + "g short.";
+                    _gc_ld.loadout_gold_timer = 150;
                 } else {
                     if (_respec_cost > 0) global.gold -= _respec_cost;
                     for (var _li = 0; _li < _loadout_max; _li++) global.player_loadout[_li] = _gc_ld.loadout_selected[_li];
@@ -523,7 +527,9 @@ if (instance_exists(obj_game_controller)) {
                     var _ltr = _gc_ld.traits_selected;
                     var _mc_cost = trait_respec_cost(_ltr);
                     if (_mc_cost > 0 && global.gold < _mc_cost) {
-                        notification = "Trait respec costs " + string(_mc_cost) + "g  (need " + string(_mc_cost - global.gold) + "g more)";
+                        // #6: same in-overlay flash as the keyboard confirm path.
+                        _gc_ld.loadout_gold_msg   = "Trait respec costs " + string(_mc_cost) + "g - you're " + string(_mc_cost - global.gold) + "g short.";
+                        _gc_ld.loadout_gold_timer = 150;
                     } else {
                         if (_mc_cost > 0) global.gold -= _mc_cost;
                         for (var _lci = 0; _lci < _loadout_max; _lci++) global.player_loadout[_lci] = _gc_ld.loadout_selected[_lci];

@@ -449,6 +449,10 @@ shrine_kind        = "blessing";  // "blessing" = boons | "curse" = curses
 shrine_offers      = [];   // array of boon ids OR curse ids offered this shrine
 shrine_cursor      = 0;
 shrine_notification = "";
+shrine_notification_fail = false;   // #13: failure notifications draw red
+// #7: embracing a curse is ARM-THEN-CONFIRM - the first Enter on a row warns,
+// the second (same row) commits. -1 = nothing armed; moving the cursor disarms.
+shrine_curse_arm   = -1;
 // Whether the player has APPROACHED the altar (committed). While false the altar's
 // nature (blessing/curse) is veiled and the player may still leave freely. Once they
 // approach, the kind is revealed - and a CURSE altar then traps them (no Esc, must
@@ -464,6 +468,10 @@ shrine_celebrate_seed  = 0;    // varies the sparkle pattern per celebration
 // Escape-item confirm (Genie Lamp / Devil Wine, used from the idle floor map via G)
 escape_confirm_open = false;
 escape_confirm_idx  = -1;      // index into global.consumable_inventory
+
+// Extract confirm (#3): E on the idle floor map (boss cleared) opens a confirm
+// popup instead of extracting instantly - a stray E can't end the run anymore.
+extract_confirm_open = false;
 
 // Event room - interactive stat-gated choice overlay (see SYSTEMS_EVENTS.md)
 showing_event_choice = false;

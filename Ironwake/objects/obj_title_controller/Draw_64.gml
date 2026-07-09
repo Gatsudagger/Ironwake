@@ -472,9 +472,11 @@ if (phase == "cutscene") {
     // Arrow caret under selected card
     var _arrow_x = _start_x + slot_selected * (_card_w + _gap) + _card_w / 2;
     if ((current_time mod 700) < 400) {
-        draw_set_font(fnt_ui);
         draw_set_color(make_color_rgb(130, 195, 255));
-        draw_text(_arrow_x, _card_y + _card_h + 21, "^");
+        // #9: drawn triangle caret instead of the letter "^".
+        draw_triangle(_arrow_x - 11, _card_y + _card_h + 38,
+                      _arrow_x + 11, _card_y + _card_h + 38,
+                      _arrow_x,      _card_y + _card_h + 22, false);
     }
 
     draw_set_alpha(1.0);

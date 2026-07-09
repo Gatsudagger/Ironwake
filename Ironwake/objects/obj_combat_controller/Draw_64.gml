@@ -197,7 +197,6 @@ if (_pet_co != undefined && !_pet_co.is_egg) {
     if (_petspr >= 0) {
         var _pet_disp_h = [120, 145, 170, 200, 230];   // display height by Stage 0-4
         var _peth_t = _pet_disp_h[clamp(_pet_co.stage, 0, 4)];
-        var _petsc  = _peth_t / max(1, sprite_get_height(_petspr));
         // Player feet (origin top-left): centre-x + a step to the right, ground-line y.
         // Anchored to the player's RESTING position (330/465 + screen shake), NOT the
         // animated _px_draw/_py_draw - otherwise the pet visibly rides along on the
@@ -208,6 +207,14 @@ if (_pet_co != undefined && !_pet_co.is_egg) {
         // at the player's true footing (y~789) the pet's lower half vanished behind the
         // log panel. Standing it slightly higher reads as a depth row behind the player.
         var _pety = min(465 + screen_shake_y + sprite_get_height(_pspr) * _pscale * 0.94, 726);
+        // #16: fit + anchor by the VISIBLE creature (sprite bbox), not the padded
+        // canvas - bonehound/hollow pup stood at half the intended display height.
+        // _petx/_pety stay the FEET point (shadow); _pdx/_pdy are the draw anchor.
+        var _pcfit  = pet_sprite_fit(_petspr, _petx, _pety, _peth_t);
+        var _petsc  = _pcfit.scale;
+        var _pdx    = _pcfit.x;
+        var _pdy    = _pcfit.y;
+        var _pet_vis_w = (sprite_get_bbox_right(_petspr) - sprite_get_bbox_left(_petspr) + 1) * _petsc;
 
         // Procedural attack lunge: on a Combatant strike (global.pet_lunge_t0), the pet
         // surges toward the enemies (right) and snaps back over ~260ms, with a squash-
@@ -222,7 +229,7 @@ if (_pet_co != undefined && !_pet_co.is_egg) {
             if (_lprog > 0.34 && _lprog < 0.60) _flash = 0.55;   // impact
         }
 
-        ui_draw_ground_shadow(_petx, _pety, sprite_get_width(_petspr) * _petsc * 0.8);
+        ui_draw_ground_shadow(_petx, _pety, _pet_vis_w * 0.8);
         // Awakened aura (Stage 4): a pulsing additive halo behind the sprite, tinted by
         // archetype (gold Fortune / red Warrior / blue Guardian). The Stage-4 form reuses
         // the Adult frame - the aura is what sells the ascension (design 2026-07-03).
@@ -230,16 +237,36 @@ if (_pet_co != undefined && !_pet_co.is_egg) {
         if (_aura >= 0) {
             var _apulse = 0.22 + 0.12 * sin(current_time / 340);
             gpu_set_blendmode(bm_add);
-            draw_sprite_ext(_petspr, pet_anim_frame(_petspr), _petx + _lunge_dx, _pety + 4, _sx * 1.10, _petsc * 1.10, 0, _aura, _apulse);
-            draw_sprite_ext(_petspr, pet_anim_frame(_petspr), _petx + _lunge_dx, _pety + 2, _sx * 1.04, _petsc * 1.04, 0, _aura, _apulse * 0.8);
+            draw_sprite_ext(_petspr, pet_anim_frame(_petspr), _pdx + _lunge_dx, _pdy + 4, _sx * 1.10, _petsc * 1.10, 0, _aura, _apulse);
+            draw_sprite_ext(_petspr, pet_anim_frame(_petspr), _pdx + _lunge_dx, _pdy + 2, _sx * 1.04, _petsc * 1.04, 0, _aura, _apulse * 0.8);
             gpu_set_blendmode(bm_normal);
         }
-        draw_sprite_ext(_petspr, pet_anim_frame(_petspr), _petx + _lunge_dx, _pety, _sx, _petsc, 0, c_white, 1.0);
+        draw_sprite_ext(_petspr, pet_anim_frame(_petspr), _pdx + _lunge_dx, _pdy, _sx, _petsc, 0, c_white, 1.0);
         // Additive white flash on the sprite at the strike apex.
         if (_flash > 0) {
             gpu_set_blendmode(bm_add);
-            draw_sprite_ext(_petspr, pet_anim_frame(_petspr), _petx + _lunge_dx, _pety, _sx, _petsc, 0, c_white, _flash);
+            draw_sprite_ext(_petspr, pet_anim_frame(_petspr), _pdx + _lunge_dx, _pdy, _sx, _petsc, 0, c_white, _flash);
             gpu_set_blendmode(bm_normal);
+        }
+        // Guard status chip (M 07-09): a guarded-stance Combatant shows its HP pool
+        // and guard state above its head, with the in-combat G toggle hint - so the
+        // player can call it off before intercepts (#20) grind it down.
+        if (_pet_co.archetype == PET_ARCH_COMBATANT && pet_stance(_pet_co) == "guarded") {
+            draw_set_halign(fa_center);
+            draw_set_font(fnt_ui_small);
+            var _gchip_y = _pety - _peth_t - 33;
+            if (pet_hp(_pet_co) <= 0) {
+                draw_set_color(make_color_rgb(230, 95, 85));
+                draw_text_outline(_petx, _gchip_y, "DOWN");
+            } else if (pet_guard_off(_pet_co)) {
+                draw_set_color(make_color_rgb(150, 156, 175));
+                draw_text_outline(_petx, _gchip_y, "CALLED OFF  " + string(pet_hp(_pet_co)) + "/" + string(pet_max_hp(_pet_co)) + "  [G]");
+            } else {
+                draw_set_color(make_color_rgb(140, 205, 150));
+                draw_text_outline(_petx, _gchip_y, "GUARDING  " + string(pet_hp(_pet_co)) + "/" + string(pet_max_hp(_pet_co)) + "  [G]");
+            }
+            draw_set_halign(fa_left);
+            draw_set_font(-1);
         }
     }
 }
@@ -249,45 +276,9 @@ if (variable_struct_exists(player, "status_effects")) {
                       sprite_get_height(_pspr) * _pscale, player.status_effects);
 }
 
-// Enemy sprites
-var _espr_map = {
-    "Ashen Skeleton":      spr_skeleton_soldier,
-    "Skeleton Archer":     spr_skeleton_archer,
-    "Vault Crawler":       spr_vault_crawler,
-    "Dungeon Wraith":      spr_dungeon_wraith,
-    "Stone Golem":         spr_stone_golem,
-    "Vault Guardian":      spr_vault_guardian,
-    "Vault Wraith":        spr_vault_wraith,
-    "Vault Sentinel":      spr_vault_sentinel,
-    "Bone Sovereign":      spr_bone_sovereign,
-    "Malgrath the Warden": spr_malgrath_warden,
-    "Grave Stalker":        spr_grave_stalker,
-    "Bone Colossus":        spr_bone_colossus,
-    "Cinder Imp":           spr_cinder_imp,
-    "Magma Slug":           spr_magma_slug,
-    "Ash Wraith":           spr_ash_wraith,
-    "Fire Drake":           spr_fire_drake,
-    "Lava Spitter":         spr_lava_spitter,
-    "Smoldering Revenant":  spr_smoldering_revenant,
-    "Cinder Golem":         spr_cinder_golem,
-    "Infernal Revenant":    spr_infernal_revenant,
-    "Ice Specter":          spr_ice_specter,
-    "Frost Shard":          spr_frost_shard,
-    "Glacial Lurker":       spr_glacial_lurker,
-    "Pale Archivist":       spr_pale_archivist,
-    "Snowbound Wraith":     spr_snowbound_wraith,
-    "Frozen Thrall":        spr_frozen_thrall,
-    "Glacial Beast":        spr_glacial_beast,
-    "Frozen Sentinel":      spr_frozen_sentinel,
-    "Glacial Warden":       spr_glacial_beast,
-    "Tomb Archon":          spr_frozen_sentinel,
-    "The Eternal Frost":    spr_frozen_sentinel,
-    // Scorched Depths bosses - reuse fitting elite sprites (these renamed clones were
-    // missing from the map, so they rendered with no model). See obj_combat_controller Create.
-    "Forge Tyrant":         spr_cinder_golem,
-    "Molten Revenant":      spr_infernal_revenant,
-    "The Ashen Colossus":   spr_fire_drake,
-};
+// Enemy sprites - the name->sprite map now lives in scr_enemies (enemy_sprite_map)
+// so the journal BESTIARY can draw the same creatures south-facing (#8).
+var _espr_map = enemy_sprite_map();
 var _espr_x0  = 1665;
 var _espr_y0  = 225;
 var _espr_dx  = -174;   // strong horizontal spread so foes read as a row, not a column
@@ -604,8 +595,8 @@ if (player_turn && !combat_over) {
         // Scroll hints
         draw_set_font(fnt_ui_small);
         draw_set_color(make_color_rgb(120, 210, 160));
-        if (_q_first > 0)        draw_text(_px + _pw / 2, _py + 54, "^ more");
-        if (_q_last < _qcount)   draw_text(_px + _pw / 2, _py + _ph - 66, "v more");
+        if (_q_first > 0)        ui_draw_scroll_more(_px + _pw / 2, _py + 54, true, "more");
+        if (_q_last < _qcount)   ui_draw_scroll_more(_px + _pw / 2, _py + _ph - 66, false, "more");
 
         // Empty-state message (run buffer holds no consumables this run).
         if (_qcount == 0) {
@@ -1118,10 +1109,28 @@ if (combat_over) {
         draw_set_color(make_color_rgb(220, 190, 120));
         draw_text(1254, 579, "Floor " + string(global.current_floor + 1) + "  *  Harder enemies");
 
-        draw_set_color(make_color_rgb(70, 80, 110));
-        draw_text_outline(_cx, 645, (input_device() == 1)
-            ? "RT: Extract     A: Continue to next floor"
-            : "E: Extract     Enter / Space: Continue to next floor");
+        // #3: armed button gets a bright double border + an explicit confirm line.
+        if (boss_extract_arm == "extract") {
+            draw_set_color(make_color_rgb(140, 255, 160));
+            draw_rectangle(400, 508, 932, 625, true);
+            draw_rectangle(398, 506, 934, 627, true);
+        } else if (boss_extract_arm == "continue") {
+            draw_set_color(make_color_rgb(255, 210, 110));
+            draw_rectangle(988, 508, 1520, 625, true);
+            draw_rectangle(986, 506, 1522, 627, true);
+        }
+        if (boss_extract_arm != "") {
+            draw_set_font(fnt_ui_small);
+            draw_set_color(c_white);
+            draw_text_outline(_cx, 645, (boss_extract_arm == "extract")
+                ? "Extract to camp?  Press E / click again to confirm."
+                : "Descend to floor " + string(global.current_floor + 1) + "?  Press Enter / click again to confirm.");
+        } else {
+            draw_set_color(make_color_rgb(70, 80, 110));
+            draw_text_outline(_cx, 645, (input_device() == 1)
+                ? "RT: Extract     A: Continue to next floor"
+                : "E: Extract     Enter / Space: Continue to next floor");
+        }
 
         draw_set_font(-1);
         draw_set_halign(fa_left);
@@ -1145,30 +1154,40 @@ if (combat_over) {
             draw_set_alpha(1.0);
         }
 
-        // Input: Extract
+        // Input: Extract (#3 arm-then-confirm: first press arms, second commits)
         var _do_extract = input_hotkey("E")
             || (mouse_check_button_pressed(mb_left) && _hover_extract);
         if (_do_extract) {
-            audio_stop_sound(MusicBox1);
-            end_run(0);
-            global.current_floor       = 1;
-            global.floor_rooms_cleared = [];
-            global.floor_map_floor     = -1;
-            room_goto(rm_hub);
-            exit;
+            if (boss_extract_arm != "extract") {
+                boss_extract_arm = "extract";
+            } else {
+                boss_extract_arm = "";
+                audio_stop_sound(MusicBox1);
+                end_run(0);
+                global.current_floor       = 1;
+                global.floor_rooms_cleared = [];
+                global.floor_map_floor     = -1;
+                room_goto(rm_hub);
+                exit;
+            }
         }
 
-        // Input: Continue
+        // Input: Continue (#3 arm-then-confirm)
         var _do_continue = input_confirm() || input_confirm_alt()
             || (mouse_check_button_pressed(mb_left) && _hover_continue);
         if (_do_continue) {
-            boss_extract_open = false;
-            audio_stop_sound(MusicBox1);
-            global.just_cleared_boss   = false;
-            global.floor_rooms_cleared = [];
-            global.current_floor++;
-            room_goto(rm_dungeon_floor);
-            exit;
+            if (boss_extract_arm != "continue") {
+                boss_extract_arm = "continue";
+            } else {
+                boss_extract_arm  = "";
+                boss_extract_open = false;
+                audio_stop_sound(MusicBox1);
+                global.just_cleared_boss   = false;
+                global.floor_rooms_cleared = [];
+                global.current_floor++;
+                room_goto(rm_dungeon_floor);
+                exit;
+            }
         }
 
         touch_sim_pump();   // early exit skips the bottom-of-Draw pump (see alloc note)
@@ -1221,6 +1240,7 @@ if (combat_over) {
                 } else {
                     // Floor boss cleared - open extract choice popup, don't advance yet
                     boss_extract_open = true;
+                    boss_extract_arm  = "";   // #3: nothing armed yet
                     exit;
                 }
             }

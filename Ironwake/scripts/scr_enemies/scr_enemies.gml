@@ -668,6 +668,52 @@ global.enemies_tundra_tomb_elite = [
 ];
 
 // =============================================================================
+// ENEMY SPRITE MAP - the single name->sprite truth, shared by the combat draw
+// (west-facing frame 3) and the journal bestiary (south-facing frame 0, #8).
+// Moved here from obj_combat_controller Draw_64 (2026-07-09).
+// =============================================================================
+function enemy_sprite_map() {
+    return {
+        "Ashen Skeleton":      spr_skeleton_soldier,
+        "Skeleton Archer":     spr_skeleton_archer,
+        "Vault Crawler":       spr_vault_crawler,
+        "Dungeon Wraith":      spr_dungeon_wraith,
+        "Stone Golem":         spr_stone_golem,
+        "Vault Guardian":      spr_vault_guardian,
+        "Vault Wraith":        spr_vault_wraith,
+        "Vault Sentinel":      spr_vault_sentinel,
+        "Bone Sovereign":      spr_bone_sovereign,
+        "Malgrath the Warden": spr_malgrath_warden,
+        "Grave Stalker":        spr_grave_stalker,
+        "Bone Colossus":        spr_bone_colossus,
+        "Cinder Imp":           spr_cinder_imp,
+        "Magma Slug":           spr_magma_slug,
+        "Ash Wraith":           spr_ash_wraith,
+        "Fire Drake":           spr_fire_drake,
+        "Lava Spitter":         spr_lava_spitter,
+        "Smoldering Revenant":  spr_smoldering_revenant,
+        "Cinder Golem":         spr_cinder_golem,
+        "Infernal Revenant":    spr_infernal_revenant,
+        "Ice Specter":          spr_ice_specter,
+        "Frost Shard":          spr_frost_shard,
+        "Glacial Lurker":       spr_glacial_lurker,
+        "Pale Archivist":       spr_pale_archivist,
+        "Snowbound Wraith":     spr_snowbound_wraith,
+        "Frozen Thrall":        spr_frozen_thrall,
+        "Glacial Beast":        spr_glacial_beast,
+        "Frozen Sentinel":      spr_frozen_sentinel,
+        "Glacial Warden":       spr_glacial_beast,
+        "Tomb Archon":          spr_frozen_sentinel,
+        "The Eternal Frost":    spr_frozen_sentinel,
+        // Scorched Depths bosses - reuse fitting elite sprites (these renamed clones were
+        // missing from the map, so they rendered with no model). See obj_combat_controller Create.
+        "Forge Tyrant":         spr_cinder_golem,
+        "Molten Revenant":      spr_infernal_revenant,
+        "The Ashen Colossus":   spr_fire_drake,
+    };
+}
+
+// =============================================================================
 // BESTIARY (Journal tab, 2026-07-04) - brief authored lore per species, grouped
 // by dungeon family. Display-only: names match the combat sprite map / enemy
 // templates so the reader recognises what it just fought.

@@ -1068,6 +1068,8 @@ function play_ability_cast_sfx(ab, caster, is_offensive) {
 // combat_on_enemy_defeated(target, player, combat_log) - shared kill handler:
 // gold, loot, XP, on-kill soul generation, and Heartstone Aegis. Called by both
 // the single-target and AoE damage paths so kill rewards never diverge.
+// (#17 resolved as WORKING AS INTENDED, M 07-09: a Soulfire killing blow pays
+// its own +2 AND the on-kill class harvest's +2 - the stack is deliberate.)
 function combat_on_enemy_defeated(target, player, combat_log) {
     target.is_defeated = true;
     enemy_death_sound(target.name);
@@ -1199,6 +1201,7 @@ function combat_pet_act(combat_state, player, combat_log, damage_popups) {
     var _imult = pet_injury_mult(_p.injured);   // injury weakens (tier 1) or benches (tier 2+) the pet
     _imult *= pet_hunger_mult(_p);              // hungry -25%; STARVING = benched (07-08)
     if (_imult <= 0) return false;
+    if (pet_hp(_p) <= 0) return false;          // #20: knocked out - benched until healed (run end / food)
     var _cmult     = pet_corruption_mult(_p) * pet_bond_mult(_p);   // corruption +15%/run + Soul-bound +5% (§5 Axis 3)
     var _fulfilled = pet_is_fulfilled(_p);       // fully corrupted -> grand archetype ability
     var _kit = pet_kit_mods(_p);                 // named-kit modifiers (traits/abilities, Pets §5)
@@ -1361,6 +1364,7 @@ function combat_pet_echo_open(combat_state, player, combat_log, damage_popups) {
     var _imult = pet_injury_mult(_p.injured);
     _imult *= pet_hunger_mult(_p);   // hungry -25%; STARVING = benched (07-08)
     if (_imult <= 0) return false;
+    if (pet_hp(_p) <= 0) return false;   // #20: knocked out - benched
     // Pick a random living enemy (it lashes out, it doesn't aim).
     var _live = [], _slots = [];
     var _slot = 0;
@@ -1398,6 +1402,7 @@ function combat_pet_vigil_check(player, combat_log, damage_popups) {
     if (_kit.vigil <= 0) return false;
     var _imult = pet_injury_mult(_p.injured);
     if (_imult <= 0) return false;
+    if (pet_hp(_p) <= 0) return false;   // #20: knocked out - benched
     global.pet_vigil_used = true;
     var _sh = max(1, round(_kit.vigil * _imult * pet_corruption_mult(_p) * pet_bond_mult(_p) * pet_stat_mult(_p, "spr")));
     player.shield_hp += _sh;

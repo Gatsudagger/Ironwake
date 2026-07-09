@@ -676,13 +676,16 @@ function awakening_label() {
 }
 
 // ---------------------------------------------------------------------------
-// ui_draw_item_icon(x, y, sz, item)
+// ui_draw_item_icon(x, y, sz, item, framed)
 // Draws a pixel art icon for the item, scaled to szxsz.
 // Legendary items are detected via unique_effect; weapons use name-keyword
 // subtype detection. Falls back to colored box + abbreviation if the sprite
 // has not yet been imported into the project.
+// framed=false skips the dark panel + rarity border - for callers that already
+// drew their own frame around the icon (#10: the codex art box drew an icon
+// box INSIDE its box for splash-less items like Chipped Spear).
 // ---------------------------------------------------------------------------
-function ui_draw_item_icon(x, y, sz, item) {
+function ui_draw_item_icon(x, y, sz, item, framed = true) {
     var _slot = variable_struct_exists(item, "slot") ? item.slot : "";
     var _rar  = variable_struct_exists(item, "rarity") ? item.rarity : 0;
     var _rcol = item_rarity_color(_rar);
@@ -732,11 +735,13 @@ function ui_draw_item_icon(x, y, sz, item) {
     // Force full opacity - icons are never meant to inherit a caller's dimmed alpha
     draw_set_alpha(1.0);
 
-    // Dark panel background + rarity border
-    draw_set_color(make_color_rgb(12, 14, 22));
-    draw_rectangle(x, y, x + sz, y + sz, false);
-    draw_set_color(_rcol);
-    draw_rectangle(x, y, x + sz, y + sz, true);
+    // Dark panel background + rarity border (skipped when the caller framed it, #10)
+    if (framed) {
+        draw_set_color(make_color_rgb(12, 14, 22));
+        draw_rectangle(x, y, x + sz, y + sz, false);
+        draw_set_color(_rcol);
+        draw_rectangle(x, y, x + sz, y + sz, true);
+    }
 
     if (_spr != -1 && sprite_exists(_spr)) {
         // 2px inset keeps the rarity border visible around the icon
@@ -1314,7 +1319,9 @@ function hatch_cutscene_draw() {
         var _grow = clamp(_t / 22, 0, 1);
         var _pop  = 1 + 0.14 * sin(_grow * pi);             // subtle bounce
         if (_bsp >= 0) {
-            var _sc = (360 / max(1, sprite_get_height(_bsp))) * (0.25 + 0.75 * _grow) * _pop;
+            // #16: reveal height keyed to the VISIBLE creature, not the padded canvas.
+            var _bvh = max(1, sprite_get_bbox_bottom(_bsp) - sprite_get_bbox_top(_bsp) + 1);
+            var _sc  = (360 / _bvh) * (0.25 + 0.75 * _grow) * _pop;
             draw_sprite_ext(_bsp, pet_anim_frame(_bsp), _cx, _base_y, _sc, _sc, 0, c_white, 1);
         }
         // Caption
@@ -1896,13 +1903,13 @@ function ui_draw_journal() {
         }
         if (_bfirst > 0) {
             draw_set_color(make_color_rgb(120, 140, 170));
-            draw_text(_list_x1, _top - 30, "^ more");
+            ui_draw_scroll_more(_list_x1, _top - 30, true, "more");
         }
         if (_blast < _bn) {
             draw_set_color(make_color_rgb(120, 140, 170));
-            draw_text(_list_x1, _bot - 30 + 6, "v " + string(_bn - _blast) + " more");
+            ui_draw_scroll_more(_list_x1, _bot - 30 + 6, false, string(_bn - _blast) + " more");
         }
-        // Detail pane: name, family, lore.
+        // Detail pane: name, family, creature portrait, lore.
         if (_bn > 0) {
             var _bd  = _bst[_bcur];
             var _bdy = _top + 6;
@@ -1912,6 +1919,18 @@ function ui_draw_journal() {
             draw_set_font(fnt_ui_small);
             draw_set_color(make_color_rgb(210, 190, 130));
             draw_text(_det_x1, _bdy, _bd.family + "  -  " + _bd.kind); _bdy += 44;
+            // #8: the creature itself, SOUTH-facing (frame 0 of the 8-dir sheet),
+            // centred between the header and the lore with a footing shadow.
+            var _bsm = enemy_sprite_map();
+            if (variable_struct_exists(_bsm, _bd.name)) {
+                var _bspr = variable_struct_get(_bsm, _bd.name);
+                var _bsc  = 180 / max(1, sprite_get_height(_bspr));
+                var _bw   = sprite_get_width(_bspr) * _bsc;
+                var _bcx  = (_det_x1 + _det_x2) / 2;
+                ui_draw_ground_shadow(_bcx, _bdy + 180 * 0.94, _bw);
+                draw_sprite_ext(_bspr, 0, _bcx - _bw / 2, _bdy, _bsc, _bsc, 0, c_white, 1);
+                _bdy += 202;
+            }
             draw_set_color(make_color_rgb(170, 176, 195));
             draw_text_ext(_det_x1, _bdy, _bd.lore, 28, _det_x2 - _det_x1 - 10);
         }
@@ -2546,8 +2565,9 @@ function ui_draw_bairc_screen() {
         draw_rectangle(_ibx0, _iby0, _ibx1, _iby1, true);
         var _isp = pet_sprite(_pet, "s");
         if (_isp >= 0) {
-            var _isc = min((_ibs - 10) / max(1, sprite_get_width(_isp)), (_ibs - 8) / max(1, sprite_get_height(_isp)));
-            draw_sprite_ext(_isp, pet_anim_frame(_isp), (_ibx0 + _ibx1) / 2, _iby1 - 5, _isc, _isc, 0, c_white, 1);
+            // #16: fit the VISIBLE creature (bbox) into the icon box, not the canvas.
+            var _ifit = pet_sprite_fit(_isp, (_ibx0 + _ibx1) / 2, _iby1 - 5, _ibs - 8, _ibs - 10);
+            draw_sprite_ext(_isp, pet_anim_frame(_isp), _ifit.x, _ifit.y, _ifit.scale, _ifit.scale, 0, c_white, 1);
         }
 
         var _tx = _ibx1 + 14;
@@ -2641,8 +2661,9 @@ function ui_draw_bairc_screen() {
             var _t    = current_time / 1000;
             var _lane = _list_x + 44 + (_gi + 0.5) * (_list_w - 88) / _gshow;
             var _wx   = sin(_t * (0.30 + 0.06 * _gi) + _gi * 2.13) * 30;
-            var _gsc  = 52 / max(1, sprite_get_height(_gsp));
-            draw_sprite_ext(_gsp, pet_anim_frame(_gsp), _lane + _wx, _gfloor, _gsc, _gsc, 0, c_white, 1);
+            // #16: 52px of VISIBLE creature, whatever the canvas padding.
+            var _gfit = pet_sprite_fit(_gsp, _lane + _wx, _gfloor, 52);
+            draw_sprite_ext(_gsp, pet_anim_frame(_gsp), _gfit.x, _gfit.y, _gfit.scale, _gfit.scale, 0, c_white, 1);
         }
         if (_dn > _gshow) {
             draw_set_halign(fa_right);
@@ -2695,16 +2716,19 @@ function ui_draw_bairc_screen() {
         if (_psp >= 0) {
             var _st_h  = [78, 90, 100, 112, 116];   // station display height by stage 0-4
             var _th    = _st_h[clamp(_p.stage, 0, 4)] * pet_stage_scale(_p);
-            var _psc   = _th / max(1, sprite_get_height(_psp));
+            // #16: fit by VISIBLE content, not the padded canvas (bonehound/hollow
+            // pup drew tiny). Width-capped so wide species stay inside the panel.
+            var _pfit  = pet_sprite_fit(_psp, _spx, _spb, _th, 170);
+            var _psc   = _pfit.scale;
             // Awakened aura: pulsing archetype-tinted halo behind the station sprite.
             var _paura = pet_aura_color(_p);
             if (_paura >= 0) {
                 var _pap = 0.20 + 0.10 * sin(current_time / 340);
                 gpu_set_blendmode(bm_add);
-                draw_sprite_ext(_psp, pet_anim_frame(_psp), _spx, _spb + 2, _psc * 1.08, _psc * 1.08, 0, _paura, _pap);
+                draw_sprite_ext(_psp, pet_anim_frame(_psp), _pfit.x, _pfit.y + 2, _psc * 1.08, _psc * 1.08, 0, _paura, _pap);
                 gpu_set_blendmode(bm_normal);
             }
-            draw_sprite_ext(_psp, pet_anim_frame(_psp), _spx, _spb, _psc, _psc, 0, c_white, 1);
+            draw_sprite_ext(_psp, pet_anim_frame(_psp), _pfit.x, _pfit.y, _psc, _psc, 0, c_white, 1);
         } else {
             draw_set_color(make_color_rgb(28, 32, 44));
             draw_rectangle(_spx - 48, _spb - 92, _spx + 48, _spb, false);
@@ -2731,12 +2755,17 @@ function ui_draw_bairc_screen() {
                 // severity so a starving pet reads at a glance.
                 ["Life Stage:", _p.is_egg ? "Egg (unhatched)"
                     : (pet_stage_name(_p.stage) + "   -   " + pet_hunger_state_label(_p)
-                       + " (" + string(pet_hunger(_p)) + "/100)"),
-                 _p.is_egg ? make_color_rgb(228, 190, 90)
+                       + " (" + string(pet_hunger(_p)) + "/100)"
+                       // #20 HP pool rides the same row; a knocked-out pet says so.
+                       + "   -   " + ((pet_hp(_p) <= 0) ? "KO"
+                           : ("HP " + string(pet_hp(_p)) + "/" + string(pet_max_hp(_p))))),
+                 // GML requires nested ternaries fully parenthesized - a bare
+                 // a ? b : c ? d : e chain is a compile error.
+                 (_p.is_egg ? make_color_rgb(228, 190, 90)
                     : ((pet_hunger_state(_p) == "starving") ? make_color_rgb(235, 90, 80)
-                     : (pet_hunger_state(_p) == "hungry")   ? make_color_rgb(230, 150, 90)
-                     : (pet_hunger_state(_p) == "peckish")  ? make_color_rgb(215, 200, 120)
-                     : make_color_rgb(228, 190, 90))],
+                     : ((pet_hunger_state(_p) == "hungry")  ? make_color_rgb(230, 150, 90)
+                      : ((pet_hunger_state(_p) == "peckish") ? make_color_rgb(215, 200, 120)
+                       : make_color_rgb(228, 190, 90)))))],
               ];
         for (var _ri = 0; _ri < 3; _ri++) {
             draw_set_color(make_color_rgb(150, 160, 185));
@@ -2965,8 +2994,11 @@ function ui_draw_bairc_screen() {
                 draw_set_font(fnt_ui);
                 draw_set_color(_fav && _can ? make_color_rgb(235, 210, 140) : (_can ? make_color_rgb(222, 228, 240) : make_color_rgb(110, 114, 128)));
                 // Crowded stable: show what the feed ACTUALLY grants ("+3 -> +2").
+                // Treats are bond-only - label them "+1 bond", never "+0 grow" (#4).
                 var _fg_eff = pet_feed_effective_growth(_p, _ff);
-                var _fg_txt = (_fg_eff < _ff.growth) ? ("+" + string(_ff.growth) + " -> +" + string(_fg_eff)) : ("+" + string(_ff.growth));
+                var _fg_txt = (variable_struct_exists(_ff, "bond") && _ff.bond > 0)
+                    ? ("+" + string(_ff.bond) + " bond")
+                    : ((_fg_eff < _ff.growth) ? ("+" + string(_ff.growth) + " -> +" + string(_fg_eff)) : ("+" + string(_ff.growth)));
                 draw_text(_txt_x, _fby + 8, "[" + string(_fi + 1) + "]  " + _ff.name + "   " + _fg_txt + (_fav ? "   - its favorite!" : ""));
                 draw_set_font(fnt_ui_small);
                 draw_set_halign(fa_right);
@@ -3195,17 +3227,27 @@ function ui_draw_bairc_screen() {
 // with descriptions, plus injury/corruption status. Opened from Bairc's station and the
 // Gate Companion tab; the caller gates input while it's up. (Pets §5)
 // ---------------------------------------------------------------------------
-function ui_draw_pet_detail(pet) {
+function ui_draw_pet_detail(pet, inline = false) {
+    // inline (#1): drawn as a seamless PAGE inside the character menu's Companion
+    // tab - no screen dim, a plain panel border instead of the modal gothic frame,
+    // and no "[Tab]/[Esc] Close" footer (the tab's own footer covers input).
     if (!is_struct(pet)) return;
     var _pd_stat_hover = "";   // stat chip under the mouse; tooltip drawn last
     var _pd_type_hover = "";   // archetype name under the mouse; free-text tooltip drawn last
-    draw_set_alpha(0.84); draw_set_color(c_black);
-    draw_rectangle(0, 0, GUI_W, GUI_H, false);
-    draw_set_alpha(1.0);
+    if (!inline) {
+        draw_set_alpha(0.84); draw_set_color(c_black);
+        draw_rectangle(0, 0, GUI_W, GUI_H, false);
+        draw_set_alpha(1.0);
+    }
     var _x1 = 360, _y1 = 96, _x2 = 1560, _y2 = 1002;
     draw_set_color(make_color_rgb(16, 17, 26));
     draw_rectangle(_x1, _y1, _x2, _y2, false);
-    ui_draw_gothic_frame(_x1, _y1, _x2, _y2, 36);
+    if (inline) {
+        draw_set_color(make_color_rgb(52, 58, 80));
+        draw_rectangle(_x1, _y1, _x2, _y2, true);
+    } else {
+        ui_draw_gothic_frame(_x1, _y1, _x2, _y2, 36);
+    }
 
     var _pad = 45, _lx = _x1 + _pad, _rx = _x2 - _pad, _y = _y1 + _pad;
     draw_set_halign(fa_left); draw_set_valign(fa_top);
@@ -3220,9 +3262,9 @@ function ui_draw_pet_detail(pet) {
     draw_rectangle(_hbx0, _hby0, _hbx1, _hby1, true);
     var _spr = pet_sprite(pet, "s");
     if (_spr >= 0) {
-        var _fitw = (_hbx1 - _hbx0) - 22, _fith = (_hby1 - _hby0) - 18;
-        var _sc = min(_fitw / max(1, sprite_get_width(_spr)), _fith / max(1, sprite_get_height(_spr)));
-        draw_sprite_ext(_spr, pet_anim_frame(_spr), (_hbx0 + _hbx1) / 2, _hby1 - 9, _sc, _sc, 0, c_white, 1);
+        // #16: fit the VISIBLE creature (bbox) into the portrait box, not the canvas.
+        var _hfit = pet_sprite_fit(_spr, (_hbx0 + _hbx1) / 2, _hby1 - 9, (_hby1 - _hby0) - 18, (_hbx1 - _hbx0) - 22);
+        draw_sprite_ext(_spr, pet_anim_frame(_spr), _hfit.x, _hfit.y, _hfit.scale, _hfit.scale, 0, c_white, 1);
     }
     var _htx = _hbx1 + 26;
     draw_set_font(fnt_ui_title); draw_set_color(c_white);
@@ -3264,6 +3306,8 @@ function ui_draw_pet_detail(pet) {
             : "Fully grown";
         _statline += "      Bond: " + pet_bond_tier_name(pet_bond_tier(pet));
         _statline += "      Hunger: " + string(pet_hunger(pet)) + "/100 (" + pet_hunger_state_label(pet) + ")";
+        _statline += "      HP: " + ((pet_hp(pet) <= 0) ? "KO"
+            : (string(pet_hp(pet)) + "/" + string(pet_max_hp(pet))));   // #20 pool
         draw_text(_lx, _y, _statline); _y += 42;
         // Three stat chips (the governing stat for this archetype is highlighted gold).
         // Hovering a chip pops the stat's explanation tooltip (drawn last, at the bottom
@@ -3351,10 +3395,12 @@ function ui_draw_pet_detail(pet) {
         }
     }
 
-    draw_set_halign(fa_center);
-    draw_set_font(fnt_ui_small); draw_set_color(make_color_rgb(150, 160, 190));
-    draw_text_outline((_x1 + _x2) / 2, _y2 - 39, "[Tab] or [Esc] - Close");
-    draw_set_halign(fa_left); draw_set_valign(fa_top);
+    if (!inline) {
+        draw_set_halign(fa_center);
+        draw_set_font(fnt_ui_small); draw_set_color(make_color_rgb(150, 160, 190));
+        draw_text_outline((_x1 + _x2) / 2, _y2 - 39, "[Tab] or [Esc] - Close");
+        draw_set_halign(fa_left); draw_set_valign(fa_top);
+    }
 
     // Hovered stat chip's explanation - very last, so it tops the whole popup.
     if (_pd_stat_hover != "") ui_draw_pet_stat_tooltip(device_mouse_x_to_gui(0), device_mouse_y_to_gui(0), pet, _pd_stat_hover);
@@ -3487,8 +3533,34 @@ function ui_list_window_first(cursor, count, max_vis) {
     return clamp(cursor - floor(max_vis / 2), 0, count - max_vis);
 }
 
+// ui_draw_scroll_more(x, y, up, label)
+// #9: windowed lists used the LETTERS "^" / "v" as scroll markers, which read as
+// keyboard keys. Draws a real filled triangle at a text line anchored at (x, y)
+// (top-left of the line, like draw_text), then the label ("19 more") beside it.
+// Uses the caller's current font/color; honors the caller's halign for the whole
+// arrow+label block, restoring it afterwards.
+function ui_draw_scroll_more(x, y, up, label = "") {
+    var _aw = 14, _ah = 12;               // arrow size, tuned to fnt_ui_small lines
+    var _ty = y + 4;                       // arrow's top inside the text line box
+    var _lw = (label != "") ? string_width("  " + label) : 0;
+    var _bw = _aw + _lw;
+    var _x0 = x;
+    var _prev_ha = draw_get_halign();
+    switch (_prev_ha) {
+        case fa_center: _x0 = x - _bw / 2; break;
+        case fa_right:  _x0 = x - _bw;     break;
+    }
+    if (up) draw_triangle(_x0, _ty + _ah, _x0 + _aw, _ty + _ah, _x0 + _aw / 2, _ty, false);
+    else    draw_triangle(_x0, _ty,       _x0 + _aw, _ty,       _x0 + _aw / 2, _ty + _ah, false);
+    if (label != "") {
+        draw_set_halign(fa_left);
+        draw_text(_x0 + _aw, y, "  " + label);
+        draw_set_halign(_prev_ha);
+    }
+}
+
 // ui_draw_sable_scroll_hint(right_x, first, last, count)
-// "^ N more" / "v N more" indicators for a windowed ui_maren_row list (rows based at
+// "N more" arrow indicators for a windowed ui_maren_row list (rows based at
 // y285, 72px tall). right_x = the right edge to right-align against. No-op when nothing
 // is clipped above or below the visible window.
 function ui_draw_sable_scroll_hint(right_x, first, last, count) {
@@ -3496,8 +3568,8 @@ function ui_draw_sable_scroll_hint(right_x, first, last, count) {
     draw_set_font(fnt_ui_small);
     draw_set_halign(fa_right);
     draw_set_color(make_color_rgb(150, 160, 140));
-    if (first > 0)    draw_text(right_x, 262, "^ " + string(first) + " more");
-    if (last < count) draw_text(right_x, 952, "v " + string(count - last) + " more");
+    if (first > 0)    ui_draw_scroll_more(right_x, 262, true,  string(first) + " more");
+    if (last < count) ui_draw_scroll_more(right_x, 952, false, string(count - last) + " more");
     draw_set_halign(fa_left);
 }
 
@@ -3723,7 +3795,9 @@ function ui_draw_status_fx(cx, top_y, draw_h, status_effects) {
         // it never reads as a second stun (M 07-08). De-dupe keyed separately so
         // a stunned AND shocked enemy shows both effects.
         var _is_shock = (combat_status_element(_se) == "shock");
-        var _dd_key   = _spr + (_is_shock ? 100000 : 0);
+        // String key: sprite refs are typed handles in LTS2026 - arithmetic on
+        // them (ref + real) throws "DoAdd: Malformed variable" at runtime.
+        var _dd_key   = string(_spr) + (_is_shock ? "#shock" : "");
         var _dup = false;
         for (var _d = 0; _d < array_length(_drawn); _d++) if (_drawn[_d] == _dd_key) { _dup = true; break; }
         if (_dup) continue;
@@ -4882,8 +4956,8 @@ function ui_draw_combat_log(x, y, width, height, log_array) {
     if (log_count > _visible_rows) {
         draw_set_halign(fa_right);
         draw_set_color(make_color_rgb(120, 140, 170));
-        if (_scroll > 0)                                 draw_text(x + width - 9, y + 3, "^ older");
-        if (_scroll < log_count - _visible_rows)         draw_text(x + width - 9, y + height - 27, "v newer");
+        if (_scroll > 0)                                 ui_draw_scroll_more(x + width - 9, y + 3, true, "older");
+        if (_scroll < log_count - _visible_rows)         ui_draw_scroll_more(x + width - 9, y + height - 27, false, "newer");
         draw_set_halign(fa_left);
 
         // Scrollbar track + thumb on the right gutter
@@ -6779,6 +6853,36 @@ function ui_draw_character_menu() {
             draw_text(_pad, _content_y + 615, "Dodge:           " + string(_derived.DODGE) + "%");
             draw_text(_pad, _content_y + 651, "Phys reduction:  " + string(_derived.phys_dmg_reduction) + "%");
             draw_text(_pad, _content_y + 687, "Base HP:         " + string(_derived.HP) + "  (+" + string(apply_equipment_stats({}).bonus_max_hp) + " gear)");
+            // #18: flat Armor from gear, with a hover explainer (it had no row here -
+            // the stat existed only on tooltips and inside the combat math).
+            var _armor_val = apply_equipment_stats({}).armor;
+            var _arm_y   = _content_y + 723;
+            var _arm_hov = (_smx >= _pad && _smx <= _pad + 400 && _smy >= _arm_y - 3 && _smy <= _arm_y + 30);
+            draw_set_color(_arm_hov ? make_color_rgb(200, 215, 245) : _dc);
+            draw_text(_pad, _arm_y, "Armor:           " + string(_armor_val) + ((_armor_val > 0) ? "" : "  (none equipped)"));
+            draw_set_color(_dc);
+            if (_arm_hov) {
+                var _am_l1 = "Armor: " + string(_armor_val);
+                var _am_l2 = "Every enemy hit is reduced by this flat";
+                var _am_l3 = "amount (after % reductions). A landed";
+                var _am_l4 = "hit always deals at least 1 damage.";
+                var _am_w  = max(string_width(_am_l2), string_width(_am_l3), string_width(_am_l4)) + 36;
+                var _am_x  = _smx + 24, _am_y2 = _smy + 12;
+                if (_am_x + _am_w > GUI_W) _am_x = GUI_W - _am_w - 6;
+                draw_set_alpha(0.95);
+                draw_set_color(make_color_rgb(18, 20, 32));
+                draw_rectangle(_am_x, _am_y2, _am_x + _am_w, _am_y2 + 150, false);
+                draw_set_alpha(1.0);
+                draw_set_color(make_color_rgb(120, 140, 190));
+                draw_rectangle(_am_x, _am_y2, _am_x + _am_w, _am_y2 + 150, true);
+                draw_set_color(c_white);
+                draw_text(_am_x + 18, _am_y2 + 12, _am_l1);
+                draw_set_color(make_color_rgb(180, 200, 235));
+                draw_text(_am_x + 18, _am_y2 + 48, _am_l2);
+                draw_text(_am_x + 18, _am_y2 + 75, _am_l3);
+                draw_text(_am_x + 18, _am_y2 + 102, _am_l4);
+                draw_set_color(_dc);
+            }
             // Accuracy - a flat bonus to each ability's to-hit, before the foe's dodge.
             draw_set_color(make_color_rgb(150, 180, 210));
             draw_text(_crit_x, _content_y + 615, "Accuracy:  +" + string(_derived.ACC_modifier) + "% to hit");
@@ -7258,10 +7362,10 @@ function ui_draw_character_menu() {
             // Scroll indicators
             draw_set_font(fnt_ui_small);
             draw_set_color(make_color_rgb(150, 160, 140));
-            if (_fl_first > 0)       draw_text(_fc_x1 + 24, _fc_y1 + 60, "^ " + string(_fl_first) + " more");
+            if (_fl_first > 0)       ui_draw_scroll_more(_fc_x1 + 24, _fc_y1 + 60, true, string(_fl_first) + " more");
             if (_fl_last < _found_n) {
                 draw_set_halign(fa_center);
-                draw_text((_fc_x1 + _fc_x2) / 2, _fc_ly2 - 28, "v " + string(_found_n - _fl_last) + " more");
+                ui_draw_scroll_more((_fc_x1 + _fc_x2) / 2, _fc_ly2 - 28, false, string(_found_n - _fl_last) + " more");
                 draw_set_halign(fa_left);
             }
         }
@@ -7486,9 +7590,9 @@ function ui_draw_character_menu() {
                 draw_set_font(fnt_ui_small);
                 draw_set_color(make_color_rgb(140, 160, 200));
                 if (_pk_scroll > 0)
-                    draw_text(_px + _pw / 2, _list_y0 - 24, "^ " + string(_pk_scroll) + " more above ^");
+                    ui_draw_scroll_more(_px + _pw / 2, _list_y0 - 24, true, string(_pk_scroll) + " more above");
                 if (_pk_scroll + _win_rows < _visible)
-                    draw_text(_px + _pw / 2, _list_y0 + _win_rows * _row_h - 3, "v " + string(_visible - _pk_scroll - _win_rows) + " more below v");
+                    ui_draw_scroll_more(_px + _pw / 2, _list_y0 + _win_rows * _row_h - 3, false, string(_visible - _pk_scroll - _win_rows) + " more below");
                 draw_set_halign(fa_left);
 
                 // Hover tooltip for item in picker (windowed rows)
@@ -7722,11 +7826,11 @@ function ui_draw_character_menu() {
             draw_set_font(fnt_ui_small);
             if (_cons_first > 0) {
                 draw_set_color(make_color_rgb(120, 200, 200));
-                draw_text(705, _content_y + 39, "^ " + string(_cons_first) + " more");
+                ui_draw_scroll_more(705, _content_y + 39, true, string(_cons_first) + " more");
             }
             if (_cons_last < _cons_count) {
                 draw_set_color(make_color_rgb(120, 200, 200));
-                draw_text(705, _content_y + 60 + _cons_max_vis * 120 - 18, "v " + string(_cons_count - _cons_last) + " more");
+                ui_draw_scroll_more(705, _content_y + 60 + _cons_max_vis * 120 - 18, false, string(_cons_count - _cons_last) + " more");
             }
             draw_set_halign(fa_left);
 
@@ -7808,7 +7912,7 @@ function ui_draw_character_menu() {
     if (menu_tab == 4) {
         var _cmp_pet = pet_active();
         if (_cmp_pet != undefined) {
-            ui_draw_pet_detail(_cmp_pet);
+            ui_draw_pet_detail(_cmp_pet, true);   // #1: seamless inline page, not the modal
         } else {
             draw_set_halign(fa_center);
             draw_set_font(fnt_ui);
@@ -8376,11 +8480,16 @@ function ui_draw_shop_screen() {
                     draw_rectangle(_cbx, _cby, _cbx + 42, _cby + 42, true);
                     if (_chosen) { draw_rectangle(_cbx + 9, _cby + 9, _cbx + 33, _cby + 33, false); }
 
-                    // name + rarity tag
+                    // icon + name + stat line (sell-tab idiom; M 07-09: the row showed
+                    // only the name - the stats are exactly what the trade destroys)
+                    if (is_struct(_it)) ui_draw_item_icon(_cbx + 60, _iy + 21, 48, _it);
                     var _iname = (is_struct(_it) && variable_struct_exists(_it, "name")) ? _it.name : "Item";
                     draw_set_font(fnt_ui);
                     draw_set_color(item_rarity_color(_irar));
-                    draw_text(_cbx + 66, _iy + 24, _iname);
+                    draw_text(_cbx + 126, _iy + 12, _iname);
+                    draw_set_font(fnt_ui_small);
+                    draw_set_color(c_white);
+                    if (is_struct(_it)) draw_text(_cbx + 126, _iy + 48, ui_item_stat_str(_it));
                     draw_set_halign(fa_right);
                     draw_set_font(fnt_ui_small);
                     draw_set_color(make_color_rgb(150, 145, 165));
@@ -8518,14 +8627,16 @@ function ui_draw_shop_screen() {
                     var _fis = 58 / max(1, max(sprite_get_width(_fic), sprite_get_height(_fic)));
                     draw_sprite_ext(_fic, 0, _rx0 + 44, _ry + 43, _fis, _fis, 0, c_white, 1);
                 } else {
+                    // Treats are bond-only (growth 0) - badge says "+1 bond", not "+0 grow" (#4).
+                    var _f_is_treat = variable_struct_exists(_it, "bond") && _it.bond > 0;
                     draw_set_color(make_color_rgb(30, 40, 24));
                     draw_rectangle(_rx0 + 15, _ry + 14, _rx0 + 73, _ry + 72, false);
                     draw_set_color(make_color_rgb(150, 200, 110));
                     draw_rectangle(_rx0 + 15, _ry + 14, _rx0 + 73, _ry + 72, true);
                     draw_set_halign(fa_center); draw_set_font(fnt_ui);
-                    draw_text(_rx0 + 44, _ry + 18, "+" + string(_it.growth));
+                    draw_text(_rx0 + 44, _ry + 18, "+" + string(_f_is_treat ? _it.bond : _it.growth));
                     draw_set_font(fnt_ui_small); draw_set_color(make_color_rgb(120, 150, 100));
-                    draw_text(_rx0 + 44, _ry + 44, "grow");
+                    draw_text(_rx0 + 44, _ry + 44, _f_is_treat ? "bond" : "grow");
                     draw_set_halign(fa_left);
                 }
             } else {
@@ -8565,8 +8676,8 @@ function ui_draw_shop_screen() {
         // Scroll indicators - only when the list genuinely exceeds one page (8+).
         draw_set_halign(fa_center); draw_set_font(fnt_ui_small);
         draw_set_color(make_color_rgb(120, 160, 160));
-        if (_win0 > 0)        draw_text(_rx0 + _rw / 2, _ry0 - 20, "^  " + string(_win0) + " more above  -  scroll with W");
-        if (_win1 < _buy_n)   draw_text(_rx0 + _rw / 2, _ry0 + _max_vis * (_prh + _prgap) - 4, "v  " + string(_buy_n - _win1) + " more  -  scroll with S");
+        if (_win0 > 0)        ui_draw_scroll_more(_rx0 + _rw / 2, _ry0 - 20, true, string(_win0) + " more above  -  scroll with W");
+        if (_win1 < _buy_n)   ui_draw_scroll_more(_rx0 + _rw / 2, _ry0 + _max_vis * (_prh + _prgap) - 4, false, string(_buy_n - _win1) + " more  -  scroll with S");
         draw_set_halign(fa_left);
 
     // -------------------------------------------------------------------------
@@ -8776,8 +8887,8 @@ function ui_draw_consumable_overflow() {
     if (_scroll > 0 || _scroll + _max_rows < _options) {
         draw_set_font(fnt_ui_small);
         draw_set_color(make_color_rgb(140, 150, 175));
-        if (_scroll > 0) draw_text(_lx0, _list_y - 8, "^ more ^");
-        if (_scroll + _max_rows < _options) draw_text(_lx0, _list_y + _max_rows * _row_h - 4, "v more v");
+        if (_scroll > 0) ui_draw_scroll_more(_lx0, _list_y - 8, true, "more");
+        if (_scroll + _max_rows < _options) ui_draw_scroll_more(_lx0, _list_y + _max_rows * _row_h - 4, false, "more");
     }
 
     // ---- RIGHT: DISCARDING panel - what the armed choice actually costs ----
@@ -8946,14 +9057,14 @@ function ui_draw_stash_screen() {
         draw_set_font(fnt_ui_small);
         draw_set_halign(fa_right);
         draw_set_color(make_color_rgb(150, 170, 200));
-        draw_text(_lx + _col_w - 14, _list_top - 26, "^ more");
+        ui_draw_scroll_more(_lx + _col_w - 14, _list_top - 26, true, "more");
         draw_set_halign(fa_left);
     }
     if (_left_scroll + _rows_visible < _left_n) {
         draw_set_font(fnt_ui_small);
         draw_set_halign(fa_right);
         draw_set_color(make_color_rgb(150, 170, 200));
-        draw_text(_lx + _col_w - 14, _max_bot + 2, "v more");
+        ui_draw_scroll_more(_lx + _col_w - 14, _max_bot + 2, false, "more");
         draw_set_halign(fa_left);
     }
     if (array_length(_left_items) == 0) {
@@ -9006,14 +9117,14 @@ function ui_draw_stash_screen() {
         draw_set_font(fnt_ui_small);
         draw_set_halign(fa_right);
         draw_set_color(make_color_rgb(150, 170, 200));
-        draw_text(_rx + _col_w - 14, _list_top - 26, "^ more");
+        ui_draw_scroll_more(_rx + _col_w - 14, _list_top - 26, true, "more");
         draw_set_halign(fa_left);
     }
     if (_right_scroll + _rows_visible < _right_n) {
         draw_set_font(fnt_ui_small);
         draw_set_halign(fa_right);
         draw_set_color(make_color_rgb(150, 170, 200));
-        draw_text(_rx + _col_w - 14, _max_bot + 2, "v more");
+        ui_draw_scroll_more(_rx + _col_w - 14, _max_bot + 2, false, "more");
         draw_set_halign(fa_left);
     }
     if (array_length(_right_items) == 0) {
@@ -9310,11 +9421,13 @@ function ui_draw_comparison_panel(new_item, equipped_item) {
         // Delta (far right, color-coded)
         if (_delta != 0) {
             var _dcol = (_delta > 0) ? make_color_rgb(80, 230, 80) : make_color_rgb(230, 80, 80);
-            var _darr = (_delta > 0) ? " ^" : " v";
             draw_set_color(_dcol);
             draw_set_halign(fa_right);
-            draw_text(_px + _pw - 12, _ry + 9,
-                ((_delta > 0) ? "+" : "") + string(_delta) + _darr);
+            // #9: drawn triangle instead of the letter arrow "^ / v".
+            draw_text(_px + _pw - 28, _ry + 9, ((_delta > 0) ? "+" : "") + string(_delta));
+            draw_set_halign(fa_left);
+            ui_draw_scroll_more(_px + _pw - 24, _ry + 9, _delta > 0);
+            draw_set_halign(fa_right);
         } else {
             draw_set_color(make_color_rgb(120, 120, 135));
             draw_set_halign(fa_right);
@@ -9569,11 +9682,11 @@ function ui_draw_trainer_screen() {
             draw_set_font(fnt_ui_small);
             if (_ab_scroll > 0) {
                 draw_set_halign(fa_center); draw_set_color(_accent);
-                draw_text(960, _ry0 - 24, "^ more above");
+                ui_draw_scroll_more(960, _ry0 - 24, true, "more above");
             }
             if (_ab_scroll + _ab_max_vis < array_length(_locked)) {
                 draw_set_halign(fa_center); draw_set_color(_accent);
-                draw_text(960, _ry0 + _ab_max_vis * (_ab_rh + _rgap) - 3, "v more below");
+                ui_draw_scroll_more(960, _ry0 + _ab_max_vis * (_ab_rh + _rgap) - 3, false, "more below");
             }
             draw_set_halign(fa_left);
         }
@@ -9639,11 +9752,11 @@ function ui_draw_trainer_screen() {
             draw_set_font(fnt_ui_small);
             if (_tr_scroll > 0) {
                 draw_set_halign(fa_center); draw_set_color(_accent);
-                draw_text(960, _ry0 - 24, "^ more above");
+                ui_draw_scroll_more(960, _ry0 - 24, true, "more above");
             }
             if (_tr_scroll + _tr_max_vis < array_length(_tr_locked)) {
                 draw_set_halign(fa_center); draw_set_color(_accent);
-                draw_text(960, _ry0 + _tr_max_vis * (_rh + _rgap) - 3, "v more below");
+                ui_draw_scroll_more(960, _ry0 + _tr_max_vis * (_rh + _rgap) - 3, false, "more below");
             }
             draw_set_halign(fa_left);
         }
@@ -9889,10 +10002,14 @@ function ui_maren_scroll_hint(_scroll, _vis, _count) {
     draw_set_halign(fa_center);
     draw_set_valign(fa_top);
     draw_set_font(fnt_ui_small);
-    var _arrows = (_scroll > 0 ? "^ " : "") + (_scroll + _vis < _count ? "v " : "");
     draw_set_color(make_color_rgb(165, 150, 195));
-    draw_text(960, 948, _arrows + "Showing " + string(_first) + "-" + string(_last) + " of " + string(_count) + "   (W/S to scroll)");
+    var _txt = "Showing " + string(_first) + "-" + string(_last) + " of " + string(_count) + "   (W/S to scroll)";
+    draw_text(960, 948, _txt);
+    // #9: real triangles flank the line instead of the letter arrows "^ / v".
     draw_set_halign(fa_left);
+    var _hw = string_width(_txt) / 2;
+    if (_scroll > 0)             ui_draw_scroll_more(960 - _hw - 28, 948, true);
+    if (_scroll + _vis < _count) ui_draw_scroll_more(960 + _hw + 14, 948, false);
 }
 
 // Draws one Maren list-row background (row index _i) and returns the text baseline y.
@@ -11533,11 +11650,11 @@ function ui_draw_item_picker() {
     // Scroll hints
     if (_p.scroll > 0) {
         draw_set_halign(fa_center); draw_set_color(make_color_rgb(120, 140, 170));
-        draw_text((_lx0 + _lx1) / 2, _ly0 - 27, "^ more");
+        ui_draw_scroll_more((_lx0 + _lx1) / 2, _ly0 - 27, true, "more");
     }
     if (_p.scroll + _vis < _n) {
         draw_set_halign(fa_center); draw_set_color(make_color_rgb(120, 140, 170));
-        draw_text((_lx0 + _lx1) / 2, _ly0 + _vis * _rh + 3, "v more");
+        ui_draw_scroll_more((_lx0 + _lx1) / 2, _ly0 + _vis * _rh + 3, false, "more");
     }
     draw_set_halign(fa_left);
 

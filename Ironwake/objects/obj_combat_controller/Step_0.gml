@@ -583,6 +583,20 @@ if (player_turn) {
         }
     }
 
+    // --- G key: call off / resume the companion's guard (M 07-09). Only lands on
+    // a guarded-stance Combatant that can actually intercept - otherwise silent.
+    // While called off it makes no intercepts (and takes no intercept damage);
+    // its own halved strikes continue as normal. Costs no AP.
+    if (input_hotkey("G")) {
+        var _gt_pet = pet_active();
+        if (_gt_pet != undefined && !_gt_pet.is_egg && _gt_pet.stage >= PET_STAGE_YOUNGADULT
+            && _gt_pet.archetype == PET_ARCH_COMBATANT && pet_stance(_gt_pet) == "guarded") {
+            array_push(combat_log, pet_guard_toggle(_gt_pet)
+                ? ("[Companion] " + _gt_pet.name + " falls back - it will not intercept blows.")
+                : ("[Companion] " + _gt_pet.name + " stands guard again."));
+        }
+    }
+
     // --- T key: End Turn manually ---
     if (input_hotkey("T")) {
         if (player.energy > 0) {
@@ -823,9 +837,10 @@ if (player_turn) {
                     );
 
                     if (_hit != "hit") {
+                        // AoE misses name the target too, so every enemy gets a line (#21).
                         array_push(combat_log, (_hit == "dodge")
                             ? (target.name + " dodged " + ab.name + "!")
-                            : (ab.name + " missed!"));
+                            : (ab.name + " missed" + (_is_aoe ? (" " + target.name) : "") + "!"));
                         play_sfx_var("snd_miss", -1);   // whiff (silent until imported)
 
                     } else {
@@ -1291,7 +1306,10 @@ if (player_turn) {
                         // --- Hit log - damaging abilities report damage; pure debuffs/utility
                         //     just report the cast (the debuff itself is logged when applied). ---
                         if (_deals_damage) {
+                            // AoE casts (Singularity et al.) name each target so the
+                            // per-enemy lines don't read as one duplicated entry (#21).
                             var _log_entry = player.name + " used " + ab.name
+                                + (_is_aoe ? (" on " + target.name) : "")
                                 + " for " + string(_final_dmg) + " damage";
                             if (_crit_result.critted) _log_entry += " (CRIT!)";
                             array_push(combat_log, _log_entry);
@@ -2214,13 +2232,26 @@ if (player_turn) {
             }
             // Pet stance (expression #3): a GUARDED Warrior companion has a 25% chance
             // to intercept part of any blow aimed at you (its own strikes are halved).
+            // #20: the intercepted portion now hits the PET's stage-scaled HP pool;
+            // at 0 HP it collapses - injury tier +1 (existing ladder benches it for
+            // the rest of the run; capped below the permadeath tier, a KO never
+            // kills outright). The pool refills between runs / when fed.
             var _gpet = pet_active();
             if (_gpet != undefined && !_gpet.is_egg && _gpet.stage >= PET_STAGE_YOUNGADULT
                 && _gpet.archetype == PET_ARCH_COMBATANT && pet_stance(_gpet) == "guarded"
-                && pet_injury_mult(_gpet.injured) > 0 && _final_dmg > 1 && irandom(99) < 25) {
+                && !pet_guard_off(_gpet)   // called off mid-fight (G) = no intercepts
+                && pet_injury_mult(_gpet.injured) > 0 && pet_hp(_gpet) > 0
+                && _final_dmg > 1 && irandom(99) < 25) {
                 var _gcut = max(1, round(_final_dmg * 0.35));
                 _final_dmg -= _gcut;
-                array_push(combat_log, "[Companion] " + _gpet.name + " intercepts the blow (-" + string(_gcut) + ")!");
+                var _gko = pet_take_damage(_gpet, _gcut);
+                array_push(combat_log, "[Companion] " + _gpet.name + " intercepts the blow (-" + string(_gcut)
+                    + ")!  [" + string(pet_hp(_gpet)) + "/" + string(pet_max_hp(_gpet)) + " HP]");
+                if (_gko) {
+                    _gpet.injured = min(_gpet.injured + 1, PET_INJURY_DEATH - 1);
+                    array_push(combat_log, "[Companion] " + _gpet.name
+                        + " collapses from its wounds - out for the rest of the run!");
+                }
             }
             // How much the player's defenses shaved off this swing (armor/Iron Skin/etc.),
             // measured before Soul Shield (which logs its own absorb line separately).

@@ -832,9 +832,12 @@ if (_gc_ds != noone && _gc_ds.dungeon_select_open) {
         // wide/squashed stretching from scaling x and y independently.
         var _art_spr = _dung_art[_di];
         var _box_w   = _is_center ? 672 : 381;
-        var _box_h   = _is_center ? 210 : 150;
+        // #11: center box dropped 84px down / 180px tall (was 54/210) - Scorched
+        // Depths' art fills its full square canvas (no built-in padding like the
+        // other two), so it rode up underneath the title text.
+        var _box_h   = _is_center ? 180 : 150;
         var _box_x   = _cx + (_cw - _box_w) / 2;
-        var _box_y   = _cy + 54;
+        var _box_y   = _cy + (_is_center ? 84 : 54);
         var _src_w   = sprite_get_width(_art_spr);
         var _src_h   = sprite_get_height(_art_spr);
         if (_src_w <= 0) _src_w = 192;
@@ -1519,8 +1522,10 @@ if (show_gallery) {
         if (_splash != -1 && sprite_exists(_splash)) {
             ui_draw_sprite_cover(_splash, 0, _art_x + 3, _art_y + 3, _art_sz - 6, _art_sz - 6, 1.0);
         } else {
-            // Fallback: enlarge the item icon, centered in the box
-            ui_draw_item_icon(_art_x + (_art_sz - 120) / 2, _art_y + (_art_sz - 120) / 2, 120, _d);
+            // Fallback: enlarge the item icon, centered in the box. Unframed (#10):
+            // the art box above IS the frame - the icon's own box read as an
+            // icon-within-an-icon (Chipped Spear et al.).
+            ui_draw_item_icon(_art_x + (_art_sz - 150) / 2, _art_y + (_art_sz - 150) / 2, 150, _d, false);
         }
 
         // --- Name + rarity/slot ---
@@ -1825,11 +1830,11 @@ if (instance_exists(obj_game_controller)) {
             draw_set_halign(fa_center);
             draw_set_color(make_color_rgb(110, 120, 150));
             if (_ov_scroll > 0) {
-                draw_text(_lx + 495, _list_y0 - 21, "^ " + string(_ov_scroll) + " more above");
+                ui_draw_scroll_more(_lx + 495, _list_y0 - 21, true, string(_ov_scroll) + " more above");
             }
             var _ov_below = _ov_pool_sz - (_ov_scroll + _ov_max_vis);
             if (_ov_below > 0) {
-                draw_text(_lx + 495, _list_y0 + _ov_max_vis * (_row_h + _row_gap) - 6, "v " + string(_ov_below) + " more below");
+                ui_draw_scroll_more(_lx + 495, _list_y0 + _ov_max_vis * (_row_h + _row_gap) - 6, false, string(_ov_below) + " more below");
             }
             draw_set_halign(fa_left);
 
@@ -1943,13 +1948,16 @@ if (instance_exists(obj_game_controller)) {
             // Cursor==pool_sz is the active confirm position; bar highlights when reached.
             var _conf_cur = (_gc_ov.loadout_cursor == _ov_pool_sz);
             var _conf_sel = (_conf_cur && _ov_sel_cnt == _loadout_max);
-            draw_set_color(_gc_ov.loadout_full_timer > 0 ? make_color_rgb(40, 10, 10)
+            // #6: the gold-shortfall flash reddens the bar like the loadout-full flash.
+            var _bar_red = _gc_ov.loadout_full_timer > 0
+                || (variable_instance_exists(_gc_ov, "loadout_gold_timer") && _gc_ov.loadout_gold_timer > 0);
+            draw_set_color(_bar_red                        ? make_color_rgb(40, 10, 10)
                          : (_conf_sel                      ? make_color_rgb(16, 70, 25)
                          : (_conf_cur                      ? make_color_rgb(45, 38, 14)
                          : (_ov_sel_cnt == _loadout_max    ? make_color_rgb(14, 48, 18)
                                                            : make_color_rgb(14, 16, 28)))));
             draw_rectangle(_desc_x, 998, _desc_x + _desc_w, 1043, false);
-            draw_set_color(_gc_ov.loadout_full_timer > 0 ? make_color_rgb(155, 40, 40)
+            draw_set_color(_bar_red                        ? make_color_rgb(155, 40, 40)
                          : (_conf_sel                      ? make_color_rgb(50, 185, 75)
                          : (_conf_cur                      ? make_color_rgb(220, 175, 70)
                          : (_ov_sel_cnt == _loadout_max    ? make_color_rgb(35, 95, 45)
@@ -1969,7 +1977,12 @@ if (instance_exists(obj_game_controller)) {
             draw_set_font(fnt_ui_small);
             draw_set_halign(fa_center);
             var _locked_flash = (variable_instance_exists(_gc_ov, "loadout_locked_timer") && _gc_ov.loadout_locked_timer > 0);
-            if (_locked_flash) {
+            var _gold_flash = (variable_instance_exists(_gc_ov, "loadout_gold_timer") && _gc_ov.loadout_gold_timer > 0);
+            if (_gold_flash) {
+                // #6: respec shortfall - drawn in the overlay itself, red like a fail.
+                draw_set_color(make_color_rgb(255, 100, 100));
+                draw_text(GUI_CX, 1010, _gc_ov.loadout_gold_msg);
+            } else if (_locked_flash) {
                 draw_set_color(make_color_rgb(230, 180, 80));
                 draw_text(GUI_CX, 1010, "That ability is locked - buy it from Vex or meet its unlock goal first.");
             } else if (_gc_ov.loadout_full_timer > 0) {
@@ -2166,11 +2179,11 @@ if (instance_exists(obj_game_controller)) {
             draw_set_halign(fa_center);
             draw_set_color(make_color_rgb(110, 120, 150));
             if (_tr_scroll > 0) {
-                draw_text(_lx + 495, _list_y0 - 21, "^ " + string(_tr_scroll) + " more above");
+                ui_draw_scroll_more(_lx + 495, _list_y0 - 21, true, string(_tr_scroll) + " more above");
             }
             var _tr_below = _tr_cnt - (_tr_scroll + _tr_max_vis);
             if (_tr_below > 0) {
-                draw_text(_lx + 495, _list_y0 + _tr_max_vis * (_tr_row_h + _tr_row_gap) - 6, "v " + string(_tr_below) + " more below");
+                ui_draw_scroll_more(_lx + 495, _list_y0 + _tr_max_vis * (_tr_row_h + _tr_row_gap) - 6, false, string(_tr_below) + " more below");
             }
             draw_set_halign(fa_left);
 

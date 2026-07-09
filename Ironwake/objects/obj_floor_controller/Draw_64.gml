@@ -552,6 +552,19 @@ if (showing_shrine) {
     // --- Veiled altar: its nature stays hidden until the player chooses to approach.
     //     Leaving here forgoes the shrine entirely; approaching commits (a revealed
     //     curse then traps them). See the shrine block in Step_0. -------------------
+    // Shrine splash art (M 07-09): the serene Ancient Altar panel, same cinematic
+    // band idiom as the event splashes (subtractive dissolve + readability scrim).
+    var _shr_x0 = GUI_CX - 400, _shr_y0 = 40, _shr_x1 = GUI_CX + 400, _shr_y1 = _shr_y0 + 448;
+    draw_sprite_stretched(spr_shrine_splash_ancient_altar, 0, _shr_x0, _shr_y0, 800, 448);
+    gpu_set_blendmode(bm_subtract);
+    draw_rectangle_color(_shr_x0, 280, _shr_x1, _shr_y1, c_black, c_black, c_white, c_white, false);
+    draw_rectangle_color(_shr_x0, _shr_y0, _shr_x0 + 70, _shr_y1, c_white, c_black, c_black, c_white, false);
+    draw_rectangle_color(_shr_x1 - 70, _shr_y0, _shr_x1, _shr_y1, c_black, c_white, c_white, c_black, false);
+    // Soft band behind the two body lines (y320/384) so they read over the glow.
+    var _shr_sc = make_color_rgb(55, 55, 60);
+    draw_rectangle_color(GUI_CX - 590, 300, GUI_CX + 590, 430, _shr_sc, _shr_sc, _shr_sc, _shr_sc, false);
+    draw_rectangle_color(GUI_CX - 560, 315, GUI_CX + 560, 415, _shr_sc, _shr_sc, _shr_sc, _shr_sc, false);
+    gpu_set_blendmode(bm_normal);
     draw_set_font(fnt_ui_title);
     draw_set_color(make_color_rgb(150, 140, 170));
     draw_text(GUI_CX, 84, "An Ancient Altar");
@@ -583,6 +596,20 @@ if (showing_shrine) {
     draw_set_valign(fa_top);
     } else {
     var _is_curse = (shrine_kind == "curse");
+    // Revealed splash: menacing Cursed Altar art vs the serene shrine (M 07-09).
+    // Same band as the veiled screen but the dissolve lands before the offer rows
+    // (y294+) and the scrim sits behind the subtitle + gold/dust readout instead.
+    var _shr2_x0 = GUI_CX - 400, _shr2_y0 = 40, _shr2_x1 = GUI_CX + 400, _shr2_y1 = _shr2_y0 + 448;
+    draw_sprite_stretched(_is_curse ? spr_shrine_splash_curse_altar : spr_shrine_splash_ancient_altar,
+        0, _shr2_x0, _shr2_y0, 800, 448);
+    gpu_set_blendmode(bm_subtract);
+    draw_rectangle_color(_shr2_x0, 260, _shr2_x1, _shr2_y1, c_black, c_black, c_white, c_white, false);
+    draw_rectangle_color(_shr2_x0, _shr2_y0, _shr2_x0 + 70, _shr2_y1, c_white, c_black, c_black, c_white, false);
+    draw_rectangle_color(_shr2_x1 - 70, _shr2_y0, _shr2_x1, _shr2_y1, c_black, c_white, c_white, c_black, false);
+    var _shr2_sc = make_color_rgb(55, 55, 60);
+    draw_rectangle_color(GUI_CX - 590, 150, GUI_CX + 590, 240, _shr2_sc, _shr2_sc, _shr2_sc, _shr2_sc, false);
+    draw_rectangle_color(GUI_CX - 560, 158, GUI_CX + 560, 230, _shr2_sc, _shr2_sc, _shr2_sc, _shr2_sc, false);
+    gpu_set_blendmode(bm_normal);
     if (_is_curse) {
         draw_set_font(fnt_ui_title);
         draw_set_color(make_color_rgb(205, 70, 70));
@@ -716,6 +743,8 @@ if (showing_shrine) {
                     if (_tsi != shrine_cursor) {
                         shrine_cursor       = _tsi;
                         shrine_notification = "";
+                        shrine_notification_fail = false;
+                        shrine_curse_arm    = -1;
                     } else if (_is_curse) {
                         touch_press(vk_enter);
                     } else if (_tsy >= _tsy0 + 90) {
@@ -731,7 +760,9 @@ if (showing_shrine) {
 
     if (shrine_notification != "") {
         draw_set_font(fnt_ui_small);
-        draw_set_color(_is_curse ? make_color_rgb(225, 150, 150) : make_color_rgb(225, 200, 150));
+        // #13: failures (can't afford / no valid tribute / the altar's grip) draw RED.
+        draw_set_color(shrine_notification_fail ? make_color_rgb(235, 80, 70)
+            : (_is_curse ? make_color_rgb(225, 150, 150) : make_color_rgb(225, 200, 150)));
         draw_text(GUI_CX, 834, shrine_notification);
     }
     if (input_device() == 2) {
@@ -740,13 +771,13 @@ if (showing_shrine) {
         draw_set_color(c_ltgray);
         draw_text(GUI_CX, 990, _is_curse
             ? ((_sn == 0) ? "No curse remains - X to leave"
-                          : "Tap a curse to choose it - tap again to embrace  (the altar will not release you)")
+                          : "Tap a curse to choose it - tap twice more to embrace  (the altar will not release you)")
             : "Tap a boon to choose it - then tap a price to pay");
     } else {
         ui_draw_key_legend(GUI_CX, 990, _is_curse
             ? ((_sn == 0)
                 ? "No curse remains  -  Esc: Leave"
-                : "W/S: Select     Enter: Embrace the curse  (the altar will not release you)")
+                : "W/S: Select     Enter: Embrace the curse - confirms twice  (the altar will not release you)")
             : "W/S: Select     1: Gold     2: Dust     3: Item     Esc: Leave");
     }
     draw_set_halign(fa_center);
@@ -803,6 +834,18 @@ if (showing_event_choice && event_active != undefined) {
         case "whispering_mirror": _splash = spr_event_splash_whispering_mirror; break;
         case "cursed_idol":       _splash = spr_event_splash_cursed_idol;       break;
         case "mysterious_font":   _splash = spr_event_splash_mysterious_font;   break;
+        // Remaining 11 events, M approved 07-09 - every event now has a panel.
+        case "abandoned_nest":    _splash = spr_event_splash_abandoned_nest;    break;
+        case "arcane_locus":      _splash = spr_event_splash_arcane_locus;      break;
+        case "collapsed_shrine":  _splash = spr_event_splash_collapsed_shrine;  break;
+        case "forked_omen":       _splash = spr_event_splash_forked_omen;       break;
+        case "gamblers_cache":    _splash = spr_event_splash_gamblers_cache;    break;
+        case "runed_anvil":       _splash = spr_event_splash_runed_anvil;       break;
+        case "starving_hound":    _splash = spr_event_splash_starving_hound;    break;
+        case "strangers_memory":  _splash = spr_event_splash_strangers_memory;  break;
+        case "trapped_corridor":  _splash = spr_event_splash_trapped_corridor;  break;
+        case "vagrant_oracle":    _splash = spr_event_splash_vagrant_oracle;    break;
+        case "wounded_wanderer":  _splash = spr_event_splash_wounded_wanderer;  break;
     }
     if (_splash != -1) {
         var _sp_x0 = GUI_CX - 400, _sp_y0 = 40, _sp_x1 = GUI_CX + 400, _sp_y1 = _sp_y0 + 448;
@@ -1136,6 +1179,40 @@ if (escape_confirm_open && escape_confirm_idx >= 0
         }
     } else {
         ui_draw_key_legend(960, 621, "Enter: Confirm      Esc / G: Cancel");
+    }
+    draw_set_halign(fa_left); draw_set_valign(fa_top);
+    draw_set_font(-1);
+}
+
+// -----------------------------------------------------------------------------
+// EXTRACT CONFIRM (#3) - same idiom as the escape-item confirm above.
+// -----------------------------------------------------------------------------
+if (extract_confirm_open) {
+    draw_set_alpha(0.65); draw_set_color(c_black);
+    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+    draw_set_alpha(0.96); draw_set_color(make_color_rgb(16, 32, 18));
+    draw_rectangle(510, 360, 1410, 690, false);
+    draw_set_alpha(1.0); draw_set_color(make_color_rgb(70, 170, 90));
+    draw_rectangle(510, 360, 1410, 690, true);
+    draw_set_halign(fa_center); draw_set_valign(fa_top);
+    draw_set_font(fnt_ui);
+    draw_set_color(c_white);
+    draw_text(960, 393, "Extract to camp?");
+    draw_set_font(fnt_ui_small);
+    draw_set_color(make_color_rgb(190, 195, 215));
+    draw_text_ext(960, 456,
+        "The run ends here. You keep all your loot and found gold -\ndeeper floors (and their richer bosses) wait for another day.", 30, 780);
+    draw_set_color(make_color_rgb(150, 160, 185));
+    if (input_device() == 2) {
+        draw_text(960, 621, "Tap here to confirm - tap outside to cancel");
+        if (mouse_check_button_pressed(mb_left)) {
+            var _xcmx = device_mouse_x_to_gui(0);
+            var _xcmy = device_mouse_y_to_gui(0);
+            if (_xcmx >= 510 && _xcmx <= 1410 && _xcmy >= 360 && _xcmy <= 690) touch_press(vk_enter);
+            else                                                               touch_press(vk_escape);
+        }
+    } else {
+        ui_draw_key_legend(960, 621, "Enter: Confirm      Esc / E: Cancel");
     }
     draw_set_halign(fa_left); draw_set_valign(fa_top);
     draw_set_font(-1);

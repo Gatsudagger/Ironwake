@@ -802,3 +802,7 @@ ability_detail_open = false;
 
 // Boss extract choice (shown after defeating floor boss when floor < 3)
 boss_extract_open = false;
+// #3: arm-then-confirm - the first press/click of a button ARMS it ("", "extract"
+// or "continue"); only a second press of the SAME button commits. A held Enter
+// from dismissing the victory screen can no longer descend by accident.
+boss_extract_arm  = "";

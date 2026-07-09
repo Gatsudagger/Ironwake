@@ -109,6 +109,8 @@ global.__sprite_includes = [
     // Pet feed item icons (Petra shop + Bairc feed menu). Resolved by spr_pet_feed_<id>.
     spr_pet_feed_scraps, spr_pet_feed_forage, spr_pet_feed_prime,
     spr_pet_feed_mending_mash, spr_pet_feed_purgeroot, spr_pet_feed_hearty_roast,
+    // Treats (bond-only, M approved 07-09).
+    spr_pet_feed_treat_honey, spr_pet_feed_treat_marrow,
     // Species-preferred feed icons (ids pref_<species>, all 17 species).
     spr_pet_feed_pref_luna_moth,   spr_pet_feed_pref_bone_stag,    spr_pet_feed_pref_saber_hound,
     spr_pet_feed_pref_gloomtoad,   spr_pet_feed_pref_wyrmling,     spr_pet_feed_pref_nightowl,
@@ -870,6 +872,8 @@ loadout_scroll     = 0;    // stateful list window top (edge-scrolling; self-cor
 loadout_selected   = [];   // up to 4 ability name strings being built this session
 loadout_full_timer = 0;    // countdown for "Loadout full" / "Slots full" flash (frames)
 loadout_locked_timer = 0;  // countdown for "ability is locked - unlock at Vex" flash (frames)
+loadout_gold_timer = 0;    // #6: countdown for the "can't afford trait respec" flash (frames)
+loadout_gold_msg   = "";   // #6: the shortfall text shown while loadout_gold_timer > 0
 loadout_confirmed  = false;
 loadout_tab        = 0;    // 0 = Abilities tab, 1 = Traits tab
 traits_cursor      = 0;
