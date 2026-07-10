@@ -971,7 +971,7 @@ if (player_turn) {
                         // roll; Poison/Void/consume resolve post-damage. (P1)
                         if (_react_key == "root" || _react_key == "frost") {
                             _dmg = round(_dmg * (1 + 0.30 * _hex_mult));
-                            array_push(combat_log, ab.name + " shatters a held foe (+" + string(30 * _hex_mult) + "%)!");
+                            array_push(combat_log, ab.name + " shatters a held foe (+" + string(30 * _hex_mult) + "% damage)!");
                         } else if (_react_key == "weaken") {
                             _dmg = round(_dmg * (1 + 0.15 * _hex_mult));
                         } else if (_react_key == "vulnerable") {
@@ -2471,13 +2471,14 @@ if (player_turn) {
                 // Bodyguard capstone (C5, M-approved 07-09): a Guardian intercepts in
                 // ANY stance at 40% - Guardians have no guarded stance, so the capstone
                 // carries the intercept identity itself (design adaptation, flagged).
-                // It pays for the reach: the pet takes the intercepted portion +25%.
+                // M ruling 07-10: the pet takes the intercepted portion REDUCED by 10%
+                // (0.90x) - capstone toughness, not a surcharge (was +25%).
                 if (_gpet.archetype == PET_ARCH_GUARDIAN && pet_kit_mods(_gpet).bodyguard) { _g_can = true; _g_body = true; }
             }
             if (_g_can && _final_dmg > 1 && irandom(99) < (_g_body ? 40 : 25)) {
                 var _gcut = max(1, round(_final_dmg * 0.35));
                 _final_dmg -= _gcut;
-                var _gko = pet_take_damage(_gpet, _g_body ? max(1, round(_gcut * 1.25)) : _gcut);
+                var _gko = pet_take_damage(_gpet, _g_body ? max(1, round(_gcut * 0.90)) : _gcut);
                 array_push(combat_log, "[Companion] " + _gpet.name + " intercepts the blow (-" + string(_gcut)
                     + ")!  [" + string(pet_hp(_gpet)) + "/" + string(pet_max_hp(_gpet)) + " HP]");
                 if (_gko) {

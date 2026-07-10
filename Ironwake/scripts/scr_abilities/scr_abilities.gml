@@ -850,7 +850,7 @@ array_push(global.abilities_arcanist,
 global.abilities_arcanist[_dw_a0    ].school = "frost";
 global.abilities_arcanist[_dw_a0 + 2].school = "shock";
 global.abilities_arcanist[_dw_a0    ].desc_short = "16 Frost dmg. Chill 2t: foe -30% dmg, shatters.";
-global.abilities_arcanist[_dw_a0    ].desc_full  = "Drive a spear of old winter through them and let the cold linger.\n- 16 Frost damage. Chilled 2 turns: the target deals -30% damage, and detonators SHATTER the chill for +30%.\n- The tempo opener: slow their swing, then break the ice with Arcane Burst.";
+global.abilities_arcanist[_dw_a0    ].desc_full  = "Drive a spear of old winter through them and let the cold linger.\n- 16 Frost damage. Chilled 2 turns: the target deals -30% damage, and detonators SHATTER the chill for +30% damage.\n- The tempo opener: slow their swing, then break the ice with Arcane Burst.";
 global.abilities_arcanist[_dw_a0 + 1].desc_short = "8 shield. Melee attackers get Chilled.";
 global.abilities_arcanist[_dw_a0 + 1].desc_full  = "Raise a pane of ice between you and their teeth.\n- 8 shield now; any melee enemy that strikes you this turn is Chilled.\n- Defense that feeds the shatter loop - punish the ones who come close.";
 global.abilities_arcanist[_dw_a0 + 2].desc_short = "9 Shock dmg, chains 50% to another foe.";
@@ -1253,7 +1253,7 @@ function ability_effect_full(ab) {
         case "Entropy":         _b = "Deals DOUBLE damage if the target already carries a void DoT - stack it on itself to ramp up."; break;
         case "Adrenaline Rush": _b = "Gain +1 AP this turn (once per combat)."; break;
         case "Sanguine Pact":   _b = "Seals up to 3 Blood into 6 shield each."; break;
-        case "Hoarfrost Lance": _b = "Chilled targets deal -30% damage; detonators SHATTER the chill for +30%."; break;
+        case "Hoarfrost Lance": _b = "Chilled targets deal -30% damage; detonators SHATTER the chill for +30% damage."; break;
         case "Glacial Ward":    _b = "Melee enemies that strike you this turn are Chilled."; break;
         case "Static Arc":      _b = "Chains 50% to one other enemy - to ALL others if the target was already Shocked."; break;
         case "Soul Engine":     _b = "Once per combat, combat-long: spells deal +3 per full turn elapsed."; break;

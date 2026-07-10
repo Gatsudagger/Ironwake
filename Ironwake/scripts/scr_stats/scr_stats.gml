@@ -3081,10 +3081,10 @@ function flagship_unlock_text(id) {
         return (_bk >= 25) ? "" : ("Locked - slay 25 bosses (" + string(_bk) + "/25)");
     }
     if (id == "bastion") {
-        // 20 full clears = the doc's "60 floors survived" on the EXISTING persistent
-        // counter (3 floors/dungeon) - no new save plumbing, M's history backfills.
+        // M ruling 07-10: 20 full clears was "immense" - lowered to 8 (24 floors
+        // survived) on the same EXISTING persistent counter, history backfills.
         var _dc = variable_global_exists("dungeon_clears_total") ? global.dungeon_clears_total : 0;
-        return (_dc >= 20) ? "" : ("Locked - complete 20 full clears (" + string(_dc) + "/20)");
+        return (_dc >= 8) ? "" : ("Locked - complete 8 full clears (" + string(_dc) + "/8)");
     }
     return "";
 }
@@ -7151,7 +7151,7 @@ function pet_kit_catalog() {
         { arch:PET_ARCH_GUARDIAN, id:"warding", name:"Warding",       kind:"Trait",   stage:2, effect:"shield", val:0.25, desc:"Raises stronger wards - +25% to its shields." },
         { arch:PET_ARCH_GUARDIAN, id:"guardian_angel", name:"Guardian Angel", kind:"Ability", stage:3, effect:"both", val:0, desc:"Capstone: each turn it heals AND shields you, never just one." },
         { arch:PET_ARCH_GUARDIAN, id:"bulwark", name:"Bulwark",       kind:"Ability", stage:3, effect:"shield", val:0.50, desc:"Capstone: an immovable ward - +50% to its shields." },
-        { arch:PET_ARCH_GUARDIAN, id:"bodyguard",  name:"Bodyguard",  kind:"Ability", stage:3, effect:"bodyguard", val:0, desc:"Capstone: it throws itself between you and harm - 40% chance to intercept part of any blow, in any stance (it takes that damage, and a quarter more)." },
+        { arch:PET_ARCH_GUARDIAN, id:"bodyguard",  name:"Bodyguard",  kind:"Ability", stage:3, effect:"bodyguard", val:0, desc:"Capstone: it throws itself between you and harm - 40% chance to intercept part of any blow, in any stance (it shrugs off a tenth of what it catches)." },
         { arch:PET_ARCH_GUARDIAN, id:"lifespring", name:"Lifespring", kind:"Ability", stage:3, effect:"lifespring", val:0, desc:"Capstone: once per combat, its heal also washes away your newest affliction." },
         // AWAKENED SPLASH (stage 4, design 2026-07-03): the crossover layer. One signature
         // splash per archetype; an Awakened pet takes exactly ONE, and only from a
@@ -7374,7 +7374,7 @@ function pet_kit_mods(pet) {
             case "sharpeye":    _m.sharpeye    += _e.val; break;   // Sharp Eye: +% event checks; shrine boons -15%
             case "opportunist": _m.opportunist += _e.val; break;   // Opportunist: strike detonates a carried status
             case "bloodscent":  _m.bloodscent  += _e.val; break;   // Bloodscent: second strike vs bleeding targets
-            case "bodyguard":   _m.bodyguard    = true;   break;   // Bodyguard: intercept 25%->40%, pet pays +25%
+            case "bodyguard":   _m.bodyguard    = true;   break;   // Bodyguard: intercept 25%->40%, pet takes it at 0.90x (M 07-10)
             case "lifespring":  _m.lifespring   = true;   break;   // Lifespring: heal also cleanses, once/combat
             // Awakened splash keys - kept SEPARATE from gold/loot so the Boon-gated
             // economy path (pet_active_boon_*) never double-counts them.

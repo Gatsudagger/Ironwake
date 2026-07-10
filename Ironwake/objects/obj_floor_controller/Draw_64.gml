@@ -552,29 +552,26 @@ if (showing_shrine) {
     // --- Veiled altar: its nature stays hidden until the player chooses to approach.
     //     Leaving here forgoes the shrine entirely; approaching commits (a revealed
     //     curse then traps them). See the shrine block in Step_0. -------------------
-    // Shrine splash art (M 07-09): the serene Ancient Altar panel, same cinematic
-    // band idiom as the event splashes (subtractive dissolve + readability scrim).
-    var _shr_x0 = GUI_CX - 400, _shr_y0 = 40, _shr_x1 = GUI_CX + 400, _shr_y1 = _shr_y0 + 448;
+    // Shrine splash art (M 07-09; restacked 07-10): the full-bleed tablet v2 was
+    // covering its own title, so the band now sits BELOW the title (y170) and the
+    // body text BELOW the band - no text ever draws over the art anymore.
+    var _shr_x0 = GUI_CX - 400, _shr_y0 = 170, _shr_x1 = GUI_CX + 400, _shr_y1 = _shr_y0 + 448;
     draw_sprite_stretched(spr_shrine_splash_ancient_altar, 0, _shr_x0, _shr_y0, 800, 448);
     gpu_set_blendmode(bm_subtract);
-    draw_rectangle_color(_shr_x0, 280, _shr_x1, _shr_y1, c_black, c_black, c_white, c_white, false);
+    draw_rectangle_color(_shr_x0, _shr_y0 + 240, _shr_x1, _shr_y1, c_black, c_black, c_white, c_white, false);
     draw_rectangle_color(_shr_x0, _shr_y0, _shr_x0 + 70, _shr_y1, c_white, c_black, c_black, c_white, false);
     draw_rectangle_color(_shr_x1 - 70, _shr_y0, _shr_x1, _shr_y1, c_black, c_white, c_white, c_black, false);
-    // Soft band behind the two body lines (y320/384) so they read over the glow.
-    var _shr_sc = make_color_rgb(55, 55, 60);
-    draw_rectangle_color(GUI_CX - 590, 300, GUI_CX + 590, 430, _shr_sc, _shr_sc, _shr_sc, _shr_sc, false);
-    draw_rectangle_color(GUI_CX - 560, 315, GUI_CX + 560, 415, _shr_sc, _shr_sc, _shr_sc, _shr_sc, false);
     gpu_set_blendmode(bm_normal);
     draw_set_font(fnt_ui_title);
     draw_set_color(make_color_rgb(150, 140, 170));
     draw_text(GUI_CX, 84, "An Ancient Altar");
     draw_set_font(fnt_ui);
     draw_set_color(make_color_rgb(180, 175, 195));
-    draw_text(GUI_CX, 320, "A shrouded altar thrums with hidden power.");
-    draw_text(GUI_CX, 384, "Its nature - blessing or curse - is veiled.");
+    draw_text(GUI_CX, 650, "A shrouded altar thrums with hidden power.");
+    draw_text(GUI_CX, 706, "Its nature - blessing or curse - is veiled.");
     draw_set_font(fnt_ui_small);
     draw_set_color(make_color_rgb(200, 160, 120));
-    draw_text(GUI_CX, 500, "Approach and you are committed - a curse, once revealed, will not release you.");
+    draw_text(GUI_CX, 790, "Approach and you are committed - a curse, once revealed, will not release you.");
     draw_set_color(c_ltgray);
     // Touch (8d): explicit APPROACH button; X chip = leave. Keyboard keeps the legend.
     if (input_device() == 2) {
@@ -597,15 +594,16 @@ if (showing_shrine) {
     } else {
     var _is_curse = (shrine_kind == "curse");
     // Revealed splash: menacing Cursed Altar art vs the serene shrine (M 07-09).
-    // Same band as the veiled screen but the dissolve lands before the offer rows
-    // (y294+) and the scrim sits behind the subtitle + gold/dust readout instead.
-    var _shr2_x0 = GUI_CX - 400, _shr2_y0 = 40, _shr2_x1 = GUI_CX + 400, _shr2_y1 = _shr2_y0 + 448;
+    // Restacked 07-10 (M: "move options lower"): the tablet shrinks to a 560x314
+    // band under the title, the offer rows sit fully BELOW the art (y490+, h132,
+    // pitch 150). Only the scrimmed subtitle + gold/dust readout ride the band top.
+    var _shr2_x0 = GUI_CX - 280, _shr2_y0 = 150, _shr2_x1 = GUI_CX + 280, _shr2_y1 = _shr2_y0 + 314;
     draw_sprite_stretched(_is_curse ? spr_shrine_splash_curse_altar : spr_shrine_splash_ancient_altar,
-        0, _shr2_x0, _shr2_y0, 800, 448);
+        0, _shr2_x0, _shr2_y0, 560, 314);
     gpu_set_blendmode(bm_subtract);
-    draw_rectangle_color(_shr2_x0, 260, _shr2_x1, _shr2_y1, c_black, c_black, c_white, c_white, false);
-    draw_rectangle_color(_shr2_x0, _shr2_y0, _shr2_x0 + 70, _shr2_y1, c_white, c_black, c_black, c_white, false);
-    draw_rectangle_color(_shr2_x1 - 70, _shr2_y0, _shr2_x1, _shr2_y1, c_black, c_white, c_white, c_black, false);
+    draw_rectangle_color(_shr2_x0, _shr2_y0 + 190, _shr2_x1, _shr2_y1, c_black, c_black, c_white, c_white, false);
+    draw_rectangle_color(_shr2_x0, _shr2_y0, _shr2_x0 + 50, _shr2_y1, c_white, c_black, c_black, c_white, false);
+    draw_rectangle_color(_shr2_x1 - 50, _shr2_y0, _shr2_x1, _shr2_y1, c_black, c_white, c_white, c_black, false);
     var _shr2_sc = make_color_rgb(55, 55, 60);
     draw_rectangle_color(GUI_CX - 590, 150, GUI_CX + 590, 240, _shr2_sc, _shr2_sc, _shr2_sc, _shr2_sc, false);
     draw_rectangle_color(GUI_CX - 560, 158, GUI_CX + 560, 230, _shr2_sc, _shr2_sc, _shr2_sc, _shr2_sc, false);
@@ -657,49 +655,45 @@ if (showing_shrine) {
     if (_sn == 0) {
         draw_set_font(fnt_ui);
         draw_set_color(make_color_rgb(150, 150, 170));
-        draw_text(GUI_CX, 480, _is_curse
+        draw_text(GUI_CX, 540, _is_curse
             ? "No curse remains to bind here. (Esc to leave.)"
             : "You already carry every boon. (Esc to leave.)");
     } else {
         draw_set_halign(fa_left);
         for (var _i = 0; _i < _sn; _i++) {
-            var _ry   = 294 + _i * 162;
+            var _ry   = 490 + _i * 150;
             var _ssel = (_i == shrine_cursor);
 
             if (_is_curse) {
                 var _cd = curse_get(shrine_offers[_i]);
-                // Translucent fill so the altar splash stays visible (M 07-09 idiom).
-                draw_set_alpha(_ssel ? 0.80 : 0.55);
+                // Rows sit below the art now (07-10) - solid fills, nothing shows through.
                 draw_set_color(_ssel ? make_color_rgb(48, 22, 22) : make_color_rgb(20, 14, 14));
-                draw_rectangle(330, _ry, 1590, _ry + 144, false);
-                draw_set_alpha(1.0);
+                draw_rectangle(330, _ry, 1590, _ry + 132, false);
                 draw_set_color(_ssel ? make_color_rgb(205, 80, 80) : make_color_rgb(80, 45, 45));
-                draw_rectangle(330, _ry, 1590, _ry + 144, true);
+                draw_rectangle(330, _ry, 1590, _ry + 132, true);
 
                 draw_set_font(fnt_ui);
                 draw_set_color(make_color_rgb(235, 130, 130));
-                draw_text(360, _ry + 15, _cd.name);
+                draw_text(360, _ry + 10, _cd.name);
                 draw_set_font(fnt_ui_small);
                 draw_set_color(make_color_rgb(210, 160, 160));
-                draw_text(360, _ry + 66, "Curse:  " + _cd.desc);
+                draw_text(360, _ry + 56, "Curse:  " + _cd.desc);
                 draw_set_color(make_color_rgb(150, 220, 150));
-                draw_text(360, _ry + 102, "Reward: " + _cd.reward);
+                draw_text(360, _ry + 94, "Reward: " + _cd.reward);
             } else {
                 var _bd = boon_get(shrine_offers[_i]);
-                // Translucent fill so the altar splash stays visible (M 07-09 idiom).
-                draw_set_alpha(_ssel ? 0.80 : 0.55);
+                // Rows sit below the art now (07-10) - solid fills, nothing shows through.
                 draw_set_color(_ssel ? make_color_rgb(45, 38, 22) : make_color_rgb(22, 20, 16));
-                draw_rectangle(330, _ry, 1590, _ry + 144, false);
-                draw_set_alpha(1.0);
+                draw_rectangle(330, _ry, 1590, _ry + 132, false);
                 draw_set_color(_ssel ? make_color_rgb(220, 185, 110) : make_color_rgb(70, 62, 45));
-                draw_rectangle(330, _ry, 1590, _ry + 144, true);
+                draw_rectangle(330, _ry, 1590, _ry + 132, true);
 
                 draw_set_font(fnt_ui);
                 draw_set_color(make_color_rgb(235, 215, 150));
-                draw_text(360, _ry + 15, _bd.name);
+                draw_text(360, _ry + 10, _bd.name);
                 draw_set_font(fnt_ui_small);
                 draw_set_color(make_color_rgb(190, 195, 210));
-                draw_text(360, _ry + 63, _bd.desc);
+                draw_text(360, _ry + 52, _bd.desc);
 
                 // Sharp Eye (C5): quoted prices go through shrine_boon_price so the
                 // display always matches what boon_pay will actually charge.
@@ -710,17 +704,17 @@ if (showing_shrine) {
                 var _ipick   = boon_item_tribute_pick(_bcost);
                 draw_set_color(_gold_ok ? make_color_rgb(150, 220, 150) : make_color_rgb(150, 110, 110));
                 var _p1_txt = "[1] " + string(_bcost) + "g";
-                draw_text(360, _ry + 102, _p1_txt);
-                draw_sprite_stretched(spr_icon_gold, 0, 360 + string_width(_p1_txt) + 8, _ry + 101, 24, 24);
+                draw_text(360, _ry + 94, _p1_txt);
+                draw_sprite_stretched(spr_icon_gold, 0, 360 + string_width(_p1_txt) + 8, _ry + 93, 24, 24);
                 draw_set_color(_dust_ok ? make_color_rgb(150, 220, 150) : make_color_rgb(150, 110, 110));
                 var _p2_txt = "[2] " + string(_dc) + " dust";
-                draw_text(540, _ry + 102, _p2_txt);
-                draw_sprite_stretched(spr_icon_dust, 0, 540 + string_width(_p2_txt) + 8, _ry + 101, 24, 24);
+                draw_text(540, _ry + 94, _p2_txt);
+                draw_sprite_stretched(spr_icon_dust, 0, 540 + string_width(_p2_txt) + 8, _ry + 93, 24, 24);
                 draw_set_color((_ipick != undefined) ? make_color_rgb(150, 220, 150) : make_color_rgb(150, 110, 110));
                 var _ip_txt = (_ipick != undefined)
                     ? ("[3] Sacrifice " + _ipick.item.name + " (" + item_rarity_name(_ipick.item.rarity) + ")")
                     : "[3] No item valuable enough";
-                draw_text(780, _ry + 102, _ip_txt);
+                draw_text(780, _ry + 94, _ip_txt);
                 // Hover-inspect the suggested sacrifice: the full item tooltip so the
                 // player knows EXACTLY what they'd be giving up (picker still lets them
                 // choose a different item after pressing 3).
@@ -729,7 +723,7 @@ if (showing_shrine) {
                     var _shy = device_mouse_y_to_gui(0);
                     draw_set_font(fnt_ui_small);
                     if (_shx >= 780 && _shx <= 780 + string_width(_ip_txt)
-                        && _shy >= _ry + 96 && _shy <= _ry + 132) {
+                        && _shy >= _ry + 88 && _shy <= _ry + 124) {
                         _shrine_tip_item = _ipick.item;
                         _shrine_tip_x    = _shx;
                         _shrine_tip_y    = _shy;
@@ -742,13 +736,13 @@ if (showing_shrine) {
         // Touch (8d, M 07-08 "no confirmation to click"): tap an offer row to
         // select it; on the SELECTED row a blessing pays via its [1]/[2]/[3]
         // price labels (simulated digit keys), a curse row is embraced by
-        // tapping it again (simulated Enter). Rows: y = 294 + i*162, h 144.
+        // tapping it again (simulated Enter). Rows: y = 490 + i*150, h 132.
         if (input_device() == 2 && mouse_check_button_pressed(mb_left)) {
             var _tsx = device_mouse_x_to_gui(0);
             var _tsy = device_mouse_y_to_gui(0);
             for (var _tsi = 0; _tsi < _sn; _tsi++) {
-                var _tsy0 = 294 + _tsi * 162;
-                if (_tsx >= 330 && _tsx <= 1590 && _tsy >= _tsy0 && _tsy <= _tsy0 + 144) {
+                var _tsy0 = 490 + _tsi * 150;
+                if (_tsx >= 330 && _tsx <= 1590 && _tsy >= _tsy0 && _tsy <= _tsy0 + 132) {
                     if (_tsi != shrine_cursor) {
                         shrine_cursor       = _tsi;
                         shrine_notification = "";
@@ -756,7 +750,7 @@ if (showing_shrine) {
                         shrine_curse_arm    = -1;
                     } else if (_is_curse) {
                         touch_press(vk_enter);
-                    } else if (_tsy >= _tsy0 + 90) {
+                    } else if (_tsy >= _tsy0 + 84) {
                         if      (_tsx >= 345 && _tsx < 540)  touch_press(ord("1"));
                         else if (_tsx >= 540 && _tsx < 780)  touch_press(ord("2"));
                         else if (_tsx >= 780 && _tsx < 1575) touch_press(ord("3"));
@@ -772,7 +766,9 @@ if (showing_shrine) {
         // #13: failures (can't afford / no valid tribute / the altar's grip) draw RED.
         draw_set_color(shrine_notification_fail ? make_color_rgb(235, 80, 70)
             : (_is_curse ? make_color_rgb(225, 150, 150) : make_color_rgb(225, 200, 150)));
-        draw_text(GUI_CX, 834, shrine_notification);
+        // 07-10 restack: rows end at y922 (490 + 2*150 + 132) - the line sits
+        // between the last row and the y990 key legend.
+        draw_text(GUI_CX, 940, shrine_notification);
     }
     if (input_device() == 2) {
         // Touch instruction line (the offer rows + price labels are the buttons)

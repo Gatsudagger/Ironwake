@@ -9726,7 +9726,10 @@ function ui_draw_trainer_screen() {
         draw_set_color(_is_warn ? make_color_rgb(255, 90, 90)
                      : (_is_bad ? make_color_rgb(230, 130, 70)
                                 : make_color_rgb(120, 220, 140)));
-        draw_text(960, 168, _gc.trainer_notification);
+        // y154: the notification owns the tab-bar..rows band (144..225) alone - the
+        // class lines below yield to it, and the "more above" arrow sits at y201
+        // (M screenshot 07-10: all three stacked on the abilities tab).
+        draw_text(960, 154, _gc.trainer_notification);
     }
 
     var _rx0 = 180;
@@ -9834,11 +9837,15 @@ function ui_draw_trainer_screen() {
     // TAB 2: ABILITY UNLOCKS
     // =====================================================================
     else if (_gc.trainer_tab == 2) {
-        draw_set_halign(fa_center);
-        draw_set_font(fnt_ui_small);
-        draw_set_color(make_color_rgb(140, 145, 175));
-        draw_text(960, 186, "Class: " + _class_names[clamp(_class_id, 0, 2)] + "   -   unlocked abilities can be slotted in your loadout.");
-        draw_set_halign(fa_left);
+        // Drawn only while no notification shows - the two share the header band
+        // and collided with the confirm prompt + scroll arrow (M screenshot 07-10).
+        if (_gc.trainer_notification == "") {
+            draw_set_halign(fa_center);
+            draw_set_font(fnt_ui_small);
+            draw_set_color(make_color_rgb(140, 145, 175));
+            draw_text(960, 162, "Class: " + _class_names[clamp(_class_id, 0, 2)] + "   -   unlocked abilities can be slotted in your loadout.");
+            draw_set_halign(fa_left);
+        }
 
         var _locked = class_vex_purchasable(_class_id);
         if (array_length(_locked) == 0) {
@@ -9911,12 +9918,15 @@ function ui_draw_trainer_screen() {
     // TAB 3: TRAIT UNLOCKS (gold + a rarity-matched item)
     // =====================================================================
     else if (_gc.trainer_tab == 3) {
-        draw_set_halign(fa_center);
-        draw_set_font(fnt_ui_small);
-        draw_set_color(make_color_rgb(140, 145, 175));
-        draw_text(960, 186, "Class: " + _class_names[clamp(_class_id, 0, 2)]
-            + "   -   unlocked traits can be equipped at the Dungeon Gate.");
-        draw_set_halign(fa_left);
+        // Same yield-to-notification rule as the abilities tab (07-10).
+        if (_gc.trainer_notification == "") {
+            draw_set_halign(fa_center);
+            draw_set_font(fnt_ui_small);
+            draw_set_color(make_color_rgb(140, 145, 175));
+            draw_text(960, 162, "Class: " + _class_names[clamp(_class_id, 0, 2)]
+                + "   -   unlocked traits can be equipped at the Dungeon Gate.");
+            draw_set_halign(fa_left);
+        }
 
         var _tr_locked = trait_vex_purchasable(_class_id);
         if (array_length(_tr_locked) == 0) {
