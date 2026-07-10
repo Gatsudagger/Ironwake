@@ -35,6 +35,26 @@ if (ending_active) {
 // the dismiss (see SYSTEMS_ONBOARDING.md); here we just block all hub input.
 if (tutorial_is_active()) exit;
 
+// C7 (M-approved 07-09): the first time ANY townsfolk reaches a friendship gate,
+// explain the gate-quest system once. Poll pattern mirrors the escape_item tip.
+if (!tutorial_seen_has("bond_gates")) {
+    var _bg_ids = ["petra", "dorn", "vex", "maren", "sable", "bairc"];
+    for (var _bgi = 0; _bgi < array_length(_bg_ids); _bgi++) {
+        if (affinity_gate_ready(_bg_ids[_bgi])) { tutorial_try_show("bond_gates"); break; }
+    }
+}
+// C7: the first corrupt creature in the roster (hatched or found) explains the
+// corruption bargain once - cost, permanence, cure vs fulfilled.
+if (!tutorial_seen_has("corruption_101")) {
+    var _cr = pet_roster();
+    for (var _cri = 0; _cri < array_length(_cr); _cri++) {
+        var _crp = _cr[_cri];
+        if (!is_struct(_crp) || _crp.is_egg) continue;
+        var _crs = pet_corr_state(_crp);
+        if (_crs == "pushing" || _crs == "fulfilled" || _crs == "cured") { tutorial_try_show("corruption_101"); break; }
+    }
+}
+
 // Gift picker (Phase 4b): gc drives the modal; the hub freezes while ANY item picker
 // is up. The gift RESULT surfaces as the popup (ui_draw_gift_popup), so the one-shot
 // resolved flag just gets cleared here.

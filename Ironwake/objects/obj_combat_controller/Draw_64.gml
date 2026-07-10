@@ -185,6 +185,28 @@ if (player.hit_flash > 0) {
     draw_sprite_ext(_pspr, _pfr, _px_draw, _py_draw, _pscale, _pscale, 0, c_white, (player.hit_flash / 15.0) * 0.8);
     gpu_set_blendmode(bm_normal);
 }
+// --- Cast windup FX (07-09 art track, code-first) ---
+// SPELL casts flare the caster in the school's color and shed rising school-tinted
+// motes for ~26 frames. Purely code-drawn (stateless motes derived from the timer),
+// no cast-frame art needed; melee attacks keep the slide lunge instead.
+if (cast_fx_timer > 0) {
+    cast_fx_timer--;
+    var _cfa = cast_fx_timer / 26.0;   // 1 at cast -> 0
+    gpu_set_blendmode(bm_add);
+    draw_sprite_ext(_pspr, _pfr, _px_draw, _py_draw, _pscale, _pscale, 0, cast_fx_color, 0.45 * _cfa);
+    var _cf_cx = _px_draw + sprite_get_width(_pspr) * _pscale * 0.5;
+    var _cf_fy = _py_draw + sprite_get_height(_pspr) * _pscale * 0.90;
+    for (var _cfi = 0; _cfi < 10; _cfi++) {
+        var _cfp = (_cfi * 137.5) mod 97;                          // per-mote phase scramble
+        var _cfx = _cf_cx + (((_cfp * 3.7) mod 120) - 60);
+        var _cfy = _cf_fy - (1 - _cfa) * (140 + (_cfp mod 90)) - (_cfp mod 40);
+        draw_set_alpha(0.5 * _cfa);
+        draw_set_color(merge_color(cast_fx_color, c_white, 0.35));
+        draw_rectangle(_cfx - 2, _cfy - 5, _cfx + 2, _cfy + 5, false);
+    }
+    draw_set_alpha(1.0);
+    gpu_set_blendmode(bm_normal);
+}
 
 // --- Active pet companion (Pets Phase 3: combat presence) --------------------
 // The equipped pet stands beside the player, facing east toward the enemies, idling via
@@ -242,32 +264,19 @@ if (_pet_co != undefined && !_pet_co.is_egg) {
             gpu_set_blendmode(bm_normal);
         }
         draw_sprite_ext(_petspr, pet_anim_frame(_petspr), _pdx + _lunge_dx, _pdy, _sx, _petsc, 0, c_white, 1.0);
+        // Corruption dressing (07-09 art track): pushing = violet flicker,
+        // fulfilled = dark aura + orbiting motes. Same transform as the base draw.
+        ui_draw_pet_corruption_fx(_pet_co, _petspr, pet_anim_frame(_petspr),
+            _pdx + _lunge_dx, _pdy, _sx, _petsc, _petx + _lunge_dx, _pety - _peth_t * 0.5);
         // Additive white flash on the sprite at the strike apex.
         if (_flash > 0) {
             gpu_set_blendmode(bm_add);
             draw_sprite_ext(_petspr, pet_anim_frame(_petspr), _pdx + _lunge_dx, _pdy, _sx, _petsc, 0, c_white, _flash);
             gpu_set_blendmode(bm_normal);
         }
-        // Guard status chip (M 07-09): a guarded-stance Combatant shows its HP pool
-        // and guard state above its head, with the in-combat G toggle hint - so the
-        // player can call it off before intercepts (#20) grind it down.
-        if (_pet_co.archetype == PET_ARCH_COMBATANT && pet_stance(_pet_co) == "guarded") {
-            draw_set_halign(fa_center);
-            draw_set_font(fnt_ui_small);
-            var _gchip_y = _pety - _peth_t - 33;
-            if (pet_hp(_pet_co) <= 0) {
-                draw_set_color(make_color_rgb(230, 95, 85));
-                draw_text_outline(_petx, _gchip_y, "DOWN");
-            } else if (pet_guard_off(_pet_co)) {
-                draw_set_color(make_color_rgb(150, 156, 175));
-                draw_text_outline(_petx, _gchip_y, "CALLED OFF  " + string(pet_hp(_pet_co)) + "/" + string(pet_max_hp(_pet_co)) + "  [G]");
-            } else {
-                draw_set_color(make_color_rgb(140, 205, 150));
-                draw_text_outline(_petx, _gchip_y, "GUARDING  " + string(pet_hp(_pet_co)) + "/" + string(pet_max_hp(_pet_co)) + "  [G]");
-            }
-            draw_set_halign(fa_left);
-            draw_set_font(-1);
-        }
+        // Guard/HP chip MOVED (M 07-09): the over-head text was awkward and hard to
+        // read. The pet's HP bar + guard state now draw in the upper-left HUD under
+        // the player's level block (ui_draw_combat_hud).
     }
 }
 // Looping status VFX (poison gas, flames, blind mist, ...) over the player sprite.
@@ -865,7 +874,7 @@ if (show_loot_screen) {
         if (_is_consumable) {
             ui_draw_consumable_icon(372, _iy, 66, _item);
             draw_set_font(fnt_ui);
-            draw_set_color(make_color_rgb(80, 200, 200));
+            draw_set_color(ui_consumable_name_color(_item));   // Genie Lamp reads legendary gold
             draw_set_halign(fa_left);
             draw_text(456, _iy + 8, _item.name);
             draw_set_font(fnt_ui_small);

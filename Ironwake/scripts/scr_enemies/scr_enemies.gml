@@ -127,7 +127,7 @@ function enemy_ability(name, kind, chance, cooldown, value, extra) {
 // procs this turn (random among those that pass their chance roll), or undefined
 // to fall through to the basic attack. Lazily initialises ability_cd.
 // ---------------------------------------------------------------------------
-function enemy_pick_ability(actor) {
+function enemy_pick_ability(actor, player = undefined) {
     if (!variable_struct_exists(actor, "abilities") || array_length(actor.abilities) == 0) return undefined;
     if (!variable_struct_exists(actor, "ability_cd") || array_length(actor.ability_cd) != array_length(actor.abilities)) {
         actor.ability_cd = array_create(array_length(actor.abilities), 0);
@@ -135,11 +135,26 @@ function enemy_pick_ability(actor) {
     for (var _i = 0; _i < array_length(actor.ability_cd); _i++) {
         if (actor.ability_cd[_i] > 0) actor.ability_cd[_i]--;
     }
+    // Awakening behavior ladder (BALANCE_NOTE C1, M-approved 07-09):
+    //   A2+  enemies use their abilities MORE (+15 proc chance) - tiers stop being
+    //        pure stat walls (adapted: there was no literal "warm-up round" to cut).
+    //   A3+  SMART CONTROL: never waste a control ability on a player already under
+    //        that control (stun/root/silence) - they act instead of re-stacking.
+    //   A4+  DIVERSIFIED DEBUFFS: skip a debuff/DoT kind the player already carries -
+    //        pack members spread afflictions instead of piling one.
+    var _asc = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
     var _ready = [];
     for (var _i = 0; _i < array_length(actor.abilities); _i++) {
         if (actor.ability_cd[_i] > 0) continue;
         var _ab = actor.abilities[_i];
+        if (player != undefined && variable_struct_exists(_ab, "status_kind") && _ab.status_kind != "") {
+            var _sk = _ab.status_kind;
+            var _is_control = (_sk == "stun" || _sk == "root" || _sk == "silence");
+            if (_asc >= 3 && _is_control && combat_has_status(player, _sk)) continue;
+            if (_asc >= 4 && !_is_control && combat_has_status(player, _sk)) continue;
+        }
         var _ch = variable_struct_exists(_ab, "chance") ? _ab.chance : 100;
+        if (_asc >= 2) _ch += 15;
         if (irandom(99) < _ch) array_push(_ready, _i);
     }
     if (array_length(_ready) == 0) return undefined;
@@ -322,7 +337,7 @@ function enemy_intent_status_word(eab) {
 // is_reroll pulses the chip so a mid-combat change is visible.
 function enemy_roll_intent(actor, player, next_round, is_reroll) {
     if (actor.is_defeated) { actor.intent = undefined; return; }
-    var _eab = enemy_pick_ability(actor);
+    var _eab = enemy_pick_ability(actor, player);   // player passed for the C1 smart-targeting gates
     var _it  = { kind: "attack", eab: _eab, label: "", lo: 0, hi: 0,
                  x2: false, pulse: (is_reroll ? 30 : 0) };
     if (_eab == undefined) {

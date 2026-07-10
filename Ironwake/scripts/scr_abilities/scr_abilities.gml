@@ -305,8 +305,8 @@ var _arc_d = [
       f: "Step sideways out of the world and let the blow pass through where you stood.\n- Next incoming attack: fully dodged. The two after: 50% then 25% less damage.\n- One charge is spent per attacking enemy, so it spans a swarm. 2-turn cooldown." },
     { s: "Hex: target takes +4 dmg for 3 turns; detonations x2.",
       f: "Whisper a Shadow hex that opens every seam in their defenses.\n- Hexed: +4 damage taken from all hits for 3 turns.\n- Detonations against the hexed target hit twice as hard and spread +2 damage-taken to every other enemy." },
-    { s: "Spend 1 Soul. Absorb 10 incoming dmg.",
-      f: "Weave a spent Soul into a pale ward around you.\n- Spend 1 Soul: a shield absorbs the next 10 damage.\n- Cheap cover when the reserve is stocked and a big hit is coming." },
+    { s: "Spend 1 Soul. Absorb 10 dmg, +3 per Soul HELD.",
+      f: "Weave a spent Soul into a ward the rest of the reserve strengthens.\n- Spend 1 Soul: a shield absorbs 10 damage, +3 more per Soul still held.\n- The reserve-defense: a stocked Arcanist wards twice as hard. Cast BEFORE dumping Souls." },
     { s: "Void rot: 6 dmg/turn for 4 turns.",
       f: "Set decay loose in their flesh and let time do the killing.\n- Void DoT: 6 damage per turn for 4 turns (24 total).\n- Feeds Void detonations - bursting it heals you for 30% of the hit." },
     { s: "Spend 2 Souls. Deal 20 Arcane dmg to ALL enemies.",
@@ -563,14 +563,14 @@ var _ss_d = [
       f: "Walk half a step behind your own shadow and let the blows guess.\n- Each of the next 3 incoming attacks has a (50% + WIS*2)% dodge chance, capped at 85%. Stun halves the odds.\n- 1 AP on a 2-turn cooldown - strong against a pack." },
     { s: "Deal 6 physical dmg. Poison: 5 dmg/turn for 4 turns.",
       f: "Flick a needle of something patient into their neck.\n- 6 physical damage + Poison 5/turn for 4 turns (20 total).\n- Cheap - apply it early and let it tick while you work." },
-    { s: "Spend 1 Prep. ALL enemies hit 40% less often for 2 turns.",
-      f: "Drop the room into a grey blindness only you can read.\n- Every enemy's accuracy drops 40% for 2 turns.\n- Buy a safe turn to set traps or catch your breath." },
+    { s: "Spend 1 Prep. Enemies -40% acc 2t; YOU +15% dodge.",
+      f: "Drop the room into a grey blindness only you can read.\n- Every enemy's accuracy drops 40% for 2 turns - and the smoke cloaks YOU: +15% dodge while it lingers.\n- The panic button: buy a safe turn to set traps or catch your breath." },
     { s: "Deal 10 physical dmg. Target deals -25% dmg for 3 turns.",
       f: "Put the shot where they carry their strength.\n- 10 physical damage. The target deals 25% less damage for 3 turns.\n- Take the most dangerous enemy down a notch early." },
     { s: "Spend 1 Prep. Trap: 26 dmg + Bleed 6/turn for 4 turns.",
       f: "Line the floor with points that keep cutting on the way out.\n- Guaranteed trap hit: 26 physical damage + Bleed 6/turn for 4 turns.\n- The DoT-build trap - feeds bleed payoffs; take Death Snare when you need the Stun instead." },
-    { s: "All hits on target deal +8 dmg. 4 turns / 3 hits.",
-      f: "Chalk an ending on their back that only your weapons can read.\n- Marked: every hit on the target deals +8, for up to 4 turns or 3 hits.\n- Apply it first, then stack Snipe and traps into the window." },
+    { s: "Mark 4t: below half HP it takes +30% from ALL sources.",
+      f: "Chalk an ending on their back that everything can read.\n- Marked for 4 turns: once the target drops below 50% HP, it takes +30% damage from EVERY source - your hits, your companion, your poisons.\n- The execute window: wound them first, then collapse the mark." },
     { s: "Spend 2 Prep. Halve next hit over 10 dmg; refund 1 Prep.",
       f: "Keep your knees bent and your plans loose.\n- Costs no AP: the next hit above 10 damage is halved, and a clean absorb refunds 1 Prep.\n- Hold it for the heavy hits - it ignores weak attacks." },
     { s: "Spend 2 Prep. Trap: 32 dmg + Stun for 2 turns.",
@@ -635,8 +635,8 @@ array_push(global.abilities_bloodwarden,
     ability_define("Bonebreaker",   3,0,  18,0,  78,false, 0,12, "debuff",5,3,  false),   // audit fix: data said 14, tooltip said 18 - 18 is right for a 3-AP hit
     ability_define("Crimson Apex",  3,3,  22,3,  82,false, 0,12, "heal",20,0,   false));
 var _bw_x = [
-    { s:"Spend 8 HP to gain 3 Blood.",
-      f:"Cut your own palm and pay the reserve in advance.\n- Trade 8 HP for 3 Blood on the spot.\n- Fuel when combat is too slow to provide it - never cast it low on HP." },
+    { s:"Seal up to 3 Blood into 6 shield each (max 18).",
+      f:"Set the reserve between yourself and the blade.\n- Convert up to 3 Blood into a ward of 6 shield per Blood sealed (max 18).\n- The Blood DUMP defense - you refill by being hit; seal it before the big swings." },
     { s:"Deal 18 physical dmg. Target takes +5 dmg for 3 turns.",
       f:"Swing through the armor and into the frame beneath it.\n- 18 physical damage. The shattered guard takes +5 from every hit for 3 turns.\n- Strong elite opener - break them, then pile on." },
     { s:"Spend 3 Blood. Deal 22 Blood dmg, heal 20 HP. Ultimate.",
@@ -830,6 +830,59 @@ global.abilities_shadowstrider[3].school = "poison"; // Poison Dart - the poison
 
 
 // =============================================================================
+// D§4 GAP-FILLER WAVE (M-approved 2026-07-09; ABILITY_DIVERSITY_RESEARCH.md).
+// Frost = tempo control (Chill rides the existing frost status + its SHATTER
+// detonation), Shock = chains, Soul Engine = the ramp "power", Devil's Flip =
+// the gamble. All Vex-purchasable (ability_unlock_info); icons use the code
+// fallback until the PixelLab round. Indices anchored on array_length so the
+// pushes stay valid whatever came before.
+// =============================================================================
+var _dw_a0 = array_length(global.abilities_arcanist);
+array_push(global.abilities_arcanist,
+    // Hoarfrost Lance - 16 Frost + Chilled 2t (foe -30% dmg; detonators SHATTER it)
+    ability_define("Hoarfrost Lance", 2,0, 16,1, 85,false, 2,8, "debuff",0.30,2, false),
+    // Glacial Ward - 8 shield; melee attackers this turn get Chilled (bespoke)
+    ability_define("Glacial Ward",    1,0, 0,0,  -1,true,  -1,0, "shield",8,0,   true),
+    // Static Arc - 9 Shock, chains 50% to one other foe (to ALL if target Shocked)
+    ability_define("Static Arc",      1,0, 9,1,  88,false, 2,8, "damage",0,0,   false),
+    // Soul Engine - once/combat power: spells +3 per full turn elapsed, combat-long
+    ability_define("Soul Engine",     2,0, 0,0,  -1,true,  -1,0, "status",0,0,   true));
+global.abilities_arcanist[_dw_a0    ].school = "frost";
+global.abilities_arcanist[_dw_a0 + 2].school = "shock";
+global.abilities_arcanist[_dw_a0    ].desc_short = "16 Frost dmg. Chill 2t: foe -30% dmg, shatters.";
+global.abilities_arcanist[_dw_a0    ].desc_full  = "Drive a spear of old winter through them and let the cold linger.\n- 16 Frost damage. Chilled 2 turns: the target deals -30% damage, and detonators SHATTER the chill for +30%.\n- The tempo opener: slow their swing, then break the ice with Arcane Burst.";
+global.abilities_arcanist[_dw_a0 + 1].desc_short = "8 shield. Melee attackers get Chilled.";
+global.abilities_arcanist[_dw_a0 + 1].desc_full  = "Raise a pane of ice between you and their teeth.\n- 8 shield now; any melee enemy that strikes you this turn is Chilled.\n- Defense that feeds the shatter loop - punish the ones who come close.";
+global.abilities_arcanist[_dw_a0 + 2].desc_short = "9 Shock dmg, chains 50% to another foe.";
+global.abilities_arcanist[_dw_a0 + 2].desc_full  = "Snap a living arc between everything that conducts.\n- 9 Shock damage, chaining 50% to one other enemy.\n- Against a target ALREADY Shocked, the chain leaps to EVERY other enemy instead.";
+global.abilities_arcanist[_dw_a0 + 3].desc_short = "Once per combat: spells +3 dmg per turn elapsed.";
+global.abilities_arcanist[_dw_a0 + 3].desc_full  = "Set a soul turning inside a cage of glass and let it gather speed.\n- Once per combat, combat-long: your spells deal +3 more for every full turn that has passed since you lit it.\n- Dead weight in short fights, monstrous in long ones - the boss-fight engine.";
+
+var _dw_b0 = array_length(global.abilities_bloodwarden);
+array_push(global.abilities_bloodwarden,
+    // Galvanize - 12 Shock melee; a killing blow grants +1 AP next turn
+    ability_define("Galvanize", 2,0, 12,1, 86,false, 0,8, "damage",0,0, false));
+global.abilities_bloodwarden[_dw_b0].school = "shock";
+global.abilities_bloodwarden[_dw_b0].desc_short = "Melee: 12 Shock dmg. Kill = +1 AP next turn.";
+global.abilities_bloodwarden[_dw_b0].desc_full  = "Put the storm behind your fist.\n- Melee spell: 12 Shock damage. If it kills, the surge carries - +1 AP next turn.\n- The shock-tempo bruiser: finish something and keep swinging.";
+
+var _dw_s0 = array_length(global.abilities_shadowstrider);
+array_push(global.abilities_shadowstrider,
+    // Winter's Bite - 1 AP + 1 Prep melee frost; +9 and Prep refund vs Chilled
+    ability_define("Winter's Bite", 1,1, 9,1, 88,false, 1,8, "damage",0,0, false));
+global.abilities_shadowstrider[_dw_s0].school = "frost";
+global.abilities_shadowstrider[_dw_s0].desc_short = "Spend 1 Prep. Melee 9 Frost; +9 & refund vs Chilled.";
+global.abilities_shadowstrider[_dw_s0].desc_full  = "A knife kept in the coldest pocket.\n- Melee spell: 9 Frost damage. Against a CHILLED target: +9 damage and the Prep comes back.\n- The cross-class frost dip - pairs with chilling weapons and Arcanist ice.";
+
+var _dw_g0 = array_length(global.abilities_general);
+array_push(global.abilities_general,
+    // Devil's Flip - 50/50: 26 dmg to your selected target, or 8 to YOU. Runs
+    // through the SELF branch (the coin is the roll - no accuracy, no root gate).
+    ability_define("Devil's Flip", 1,0, 0,0, -1,true, -1,0, "status",0,0, true));
+global.abilities_general[_dw_g0].desc_short = "Flip: 50% deal 26 dmg - 50% take 8 yourself.";
+global.abilities_general[_dw_g0].desc_full  = "The house always deals; sometimes you ARE the house.\n- Flip a coin: heads, the target takes 26 damage. Tails, YOU take 8.\n- Same average as an honest Strike - for players who'd rather gamble.";
+
+// =============================================================================
 // ATTACK CLASSIFICATION - reach (melee/ranged) x kind (attack/spell).
 // Control effects key off this: root blocks melee, silence blocks spell, stun all.
 // See SYSTEMS_ATTACK_CLASS.md.
@@ -849,6 +902,8 @@ function ability_attack_class(ab) {
         case "Cleave":      case "Rupture":       case "Throat Slit":  case "Assassinate":
         // #26 Arcanist melee kit - the melee SPELLS (dtype != 0 keeps them spells)
         case "Blazing Palm": case "Gravewrack Grip": case "Soul Rend":
+        // D§4 wave melee spells (frost knife + shock fist)
+        case "Winter's Bite": case "Galvanize":
             _melee = true; break;
     }
     var _spell = (variable_struct_exists(ab, "damage_type") && ab.damage_type != 0);
@@ -930,6 +985,8 @@ function ability_category(ab) {
         case "Crippling Shot": case "Mana Sever":  case "Vital Theft":   case "Soulbind":
         case "Bear Trap":    case "Spike Trap":    case "Death Snare":
         case "Blazing Palm": case "Gravewrack Grip": case "Soul Rend":   // #26 melee kit
+        case "Hoarfrost Lance": case "Static Arc": case "Galvanize":     // D§4 wave
+        case "Winter's Bite":   case "Devil's Flip":
             return "offense";
 
         // defense - self-protection
@@ -941,7 +998,7 @@ function ability_category(ab) {
         // Blood Leech - judgment calls, tunable).
         case "Field Dressing": case "Void Drain":  case "Blood Surge":   case "Second Wind":
         case "Adrenaline Rush": case "Soul Harvest": case "Sanguine Pact": case "Bloodfeast":
-        case "Blood Leech":
+        case "Blood Leech":    case "Soul Engine":   // D§4: the ramp power is a self-buff
             return "support";
 
         // control - pure debuff / CC, no damage as the point (Entropy is DoT-only
@@ -1008,19 +1065,67 @@ function ability_synergy_active(ab, caster) {
 }
 
 // ability_effective_cost(ab, caster) - SINGLE SOURCE OF TRUTH for the AP a caster
-// pays for an ability right now, after the same-category synergy discount (-1 AP,
-// floor 1). Used by the UI cost display and standalone gates; the combat cast block
-// folds the same -1 into its inline discount stack (Quickcast/Cracked Focus/etc.) so
-// every path agrees. Free (0-AP) abilities stay 0; only AP is discounted, never the
-// secondary resource. Pass the casting player as `caster` (may be undefined -> no discount).
+// pays for an ability right now: same-category synergy, Quickcast rune, Cracked
+// Focus and Gatewarden's Brand all folded in, in the same order the cast block
+// applies them. The UI cost pips, the combat resource gate AND the actual spend all
+// read this, so they can never disagree (07-09 bug: Cracked Focus was applied at
+// spend but not at the gate, so a Singularity that would really cost 1 AP was
+// refused at 1 AP with "Not enough resources"). Free (0-AP) abilities stay 0; only
+// AP is discounted, never the secondary resource. Pass the casting player as
+// `caster` (may be undefined / an enemy -> flag guards skip the player discounts).
 function ability_effective_cost(ab, caster) {
-    var _base = variable_struct_exists(ab, "energy_cost") ? ab.energy_cost : 0;
-    if (_base <= 0) return _base;   // free abilities stay free
-    // SUPPORT abilities can be discounted all the way to 0 AP (M's call): a 1-AP
-    // support cast after another support this turn becomes free, so buff/heal chains
-    // are genuinely free. Every other role still floors at 1 AP.
+    var _cost = variable_struct_exists(ab, "energy_cost") ? ab.energy_cost : 0;
+    if (_cost <= 0) return _cost;   // free abilities stay free
+
+    // Same-category synergy (-1 AP). SUPPORT abilities can be discounted all the way
+    // to 0 AP (M's call): a 1-AP support cast after another support this turn becomes
+    // free, so buff/heal chains are genuinely free. Every other role floors at 1 AP.
     var _floor = (ability_category(ab) == "support") ? 0 : 1;
-    return max(_floor, _base - (ability_synergy_active(ab, caster) ? 1 : 0));
+    if (ability_synergy_active(ab, caster)) _cost = max(_floor, _cost - 1);
+
+    if (is_undefined(caster)) return _cost;
+    var _is_spell = ability_class_is_spell(ability_attack_class(ab));
+
+    // Quickcast aspect rune: the first SPELL each combat costs -1 AP (can reach 0).
+    if (_cost > 0 && _is_spell
+        && rune_aspect_socketed("quickcast")
+        && variable_struct_exists(caster, "rune_first_spell_used")
+        && !caster.rune_first_spell_used) {
+        _cost -= 1;
+    }
+
+    // Cracked Focus (class weapon): first SPELL each combat costs 1 less AP (min 1).
+    // Skipped when a prior discount already has it at 1 or 0, so the charge isn't
+    // shown (or burned in the cast block) for zero effect.
+    if (_cost > 1 && _is_spell
+        && variable_struct_exists(caster, "cf_first_spell_ap") && caster.cf_first_spell_ap
+        && variable_struct_exists(caster, "cf_used") && !caster.cf_used) {
+        _cost -= 1;
+    }
+
+    // Gatewarden's Brand: the first ability each combat costs 0 AP.
+    if (variable_struct_exists(caster, "gatewarden_brand") && caster.gatewarden_brand
+        && variable_struct_exists(caster, "gatewarden_used") && !caster.gatewarden_used) {
+        _cost = 0;
+    }
+
+    return _cost;
+}
+
+// Display name + current amount of the caster's SECONDARY resource (mirrors the
+// variable_struct_exists chain in ability_secondary_ok). Used by the combat gate's
+// refusal message so the player is told exactly what is missing.
+function ability_secondary_label(caster) {
+    if (variable_struct_exists(caster, "souls"))       return "Souls";
+    if (variable_struct_exists(caster, "blood"))       return "Blood";
+    if (variable_struct_exists(caster, "preparation")) return "Preparation";
+    return "resource";
+}
+function ability_secondary_amount(caster) {
+    if (variable_struct_exists(caster, "souls"))       return caster.souls;
+    if (variable_struct_exists(caster, "blood"))       return caster.blood;
+    if (variable_struct_exists(caster, "preparation")) return caster.preparation;
+    return 0;
 }
 
 
@@ -1147,7 +1252,17 @@ function ability_effect_full(ab) {
         case "Killing Spree":   _b = "Deals +6 bonus damage per debuff or trap on the target."; break;
         case "Entropy":         _b = "Deals DOUBLE damage if the target already carries a void DoT - stack it on itself to ramp up."; break;
         case "Adrenaline Rush": _b = "Gain +1 AP this turn (once per combat)."; break;
-        case "Sanguine Pact":   _b = "Spend 8 HP to gain 3 Blood."; break;
+        case "Sanguine Pact":   _b = "Seals up to 3 Blood into 6 shield each."; break;
+        case "Hoarfrost Lance": _b = "Chilled targets deal -30% damage; detonators SHATTER the chill for +30%."; break;
+        case "Glacial Ward":    _b = "Melee enemies that strike you this turn are Chilled."; break;
+        case "Static Arc":      _b = "Chains 50% to one other enemy - to ALL others if the target was already Shocked."; break;
+        case "Soul Engine":     _b = "Once per combat, combat-long: spells deal +3 per full turn elapsed."; break;
+        case "Galvanize":       _b = "A killing blow grants +1 AP next turn."; break;
+        case "Winter's Bite":   _b = "Against a Chilled target: +9 damage and the Prep refunds."; break;
+        case "Devil's Flip":    _b = "A coin flip: 50% the target takes 26 - 50% YOU take 8."; break;
+        case "Soul Shield":     _b = "The ward absorbs +3 more per Soul still held."; break;
+        case "Marked for Death": _b = "Marked: below half HP the target takes +30% from ALL damage sources."; break;
+        case "Smoke Bomb":      _b = "The smoke also cloaks YOU: +15% dodge while it lingers."; break;
         case "Second Wind":     _b = "Also restore 1 secondary resource (Soul / Blood / Prep)."; break;
         case "Blink":           _b = "Fully dodge the next attack; the 2nd hit after takes 50% less and the 3rd 25% less. 2-turn cooldown."; break;
         case "Shadow Step":     _b = "~(50% + WIS) chance to dodge each of the next 3 attacks. 2-turn cooldown."; break;
@@ -1271,7 +1386,7 @@ function ability_summary(ab) {
             case "Killing Spree":   _tag = "+5 per debuff"; break;
             case "Snipe":           _tag = "+" + string(_ev) + " if debuffed"; break;
             case "Adrenaline Rush": _tag = "+1 AP"; break;
-            case "Sanguine Pact":   _tag = "HP -> Blood"; break;
+            case "Sanguine Pact":   _tag = "Blood -> shield"; break;
             case "Blink":           _tag = "Dodge 1, soften 2 - 2t CD"; break;
             case "Shadow Step":     _tag = "Dodge chance x3 - 2t CD"; break;
             case "Evasive Roll":    _tag = "Halve next hit"; break;
@@ -1603,6 +1718,14 @@ function ability_unlock_info(ability_name) {
         case "Blazing Palm":     return { type:"vex", cost:500,  goal_type:"", goal_value:0 };
         case "Gravewrack Grip":  return { type:"vex", cost:800,  goal_type:"", goal_value:0 };
         case "Soul Rend":        return { type:"vex", cost:1200, goal_type:"", goal_value:0 };
+        // D§4 wave (M-approved pricing: 1-AP 250 / 2-AP 400 / engine 500 / gamble 100)
+        case "Glacial Ward":     return { type:"vex", cost:250, goal_type:"", goal_value:0 };
+        case "Static Arc":       return { type:"vex", cost:250, goal_type:"", goal_value:0 };
+        case "Hoarfrost Lance":  return { type:"vex", cost:400, goal_type:"", goal_value:0 };
+        case "Soul Engine":      return { type:"vex", cost:500, goal_type:"", goal_value:0 };
+        case "Galvanize":        return { type:"vex", cost:400, goal_type:"", goal_value:0 };
+        case "Winter's Bite":    return { type:"vex", cost:250, goal_type:"", goal_value:0 };
+        case "Devil's Flip":     return { type:"vex", cost:100, goal_type:"", goal_value:0 };
         // Bloodwarden
         case "Bloodthorn Aura":  return { type:"vex", cost:100, goal_type:"", goal_value:0 };
         case "Plague Touch":     return { type:"vex", cost:100, goal_type:"", goal_value:0 };

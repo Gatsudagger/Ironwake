@@ -425,7 +425,7 @@ if (showing_treasure) {
                           && treasure_item.item_category == "consumable";
         if (_tr_is_cons) {
             draw_set_font(fnt_ui);
-            draw_set_color(make_color_rgb(80, 200, 200));
+            draw_set_color(ui_consumable_name_color(treasure_item));   // Genie Lamp reads legendary gold
             draw_text(_pop_cx, _pop_cy + 138, treasure_item.name);
             draw_set_font(fnt_ui_small);
             draw_set_color(make_color_rgb(140, 200, 200));
@@ -457,7 +457,7 @@ if (showing_treasure) {
                           && treasure_item2.item_category == "consumable";
         draw_set_font(fnt_ui);
         if (_t2_is_cons) {
-            draw_set_color(make_color_rgb(80, 200, 200));
+            draw_set_color(ui_consumable_name_color(treasure_item2));   // Genie Lamp reads legendary gold
             draw_text(_pop_cx, _pop_cy + 252, "+ " + treasure_item2.name + "  [CONSUMABLE]");
         } else {
             draw_set_color(item_rarity_color(treasure_item2.rarity));
@@ -668,8 +668,11 @@ if (showing_shrine) {
 
             if (_is_curse) {
                 var _cd = curse_get(shrine_offers[_i]);
+                // Translucent fill so the altar splash stays visible (M 07-09 idiom).
+                draw_set_alpha(_ssel ? 0.80 : 0.55);
                 draw_set_color(_ssel ? make_color_rgb(48, 22, 22) : make_color_rgb(20, 14, 14));
                 draw_rectangle(330, _ry, 1590, _ry + 144, false);
+                draw_set_alpha(1.0);
                 draw_set_color(_ssel ? make_color_rgb(205, 80, 80) : make_color_rgb(80, 45, 45));
                 draw_rectangle(330, _ry, 1590, _ry + 144, true);
 
@@ -683,8 +686,11 @@ if (showing_shrine) {
                 draw_text(360, _ry + 102, "Reward: " + _cd.reward);
             } else {
                 var _bd = boon_get(shrine_offers[_i]);
+                // Translucent fill so the altar splash stays visible (M 07-09 idiom).
+                draw_set_alpha(_ssel ? 0.80 : 0.55);
                 draw_set_color(_ssel ? make_color_rgb(45, 38, 22) : make_color_rgb(22, 20, 16));
                 draw_rectangle(330, _ry, 1590, _ry + 144, false);
+                draw_set_alpha(1.0);
                 draw_set_color(_ssel ? make_color_rgb(220, 185, 110) : make_color_rgb(70, 62, 45));
                 draw_rectangle(330, _ry, 1590, _ry + 144, true);
 
@@ -695,12 +701,15 @@ if (showing_shrine) {
                 draw_set_color(make_color_rgb(190, 195, 210));
                 draw_text(360, _ry + 63, _bd.desc);
 
-                var _gold_ok = _sg >= _bd.cost;
-                var _dc      = boon_dust_cost(_bd.cost);
+                // Sharp Eye (C5): quoted prices go through shrine_boon_price so the
+                // display always matches what boon_pay will actually charge.
+                var _bcost   = shrine_boon_price(_bd.cost);
+                var _gold_ok = _sg >= _bcost;
+                var _dc      = boon_dust_cost(_bcost);
                 var _dust_ok = _sdu >= _dc;
-                var _ipick   = boon_item_tribute_pick(_bd.cost);
+                var _ipick   = boon_item_tribute_pick(_bcost);
                 draw_set_color(_gold_ok ? make_color_rgb(150, 220, 150) : make_color_rgb(150, 110, 110));
-                var _p1_txt = "[1] " + string(_bd.cost) + "g";
+                var _p1_txt = "[1] " + string(_bcost) + "g";
                 draw_text(360, _ry + 102, _p1_txt);
                 draw_sprite_stretched(spr_icon_gold, 0, 360 + string_width(_p1_txt) + 8, _ry + 101, 24, 24);
                 draw_set_color(_dust_ok ? make_color_rgb(150, 220, 150) : make_color_rgb(150, 110, 110));
@@ -977,30 +986,36 @@ if (showing_event_choice && event_active != undefined) {
         draw_text(GUI_CX, 252, "Gold: " + string(global.gold));
 
         draw_set_halign(fa_left);
+        // Choice rows (M 07-09 restyle): TRANSLUCENT fills so the splash art and
+        // vignette stay visible behind them - the old opaque slabs buried the art.
+        // Tighter rows (132px, 150 pitch) trim the dead space; four choices now end
+        // at y930, clear of the footer (opaque rows at 165 pitch reached y975).
         var _en = array_length(_ev.choices);
         for (var _i = 0; _i < _en; _i++) {
             var _ch       = _ev.choices[_i];
             var _unlocked = event_choice_unlocked(_ch);
-            var _ry       = 315 + _i * 165;
+            var _ry       = 330 + _i * 150;
             var _csel     = (_i == event_cursor);
 
+            draw_set_alpha(_csel ? 0.80 : 0.55);
             draw_set_color(_csel ? make_color_rgb(38, 44, 58) : make_color_rgb(20, 22, 32));
-            draw_rectangle(330, _ry, 1590, _ry + 147, false);
+            draw_rectangle(330, _ry, 1590, _ry + 132, false);
+            draw_set_alpha(1.0);
             draw_set_color(_csel ? _ev.color : make_color_rgb(58, 62, 80));
-            draw_rectangle(330, _ry, 1590, _ry + 147, true);
+            draw_rectangle(330, _ry, 1590, _ry + 132, true);
 
             // Label + hint
             draw_set_font(fnt_ui);
             draw_set_color(_unlocked ? make_color_rgb(236, 240, 250) : make_color_rgb(110, 112, 122));
-            draw_text(360, _ry + 18, ui_sentence(_ch.label));
+            draw_text(360, _ry + 12, ui_sentence(_ch.label));
             draw_set_font(fnt_ui_small);
             draw_set_color(_unlocked ? make_color_rgb(178, 186, 204) : make_color_rgb(92, 94, 104));
-            draw_text(360, _ry + 72, ui_sentence(_ch.hint));
+            draw_text(360, _ry + 60, ui_sentence(_ch.hint));
 
             // Generated mechanics line under the lore hint: odds + what each
             // outcome actually grants, so the player understands the bet.
             draw_set_color(_unlocked ? make_color_rgb(150, 200, 230) : make_color_rgb(80, 90, 112));
-            draw_text(360, _ry + 108, event_choice_mechanics_text(_ch));
+            draw_text(360, _ry + 96, event_choice_mechanics_text(_ch));
 
             // Right-side info: gold cost / check odds / lock reason
             draw_set_halign(fa_right);
@@ -1009,7 +1024,7 @@ if (showing_event_choice && event_active != undefined) {
                 var _lock = (_ch.req_stat != "" && player_effective_stat(_ch.req_stat) < _ch.req_amount)
                     ? ("NEED " + _ch.req_stat + " " + string(_ch.req_amount))
                     : "NOT ENOUGH GOLD";
-                draw_text(1560, _ry + 21, _lock);
+                draw_text(1560, _ry + 15, _lock);
             } else {
                 var _info = "";
                 var _cost = event_choice_cost(_ch);
@@ -1020,7 +1035,7 @@ if (showing_event_choice && event_active != undefined) {
                 }
                 if (_info != "") {
                     draw_set_color(make_color_rgb(150, 200, 230));
-                    draw_text(1560, _ry + 21, _info);
+                    draw_text(1560, _ry + 15, _info);
                 }
             }
             draw_set_halign(fa_left);
@@ -1030,13 +1045,14 @@ if (showing_event_choice && event_active != undefined) {
         // touches"): tap a choice row to select it, tap the selected row again
         // to choose it (simulated Enter - the existing confirm handler pays the
         // cost/rolls the check). Locked rows ignore taps. Same idiom as the
-        // shrine offer rows. Rows: y = 315 + i*165, h 147, x 330..1590.
+        // shrine offer rows. Rows: y = 330 + i*150, h 132, x 330..1590 (kept in
+        // sync with the translucent row draw above).
         if (input_device() == 2 && mouse_check_button_pressed(mb_left)) {
             var _tex = device_mouse_x_to_gui(0);
             var _tey = device_mouse_y_to_gui(0);
             for (var _ti = 0; _ti < _en; _ti++) {
-                var _ty0 = 315 + _ti * 165;
-                if (_tex >= 330 && _tex <= 1590 && _tey >= _ty0 && _tey <= _ty0 + 147) {
+                var _ty0 = 330 + _ti * 150;
+                if (_tex >= 330 && _tex <= 1590 && _tey >= _ty0 && _tey <= _ty0 + 132) {
                     if (event_choice_unlocked(_ev.choices[_ti])) {
                         if (_ti != event_cursor) event_cursor = _ti;
                         else                     touch_press(vk_enter);

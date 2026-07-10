@@ -220,6 +220,9 @@ global.__sprite_includes = [
     spr_icon_rune_anchor,
     spr_icon_rune_quickcast,
     spr_icon_rune_echo,
+    // Cascade/Bastion flagship gems (2026-07-10 D SS4 round) - same string-ref path.
+    spr_icon_rune_cascade,
+    spr_icon_rune_bastion,
     // NPC actor sprites (idle + action) - drawn via asset_get_index("spr_npc_<id>_..")
     // strings, so they need a hard reference here or the compiler strips them.
     spr_npc_dorn_idle,   spr_npc_dorn_action,
@@ -968,6 +971,7 @@ sable_notification = "";
 // the player owns a pet (bairc_active()); dormant before that. See PETS_DESIGN.md.
 bairc_open         = false;
 bairc_cursor       = 0;
+bairc_feed_page    = 0;        // feed-pouch page (6 hotkey rows per page, [A]/[D] flip)
 bairc_notification = "";
 bairc_detail_open  = false;   // Tab pet-kit detail popup over the station
 companion_detail_open = false; // Tab pet-kit detail popup over the Gate Companion tab

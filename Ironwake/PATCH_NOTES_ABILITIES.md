@@ -97,3 +97,92 @@ apply) → slot them → in combat: Blazing Palm logs "+1 Soul."; Gravewrack Gri
 misses, the enemy shows Rooted and a melee enemy skips its turn; Soul Rend with 2+
 Souls logs "consumes 2 Souls (+16 dmg)" and the hit preview includes the bonus;
 while Rooted, a detonator (e.g. Arcane Burst) on that target logs the shatter (+30%).
+
+## AP-COST TRUTH + SOUL CLARITY (2026-07-09 batch)
+
+**The Singularity bug (M 07-09):** the button pips, the "can I cast it" gate and
+the actual AP spend each computed the discount stack DIFFERENTLY. The gate knew
+synergy + Quickcast; the spend also applied Cracked Focus and Gatewarden's Brand;
+the pips showed synergy only. Result: a Singularity that would really cost 1 AP
+was refused at 1 AP with "Not enough resources."
+
+| What | Was | Now |
+|---|---|---|
+| Cost source of truth | 3 divergent computations | `ability_effective_cost` folds in synergy + Quickcast + Cracked Focus + Brand; the pips, the gate and the spend all read it. |
+| Cost pips | Discounted count only (a 3-AP spell read as "2 AP ability") | BASE-cost pips always drawn; discount-waived pips are hollow struck-green ("you're not paying these"). |
+| Refusal message | "Not enough resources." | Names the gap: "Singularity needs 2 AP - you have 1." / "... needs 3 Souls - you have 2." |
+| First-spell charges | Quickcast/Cracked Focus burned even when they saved nothing | Only consumed when they actually lower the cost. |
+| **Arcane Surge** | (verified, no change) | Keys off BASE cost ≥3, so a synergy-discounted Singularity still gets +25%. Preview matches. |
+| **Soulfire "+4 Souls"** | On-kill class passive logged as "Soul Harvest" — colliding with the ABILITY named Soul Harvest; Void Drain's +1 was silent | Kill line now reads "Arcanist passive: +2 Souls on the kill."; Void Drain logs its +1; new compendium "Class Resources" section documents all three class passives. |
+| Crit sources | Unstated whether gear crit was phys-only | Compendium now states: gear "+X% crit" feeds ALL four crit types; only "Spell crit" sources are spell-only. (Bug: Flurry's per-strike rolls dropped Shadow Sickle's bonus — fixed.) |
+
+**F5 checks:** cast two same-category spells with 1 AP left — the second's pips
+show struck-green waived pips and it casts if (and only if) the gate says so; kill
+with Soulfire → two labeled +2 lines (spell, then Arcanist passive); Void Drain
+logs "+1 Soul."; try an unaffordable cast → the log names the missing resource.
+DoT kills still do NOT trigger the Arcanist on-kill +2 (pre-existing; flagged as a
+design question, not changed).
+
+## BALANCE PROGRAM WAVE 1 (2026-07-09 late) — C1-C7 + D§3 reworks, all M-approved
+
+**Difficulty & reward loop:** Awakening behavior ladder (A2+ +15% enemy ability use, A3+
+smart control + mends the worst-hurt ALLY, A4+ +1 elite/floor + debuff diversity, A5 boss
+ENRAGE +10%/round past 6) + top-end stat bump (A4 HP x2.20, A5 x2.75/x2.45); steeper A5
+loot anchors (legendaries off mobs/elites now exist); **Awakening XP mult [1.0..2.0] — XP
+never scaled with tier before; this was the "stuck at level 8" root cause.**
+
+**Pets:** Executioner +100% below 30% + SLAYS non-elite/non-boss under 15%; 7 new kit
+entries — Charmed (+3% all crit, LCK-scaled), Fate's Coin (once/combat lethal save at 1 HP,
+fires before Last Stand), Sharp Eye (+10% event checks, shrine boons -15% via
+shrine_boon_price single-source), Opportunist (pet strike DETONATES a carried status,
++35%), Bloodscent (second strike at half vs bleeding), Bodyguard (Guardian intercepts 40%
+in ANY stance, pays +25% — ADAPTED: guardians have no guarded stance), Lifespring (heal
+also cleanses, once/combat).
+
+**Aspects:** Echo BLURB fixed (mechanic was already the 50% echo); NEW flagships Cascade
+(kills refund 1 resource; unlock 25 boss kills) + Bastion (start combat +8 shield; unlock
+20 full clears — ADAPTED from "60 floors" onto the existing counter); locked recipes show
+greyed at Maren with their condition.
+
+**D§3 reworks:** Sanguine Pact = Blood->shield dump (3 Blood -> 6 each); Soul Shield +3 per
+Soul HELD; Smoke Bomb also cloaks YOU (+15% dodge, SMK chip); Marked for Death = "+30% from
+ALL sources below half HP" (universal-sink hook, so pets and DoTs count). **Curse and
+Entropy needed NO mechanics change — both had already been reworked in earlier audits and
+only stale text/analysis said otherwise.**
+
+**Onboarding:** bond_gates + corruption_101 coach-marks (roster/gate polls); Compendium
+gained Companions + Townsfolk sections; NPC bond header now shows the active gate quest's
+objective + progress inline.
+
+**F5 checklist:** A5 dungeon-select panel shows XP/loot/behavior lines; kill at A1+ logs
+scaled XP; a marked enemy under half HP takes visibly more from a pet strike/DoT; Smoke
+Bomb shows SMK chip and enemies whiff more; Sanguine Pact logs the ward; Soul Shield with 4
+Souls logs 22 absorb; new capstones appear in the Bairc [G] picker (4 options/archetype);
+Maren Forge lists 4 flagships, 2 greyed with conditions; corrupt pet in roster fires the
+corruption tip once.
+
+## D§4 GAP-FILLER WAVE (2026-07-09 late) — 7 NEW ABILITIES, M-approved
+
+All Vex-purchasable; icons show a blank badge until the PixelLab round.
+
+| Ability | Class / Cost | Vex | What it does |
+|---|---|---|---|
+| **Hoarfrost Lance** | Arcanist, 2 AP | 400g | 16 Frost + Chilled 2t (target -30% dmg; detonators SHATTER the chill for +30% — the existing frost reaction). |
+| **Glacial Ward** | Arcanist, 1 AP | 250g | 8 shield; melee enemies that land a blow this turn are Chilled. GLW chip. |
+| **Static Arc** | Arcanist, 1 AP | 250g | 9 Shock, chains 50% of dealt damage to one other enemy — to ALL others if the target was already Shocked. |
+| **Soul Engine** | Arcanist, 2 AP | 500g | Once/combat, combat-long: spells +3 per full turn elapsed. ENG chip shows the live bonus; hit preview includes it. |
+| **Galvanize** | Bloodwarden, 2 AP | 400g | Melee spell, 12 Shock; a killing blow banks +1 AP next turn. |
+| **Winter's Bite** | Shadowstrider, 1 AP + 1 Prep | 250g | Melee spell, 9 Frost; vs a CHILLED target +9 and the Prep refunds. |
+| **Devil's Flip** | General, 1 AP | 100g | Coin flip: heads = selected target takes 26 (phys-mitigated); tails = YOU take 8 (lethal gate applies). EV = Strike. |
+
+Frost/shock ride the EXISTING status plumbing (Chilled = frost-element weaken, shatter =
+the frost detonation; Shocked = the weapon-affix shock status). Winter's Bite + Galvanize
+are melee SPELLS (Blazing Palm precedent: root-blocked, silence-blocked, melee weapon flat
+damage rides along).
+
+**F5 checks:** buy all 7 at Vex (prices above); Hoarfrost then Arcane Burst logs the
+shatter; Glacial Ward chip + a melee attacker logs "Chilled by the Glacial Ward"; Static
+Arc into a shock-affix-statused target chains to everyone; Soul Engine on turn 1, then a
+turn-4 Soulfire previews and deals +9 more; Galvanize kill → next turn shows 4 AP; Winter's
+Bite on a chilled foe logs +9 and the Prep back; Devil's Flip logs HEADS or TAILS and the
+right victim. New abilities show blank icon badges (PixelLab round queued).

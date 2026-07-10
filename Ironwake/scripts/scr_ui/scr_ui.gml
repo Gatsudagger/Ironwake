@@ -887,6 +887,11 @@ function ui_ability_icon_sprite(ability) {
         case "Blazing Palm":     return spr_ability_blazing_palm;
         case "Gravewrack Grip":  return spr_ability_gravewrack_grip;
         case "Soul Rend":        return spr_ability_soul_rend;
+        // --- D SS4 frost/shock/ramp kit (2026-07-10) ---
+        case "Hoarfrost Lance":  return spr_ability_hoarfrost_lance;
+        case "Glacial Ward":     return spr_ability_glacial_ward;
+        case "Static Arc":       return spr_ability_static_arc;
+        case "Soul Engine":      return spr_ability_soul_engine;
         // --- Bloodwarden ---
         case "Blood Leech":      return spr_ability_blood_leech;
         case "Iron Skin":        return spr_ability_iron_skin;
@@ -898,6 +903,7 @@ function ui_ability_icon_sprite(ability) {
         case "Undying":          return spr_ability_undying;
         case "Plague Touch":     return spr_ability_plague_touch;
         case "Bloodfeast":       return spr_ability_bloodfeast;
+        case "Galvanize":        return spr_ability_galvanize;   // D SS4 2026-07-10
         // --- Shadowstrider ---
         case "Snipe":            return spr_ability_snipe;
         case "Bear Trap":        return spr_ability_bear_trap;
@@ -909,6 +915,7 @@ function ui_ability_icon_sprite(ability) {
         case "Marked for Death": return spr_ability_marked_for_death;
         case "Evasive Roll":     return spr_ability_evasive_roll;
         case "Death Snare":      return spr_ability_death_snare;
+        case "Winter's Bite":    return spr_ability_winters_bite; // D SS4 2026-07-10
         // --- General ---
         case "Strike":           return spr_ability_strike;
         case "Field Dressing":   return spr_ability_field_dressing;
@@ -929,6 +936,7 @@ function ui_ability_icon_sprite(ability) {
         case "Rupture":          return spr_ability_rupture;
         case "Throat Slit":      return spr_ability_throat_slit;
         case "Assassinate":      return spr_ability_assassinate;
+        case "Devil's Flip":     return spr_ability_devils_flip;  // D SS4 2026-07-10
     }
     return -1;
 }
@@ -2055,8 +2063,22 @@ function ui_draw_tavern_board() {
         draw_set_font(fnt_ui); draw_set_color(make_color_rgb(160, 140, 115));
         draw_text(_lx, _qy, "The board is bare.");
     }
+    // Windowed list (M 07-09 screenshot: with 7+ notes the last row ran under the
+    // key-legend footer). 6 notes + their group headers fit between the subtitle
+    // and the footer band; the window follows the cursor, drawn-triangle
+    // indicators show what's clipped.
+    var _bl_vis   = 6;
+    var _bl_first = ui_list_window_first(_cur, _n, _bl_vis);
+    var _bl_last  = min(_n, _bl_first + _bl_vis);
+    if (_bl_first > 0) {
+        draw_set_font(fnt_ui_small);
+        draw_set_color(make_color_rgb(190, 170, 130));
+        draw_set_halign(fa_right);
+        ui_draw_scroll_more(_rx, _qy - 27, true, string(_bl_first) + " more");
+        draw_set_halign(fa_left);
+    }
     var _last_status = "";
-    for (var _i = 0; _i < _n; _i++) {
+    for (var _i = _bl_first; _i < _bl_last; _i++) {
         var _qid = _rows[_i];
         var _qd  = quest_def(_qid);
         var _qs  = quest_state(_qid);
@@ -2121,6 +2143,13 @@ function ui_draw_tavern_board() {
             draw_circle(_rx + 2, _qy + 60, 7, false);
         }
         _qy += 108;
+    }
+    if (_bl_last < _n) {
+        draw_set_font(fnt_ui_small);
+        draw_set_color(make_color_rgb(190, 170, 130));
+        draw_set_halign(fa_right);
+        ui_draw_scroll_more(_rx, _qy + 3, false, string(_n - _bl_last) + " more");
+        draw_set_halign(fa_left);
     }
 
     // Feedback + footer.
@@ -2450,6 +2479,49 @@ function ui_draw_pet_stat_tooltip(mx, my, pet, which) {
 // Three compact PWR/SPR/LCK chips (governing stat gold, hovered chip's border lightens).
 // Returns the stat key under the mouse ("" if none) so the CALLER can pop
 // ui_draw_pet_stat_tooltip after everything else - tooltips must draw last.
+// ---------------------------------------------------------------------------
+// ui_draw_pet_corruption_fx(pet, spr, frame, x, y, xs, ys, cx, cy)
+// Code-drawn corruption dressing layered over a pet sprite (07-09 art track):
+//   pushing   - an irregular violet flicker (the corruption gnawing at it)
+//   fulfilled - a steady dark-violet aura + slow orbiting motes (grand power)
+// x/y/xs/ys = the exact transform the base sprite was drawn with (the tint
+// layers redraw the sprite, so they self-align at any site); cx/cy = the body
+// CENTER the caller knows (feet-anchored sites pass feet_y - height/2), used
+// only for the orbiting motes. No-op for uncorrupted pets. Caller's blendmode
+// and alpha are restored.
+// ---------------------------------------------------------------------------
+function ui_draw_pet_corruption_fx(pet, spr, frame, x, y, xs, ys, cx, cy) {
+    var _cst = pet_corr_state(pet);
+    if (_cst != "pushing" && _cst != "fulfilled") return;
+    var _t   = current_time / 1000;
+    var _vio = make_color_rgb(165, 70, 210);
+    gpu_set_blendmode(bm_add);
+    if (_cst == "pushing") {
+        // Mostly dormant, surging every couple of seconds - reads as "unstable".
+        var _fk = sin(_t * 3.1) * sin(_t * 1.7 + 1.3);
+        if (_fk > 0.55) {
+            draw_sprite_ext(spr, frame, x, y, xs, ys, 0, _vio, 0.30 * ((_fk - 0.55) / 0.45));
+        }
+    } else {
+        // Fulfilled: the corruption owns it. Steady aura...
+        var _pl = 0.22 + 0.10 * sin(_t * 2.4);
+        draw_sprite_ext(spr, frame, x, y + 2, xs * 1.10, ys * 1.10, 0, _vio, _pl);
+        draw_sprite_ext(spr, frame, x, y, xs * 1.04, ys * 1.04, 0, _vio, _pl * 0.8);
+        // ...plus slow orbiting motes around the body center.
+        var _orb_r = max(24, sprite_get_height(spr) * ys * 0.42);
+        for (var _mi = 0; _mi < 5; _mi++) {
+            var _ma = _t * (0.8 + 0.15 * _mi) + _mi * 1.2566;   // 2pi/5 spacing
+            var _mx = cx + cos(_ma) * _orb_r;
+            var _my = cy + sin(_ma) * _orb_r * 0.45;            // flattened orbit
+            draw_set_alpha(0.35 + 0.20 * sin(_t * 3 + _mi));
+            draw_set_color(_vio);
+            draw_circle(_mx, _my, 2.5, false);
+        }
+        draw_set_alpha(1.0);
+    }
+    gpu_set_blendmode(bm_normal);
+}
+
 function ui_draw_pet_stat_chips(_x, _y, _pet, _chip_w, _chip_h) {
     var _pri  = pet_stat_primary(_pet.archetype);
     var _keys = ["pow", "spr", "lck"];
@@ -2613,7 +2685,10 @@ function ui_draw_bairc_screen() {
             if (_regl != "") _l2 += "  -  " + _regl;
             _l2 += pet_injury_tag(_pet) + pet_corruption_tag(_pet);
         }
-        draw_text(_tx, _ry + 40, _l2);
+        // Truncate against the stage pill / ACTIVE tag on the right - a long tag
+        // cluster ("Fortune - Vital Egg [CORRUPTING 1/3]") ran into both (M 07-09).
+        var _l2_lim = min(_pl_x0, _list_x + _list_w - 12 - (_is_active ? string_width("ACTIVE") + 18 : 0));
+        draw_text(_tx, _ry + 40, ui_truncate(_l2, _l2_lim - _tx));
     }
 
     // Touch (8d, M 07-08 "cant hatch egg"): tap a roster row to select it; tap
@@ -2729,6 +2804,9 @@ function ui_draw_bairc_screen() {
                 gpu_set_blendmode(bm_normal);
             }
             draw_sprite_ext(_psp, pet_anim_frame(_psp), _pfit.x, _pfit.y, _psc, _psc, 0, c_white, 1);
+            // Corruption dressing (07-09 art track): flicker / dark aura + motes.
+            ui_draw_pet_corruption_fx(_p, _psp, pet_anim_frame(_psp),
+                _pfit.x, _pfit.y, _psc, _psc, _spx, _spb - _th * 0.5);
         } else {
             draw_set_color(make_color_rgb(28, 32, 44));
             draw_rectangle(_spx - 48, _spb - 92, _spx + 48, _spb, false);
@@ -2752,13 +2830,11 @@ function ui_draw_bairc_screen() {
                 ["Species:",    pet_species_get(_p.species).name,                         make_color_rgb(220, 226, 238)],
                 ["Type:",       pet_archetype_name(_p.archetype),                         pet_arch_color(_p.archetype)],
                 // Hunger rides the Life Stage row (07-08): state + meter, colored by
-                // severity so a starving pet reads at a glance.
+                // severity so a starving pet reads at a glance. HP moved OFF this row
+                // to the stat-chip band (M 07-09: the row ran under the sprite).
                 ["Life Stage:", _p.is_egg ? "Egg (unhatched)"
                     : (pet_stage_name(_p.stage) + "   -   " + pet_hunger_state_label(_p)
-                       + " (" + string(pet_hunger(_p)) + "/100)"
-                       // #20 HP pool rides the same row; a knocked-out pet says so.
-                       + "   -   " + ((pet_hp(_p) <= 0) ? "KO"
-                           : ("HP " + string(pet_hp(_p)) + "/" + string(pet_max_hp(_p))))),
+                       + " (" + string(pet_hunger(_p)) + "/100)"),
                  // GML requires nested ternaries fully parenthesized - a bare
                  // a ? b : c ? d : e chain is a compile error.
                  (_p.is_egg ? make_color_rgb(228, 190, 90)
@@ -2771,7 +2847,9 @@ function ui_draw_bairc_screen() {
             draw_set_color(make_color_rgb(150, 160, 185));
             draw_text(_dx, _dy + 76 + _ri * 30, _idr[_ri][0]);
             draw_set_color(_idr[_ri][2]);
-            draw_text(_dx + 158, _dy + 76 + _ri * 30, _idr[_ri][1]);
+            // Truncated against the sprite's corner of the profile box (M 07-09:
+            // long stage+hunger values ran under the creature art).
+            draw_text(_dx + 158, _dy + 76 + _ri * 30, ui_truncate(_idr[_ri][1], (_dw - 190) - 158));
         }
         // Hovering the Type value explains what that type DOES (M 07-08: e.g.
         // Boon - "grants passive boons, never fights"). Reuses the growth-bar
@@ -2840,9 +2918,16 @@ function ui_draw_bairc_screen() {
             draw_set_color(make_color_rgb(140, 132, 150));
             // Name the scale explicitly: "9 / 10" read as nine-of-ten TOTAL bond while
             // Awakened asks for "bond 18" on the same total scale (M 07-08 confusion).
+            // The "(deepens on survived runs)" suffix moved to a HOVER tooltip - it
+            // collided with the frame/sprite on the right (M 07-09). The "(hover)"
+            // nudge marks that there's more to read, same idiom as the growth bar.
             draw_text(_bpx + 3 * 27 + 16, _dy + 224, (_bnext > 0)
-                ? ("total " + string(pet_bond(_p)) + "  -  " + pet_bond_tier_name(_bt + 1) + " at " + string(_bnext) + "  (deepens on survived runs)")
+                ? ("total " + string(pet_bond(_p)) + "  -  " + pet_bond_tier_name(_bt + 1) + " at " + string(_bnext) + "  (hover)")
                 : "its heart is yours entirely");
+            var _bhx = device_mouse_x_to_gui(0), _bhy = device_mouse_y_to_gui(0);
+            if (_bhx >= _dx && _bhx <= _dx + _dw - 190 && _bhy >= _dy + 220 && _bhy <= _dy + 252) {
+                _growth_hover_txt = "Bond deepens by +1 on each survived run with it as your ACTIVE companion (ending the run with a full belly adds another +1). Treats add bond directly, up to 2 per run. Devoted at 10; Soul-bound at 18.";
+            }
         } else {
             // Eggs: what the creature inside will do, in the growth/bond rows' place.
             draw_set_color(make_color_rgb(180, 188, 206));
@@ -2851,7 +2936,19 @@ function ui_draw_bairc_screen() {
 
         // Stat chips (PWR/SPR/LCK, governing gold). Hovering one explains it - the
         // tooltip itself draws at the end of the screen so nothing overdraws it.
-        if (!_p.is_egg) _stat_hover = ui_draw_pet_stat_chips(_dx, _dy + 266, _p, 128, 42);
+        if (!_p.is_egg) {
+            _stat_hover = ui_draw_pet_stat_chips(_dx, _dy + 266, _p, 128, 42);
+            // HP lives with the stats now (M 07-09: it rode the Life Stage row and
+            // ran under the sprite). Red when knocked out.
+            draw_set_font(fnt_ui);
+            if (pet_hp(_p) <= 0) {
+                draw_set_color(make_color_rgb(230, 95, 85));
+                draw_text(_dx + 3 * 140 + 24, _dy + 274, "HP 0/" + string(pet_max_hp(_p)) + "  KO");
+            } else {
+                draw_set_color(make_color_rgb(140, 205, 150));
+                draw_text(_dx + 3 * 140 + 24, _dy + 274, "HP " + string(pet_hp(_p)) + "/" + string(pet_max_hp(_p)));
+            }
+        }
 
         // ---- GRANTS box: what this creature does for you - type gift, egg gift,
         // corruption state, origin, signature kinship. A plain labelled header (no
@@ -2967,16 +3064,32 @@ function ui_draw_bairc_screen() {
             }
             // Fit as many 54px rows as the box allows (max 6 = the hotkey range),
             // reserving a line for the overflow note when the pouch is deeper.
-            var _avail = _fy1 - _rows_y - 10;
-            var _fmax  = min(array_length(_owned), min(6, _avail div 54));
+            // Pouches deeper than one page window on _gc.bairc_feed_page ([A]/[D],
+            // mirrored in the Step handler so hotkey [n] = visible row n).
+            var _avail   = _fy1 - _rows_y - 10;
+            var _fpage   = clamp(_gc.bairc_feed_page, 0, max(0, ceil(array_length(_owned) / 6) - 1));
+            var _fp_off  = _fpage * 6;
+            var _fp_rem  = array_length(_owned) - _fp_off;
+            var _fmax    = min(_fp_rem, min(6, _avail div 54));
             if (array_length(_owned) > _fmax) _fmax = min(_fmax, max(1, (_avail - 30) div 54));
             for (var _fi = 0; _fi < _fmax; _fi++) {
-                var _ff  = _owned[_fi];
+                var _ff  = _owned[_fp_off + _fi];
                 var _cnt = pet_feed_pouch_count(_ff.id);
                 // Species favorites only feed their own species; a match glows gold.
                 var _is_pref = variable_struct_exists(_ff, "species");
                 var _fav     = _is_pref && (_ff.species == _p.species);
-                var _can     = (_cnt > 0) && !_fready && (!_is_pref || _fav);
+                // Edibility mirrors pet_feed_apply EXACTLY (M 07-09: rows greyed on
+                // "growth full" alone, but food still feeds a hungry or hurt pet at
+                // full growth, and treats are bond-only - growth never gates them).
+                var _is_treat = variable_struct_exists(_ff, "bond") && _ff.bond > 0;
+                var _edible;
+                if (_is_treat) {
+                    _edible = (pet_treats_left() > 0);
+                } else {
+                    var _fd_grow_ok = (_p.stage < pet_max_stage()) && !_fready;
+                    _edible = _fd_grow_ok || (pet_hunger(_p) < 100) || (pet_hp(_p) < pet_max_hp(_p));
+                }
+                var _can = (_cnt > 0) && _edible && (!_is_pref || _fav);
                 var _fby = _rows_y + _fi * 54;
                 var _fbh = 48;
                 draw_set_color(_fav && _can ? make_color_rgb(40, 36, 22) : (_can ? make_color_rgb(26, 36, 30) : make_color_rgb(20, 22, 28)));
@@ -3006,10 +3119,13 @@ function ui_draw_bairc_screen() {
                 draw_text(_dx + _dw - 30, _fby + 14, "x" + string(_cnt));
                 draw_set_halign(fa_left);
             }
-            if (array_length(_owned) > _fmax) {
+            if (array_length(_owned) > _fmax || _fpage > 0) {
                 draw_set_font(fnt_ui_small);
-                draw_set_color(make_color_rgb(120, 124, 138));
-                draw_text(_dx, _rows_y + _fmax * 54 + 4, "+" + string(array_length(_owned) - _fmax) + " more in the pouch");
+                draw_set_color(make_color_rgb(150, 160, 140));
+                var _fp_total = max(1, ceil(array_length(_owned) / 6));
+                draw_text(_dx, _rows_y + _fmax * 54 + 4, (_fp_total > 1)
+                    ? ("[A]/[D] page " + string(_fpage + 1) + "/" + string(_fp_total) + "  -  " + string(array_length(_owned) - min(array_length(_owned), _fp_off + _fmax)) + " more in the pouch")
+                    : ("+" + string(array_length(_owned) - _fmax) + " more in the pouch"));
             }
         }
     }
@@ -3963,6 +4079,7 @@ function status_tooltip_desc(se) {
         case "stun":       _base = "Stunned: cannot act."; break;
         case "root":       _base = "Rooted: melee can't reach (ranged still acts)."; break;
         case "silence":    _base = "Silenced: cannot cast spells."; break;
+        case "marked":     _base = "Marked for Death: once below half HP, takes +30% damage from ALL sources."; break;
         case "regen":      _base = "Regenerating: restores " + string(_val) + " HP each turn."; break;
         case "soulbind":   _base = "Soulbound: suffers " + string(round(_val * 100)) + "% of the damage you take, healing you the same. Lasts the whole combat."; break;
         default:           _base = "Active effect."; break;
@@ -4565,12 +4682,16 @@ function ui_draw_ability_buttons(x, y, ability_array, selected_index, caster) {
             continue;
         }
 
-        // Energy cost pips in bottom half - small 12x12 squares. Count is the EFFECTIVE
-        // (synergy-discounted) cost; lit pips turn green when discounted so the saving
-        // pops, yellow otherwise (SYSTEMS_ABILITY_SYNERGY.md).
+        // Energy cost pips in bottom half - small 12x12 squares. BASE cost pips are
+        // always drawn so the real price stays legible; when a discount is active the
+        // waived pips render as hollow green outlines at the end of the row ("you're
+        // not paying these"), and the payable pips light green so the saving pops
+        // (07-09: showing only the discounted count made a synergy-discounted
+        // Singularity read as "2 AP ability" with no hint it was really 3).
         var pip_size = 12;
         var pip_gap  = 5;
-        var pip_count = _eff_cost;   // already floored at 1 for non-free; 0 stays 0 (free)
+        var _base_cost = variable_struct_exists(ab, "energy_cost") ? ab.energy_cost : 0;
+        var pip_count = max(_base_cost, _eff_cost);   // 0 stays 0 (free)
         var pip_total_width = pip_count * (pip_size + pip_gap) - pip_gap;
         var pip_start_x = bx + (btn_width - pip_total_width) / 2;
         var pip_y       = y + btn_height - 21;
@@ -4578,8 +4699,17 @@ function ui_draw_ability_buttons(x, y, ability_array, selected_index, caster) {
 
         for (var p = 0; p < pip_count; p++) {
             var px = pip_start_x + p * (pip_size + pip_gap);
-            // Lit if the caster has enough energy to cover pips up to this one
-            if (p < caster.energy) {
+            if (p >= _eff_cost) {
+                // Discount-waived pip: hollow green outline, full alpha so it reads
+                // even on a dimmed button. Part of the base price, not paid this cast.
+                var _pip_prev_a2 = draw_get_alpha();
+                draw_set_alpha(1.0);
+                draw_set_color(make_color_rgb(120, 230, 140));
+                draw_rectangle(px, pip_y, px + pip_size, pip_y + pip_size, true);
+                draw_line(px, pip_y + pip_size, px + pip_size, pip_y);   // struck through
+                draw_set_alpha(_pip_prev_a2);
+            } else if (p < caster.energy) {
+                // Lit if the caster has enough energy to cover pips up to this one
                 draw_set_color(_lit_color);
                 draw_rectangle(px, pip_y, px + pip_size, pip_y + pip_size, false);
             } else {
@@ -6038,6 +6168,34 @@ function ui_draw_combat_hud(combat_state, player, ability_array, selected_abilit
         draw_set_font(-1);
     }
 
+    // --- Active pet HP (below the level/XP block) ---
+    // M 07-09: the over-head chip was awkward and hard to read - the companion's
+    // vitals now live under the player's, as a slightly smaller green HP bar (same
+    // widget as the player bar). Guard state + [G] toggle hint sit beside it for
+    // guarded-stance Combatants. Buff icons/boons shift down while it's shown.
+    var _hud_pet      = pet_active();
+    var _hud_pet_show = (_hud_pet != undefined && !_hud_pet.is_egg);
+    if (_hud_pet_show) {
+        ui_draw_hp_bar(30, 234, 280, 26, pet_hp(_hud_pet), pet_max_hp(_hud_pet), "PET");
+        if (_hud_pet.archetype == PET_ARCH_COMBATANT && pet_stance(_hud_pet) == "guarded") {
+            draw_set_font(fnt_ui_small);
+            draw_set_halign(fa_left);
+            draw_set_valign(fa_middle);
+            if (pet_hp(_hud_pet) <= 0) {
+                draw_set_color(make_color_rgb(230, 95, 85));
+                draw_text(322, 248, "DOWN");
+            } else if (pet_guard_off(_hud_pet)) {
+                draw_set_color(make_color_rgb(150, 156, 175));
+                draw_text(322, 248, "CALLED OFF  [G]");
+            } else {
+                draw_set_color(make_color_rgb(140, 205, 150));
+                draw_text(322, 248, "GUARDING  [G]");
+            }
+            draw_set_valign(fa_top);
+            draw_set_font(-1);
+        }
+    }
+
     // --- Active player buff icons (below XP bar) ---
     // Each carries an `se` descriptor (name + one-line desc + duration noun + colour) so
     // it hover-explains itself like the typed debuff badges do. These buffs live on the
@@ -6085,6 +6243,39 @@ function ui_draw_combat_hud(combat_state, player, ability_array, selected_abilit
                   desc: "Vanished: a chance to completely avoid each incoming attack (scales with Wisdom); your next strike also deals bonus damage." }
         });
     }
+    if (variable_struct_exists(player, "soul_engine_active") && player.soul_engine_active) {
+        var _eng_col   = make_color_rgb(180, 120, 235);
+        var _eng_round = variable_struct_exists(player, "soul_engine_round") ? player.soul_engine_round : 0;
+        var _eng_now   = variable_struct_exists(combat_state, "round") ? combat_state.round : _eng_round;
+        var _eng_bonus = 3 * max(0, _eng_now - _eng_round);
+        array_push(_pbuffs, {
+            label:    "ENG",
+            color:    _eng_col,
+            duration: max(0, _eng_now - _eng_round),
+            se: { name: "Soul Engine", color: _eng_col, duration: max(0, _eng_now - _eng_round), dur_noun: "turn",
+                  desc: "Soul Engine: your spells currently deal +" + string(_eng_bonus) + " (grows +3 every turn, whole combat)." }
+        });
+    }
+    if (variable_struct_exists(player, "glacial_ward_turns") && player.glacial_ward_turns > 0) {
+        var _glw_col = make_color_rgb(140, 200, 235);
+        array_push(_pbuffs, {
+            label:    "GLW",
+            color:    _glw_col,
+            duration: player.glacial_ward_turns,
+            se: { name: "Glacial Ward", color: _glw_col, duration: player.glacial_ward_turns, dur_noun: "turn",
+                  desc: "Glacial Ward: melee enemies that strike you are Chilled (-30% damage; detonators shatter it)." }
+        });
+    }
+    if (variable_struct_exists(player, "smoke_dodge_turns") && player.smoke_dodge_turns > 0) {
+        var _smk_col = make_color_rgb(140, 145, 160);
+        array_push(_pbuffs, {
+            label:    "SMK",
+            color:    _smk_col,
+            duration: player.smoke_dodge_turns,
+            se: { name: "Smoke Cover", color: _smk_col, duration: player.smoke_dodge_turns, dur_noun: "turn",
+                  desc: "Smoke Cover: the smoke hides you too - +15% dodge while it lingers." }
+        });
+    }
     if (variable_struct_exists(player, "shadow_step_charges") && player.shadow_step_charges > 0) {
         var _ss_col = make_color_rgb(45, 155, 65);
         array_push(_pbuffs, {
@@ -6102,15 +6293,18 @@ function ui_draw_combat_hud(combat_state, player, ability_array, selected_abilit
         var _pstat = status_icons_from(player.status_effects);
         for (var _psi = 0; _psi < array_length(_pstat); _psi++) array_push(_pbuffs, _pstat[_psi]);
     }
+    // Rows below the level block slide down by the pet bar's height when it's shown
+    // (constant for a whole combat - the active pet can't change mid-fight).
+    var _hud_shift = _hud_pet_show ? 54 : 0;
     if (array_length(_pbuffs) > 0) {
-        ui_draw_status_icon_row(30, 222, _pbuffs);
+        ui_draw_status_icon_row(30, 222 + _hud_shift, _pbuffs);
     }
 
     // --- Active run boons + curses (left column, below the per-combat buff row) ---
     // Boons occupy a header (24px) + 27px per entry; stack curses just beneath them.
-    ui_draw_active_boons(30, 278);
+    ui_draw_active_boons(30, 278 + _hud_shift);
     var _boon_n = variable_global_exists("run_boons") ? array_length(global.run_boons) : 0;
-    var _curse_y = 278 + ((_boon_n > 0) ? (24 + 27 * _boon_n + 12) : 0);
+    var _curse_y = 278 + _hud_shift + ((_boon_n > 0) ? (24 + 27 * _boon_n + 12) : 0);
     ui_draw_active_curses(30, _curse_y);
 
     // --- Ability buttons (bottom-center) ---
@@ -6524,6 +6718,15 @@ function ui_compendium_sections() {
             ],
         },
         {
+            title: "Class Resources",
+            entries: [
+                { term: "What they are", text: "Each class banks a SECONDARY resource (cap 10) alongside AP. Generator abilities build it, payoff abilities spend it. Your bank carries between fights on the same floor - AP resets, the resource doesn't." },
+                { term: "Souls (Arcanist)", text: "Built two ways: soul-generating spells (each states its gain - Soulfire +2, Void Drain +1, Scorch and Blazing Palm +1), and the Arcanist CLASS PASSIVE - +2 Souls every time one of your hits kills an enemy. Both can land in the same cast: a killing Soulfire logs +2 for the spell AND +2 for the kill. Spent by Arcane Burst, Soul Nova, Arcane Echo, Singularity and Soul Rend." },
+                { term: "Blood (Bloodwarden)", text: "Built through bloodshed: +1 Blood each time YOU take a hit (class passive), plus blood-feeding abilities like Blood Leech. Spent by your crimson payoffs - many also cost HP, so the reserve is life you've set aside." },
+                { term: "Preparation (Shadowstrider)", text: "+1 Preparation at the start of each of your turns while no trap of yours is armed (class passive), plus refunds from clean plays like Evasive Roll. Spent to power traps and executes." },
+            ],
+        },
+        {
             title: "Ability Synergy",
             entries: [
                 { term: "Role Categories", text: "Every ability has a role: OFFENSE (deal damage), DEFENSE (protect yourself), SUPPORT (heal / buff / resource) or CONTROL (debuff / crowd-control). Buttons and ability rows are colour-coded - offense red, defense blue, support green, control purple." },
@@ -6538,7 +6741,8 @@ function ui_compendium_sections() {
                 { term: "Accuracy",        text: "First the attacker rolls to connect (its Accuracy, capped 5-99%). A failure is a MISS. Blind lowers Accuracy sharply." },
                 { term: "Dodge",           text: "If an attack connects, the defender rolls their Dodge % to evade it - that's a DODGE (shown separately from a miss). High DEX raises Dodge, with diminishing returns." },
                 { term: "Guaranteed Hit",  text: "Some abilities always land - they ignore accuracy, Dodge and Blind entirely." },
-                { term: "Critical Hits",   text: "A successful crit deals bonus damage. Certain abilities crit more often or for more." },
+                { term: "Critical Hits",   text: "A successful crit deals bonus damage. Every ability rolls ONE of four crit types, each fed by a stat: Power (STR), Precision (DEX), Arcane (INT) or Effect (WIS) - so spells crit off INT, weapon strikes off STR or DEX." },
+                { term: "Crit on gear",    text: "\"+X% crit\" from gear affixes and Keen runes is added to ALL crit rolls - physical, spell and effect alike. Only sources that SAY \"Spell crit\" (like the Surge rune aspect) are spell-only. The four Crit rows on your character sheet already include your gear bonus." },
             ],
         },
         {
@@ -6558,6 +6762,24 @@ function ui_compendium_sections() {
                 { term: "Epic",      text: "Strong, multi-affix gear that can anchor a build." },
                 { term: "Legendary", text: "Hand-crafted uniques with build-defining powers. The rarest drops." },
                 { term: "Requirements", text: "Rare and better weapons and heavy armor demand a minimum stat (STR/DEX/INT/CON) to wield - a greatsword needs STR, a bow needs DEX, a focus needs INT. If you don't meet it, the item can't be equipped; the requirement shows in red on its tooltip." },
+            ],
+        },
+        {
+            title: "Companions",
+            entries: [
+                { term: "Life & care", text: "Creatures grow through five stages (Hatchling to Awakened) by completing runs as your ACTIVE companion with a full growth bar (feed fills it). They have HUNGER (a well-fed pet banks growth; a starving one is benched) and an HP pool - intercepted blows hurt them, and at 0 HP they are injured and benched for the run. Food heals and feeds; treats deepen bond (2 per run)." },
+                { term: "Bond", text: "Bond deepens by +1 per survived run with it active (+1 more ending the run well-fed); treats add more. Devoted at 10, Soul-bound at 18 - Soul-bound is required for the Awakened crossing (full clear at Awakening 5)." },
+                { term: "Types", text: "FORTUNE grants passive boons (gold, loot find, luck) and never fights. WARRIOR strikes an enemy every turn and has stances (Aggressive / Guarded / Assist). GUARDIAN heals and shields you (Balanced / Mender / Warder / Cleanser stances)." },
+                { term: "Gifts", text: "A raised creature makes exactly TWO permanent picks: its Stage-3 CAPSTONE (choose at Bairc's when it reaches Adult) and its Stage-4 AWAKENED SPLASH (one effect borrowed from a DIFFERENT type). Pending picks never expire - Bairc holds them until you choose. Wild-caught creatures roll theirs." },
+                { term: "Corruption", text: "A corrupted creature PUSHES for 3 survived runs as your active companion: you pay -20% max HP and -10% damage while it pushes, and it gains a permanent +15% to its passive per run. CURE at Bairc's any time = keep the gains, lose the grand power. Fully corrupted = its passive is +45% forever, the burden ends, and it gains a grand boon: Fortune pays extra gold and loot find, a Warrior's strike becomes a cleave against ALL enemies, a Guardian heals AND shields every turn." },
+            ],
+        },
+        {
+            title: "Townsfolk",
+            entries: [
+                { term: "Affinity", text: "Camp folk remember you. Trading, feeding, gifting and quests all deepen affinity; gifts they LIKE or LOVE count for more. Higher tiers unlock each vendor's personal perks (discounts, extra stock, services)." },
+                { term: "Gates", text: "Past Acquaintance, each new tier is a GATE: crossing takes a FAVOR - a gate quest posted on the tavern board. Finish it, then deepen the bond with them in camp." },
+                { term: "Neglect & limits", text: "Friendships DECAY if ignored for many runs, and only a limited number of townsfolk can hold the deepest tiers at once - deepening one may demote another. Betrayal (robbing the one who trusts you) is remembered hardest of all." },
             ],
         },
     ];
@@ -7979,8 +8201,20 @@ function ui_draw_npc_bond(npc_id, x, y) {
     draw_set_color(make_color_rgb(210, 190, 130));
     draw_text(x, y, "Bond: " + affinity_tier_name(npc_id));
     if (_rdy) {
-        draw_set_color(c_aqua);
-        draw_text(x + 210, y, "Ready - [B] Deepen");
+        // C7 (M-approved 07-09): the owed FAVOR shows right here - objective +
+        // progress while the gate quest runs, "[B] Deepen" once it's done/unstarted.
+        var _gq = npc_active_gate_quest(npc_id);
+        if (_gq != undefined && _gq.state.progress < _gq.def.obj_target) {
+            draw_set_color(make_color_rgb(150, 200, 230));
+            draw_text(x + 210, y, ui_truncate("Favor: " + _gq.def.objective
+                + "  (" + string(min(_gq.state.progress, _gq.def.obj_target)) + "/" + string(_gq.def.obj_target) + ")", 470));
+        } else if (_gq != undefined) {
+            draw_set_color(c_aqua);
+            draw_text(x + 210, y, "Favor done - [B] Deepen");
+        } else {
+            draw_set_color(c_aqua);
+            draw_text(x + 210, y, "Ready - [B] Deepen");
+        }
     } else if (_tier < 4) {
         var _bx = x + 210, _by = y + 6, _bw = 220, _bh = 12;
         draw_set_color(make_color_rgb(40, 44, 56));
@@ -8198,32 +8432,13 @@ function ui_draw_shop_screen() {
     // =========================================================================
     if (_gc.shop_tab == 1) {
 
-        // Build the sell list: stash equipment -> stash consumables -> carried equipment -> carried consumables.
-        // global.inventory[] (equipped slots) is excluded entirely.
-        var _sl_items = [];
-        var _sl_src   = [];
-        var _sl_tags  = [];
-
-        for (var _i = 0; _i < array_length(global.equipment_stash); _i++) {
-            array_push(_sl_items, global.equipment_stash[_i]);
-            array_push(_sl_src,   0);
-            array_push(_sl_tags,  "[STASH]");
-        }
-        for (var _i = 0; _i < array_length(global.consumable_stash); _i++) {
-            array_push(_sl_items, global.consumable_stash[_i]);
-            array_push(_sl_src,   1);
-            array_push(_sl_tags,  "[STASH]");
-        }
-        for (var _i = 0; _i < array_length(global.carried_items); _i++) {
-            array_push(_sl_items, global.carried_items[_i]);
-            array_push(_sl_src,   2);
-            array_push(_sl_tags,  "[CARRIED]");
-        }
-        for (var _i = 0; _i < array_length(global.consumable_inventory); _i++) {
-            array_push(_sl_items, global.consumable_inventory[_i]);
-            array_push(_sl_src,   3);
-            array_push(_sl_tags,  "[CARRIED]");
-        }
+        // Sell list via the shared sorted builder (rarity-DESC equipment, then
+        // consumables) - MUST match the Step action handler's list exactly, so both
+        // call shop_build_sell_list(). Equipped slots excluded.
+        var _sl       = shop_build_sell_list();
+        var _sl_items = _sl.items;
+        var _sl_src   = _sl.src;
+        var _sl_tags  = _sl.tags;
         var _sl_count = array_length(_sl_items);
 
         if (_sl_count == 0) {
@@ -8645,7 +8860,7 @@ function ui_draw_shop_screen() {
 
             // Name
             draw_set_font(fnt_ui);
-            draw_set_color(_is_feed ? make_color_rgb(180, 220, 130) : make_color_rgb(80, 210, 210));
+            draw_set_color(_is_feed ? make_color_rgb(180, 220, 130) : ui_consumable_name_color(_it));   // Genie Lamp golds
             draw_text(_rx0 + 90, _ry + 9, _it.name);
 
             // Description / blurb
@@ -8876,7 +9091,7 @@ function ui_draw_consumable_overflow() {
 
         if (_i < array_length(_groups)) {
             ui_draw_consumable_icon(_lx0, _ry - 2, 40, _groups[_i].item);
-            draw_set_color(_is_sel ? make_color_rgb(120, 230, 230) : make_color_rgb(80, 200, 200));
+            draw_set_color(_is_sel ? make_color_rgb(120, 230, 230) : ui_consumable_name_color(_groups[_i].item));   // Genie Lamp golds
             draw_text(_lx0 + 54, _ry + 4, consumable_group_label(_groups[_i]));
         } else {
             ui_draw_consumable_icon(_lx0, _ry - 2, 40, _new);
@@ -9039,7 +9254,7 @@ function ui_draw_stash_screen() {
         draw_rectangle(_lx + 6, _item_y, _lx + _col_w - 6, _item_y + _row_h - 3, false);
         draw_set_alpha(1.0);
 
-        var _col = (_tab == 1) ? make_color_rgb(80, 220, 220) : item_rarity_color(_it.rarity);
+        var _col = (_tab == 1) ? ui_consumable_name_color(_it) : item_rarity_color(_it.rarity);   // Genie Lamp golds on the consumables tab
         if (_tab == 0) ui_draw_item_icon(_lx + 12, _item_y + 8, 30, _it);
         else           ui_draw_consumable_icon(_lx + 12, _item_y + 8, 30, _it);
         var _stl_tx = _lx + 51;
@@ -9100,7 +9315,7 @@ function ui_draw_stash_screen() {
         draw_rectangle(_rx + 6, _item_y, _rx + _col_w - 6, _item_y + _row_h - 3, false);
         draw_set_alpha(1.0);
 
-        var _col = (_tab == 1) ? make_color_rgb(80, 220, 220) : item_rarity_color(_it.rarity);
+        var _col = (_tab == 1) ? ui_consumable_name_color(_it) : item_rarity_color(_it.rarity);   // Genie Lamp golds on the consumables tab
         if (_tab == 0) ui_draw_item_icon(_rx + 12, _item_y + 8, 30, _it);
         else           ui_draw_consumable_icon(_rx + 12, _item_y + 8, 30, _it);
         var _str_tx = _rx + 51;
@@ -10564,11 +10779,21 @@ function ui_draw_maren_screen() {
             for (var _fi = 0; _fi < array_length(_flags); _fi++) {
                 var _tyfl = ui_maren_row(_fi, _fi == _cursor);
                 // Gem icon + name + effect of the tier-III flagship being forged.
+                // Chase recipes (Cascade/Bastion, C6) show GREYED with their unlock
+                // condition until earned - maren_craft_flagship enforces the same gate.
+                var _flock = flagship_unlock_text(_flags[_fi]);
+                if (_flock != "") draw_set_alpha(0.45);
                 ui_draw_rune_entry(_list_x, _tyfl, rune_make(_flags[_fi], 3));
+                draw_set_alpha(1.0);
                 draw_set_halign(fa_right);
                 draw_set_font(fnt_ui_small);
-                draw_set_color(_faff ? make_color_rgb(200, 180, 130) : make_color_rgb(165, 110, 110));
-                draw_text(_list_x2 - 24, _tyfl + 23, string(_fc.gold) + "g  +  " + string(_fc.dust) + " Dust");
+                if (_flock != "") {
+                    draw_set_color(make_color_rgb(205, 120, 100));
+                    draw_text(_list_x2 - 24, _tyfl + 23, _flock);
+                } else {
+                    draw_set_color(_faff ? make_color_rgb(200, 180, 130) : make_color_rgb(165, 110, 110));
+                    draw_text(_list_x2 - 24, _tyfl + 23, string(_fc.gold) + "g  +  " + string(_fc.dust) + " Dust");
+                }
                 draw_set_halign(fa_left);
             }
         }
@@ -11674,8 +11899,11 @@ function ui_draw_item_picker() {
             if (_tk_spr >= 0) {
                 draw_set_color(make_color_rgb(20, 18, 12));
                 draw_rectangle(_dx, _gdy, _dx + 96, _gdy + 96, false);
-                var _tk_sc = 96 / max(1, sprite_get_width(_tk_spr));
-                draw_sprite_ext(_tk_spr, 0, _dx, _gdy, _tk_sc, _tk_sc, 0, c_white, 1.0);
+                // draw_sprite_stretched fills the frame regardless of the sprite's
+                // origin - the old draw_sprite_ext anchored on the sprite ORIGIN, so
+                // trinkets with a centered origin floated outside the box (M 07-09
+                // screenshot: Meteoric Ingot at the frame's top-left corner).
+                draw_sprite_stretched(_tk_spr, 0, _dx + 4, _gdy + 4, 88, 88);
                 draw_set_color(make_color_rgb(255, 200, 80));
                 draw_rectangle(_dx, _gdy, _dx + 96, _gdy + 96, true);
                 _tk_x = _dx + 114;

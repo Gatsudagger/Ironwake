@@ -1023,9 +1023,19 @@ if (_gc_ds != noone && _gc_ds.dungeon_select_open) {
                      "Packs: 4s common, 5s appear",
                      "Packs: 4s common, 5s appear"];
     draw_text(_fxx, _fxy, _fx_packs[_fx_a]); _fxy += 30;
+    // C1 behavior ladder (M-approved 07-09) - one cumulative line, tier-tinted.
+    var _fx_beh = "";
+    if      (_fx_a >= 4) _fx_beh = "Cunning: spread debuffs, no wasted control, +1 elite";
+    else if (_fx_a >= 3) _fx_beh = "Cunning: no wasted control, smart mending";
+    else if (_fx_a >= 2) _fx_beh = "Abilities used more often";
+    if (_fx_beh != "") {
+        draw_set_color(make_color_rgb(230, 160, 90));
+        draw_text(_fxx, _fxy, _fx_beh); _fxy += 30;
+        draw_set_color(make_color_rgb(200, 206, 228));
+    }
     if (_fx_a >= 5) {
         draw_set_color(make_color_rgb(255, 110, 110));
-        draw_text(_fxx, _fxy, "Bosses: +25% HP & damage on top"); _fxy += 30;
+        draw_text(_fxx, _fxy, "Bosses: +25% HP & dmg; ENRAGE past round 6"); _fxy += 30;
     }
     _fxy += 12;
 
@@ -1033,15 +1043,23 @@ if (_gc_ds != noone && _gc_ds.dungeon_select_open) {
     draw_set_color(make_color_rgb(110, 210, 130));
     draw_text(_fxx, _fxy, "REWARDS"); _fxy += 33;
     draw_set_color(make_color_rgb(200, 206, 228));
-    // Loot rarity pips: drop weights lerp from A0 to A5, so tier = filled pips.
-    draw_text(_fxx, _fxy, "Loot rarity:");
-    var _fx_px = _fxx + string_width("Loot rarity:") + 15;
-    for (var _fp = 0; _fp < 5; _fp++) {
-        draw_set_color((_fp < _fx_a) ? make_color_rgb(228, 190, 90) : make_color_rgb(45, 50, 72));
-        draw_rectangle(_fx_px + _fp * 24, _fxy + 5, _fx_px + _fp * 24 + 16, _fxy + 21, false);
-    }
+    // Concrete drop odds from the SAME drop_weights table the loot rolls use
+    // (#14 / M 07-09: show the actual loot increase per tier, not abstract pips).
+    // Rare-or-better and Epic-or-better chance for standard mobs and bosses.
+    var _fx_wstd  = drop_weights("standard", _fx_a);
+    var _fx_wboss = drop_weights("boss", _fx_a);
+    draw_text(_fxx, _fxy, "Rare+ drops: " + string(_fx_wstd[2] + _fx_wstd[3] + _fx_wstd[4])
+        + "% mobs / " + string(_fx_wboss[2] + _fx_wboss[3] + _fx_wboss[4]) + "% bosses");
+    _fxy += 30;
+    draw_text(_fxx, _fxy, "Epic+ drops: " + string(_fx_wstd[3] + _fx_wstd[4])
+        + "% mobs / " + string(_fx_wboss[3] + _fx_wboss[4]) + "% bosses");
     _fxy += 30;
     draw_set_color(make_color_rgb(200, 206, 228));
+    // Awakening XP multiplier (C3): the panel is the single reference for it.
+    if (awaken_xp_mult(_fx_a) > 1.0) {
+        draw_text(_fxx, _fxy, "XP from kills +" + string(round((awaken_xp_mult(_fx_a) - 1) * 100)) + "%");
+        _fxy += 30;
+    }
     draw_text(_fxx, _fxy, "Full-clear bonus: +" + string(awaken_clear_gold_bonus(_fx_a)) + "g");
     _fxy += 30;
     draw_text(_fxx, _fxy, "Rest alcoves heal +" + string(15 + 4 * _fx_a) + " HP");
@@ -2378,10 +2396,14 @@ if (instance_exists(obj_game_controller)) {
                         draw_text(_lx + 660 - 16, _ry + 46, "ACTIVE");
                     }
                     draw_set_halign(fa_left);
-                    // Line 2: species + archetype + tags, muted.
+                    // Line 2: species + archetype + tags, muted. Truncated against the
+                    // right-aligned ACTIVE tag - a long species + [CORRUPTING x/3] ran
+                    // into it (M 07-09 screenshot).
                     draw_set_font(fnt_ui_small);
                     draw_set_color(make_color_rgb(150, 160, 185));
-                    draw_text(_ctx, _ry + 46, "(" + pet_species_get(_cp.species).name + ")   " + pet_archetype_name(_cp.archetype) + pet_injury_tag(_cp) + pet_corruption_tag(_cp));
+                    var _cl2 = "(" + pet_species_get(_cp.species).name + ")   " + pet_archetype_name(_cp.archetype) + pet_injury_tag(_cp) + pet_corruption_tag(_cp);
+                    var _cl2_max = (_lx + 660 - 16) - _ctx - (_active ? string_width("ACTIVE") + 18 : 0);
+                    draw_text(_ctx, _ry + 46, ui_truncate(_cl2, _cl2_max));
                 }
             }
 
@@ -2417,6 +2439,10 @@ if (instance_exists(obj_game_controller)) {
                         gpu_set_blendmode(bm_normal);
                     }
                     draw_sprite_ext(_hsp, pet_anim_frame(_hsp), (_px0 + _px1) / 2, _py1 - 11, _hsc, _hsc, 0, c_white, 1);
+                    // Corruption dressing (07-09 art track): flicker / dark aura + motes.
+                    ui_draw_pet_corruption_fx(_hp, _hsp, pet_anim_frame(_hsp),
+                        (_px0 + _px1) / 2, _py1 - 11, _hsc, _hsc,
+                        (_px0 + _px1) / 2, (_py0 + _py1) / 2 + 15);
                 }
 
                 // Header band (right of portrait): name + stage/archetype + egg chip.
@@ -2448,6 +2474,21 @@ if (instance_exists(obj_game_controller)) {
                     var _ceg = pet_egg_type_get(_hp.egg_type);
                     if (_ceg != undefined) _ceff += "\n" + _egl + " - " + _ceg.desc;
                 }
+                // Corruption state belongs in the card too (M 07-09: it only showed as
+                // a name-row tag). Spell out what the state DOES - the +15%/run is a
+                // permanent multiplier on the passive above (pet_corruption_mult).
+                var _ccst = pet_corr_state(_hp);
+                if (_ccst == "pushing") {
+                    _ceff += "\nCorrupting " + string(pet_corr_runs(_hp)) + "/3 - each pushed run adds +15% to its passive, permanently; while it pushes YOU pay -20% max HP and -10% damage.";
+                } else if (_ccst == "fulfilled") {
+                    _ceff += "\nFULLY CORRUPTED - its passive is 45% stronger, forever" + ((_hp.archetype == PET_ARCH_BOON) ? ", plus a grand boon: extra gold and loot find on top." : ".");
+                } else if (_ccst == "cured") {
+                    _ceff += "\nPurged of corruption - the +" + string(pet_corr_runs(_hp) * 15) + "% it had already earned is kept.";
+                }
+                // The Awakened splash pick (Stage-4 gift) is a grant as well - it was
+                // invisible here and on the detail popup once chosen (M 07-09).
+                var _cspl = pet_splash_text(_hp);
+                if (_cspl != "") _ceff += "\n" + _cspl;
                 draw_set_font(fnt_ui);
                 var _ew = (_gx1 - _gx0) - 28;
                 var _eh = string_height_ext(_ceff, 30, _ew);
@@ -2466,7 +2507,17 @@ if (instance_exists(obj_game_controller)) {
                 var _hst = pet_stance(_hp);
                 if (_hst != "") {
                     var _sty0 = _gy1 + 20;
-                    var _sty1 = min(_cy1 - 54, _sty0 + 112);
+                    // Size the box to the MEASURED wrapped description - the fixed
+                    // 112px cap let long stance text (guarded, 4 lines) run past the
+                    // bottom border (M 07-09 screenshot). Label width measured in the
+                    // font it draws in (fnt_ui).
+                    draw_set_font(fnt_ui);
+                    var _hst_lbl_w = string_width(pet_stance_label(_hst));
+                    draw_set_font(fnt_ui_small);
+                    var _hst_dsc_x = _gx0 + 14 + _hst_lbl_w + 24;
+                    var _hst_dsc_w = (_gx1 - _gx0) - 52 - _hst_lbl_w;
+                    var _hst_dsc_h = string_height_ext(pet_stance_desc(_hst), 26, _hst_dsc_w);
+                    var _sty1 = min(_cy1 - 54, _sty0 + max(112, 52 + _hst_dsc_h + 14));
                     draw_set_color(make_color_rgb(26, 24, 36));
                     draw_rectangle(_gx0, _sty0, _gx1, _sty1, false);
                     draw_set_color(make_color_rgb(110, 96, 150));
@@ -2476,8 +2527,7 @@ if (instance_exists(obj_game_controller)) {
                     draw_set_font(fnt_ui); draw_set_color(make_color_rgb(222, 214, 240));
                     draw_text(_gx0 + 14, _sty0 + 46, pet_stance_label(_hst));
                     draw_set_font(fnt_ui_small); draw_set_color(make_color_rgb(150, 150, 175));
-                    draw_text_ext(_gx0 + 14 + string_width(pet_stance_label(_hst)) + 24, _sty0 + 52,
-                        pet_stance_desc(_hst), 26, (_gx1 - _gx0) - 52 - string_width(pet_stance_label(_hst)));
+                    draw_text_ext(_hst_dsc_x, _sty0 + 52, pet_stance_desc(_hst), 26, _hst_dsc_w);
                 }
 
                 // Footer hint inside the card.

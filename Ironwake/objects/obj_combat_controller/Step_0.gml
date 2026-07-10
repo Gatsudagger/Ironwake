@@ -572,6 +572,15 @@ if (player_turn) {
                     array_push(combat_log, "Iron Skin wore off.");
                 }
             }
+            // Smoke Bomb self-cover ticks with your turns, like Iron Skin.
+            if (variable_struct_exists(player, "smoke_dodge_turns") && player.smoke_dodge_turns > 0) {
+                player.smoke_dodge_turns--;
+                if (player.smoke_dodge_turns <= 0) array_push(combat_log, "The smoke thins - your cover is gone.");
+            }
+            // Glacial Ward's rebuke covers one round of enemy swings.
+            if (variable_struct_exists(player, "glacial_ward_turns") && player.glacial_ward_turns > 0) {
+                player.glacial_ward_turns--;
+            }
             combat_next_turn(combat_state);
             player_turn = combat_state.active.is_player;
             if (!player_turn) {
@@ -610,6 +619,15 @@ if (player_turn) {
                 array_push(combat_log, "Iron Skin wore off.");
             }
         }
+        // Smoke Bomb self-cover ticks with your turns, like Iron Skin.
+        if (variable_struct_exists(player, "smoke_dodge_turns") && player.smoke_dodge_turns > 0) {
+            player.smoke_dodge_turns--;
+            if (player.smoke_dodge_turns <= 0) array_push(combat_log, "The smoke thins - your cover is gone.");
+        }
+        // Glacial Ward's rebuke covers one round of enemy swings.
+        if (variable_struct_exists(player, "glacial_ward_turns") && player.glacial_ward_turns > 0) {
+            player.glacial_ward_turns--;
+        }
         combat_next_turn(combat_state);
         player_turn = combat_state.active.is_player;
         if (!player_turn) {
@@ -640,26 +658,23 @@ if (player_turn) {
                         && selected_ability < array_length(player.ability_cd))
                        ? player.ability_cd[selected_ability] : 0;
 
-        // Quickcast aspect rune: the first SPELL each combat costs -1 AP. Evaluate the
-        // resource gate against the discounted cost (so it's castable at cost-1), but
-        // only consume the rune in the cast branch. ab.energy_cost is restored after spend.
+        // Resource gate cost: ability_effective_cost is the SINGLE SOURCE OF TRUTH
+        // (synergy + Quickcast + Cracked Focus + Gatewarden's Brand), so this gate,
+        // the button pips and the actual spend below can never disagree (07-09 bug:
+        // Cracked Focus applied at spend but not here, so a Singularity that would
+        // really cost 1 AP was refused at 1 AP). Discount eligibility is recomputed
+        // here only for the cast branch's log lines + charge consumption.
         var _qc_orig_ec = ab.energy_cost;
-        // Same-category synergy discount (SYSTEMS_ABILITY_SYNERGY.md): if an ability of
-        // THIS ability's role category was already cast this turn, it costs -1 AP (floor 1).
-        // Applied FIRST so it composes with the per-cast discounts below (Quickcast can
-        // still take it to 0). Mirrored in the cast branch + the UI via ability_effective_cost.
-        var _syn_elig = ability_synergy_active(ab, player);
+        var _syn_elig  = ability_synergy_active(ab, player);
         // Support abilities floor at 0 (a 1-AP support after another support is free);
         // every other role floors at 1. Matches ability_effective_cost.
         var _syn_floor = (ability_category(ab) == "support") ? 0 : 1;
-        if (_syn_elig && ab.energy_cost > 0) ab.energy_cost = max(_syn_floor, ab.energy_cost - 1);  // free abilities stay free
         var _qc_elig = rune_aspect_socketed("quickcast")
                        && variable_struct_exists(player, "rune_first_spell_used")
                        && !player.rune_first_spell_used
                        && ability_class_is_spell(ability_attack_class(ab));
-        if (_qc_elig) ab.energy_cost = max(0, ab.energy_cost - 1);
-        var _qc_can_cast = ability_can_cast(ab, player);
-        ab.energy_cost = _qc_orig_ec;   // restore; re-applied below only on actual cast
+        var _eff_cost    = ability_effective_cost(ab, player);
+        var _qc_can_cast = (player.energy >= _eff_cost) && ability_secondary_ok(ab, player);
 
         if (_already_used) {
             array_push(combat_log, ab.name + " already used this turn.");
@@ -670,9 +685,18 @@ if (player_turn) {
         } else if (_ctrl_block != "") {
             array_push(combat_log, "You are " + _ctrl_block + " - can't use " + ab.name + ".");
 
-        // Resource gate - must have enough energy and secondary resource (Quickcast-aware)
+        // Resource gate - must have enough energy and secondary resource. Name the
+        // missing resource explicitly ("Not enough resources." told M nothing when
+        // Singularity wanted AP while he was staring at a full Soul bar).
         } else if (!_qc_can_cast) {
-            array_push(combat_log, "Not enough resources.");
+            if (player.energy < _eff_cost) {
+                array_push(combat_log, ab.name + " needs " + string(_eff_cost)
+                    + " AP - you have " + string(player.energy) + ".");
+            } else {
+                array_push(combat_log, ab.name + " needs " + string(ab.secondary_cost)
+                    + " " + ability_secondary_label(player) + " - you have "
+                    + string(ability_secondary_amount(player)) + ".");
+            }
 
         } else {
             // Same-category synergy discount: apply the -1 AP for this cast (floor 0 for
@@ -686,16 +710,22 @@ if (player_turn) {
             }
 
             // Quickcast: apply the -1 AP discount for this cast and consume the rune.
-            if (_qc_elig) {
-                ab.energy_cost = max(0, ab.energy_cost - 1);
+            // The >0 guard matches ability_effective_cost - a spell synergy already
+            // made free doesn't burn the once-per-combat charge for nothing.
+            if (_qc_elig && ab.energy_cost > 0) {
+                ab.energy_cost -= 1;
                 player.rune_first_spell_used = true;
                 array_push(combat_log, "Quickcast rune - " + ab.name + " costs 1 less AP!");
             }
 
             // Cracked Focus (class weapon): first SPELL each combat costs 1 less AP (min 1).
-            if (variable_struct_exists(player, "cf_first_spell_ap") && player.cf_first_spell_ap
+            // The >1 guard matches ability_effective_cost - the charge is only consumed
+            // when it actually lowers the cost (never raises 0 back to 1, never burns on
+            // a 1-AP spell for zero effect).
+            if (ab.energy_cost > 1
+                && variable_struct_exists(player, "cf_first_spell_ap") && player.cf_first_spell_ap
                 && !player.cf_used && ability_class_is_spell(ability_attack_class(ab))) {
-                ab.energy_cost = max(1, ab.energy_cost - 1);
+                ab.energy_cost -= 1;
                 player.cf_used = true;
                 array_push(combat_log, "Cracked Focus - first spell costs 1 less AP!");
             }
@@ -723,6 +753,21 @@ if (player_turn) {
             // turn gets the -1 AP synergy discount (SYSTEMS_ABILITY_SYNERGY.md). Marked
             // after the resource spend commits, so the first of a category always pays full.
             player.turn_cast_categories[$ ability_category(ab)] = true;
+
+            // Cast windup FX (07-09 art track): SPELL casts flare the caster in the
+            // school's color (melee keeps its lunge). Drawn in Draw_64 by the sprite.
+            if (ability_class_is_spell(ability_attack_class(ab))) {
+                cast_fx_timer = 26;
+                var _cfx_sch  = ability_school(ab);
+                cast_fx_color = (_cfx_sch == "") ? make_color_rgb(150, 120, 220) : school_color(_cfx_sch);
+            }
+
+            // Smoke Bomb self-cover (D§3 rework, M-approved 07-09): the smoke hides
+            // YOU too - +15 dodge for the blind's duration (combat_smoke_dodge).
+            if (ab.name == "Smoke Bomb") {
+                player.smoke_dodge_turns = ab.effect_duration;
+                array_push(combat_log, "The smoke cloaks you too - +15% dodge while it lingers.");
+            }
 
             if (!ab.self_targeted) {
                 // --- Build the target list ---
@@ -1017,8 +1062,13 @@ if (player_turn) {
                             var _fl_each = max(1, round(_dmg / 3));
                             _final_dmg = 0;
                             for (var _fhi = 0; _fhi < 3; _fhi++) {
+                                // Include weapon_crit_bonus (Shadow Sickle) - the main roll above
+                                // has it, but these per-strike re-rolls dropped it, so Flurry was
+                                // the one attack the sickle's "+crit to all rolls" skipped.
                                 var _fl_cr  = combat_roll_crit(player.stats,
-                                    ab.base_crit + boon_value("duelist") + _react_crit_bonus, ab.crit_type);
+                                    ab.base_crit + boon_value("duelist") + _react_crit_bonus
+                                        + (variable_struct_exists(player, "weapon_crit_bonus") ? player.weapon_crit_bonus : 0),
+                                    ab.crit_type);
                                 var _fl_hit = _fl_cr.critted ? round(_fl_each * _fl_cr.multiplier) : _fl_each;
                                 if (_fl_cr.critted) _crit_result.critted = true; // popup/log flag CRIT if any hit crit
                                 _final_dmg += combat_resolve_damage(_fl_hit, ab.damage_type, target.armor, target.el_resist);
@@ -1065,6 +1115,13 @@ if (player_turn) {
                         if (player.class_id == 0 && trait_active("Arcane Surge")
                             && variable_struct_exists(ab, "energy_cost") && ab.energy_cost >= 3) {
                             _final_dmg = floor(_final_dmg * (1 + 0.25 * trait_potency_mult("Arcane Surge")));
+                        }
+                        // Soul Engine (D§4, M-approved 07-09): the lit engine adds +3 flat
+                        // to SPELLS per full turn elapsed since ignition (combat-long).
+                        // Mirrored in combat_estimate_hit so the preview shows it.
+                        if (variable_struct_exists(player, "soul_engine_active") && player.soul_engine_active
+                            && ability_class_is_spell(ability_attack_class(ab))) {
+                            _final_dmg += 3 * max(0, combat_state.round - player.soul_engine_round);
                         }
                         // Berserker Rage: below 40% HP deal +20% damage (Bloodwarden only)
                         if (player.class_id == 1 && trait_active("Berserker Rage")
@@ -1380,6 +1437,10 @@ if (player_turn) {
                         if (ab.name == "Void Drain") {
                             if (player.class_id == 0 && variable_struct_exists(player, "souls")) {
                                 player.souls = min(player.souls_max, player.souls + 1);
+                                // Was SILENT - the desc promises "Banks +1 Soul on hit" but the
+                                // log never showed it, so no-kill turns ended with unexplained
+                                // Souls (M 07-09 read them as Soulfire double-fires).
+                                array_push(combat_log, "Void Drain: +1 Soul.");
                             }
                             if (variable_struct_exists(player, "ability_cd")
                                 && selected_ability < array_length(player.ability_cd)) {
@@ -1491,6 +1552,70 @@ if (player_turn) {
                             array_push(combat_log, "Momentum! Strike's AP returns.");
                         }
 
+                        // --- Galvanize (D§4, M-approved 07-09): a killing blow banks
+                        //     +1 AP for NEXT turn (granted in combat_next_turn).
+                        if (ab.name == "Galvanize" && target.is_defeated) {
+                            player.galvanize_ap = 1;
+                            array_push(combat_log, "Galvanize - the surge carries: +1 AP next turn!");
+                        }
+
+                        // --- Winter's Bite (D§4): against a CHILLED target the knife
+                        //     bites deeper - +9 Frost and the Prep comes back.
+                        if (ab.name == "Winter's Bite") {
+                            var _wb_chilled = false;
+                            for (var _wbi = 0; _wbi < array_length(target.status_effects); _wbi++) {
+                                if (combat_status_element(target.status_effects[_wbi]) == "frost") { _wb_chilled = true; break; }
+                            }
+                            if (_wb_chilled) {
+                                if (!target.is_defeated) {
+                                    var _wb_dmg = combat_resolve_damage(9, 1, target.armor, target.el_resist);
+                                    if (_wb_dmg < 1) _wb_dmg = 1;
+                                    combat_apply_damage(target, _wb_dmg);
+                                    array_push(combat_log, "Winter's Bite sinks into the chill - +" + string(_wb_dmg) + "!");
+                                    if (target.HP <= 0) combat_on_enemy_defeated(target, player, combat_log);
+                                }
+                                if (variable_struct_exists(player, "preparation")) {
+                                    player.preparation = min(player.preparation_max, player.preparation + 1);
+                                    array_push(combat_log, "Winter's Bite: the Prep returns.");
+                                }
+                            }
+                        }
+
+                        // --- Static Arc (D§4): the arc chains 50% of the dealt damage to
+                        //     one other enemy - to ALL others if the target was already
+                        //     Shocked (the shock is not consumed).
+                        if (ab.name == "Static Arc" && _final_dmg > 0) {
+                            var _sa_shocked = false;
+                            for (var _sasi = 0; _sasi < array_length(target.status_effects); _sasi++) {
+                                if (combat_status_element(target.status_effects[_sasi]) == "shock") { _sa_shocked = true; break; }
+                            }
+                            var _sa_others = [];
+                            var _sa_slots  = [];
+                            var _sa_live   = 0;
+                            for (var _saci = 0; _saci < array_length(combat_state.combatants); _saci++) {
+                                var _sac = combat_state.combatants[_saci];
+                                if (_sac.is_player || _sac.is_defeated) continue;
+                                if (_sac != target) { array_push(_sa_others, _sac); array_push(_sa_slots, _sa_live); }
+                                _sa_live++;
+                            }
+                            if (array_length(_sa_others) > 0) {
+                                var _sa_first = _sa_shocked ? 0 : irandom(array_length(_sa_others) - 1);
+                                var _sa_count = _sa_shocked ? array_length(_sa_others) : 1;
+                                if (_sa_shocked) array_push(combat_log, "The shock ARCS to everything standing!");
+                                for (var _sahi = 0; _sahi < _sa_count; _sahi++) {
+                                    var _sa_idx = _sa_shocked ? _sahi : _sa_first;
+                                    var _sa_t   = _sa_others[_sa_idx];
+                                    var _sa_dmg = combat_resolve_damage(max(1, round(_final_dmg * 0.5)), 1, _sa_t.armor, _sa_t.el_resist);
+                                    if (_sa_dmg < 1) _sa_dmg = 1;
+                                    combat_apply_damage(_sa_t, _sa_dmg);
+                                    _sa_t.hit_flash = max(_sa_t.hit_flash, 10);
+                                    array_push(damage_popups, { value: _sa_dmg, x: 1620 + _sa_slots[_sa_idx] * (-120), y: 233 + _sa_slots[_sa_idx] * 105 - 60, timer: 45, col: make_color_rgb(150, 200, 245) });
+                                    array_push(combat_log, "Static Arc chains to " + _sa_t.name + " for " + string(_sa_dmg) + "!");
+                                    if (_sa_t.HP <= 0) combat_on_enemy_defeated(_sa_t, player, combat_log);
+                                }
+                            }
+                        }
+
                         // --- Echo: 50% second instance to this target (first AoE only) ---
                         if (_echo_now && !target.is_defeated && _final_dmg > 0) {
                             var _echo_dmg = max(1, round(_final_dmg * 0.5));
@@ -1580,11 +1705,14 @@ if (player_turn) {
                                     case "vulnerable": _kind_phrase = "Exposed (+" + string(_status_ev) + " dmg taken/hit)"; break;
                                     case "hexed":      _kind_phrase = "Hexed (+" + string(_status_ev) + " dmg taken/hit; detonations doubled + spread)"; break;
                                     case "firemark":   _kind_phrase = "Searing (+" + string(_status_ev) + " fire dmg/hit)"; break;
-                                    case "weaken":     _kind_phrase = "Weakened (-" + string(round(_status_ev * 100)) + "% dmg)"; break;
+                                    case "weaken":     _kind_phrase = (ability_status_element(ab) == "frost")
+                                        ? ("Chilled (-" + string(round(_status_ev * 100)) + "% dmg; detonators shatter it)")
+                                        : ("Weakened (-" + string(round(_status_ev * 100)) + "% dmg)"); break;
                                     case "blind":      _kind_phrase = "Blinded (-" + string(round(_status_ev * 100)) + "% acc)"; break;
                                     case "stun":       _kind_phrase = "Stunned"; break;
                                     case "root":       _kind_phrase = "Rooted"; break;
                                     case "silence":    _kind_phrase = "Silenced"; break;
+                                    case "marked":     _kind_phrase = "Marked (+30% from ALL sources below half HP)"; break;
                                     case "mortality":  _kind_phrase = "Mortality (-" + string(round(_status_ev * 100)) + "% healing)"; break;
                                     default:           _kind_phrase = ab.name;
                                 }
@@ -1700,9 +1828,72 @@ if (player_turn) {
 
                 // --- Soul Shield: add to the damage-absorbing shield pool ---
                 if (ab.name == "Soul Shield") {
-                    player.shield_hp += ab.effect_value;
+                    // D§3 rework (M-approved 07-09): +3 shield per Soul HELD (not
+                    // spent) - the reserve-defense identity, vs Iron Skin's flat
+                    // mitigation. A stocked Arcanist wards ~2x harder.
+                    var _ss_bonus = variable_struct_exists(player, "souls") ? player.souls * 3 : 0;
+                    player.shield_hp += ab.effect_value + _ss_bonus;
                     array_push(combat_log,
-                        "Soul Shield raised - absorbs the next " + string(ab.effect_value) + " damage.");
+                        "Soul Shield raised - absorbs the next " + string(ab.effect_value + _ss_bonus) + " damage"
+                        + ((_ss_bonus > 0) ? " (+" + string(_ss_bonus) + " from Souls held)." : "."));
+                }
+
+                // --- Glacial Ward (D§4, M-approved 07-09): shield + a frozen rebuke -
+                //     melee enemies that land a blow this turn are Chilled.
+                if (ab.name == "Glacial Ward") {
+                    if (!variable_struct_exists(player, "shield_hp")) player.shield_hp = 0;
+                    player.shield_hp += ab.effect_value;
+                    player.glacial_ward_turns = 1;
+                    array_push(combat_log, "Glacial Ward raised - " + string(ab.effect_value)
+                        + " shield; melee attackers will be Chilled.");
+                }
+
+                // --- Soul Engine (D§4): once per combat, combat-long ramp - spells
+                //     gain +3 per FULL turn elapsed since it was lit.
+                if (ab.name == "Soul Engine") {
+                    if (variable_struct_exists(player, "soul_engine_active") && player.soul_engine_active) {
+                        array_push(combat_log, "The Soul Engine already turns.");
+                    } else {
+                        player.soul_engine_active = true;
+                        player.soul_engine_round  = combat_state.round;
+                        array_push(combat_log, "SOUL ENGINE lit - your spells grow +3 for every turn that passes.");
+                    }
+                }
+
+                // --- Devil's Flip (D§4): the coin IS the roll - no accuracy, no
+                //     dodge. Heads: your SELECTED target takes 26 (phys-mitigated).
+                //     Tails: YOU take 8 (the lethal gate still applies).
+                if (ab.name == "Devil's Flip") {
+                    if (irandom(1) == 0) {
+                        // Resolve the selected target with the same fallback walk the
+                        // cast path uses (first living enemy when selection is stale).
+                        var _df_t = undefined, _df_slot = 0, _df_live = 0;
+                        for (var _dfi = 0; _dfi < array_length(combat_state.combatants); _dfi++) {
+                            var _dfc = combat_state.combatants[_dfi];
+                            if (_dfc.is_player || _dfc.is_defeated) continue;
+                            if (_df_t == undefined) { _df_t = _dfc; _df_slot = _df_live; }   // fallback: first living
+                            if (_df_live == selected_target) { _df_t = _dfc; _df_slot = _df_live; break; }
+                            _df_live++;
+                        }
+                        if (_df_t != undefined) {
+                            var _df_dmg = combat_resolve_damage(26, 0, _df_t.armor, _df_t.el_resist);
+                            if (_df_dmg < 1) _df_dmg = 1;
+                            combat_apply_damage(_df_t, _df_dmg);
+                            _df_t.hit_flash = max(_df_t.hit_flash, 12);
+                            array_push(damage_popups, { value: _df_dmg, x: 1620 + _df_slot * (-120), y: 233 + _df_slot * 105 - 60, timer: 50, col: make_color_rgb(235, 190, 90) });
+                            array_push(combat_log, "DEVIL'S FLIP - heads! " + _df_t.name + " takes " + string(_df_dmg) + "!");
+                            if (_df_t.HP <= 0) combat_on_enemy_defeated(_df_t, player, combat_log);
+                        } else {
+                            array_push(combat_log, "Devil's Flip finds no one to collect from.");
+                        }
+                    } else {
+                        combat_apply_damage(player, 8);
+                        player.hit_flash = 15;
+                        combat_state.player_took_damage = true;
+                        array_push(damage_popups, { value: 8, x: 475, y: 545, timer: 50, col: make_color_rgb(255, 130, 60) });
+                        array_push(combat_log, "DEVIL'S FLIP - tails! The house collects 8 from YOU.");
+                        if (player.HP <= 0 && !combat_try_last_stand(player, combat_log)) player.is_defeated = true;
+                    }
                 }
 
                 // --- Blink: staged guard over the next 3 attacks (2-turn CD). Only the
@@ -1783,10 +1974,19 @@ if (player_turn) {
 
                 // --- Sanguine Pact: spend 8 HP (never lethal) to gain 3 Blood ---
                 if (ab.name == "Sanguine Pact" && variable_struct_exists(player, "blood")) {
-                    var _sp_cost = min(8, player.HP - 1);
-                    player.HP   -= _sp_cost;
-                    player.blood = min(player.blood_max, player.blood + 3);
-                    array_push(combat_log, "Sanguine Pact: -" + string(_sp_cost) + " HP, +3 Blood.");
+                    // D§3 rework (M-approved 07-09): was an HP->Blood trickle on the
+                    // class that gains Blood by BEING HIT. Now the Blood DUMP defense:
+                    // seal up to 3 Blood into 6 shield each.
+                    var _sp_spend = min(3, player.blood);
+                    if (_sp_spend <= 0) {
+                        array_push(combat_log, "Sanguine Pact: no Blood to seal with.");
+                    } else {
+                        player.blood -= _sp_spend;
+                        if (!variable_struct_exists(player, "shield_hp")) player.shield_hp = 0;
+                        player.shield_hp += _sp_spend * 6;
+                        array_push(combat_log, "Sanguine Pact: seals " + string(_sp_spend)
+                            + " Blood into a " + string(_sp_spend * 6) + "-point ward.");
+                    }
                 }
 
                 // --- Vanish: untargetable next attack; next strike deals bonus damage ---
@@ -1917,6 +2117,7 @@ if (player_turn) {
                     var _gold_drop = irandom(actor.gold_max - actor.gold_min) + actor.gold_min;
                     add_gold(_gold_drop);
                     global.current_run_kills++;
+                    global.total_kills++;   // lifetime counter (see combat_on_enemy_defeated)
                     array_push(combat_log, "Gained " + string(_gold_drop) + "g!");
                     // --- Item / consumable drop ---
                     var _drop_type;
@@ -1950,7 +2151,7 @@ if (player_turn) {
                     } else {
                         _dot_xp_scale = 1.0;
                     }
-                    var _dot_xp_amt   = round(_dot_xp_base * _dot_xp_scale);
+                    var _dot_xp_amt   = round(_dot_xp_base * _dot_xp_scale * awaken_xp_mult());   // Awakening XP mult (C3)
                     var _dot_xp_lvls  = grant_xp(_dot_xp_amt);
                     array_push(combat_log, "Gained " + string(_dot_xp_amt) + " XP!");
                     if (_dot_xp_lvls > 0) {
@@ -2109,21 +2310,43 @@ if (player_turn) {
             if (_eab.kind != "heal") enemy_attack_sound(actor.name);
 
             if (_eab.kind == "heal") {
-                // Scale by Awakening, then reduce by the enemy's Mortality (anti-heal). (P6)
+                // C1 A3+ SMART TARGETING (M-approved 07-09): the mend goes to the MOST
+                // WOUNDED living ally (itself included), not blindly to itself.
+                var _htgt = actor;
+                if ((variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0) >= 3) {
+                    var _worst = (actor.max_HP > 0) ? (actor.HP / actor.max_HP) : 1;
+                    for (var _hti = 0; _hti < array_length(combat_state.combatants); _hti++) {
+                        var _htc = combat_state.combatants[_hti];
+                        if (_htc.is_player || _htc.is_defeated || _htc.max_HP <= 0) continue;
+                        var _hfrac = _htc.HP / _htc.max_HP;
+                        if (_hfrac < _worst) { _worst = _hfrac; _htgt = _htc; }
+                    }
+                }
+                // Popup lands on the healed TARGET's slot, not the caster's.
+                var _ht_slot = 0;
+                for (var _hsi = 0; _hsi < array_length(combat_state.combatants); _hsi++) {
+                    if (combat_state.combatants[_hsi] == _htgt) break;
+                    if (!combat_state.combatants[_hsi].is_player) _ht_slot++;
+                }
+                // Scale by Awakening, then reduce by the target's Mortality (anti-heal). (P6)
                 var _eheal_raw = round(_eab.value * awaken_enemy_heal_mult());
-                var _eheal_amt = combat_heal_after_mortality(actor, _eheal_raw);
-                var _ehl = min(actor.max_HP - actor.HP, _eheal_amt);
-                actor.HP += _ehl;
-                actor.hit_flash = max(actor.hit_flash, 6);
-                if (_ehl > 0) array_push(damage_popups, { value: _ehl, x: _sa_x, y: _sa_y - 60, timer: 45, col: c_lime });
-                if (_ehl <= 0 && combat_has_status(actor, "mortality")) {
+                var _eheal_amt = combat_heal_after_mortality(_htgt, _eheal_raw);
+                var _ehl = min(_htgt.max_HP - _htgt.HP, _eheal_amt);
+                _htgt.HP += _ehl;
+                _htgt.hit_flash = max(_htgt.hit_flash, 6);
+                if (_ehl > 0) array_push(damage_popups, { value: _ehl, x: 1620 + _ht_slot * (-120), y: 233 + _ht_slot * 105 - 60, timer: 45, col: c_lime });
+                if (_ehl <= 0 && combat_has_status(_htgt, "mortality")) {
                     array_push(combat_log, actor.name + "'s mending is suppressed!");
+                } else if (_htgt != actor) {
+                    array_push(combat_log, actor.name + " mends " + _htgt.name + " for " + string(_ehl) + " HP!");
                 } else {
                     array_push(combat_log, actor.name + " " + ((_eab.msg != "") ? _eab.msg : ("mends " + string(_ehl) + " HP")) + ".");
                 }
 
             } else if (_eab.kind == "spell") {
-                var _sdmg = combat_mitigate_player(player, _eab.value, _eab.dtype, combat_log);
+                // A5 boss enrage applies to spells too (same helper as the swing path).
+                var _sdmg = combat_mitigate_player(player,
+                    max(1, round(_eab.value * awaken_boss_enrage_mult(combat_state.round))), _eab.dtype, combat_log);
                 if (_incoming_mult < 1.0) _sdmg = max(1, round(_sdmg * _incoming_mult));  // Blink softening
                 if (_sdmg > 0) combat_state.player_took_damage = true;
                 combat_apply_damage(player, _sdmg);
@@ -2166,6 +2389,9 @@ if (player_turn) {
 
         // --- Determine base damage for this turn (handles telegraph spike) ---
         var _base_dmg = enemy_get_attack_damage(actor, combat_state.round);
+        // A5 BOSS ENRAGE (C1, M-approved 07-09): in a boss room at Awakening 5,
+        // every enemy swing gains +10% per round past round 6 - no turtling.
+        _base_dmg = max(1, round(_base_dmg * awaken_boss_enrage_mult(combat_state.round)));
         // Weaken debuff on the enemy reduces its outgoing damage (max of stacks).
         var _enemy_weaken = combat_status_max(actor, "weaken");
         if (_enemy_weaken > 0) _base_dmg = max(1, round(_base_dmg * (1 - _enemy_weaken)));
@@ -2180,7 +2406,7 @@ if (player_turn) {
         // --- Primary attack hit roll ---
         // Enemies don't have a full stats struct; pass a minimal anonymous struct
         // with only the DEX field that combat_roll_hit() needs.
-        var _hit = combat_roll_hit(_enemy_acc + 9, player.dodge, false);
+        var _hit = combat_roll_hit(_enemy_acc + 9, player.dodge + combat_smoke_dodge(player), false);
 
         if (_hit != "hit") {
             array_push(combat_log, (_hit == "dodge")
@@ -2237,14 +2463,21 @@ if (player_turn) {
             // the rest of the run; capped below the permadeath tier, a KO never
             // kills outright). The pool refills between runs / when fed.
             var _gpet = pet_active();
+            var _g_can = false, _g_body = false;
             if (_gpet != undefined && !_gpet.is_egg && _gpet.stage >= PET_STAGE_YOUNGADULT
-                && _gpet.archetype == PET_ARCH_COMBATANT && pet_stance(_gpet) == "guarded"
                 && !pet_guard_off(_gpet)   // called off mid-fight (G) = no intercepts
-                && pet_injury_mult(_gpet.injured) > 0 && pet_hp(_gpet) > 0
-                && _final_dmg > 1 && irandom(99) < 25) {
+                && pet_injury_mult(_gpet.injured) > 0 && pet_hp(_gpet) > 0) {
+                if (_gpet.archetype == PET_ARCH_COMBATANT && pet_stance(_gpet) == "guarded") _g_can = true;
+                // Bodyguard capstone (C5, M-approved 07-09): a Guardian intercepts in
+                // ANY stance at 40% - Guardians have no guarded stance, so the capstone
+                // carries the intercept identity itself (design adaptation, flagged).
+                // It pays for the reach: the pet takes the intercepted portion +25%.
+                if (_gpet.archetype == PET_ARCH_GUARDIAN && pet_kit_mods(_gpet).bodyguard) { _g_can = true; _g_body = true; }
+            }
+            if (_g_can && _final_dmg > 1 && irandom(99) < (_g_body ? 40 : 25)) {
                 var _gcut = max(1, round(_final_dmg * 0.35));
                 _final_dmg -= _gcut;
-                var _gko = pet_take_damage(_gpet, _gcut);
+                var _gko = pet_take_damage(_gpet, _g_body ? max(1, round(_gcut * 1.25)) : _gcut);
                 array_push(combat_log, "[Companion] " + _gpet.name + " intercepts the blow (-" + string(_gcut)
                     + ")!  [" + string(pet_hp(_gpet)) + "/" + string(pet_max_hp(_gpet)) + " HP]");
                 if (_gko) {
@@ -2299,6 +2532,19 @@ if (player_turn) {
             array_push(combat_log,
                 actor.name + " attacked for " + string(_final_dmg) + " damage!"
                 + ((_dmg_blocked > 0) ? ("  (" + string(_dmg_blocked) + " blocked)") : ""));
+
+            // --- Glacial Ward rebuke (D§4, M-approved 07-09): a MELEE attacker that
+            //     lands a blow while the ward stands is Chilled (frost weaken; the
+            //     same status detonators shatter).
+            if (variable_struct_exists(player, "glacial_ward_turns") && player.glacial_ward_turns > 0
+                && ((variable_struct_exists(actor, "reach") ? actor.reach : "melee") == "melee")
+                && variable_struct_exists(actor, "status_effects") && !actor.is_defeated) {
+                array_push(actor.status_effects, {
+                    name: "Chilled", effect_type: "debuff", kind: "weaken",
+                    effect_value: 0.30, duration: 2, element: "frost", source: "player"
+                });
+                array_push(combat_log, actor.name + " is Chilled by the Glacial Ward!");
+            }
 
             // --- Bloodthorn Aura reflect ---
             if (player.bloodthorn_active) {
@@ -2358,7 +2604,7 @@ if (player_turn) {
         // Fire a second independent hit roll using mechanic_value as the flat
         // per-hit damage (separate from the telegraphed damage path).
         if (actor.mechanic_type == "double_strike" && !actor.is_defeated) {
-            var _hit2 = combat_roll_hit(_enemy_acc + 9, player.dodge, false);
+            var _hit2 = combat_roll_hit(_enemy_acc + 9, player.dodge + combat_smoke_dodge(player), false);
 
             if (_hit2 != "hit") {
                 array_push(combat_log, (_hit2 == "dodge")

@@ -758,32 +758,13 @@ if (shop_open != -1 && !stash_mode_open) {
     // =========================================================================
     if (shop_tab == 1) {
 
-        // Build sell list: stash equipment, stash consumables, carried equipment, carried consumables.
-        // Equipment in global.inventory[] (equipped slots) is excluded entirely.
-        var _sl_items = [];
-        var _sl_src   = [];   // 0=equipment_stash  1=consumable_stash  2=carried_items  3=consumable_inventory
-        var _sl_idx   = [];   // index within the source array at build time
-
-        for (var _i = 0; _i < array_length(global.equipment_stash); _i++) {
-            array_push(_sl_items, global.equipment_stash[_i]);
-            array_push(_sl_src,   0);
-            array_push(_sl_idx,   _i);
-        }
-        for (var _i = 0; _i < array_length(global.consumable_stash); _i++) {
-            array_push(_sl_items, global.consumable_stash[_i]);
-            array_push(_sl_src,   1);
-            array_push(_sl_idx,   _i);
-        }
-        for (var _i = 0; _i < array_length(global.carried_items); _i++) {
-            array_push(_sl_items, global.carried_items[_i]);
-            array_push(_sl_src,   2);
-            array_push(_sl_idx,   _i);
-        }
-        for (var _i = 0; _i < array_length(global.consumable_inventory); _i++) {
-            array_push(_sl_items, global.consumable_inventory[_i]);
-            array_push(_sl_src,   3);
-            array_push(_sl_idx,   _i);
-        }
+        // Sell list via the shared sorted builder (rarity-DESC equipment, then
+        // consumables) - MUST match the Draw renderer's list exactly, so both call
+        // shop_build_sell_list(). Equipped slots (global.inventory[]) excluded.
+        var _sl       = shop_build_sell_list();
+        var _sl_items = _sl.items;
+        var _sl_src   = _sl.src;    // 0=equipment_stash  1=consumable_stash  2=carried_items  3=consumable_inventory
+        var _sl_idx   = _sl.idx;    // index within the source array at build time
         var _sl_count = array_length(_sl_items);
 
         // Clamp cursor and scroll window
@@ -1737,7 +1718,13 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open) {
 
         // Feed: number keys 1-N apply an OWNED feed (bought from Petra) to the highlighted
         // pet - no gold here. Feed FILLS the growth bar; an active run still evolves it.
-        var _owned    = pet_feed_owned_list();
+        // Pouches deeper than the 6 hotkey rows page with [A]/[D] (M 07-09: overflow
+        // items were listed as "+N more" but could never be seen or selected).
+        var _owned      = pet_feed_owned_list();
+        var _feed_pages = max(1, ceil(array_length(_owned) / 6));
+        if (input_hotkey("D")) bairc_feed_page = (bairc_feed_page + 1) mod _feed_pages;
+        if (input_hotkey("A")) bairc_feed_page = (bairc_feed_page - 1 + _feed_pages) mod _feed_pages;
+        bairc_feed_page = clamp(bairc_feed_page, 0, _feed_pages - 1);
         var _feed_key = -1;
         if      (input_hotkey("1") || input_inject_take("bairc:feed1")) _feed_key = 0;
         else if (input_hotkey("2") || input_inject_take("bairc:feed2")) _feed_key = 1;
@@ -1746,13 +1733,14 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open) {
         else if (input_hotkey("5") || input_inject_take("bairc:feed5")) _feed_key = 4;
         else if (input_hotkey("6") || input_inject_take("bairc:feed6")) _feed_key = 5;
         if (_feed_key >= 0) {
-            if (_feed_key >= array_length(_owned)) {
+            var _feed_idx = bairc_feed_page * 6 + _feed_key;   // hotkeys address the visible page
+            if (_feed_idx >= array_length(_owned)) {
                 if (!_bp.is_egg && pet_feed_pouch_total() <= 0)
                     bairc_notification = "No feed on hand - buy some from Petra the Trader.";
             } else {
-                var _fr = pet_feed_apply(_bp, _owned[_feed_key].id);
+                var _fr = pet_feed_apply(_bp, _owned[_feed_idx].id);
                 if (_fr == "") {
-                    bairc_notification = _bp.name + " enjoys the " + _owned[_feed_key].name + "."
+                    bairc_notification = _bp.name + " enjoys the " + _owned[_feed_idx].name + "."
                         + (pet_growth_ready(_bp) ? "  Ready to grow - take it on a run!" : "");
                     audio_play_sound(snd_npc_confirm, 1, false);
                     affinity_add("bairc", 2);   // function-use drip (feeding)

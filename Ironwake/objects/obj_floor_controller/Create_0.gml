@@ -203,6 +203,13 @@ if (_need_new_map) {
         array_push(_pool, _bonus_list[irandom(array_length(_bonus_list) - 1)]);
     }
 
+    // C1 A4+ (M-approved 07-09): COORDINATED PACKS - one extra ELITE chamber per
+    // floor at Awakening 4 and above. Guaranteed (not a bonus roll), so high tiers
+    // always carry the additional hard fight.
+    if ((variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0) >= 4) {
+        array_push(_pool, "elite");
+    }
+
     // Shuffle pool so room sequence varies per run
     var _pool_copy = array_create(array_length(_pool));
     array_copy(_pool_copy, 0, _pool, 0, array_length(_pool));

@@ -115,6 +115,12 @@ function combat_next_turn(combat_state) {
     // Fully restore energy at the start of each turn
     actor.energy = 3;
 
+    // Galvanize (D§4, M-approved 07-09): a killing blow last turn banked +1 AP.
+    if (actor.is_player && variable_struct_exists(actor, "galvanize_ap") && actor.galvanize_ap > 0) {
+        actor.energy += actor.galvanize_ap;
+        actor.galvanize_ap = 0;
+    }
+
     // Tundra Tomb floor passive: the pending chill docks AP from the player's FIRST
     // turn of this combat (set in obj_combat_controller Create; never below 1 AP).
     if (actor.is_player && variable_struct_exists(actor, "chill_ap_penalty") && actor.chill_ap_penalty > 0) {
@@ -361,6 +367,13 @@ function combat_estimate_hit(ability, caster, target) {
         if (caster.class_id == 0 && trait_active("Arcane Surge")
             && variable_struct_exists(ability, "energy_cost") && ability.energy_cost >= 3)
             _final = floor(_final * (1 + 0.25 * trait_potency_mult("Arcane Surge")));
+        // Soul Engine (D§4): mirror the +3/turn flat spell bonus in the preview.
+        if (variable_struct_exists(caster, "soul_engine_active") && caster.soul_engine_active
+            && ability_class_is_spell(ability_attack_class(ability))
+            && instance_exists(obj_combat_controller)) {
+            var _se_round = variable_struct_exists(caster, "soul_engine_round") ? caster.soul_engine_round : 0;
+            _final += 3 * max(0, instance_find(obj_combat_controller, 0).combat_state.round - _se_round);
+        }
         if (caster.class_id == 1 && trait_active("Berserker Rage")
             && caster.HP <= floor(caster.max_HP * 0.40))
             _final = floor(_final * (1 + 0.20 * trait_potency_mult("Berserker Rage")));
@@ -420,10 +433,27 @@ function combat_apply_damage(target_struct, damage) {
         var _guard = pet_active_pwr_guard();
         if (_guard > 0) damage = max(1, round(damage * (1 - _guard)));
     }
+    // Marked for Death (D§3 rework, M-approved 07-09): a MARKED enemy below 50%
+    // max HP takes +30% from ALL sources - hits, pet strikes and DoT ticks alike.
+    // Hooked here because every damage path funnels through this sink.
+    if (damage > 0 && variable_struct_exists(target_struct, "is_player") && !target_struct.is_player
+        && variable_struct_exists(target_struct, "status_effects")
+        && variable_struct_exists(target_struct, "max_HP") && target_struct.max_HP > 0
+        && target_struct.HP < target_struct.max_HP * 0.5
+        && combatant_has_status_kind(target_struct, "marked")) {
+        damage = round(damage * 1.30);
+    }
     var prev_hp         = target_struct.HP;
     target_struct.HP    = max(0, target_struct.HP - damage);
     var actual_dealt    = prev_hp - target_struct.HP;
     return actual_dealt;
+}
+
+// Smoke Bomb self-cover (D§3 rework, M-approved 07-09): the smoke hides YOU too -
+// +15 dodge while smoke_dodge_turns > 0 (set at cast, ticked down at your turn
+// start). Folded into both enemy hit rolls (primary + double strike).
+function combat_smoke_dodge(player) {
+    return (variable_struct_exists(player, "smoke_dodge_turns") && player.smoke_dodge_turns > 0) ? 15 : 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -474,11 +504,13 @@ function combat_check_blink(target, combat_log) {
 // drift from what combat actually applies.
 // ---------------------------------------------------------------------------
 function awaken_hp_mult(asc) {
-    var _tbl = [1.00, 1.20, 1.45, 1.75, 2.10, 2.55];
+    // A4/A5 top-end bumped (C1, M-approved 07-09) alongside the behavior ladder +
+    // the new Awakening XP mult - the player curve rises with it.
+    var _tbl = [1.00, 1.20, 1.45, 1.75, 2.20, 2.75];
     return _tbl[clamp(asc, 0, array_length(_tbl) - 1)];
 }
 function awaken_dmg_mult(asc) {
-    var _tbl = [1.00, 1.15, 1.35, 1.60, 1.90, 2.30];
+    var _tbl = [1.00, 1.15, 1.35, 1.60, 1.90, 2.45];
     return _tbl[clamp(asc, 0, array_length(_tbl) - 1)];
 }
 
@@ -487,6 +519,29 @@ function awaken_dmg_mult(asc) {
 function awaken_clear_gold_bonus(asc) {
     var _tbl = [0, 50, 100, 150, 200, 300];
     return _tbl[clamp(asc, 0, array_length(_tbl) - 1)];
+}
+
+// awaken_boss_enrage_mult(round) - A5 BOSS ENRAGE (BALANCE_NOTE C1, M-approved
+// 07-09): in a BOSS encounter at Awakening 5, enemy damage gains +10% per round
+// past round 6, so the fight can't be turtled forever. 1.0 everywhere else.
+function awaken_boss_enrage_mult(round) {
+    var _asc = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
+    if (_asc < 5) return 1.0;
+    if (!variable_global_exists("next_enemy_type") || global.next_enemy_type != "boss") return 1.0;
+    return 1.0 + 0.10 * max(0, round - 6);
+}
+
+// awaken_xp_mult(asc) - kill-XP multiplier by Awakening tier (BALANCE_NOTE C3,
+// M-approved 07-09). Root cause of the "level 8 wall": enemies scaled to x2.55 HP
+// at A5 but paid A0 XP, so run level (and the L5/10/15 perm-point rungs) fell ever
+// further behind the difficulty. A thorough A5 clear now lands ~L11-12 (2 points);
+// L15 stays a kill-everything trophy. Shown on the dungeon-select AWAKENING
+// EFFECTS panel (same single-source rule as the tables above).
+function awaken_xp_mult(asc = undefined) {
+    var _asc = (asc != undefined) ? asc
+        : (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0);
+    var _tbl = [1.00, 1.15, 1.30, 1.50, 1.75, 2.00];
+    return _tbl[clamp(_asc, 0, array_length(_tbl) - 1)];
 }
 
 // ---------------------------------------------------------------------------
@@ -577,6 +632,14 @@ function combat_apply_start_traits(player) {
         if (!variable_struct_exists(player, "shield_hp")) player.shield_hp = 0;
         player.shield_hp += boon_value("aegis");
     }
+
+    // Bastion flagship rune (C6, M-approved 07-09): start each combat with a
+    // standing ward (8 at tier III). Stacks with Aegis - both are chase content.
+    var _bast = rune_aspect_value("start_shield", undefined);
+    if (_bast > 0) {
+        if (!variable_struct_exists(player, "shield_hp")) player.shield_hp = 0;
+        player.shield_hp += _bast;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -618,6 +681,19 @@ function combat_try_last_stand(player, combat_log) {
         array_push(combat_log, "UNDYING! Your blood refuses the wound - you surge back to " + string(player.HP) + " HP (+3 Blood).");
         return true;
     }
+    // FATE'S COIN (Fortune capstone, C5 M-approved 07-09): once per combat, the
+    // blow that would kill you leaves you at 1 HP. Fires BEFORE Last Stand so the
+    // scarcer once-per-RUN trait is preserved; after Undying, which the player
+    // armed deliberately with a cast. player struct is per-combat, so the used
+    // flag resets naturally each fight.
+    if (pet_active_has_fatecoin()
+        && (!variable_struct_exists(player, "fatecoin_used") || !player.fatecoin_used)) {
+        player.fatecoin_used = true;
+        player.HP = 1;
+        array_push(combat_log, "FATE'S COIN! Your companion's luck turns the blow - you cling on at 1 HP.");
+        return true;
+    }
+
     if (!trait_active("Last Stand")) return false;
     if (variable_global_exists("last_stand_used") && global.last_stand_used) return false;
 
@@ -659,9 +735,15 @@ function ability_status_kind(ability) {
             // vulnerable in the damage chain), but ALSO doubles any detonation reaction
             // on the bearer and spreads +2 dmg-taken to all other enemies when one fires.
             return "hexed";
-        case "Bonebreaker": case "Marked for Death":
+        case "Bonebreaker":
             return "vulnerable";
+        case "Marked for Death":
+            // D§3 rework (M-approved 07-09): the EXECUTE setup - was a flat
+            // vulnerable clone. "marked" = +30% from all sources below 50% HP
+            // (applied in combat_apply_damage).
+            return "marked";
         case "Marrow Crush": case "Crippling Shot":
+        case "Hoarfrost Lance":   // D§4 Chill: weaken-kind, frost element (shatters)
             return "weaken";
         case "Smoke Bomb":
             return "blind";
@@ -692,6 +774,9 @@ function ability_status_element(ability) {
         case "Gore Strike": case "Spike Trap": case "Serrated Bleed":
             return "bleed";
         case "Entropy":       return "void";
+        // D§4: the Chill rides the existing frost element (Chilled display +
+        // frost SHATTER detonation), applied as a weaken-kind status.
+        case "Hoarfrost Lance": return "frost";
     }
     if (ability.effect_type == "dot") {
         switch (ability.damage_type) {
@@ -1083,6 +1168,7 @@ function combat_on_enemy_defeated(target, player, combat_log) {
     _gold_drop = round(_gold_drop * (1 + pet_active_boon_gold_pct() + pet_active_lck_gold_pct() + pet_active_splash_gold_pct() + pet_active_egg_bonus("gold")));   // Fortune pet gift + universal LCK + Gilded-Soul splash + Gilded-egg hatchling
     add_gold(_gold_drop);
     global.current_run_kills++;
+    global.total_kills++;   // lifetime counter - was initialized/saved/shown but never incremented (hub always read 0)
     quest_tick("kill_family", enemy_sound_family(target.name), 1);   // Phase 4a quest objective
     array_push(combat_log, "Gained " + string(_gold_drop) + "g!");
 
@@ -1105,7 +1191,7 @@ function combat_on_enemy_defeated(target, player, combat_log) {
     var _xp_base  = variable_struct_exists(target, "xp_value") ? target.xp_value : 10;
     var _xp_floor = variable_global_exists("current_floor") ? global.current_floor : 1;
     var _xp_scale = (_xp_floor == 2) ? 1.25 : ((_xp_floor >= 3) ? 1.5 : 1.0);
-    var _xp_amt   = round(_xp_base * _xp_scale * (1 + pet_active_egg_bonus("xp")));   // Scholar's egg
+    var _xp_amt   = round(_xp_base * _xp_scale * awaken_xp_mult() * (1 + pet_active_egg_bonus("xp")));   // floor + Awakening (C3) + Scholar's egg
     var _xp_lvls  = grant_xp(_xp_amt);
     array_push(combat_log, "Gained " + string(_xp_amt) + " XP!");
     if (_xp_lvls > 0) {
@@ -1113,14 +1199,32 @@ function combat_on_enemy_defeated(target, player, combat_log) {
         array_push(combat_log, "LEVEL UP! Now level " + string(global.run_level) + ".");
     }
 
-    // On-kill soul generation (Arcanist)
+    // On-kill soul generation (Arcanist class passive). Logged as "class passive" -
+    // the old "Soul Harvest: gained 2 Souls." line collided with the castable ability
+    // that is ALSO named Soul Harvest, so kill souls looked like a mystery double-fire
+    // on top of Soulfire's own +2 (M 07-09).
     if (player.class_id == 0 && variable_struct_exists(player, "souls")) {
         player.souls = min(player.souls_max, player.souls + 2);
-        array_push(combat_log, "Soul Harvest: gained 2 Souls.");
+        array_push(combat_log, "Arcanist passive: +2 Souls on the kill.");
     }
     if (player.class_id == 0 && variable_struct_exists(player, "souls") && trait_active("Soul Siphon")) {
         player.souls = min(player.souls_max, player.souls + 1);
         array_push(combat_log, "Soul Siphon: +1 Soul.");
+    }
+
+    // Cascade flagship rune (C6, M-approved 07-09): killing blows refund 1 of the
+    // class's secondary resource.
+    if (rune_aspect_socketed("cascade")) {
+        if (variable_struct_exists(player, "souls")) {
+            player.souls = min(player.souls_max, player.souls + 1);
+            array_push(combat_log, "Cascade rune: +1 Soul.");
+        } else if (variable_struct_exists(player, "blood")) {
+            player.blood = min(player.blood_max, player.blood + 1);
+            array_push(combat_log, "Cascade rune: +1 Blood.");
+        } else if (variable_struct_exists(player, "preparation")) {
+            player.preparation = min(player.preparation_max, player.preparation + 1);
+            array_push(combat_log, "Cascade rune: +1 Preparation.");
+        }
     }
 
     // Vampirism boon: heal a flat amount on each kill
@@ -1214,6 +1318,12 @@ function combat_pet_act(combat_state, player, combat_log, damage_popups) {
         // enemy-attack path in obj_combat_controller Step).
         if (_stance == "guarded") _base = max(1, round(_base * 0.5));
         var _exec = (_kit.execute > 0) ? (1 + _kit.execute) : 1;   // Executioner capstone vs low-HP foes
+        // Executioner slay threshold (BALANCE_NOTE C4, M-approved 07-09): in a
+        // non-elite / non-boss encounter, its strike outright slays a target left
+        // below 15% max HP. Room type is the encounter-rank source of truth.
+        var _slay_ok = (_kit.execute > 0)
+            && (!variable_global_exists("next_enemy_type")
+                || (global.next_enemy_type != "elite" && global.next_enemy_type != "boss"));
 
         if (_fulfilled) {
             // GRAND: corrupted cleave - strike EVERY living enemy.
@@ -1225,6 +1335,11 @@ function combat_pet_act(combat_state, player, combat_log, damage_popups) {
                 var _cd = combat_resolve_damage(round(_base * _cmul), 0, _c.armor, _c.el_resist);
                 if (_cd < 1) _cd = 1;
                 combat_apply_damage(_c, _cd);
+                // Executioner slay (C4): finish a still-standing target under 15%.
+                if (_slay_ok && _c.HP > 0 && _c.max_HP > 0 && _c.HP < _c.max_HP * 0.15) {
+                    combat_apply_damage(_c, _c.HP);
+                    array_push(combat_log, "[Companion] Executioner - " + _c.name + " is slain outright!");
+                }
                 array_push(damage_popups, { value: _cd, x: 1620 + _slot * (-120), y: 233 + _slot * 105 - 105, timer: 50, col: make_color_rgb(190, 120, 220) });
                 if (_c.HP <= 0) combat_on_enemy_defeated(_c, player, combat_log);
                 _slot++; _any = true;
@@ -1259,7 +1374,19 @@ function combat_pet_act(combat_state, player, combat_log, damage_popups) {
         }
         if (_best == undefined) return false;
         var _emul = (_best.max_HP > 0 && _best.HP < _best.max_HP * 0.30) ? _exec : 1;
-        var _dmg = combat_resolve_damage(round(_base * _emul), 0, _best.armor, _best.el_resist);
+        // Opportunist capstone (C5, M-approved 07-09): the strike DETONATES a status
+        // the target carries (consumed) for +35%. Simplified to the flat form - pets
+        // don't roll crits, so crit-flavored reactions cash out as the bonus too.
+        var _opp = 1;
+        if (_kit.opportunist > 0) {
+            var _od = combat_detonator_pick(_best);
+            if (_od.idx >= 0) {
+                array_delete(_best.status_effects, _od.idx, 1);
+                _opp = 1 + _kit.opportunist;
+                array_push(combat_log, "[Companion] Opportunist - it detonates the affliction!");
+            }
+        }
+        var _dmg = combat_resolve_damage(round(_base * _emul * _opp), 0, _best.armor, _best.el_resist);
         if (_dmg < 1) _dmg = 1;
         combat_apply_damage(_best, _dmg);
         if (_stance == "assist" && _best.HP > 0) {
@@ -1289,7 +1416,30 @@ function combat_pet_act(combat_state, player, combat_log, damage_popups) {
             array_push(combat_log, "[Companion] " + _p.name + " strikes " + _best.name + " for " + string(_dmg) + "!");
         }
         array_push(damage_popups, { value: _dmg, x: 1620 + _bslot * (-120), y: 233 + _bslot * 105 - 105, timer: 50, col: make_color_rgb(150, 215, 150) });
+        // Executioner slay (C4): finish a still-standing target under 15%.
+        if (_slay_ok && _best.HP > 0 && _best.max_HP > 0 && _best.HP < _best.max_HP * 0.15) {
+            combat_apply_damage(_best, _best.HP);
+            array_push(combat_log, "[Companion] Executioner - " + _best.name + " is slain outright!");
+        }
         if (_best.HP <= 0) combat_on_enemy_defeated(_best, player, combat_log);
+        // Bloodscent capstone (C5): a BLEEDING target that survives the strike is
+        // struck again at half power - the smell of blood drives it.
+        if (_kit.bloodscent > 0 && _best.HP > 0 && !_best.is_defeated
+            && variable_struct_exists(_best, "status_effects")) {
+            var _bs_bleeding = false;
+            for (var _bsi = 0; _bsi < array_length(_best.status_effects); _bsi++) {
+                var _bse = _best.status_effects[_bsi];
+                if (combat_status_kind_of(_bse) == "dot" && combat_status_element(_bse) == "bleed") { _bs_bleeding = true; break; }
+            }
+            if (_bs_bleeding) {
+                var _bs_dmg = combat_resolve_damage(max(1, round(_base * _kit.bloodscent)), 0, _best.armor, _best.el_resist);
+                if (_bs_dmg < 1) _bs_dmg = 1;
+                combat_apply_damage(_best, _bs_dmg);
+                array_push(combat_log, "[Companion] Bloodscent - it tears at the bleeding " + _best.name + " again for " + string(_bs_dmg) + "!");
+                array_push(damage_popups, { value: _bs_dmg, x: 1620 + _bslot * (-120), y: 233 + _bslot * 105 - 135, timer: 50, col: make_color_rgb(220, 120, 120) });
+                if (_best.HP <= 0) combat_on_enemy_defeated(_best, player, combat_log);
+            }
+        }
         global.pet_lunge_t0 = current_time;   // procedural lunge (combat draw)
         return true;
     }
@@ -1334,6 +1484,18 @@ function combat_pet_act(combat_state, player, combat_log, damage_popups) {
                 array_push(combat_log, "[Companion] " + _p.name + " tends your wounds (+" + string(_gain) + " HP).");
                 array_push(damage_popups, { value: _gain, x: 475, y: 545, timer: 50, col: make_color_rgb(120, 220, 140) });
                 _did = true;
+            }
+            // Lifespring capstone (C5, M-approved 07-09): once per combat its heal
+            // also washes away the newest affliction. The player struct is
+            // per-combat, so the used flag resets each fight.
+            if (_kit.lifespring
+                && (!variable_struct_exists(player, "lifespring_used") || !player.lifespring_used)) {
+                var _ls = combat_cleanse(player, "one");
+                if (_ls > 0) {
+                    player.lifespring_used = true;
+                    array_push(combat_log, "[Companion] Lifespring - the affliction washes away with the wound.");
+                    _did = true;
+                }
             }
         }
         if (_do_shield) {

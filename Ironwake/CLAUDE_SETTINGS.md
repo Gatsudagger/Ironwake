@@ -53,6 +53,20 @@
 - Test before marking complete
 - Keep GML files under 500 lines when feasible (split into functions if needed)
 
+### UI Collision Check (MANDATORY — added 2026-07-09)
+Whenever adding or changing any on-screen text or UI element:
+- **Verify nothing collides or overlaps** with neighboring text, boxes, frames, or borders at 1920×1080
+- Check the **longest realistic string** (longest item/ability/pet name, max stack counts, 4-digit gold), not just the happy case
+- Check **list overflow**: when rows exceed the visible area, scrolling/indicators must work and rows must not run past the panel
+- Measure with `string_width()`/`string_height()` against the actual box rect before placing — don't eyeball offsets
+- Too much time has been lost fixing minor overlap errors across pages; catch them before handoff
+
+### Reference Sync (MANDATORY — added 2026-07-09)
+Whenever a game mechanic changes, sweep and update **every in-game reference** to it in the same task:
+- Compendium/codex entries, tutorials, ability/trait/item descriptions, tooltips, shop text, key legends
+- Grep for the old numbers/terms across scripts and objects before marking complete
+- A mechanic change is not done until the game nowhere describes the old behavior
+
 ### Communication with M
 - Start each task with: "Starting [TASK_NAME]. Need clarifications on: [X, Y, Z]?" (if any)
 - End each task with: "Completed [TASK_NAME]. [2-sentence summary]. Ready for compaction?"

@@ -271,7 +271,7 @@ if (_pet_vit > 0) {
 player.dodge += _equip_bonus.dodge_flat;
 // crit_flat stored in stats so combat_roll_crit can read it from attacker_stats
 // (+ Keen egg: active hatchling adds flat crit-chance points on the same channel)
-player.stats.crit_bonus = _equip_bonus.crit_flat + pet_active_egg_bonus("crit");
+player.stats.crit_bonus = _equip_bonus.crit_flat + pet_active_egg_bonus("crit") + pet_active_kit_crit();   // gear + egg + Charmed (C5)
 // gold_find stored for future hook; add_gold will check this when implemented
 player.gold_find_pct = _equip_bonus.gold_find;
 
@@ -766,6 +766,11 @@ attack_anim_enemy_idx = 0;      // which enemy slot is sliding
 screen_shake_timer = 0;
 screen_shake_x     = 0;
 screen_shake_y     = 0;
+
+// Cast windup FX (07-09 art track, code-first): on a SPELL cast the caster flares
+// in the spell's school color and sheds rising motes while the timer runs down.
+cast_fx_timer = 0;
+cast_fx_color = c_white;
 
 // VFX impact sprite - drawn at hit position for a few frames.
 // vfx_timer_max holds the value vfx_timer was set to, so the Draw event can map

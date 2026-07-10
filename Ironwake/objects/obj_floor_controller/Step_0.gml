@@ -183,12 +183,14 @@ if (showing_shrine) {
                     shrine_notification = "Already claimed.";
                     shrine_notification_fail = true;
                 } else {
-                    var _cands = item_picker_candidates_by_tribute(_bd2.cost);
+                    // Sharp Eye (C5): the tribute tier uses the discounted price too.
+                    var _bcost2 = shrine_boon_price(_bd2.cost);
+                    var _cands = item_picker_candidates_by_tribute(_bcost2);
                     if (array_length(_cands) == 0) {
                         shrine_notification = "No item valuable enough to sacrifice.";
                         shrine_notification_fail = true;
                     } else {
-                        item_picker_open("shrine_boon", { boon_id: _bid, cost: _bd2.cost }, _cands);
+                        item_picker_open("shrine_boon", { boon_id: _bid, cost: _bcost2 }, _cands);
                         shrine_notification = "";
                         shrine_notification_fail = false;
                     }

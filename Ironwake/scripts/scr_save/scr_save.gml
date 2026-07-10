@@ -549,6 +549,19 @@ function load_game() {
         global.run_history = _s.run_history;
     }
 
+    // Lifetime-kills backfill: total_kills was never incremented before 07-09 (the hub
+    // stat always showed 0), so old saves carry a 0. Recover it from the per-run kill
+    // counts already stored in run history. Only fires on affected saves; a save
+    // written after the fix has a nonzero (and more complete) live count.
+    if (global.total_kills == 0 && is_array(global.run_history)) {
+        var _tk_sum = 0;
+        for (var _tk = 0; _tk < array_length(global.run_history); _tk++) {
+            var _tk_r = global.run_history[_tk];
+            if (is_struct(_tk_r) && variable_struct_exists(_tk_r, "kills")) _tk_sum += _tk_r.kills;
+        }
+        global.total_kills = _tk_sum;
+    }
+
     // Equipped items. global.inventory is pre-sized to EQUIP_SLOT_COUNT (10): index 8 =
     // Ranged Weapon, 9 = Ring 2. Older saves have fewer entries - the extra positions
     // stay undefined (empty), so the migration is automatic and lossless (the same
@@ -558,6 +571,7 @@ function load_game() {
         for (var _ii = 0; _ii < min(EQUIP_SLOT_COUNT, array_length(_s.inventory)); _ii++) {
             global.inventory[_ii] = _s.inventory[_ii];
             item_migrate_weapon_fields(global.inventory[_ii], _reroll_weapons);   // backfill weapon_damage/two_handed (+v2 range re-roll)
+            item_merge_dup_affixes(global.inventory[_ii]);   // pre-fix saves: "+2 INT +1 INT" -> "+3 INT"
         }
     }
 
@@ -566,6 +580,7 @@ function load_game() {
         global.equipment_stash = _s.equipment_stash;
         for (var _esi = 0; _esi < array_length(global.equipment_stash); _esi++) {
             item_migrate_weapon_fields(global.equipment_stash[_esi], _reroll_weapons);
+            item_merge_dup_affixes(global.equipment_stash[_esi]);   // pre-fix saves: merge stacked same-stat rows
         }
     }
     if (variable_struct_exists(_s, "consumable_stash") && is_array(_s.consumable_stash)) {
@@ -622,6 +637,23 @@ function load_game() {
     // covers them.
     if (variable_struct_exists(_s, "consumable_inventory") && is_array(_s.consumable_inventory)) {
         global.consumable_inventory = _s.consumable_inventory;
+    }
+
+    // Genie Lamp rarity stamp: lamps created before 07-09 lack the legendary rarity
+    // field (added so its name golds everywhere). Backfill owned lamps in both
+    // consumable pools; new lamps get it at create_consumable. Runs AFTER both pools
+    // load (consumable_inventory restores just above).
+    var _gl_pools = [global.consumable_stash, global.consumable_inventory];
+    for (var _gp = 0; _gp < array_length(_gl_pools); _gp++) {
+        var _gl_pool = _gl_pools[_gp];
+        if (!is_array(_gl_pool)) continue;
+        for (var _gi = 0; _gi < array_length(_gl_pool); _gi++) {
+            var _gc2 = _gl_pool[_gi];
+            if (is_struct(_gc2) && variable_struct_exists(_gc2, "name") && _gc2.name == "Genie Lamp"
+                && !variable_struct_exists(_gc2, "rarity")) {
+                _gc2.rarity = 4;
+            }
+        }
     }
 
     // Shop stock (per-slot). Restore this character's Dorn/Petra stock. Saves

@@ -942,7 +942,10 @@ function item_rarity_name(rarity) {
 // Returns a draw color for a rarity integer.
 // ---------------------------------------------------------------------------
 function item_rarity_color(rarity) {
-    switch (rarity) {
+    // Normalize: a fractional/real rarity (or anything non-numeric) must not fall
+    // through the integer cases and silently draw a colored item white.
+    var _r = is_real(rarity) ? round(rarity) : 0;
+    switch (_r) {
         case 0: return c_white;                            // Common   - white
         case 1: return make_color_rgb(100, 200, 100);     // Uncommon - green
         case 2: return make_color_rgb(80, 140, 255);      // Rare     - blue
@@ -957,7 +960,7 @@ function item_rarity_color(rarity) {
 // Returns a consumable item struct for inventory and drop systems.
 // ---------------------------------------------------------------------------
 function create_consumable(name, effect_type, effect_value, description, gold_value) {
-    return {
+    var _c = {
         name:          name,
         item_category: "consumable",
         effect_type:   effect_type,
@@ -965,6 +968,18 @@ function create_consumable(name, effect_type, effect_value, description, gold_va
         description:   description,
         gold_value:    gold_value
     };
+    // The Genie Lamp is a legendary-tier drop (~1.5% off elites/bosses) and should
+    // READ like one: stamp legendary rarity so every rarity-aware name draw golds it
+    // (M 07-09). Centralized here so all creation sites agree.
+    if (name == "Genie Lamp") _c.rarity = 4;
+    return _c;
+}
+
+// Name color for a consumable row: rarity-stamped specials (Genie Lamp = legendary
+// gold) use their rarity color; everything else keeps the consumable cyan.
+function ui_consumable_name_color(item) {
+    if (is_struct(item) && variable_struct_exists(item, "rarity")) return item_rarity_color(item.rarity);
+    return make_color_rgb(80, 200, 200);
 }
 
 // ---------------------------------------------------------------------------
@@ -1213,6 +1228,53 @@ function slot_is_caster_affix(slot, base_name) {
 }
 
 // ---------------------------------------------------------------------------
+// item_affix_exclusions(item) - the exclude list for rolling EXTRA affixes onto an
+// item: its base stat PLUS every stat already present on an existing affix row.
+// Pre-declared multi-stat items (Ember Ring's intrinsic "of Insight" +INT) were only
+// excluding the base stat, so the roller could stack a second row of the same stat
+// ("+2 INT  +1 INT" instead of one combined row - M 07-09 screenshot).
+// ---------------------------------------------------------------------------
+function item_affix_exclusions(item) {
+    var _ex = [item.stat_name];
+    if (variable_struct_exists(item, "affixes") && is_array(item.affixes)) {
+        for (var _xi = 0; _xi < array_length(item.affixes); _xi++) {
+            var _xr = item.affixes[_xi];
+            if (is_struct(_xr) && variable_struct_exists(_xr, "stat_name")) array_push(_ex, _xr.stat_name);
+        }
+    }
+    return _ex;
+}
+
+// ---------------------------------------------------------------------------
+// item_merge_dup_affixes(item) - merge duplicate same-stat affix rows (values sum
+// into the first row; rows without stat_name, e.g. elemental status affixes, pass
+// through untouched). Run on loaded items so pre-fix saves with stacked rows read
+// "+3 INT" instead of "+2 INT  +1 INT". Totals don't change - stat application
+// always summed every row - this is display + affix-slot hygiene.
+// ---------------------------------------------------------------------------
+function item_merge_dup_affixes(item) {
+    if (!is_struct(item) || !variable_struct_exists(item, "affixes") || !is_array(item.affixes)) return;
+    var _out = [];
+    for (var _mi = 0; _mi < array_length(item.affixes); _mi++) {
+        var _row = item.affixes[_mi];
+        var _merged = false;
+        if (is_struct(_row) && variable_struct_exists(_row, "stat_name") && variable_struct_exists(_row, "stat_value")) {
+            for (var _mj = 0; _mj < array_length(_out); _mj++) {
+                var _prev = _out[_mj];
+                if (is_struct(_prev) && variable_struct_exists(_prev, "stat_name")
+                    && _prev.stat_name == _row.stat_name && variable_struct_exists(_prev, "stat_value")) {
+                    _prev.stat_value += _row.stat_value;
+                    _merged = true;
+                    break;
+                }
+            }
+        }
+        if (!_merged) array_push(_out, _row);
+    }
+    item.affixes = _out;
+}
+
+// ---------------------------------------------------------------------------
 // roll_affixes(rarity, count, exclude_stat_names, slot, base_name)
 // Returns an array of affix structs chosen from global.affix_pool.
 // No duplicate stat_names. exclude_stat_names prevents doubling the base stat.
@@ -1351,14 +1413,18 @@ function drop_weights(source, asc) {
     asc = clamp(asc, 0, 5);
     var _a0, _a5;
     switch (source) {
-        case "standard":  _a0 = [90,  9,  1,  0, 0]; _a5 = [45, 33, 17,  5, 0]; break;
-        case "elite":     _a0 = [72, 23,  5,  0, 0]; _a5 = [22, 38, 28, 10, 2]; break;
-        case "boss":      _a0 = [33, 42, 21,  3, 1]; _a5 = [ 6, 28, 38, 22, 6]; break;
-        case "chest":     _a0 = [80, 17,  3,  0, 0]; _a5 = [33, 37, 22,  7, 1]; break;
-        case "vault":     _a0 = [70, 24,  5,  1, 0]; _a5 = [25, 38, 26,  9, 2]; break;
+        // A5 anchors steepened (BALANCE_NOTE C2, M-approved 07-09): high Awakening
+        // pays in rarity - legendaries now exist outside bosses (2% mobs / 6% elites),
+        // and an A5 standard mob is 36% rare-or-better (was 22%). A0 anchors and the
+        // lerp are untouched, so every tier between scales smoothly.
+        case "standard":  _a0 = [90,  9,  1,  0, 0]; _a5 = [28, 36, 24, 10, 2]; break;
+        case "elite":     _a0 = [72, 23,  5,  0, 0]; _a5 = [10, 30, 34, 20, 6]; break;
+        case "boss":      _a0 = [33, 42, 21,  3, 1]; _a5 = [ 0, 20, 38, 30, 12]; break;
+        case "chest":     _a0 = [80, 17,  3,  0, 0]; _a5 = [20, 36, 28, 13, 3]; break;
+        case "vault":     _a0 = [70, 24,  5,  1, 0]; _a5 = [12, 32, 32, 18, 6]; break;
         case "reliquary": _a0 = [ 0, 60, 32,  7, 1]; _a5 = [ 0, 25, 40, 28, 7]; break;
         case "dorn":      _a0 = [55, 38,  7,  0, 0]; _a5 = [10, 35, 35, 18, 2]; break;
-        default:          _a0 = [90,  9,  1,  0, 0]; _a5 = [45, 33, 17,  5, 0]; break;
+        default:          _a0 = [90,  9,  1,  0, 0]; _a5 = [28, 36, 24, 10, 2]; break;
     }
     var _t = asc / 5;
     var _w = array_create(5, 0);
@@ -1452,7 +1518,7 @@ function drop_equipment(rarity_weights, do_discover = true) {
     var _bias_t = weapon_damage_bias_t(_item);
 
     if (_affix_count > 0) {
-        var _affixes = roll_affixes(_eff_rarity, _affix_count, [_item.stat_name], _item.slot, _item.base_name, _bias_t);
+        var _affixes = roll_affixes(_eff_rarity, _affix_count, item_affix_exclusions(_item), _item.slot, _item.base_name, _bias_t);
         apply_affixes_to_item(_item, _affixes);
     }
 
@@ -2582,7 +2648,13 @@ function rune_catalog() {
         { id:"surge",      name:"Surge",      domain:"aspect", aspect:"spell_crit",           vals:[4,8,14],   blurb:"+#% Spell crit chance" },
         { id:"anchor",     name:"Anchor",     domain:"aspect", aspect:"melee_weaken",         vals:[1,1,2],    blurb:"Melee attacks Weaken (# turns)" },
         { id:"quickcast",  name:"Quickcast",  domain:"aspect", aspect:"first_spell_ap", tier3_only:true, vals:[0,0,1], blurb:"First spell each combat costs -1 AP" },
-        { id:"echo",       name:"Echo",       domain:"aspect", aspect:"first_aoe_echo", tier3_only:true, vals:[0,0,1], blurb:"First AoE each combat applies its rider at full duration" },
+        // Echo blurb fixed 07-09 (C6): the MECHANIC was already the 50% damage echo -
+        // only this text still described the old rider-duration behavior.
+        { id:"echo",       name:"Echo",       domain:"aspect", aspect:"first_aoe_echo", tier3_only:true, vals:[0,0,1], blurb:"First AoE each combat ECHOES - every target takes 50% again" },
+        // NEW tier-3 flagships (C6, M-approved 07-09) - progression-gated chase
+        // recipes at Maren (flagship_unlock_text).
+        { id:"cascade",    name:"Cascade",    domain:"aspect", aspect:"kill_refund",  tier3_only:true, vals:[0,0,1], blurb:"Your killing blows refund 1 Soul / Blood / Prep" },
+        { id:"bastion",    name:"Bastion",    domain:"aspect", aspect:"start_shield", tier3_only:true, vals:[0,0,8], blurb:"Start each combat with 8 shield" },
     ];
 }
 
@@ -2997,13 +3069,32 @@ function maren_split_rune(rune_inv_index) {
 }
 
 // Flagship (tier3_only) rune ids, and the craft cost to forge one directly.
-function rune_flagship_ids()  { return ["quickcast", "echo"]; }
+function rune_flagship_ids()  { return ["quickcast", "echo", "cascade", "bastion"]; }
 function flagship_craft_cost() { return { gold: cha_price(300), dust: 60 }; }
+
+// Flagship unlock gates (C6, M-approved 07-09): the new recipes are chase
+// content - locked rows show at Maren greyed with this text (Vex-unlock idiom).
+// "" = unlocked. Quickcast/Echo stay available from the start.
+function flagship_unlock_text(id) {
+    if (id == "cascade") {
+        var _bk = variable_global_exists("total_boss_kills") ? global.total_boss_kills : 0;
+        return (_bk >= 25) ? "" : ("Locked - slay 25 bosses (" + string(_bk) + "/25)");
+    }
+    if (id == "bastion") {
+        // 20 full clears = the doc's "60 floors survived" on the EXISTING persistent
+        // counter (3 floors/dungeon) - no new save plumbing, M's history backfills.
+        var _dc = variable_global_exists("dungeon_clears_total") ? global.dungeon_clears_total : 0;
+        return (_dc >= 20) ? "" : ("Locked - complete 20 full clears (" + string(_dc) + "/20)");
+    }
+    return "";
+}
 
 // Craft a tier-III flagship rune for gold+dust. "" on success else reason.
 function maren_craft_flagship(id) {
     var _def = rune_get(id);
     if (_def == undefined || !variable_struct_exists(_def, "tier3_only") || !_def.tier3_only) return "Not a flagship rune.";
+    var _lock = flagship_unlock_text(id);
+    if (_lock != "") return _lock;
     var _cost = flagship_craft_cost();
     if (global.gold < _cost.gold) return "Need " + string(_cost.gold) + "g.";
     if (!variable_global_exists("rune_dust") || global.rune_dust < _cost.dust) return "Need " + string(_cost.dust) + " dust.";
@@ -3012,6 +3103,52 @@ function maren_craft_flagship(id) {
     array_push(global.rune_inventory, rune_make(id, 3));
     save_game();
     return "";
+}
+
+// ---------------------------------------------------------------------------
+// shop_build_sell_list() - the sellable-item list for the shop SELL tab, SORTED:
+// equipment first by rarity DESC (legendary -> common; stash before carried and
+// build order break ties), then consumables in their original stash -> carried
+// order. SINGLE SOURCE for both the Step action handler and the Draw renderer -
+// they used to build parallel arrays independently, and any ordering drift would
+// sell the wrong item. Returns { items, src, idx, tags }:
+//   src  0=equipment_stash 1=consumable_stash 2=carried_items 3=consumable_inventory
+//   idx  = index within the source array at build time (for the actual removal)
+//   tags = "[STASH]" / "[CARRIED]" display tag per row
+// ---------------------------------------------------------------------------
+function shop_build_sell_list() {
+    var _entries = [];
+    for (var _i = 0; _i < array_length(global.equipment_stash); _i++)
+        array_push(_entries, { it: global.equipment_stash[_i],      src: 0, idx: _i });
+    for (var _i = 0; _i < array_length(global.consumable_stash); _i++)
+        array_push(_entries, { it: global.consumable_stash[_i],     src: 1, idx: _i });
+    for (var _i = 0; _i < array_length(global.carried_items); _i++)
+        array_push(_entries, { it: global.carried_items[_i],        src: 2, idx: _i });
+    for (var _i = 0; _i < array_length(global.consumable_inventory); _i++)
+        array_push(_entries, { it: global.consumable_inventory[_i], src: 3, idx: _i });
+
+    array_sort(_entries, function(_a, _b) {
+        var _ae = variable_struct_exists(_a.it, "slot");
+        var _be = variable_struct_exists(_b.it, "slot");
+        if (_ae != _be) return _ae ? -1 : 1;   // equipment block above consumables
+        if (_ae) {
+            var _ar = variable_struct_exists(_a.it, "rarity") ? _a.it.rarity : 0;
+            var _br = variable_struct_exists(_b.it, "rarity") ? _b.it.rarity : 0;
+            if (_ar != _br) return _br - _ar;  // rarity DESC (M 07-09: sort for sell navigation)
+        }
+        if (_a.src != _b.src) return _a.src - _b.src;
+        return _a.idx - _b.idx;
+    });
+
+    var _r = { items: [], src: [], idx: [], tags: [] };
+    for (var _i = 0; _i < array_length(_entries); _i++) {
+        var _e = _entries[_i];
+        array_push(_r.items, _e.it);
+        array_push(_r.src,   _e.src);
+        array_push(_r.idx,   _e.idx);
+        array_push(_r.tags,  (_e.src == 0 || _e.src == 1) ? "[STASH]" : "[CARRIED]");
+    }
+    return _r;
 }
 
 // =============================================================================
@@ -3686,19 +3823,23 @@ function boon_pay(id, method) {
     var _b = boon_get(id);
     if (_b == undefined) return "Unknown boon.";
     if (boon_active(id)) return "Already claimed.";
+    // Sharp Eye pet capstone (C5): boons cost 15% less. Discounted ONCE here so
+    // gold, the derived dust cost and the item-tribute tier all agree with the
+    // shrine draw (which quotes shrine_boon_price too).
+    var _cost = shrine_boon_price(_b.cost);
     if (method == "gold") {
-        if (global.gold < _b.cost) return "Need " + string(_b.cost) + "g.";
-        global.gold -= _b.cost;
+        if (global.gold < _cost) return "Need " + string(_cost) + "g.";
+        global.gold -= _cost;
         boon_grant(id);
         return "";
     } else if (method == "dust") {
-        var _dc = boon_dust_cost(_b.cost);
+        var _dc = boon_dust_cost(_cost);
         if (!variable_global_exists("rune_dust") || global.rune_dust < _dc) return "Need " + string(_dc) + " dust.";
         global.rune_dust -= _dc;
         boon_grant(id);
         return "";
     } else if (method == "item") {
-        var _pick = boon_item_tribute_pick(_b.cost);
+        var _pick = boon_item_tribute_pick(_cost);
         if (_pick == undefined) return "No item valuable enough to sacrifice.";
         if (_pick.source == "carried") array_delete(global.carried_items, _pick.index, 1);
         else                           array_delete(global.equipment_stash, _pick.index, 1);
@@ -4408,6 +4549,20 @@ function quest_catalog() {
 // surfaces branch on it.
 function quest_is_gate(d) {
     return (d != undefined) && variable_struct_exists(d, "kind") && d.kind == "gate";
+}
+
+// The NPC's ACTIVE gate quest ({def, state}) or undefined - the NPC-screen bond
+// header shows its progress inline (C7, M-approved 07-09) so the player sees the
+// favor they owe without opening the board or Journal.
+function npc_active_gate_quest(npc_id) {
+    var _c = quest_catalog();
+    for (var _i = 0; _i < array_length(_c); _i++) {
+        var _d = _c[_i];
+        if (!quest_is_gate(_d) || _d.npc != npc_id) continue;
+        var _s = quest_state(_d.id);
+        if (_s != undefined && _s.status == "active") return { def: _d, state: _s };
+    }
+    return undefined;
 }
 
 // Visibility filter (4c): hunts always show; a gate quest hides until its NPC has
@@ -5490,7 +5645,7 @@ function petra_roll_one(rarity) {
     else if (rarity == 2) _ac = (irandom(1) == 0) ? 1 : 2;
     else if (rarity == 3) _ac = 2;
     var _pb_t = weapon_damage_bias_t(_item);
-    if (_ac > 0) apply_affixes_to_item(_item, roll_affixes(rarity, _ac, [_item.stat_name], _item.slot, _item.base_name, _pb_t));
+    if (_ac > 0) apply_affixes_to_item(_item, roll_affixes(rarity, _ac, item_affix_exclusions(_item), _item.slot, _item.base_name, _pb_t));
     var _be = (variable_struct_exists(_item, "elem_affix") && _item.elem_affix != undefined);
     if ((_item.slot == "weapon" || _item.slot == "ranged_weapon") && !_be) {
         apply_elemental_affix_to_item(_item, roll_elemental_affix(rarity, _pb_t));
@@ -6509,6 +6664,33 @@ function pet_active_boon_loot_pts() {
     return round(_v);
 }
 
+// --- C5 kit hooks for the ACTIVE pet (M-approved 07-09) -----------------------
+// Charmed: flat % added to ALL the player's crit rolls, LCK-scaled + care-modified.
+function pet_active_kit_crit() {
+    var _p = pet_active();
+    if (_p == undefined || _p.is_egg) return 0;
+    var _c = pet_kit_mods(_p).crit;
+    if (_c <= 0) return 0;
+    return _c * pet_injury_mult(_p.injured) * pet_corruption_mult(_p) * pet_stat_mult(_p, "lck") * pet_hunger_mult(_p);
+}
+// Fate's Coin: once-per-combat lethal save (checked in combat_try_last_stand).
+function pet_active_has_fatecoin() {
+    var _p = pet_active();
+    if (_p == undefined || _p.is_egg || pet_hp(_p) <= 0 || pet_injury_mult(_p.injured) <= 0) return false;
+    return pet_kit_mods(_p).fatecoin;
+}
+// Sharp Eye: flat % added to event stat-check odds (0 when absent).
+function pet_active_sharpeye() {
+    var _p = pet_active();
+    if (_p == undefined || _p.is_egg || pet_injury_mult(_p.injured) <= 0) return 0;
+    return pet_kit_mods(_p).sharpeye;
+}
+// Sharp Eye's shrine discount: boon prices -15% while it watches the exchange.
+// Single price source for the shrine draw AND the payment handler.
+function shrine_boon_price(base_cost) {
+    return (pet_active_sharpeye() > 0) ? max(1, round(base_cost * 0.85)) : base_cost;
+}
+
 // --- Pet stats (Pets §5): three weak, archetype-tied stats that modestly modify their
 // matching ability's effectiveness. Derived from archetype + stage + a stable per-creature
 // "talent" (0..2, hashed from uid) so NO new saved fields are needed and old pets Just Work.
@@ -6761,8 +6943,16 @@ function pet_passive_list(pet) {
     }
     // Kit traits (stage-gated).
     var _kit = pet_kit(pet);
-    for (var _i = 0; _i < array_length(_kit); _i++)
-        if (_kit[_i].kind == "Trait") array_push(_out, { name: _kit[_i].name, desc: _kit[_i].desc });
+    for (var _i = 0; _i < array_length(_kit); _i++) {
+        if (_kit[_i].kind == "Trait") {
+            array_push(_out, { name: _kit[_i].name, desc: _kit[_i].desc });
+        } else if (_kit[_i].kind == "Splash") {
+            // The Awakened splash (kind "Splash") fell through BOTH the Trait and
+            // Ability filters, so a chosen Stage-4 gift showed NOWHERE (M 07-09,
+            // awakened hollow pup). It's a passive - list it here, labeled.
+            array_push(_out, { name: _kit[_i].name + "  (Awakened gift)", desc: _kit[_i].desc });
+        }
+    }
     return _out;
 }
 
@@ -6939,21 +7129,30 @@ function pet_corruption_tag(pet) {
 // drives the Tab detail popup + small additive effect mods. (Values TBD - balance.)
 function pet_kit_catalog() {
     return [
-        // BOON
+        // BOON (C5 M-approved 07-09: Fortune gets table presence - Charmed stage-2
+        // crit aura + two new capstone options beside the economy pair)
         { arch:PET_ARCH_BOON, id:"prospector", name:"Prospector",     kind:"Trait",   stage:1, effect:"gold", val:0.04, desc:"Sniffs out coin - +4% gold while it is your companion." },
         { arch:PET_ARCH_BOON, id:"lucky",      name:"Lucky Streak",   kind:"Trait",   stage:2, effect:"loot", val:2,    desc:"Fortune leans your way - +2% loot find while active." },
+        { arch:PET_ARCH_BOON, id:"charmed",    name:"Charmed",        kind:"Trait",   stage:2, effect:"crit", val:3,    desc:"Luck rides your blade - +3% to ALL your critical rolls while it is active (grows with its LCK)." },
         { arch:PET_ARCH_BOON, id:"windfall",   name:"Windfall",       kind:"Ability", stage:3, effect:"gold", val:0.08, desc:"Capstone: a surge of fortune - a further +8% gold." },
         { arch:PET_ARCH_BOON, id:"treasure_sense", name:"Treasure Sense", kind:"Ability", stage:3, effect:"loot", val:4, desc:"Capstone: an unerring nose for loot - a further +4% loot find." },
-        // COMBATANT
+        { arch:PET_ARCH_BOON, id:"fate_coin",  name:"Fate's Coin",    kind:"Ability", stage:3, effect:"fatecoin", val:0, desc:"Capstone: once per combat, a blow that would kill you leaves you at 1 HP instead." },
+        { arch:PET_ARCH_BOON, id:"sharp_eye",  name:"Sharp Eye",      kind:"Ability", stage:3, effect:"sharpeye", val:10, desc:"Capstone: it sees the angles - event stat-checks +10% success, shrine boons cost 15% less." },
+        // COMBATANT (C5: +2 capstone options; C4: Executioner reworked - was a
+        // strictly-worse Rend at +40% conditional vs +50% flat)
         { arch:PET_ARCH_COMBATANT, id:"vicious", name:"Vicious",      kind:"Trait",   stage:1, effect:"dmg", val:0.15, desc:"Goes for the throat - +15% to its attacks." },
         { arch:PET_ARCH_COMBATANT, id:"savage",  name:"Savage",       kind:"Trait",   stage:2, effect:"dmg", val:0.20, desc:"Tastes blood - a further +20% to its attacks." },
         { arch:PET_ARCH_COMBATANT, id:"rend",    name:"Rend",         kind:"Ability", stage:3, effect:"dmg", val:0.50, desc:"Capstone: brutal, tearing strikes - +50% attack damage." },
-        { arch:PET_ARCH_COMBATANT, id:"executioner", name:"Executioner", kind:"Ability", stage:3, effect:"execute", val:0.40, desc:"Capstone: +40% damage to enemies below 30% HP - it finishes the wounded." },
-        // GUARDIAN
+        { arch:PET_ARCH_COMBATANT, id:"executioner", name:"Executioner", kind:"Ability", stage:3, effect:"execute", val:1.00, desc:"Capstone: +100% damage to enemies below 30% HP - and its strike SLAYS outright a lesser foe below 15% (not elites or bosses)." },
+        { arch:PET_ARCH_COMBATANT, id:"opportunist", name:"Opportunist", kind:"Ability", stage:3, effect:"opportunist", val:0.35, desc:"Capstone: its strike DETONATES a status the target carries (consumed) for +35% damage - a second detonator on your side." },
+        { arch:PET_ARCH_COMBATANT, id:"bloodscent",  name:"Bloodscent",  kind:"Ability", stage:3, effect:"bloodscent", val:0.50, desc:"Capstone: the smell of blood drives it - against a BLEEDING target it strikes twice (second hit at half power)." },
+        // GUARDIAN (C5: +2 capstone options)
         { arch:PET_ARCH_GUARDIAN, id:"devoted", name:"Devoted",       kind:"Trait",   stage:1, effect:"heal", val:0.25, desc:"Never leaves your side - +25% to its healing." },
         { arch:PET_ARCH_GUARDIAN, id:"warding", name:"Warding",       kind:"Trait",   stage:2, effect:"shield", val:0.25, desc:"Raises stronger wards - +25% to its shields." },
         { arch:PET_ARCH_GUARDIAN, id:"guardian_angel", name:"Guardian Angel", kind:"Ability", stage:3, effect:"both", val:0, desc:"Capstone: each turn it heals AND shields you, never just one." },
         { arch:PET_ARCH_GUARDIAN, id:"bulwark", name:"Bulwark",       kind:"Ability", stage:3, effect:"shield", val:0.50, desc:"Capstone: an immovable ward - +50% to its shields." },
+        { arch:PET_ARCH_GUARDIAN, id:"bodyguard",  name:"Bodyguard",  kind:"Ability", stage:3, effect:"bodyguard", val:0, desc:"Capstone: it throws itself between you and harm - 40% chance to intercept part of any blow, in any stance (it takes that damage, and a quarter more)." },
+        { arch:PET_ARCH_GUARDIAN, id:"lifespring", name:"Lifespring", kind:"Ability", stage:3, effect:"lifespring", val:0, desc:"Capstone: once per combat, its heal also washes away your newest affliction." },
         // AWAKENED SPLASH (stage 4, design 2026-07-03): the crossover layer. One signature
         // splash per archetype; an Awakened pet takes exactly ONE, and only from a
         // DIFFERENT archetype (pet_splash_pool) - a Warrior tastes Fortune, never more Warrior.
@@ -7109,6 +7308,17 @@ function pet_assign_splash(pet) {
     pet.splash_pending = false;
 }
 
+// Display text for a pet's chosen/rolled Awakened splash: "Name - desc", or ""
+// until it has one. Surfaces the Stage-4 gift on the companion loadout card and
+// the Tab detail popup (M 07-09: once chosen, the splash showed NOWHERE).
+function pet_splash_text(pet) {
+    if (!is_struct(pet) || pet.is_egg) return "";
+    if (!variable_struct_exists(pet, "kit_splash") || pet.kit_splash == "") return "";
+    var _k = pet_kit_get(pet.kit_splash);
+    if (_k == undefined) return "";
+    return _k.name + " - " + _k.desc;
+}
+
 // Count of pets awaiting a splash pick (Bairc badge / notice, mirrors capstone count).
 function pet_splash_pending_count() {
     var _r = pet_roster(); var _n = 0;
@@ -7144,6 +7354,8 @@ function pet_aura_color(pet) {
 // Aggregate the additive effect mods from a pet's unlocked kit.
 function pet_kit_mods(pet) {
     var _m = { dmg:0, heal:0, shield:0, gold:0, loot:0, execute:0, both:false,
+               crit:0, fatecoin:false, sharpeye:0, opportunist:0, bloodscent:0,
+               bodyguard:false, lifespring:false,
                splash_gold:0, splash_loot:0, echo:0, vigil:0 };
     var _k = pet_kit(pet);
     for (var _i = 0; _i < array_length(_k); _i++) {
@@ -7156,6 +7368,14 @@ function pet_kit_mods(pet) {
             case "loot":    _m.loot    += _e.val; break;
             case "execute": _m.execute += _e.val; break;
             case "both":    _m.both     = true;   break;
+            // C5 kit additions (M-approved 07-09)
+            case "crit":        _m.crit        += _e.val; break;   // Charmed: +% to all player crit rolls (LCK-scaled at apply)
+            case "fatecoin":    _m.fatecoin     = true;   break;   // Fate's Coin: once/combat lethal save at 1 HP
+            case "sharpeye":    _m.sharpeye    += _e.val; break;   // Sharp Eye: +% event checks; shrine boons -15%
+            case "opportunist": _m.opportunist += _e.val; break;   // Opportunist: strike detonates a carried status
+            case "bloodscent":  _m.bloodscent  += _e.val; break;   // Bloodscent: second strike vs bleeding targets
+            case "bodyguard":   _m.bodyguard    = true;   break;   // Bodyguard: intercept 25%->40%, pet pays +25%
+            case "lifespring":  _m.lifespring   = true;   break;   // Lifespring: heal also cleanses, once/combat
             // Awakened splash keys - kept SEPARATE from gold/loot so the Boon-gated
             // economy path (pet_active_boon_*) never double-counts them.
             case "splash_fortune": _m.splash_gold += _e.val; _m.splash_loot += _e.val2; break;
@@ -7652,6 +7872,8 @@ function tutorial_catalog() {
         { id:"shrine",     title:"Altars",              body:"A shrine is an altar. A Blessing altar sells boons for tribute; a Cursed altar lets you take on a curse - a run-long penalty - in exchange for far better spoils. Choose how greedy you dare to be." },
         { id:"gold_risk",  title:"Gold at Risk",        body:"Gold you FIND during a run is at risk - die and you lose most of it (a quarter is returned as mercy). Gold banked before the run is always safe at camp. The number in brackets on your HUD is what you're gambling: extract to keep it all." },
         { id:"escape_item", title:"A Way Out",          body:"You carry an escape item. On the floor map, press G (or tap the LAMP / WINE button) to use it: the Genie Lamp whisks you back to camp with ALL your loot, free. Devil Wine does the same - but drains 2 random stat points. WARNING: the Wine's toll is PERMANENT - those points are gone from your hero on every future run, not just this one. Cash out a greedy run before the dungeon takes it back." },
+        { id:"bond_gates",  title:"Growing Closer",     body:"Someone in camp has warmed to you - their bond has reached a GATE. Crossing a gate now takes a FAVOR: talk to them and take on their gate quest (it appears on the tavern board and in your Journal). Finish it and the friendship deepens, unlocking their next perk. Mind your bonds: friendships DECAY if neglected, and only a few can hold the deepest tiers - deepening one may demote another." },
+        { id:"corruption_101", title:"Corruption",      body:"A creature in your care is CORRUPTED. The bargain: while it pushes (3 survived runs as your active companion), YOU pay -20% max HP and -10% damage. Each pushed run adds a PERMANENT +15% to its passive gift. You may CURE it at Bairc's any time - the gains earned so far are kept, the burden lifts, but its grand power is forfeit. See it through all 3 runs and it fully corrupts: its gift is 45% stronger forever, the burden ends, and it earns a grand boon. The full table lives in the Compendium under Companions." },
     ];
 }
 
@@ -7877,7 +8099,7 @@ function chit_reforge_item(item) {
     var _r = variable_struct_exists(item, "rarity") ? item.rarity : 1;
     // Reforge re-CREATES the affix rows, so the weapon's damage-roll bias applies
     // here too - otherwise reforging a max-roll weapon would sidestep the tradeoff.
-    apply_affixes_to_item(item, roll_affixes(min(_r, 3), _count, [item.stat_name], item.slot, _bn, weapon_damage_bias_t(item)));
+    apply_affixes_to_item(item, roll_affixes(min(_r, 3), _count, item_affix_exclusions(item), item.slot, _bn, weapon_damage_bias_t(item)));
     return true;
 }
 
@@ -7912,7 +8134,7 @@ function alch_rebirth_make(old_item) {
     if (_r == 1)      _ac = 1;
     else if (_r == 2) _ac = (irandom(1) == 0) ? 1 : 2;
     else if (_r >= 3) _ac = 2;
-    if (_ac > 0) apply_affixes_to_item(_item, roll_affixes(min(_r, 3), _ac, [_item.stat_name], _item.slot, item_base_name(_item), weapon_damage_bias_t(_item)));
+    if (_ac > 0) apply_affixes_to_item(_item, roll_affixes(min(_r, 3), _ac, item_affix_exclusions(_item), _item.slot, item_base_name(_item), weapon_damage_bias_t(_item)));
     _item.socket_count = rune_sockets_for_rarity(_item.rarity);
     return _item;
 }
@@ -8192,7 +8414,8 @@ function event_check_chance(stat_name, base_pct, per_point, ref) {
     // Sense trait: a flat +5% to every stat-check's success odds (read of the room
     // tips the bet in your favor). Folded into the base before the curve + clamp.
     var _sense_bonus = trait_active("Sense") ? 5 : 0;
-    return clamp(base_pct + _sense_bonus + (_s - ref) * per_point, 10, 90);
+    // Sharp Eye pet capstone (C5): a further +10% - it sees the angles.
+    return clamp(base_pct + _sense_bonus + pet_active_sharpeye() + (_s - ref) * per_point, 10, 90);
 }
 
 // event_effect_phrase(fx) - short plain-language summary of an effects struct,
