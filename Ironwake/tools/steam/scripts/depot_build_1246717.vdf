@@ -1,0 +1,18 @@
+"DepotBuild"
+{
+	"DepotID" "1246717"
+
+	// Take everything in the content folder, preserving structure.
+	"FileMapping"
+	{
+		"LocalPath" "*"
+		"DepotPath" "."
+		"recursive" "1"
+	}
+
+	// Never ship these: steam_appid.txt is a local-dev override that breaks the
+	// "launch through Steam" flow for customers; pdb/log files are dev noise.
+	"FileExclusion" "*.pdb"
+	"FileExclusion" "steam_appid.txt"
+	"FileExclusion" "*.log"
+}
