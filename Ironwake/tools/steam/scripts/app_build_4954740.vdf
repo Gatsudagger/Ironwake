@@ -1,6 +1,6 @@
-"AppBuild"
+﻿"AppBuild"
 {
-	"AppID" "1246716"
+	"AppID" "4954740"
 	// Bump this line every upload - it's the label you'll see in the Builds dashboard.
 	"Desc" "Ironwake EA build 2026-07-10 (first upload)"
 
@@ -16,6 +16,7 @@
 
 	"Depots"
 	{
-		"1246717" "depot_build_1246717.vdf"
+		"4954741" "depot_build_4954741.vdf"
 	}
 }
+

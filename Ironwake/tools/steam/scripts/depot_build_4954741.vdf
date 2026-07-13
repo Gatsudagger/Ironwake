@@ -1,6 +1,6 @@
-"DepotBuild"
+﻿"DepotBuild"
 {
-	"DepotID" "1246717"
+	"DepotID" "4954741"
 
 	// Take everything in the content folder, preserving structure.
 	"FileMapping"
@@ -16,3 +16,4 @@
 	"FileExclusion" "steam_appid.txt"
 	"FileExclusion" "*.log"
 }
+
