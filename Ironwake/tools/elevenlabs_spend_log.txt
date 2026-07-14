@@ -1,0 +1,14 @@
+2026-07-14 19:14  cost=0  dur=0.7s  out=snd_loot_common.mp3  prompt=A soft dull thump of worn leather and cloth dropping onto stone, muted, unremarkable, dark fantasy g
+2026-07-14 19:14  cost=0  dur=0.9s  out=snd_loot_uncommon.mp3  prompt=A small metal clink of gear dropping onto stone with a single faint bell chime tail, dark fantasy ga
+2026-07-14 19:14  cost=0  dur=1.3s  out=snd_loot_rare.mp3  prompt=A bright crystalline two-note ascending chime, clean and rewarding, dark fantasy game rare loot stin
+2026-07-14 19:15  cost=0  dur=2.0s  out=snd_loot_epic.mp3  prompt=A deep resonant bronze bell strike with an airy rising shimmer swell, majestic and rewarding, dark f
+2026-07-14 19:15  cost=0  dur=4.0s  out=snd_loot_legendary.mp3  prompt=A legendary treasure fanfare, deep sub bass boom then a rising ethereal choir shimmer ending in a gr
+2026-07-14 19:15  cost=0  dur=3.0s  out=snd_loot_unique.mp3  prompt=A haunting antique music box playing three slow delicate notes over a faint whispering wind drone, m
+2026-07-14 19:15  cost=0  dur=0.5s  out=snd_loot_reveal.mp3  prompt=A quick crisp parchment card flip snap, very short, game UI item reveal tick
+2026-07-14 19:20  cost=0  dur=1.0s  out=snd_loot_common.mp3  prompt=Short video game reward jingle, two quick ascending plucked harp notes with a soft warm resolve, mod
+2026-07-14 19:20  cost=0  dur=1.2s  out=snd_loot_uncommon.mp3  prompt=Short video game reward jingle, three ascending bright plucked notes ending on a small bell, cheerfu
+2026-07-14 19:20  cost=0  dur=1.6s  out=snd_loot_rare.mp3  prompt=Video game treasure jingle, a four note ascending celesta and bell arpeggio with a sparkling triumph
+2026-07-14 19:21  cost=0  dur=2.5s  out=snd_loot_epic.mp3  prompt=Video game epic treasure fanfare, bold ascending orchestral arpeggio with french horns and chimes re
+2026-07-14 19:21  cost=0  dur=4.5s  out=snd_loot_legendary.mp3  prompt=Grand video game legendary treasure fanfare like opening a sacred chest, a rising four note orchestr
+2026-07-14 19:21  cost=0  dur=3.0s  out=snd_loot_unique.mp3  prompt=Video game mysterious treasure jingle, a delicate antique music box melody rising and resolving swee
+2026-07-14 19:21  cost=0  dur=0.5s  out=snd_loot_reveal.mp3  prompt=A single soft plucked pizzicato note, very short and pleasant, game UI item reveal tick

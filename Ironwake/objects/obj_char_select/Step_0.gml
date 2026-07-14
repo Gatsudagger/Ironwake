@@ -1,13 +1,14 @@
 // =============================================================================
 // obj_char_select - Step event
 // Handles all keyboard input for the character selection screen.
-// Input map:
-//   Left / A              - previous class
-//   Right / D             - next class
-//   Up / W                - previous stat row
-//   Down / S              - next stat row
-//   Enter / Space         - add 1 free point to selected stat (or confirm when pool empty)
-//   X                     - remove 1 point from selected stat (refunds to pool)
+// Input map (remapped 2026-07-14, M: streamline - stat boxes are a horizontal
+// row so left/right selects them; vertical +/- matches "up = more"):
+//   Q / E                 - previous / next class
+//   Left / A, Right / D   - previous / next stat box
+//   Up / W                - add 1 free point to selected stat
+//   Down / S  or  X       - remove 1 point from selected stat (refunds to pool)
+//   Enter / Space         - add 1 free point (or confirm when pool empty)
+//   G                     - toggle gender
 //   Mouse click (panel)   - select class
 //   Mouse click (stat box)- select stat + add point if pool > 0
 // =============================================================================
@@ -70,7 +71,11 @@ if (naming_active) {
 
     if (input_confirm()) {
         var _name = string_trim(keyboard_string);
-        if (_name == "") _name = "Hero";
+        if (_name == "") {
+            // No nameless heroes (07-14 report) - hold the modal until they type one.
+            naming_blocked_flash = 60;   // Draw shows "Enter a name to continue"
+            exit;
+        }
         global.player_name  = _name;
         global.chosen_class = selected_class;
         global.chosen_stats = working_stats;
@@ -80,6 +85,7 @@ if (naming_active) {
         selected_portrait   = 0;
         exit;
     }
+    if (naming_blocked_flash > 0) naming_blocked_flash--;
 
     if (input_cancel()) {
         naming_active    = false;
@@ -120,12 +126,12 @@ if (portrait_active) {
 
 
 // -----------------------------------------------------------------------------
-// 1. CLASS SELECTION - left / right
+// 1. CLASS SELECTION - Q / E (was A/D; remapped so the stat row owns left/right)
 // -----------------------------------------------------------------------------
 var _class_changed = false;
 
-if (nav_left())  { selected_class = wrap_index(selected_class - 1, 3); _class_changed = true; }
-if (nav_right()) { selected_class = wrap_index(selected_class + 1, 3); _class_changed = true; }
+if (input_tab_prev()) { selected_class = wrap_index(selected_class - 1, 3); _class_changed = true; }
+if (input_tab_next()) { selected_class = wrap_index(selected_class + 1, 3); _class_changed = true; }
 
 if (_class_changed) {
     // Rebuild working stats from the new class preset and reset the free pool
@@ -137,27 +143,27 @@ if (_class_changed) {
 
 
 // -----------------------------------------------------------------------------
-// 1b. GENDER TOGGLE - Q / E flips the chosen class's combat-sprite gender.
-// Cosmetic only; both options shown on the selected class panel.
+// 1b. GENDER TOGGLE - G flips the chosen class's combat-sprite gender (was Q/E,
+// which now cycles class). Cosmetic only; both options shown on the class panel.
 // -----------------------------------------------------------------------------
-if (input_tab_prev() || input_tab_next()) {
+if (input_hotkey("G")) {
     selected_gender = (selected_gender == "m") ? "f" : "m";
 }
 
 
 // -----------------------------------------------------------------------------
-// 2. STAT ROW SELECTION - up / down
+// 2. STAT SELECTION - left / right (the 6 stat boxes are a horizontal row)
 // -----------------------------------------------------------------------------
-if (nav_up())   selected_stat = wrap_index(selected_stat - 1, 6);
-if (nav_down()) selected_stat = wrap_index(selected_stat + 1, 6);
+if (nav_left())  selected_stat = wrap_index(selected_stat - 1, 6);
+if (nav_right()) selected_stat = wrap_index(selected_stat + 1, 6);
 
 
 // -----------------------------------------------------------------------------
-// 3. ALLOCATE POINT - Z or Enter
+// 3. ALLOCATE POINT - W (hold-repeats), Z, or Enter/Space
 // stats_apply_points handles clamping; we read free_points back from the
 // struct so the display stays in sync with the actual pool.
 // -----------------------------------------------------------------------------
-if (input_confirm() || input_confirm_alt() || input_hotkey("Z")) {
+if (nav_up() || input_confirm() || input_confirm_alt() || input_hotkey("Z")) {
     if (free_points > 0) {
         stats_apply_points(working_stats, _stat_names[selected_stat], 1);
         free_points = working_stats.free_points;
@@ -166,11 +172,11 @@ if (input_confirm() || input_confirm_alt() || input_hotkey("Z")) {
 
 
 // -----------------------------------------------------------------------------
-// 4. REMOVE POINT - X
+// 4. REMOVE POINT - S (hold-repeats) or X
 // stats_apply_points prevents the stat from dropping below its class preset
 // floor, so no additional guard is needed here.
 // -----------------------------------------------------------------------------
-if (input_hotkey("X")) {
+if (nav_down() || input_hotkey("X")) {
     stats_apply_points(working_stats, _stat_names[selected_stat], -1);
     free_points = working_stats.free_points;
 }

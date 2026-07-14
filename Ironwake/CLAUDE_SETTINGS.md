@@ -67,6 +67,21 @@ Whenever a game mechanic changes, sweep and update **every in-game reference** t
 - Grep for the old numbers/terms across scripts and objects before marking complete
 - A mechanic change is not done until the game nowhere describes the old behavior
 
+### AI Generation Credit Budgets (MANDATORY — added 2026-07-14)
+M pays real money for generation subscriptions. Credits are NEVER burned on
+unaudited re-rolls (lesson: PixelLab 610-gen session, ~440 wasted).
+
+**ElevenLabs (Creator $22/mo):**
+- Call `check_subscription` at session start AND wrap-up; report balance + spend to M both times
+- Session cap: **~10,000 credits without M's explicit sign-off**
+- **ONE candidate per sound, then audition** (listen / `_for_review\`) before any iteration
+- **2 misses on the same prompt = STOP** — rework the approach or use owned Asset_Library packs
+- Set the **shortest sensible explicit duration** (combat SFX ~0.5–1.5s); never auto-duration for short effects
+- No unattended/scripted generation loops
+
+**PixelLab:** hard cap ~100 gens/session without sign-off; 2 failed rolls = stop
+and switch approach; report spend every wrap-up.
+
 ### Communication with M
 - Start each task with: "Starting [TASK_NAME]. Need clarifications on: [X, Y, Z]?" (if any)
 - End each task with: "Completed [TASK_NAME]. [2-sentence summary]. Ready for compaction?"

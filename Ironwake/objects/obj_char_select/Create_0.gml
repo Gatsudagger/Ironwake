@@ -26,6 +26,9 @@ confirmed = false;
 // Set true when the name-entry overlay is active
 naming_active = false;
 
+// Frames left on the "Enter a name to continue" warning (confirm with empty name)
+naming_blocked_flash = 0;
+
 // Set true when the portrait-selection overlay is active (after name confirmed)
 portrait_active   = false;
 selected_portrait = 0;

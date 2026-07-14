@@ -71,6 +71,34 @@ combat_pet_vigil_check(player, combat_log, damage_popups);
 // 1b. LOOT SCREEN - intercepts all input after combat while items are shown
 // -----------------------------------------------------------------------------
 if (show_loot_screen) {
+    // Staggered reveal: one row every 8 frames with a tick; the best item's row
+    // fires the haul's ONE rarity stinger as it lands (SOUND_ATMOSPHERE_SPEC.md
+    // section 1). Rows beyond the visible window count as "revealed" with the
+    // last visible one so the stinger can't be lost to scrolling.
+    var _lr_count   = array_length(global.run_items_found);
+    var _lr_visible = min(8, _lr_count);
+    if (loot_reveal_shown < _lr_visible) {
+        if (loot_reveal_timer mod 8 == 0) {
+            loot_reveal_shown++;
+            play_sfx_var("snd_loot_reveal", -1);
+            var _lr_best_vis = min(loot_best_row, _lr_visible - 1);
+            if (!loot_sting_played && loot_reveal_shown - 1 >= _lr_best_vis) {
+                loot_sting_played = true;
+                audio_play_sound(loot_rarity_sound(loot_best_rarity), 1, false);
+            }
+        }
+        loot_reveal_timer++;
+        // Any key/click skips the stagger: reveal everything + fire the stinger.
+        if (input_confirm() || input_confirm_alt() || input_cancel()
+            || mouse_check_button_pressed(mb_left)) {
+            loot_reveal_shown = _lr_visible;
+            if (!loot_sting_played) {
+                loot_sting_played = true;
+                audio_play_sound(loot_rarity_sound(loot_best_rarity), 1, false);
+            }
+        }
+        exit;   // input below (scroll/close) waits until the reveal finishes
+    }
     if (nav_up())   loot_screen_scroll = max(0, loot_screen_scroll - 1);
     if (nav_down()) {
         var _max_scroll = max(0, array_length(global.run_items_found) - 5);
@@ -172,6 +200,18 @@ if (_result == 1) {
         && array_length(global.run_items_found) > 0
         && !show_loot_screen) {
         show_loot_screen = true;
+        // Arm the staggered reveal + find the best item for the ONE stinger
+        // (haul rule, SOUND_ATMOSPHERE_SPEC.md section 1).
+        loot_reveal_timer = 0;
+        loot_reveal_shown = 0;
+        loot_sting_played = false;
+        loot_best_row     = 0;
+        loot_best_rarity  = 0;
+        for (var _lbi = 0; _lbi < array_length(global.run_items_found); _lbi++) {
+            var _lbit = global.run_items_found[_lbi];
+            var _lbr  = variable_struct_exists(_lbit, "rarity") ? _lbit.rarity : 0;
+            if (_lbr > loot_best_rarity) { loot_best_rarity = _lbr; loot_best_row = _lbi; }
+        }
         exit;
     }
     // Resolve any pack-full consumable pickups before combat closes (after the

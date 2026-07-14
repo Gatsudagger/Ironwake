@@ -626,6 +626,13 @@ for (var _ii = 0; _ii < array_length(combat_state.combatants); _ii++) {
 global.run_items_found = [];
 show_loot_screen   = false;
 loot_screen_scroll = 0;
+// Staggered loot reveal (SOUND_ATMOSPHERE_SPEC.md section 1): rows appear one
+// by one with a tick; the best item's row fires its rarity stinger.
+loot_reveal_timer  = 0;    // frames since the loot screen opened
+loot_reveal_shown  = 0;    // rows currently revealed
+loot_best_row      = 0;    // index of the highest-rarity item (first if tied)
+loot_best_rarity   = 0;
+loot_sting_played  = false;
 
 // Boss floor-completion XP bonus granted at most once per combat
 boss_bonus_granted = false;

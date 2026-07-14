@@ -494,6 +494,17 @@ if (input_confirm() || input_confirm_alt()) {
                 if (treasure_item == undefined) treasure_item = _t_found;
                 else                            treasure_item2 = _t_found;
             }
+            // Dopamine layer: the best EQUIPMENT find sings its rarity over the
+            // chest foley; consumable-only chests keep just chest+gold.
+            var _t_best = treasure_item;
+            if (is_struct(treasure_item2)) {
+                var _t_eq1 = is_struct(_t_best) && variable_struct_exists(_t_best, "rarity")
+                    && !(variable_struct_exists(_t_best, "item_category") && _t_best.item_category == "consumable");
+                var _t_eq2 = variable_struct_exists(treasure_item2, "rarity")
+                    && !(variable_struct_exists(treasure_item2, "item_category") && treasure_item2.item_category == "consumable");
+                if (_t_eq2 && (!_t_eq1 || treasure_item2.rarity > _t_best.rarity)) _t_best = treasure_item2;
+            }
+            loot_item_sting(_t_best);
         }
 
         show_debug_message("[FLOOR DEBUG] floor=" + string(global.current_floor)
@@ -559,6 +570,7 @@ if (input_confirm() || input_confirm_alt()) {
         showing_treasure = true;
         audio_play_sound(snd_chest, 1, false);
         if (treasure_gold > 0) audio_play_sound(snd_gold, 1, false);
+        loot_item_sting(_tv_e);   // armory find sings its rarity
         show_debug_message("[FLOOR DEBUG] room=" + string(selected_room) + " type=treasure_vault gold=" + string(_tv_gold));
 
     } else if (_room.type == "treasure_rare") {
@@ -579,6 +591,7 @@ if (input_confirm() || input_confirm_alt()) {
         showing_treasure = true;
         audio_play_sound(snd_chest, 1, false);
         if (treasure_gold > 0) audio_play_sound(snd_gold, 1, false);
+        loot_item_sting(_tr_e, true);   // reliquary: legendary = the relic motif
         show_debug_message("[FLOOR DEBUG] room=" + string(selected_room) + " type=treasure_rare gold=" + string(_tr_gold));
 
     } else if (_room.type == "event") {

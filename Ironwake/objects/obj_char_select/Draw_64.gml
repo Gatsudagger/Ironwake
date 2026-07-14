@@ -96,7 +96,7 @@ for (var _i = 0; _i < 3; _i++) {
     if (_is_sel) {
         // Gender selector: both class sprites side by side (Male / Female), the
         // chosen one lit in a highlight cell and the other dimmed, with a label
-        // under each. The "Q / E: Gender" hint lives in the bottom instruction bar,
+        // under each. The "G: Gender" hint lives in the bottom instruction bar,
         // so nothing else is crammed into the panel here.
         var _fnames = ["spr_arcanist_f", "spr_bloodwarden_f", "spr_shadowstrider_f"];
         var _fspr   = asset_get_index(_fnames[_i]);
@@ -305,7 +305,7 @@ if (input_device() == 2) {
 } else {
     // Navigation hint
     draw_set_color(make_color_rgb(130, 135, 145));
-    draw_text_outline(960, _inst_y, "A / D: Class    Q / E: Gender    W / S: Stat    Enter / Space: Confirm");
+    draw_text_outline(960, _inst_y, "Q / E: Class    A / D: Stat    W / S: + / - Point    G: Gender    Enter / Space: Confirm");
 
     // Readiness prompt
     if (free_points > 0) {
@@ -359,6 +359,15 @@ if (naming_active) {
     draw_set_halign(fa_left);
     draw_set_valign(fa_middle);
     draw_text(_box_x + 21, _box_y + _box_h / 2, _display_name);
+
+    // Empty-name warning (Step blocks confirm and arms this flash). Sits in the
+    // gap between the title (ends ~y430) and the input box (top y480).
+    if (naming_blocked_flash > 0) {
+        draw_set_halign(fa_center);
+        draw_set_font(fnt_ui_small);
+        draw_set_color(make_color_rgb(230, 150, 130));
+        draw_text_outline(960, 453 + _ny_off, "Enter a name to continue");
+    }
 
     // Hints (keyboard-speak - hidden on touch, where the DONE button sits here)
     draw_set_halign(fa_center);

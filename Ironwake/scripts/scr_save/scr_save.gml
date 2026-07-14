@@ -233,6 +233,10 @@ function save_game() {
 // and can't inherit the previously-active character's non-overwritten globals.
 // ---------------------------------------------------------------------------
 function new_game_reset() {
+    // A new character must not inherit a previous session's in-progress run
+    // (same leak as load_game - see run_state_reset).
+    run_state_reset();
+
     // Economy
     global.gold             = 0;
     global.current_run_gold = 0;
@@ -771,4 +775,35 @@ function load_game() {
     if (variable_struct_exists(_s, "highest_run_level"))       global.highest_run_level       = _s.highest_run_level;
     if (variable_struct_exists(_s, "perm_hp_battle_hardened")) global.perm_hp_battle_hardened = _s.perm_hp_battle_hardened;
     if (variable_struct_exists(_s, "chosen_portrait"))         global.chosen_portrait         = _s.chosen_portrait;
+
+    // A loaded slot must NEVER inherit another session's in-progress run (07-14
+    // report: quit-to-title mid-run leaked run state on the persistent gc; Enter
+    // Dungeon then skipped loadout and resumed the old session's floor).
+    run_state_reset();
+}
+
+// ---------------------------------------------------------------------------
+// run_state_reset()
+// Clears every run-scoped piece of state to fresh-run defaults. Runs are
+// hub-gated and never saved mid-run, so ANY entry into a character context
+// (load_game, new_game_reset, quit-to-title) must call this - otherwise the
+// persistent obj_game_controller carries the previous session's run across
+// slots (loadout_confirmed alone is enough to skip straight onto a floor).
+// Mirrors the tail of the end-of-run cleanup in scr_stats.
+// ---------------------------------------------------------------------------
+function run_state_reset() {
+    if (instance_exists(obj_game_controller)) {
+        instance_find(obj_game_controller, 0).loadout_confirmed = false;
+    }
+    global.run_seed             = irandom(99999) + 1;
+    global.floor_map_floor      = -1;   // force floor 1 regen on the next run
+    global.events_seen_this_run = [];
+    global.just_cleared_boss    = false;
+    global.just_cleared_room    = false;
+    global.current_room_index   = 0;
+    global.run_xp               = 0;
+    global.run_level            = 1;
+    global.pending_stat_points  = 0;
+    global.run_stat_bonuses     = { STR: 0, DEX: 0, CON: 0, INT: 0, WIS: 0, CHA: 0 };
+    global.run_trinkets         = [];
 }

@@ -162,16 +162,29 @@ for (var _i = 0; _i < _count; _i++) {
     }
     draw_rectangle(_nx, _ny, _nx + _NW, _ny + _NH, false);
 
-    // Node border (no white select ring on a dead room - it isn't selectable)
+    // Black separation ring just outside the box so every node pops off the bg
+    // art regardless of how bright/busy it is (07-14 legibility pass, M).
+    draw_set_color(make_color_rgb(4, 5, 10));
+    draw_rectangle(_nx - 1, _ny - 1, _nx + _NW + 1, _ny + _NH + 1, true);
+
+    // Node border (no white select ring on a dead room - it isn't selectable).
+    // Select ring thickened to 2px to match the heavier borders below.
     if (_is_sel && !_dead) {
         draw_set_color(c_white);
         draw_rectangle(_nx - 3, _ny - 3, _nx + _NW + 3, _ny + _NH + 3, true);
+        draw_rectangle(_nx - 4, _ny - 4, _nx + _NW + 4, _ny + _NH + 4, true);
     }
+    // Border weight encodes state: enterable-now 3px in the type color, future
+    // 2px mid-tone, dead/cleared a thin recessed line. Drawn INWARD so the node
+    // footprint (and mouse hit rects) is unchanged.
     var _border_col = make_color_rgb(34, 38, 50);   // dead / cleared default
-    if (_acc)         _border_col = _tc;
-    else if (_future) _border_col = make_color_rgb(62, 68, 88);
+    var _border_w   = 1;
+    if (_acc)         { _border_col = _tc;                          _border_w = 3; }
+    else if (_future) { _border_col = make_color_rgb(78, 86, 110);  _border_w = 2; }
     draw_set_color(_border_col);
-    draw_rectangle(_nx, _ny, _nx + _NW, _ny + _NH, true);
+    for (var _bk = 0; _bk < _border_w; _bk++) {
+        draw_rectangle(_nx + _bk, _ny + _bk, _nx + _NW - _bk, _ny + _NH - _bk, true);
+    }
 
     // Room name (single line, clipped to the box)
     var _name_str = _room.name;

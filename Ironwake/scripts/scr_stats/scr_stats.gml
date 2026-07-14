@@ -956,6 +956,40 @@ function item_rarity_color(rarity) {
 }
 
 // ---------------------------------------------------------------------------
+// loot_rarity_sound(rarity)
+// The loot dopamine ladder (SOUND_ATMOSPHERE_SPEC.md section 1) - one musical
+// stinger per rarity tier, scaled in grandeur. Haul rule (M, 07-14): the loot
+// screen plays reveal ticks per row and ONE stinger - the best item's.
+// (snd_loot_unique - the off-ladder relic motif - is reserved for guaranteed
+// treasure sites: reliquary chests / Petra order claims.)
+// ---------------------------------------------------------------------------
+function loot_rarity_sound(rarity) {
+    var _r = is_real(rarity) ? round(rarity) : 0;
+    switch (_r) {
+        case 1: return snd_loot_uncommon;
+        case 2: return snd_loot_rare;
+        case 3: return snd_loot_epic;
+        case 4: return snd_loot_legendary;
+    }
+    return snd_loot_common;
+}
+
+// loot_item_sting(item, [relic]) - layer the dopamine stinger for an EQUIPMENT
+// find over the chest foley (consumable finds keep just chest+gold). relic=true
+// swaps a legendary's fanfare for the off-ladder music-box relic motif - used
+// at reliquary chests, where a hand-authored legendary is "finding a story".
+function loot_item_sting(item, relic = false) {
+    if (!is_struct(item)) return;
+    if (variable_struct_exists(item, "item_category") && item.item_category == "consumable") return;
+    if (!variable_struct_exists(item, "rarity")) return;
+    if (relic && round(item.rarity) >= 4) {
+        audio_play_sound(snd_loot_unique, 1, false);
+        return;
+    }
+    audio_play_sound(loot_rarity_sound(item.rarity), 1, false);
+}
+
+// ---------------------------------------------------------------------------
 // create_consumable(name, effect_type, effect_value, description, gold_value)
 // Returns a consumable item struct for inventory and drop systems.
 // ---------------------------------------------------------------------------
@@ -3576,6 +3610,23 @@ function school_vfx_blend(school) {
     if (_tid == "default") return c_white;
     var _t = vael_tint_get(_tid);
     return (_t == undefined) ? c_white : _t.color;
+}
+
+// school_vfx_sprite(base_spr, school) - which sprite the cast-impact VFX draws.
+// image_blend MULTIPLIES, so tinting the authored (yellow-orange) Gigapack art
+// barely reads - the yellow survives (07-14 report). An equipped Vael tint
+// swaps to the grayscale twin (tools/make_vfx_grey_twins.py) so the blend
+// becomes tint x white = the tint, at full luminance detail. Default tint
+// keeps the authored art untouched.
+function school_vfx_sprite(base_spr, school) {
+    if (school == "" || school_tint_id(school) == "default") return base_spr;
+    switch (base_spr) {
+        case spr_vfx_impact: return spr_vfx_impact_grey;
+        case spr_vfx_fire:   return spr_vfx_fire_grey;
+        case spr_vfx_void:   return spr_vfx_void_grey;
+        case spr_vfx_arcane: return spr_vfx_arcane_grey;
+    }
+    return base_spr;
 }
 
 // =============================================================================
@@ -9144,6 +9195,9 @@ function audio_sfx_assets() {
         // here or it plays at full volume, ignoring the SFX slider.
         snd_ui_move, snd_ui_confirm, snd_ui_cancel, snd_ui_error,
         snd_ui_toggle_on, snd_ui_toggle_off,
+        // Loot dopamine suite (SOUND_ATMOSPHERE_SPEC.md section 1, 07-14)
+        snd_loot_common, snd_loot_uncommon, snd_loot_rare, snd_loot_epic,
+        snd_loot_legendary, snd_loot_unique, snd_loot_reveal, snd_loot_reveal_2,
         snd_dice_roll, snd_dice_roll_2, snd_dice_roll_3, snd_dice_shake,
         snd_dice_place, snd_dice_place_2, snd_kb_capture, snd_kb_payout, snd_kb_payout_2,
         snd_player_atk, snd_player_atk_2, snd_player_atk_3, snd_miss, snd_miss_2,
@@ -9395,6 +9449,13 @@ function pause_quit_to_title() {
     }
     global.pause_open = false;
     if (variable_global_exists("settings_open")) global.settings_open = false;
+
+    // Abandon any in-progress run. Without this, quitting to title mid-run left
+    // loadout_confirmed + the floor/run globals on the persistent gc - loading ANY
+    // save (or making a new character) afterwards and pressing Enter Dungeon
+    // skipped dungeon-select/loadout and dropped the player onto the stale run's
+    // floor (07-14 report). Helper lives in scr_save next to load_game.
+    run_state_reset();
 
     // Stop hub/dungeon music so it doesn't overlap the title theme (re-started in
     // obj_title_controller Create).

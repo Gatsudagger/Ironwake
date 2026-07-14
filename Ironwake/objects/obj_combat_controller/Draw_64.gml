@@ -386,17 +386,20 @@ for (var _ei = 0; _ei < _ecnt; _ei++) {
 // size.
 if (vfx_timer > 0) {
     vfx_timer--;
+    // Spell tint (Vael): an equipped palette swaps to the grayscale twin so the
+    // blend color actually reads (multiplying into the authored yellow art barely
+    // shifted it); default tint keeps the authored sprite as-is.
+    var _vfx_draw   = school_vfx_sprite(vfx_spr, vfx_school);
     var _vfx_max    = (vfx_timer_max > 0) ? vfx_timer_max : 20;
     var _vfx_prog   = clamp((_vfx_max - vfx_timer) / _vfx_max, 0, 1);   // 0 -> 1 over life
-    var _vfx_count  = sprite_get_number(vfx_spr);
+    var _vfx_count  = sprite_get_number(_vfx_draw);
     var _vfx_frame  = clamp(floor(_vfx_prog * _vfx_count), 0, _vfx_count - 1);
     var _vfx_alpha  = min(1.0, vfx_timer / 10.0);
     var _vfx_target = lerp(248, 173, _vfx_prog);                        // on-screen px, shrinks
-    var _vfx_scale  = _vfx_target / max(1, sprite_get_width(vfx_spr));
+    var _vfx_scale  = _vfx_target / max(1, sprite_get_width(_vfx_draw));
     gpu_set_blendmode(bm_add);
     draw_set_alpha(_vfx_alpha);
-    // Spell tint (Vael): equipped palettes blend the cast VFX; default stays as authored.
-    draw_sprite_ext(vfx_spr, _vfx_frame, vfx_x + screen_shake_x, vfx_y + screen_shake_y, _vfx_scale, _vfx_scale, 0, school_vfx_blend(vfx_school), 1.0);
+    draw_sprite_ext(_vfx_draw, _vfx_frame, vfx_x + screen_shake_x, vfx_y + screen_shake_y, _vfx_scale, _vfx_scale, 0, school_vfx_blend(vfx_school), 1.0);
     gpu_set_blendmode(bm_normal);
     draw_set_alpha(1.0);
 }
@@ -852,9 +855,11 @@ if (show_loot_screen) {
     draw_set_color(make_color_rgb(160, 160, 180));
     draw_text(960, 173, "Items collected this room:");
 
-    // Item rows
+    // Item rows (staggered reveal: Step advances loot_reveal_shown + plays the
+    // tick/stinger; rows past it stay hidden until their beat lands)
     var _count   = array_length(global.run_items_found);
     var _visible = min(8, _count);
+    _visible = min(_visible, loot_reveal_shown);
 
     for (var _i = 0; _i < _visible; _i++) {
         var _idx = _i + loot_screen_scroll;
