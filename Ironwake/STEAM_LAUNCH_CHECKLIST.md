@@ -57,6 +57,31 @@ un-published config changes (OS checkboxes) - "Prepare for Publishing" already r
 M deferred "Publish to Steam"; MUST be published before/with the first build upload
 (it releases nothing - config only).
 
+**STATUS 2026-07-14 (key-art session): ALL GRAPHICAL ASSETS UPLOADED + SAVED CLEAN.**
+Master = MidJourney gen (M's account, commercial rights): hooded hero + rabbit-like
+companion on a forest path, blood-red moon, distant lantern-lit town; companion was
+PIL-transplanted from a second gen (swap was one-off session work; the finished
+composite is committed as `tools/steam/art/key_art_master.png`, sources alongside).
+All 8 sizes built by `tools/steam/build_capsules.py` from tools/steam/art/ masters
+(rerunnable end to end, outputs to _for_review/steam_capsules/). Logotype = Cinzel Decorative
+Bold, parchment + dark stroke; NO tagline (M cut it). App/shortcut icon = M's lantern
+gen #2, glow-punched. GOTCHAS LEARNED (they will bite again):
+- Store Graphical Assets page: drag ONLY files that map to slots; any unmatched image
+  in the batch blocks the whole Upload ("image type selected for every image").
+- LIBRARY HERO must contain no text/logo AND Steam's detector false-positives on
+  clusters of bright town windows (rejected twice); shipped hero = moon/hills crop
+  with zero warm light clusters.
+- The red "Requirements:" line under Small Capsule is permanent boilerplate, not an
+  error; real failures are popups at Save.
+- Client Images page (App Admin): Shortcut Icon needs PNG 256/512 (or ICO >=256) -
+  184px gets rejected; "Convert shortcut icon to app icon" checkbox regenerates the
+  184 App Icon from it. Never upload the 32px file to App Icon (blurry stretch).
+- Page Background 1438x810 exists too (not on the checklist): ambient, no logo -
+  built as page_background_1438x810.png.
+Icon candidates M rejected on the way: red-moon-only, key-art pet on moon, hero
+silhouette on moon (liked, runner-up), in-game Rimefox on moon. REMAINING FOR PAGE
+SUBMIT: 5+ screenshots (KIT section 8) -> submit for review.
+
 ---
 
 ## 2. THIS WEEK - the store page (M in dashboard, Claude for assets/copy)
