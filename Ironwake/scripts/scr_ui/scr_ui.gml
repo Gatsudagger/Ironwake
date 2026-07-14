@@ -1316,7 +1316,15 @@ function hatch_cutscene_draw() {
                 draw_set_alpha(1.0);
             }
             var _sc = 360 / max(1, sprite_get_height(_spr));   // ~360px tall
-            draw_sprite_ext(_spr, _fr, _cx + _jx, _base_y + _jy, _sc, _sc, 0, c_white, 1);
+            // Anchor the VISIBLE egg's center at the stage point - padded sprite
+            // canvases were drifting the egg well above it (and away from the glow).
+            var _vl = sprite_get_bbox_left(_spr);
+            var _vt = sprite_get_bbox_top(_spr);
+            var _vcx = _vl + (sprite_get_bbox_right(_spr)  - _vl + 1) / 2;
+            var _vcy = _vt + (sprite_get_bbox_bottom(_spr) - _vt + 1) / 2;
+            var _dx = _cx     + _jx + (sprite_get_xoffset(_spr) - _vcx) * _sc;
+            var _dy = _base_y + _jy + (sprite_get_yoffset(_spr) - _vcy) * _sc;
+            draw_sprite_ext(_spr, _fr, _dx, _dy, _sc, _sc, 0, c_white, 1);
         }
         draw_set_font(fnt_ui_title);
         draw_set_color(make_color_rgb(210, 200, 225));
@@ -1328,9 +1336,16 @@ function hatch_cutscene_draw() {
         var _pop  = 1 + 0.14 * sin(_grow * pi);             // subtle bounce
         if (_bsp >= 0) {
             // #16: reveal height keyed to the VISIBLE creature, not the padded canvas.
-            var _bvh = max(1, sprite_get_bbox_bottom(_bsp) - sprite_get_bbox_top(_bsp) + 1);
+            var _bvl = sprite_get_bbox_left(_bsp);
+            var _bvt = sprite_get_bbox_top(_bsp);
+            var _bvw = max(1, sprite_get_bbox_right(_bsp)  - _bvl + 1);
+            var _bvh = max(1, sprite_get_bbox_bottom(_bsp) - _bvt + 1);
             var _sc  = (360 / _bvh) * (0.25 + 0.75 * _grow) * _pop;
-            draw_sprite_ext(_bsp, pet_anim_frame(_bsp), _cx, _base_y, _sc, _sc, 0, c_white, 1);
+            // Anchor the VISIBLE creature's center at the stage point too - padded
+            // canvases were drawing the body up into the caption text (07-13 report).
+            var _dx = _cx     + (sprite_get_xoffset(_bsp) - (_bvl + _bvw / 2)) * _sc;
+            var _dy = _base_y + (sprite_get_yoffset(_bsp) - (_bvt + _bvh / 2)) * _sc;
+            draw_sprite_ext(_bsp, pet_anim_frame(_bsp), _dx, _dy, _sc, _sc, 0, c_white, 1);
         }
         // Caption
         draw_set_font(fnt_ui_title);
@@ -8582,7 +8597,7 @@ function ui_draw_shop_screen() {
             var _o     = global.petra_order;
             var _ready = (_o.status == "ready");
             draw_set_color(make_color_rgb(16, 14, 24));
-            draw_rectangle(360, 300, 1500, 620, false);
+            draw_rectangle(360, 300, 1560, 620, false);
             draw_set_color(_ready ? make_color_rgb(120, 220, 140) : _tt_accent);
             draw_rectangle(360, 300, 1560, 620, true);
 
@@ -11753,21 +11768,23 @@ function ui_draw_vael_portrait_tab(_gc) {
         draw_sprite_stretched_ext(_ports[_next], 0, _main_x + _main_w + 42, _thumb_y, _thumb_w, _thumb_h, c_white, 0.5);
     }
 
-    // Counter
+    // Counter - the gothic frame's band extends ~33px BELOW the portrait rect
+    // (to y~741), so these lines start at +51/+96 to clear it (07-13 report:
+    // "3 / 60" was drawn into the frame's bottom filigree).
     draw_set_font(fnt_ui);
     draw_set_color(make_color_rgb(180, 165, 195));
-    draw_text(960, _main_y + _main_h + 24, string(_cur + 1) + " / " + string(_pcount));
+    draw_text(960, _main_y + _main_h + 51, string(_cur + 1) + " / " + string(_pcount));
 
     // Status / confirm line
     if (_cur == _active) {
         draw_set_color(make_color_rgb(150, 230, 150));
-        draw_text(960, _main_y + _main_h + 69, "Your current portrait");
+        draw_text(960, _main_y + _main_h + 96, "Your current portrait");
     } else if (global.gold >= 100) {
         draw_set_color(make_color_rgb(230, 210, 150));
-        draw_text(960, _main_y + _main_h + 69, "100g  -  Enter to set as your portrait");
+        draw_text(960, _main_y + _main_h + 96, "100g  -  Enter to set as your portrait");
     } else {
         draw_set_color(make_color_rgb(190, 130, 130));
-        draw_text(960, _main_y + _main_h + 69, "Not enough gold (need 100g)");
+        draw_text(960, _main_y + _main_h + 96, "Not enough gold (need 100g)");
     }
 
     // Notification

@@ -82,6 +82,53 @@ Icon candidates M rejected on the way: red-moon-only, key-art pet on moon, hero
 silhouette on moon (liked, runner-up), in-game Rimefox on moon. REMAINING FOR PAGE
 SUBMIT: 5+ screenshots (KIT section 8) -> submit for review.
 
+**STATUS 2026-07-14 evening (screenshot session): 13 SCREENSHOTS UPLOADED + SAVED
+CLEAN - store-page checklist fully green.** M shot 19 candidates windowed on 07-13
+into `Steam Page Images/` (repo root, untracked); windowed grabs came out 1902-1916 x
+1062-1072 and Steamworks REJECTS anything under exactly-1920x1080 ("Dimensions
+provided do not match any known assets"). Fix = `tools/steam/fit_screenshots.py`:
+center-crop to 16:9 + Lanczos upscale to 1920x1080 (~1%, invisible), outputs to
+`_for_review/steam_screenshots_1920/`. M chose ALL 13 over the curated 8; skipped
+only `tavern requests.png` (1547x1037 source - the crop cut its title band + footer;
+parked in `_skip/`). The 5 "title thumbnail" PNGs are MidJourney gens (1456x816),
+NOT gameplay - never upload as screenshots; M says ignore. Suggested top-row order:
+combat 1, Petra hub screen, Dungeon choice screen, Dungeon loadout, Title screen.
+Mature-content checkbox unchecked on all. STILL UNSHOT (KIT section 8 hook shots,
+optional - can be added post-approval): Awakened-pet aura (Bairc shot exists but has
+the wrong pet selected), Shrine of Tribute overlay, High Table/Knucklebones.
+LIBRARY ASSETS ADDENDUM (same evening): the checklist item is actually FIVE
+sub-assets - capsule 600x900, hero 3840x1240, logo PNG, **Library Header 920x430**
+(D1 missed it; same art as the header capsule = canonical, Steam falls back to the
+header capsule when unset; now built by build_capsules.py as
+library_header_920x430.png), and the **Placement Tool** (not an upload - the
+interactive widget at librarylogoeditorpopup/<appid> that pins the logo over the
+hero; bottom-left anchor default was correct for our wordmark, M saved as-is).
+All five green 07-14.
+BROADCAST ASSETS (suggested, not required - done 07-14 anyway): two panels
+199x433 flanking the live-broadcast video on the store page; built by
+build_capsules.py from the master's tree-line edges (ambient, no text) as
+broadcast_left_199x433.png / broadcast_right_199x433.png; upload = drag to the
+top drop zone on the Broadcast Assets tab, pick type 'Broadcast Panel' +
+left/right direction in the dropdown, Upload, Save. Both up + saved clean.
+RECOMMENDED ITEMS (07-14 ruling): tick NO Supported-Features box for anything not
+in the build. Cloud Saves + Steam Achievements boxes stay UNTICKED until D7/D4
+actually ship them during the Coming Soon window (both planned pre-launch).
+ACCESSIBILITY WIZARD done + saved 07-14: YES only to custom volume controls
+(music/SFX sliders), adjustable difficulty (opt-in Awakening tiers, A0 baseline),
+keyboard-only play, and own-pace/turn-based-style option if worded; NO to all else
+(readability, directional audio, color alternatives, text size, subtitles,
+contrast, camera comfort, TTS, save-anytime - saves are hub-gated).
+**STORE PAGE SUBMITTED FOR REVIEW 2026-07-14 (M, same evening).** Review = 2-3
+business days -> expect verdict ~Jul 16-17; email on approval; page locked for
+edits while in review. ON APPROVAL: M flips **Coming Soon** (starts the >=14-day
+public clock - Aug 19 launch date already set, margin is huge). If Valve bounces
+anything, fix + resubmit (rejections cite the exact item). DURING THE WAIT, docket
+order: D4 achievements (Claude drives design first - no dashboard dependency),
+the 3 bug-report screenshots in Screenshots\ (07-13: portrait text overlay
+collision, egg hatch text issues, petra borderline cropped), optional reshoot of
+the 3 KIT hook shots (Awakened aura / Shrine / High Table - screenshots stay
+editable after approval).
+
 ---
 
 ## 2. THIS WEEK - the store page (M in dashboard, Claude for assets/copy)

@@ -101,6 +101,9 @@ save(im, "main_capsule_1232x706.png")
 im = crop_resize((0, 90, 1456, 770), (920, 430))
 place(im, LOGO_BASE, 460, 215, 520)
 save(im, "header_capsule_920x430.png")
+# Library Header (Library Assets page) = same spec + same branding rules;
+# Steam falls back to the header capsule when unset, so identical art is canonical.
+save(im, "library_header_920x430.png")
 
 # ---- 3. Small capsule 462x174 (Steam: logo must NEARLY FILL it) ----
 im = crop_resize((0, 160, 1456, 708), (462, 174))
@@ -144,6 +147,12 @@ im = ImageEnhance.Contrast(im).enhance(0.92)
 im = ImageEnhance.Brightness(im).enhance(0.92)
 im.save(os.path.join(OUT, "page_background_1438x810.png"), quality=95)
 print("page_background_1438x810.png", im.size)
+
+# ---- 6c. Broadcast panels 199x433 (flank the live-broadcast video on the store
+# page; ambient, no text - the master's tree-line edges act as curtains) ----
+panel_w = round(MH * 199 / 433)  # 375 at full master height
+save(crop_resize((0, 0, panel_w, MH), (199, 433)), "broadcast_left_199x433.png")
+save(crop_resize((MW - panel_w, 0, MW, MH), (199, 433)), "broadcast_right_199x433.png")
 
 # ---- 7. Library logo (transparent, ~1280w) ----
 s = 1280 / LOGO_BASE.width
