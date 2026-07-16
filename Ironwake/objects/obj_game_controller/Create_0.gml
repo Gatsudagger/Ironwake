@@ -948,9 +948,9 @@ if (!variable_global_exists("rune_dust"))      global.rune_dust      = 0;
 if (!variable_global_exists("aspect_slots"))   global.aspect_slots   = 2;
 if (!variable_global_exists("aspect_runes"))   global.aspect_runes   = [];
 
-// Maren the Runesmith screen state (Phase 1 tabs: 0 Socket, 1 Runes)
+// Maren the Runesmith screen state
 maren_open         = false;
-maren_tab          = 0;    // 0 = Socket gear, 1 = Runes (owned list)
+maren_tab          = 0;    // 0 Socket Gear, 1 Aspects, 2 Forge, 3 Runes, 4 Spirits
 maren_cursor       = 0;    // row cursor in the active list
 maren_phase        = 0;    // Socket tab: 0 choose item, 1 choose socket, 2 choose rune
 maren_item_sel     = -1;   // chosen equipped-item slot index (0-7) in Socket tab
@@ -959,6 +959,14 @@ maren_scroll       = 0;    // first visible row index (list windowing for long r
 // Confirm modal: undefined = none, else { action, message, warn, cost } describing a
 // pending gold-costing or destructive action awaiting Enter (confirm) / Esc (cancel).
 maren_confirm      = undefined;
+
+// Banshee release ceremony (Spirits tab, BANSHEE_BOTTLE_SPEC.md): a lore popup
+// over Maren's station - bottle opens, banshee rises, melodic scream - then the
+// reward text (unlocked track / dust bounty). Timer drives the animation frames.
+banshee_release_open   = false;
+banshee_release_timer  = 0;
+banshee_release_result = undefined;   // { kind:"track", track } or { kind:"dust", amount }
+banshee_scream_played  = false;
 
 // Sable the Alchemist screen state (tabs: 0 Salvage, 1 Brew, 2 Upgrade)
 sable_open         = false;

@@ -1244,6 +1244,17 @@ if (combat_over) {
                     array_push(combat_log, "Among the remains: " + _boss_tk.name + " - " + _boss_tk.flavor + ". A gift begging for its owner.");
                 }
                 if (global.current_floor >= 3) {
+                    // Banshee in a Bottle: guaranteed from each dungeon's FINAL boss,
+                    // first kill only (per save). Granted before end_run(1) so the
+                    // victory banking sweeps it straight into Maren's queue - a full
+                    // clear IS the successful extraction. (BANSHEE_BOTTLE_SPEC.md)
+                    banshee_init();
+                    var _bb_dung = variable_global_exists("selected_dungeon") ? global.selected_dungeon : "ashen_vault";
+                    if (!variable_struct_exists(global.banshee_boss_drops, _bb_dung)) {
+                        variable_struct_set(global.banshee_boss_drops, _bb_dung, true);
+                        global.banshee_carried++;
+                        array_push(combat_log, "Among the remains: a corked bottle, faintly wailing. A Banshee in a Bottle!");
+                    }
                     // Full dungeon clear - end run as victory
                     global.just_cleared_boss = false;
                     global.floor_rooms_cleared = [];

@@ -483,6 +483,21 @@ if (showing_treasure) {
         _enter_y = _pop_cy + 330;
     }
 
+    // Banshee in a Bottle - the off-ladder wail below everything else. Icon +
+    // pale-cyan name line + the extraction warning (the whole tension of the find).
+    if (treasure_banshee) {
+        var _bb_txt = "A BANSHEE IN A BOTTLE!";
+        draw_set_font(fnt_ui);
+        draw_set_color(make_color_rgb(150, 235, 235));
+        draw_sprite_stretched(spr_icon_banshee_bottle, 0,
+            _pop_cx - string_width(_bb_txt) * 0.5 - 44, _enter_y - 6, 36, 36);
+        draw_text(_pop_cx, _enter_y + 12, _bb_txt);
+        draw_set_font(fnt_ui_small);
+        draw_set_color(make_color_rgb(120, 170, 175));
+        draw_text(_pop_cx, _enter_y + 51, "Something wails within. Extract alive to keep it - Maren can free the spirit.");
+        _enter_y += 96;
+    }
+
     if (input_device() == 2) {
         // Touch: framed CONTINUE button (M 07-08, same as rest/event popups).
         ui_draw_touch_continue(_pop_cx, _enter_y - 12);
@@ -1227,6 +1242,13 @@ if (extract_confirm_open) {
     draw_set_color(make_color_rgb(190, 195, 215));
     draw_text_ext(960, 456,
         "The run ends here. You keep all your loot and found gold -\ndeeper floors (and their richer bosses) wait for another day.", 30, 780);
+    // Carried banshee bottles: remind the player what makes it out with them.
+    banshee_init();
+    if (global.banshee_carried > 0) {
+        draw_set_color(make_color_rgb(150, 235, 235));
+        draw_text(960, 552, "Carrying: Banshee in a Bottle x" + string(global.banshee_carried)
+            + "  (banks to Maren on extraction)");
+    }
     draw_set_color(make_color_rgb(150, 160, 185));
     if (input_device() == 2) {
         draw_text(960, 621, "Tap here to confirm - tap outside to cancel");

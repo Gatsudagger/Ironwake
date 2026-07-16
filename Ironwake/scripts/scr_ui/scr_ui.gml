@@ -5778,8 +5778,9 @@ function ui_draw_settings_overlay() {
     draw_rectangle(0, 0, GUI_W, GUI_H, false);
     draw_set_alpha(1.0);
 
-    // Panel (tall enough for: Music, SFX, Menu Tick, Fullscreen, Tutorial Tips, Reset Tutorial)
-    var _pw = 840, _ph = 762;
+    // Panel (tall enough for: Music, SFX, Hub Music, Dungeon Music, Menu Tick,
+    // Fullscreen, Tutorial Tips, Reset Tutorial)
+    var _pw = 840, _ph = 978;
     var _px = GUI_CX - _pw / 2;
     var _py = GUI_CY - _ph / 2;
     draw_set_color(make_color_rgb(18, 22, 36));
@@ -5841,10 +5842,62 @@ function ui_draw_settings_overlay() {
         draw_text(_bar_x + _bar_w + 24, _by + _bar_h / 2, string(round(_vols[_i] * 100)) + "%");
     }
 
-    // --- Third row: Menu Tick (nav glass ping) toggle ---
+    // --- Rows 2/3: Hub Music / Dungeon Music track selectors (banshee jukebox,
+    //     BANSHEE_BOTTLE_SPEC.md). A/D cycles Default + that pool's freed songs;
+    //     the row is greyed until a spirit has been released. Per-save selection. ---
+    banshee_init();
+    var _trk_labels = ["Hub Music", "Dungeon Music"];
+    var _trk_pools  = ["hub", "dungeon"];
+    for (var _ti = 0; _ti < 2; _ti++) {
+        var _ty   = _row_y + (2 + _ti) * _row_h;
+        var _tsel2 = (global.settings_cursor == 2 + _ti);
+        var _tpool = music_pool_unlocked(_trk_pools[_ti]);
+        var _thas  = (array_length(_tpool) > 0);
+        var _tcur  = music_selected_track(_trk_pools[_ti]);
+
+        if (_tsel2) {
+            draw_set_alpha(0.20);
+            draw_set_color(make_color_rgb(80, 140, 220));
+            draw_rectangle(_px + 30, _ty - 21, _px + _pw - 30, _ty + 45, false);
+            draw_set_alpha(1.0);
+        }
+        draw_set_halign(fa_left);
+        draw_set_valign(fa_middle);
+        draw_set_font(fnt_ui);
+        draw_set_color(_tsel2 ? c_white : make_color_rgb(170, 180, 200));
+        draw_text(_px + 60, _ty + 12, (_tsel2 ? "> " : "  ") + _trk_labels[_ti]);
+
+        // Value box - same footprint as the slider track so the column lines up.
+        var _tby = _ty + 3;
+        draw_set_color(make_color_rgb(35, 42, 60));
+        draw_rectangle(_bar_x, _tby, _bar_x + _bar_w, _tby + _bar_h + 6, false);
+        draw_set_color(_tsel2 ? make_color_rgb(120, 190, 255) : make_color_rgb(70, 85, 110));
+        draw_rectangle(_bar_x, _tby, _bar_x + _bar_w, _tby + _bar_h + 6, true);
+        draw_set_halign(fa_center);
+        if (_thas) {
+            var _tname = (_tcur == undefined) ? "Default" : _tcur.name;
+            draw_set_color(_tcur == undefined ? c_white : make_color_rgb(150, 235, 235));
+            // Shrink-to-fit: track names must never kiss the < > arrows.
+            var _tval_sc = min(1.0, (_bar_w - 108) / max(1, string_width(_tname)));
+            draw_text_transformed(_bar_x + _bar_w / 2, _tby + (_bar_h + 6) / 2, _tname, _tval_sc, _tval_sc, 0);
+            draw_set_color(_tsel2 ? make_color_rgb(120, 190, 255) : make_color_rgb(90, 100, 125));
+            draw_text(_bar_x + 21,          _tby + (_bar_h + 6) / 2, "<");
+            draw_text(_bar_x + _bar_w - 21, _tby + (_bar_h + 6) / 2, ">");
+        } else {
+            draw_set_color(make_color_rgb(95, 100, 118));
+            draw_text(_bar_x + _bar_w / 2, _tby + (_bar_h + 6) / 2, "No songs freed yet");
+        }
+        draw_set_halign(fa_left);
+        draw_set_font(fnt_ui_small);
+        draw_set_color(make_color_rgb(140, 150, 170));
+        draw_text(_bar_x + _bar_w + 24, _tby + (_bar_h + 6) / 2, _thas ? "(A/D)" : "(Maren)");
+        draw_set_font(fnt_ui);
+    }
+
+    // --- Fifth row: Menu Tick (nav glass ping) toggle ---
     var _tick_on = (!variable_global_exists("ui_tick_enabled")) || global.ui_tick_enabled;
-    var _ky   = _row_y + 2 * _row_h;
-    var _ksel = (global.settings_cursor == 2);
+    var _ky   = _row_y + 4 * _row_h;
+    var _ksel = (global.settings_cursor == 4);
     if (_ksel) {
         draw_set_alpha(0.20);
         draw_set_color(make_color_rgb(80, 140, 220));
@@ -5873,9 +5926,9 @@ function ui_draw_settings_overlay() {
     draw_text(_kpx + _kpw + 24, _kpy + _kph / 2, "(menu navigation sound)");
     draw_set_font(fnt_ui);
 
-    // --- Fourth row: Fullscreen toggle ---
+    // --- Sixth row: Fullscreen toggle ---
     var _fry = _ky + 84;
-    var _fsel = (global.settings_cursor == 3);
+    var _fsel = (global.settings_cursor == 5);
     if (_fsel) {
         draw_set_alpha(0.20);
         draw_set_color(make_color_rgb(80, 140, 220));
@@ -5906,10 +5959,10 @@ function ui_draw_settings_overlay() {
     draw_set_color(make_color_rgb(140, 150, 170));
     draw_text(_pill_x + _pill_w + 24, _pill_y + _pill_h / 2, "(F11)");
 
-    // --- Fifth row: Tutorial Tips on/off toggle ---
+    // --- Seventh row: Tutorial Tips on/off toggle ---
     var _tut_on = (!variable_global_exists("tutorial_enabled")) || global.tutorial_enabled;
     var _try    = _fry + 84;
-    var _tsel   = (global.settings_cursor == 4);
+    var _tsel   = (global.settings_cursor == 6);
     if (_tsel) {
         draw_set_alpha(0.20);
         draw_set_color(make_color_rgb(80, 140, 220));
@@ -5934,9 +5987,9 @@ function ui_draw_settings_overlay() {
     draw_set_color(c_white);
     draw_text(_tpx + _tpw / 2, _tpy + _tph / 2, _tut_on ? "ON" : "OFF");
 
-    // --- Sixth row: Reset Tutorial (re-show every tip) ---
+    // --- Eighth row: Reset Tutorial (re-show every tip) ---
     var _rry  = _try + 72;
-    var _rsel = (global.settings_cursor == 5);
+    var _rsel = (global.settings_cursor == 7);
     if (_rsel) {
         draw_set_alpha(0.20);
         draw_set_color(make_color_rgb(80, 140, 220));
@@ -10541,20 +10594,23 @@ function ui_draw_maren_screen() {
     ui_draw_npc_bond("maren", 90, 45);
     ui_draw_npc_column("maren");   // sprite column (rows + socket tooltip narrowed to clear it)
 
-    // Tab bar (4 tabs) - x=368+t*300, y=105, w=285, h=60
-    var _tab_labels = ["Socket Gear", "Aspects", "Forge", "Runes"];
+    // Tab bar (5 tabs) - x=368+t*240, y=105, w=225, h=60 (MUST match the mouse
+    // hit-test in obj_game_controller Step's maren block)
+    var _tab_labels = ["Socket Gear", "Aspects", "Forge", "Runes", "Spirits"];
     draw_set_font(fnt_ui);
-    for (var _t = 0; _t < 4; _t++) {
-        var _tx  = 368 + _t * 300;
+    for (var _t = 0; _t < 5; _t++) {
+        var _tx  = 368 + _t * 240;
         var _on  = (_gc.maren_tab == _t);
         draw_set_color(_on ? make_color_rgb(45, 35, 70) : make_color_rgb(22, 20, 34));
-        draw_rectangle(_tx, 105, _tx + 285, 165, false);
+        draw_rectangle(_tx, 105, _tx + 225, 165, false);
         draw_set_color(_on ? make_color_rgb(150, 110, 220) : make_color_rgb(55, 50, 75));
-        draw_rectangle(_tx, 105, _tx + 285, 165, true);
+        draw_rectangle(_tx, 105, _tx + 225, 165, true);
         draw_set_halign(fa_center);
         draw_set_valign(fa_middle);
         draw_set_color(_on ? c_white : make_color_rgb(150, 150, 170));
-        draw_text(_tx + 143, 135, _tab_labels[_t]);
+        // Tabs are narrower at 5-up: shrink-to-fit so "Socket Gear" can't kiss the borders.
+        var _tab_sc = min(1.0, (225 - 24) / max(1, string_width(_tab_labels[_t])));
+        draw_text_transformed(_tx + 113, 135, _tab_labels[_t], _tab_sc, _tab_sc, 0);
     }
     draw_set_halign(fa_left);
     draw_set_valign(fa_top);
@@ -10822,7 +10878,7 @@ function ui_draw_maren_screen() {
                 draw_set_halign(fa_left);
             }
         }
-    } else {
+    } else if (_gc.maren_tab == 3) {
         // -------- RUNES TAB (read-only owned list) --------
         draw_set_color(make_color_rgb(140, 130, 165));
         draw_text(_list_x, 225, "Runes owned (" + string(array_length(global.rune_inventory)) + "):");
@@ -10837,6 +10893,50 @@ function ui_draw_maren_screen() {
             ui_draw_rune_entry(_list_x, _ty4, _rn2, true, _list_x2);
         }
         ui_maren_scroll_hint(_scroll, _vis, _runes_n);
+    } else {
+        // -------- SPIRITS TAB (Banshee in a Bottle, BANSHEE_BOTTLE_SPEC.md) --------
+        banshee_init();
+        draw_set_color(make_color_rgb(140, 130, 165));
+        draw_text(_list_x, 225, "Bottled spirits - Maren frees them; their parting songs become yours:");
+
+        // The single action row: bottle icon + banked count (the release action).
+        var _sp_ty = ui_maren_row(0, _cursor == 0);
+        draw_sprite_stretched(spr_icon_banshee_bottle, 0, _list_x + 18, _sp_ty - 9, 48, 48);
+        draw_set_font(fnt_ui);
+        draw_set_color((global.banshee_banked > 0) ? make_color_rgb(150, 235, 235) : make_color_rgb(120, 130, 145));
+        draw_text(_list_x + 84, _sp_ty - 11, "Banshee in a Bottle  x" + string(global.banshee_banked));
+        draw_set_font(fnt_ui_small);
+        draw_set_color(make_color_rgb(135, 130, 155));
+        draw_text(_list_x + 84, _sp_ty + 23, (global.banshee_banked > 0)
+            ? "Release a spirit - a random new song joins your Settings music."
+            : "A very rare dungeon find. Survive the trip out and bring one here.");
+        draw_set_halign(fa_right);
+        draw_set_color(make_color_rgb(150, 200, 255));
+        draw_text(_list_x2 - 24, _sp_ty - 11, "[Enter] Release");
+        draw_set_halign(fa_left);
+
+        // Song ledger below the action row: every catalog track, named once owned,
+        // a veiled "???" row while still bottled somewhere in the dark.
+        var _sp_cat = music_track_catalog();
+        var _sp_y   = _sp_ty + 90;
+        draw_set_font(fnt_ui);
+        draw_set_color(make_color_rgb(180, 150, 230));
+        draw_text(_list_x, _sp_y, "Songs freed (" + string(array_length(global.music_unlocked))
+            + "/" + string(array_length(_sp_cat)) + "):");
+        draw_set_font(fnt_ui_small);
+        for (var _sp_i = 0; _sp_i < array_length(_sp_cat); _sp_i++) {
+            var _sp_t   = _sp_cat[_sp_i];
+            var _sp_own = music_track_owned(_sp_t.id);
+            var _sp_ry  = _sp_y + 48 + _sp_i * 39;
+            draw_set_color(_sp_own ? make_color_rgb(205, 210, 222) : make_color_rgb(95, 100, 118));
+            draw_text(_list_x + 24, _sp_ry, _sp_own
+                ? ("\"" + _sp_t.name + "\"   -   " + ((_sp_t.pool == "hub") ? "Hub music" : "Dungeon music"))
+                : "\"???\"   -   a song still bottled");
+        }
+        draw_set_color(make_color_rgb(120, 115, 140));
+        draw_text(_list_x + 24, _sp_y + 48 + array_length(_sp_cat) * 39 + 15,
+            "Freed songs are chosen in Settings (Hub Music / Dungeon Music). Extra spirits leave 25 Rune Dust.");
+        draw_set_font(fnt_ui);
     }
 
     // Notification line
@@ -10898,6 +10998,83 @@ function ui_draw_maren_screen() {
         ui_draw_key_legend(GUI_CX, _cby1 - 48, "Enter: Confirm        Esc: Cancel");
         draw_set_halign(fa_left);
         draw_set_valign(fa_top);
+    }
+
+    // Banshee release ceremony - the lore popup (Bairc-event idiom): the bottle
+    // opens, the banshee rises with her melodic scream, then the reward reveal.
+    // Timer is stepped (and input swallowed) by the maren block in gc Step.
+    if (variable_instance_exists(_gc, "banshee_release_open") && _gc.banshee_release_open) {
+        draw_set_alpha(0.85);
+        draw_set_color(make_color_rgb(4, 8, 12));
+        draw_rectangle(0, 0, GUI_W, GUI_H, false);
+        draw_set_alpha(1.0);
+
+        var _br_frames = 17;                                     // spr_banshee_release frame count
+        var _br_frame  = min(_br_frames - 1, _gc.banshee_release_timer div 5);   // ~12fps, holds the last frame
+        var _br_done   = (_gc.banshee_release_timer >= _br_frames * 5);
+
+        // Panel sized around the 3x-scaled 128px animation canvas.
+        var _br_bw = 990, _br_bh = 852;
+        var _br_bx = GUI_CX - _br_bw / 2;
+        var _br_by = GUI_CY - _br_bh / 2;
+        draw_set_color(make_color_rgb(14, 18, 26));
+        draw_rectangle(_br_bx, _br_by, _br_bx + _br_bw, _br_by + _br_bh, false);
+
+        draw_set_halign(fa_center);
+        draw_set_valign(fa_top);
+        draw_set_font(fnt_ui_title);
+        draw_set_color(make_color_rgb(150, 235, 235));
+        draw_text(GUI_CX, _br_by + 33, "The Bottle Opens");
+        draw_set_color(make_color_rgb(70, 64, 48));
+        draw_line(_br_bx + 45, _br_by + 90, _br_bx + _br_bw - 45, _br_by + 90);
+
+        // The animation, pixel-scaled 3x (384px) and centered. A soft cyan glow
+        // swells under the ghost as the ceremony progresses.
+        var _br_ax = GUI_CX - 192;
+        var _br_ay = _br_by + 120;
+        var _br_glow = 0.10 + 0.20 * min(1, _gc.banshee_release_timer / 40)
+                     + 0.04 * sin(_gc.banshee_release_timer * 0.15);
+        draw_set_alpha(_br_glow);
+        draw_set_color(make_color_rgb(90, 200, 210));
+        draw_ellipse(GUI_CX - 210, _br_ay + 60, GUI_CX + 210, _br_ay + 350, false);
+        draw_set_alpha(1.0);
+        draw_sprite_stretched(spr_banshee_release, _br_frame, _br_ax, _br_ay, 384, 384);
+
+        // Reveal band under the animation (after the banshee has fully risen).
+        if (_br_done && _gc.banshee_release_result != undefined) {
+            var _br_res = _gc.banshee_release_result;
+            draw_set_font(fnt_ui);
+            draw_set_color(make_color_rgb(205, 210, 222));
+            if (_br_res.kind == "track") {
+                draw_text_ext(GUI_CX, _br_by + 546,
+                    "The spirit unwinds into the rafters, and her scream softens into song.\nMaren bows her head. \"Go on, then. Sing somewhere kinder.\"", 36, _br_bw - 120);
+                draw_set_font(fnt_ui_title);
+                draw_set_color(make_color_rgb(150, 235, 235));
+                draw_text(GUI_CX, _br_by + 660, "\"" + _br_res.track.name + "\"");
+                draw_set_font(fnt_ui_small);
+                draw_set_color(make_color_rgb(200, 180, 130));
+                draw_text(GUI_CX, _br_by + 717, "New " + ((_br_res.track.pool == "hub") ? "Hub" : "Dungeon")
+                    + " music track - choose it in Settings.");
+            } else {
+                draw_text_ext(GUI_CX, _br_by + 546,
+                    "The spirit unwinds into the rafters - but you already know every song she knew.\nShe leaves what dust a grateful ghost can gather.", 36, _br_bw - 120);
+                draw_set_font(fnt_ui_title);
+                draw_set_color(make_color_rgb(195, 155, 255));
+                draw_text(GUI_CX, _br_by + 660, "+" + string(_br_res.amount) + " Rune Dust");
+            }
+            draw_set_font(fnt_ui_small);
+            draw_set_color(make_color_rgb(120, 128, 150));
+            draw_text(GUI_CX, _br_by + _br_bh - 45, "Press any key to continue");
+        } else {
+            draw_set_font(fnt_ui_small);
+            draw_set_color(make_color_rgb(120, 128, 150));
+            draw_text(GUI_CX, _br_by + _br_bh - 45, "Press any key to skip");
+        }
+
+        // Ornate gothic rim, matching the tutorial-tip / Bairc popup dressing.
+        draw_set_font(-1);
+        ui_draw_gothic_frame(_br_bx, _br_by, _br_bx + _br_bw, _br_by + _br_bh, 30);
+        draw_set_halign(fa_left);
     }
 
     draw_set_valign(fa_top);

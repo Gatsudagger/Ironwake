@@ -794,9 +794,11 @@ player.hit_flash = 0;
 for (var _ei = 0; _ei < array_length(enemies); _ei++) enemies[_ei].hit_flash = 0;
 
 // Battle music - boss gets its own track, everything else gets the combat loop.
-// Ambience beds stay on the floor: combat wants its full dramatic range.
+// The dungeon's own bed carries into combat (SOUND_ATMOSPHERE_SPEC.md section 2
+// superseded the old drop-to-silence: the quiet low bed keeps the floor's
+// identity under the music without eating combat's dramatic range).
 audio_apply_volumes();   // honor saved Music/SFX volumes
-ambience_set([]);
+ambience_set([dungeon_ambience_bed(), snd_amb_torch]);
 if (_enemy_type == "boss") {
     audio_play_sound(_14_BOSS_y_LOOP, 1, true);
 } else {

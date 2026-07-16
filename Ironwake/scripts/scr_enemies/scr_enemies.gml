@@ -717,14 +717,14 @@ function enemy_sprite_map() {
         "Frozen Thrall":        spr_frozen_thrall,
         "Glacial Beast":        spr_glacial_beast,
         "Frozen Sentinel":      spr_frozen_sentinel,
-        "Glacial Warden":       spr_glacial_beast,
-        "Tomb Archon":          spr_frozen_sentinel,
-        "The Eternal Frost":    spr_frozen_sentinel,
-        // Scorched Depths bosses - reuse fitting elite sprites (these renamed clones were
-        // missing from the map, so they rendered with no model). See obj_combat_controller Create.
-        "Forge Tyrant":         spr_cinder_golem,
-        "Molten Revenant":      spr_infernal_revenant,
-        "The Ashen Colossus":   spr_fire_drake,
+        // Boss sprites (07-14): all six bosses that shared another enemy's model
+        // now have their own art (PixelLab, style-matched to each dungeon family).
+        "Glacial Warden":       spr_glacial_warden,
+        "Tomb Archon":          spr_tomb_archon,
+        "The Eternal Frost":    spr_eternal_frost,
+        "Forge Tyrant":         spr_forge_tyrant,
+        "Molten Revenant":      spr_molten_revenant,
+        "The Ashen Colossus":   spr_ashen_colossus,
     };
 }
 

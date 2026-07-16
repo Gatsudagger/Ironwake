@@ -291,6 +291,22 @@ function end_run(result) {
     // Reset Last Stand for the next run (consumed at most once per run in combat)
     if (variable_global_exists("last_stand_used")) global.last_stand_used = false;
 
+    // Banshee in a Bottle: carried bottles bank on any SURVIVED run (clear or
+    // extract - "clear counts as the perfect extraction"); death shatters them
+    // with the rest of the unsecured haul. (BANSHEE_BOTTLE_SPEC.md)
+    banshee_init();
+    if (result >= 0 && global.banshee_carried > 0) {
+        global.banshee_banked += global.banshee_carried;
+        var _bb_msg = (global.banshee_carried == 1)
+            ? "The Banshee in a Bottle made it out with you - Maren can release its spirit."
+            : string(global.banshee_carried) + " Banshees in Bottles made it out with you - Maren can release their spirits.";
+        if (variable_global_exists("pet_find_notice")) {
+            global.pet_find_notice = (global.pet_find_notice != "")
+                ? (global.pet_find_notice + "   " + _bb_msg) : _bb_msg;
+        }
+    }
+    global.banshee_carried = 0;
+
     if (result == 1) {
         // Victory - award hub unlock, record best floor, move carried items to safe stash
         global.hub_unlocks++;
@@ -4370,7 +4386,7 @@ function affinity_betrayal_for(new_id) {
         var _lines = affinity_betrayal_lines(_ids[_i]);
         ledger_add(_ids[_i], "milestone", _lines.ledger);
         journal_badge_npc(_ids[_i]);
-        audio_play_sound(snd_sting_heartbreak, 1, false);   // a music box winding down
+        audio_play_sound(snd_betrayal, 1, false);   // reversed sting + cold heartbeat thud (replaced the music box 07-14)
         if (variable_global_exists("pet_find_notice")) {
             global.pet_find_notice = (global.pet_find_notice != "") ? (global.pet_find_notice + "   " + _lines.notice) : _lines.notice;
         }
@@ -4684,6 +4700,7 @@ function quest_tick(obj_type, param, amount) {
                 var _qmsg = "Request complete: " + _d.name + " - report to the tavern board.";
                 global.pet_find_notice = (global.pet_find_notice != "")
                     ? (global.pet_find_notice + "   " + _qmsg) : _qmsg;
+                audio_play_sound(snd_quest_ready, 1, false);   // soft parchment-and-bell ping (turn-in fanfare stays the board's)
             }
         }
     }
@@ -6564,6 +6581,7 @@ function pet_run_complete(result) {
             // Same pick/roll split for the Awakened SPLASH (one off-archetype effect).
             if (_p.raised) _p.splash_pending = true;
             else           pet_assign_splash(_p);
+            audio_play_sound(snd_awakened_cross, 1, false);   // the wing moment: rising swell into one deep bell
         }
         quest_tick("pet_stage", "", _p.stage);                 // Phase 4a quest objective
         return _p;                                             // evolved this run
@@ -6873,6 +6891,7 @@ function pet_bond_gain(pet, amount) {
     pet.bond = pet_bond(pet) + amount;
     var _t1 = pet_bond_tier(pet);
     if (_t1 <= _t0) return "";
+    audio_play_sound(snd_bond_up, 1, false);   // warm two-note motif on a tier crossing
     var _msg = pet.name + "'s bond deepens - " + pet_bond_tier_name(_t1) + ".";
     if (_t1 >= 1 && _t0 < 1) {
         pet_pref_discover(pet.species);
@@ -7670,6 +7689,7 @@ function hatch_cutscene_start(pet) {
     hatch_t      = 0;
     hatch_frame  = 0;
     hatch_done   = false;
+    audio_play_sound(snd_egg_stir, 1, false);   // shell wobble + tap from inside (SHAKE phase)
 }
 
 // Advance the cutscene one step (called from gc Step while hatch_active). Runs in gc scope.
@@ -7691,6 +7711,7 @@ function hatch_cutscene_step() {
                         pet_hatch(hatch_pet);
                         hatch_done = true;
                         audio_play_sound(snd_pet_hatch, 1, false);
+                        audio_play_sound(snd_hatch_burst, 1, false);   // crack + warm chime bloom layered over
                     }
                     hatch_phase = 2; hatch_t = 0;
                 }
@@ -9155,7 +9176,183 @@ function audio_music_assets() {
         // Sound pass Batch 3 - ambience beds (M routed these under the Music
         // slider rather than a third slider, 07-07)
         snd_amb_rain, snd_amb_cave, snd_amb_torch,
+        // Atmosphere pass sections 2-3 (SOUND_ATMOSPHERE_SPEC.md, 07-14): per-
+        // dungeon beds + title bed + hub station loops, all under Music.
+        snd_amb_ashen, snd_amb_scorched, snd_amb_tundra, snd_amb_title,
+        snd_amb_forge, snd_amb_cauldron, snd_amb_garden, snd_amb_tavern,
+        // Banshee-unlocked jukebox tracks (BANSHEE_BOTTLE_SPEC.md, 07-15).
+        snd_music_hub_1, snd_music_hub_2, snd_music_dungeon_1,
     ];
+}
+
+// =============================================================================
+// BANSHEE IN A BOTTLE - unlockable music tracks (BANSHEE_BOTTLE_SPEC.md, 07-15)
+// A very rare run find: guaranteed on each dungeon's FINAL boss (first kill per
+// save) + a small chest-site chance. Rides the run (die = lost, extract/clear =
+// banked); Maren's Spirits tab releases one for a random not-yet-owned track,
+// or a Rune Dust bounty once every track is owned. Selected tracks replace the
+// default hub / dungeon music via the Settings selectors (per-save).
+// =============================================================================
+
+// The track catalog is code-side truth; saves store track IDS only. pool gates
+// which Settings selector row a track appears under ("hub" / "dungeon").
+function music_track_catalog() {
+    return [
+        { id: "hub_rainlight", name: "Rainlight",     pool: "hub",     snd: snd_music_hub_1 },
+        { id: "hub_emberside", name: "Emberside",     pool: "hub",     snd: snd_music_hub_2 },
+        { id: "dun_longdark",  name: "The Long Dark", pool: "dungeon", snd: snd_music_dungeon_1 },
+    ];
+}
+
+// Ensure every banshee/jukebox global exists (tolerant defaults for old saves
+// and the title screen, where no slot is loaded yet).
+function banshee_init() {
+    if (!variable_global_exists("banshee_carried"))    global.banshee_carried    = 0;   // run-scoped, never saved
+    if (!variable_global_exists("banshee_banked"))     global.banshee_banked     = 0;   // stash-side, saved
+    if (!variable_global_exists("banshee_boss_drops")) global.banshee_boss_drops = {};  // dungeon_key -> true once granted
+    if (!variable_global_exists("music_unlocked"))     global.music_unlocked     = [];  // array of catalog ids
+    if (!variable_global_exists("music_sel_hub"))      global.music_sel_hub      = "";  // "" = default track
+    if (!variable_global_exists("music_sel_dungeon"))  global.music_sel_dungeon  = "";
+}
+
+function music_track_by_id(track_id) {
+    var _c = music_track_catalog();
+    for (var _i = 0; _i < array_length(_c); _i++) {
+        if (_c[_i].id == track_id) return _c[_i];
+    }
+    return undefined;
+}
+
+function music_track_owned(track_id) {
+    banshee_init();
+    for (var _i = 0; _i < array_length(global.music_unlocked); _i++) {
+        if (global.music_unlocked[_i] == track_id) return true;
+    }
+    return false;
+}
+
+// Unlocked catalog entries for one pool, catalog order (drives the selector rows).
+function music_pool_unlocked(pool) {
+    banshee_init();
+    var _out = [];
+    var _c = music_track_catalog();
+    for (var _i = 0; _i < array_length(_c); _i++) {
+        if (_c[_i].pool == pool && music_track_owned(_c[_i].id)) array_push(_out, _c[_i]);
+    }
+    return _out;
+}
+
+// The selected catalog entry for a pool, or undefined for the default music.
+// Validates ownership so a stale/foreign selection can never silence the game.
+function music_selected_track(pool) {
+    banshee_init();
+    var _sel = (pool == "hub") ? global.music_sel_hub : global.music_sel_dungeon;
+    if (_sel == "") return undefined;
+    var _t = music_track_by_id(_sel);
+    if (_t == undefined || _t.pool != pool || !music_track_owned(_sel)) {
+        if (pool == "hub") global.music_sel_hub = ""; else global.music_sel_dungeon = "";
+        return undefined;
+    }
+    return _t;
+}
+
+// The sound asset the hub should loop (selection or the Rainy_Memories default).
+function music_hub_snd() {
+    var _t = music_selected_track("hub");
+    return (_t == undefined) ? Rainy_Memories : _t.snd;
+}
+
+// Stop whatever hub music is playing - default AND every hub-pool track - so
+// the scattered leave-hub stop sites never need to know about the catalog.
+function music_hub_stop() {
+    audio_stop_sound(Rainy_Memories);
+    var _c = music_track_catalog();
+    for (var _i = 0; _i < array_length(_c); _i++) {
+        if (_c[_i].pool == "hub") audio_stop_sound(_c[_i].snd);
+    }
+}
+
+// Stop all dungeon-floor music (default intro/loop pair + custom tracks).
+function music_dungeon_stop() {
+    audio_stop_sound(_2_dungeon_INITIAL);
+    audio_stop_sound(_2_dungeon_LOOP);
+    var _c = music_track_catalog();
+    for (var _i = 0; _i < array_length(_c); _i++) {
+        if (_c[_i].pool == "dungeon") audio_stop_sound(_c[_i].snd);
+    }
+}
+
+// Live-apply after a Settings selector change: restart the relevant music only
+// if it is playing RIGHT NOW (hub room / dungeon floor). Elsewhere the change
+// simply takes effect on the next room entry.
+function music_selection_apply(pool) {
+    if (pool == "hub" && room == rm_hub) {
+        music_hub_stop();
+        audio_play_sound(music_hub_snd(), 1, true);
+    } else if (pool == "dungeon" && room == rm_dungeon_floor) {
+        music_dungeon_stop();
+        var _t = music_selected_track("dungeon");
+        if (_t != undefined) {
+            audio_play_sound(_t.snd, 1, true);
+            if (instance_exists(obj_floor_controller)) instance_find(obj_floor_controller, 0).dungeon_music_looping = true;
+        } else {
+            // Back to the default pair: skip the intro mid-floor, just loop.
+            audio_play_sound(_2_dungeon_LOOP, 1, true);
+            if (instance_exists(obj_floor_controller)) instance_find(obj_floor_controller, 0).dungeon_music_looping = true;
+        }
+    }
+}
+
+// Settings selector: cycle a pool's selection by dir (+1/-1) through
+// [Default, ...unlocked tracks in catalog order]. Returns true if it changed
+// (false when the pool has nothing unlocked yet - the row is inert).
+function music_selection_cycle(pool, dir) {
+    var _pool = music_pool_unlocked(pool);
+    var _n = array_length(_pool);
+    if (_n == 0) return false;
+    var _cur = music_selected_track(pool);
+    var _idx = 0;   // 0 = Default, 1.._n = _pool[_idx-1]
+    if (_cur != undefined) {
+        for (var _i = 0; _i < _n; _i++) if (_pool[_i].id == _cur.id) { _idx = _i + 1; break; }
+    }
+    _idx = wrap_index(_idx + dir, _n + 1);
+    var _new_id = (_idx == 0) ? "" : _pool[_idx - 1].id;
+    if (pool == "hub") global.music_sel_hub = _new_id; else global.music_sel_dungeon = _new_id;
+    music_selection_apply(pool);
+    return true;
+}
+
+// Chest-site roll (treasure/vault/reliquary): ~4%, nudged by the active pet's
+// LCK loot bonus, capped well under "expected". Increments the carried count -
+// the bottle rides the run from here (end_run banks or loses it).
+function banshee_chest_try() {
+    banshee_init();
+    var _chance = min(8, 4 + floor(pet_active_lck_loot_pts() / 5));
+    if (irandom(99) >= _chance) return false;
+    global.banshee_carried++;
+    return true;
+}
+
+// Maren release: consume one banked bottle, roll a random NOT-yet-owned track
+// (both pools, equal weight). Returns { kind:"track", track } on an unlock or
+// { kind:"dust", amount } once every track is owned (the 25-dust bounty).
+function banshee_release_roll() {
+    banshee_init();
+    if (global.banshee_banked <= 0) return undefined;
+    global.banshee_banked--;
+    var _locked = [];
+    var _c = music_track_catalog();
+    for (var _i = 0; _i < array_length(_c); _i++) {
+        if (!music_track_owned(_c[_i].id)) array_push(_locked, _c[_i]);
+    }
+    if (array_length(_locked) == 0) {
+        var _bounty = 25;
+        global.rune_dust += _bounty;
+        return { kind: "dust", amount: _bounty };
+    }
+    var _t = _locked[irandom(array_length(_locked) - 1)];
+    array_push(global.music_unlocked, _t.id);
+    return { kind: "track", track: _t };
 }
 
 // -----------------------------------------------------------------------------
@@ -9167,7 +9364,44 @@ function audio_music_assets() {
 // audio_stop_sound sites for music never need to know about ambience.
 // -----------------------------------------------------------------------------
 function ambience_all_assets() {
-    return [snd_amb_rain, snd_amb_cave, snd_amb_torch];
+    return [snd_amb_rain, snd_amb_cave, snd_amb_torch,
+            snd_amb_ashen, snd_amb_scorched, snd_amb_tundra, snd_amb_title,
+            // Hub station loops are Step-driven (hub_station_ambience_update),
+            // but they live in this list so room-change ambience_set calls
+            // sweep them up if a station flag somehow survives a transition.
+            snd_amb_forge, snd_amb_cauldron, snd_amb_garden, snd_amb_tavern];
+}
+
+// Which ambience bed the selected dungeon breathes (spec section 2). The old
+// shared snd_amb_cave bed is retired - each dungeon has its own air.
+function dungeon_ambience_bed() {
+    var _d = variable_global_exists("selected_dungeon") ? global.selected_dungeon : "ashen_vault";
+    switch (_d) {
+        case "scorched_depths": return snd_amb_scorched;
+        case "tundra_tomb":     return snd_amb_tundra;
+        default:                return snd_amb_ashen;
+    }
+}
+
+// HUB STATION FLAVOR (spec section 3): a short quiet loop while that NPC screen
+// is open. Called from obj_game_controller's Step TOP (before any modal exit)
+// so the *_open instance flags are in scope every frame; loops self-stop the
+// frame a screen closes, and room-change ambience_set calls are the backstop.
+function hub_station_ambience_update() {
+    var _hub = (room == rm_hub || room == rm_character_select);
+    var _want_forge    = _hub && (shop_open == 1);   // Dorn only - Petra's stall gets no loop
+    var _want_cauldron = _hub && sable_open;
+    var _want_garden   = _hub && (bairc_open || bairc_intro_open);
+    var _want_tavern   = _hub && (tavern_board_open
+        || (variable_instance_exists(id, "kb_open") && kb_open));   // board + Knucklebones/High Table
+    var _loops = [[snd_amb_forge, _want_forge], [snd_amb_cauldron, _want_cauldron],
+                  [snd_amb_garden, _want_garden], [snd_amb_tavern, _want_tavern]];
+    for (var _i = 0; _i < array_length(_loops); _i++) {
+        var _snd = _loops[_i][0];
+        var _want = _loops[_i][1];
+        if (_want && !audio_is_playing(_snd)) audio_play_sound(_snd, 0, true);
+        else if (!_want && audio_is_playing(_snd)) audio_stop_sound(_snd);
+    }
 }
 
 // _list: the ambience assets this room wants (may be empty). Already-playing
@@ -9210,8 +9444,15 @@ function audio_sfx_assets() {
         snd_cast_arcane, snd_cast_arcane_2, snd_cast_heal, snd_cast_shield,
         snd_cast_buff, snd_cast_buff_2, snd_cast_debuff,
         snd_sting_levelup, snd_sting_floor, snd_sting_victory, snd_sting_defeat,
-        snd_sting_quest, snd_sting_mystery, snd_sting_heartbreak,
+        snd_sting_quest, snd_sting_mystery,
+        snd_banshee_scream,   // release-ceremony wail (BANSHEE_BOTTLE_SPEC.md)
+        // (snd_sting_heartbreak retired 07-14 - snd_betrayal replaced it at the
+        // betrayal site; the asset stays in the project but never plays.)
         snd_equip, snd_buy, snd_pet_hatch,
+        // Atmosphere pass section 4 - moment stingers (SOUND_ATMOSPHERE_SPEC.md)
+        snd_shrine_hum, snd_curse_whisper, snd_egg_stir, snd_hatch_burst,
+        snd_awakened_cross, snd_bond_up, snd_extract, snd_boss_door,
+        snd_betrayal, snd_quest_ready,
         snd_confirm_major, snd_npc_confirm, snd_sell,
         // Batch 2 - economy/items
         snd_gold, snd_potion, snd_forge, snd_rune_socket, snd_page, snd_chest, snd_gate,
@@ -9227,7 +9468,7 @@ function audio_settings_init() {
     if (!variable_global_exists("music_volume")) global.music_volume = 0.7;
     if (!variable_global_exists("sfx_volume"))   global.sfx_volume   = 0.8;
     if (!variable_global_exists("settings_open"))        global.settings_open        = false;
-    if (!variable_global_exists("settings_cursor"))      global.settings_cursor      = 0;   // 0 Music, 1 SFX, 2 Menu Tick, 3 Fullscreen, 4 Tutorial, 5 Reset
+    if (!variable_global_exists("settings_cursor"))      global.settings_cursor      = 0;   // 0 Music, 1 SFX, 2 Hub Track, 3 Dungeon Track, 4 Menu Tick, 5 Fullscreen, 6 Tutorial, 7 Reset
     if (!variable_global_exists("settings_reset_flash")) global.settings_reset_flash = 0;
     if (!variable_global_exists("tutorial_enabled"))     global.tutorial_enabled     = true;
     if (!variable_global_exists("ui_tick_enabled"))      global.ui_tick_enabled      = true;   // the menu-nav glass ping
@@ -9275,6 +9516,21 @@ function audio_apply_volumes() {
     audio_sound_gain(snd_amb_rain,  _mv * 0.50, 0);
     audio_sound_gain(snd_amb_cave,  _mv * 0.55, 0);
     audio_sound_gain(snd_amb_torch, _mv * 0.30, 0);
+    // Atmosphere-pass beds are loudness-normalized at import (M 07-14: raw gens
+    // were "barely audible"), so these trims are the ONLY quiet-maker - raise
+    // here first if F5 says a bed still doesn't read.
+    audio_sound_gain(snd_amb_ashen,    _mv * 0.55, 0);
+    audio_sound_gain(snd_amb_scorched, _mv * 0.55, 0);
+    audio_sound_gain(snd_amb_tundra,   _mv * 0.55, 0);
+    audio_sound_gain(snd_amb_title,    _mv * 0.55, 0);
+    audio_sound_gain(snd_amb_forge,    _mv * 0.50, 0);
+    audio_sound_gain(snd_amb_cauldron, _mv * 0.50, 0);
+    audio_sound_gain(snd_amb_garden,   _mv * 0.50, 0);
+    audio_sound_gain(snd_amb_tavern,   _mv * 0.50, 0);
+    // Banshee jukebox tracks ride the flat music gain (they ARE the music).
+    audio_sound_gain(snd_music_hub_1,     _mv, 0);
+    audio_sound_gain(snd_music_hub_2,     _mv, 0);
+    audio_sound_gain(snd_music_dungeon_1, _mv, 0);
 }
 
 // Adjust one category by delta (e.g. ±0.05), clamp, and re-apply immediately.
@@ -9287,8 +9543,8 @@ function audio_settings_adjust(which, delta) {
 
 // Shared input handler for the settings overlay. Call from a controller's Step
 // while global.settings_open; returns true (so the caller can `exit` and block
-// its own input). W/S pick a row, A/D or <-/-> adjust sliders / toggle fullscreen,
-// Esc/O closes. Rows: 0 Music, 1 SFX, 2 Fullscreen, 3 Tutorial Tips, 4 Reset Tutorial.
+// its own input). W/S pick a row, A/D or <-/-> adjust sliders / cycle tracks /
+// toggle, Esc/O closes. Row order matches ui_draw_settings_overlay (8 rows).
 function audio_settings_handle_input() {
     audio_settings_init();
     video_settings_init();
@@ -9298,10 +9554,11 @@ function audio_settings_handle_input() {
         global.settings_reset_flash--;
     }
 
-    // Rows: 0 Music, 1 SFX, 2 Menu Tick, 3 Fullscreen, 4 Tutorial Tips, 5 Reset Tutorial.
-    if (nav_up())   global.settings_cursor = wrap_index(global.settings_cursor - 1, 6);
-    if (nav_down()) global.settings_cursor = wrap_index(global.settings_cursor + 1, 6);
-    global.settings_cursor = clamp(global.settings_cursor, 0, 5);
+    // Rows: 0 Music, 1 SFX, 2 Hub Music, 3 Dungeon Music, 4 Menu Tick,
+    //       5 Fullscreen, 6 Tutorial Tips, 7 Reset Tutorial.
+    if (nav_up())   global.settings_cursor = wrap_index(global.settings_cursor - 1, 8);
+    if (nav_down()) global.settings_cursor = wrap_index(global.settings_cursor + 1, 8);
+    global.settings_cursor = clamp(global.settings_cursor, 0, 7);
 
     var _left    = nav_left();
     var _right   = nav_right();
@@ -9316,7 +9573,21 @@ function audio_settings_handle_input() {
             if (_left)  audio_settings_adjust(1, -0.05);
             if (_right) audio_settings_adjust(1,  0.05);
         break;
-        case 2: // Menu Tick (the nav glass ping) on/off
+        case 2: // Hub Music track selector (banshee unlocks; per-save selection)
+        case 3: // Dungeon Music track selector
+            if (_left || _right) {
+                var _ms_pool = (global.settings_cursor == 2) ? "hub" : "dungeon";
+                if (music_selection_cycle(_ms_pool, _right ? 1 : -1)) {
+                    audio_play_sound(snd_ui_move, 1, false);
+                    // Selection is progression, not preference: it lives in the SAVE
+                    // (settings.ini is slot-agnostic). No slot loaded (title) = inert row.
+                    if (variable_global_exists("save_slot") && global.save_slot >= 0) save_game();
+                } else {
+                    audio_play_sound(snd_ui_error, 1, false);   // nothing unlocked in this pool yet
+                }
+            }
+        break;
+        case 4: // Menu Tick (the nav glass ping) on/off
             if (_left || _right || _confirm) {
                 global.ui_tick_enabled = !global.ui_tick_enabled;
                 // Turning it ON previews the tick itself; OFF gets the toggle thunk.
@@ -9324,13 +9595,13 @@ function audio_settings_handle_input() {
                 audio_settings_save();
             }
         break;
-        case 3: // Fullscreen
+        case 5: // Fullscreen
             if (_left || _right || _confirm) {
                 video_toggle_fullscreen();
                 audio_play_sound(window_get_fullscreen() ? snd_ui_toggle_on : snd_ui_toggle_off, 1, false);
             }
         break;
-        case 4: // Tutorial Tips on/off
+        case 6: // Tutorial Tips on/off
             if (_left || _right || _confirm) {
                 if (!variable_global_exists("tutorial_enabled")) global.tutorial_enabled = true;
                 global.tutorial_enabled = !global.tutorial_enabled;
@@ -9338,7 +9609,7 @@ function audio_settings_handle_input() {
                 audio_settings_save();
             }
         break;
-        case 5: // Reset Tutorial - clear seen flags so every tip shows again
+        case 7: // Reset Tutorial - clear seen flags so every tip shows again
             if (_left || _right || _confirm) {
                 tutorial_reset_all();
                 global.tutorial_enabled   = true;   // resetting implies you want the tips back

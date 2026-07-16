@@ -123,6 +123,22 @@ Creature Collector · Gothic · Character Customization · Indie · Replay Value
 > All AI-generated assets were reviewed, curated, and integrated by the developer. The game does
 > not generate any content with AI at runtime, and no live AI models are accessed by the game.
 
+- **>>> PENDING EDIT (added 2026-07-14): disclosure v2 — REQUIRED before build upload.**
+  ElevenLabs SFX/ambience shipped 07-14 (and Suno music is queued), so the live art-only
+  disclosure above is now incomplete. When the page unlocks from review (or at the D5/D6
+  build-upload step at the latest), replace the content-survey AI text with this v2 verbatim:
+
+> Ironwake contains pre-generated AI content. Some 2D art assets (character sprites, portraits,
+> item illustrations, backgrounds, and icon sets) were created using AI image-generation tools
+> (PixelLab and MidJourney, plus licensed third-party icon packs produced with Stable Diffusion).
+> Some sound effects and ambient audio were created using AI audio-generation tools (ElevenLabs),
+> and some music tracks were created using AI music-generation tools (Suno). All AI-generated
+> assets were reviewed, curated, and edited by the developer. The game does not generate any
+> content with AI at runtime, and no live AI models are accessed by the game.
+
+  (If no Suno track has shipped by then, delete the clause
+  ", and some music tracks were created using AI music-generation tools (Suno)".)
+
 ---
 
 ## 6. Credits / author sections (license-required — do not skip)

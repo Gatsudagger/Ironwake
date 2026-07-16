@@ -136,8 +136,10 @@ gallery_scroll      = 0;    // top visible row index
 gallery_cursor      = -1;   // highlighted row (-1 = none)
 gallery_detail_item = undefined;   // item struct shown in detail panel (undefined = closed)
 
-// Hub music + ambience bed (night rain outside, torch crackle at the gate)
-audio_play_sound(Rainy_Memories, 1, true);
+// Hub music + ambience bed (night rain outside, torch crackle at the gate).
+// music_hub_snd() honors the per-save Settings selection (banshee jukebox);
+// defaults to Rainy_Memories when nothing is selected/unlocked.
+audio_play_sound(music_hub_snd(), 1, true);
 audio_apply_volumes();   // honor saved Music/SFX volumes for this session's sounds
 ambience_set([snd_amb_rain, snd_amb_torch]);
 

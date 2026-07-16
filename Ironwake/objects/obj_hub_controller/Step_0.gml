@@ -346,7 +346,7 @@ if (instance_exists(obj_game_controller)) {
                     _gc_ld.loadout_open      = false;
                     _gc_ld.loadout_confirmed = true;
                     audio_play_sound(snd_confirm_major, 1, false);   // committing to the descent
-                    audio_stop_sound(Rainy_Memories);
+                    music_hub_stop();   // stops the default AND any banshee-jukebox hub track
                     room_goto(rm_dungeon_floor);
                 }
             }
@@ -558,7 +558,7 @@ if (instance_exists(obj_game_controller)) {
                         _gc_ld.loadout_open      = false;
                         _gc_ld.loadout_confirmed = true;
                         audio_play_sound(snd_confirm_major, 1, false);   // committing to the descent
-                        audio_stop_sound(Rainy_Memories);
+                        music_hub_stop();   // stops the default AND any banshee-jukebox hub track
                         room_goto(rm_dungeon_floor);
                     }
                 }
@@ -1008,7 +1008,7 @@ if (!show_gallery && selected_npc == array_length(npc_names)
         var _gc_e = instance_find(obj_game_controller, 0);
 
         if (_gc_e.loadout_confirmed) {
-            audio_stop_sound(Rainy_Memories);
+            music_hub_stop();   // stops the default AND any banshee-jukebox hub track
             room_goto(rm_dungeon_floor);
         } else {
             // Open dungeon selection (player picks dungeon + ascendance before loadout)
@@ -1117,7 +1117,7 @@ if (mouse_check_button_pressed(mb_left)) {
         if (instance_exists(obj_game_controller)) {
             var _gc_e2 = instance_find(obj_game_controller, 0);
             if (_gc_e2.loadout_confirmed) {
-                audio_stop_sound(Rainy_Memories);
+                music_hub_stop();   // stops the default AND any banshee-jukebox hub track
                 room_goto(rm_dungeon_floor);
             } else {
                 // Open dungeon selection overlay (mirrors keyboard handler)

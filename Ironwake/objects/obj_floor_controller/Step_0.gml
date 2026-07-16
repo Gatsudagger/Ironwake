@@ -112,6 +112,8 @@ if (showing_shrine) {
             shrine_notification = "";
             shrine_notification_fail = false;
             shrine_curse_arm    = -1;
+            // A curse altar springs its trap the moment it drops the veil.
+            if (shrine_kind == "curse") audio_play_sound(snd_curse_whisper, 1, false);
         }
         exit;
     }
@@ -344,6 +346,8 @@ if (escape_confirm_open) {
                 }
             }
             escape_confirm_open = false;
+            music_dungeon_stop();   // parity with the E-extract path (the lamp path never stopped the track)
+            audio_play_sound(snd_extract, 1, false);   // gate rumble + wind rush out
             end_run(0);   // extraction: keep gold, carried loot -> stash, pet banks growth
             save_game();
             global.current_floor       = 1;
@@ -366,8 +370,8 @@ if (extract_confirm_open) {
         extract_confirm_open = false;
     } else if (input_confirm() || input_confirm_alt()) {
         extract_confirm_open = false;
-        audio_stop_sound(_2_dungeon_INITIAL);
-        audio_stop_sound(_2_dungeon_LOOP);
+        music_dungeon_stop();   // default pair + any banshee-jukebox dungeon track
+        audio_play_sound(snd_extract, 1, false);   // gate rumble + wind rush out
         end_run(0);
         global.current_floor       = 1;
         global.floor_rooms_cleared = [];
@@ -547,9 +551,11 @@ if (input_confirm() || input_confirm_alt()) {
         treasure_gold  = _th_gold;
         treasure_item  = _th_c;
         treasure_timer = 0;
+        treasure_banshee = banshee_chest_try();   // very rare: a Banshee in a Bottle rides the haul
         showing_treasure = true;
         audio_play_sound(snd_chest, 1, false);
         if (treasure_gold > 0) audio_play_sound(snd_gold, 1, false);
+        if (treasure_banshee) audio_play_sound(snd_sting_mystery, 1, false);   // something wails inside the chest...
         show_debug_message("[FLOOR DEBUG] room=" + string(selected_room) + " type=treasure_heal gold=" + string(_th_gold));
 
     } else if (_room.type == "treasure_vault") {
@@ -567,9 +573,11 @@ if (input_confirm() || input_confirm_alt()) {
         treasure_gold  = _tv_gold;
         treasure_item  = _tv_e;
         treasure_timer = 0;
+        treasure_banshee = banshee_chest_try();   // very rare: a Banshee in a Bottle rides the haul
         showing_treasure = true;
         audio_play_sound(snd_chest, 1, false);
         if (treasure_gold > 0) audio_play_sound(snd_gold, 1, false);
+        if (treasure_banshee) audio_play_sound(snd_sting_mystery, 1, false);   // something wails inside the chest...
         loot_item_sting(_tv_e);   // armory find sings its rarity
         show_debug_message("[FLOOR DEBUG] room=" + string(selected_room) + " type=treasure_vault gold=" + string(_tv_gold));
 
@@ -588,9 +596,11 @@ if (input_confirm() || input_confirm_alt()) {
         treasure_gold  = _tr_gold;
         treasure_item  = _tr_e;
         treasure_timer = 0;
+        treasure_banshee = banshee_chest_try();   // very rare: a Banshee in a Bottle rides the haul
         showing_treasure = true;
         audio_play_sound(snd_chest, 1, false);
         if (treasure_gold > 0) audio_play_sound(snd_gold, 1, false);
+        if (treasure_banshee) audio_play_sound(snd_sting_mystery, 1, false);   // something wails inside the chest...
         loot_item_sting(_tr_e, true);   // reliquary: legendary = the relic motif
         show_debug_message("[FLOOR DEBUG] room=" + string(selected_room) + " type=treasure_rare gold=" + string(_tr_gold));
 
@@ -623,16 +633,19 @@ if (input_confirm() || input_confirm_alt()) {
         shrine_curse_arm    = -1;
         shrine_revealed     = false;   // veiled until the player approaches
         showing_shrine      = true;
+        audio_play_sound(snd_shrine_hum, 1, false);   // low choral swell - the altar's pull (still veiled)
         tutorial_try_show("shrine");   // first-altar coach-mark (see SYSTEMS_ONBOARDING.md)
         show_debug_message("[FLOOR DEBUG] room=" + string(selected_room) + " type=shrine kind=" + shrine_kind + " offers=" + string(array_length(shrine_offers)));
 
     } else if (_room.type == "combat" || _room.type == "elite" || _room.type == "boss") {
-        audio_stop_sound(_2_dungeon_INITIAL);
-        audio_stop_sound(_2_dungeon_LOOP);
+        music_dungeon_stop();   // default pair + any banshee-jukebox dungeon track
         global.next_enemy_type    = _room.enemies;
         global.current_room_index = selected_room;
         global.just_cleared_room  = false;
         global.just_cleared_boss  = (_room.type == "boss");
+        // Boss threshold: the iron door groans open as the room transition starts
+        // (audio rides across room_goto - gc is persistent, sounds aren't stopped).
+        if (_room.type == "boss") audio_play_sound(snd_boss_door, 1, false);
 
         show_debug_message("[FLOOR DEBUG] floor=" + string(global.current_floor)
             + " room=" + string(selected_room)

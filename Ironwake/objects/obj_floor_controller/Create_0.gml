@@ -442,6 +442,7 @@ treasure_timer   = 0;
 treasure_item    = undefined;
 treasure_item2   = undefined;   // Treasure Hunter's bonus item (treasure rooms only)
 treasure_coins   = [];          // gold-burst coins on the popup (#19 polish, shared sim)
+treasure_banshee = false;       // this chest also held a Banshee in a Bottle (very rare)
 
 showing_event = false;
 event_title   = "";
@@ -493,9 +494,17 @@ event_coins          = [];         // gold-burst particles on a gold-yielding re
 // 6. DUNGEON MUSIC
 // -----------------------------------------------------------------------------
 audio_apply_volumes();   // honor saved Music/SFX volumes
-audio_play_sound(_2_dungeon_INITIAL, 1, false);
-dungeon_music_looping = false;
-ambience_set([snd_amb_cave, snd_amb_torch]);   // cave air + brazier crackle under the music
+// Banshee jukebox: a selected dungeon track replaces the default INITIAL->LOOP
+// pair entirely (custom tracks are single seamless loops, no intro handoff).
+var _dm_track = music_selected_track("dungeon");
+if (_dm_track != undefined) {
+    audio_play_sound(_dm_track.snd, 1, true);
+    dungeon_music_looping = true;   // true = the Step intro->loop handoff stays dormant
+} else {
+    audio_play_sound(_2_dungeon_INITIAL, 1, false);
+    dungeon_music_looping = false;
+}
+ambience_set([dungeon_ambience_bed(), snd_amb_torch]);   // per-dungeon air + brazier crackle under the music
 
 // The portcullis grinds open once per descent - fresh run arrivals on floor 1
 // only, never on floor advances or returns from combat.

@@ -113,3 +113,30 @@ some re-rolls, expect ~5-8k credits = inside one session cap.
 Session order: (1) Loot suite end-to-end incl. wiring + F5, (2) dungeon
 ambience trio + title bed, (3) hub flavor + stingers, (4) music runs in
 parallel on M's Suno side whenever he wants.
+
+## Status 2026-07-14 evening (sections 2-4 batch)
+
+Site audit rulings (M via scoping questions):
+- Level-up fanfare: NOT needed - `snd_sting_levelup` already fires (scr_combat).
+- Quest turn-in at the board already plays `snd_sting_quest`; the SILENT site is
+  the mid-run "Request complete - report to the tavern board" notice
+  (quest_tick, scr_stats) -> NEW `snd_quest_ready` distinct soft ping (M ruled).
+- Betrayal: `snd_sting_heartbreak` already fires there; M ruled GENERATE the
+  spec's `snd_betrayal` upgrade anyway - replaces heartbreak at that site IF it
+  auditions better.
+
+M AUDITIONED: 17/18 passed; curse whisper v1 "sounds sci-fi" -> v2 re-roll
+(human-whisper prompt, strike 1 of 2). M: "many are barely audible" -> ALL
+imports loudness-normalized to -16 LUFS; in-game trims are now the only
+quiet-maker (audio_apply_volumes).
+
+IMPORTED + WIRED (tools/import_sounds_atmo.py; loops = second-half+crossfade
+edit so the wrap point is mid-material): per-dungeon beds via new
+dungeon_ambience_bed() in floor AND combat controllers (combat's old
+drop-to-silence superseded per this spec), title bed, hub station loops via
+hub_station_ambience_update() at gc Step top (forge=Dorn shop_open==1,
+cauldron=sable, garden=bairc, tavern=board+kb_open), all 9 stinger sites
+(betrayal REPLACED snd_sting_heartbreak; snd_amb_cave retired from play).
+Igor load+link CLEAN (compile 2A-gated as always) - M F5 = the compile.
+Spend: 1,828 credits (meter 295 -> 2,123; SFX = 11 credits/sec).
+F5 must also judge: curse whisper v2 (in-game), bed levels, loop seams.

@@ -16,6 +16,11 @@ if (keyboard_check_pressed(vk_f11)) {
     video_toggle_fullscreen();
 }
 
+// Hub station flavor loops (SOUND_ATMOSPHERE_SPEC.md section 3): keep each open
+// NPC screen's quiet bed in lock-step with its *_open flag. Runs above every
+// modal early-exit below so a loop can never stick on while one is up.
+hub_station_ambience_update();
+
 // Android (8c): pop the OS on-screen keyboard whenever a typed-text modal is
 // capturing keyboard_string (hero naming at char create, pet naming at Bairc)
 // and dismiss it when the modal closes. One pump - text_entry_active() already
@@ -691,7 +696,8 @@ if (input_hotkey("F") && room == rm_hub && !text_entry_active()
         _gift_npc = (shop_open == 0) ? "petra" : "dorn"; _gift_notify = 0;
     } else if (trainer_open && !trainer_statpick_open && !vex_detail_open) {
         _gift_npc = "vex"; _gift_notify = 1;
-    } else if (variable_instance_exists(id, "maren_open") && maren_open && maren_confirm == undefined) {
+    } else if (variable_instance_exists(id, "maren_open") && maren_open && maren_confirm == undefined
+        && !banshee_release_open) {
         _gift_npc = "maren"; _gift_notify = 2;
     } else if (variable_instance_exists(id, "sable_open") && sable_open) {
         _gift_npc = "sable"; _gift_notify = 3;
@@ -1812,6 +1818,32 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open) {
 // Layout constants here MUST match ui_draw_maren_screen() in scr_ui.
 // =============================================================================
 if (variable_instance_exists(id, "maren_open") && maren_open) {
+    // --- Banshee release ceremony popup: owns ALL input while open. Any key
+    //     first skips to the reveal, then closes. (Drawn by ui_draw_maren.) ---
+    if (banshee_release_open) {
+        banshee_release_timer++;
+        // Melodic scream lands as the spirit clears the bottle mouth (anim frame
+        // ~4 of 17 at 5 game-steps per frame - matches ui_draw_banshee_release).
+        if (!banshee_scream_played && banshee_release_timer >= 20) {
+            banshee_scream_played = true;
+            audio_play_sound(snd_banshee_scream, 1, false);
+        }
+        var _bb_anim_done = (banshee_release_timer >= 17 * 5);
+        if (keyboard_check_pressed(vk_anykey) || mouse_check_button_pressed(mb_left)) {
+            if (!_bb_anim_done) {
+                banshee_release_timer = 17 * 5;   // skip to the held final frame + reveal
+                if (!banshee_scream_played) {
+                    banshee_scream_played = true;
+                    audio_play_sound(snd_banshee_scream, 1, false);
+                }
+            } else {
+                banshee_release_open   = false;
+                banshee_release_result = undefined;
+            }
+        }
+        exit;
+    }
+
     rune_inventory_sort();   // keep the rune/aspect pool alphabetical (display + index ops read this)
     var _m_slots = maren_socketable_slots();
     var _m_gear  = rune_inventory_indices("gear");
@@ -1899,6 +1931,21 @@ if (variable_instance_exists(id, "maren_open") && maren_open) {
                 } else {
                     maren_notification = "Could not remove that rune.";
                 }
+
+            } else if (_cf.action == "banshee_release") {
+                // Free the spirit: consume a banked bottle, roll the reward, and start
+                // the release ceremony popup (bottle opens, banshee rises, scream).
+                var _bb_res = banshee_release_roll();
+                if (_bb_res == undefined) {
+                    maren_notification = "No bottled spirits to free.";
+                } else {
+                    banshee_release_open   = true;
+                    banshee_release_timer  = 0;
+                    banshee_release_result = _bb_res;
+                    banshee_scream_played  = false;
+                    affinity_add("maren", 2);   // she loves this work (function-use drip)
+                    save_game();
+                }
             }
             exit;
         }
@@ -1928,8 +1975,10 @@ if (variable_instance_exists(id, "maren_open") && maren_open) {
         else if (maren_phase == 1) _m_rows = max(1, array_length(_m_groups));         // Combine groups
         else if (maren_phase == 2) _m_rows = max(1, array_length(global.rune_inventory)); // Split list
         else                       _m_rows = max(1, array_length(_m_flags));          // Flagship list
+    } else if (maren_tab == 3) {
+        _m_rows = max(1, array_length(global.rune_inventory));                        // Runes (owned list)
     } else {
-        _m_rows = max(1, array_length(global.rune_inventory));
+        _m_rows = 1;                                                                  // Spirits: single Release action row
     }
 
     // Esc / Backspace - step back one phase, else close the screen
@@ -1943,12 +1992,12 @@ if (variable_instance_exists(id, "maren_open") && maren_open) {
         exit;
     }
 
-    // Q/E (or <-/->) - switch tab (4 tabs; Q/<- left, E/-> right; resets the active flow)
+    // Q/E (or <-/->) - switch tab (5 tabs; Q/<- left, E/-> right; resets the active flow)
     var _maren_tabchg = 0;
     if (input_tab_next() || keyboard_check_pressed(vk_right)) _maren_tabchg = 1;
     else if (input_tab_prev() || keyboard_check_pressed(vk_left)) _maren_tabchg = -1;
     if (_maren_tabchg != 0) {
-        maren_tab = (maren_tab + _maren_tabchg + 4) mod 4;
+        maren_tab = (maren_tab + _maren_tabchg + 5) mod 5;
         maren_phase = 0; maren_item_sel = -1; maren_cursor = 0; maren_scroll = 0; maren_notification = "";
         exit;
     }
@@ -1966,15 +2015,16 @@ if (variable_instance_exists(id, "maren_open") && maren_open) {
     else if (maren_cursor >= maren_scroll + _m_vis) maren_scroll = maren_cursor - _m_vis + 1;
     maren_scroll = clamp(maren_scroll, 0, max(0, _m_rows - _m_vis));
 
-    // Mouse - tab bar (x=445+t*200, y=70, w=190, h=40) + row select acts immediately
+    // Mouse - tab bar (5 tabs: x=368+t*240, y=105, w=225, h=60 - MUST match
+    // ui_draw_maren's bar) + row select acts immediately
     var _m_act = (input_confirm());
     if (mouse_check_button_pressed(mb_left)) {
         var _mmx = device_mouse_x_to_gui(0);
         var _mmy = device_mouse_y_to_gui(0);
         var _hit_tab = false;
-        for (var _mtb = 0; _mtb < 4; _mtb++) {
-            var _mtx = 368 + _mtb * 300;
-            if (_mmx >= _mtx && _mmx < _mtx + 285 && _mmy >= 105 && _mmy < 165) {
+        for (var _mtb = 0; _mtb < 5; _mtb++) {
+            var _mtx = 368 + _mtb * 240;
+            if (_mmx >= _mtx && _mmx < _mtx + 225 && _mmy >= 105 && _mmy < 165) {
                 maren_tab = _mtb; maren_phase = 0; maren_item_sel = -1; maren_cursor = 0; maren_scroll = 0; maren_notification = "";
                 _hit_tab = true; break;
             }
@@ -2141,6 +2191,23 @@ if (variable_instance_exists(id, "maren_open") && maren_open) {
                         ? ("Forged the " + _fdef.name + " flagship rune!")
                         : _fres;
                 }
+            }
+        } else if (maren_tab == 4) {
+            // -------- SPIRITS TAB (Banshee in a Bottle release) --------
+            banshee_init();
+            if (global.banshee_banked <= 0) {
+                maren_notification = "No bottled spirits to free. Bottles ride out of the dungeon with a living extractor.";
+                audio_play_sound(snd_ui_error, 1, false);
+            } else {
+                var _bb_all_owned = (array_length(global.music_unlocked) >= array_length(music_track_catalog()));
+                maren_confirm = {
+                    action: "banshee_release",
+                    message: "Free the spirit from a Banshee in a Bottle?",
+                    warn: _bb_all_owned
+                        ? "Every song is already yours - this spirit leaves 25 Rune Dust in gratitude."
+                        : "Its parting song becomes a music track you can choose in Settings.",
+                    cost: 0
+                };
             }
         }
         // Runes tab is read-only.
