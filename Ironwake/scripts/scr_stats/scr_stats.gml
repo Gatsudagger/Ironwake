@@ -9203,6 +9203,7 @@ function audio_music_assets() {
         snd_music_hub_1, snd_music_hub_2, snd_music_dungeon_1,
         snd_music_hub_3, snd_music_hub_4, snd_music_hub_5,
         snd_music_dungeon_2, snd_music_dungeon_3,
+        snd_music_dungeon_4,   // Nocturne (gothic piano, M-approved 07-17)
     ];
 }
 
@@ -9230,6 +9231,9 @@ function music_track_catalog() {
         { id: "dun_bloodiron",   name: "Blood and Iron", pool: "dungeon", snd: snd_music_dungeon_2 },
         { id: "dun_kingsfall",   name: "Kingsfall",      pool: "dungeon", snd: snd_music_dungeon_3 },
         { id: "hub_thewake",     name: "The Wake",       pool: "hub",     snd: snd_music_hub_5 },
+        // 07-17: M's gothic-virtuoso piano ask ("somber but many notes, at times
+        // fast tempo, Castlevania") - approved from sample, dungeon pool.
+        { id: "dun_nocturne",    name: "Nocturne",       pool: "dungeon", snd: snd_music_dungeon_4 },
     ];
 }
 
