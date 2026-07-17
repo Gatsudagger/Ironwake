@@ -9198,9 +9198,11 @@ function audio_music_assets() {
         snd_amb_ashen, snd_amb_scorched, snd_amb_tundra, snd_amb_title,
         snd_amb_forge, snd_amb_cauldron, snd_amb_garden, snd_amb_tavern,
         // Banshee-unlocked jukebox tracks (BANSHEE_BOTTLE_SPEC.md, 07-15;
-        // hub_3/hub_4 = Hearthlight / Moth & Lantern, M-approved 07-16).
+        // hub_3/4/5 = Hearthlight / Moth & Lantern / The Wake, dungeon_2/3 =
+        // Blood and Iron / Kingsfall - all M-approved 07-16).
         snd_music_hub_1, snd_music_hub_2, snd_music_dungeon_1,
-        snd_music_hub_3, snd_music_hub_4,
+        snd_music_hub_3, snd_music_hub_4, snd_music_hub_5,
+        snd_music_dungeon_2, snd_music_dungeon_3,
     ];
 }
 
@@ -9220,10 +9222,14 @@ function music_track_catalog() {
         { id: "hub_rainlight", name: "Rainlight",     pool: "hub",     snd: snd_music_hub_1 },
         { id: "hub_emberside", name: "Emberside",     pool: "hub",     snd: snd_music_hub_2 },
         { id: "dun_longdark",  name: "The Long Dark", pool: "dungeon", snd: snd_music_dungeon_1 },
-        // M-approved from the 07-16 sample round (dungeon concepts + Celtic Wake
-        // still in audition - see _for_review/music_samples).
-        { id: "hub_hearthlight", name: "Hearthlight",    pool: "hub",  snd: snd_music_hub_3 },
-        { id: "hub_mothlantern", name: "Moth & Lantern", pool: "hub",  snd: snd_music_hub_4 },
+        // M-approved from the 07-16 sample rounds. Fulls generated with explicit
+        // evolving-section structure per M ("diversity and variance within the
+        // song so the listener doesn't tire"). GraveDancer concept = parked.
+        { id: "hub_hearthlight", name: "Hearthlight",    pool: "hub",     snd: snd_music_hub_3 },
+        { id: "hub_mothlantern", name: "Moth & Lantern", pool: "hub",     snd: snd_music_hub_4 },
+        { id: "dun_bloodiron",   name: "Blood and Iron", pool: "dungeon", snd: snd_music_dungeon_2 },
+        { id: "dun_kingsfall",   name: "Kingsfall",      pool: "dungeon", snd: snd_music_dungeon_3 },
+        { id: "hub_thewake",     name: "The Wake",       pool: "hub",     snd: snd_music_hub_5 },
     ];
 }
 
