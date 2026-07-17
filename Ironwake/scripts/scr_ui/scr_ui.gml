@@ -1054,6 +1054,7 @@ function ui_trait_icon_sprite(tr) {
         case "crimson_reserve":  return spr_icon_trait_crimson_reserve;
         case "vampiric_edge":    return spr_icon_trait_vampiric_edge;
         case "berserker_rage":   return spr_icon_trait_berserker_rage;
+        case "relentless":       return spr_icon_trait_relentless;   // M pick 07-16 (berserk scream #09)
         // --- Shadowstrider ---
         case "phantom_step":     return spr_icon_trait_phantom_step;
         case "shadow_meld":      return spr_icon_trait_shadow_meld;
