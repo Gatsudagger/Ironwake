@@ -1862,6 +1862,8 @@ function ability_unlock_condition_text(ability_name) {
 // Ability names are unique across all pools, so a name lookup is safe.
 // ---------------------------------------------------------------------------
 function ability_is_unlocked(ability_name) {
+    // TEST LEVER (F8, gc Step): everything reads unlocked while the toggle is on.
+    if (variable_global_exists("debug_unlock_all") && global.debug_unlock_all) return true;
     var _info = ability_unlock_info(ability_name);
     if (_info == undefined) return true;   // free starter
 
@@ -2132,6 +2134,8 @@ function trait_get_by_name(trait_name) {
 function trait_is_unlocked(trait_name) {
     var _t = trait_get_by_name(trait_name);
     if (_t == undefined) return false;
+    // TEST LEVER (F8, gc Step): everything reads unlocked while the toggle is on.
+    if (variable_global_exists("debug_unlock_all") && global.debug_unlock_all) return true;
     if (_t.unlock_type == "default") return true;
     if (!variable_global_exists("traits_unlocked")) return false;
     if (!variable_struct_exists(global.traits_unlocked, _t.effect_id)) return false;

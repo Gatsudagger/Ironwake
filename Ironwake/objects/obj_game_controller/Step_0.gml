@@ -16,6 +16,22 @@ if (keyboard_check_pressed(vk_f11)) {
     video_toggle_fullscreen();
 }
 
+// =============================================================================
+// TEST LEVER (07-16) - F8 toggles UNLOCK-EVERYTHING for playtesting: abilities,
+// traits, music tracks and Maren flagship recipes all read as unlocked while ON.
+// Deliberately a CHECK BYPASS, not a data grant - global.debug_unlock_all is
+// never written to the save, so the real slot's progression is untouched and a
+// relaunch always starts OFF. Audio cue: rising = ON, low = OFF.
+// REMOVE BEFORE RELEASE (F9 win-state lever precedent).
+// =============================================================================
+if (keyboard_check_pressed(vk_f8)) {
+    if (!variable_global_exists("debug_unlock_all")) global.debug_unlock_all = false;
+    global.debug_unlock_all = !global.debug_unlock_all;
+    var _dua_si = audio_play_sound(snd_loot_reveal, 1, false);
+    audio_sound_pitch(_dua_si, global.debug_unlock_all ? 1.4 : 0.7);
+    show_debug_message("[TEST] debug_unlock_all = " + string(global.debug_unlock_all));
+}
+
 // Hub station flavor loops (SOUND_ATMOSPHERE_SPEC.md section 3): keep each open
 // NPC screen's quiet bed in lock-step with its *_open flag. Runs above every
 // modal early-exit below so a loop can never stick on while one is up.

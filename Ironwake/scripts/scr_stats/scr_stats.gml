@@ -3126,6 +3126,8 @@ function flagship_craft_cost() { return { gold: cha_price(300), dust: 60 }; }
 // content - locked rows show at Maren greyed with this text (Vex-unlock idiom).
 // "" = unlocked. Quickcast/Echo stay available from the start.
 function flagship_unlock_text(id) {
+    // TEST LEVER (F8, gc Step): recipes read unlocked while the toggle is on.
+    if (variable_global_exists("debug_unlock_all") && global.debug_unlock_all) return "";
     if (id == "cascade") {
         var _bk = variable_global_exists("total_boss_kills") ? global.total_boss_kills : 0;
         return (_bk >= 25) ? "" : ("Locked - slay 25 bosses (" + string(_bk) + "/25)");
@@ -9234,6 +9236,8 @@ function music_track_by_id(track_id) {
 
 function music_track_owned(track_id) {
     banshee_init();
+    // TEST LEVER (F8, gc Step): every track reads owned while the toggle is on.
+    if (variable_global_exists("debug_unlock_all") && global.debug_unlock_all) return true;
     for (var _i = 0; _i < array_length(global.music_unlocked); _i++) {
         if (global.music_unlocked[_i] == track_id) return true;
     }
