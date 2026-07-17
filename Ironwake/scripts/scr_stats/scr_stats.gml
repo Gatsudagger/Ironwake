@@ -9204,7 +9204,7 @@ function audio_music_assets() {
         snd_music_hub_3, snd_music_hub_4, snd_music_hub_5,
         snd_music_dungeon_2, snd_music_dungeon_3,
         snd_music_dungeon_4,   // Nocturne (gothic piano, M-approved 07-17)
-        snd_music_hub_6, snd_music_dungeon_5,   // Tempest Road / Drums of the Deep (07-17)
+        snd_music_hub_6,       // Tempest Road (07-17, dual-pool)
     ];
 }
 
@@ -9235,11 +9235,11 @@ function music_track_catalog() {
         // 07-17: M's gothic-virtuoso piano ask ("somber but many notes, at times
         // fast tempo, Castlevania") - approved from sample, dungeon pool.
         { id: "dun_nocturne",    name: "Nocturne",       pool: "dungeon", snd: snd_music_dungeon_4 },
-        // 07-17 pair, both M-approved from 30s samples: Tempest Road = swirling
-        // minor-key waltz x flamenco desert (Zelda storms/valley homage), hub
-        // pool per M "one each"; Drums of the Deep = tribal ritual percussion.
-        { id: "hub_tempestroad", name: "Tempest Road",     pool: "hub",     snd: snd_music_hub_6 },
-        { id: "dun_deepdrums",   name: "Drums of the Deep", pool: "dungeon", snd: snd_music_dungeon_5 },
+        // 07-17: Tempest Road = swirling minor-key waltz x flamenco desert
+        // (Zelda storms/valley homage). M ruled it pool "both": one unlock,
+        // selectable as hub AND dungeon music. (Its sibling Drums of the Deep
+        // was cut entirely - "boring and monotonous".)
+        { id: "hub_tempestroad", name: "Tempest Road",    pool: "both",    snd: snd_music_hub_6 },
     ];
 }
 
@@ -9272,13 +9272,19 @@ function music_track_owned(track_id) {
     return false;
 }
 
+// True when a track belongs to the given pool. pool "both" tracks (M 07-17,
+// Tempest Road) count for hub AND dungeon - one unlock covers both selectors.
+function music_pool_match(track_pool, pool) {
+    return (track_pool == pool) || (track_pool == "both");
+}
+
 // Unlocked catalog entries for one pool, catalog order (drives the selector rows).
 function music_pool_unlocked(pool) {
     banshee_init();
     var _out = [];
     var _c = music_track_catalog();
     for (var _i = 0; _i < array_length(_c); _i++) {
-        if (_c[_i].pool == pool && music_track_owned(_c[_i].id)) array_push(_out, _c[_i]);
+        if (music_pool_match(_c[_i].pool, pool) && music_track_owned(_c[_i].id)) array_push(_out, _c[_i]);
     }
     return _out;
 }
@@ -9290,7 +9296,7 @@ function music_selected_track(pool) {
     var _sel = (pool == "hub") ? global.music_sel_hub : global.music_sel_dungeon;
     if (_sel == "") return undefined;
     var _t = music_track_by_id(_sel);
-    if (_t == undefined || _t.pool != pool || !music_track_owned(_sel)) {
+    if (_t == undefined || !music_pool_match(_t.pool, pool) || !music_track_owned(_sel)) {
         if (pool == "hub") global.music_sel_hub = ""; else global.music_sel_dungeon = "";
         return undefined;
     }
@@ -9309,7 +9315,7 @@ function music_hub_stop() {
     audio_stop_sound(Rainy_Memories);
     var _c = music_track_catalog();
     for (var _i = 0; _i < array_length(_c); _i++) {
-        if (_c[_i].pool == "hub") audio_stop_sound(_c[_i].snd);
+        if (music_pool_match(_c[_i].pool, "hub")) audio_stop_sound(_c[_i].snd);
     }
 }
 
@@ -9319,7 +9325,7 @@ function music_dungeon_stop() {
     audio_stop_sound(_2_dungeon_LOOP);
     var _c = music_track_catalog();
     for (var _i = 0; _i < array_length(_c); _i++) {
-        if (_c[_i].pool == "dungeon") audio_stop_sound(_c[_i].snd);
+        if (music_pool_match(_c[_i].pool, "dungeon")) audio_stop_sound(_c[_i].snd);
     }
 }
 

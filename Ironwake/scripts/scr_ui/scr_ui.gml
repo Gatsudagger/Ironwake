@@ -10998,7 +10998,8 @@ function ui_draw_maren_screen() {
                 if (!music_track_owned(_sp_t.id)) continue;
                 draw_set_color(make_color_rgb(205, 210, 222));
                 draw_text(_list_x + 24, _sp_y + 48 + _sp_shown * 39,
-                    "\"" + _sp_t.name + "\"   -   " + ((_sp_t.pool == "hub") ? "Hub music" : "Dungeon music"));
+                    "\"" + _sp_t.name + "\"   -   " + ((_sp_t.pool == "both") ? "Hub & Dungeon music"
+                        : ((_sp_t.pool == "hub") ? "Hub music" : "Dungeon music")));
                 _sp_shown++;
             }
             // A veiled hint that the collection is not complete - count kept secret.
@@ -11129,7 +11130,8 @@ function ui_draw_maren_screen() {
                 draw_text(GUI_CX, _br_by + 660, "\"" + _br_res.track.name + "\"");
                 draw_set_font(fnt_ui_small);
                 draw_set_color(make_color_rgb(200, 180, 130));
-                draw_text(GUI_CX, _br_by + 717, "New " + ((_br_res.track.pool == "hub") ? "Hub" : "Dungeon")
+                draw_text(GUI_CX, _br_by + 717, "New " + ((_br_res.track.pool == "both") ? "Hub & Dungeon"
+                        : ((_br_res.track.pool == "hub") ? "Hub" : "Dungeon"))
                     + " music track - choose it in Settings.");
             } else {
                 draw_text_ext(GUI_CX, _br_by + 546,
