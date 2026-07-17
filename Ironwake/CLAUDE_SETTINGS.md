@@ -82,6 +82,21 @@ unaudited re-rolls (lesson: PixelLab 610-gen session, ~440 wasted).
 **PixelLab:** hard cap ~100 gens/session without sign-off; 2 failed rolls = stop
 and switch approach; report spend every wrap-up.
 
+### _for_review Lifecycle (MANDATORY — added 2026-07-17, M's standing order)
+`Ironwake\_for_review\` holds ONLY material actively awaiting M's review. When a
+revision round completes, clean it automatically — no prompt needed:
+
+1. **A review item is RESOLVED when** M has picked/approved it AND the pick is
+   imported + committed, or M has rejected it.
+2. **Before deleting anything**, verify the imported asset actually exists in the
+   committed project (sprite folder / sound folder / yyp entry). Never delete the
+   only copy of something.
+3. **Then delete**: candidate images/sheets, source mp3s whose oggs are committed,
+   conversion intermediates (_ogg/_proc), and rejected material.
+4. **Never touch `_archive\`** (shipped history — e.g. the Steam 1920×1080
+   screenshot crops may be the only local copies) unless M explicitly asks.
+5. Report what was removed in the wrap-up summary.
+
 ### Communication with M
 - Start each task with: "Starting [TASK_NAME]. Need clarifications on: [X, Y, Z]?" (if any)
 - End each task with: "Completed [TASK_NAME]. [2-sentence summary]. Ready for compaction?"
