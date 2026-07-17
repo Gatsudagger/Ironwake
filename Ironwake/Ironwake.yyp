@@ -153,6 +153,8 @@
     {"id":{"name":"snd_music_hub_2","path":"sounds/snd_music_hub_2/snd_music_hub_2.yy",},},
     {"id":{"name":"snd_hatch_build","path":"sounds/snd_hatch_build/snd_hatch_build.yy",},},
     {"id":{"name":"snd_hatch_fanfare","path":"sounds/snd_hatch_fanfare/snd_hatch_fanfare.yy",},},
+    {"id":{"name":"snd_music_hub_3","path":"sounds/snd_music_hub_3/snd_music_hub_3.yy",},},
+    {"id":{"name":"snd_music_hub_4","path":"sounds/snd_music_hub_4/snd_music_hub_4.yy",},},
     {"id":{"name":"snd_miss","path":"sounds/snd_miss/snd_miss.yy",},},
     {"id":{"name":"snd_move_whoosh","path":"sounds/snd_move_whoosh/snd_move_whoosh.yy",},},
     {"id":{"name":"snd_npc_confirm","path":"sounds/snd_npc_confirm/snd_npc_confirm.yy",},},
