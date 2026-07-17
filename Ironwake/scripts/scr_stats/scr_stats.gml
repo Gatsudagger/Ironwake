@@ -9204,6 +9204,7 @@ function audio_music_assets() {
         snd_music_hub_3, snd_music_hub_4, snd_music_hub_5,
         snd_music_dungeon_2, snd_music_dungeon_3,
         snd_music_dungeon_4,   // Nocturne (gothic piano, M-approved 07-17)
+        snd_music_hub_6, snd_music_dungeon_5,   // Tempest Road / Drums of the Deep (07-17)
     ];
 }
 
@@ -9234,6 +9235,11 @@ function music_track_catalog() {
         // 07-17: M's gothic-virtuoso piano ask ("somber but many notes, at times
         // fast tempo, Castlevania") - approved from sample, dungeon pool.
         { id: "dun_nocturne",    name: "Nocturne",       pool: "dungeon", snd: snd_music_dungeon_4 },
+        // 07-17 pair, both M-approved from 30s samples: Tempest Road = swirling
+        // minor-key waltz x flamenco desert (Zelda storms/valley homage), hub
+        // pool per M "one each"; Drums of the Deep = tribal ritual percussion.
+        { id: "hub_tempestroad", name: "Tempest Road",     pool: "hub",     snd: snd_music_hub_6 },
+        { id: "dun_deepdrums",   name: "Drums of the Deep", pool: "dungeon", snd: snd_music_dungeon_5 },
     ];
 }
 

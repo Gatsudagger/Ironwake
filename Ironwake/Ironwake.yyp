@@ -159,6 +159,8 @@
     {"id":{"name":"snd_music_dungeon_3","path":"sounds/snd_music_dungeon_3/snd_music_dungeon_3.yy",},},
     {"id":{"name":"snd_music_hub_5","path":"sounds/snd_music_hub_5/snd_music_hub_5.yy",},},
     {"id":{"name":"snd_music_dungeon_4","path":"sounds/snd_music_dungeon_4/snd_music_dungeon_4.yy",},},
+    {"id":{"name":"snd_music_hub_6","path":"sounds/snd_music_hub_6/snd_music_hub_6.yy",},},
+    {"id":{"name":"snd_music_dungeon_5","path":"sounds/snd_music_dungeon_5/snd_music_dungeon_5.yy",},},
     {"id":{"name":"snd_miss","path":"sounds/snd_miss/snd_miss.yy",},},
     {"id":{"name":"snd_move_whoosh","path":"sounds/snd_move_whoosh/snd_move_whoosh.yy",},},
     {"id":{"name":"snd_npc_confirm","path":"sounds/snd_npc_confirm/snd_npc_confirm.yy",},},
