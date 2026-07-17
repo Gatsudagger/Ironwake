@@ -37,3 +37,4 @@
 2026-07-16 23:40  cost=7420  dur=misc  out=MUSIC-MCP  prompt=compose_music round: 6+4 x30s samples + 2 x120s fulls (hub_3 Hearthlight, hub_4 Moth & Lantern); session total 7630 incl. 3 SFX above
 2026-07-16 23:55  cost=4950  dur=3x120s  out=MUSIC-MCP  prompt=fulls round 2: snd_music_dungeon_2 BloodAndIron, dungeon_3 Kingsfall, hub_5 TheWake Celtic (evolving-section prompts per M variance note); session total 12580
 2026-07-17 00:06  cost=2475  dur=120s  out=MUSIC-MCP  prompt=Hearthlight full v2 replace (M rejected v1 full - pre-variance-note gen; v2 = evolving sections). GraveDancer sample REJECTED+archived, no full.
+2026-07-17 00:11  cost=2475  dur=120s  out=MUSIC-MCP  prompt=Hearthlight v3 - M diagnosed Celtic brief bleed-over from TheWake into other hub tracks; v3 = Rainlight/Emberside palette (melancholy dark-fantasy calm, piano+strings ambient, NOT folk)
