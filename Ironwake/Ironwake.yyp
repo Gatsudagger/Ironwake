@@ -212,7 +212,7 @@
     {"id":{"name":"spr_ability_bloodfeast","path":"sprites/spr_ability_bloodfeast/spr_ability_bloodfeast.yy",},},
     {"id":{"name":"spr_ability_bloodthorn_aura","path":"sprites/spr_ability_bloodthorn_aura/spr_ability_bloodthorn_aura.yy",},},
     {"id":{"name":"spr_ability_bonebreaker","path":"sprites/spr_ability_bonebreaker/spr_ability_bonebreaker.yy",},},
-    {"id":{"name":"spr_ability_cleave","path":"sprites/spr_ability_cleave/spr_ability_cleave.yy",},},
+    {"id":{"name":"spr_ability_cleave","path":"sprites/spr_ability_cleave/spr_ability_cleave.yy",},},{"id":{"name":"spr_ability_warpath","path":"sprites/spr_ability_warpath/spr_ability_warpath.yy",},},{"id":{"name":"spr_ability_compounding_dread","path":"sprites/spr_ability_compounding_dread/spr_ability_compounding_dread.yy",},},
     {"id":{"name":"spr_ability_crimson_apex","path":"sprites/spr_ability_crimson_apex/spr_ability_crimson_apex.yy",},},
     {"id":{"name":"spr_ability_crippling_shot","path":"sprites/spr_ability_crippling_shot/spr_ability_crippling_shot.yy",},},
     {"id":{"name":"spr_ability_curse","path":"sprites/spr_ability_curse/spr_ability_curse.yy",},},

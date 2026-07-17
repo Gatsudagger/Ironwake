@@ -911,6 +911,8 @@ function ui_ability_icon_sprite(ability) {
         case "Poison Dart":      return spr_ability_poison_dart;
         case "Smoke Bomb":       return spr_ability_smoke_bomb;
         case "Frost Shot":       return spr_ability_crippling_shot;   // renamed 07-16; sprite asset keeps its old name
+        case "Warpath":          return spr_ability_warpath;            // 07-16 combo batch (M pick #13)
+        case "Compounding Dread": return spr_ability_compounding_dread; // 07-16 combo batch (M pick #7)
         case "Spike Trap":       return spr_ability_spike_trap;
         case "Marked for Death": return spr_ability_marked_for_death;
         case "Evasive Roll":     return spr_ability_evasive_roll;
