@@ -8682,14 +8682,23 @@ function event_apply_effects(fx) {
             ? ("You recovered a " + _pe.name + " egg - visit Bairc.")
             : ("A " + _pe.name + " follows you home - visit Bairc.");
     }
-    // Borrowed Memory (expression #6) - a temporary other-class ability, this run only
+    // Borrowed Memory (expression #6; 07-16 combo batch: now a pick-1-of-3 DRAFT -
+    // the offer is stashed here and the floor controller opens the choice screen
+    // right after this event's result closes).
     if (variable_struct_exists(fx, "memory") && fx.memory) {
-        var _bm = borrowed_memory_grant();
-        if (_bm != "") {
-            array_push(_sum, "BORROWED MEMORY: " + _bm + " (" + global.run_borrowed_class + " - this run)");
+        var _bm_offer = borrowed_memory_offer(3);
+        if (array_length(_bm_offer) > 0) {
+            global.borrowed_offer = _bm_offer;
+            array_push(_sum, "BORROWED MEMORIES stir - choose one to keep (this run)");
         } else {
             array_push(_sum, "the memory slips away...");
         }
+    }
+    // Borrowed Memory draft pick (the second screen's choice lands here).
+    if (variable_struct_exists(fx, "memory_pick") && fx.memory_pick != "") {
+        global.run_borrowed_ability = fx.memory_pick;
+        global.run_borrowed_class   = variable_struct_exists(fx, "memory_pick_class") ? fx.memory_pick_class : "";
+        array_push(_sum, "BORROWED MEMORY: " + fx.memory_pick + " (" + global.run_borrowed_class + " - this run)");
     }
     // Boon (rare jackpot) - "random" picks an unowned boon, else a specific id
     if (variable_struct_exists(fx, "boon") && fx.boon != "") {

@@ -1,4 +1,9 @@
-# Combat Combo Plan — 2026-07-16 (SPEC FOR M's NUMBER APPROVAL — not yet design-locked)
+# Combat Combo Plan — 2026-07-16 (DESIGN-LOCKED + IMPLEMENTED same day)
+
+**§H answers (M, in-session 07-16):** Overwhelm CORE +15% · Overcharge on damage AND
+heals/shields (+2/pt) · Warpath +2/turn · Flip streak per-combat (+8/win) · Crippling Shot
+RENAMED **Frost Shot** (M's call), Chill 1 turn · SS ramp (Compounding Dread) added now ·
+Entropy 6/8/10/12. Implementation notes + F5 checklist: PATCH_NOTES_ABILITIES.md (07-16 section).
 
 **Scope approved by M 2026-07-16:** all four buckets (A juice/legibility, B Bloodwarden parity,
 C dead-pick reworks, D borrowed-memory draft) **plus both global rules** (Overwhelm, Overcharge).

@@ -186,3 +186,38 @@ Arc into a shock-affix-statused target chains to everyone; Soul Engine on turn 1
 turn-4 Soulfire previews and deals +9 more; Galvanize kill → next turn shows 4 AP; Winter's
 Bite on a chilled foe logs +9 and the Prep back; Devil's Flip logs HEADS or TAILS and the
 right victim. New abilities show blank icon badges (PixelLab round queued).
+
+## COMBAT COMBO BATCH (2026-07-16) — M-approved numbers, COMBAT_COMBO_PLAN_2026-07-16.md
+
+Budget yardstick: 1 AP ~ 12-14 pts; DoT ~0.75x face; stun ~14-16, weaken ~8, Exposed ~4/hit.
+
+**Detonator parity + cascade:**
+| Change | Budget math | Wrong fight |
+|---|---|---|
+| **Rupture** = true detonator (bespoke detonate-ALL-DoTs rider DELETED; shared bleed reaction is the same +5/tick, consumed) | vs bleed: unchanged. NEW: shatters chill, crits vs stun, drinks void, Hexed-doubled — BW finally reaches the reaction table | No statuses on the target |
+| **Bonebreaker** = detonator #2 (stats unchanged) | 3 AP: 18 + Exposed 5x3t ~ on budget; detonation is the read | Clean targets |
+| **Rift** = the CASCADE: detonates EVERY enemy it hits, each individually (per-target reaction incl. Hexed x2) | Gated by 3 AP + 2 Souls + multi-turn setup | A lone clean boss (Singularity wins) |
+
+**New ramps (Vex 500g each, once/combat, combat-long, support):**
+| Ability | Effect | Budget | Wrong fight |
+|---|---|---|---|
+| **Warpath** (BW, 2 AP) | Physical/Blood abilities +2 per full turn elapsed | Soul Engine mirror at +2 (BW swings more/turn) | 2-turn trash |
+| **Compounding Dread** (SS, 2 AP) | Each trap cast after lighting it: permanent +4 trap damage this combat | Trap-build boss scaling | Trapless kits / short fights |
+
+**Reworks:**
+| Ability | Change | Budget | Wrong fight |
+|---|---|---|---|
+| **Frost Shot** (was Crippling Shot; save-migrated: loadout/unlocks/mastery/casts) | 10 phys + Weaken 25%/3t + NEW Chill 1t (Hoarfrost-shape status; weaken layer = max, no stack) | 10+8+6 = 24 on a 2-AP slot | Low-threat trash |
+| **Entropy** | Accelerating DoT 6/8/10/12 (36 total; `accel` field, both tickers honor it). Double-on-void-reapply kept | ~26 effective, heavily back-loaded | Anything dying in 2 turns |
+| **Devil's Flip** | Win streak: +8 payout per consecutive win THIS combat; tails deals 8 to YOU and resets | EV at streak 0 unchanged (13) | Fights where eating 8 kills you |
+
+**Global rules (CORE):**
+- **OVERWHELM**: enemy with 2+ DISTINCT status kinds (dots split by element) takes +15% from ALL sources (combat_apply_damage, next to Marked). Gold OVW+ badge, hover-explained, Compendium entry.
+- **OVERCHARGE**: spender cast at FULL reserve drains it all — +2 damage per excess point (post-crit flat, once per cast, after Nova/Rend's own rates), +2 heal on Blood Surge-style self heals, Pact seals ALL Blood (first 3 at 6/pt, rest at 2/pt). Reserve-HELD scalers (Soul Shield, Arcane Echo) excluded. Full bar glows gold + eligible buttons pulse; whiffed cast keeps the reserve.
+
+**Combo juice/legibility (presentation only):**
+- Detonating hits resolve as a SEQUENCE: damage number → reaction splash ("SHATTER!", "BLOOD BURST!"…) → "HEXED x2!" → each on a rising snd_loot_reveal tick (pitch 1.12/1.28/1.4 for OVERCHARGE). Popups carry text/sfx/pitch/delay.
+- The status badge your SELECTED ability would detonate PULSES on the enemy row; hit preview already names the bonus (auto-covers the new detonators).
+- Borrowed Memories = pick-1-of-3 DRAFT: the event offer opens a second choice screen (same event UI, synthetic event `borrowed_pick`, new fx key `memory_pick`).
+
+**F5 checks:** Gore Strike → Rupture logs BLOOD BURST + no leftover bleed; Hoarfrost → Rupture shatters (BW!); Rift into 3 statused enemies logs 3 separate reactions; Frost Shot then Snipe logs SHATTER; Entropy ticks 6/8/10/12 on a dummy; Flip twice-heads logs streak 2 and +8; Warpath turn-4 Gore Strike previews +6; Dread + 2 Spike Traps: second logs +4; fill Souls to 10 → bar glows FULL, Soul Nova button pulses, cast logs OVERCHARGE +12 (4 at 7, 6 at 2); Blood Surge at 10 Blood heals 14+16; enemy with bleed+chill shows OVW+ badge and takes +15%; Stranger's Memory event → result closes into a 3-memory pick screen; old save with Crippling Shot equipped loads as Frost Shot.

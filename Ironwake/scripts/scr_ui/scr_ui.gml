@@ -910,7 +910,7 @@ function ui_ability_icon_sprite(ability) {
         case "Shadow Step":      return spr_ability_shadow_step;
         case "Poison Dart":      return spr_ability_poison_dart;
         case "Smoke Bomb":       return spr_ability_smoke_bomb;
-        case "Crippling Shot":   return spr_ability_crippling_shot;
+        case "Frost Shot":       return spr_ability_crippling_shot;   // renamed 07-16; sprite asset keeps its old name
         case "Spike Trap":       return spr_ability_spike_trap;
         case "Marked for Death": return spr_ability_marked_for_death;
         case "Evasive Roll":     return spr_ability_evasive_roll;
@@ -3715,7 +3715,9 @@ function status_icon_color(sname, etype) {
         case "Curse":            return make_color_rgb(160,  50, 210);  // curse
         case "Marrow Crush":     return make_color_rgb(210, 130,  40);  // weaken
         case "Smoke Bomb":       return make_color_rgb(150, 150, 155);  // blind
-        case "Crippling Shot":   return make_color_rgb(210, 110,  40);  // cripple
+        case "Frost Shot":       return make_color_rgb( 90, 180, 230);  // frost primer (renamed 07-16)
+        case "Warpath":          return make_color_rgb(200,  70,  60);  // BW ramp (07-16)
+        case "Compounding Dread": return make_color_rgb(120,  80, 170); // SS trap ramp (07-16)
         case "Plague Touch":     return make_color_rgb( 90, 200, 110);  // plague
         case "Marked for Death": return make_color_rgb(220, 200,  40);  // marked
     }
@@ -3735,7 +3737,9 @@ function status_icon_label(sname, etype) {
         case "Curse":            return "CRS";
         case "Marrow Crush":     return "WKN";
         case "Smoke Bomb":       return "SMK";
-        case "Crippling Shot":   return "CRP";
+        case "Frost Shot":       return "FRS";
+        case "Warpath":          return "WAR";
+        case "Compounding Dread": return "DRD";
         case "Plague Touch":     return "PLG";
         case "Marked for Death": return "MFD";
     }
@@ -4009,6 +4013,15 @@ function ui_draw_status_icon_row(x, y, icon_list, max_w = -1) {
         draw_set_alpha(1.0);
         draw_set_color(make_color_rgb(10, 10, 18));
         draw_roundrect(_ix, y, _ix + _iw, y + _ih, true);
+        // Detonation pulse (07-16 combo legibility): the badge the selected
+        // ability would react with breathes a bright ring - cast now to pop it.
+        if (variable_struct_exists(_ic, "pulse") && _ic.pulse) {
+            draw_set_alpha(0.5 + 0.5 * sin(current_time / 140));
+            draw_set_color(c_white);
+            draw_roundrect(_ix - 2, y - 2, _ix + _iw + 2, y + _ih + 2, true);
+            draw_roundrect(_ix - 1, y - 1, _ix + _iw + 1, y + _ih + 1, true);
+            draw_set_alpha(1.0);
+        }
         // label text
         draw_set_color(c_white);
         draw_text(_ix + _iw * 0.5, y + _ih * 0.5, _ic.label);
@@ -4097,6 +4110,7 @@ function status_tooltip_desc(se) {
         case "marked":     _base = "Marked for Death: once below half HP, takes +30% damage from ALL sources."; break;
         case "regen":      _base = "Regenerating: restores " + string(_val) + " HP each turn."; break;
         case "soulbind":   _base = "Soulbound: suffers " + string(round(_val * 100)) + "% of the damage you take, healing you the same. Lasts the whole combat."; break;
+        case "overwhelm":  _base = "Overwhelmed: carrying 2 or more DIFFERENT status effects - takes +15% damage from ALL sources while they last."; break;
         default:           _base = "Active effect."; break;
     }
     return _base + _turns;
@@ -4228,11 +4242,28 @@ function ui_draw_enemy_inspect_tooltip(mx, my, enemy) {
 // Draws status icons for an enemy's status_effects array inline with their bar.
 // Placed to the right of the HP bar; call from Draw_64 during the bar loop.
 // ---------------------------------------------------------------------------
-function ui_draw_enemy_status_icons(x, y, status_effects) {
+function ui_draw_enemy_status_icons(x, y, status_effects, react_se = undefined, overwhelmed = false) {
     if (array_length(status_effects) == 0) exit;
     // Capped to the HP-bar width so a heavily-debuffed enemy's row can't collide
     // with the neighbouring column or the row below (overflow shows as "+N").
-    ui_draw_status_icon_row(x, y, status_icons_from(status_effects), 400);
+    var _icons = status_icons_from(status_effects);
+    // Combo legibility (07-16): the status the SELECTED ability would detonate
+    // pulses (react_se = that status struct, matched by reference).
+    if (react_se != undefined) {
+        for (var _gi = 0; _gi < array_length(_icons); _gi++) {
+            if (_icons[_gi].se == react_se) { _icons[_gi].pulse = true; break; }
+        }
+    }
+    // OVERWHELM (07-16 core rule): 2+ distinct statuses -> +15% damage taken.
+    // Shown as a gold badge at the row's end; hover explains it like any status.
+    if (overwhelmed) {
+        array_push(_icons, {
+            label: "OVW+", color: make_color_rgb(255, 200, 70), duration: 0,
+            se: { name: "Overwhelmed", kind: "overwhelm", effect_value: 0.15, duration: 0,
+                  color: make_color_rgb(255, 200, 70) }
+        });
+    }
+    ui_draw_status_icon_row(x, y, _icons, 400);
 }
 
 // ---------------------------------------------------------------------------
@@ -4509,12 +4540,23 @@ function ui_draw_secondary_resource(x, y, current, maximum, resource_name, color
     draw_set_color(c_black);
     draw_rectangle(x, y, x + width, y + height, true);
 
+    // OVERCHARGE glow (07-16): a FULL reserve pulses gold - the next eligible
+    // spender drains everything for +2 per point (see the Compendium entry).
+    if (maximum > 0 && current >= maximum) {
+        draw_set_alpha(0.45 + 0.4 * sin(current_time / 160));
+        draw_set_color(make_color_rgb(255, 210, 80));
+        draw_rectangle(x - 2, y - 2, x + width + 2, y + height + 2, true);
+        draw_rectangle(x - 1, y - 1, x + width + 1, y + height + 1, true);
+        draw_set_alpha(1.0);
+    }
+
     // Resource name and value. Value measured first so the name truncates to the
     // remaining space instead of colliding it (font-agnostic).
     draw_set_font(fnt_ui_small);
     draw_set_color(c_white);
     draw_set_valign(fa_middle);
-    var _val_str = string(current) + " / " + string(maximum);
+    var _val_str = string(current) + " / " + string(maximum)
+                 + ((maximum > 0 && current >= maximum) ? "  FULL" : "");
     var _name_max = width - 12 - string_width(_val_str) - 12;
 
     draw_set_halign(fa_left);
@@ -4658,6 +4700,18 @@ function ui_draw_ability_buttons(x, y, ability_array, selected_index, caster) {
         draw_set_color(ability_category_color(ability_category(ab)));
         for (var _b = 0; _b < 3; _b++) {
             draw_rectangle(bx + _b, y + _b, bx + btn_width - _b, y + btn_height - _b, true);
+        }
+
+        // OVERCHARGE (07-16): the reserve is FULL and this ability would drain it -
+        // a pulsing gold ring over the role border flags the cash-out cast.
+        if (ability_overcharge_eligible(ab, caster)) {
+            var _oc_prev_a = draw_get_alpha();
+            draw_set_alpha(0.55 + 0.45 * sin(current_time / 160));
+            draw_set_color(make_color_rgb(255, 210, 80));
+            for (var _ocb = 0; _ocb < 3; _ocb++) {
+                draw_rectangle(bx + _ocb, y + _ocb, bx + btn_width - _ocb, y + btn_height - _ocb, true);
+            }
+            draw_set_alpha(_oc_prev_a);
         }
 
         // Selected ability: a bold, bright gold ring drawn OUTSIDE the role border so
@@ -6763,7 +6817,8 @@ function ui_compendium_sections() {
         {
             title: "Status Reactions",
             entries: [
-                { term: "Detonators",   text: "Snipe, Assassinate, Arcane Burst and Soul Nova are DETONATORS - when they hit a target carrying a status, they trigger a reaction based on that status (and usually consume it). Set up the status, then detonate. Elemental weapons (Flaming/Frostbound/Storm-touched) are an easy way to apply burn/frost/shock for these." },
+                { term: "Detonators",   text: "Snipe, Assassinate, Arcane Burst, Soul Nova, Rupture, Bonebreaker and Rift are DETONATORS - when they hit a target carrying a status, they trigger a reaction based on that status (and usually consume it). Set up the status, then detonate. Rift detonates EVERY enemy it hits - the cascade turn. Elemental weapons (Flaming/Frostbound/Storm-touched) are an easy way to apply burn/frost/shock for these. When your selected ability would react, the target's status badge PULSES and the hit preview names the bonus." },
+                { term: "Overwhelmed",  text: "An enemy carrying 2 or more DIFFERENT status effects is OVERWHELMED: it takes +15% damage from ALL sources while they last (shown as a gold OVW+ badge). Mixing statuses - a bleed plus a chill, a hex plus a poison - beats stacking one." },
                 { term: "Hexed",        text: "Curse marks a foe Hexed: it takes +4 damage per hit, any detonation on it has its bonus DOUBLED, and each detonation spreads +2 damage-taken to every other enemy. The Control piece of a detonation build." },
                 { term: "Poison",       text: "Detonating poison applies Mortality: the target's healing is cut for 4 turns. Utility, not burst - answers self-healing foes." },
                 { term: "Bleed",        text: "Detonating bleed bursts every remaining bleed tick at once for bonus damage." },
@@ -6792,6 +6847,7 @@ function ui_compendium_sections() {
                 { term: "Souls (Arcanist)", text: "Built two ways: soul-generating spells (each states its gain - Soulfire +2, Void Drain +1, Scorch and Blazing Palm +1), and the Arcanist CLASS PASSIVE - +2 Souls every time one of your hits kills an enemy. Both can land in the same cast: a killing Soulfire logs +2 for the spell AND +2 for the kill. Spent by Arcane Burst, Soul Nova, Arcane Echo, Singularity and Soul Rend." },
                 { term: "Blood (Bloodwarden)", text: "Built through bloodshed: +1 Blood each time YOU take a hit (class passive), plus blood-feeding abilities like Blood Leech. Spent by your crimson payoffs - many also cost HP, so the reserve is life you've set aside." },
                 { term: "Preparation (Shadowstrider)", text: "+1 Preparation at the start of each of your turns while no trap of yours is armed (class passive), plus refunds from clean plays like Evasive Roll. Spent to power traps and executes." },
+                { term: "OVERCHARGE", text: "Cast a resource-spending ability while your reserve is FULL (10) and it drains the WHOLE reserve: every point beyond what the ability itself uses adds +2 damage (or +2 healing / shield on self-spenders like Blood Surge and Sanguine Pact). The resource bar glows gold when full, and eligible abilities pulse gold on the combat bar. Abilities that scale with the reserve HELD (Soul Shield, Arcane Echo) don't Overcharge - they're already the hoard's payoff. Hoard, then cash out." },
             ],
         },
         {

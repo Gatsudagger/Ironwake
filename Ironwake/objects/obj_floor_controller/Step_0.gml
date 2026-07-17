@@ -236,6 +236,36 @@ if (showing_event_choice) {
     // Result phase - any key closes the overlay and marks the room cleared.
     if (event_phase == "result") {
         if (input_confirm() || input_confirm_alt() || mouse_check_button_pressed(mb_left)) {
+            // Borrowed Memory DRAFT (07-16 combo batch): if the event just offered
+            // memories, the overlay stays open and becomes the pick-1-of-3 screen -
+            // a synthetic event rendered by the same generic choice UI. The room
+            // clears when the PICK's own result closes (offer is empty by then).
+            if (variable_global_exists("borrowed_offer") && is_array(global.borrowed_offer)
+                && array_length(global.borrowed_offer) > 0) {
+                var _bo = global.borrowed_offer;
+                var _bo_choices = [];
+                for (var _boi = 0; _boi < array_length(_bo); _boi++) {
+                    array_push(_bo_choices, {
+                        label: _bo[_boi].name + " (" + _bo[_boi].from_class + ")",
+                        hint:  _bo[_boi].hint,
+                        cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+                        outcomes: [ { weight: 100,
+                            text: "The " + _bo[_boi].from_class + "'s memory settles into your hands as if they had always known it.",
+                            effects: { memory_pick: _bo[_boi].name, memory_pick_class: _bo[_boi].from_class } } ]
+                    });
+                }
+                global.borrowed_offer = [];
+                event_active = {
+                    id:    "borrowed_pick",
+                    title: "Borrowed Memories",
+                    body:  "Three ghosts of other lives hang in the air, each offering what it knew. Only one will stay with you.",
+                    color: make_color_rgb(150, 130, 220),
+                    choices: _bo_choices
+                };
+                event_phase  = "choices";
+                event_cursor = 0;
+                exit;
+            }
             showing_event_choice = false;
             current_rooms[selected_room].cleared = true;
             global.floor_rooms_cleared[selected_room] = true;

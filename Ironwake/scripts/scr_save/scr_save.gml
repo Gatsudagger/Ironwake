@@ -734,6 +734,30 @@ function load_game() {
     if (variable_struct_exists(_s, "ability_mastery") && is_struct(_s.ability_mastery)) {
         global.ability_mastery = _s.ability_mastery;
     }
+    // 07-16: "Crippling Shot" was renamed "Frost Shot" (combo batch - it gained the
+    // Chill rider and the frost identity). Sweep every name-keyed store so old saves
+    // keep the ability equipped/unlocked/mastered. Idempotent - no version gate
+    // needed (same pattern as the Lucky Find -> Blessed Thirst trait rename).
+    if (variable_global_exists("player_loadout") && is_array(global.player_loadout)) {
+        for (var _fsi = 0; _fsi < array_length(global.player_loadout); _fsi++) {
+            if (global.player_loadout[_fsi] == "Crippling Shot") global.player_loadout[_fsi] = "Frost Shot";
+        }
+    }
+    if (variable_global_exists("unlocked_abilities") && is_array(global.unlocked_abilities)) {
+        for (var _fsj = 0; _fsj < array_length(global.unlocked_abilities); _fsj++) {
+            if (global.unlocked_abilities[_fsj] == "Crippling Shot") global.unlocked_abilities[_fsj] = "Frost Shot";
+        }
+    }
+    if (variable_global_exists("ability_casts") && is_struct(global.ability_casts)
+        && variable_struct_exists(global.ability_casts, "Crippling Shot")) {
+        variable_struct_set(global.ability_casts, "Frost Shot", variable_struct_get(global.ability_casts, "Crippling Shot"));
+        variable_struct_remove(global.ability_casts, "Crippling Shot");
+    }
+    if (variable_global_exists("ability_mastery") && is_struct(global.ability_mastery)
+        && variable_struct_exists(global.ability_mastery, "Crippling Shot")) {
+        variable_struct_set(global.ability_mastery, "Frost Shot", variable_struct_get(global.ability_mastery, "Crippling Shot"));
+        variable_struct_remove(global.ability_mastery, "Crippling Shot");
+    }
     // Boons and curses are run-scoped (cleared in end_run). A save can only hold
     // non-empty values if it was written mid-run (boon_grant/curse_grant save on
     // pickup); since loading always lands in the hub between runs, restoring them

@@ -97,9 +97,20 @@ for (var _i = 0; _i < _count; _i++) {
         _inspect_target = _c;
     }
 
-    // Status icons below the HP bar for this enemy
+    // Status icons below the HP bar for this enemy. Combo legibility (07-16):
+    // the status the SELECTED ability would detonate pulses, and an enemy under
+    // 2+ distinct statuses gets the gold OVERWHELMED (+15% taken) badge.
     if (variable_struct_exists(_c, "status_effects") && array_length(_c.status_effects) > 0) {
-        ui_draw_enemy_status_icons(_bar_x, _bar_y + _bar_height + 6, _c.status_effects);
+        var _row_react_se = undefined;
+        if (player_turn && selected_ability < array_length(player.abilities)
+            && is_struct(player.abilities[selected_ability])) {
+            var _row_rp = combat_reaction_preview(player.abilities[selected_ability], player, _c);
+            if (_row_rp.idx >= 0 && _row_rp.idx < array_length(_c.status_effects)) {
+                _row_react_se = _c.status_effects[_row_rp.idx];
+            }
+        }
+        ui_draw_enemy_status_icons(_bar_x, _bar_y + _bar_height + 6, _c.status_effects,
+            _row_react_se, combatant_distinct_status_kinds(_c) >= 2);
     }
 
     _living_idx++;
@@ -415,19 +426,28 @@ for (var _di = 0; _di < array_length(damage_popups); _di++) {
     // a countdown so they appear one after another instead of overlapping exactly.
     if (variable_struct_exists(_dp, "delay") && _dp.delay > 0) {
         _dp.delay--;
+        // Combo-sequence tick (07-16): a popup carrying an sfx plays it the frame
+        // its delay expires - the rising reveal ladder under SHATTER!/HEXED x2!.
+        if (_dp.delay == 0 && variable_struct_exists(_dp, "sfx") && _dp.sfx != -1) {
+            var _dp_si = audio_play_sound(_dp.sfx, 1, false);
+            if (variable_struct_exists(_dp, "pitch")) audio_sound_pitch(_dp_si, _dp.pitch);
+        }
         array_push(_kept_popups, _dp);
         continue;
     }
     _dp.timer--;
     _dp.y -= 1.0;
     if (_dp.timer > 0) {
+        // Splash-text popups (combo sequence) draw their `text`; damage/heal
+        // popups keep drawing the number.
+        var _dp_str = variable_struct_exists(_dp, "text") ? _dp.text : string(_dp.value);
         var _dp_alpha = min(1.0, _dp.timer / 18.0);
         var _dp_scale = lerp(1.0, 1.5, clamp(_dp.timer / 50.0, 0, 1));
         draw_set_alpha(_dp_alpha);
         draw_set_color(c_black);
-        draw_text_transformed(_dp.x + 2, _dp.y + 2, string(_dp.value), _dp_scale, _dp_scale, 0);
+        draw_text_transformed(_dp.x + 2, _dp.y + 2, _dp_str, _dp_scale, _dp_scale, 0);
         draw_set_color(_dp.col);
-        draw_text_transformed(_dp.x, _dp.y, string(_dp.value), _dp_scale, _dp_scale, 0);
+        draw_text_transformed(_dp.x, _dp.y, _dp_str, _dp_scale, _dp_scale, 0);
         draw_set_alpha(1.0);
         array_push(_kept_popups, _dp);
     }
