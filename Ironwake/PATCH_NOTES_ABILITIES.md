@@ -221,3 +221,51 @@ Budget yardstick: 1 AP ~ 12-14 pts; DoT ~0.75x face; stun ~14-16, weaken ~8, Exp
 - Borrowed Memories = pick-1-of-3 DRAFT: the event offer opens a second choice screen (same event UI, synthetic event `borrowed_pick`, new fx key `memory_pick`).
 
 **F5 checks:** Gore Strike → Rupture logs BLOOD BURST + no leftover bleed; Hoarfrost → Rupture shatters (BW!); Rift into 3 statused enemies logs 3 separate reactions; Frost Shot then Snipe logs SHATTER; Entropy ticks 6/8/10/12 on a dummy; Flip twice-heads logs streak 2 and +8; Warpath turn-4 Gore Strike previews +6; Dread + 2 Spike Traps: second logs +4; fill Souls to 10 → bar glows FULL, Soul Nova button pulses, cast logs OVERCHARGE +12 (4 at 7, 6 at 2); Blood Surge at 10 Blood heals 14+16; enemy with bleed+chill shows OVW+ badge and takes +15%; Stranger's Memory event → result closes into a 3-memory pick screen; old save with Crippling Shot equipped loads as Frost Shot.
+
+## F5 NOTES BATCH (2026-07-16 late) — M's 9 notes from the combo-batch F5
+
+**Audio:**
+- **Crickets** (`snd_amb_title`) no longer play under the title/intro music — moved to the
+  character-creation screen, the one place that's otherwise silent (obj_title_controller /
+  obj_char_select Create).
+- **Sable's cauldron** (`snd_amb_cauldron`) REPLACED in place — v1 read as a toilet; v2 is a
+  thick viscous porridge-simmer, no watery glugs. Same asset name, wiring untouched.
+- **Egg hatch = Zelda chest**: tremble stretched 50→110 frames; new `snd_hatch_build` (2.5s
+  rising harp/celesta swell) starts at the first wobble and crests INTO the shell-break,
+  where the new `snd_hatch_fanfare` (bright resolving flourish) lands on top of the old
+  burst+foley. Both in audio_sfx_assets().
+
+**Bloodwarden lackluster (M: "too many 3 AP abilities"):**
+- NEW TRAIT **Relentless** (BW-only, tier 3 = 500g + Legendary at Vex, unlock 6 boss kills):
+  base AP 3 → 4 EVERY turn. Single source of truth `actor_turn_ap()` — turn refill, first
+  turn, and the HUD pips all read it. Enemies unaffected.
+- **AP audit** (M-approved): **Undying 3→2 AP**, **Bloodfeast 3→2 AP** — the two whole-turn
+  utility casts; Marrow Crush / Bonebreaker / Crimson Apex deliberately stay 3.
+- **Vex trait slots**: purchasable cap +2 → **+4** (6 equipped max, 7 with Crown). Price
+  ladder 800/2000/4000/8000g. Tab text + compendium + coach-mark synced.
+- **BUGFIX found during wiring**: Ley Tap did `player.AP += 1` but the combat struct's field
+  is `energy` — equipping Ley Tap crashed at combat start. Now `player.energy += 1`.
+
+**Pets/UI:**
+- **Baby moth size**: combat pet draw now passes a width cap (1.35× the stage height) to
+  pet_sprite_fit — height-only fit blew the wide caterpillar up to knight size.
+- **Corrupt-egg notice** (and all hub NPC-panel notifications) now WRAP inside the detail
+  panel (small font, measured to end above the y330 panel bottom) instead of running off-screen.
+- **Maren Spirits ledger**: lists ONLY freed songs — no "???" rows, no x/total count; a
+  veiled "...more spirits still wander the dark." when any remain. (NOTE: F8 makes every
+  song read as owned — toggle it OFF to see the mystery view.)
+
+**Awaiting M approval (in _for_review\):**
+- `music_samples\` — 6 × 30s track auditions (~405 credits each): dungeon Ashfall /
+  Hoarfrost / The Iron Deep, hub Hearthlight / Moth & Lantern / The Wake. Approved concepts
+  get full-length versions + catalog wiring (Maren release + Settings selectors).
+- Dust Egg redesign candidates + Relentless trait icon candidates (PixelLab, M picks).
+  Until the icon lands, Relentless shows the slate fallback badge.
+
+**F5 checks:** title screen = music only, char create = crickets only; Sable's tab bubbles
+properly; hatch an egg — longer tremble, build swells, fanfare lands ON the crack; Vex trait
+tab sells slots 3/4/5/6 at 800/2000/4000/8000 and Relentless for 500g+Legendary (BW);
+Relentless run: 4 yellow pips every turn, Marrow Crush + Blood Leech same turn works;
+Undying/Bloodfeast buttons show 2 AP; equip Ley Tap on an Arcanist — combat STARTS (was a
+crash) with 4 AP turn 1; baby moth in combat is house-cat sized; trigger a curse-altar egg →
+hub notice wraps inside the panel; Maren Spirits with F8 OFF shows only freed songs.

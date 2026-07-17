@@ -100,6 +100,17 @@ function combat_init(combatant_array) {
 // Handles Shadowstrider Preparation generation.
 // Returns the updated combat_state (same reference).
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// actor_turn_ap(actor)
+// AP restored at the start of this actor's turn. Base 3 for everyone; the
+// Bloodwarden Relentless trait (M 07-16) raises the player's base to 4.
+// Single source of truth - the HUD pips and turn refill both read it.
+// ---------------------------------------------------------------------------
+function actor_turn_ap(actor) {
+    if (actor.is_player && actor.class_id == 1 && trait_active("Relentless")) return 4;
+    return 3;
+}
+
 function combat_next_turn(combat_state) {
     var count = array_length(combat_state.combatants);
 
@@ -112,8 +123,9 @@ function combat_next_turn(combat_state) {
     var actor = combat_state.combatants[combat_state.turn_index];
     combat_state.active = actor;
 
-    // Fully restore energy at the start of each turn
-    actor.energy = 3;
+    // Fully restore energy at the start of each turn (Relentless raises the
+    // player's base to 4 - see actor_turn_ap).
+    actor.energy = actor_turn_ap(actor);
 
     // Galvanize (D§4, M-approved 07-09): a killing blow last turn banked +1 AP.
     if (actor.is_player && variable_struct_exists(actor, "galvanize_ap") && actor.galvanize_ap > 0) {
@@ -627,9 +639,17 @@ function combat_apply_start_traits(player) {
     // phantom_step_active is consumed by combat_check_phantom_step()
     player.phantom_step_active = trait_active("Phantom Step");
 
-    // Ley Tap: +1 bonus AP at combat start (Arcanist only)
+    // Ley Tap: +1 bonus AP at combat start (Arcanist only).
+    // Bugfix 07-16: was `player.AP += 1` but the combat player struct's field is
+    // `energy` (no AP field exists) - equipping Ley Tap crashed at combat start.
     if (player.class_id == 0 && trait_active("Ley Tap")) {
-        player.AP += 1;
+        player.energy += 1;
+    }
+
+    // Relentless (M 07-16): Bloodwarden's base AP is 4 - the struct is built with
+    // energy: 3, so top up the FIRST turn here; combat_next_turn covers the rest.
+    if (player.class_id == 1 && trait_active("Relentless")) {
+        player.energy = max(player.energy, 4);
     }
 
     // Iron Will: first status effect applied to the player this combat is absorbed

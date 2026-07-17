@@ -7663,7 +7663,9 @@ function pet_hatch(pet) {
 // action. State lives on obj_game_controller (see its Create). hatch_cutscene_step()
 // runs from gc Step while hatch_active (owning all input); hatch_cutscene_draw()
 // (scr_ui) renders it over the Bairc screen. pet_hatch() is applied at the reveal.
-#macro HATCH_SHAKE_LEN  50   // frames of trembling before the shell cracks
+#macro HATCH_SHAKE_LEN  110  // frames of trembling before the shell cracks
+                             // (M 07-16: 50 -> 110 so the Zelda-chest-style rising
+                             // build has room to swell before the crack lands)
 #macro HATCH_CRACK_HOLD 7    // frames each crack-animation frame is held
 #macro HATCH_REVEAL_MIN 36   // min frames of reveal before input can dismiss it
 
@@ -7692,6 +7694,9 @@ function hatch_cutscene_start(pet) {
     hatch_frame  = 0;
     hatch_done   = false;
     audio_play_sound(snd_egg_stir, 1, false);   // shell wobble + tap from inside (SHAKE phase)
+    // M 07-16 (Zelda-chest hatch): rising musical build under the whole tremble+crack,
+    // timed to crest right as the shell breaks (see HATCH_SHAKE_LEN).
+    audio_play_sound(snd_hatch_build, 1, false);
 }
 
 // Advance the cutscene one step (called from gc Step while hatch_active). Runs in gc scope.
@@ -7714,6 +7719,7 @@ function hatch_cutscene_step() {
                         hatch_done = true;
                         audio_play_sound(snd_pet_hatch, 1, false);
                         audio_play_sound(snd_hatch_burst, 1, false);   // crack + warm chime bloom layered over
+                        audio_play_sound(snd_hatch_fanfare, 1, false); // M 07-16: the triumphant "got it!" resolve the build climbs into
                     }
                     hatch_phase = 2; hatch_t = 0;
                 }
@@ -7938,7 +7944,7 @@ function tutorial_catalog() {
         { id:"hub",        title:"The Ironwake Camp",   body:"This is your hub between runs. Visit the camp's merchants and trainers, manage gear and abilities, then approach the dungeon gate to descend. Anything you bank here carries between runs." },
         { id:"loadout",    title:"Prepare to Descend",  body:"Before each run, equip your gear and choose which abilities and traits to bring. You can only take a limited set into the dungeon, so build around how you want to fight. Note the THREE TABS at the top - ABILITIES, TRAITS and COMPANION are picked separately, and it's easy to descend having forgotten your traits. Check all three before you commit." },
         { id:"ascendance", title:"Awakening Tiers",     body:"Higher Awakening tiers make enemies tougher but drop better, rarer loot. Raise the tier when you want more risk for more reward - start low and work up." },
-        { id:"combat_ap",  title:"Action Points (AP)",  body:"Each turn you have 3 AP. Abilities cost AP to use; a basic attack is free. Spend your AP wisely, then end your turn to let the enemy act." },
+        { id:"combat_ap",  title:"Action Points (AP)",  body:"Each turn you have 3 AP (4 with the Bloodwarden Relentless trait). Abilities cost AP to use; a basic attack is free. Spend your AP wisely, then end your turn to let the enemy act." },
         { id:"targeting",  title:"Choosing a Target",   body:"When several foes are present, Tab or click to pick who you hit. The glowing rune beneath an enemy marks your current target." },
         { id:"intent",     title:"Enemy Intent",        body:"Every enemy telegraphs its next move on the chip above its health bar: red for an attack (with the rough damage you'd take), purple for a spell, green for a heal, amber for a status effect. Intents are honest - and if you Stun, Root or Silence a foe, its chip greys out: that move is cancelled." },
         { id:"inspect",    title:"Inspect Your Foes",   body:"Mouse over an enemy (or its health bar) to inspect it. You'll see whether it fights at Melee or Ranged and with Phys or Spell - and which controls stop it: Root halts melee, Silence stops spells, Stun stops anything. Ranged foes ignore Root, so a trap won't keep them off you." },
@@ -9464,6 +9470,7 @@ function audio_sfx_assets() {
         snd_equip, snd_buy, snd_pet_hatch,
         // Atmosphere pass section 4 - moment stingers (SOUND_ATMOSPHERE_SPEC.md)
         snd_shrine_hum, snd_curse_whisper, snd_egg_stir, snd_hatch_burst,
+        snd_hatch_build, snd_hatch_fanfare,   // Zelda-chest hatch crescendo (M 07-16)
         snd_awakened_cross, snd_bond_up, snd_extract, snd_boss_door,
         snd_betrayal, snd_quest_ready,
         snd_confirm_major, snd_npc_confirm, snd_sell,

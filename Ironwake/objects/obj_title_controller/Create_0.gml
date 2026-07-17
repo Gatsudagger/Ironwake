@@ -27,7 +27,9 @@ audio_apply_volumes();
 
 // Intro and title screen music - loops until the player starts a new game
 audio_play_sound(Viking_March, 1, true);
-ambience_set([snd_amb_title]);   // night forest air under the title track (spec section 2)
+// Night-forest ambience (crickets) moved to char select (M 07-16): under the title
+// track the two clashed; it belongs in the one screen that is otherwise silent.
+ambience_set([]);
 skip_timer   = 0;
 skip_hold    = 40;           // frames before any-key-skip is accepted
 

@@ -6220,7 +6220,7 @@ function ui_draw_combat_hud(combat_state, player, ability_array, selected_abilit
     ui_draw_hp_bar(30, 30, 375, 36, player.HP, player.max_HP, "HP");
 
     // --- Energy pips (below HP bar) ---
-    ui_draw_energy_pips(30, 84, player.energy, 3);
+    ui_draw_energy_pips(30, 84, player.energy, actor_turn_ap(player));
 
     // --- Secondary resource bar (below energy pips) ---
     // Determine which resource this class uses and pick a matching color
@@ -6837,7 +6837,7 @@ function ui_compendium_sections() {
         {
             title: "AP / Turn Economy",
             entries: [
-                { term: "Action Points (AP)", text: "You have 3 AP each turn. Abilities and items spend AP; bigger abilities cost more." },
+                { term: "Action Points (AP)", text: "You have 3 AP each turn (4 with the Bloodwarden Relentless trait). Abilities and items spend AP; bigger abilities cost more." },
                 { term: "Using Items",        text: "A consumable costs 1 AP on your turn. On an enemy's turn you may use 1 item free, once per enemy turn." },
                 { term: "Ending Your Turn",   text: "Unspent AP is lost. AP refills back to 3 at the start of your next turn." },
             ],
@@ -9920,8 +9920,9 @@ function ui_draw_trainer_screen() {
         // Single action row (kept at the standard first-row position so the mouse
         // hit-test in obj_game_controller Step matches).
         var _ry  = _ry0;
-        var _maxed = (_bts >= 2);
-        var _cost  = cha_price((_bts == 0) ? 800 : 2000);
+        var _maxed = (_bts >= 4);   // M 07-16: cap raised +2 -> +4 bought slots
+        var _slot_ladder = [800, 2000, 4000, 8000];
+        var _cost  = cha_price(_slot_ladder[clamp(_bts, 0, 3)]);
 
         draw_set_color(_maxed ? make_color_rgb(16, 18, 26) : make_color_rgb(26, 18, 44));
         draw_rectangle(_rx0, _ry, _rx1, _ry + _rh, false);
@@ -9931,7 +9932,7 @@ function ui_draw_trainer_screen() {
         if (_maxed) {
             draw_set_font(fnt_ui);
             draw_set_color(make_color_rgb(110, 200, 130));
-            draw_text(_rx0 + 24, _ry + 27, "All trait slots purchased - you have the maximum of 4.");
+            draw_text(_rx0 + 24, _ry + 27, "All trait slots purchased - you have the maximum of 6.");
         } else {
             draw_set_font(fnt_ui);
             draw_set_color(c_white);
@@ -9953,7 +9954,7 @@ function ui_draw_trainer_screen() {
         draw_text(960, 420, "Active Trait Slots:  " + string(_total) + "   (base 2  +  " + string(_bts) + " purchased)");
         draw_set_font(fnt_ui_small);
         draw_set_color(make_color_rgb(120, 125, 150));
-        draw_text(960, 468, "Buy extra slots to equip more traits at once. Maximum +2 (4 total).");
+        draw_text(960, 468, "Buy extra slots to equip more traits at once. Maximum +4 (6 total).");
         draw_set_color(make_color_rgb(90, 95, 120));
         draw_text(960, 504, "Stacks on top of Crown of the Hollow King while it is equipped.");
         draw_set_halign(fa_left);
@@ -10973,26 +10974,42 @@ function ui_draw_maren_screen() {
         draw_text(_list_x2 - 24, _sp_ty - 11, "[Enter] Release");
         draw_set_halign(fa_left);
 
-        // Song ledger below the action row: every catalog track, named once owned,
-        // a veiled "???" row while still bottled somewhere in the dark.
+        // Song ledger below the action row. M 07-16: list ONLY songs already freed -
+        // no "???" placeholder rows and no x/total count. How many songs exist (and
+        // that a new bottle always holds one) stays a mystery until each is revealed.
         var _sp_cat = music_track_catalog();
         var _sp_y   = _sp_ty + 90;
+        var _sp_shown = 0;
+        var _sp_total_owned = 0;
+        for (var _sp_i = 0; _sp_i < array_length(_sp_cat); _sp_i++)
+            if (music_track_owned(_sp_cat[_sp_i].id)) _sp_total_owned++;
         draw_set_font(fnt_ui);
         draw_set_color(make_color_rgb(180, 150, 230));
-        draw_text(_list_x, _sp_y, "Songs freed (" + string(array_length(global.music_unlocked))
-            + "/" + string(array_length(_sp_cat)) + "):");
+        draw_text(_list_x, _sp_y, "Songs freed:");
         draw_set_font(fnt_ui_small);
-        for (var _sp_i = 0; _sp_i < array_length(_sp_cat); _sp_i++) {
-            var _sp_t   = _sp_cat[_sp_i];
-            var _sp_own = music_track_owned(_sp_t.id);
-            var _sp_ry  = _sp_y + 48 + _sp_i * 39;
-            draw_set_color(_sp_own ? make_color_rgb(205, 210, 222) : make_color_rgb(95, 100, 118));
-            draw_text(_list_x + 24, _sp_ry, _sp_own
-                ? ("\"" + _sp_t.name + "\"   -   " + ((_sp_t.pool == "hub") ? "Hub music" : "Dungeon music"))
-                : "\"???\"   -   a song still bottled");
+        if (_sp_total_owned == 0) {
+            draw_set_color(make_color_rgb(95, 100, 118));
+            draw_text(_list_x + 24, _sp_y + 48, "None yet - every bottle carries a song no one living has heard.");
+            _sp_shown = 1;
+        } else {
+            for (var _sp_i = 0; _sp_i < array_length(_sp_cat); _sp_i++) {
+                var _sp_t = _sp_cat[_sp_i];
+                if (!music_track_owned(_sp_t.id)) continue;
+                draw_set_color(make_color_rgb(205, 210, 222));
+                draw_text(_list_x + 24, _sp_y + 48 + _sp_shown * 39,
+                    "\"" + _sp_t.name + "\"   -   " + ((_sp_t.pool == "hub") ? "Hub music" : "Dungeon music"));
+                _sp_shown++;
+            }
+            // A veiled hint that the collection is not complete - count kept secret.
+            if (_sp_total_owned < array_length(_sp_cat)) {
+                draw_set_color(make_color_rgb(95, 100, 118));
+                draw_text(_list_x + 24, _sp_y + 48 + _sp_shown * 39,
+                    "...more spirits still wander the dark.");
+                _sp_shown++;
+            }
         }
         draw_set_color(make_color_rgb(120, 115, 140));
-        draw_text(_list_x + 24, _sp_y + 48 + array_length(_sp_cat) * 39 + 15,
+        draw_text(_list_x + 24, _sp_y + 48 + _sp_shown * 39 + 15,
             "Freed songs are chosen in Settings (Hub Music / Dungeon Music). Extra spirits leave 25 Rune Dust.");
         draw_set_font(fnt_ui);
     }

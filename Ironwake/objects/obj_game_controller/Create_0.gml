@@ -920,10 +920,11 @@ if (!variable_global_exists("traits_unlocked")) {
         focused_power:     false,
         chain_caster:      false,
         plaguebearer:      false,
+        relentless:        false,
     };
 }
 // Backfill newer trait keys onto save files that predate them.
-var _tu_defaults = ["prospector", "last_stand", "focused_power", "chain_caster", "plaguebearer"];
+var _tu_defaults = ["prospector", "last_stand", "focused_power", "chain_caster", "plaguebearer", "relentless"];
 for (var _tui = 0; _tui < array_length(_tu_defaults); _tui++) {
     if (!variable_struct_exists(global.traits_unlocked, _tu_defaults[_tui])) {
         variable_struct_set(global.traits_unlocked, _tu_defaults[_tui], false);
@@ -1053,7 +1054,7 @@ kb_tourney = undefined;
 
 // -----------------------------------------------------------------------------
 // 13b. VEX THE TRAINER - permanent upgrades bought with gold (+items for stats)
-// bonus_trait_slots: extra active-trait slots purchased (base 2, +2 max -> 4 total).
+// bonus_trait_slots: extra active-trait slots purchased (base 2, +4 max -> 6 total; M 07-16).
 // unlocked_abilities: names of non-starter abilities purchased into the loadout pool.
 // trait_potency: struct keyed by trait name -> potency tier (0-5); each tier adds
 //                +10% to that trait's magnitude, paid for by permanently sacrificing

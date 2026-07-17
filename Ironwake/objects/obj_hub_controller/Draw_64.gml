@@ -513,10 +513,15 @@ if (npc_unlocked[selected_npc]) {
     draw_text(_ddx, _ddy + 138, _hint);
 }
 
-// Notification message
+// Notification message. M 07-16: WRAP inside the panel - long pet/egg notices
+// (e.g. "A dark egg festers where the altar stood - visit Bairc.") ran off-screen.
+// Small font + 20px sep so two wrapped lines still end above the panel bottom
+// (first line y294, panel bottom y330; measured, not eyeballed).
 if (notification != "") {
+    draw_set_font(fnt_ui_small);
     draw_set_color(c_yellow);
-    draw_text(_ddx, _ddy + 171, notification);
+    draw_text_ext(_ddx, _ddy + 169, notification, 20, _dp_x + _dp_w - 24 - _ddx);
+    draw_set_font(fnt_ui);
 }
 draw_set_font(-1);
 } // end selected_npc < 6

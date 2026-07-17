@@ -10,6 +10,10 @@
 // SELECTION STATE
 // -----------------------------------------------------------------------------
 
+// Night-forest crickets under the otherwise-silent creation screen (M 07-16:
+// they clashed with the title music, but fit here in the quiet).
+ambience_set([snd_amb_title]);
+
 // Currently highlighted class tab (0=Arcanist, 1=Bloodwarden, 2=Shadowstrider)
 selected_class = 0;
 

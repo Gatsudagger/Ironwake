@@ -243,7 +243,9 @@ if (_pet_co != undefined && !_pet_co.is_egg) {
         // #16: fit + anchor by the VISIBLE creature (sprite bbox), not the padded
         // canvas - bonehound/hollow pup stood at half the intended display height.
         // _petx/_pety stay the FEET point (shadow); _pdx/_pdy are the draw anchor.
-        var _pcfit  = pet_sprite_fit(_petspr, _petx, _pety, _peth_t);
+        // M 07-16: cap visible WIDTH too - fitting by height alone blew short, wide
+        // sprites up huge (the luna moth caterpillar drew near knight-sized).
+        var _pcfit  = pet_sprite_fit(_petspr, _petx, _pety, _peth_t, _peth_t * 1.35);
         var _petsc  = _pcfit.scale;
         var _pdx    = _pcfit.x;
         var _pdy    = _pcfit.y;

@@ -31,3 +31,6 @@
 2026-07-14 20:03  cost=111  dur=2.5s  out=snd_betrayal.mp3  prompt=A reversed cymbal sting sweeping in, then one cold heavy heartbeat thud and hollow silence, emotiona
 2026-07-14 20:03  cost=0  dur=1s  out=snd_quest_ready.mp3  prompt=Soft short parchment page rustle ending with a single small bright bell ding, gentle quest objective
 2026-07-14 20:13  cost=0  dur=2s  out=snd_curse_whisper_v2.mp3  prompt=Several hushed human voices whispering over each other in an ancient stone crypt, breathy and dry, r
+2026-07-16 22:56  cost=0  dur=2.5s  out=snd_hatch_build.mp3  prompt=Rising magical anticipation build for a fantasy treasure opening, an ascending harp and celesta arpe
+2026-07-16 22:56  cost=0  dur=2.5s  out=snd_hatch_fanfare.mp3  prompt=Triumphant bright fantasy fanfare, a joyful ascending four-note bell and string flourish landing on 
+2026-07-16 22:57  cost=210  dur=14s  out=snd_amb_cauldron.mp3  prompt=Seamless looping alchemist cauldron simmer: thick viscous liquid like heavy porridge bubbling slowly

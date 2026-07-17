@@ -390,9 +390,11 @@ global.abilities_bloodwarden = [
         /*effect_type*/"status", /*effect_value*/8, /*duration*/4, // reflect 8 dmg/hit x 4 turns
         /*self*/true),
 
-    // 7: Undying - ultimate safety net; costs 3 Blood; survive lethal blow at 1 HP
+    // 7: Undying - ultimate safety net; costs 3 Blood; survive lethal blow at 1 HP.
+    //    M 07-16 AP audit: 3 -> 2 AP. Spending a WHOLE turn on not-dying felt dead;
+    //    at 2 AP you can still Leech/Cleave the same turn you brace.
     ability_define("Undying",
-        /*energy*/3, /*secondary*/3,
+        /*energy*/2, /*secondary*/3,
         /*damage*/0, /*dtype*/0,
         /*acc*/-1, /*guaranteed*/true,
         /*crit_type*/-1, /*base_crit*/0,
@@ -408,9 +410,11 @@ global.abilities_bloodwarden = [
         /*effect_type*/"debuff", /*effect_value*/0.5, /*duration*/5, // -50% healing received
         /*self*/false),
 
-    // 9: Bloodfeast - every ability drains 6 HP from targets for 2 turns
+    // 9: Bloodfeast - every ability drains 6 HP from targets for 2 turns.
+    //    M 07-16 AP audit: 3 -> 2 AP. At 3 AP the buff's first turn was always
+    //    wasted (no AP left to swing with it) - a setup ability that ate its own payoff.
     ability_define("Bloodfeast",
-        /*energy*/3, /*secondary*/2,
+        /*energy*/2, /*secondary*/2,
         /*damage*/0, /*dtype*/3,        // blood
         /*acc*/-1, /*guaranteed*/true,
         /*crit_type*/-1, /*base_crit*/0,
@@ -1628,6 +1632,11 @@ global.traits_all = [
         "Below 40% HP, all damage you deal is increased by 20% (Bloodwarden only).",
         1, "total_boss_kills", 4, "berserker_rage"),
 
+    // M 07-16: the "too many 3-AP abilities" fix - a whole extra action every turn.
+    trait_define("Relentless",
+        "Base AP raised from 3 to 4 every turn (Bloodwarden only).",
+        1, "total_boss_kills", 6, "relentless"),
+
     // -------------------------------------------------------------------------
     // CLASS: SHADOWSTRIDER (class_req 2) - unlocked via boss kills
     // -------------------------------------------------------------------------
@@ -1675,6 +1684,7 @@ function trait_colloquial(effect_id) {
         case "crimson_reserve":  return "You walk into every fight with the tank already part-full of Blood to spend. (Bloodwarden)";
         case "vampiric_edge":    return "Your bleeds and poisons feed you back - every tick of them mends a little of your own flesh. (Bloodwarden)";
         case "berserker_rage":   return "Cornered and bloodied is exactly where you want to be - the closer to death, the harder you hit. (Bloodwarden)";
+        case "relentless":       return "Your fury does not wait. Four actions a turn, every turn - the heavy blows stop costing you the whole round. (Bloodwarden)";
         case "phantom_step":     return "You're a ghost on the first beat - the opening attack of every fight simply passes through you. (Shadowstrider)";
         case "shadow_meld":      return "Slip a blow and answer from the dark - the next strike you land finds something vital. (Shadowstrider)";
         case "serrated_strikes": return "Your edges are wicked - every physical hit leaves a free, lingering bleed. (Shadowstrider)";
@@ -1692,8 +1702,8 @@ function trait_colloquial(effect_id) {
 // ---------------------------------------------------------------------------
 // max_trait_slots()
 // Total active-trait slots available: base 2 + bought bonus_trait_slots
-// (Vex, max +2) + 1 while Crown of the Hollow King is equipped. Single source
-// of truth used by the loadout select/draw code.
+// (Vex, max +4 as of M 07-16) + 1 while Crown of the Hollow King is equipped.
+// Single source of truth used by the loadout select/draw code.
 // ---------------------------------------------------------------------------
 function max_trait_slots() {
     var _m = 2;
@@ -2153,6 +2163,7 @@ function trait_unlock_tier(trait_name) {
         // Tier 3 - powerful / build-defining
         case "Focused Power": case "Chain Caster": case "Plaguebearer":
         case "Arcane Surge": case "Berserker Rage": case "Serrated Strikes":
+        case "Relentless":
             return 3;
     }
     return 2;

@@ -288,6 +288,7 @@ function new_game_reset() {
         vampiric_edge: false, berserker_rage: false, shadow_meld: false,
         serrated_strikes: false, expanded_arsenal: false, prospector: false,
         last_stand: false, focused_power: false, chain_caster: false, plaguebearer: false,
+        relentless: false,
     };
 
     // Vex the Trainer permanent purchases

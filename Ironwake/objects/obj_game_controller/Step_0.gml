@@ -1410,13 +1410,14 @@ if (trainer_open) {
             trainer_notification = "";
         }
     }
-    // === TAB 1: TRAIT SLOT EXPANSION - 800g then 2000g, max +2 ===
+    // === TAB 1: TRAIT SLOT EXPANSION - 800/2000/4000/8000g, max +4 (M 07-16: was +2) ===
     else if (trainer_tab == 1 && _act) {
         var _bts = variable_global_exists("bonus_trait_slots") ? global.bonus_trait_slots : 0;
-        if (_bts >= 2) {
-            trainer_notification = "All trait slots already purchased (4 total).";
+        if (_bts >= 4) {
+            trainer_notification = "All trait slots already purchased (6 total).";
         } else {
-            var _slot_cost = vex_price(cha_price((_bts == 0) ? 800 : 2000));   // Vex Friend perk: 10% off
+            var _slot_ladder = [800, 2000, 4000, 8000];
+            var _slot_cost = vex_price(cha_price(_slot_ladder[_bts]));   // Vex Friend perk: 10% off
             if (global.gold < _slot_cost) {
                 trainer_notification = "Not enough gold - the next slot costs " + string(_slot_cost) + "g.";
                 audio_play_sound(snd_ui_error, 1, false);
