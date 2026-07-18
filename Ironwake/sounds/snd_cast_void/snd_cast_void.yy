@@ -6,11 +6,11 @@
     "path":"audiogroups/audiogroup_default",
   },
   "bitDepth":1,
-  "channelFormat":0,
+  "channelFormat":1,
   "compression":0,
   "compressionQuality":4,
   "conversionMode":0,
-  "duration":4.162902,
+  "duration":1.28,
   "exportDir":"",
   "name":"snd_cast_void",
   "parent":{
@@ -21,6 +21,6 @@
   "resourceType":"GMSound",
   "resourceVersion":"2.0",
   "sampleRate":44100,
-  "soundFile":"snd_cast_void.wav",
+  "soundFile":"snd_cast_void.ogg",
   "volume":1.0,
 }

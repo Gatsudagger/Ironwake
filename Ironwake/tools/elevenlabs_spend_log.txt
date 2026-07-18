@@ -12,3 +12,32 @@
 2026-07-14 19:21  cost=0  dur=4.5s  out=snd_loot_legendary.mp3  prompt=Grand video game legendary treasure fanfare like opening a sacred chest, a rising four note orchestr
 2026-07-14 19:21  cost=0  dur=3.0s  out=snd_loot_unique.mp3  prompt=Video game mysterious treasure jingle, a delicate antique music box melody rising and resolving swee
 2026-07-14 19:21  cost=0  dur=0.5s  out=snd_loot_reveal.mp3  prompt=A single soft plucked pizzicato note, very short and pleasant, game UI item reveal tick
+2026-07-14 19:58  cost=0  dur=22s  out=snd_amb_ashen.mp3  prompt=Seamless looping dungeon ambience, dry ancient crypt: still stone-hall air, soft dust settling, very
+2026-07-14 19:58  cost=0  dur=22s  out=snd_amb_scorched.mp3  prompt=Seamless looping dungeon ambience, volcanic forge-depths: deep magma rumble, soft ember hiss and cra
+2026-07-14 19:58  cost=0  dur=22s  out=snd_amb_tundra.mp3  prompt=Seamless looping dungeon ambience, frozen ruin: thin arctic wind whistling through stone corridors, 
+2026-07-14 19:59  cost=968  dur=22s  out=snd_amb_title.mp3  prompt=Seamless looping calm night ambience, medieval forest overlook: soft night wind through trees, a dis
+2026-07-14 20:00  cost=0  dur=14s  out=snd_amb_forge.mp3  prompt=Seamless looping blacksmith forge interior ambience: slow bellows breathing rhythmically, soft coal 
+2026-07-14 20:00  cost=0  dur=14s  out=snd_amb_cauldron.mp3  prompt=Seamless looping alchemist workshop ambience: thick gentle potion bubbling in an iron cauldron, soft
+2026-07-14 20:01  cost=0  dur=14s  out=snd_amb_garden.mp3  prompt=Seamless looping creature pen ambience: soft small animal chitters and gentle coos, straw rustling, 
+2026-07-14 20:01  cost=616  dur=14s  out=snd_amb_tavern.mp3  prompt=Seamless looping medieval tavern interior ambience: low indistinct crowd murmur, occasional wooden m
+2026-07-14 20:01  cost=0  dur=2s  out=snd_shrine_hum.mp3  prompt=Low reverent choral drone swelling upward, sacred ancient holy shrine presence, gothic dark fantasy,
+2026-07-14 20:01  cost=0  dur=2s  out=snd_curse_whisper.mp3  prompt=Dissonant cluster of hushed overlapping whispers rising quickly then cutting off, unsettling cursed 
+2026-07-14 20:02  cost=0  dur=1s  out=snd_egg_stir.mp3  prompt=A large egg wobbling gently on stone with one faint tap from inside the shell, short, close, quiet, 
+2026-07-14 20:02  cost=0  dur=1.5s  out=snd_hatch_burst.mp3  prompt=Eggshell cracking open followed by a warm bright magical chime bloom, joyful fantasy hatching moment
+2026-07-14 20:02  cost=0  dur=4s  out=snd_awakened_cross.mp3  prompt=Airy rising magical swell building steadily into a single deep resonant bell strike with a shimmerin
+2026-07-14 20:02  cost=0  dur=1.5s  out=snd_bond_up.mp3  prompt=Warm two-note ascending harp and small bell motif, gentle affectionate fantasy chime, tender, short.
+2026-07-14 20:02  cost=0  dur=2.5s  out=snd_extract.mp3  prompt=Massive stone gate rumbling open, wind rushing past, ending in a soft fading magical chime, dungeon 
+2026-07-14 20:03  cost=0  dur=2s  out=snd_boss_door.mp3  prompt=Massive ancient iron door groaning slowly open with a deep sub-bass impact at the end, ominous dunge
+2026-07-14 20:03  cost=111  dur=2.5s  out=snd_betrayal.mp3  prompt=A reversed cymbal sting sweeping in, then one cold heavy heartbeat thud and hollow silence, emotiona
+2026-07-14 20:03  cost=0  dur=1s  out=snd_quest_ready.mp3  prompt=Soft short parchment page rustle ending with a single small bright bell ding, gentle quest objective
+2026-07-14 20:13  cost=0  dur=2s  out=snd_curse_whisper_v2.mp3  prompt=Several hushed human voices whispering over each other in an ancient stone crypt, breathy and dry, r
+2026-07-16 22:56  cost=0  dur=2.5s  out=snd_hatch_build.mp3  prompt=Rising magical anticipation build for a fantasy treasure opening, an ascending harp and celesta arpe
+2026-07-16 22:56  cost=0  dur=2.5s  out=snd_hatch_fanfare.mp3  prompt=Triumphant bright fantasy fanfare, a joyful ascending four-note bell and string flourish landing on 
+2026-07-16 22:57  cost=210  dur=14s  out=snd_amb_cauldron.mp3  prompt=Seamless looping alchemist cauldron simmer: thick viscous liquid like heavy porridge bubbling slowly
+2026-07-16 23:40  cost=7420  dur=misc  out=MUSIC-MCP  prompt=compose_music round: 6+4 x30s samples + 2 x120s fulls (hub_3 Hearthlight, hub_4 Moth & Lantern); session total 7630 incl. 3 SFX above
+2026-07-16 23:55  cost=4950  dur=3x120s  out=MUSIC-MCP  prompt=fulls round 2: snd_music_dungeon_2 BloodAndIron, dungeon_3 Kingsfall, hub_5 TheWake Celtic (evolving-section prompts per M variance note); session total 12580
+2026-07-17 00:06  cost=2475  dur=120s  out=MUSIC-MCP  prompt=Hearthlight full v2 replace (M rejected v1 full - pre-variance-note gen; v2 = evolving sections). GraveDancer sample REJECTED+archived, no full.
+2026-07-17 00:11  cost=2475  dur=120s  out=MUSIC-MCP  prompt=Hearthlight v3 - M diagnosed Celtic brief bleed-over from TheWake into other hub tracks; v3 = Rainlight/Emberside palette (melancholy dark-fantasy calm, piano+strings ambient, NOT folk)
+2026-07-17 00:24  cost=2880  dur=30s+120s  out=MUSIC-MCP  prompt=Nocturne (gothic virtuoso piano, Castlevania brief) sample + approved full -> snd_music_dungeon_4
+2026-07-17 01:15  cost=4124  dur=2x30s+2x120s  out=MUSIC-MCP  prompt=M pair: Tempest Road (Zelda storms/valley homage - minor waltz x flamenco desert, hub_6) + Drums of the Deep (tribal ritual percussion, dungeon_5); both approved from samples, one roll each
+2026-07-17 01:40  cost=4950  dur=2x120s  out=MUSIC-MCP  prompt=v2 fulls re-roll with VERBATIM sample prompts (v1 fulls drifted - evolving-section language changed the sound vs approved samples). VERDICT: Tempest Road v2 APPROVED as dual-pool (pool both, hub+dungeon selectors); Drums of the Deep CUT entirely (boring/monotonous) - dungeon_5 asset removed

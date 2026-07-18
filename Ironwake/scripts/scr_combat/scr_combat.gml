@@ -100,6 +100,17 @@ function combat_init(combatant_array) {
 // Handles Shadowstrider Preparation generation.
 // Returns the updated combat_state (same reference).
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// actor_turn_ap(actor)
+// AP restored at the start of this actor's turn. Base 3 for everyone; the
+// Bloodwarden Relentless trait (M 07-16) raises the player's base to 4.
+// Single source of truth - the HUD pips and turn refill both read it.
+// ---------------------------------------------------------------------------
+function actor_turn_ap(actor) {
+    if (actor.is_player && actor.class_id == 1 && trait_active("Relentless")) return 4;
+    return 3;
+}
+
 function combat_next_turn(combat_state) {
     var count = array_length(combat_state.combatants);
 
@@ -112,8 +123,9 @@ function combat_next_turn(combat_state) {
     var actor = combat_state.combatants[combat_state.turn_index];
     combat_state.active = actor;
 
-    // Fully restore energy at the start of each turn
-    actor.energy = 3;
+    // Fully restore energy at the start of each turn (Relentless raises the
+    // player's base to 4 - see actor_turn_ap).
+    actor.energy = actor_turn_ap(actor);
 
     // Galvanize (D§4, M-approved 07-09): a killing blow last turn banked +1 AP.
     if (actor.is_player && variable_struct_exists(actor, "galvanize_ap") && actor.galvanize_ap > 0) {
@@ -374,6 +386,19 @@ function combat_estimate_hit(ability, caster, target) {
             var _se_round = variable_struct_exists(caster, "soul_engine_round") ? caster.soul_engine_round : 0;
             _final += 3 * max(0, instance_find(obj_combat_controller, 0).combat_state.round - _se_round);
         }
+        // Warpath (07-16): mirror the +2/turn flat physical/Blood bonus in the preview.
+        if (variable_struct_exists(caster, "warpath_active") && caster.warpath_active
+            && variable_struct_exists(ability, "damage_type")
+            && (ability.damage_type == 0 || ability.damage_type == 3)
+            && instance_exists(obj_combat_controller)) {
+            var _wp_round = variable_struct_exists(caster, "warpath_round") ? caster.warpath_round : 0;
+            _final += 2 * max(0, instance_find(obj_combat_controller, 0).combat_state.round - _wp_round);
+        }
+        // Compounding Dread (07-16): mirror the accumulated trap bonus in the preview.
+        if (variable_struct_exists(caster, "dread_bonus") && caster.dread_bonus > 0
+            && (ability.name == "Bear Trap" || ability.name == "Spike Trap" || ability.name == "Death Snare")) {
+            _final += caster.dread_bonus;
+        }
         if (caster.class_id == 1 && trait_active("Berserker Rage")
             && caster.HP <= floor(caster.max_HP * 0.40))
             _final = floor(_final * (1 + 0.20 * trait_potency_mult("Berserker Rage")));
@@ -442,6 +467,14 @@ function combat_apply_damage(target_struct, damage) {
         && target_struct.HP < target_struct.max_HP * 0.5
         && combatant_has_status_kind(target_struct, "marked")) {
         damage = round(damage * 1.30);
+    }
+    // OVERWHELM (combo batch, M-approved 07-16): an enemy carrying 2+ DISTINCT
+    // status kinds takes +15% damage from ALL sources (hits, pet strikes, DoT
+    // ticks). Core rule - hooked here because every damage path funnels through
+    // this sink, same as Marked. DoTs of different elements count separately.
+    if (damage > 0 && variable_struct_exists(target_struct, "is_player") && !target_struct.is_player
+        && combatant_distinct_status_kinds(target_struct) >= 2) {
+        damage = round(damage * 1.15);
     }
     var prev_hp         = target_struct.HP;
     target_struct.HP    = max(0, target_struct.HP - damage);
@@ -606,9 +639,17 @@ function combat_apply_start_traits(player) {
     // phantom_step_active is consumed by combat_check_phantom_step()
     player.phantom_step_active = trait_active("Phantom Step");
 
-    // Ley Tap: +1 bonus AP at combat start (Arcanist only)
+    // Ley Tap: +1 bonus AP at combat start (Arcanist only).
+    // Bugfix 07-16: was `player.AP += 1` but the combat player struct's field is
+    // `energy` (no AP field exists) - equipping Ley Tap crashed at combat start.
     if (player.class_id == 0 && trait_active("Ley Tap")) {
-        player.AP += 1;
+        player.energy += 1;
+    }
+
+    // Relentless (M 07-16): Bloodwarden's base AP is 4 - the struct is built with
+    // energy: 3, so top up the FIRST turn here; combat_next_turn covers the rest.
+    if (player.class_id == 1 && trait_active("Relentless")) {
+        player.energy = max(player.energy, 4);
     }
 
     // Iron Will: first status effect applied to the player this combat is absorbed
@@ -742,7 +783,7 @@ function ability_status_kind(ability) {
             // vulnerable clone. "marked" = +30% from all sources below 50% HP
             // (applied in combat_apply_damage).
             return "marked";
-        case "Marrow Crush": case "Crippling Shot":
+        case "Marrow Crush": case "Frost Shot":   // Frost Shot's own debuff is the Weaken; its 1-turn Chill is a bespoke rider (Step_0)
         case "Hoarfrost Lance":   // D§4 Chill: weaken-kind, frost element (shatters)
             return "weaken";
         case "Smoke Bomb":
@@ -869,6 +910,77 @@ function combat_status_element(se) {
     return "";
 }
 
+// combatant_distinct_status_kinds(c) - number of DISTINCT status kinds the
+// combatant carries, for the OVERWHELM rule (07-16): two bleed stacks = 1,
+// bleed + chill = 2. DoTs are qualified by element (bleed/poison/void each
+// count as their own kind); everything else counts by its `kind`.
+function combatant_distinct_status_kinds(c) {
+    if (!is_struct(c) || !variable_struct_exists(c, "status_effects")) return 0;
+    var _seen = {};
+    var _n = 0;
+    for (var _i = 0; _i < array_length(c.status_effects); _i++) {
+        var _s = c.status_effects[_i];
+        var _k = combat_status_kind_of(_s);
+        if (_k == "dot") _k = "dot:" + combat_status_element(_s);
+        if (!variable_struct_exists(_seen, _k)) {
+            variable_struct_set(_seen, _k, true);
+            _n++;
+        }
+    }
+    return _n;
+}
+
+// combat_reaction_preview(ab, caster, target) - the LEGIBILITY half of the combo
+// system (07-16): what reaction would THIS ability trigger on THIS target right
+// now? Returns { label, col } for the hit-preview chip / status-icon glow, or
+// label "" when nothing would react. Mirrors the Step_0 reaction switch - keep
+// the two in sync when the reaction table changes.
+function combat_reaction_preview(ab, caster, target) {
+    var _none = { label: "", col: c_white, idx: -1 };
+    if (!is_struct(ab) || !ability_is_detonator(ab)) return _none;
+    if (!variable_struct_exists(ab, "base_damage") || ab.base_damage <= 0) return _none;
+    var _pick = combat_detonator_pick(target);
+    if (_pick.key == "") return _none;
+    var _hexed = (combat_status_total(target, "hexed") > 0);
+    var _hx = _hexed ? 2 : 1;
+    var _lbl = "";
+    var _col = c_white;
+    switch (_pick.key) {
+        case "frost": case "root":
+            _lbl = "SHATTER +" + string(30 * _hx) + "%"; _col = make_color_rgb(140, 210, 255); break;
+        case "stun":
+            _lbl = "CRIT!"; _col = c_yellow; break;
+        case "burn":
+            _lbl = "+" + string(40 * _hx) + "% crit"; _col = make_color_rgb(255, 150, 60); break;
+        case "vulnerable":
+            _lbl = "+" + string(12 * _hx) + " dmg"; _col = make_color_rgb(255, 200, 90); break;
+        case "weaken":
+            _lbl = "+" + string(15 * _hx) + "% dmg"; _col = make_color_rgb(210, 160, 255); break;
+        case "bleed":
+            // Sum remaining bleed ticks for the exact bonus.
+            var _bt = 0;
+            for (var _i = 0; _i < array_length(target.status_effects); _i++) {
+                var _s = target.status_effects[_i];
+                if (combat_status_kind_of(_s) == "dot" && combat_status_element(_s) == "bleed") {
+                    _bt += variable_struct_exists(_s, "duration") ? _s.duration : 0;
+                }
+            }
+            _lbl = "BURST +" + string(_bt * 5 * _hx); _col = make_color_rgb(235, 80, 80); break;
+        case "poison":
+            _lbl = "MORTALITY"; _col = make_color_rgb(150, 220, 90); break;
+        case "void":
+            _lbl = "+" + string(30 * _hx) + "% lifesteal"; _col = make_color_rgb(190, 120, 255); break;
+        case "blind":
+            _lbl = "CAN'T MISS"; _col = make_color_rgb(200, 200, 200); break;
+        case "shock":
+            _lbl = "ARC " + string(33 * _hx) + "%"; _col = make_color_rgb(120, 200, 255); break;
+    }
+    // Numeric labels above already carry the doubled hex values; flag the hex
+    // itself only on the non-numeric ones so nothing reads as doubled twice.
+    if (_lbl != "" && _hexed && (_pick.key == "stun" || _pick.key == "poison" || _pick.key == "blind")) _lbl += " (HEXED)";
+    return { label: _lbl, col: _col, idx: _pick.idx };
+}
+
 // combat_detonator_pick(target) - returns { key, idx } for the highest-priority
 // reaction the target is currently carrying, or { key:"", idx:-1 } if none.
 function combat_detonator_pick(target) {
@@ -915,6 +1027,8 @@ function combat_tick_statuses(c, log) {
         if (_se_kind == "dot") {
             combat_apply_damage(c, _se.effect_value);
             array_push(log, _cname + " takes " + string(_se.effect_value) + " " + _se.name + " damage!");
+            // Accelerating DoT (Entropy 07-16): each tick grows by `accel` (6/8/10/12).
+            if (variable_struct_exists(_se, "accel") && _se.accel > 0) _se.effect_value += _se.accel;
         } else if (_se_kind == "regen") {
             // Heal-over-time (Warden's / Phoenix Tonic). Clamp to max HP; heals raw to
             // match the instant-heal consumable (no mortality reduction on player items).
@@ -1112,6 +1226,43 @@ function enemy_attack_sound(name) {
     play_enemy_sfx("snd_attack_" + enemy_sound_family(name), -1);
 }
 
+// ability_sfx_school(ab) - resolve a magic SCHOOL for an ability's CAST sound, so
+// elemental spells that all share damage_type 1 (fire/frost/shock/arcane/nature)
+// stop playing the same snd_cast_elem. Returns a school suffix ("fire".."nature")
+// for the known offensive spells, or "" to let play_ability_cast_sfx fall back to
+// its damage_type routing (physical -> weapon vocal; drain -> void; blood -> blood).
+// Keyed on the STABLE ENGLISH ability name (abilities have no id; the name is the
+// identity used everywhere) so it survives localization. Schools are read straight
+// from the abilities' own flavor descriptions ("15 Fire dmg", "38 Arcane dmg", ...).
+function ability_sfx_school(ab) {
+    if (!variable_struct_exists(ab, "name")) return "";
+    switch (ab.name) {
+        // FIRE
+        case "Soulfire":        return "fire";
+        case "Scorch":          return "fire";
+        case "Blazing Palm":    return "fire";
+        // FROST (Glacial Ward stays a defensive "ward" via the support branch)
+        case "Frost Shot":      return "frost";
+        case "Hoarfrost Lance": return "frost";
+        case "Winter's Bite":   return "frost";
+        // SHOCK
+        case "Static Arc":      return "shock";
+        case "Galvanize":       return "shock";
+        // NATURE / poison
+        case "Poison Dart":     return "nature";
+        case "Plague Touch":    return "nature";
+        // ARCANE (the arcane-typed elemental spells; snd_cast_arcane was rerolled)
+        case "Arcane Burst":    return "arcane";
+        case "Rift":            return "arcane";
+        case "Soul Nova":       return "arcane";
+        case "Soul Rend":       return "arcane";
+        case "Arcane Echo":     return "arcane";
+        case "Mana Sever":      return "arcane";
+        case "Singularity":     return "arcane";
+    }
+    return "";
+}
+
 // play_ability_cast_sfx(ab, caster, is_offensive) - PLAYER cast audio keyed to the
 // ABILITY (damage type + effect kind) instead of the caster's class, so a fireball and a
 // shadowbolt sound different no matter who throws them. See SYSTEMS_COMBAT_FX.md.
@@ -1132,6 +1283,15 @@ function play_ability_cast_sfx(ab, caster, is_offensive) {
             case "debuff":   play_sfx_var("snd_cast_debuff", -1); break; // ominous
             default:         play_sfx_var("snd_cast_buff",   -1); break; // generic self-buff
         }
+        return;
+    }
+
+    // Offensive cast. First try the ability's specific magic SCHOOL (fire/frost/shock/
+    // arcane/nature) so elemental spells don't collapse onto one snd_cast_elem; only
+    // if the ability isn't a recognized school do we fall back to damage_type texture.
+    var _school = ability_sfx_school(ab);
+    if (_school != "") {
+        play_sfx_var("snd_cast_" + _school, -1);
         return;
     }
 

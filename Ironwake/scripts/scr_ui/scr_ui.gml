@@ -11,6 +11,46 @@
 #macro GUI_CY (GUI_H / 2)   // 540 - vertical center
 
 // =============================================================================
+// WIDE-ASPECT GUTTERS (ANDROID_PORT_PLAN.md chunk 8b) - phones are 19.5:9-21:9,
+// wider than the 16:9 canvas. gui_geometry_apply() centers the 1920x1080 band on
+// the screen (uniform scale, no distortion) and records how far the visible
+// screen extends PAST the band on each side, in GUI units. ALL layout stays in
+// 1920x1080 coordinates; only full-bleed drawing (backgrounds, dim scrims,
+// vignettes) spans GUI_XL..GUI_XR so the side strips never show raw black.
+// On any 16:9-or-narrower window the gutter is 0 and GUI_XL/GUI_XR collapse to
+// exactly 0/1920 - the PC and HTML5 builds render identically to before.
+// =============================================================================
+#macro GUI_GUTTER (variable_global_exists("gui_gutter") ? global.gui_gutter : 0)
+#macro GUI_XL (-GUI_GUTTER)          // left  edge of the visible screen, GUI units
+#macro GUI_XR (GUI_W + GUI_GUTTER)   // right edge of the visible screen, GUI units
+
+// Fit the GUI layer to the current window. 16:9 or narrower keeps the shipped
+// path (display_set_gui_size stretch, gutter 0). Wider windows get the band
+// treatment: uniform scale locked to window height, centered with equal side
+// gutters via display_set_gui_maximise (mouse/touch -> GUI mapping follows it).
+// Called from obj_game_controller Create and re-applied by its Step whenever the
+// window dimensions change (F11 fullscreen, F7 aspect lever, Android fold/boot).
+function gui_geometry_apply() {
+    global.gui_gutter = 0;
+    var _ww = max(1, window_get_width());
+    var _wh = max(1, window_get_height());
+    // HTML5 keeps the shipped stretch-to-canvas behavior untouched (scr_stats
+    // video_apply drives the canvas size there).
+    if (os_browser != browser_not_a_browser) {
+        display_set_gui_size(GUI_W, GUI_H);
+        return;
+    }
+    if (_ww / _wh <= (GUI_W / GUI_H) + 0.002) {
+        display_set_gui_size(GUI_W, GUI_H);
+    } else {
+        var _s  = _wh / GUI_H;                    // uniform scale, height-locked
+        var _ox = (_ww - GUI_W * _s) / 2;         // centering offset, window px
+        display_set_gui_maximise(_s, _s, _ox, 0);
+        global.gui_gutter = _ox / _s;             // one side's gutter, GUI units
+    }
+}
+
+// =============================================================================
 // draw_text_outline(x, y, str, [outline_col], [fill_col])
 // Draws str with a solid black (or given) outline so light hint/footer text and
 // lore flavor stay legible over busy backgrounds. Uses the CURRENT draw color as
@@ -42,6 +82,11 @@ function draw_text_outline(x, y, str, outline_col = c_black, fill_col = undefine
 // halign fa_left. Honors the caller's valign.
 // ---------------------------------------------------------------------------
 function ui_draw_key_legend(cx, y, txt, label_col = undefined, translate = true) {
+    // Touch (M 07-17): key legends are keyboard-speak ("[G] Gender", "W/S...") -
+    // useless on a phone and just wasted footer space. On-screen actions live in the
+    // tappable chip bar / buttons instead, so draw nothing here on touch. (Gamepad
+    // still gets the pad-glyph translation below; keyboard is unchanged.)
+    if (input_device() == 2) return;
     if (label_col == undefined) label_col = make_color_rgb(150, 158, 182);
     var _key_col = make_color_rgb(255, 205, 90);
     draw_set_font(fnt_ui_small);
@@ -159,7 +204,9 @@ function ui_draw_touch_back(_top = 108) {
         draw_set_halign(fa_left); draw_set_valign(fa_top);
         draw_set_color(c_white); draw_set_font(-1);
     }
-    if (touch_tapped(_x1, _y1, _x2, _y2)) touch_press(vk_escape);
+    // Suppress the back-tap while the action menu owns input (it has its own Close).
+    var _amenu_up = variable_global_exists("touch_amenu") && global.touch_amenu.open;
+    if (!_amenu_up && touch_tapped(_x1, _y1, _x2, _y2)) touch_press(vk_escape);
 }
 
 // ---------------------------------------------------------------------------
@@ -172,6 +219,8 @@ function ui_draw_touch_back(_top = 108) {
 // ---------------------------------------------------------------------------
 function ui_draw_touch_chips() {
     if (input_device() != 2) return;
+    // While the action menu is up it's modal - hide the chip bar under it.
+    if (variable_global_exists("touch_amenu") && global.touch_amenu.open) return;
     var _ctx   = __input_ctx();
     var _chips = [];
     switch (_ctx) {
@@ -218,12 +267,24 @@ function ui_draw_touch_chips() {
             array_push(_chips, { lbl: "HIGH TABLE",   key: ord("T"), hot: false });
             array_push(_chips, { lbl: "REROLL",       key: ord("R"), hot: false });
             break;
+        case "shop":
+        case "bairc":
+            // NPC screens: a single ACTIONS chip opens the long-press action menu
+            // (Deepen Bond / Gift / Reforge / Cancel). Only shown when at least one
+            // verb is actually available, so it's never a dead button. key -1 is the
+            // sentinel handled in the tap loop below (opens the menu, not a keypress).
+            if (array_length(touch_action_menu_items()) > 0) {
+                array_push(_chips, { lbl: "ACTIONS", key: -1, hot: false });
+            }
+            if (array_length(_chips) == 0) return;
+            break;
         default: return;   // other screens: direct taps + the X chip cover them
     }
 
     draw_set_font(fnt_ui_small);
-    // measure, then draw centred along the bottom edge
-    var _pad_x = 27, _gap = 15, _ch_h = 57;
+    // measure, then draw centred along the bottom edge. Chips sized up for thumbs
+    // (M 07-17: prioritise menu-button size on mobile) - taller + more side padding.
+    var _pad_x = 34, _gap = 15, _ch_h = 66;
     var _tot = 0;
     for (var _i = 0; _i < array_length(_chips); _i++) {
         _chips[_i].w = string_width(_chips[_i].lbl) + _pad_x * 2;
@@ -249,11 +310,160 @@ function ui_draw_touch_chips() {
         draw_rectangle(_cx, _cy, _cx + _c.w, _cy + _ch_h, true);
         draw_set_color((_flash || _press) ? make_color_rgb(245, 195, 80) : make_color_rgb(215, 200, 165));
         draw_text(_cx + _c.w / 2, _cy + _ch_h / 2 + 1, _c.lbl);
-        if (touch_tapped(_cx, _cy, _cx + _c.w, _cy + _ch_h)) touch_press(_c.key);
+        if (touch_tapped(_cx, _cy, _cx + _c.w, _cy + _ch_h)) {
+            if (_c.key == -1) {
+                if (!variable_global_exists("touch_amenu")) global.touch_amenu = { open: false, open_t0: -1 };
+                global.touch_amenu.open    = true;
+                global.touch_amenu.open_t0 = variable_global_exists("tg") ? global.tg.t0 : -1;
+                audio_play_sound(snd_page, 1, false);
+            } else {
+                touch_press(_c.key);
+            }
+        }
         _cx += _c.w + _gap;
     }
     draw_set_halign(fa_left); draw_set_valign(fa_top);
     draw_set_color(c_white); draw_set_font(-1);
+}
+
+// ---------------------------------------------------------------------------
+// ui_draw_touch_action_menu() - the NPC-screen long-press ACTION MENU (M 07-17).
+// Modal list of the current context's letter-hotkey verbs; a tapped row fires the
+// same simulated key the keyboard uses (handled next frame). Opened by long-press
+// or the ACTIONS chip (both set global.touch_amenu.open); the tap/close INPUT is
+// owned by obj_game_controller Step (which exits while open so the screen beneath
+// is frozen) - this function only DRAWS, using the shared touch_amenu_rects layout
+// so hit-test and render can't drift. Call LAST in the room controller's Draw GUI,
+// after ui_draw_touch_chips / ui_draw_touch_back, so it lands on top.
+// ---------------------------------------------------------------------------
+function ui_draw_touch_action_menu() {
+    if (input_device() != 2) return;
+    if (!variable_global_exists("touch_amenu") || !global.touch_amenu.open) return;
+    var _items = touch_action_menu_items();
+    var _n = array_length(_items);
+    if (_n == 0) { global.touch_amenu.open = false; return; }
+    var _lay = touch_amenu_rects(_n);
+
+    // Full-bleed scrim (spans the wide-aspect gutters).
+    draw_set_alpha(0.62); draw_set_color(c_black);
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
+    draw_set_alpha(1.0);
+
+    // Panel + gold frame.
+    draw_set_color(make_color_rgb(16, 18, 26));
+    draw_rectangle(_lay.x1, _lay.y1, _lay.x2, _lay.y2, false);
+    draw_set_color(make_color_rgb(150, 130, 85));
+    draw_rectangle(_lay.x1, _lay.y1, _lay.x2, _lay.y2, true);
+
+    draw_set_halign(fa_center); draw_set_valign(fa_middle);
+    draw_set_font(fnt_ui);
+    draw_set_color(make_color_rgb(240, 220, 170));
+    draw_text(GUI_CX, _lay.y1 + _lay.title_h / 2 + 4, "ACTIONS");
+
+    var _pmx = device_mouse_x_to_gui(0), _pmy = device_mouse_y_to_gui(0);
+    var _pdn = mouse_check_button(mb_left);
+
+    // Action rows.
+    for (var _i = 0; _i < _n; _i++) {
+        var _r  = _lay.rows[_i];
+        var _pr = _pdn && _pmx >= _lay.x1 && _pmx <= _lay.x2 && _pmy >= _r.y1 && _pmy <= _r.y2;
+        draw_set_color(_pr ? make_color_rgb(52, 44, 26) : make_color_rgb(26, 28, 38));
+        draw_rectangle(_lay.x1 + _lay.pad, _r.y1, _lay.x2 - _lay.pad, _r.y2, false);
+        draw_set_color(_pr ? make_color_rgb(245, 195, 80) : make_color_rgb(120, 108, 82));
+        draw_rectangle(_lay.x1 + _lay.pad, _r.y1, _lay.x2 - _lay.pad, _r.y2, true);
+        draw_set_color(make_color_rgb(232, 222, 198));
+        draw_text(GUI_CX, (_r.y1 + _r.y2) / 2 + 1, _items[_i].lbl);
+    }
+
+    // Close row.
+    var _rc  = _lay.close;
+    var _prc = _pdn && _pmx >= _lay.x1 && _pmx <= _lay.x2 && _pmy >= _rc.y1 && _pmy <= _rc.y2;
+    draw_set_color(_prc ? make_color_rgb(52, 26, 26) : make_color_rgb(22, 20, 26));
+    draw_rectangle(_lay.x1 + _lay.pad, _rc.y1, _lay.x2 - _lay.pad, _rc.y2, false);
+    draw_set_color(make_color_rgb(150, 92, 82));
+    draw_rectangle(_lay.x1 + _lay.pad, _rc.y1, _lay.x2 - _lay.pad, _rc.y2, true);
+    draw_set_color(make_color_rgb(222, 184, 172));
+    draw_text(GUI_CX, (_rc.y1 + _rc.y2) / 2 + 1, "Close");
+
+    draw_set_halign(fa_left); draw_set_valign(fa_top);
+    draw_set_color(c_white); draw_set_font(-1);
+}
+
+// ---------------------------------------------------------------------------
+// ui_draw_touch_gamepad() - on-screen GAMEPAD overlay for touch (M 07-17). Since
+// the whole game is operable from the (tested) gamepad backend - everything reachable
+// by 4 directions + confirm - this is just a touch skin over those existing inputs:
+// each button fires a simulated key that nav_* / input_confirm already handle, so it
+// drives EVERY screen for free with zero per-screen work. Mounted in the reclaimed
+// left GUTTER (8b letterbox space); skipped on ~16:9 devices with no gutter room.
+// ADDITION, not a replacement - direct tap still works. Hold a direction to repeat
+// (self-timed so it can't edge-churn the key). Call LAST in each room controller's
+// Draw GUI. Toggle-off via global.touch_gamepad_off (a Settings row can flip it).
+// v1 = d-pad + confirm; back/tab/examine buttons come after the feel is tuned.
+// ---------------------------------------------------------------------------
+function ui_draw_touch_gamepad() {
+    if (input_device() != 2) return;
+    if (variable_global_exists("touch_gamepad_off") && global.touch_gamepad_off) return;
+    if (GUI_GUTTER < 120) return;   // needs letterbox gutter room
+
+    // Sized to FIT the gutter so the cross never runs off-screen (M 07-17): the cross
+    // half-width is 2.7*_bs, and _bs = (gutter-18)/5.4 keeps it ~9px inside the edge.
+    var _gut  = GUI_GUTTER;
+    var _bs   = min((_gut - 18) / 5.4, 46);          // d-pad button half-size
+    var _step = _bs * 1.7;                            // centre-to-centre
+    var _cy   = GUI_H - (_step + _bs) - 40;          // low, for thumb reach; clears the bottom
+    var _lcx  = GUI_XL / 2;                           // LEFT gutter centre  -> d-pad (left thumb)
+    var _rcx  = (GUI_W + GUI_XR) / 2;                 // RIGHT gutter centre -> OK   (right thumb)
+    var _tgl  = _bs * 0.44;                           // triangle glyph half-size
+
+    var _mx = device_mouse_x_to_gui(0), _my = device_mouse_y_to_gui(0);
+    var _down = mouse_check_button(mb_left);
+    if (!variable_global_exists("tg_pad_hold")) global.tg_pad_hold = { key: -1, t: 0 };
+    var _hold = global.tg_pad_hold;
+    var _any_dir = false;
+
+    var _dirs = [[0, -1, vk_up], [0, 1, vk_down], [-1, 0, vk_left], [1, 0, vk_right]];
+    for (var _i = 0; _i < 4; _i++) {
+        var _bx = _lcx + _dirs[_i][0] * _step;
+        var _by = _cy  + _dirs[_i][1] * _step;
+        var _key = _dirs[_i][2];
+        var _on  = _down && point_in_rectangle(_mx, _my, _bx - _bs, _by - _bs, _bx + _bs, _by + _bs);
+        draw_set_alpha(_on ? 0.92 : 0.46);
+        draw_set_color(_on ? make_color_rgb(58, 50, 30) : make_color_rgb(16, 18, 26));
+        draw_roundrect(_bx - _bs, _by - _bs, _bx + _bs, _by + _bs, false);
+        draw_set_alpha(_on ? 1.0 : 0.72);
+        draw_set_color(_on ? make_color_rgb(245, 205, 90) : make_color_rgb(150, 140, 110));
+        draw_roundrect(_bx - _bs, _by - _bs, _bx + _bs, _by + _bs, true);
+        draw_set_color(_on ? make_color_rgb(255, 230, 150) : make_color_rgb(200, 190, 160));
+        var _t = _tgl;
+        if (_dirs[_i][1] == -1)      draw_triangle(_bx, _by - _t, _bx - _t, _by + _t, _bx + _t, _by + _t, false);
+        else if (_dirs[_i][1] == 1)  draw_triangle(_bx, _by + _t, _bx - _t, _by - _t, _bx + _t, _by - _t, false);
+        else if (_dirs[_i][0] == -1) draw_triangle(_bx - _t, _by, _bx + _t, _by - _t, _bx + _t, _by + _t, false);
+        else                         draw_triangle(_bx + _t, _by, _bx - _t, _by - _t, _bx - _t, _by + _t, false);
+        if (_on) {
+            _any_dir = true;
+            if (_hold.key != _key) { _hold.key = _key; _hold.t = 0; touch_press(_key); }
+            else { _hold.t++; if (_hold.t >= 18 && ((_hold.t - 18) mod 5) == 0) touch_press(_key); }
+        }
+    }
+    if (!_any_dir) _hold.key = -1;
+
+    // OK / confirm button in the RIGHT gutter (right thumb) - a bit larger.
+    var _abs = _bs * 1.25;
+    var _aon = _down && point_in_rectangle(_mx, _my, _rcx - _abs, _cy - _abs, _rcx + _abs, _cy + _abs);
+    draw_set_alpha(_aon ? 0.95 : 0.5);
+    draw_set_color(_aon ? make_color_rgb(24, 52, 26) : make_color_rgb(16, 22, 18));
+    draw_roundrect(_rcx - _abs, _cy - _abs, _rcx + _abs, _cy + _abs, false);
+    draw_set_alpha(1.0);
+    draw_set_color(_aon ? make_color_rgb(150, 240, 150) : make_color_rgb(110, 180, 120));
+    draw_roundrect(_rcx - _abs, _cy - _abs, _rcx + _abs, _cy + _abs, true);
+    draw_set_halign(fa_center); draw_set_valign(fa_middle);
+    draw_set_font(fnt_ui); draw_set_color(c_white);
+    draw_text(_rcx, _cy + 1, "OK");
+    draw_set_halign(fa_left); draw_set_valign(fa_top); draw_set_font(-1);
+    if (touch_tapped(_rcx - _abs, _cy - _abs, _rcx + _abs, _cy + _abs)) touch_press(vk_enter);
+
+    draw_set_alpha(1.0); draw_set_color(c_white);
 }
 
 // ---------------------------------------------------------------------------
@@ -910,7 +1120,9 @@ function ui_ability_icon_sprite(ability) {
         case "Shadow Step":      return spr_ability_shadow_step;
         case "Poison Dart":      return spr_ability_poison_dart;
         case "Smoke Bomb":       return spr_ability_smoke_bomb;
-        case "Crippling Shot":   return spr_ability_crippling_shot;
+        case "Frost Shot":       return spr_ability_crippling_shot;   // renamed 07-16; sprite asset keeps its old name
+        case "Warpath":          return spr_ability_warpath;            // 07-16 combo batch (M pick #13)
+        case "Compounding Dread": return spr_ability_compounding_dread; // 07-16 combo batch (M pick #7)
         case "Spike Trap":       return spr_ability_spike_trap;
         case "Marked for Death": return spr_ability_marked_for_death;
         case "Evasive Roll":     return spr_ability_evasive_roll;
@@ -1052,6 +1264,7 @@ function ui_trait_icon_sprite(tr) {
         case "crimson_reserve":  return spr_icon_trait_crimson_reserve;
         case "vampiric_edge":    return spr_icon_trait_vampiric_edge;
         case "berserker_rage":   return spr_icon_trait_berserker_rage;
+        case "relentless":       return spr_icon_trait_relentless;   // M pick 07-16 (berserk scream #09)
         // --- Shadowstrider ---
         case "phantom_step":     return spr_icon_trait_phantom_step;
         case "shadow_meld":      return spr_icon_trait_shadow_meld;
@@ -1287,10 +1500,13 @@ function hatch_cutscene_draw() {
     var _cx    = GUI_CX;
     var _base_y = GUI_CY + 140;   // subjects sit a little below center
 
-    // Backdrop: fades to near-black through the shake, holds full afterwards.
-    var _bg_a = (_phase == 0) ? lerp(0.30, 0.95, _t / HATCH_SHAKE_LEN) : 0.95;
+    // Backdrop: fades to FULLY black through the shake, holds opaque afterwards. Must
+    // be opaque so the garden's pet-detail panel behind (centered differently) doesn't
+    // bleed through and clash with the centered hatch caption (M 07-17: looked like the
+    // text "switched alignment" across phases - it was the garden showing through 0.95).
+    var _bg_a = (_phase == 0) ? lerp(0.30, 1.0, _t / HATCH_SHAKE_LEN) : 1.0;
     draw_set_alpha(_bg_a); draw_set_color(c_black);
-    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
     draw_set_alpha(1.0);
     draw_set_halign(fa_center); draw_set_valign(fa_middle);
 
@@ -1369,7 +1585,7 @@ function hatch_cutscene_draw() {
         var _flash = clamp(1 - _t / 18, 0, 1);
         if (_flash > 0) {
             draw_set_alpha(_flash); draw_set_color(c_white);
-            draw_rectangle(0, 0, GUI_W, GUI_H, false);
+            draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
             draw_set_alpha(1.0);
         }
     }
@@ -1408,7 +1624,7 @@ function ui_draw_bairc_lore() {
 // portrait left, name + divider, wrapped body, any-key footer.
 function ui_draw_bairc_dialogue(_txt) {
     draw_set_alpha(0.93); draw_set_color(make_color_rgb(6, 8, 14));   // near-opaque so the hub behind (incl. Bairc's own portrait panel) can't bleed past the modal edges
-    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
     draw_set_alpha(1.0);
 
     var _bw   = 1240;
@@ -1486,7 +1702,7 @@ function ui_draw_bairc_capstone() {
 
     // Backdrop.
     draw_set_alpha(0.88); draw_set_color(c_black);
-    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
     draw_set_alpha(1.0);
 
     var _px1 = 460, _py1 = 250, _px2 = 1460, _py2 = 830;
@@ -1591,7 +1807,7 @@ function journal_quest_reward_text(def) {
     // Board-request extras (BOARD_REQUESTS_SPEC.md): dust / item roll / Reforge Chit.
     if (variable_struct_exists(_r, "dust") && _r.dust > 0) _out += (_out != "" ? ", " : "") + string(_r.dust) + " dust";
     if (variable_struct_exists(_r, "item") && _r.item)     _out += (_out != "" ? " " : "") + "+ item";
-    if (variable_struct_exists(_r, "chit") && _r.chit > 0) _out += (_out != "" ? " " : "") + "+ Reforge Chit";
+    if (variable_struct_exists(_r, "chit") && _r.chit > 0) _out += (_out != "" ? " " : "") + "+ " + item_rarity_name(variable_struct_exists(_r, "chit_tier") ? clamp(_r.chit_tier, 0, 4) : 0) + " Reforge Ingot";
     return (_out == "") ? "Their thanks" : _out;
 }
 
@@ -1603,7 +1819,7 @@ function ui_draw_journal() {
 
     // Dim + panel + frame (vendor-screen footprint).
     draw_set_alpha(0.86); draw_set_color(c_black);
-    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
     draw_set_alpha(1.0);
     var _x1 = 120, _y1 = 66, _x2 = 1800, _y2 = 1020;
     draw_set_color(make_color_rgb(18, 17, 24));
@@ -1977,7 +2193,7 @@ function ui_draw_gift_popup() {
     var _pos = (_gp.delta >= 0);
 
     draw_set_alpha(0.55); draw_set_color(c_black);
-    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
     draw_set_alpha(1.0);
     var _w = 860, _h = 380;
     var _x1 = GUI_CX - _w / 2, _y1 = GUI_CY - _h / 2, _x2 = _x1 + _w, _y2 = _y1 + _h;
@@ -2013,7 +2229,7 @@ function ui_draw_gift_popup() {
     draw_rectangle(_bx, _by, _bx + _bw, _by + _bh, true);
 
     draw_set_color(make_color_rgb(140, 145, 165));
-    draw_text(GUI_CX, _y2 - 48, "Enter / Esc - close");
+    draw_text(GUI_CX, _y2 - 48, (input_device() == 2) ? "Tap Back to close" : "Enter / Esc - close");
     draw_set_halign(fa_left); draw_set_valign(fa_top);
     draw_set_alpha(1.0); draw_set_color(c_white); draw_set_font(-1);
 }
@@ -2029,7 +2245,7 @@ function ui_draw_tavern_board() {
     if (!variable_instance_exists(_gc, "tavern_board_open") || !_gc.tavern_board_open) return;
 
     draw_set_alpha(0.86); draw_set_color(c_black);
-    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
     draw_set_alpha(1.0);
     var _x1 = 240, _y1 = 66, _x2 = 1680, _y2 = 1020;
     // Board backdrop: the tavern-board art fills the panel (cover-crop), darkened so
@@ -2083,7 +2299,7 @@ function ui_draw_tavern_board() {
     // and the footer band; the window follows the cursor, drawn-triangle
     // indicators show what's clipped.
     var _bl_vis   = 6;
-    var _bl_first = ui_list_window_first(_cur, _n, _bl_vis);
+    var _bl_first = ui_list_window("tavern_board", _cur, _n, _bl_vis);
     var _bl_last  = min(_n, _bl_first + _bl_vis);
     if (_bl_first > 0) {
         draw_set_font(fnt_ui_small);
@@ -2203,7 +2419,7 @@ function ui_draw_knucklebones() {
 
     // Near-opaque dim so the tavern board / hub text can't ghost through at the edges.
     draw_set_alpha(0.96); draw_set_color(c_black);
-    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
     draw_set_alpha(1.0);
     var _x0 = 510, _y0 = 54, _x1 = 1410, _y1 = 1026;
     draw_set_color(make_color_rgb(30, 22, 15));
@@ -2368,7 +2584,7 @@ function ui_draw_knucklebones() {
 function ui_draw_knucklebones_rules(_g) {
     if (!_g.help) return;
     draw_set_alpha(0.82); draw_set_color(c_black);
-    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
     draw_set_alpha(1.0);
     var _hx0 = 480, _hy0 = 216, _hx1 = 1440, _hy1 = 864;
     draw_set_color(make_color_rgb(26, 20, 14));
@@ -2567,7 +2783,7 @@ function ui_draw_bairc_screen() {
 
     // Dim + panel + frame.
     draw_set_alpha(0.82); draw_set_color(c_black);
-    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
     draw_set_alpha(1.0);
     var _x1 = 120, _y1 = 66, _x2 = 1860, _y2 = 1020;   // vendor-width so Bairc gets the same 300px actor column
     draw_set_color(make_color_rgb(16, 18, 22));
@@ -3217,13 +3433,16 @@ function ui_draw_bairc_screen() {
         var _rp = _roster[_cur];
         var _rmx1 = 560, _rmy1 = 372, _rmx2 = 1360, _rmy2 = 636;
         draw_set_alpha(0.9); draw_set_color(c_black);
-        draw_rectangle(0, 0, GUI_W, GUI_H, false); draw_set_alpha(1.0);
+        draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false); draw_set_alpha(1.0);
         draw_set_color(make_color_rgb(20, 18, 14));
         draw_rectangle(_rmx1, _rmy1, _rmx2, _rmy2, false);
         ui_draw_gothic_frame(_rmx1, _rmy1, _rmx2, _rmy2, 30);
         draw_set_halign(fa_center); draw_set_valign(fa_top);
         draw_set_font(fnt_ui_title); draw_set_color(make_color_rgb(228, 200, 130));
-        draw_text(GUI_CX, _rmy1 + 34, "Entrust " + (_rp.is_egg ? (_rp.name + " Egg") : _rp.name) + " to Bairc?");
+        // Shrink-to-fit so a long pet name can't run past the modal frame (M 07-17).
+        var _et_txt = "Entrust " + (_rp.is_egg ? (_rp.name + " Egg") : _rp.name) + " to Bairc?";
+        var _et_sc  = min(1, ((_rmx2 - _rmx1) - 80) / max(1, string_width(_et_txt)));
+        draw_text_transformed(GUI_CX, _rmy1 + 34, _et_txt, _et_sc, _et_sc, 0);
         draw_set_font(fnt_ui); draw_set_color(make_color_rgb(205, 198, 208));
         draw_text_ext(GUI_CX, _rmy1 + 104, _rp.is_egg
             ? "He will keep the egg warm and hatch it in his own time. It will not be yours."
@@ -3241,7 +3460,7 @@ function ui_draw_bairc_screen() {
         var _bn_off = (variable_global_exists("osk_shown") && global.osk_shown) ? -210 : 0;
         var _nx1 = 540, _ny1 = 354 + _bn_off, _nx2 = 1380, _ny2 = 666 + _bn_off;
         draw_set_alpha(0.9); draw_set_color(c_black);
-        draw_rectangle(0, 0, GUI_W, GUI_H, false); draw_set_alpha(1.0);
+        draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false); draw_set_alpha(1.0);
         draw_set_color(make_color_rgb(16, 18, 26));
         draw_rectangle(_nx1, _ny1, _nx2, _ny2, false);
         ui_draw_gothic_frame(_nx1, _ny1, _nx2, _ny2, 30);
@@ -3292,12 +3511,20 @@ function ui_draw_bairc_screen() {
         var _pmp = _roster[_cur];
         var _pmi = bairc_pad_menu_items(_pmp, _gc.bairc_pad_menu_level);
         var _pmn = array_length(_pmi);
-        var _pmw = 480;
-        var _pmh = 108 + _pmn * 48;
+        var _bm_touch = (input_device() == 2);
+        var _pmw      = _bm_touch ? 564 : 480;
+        var _bm_pitch = _bm_touch ? 72 : 48;   // row spacing - bigger tap targets on touch
+        var _bm_rowh  = _bm_touch ? 60 : 42;   // highlight / tap-zone height
+        // Donate (tag "bairc:R") is destructive - set it apart with an extra gap +
+        // divider + red tint so it can't be fat-fingered next to Feed/Name (M 07-17).
+        var _bm_dgap  = 30;
+        var _bm_has_donate = false;
+        for (var _dq = 0; _dq < _pmn; _dq++) if (_pmi[_dq].tag == "bairc:R") _bm_has_donate = true;
+        var _pmh = 100 + _pmn * _bm_pitch + (_bm_has_donate ? _bm_dgap : 0);
         var _pmx = GUI_CX - _pmw / 2;
         var _pmy = GUI_CY - _pmh / 2;
         draw_set_alpha(0.55); draw_set_color(c_black);
-        draw_rectangle(0, 0, GUI_W, GUI_H, false);
+        draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
         draw_set_alpha(0.96); draw_set_color(make_color_rgb(14, 16, 24));
         draw_rectangle(_pmx, _pmy, _pmx + _pmw, _pmy + _pmh, false);
         draw_set_alpha(1.0);
@@ -3307,20 +3534,28 @@ function ui_draw_bairc_screen() {
         draw_text(GUI_CX, _pmy + 20, (_gc.bairc_pad_menu_level == 1)
             ? ("Feed " + (_pmp.is_egg ? "the egg" : _pmp.name))
             : (_pmp.is_egg ? (_pmp.name + " Egg") : _pmp.name));
+        draw_set_valign(fa_middle);
         for (var _pr = 0; _pr < _pmn; _pr++) {
             var _pit    = _pmi[_pr];
-            var _pry    = _pmy + 62 + _pr * 48;
+            var _is_don = (_pit.tag == "bairc:R");
+            var _pry    = _pmy + 56 + _pr * _bm_pitch + (_is_don ? _bm_dgap : 0);   // row TOP
             var _is_cur = (_pr == _gc.bairc_pad_menu_cursor);
+            if (_is_don) {   // divider above the set-apart Donate row
+                draw_set_color(make_color_rgb(92, 54, 48));
+                draw_rectangle(_pmx + 30, _pry - _bm_dgap + 9, _pmx + _pmw - 30, _pry - _bm_dgap + 11, false);
+            }
             if (_is_cur) {
-                draw_set_color(make_color_rgb(46, 42, 28));
-                draw_rectangle(_pmx + 18, _pry - 6, _pmx + _pmw - 18, _pry + 36, false);
-                draw_set_color(make_color_rgb(255, 224, 120));
-                draw_rectangle(_pmx + 18, _pry - 6, _pmx + _pmw - 18, _pry + 36, true);
+                draw_set_color(_is_don ? make_color_rgb(58, 26, 24) : make_color_rgb(46, 42, 28));
+                draw_rectangle(_pmx + 18, _pry, _pmx + _pmw - 18, _pry + _bm_rowh, false);
+                draw_set_color(_is_don ? make_color_rgb(240, 120, 100) : make_color_rgb(255, 224, 120));
+                draw_rectangle(_pmx + 18, _pry, _pmx + _pmw - 18, _pry + _bm_rowh, true);
             }
             draw_set_color((_pit.tag == "") ? make_color_rgb(110, 114, 128)
-                          : (_is_cur ? c_white : make_color_rgb(200, 208, 222)));
-            draw_text(GUI_CX, _pry, _pit.label);
+                          : (_is_don ? (_is_cur ? make_color_rgb(255, 185, 170) : make_color_rgb(214, 130, 116))
+                                     : (_is_cur ? c_white : make_color_rgb(200, 208, 222))));
+            draw_text(GUI_CX, _pry + _bm_rowh / 2, _pit.label);
         }
+        draw_set_valign(fa_top);
         draw_set_font(fnt_ui_small); draw_set_color(make_color_rgb(150, 158, 182));
         ui_draw_key_legend(GUI_CX, _pmy + _pmh - 34,
             (input_device() == 2)
@@ -3334,9 +3569,9 @@ function ui_draw_bairc_screen() {
             var _pmmy = device_mouse_y_to_gui(0);
             var _pm_hit = false;
             for (var _pt = 0; _pt < _pmn; _pt++) {
-                var _pty = _pmy + 62 + _pt * 48;
+                var _pty = _pmy + 56 + _pt * _bm_pitch + ((_pmi[_pt].tag == "bairc:R") ? _bm_dgap : 0);
                 if (_pmmx >= _pmx + 18 && _pmmx <= _pmx + _pmw - 18
-                    && _pmmy >= _pty - 6 && _pmmy <= _pty + 36) {
+                    && _pmmy >= _pty && _pmmy <= _pty + _bm_rowh) {
                     _gc.bairc_pad_menu_cursor = _pt;
                     touch_press(vk_enter);
                     _pm_hit = true;
@@ -3367,7 +3602,7 @@ function ui_draw_pet_detail(pet, inline = false) {
     var _pd_type_hover = "";   // archetype name under the mouse; free-text tooltip drawn last
     if (!inline) {
         draw_set_alpha(0.84); draw_set_color(c_black);
-        draw_rectangle(0, 0, GUI_W, GUI_H, false);
+        draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
         draw_set_alpha(1.0);
     }
     var _x1 = 360, _y1 = 96, _x2 = 1560, _y2 = 1002;
@@ -3529,7 +3764,7 @@ function ui_draw_pet_detail(pet, inline = false) {
     if (!inline) {
         draw_set_halign(fa_center);
         draw_set_font(fnt_ui_small); draw_set_color(make_color_rgb(150, 160, 190));
-        draw_text_outline((_x1 + _x2) / 2, _y2 - 39, "[Tab] or [Esc] - Close");
+        draw_text_outline((_x1 + _x2) / 2, _y2 - 39, ((input_device() == 2) ? "Tap Back to close" : "[Tab] or [Esc] - Close"));
         draw_set_halign(fa_left); draw_set_valign(fa_top);
     }
 
@@ -3599,10 +3834,21 @@ function dungeon_bg_draw(surface, scrim_alpha) {
     if (_spr == -1 || !sprite_exists(_spr)) return false;
     draw_set_color(c_white);
     draw_set_alpha(1.0);
-    draw_sprite_stretched(_spr, 0, 0, 0, GUI_W, GUI_H);
+    if (GUI_GUTTER <= 0) {
+        // 16:9 (PC/HTML5): the shipped stretch, byte-for-byte.
+        draw_sprite_stretched(_spr, 0, 0, 0, GUI_W, GUI_H);
+    } else {
+        // Wide-aspect gutters (8b): uniform cover-scale over the full visible
+        // width so phone side strips show more art instead of raw black.
+        var _bg_w = sprite_get_width(_spr);
+        var _bg_h = sprite_get_height(_spr);
+        var _bg_s = max((GUI_XR - GUI_XL) / max(1, _bg_w), GUI_H / max(1, _bg_h));
+        draw_sprite_ext(_spr, 0, GUI_CX - _bg_w * _bg_s / 2, GUI_CY - _bg_h * _bg_s / 2,
+            _bg_s, _bg_s, 0, c_white, 1.0);
+    }
     draw_set_color(c_black);
     draw_set_alpha(scrim_alpha);
-    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
     draw_set_alpha(1.0);
     draw_set_color(c_white);
     return true;
@@ -3664,6 +3910,27 @@ function ui_list_window_first(cursor, count, max_vis) {
     return clamp(cursor - floor(max_vis / 2), 0, count - max_vis);
 }
 
+/// ui_list_window(list_id, cursor, count, max_vis)
+/// Edge-triggered sibling of ui_list_window_first: keeps a persistent per-list
+/// scroll offset (keyed by list_id) so the SELECTOR moves within the visible window
+/// and the list only shifts once the cursor reaches the top/bottom edge - instead of
+/// the centered "cursor floats, list recenters" feel. Draw + mouse hit-test for the
+/// SAME list MUST pass the SAME list_id or clicks misalign. Self-corrects to 0 when a
+/// list opens (cursor resets to 0 -> cursor < first -> first = 0), so stale offsets
+/// from a previous visit never persist.
+function ui_list_window(list_id, cursor, count, max_vis) {
+    if (count <= max_vis) return 0;
+    if (!variable_global_exists("list_scroll_state")) global.list_scroll_state = {};
+    var _prev  = variable_struct_exists(global.list_scroll_state, list_id)
+               ? variable_struct_get(global.list_scroll_state, list_id) : 0;
+    var _first = clamp(_prev, 0, count - max_vis);
+    if (cursor < _first)            _first = cursor;
+    if (cursor >= _first + max_vis) _first = cursor - (max_vis - 1);
+    _first = clamp(_first, 0, count - max_vis);
+    variable_struct_set(global.list_scroll_state, list_id, _first);
+    return _first;
+}
+
 // ui_draw_scroll_more(x, y, up, label)
 // #9: windowed lists used the LETTERS "^" / "v" as scroll markers, which read as
 // keyboard keys. Draws a real filled triangle at a text line anchored at (x, y)
@@ -3715,7 +3982,9 @@ function status_icon_color(sname, etype) {
         case "Curse":            return make_color_rgb(160,  50, 210);  // curse
         case "Marrow Crush":     return make_color_rgb(210, 130,  40);  // weaken
         case "Smoke Bomb":       return make_color_rgb(150, 150, 155);  // blind
-        case "Crippling Shot":   return make_color_rgb(210, 110,  40);  // cripple
+        case "Frost Shot":       return make_color_rgb( 90, 180, 230);  // frost primer (renamed 07-16)
+        case "Warpath":          return make_color_rgb(200,  70,  60);  // BW ramp (07-16)
+        case "Compounding Dread": return make_color_rgb(120,  80, 170); // SS trap ramp (07-16)
         case "Plague Touch":     return make_color_rgb( 90, 200, 110);  // plague
         case "Marked for Death": return make_color_rgb(220, 200,  40);  // marked
     }
@@ -3735,7 +4004,9 @@ function status_icon_label(sname, etype) {
         case "Curse":            return "CRS";
         case "Marrow Crush":     return "WKN";
         case "Smoke Bomb":       return "SMK";
-        case "Crippling Shot":   return "CRP";
+        case "Frost Shot":       return "FRS";
+        case "Warpath":          return "WAR";
+        case "Compounding Dread": return "DRD";
         case "Plague Touch":     return "PLG";
         case "Marked for Death": return "MFD";
     }
@@ -4009,6 +4280,15 @@ function ui_draw_status_icon_row(x, y, icon_list, max_w = -1) {
         draw_set_alpha(1.0);
         draw_set_color(make_color_rgb(10, 10, 18));
         draw_roundrect(_ix, y, _ix + _iw, y + _ih, true);
+        // Detonation pulse (07-16 combo legibility): the badge the selected
+        // ability would react with breathes a bright ring - cast now to pop it.
+        if (variable_struct_exists(_ic, "pulse") && _ic.pulse) {
+            draw_set_alpha(0.5 + 0.5 * sin(current_time / 140));
+            draw_set_color(c_white);
+            draw_roundrect(_ix - 2, y - 2, _ix + _iw + 2, y + _ih + 2, true);
+            draw_roundrect(_ix - 1, y - 1, _ix + _iw + 1, y + _ih + 1, true);
+            draw_set_alpha(1.0);
+        }
         // label text
         draw_set_color(c_white);
         draw_text(_ix + _iw * 0.5, y + _ih * 0.5, _ic.label);
@@ -4097,6 +4377,7 @@ function status_tooltip_desc(se) {
         case "marked":     _base = "Marked for Death: once below half HP, takes +30% damage from ALL sources."; break;
         case "regen":      _base = "Regenerating: restores " + string(_val) + " HP each turn."; break;
         case "soulbind":   _base = "Soulbound: suffers " + string(round(_val * 100)) + "% of the damage you take, healing you the same. Lasts the whole combat."; break;
+        case "overwhelm":  _base = "Overwhelmed: carrying 2 or more DIFFERENT status effects - takes +15% damage from ALL sources while they last."; break;
         default:           _base = "Active effect."; break;
     }
     return _base + _turns;
@@ -4228,11 +4509,28 @@ function ui_draw_enemy_inspect_tooltip(mx, my, enemy) {
 // Draws status icons for an enemy's status_effects array inline with their bar.
 // Placed to the right of the HP bar; call from Draw_64 during the bar loop.
 // ---------------------------------------------------------------------------
-function ui_draw_enemy_status_icons(x, y, status_effects) {
+function ui_draw_enemy_status_icons(x, y, status_effects, react_se = undefined, overwhelmed = false) {
     if (array_length(status_effects) == 0) exit;
     // Capped to the HP-bar width so a heavily-debuffed enemy's row can't collide
     // with the neighbouring column or the row below (overflow shows as "+N").
-    ui_draw_status_icon_row(x, y, status_icons_from(status_effects), 400);
+    var _icons = status_icons_from(status_effects);
+    // Combo legibility (07-16): the status the SELECTED ability would detonate
+    // pulses (react_se = that status struct, matched by reference).
+    if (react_se != undefined) {
+        for (var _gi = 0; _gi < array_length(_icons); _gi++) {
+            if (_icons[_gi].se == react_se) { _icons[_gi].pulse = true; break; }
+        }
+    }
+    // OVERWHELM (07-16 core rule): 2+ distinct statuses -> +15% damage taken.
+    // Shown as a gold badge at the row's end; hover explains it like any status.
+    if (overwhelmed) {
+        array_push(_icons, {
+            label: "OVW+", color: make_color_rgb(255, 200, 70), duration: 0,
+            se: { name: "Overwhelmed", kind: "overwhelm", effect_value: 0.15, duration: 0,
+                  color: make_color_rgb(255, 200, 70) }
+        });
+    }
+    ui_draw_status_icon_row(x, y, _icons, 400);
 }
 
 // ---------------------------------------------------------------------------
@@ -4509,12 +4807,23 @@ function ui_draw_secondary_resource(x, y, current, maximum, resource_name, color
     draw_set_color(c_black);
     draw_rectangle(x, y, x + width, y + height, true);
 
+    // OVERCHARGE glow (07-16): a FULL reserve pulses gold - the next eligible
+    // spender drains everything for +2 per point (see the Compendium entry).
+    if (maximum > 0 && current >= maximum) {
+        draw_set_alpha(0.45 + 0.4 * sin(current_time / 160));
+        draw_set_color(make_color_rgb(255, 210, 80));
+        draw_rectangle(x - 2, y - 2, x + width + 2, y + height + 2, true);
+        draw_rectangle(x - 1, y - 1, x + width + 1, y + height + 1, true);
+        draw_set_alpha(1.0);
+    }
+
     // Resource name and value. Value measured first so the name truncates to the
     // remaining space instead of colliding it (font-agnostic).
     draw_set_font(fnt_ui_small);
     draw_set_color(c_white);
     draw_set_valign(fa_middle);
-    var _val_str = string(current) + " / " + string(maximum);
+    var _val_str = string(current) + " / " + string(maximum)
+                 + ((maximum > 0 && current >= maximum) ? "  FULL" : "");
     var _name_max = width - 12 - string_width(_val_str) - 12;
 
     draw_set_halign(fa_left);
@@ -4620,10 +4929,39 @@ function ui_draw_ground_shadow(cx, baseline_y, sprite_display_width) {
 // ring (over its role-coloured border) so it's unmistakable while scrolling.
 // Each button: 240x75 with 12px gap.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// combat_ability_geom(count) - SHARED source for the combat ability button row so
+// the render (ui_draw_ability_buttons), the tap/click hit-test (combat Step), and
+// the USED overlay (combat Draw) always agree. Desktop/pad = the shipped 240x75 @
+// x240 pitch252 layout, byte-identical. Touch (M 07-17: prioritise ability-button
+// size on mobile) FILLS the screen width so each button is as wide as the count
+// allows - wider for the usual 4-6 abilities - and a little taller; it also keeps a
+// high ability count ON-SCREEN instead of running off the right edge like the fixed
+// 252 pitch did. Returns {x0, w, gap, pitch, y, h}.
+// ---------------------------------------------------------------------------
+function combat_ability_geom(_count) {
+    if (input_device() == 2 && _count > 0) {
+        var _gap   = 14;
+        var _marg  = 42;
+        var _avail = GUI_W - _marg * 2;
+        var _w     = min((_avail - (_count - 1) * _gap) / _count, 360);   // cap so a few aren't absurd
+        var _pitch = _w + _gap;
+        var _x0    = (GUI_W - (_pitch * _count - _gap)) / 2;              // centre the row
+        return { x0: _x0, w: _w, gap: _gap, pitch: _pitch, y: 984, h: 87 };
+    }
+    return { x0: 240, w: 240, gap: 12, pitch: 252, y: 990, h: 75 };
+}
+
 function ui_draw_ability_buttons(x, y, ability_array, selected_index, caster) {
-    var btn_width  = 240;
-    var btn_height = 75;
-    var btn_gap    = 12;
+    // Geometry from the shared source (touch widens/fills; desktop = the passed
+    // 240,990 exactly). Override the params so the existing draw math below is
+    // untouched.
+    var _abg = combat_ability_geom(array_length(ability_array));
+    x = _abg.x0;
+    y = _abg.y;
+    var btn_width  = _abg.w;
+    var btn_height = _abg.h;
+    var btn_gap    = _abg.gap;
 
     var count = array_length(ability_array);
 
@@ -4658,6 +4996,18 @@ function ui_draw_ability_buttons(x, y, ability_array, selected_index, caster) {
         draw_set_color(ability_category_color(ability_category(ab)));
         for (var _b = 0; _b < 3; _b++) {
             draw_rectangle(bx + _b, y + _b, bx + btn_width - _b, y + btn_height - _b, true);
+        }
+
+        // OVERCHARGE (07-16): the reserve is FULL and this ability would drain it -
+        // a pulsing gold ring over the role border flags the cash-out cast.
+        if (ability_overcharge_eligible(ab, caster)) {
+            var _oc_prev_a = draw_get_alpha();
+            draw_set_alpha(0.55 + 0.45 * sin(current_time / 160));
+            draw_set_color(make_color_rgb(255, 210, 80));
+            for (var _ocb = 0; _ocb < 3; _ocb++) {
+                draw_rectangle(bx + _ocb, y + _ocb, bx + btn_width - _ocb, y + btn_height - _ocb, true);
+            }
+            draw_set_alpha(_oc_prev_a);
         }
 
         // Selected ability: a bold, bright gold ring drawn OUTSIDE the role border so
@@ -5478,7 +5828,7 @@ function ui_draw_ability_tooltip(x, anchor_bottom, ability, caster) {
     // --- Footer hint: V opens the full ability breakdown (mirrors the Tab popup on
     //     the loadout / Vex screens; Tab is the target-cycle key in combat). ---
     draw_set_color(make_color_rgb(150, 160, 190));
-    draw_text(tx, cur_y, "[V] Ability details");
+    draw_text(tx, cur_y, (input_device() == 2) ? "Hold an ability to examine" : "[V] Ability details");
 
     draw_set_font(-1);
     draw_set_halign(fa_left);
@@ -5658,7 +6008,7 @@ function ui_draw_pause_menu() {
     // Dim
     draw_set_alpha(0.72);
     draw_set_color(make_color_rgb(6, 8, 14));
-    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
     draw_set_alpha(1.0);
 
     // Panel
@@ -5720,7 +6070,7 @@ function ui_draw_tutorial_tip() {
     // Dim the screen behind the tip.
     draw_set_alpha(0.78);
     draw_set_color(make_color_rgb(6, 8, 14));
-    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
     draw_set_alpha(1.0);
 
     var _bw   = 990;
@@ -5775,11 +6125,12 @@ function ui_draw_settings_overlay() {
     // Dim the screen behind the panel
     draw_set_alpha(0.78);
     draw_set_color(make_color_rgb(6, 8, 14));
-    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
     draw_set_alpha(1.0);
 
-    // Panel (tall enough for: Music, SFX, Menu Tick, Fullscreen, Tutorial Tips, Reset Tutorial)
-    var _pw = 840, _ph = 762;
+    // Panel (tall enough for: Music, SFX, Hub Music, Dungeon Music, Menu Tick,
+    // Fullscreen, Tutorial Tips, Reset Tutorial)
+    var _pw = 840, _ph = 978;
     var _px = GUI_CX - _pw / 2;
     var _py = GUI_CY - _ph / 2;
     draw_set_color(make_color_rgb(18, 22, 36));
@@ -5841,10 +6192,62 @@ function ui_draw_settings_overlay() {
         draw_text(_bar_x + _bar_w + 24, _by + _bar_h / 2, string(round(_vols[_i] * 100)) + "%");
     }
 
-    // --- Third row: Menu Tick (nav glass ping) toggle ---
+    // --- Rows 2/3: Hub Music / Dungeon Music track selectors (banshee jukebox,
+    //     BANSHEE_BOTTLE_SPEC.md). A/D cycles Default + that pool's freed songs;
+    //     the row is greyed until a spirit has been released. Per-save selection. ---
+    banshee_init();
+    var _trk_labels = ["Hub Music", "Dungeon Music"];
+    var _trk_pools  = ["hub", "dungeon"];
+    for (var _ti = 0; _ti < 2; _ti++) {
+        var _ty   = _row_y + (2 + _ti) * _row_h;
+        var _tsel2 = (global.settings_cursor == 2 + _ti);
+        var _tpool = music_pool_unlocked(_trk_pools[_ti]);
+        var _thas  = (array_length(_tpool) > 0);
+        var _tcur  = music_selected_track(_trk_pools[_ti]);
+
+        if (_tsel2) {
+            draw_set_alpha(0.20);
+            draw_set_color(make_color_rgb(80, 140, 220));
+            draw_rectangle(_px + 30, _ty - 21, _px + _pw - 30, _ty + 45, false);
+            draw_set_alpha(1.0);
+        }
+        draw_set_halign(fa_left);
+        draw_set_valign(fa_middle);
+        draw_set_font(fnt_ui);
+        draw_set_color(_tsel2 ? c_white : make_color_rgb(170, 180, 200));
+        draw_text(_px + 60, _ty + 12, (_tsel2 ? "> " : "  ") + _trk_labels[_ti]);
+
+        // Value box - same footprint as the slider track so the column lines up.
+        var _tby = _ty + 3;
+        draw_set_color(make_color_rgb(35, 42, 60));
+        draw_rectangle(_bar_x, _tby, _bar_x + _bar_w, _tby + _bar_h + 6, false);
+        draw_set_color(_tsel2 ? make_color_rgb(120, 190, 255) : make_color_rgb(70, 85, 110));
+        draw_rectangle(_bar_x, _tby, _bar_x + _bar_w, _tby + _bar_h + 6, true);
+        draw_set_halign(fa_center);
+        if (_thas) {
+            var _tname = (_tcur == undefined) ? "Default" : _tcur.name;
+            draw_set_color(_tcur == undefined ? c_white : make_color_rgb(150, 235, 235));
+            // Shrink-to-fit: track names must never kiss the < > arrows.
+            var _tval_sc = min(1.0, (_bar_w - 108) / max(1, string_width(_tname)));
+            draw_text_transformed(_bar_x + _bar_w / 2, _tby + (_bar_h + 6) / 2, _tname, _tval_sc, _tval_sc, 0);
+            draw_set_color(_tsel2 ? make_color_rgb(120, 190, 255) : make_color_rgb(90, 100, 125));
+            draw_text(_bar_x + 21,          _tby + (_bar_h + 6) / 2, "<");
+            draw_text(_bar_x + _bar_w - 21, _tby + (_bar_h + 6) / 2, ">");
+        } else {
+            draw_set_color(make_color_rgb(95, 100, 118));
+            draw_text(_bar_x + _bar_w / 2, _tby + (_bar_h + 6) / 2, "No songs freed yet");
+        }
+        draw_set_halign(fa_left);
+        draw_set_font(fnt_ui_small);
+        draw_set_color(make_color_rgb(140, 150, 170));
+        draw_text(_bar_x + _bar_w + 24, _tby + (_bar_h + 6) / 2, _thas ? "(A/D)" : "(Maren)");
+        draw_set_font(fnt_ui);
+    }
+
+    // --- Fifth row: Menu Tick (nav glass ping) toggle ---
     var _tick_on = (!variable_global_exists("ui_tick_enabled")) || global.ui_tick_enabled;
-    var _ky   = _row_y + 2 * _row_h;
-    var _ksel = (global.settings_cursor == 2);
+    var _ky   = _row_y + 4 * _row_h;
+    var _ksel = (global.settings_cursor == 4);
     if (_ksel) {
         draw_set_alpha(0.20);
         draw_set_color(make_color_rgb(80, 140, 220));
@@ -5873,9 +6276,9 @@ function ui_draw_settings_overlay() {
     draw_text(_kpx + _kpw + 24, _kpy + _kph / 2, "(menu navigation sound)");
     draw_set_font(fnt_ui);
 
-    // --- Fourth row: Fullscreen toggle ---
+    // --- Sixth row: Fullscreen toggle ---
     var _fry = _ky + 84;
-    var _fsel = (global.settings_cursor == 3);
+    var _fsel = (global.settings_cursor == 5);
     if (_fsel) {
         draw_set_alpha(0.20);
         draw_set_color(make_color_rgb(80, 140, 220));
@@ -5906,10 +6309,10 @@ function ui_draw_settings_overlay() {
     draw_set_color(make_color_rgb(140, 150, 170));
     draw_text(_pill_x + _pill_w + 24, _pill_y + _pill_h / 2, "(F11)");
 
-    // --- Fifth row: Tutorial Tips on/off toggle ---
+    // --- Seventh row: Tutorial Tips on/off toggle ---
     var _tut_on = (!variable_global_exists("tutorial_enabled")) || global.tutorial_enabled;
     var _try    = _fry + 84;
-    var _tsel   = (global.settings_cursor == 4);
+    var _tsel   = (global.settings_cursor == 6);
     if (_tsel) {
         draw_set_alpha(0.20);
         draw_set_color(make_color_rgb(80, 140, 220));
@@ -5934,9 +6337,9 @@ function ui_draw_settings_overlay() {
     draw_set_color(c_white);
     draw_text(_tpx + _tpw / 2, _tpy + _tph / 2, _tut_on ? "ON" : "OFF");
 
-    // --- Sixth row: Reset Tutorial (re-show every tip) ---
+    // --- Eighth row: Reset Tutorial (re-show every tip) ---
     var _rry  = _try + 72;
-    var _rsel = (global.settings_cursor == 5);
+    var _rsel = (global.settings_cursor == 7);
     if (_rsel) {
         draw_set_alpha(0.20);
         draw_set_color(make_color_rgb(80, 140, 220));
@@ -5960,11 +6363,47 @@ function ui_draw_settings_overlay() {
         draw_text(GUI_CX, _py + _ph - 78, "Tutorial reset - tips will show again.");
     }
 
+    // -----------------------------------------------------------------------
+    // TOUCH (M 07-17): these rows were nav+Enter only - unreachable on a phone.
+    // Tap a volume TRACK to set that level directly; tap a music/toggle/reset row
+    // to act on it (music cycles, toggles flip, reset fires) via the same key the
+    // keyboard handler reads next frame. Touch only; the keyboard/pad path is
+    // untouched. Row Y's reuse the exact locals the rows above were drawn at.
+    // -----------------------------------------------------------------------
+    if (input_device() == 2 && mouse_check_button_pressed(mb_left)) {
+        var _stmx   = device_mouse_x_to_gui(0);
+        var _stmy   = device_mouse_y_to_gui(0);
+        var _st_ys  = [ _row_y, _row_y + _row_h, _row_y + 2 * _row_h, _row_y + 3 * _row_h,
+                        _ky, _fry, _try, _rry ];
+        for (var _sri = 0; _sri < 8; _sri++) {
+            var _sry = _st_ys[_sri];
+            if (_stmx < _px + 30 || _stmx > _px + _pw - 30 || _stmy < _sry - 21 || _stmy > _sry + 45) continue;
+            global.settings_cursor = _sri;
+            if (_sri <= 1) {
+                // Volume: tap on the track sets the level (delta via adjust reuses apply+save).
+                if (_stmx >= _bar_x && _stmx <= _bar_x + _bar_w) {
+                    var _tgt = clamp((_stmx - _bar_x) / _bar_w, 0, 1);
+                    var _cur = (_sri == 0) ? global.music_volume : global.sfx_volume;
+                    audio_settings_adjust(_sri, _tgt - _cur);
+                }
+            } else if (_sri <= 3) {
+                touch_press(ord("D"));   // music selector: cycle to the next freed track
+            } else {
+                touch_press(vk_enter);   // Menu Tick / Fullscreen / Tutorial / Reset: act
+            }
+            break;
+        }
+    }
+
     // Footer hint
     draw_set_halign(fa_center);
     draw_set_font(fnt_ui_small);
     draw_set_color(make_color_rgb(150, 160, 185));
-    ui_draw_key_legend(GUI_CX, _py + _ph - 42, "W/S: Select    A/D or <-/->: Adjust / Toggle / Enter    Esc/O: Close");
+    if (input_device() == 2) {
+        draw_text(GUI_CX, _py + _ph - 42, "Tap a bar to set volume - tap a row to change it - Back to close");
+    } else {
+        ui_draw_key_legend(GUI_CX, _py + _ph - 42, "W/S: Select    A/D or <-/->: Adjust / Toggle / Enter    Esc/O: Close");
+    }
 
     draw_set_halign(fa_left);
     draw_set_valign(fa_top);
@@ -6111,7 +6550,7 @@ function ui_draw_combat_hud(combat_state, player, ability_array, selected_abilit
     ui_draw_hp_bar(30, 30, 375, 36, player.HP, player.max_HP, "HP");
 
     // --- Energy pips (below HP bar) ---
-    ui_draw_energy_pips(30, 84, player.energy, 3);
+    ui_draw_energy_pips(30, 84, player.energy, actor_turn_ap(player));
 
     // --- Secondary resource bar (below energy pips) ---
     // Determine which resource this class uses and pick a matching color
@@ -6364,7 +6803,7 @@ function ui_draw_ability_detail(ab, close_key_label = "Tab", scroll_y = 0) {
 
     // Dim the whole screen.
     draw_set_alpha(0.80); draw_set_color(c_black);
-    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
     draw_set_alpha(1.0);
 
     var _x1 = 390, _y1 = 144, _x2 = 1530, _y2 = 936;
@@ -6537,7 +6976,7 @@ function ui_draw_ability_detail(ab, close_key_label = "Tab", scroll_y = 0) {
 function ui_draw_trait_detail(tr) {
     if (!is_struct(tr)) return;
     draw_set_alpha(0.80); draw_set_color(c_black);
-    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
     draw_set_alpha(1.0);
 
     var _x1 = 450, _y1 = 240, _x2 = 1470, _y2 = 810;
@@ -6589,7 +7028,7 @@ function ui_draw_trait_detail(tr) {
     draw_set_halign(fa_center);
     draw_set_font(fnt_ui_small);
     draw_set_color(make_color_rgb(150, 160, 190));
-    draw_text_outline((_x1 + _x2) / 2, _y2 - 39, "[Tab] or [Esc] - Close");
+    draw_text_outline((_x1 + _x2) / 2, _y2 - 39, ((input_device() == 2) ? "Tap Back to close" : "[Tab] or [Esc] - Close"));
     draw_set_halign(fa_left); draw_set_valign(fa_top);
     draw_set_color(c_white);
     draw_set_font(-1);
@@ -6602,7 +7041,7 @@ function ui_draw_trait_detail(tr) {
 // ---------------------------------------------------------------------------
 function ui_draw_potency_detail() {
     draw_set_alpha(0.80); draw_set_color(c_black);
-    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
     draw_set_alpha(1.0);
 
     var _x1 = 450, _y1 = 210, _x2 = 1470, _y2 = 876;
@@ -6648,7 +7087,7 @@ function ui_draw_potency_detail() {
     draw_set_halign(fa_center);
     draw_set_font(fnt_ui_small);
     draw_set_color(make_color_rgb(150, 160, 190));
-    draw_text_outline((_x1 + _x2) / 2, _y2 - 39, "[Tab] or [Esc] - Close");
+    draw_text_outline((_x1 + _x2) / 2, _y2 - 39, ((input_device() == 2) ? "Tap Back to close" : "[Tab] or [Esc] - Close"));
     draw_set_halign(fa_left); draw_set_valign(fa_top);
     draw_set_color(c_white);
     draw_set_font(-1);
@@ -6710,7 +7149,8 @@ function ui_compendium_sections() {
         {
             title: "Status Reactions",
             entries: [
-                { term: "Detonators",   text: "Snipe, Assassinate, Arcane Burst and Soul Nova are DETONATORS - when they hit a target carrying a status, they trigger a reaction based on that status (and usually consume it). Set up the status, then detonate. Elemental weapons (Flaming/Frostbound/Storm-touched) are an easy way to apply burn/frost/shock for these." },
+                { term: "Detonators",   text: "Snipe, Assassinate, Arcane Burst, Soul Nova, Rupture, Bonebreaker and Rift are DETONATORS - when they hit a target carrying a status, they trigger a reaction based on that status (and usually consume it). Set up the status, then detonate. Rift detonates EVERY enemy it hits - the cascade turn. Elemental weapons (Flaming/Frostbound/Storm-touched) are an easy way to apply burn/frost/shock for these. When your selected ability would react, the target's status badge PULSES and the hit preview names the bonus." },
+                { term: "Overwhelmed",  text: "An enemy carrying 2 or more DIFFERENT status effects is OVERWHELMED: it takes +15% damage from ALL sources while they last (shown as a gold OVW+ badge). Mixing statuses - a bleed plus a chill, a hex plus a poison - beats stacking one." },
                 { term: "Hexed",        text: "Curse marks a foe Hexed: it takes +4 damage per hit, any detonation on it has its bonus DOUBLED, and each detonation spreads +2 damage-taken to every other enemy. The Control piece of a detonation build." },
                 { term: "Poison",       text: "Detonating poison applies Mortality: the target's healing is cut for 4 turns. Utility, not burst - answers self-healing foes." },
                 { term: "Bleed",        text: "Detonating bleed bursts every remaining bleed tick at once for bonus damage." },
@@ -6727,9 +7167,11 @@ function ui_compendium_sections() {
         {
             title: "AP / Turn Economy",
             entries: [
-                { term: "Action Points (AP)", text: "You have 3 AP each turn. Abilities and items spend AP; bigger abilities cost more." },
+                { term: "Action Points (AP)", text: "You have 3 AP each turn (4 with the Bloodwarden Relentless trait). Abilities and items spend AP; bigger abilities cost more." },
                 { term: "Using Items",        text: "A consumable costs 1 AP on your turn. On an enemy's turn you may use 1 item free, once per enemy turn." },
-                { term: "Ending Your Turn",   text: "Unspent AP is lost. AP refills back to 3 at the start of your next turn." },
+                { term: "Ending Your Turn",   text: "Any AP you don't spend becomes POISE (see below) rather than being wasted. AP refills back to 3 at the start of your next turn." },
+                { term: "Poise",              text: "Each unspent AP at the end of your turn becomes 2 shield - up to 6 (8 with Relentless). This POISE guard lasts only until your next turn (it does not stack turn to turn), so a held turn braces you for a telegraphed blow. Attacking is still usually better - the low rate is a floor, not a plan." },
+                { term: "Interrupt",          text: "Land a STUN or ROOT on an enemy that is winding up a charged or heavy attack and you INTERRUPT it: the telegraph is answered AND you get 1 AP back (once per turn). Read the intent, punish it, keep tempo." },
             ],
         },
         {
@@ -6739,6 +7181,7 @@ function ui_compendium_sections() {
                 { term: "Souls (Arcanist)", text: "Built two ways: soul-generating spells (each states its gain - Soulfire +2, Void Drain +1, Scorch and Blazing Palm +1), and the Arcanist CLASS PASSIVE - +2 Souls every time one of your hits kills an enemy. Both can land in the same cast: a killing Soulfire logs +2 for the spell AND +2 for the kill. Spent by Arcane Burst, Soul Nova, Arcane Echo, Singularity and Soul Rend." },
                 { term: "Blood (Bloodwarden)", text: "Built through bloodshed: +1 Blood each time YOU take a hit (class passive), plus blood-feeding abilities like Blood Leech. Spent by your crimson payoffs - many also cost HP, so the reserve is life you've set aside." },
                 { term: "Preparation (Shadowstrider)", text: "+1 Preparation at the start of each of your turns while no trap of yours is armed (class passive), plus refunds from clean plays like Evasive Roll. Spent to power traps and executes." },
+                { term: "OVERCHARGE", text: "Cast a resource-spending ability while your reserve is FULL (10) and it drains the WHOLE reserve: every point beyond what the ability itself uses adds +2 damage (or +2 healing / shield on self-spenders like Blood Surge and Sanguine Pact). The resource bar glows gold when full, and eligible abilities pulse gold on the combat bar. Abilities that scale with the reserve HELD (Soul Shield, Arcane Echo) don't Overcharge - they're already the hoard's payoff. Hoard, then cash out." },
             ],
         },
         {
@@ -6824,7 +7267,7 @@ function ui_draw_character_menu() {
     // Full screen dark overlay
     draw_set_alpha(1.0);
     draw_set_color(make_color_rgb(8, 10, 18));
-    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
     draw_set_alpha(1.0);
 
     // Ornate gothic rim around the whole menu (matches the NPC shop overlays). Drawn
@@ -7572,7 +8015,7 @@ function ui_draw_character_menu() {
             var _fl_y0    = _fc_y1 + 86;
             var _fl_rowh  = 60;
             var _fl_vis   = max(1, floor((_fc_ly2 - _fl_y0 - 14) / _fl_rowh));
-            var _fl_first = ui_list_window_first(_fcur, _found_n, _fl_vis);
+            var _fl_first = ui_list_window("equip_found", _fcur, _found_n, _fl_vis);
             var _fl_last  = min(_found_n, _fl_first + _fl_vis);
             for (var _fi = _fl_first; _fi < _fl_last; _fi++) {
                 var _fit  = _found[_fi].item;
@@ -7596,13 +8039,13 @@ function ui_draw_character_menu() {
                 draw_set_color(item_rarity_color(_fit.rarity));
                 draw_text(_ftx, _fry + 28, ui_truncate(_fit.name, _fc_x2 - _ftx - 24));
             }
-            // Scroll indicators
-            draw_set_font(fnt_ui_small);
-            draw_set_color(make_color_rgb(150, 160, 140));
-            if (_fl_first > 0)       ui_draw_scroll_more(_fc_x1 + 24, _fc_y1 + 60, true, string(_fl_first) + " more");
-            if (_fl_last < _found_n) {
+            // Position readout (replaces "N more above/below") - selected row's place
+            // in the full pack list, e.g. "7 / 23". Only when the list overflows.
+            if (_found_n > _fl_vis) {
+                draw_set_font(fnt_ui_small);
+                draw_set_color(make_color_rgb(150, 160, 140));
                 draw_set_halign(fa_center);
-                ui_draw_scroll_more((_fc_x1 + _fc_x2) / 2, _fc_ly2 - 28, false, string(_found_n - _fl_last) + " more");
+                draw_text((_fc_x1 + _fc_x2) / 2, _fc_ly2 - 28, string(_fcur + 1) + " / " + string(_found_n));
                 draw_set_halign(fa_left);
             }
         }
@@ -7702,11 +8145,11 @@ function ui_draw_character_menu() {
             var _list_y0  = _py + 48 + _eq_extra * _row_h;   // top of the selectable list
             // Windowed list: the panel used to grow with the item count, so rows past
             // the screen bottom were selectable but invisible. Cap the panel to what
-            // fits and slide a window that follows the cursor (stateless - derived
-            // from equip_picker_index; the Step mouse hit-test mirrors this math).
+            // fits and slide an EDGE-TRIGGERED window (persistent equip_picker_scroll,
+            // advanced in the Step handler; the mouse hit-test mirrors this).
             var _max_rows  = max(1, (1020 - _list_y0) div _row_h);
             var _win_rows  = min(_visible, _max_rows);
-            var _pk_scroll = clamp(_gc.equip_picker_index - _max_rows + 1, 0, max(0, _visible - _max_rows));
+            var _pk_scroll = clamp(_gc.equip_picker_scroll, 0, max(0, _visible - _max_rows));
             var _ph        = max(150, (_win_rows + _eq_extra) * _row_h + 48);
 
             draw_set_alpha(0.97);
@@ -7822,15 +8265,15 @@ function ui_draw_character_menu() {
                     draw_set_halign(fa_left);
                 }
 
-                // Overflow hints when the window is sliding over a longer list.
-                draw_set_halign(fa_center);
-                draw_set_font(fnt_ui_small);
-                draw_set_color(make_color_rgb(140, 160, 200));
-                if (_pk_scroll > 0)
-                    ui_draw_scroll_more(_px + _pw / 2, _list_y0 - 24, true, string(_pk_scroll) + " more above");
-                if (_pk_scroll + _win_rows < _visible)
-                    ui_draw_scroll_more(_px + _pw / 2, _list_y0 + _win_rows * _row_h - 3, false, string(_visible - _pk_scroll - _win_rows) + " more below");
-                draw_set_halign(fa_left);
+                // Position readout (replaces "N more above/below") when the list overflows
+                // the visible window - shows the selected row's place in the full list.
+                if (_visible > _max_rows) {
+                    draw_set_halign(fa_center);
+                    draw_set_font(fnt_ui_small);
+                    draw_set_color(make_color_rgb(140, 160, 200));
+                    draw_text(_px + _pw / 2, _list_y0 + _win_rows * _row_h - 3, string(_gc.equip_picker_index + 1) + " / " + string(_visible));
+                    draw_set_halign(fa_left);
+                }
 
                 // Hover tooltip for item in picker (windowed rows)
                 var _hmx = device_mouse_x_to_gui(0);
@@ -8055,21 +8498,18 @@ function ui_draw_character_menu() {
             // Windowed list - keep the cursor on screen when there are many items.
             // Mouse hit-testing in obj_game_controller Step uses the same window math.
             var _cons_max_vis = 7;
-            var _cons_first   = ui_list_window_first(_sub_cur, _cons_count, _cons_max_vis);
+            var _cons_first   = ui_list_window("consumables", _sub_cur, _cons_count, _cons_max_vis);
             var _cons_last    = min(_cons_count, _cons_first + _cons_max_vis);
 
-            // "more above / below" hints
-            draw_set_halign(fa_center);
-            draw_set_font(fnt_ui_small);
-            if (_cons_first > 0) {
+            // Position readout (replaces "N more above/below") - "X / N" at the bottom
+            // when the consumable list overflows one page.
+            if (_cons_count > _cons_max_vis) {
+                draw_set_halign(fa_center);
+                draw_set_font(fnt_ui_small);
                 draw_set_color(make_color_rgb(120, 200, 200));
-                ui_draw_scroll_more(705, _content_y + 39, true, string(_cons_first) + " more");
+                draw_text(705, _content_y + 60 + _cons_max_vis * 120 - 18, string(_sub_cur + 1) + " / " + string(_cons_count));
+                draw_set_halign(fa_left);
             }
-            if (_cons_last < _cons_count) {
-                draw_set_color(make_color_rgb(120, 200, 200));
-                ui_draw_scroll_more(705, _content_y + 60 + _cons_max_vis * 120 - 18, false, string(_cons_count - _cons_last) + " more");
-            }
-            draw_set_halign(fa_left);
 
             for (var _ci = _cons_first; _ci < _cons_last; _ci++) {
                 var _c      = _cgroups[_ci].item;
@@ -8363,7 +8803,7 @@ function ui_draw_shop_screen() {
     // Full-screen dark cover
     draw_set_alpha(0.96);
     draw_set_color(make_color_rgb(8, 10, 18));
-    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
     draw_set_alpha(1.0);
 
     // Title
@@ -8385,8 +8825,9 @@ function ui_draw_shop_screen() {
     var _tab_h   = 42;
     var _tab_w   = 320;
     var _tab_gap = 24;
-    var _tab_labels  = _is_petra ? ["BUY", "SELL", "TRADE"] : ["BUY", "SELL"];
-    var _tab_accents = [_accent, make_color_rgb(220, 155, 45), make_color_rgb(190, 120, 210)];
+    var _tab_labels  = _is_petra ? ["BUY", "SELL", "TRADE"] : ["BUY", "SELL", "REFORGE"];
+    // 3rd tab accent differs per NPC: Petra's Trade = violet, Dorn's Reforge = forge copper.
+    var _tab_accents = [_accent, make_color_rgb(220, 155, 45), _is_petra ? make_color_rgb(190, 120, 210) : make_color_rgb(210, 140, 70)];
     var _tab_n     = array_length(_tab_labels);
     var _tab_total = _tab_n * _tab_w + (_tab_n - 1) * _tab_gap;
     var _tab_x0    = 960 - _tab_total / 2;
@@ -8518,20 +8959,23 @@ function ui_draw_shop_screen() {
                 draw_text(_sell_tx, _ry + 12, _it.name);
                 // Stats or consumable description
                 draw_set_font(fnt_ui_small);
+                // Shrink-to-fit so long affix/flavor strings clear the right-side
+                // source-tag / price / class column (same fix as the Dorn buy rows).
+                var _sell_max = (_rx0 + _rw - 180) - _sell_tx;
                 if (_sell_is_equip) {
                     draw_set_color(c_white);
-                    draw_text(_sell_tx, _ry + 45, ui_item_stat_str(_it));
+                    ui_draw_stat_line_fit(_sell_tx, _ry + 45, ui_item_stat_str(_it), _sell_max);
                     if (variable_struct_exists(_it, "unique_desc") && _it.unique_desc != "") {
                         draw_set_color(make_color_rgb(200, 160, 40));
-                        draw_text(_sell_tx, _ry + 75, _it.unique_desc);
+                        ui_draw_stat_line_fit(_sell_tx, _ry + 75, _it.unique_desc, _sell_max);
                     } else if (_it.effect_desc != "") {
                         draw_set_color(make_color_rgb(95, 105, 130));
-                        draw_text(_sell_tx, _ry + 75, ui_sentence(_it.effect_desc));
+                        ui_draw_stat_line_fit(_sell_tx, _ry + 75, ui_sentence(_it.effect_desc), _sell_max);
                     }
                 } else {
                     var _cdesc = variable_struct_exists(_it, "description") ? _it.description : "";
                     draw_set_color(make_color_rgb(130, 140, 155));
-                    draw_text(_sell_tx, _ry + 45, ui_sentence(_cdesc));
+                    ui_draw_stat_line_fit(_sell_tx, _ry + 45, ui_sentence(_cdesc), _sell_max);
                 }
                 // Right side: source tag + sell price + class restriction if any
                 draw_set_halign(fa_right);
@@ -8583,6 +9027,14 @@ function ui_draw_shop_screen() {
         draw_set_halign(fa_left);
         draw_set_valign(fa_top);
         draw_set_alpha(1.0);
+        return;
+    }
+
+    // =========================================================================
+    // REFORGE TAB (Dorn only; shop_tab == 2) - two-panel ingot hoard + rework list
+    // =========================================================================
+    if (_gc.shop_tab == 2 && !_is_petra) {
+        ui_draw_dorn_reforge(_gc);
         return;
     }
 
@@ -8719,7 +9171,7 @@ function ui_draw_shop_screen() {
                     draw_text(_cbx + 126, _iy + 12, _iname);
                     draw_set_font(fnt_ui_small);
                     draw_set_color(c_white);
-                    if (is_struct(_it)) draw_text(_cbx + 126, _iy + 48, ui_item_stat_str(_it));
+                    if (is_struct(_it)) ui_draw_stat_line_fit(_cbx + 126, _iy + 48, ui_item_stat_str(_it), (_tlx + _tlw - 120) - (_cbx + 126));
                     draw_set_halign(fa_right);
                     draw_set_font(fnt_ui_small);
                     draw_set_color(make_color_rgb(150, 145, 165));
@@ -8750,7 +9202,7 @@ function ui_draw_shop_screen() {
                 if (_rung3 != undefined) {
                     var _bp_x0 = 480, _bp_y0 = 285, _bp_x1 = 1440, _bp_y1 = 795;
                     draw_set_alpha(0.72); draw_set_color(c_black);
-                    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+                    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
                     draw_set_alpha(0.97); draw_set_color(make_color_rgb(24, 19, 32));
                     draw_rectangle(_bp_x0, _bp_y0, _bp_x1, _bp_y1, false);
                     draw_set_alpha(1.0); draw_set_color(_tt_accent);
@@ -8828,8 +9280,9 @@ function ui_draw_shop_screen() {
         var _prh      = 84;
         var _prgap    = 6;
         var _max_vis  = 9;    // 4 consumables + limited special + 3 basics + premium all fit
-        var _win0     = 0;
-        if (_buy_n > _max_vis) _win0 = clamp(_gc.shop_index - _max_vis + 2, 0, _buy_n - _max_vis);
+        // Edge-triggered window: driven by the persistent buy_scroll the Step handler
+        // advances only when the cursor reaches an edge (so the selector moves, not the list).
+        var _win0     = clamp(_gc.buy_scroll, 0, max(0, _buy_n - _max_vis));
         var _win1     = min(_buy_n, _win0 + _max_vis);
 
         for (var _ri = _win0; _ri < _win1; _ri++) {
@@ -8903,12 +9356,17 @@ function ui_draw_shop_screen() {
             draw_set_halign(fa_left);
         }
 
-        // Scroll indicators - only when the list genuinely exceeds one page (8+).
-        draw_set_halign(fa_center); draw_set_font(fnt_ui_small);
-        draw_set_color(make_color_rgb(120, 160, 160));
-        if (_win0 > 0)        ui_draw_scroll_more(_rx0 + _rw / 2, _ry0 - 20, true, string(_win0) + " more above  -  scroll with W");
-        if (_win1 < _buy_n)   ui_draw_scroll_more(_rx0 + _rw / 2, _ry0 + _max_vis * (_prh + _prgap) - 4, false, string(_buy_n - _win1) + " more  -  scroll with S");
-        draw_set_halign(fa_left);
+        // Position readout (replaces "N more above/below") - shows the selected row's
+        // place in the full list, e.g. "12 / 20". Only when the list overflows one page.
+        if (_buy_n > _max_vis) {
+            draw_set_halign(fa_center); draw_set_font(fnt_ui_small);
+            draw_set_color(make_color_rgb(120, 160, 160));
+            // Touch: clamp the readout above the ACTIONS chip (top ~y1005) so it isn't covered.
+            var _sm_below_y = _ry0 + _max_vis * (_prh + _prgap) - 4;
+            if (input_device() == 2) _sm_below_y = min(_sm_below_y, 992);
+            draw_text(_rx0 + _rw / 2, _sm_below_y, string(_gc.shop_index + 1) + " / " + string(_buy_n));
+            draw_set_halign(fa_left);
+        }
 
     // -------------------------------------------------------------------------
     // DORN - rotating gear list; sold entries appear greyed with SOLD tag
@@ -8967,24 +9425,31 @@ function ui_draw_shop_screen() {
                 draw_set_font(fnt_ui_small);
                 draw_text(_rx0 + _rw - 24, _ry + 12, "[" + item_rarity_name(_entry.item.rarity) + "]");
                 draw_set_halign(fa_left);
-                // Stat string
+                // Stat string. Long rare/legendary affix lists used to run into the
+                // right-aligned price/type column (M 07-17) - shrink-to-fit like the
+                // picker/stash lists, reserving room for the Req tag + the price.
                 draw_set_color(c_white);
-                var _dstat = ui_item_stat_str(_entry.item);
-                draw_text(_rx0 + 75, _ry + 45, _dstat);
+                var _dstat    = ui_item_stat_str(_entry.item);
+                var _dreq     = item_stat_requirement(_entry.item);
+                var _has_req   = (_dreq.value > 0 && _dreq.stat != "");
+                var _req_str   = _has_req ? ("Req " + string(_dreq.value) + " " + _dreq.stat) : "";
+                var _req_w     = _has_req ? string_width(_req_str) : 0;
+                var _stat_max  = (_rw - 140 - 75) - (_has_req ? (_req_w + 27) : 0);   // keep clear of the price
+                ui_draw_stat_line_fit(_rx0 + 75, _ry + 45, _dstat, _stat_max);
                 // Stat requirement appended, red if the current class can't meet it (hard-blocked).
-                var _dreq = item_stat_requirement(_entry.item);
-                if (_dreq.value > 0 && _dreq.stat != "") {
+                if (_has_req) {
                     draw_set_color((player_base_stat(_dreq.stat) >= _dreq.value)
                         ? make_color_rgb(110, 170, 110) : make_color_rgb(225, 80, 80));
-                    draw_text(_rx0 + 75 + string_width(_dstat) + 27, _ry + 45, "Req " + string(_dreq.value) + " " + _dreq.stat);
+                    draw_text(_rx0 + 75 + min(string_width(_dstat), _stat_max) + 27, _ry + 45, _req_str);
                 }
-                // Flavor or unique below stats
+                // Flavor or unique below stats (shrink-to-fit to clear the right-aligned slot label).
+                var _desc_max = (_rw - 180) - 75;
                 if (variable_struct_exists(_entry.item, "unique_desc") && _entry.item.unique_desc != "") {
                     draw_set_color(make_color_rgb(255, 200, 50));
-                    draw_text(_rx0 + 75, _ry + 75, _entry.item.unique_desc);
+                    ui_draw_stat_line_fit(_rx0 + 75, _ry + 75, _entry.item.unique_desc, _desc_max);
                 } else if (_entry.item.effect_desc != "") {
                     draw_set_color(make_color_rgb(95, 105, 130));
-                    draw_text(_rx0 + 75, _ry + 75, _entry.item.effect_desc);
+                    ui_draw_stat_line_fit(_rx0 + 75, _ry + 75, _entry.item.effect_desc, _desc_max);
                 }
                 // Slot label right-aligned (so buyers know wep/arm/boot at a glance)
                 if (variable_struct_exists(_entry.item, "slot")) {
@@ -9005,19 +9470,154 @@ function ui_draw_shop_screen() {
         }
     }
 
-    // Buy tab footer (raised to clear the bottom rim band). Dorn also honors
-    // Reforge Chits ([R], BOARD_REQUESTS_SPEC.md §7) - show the count when held.
+    // Buy tab footer (raised to clear the bottom rim band). Dorn's affix rework now
+    // lives on its own REFORGE tab (Q/E, or the [R] shortcut) - nudge toward it.
     draw_set_halign(fa_center);
     draw_set_font(fnt_ui_small);
-    if (!_is_petra && variable_global_exists("reforge_chits") && global.reforge_chits > 0) {
+    if (!_is_petra && input_device() != 2) {
         draw_set_color(make_color_rgb(220, 185, 110));
-        draw_text_outline(960, 993, "R: Rework an item's affixes   (Reforge Chits: " + string(global.reforge_chits) + ")");
+        draw_text_outline(960, 993, "[R] or Q/E -> REFORGE tab: rework an item's affixes with your ingots");
     }
     draw_set_color(make_color_rgb(75, 85, 105));
-    ui_draw_key_legend(960, 1026, "W/S: Navigate   Q/E: Buy/Sell   Enter: Buy   F: Gift   Esc: Close     (purchases go to your stash)");
+    ui_draw_key_legend(960, 1026, "W/S: Navigate   Q/E: Tab   Enter: Buy   F: Gift   Esc: Close     (purchases go to your stash)");
     draw_set_halign(fa_left);
     draw_set_valign(fa_top);
     draw_set_alpha(1.0);
+    draw_set_font(-1);
+}
+
+// ---------------------------------------------------------------------------
+// ui_draw_dorn_reforge(_gc)
+// REFORGE tab (Dorn only; shop_tab == 2). LEFT panel = the player's ingot hoard by
+// rarity tier; RIGHT panel = every affix-bearing item they can rework, each row
+// enterable only when they own an ingot of that item's tier OR higher. The gothic
+// frame, tab bar, title, gold, bond and Dorn sprite are already drawn by
+// ui_draw_shop_overlay before this runs; the rework result uses shop_notification
+// (drawn at y156 by the shared block). Input/rework logic is in the gc Step handler.
+// ---------------------------------------------------------------------------
+function ui_draw_dorn_reforge(_gc) {
+    reforge_ingots_ensure();
+    var _copper   = make_color_rgb(210, 140, 70);
+    var _panel_bg = make_color_rgb(16, 16, 22);
+    var _panel_ln = make_color_rgb(70, 55, 40);
+
+    // ---- LEFT PANEL: YOUR INGOTS ------------------------------------------
+    var _lx0 = 150, _lx1 = 600, _ly0 = 189, _ly1 = 900;
+    draw_set_color(_panel_bg); draw_rectangle(_lx0, _ly0, _lx1, _ly1, false);
+    draw_set_color(_panel_ln); draw_rectangle(_lx0, _ly0, _lx1, _ly1, true);
+    draw_set_halign(fa_center);
+    draw_set_font(fnt_ui);
+    draw_set_color(_copper);
+    draw_text((_lx0 + _lx1) / 2, _ly0 + 15, "YOUR INGOTS");
+
+    var _tier_names = ["Common", "Uncommon", "Rare", "Epic", "Legendary"];
+    for (var _t = 0; _t < 5; _t++) {
+        var _cnt = global.reforge_ingots[_t];
+        var _has = (_cnt > 0);
+        var _iry = _ly0 + 72 + _t * 96;
+        draw_set_alpha(_has ? 1.0 : 0.32);
+        draw_sprite_stretched(reforge_ingot_sprite(_t), 0, _lx0 + 30, _iry, 60, 60);
+        draw_set_alpha(1.0);
+        draw_set_halign(fa_left);
+        draw_set_font(fnt_ui);
+        draw_set_color(_has ? item_rarity_color(_t) : make_color_rgb(88, 88, 100));
+        draw_text(_lx0 + 108, _iry + 15, _tier_names[_t]);
+        draw_set_halign(fa_right);
+        draw_set_color(_has ? c_white : make_color_rgb(78, 78, 90));
+        draw_text(_lx1 - 24, _iry + 15, "x" + string(_cnt));
+    }
+    draw_set_halign(fa_left);
+    draw_set_font(fnt_ui_small);
+    draw_set_color(make_color_rgb(150, 135, 110));
+    draw_text_ext(_lx0 + 24, _ly1 - 96, "A higher-tier ingot reworks its own tier or below - a Legendary ingot works on anything.", 30, (_lx1 - _lx0) - 48);
+
+    // ---- RIGHT PANEL: REWORK GEAR -----------------------------------------
+    var _rx0 = 630, _rx1 = 1500, _ry0 = 189, _ry1 = 900;
+    draw_set_color(_panel_bg); draw_rectangle(_rx0, _ry0, _rx1, _ry1, false);
+    draw_set_color(_panel_ln); draw_rectangle(_rx0, _ry0, _rx1, _ry1, true);
+    draw_set_halign(fa_center);
+    draw_set_font(fnt_ui);
+    draw_set_color(_copper);
+    draw_text((_rx0 + _rx1) / 2, _ry0 + 15, "REWORK GEAR");
+    draw_set_halign(fa_left);
+
+    var _list = item_picker_candidates_affixed();
+    var _n    = array_length(_list);
+    if (_n == 0) {
+        draw_set_halign(fa_center);
+        draw_set_font(fnt_ui);
+        draw_set_color(make_color_rgb(120, 120, 135));
+        draw_text_ext((_rx0 + _rx1) / 2, _ry0 + 240,
+            "No affix-bearing gear to rework.\n(Equipped gear must be unequipped first.)", 34, (_rx1 - _rx0) - 80);
+        draw_set_halign(fa_left);
+    } else {
+        var _cur  = clamp(_gc.reforge_index, 0, _n - 1);
+        var _vis  = 6;
+        // Edge-triggered window: driven by the persistent reforge_scroll the Step handler
+        // advances only when the cursor hits an edge (so the selector moves, not the list).
+        var _win0 = clamp(_gc.reforge_scroll, 0, max(0, _n - _vis));
+        var _win1 = min(_n, _win0 + _vis);
+        var _row_h = 96, _row_y0 = _ry0 + 66;
+        var _name_maxw = (_rx1 - 300) - (_rx0 + 30);   // reserve a right zone for status text
+
+        for (var _i = _win0; _i < _win1; _i++) {
+            var _c    = _list[_i];
+            var _rar  = variable_struct_exists(_c.item, "rarity") ? clamp(_c.item.rarity, 0, 4) : 0;
+            var _able = (reforge_ingot_tier_for(_rar) >= 0);
+            var _sel  = (_i == _cur);
+            var _ry   = _row_y0 + (_i - _win0) * (_row_h + 6);
+
+            draw_set_alpha(_sel ? 1.0 : 0.85);
+            draw_set_color(_sel ? make_color_rgb(38, 32, 24) : make_color_rgb(20, 20, 26));
+            draw_rectangle(_rx0 + 12, _ry, _rx1 - 12, _ry + _row_h, false);
+            draw_set_alpha(1.0);
+            draw_set_color(_sel ? _copper : make_color_rgb(48, 44, 40));
+            draw_rectangle(_rx0 + 12, _ry, _rx1 - 12, _ry + _row_h, true);
+
+            // Name (rarity-colored, dimmed when unaffordable) - truncate to its zone.
+            draw_set_font(fnt_ui);
+            var _disp = _c.label;
+            if (string_width(_disp) > _name_maxw) {
+                while (string_length(_disp) > 1 && string_width(_disp + "...") > _name_maxw) {
+                    _disp = string_copy(_disp, 1, string_length(_disp) - 1);
+                }
+                _disp += "...";
+            }
+            var _nc = item_rarity_color(_rar);
+            draw_set_color(_able ? _nc : merge_color(_nc, c_black, 0.55));
+            draw_text(_rx0 + 30, _ry + 12, _disp);
+            draw_set_font(fnt_ui_small);
+            draw_set_color(_able ? make_color_rgb(150, 150, 165) : make_color_rgb(95, 95, 108));
+            draw_text(_rx0 + 30, _ry + 54, "[" + item_rarity_name(_rar) + "]");
+
+            draw_set_halign(fa_right);
+            if (_able) {
+                draw_set_color(make_color_rgb(120, 210, 130));
+                draw_text(_rx1 - 30, _ry + 32, _sel ? "Enter: Rework" : "Ready");
+            } else {
+                draw_set_color(make_color_rgb(190, 90, 80));
+                draw_text(_rx1 - 30, _ry + 32, "Need " + item_rarity_name(_rar) + "+ ingot");
+            }
+            draw_set_halign(fa_left);
+        }
+
+        // Position readout instead of "N more above/below" - shows where the selected
+        // row sits in the whole list (e.g. "23 / 56"). Only when the list overflows.
+        if (_n > _vis) {
+            draw_set_halign(fa_center);
+            draw_set_font(fnt_ui_small);
+            draw_set_color(make_color_rgb(150, 130, 100));
+            draw_text((_rx0 + _rx1) / 2, _ry1 - 30, string(_cur + 1) + " / " + string(_n));
+            draw_set_halign(fa_left);
+        }
+    }
+
+    draw_set_halign(fa_center);
+    draw_set_font(fnt_ui_small);
+    draw_set_color(make_color_rgb(75, 85, 105));
+    ui_draw_key_legend(960, 1026, "W/S: Choose Gear   Enter: Rework   Q/E: Tab   Esc: Close");
+    draw_set_halign(fa_left);
+    draw_set_valign(fa_top);
     draw_set_font(-1);
 }
 
@@ -9035,7 +9635,7 @@ function ui_draw_consumable_overflow() {
     // Dim the whole screen
     draw_set_alpha(0.72);
     draw_set_color(make_color_rgb(6, 8, 14));
-    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
     draw_set_alpha(1.0);
 
     var _new     = global.consumable_overflow[0];
@@ -9188,7 +9788,7 @@ function ui_draw_stash_screen() {
     // Full-screen opaque cover
     draw_set_alpha(1.0);
     draw_set_color(make_color_rgb(8, 10, 18));
-    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
 
     // Title
     draw_set_halign(fa_center);
@@ -9252,10 +9852,11 @@ function ui_draw_stash_screen() {
     // instead of the cursor scrolling off-screen). Only the active side tracks
     // the cursor; the inactive side shows from the top.
     var _left_n      = array_length(_left_items);
+    // Active column uses the edge-triggered stash_scroll (cursor moves, list shifts only
+    // at the edges); the inactive column just shows from the top.
     var _left_scroll = 0;
     if (_left_active) {
-        _left_scroll = clamp(_gc.stash_mode_index - floor(_rows_visible / 2),
-                             0, max(0, _left_n - _rows_visible));
+        _left_scroll = clamp(_gc.stash_scroll, 0, max(0, _left_n - _rows_visible));
     }
 
     var _item_y = _list_top;
@@ -9278,19 +9879,23 @@ function ui_draw_stash_screen() {
         draw_text(_stl_tx, _item_y + 8, _it.name);
         draw_set_font(fnt_ui_small);
         draw_set_color(make_color_rgb(140, 150, 170));
-        draw_text(_stl_tx, _item_y + 39, (_tab == 1) ? _it.description : ui_item_stat_str(_it));
+        // Shrink-to-fit so a busy many-affix item can't run off the column edge
+        // (M 07-17: was plain draw_text, overflowed sideways).
+        ui_draw_stat_line_fit(_stl_tx, _item_y + 39, (_tab == 1) ? _it.description : ui_item_stat_str(_it), (_lx + _col_w - 12) - _stl_tx);
 
         _item_y += _row_h;
     }
-    // More-above / more-below hints
-    if (_left_scroll > 0) {
-        draw_set_font(fnt_ui_small);
-        draw_set_halign(fa_right);
-        draw_set_color(make_color_rgb(150, 170, 200));
-        ui_draw_scroll_more(_lx + _col_w - 14, _list_top - 26, true, "more");
-        draw_set_halign(fa_left);
-    }
-    if (_left_scroll + _rows_visible < _left_n) {
+    // Active column: position readout at the bottom (e.g. "12 / 40"), matching the other
+    // lists. Inactive column: a plain "more" below when its list overflows the view.
+    if (_left_active) {
+        if (_left_n > _rows_visible) {
+            draw_set_font(fnt_ui_small);
+            draw_set_halign(fa_center);
+            draw_set_color(make_color_rgb(150, 170, 200));
+            draw_text(_lx + _col_w / 2, _max_bot + 2, string(_gc.stash_mode_index + 1) + " / " + string(_left_n));
+            draw_set_halign(fa_left);
+        }
+    } else if (_left_scroll + _rows_visible < _left_n) {
         draw_set_font(fnt_ui_small);
         draw_set_halign(fa_right);
         draw_set_color(make_color_rgb(150, 170, 200));
@@ -9315,8 +9920,7 @@ function ui_draw_stash_screen() {
     var _right_n      = array_length(_right_items);
     var _right_scroll = 0;
     if (_right_active) {
-        _right_scroll = clamp(_gc.stash_mode_index - floor(_rows_visible / 2),
-                              0, max(0, _right_n - _rows_visible));
+        _right_scroll = clamp(_gc.stash_scroll, 0, max(0, _right_n - _rows_visible));
     }
 
     _item_y = _list_top;
@@ -9339,18 +9943,20 @@ function ui_draw_stash_screen() {
         draw_text(_str_tx, _item_y + 8, _it.name);
         draw_set_font(fnt_ui_small);
         draw_set_color(make_color_rgb(140, 150, 170));
-        draw_text(_str_tx, _item_y + 39, (_tab == 1) ? _it.description : ui_item_stat_str(_it));
+        // Shrink-to-fit so a busy many-affix item can't run off the column edge (M 07-17).
+        ui_draw_stat_line_fit(_str_tx, _item_y + 39, (_tab == 1) ? _it.description : ui_item_stat_str(_it), (_rx + _col_w - 12) - _str_tx);
 
         _item_y += _row_h;
     }
-    if (_right_scroll > 0) {
-        draw_set_font(fnt_ui_small);
-        draw_set_halign(fa_right);
-        draw_set_color(make_color_rgb(150, 170, 200));
-        ui_draw_scroll_more(_rx + _col_w - 14, _list_top - 26, true, "more");
-        draw_set_halign(fa_left);
-    }
-    if (_right_scroll + _rows_visible < _right_n) {
+    if (_right_active) {
+        if (_right_n > _rows_visible) {
+            draw_set_font(fnt_ui_small);
+            draw_set_halign(fa_center);
+            draw_set_color(make_color_rgb(150, 170, 200));
+            draw_text(_rx + _col_w / 2, _max_bot + 2, string(_gc.stash_mode_index + 1) + " / " + string(_right_n));
+            draw_set_halign(fa_left);
+        }
+    } else if (_right_scroll + _rows_visible < _right_n) {
         draw_set_font(fnt_ui_small);
         draw_set_halign(fa_right);
         draw_set_color(make_color_rgb(150, 170, 200));
@@ -9369,6 +9975,41 @@ function ui_draw_stash_screen() {
     draw_set_color(c_gray);
     ui_draw_key_legend(960, 1026, "Q/E: Category   A/D: Switch Side   W/S: Navigate   Enter: Move Item   Esc: Close");
     draw_set_halign(fa_left);
+
+    // HOARD STRIP (M 07-17): the tracked currencies no single vendor lists in full -
+    // Reforge Ingots per tier + banked Banshees - shown here so you can witness the
+    // whole hoard of wealth. (Chip bar is suppressed on the stash, so the bottom is
+    // free.) Only drawn when you actually hold something.
+    var _hoard_ing = reforge_ingot_total();
+    var _hoard_ban = variable_global_exists("banshee_banked") ? global.banshee_banked : 0;
+    if (_hoard_ing > 0 || _hoard_ban > 0) {
+        draw_set_font(fnt_ui_small);
+        draw_set_valign(fa_middle);
+        var _hy = 1052, _hsz = 26, _hlbl = "HOARD:  ";
+        var _hw = string_width(_hlbl);
+        for (var _ht = 0; _ht < 5; _ht++) if (global.reforge_ingots[_ht] > 0) _hw += _hsz + 4 + string_width("x" + string(global.reforge_ingots[_ht])) + 18;
+        if (_hoard_ban > 0) _hw += _hsz + 4 + string_width("x" + string(_hoard_ban)) + 18;
+        var _hx = 960 - _hw / 2;
+        draw_set_halign(fa_left);
+        draw_set_color(make_color_rgb(200, 185, 140));
+        draw_text(_hx, _hy, _hlbl); _hx += string_width(_hlbl);
+        for (var _ht = 0; _ht < 5; _ht++) {
+            if (global.reforge_ingots[_ht] <= 0) continue;
+            draw_sprite_stretched(reforge_ingot_sprite(_ht), 0, _hx, _hy - _hsz / 2, _hsz, _hsz);
+            _hx += _hsz + 4;
+            draw_set_color(item_rarity_color(_ht));
+            var _hl = "x" + string(global.reforge_ingots[_ht]);
+            draw_text(_hx, _hy, _hl); _hx += string_width(_hl) + 18;
+        }
+        if (_hoard_ban > 0) {
+            draw_sprite_stretched(spr_icon_banshee_bottle, 0, _hx, _hy - _hsz / 2, _hsz, _hsz);
+            _hx += _hsz + 4;
+            draw_set_color(make_color_rgb(150, 235, 235));
+            draw_text(_hx, _hy, "x" + string(_hoard_ban));
+        }
+        draw_set_valign(fa_top);
+        draw_set_halign(fa_left);
+    }
     draw_set_valign(fa_top);
 
     // Ornate gothic rim around the whole overlay. Columns (x105..960 / 1020..1875) and the
@@ -9434,7 +10075,7 @@ function ui_draw_stash_screen() {
 function ui_draw_credits_page() {
     draw_set_alpha(0.84);
     draw_set_color(make_color_rgb(6, 7, 12));
-    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
     draw_set_alpha(1.0);
 
     draw_set_halign(fa_center);
@@ -9697,7 +10338,7 @@ function ui_draw_trainer_screen() {
     // Full-screen dark cover
     draw_set_alpha(0.97);
     draw_set_color(make_color_rgb(8, 8, 16));
-    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
     draw_set_alpha(1.0);
 
     // Title + gold
@@ -9809,8 +10450,9 @@ function ui_draw_trainer_screen() {
         // Single action row (kept at the standard first-row position so the mouse
         // hit-test in obj_game_controller Step matches).
         var _ry  = _ry0;
-        var _maxed = (_bts >= 2);
-        var _cost  = cha_price((_bts == 0) ? 800 : 2000);
+        var _maxed = (_bts >= 4);   // M 07-16: cap raised +2 -> +4 bought slots
+        var _slot_ladder = [800, 2000, 4000, 8000];
+        var _cost  = cha_price(_slot_ladder[clamp(_bts, 0, 3)]);
 
         draw_set_color(_maxed ? make_color_rgb(16, 18, 26) : make_color_rgb(26, 18, 44));
         draw_rectangle(_rx0, _ry, _rx1, _ry + _rh, false);
@@ -9820,7 +10462,7 @@ function ui_draw_trainer_screen() {
         if (_maxed) {
             draw_set_font(fnt_ui);
             draw_set_color(make_color_rgb(110, 200, 130));
-            draw_text(_rx0 + 24, _ry + 27, "All trait slots purchased - you have the maximum of 4.");
+            draw_text(_rx0 + 24, _ry + 27, "All trait slots purchased - you have the maximum of 6.");
         } else {
             draw_set_font(fnt_ui);
             draw_set_color(c_white);
@@ -9842,7 +10484,7 @@ function ui_draw_trainer_screen() {
         draw_text(960, 420, "Active Trait Slots:  " + string(_total) + "   (base 2  +  " + string(_bts) + " purchased)");
         draw_set_font(fnt_ui_small);
         draw_set_color(make_color_rgb(120, 125, 150));
-        draw_text(960, 468, "Buy extra slots to equip more traits at once. Maximum +2 (4 total).");
+        draw_text(960, 468, "Buy extra slots to equip more traits at once. Maximum +4 (6 total).");
         draw_set_color(make_color_rgb(90, 95, 120));
         draw_text(960, 504, "Stacks on top of Crown of the Hollow King while it is equipped.");
         draw_set_halign(fa_left);
@@ -10509,7 +11151,7 @@ function ui_draw_maren_screen() {
     // Full-screen overlay
     draw_set_alpha(1.0);
     draw_set_color(make_color_rgb(10, 8, 16));
-    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
 
     // Title + dust
     draw_set_halign(fa_center);
@@ -10541,20 +11183,23 @@ function ui_draw_maren_screen() {
     ui_draw_npc_bond("maren", 90, 45);
     ui_draw_npc_column("maren");   // sprite column (rows + socket tooltip narrowed to clear it)
 
-    // Tab bar (4 tabs) - x=368+t*300, y=105, w=285, h=60
-    var _tab_labels = ["Socket Gear", "Aspects", "Forge", "Runes"];
+    // Tab bar (5 tabs) - x=368+t*240, y=105, w=225, h=60 (MUST match the mouse
+    // hit-test in obj_game_controller Step's maren block)
+    var _tab_labels = ["Socket Gear", "Aspects", "Forge", "Runes", "Spirits"];
     draw_set_font(fnt_ui);
-    for (var _t = 0; _t < 4; _t++) {
-        var _tx  = 368 + _t * 300;
+    for (var _t = 0; _t < 5; _t++) {
+        var _tx  = 368 + _t * 240;
         var _on  = (_gc.maren_tab == _t);
         draw_set_color(_on ? make_color_rgb(45, 35, 70) : make_color_rgb(22, 20, 34));
-        draw_rectangle(_tx, 105, _tx + 285, 165, false);
+        draw_rectangle(_tx, 105, _tx + 225, 165, false);
         draw_set_color(_on ? make_color_rgb(150, 110, 220) : make_color_rgb(55, 50, 75));
-        draw_rectangle(_tx, 105, _tx + 285, 165, true);
+        draw_rectangle(_tx, 105, _tx + 225, 165, true);
         draw_set_halign(fa_center);
         draw_set_valign(fa_middle);
         draw_set_color(_on ? c_white : make_color_rgb(150, 150, 170));
-        draw_text(_tx + 143, 135, _tab_labels[_t]);
+        // Tabs are narrower at 5-up: shrink-to-fit so "Socket Gear" can't kiss the borders.
+        var _tab_sc = min(1.0, (225 - 24) / max(1, string_width(_tab_labels[_t])));
+        draw_text_transformed(_tx + 113, 135, _tab_labels[_t], _tab_sc, _tab_sc, 0);
     }
     draw_set_halign(fa_left);
     draw_set_valign(fa_top);
@@ -10822,7 +11467,7 @@ function ui_draw_maren_screen() {
                 draw_set_halign(fa_left);
             }
         }
-    } else {
+    } else if (_gc.maren_tab == 3) {
         // -------- RUNES TAB (read-only owned list) --------
         draw_set_color(make_color_rgb(140, 130, 165));
         draw_text(_list_x, 225, "Runes owned (" + string(array_length(global.rune_inventory)) + "):");
@@ -10837,6 +11482,67 @@ function ui_draw_maren_screen() {
             ui_draw_rune_entry(_list_x, _ty4, _rn2, true, _list_x2);
         }
         ui_maren_scroll_hint(_scroll, _vis, _runes_n);
+    } else {
+        // -------- SPIRITS TAB (Banshee in a Bottle, BANSHEE_BOTTLE_SPEC.md) --------
+        banshee_init();
+        draw_set_color(make_color_rgb(140, 130, 165));
+        draw_text(_list_x, 225, "Bottled spirits - Maren frees them; their parting songs become yours:");
+
+        // The single action row: bottle icon + banked count (the release action).
+        var _sp_ty = ui_maren_row(0, _cursor == 0);
+        draw_sprite_stretched(spr_icon_banshee_bottle, 0, _list_x + 18, _sp_ty - 9, 48, 48);
+        draw_set_font(fnt_ui);
+        draw_set_color((global.banshee_banked > 0) ? make_color_rgb(150, 235, 235) : make_color_rgb(120, 130, 145));
+        draw_text(_list_x + 84, _sp_ty - 11, "Banshee in a Bottle  x" + string(global.banshee_banked));
+        draw_set_font(fnt_ui_small);
+        draw_set_color(make_color_rgb(135, 130, 155));
+        draw_text(_list_x + 84, _sp_ty + 23, (global.banshee_banked > 0)
+            ? "Release a spirit - a random new song joins your Settings music."
+            : "A very rare dungeon find. Survive the trip out and bring one here.");
+        draw_set_halign(fa_right);
+        draw_set_color(make_color_rgb(150, 200, 255));
+        draw_text(_list_x2 - 24, _sp_ty - 11, "[Enter] Release");
+        draw_set_halign(fa_left);
+
+        // Song ledger below the action row. M 07-16: list ONLY songs already freed -
+        // no "???" placeholder rows and no x/total count. How many songs exist (and
+        // that a new bottle always holds one) stays a mystery until each is revealed.
+        var _sp_cat = music_track_catalog();
+        var _sp_y   = _sp_ty + 90;
+        var _sp_shown = 0;
+        var _sp_total_owned = 0;
+        for (var _sp_i = 0; _sp_i < array_length(_sp_cat); _sp_i++)
+            if (music_track_owned(_sp_cat[_sp_i].id)) _sp_total_owned++;
+        draw_set_font(fnt_ui);
+        draw_set_color(make_color_rgb(180, 150, 230));
+        draw_text(_list_x, _sp_y, "Songs freed:");
+        draw_set_font(fnt_ui_small);
+        if (_sp_total_owned == 0) {
+            draw_set_color(make_color_rgb(95, 100, 118));
+            draw_text(_list_x + 24, _sp_y + 48, "None yet - every bottle carries a song no one living has heard.");
+            _sp_shown = 1;
+        } else {
+            for (var _sp_i = 0; _sp_i < array_length(_sp_cat); _sp_i++) {
+                var _sp_t = _sp_cat[_sp_i];
+                if (!music_track_owned(_sp_t.id)) continue;
+                draw_set_color(make_color_rgb(205, 210, 222));
+                draw_text(_list_x + 24, _sp_y + 48 + _sp_shown * 39,
+                    "\"" + _sp_t.name + "\"   -   " + ((_sp_t.pool == "both") ? "Hub & Dungeon music"
+                        : ((_sp_t.pool == "hub") ? "Hub music" : "Dungeon music")));
+                _sp_shown++;
+            }
+            // A veiled hint that the collection is not complete - count kept secret.
+            if (_sp_total_owned < array_length(_sp_cat)) {
+                draw_set_color(make_color_rgb(95, 100, 118));
+                draw_text(_list_x + 24, _sp_y + 48 + _sp_shown * 39,
+                    "...more spirits still wander the dark.");
+                _sp_shown++;
+            }
+        }
+        draw_set_color(make_color_rgb(120, 115, 140));
+        draw_text(_list_x + 24, _sp_y + 48 + _sp_shown * 39 + 15,
+            "Freed songs are chosen in Settings (Hub Music / Dungeon Music). Extra spirits leave 25 Rune Dust.");
+        draw_set_font(fnt_ui);
     }
 
     // Notification line
@@ -10866,7 +11572,7 @@ function ui_draw_maren_screen() {
         var _cf = _gc.maren_confirm;
         draw_set_alpha(0.82);
         draw_set_color(c_black);
-        draw_rectangle(0, 0, GUI_W, GUI_H, false);
+        draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
         draw_set_alpha(1.0);
 
         var _cbx0 = 480; var _cbx1 = 1440; var _cby0 = 372; var _cby1 = 708;
@@ -10900,6 +11606,84 @@ function ui_draw_maren_screen() {
         draw_set_valign(fa_top);
     }
 
+    // Banshee release ceremony - the lore popup (Bairc-event idiom): the bottle
+    // opens, the banshee rises with her melodic scream, then the reward reveal.
+    // Timer is stepped (and input swallowed) by the maren block in gc Step.
+    if (variable_instance_exists(_gc, "banshee_release_open") && _gc.banshee_release_open) {
+        draw_set_alpha(0.85);
+        draw_set_color(make_color_rgb(4, 8, 12));
+        draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
+        draw_set_alpha(1.0);
+
+        var _br_frames = 17;                                     // spr_banshee_release frame count
+        var _br_frame  = min(_br_frames - 1, _gc.banshee_release_timer div 5);   // ~12fps, holds the last frame
+        var _br_done   = (_gc.banshee_release_timer >= _br_frames * 5);
+
+        // Panel sized around the 3x-scaled 128px animation canvas.
+        var _br_bw = 990, _br_bh = 852;
+        var _br_bx = GUI_CX - _br_bw / 2;
+        var _br_by = GUI_CY - _br_bh / 2;
+        draw_set_color(make_color_rgb(14, 18, 26));
+        draw_rectangle(_br_bx, _br_by, _br_bx + _br_bw, _br_by + _br_bh, false);
+
+        draw_set_halign(fa_center);
+        draw_set_valign(fa_top);
+        draw_set_font(fnt_ui_title);
+        draw_set_color(make_color_rgb(150, 235, 235));
+        draw_text(GUI_CX, _br_by + 33, "The Bottle Opens");
+        draw_set_color(make_color_rgb(70, 64, 48));
+        draw_line(_br_bx + 45, _br_by + 90, _br_bx + _br_bw - 45, _br_by + 90);
+
+        // The animation, pixel-scaled 3x (384px) and centered. A soft cyan glow
+        // swells under the ghost as the ceremony progresses.
+        var _br_ax = GUI_CX - 192;
+        var _br_ay = _br_by + 120;
+        var _br_glow = 0.10 + 0.20 * min(1, _gc.banshee_release_timer / 40)
+                     + 0.04 * sin(_gc.banshee_release_timer * 0.15);
+        draw_set_alpha(_br_glow);
+        draw_set_color(make_color_rgb(90, 200, 210));
+        draw_ellipse(GUI_CX - 210, _br_ay + 60, GUI_CX + 210, _br_ay + 350, false);
+        draw_set_alpha(1.0);
+        draw_sprite_stretched(spr_banshee_release, _br_frame, _br_ax, _br_ay, 384, 384);
+
+        // Reveal band under the animation (after the banshee has fully risen).
+        if (_br_done && _gc.banshee_release_result != undefined) {
+            var _br_res = _gc.banshee_release_result;
+            draw_set_font(fnt_ui);
+            draw_set_color(make_color_rgb(205, 210, 222));
+            if (_br_res.kind == "track") {
+                draw_text_ext(GUI_CX, _br_by + 546,
+                    "The spirit unwinds into the rafters, and her scream softens into song.\nMaren bows her head. \"Go on, then. Sing somewhere kinder.\"", 36, _br_bw - 120);
+                draw_set_font(fnt_ui_title);
+                draw_set_color(make_color_rgb(150, 235, 235));
+                draw_text(GUI_CX, _br_by + 660, "\"" + _br_res.track.name + "\"");
+                draw_set_font(fnt_ui_small);
+                draw_set_color(make_color_rgb(200, 180, 130));
+                draw_text(GUI_CX, _br_by + 717, "New " + ((_br_res.track.pool == "both") ? "Hub & Dungeon"
+                        : ((_br_res.track.pool == "hub") ? "Hub" : "Dungeon"))
+                    + " music track - choose it in Settings.");
+            } else {
+                draw_text_ext(GUI_CX, _br_by + 546,
+                    "The spirit unwinds into the rafters - but you already know every song she knew.\nShe leaves what dust a grateful ghost can gather.", 36, _br_bw - 120);
+                draw_set_font(fnt_ui_title);
+                draw_set_color(make_color_rgb(195, 155, 255));
+                draw_text(GUI_CX, _br_by + 660, "+" + string(_br_res.amount) + " Rune Dust");
+            }
+            draw_set_font(fnt_ui_small);
+            draw_set_color(make_color_rgb(120, 128, 150));
+            draw_text(GUI_CX, _br_by + _br_bh - 45, (input_device() == 2) ? "Tap to continue" : "Press any key to continue");
+        } else {
+            draw_set_font(fnt_ui_small);
+            draw_set_color(make_color_rgb(120, 128, 150));
+            draw_text(GUI_CX, _br_by + _br_bh - 45, (input_device() == 2) ? "Tap to skip" : "Press any key to skip");
+        }
+
+        // Ornate gothic rim, matching the tutorial-tip / Bairc popup dressing.
+        draw_set_font(-1);
+        ui_draw_gothic_frame(_br_bx, _br_by, _br_bx + _br_bw, _br_by + _br_bh, 30);
+        draw_set_halign(fa_left);
+    }
+
     draw_set_valign(fa_top);
     draw_set_alpha(1.0);
     draw_set_font(-1);
@@ -10918,7 +11702,7 @@ function ui_draw_sable_screen() {
 
     draw_set_alpha(1.0);
     draw_set_color(make_color_rgb(10, 14, 12));
-    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
 
     // Title + dust
     draw_set_halign(fa_center);
@@ -11079,7 +11863,7 @@ function ui_draw_sable_screen() {
                 draw_text(_list_x, _row_y0 + 12, "No unequipped gear to salvage.");
             } else {
                 var _svis   = 9;
-                var _gfirst = ui_list_window_first(_cursor, _gn, _svis);
+                var _gfirst = ui_list_window("sable_gear", _cursor, _gn, _svis);
                 var _glast  = min(_gn, _gfirst + _svis);
                 for (var _gi = _gfirst; _gi < _glast; _gi++) {
                     var _it  = _gear[_gi].item;
@@ -11107,7 +11891,7 @@ function ui_draw_sable_screen() {
                 draw_text(_list_x, _row_y0 + 12, "No unsocketed runes to scrap.");
             } else {
                 var _svis2  = 9;
-                var _rfirst = ui_list_window_first(_cursor, _rn_n, _svis2);
+                var _rfirst = ui_list_window("sable_rune", _cursor, _rn_n, _svis2);
                 var _rlast  = min(_rn_n, _rfirst + _svis2);
                 for (var _ri = _rfirst; _ri < _rlast; _ri++) {
                     var _rn  = _rinv[_ri];
@@ -11354,7 +12138,7 @@ function ui_draw_vael_screen() {
 
     draw_set_alpha(1.0);
     draw_set_color(make_color_rgb(16, 12, 18));
-    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
 
     // Title + gold
     draw_set_halign(fa_center);
@@ -11415,7 +12199,7 @@ function ui_draw_vael_screen() {
     // Windowed list (left column, x200..800). Scroll derivation MUST match the Vael
     // input block in obj_game_controller Step (vael_list_scroll).
     var _vis    = 10;   // 11 -> 10 so the list bottom + scroll hint clear the controls line
-    var _scroll = vael_list_scroll(_cursor, _count, _vis);
+    var _scroll = ui_list_window("vael_skins", _cursor, _count, _vis);
     var _list_y = 225;
     var _row_h  = 72;
 
@@ -11594,7 +12378,7 @@ function ui_draw_vael_tints_tab(_gc) {
     var _cursor  = clamp(_gc.vael_tint_cursor, 0, _count - 1);
 
     var _vis    = 10;
-    var _scroll = vael_list_scroll(_cursor, _count, _vis);
+    var _scroll = ui_list_window("vael_tints", _cursor, _count, _vis);
     var _list_y = 225;
     var _row_h  = 72;
 

@@ -310,8 +310,11 @@ if (instance_exists(obj_game_controller)) {
         if (variable_instance_exists(_gc_ld, "loadout_gold_timer") && _gc_ld.loadout_gold_timer > 0) _gc_ld.loadout_gold_timer--;
 
         // Q/E cycle the three tabs: Abilities (0) / Traits (1) / Companion (2).
-        if (input_tab_next()) { _gc_ld.loadout_tab = (_gc_ld.loadout_tab + 1) mod 3; _gc_ld.loadout_cursor = 0; audio_play_sound(snd_page, 1, false); }
-        if (input_tab_prev()) { _gc_ld.loadout_tab = (_gc_ld.loadout_tab + 2) mod 3; _gc_ld.loadout_cursor = 0; audio_play_sound(snd_page, 1, false); }
+        // Tabs swap on Q/E AND on left/right (the d-pad / arrows / A-D) - the loadout
+        // has no other use for horizontal nav, so left=right maps to the tab swap
+        // (M 07-17: on-screen d-pad left/right did nothing here).
+        if (input_tab_next() || nav_right()) { _gc_ld.loadout_tab = (_gc_ld.loadout_tab + 1) mod 3; _gc_ld.loadout_cursor = 0; audio_play_sound(snd_page, 1, false); }
+        if (input_tab_prev() || nav_left())  { _gc_ld.loadout_tab = (_gc_ld.loadout_tab + 2) mod 3; _gc_ld.loadout_cursor = 0; audio_play_sound(snd_page, 1, false); }
 
         if (input_cancel()) {
             _gc_ld.loadout_open = false;
@@ -346,7 +349,7 @@ if (instance_exists(obj_game_controller)) {
                     _gc_ld.loadout_open      = false;
                     _gc_ld.loadout_confirmed = true;
                     audio_play_sound(snd_confirm_major, 1, false);   // committing to the descent
-                    audio_stop_sound(Rainy_Memories);
+                    music_hub_stop();   // stops the default AND any banshee-jukebox hub track
                     room_goto(rm_dungeon_floor);
                 }
             }
@@ -558,7 +561,7 @@ if (instance_exists(obj_game_controller)) {
                         _gc_ld.loadout_open      = false;
                         _gc_ld.loadout_confirmed = true;
                         audio_play_sound(snd_confirm_major, 1, false);   // committing to the descent
-                        audio_stop_sound(Rainy_Memories);
+                        music_hub_stop();   // stops the default AND any banshee-jukebox hub track
                         room_goto(rm_dungeon_floor);
                     }
                 }
@@ -1008,7 +1011,7 @@ if (!show_gallery && selected_npc == array_length(npc_names)
         var _gc_e = instance_find(obj_game_controller, 0);
 
         if (_gc_e.loadout_confirmed) {
-            audio_stop_sound(Rainy_Memories);
+            music_hub_stop();   // stops the default AND any banshee-jukebox hub track
             room_goto(rm_dungeon_floor);
         } else {
             // Open dungeon selection (player picks dungeon + ascendance before loadout)
@@ -1100,6 +1103,13 @@ if (mouse_check_button_pressed(mb_left)) {
                             _gc_mc.bairc_open = true; _gc_mc.bairc_cursor = 0;
                             _gc_mc.bairc_notification = "";
                         }
+                    } else if (_hni == 7) {
+                        // Tavern Requests board - this mouse/tap path was missing the
+                        // case the keyboard-Enter path has (~line 960), so tapping the
+                        // row fell through to "Coming Soon" on touch (M 07-17).
+                        _gc_mc.tavern_board_open   = true;
+                        _gc_mc.tavern_board_cursor = 0;
+                        _gc_mc.tavern_board_note   = "";
                     } else {
                         notification = npc_names[_hni] + ": Coming Soon.";
                     }
@@ -1117,7 +1127,7 @@ if (mouse_check_button_pressed(mb_left)) {
         if (instance_exists(obj_game_controller)) {
             var _gc_e2 = instance_find(obj_game_controller, 0);
             if (_gc_e2.loadout_confirmed) {
-                audio_stop_sound(Rainy_Memories);
+                music_hub_stop();   // stops the default AND any banshee-jukebox hub track
                 room_goto(rm_dungeon_floor);
             } else {
                 // Open dungeon selection overlay (mirrors keyboard handler)

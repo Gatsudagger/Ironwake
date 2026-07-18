@@ -2,6 +2,9 @@
 
 Audit of everything that ships in the build. Status: ✅ verified · ⚠️ action needed · ❓ unknown, needs M.
 Last verified 2026-07-07 (itch pages fetched live; quotes are from the pack pages on that date).
+**Updated 2026-07-17:** added the AI-generated audio that shipped after the audit —
+ElevenLabs (SFX / ambience / 3 Banshee music tracks) — to the Audio table and the AI
+disclosure (now v2). Suno noted as not-yet-shipped.
 
 ## Art
 
@@ -27,6 +30,8 @@ Last verified 2026-07-07 (itch pages fetched live; quotes are from the pack page
 | **Sara Garrard (sonatina.itch.io) — "Shadows/Infinity: Battle Zone"** | _2_dungeon_INITIAL/LOOP, _3_critical_INITIAL/LOOP, _14_BOSS_y_LOOP, _15_game_over_INITIAL (identified 2026-07-07 via embedded vorbis tags: ARTIST=Sara Garrard, ALBUM=Shadows/Infinity: Battle Zone, 2022) | Commercial use OK incl. monetized games; **credit Sara Garrard required**; on itch, link sonatina.itch.io on the game page; donation appreciated, not required. Full terms ship in the pack download | ⚠️ **credit required** — covered by Credits screen. Locate M's pack download for the full terms file (for the Steam context) |
 | **Alex Coldfire — "12 Instrumental Game Soundtracks (Visual Novel/Action)"** (alex-coldfire.itch.io/12-soundtracks; identified by M 2026-07-07, track list verified on page) | Viking_March (title), Rainy_Memories (hub) | **CC BY-ND 4.0**: free in commercial projects; "you must **credit me (Alex Coldfire)** as the author in the game's credits and in the author section on all relevant pages"; **no major changes to tracks**; no resale | ⚠️ **credit required** (game credits + store pages) — covered by Credits screen; use tracks as-is |
 | **Sara Garrard — "RPG music pack: INFINITY CRYSTAL"** (sonatina.itch.io/infinity-crystal; M identified 2026-07-07) | Game_Over (defeat sting) | Same terms as Battle Zone: commercial OK, credit Sara Garrard + itch-page link, donation optional | ✅ covered by existing Sara Garrard credit |
+| **ElevenLabs** (AI generation, elevenlabs.ai) | Loot-reveal jingles + chest/reliquary stingers (07-14), per-dungeon ambient beds + station loops + moment stingers (07-14, 18 sounds), and **3 music-unlock tracks** via the Banshee system (07-15) | ElevenLabs Creator plan — generated audio usable in commercial projects | ✅ (AI — disclose) |
+| **Suno** (AI music generation) | *(NOT yet shipped — M generates on the Suno web app into Asset_Library\Sounds\Suno\; no track imported into the build yet. Add to the disclosure only once a Suno track ships.)* | Suno terms — subscriber commercial rights | ⏳ pending first import |
 | **MusicBox1** (FL Studio 21 render) | Pet/music-box theme | ❓ M: standalone free itch download, author not yet recalled | ⚠️ last unidentified track — name the creator when found, or replace |
 | ~~Legacy SFX~~ (utility2, Check_1, Chimes__Ascending_, Success_1/2, spell1, Magic, attack1, grunt, teleport, die5, hurt, Obscure, Strings_1, Harp_2__Descending_) | (nothing — fully retired) | Unidentifiable provenance → **RETIRED 2026-07-07** (sound pass Batch 4): all 15 assets deleted from the project, live uses replaced from the cleared 400 Sounds Pack | ✅ resolved by removal |
 | **MidJourney (M's own generations)** | ALL NPC artwork + ALL portraits (6 hub NPC portraits, 60 char-creation portraits, Vael portrait carousel) — confirmed by M 2026-07-07 | MidJourney paid-plan terms: subscriber owns/has commercial rights to generations | ✅ (AI — disclose) |
@@ -39,13 +44,24 @@ Last verified 2026-07-07 (itch pages fetched live; quotes are from the pack page
 | **Cinzel Decorative** (Google Fonts) | fnt_ui_title | SIL OFL 1.1 | ✅ swapped 2026-07-07 |
 | ~~Centaur / Castellar (Monotype)~~ | (removed from .yy 2026-07-07) | Windows system fonts — NOT licensed for game embedding | ✅ resolved by swap |
 
-## Steam AI Content Disclosure (draft for the Content Survey)
+## AI Content Disclosure (v2 — current, for Steam Content Survey AND Play listing)
+
+**Updated 2026-07-17 to include AI-generated audio (ElevenLabs). This is the LIVE text —
+use it verbatim on both stores.** Suno is deliberately omitted (no Suno track shipped);
+when the first Suno music track imports, add "and Suno" to the audio tools clause.
 
 > Ironwake contains pre-generated AI content. Some 2D art assets (character sprites, portraits,
 > item illustrations, backgrounds, and icon sets) were created using AI image-generation tools
 > (PixelLab and MidJourney, plus licensed third-party icon packs produced with Stable Diffusion).
-> All AI-generated assets were reviewed, curated, and integrated by the developer. The game does
-> not generate any content with AI at runtime, and no live AI models are accessed by the game.
+> Some sound effects, ambient audio, and music tracks were created using AI audio-generation
+> tools (ElevenLabs). All AI-generated assets were reviewed, curated, and edited by the
+> developer. The game does not generate any content with AI at runtime, and no live AI models
+> are accessed by the game.
+
+**No in-game credit is required for AI-generated audio** — like the PixelLab/MidJourney art,
+ElevenLabs output is the developer's own generated asset, not licensed third-party content, so
+it needs *disclosure* (above) but not an attribution line on the Credits screen. The in-game
+Credits screen still owes the licensed-music/icon/VFX lines below.
 
 ## In-game credits screen — minimum required lines
 

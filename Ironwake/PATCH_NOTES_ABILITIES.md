@@ -186,3 +186,134 @@ Arc into a shock-affix-statused target chains to everyone; Soul Engine on turn 1
 turn-4 Soulfire previews and deals +9 more; Galvanize kill → next turn shows 4 AP; Winter's
 Bite on a chilled foe logs +9 and the Prep back; Devil's Flip logs HEADS or TAILS and the
 right victim. New abilities show blank icon badges (PixelLab round queued).
+
+## COMBAT COMBO BATCH (2026-07-16) — M-approved numbers, COMBAT_COMBO_PLAN_2026-07-16.md
+
+Budget yardstick: 1 AP ~ 12-14 pts; DoT ~0.75x face; stun ~14-16, weaken ~8, Exposed ~4/hit.
+
+**Detonator parity + cascade:**
+| Change | Budget math | Wrong fight |
+|---|---|---|
+| **Rupture** = true detonator (bespoke detonate-ALL-DoTs rider DELETED; shared bleed reaction is the same +5/tick, consumed) | vs bleed: unchanged. NEW: shatters chill, crits vs stun, drinks void, Hexed-doubled — BW finally reaches the reaction table | No statuses on the target |
+| **Bonebreaker** = detonator #2 (stats unchanged) | 3 AP: 18 + Exposed 5x3t ~ on budget; detonation is the read | Clean targets |
+| **Rift** = the CASCADE: detonates EVERY enemy it hits, each individually (per-target reaction incl. Hexed x2) | Gated by 3 AP + 2 Souls + multi-turn setup | A lone clean boss (Singularity wins) |
+
+**New ramps (Vex 500g each, once/combat, combat-long, support):**
+| Ability | Effect | Budget | Wrong fight |
+|---|---|---|---|
+| **Warpath** (BW, 2 AP) | Physical/Blood abilities +2 per full turn elapsed | Soul Engine mirror at +2 (BW swings more/turn) | 2-turn trash |
+| **Compounding Dread** (SS, 2 AP) | Each trap cast after lighting it: permanent +4 trap damage this combat | Trap-build boss scaling | Trapless kits / short fights |
+
+**Reworks:**
+| Ability | Change | Budget | Wrong fight |
+|---|---|---|---|
+| **Frost Shot** (was Crippling Shot; save-migrated: loadout/unlocks/mastery/casts) | 10 phys + Weaken 25%/3t + NEW Chill 1t (Hoarfrost-shape status; weaken layer = max, no stack) | 10+8+6 = 24 on a 2-AP slot | Low-threat trash |
+| **Entropy** | Accelerating DoT 6/8/10/12 (36 total; `accel` field, both tickers honor it). Double-on-void-reapply kept | ~26 effective, heavily back-loaded | Anything dying in 2 turns |
+| **Devil's Flip** | Win streak: +8 payout per consecutive win THIS combat; tails deals 8 to YOU and resets | EV at streak 0 unchanged (13) | Fights where eating 8 kills you |
+
+**Global rules (CORE):**
+- **OVERWHELM**: enemy with 2+ DISTINCT status kinds (dots split by element) takes +15% from ALL sources (combat_apply_damage, next to Marked). Gold OVW+ badge, hover-explained, Compendium entry.
+- **OVERCHARGE**: spender cast at FULL reserve drains it all — +2 damage per excess point (post-crit flat, once per cast, after Nova/Rend's own rates), +2 heal on Blood Surge-style self heals, Pact seals ALL Blood (first 3 at 6/pt, rest at 2/pt). Reserve-HELD scalers (Soul Shield, Arcane Echo) excluded. Full bar glows gold + eligible buttons pulse; whiffed cast keeps the reserve.
+
+**Combo juice/legibility (presentation only):**
+- Detonating hits resolve as a SEQUENCE: damage number → reaction splash ("SHATTER!", "BLOOD BURST!"…) → "HEXED x2!" → each on a rising snd_loot_reveal tick (pitch 1.12/1.28/1.4 for OVERCHARGE). Popups carry text/sfx/pitch/delay.
+- The status badge your SELECTED ability would detonate PULSES on the enemy row; hit preview already names the bonus (auto-covers the new detonators).
+- Borrowed Memories = pick-1-of-3 DRAFT: the event offer opens a second choice screen (same event UI, synthetic event `borrowed_pick`, new fx key `memory_pick`).
+
+**F5 checks:** Gore Strike → Rupture logs BLOOD BURST + no leftover bleed; Hoarfrost → Rupture shatters (BW!); Rift into 3 statused enemies logs 3 separate reactions; Frost Shot then Snipe logs SHATTER; Entropy ticks 6/8/10/12 on a dummy; Flip twice-heads logs streak 2 and +8; Warpath turn-4 Gore Strike previews +6; Dread + 2 Spike Traps: second logs +4; fill Souls to 10 → bar glows FULL, Soul Nova button pulses, cast logs OVERCHARGE +12 (4 at 7, 6 at 2); Blood Surge at 10 Blood heals 14+16; enemy with bleed+chill shows OVW+ badge and takes +15%; Stranger's Memory event → result closes into a 3-memory pick screen; old save with Crippling Shot equipped loads as Frost Shot.
+
+## F5 NOTES BATCH (2026-07-16 late) — M's 9 notes from the combo-batch F5
+
+**Audio:**
+- **Crickets** (`snd_amb_title`) no longer play under the title/intro music — moved to the
+  character-creation screen, the one place that's otherwise silent (obj_title_controller /
+  obj_char_select Create).
+- **Sable's cauldron** (`snd_amb_cauldron`) REPLACED in place — v1 read as a toilet; v2 is a
+  thick viscous porridge-simmer, no watery glugs. Same asset name, wiring untouched.
+- **Egg hatch = Zelda chest**: tremble stretched 50→110 frames; new `snd_hatch_build` (2.5s
+  rising harp/celesta swell) starts at the first wobble and crests INTO the shell-break,
+  where the new `snd_hatch_fanfare` (bright resolving flourish) lands on top of the old
+  burst+foley. Both in audio_sfx_assets().
+
+**Bloodwarden lackluster (M: "too many 3 AP abilities"):**
+- NEW TRAIT **Relentless** (BW-only, tier 3 = 500g + Legendary at Vex, unlock 6 boss kills):
+  base AP 3 → 4 EVERY turn. Single source of truth `actor_turn_ap()` — turn refill, first
+  turn, and the HUD pips all read it. Enemies unaffected.
+- **AP audit** (M-approved): **Undying 3→2 AP**, **Bloodfeast 3→2 AP** — the two whole-turn
+  utility casts; Marrow Crush / Bonebreaker / Crimson Apex deliberately stay 3.
+- **Vex trait slots**: purchasable cap +2 → **+4** (6 equipped max, 7 with Crown). Price
+  ladder 800/2000/4000/8000g. Tab text + compendium + coach-mark synced.
+- **BUGFIX found during wiring**: Ley Tap did `player.AP += 1` but the combat struct's field
+  is `energy` — equipping Ley Tap crashed at combat start. Now `player.energy += 1`.
+
+**Pets/UI:**
+- **Baby moth size**: combat pet draw now passes a width cap (1.35× the stage height) to
+  pet_sprite_fit — height-only fit blew the wide caterpillar up to knight size.
+- **Corrupt-egg notice** (and all hub NPC-panel notifications) now WRAP inside the detail
+  panel (small font, measured to end above the y330 panel bottom) instead of running off-screen.
+- **Maren Spirits ledger**: lists ONLY freed songs — no "???" rows, no x/total count; a
+  veiled "...more spirits still wander the dark." when any remain. (NOTE: F8 makes every
+  song read as owned — toggle it OFF to see the mystery view.)
+
+**Awaiting M approval (in _for_review\):**
+- `music_samples\` — 6 × 30s track auditions (~405 credits each): dungeon Ashfall /
+  Hoarfrost / The Iron Deep, hub Hearthlight / Moth & Lantern / The Wake. Approved concepts
+  get full-length versions + catalog wiring (Maren release + Settings selectors).
+- Dust Egg redesign candidates + Relentless trait icon candidates (PixelLab, M picks).
+  Until the icon lands, Relentless shows the slate fallback badge.
+
+**F5 checks:** title screen = music only, char create = crickets only; Sable's tab bubbles
+properly; hatch an egg — longer tremble, build swells, fanfare lands ON the crack; Vex trait
+tab sells slots 3/4/5/6 at 800/2000/4000/8000 and Relentless for 500g+Legendary (BW);
+Relentless run: 4 yellow pips every turn, Marrow Crush + Blood Leech same turn works;
+Undying/Bloodfeast buttons show 2 AP; equip Ley Tap on an Arcanist — combat STARTS (was a
+crash) with 4 AP turn 1; baby moth in combat is house-cat sized; trigger a curse-altar egg →
+hub notice wraps inside the panel; Maren Spirits with F8 OFF shows only freed songs.
+
+---
+
+# Combat Plan v2 (2026-07-17) — dead-pick fixes + four new verbs + honing
+
+M-approved via scoping questions; numbers blessed 07-17. Full design + budget math in
+`COMBAT_IMPROVEMENT_PLAN_2026-07-17.md`. Budget rule of thumb: 1 AP ≈ 12–14 pts; DoT ≈ 0.75×
+face; conditional ≈ face × uptime; stun ≈ 14–16, root ≈ 8 vs melee / 0 vs ranged.
+
+## Dead-pick fixes
+
+| Ability | Was | Now | Why |
+|---|---|---|---|
+| **Snipe** (SS, 1 AP) | +20 vs any debuffed target (~34 pts at 1 AP) | **+12** vs debuffed (26 total) | "primer + Snipe spam" was the obviously-best line. 14 + 12×~0.9 uptime = honest 1-AP conditional. |
+| **Bear Trap** (SS) | 2 AP + 1 Prep, 16 + root — strictly dominated by Spike Trap (~44) | **1 AP** + 1 Prep, keep 16 + root | The cheap opener trap next to Spike (damage) and Snare (stun). ~24 vs melee, 16 vs ranged on a ~20 budget. |
+| **Killing Spree** (SS, 3 AP + 2 Prep) | 12 + 5/debuff (needed 4+ debuffs just to match Assassinate); data drift +5 vs +6 | 12 + **5**/debuff (unified); **each enemy KILLED refunds 2 AP** | The multi-kill sweep vs Assassinate's single execute. Refund only pays on lethal — self-balancing. |
+| **Vital Theft** (BW, 2 AP + 1 Blood) | 8 dmg + target −8 max HP; "steal" gave you nothing | 8 dmg; target max HP −8 **AND your max HP +8 and heal 8** (combat-long) | 8 + 8 heal + ~6 temp max HP + 8 enemy-pool cut ≈ 30 on a ~30 budget. The theft is real. |
+| **Adrenaline Rush** (General, 0 AP) | +1 AP once per COMBAT — dominated by Ley Tap | **Once per TURN: pay 5 HP → +1 AP** | The HP-as-resource lever; loves lifesteal builds. Priced by the HP-spiral risk. |
+| **Galvanize** (BW, 2 AP) | 12 Shock — under budget, kill→+1 AP rider never fired | **16** Shock | Honest hit (Gore Strike parity minus bleed) so the surge rider gets to trigger. |
+
+## New verbs / rules
+
+- **Poise** (core rule): at end of your turn, each UNSPENT AP → **2 shield** (max 6, 8 with
+  Relentless), expiring at the start of your next turn (StS block model, no stacking). Kills
+  the dead 3rd-AP turn; creates swing-or-hold decisions before a telegraph.
+- **Interrupt** (core rule): land a **stun or root on an enemy whose intent is a charged/heavy
+  attack** → refund 1 AP (once per turn). Read the telegraph, answer it, get tempo back.
+- **Bulwark Slam** (BW, NEW, 2 AP, Vex 400g): consume ALL your shield; deal its value **+8** as
+  physical (power crit). Completes the Blood engine: hit → Blood → Sanguine Pact ward → Slam.
+  NOT a detonator. Only good with a stocked guard.
+- **Counterblade** (SS, NEW, 1 AP, Vex 400g): until your next turn, counter EVERY melee attacker
+  — hit OR dodged — for **12** physical. Reactive-offense stance; pairs with Shadow Step / Vanish
+  dodges. Dead vs ranged, by design.
+
+## Honing — The Whetstone (simple v1)
+
+- A new shrine event, **guaranteed once per run, free.** Pick ONE slotted ability → choose one of
+  its two mastery mods as a **RUN-SCOPED** bonus (stacks with permanent notches; same mod ids).
+- Mastery system itself flagged for a later rework (M: "incredibly bland") — hand-authored
+  per-ability mod tables. The v1 shrine is built so only `ability_mastery_options()` changes then.
+
+**F5 checks:** Snipe reads "+12 if debuffed" everywhere; Bear Trap shows 1 AP; Killing Spree kills
+give back AP mid-cast; Vital Theft raises your max HP + heals; Adrenaline Rush is castable every
+turn for 5 HP and blocked at ≤5 HP; Galvanize hits for 16; end a turn with spare AP → Poise shield
+chip appears and is gone next turn; stun/root a charging enemy → INTERRUPT + AP back; buy Bulwark
+Slam (Vex, BW) — full Sanguine Pact ward + Slam = big hit, shield emptied; buy Counterblade (Vex,
+SS) — a melee pack eats 12 each, a dodged attack still counters; hit a Whetstone → hone a slotted
+ability for the run, gone after the run.

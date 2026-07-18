@@ -16,6 +16,52 @@ if (keyboard_check_pressed(vk_f11)) {
     video_toggle_fullscreen();
 }
 
+// Wide-aspect geometry (8b): re-fit the GUI band whenever the window shape
+// changes - F11 fullscreen, the F7 aspect lever below, HTML5 frame resize.
+if (window_get_width() != geom_last_w || window_get_height() != geom_last_h) {
+    geom_last_w = window_get_width();
+    geom_last_h = window_get_height();
+    gui_geometry_apply();
+}
+
+// =============================================================================
+// TEST LEVER (8b) - F7 cycles the WINDOWED shape 16:9 -> 19.5:9 (S25) -> 20:9 so
+// the wide-aspect gutters can be F5-verified on a PC monitor without a device
+// build. Drops out of fullscreen first; 810-high shapes fit a 1080p display.
+// REMOVE BEFORE RELEASE (F8 unlock / F9 win-state lever precedent).
+// =============================================================================
+if (os_type == os_windows && keyboard_check_pressed(vk_f7)) {
+    if (!variable_global_exists("debug_aspect_idx")) global.debug_aspect_idx = 0;
+    global.debug_aspect_idx = (global.debug_aspect_idx + 1) mod 3;
+    if (global.fullscreen) video_toggle_fullscreen();
+    var _shapes = [[1440, 810], [1755, 810], [1800, 810]];   // 16:9, 19.5:9, 20:9
+    var _shp = _shapes[global.debug_aspect_idx];
+    window_set_size(_shp[0], _shp[1]);
+    window_center();
+    show_debug_message("[TEST] aspect lever -> " + string(_shp[0]) + "x" + string(_shp[1]));
+}
+
+// =============================================================================
+// TEST LEVER (07-16) - F8 toggles UNLOCK-EVERYTHING for playtesting: abilities,
+// traits, music tracks and Maren flagship recipes all read as unlocked while ON.
+// Deliberately a CHECK BYPASS, not a data grant - global.debug_unlock_all is
+// never written to the save, so the real slot's progression is untouched and a
+// relaunch always starts OFF. Audio cue: rising = ON, low = OFF.
+// REMOVE BEFORE RELEASE (F9 win-state lever precedent).
+// =============================================================================
+if (keyboard_check_pressed(vk_f8)) {
+    if (!variable_global_exists("debug_unlock_all")) global.debug_unlock_all = false;
+    global.debug_unlock_all = !global.debug_unlock_all;
+    var _dua_si = audio_play_sound(snd_loot_reveal, 1, false);
+    audio_sound_pitch(_dua_si, global.debug_unlock_all ? 1.4 : 0.7);
+    show_debug_message("[TEST] debug_unlock_all = " + string(global.debug_unlock_all));
+}
+
+// Hub station flavor loops (SOUND_ATMOSPHERE_SPEC.md section 3): keep each open
+// NPC screen's quiet bed in lock-step with its *_open flag. Runs above every
+// modal early-exit below so a loop can never stick on while one is up.
+hub_station_ambience_update();
+
 // Android (8c): pop the OS on-screen keyboard whenever a typed-text modal is
 // capturing keyboard_string (hero naming at char create, pet naming at Bairc)
 // and dismiss it when the modal closes. One pump - text_entry_active() already
@@ -496,6 +542,7 @@ if (stash_mode_open) {
     if (input_tab_prev() || input_tab_next()) {
         stash_mode_tab   = 1 - stash_mode_tab;
         stash_mode_index = 0;   // side is kept: tab-flipping in the stash column stays there
+        stash_scroll     = 0;
         audio_play_sound(snd_page, 1, false);
     }
     // Touch (M 07-08): sideways swipe across the item columns flips the
@@ -505,14 +552,24 @@ if (stash_mode_open) {
     if (nav_left()) {
         stash_mode_side  = 0;
         stash_mode_index = 0;
+        stash_scroll     = 0;
     }
     if (nav_right()) {
         stash_mode_side  = 1;
         stash_mode_index = 0;
+        stash_scroll     = 0;
     }
     // Hold-to-repeat + wrap-around (top<->bottom). nav_up/down auto-repeat while held.
     if (nav_up())   stash_mode_index = wrap_index(stash_mode_index - 1, _cur_count);
     if (nav_down()) stash_mode_index = wrap_index(stash_mode_index + 1, _cur_count);
+
+    // Edge-triggered scroll for the ACTIVE column: cursor moves within the visible
+    // window; the list only shifts when the cursor reaches the top/bottom edge. Visible
+    // rows mirror the Draw + mouse math (list top y249, row 75, bottom 1020 -> 10 rows).
+    var _stash_vis = max(1, floor((1020 - 249) / 75));
+    if (stash_mode_index < stash_scroll)               stash_scroll = stash_mode_index;
+    if (stash_mode_index >= stash_scroll + _stash_vis) stash_scroll = stash_mode_index - (_stash_vis - 1);
+    stash_scroll = clamp(stash_scroll, 0, max(0, _cur_count - _stash_vis));
 
     if (input_confirm()) {
         // The tab picks the array pair, the side picks the direction.
@@ -562,31 +619,31 @@ if (stash_mode_open) {
         // Category tabs
         if (_smy >= 138 && _smy < 190) {
             if (_smx >= 660 && _smx < 945 && stash_mode_tab != 0) {
-                stash_mode_tab = 0; stash_mode_index = 0;
+                stash_mode_tab = 0; stash_mode_index = 0; stash_scroll = 0;
                 audio_play_sound(snd_page, 1, false);
             } else if (_smx >= 975 && _smx < 1260 && stash_mode_tab != 1) {
-                stash_mode_tab = 1; stash_mode_index = 0;
+                stash_mode_tab = 1; stash_mode_index = 0; stash_scroll = 0;
                 audio_play_sound(snd_page, 1, false);
             }
         }
         // Switch to left side
         if (_smx >= 45 && _smx < 900 && _smy >= 204 && _smy < _max_bot) {
-            if (stash_mode_side != 0) { stash_mode_side = 0; stash_mode_index = 0; }
+            if (stash_mode_side != 0) { stash_mode_side = 0; stash_mode_index = 0; stash_scroll = 0; }
             else if (_smy >= _list_top) {
                 var _lcnt   = (stash_mode_tab == 0) ? array_length(global.carried_items)
                                                     : array_length(global.consumable_inventory);
-                var _lscr   = clamp(stash_mode_index - floor(_rows_vis / 2), 0, max(0, _lcnt - _rows_vis));
+                var _lscr   = clamp(stash_scroll, 0, max(0, _lcnt - _rows_vis));
                 var _lrow   = _lscr + floor((_smy - _list_top) / _row_h);
                 if (_lrow >= 0 && _lrow < _lcnt) stash_mode_index = _lrow;
             }
         }
         // Switch to right side
         if (_smx >= 1020 && _smx < 1875 && _smy >= 204 && _smy < _max_bot) {
-            if (stash_mode_side != 1) { stash_mode_side = 1; stash_mode_index = 0; }
+            if (stash_mode_side != 1) { stash_mode_side = 1; stash_mode_index = 0; stash_scroll = 0; }
             else if (_smy >= _list_top) {
                 var _rcnt   = (stash_mode_tab == 0) ? array_length(global.equipment_stash)
                                                     : array_length(global.consumable_stash);
-                var _rscr   = clamp(stash_mode_index - floor(_rows_vis / 2), 0, max(0, _rcnt - _rows_vis));
+                var _rscr   = clamp(stash_scroll, 0, max(0, _rcnt - _rows_vis));
                 var _rrow   = _rscr + floor((_smy - _list_top) / _row_h);
                 if (_rrow >= 0 && _rrow < _rcnt) stash_mode_index = _rrow;
             }
@@ -642,6 +699,53 @@ if (level_alloc_open) {
 
 
 // =============================================================================
+// TOUCH ACTION MENU (M 07-17) - modal list of the open NPC screen's letter-hotkey
+// verbs (Deepen Bond / Gift / Reforge / Cancel), for touch where those keys have
+// no direct tap target. Opened by long-press (on empty space, so it can't also
+// trip a press-fire buy) or the ACTIONS chip; a row tap fires the matching
+// simulated key through the unchanged handler NEXT frame. The menu owns input
+// while open (exits, freezing the screen beneath). Drawn by
+// ui_draw_touch_action_menu. Placed AFTER the higher modals (item picker / gift /
+// kb / journal / pet inspect, which all exit above) so those keep priority -
+// __input_ctx() reads shop/bairc only when none of them own input.
+// =============================================================================
+if (input_device() == 2) {
+    if (!variable_global_exists("touch_amenu")) global.touch_amenu = { open: false, open_t0: -1 };
+    var _am_ctx = __input_ctx();
+    var _am_npc = (_am_ctx == "shop" || _am_ctx == "bairc");
+    if (global.touch_amenu.open) {
+        var _am_items = touch_action_menu_items();
+        if (!_am_npc || array_length(_am_items) == 0) {
+            global.touch_amenu.open = false;
+        } else {
+            // Ignore the very gesture that opened the menu (same press-origin time)
+            // so its own release can't instantly select a row or dismiss.
+            if (global.tg.t0 != global.touch_amenu.open_t0) {
+                var _am_lay = touch_amenu_rects(array_length(_am_items));
+                var _am_hit = false;
+                for (var _ai = 0; _ai < array_length(_am_items); _ai++) {
+                    var _amr = _am_lay.rows[_ai];
+                    if (touch_tap_in(_am_lay.x1, _amr.y1, _am_lay.x2, _amr.y2)) {
+                        touch_press(_am_items[_ai].key);
+                        global.touch_amenu.open = false;
+                        _am_hit = true;
+                        break;
+                    }
+                }
+                // Close row or any tap outside a row dismisses.
+                if (!_am_hit && touch_tap()) global.touch_amenu.open = false;
+            }
+            exit;   // modal owns input while open
+        }
+    } else if (_am_npc && touch_lp() && array_length(touch_action_menu_items()) > 0) {
+        global.touch_amenu.open    = true;
+        global.touch_amenu.open_t0 = global.tg.t0;
+        audio_play_sound(snd_page, 1, false);
+        exit;
+    }
+}
+
+// =============================================================================
 // DEEPEN BOND (B) inside an open NPC screen, so a ready gate is actionable right
 // where you earn it (mirrors the hub-list B handler, which is gated off while a
 // screen is open). Maps the currently-open NPC screen to its affinity id. No-ops
@@ -691,7 +795,8 @@ if (input_hotkey("F") && room == rm_hub && !text_entry_active()
         _gift_npc = (shop_open == 0) ? "petra" : "dorn"; _gift_notify = 0;
     } else if (trainer_open && !trainer_statpick_open && !vex_detail_open) {
         _gift_npc = "vex"; _gift_notify = 1;
-    } else if (variable_instance_exists(id, "maren_open") && maren_open && maren_confirm == undefined) {
+    } else if (variable_instance_exists(id, "maren_open") && maren_open && maren_confirm == undefined
+        && !banshee_release_open) {
         _gift_npc = "maren"; _gift_notify = 2;
     } else if (variable_instance_exists(id, "sable_open") && sable_open) {
         _gift_npc = "sable"; _gift_notify = 3;
@@ -723,34 +828,25 @@ if (input_hotkey("F") && room == rm_hub && !text_entry_active()
 // =============================================================================
 if (shop_open != -1 && !stash_mode_open) {
 
-    // Q/E: cycle tabs. Petra (shop_open == 0) has a 3rd "Treasure Trader" tab; Dorn has 2.
-    var _shop_ntabs = (shop_open == 0) ? 3 : 2;
+    // Q/E: cycle tabs. Petra (shop_open == 0) has BUY/SELL/TRADE; Dorn has BUY/SELL/REFORGE.
+    var _shop_ntabs = 3;
     if (input_tab_next()) {
         shop_tab = (shop_tab + 1) mod _shop_ntabs;
-        sell_index = 0; sell_scroll = 0; sell_confirm_name = ""; shop_notification = "";
+        sell_index = 0; sell_scroll = 0; buy_scroll = 0; sell_confirm_name = ""; shop_notification = "";
+        reforge_index = 0; reforge_scroll = 0;
         petra_trade_confirm = false; petra_trade_selected = []; petra_trade_notification = "";
     }
     if (input_tab_prev()) {
         shop_tab = (shop_tab + _shop_ntabs - 1) mod _shop_ntabs;
-        sell_index = 0; sell_scroll = 0; sell_confirm_name = ""; shop_notification = "";
+        sell_index = 0; sell_scroll = 0; buy_scroll = 0; sell_confirm_name = ""; shop_notification = "";
+        reforge_index = 0; reforge_scroll = 0;
         petra_trade_confirm = false; petra_trade_selected = []; petra_trade_notification = "";
     }
 
-    // Dorn honors Reforge Chits (BOARD_REQUESTS_SPEC.md §7): [R] opens the affix
-    // reroll picker. The item is reworked IN PLACE - same base, same rarity, new
-    // affixes - and nothing is consumed but the chit.
+    // Dorn's affix rework lives on its own REFORGE tab now (shop_tab == 2). [R] is a
+    // shortcut that jumps straight to it from any Dorn tab.
     if (shop_open == 1 && input_hotkey("R")) {
-        board_requests_ensure();
-        if (global.reforge_chits < 1) {
-            shop_notification = "No Reforge Chits - the tavern board pays them for the harder requests.";
-        } else {
-            var _rf_cands = item_picker_candidates_affixed();
-            if (array_length(_rf_cands) == 0) {
-                shop_notification = "Nothing you hold carries affixes to rework (equipped gear must be unequipped).";
-            } else {
-                item_picker_open("chit_reforge", {}, _rf_cands);
-            }
-        }
+        shop_tab = 2; reforge_index = 0; reforge_scroll = 0; shop_notification = "";
     }
 
     // =========================================================================
@@ -887,11 +983,89 @@ if (shop_open != -1 && !stash_mode_open) {
     }
 
     // =========================================================================
+    // REFORGE TAB (Dorn only; shop_tab == 2). Two-panel rework: choose affix-bearing
+    // gear on the right, spend the lowest matching-tier ingot to reroll its affixes
+    // in place. Same effect as the old [R] picker (chit_reforge_item + spend).
+    // =========================================================================
+    if (shop_tab == 2 && shop_open == 1) {
+        var _rf_list = item_picker_candidates_affixed();
+        var _rf_n    = array_length(_rf_list);
+        reforge_index = clamp(reforge_index, 0, max(0, _rf_n - 1));
+
+        if (input_cancel() || input_back()) {
+            shop_open = -1; shop_tab = 0; shop_index = 0;
+            reforge_index = 0; reforge_scroll = 0; shop_notification = "";
+            exit;
+        }
+
+        if (_rf_n > 0) {
+            if (nav_up())   { reforge_index = wrap_index(reforge_index - 1, _rf_n); shop_notification = ""; }
+            if (nav_down()) { reforge_index = wrap_index(reforge_index + 1, _rf_n); shop_notification = ""; }
+
+            if (input_confirm()) {
+                var _rc = _rf_list[reforge_index];
+                var _rr = variable_struct_exists(_rc.item, "rarity") ? clamp(_rc.item.rarity, 0, 4) : 0;
+                var _rt = reforge_ingot_tier_for(_rr);   // -1 = no ingot of that tier or higher
+                if (_rt < 0) {
+                    shop_notification = "No " + item_rarity_name(_rr) + "-tier (or higher) Reforge Ingot - the tavern board pays them.";
+                    audio_play_sound(snd_ui_error, 1, false);
+                } else {
+                    var _oldn = _rc.label;
+                    if (chit_reforge_item(_rc.item)) {
+                        var _sp = reforge_ingot_spend(_rr);
+                        shop_notification = "Dorn reworks " + _oldn + " into " + _rc.item.name + "!  (spent a " + item_rarity_name(_sp) + " ingot)";
+                        audio_play_sound(snd_forge, 1, false);
+                        if (room == rm_hub || room == rm_character_select) save_game();
+                    } else {
+                        shop_notification = "That item has no affixes to rework.";
+                        audio_play_sound(snd_ui_error, 1, false);
+                    }
+                }
+            }
+        }
+
+        // Edge-triggered scroll: the selector moves WITHIN the visible window and the
+        // list only shifts once the cursor reaches the top/bottom edge (matches the Sell
+        // list) - instead of pinning the cursor mid-window while rows slide under it.
+        var _rf_vis = 6;
+        if (reforge_index < reforge_scroll)            reforge_scroll = reforge_index;
+        if (reforge_index >= reforge_scroll + _rf_vis) reforge_scroll = reforge_index - (_rf_vis - 1);
+        reforge_scroll = clamp(reforge_scroll, 0, max(0, _rf_n - _rf_vis));
+
+        // Mouse: click a tab header to leave, or a gear row to select it (Enter reworks).
+        // Row window MUST mirror ui_draw_dorn_reforge (6 visible, pitch 102, top y255).
+        if (mouse_check_button_pressed(mb_left)) {
+            var _rmx = device_mouse_x_to_gui(0);
+            var _rmy = device_mouse_y_to_gui(0);
+            var _rt_w = 320, _rt_gap = 24, _rt_n = 3;
+            var _rt_x0 = 960 - (_rt_n * _rt_w + (_rt_n - 1) * _rt_gap) / 2;
+            for (var _rti = 0; _rti < _rt_n; _rti++) {
+                var _rtx = _rt_x0 + _rti * (_rt_w + _rt_gap);
+                if (_rmx >= _rtx && _rmx < _rtx + _rt_w && _rmy >= 96 && _rmy < 138 && shop_tab != _rti) {
+                    shop_tab = _rti; shop_notification = ""; sell_index = 0; sell_scroll = 0;
+                }
+            }
+            if (_rf_n > 0) {
+                var _rvis  = 6;
+                var _rwin0 = clamp(reforge_scroll, 0, max(0, _rf_n - _rvis));
+                var _rwin1 = min(_rf_n, _rwin0 + _rvis);
+                for (var _rri = _rwin0; _rri < _rwin1; _rri++) {
+                    var _rry = 255 + (_rri - _rwin0) * 102;
+                    if (_rmx >= 642 && _rmx < 1488 && _rmy >= _rry && _rmy < _rry + 96) {
+                        reforge_index = _rri; shop_notification = ""; break;
+                    }
+                }
+            }
+        }
+        exit;
+    }
+
+    // =========================================================================
     // TREASURE TRADER TAB (Petra only; shop_tab == 2). Async gear laundering -
     // 3 same-tier items -> 1 of the next tier, earned by clearing floors. Reads/
     // writes global.petra_order. Logic lives in scr_stats (PETRA_TT_PHASE1_SPEC.md).
     // =========================================================================
-    if (shop_tab == 2) {
+    if (shop_tab == 2 && shop_open == 0) {
         // Esc/Backspace: cancel a pending confirm first, else close the shop.
         if (input_cancel() || input_back()) {
             if (petra_trade_confirm) {
@@ -1025,6 +1199,13 @@ if (shop_open != -1 && !stash_mode_open) {
         if (nav_down()) { shop_index = wrap_index(shop_index + 1, _buy_n); shop_notification = ""; }
         shop_index = clamp(shop_index, 0, _buy_n - 1);
 
+        // Edge-triggered scroll (vis 9): cursor moves within the window; the list only
+        // shifts when the cursor hits the top/bottom edge (matches Sell / Reforge).
+        var _buy_vis = 9;
+        if (shop_index < buy_scroll)             buy_scroll = shop_index;
+        if (shop_index >= buy_scroll + _buy_vis) buy_scroll = shop_index - (_buy_vis - 1);
+        buy_scroll = clamp(buy_scroll, 0, max(0, _buy_n - _buy_vis));
+
         if (input_confirm()) {
             var _entry  = _buy_list[shop_index];
             var _sprice = _entry.price;
@@ -1124,8 +1305,8 @@ if (shop_open != -1 && !stash_mode_open) {
     if (mouse_check_button_pressed(mb_left)) {
         var _shmx = device_mouse_x_to_gui(0);
         var _shmy = device_mouse_y_to_gui(0);
-        // Tab clicks (auto-centred to match the draw side). Petra (shop_open==0) has 3.
-        var _mt_n   = (shop_open == 0) ? 3 : 2;
+        // Tab clicks (auto-centred to match the draw side). Both shops have 3 tabs.
+        var _mt_n   = 3;
         var _mt_w   = 320;
         var _mt_gap = 24;
         var _mt_x0  = 960 - (_mt_n * _mt_w + (_mt_n - 1) * _mt_gap) / 2;
@@ -1145,7 +1326,7 @@ if (shop_open != -1 && !stash_mode_open) {
                 // the 4-5 consumable rows at Dorn's 126px pitch, so feed rows misclicked.
                 var _shp_n    = array_length(petra_buy_list());
                 var _shp_vis  = min(9, _shp_n);
-                var _shp_win0 = (_shp_n > 9) ? clamp(shop_index - 9 + 2, 0, _shp_n - 9) : 0;
+                var _shp_win0 = (_shp_n > 9) ? clamp(buy_scroll, 0, max(0, _shp_n - 9)) : 0;
                 for (var _shri = 0; _shri < _shp_vis; _shri++) {
                     var _shry = 189 + _shri * 90;
                     if (_shmx >= 150 && _shmx < 1500 && _shmy >= _shry && _shmy < _shry + 84) {
@@ -1388,13 +1569,14 @@ if (trainer_open) {
             trainer_notification = "";
         }
     }
-    // === TAB 1: TRAIT SLOT EXPANSION - 800g then 2000g, max +2 ===
+    // === TAB 1: TRAIT SLOT EXPANSION - 800/2000/4000/8000g, max +4 (M 07-16: was +2) ===
     else if (trainer_tab == 1 && _act) {
         var _bts = variable_global_exists("bonus_trait_slots") ? global.bonus_trait_slots : 0;
-        if (_bts >= 2) {
-            trainer_notification = "All trait slots already purchased (4 total).";
+        if (_bts >= 4) {
+            trainer_notification = "All trait slots already purchased (6 total).";
         } else {
-            var _slot_cost = vex_price(cha_price((_bts == 0) ? 800 : 2000));   // Vex Friend perk: 10% off
+            var _slot_ladder = [800, 2000, 4000, 8000];
+            var _slot_cost = vex_price(cha_price(_slot_ladder[_bts]));   // Vex Friend perk: 10% off
             if (global.gold < _slot_cost) {
                 trainer_notification = "Not enough gold - the next slot costs " + string(_slot_cost) + "g.";
                 audio_play_sound(snd_ui_error, 1, false);
@@ -1812,6 +1994,32 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open) {
 // Layout constants here MUST match ui_draw_maren_screen() in scr_ui.
 // =============================================================================
 if (variable_instance_exists(id, "maren_open") && maren_open) {
+    // --- Banshee release ceremony popup: owns ALL input while open. Any key
+    //     first skips to the reveal, then closes. (Drawn by ui_draw_maren.) ---
+    if (banshee_release_open) {
+        banshee_release_timer++;
+        // Melodic scream lands as the spirit clears the bottle mouth (anim frame
+        // ~4 of 17 at 5 game-steps per frame - matches ui_draw_banshee_release).
+        if (!banshee_scream_played && banshee_release_timer >= 20) {
+            banshee_scream_played = true;
+            audio_play_sound(snd_banshee_scream, 1, false);
+        }
+        var _bb_anim_done = (banshee_release_timer >= 17 * 5);
+        if (keyboard_check_pressed(vk_anykey) || mouse_check_button_pressed(mb_left)) {
+            if (!_bb_anim_done) {
+                banshee_release_timer = 17 * 5;   // skip to the held final frame + reveal
+                if (!banshee_scream_played) {
+                    banshee_scream_played = true;
+                    audio_play_sound(snd_banshee_scream, 1, false);
+                }
+            } else {
+                banshee_release_open   = false;
+                banshee_release_result = undefined;
+            }
+        }
+        exit;
+    }
+
     rune_inventory_sort();   // keep the rune/aspect pool alphabetical (display + index ops read this)
     var _m_slots = maren_socketable_slots();
     var _m_gear  = rune_inventory_indices("gear");
@@ -1899,6 +2107,21 @@ if (variable_instance_exists(id, "maren_open") && maren_open) {
                 } else {
                     maren_notification = "Could not remove that rune.";
                 }
+
+            } else if (_cf.action == "banshee_release") {
+                // Free the spirit: consume a banked bottle, roll the reward, and start
+                // the release ceremony popup (bottle opens, banshee rises, scream).
+                var _bb_res = banshee_release_roll();
+                if (_bb_res == undefined) {
+                    maren_notification = "No bottled spirits to free.";
+                } else {
+                    banshee_release_open   = true;
+                    banshee_release_timer  = 0;
+                    banshee_release_result = _bb_res;
+                    banshee_scream_played  = false;
+                    affinity_add("maren", 2);   // she loves this work (function-use drip)
+                    save_game();
+                }
             }
             exit;
         }
@@ -1928,8 +2151,10 @@ if (variable_instance_exists(id, "maren_open") && maren_open) {
         else if (maren_phase == 1) _m_rows = max(1, array_length(_m_groups));         // Combine groups
         else if (maren_phase == 2) _m_rows = max(1, array_length(global.rune_inventory)); // Split list
         else                       _m_rows = max(1, array_length(_m_flags));          // Flagship list
+    } else if (maren_tab == 3) {
+        _m_rows = max(1, array_length(global.rune_inventory));                        // Runes (owned list)
     } else {
-        _m_rows = max(1, array_length(global.rune_inventory));
+        _m_rows = 1;                                                                  // Spirits: single Release action row
     }
 
     // Esc / Backspace - step back one phase, else close the screen
@@ -1943,12 +2168,12 @@ if (variable_instance_exists(id, "maren_open") && maren_open) {
         exit;
     }
 
-    // Q/E (or <-/->) - switch tab (4 tabs; Q/<- left, E/-> right; resets the active flow)
+    // Q/E (or <-/->) - switch tab (5 tabs; Q/<- left, E/-> right; resets the active flow)
     var _maren_tabchg = 0;
     if (input_tab_next() || keyboard_check_pressed(vk_right)) _maren_tabchg = 1;
     else if (input_tab_prev() || keyboard_check_pressed(vk_left)) _maren_tabchg = -1;
     if (_maren_tabchg != 0) {
-        maren_tab = (maren_tab + _maren_tabchg + 4) mod 4;
+        maren_tab = (maren_tab + _maren_tabchg + 5) mod 5;
         maren_phase = 0; maren_item_sel = -1; maren_cursor = 0; maren_scroll = 0; maren_notification = "";
         exit;
     }
@@ -1966,15 +2191,16 @@ if (variable_instance_exists(id, "maren_open") && maren_open) {
     else if (maren_cursor >= maren_scroll + _m_vis) maren_scroll = maren_cursor - _m_vis + 1;
     maren_scroll = clamp(maren_scroll, 0, max(0, _m_rows - _m_vis));
 
-    // Mouse - tab bar (x=445+t*200, y=70, w=190, h=40) + row select acts immediately
+    // Mouse - tab bar (5 tabs: x=368+t*240, y=105, w=225, h=60 - MUST match
+    // ui_draw_maren's bar) + row select acts immediately
     var _m_act = (input_confirm());
     if (mouse_check_button_pressed(mb_left)) {
         var _mmx = device_mouse_x_to_gui(0);
         var _mmy = device_mouse_y_to_gui(0);
         var _hit_tab = false;
-        for (var _mtb = 0; _mtb < 4; _mtb++) {
-            var _mtx = 368 + _mtb * 300;
-            if (_mmx >= _mtx && _mmx < _mtx + 285 && _mmy >= 105 && _mmy < 165) {
+        for (var _mtb = 0; _mtb < 5; _mtb++) {
+            var _mtx = 368 + _mtb * 240;
+            if (_mmx >= _mtx && _mmx < _mtx + 225 && _mmy >= 105 && _mmy < 165) {
                 maren_tab = _mtb; maren_phase = 0; maren_item_sel = -1; maren_cursor = 0; maren_scroll = 0; maren_notification = "";
                 _hit_tab = true; break;
             }
@@ -2142,6 +2368,23 @@ if (variable_instance_exists(id, "maren_open") && maren_open) {
                         : _fres;
                 }
             }
+        } else if (maren_tab == 4) {
+            // -------- SPIRITS TAB (Banshee in a Bottle release) --------
+            banshee_init();
+            if (global.banshee_banked <= 0) {
+                maren_notification = "No bottled spirits to free. Bottles ride out of the dungeon with a living extractor.";
+                audio_play_sound(snd_ui_error, 1, false);
+            } else {
+                var _bb_all_owned = (array_length(global.music_unlocked) >= array_length(music_track_catalog()));
+                maren_confirm = {
+                    action: "banshee_release",
+                    message: "Free the spirit from a Banshee in a Bottle?",
+                    warn: _bb_all_owned
+                        ? "Every song is already yours - this spirit leaves 25 Rune Dust in gratitude."
+                        : "Its parting song becomes a music track you can choose in Settings.",
+                    cost: 0
+                };
+            }
         }
         // Runes tab is read-only.
     }
@@ -2222,7 +2465,8 @@ if (variable_instance_exists(id, "sable_open") && sable_open) {
             var _sfirst = 0;
             var _svis_now = _s_rows;
             if (sable_tab == 0 && sable_phase >= 1) {
-                _sfirst   = ui_list_window_first(sable_cursor, _s_rows, 9);
+                var _sid  = (sable_phase == 1) ? "sable_gear" : "sable_rune";   // phase 1 gear / 2 rune - separate scroll state
+                _sfirst   = ui_list_window(_sid, sable_cursor, _s_rows, 9);
                 _svis_now = min(_s_rows - _sfirst, 9);
             }
             if (_srow >= 0 && _srow < _svis_now) {
@@ -2382,7 +2626,7 @@ if (variable_instance_exists(id, "vael_open") && vael_open) {
             var _tmy = device_mouse_y_to_gui(0);
             if (_tmx >= 300 && _tmx < 1160) {
                 var _t_vis    = 10;
-                var _t_scroll = vael_list_scroll(vael_tint_cursor, _t_rows, _t_vis);
+                var _t_scroll = ui_list_window("vael_tints", vael_tint_cursor, _t_rows, _t_vis);
                 var _t_vrow   = floor((_tmy - 225) / 72);
                 if (_t_vrow >= 0 && _t_vrow < _t_vis) {
                     var _t_row = _t_scroll + _t_vrow;
@@ -2422,7 +2666,7 @@ if (variable_instance_exists(id, "vael_open") && vael_open) {
         // Windowed list: x300..1200, start y225, row step 72 (matches ui_draw_vael_screen).
         if (_vmx >= 300 && _vmx < 1200) {
             var _v_vis    = 10;   // match the draw-side window (clears the controls line)
-            var _v_scroll = vael_list_scroll(clamp(vael_cursor, 0, _v_rows - 1), _v_rows, _v_vis);
+            var _v_scroll = ui_list_window("vael_skins", clamp(vael_cursor, 0, _v_rows - 1), _v_rows, _v_vis);
             var _vvis_row = floor((_vmy - 225) / 72);
             if (_vvis_row >= 0 && _vvis_row < _v_vis) {
                 var _vrow = _v_scroll + _vvis_row;
@@ -2528,6 +2772,7 @@ if (mouse_check_button_pressed(mb_left)) {
                     equip_slot_selected = _msl;
                     equip_picker_open   = true;
                     equip_picker_index  = 0;
+                    equip_picker_scroll = 0;
                     equip_msg           = "";
                     break;
                 }
@@ -2562,7 +2807,7 @@ if (mouse_check_button_pressed(mb_left)) {
             var _mp_eq_off    = (global.inventory[_msel_inv] != undefined) ? 108 : 0;
             var _mp_count     = array_length(_mpitems);
             var _mp_max_rows  = max(1, (1020 - (228 + _mp_eq_off)) div 108);
-            var _mp_scroll    = clamp(equip_picker_index - _mp_max_rows + 1, 0, max(0, _mp_count - _mp_max_rows));
+            var _mp_scroll    = clamp(equip_picker_scroll, 0, max(0, _mp_count - _mp_max_rows));
             var _mp_win_rows  = min(_mp_count - _mp_scroll, _mp_max_rows);
             for (var _mwr = 0; _mwr < _mp_win_rows; _mwr++) {
                 var _mri  = _mp_scroll + _mwr;
@@ -2644,7 +2889,7 @@ if (mouse_check_button_pressed(mb_left)) {
         var _mcons   = array_length(_mgroups);
         // Same windowing as the draw (scr_ui) so clicks land on the visible rows.
         var _mcons_max_vis = 7;
-        var _mcons_first   = ui_list_window_first(consumable_submenu_cursor, _mcons, _mcons_max_vis);
+        var _mcons_first   = ui_list_window("consumables", consumable_submenu_cursor, _mcons, _mcons_max_vis);
         var _mcons_last    = min(_mcons, _mcons_first + _mcons_max_vis);
         for (var _mci = _mcons_first; _mci < _mcons_last; _mci++) {
             var _mcy = 195 + (_mci - _mcons_first) * 120;
@@ -2769,7 +3014,7 @@ if (menu_tab == 1) {
             } else if (_emx >= 1360 && _emx <= 1862 && _emy >= 150 && _emy <= 1012) {
                 equip_found_focus = true;   // clicking the column focuses it even when empty
                 if (_found_n > 0) {
-                    var _ffirst = ui_list_window_first(equip_found_cursor, _found_n, 12);
+                    var _ffirst = ui_list_window("equip_found", equip_found_cursor, _found_n, 12);
                     var _frow   = floor((_emy - 236) / 60);
                     if (_frow >= 0 && _frow < min(12, _found_n - _ffirst)) equip_found_cursor = clamp(_ffirst + _frow, 0, _found_n - 1);
                 }
@@ -2848,8 +3093,9 @@ if (menu_tab == 1) {
 
         // Enter opens the item picker for this slot
         if (input_confirm()) {
-            equip_picker_open  = true;
-            equip_picker_index = 0;
+            equip_picker_open   = true;
+            equip_picker_index  = 0;
+            equip_picker_scroll = 0;
         }
 
         // U unequips the selected slot
@@ -2897,6 +3143,15 @@ if (menu_tab == 1) {
 
         if (nav_up())   { if (_picker_count > 0) equip_picker_index = wrap_index(equip_picker_index - 1, _picker_count); equip_msg = ""; }
         if (nav_down()) { if (_picker_count > 0) equip_picker_index = wrap_index(equip_picker_index + 1, _picker_count); equip_msg = ""; }
+
+        // Edge-triggered scroll: window size mirrors the Draw + mouse math (row_h 108,
+        // list top 228 + a worn-item row when one is equipped). Synced every frame so
+        // the Draw and the mouse hit-test (which both read equip_picker_scroll) agree.
+        var _pk_eq_off = (global.inventory[_sel_inv] != undefined) ? 108 : 0;
+        var _pk_vis    = max(1, (1020 - (228 + _pk_eq_off)) div 108);
+        if (equip_picker_index < equip_picker_scroll)            equip_picker_scroll = equip_picker_index;
+        if (equip_picker_index >= equip_picker_scroll + _pk_vis) equip_picker_scroll = equip_picker_index - (_pk_vis - 1);
+        equip_picker_scroll = clamp(equip_picker_scroll, 0, max(0, _picker_count - _pk_vis));
 
         if ((input_confirm()) && _picker_count == 0) {
             equip_picker_open = false;

@@ -295,6 +295,8 @@ function enemy_should_telegraph(enemy, turn_number) {
 //   lo/hi  approximate post-mitigation damage band (equal for fixed spells)
 //   x2     true when a double_strike second hit rides along
 //   pulse  frames left of the "intent changed" flash (set on re-rolls)
+//   heavy  true = a charged/telegraphed attack (spike swing or spell nuke); a
+//          player STUN/ROOT that lands on it triggers INTERRUPT (+1 AP)
 // }
 // =============================================================================
 
@@ -339,7 +341,7 @@ function enemy_roll_intent(actor, player, next_round, is_reroll) {
     if (actor.is_defeated) { actor.intent = undefined; return; }
     var _eab = enemy_pick_ability(actor, player);   // player passed for the C1 smart-targeting gates
     var _it  = { kind: "attack", eab: _eab, label: "", lo: 0, hi: 0,
-                 x2: false, pulse: (is_reroll ? 30 : 0) };
+                 x2: false, pulse: (is_reroll ? 30 : 0), heavy: false };
     if (_eab == undefined) {
         // Basic attack: damage +/- 2 swing variance; telegraph-spike aware.
         var _spike = (actor.telegraph_turn > 0 && (next_round mod actor.telegraph_turn) == 0);
@@ -347,10 +349,13 @@ function enemy_roll_intent(actor, player, next_round, is_reroll) {
         _it.lo = enemy_intent_estimate(actor, max(1, _raw - 2), 0, player);
         _it.hi = enemy_intent_estimate(actor, _raw + 2, 0, player);
         _it.x2 = (actor.mechanic_type == "double_strike");
+        // A telegraphed spike swing is the "charged/heavy attack" Interrupt punishes.
+        _it.heavy = _spike;
     } else if (_eab.kind == "spell") {
         _it.kind = "spell";
         var _est = enemy_intent_estimate(actor, _eab.value, _eab.dtype, player);
         _it.lo = _est; _it.hi = _est;
+        _it.heavy = true;   // a committed enemy spell nuke is a charged action
     } else if (_eab.kind == "heal") {
         _it.kind = "heal";  _it.label = "Mend";
     } else {
@@ -717,14 +722,14 @@ function enemy_sprite_map() {
         "Frozen Thrall":        spr_frozen_thrall,
         "Glacial Beast":        spr_glacial_beast,
         "Frozen Sentinel":      spr_frozen_sentinel,
-        "Glacial Warden":       spr_glacial_beast,
-        "Tomb Archon":          spr_frozen_sentinel,
-        "The Eternal Frost":    spr_frozen_sentinel,
-        // Scorched Depths bosses - reuse fitting elite sprites (these renamed clones were
-        // missing from the map, so they rendered with no model). See obj_combat_controller Create.
-        "Forge Tyrant":         spr_cinder_golem,
-        "Molten Revenant":      spr_infernal_revenant,
-        "The Ashen Colossus":   spr_fire_drake,
+        // Boss sprites (07-14): all six bosses that shared another enemy's model
+        // now have their own art (PixelLab, style-matched to each dungeon family).
+        "Glacial Warden":       spr_glacial_warden,
+        "Tomb Archon":          spr_tomb_archon,
+        "The Eternal Frost":    spr_eternal_frost,
+        "Forge Tyrant":         spr_forge_tyrant,
+        "Molten Revenant":      spr_molten_revenant,
+        "The Ashen Colossus":   spr_ashen_colossus,
     };
 }
 

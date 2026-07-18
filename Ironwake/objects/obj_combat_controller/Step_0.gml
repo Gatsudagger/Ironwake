@@ -266,6 +266,18 @@ if (player_turn) {
         // again. This is the single canonical player-turn-start hook (the per-turn
         // one-liners elsewhere just raise need_player_status_tick).
         player.turn_cast_categories = {};
+        // Combat plan v2 (07-17): reset per-turn flags, end the Counterblade stance,
+        // and expire whatever Poise shield survived the enemy turn (StS block does not
+        // carry over). poise_shield is decremented as shield is spent, so only the
+        // UNSPENT remainder is removed here - persistent shields (Sanguine Pact,
+        // Ashkeeper Blade) are never touched.
+        player.adrenaline_turn_used = false;
+        player.interrupt_used       = false;
+        player.counterblade_active  = false;
+        if (variable_struct_exists(player, "poise_shield") && player.poise_shield > 0) {
+            player.shield_hp = max(0, player.shield_hp - player.poise_shield);
+            player.poise_shield = 0;
+        }
         // Tick down per-ability cooldowns at the start of the player's turn.
         if (variable_struct_exists(player, "ability_cd")) {
             for (var _cdi = 0; _cdi < array_length(player.ability_cd); _cdi++) {
@@ -372,7 +384,7 @@ if (player_turn) {
                 // Same windowing as the draw (Draw_64) so clicks hit the visible rows.
                 var _q_max_vis = 6;
                 var _q_vis     = min(_qcount, _q_max_vis);
-                var _q_first   = ui_list_window_first(consumable_quick_cursor, _qcount, _q_max_vis);
+                var _q_first   = ui_list_window("combat_quick", consumable_quick_cursor, _qcount, _q_max_vis);
                 var _q_last    = min(_qcount, _q_first + _q_max_vis);
                 var _qpw   = 750;
                 var _qph   = 84 + _q_vis * 108 + 66;
@@ -562,14 +574,16 @@ if (player_turn) {
         var _cmx = _cb_tap ? touch_tap_x() : (_cb_lp ? touch_lp_x() : device_mouse_x_to_gui(0));
         var _cmy = _cb_tap ? touch_tap_y() : (_cb_lp ? touch_lp_y() : device_mouse_y_to_gui(0));
 
-        // Ability buttons: x=240+i*252, y=990-1065, w=240, h=75
+        // Ability buttons: geometry from the shared combat_ability_geom (touch
+        // widens the row; desktop = 240+i*252, 240x75 @ y990).
         // Touch two-step (M 07-08 device test: single tap-release still cast by
         // accident coming out of a scroll): first tap only SELECTS/highlights
         // the ability, tapping the selected ability again casts it. Desktop
         // mouse keeps single-click cast - byte-identical for device 0/1.
+        var _abg = combat_ability_geom(array_length(player.abilities));
         for (var _cbi = 0; _cbi < array_length(player.abilities); _cbi++) {
-            var _cbx = 240 + _cbi * 252;
-            if (_cmx >= _cbx && _cmx < _cbx+240 && _cmy >= 990 && _cmy < 1065) {
+            var _cbx = _abg.x0 + _cbi * _abg.pitch;
+            if (_cmx >= _cbx && _cmx < _cbx + _abg.w && _cmy >= _abg.y && _cmy < _abg.y + _abg.h) {
                 if (_cb_lp) {
                     selected_ability = _cbi;
                     touch_press(ord("V"));   // examine, don't cast
@@ -602,8 +616,15 @@ if (player_turn) {
         // there; running this inline zone too would end the turn twice.
         if (input_device() != 2 && _cmx >= 660 && _cmx < 1260 && _cmy >= 936 && _cmy < 972) {
             // Inline end-turn - mirrors the T-key block below
+            player.poise_shield = 0;
             if (player.energy > 0) {
                 array_push(combat_log, "Turn ended - " + string(player.energy) + " AP unspent.");
+                // POISE (07-17): unspent AP braces you - 2 shield each (cap 6, 8 with
+                // Relentless), expiring at the start of your next turn (StS block model).
+                if (!variable_struct_exists(player, "shield_hp")) player.shield_hp = 0;
+                player.poise_shield = min(player.energy * 2, (trait_active("Relentless") ? 8 : 6));
+                player.shield_hp += player.poise_shield;
+                array_push(combat_log, "Poise braces you (+" + string(player.poise_shield) + " shield).");
             }
             if (variable_struct_exists(player, "iron_skin_duration") && player.iron_skin_duration > 0) {
                 player.iron_skin_duration--;
@@ -770,6 +791,16 @@ if (player_turn) {
                 array_push(combat_log, "Cracked Focus - first spell costs 1 less AP!");
             }
 
+            // OVERCHARGE arming (07-16 combo batch, M-approved): casting a secondary-
+            // resource spender while the reserve is FULL drains the WHOLE reserve -
+            // the excess pays out at +2 damage / heal / shield per point. Armed here
+            // (full check BEFORE the printed cost is paid); resolved after the
+            // ability's own consumption riders; cleared unconditionally post-cast so
+            // a whiffed cast keeps the reserve. Reserve-HELD scalers (Soul Shield,
+            // Arcane Echo) are excluded - they already ARE the hoard payoff, and
+            // draining under them would double-dip or trap.
+            player.overcharge_armed = ability_overcharge_eligible(ab, player);
+
             // Gatewarden's Brand: first ability each combat costs 0 AP.
             // Only the energy_cost is waived; secondary resource cost still applies.
             var _brand_proc = player.gatewarden_brand && !player.gatewarden_used;
@@ -882,8 +913,10 @@ if (player_turn) {
                     // A detonator ability reacts with the target's strongest status. Burn/Stun
                     // resolve through the crit roll (below), Blind through the hit roll; the rest
                     // (damage mods / poison->mortality / void lifesteal / consume) resolve later.
-                    var _detonator = (ab.base_damage > 0 && (ab.name == "Snipe"
-                        || ab.name == "Assassinate" || ab.name == "Arcane Burst" || ab.name == "Soul Nova"));
+                    // 07-16 combo batch: the list lives in ability_is_detonator (adds Rupture,
+                    // Bonebreaker, and Rift - Rift being AoE makes this per-target pick THE
+                    // cascade: every enemy's own status detonates individually).
+                    var _detonator = (ab.base_damage > 0 && ability_is_detonator(ab));
                     var _react           = _detonator ? combat_detonator_pick(target) : { key: "", idx: -1 };
                     var _react_key       = _react.key;
                     // Hexed (Curse rework, audit §6): a detonation on a hexed target has its
@@ -953,7 +986,7 @@ if (player_turn) {
 
                         // --- Damage calculation ---
                         // Pure-debuff / utility abilities define base_damage 0 (e.g. Marked for
-                        // Death, Curse, Crippling Shot) - they apply a status and deal NO direct
+                        // Death, Curse) - they apply a status and deal NO direct
                         // damage. _deals_damage gates the damage riders, popup and log below so
                         // they never "carry" a damage number (was picking up the target's own
                         // Vulnerable bonus and reporting 0-12 phantom damage).
@@ -992,9 +1025,22 @@ if (player_turn) {
                         if (ab.name == "Arcane Echo" && variable_struct_exists(player, "souls")) {
                             _dmg += player.souls * 4;
                         }
-                        // Killing Spree: bonus per debuff / trap / mark on the target.
+                        // Bulwark Slam (07-17): consume your ENTIRE shield and add its value
+                        // to the hit (the +8 base is on the ability). Pre-crit so the whole
+                        // blow crits together. Zeroes the Poise tracker too so it can't
+                        // double-expire a shield that's already been spent.
+                        if (ab.name == "Bulwark Slam") {
+                            var _bs_sh = variable_struct_exists(player, "shield_hp") ? player.shield_hp : 0;
+                            if (_bs_sh > 0) {
+                                _dmg += _bs_sh;
+                                player.shield_hp = 0;
+                                if (variable_struct_exists(player, "poise_shield")) player.poise_shield = 0;
+                                array_push(combat_log, "Bulwark Slam spends the whole ward - +" + string(_bs_sh) + " damage!");
+                            }
+                        }
+                        // Killing Spree: bonus per debuff / trap / mark on the target (07-17: +5, unified).
                         if (ab.name == "Killing Spree" && variable_struct_exists(target, "status_effects")) {
-                            _dmg += array_length(target.status_effects) * 6;
+                            _dmg += array_length(target.status_effects) * 5;
                         }
                         // Vanish: the empowered strike out of stealth deals bonus damage.
                         // Only a real ATTACK spends the ambush bonus - casting a pure debuff
@@ -1066,26 +1112,10 @@ if (player_turn) {
                                 array_push(combat_log, "Assassinate - execute! Double damage.");
                             }
                         }
-                        // Rupture: detonate all bleed/poison stacks - +5 per remaining tick,
-                        // then clear those DoTs from the target.
-                        if (ab.name == "Rupture" && variable_struct_exists(target, "status_effects")) {
-                            var _bleed_turns = 0;
-                            var _rupture_kept = [];
-                            for (var _rsi = 0; _rsi < array_length(target.status_effects); _rsi++) {
-                                var _rse  = target.status_effects[_rsi];
-                                var _rkind = variable_struct_exists(_rse, "kind") ? _rse.kind : "";
-                                if (_rkind == "dot") {
-                                    _bleed_turns += (variable_struct_exists(_rse, "duration") ? _rse.duration : 0);
-                                } else {
-                                    array_push(_rupture_kept, _rse);
-                                }
-                            }
-                            if (_bleed_turns > 0) {
-                                _dmg += _bleed_turns * 5;
-                                target.status_effects = _rupture_kept;
-                                array_push(combat_log, "Rupture detonates " + string(_bleed_turns) + " bleed ticks (+" + string(_bleed_turns * 5) + " dmg)!");
-                            }
-                        }
+                        // (Rupture's old bespoke detonate-all-DoTs rider is DELETED - 07-16:
+                        //  Rupture is now a true detonator, so the shared Bleed reaction above
+                        //  covers the +5/tick burst, and every other status reacts per the
+                        //  table: chill shatters, poison spreads Mortality, void heals, etc.)
                         // ===== end §3 combo riders =====
 
                         // Weaken on the caster reduces outgoing damage (max of stacked debuffs).
@@ -1162,6 +1192,38 @@ if (player_turn) {
                         if (variable_struct_exists(player, "soul_engine_active") && player.soul_engine_active
                             && ability_class_is_spell(ability_attack_class(ab))) {
                             _final_dmg += 3 * max(0, combat_state.round - player.soul_engine_round);
+                        }
+                        // Warpath (07-16 combo batch): the Bloodwarden ramp - physical and
+                        // Blood abilities gain +2 per FULL turn elapsed since the march began.
+                        // Mirrored in combat_estimate_hit so the preview shows it.
+                        if (variable_struct_exists(player, "warpath_active") && player.warpath_active
+                            && _deals_damage && (ab.damage_type == 0 || ab.damage_type == 3)) {
+                            _final_dmg += 2 * max(0, combat_state.round - player.warpath_round);
+                        }
+                        // Compounding Dread (07-16): accumulated trap bonus - flat, post-crit,
+                        // mirrored in combat_estimate_hit. The +4 increments after each trap
+                        // cast below (so the first trap after lighting it gets +0).
+                        if (variable_struct_exists(player, "dread_bonus") && player.dread_bonus > 0
+                            && (ab.name == "Bear Trap" || ab.name == "Spike Trap" || ab.name == "Death Snare")) {
+                            _final_dmg += player.dread_bonus;
+                            array_push(combat_log, "Compounding Dread: +" + string(player.dread_bonus) + " trap damage!");
+                        }
+                        // OVERCHARGE resolution (07-16, M-approved): a spender cast at a FULL
+                        // reserve drains everything left on its first landed hit - +2 damage
+                        // per point drained. Armed at the spend (after the printed cost);
+                        // resolves AFTER Soul Nova / Soul Rend's own consumption so their
+                        // better per-point rates apply first. Once per cast (first AoE target).
+                        if (variable_struct_exists(player, "overcharge_armed") && player.overcharge_armed && _deals_damage) {
+                            var _oc_pts = 0;
+                            if      (variable_struct_exists(player, "souls"))       { _oc_pts = player.souls;       player.souls = 0; }
+                            else if (variable_struct_exists(player, "blood"))       { _oc_pts = player.blood;       player.blood = 0; }
+                            else if (variable_struct_exists(player, "preparation")) { _oc_pts = player.preparation; player.preparation = 0; }
+                            player.overcharge_armed = false;
+                            if (_oc_pts > 0) {
+                                _final_dmg += _oc_pts * 2;
+                                player.overcharge_hit_pts = _oc_pts;   // read by the splash sequence below
+                                array_push(combat_log, "OVERCHARGE! The reserve empties into the blow - +" + string(_oc_pts * 2) + " damage!");
+                            }
                         }
                         // Berserker Rage: below 40% HP deal +20% damage (Bloodwarden only)
                         if (player.class_id == 1 && trait_active("Berserker Rage")
@@ -1372,6 +1434,43 @@ if (player_turn) {
                         if (_deals_damage) {
                             var _pop_col = (_crit_result.critted) ? c_yellow : make_color_rgb(255, 100, 100);
                             array_push(damage_popups, { value: _final_dmg, x: _vfx_ex, y: _vfx_ey - 105, timer: 50, col: _pop_col });
+                        }
+                        // ===== Sequenced combo presentation (07-16, COMBAT_COMBO_PLAN §A3) =====
+                        // A detonating hit READS as a sequence: damage number, then the
+                        // reaction splash, then the hex splash - staggered popups with a
+                        // rising reveal tick (the loot-suite lesson). Damage was resolved
+                        // above in one pass; this is presentation only.
+                        if (_deals_damage && _react_key != "") {
+                            var _cq_lbl = "";
+                            var _cq_col = c_white;
+                            switch (_react_key) {
+                                case "root": case "frost": _cq_lbl = "SHATTER!";     _cq_col = make_color_rgb(140, 210, 255); break;
+                                case "bleed":              _cq_lbl = "BLOOD BURST!"; _cq_col = make_color_rgb(235,  80,  80); break;
+                                case "stun":               _cq_lbl = "OPENING!";     _cq_col = c_yellow; break;
+                                case "burn":               _cq_lbl = "IGNITE!";      _cq_col = make_color_rgb(255, 150,  60); break;
+                                case "vulnerable":         _cq_lbl = "EXPOSED!";     _cq_col = make_color_rgb(255, 200,  90); break;
+                                case "weaken":             _cq_lbl = "BREAK!";       _cq_col = make_color_rgb(210, 160, 255); break;
+                                case "poison":             _cq_lbl = "FESTER!";      _cq_col = make_color_rgb(150, 220,  90); break;
+                                case "void":               _cq_lbl = "SIPHON!";      _cq_col = make_color_rgb(190, 120, 255); break;
+                                case "shock":              _cq_lbl = "ARC!";         _cq_col = make_color_rgb(120, 200, 255); break;
+                                case "blind":              _cq_lbl = "TRUE SHOT!";   _cq_col = make_color_rgb(200, 200, 200); break;
+                            }
+                            if (_cq_lbl != "") {
+                                array_push(damage_popups, { value: 0, text: _cq_lbl, x: _vfx_ex, y: _vfx_ey - 145,
+                                    timer: 44, delay: 10, col: _cq_col, sfx: snd_loot_reveal, pitch: 1.12 });
+                                if (_hexed) {
+                                    array_push(damage_popups, { value: 0, text: "HEXED x2!", x: _vfx_ex, y: _vfx_ey - 185,
+                                        timer: 44, delay: 22, col: make_color_rgb(200, 110, 255), sfx: snd_loot_reveal, pitch: 1.28 });
+                                }
+                                screen_shake_timer = max(screen_shake_timer, _hexed ? 12 : 10);
+                            }
+                        }
+                        // Overcharge splash rides the same sequence, one step later.
+                        if (_deals_damage && variable_struct_exists(player, "overcharge_hit_pts") && player.overcharge_hit_pts > 0) {
+                            array_push(damage_popups, { value: 0, text: "OVERCHARGE +" + string(player.overcharge_hit_pts * 2) + "!",
+                                x: _vfx_ex, y: _vfx_ey - 225, timer: 44, delay: 34, col: make_color_rgb(255, 230, 120),
+                                sfx: snd_loot_reveal, pitch: 1.4 });
+                            player.overcharge_hit_pts = 0;
                         }
                         attack_anim_timer     = 20;
                         attack_anim_src_x     = 330;
@@ -1599,6 +1698,25 @@ if (player_turn) {
                             array_push(combat_log, "Galvanize - the surge carries: +1 AP next turn!");
                         }
 
+                        // --- Killing Spree (07-17): the spree - every enemy this cast FELLS
+                        //     refunds 2 AP, so kills chain into more kills this turn.
+                        if (ab.name == "Killing Spree" && target.is_defeated) {
+                            player.energy += 2;
+                            array_push(combat_log, "Killing Spree - the spree continues! +2 AP.");
+                        }
+
+                        // --- Vital Theft (07-17): the steal is real - drain the target's max
+                        //     HP, add it to your own, and heal the same, all combat-long. Fires
+                        //     on the landed hit (was never wired before this pass).
+                        if (ab.name == "Vital Theft") {
+                            var _vt = ab.effect_value;
+                            target.max_HP = max(1, target.max_HP - _vt);
+                            if (target.HP > target.max_HP) target.HP = target.max_HP;
+                            player.max_HP += _vt;
+                            player.HP = min(player.max_HP, player.HP + _vt);
+                            array_push(combat_log, "Vital Theft: you steal " + string(_vt) + " max HP - you grow as they wither.");
+                        }
+
                         // --- Winter's Bite (D§4): against a CHILLED target the knife
                         //     bites deeper - +9 Frost and the Prep comes back.
                         if (ab.name == "Winter's Bite") {
@@ -1737,6 +1855,11 @@ if (player_turn) {
                                     element:      ability_status_element(ab),
                                     source:       "player"
                                 };
+                                // Entropy (07-16, M-approved): the rot ACCELERATES - each tick
+                                // grows +2 (6/8/10/12 = 36 back-loaded). Both DoT tickers honor
+                                // the `accel` field; the double-on-reapply above still applies
+                                // to the starting value.
+                                if (ab.name == "Entropy") _status.accel = 2;
                                 array_push(target.status_effects, _status);
                                 // Name what the status DOES so players learn the system by reading the log.
                                 var _kind_phrase = "";
@@ -1757,6 +1880,22 @@ if (player_turn) {
                                     default:           _kind_phrase = ab.name;
                                 }
                                 array_push(combat_log, ab.name + " -> " + target.name + ": " + _kind_phrase + " (" + ability_turns(_status_dur) + ").");
+
+                                // INTERRUPT (07-17): a STUN, or a ROOT on a MELEE foe, that
+                                // lands while the target is winding up a charged/heavy attack
+                                // answers the telegraph AND refunds 1 AP (once per turn). Root
+                                // only counts on melee foes (it can't stop a ranged wind-up),
+                                // mirroring enemy_intent_blocked.
+                                var _int_stops = (_status_kind == "stun")
+                                    || (_status_kind == "root" && (variable_struct_exists(target, "reach") ? target.reach : "melee") == "melee");
+                                if (_int_stops
+                                    && variable_struct_exists(target, "intent") && target.intent != undefined
+                                    && variable_struct_exists(target.intent, "heavy") && target.intent.heavy
+                                    && !(variable_struct_exists(player, "interrupt_used") && player.interrupt_used)) {
+                                    player.energy += 1;
+                                    player.interrupt_used = true;
+                                    array_push(combat_log, "INTERRUPT! " + target.name + "'s charged attack is broken - +1 AP!");
+                                }
 
                                 // Plaguebearer: single-target debuffs/DoTs also strike every
                                 // OTHER living enemy at half duration.
@@ -1780,6 +1919,18 @@ if (player_turn) {
                                     }
                                     if (_pb_spread) array_push(combat_log, "Plaguebearer spreads " + ab.name + " to all enemies!");
                                 }
+                            }
+
+                            // Frost Shot (07-16 combo batch): the SS shatter-primer's second
+                            // edge - a 1-turn Chill rider on top of its 3-turn Weaken (same
+                            // status shape as Hoarfrost Lance's chill, shorter window). The
+                            // weaken layer aggregates by MAX, so they overlap, not stack.
+                            if (ab.name == "Frost Shot") {
+                                array_push(target.status_effects, {
+                                    name: "Chilled", effect_type: "debuff", kind: "weaken",
+                                    effect_value: 0.30, duration: 1, element: "frost", source: "player"
+                                });
+                                array_push(combat_log, target.name + " is Chilled (1 turn) - detonators will SHATTER it!");
                             }
 
                             // Elemental weapon affix MAY apply its setup status (burn/frost/shock)
@@ -1807,6 +1958,17 @@ if (player_turn) {
 
                   // Echo consumes its once-per-combat charge after the full AoE resolves.
                   if (_echo_now) player.rune_first_aoe_used = true;
+
+                  // Compounding Dread (07-16): each trap cast while the dread is lit
+                  // compounds the permanent (this-combat) trap bonus by +4. Incremented
+                  // AFTER resolution so the first trap after lighting it gets +0.
+                  if (variable_struct_exists(player, "dread_active") && player.dread_active
+                      && (ab.name == "Bear Trap" || ab.name == "Spike Trap" || ab.name == "Death Snare")) {
+                      player.dread_bonus += 4;
+                      array_push(combat_log, "The dread compounds - traps now +" + string(player.dread_bonus) + " damage this combat.");
+                  }
+                  // OVERCHARGE safety: a fully-missed cast keeps the reserve (generous).
+                  player.overcharge_armed = false;
                 }       // end "targets non-empty" else
 
             } else {
@@ -1829,7 +1991,22 @@ if (player_turn) {
                 }
 
                 if (ab.effect_type == "heal") {
-                    var _heal_amt = combat_heal_after_mortality(player, ab.effect_value);
+                    var _self_heal_base = ab.effect_value;
+                    // OVERCHARGE (07-16): a heal spender cast at a FULL reserve drains
+                    // what's left for +2 healing per point (e.g. Blood Surge at 10 Blood:
+                    // pay 2, drain the other 8, heal 14 + 16).
+                    if (variable_struct_exists(player, "overcharge_armed") && player.overcharge_armed) {
+                        var _och_pts = 0;
+                        if      (variable_struct_exists(player, "souls"))       { _och_pts = player.souls;       player.souls = 0; }
+                        else if (variable_struct_exists(player, "blood"))       { _och_pts = player.blood;       player.blood = 0; }
+                        else if (variable_struct_exists(player, "preparation")) { _och_pts = player.preparation; player.preparation = 0; }
+                        player.overcharge_armed = false;
+                        if (_och_pts > 0) {
+                            _self_heal_base += _och_pts * 2;
+                            array_push(combat_log, "OVERCHARGE! The reserve empties into the mending - +" + string(_och_pts * 2) + " healing!");
+                        }
+                    }
+                    var _heal_amt = combat_heal_after_mortality(player, _self_heal_base);
                     var _heal = min(player.max_HP - player.HP, _heal_amt);
                     player.HP += _heal;
                     if (_heal > 0) {
@@ -1900,10 +2077,37 @@ if (player_turn) {
                     }
                 }
 
+                // --- Warpath (07-16 combo batch): the Bloodwarden ramp - once per
+                //     combat, combat-long: physical/Blood abilities +2 per full turn. ---
+                if (ab.name == "Warpath") {
+                    if (variable_struct_exists(player, "warpath_active") && player.warpath_active) {
+                        array_push(combat_log, "The march is already on.");
+                    } else {
+                        player.warpath_active = true;
+                        player.warpath_round  = combat_state.round;
+                        array_push(combat_log, "WARPATH - every turn from here hits +2 harder.");
+                    }
+                }
+
+                // --- Compounding Dread (07-16): the Shadowstrider trap ramp - each
+                //     trap cast while lit permanently adds +4 trap damage this combat. ---
+                if (ab.name == "Compounding Dread") {
+                    if (variable_struct_exists(player, "dread_active") && player.dread_active) {
+                        array_push(combat_log, "The dread already gathers.");
+                    } else {
+                        player.dread_active = true;
+                        if (!variable_struct_exists(player, "dread_bonus")) player.dread_bonus = 0;
+                        array_push(combat_log, "COMPOUNDING DREAD - every trap from here teaches the next to cut deeper (+4 each).");
+                    }
+                }
+
                 // --- Devil's Flip (D§4): the coin IS the roll - no accuracy, no
                 //     dodge. Heads: your SELECTED target takes 26 (phys-mitigated).
                 //     Tails: YOU take 8 (the lethal gate still applies).
                 if (ab.name == "Devil's Flip") {
+                    // Win streak (07-16, M-approved): +8 payout per consecutive win THIS
+                    // combat; a tails resets it. EV at streak 0 unchanged (Strike parity).
+                    if (!variable_struct_exists(player, "flip_streak")) player.flip_streak = 0;
                     if (irandom(1) == 0) {
                         // Resolve the selected target with the same fallback walk the
                         // cast path uses (first living enemy when selection is stale).
@@ -1916,12 +2120,15 @@ if (player_turn) {
                             _df_live++;
                         }
                         if (_df_t != undefined) {
-                            var _df_dmg = combat_resolve_damage(26, 0, _df_t.armor, _df_t.el_resist);
+                            var _df_base = 26 + player.flip_streak * 8;
+                            var _df_dmg = combat_resolve_damage(_df_base, 0, _df_t.armor, _df_t.el_resist);
                             if (_df_dmg < 1) _df_dmg = 1;
                             combat_apply_damage(_df_t, _df_dmg);
                             _df_t.hit_flash = max(_df_t.hit_flash, 12);
                             array_push(damage_popups, { value: _df_dmg, x: 1620 + _df_slot * (-120), y: 233 + _df_slot * 105 - 60, timer: 50, col: make_color_rgb(235, 190, 90) });
-                            array_push(combat_log, "DEVIL'S FLIP - heads! " + _df_t.name + " takes " + string(_df_dmg) + "!");
+                            player.flip_streak += 1;
+                            array_push(combat_log, "DEVIL'S FLIP - heads! " + _df_t.name + " takes " + string(_df_dmg)
+                                + ((player.flip_streak >= 2) ? (" (streak " + string(player.flip_streak) + " - next flip +" + string(player.flip_streak * 8) + ")") : "") + "!");
                             if (_df_t.HP <= 0) combat_on_enemy_defeated(_df_t, player, combat_log);
                         } else {
                             array_push(combat_log, "Devil's Flip finds no one to collect from.");
@@ -1931,7 +2138,9 @@ if (player_turn) {
                         player.hit_flash = 15;
                         combat_state.player_took_damage = true;
                         array_push(damage_popups, { value: 8, x: 475, y: 545, timer: 50, col: make_color_rgb(255, 130, 60) });
-                        array_push(combat_log, "DEVIL'S FLIP - tails! The house collects 8 from YOU.");
+                        array_push(combat_log, "DEVIL'S FLIP - tails! The house collects 8 from YOU"
+                            + ((player.flip_streak > 0) ? (" - the " + string(player.flip_streak) + "-win streak dies") : "") + ".");
+                        player.flip_streak = 0;
                         if (player.HP <= 0 && !combat_try_last_stand(player, combat_log)) player.is_defeated = true;
                     }
                 }
@@ -2001,14 +2210,18 @@ if (player_turn) {
                     }
                 }
 
-                // --- Adrenaline Rush: +1 AP this turn, once per combat ---
+                // --- Adrenaline Rush (07-17 rework): once per TURN, pay 5 HP -> +1 AP.
+                //     The HP-as-fuel lever; loves lifesteal builds, ruinous when bleeding out. ---
                 if (ab.name == "Adrenaline Rush") {
-                    if (!variable_struct_exists(player, "adrenaline_used") || !player.adrenaline_used) {
-                        player.adrenaline_used = true;
-                        player.energy += 1;
-                        array_push(combat_log, "Adrenaline Rush: +1 AP this turn!");
+                    if (variable_struct_exists(player, "adrenaline_turn_used") && player.adrenaline_turn_used) {
+                        array_push(combat_log, "Adrenaline Rush already spent this turn.");
+                    } else if (player.HP <= 5) {
+                        array_push(combat_log, "Not enough HP to push - Adrenaline Rush needs more than 5 HP.");
                     } else {
-                        array_push(combat_log, "Adrenaline Rush already spent this combat.");
+                        player.HP -= 5;
+                        player.energy += 1;
+                        player.adrenaline_turn_used = true;
+                        array_push(combat_log, "Adrenaline Rush: 5 HP -> +1 AP!");
                     }
                 }
 
@@ -2023,9 +2236,20 @@ if (player_turn) {
                     } else {
                         player.blood -= _sp_spend;
                         if (!variable_struct_exists(player, "shield_hp")) player.shield_hp = 0;
-                        player.shield_hp += _sp_spend * 6;
-                        array_push(combat_log, "Sanguine Pact: seals " + string(_sp_spend)
-                            + " Blood into a " + string(_sp_spend * 6) + "-point ward.");
+                        var _sp_ward = _sp_spend * 6;
+                        // OVERCHARGE (07-16): sealed at a FULL reserve, the Pact takes ALL
+                        // the Blood - the first 3 at its own 6/point rate, the rest at +2.
+                        if (variable_struct_exists(player, "overcharge_armed") && player.overcharge_armed) {
+                            var _sp_extra = player.blood;
+                            player.blood = 0;
+                            player.overcharge_armed = false;
+                            if (_sp_extra > 0) {
+                                _sp_ward += _sp_extra * 2;
+                                array_push(combat_log, "OVERCHARGE! The whole reserve seals into the ward - +" + string(_sp_extra * 2) + " shield!");
+                            }
+                        }
+                        player.shield_hp += _sp_ward;
+                        array_push(combat_log, "Sanguine Pact: seals the Blood into a " + string(_sp_ward) + "-point ward.");
                     }
                 }
 
@@ -2112,6 +2336,8 @@ if (player_turn) {
                 // DoT bypasses armor - poison and bleed are internal damage
                 var _dot_dmg = _se.effect_value;
                 combat_apply_damage(actor, _dot_dmg);
+                // Accelerating DoT (Entropy 07-16): each tick grows by `accel` (6/8/10/12).
+                if (variable_struct_exists(_se, "accel") && _se.accel > 0) _se.effect_value += _se.accel;
                 // Vampiric Edge: Bloodwarden heals 2 HP per DoT tick from player effects
                 if (_se.source == "player" && player.class_id == 1 && trait_active("Vampiric Edge")) {
                     var _vamp_heal = round(2 * trait_potency_mult("Vampiric Edge"));
@@ -2297,6 +2523,29 @@ if (player_turn) {
                 exit;
             } else {
                 array_push(combat_log, "The vanish falters - " + actor.name + " finds its mark!");
+            }
+        }
+
+        // --- Counterblade (07-17): riposte stance - a MELEE attacker eats 12 physical,
+        //     whether its blow lands or is dodged. Fires once per attacking melee enemy
+        //     (each enemy runs this section on its own turn); the stance clears at the
+        //     player's next turn start. A riposte that kills ends that enemy's turn. ---
+        if (variable_struct_exists(player, "counterblade_active") && player.counterblade_active
+            && (variable_struct_exists(actor, "reach") ? actor.reach : "melee") == "melee"
+            && !actor.is_defeated
+            && !(variable_struct_exists(actor, "intent") && actor.intent != undefined && actor.intent.kind == "heal")) {
+            var _cb_dmg = combat_resolve_damage(12, 0, actor.armor, actor.el_resist);
+            if (_cb_dmg < 1) _cb_dmg = 1;
+            combat_apply_damage(actor, _cb_dmg);
+            actor.hit_flash = max(actor.hit_flash, 10);
+            array_push(combat_log, "Counterblade ripostes " + actor.name + " for " + string(_cb_dmg) + "!");
+            if (actor.HP <= 0 && !actor.is_defeated) {
+                combat_on_enemy_defeated(actor, player, combat_log);
+                combat_next_turn(combat_state);
+                player_turn = combat_state.active.is_player;
+                if (player_turn) { abilities_used_this_turn = []; if (instance_exists(obj_game_controller)) instance_find(obj_game_controller, 0).items_used_this_turn = 0; need_player_status_tick = true; }
+                enemy_turn_timer = enemy_turn_delay;
+                exit;
             }
         }
 
@@ -2534,6 +2783,9 @@ if (player_turn) {
             if (variable_struct_exists(player, "shield_hp") && player.shield_hp > 0 && _final_dmg > 0) {
                 var _sa = min(player.shield_hp, _final_dmg);
                 player.shield_hp -= _sa;
+                // Poise is spent first (07-17): decrement the tracker so its turn-start
+                // expiry only removes what survived, never a persistent ward.
+                if (variable_struct_exists(player, "poise_shield") && player.poise_shield > 0) player.poise_shield = max(0, player.poise_shield - _sa);
                 _final_dmg -= _sa;
                 array_push(combat_log, "Soul Shield absorbs " + string(_sa) + " damage.");
             }
@@ -2679,6 +2931,7 @@ if (player_turn) {
                 if (variable_struct_exists(player, "shield_hp") && player.shield_hp > 0 && _final_dmg2 > 0) {
                     var _sa2 = min(player.shield_hp, _final_dmg2);
                     player.shield_hp -= _sa2;
+                    if (variable_struct_exists(player, "poise_shield") && player.poise_shield > 0) player.poise_shield = max(0, player.poise_shield - _sa2);
                     _final_dmg2 -= _sa2;
                     array_push(combat_log, "Soul Shield absorbs " + string(_sa2) + " damage.");
                 }

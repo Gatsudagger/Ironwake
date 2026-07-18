@@ -13,7 +13,7 @@
 // both directions (unknown fields ignored, missing fields defaulted), so bump this
 // ONLY when a field's MEANING changes and add the fix-up in load_game's migration
 // block - never repurpose an old field name without one.
-#macro SAVE_FORMAT_VERSION 2
+#macro SAVE_FORMAT_VERSION 3
 // v2 (2026-07-08): weapon flat damage became a per-item RANGE roll (was fixed per
 // rarity) and caster ranged weapons gained a rolled wpn_school. Loading a v1 save
 // re-rolls every non-hand-tuned weapon once (item_migrate_weapon_fields force flag).
@@ -161,7 +161,7 @@ function save_game() {
         // (unlike the code-authored catalog), plus the id sequence + Reforge Chits.
         board_requests:  (variable_global_exists("board_requests")  && is_array(global.board_requests))   ? global.board_requests  : [],
         board_seq:       variable_global_exists("board_seq")     ? global.board_seq     : 0,
-        reforge_chits:   variable_global_exists("reforge_chits") ? global.reforge_chits : 0,
+        reforge_ingots:  (variable_global_exists("reforge_ingots") && is_array(global.reforge_ingots)) ? global.reforge_ingots : [0, 0, 0, 0, 0],
         // Board v2: special-posting cadence must survive reload (rerolls_used is
         // board-age-scoped and resets every run end - not worth persisting).
         board_special_countdown: variable_global_exists("board_special_countdown") ? global.board_special_countdown : 5,
@@ -208,6 +208,15 @@ function save_game() {
         chosen_portrait:             variable_global_exists("chosen_portrait")             ? global.chosen_portrait             : 0,
         chosen_class:                variable_global_exists("chosen_class")                ? global.chosen_class                : 0,
         chosen_stats:                variable_global_exists("chosen_stats")                ? global.chosen_stats                : undefined,
+
+        // Banshee in a Bottle + music jukebox (v3, BANSHEE_BOTTLE_SPEC.md).
+        // banked = stash-side bottles awaiting Maren; carried is run-scoped and
+        // intentionally NOT saved (same reasoning as carried_items above).
+        banshee_banked:     variable_global_exists("banshee_banked")     ? global.banshee_banked     : 0,
+        banshee_boss_drops: (variable_global_exists("banshee_boss_drops") && is_struct(global.banshee_boss_drops)) ? global.banshee_boss_drops : {},
+        music_unlocked:     (variable_global_exists("music_unlocked")     && is_array(global.music_unlocked))      ? global.music_unlocked     : [],
+        music_sel_hub:      variable_global_exists("music_sel_hub")      ? global.music_sel_hub      : "",
+        music_sel_dungeon:  variable_global_exists("music_sel_dungeon")  ? global.music_sel_dungeon  : "",
     };
 
     var _json = json_stringify(_save);
@@ -279,6 +288,7 @@ function new_game_reset() {
         vampiric_edge: false, berserker_rage: false, shadow_meld: false,
         serrated_strikes: false, expanded_arsenal: false, prospector: false,
         last_stand: false, focused_power: false, chain_caster: false, plaguebearer: false,
+        relentless: false,
     };
 
     // Vex the Trainer permanent purchases
@@ -308,7 +318,7 @@ function new_game_reset() {
     // Tavern board requests: empty - board_bootstrap() stocks it on first board open.
     global.board_requests = [];
     global.board_seq      = 0;
-    global.reforge_chits  = 0;
+    global.reforge_ingots = [0, 0, 0, 0, 0];
     // Board v2 + dice v2 cadences: fresh clocks, no standing invitation.
     global.board_special_countdown = 5;
     global.board_rerolls_used      = 0;
@@ -366,6 +376,7 @@ function new_game_reset() {
     global.run_curses = [];
     global.run_borrowed_ability = "";   // Borrowed Memory (run-scoped)
     global.run_borrowed_class   = "";
+    run_honing_clear();                 // Whetstone honing (run-scoped, never persisted)
     global.gold_potion_bosses = 0;   // exotic find-buff potions never carry across a load
     global.loot_potion_bosses = 0;
 
@@ -389,6 +400,14 @@ function new_game_reset() {
     global.chosen_portrait = 0;
     global.chosen_class    = 0;
     global.chosen_stats    = undefined;
+
+    // Banshee in a Bottle + music jukebox - a new character owns nothing yet.
+    global.banshee_carried    = 0;
+    global.banshee_banked     = 0;
+    global.banshee_boss_drops = {};
+    global.music_unlocked     = [];
+    global.music_sel_hub      = "";
+    global.music_sel_dungeon  = "";
 }
 
 
@@ -607,7 +626,7 @@ function load_game() {
     // stocks the board the first time it is opened).
     global.board_requests = (variable_struct_exists(_s, "board_requests") && is_array(_s.board_requests)) ? _s.board_requests : [];
     global.board_seq      = (variable_struct_exists(_s, "board_seq"))     ? _s.board_seq     : 0;
-    global.reforge_chits  = (variable_struct_exists(_s, "reforge_chits")) ? _s.reforge_chits : 0;
+    global.reforge_ingots = (variable_struct_exists(_s, "reforge_ingots") && is_array(_s.reforge_ingots) && array_length(_s.reforge_ingots) == 5) ? _s.reforge_ingots : [0, 0, 0, 0, 0];
     // Board v2 (older saves -> fresh 5-run cadence); the reroll ladder always loads reset.
     global.board_special_countdown = (variable_struct_exists(_s, "board_special_countdown")) ? _s.board_special_countdown : 5;
     global.board_rerolls_used      = 0;
@@ -679,6 +698,17 @@ function load_game() {
     }
     if (variable_struct_exists(_s, "petra_special_qty")) global.petra_special_qty = _s.petra_special_qty;
 
+    // Banshee in a Bottle + music jukebox (v3). Pre-v3 saves lack every key ->
+    // fresh defaults (nothing owned, default music). Selections re-validate
+    // against ownership in music_selected_track, so a hand-edited save can't
+    // point at a locked track.
+    global.banshee_carried    = 0;   // run-scoped: never persists across a load
+    global.banshee_banked     = (variable_struct_exists(_s, "banshee_banked")) ? max(0, _s.banshee_banked) : 0;
+    global.banshee_boss_drops = (variable_struct_exists(_s, "banshee_boss_drops") && is_struct(_s.banshee_boss_drops)) ? _s.banshee_boss_drops : {};
+    global.music_unlocked     = (variable_struct_exists(_s, "music_unlocked") && is_array(_s.music_unlocked)) ? _s.music_unlocked : [];
+    global.music_sel_hub      = (variable_struct_exists(_s, "music_sel_hub"))     ? _s.music_sel_hub     : "";
+    global.music_sel_dungeon  = (variable_struct_exists(_s, "music_sel_dungeon")) ? _s.music_sel_dungeon : "";
+
     // Rune system (Maren)
     if (variable_struct_exists(_s, "rune_inventory") && is_array(_s.rune_inventory)) {
         global.rune_inventory = _s.rune_inventory;
@@ -706,6 +736,30 @@ function load_game() {
     if (variable_struct_exists(_s, "ability_mastery") && is_struct(_s.ability_mastery)) {
         global.ability_mastery = _s.ability_mastery;
     }
+    // 07-16: "Crippling Shot" was renamed "Frost Shot" (combo batch - it gained the
+    // Chill rider and the frost identity). Sweep every name-keyed store so old saves
+    // keep the ability equipped/unlocked/mastered. Idempotent - no version gate
+    // needed (same pattern as the Lucky Find -> Blessed Thirst trait rename).
+    if (variable_global_exists("player_loadout") && is_array(global.player_loadout)) {
+        for (var _fsi = 0; _fsi < array_length(global.player_loadout); _fsi++) {
+            if (global.player_loadout[_fsi] == "Crippling Shot") global.player_loadout[_fsi] = "Frost Shot";
+        }
+    }
+    if (variable_global_exists("unlocked_abilities") && is_array(global.unlocked_abilities)) {
+        for (var _fsj = 0; _fsj < array_length(global.unlocked_abilities); _fsj++) {
+            if (global.unlocked_abilities[_fsj] == "Crippling Shot") global.unlocked_abilities[_fsj] = "Frost Shot";
+        }
+    }
+    if (variable_global_exists("ability_casts") && is_struct(global.ability_casts)
+        && variable_struct_exists(global.ability_casts, "Crippling Shot")) {
+        variable_struct_set(global.ability_casts, "Frost Shot", variable_struct_get(global.ability_casts, "Crippling Shot"));
+        variable_struct_remove(global.ability_casts, "Crippling Shot");
+    }
+    if (variable_global_exists("ability_mastery") && is_struct(global.ability_mastery)
+        && variable_struct_exists(global.ability_mastery, "Crippling Shot")) {
+        variable_struct_set(global.ability_mastery, "Frost Shot", variable_struct_get(global.ability_mastery, "Crippling Shot"));
+        variable_struct_remove(global.ability_mastery, "Crippling Shot");
+    }
     // Boons and curses are run-scoped (cleared in end_run). A save can only hold
     // non-empty values if it was written mid-run (boon_grant/curse_grant save on
     // pickup); since loading always lands in the hub between runs, restoring them
@@ -715,6 +769,7 @@ function load_game() {
     global.run_curses = [];
     global.run_borrowed_ability = "";   // Borrowed Memory: run-scoped, same reasoning
     global.run_borrowed_class   = "";
+    run_honing_clear();                 // Whetstone honing: run-scoped, same reasoning
     global.gold_potion_bosses = 0;   // exotic find-buff potions never carry across a load
     global.loot_potion_bosses = 0;
     if (variable_struct_exists(_s, "tutorial_seen") && is_struct(_s.tutorial_seen)) {
@@ -806,4 +861,6 @@ function run_state_reset() {
     global.pending_stat_points  = 0;
     global.run_stat_bonuses     = { STR: 0, DEX: 0, CON: 0, INT: 0, WIS: 0, CHA: 0 };
     global.run_trinkets         = [];
+    global.banshee_carried      = 0;   // run-scoped bottles never survive a run teardown
+    run_honing_clear();                 // Whetstone honing is run-scoped - never survives a run teardown
 }

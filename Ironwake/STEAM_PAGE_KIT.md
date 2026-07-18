@@ -115,13 +115,21 @@ Creature Collector · Gothic · Character Customization · Indie · Replay Value
   imagery, no violence against realistic humans).
 - **Gambling:** in-game dice mini-games wagering in-game gold only — no real-money gambling,
   no loot boxes, no microtransactions.
-- **AI-generated content disclosure (paste verbatim):**
+- **AI-generated content disclosure (v2 — LIVE as of 2026-07-17, paste verbatim):**
 
 > Ironwake contains pre-generated AI content. Some 2D art assets (character sprites, portraits,
 > item illustrations, backgrounds, and icon sets) were created using AI image-generation tools
 > (PixelLab and MidJourney, plus licensed third-party icon packs produced with Stable Diffusion).
-> All AI-generated assets were reviewed, curated, and integrated by the developer. The game does
-> not generate any content with AI at runtime, and no live AI models are accessed by the game.
+> Some sound effects, ambient audio, and music tracks were created using AI audio-generation
+> tools (ElevenLabs). All AI-generated assets were reviewed, curated, and edited by the
+> developer. The game does not generate any content with AI at runtime, and no live AI models
+> are accessed by the game.
+
+  This v2 replaces the old art-only disclosure and now covers the ElevenLabs audio + music
+  that shipped 07-14/07-15 (SFX, ambience, 3 Banshee tracks). **Suno is intentionally NOT
+  named** — no Suno track has shipped. When the first Suno music track imports, add "and Suno"
+  inside the audio-tools parenthesis: "(ElevenLabs and Suno)". Single source of truth for this
+  text = CREDITS.md "AI Content Disclosure (v2)".
 
 ---
 

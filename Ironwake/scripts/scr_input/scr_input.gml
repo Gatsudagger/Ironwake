@@ -548,3 +548,73 @@ function touch_swipe_tab(_x1, _y1, _x2, _y2) {
     _g.sw_done = true;
     touch_press((_tdx < 0) ? ord("E") : ord("Q"));
 }
+
+// =============================================================================
+// TOUCH ACTION MENU (M 07-17) - NPC engagement screens carry letter-hotkey verbs
+// (Deepen Bond / Gift / Reforge / Cancel) that single-touch=mouse can't reach, as
+// they're keyboard/pad only. A long-press (on empty space, so it can't also trip a
+// press-fire buy button) OR the ACTIONS chip opens a modal list; tapping a row
+// fires the SAME simulated key the keyboard uses, through the unchanged handler.
+// touch_action_menu_items() = the current context's available verbs (gated on the
+// exact conditions the handlers check, so no dead rows - M's "no dead buttons"
+// rule). touch_amenu_rects() = shared layout used by both the Step hit-test and
+// the scr_ui draw so they can never drift.
+// =============================================================================
+function touch_action_menu_items() {
+    var _items = [];
+    var _gc = instance_exists(obj_game_controller) ? instance_find(obj_game_controller, 0) : noone;
+    if (_gc == noone) return _items;
+    var _ctx = __input_ctx();
+    if (_ctx == "shop") {
+        // Which NPC owns the open window (mirrors the B/F handler mapping in gc Step).
+        var _npc = "";
+        if (_gc.shop_open == 0)                                                       _npc = "petra";
+        else if (_gc.shop_open == 1)                                                  _npc = "dorn";
+        else if (variable_instance_exists(_gc, "trainer_open") && _gc.trainer_open)   _npc = "vex";
+        else if (variable_instance_exists(_gc, "maren_open")   && _gc.maren_open)     _npc = "maren";
+        else if (variable_instance_exists(_gc, "sable_open")   && _gc.sable_open)     _npc = "sable";
+        else if (variable_instance_exists(_gc, "vael_open")    && _gc.vael_open)      _npc = "vael";
+        // Deepen Bond only when the gate is actually ready (else the keyboard press
+        // is a no-op - a dead row).
+        if (_npc != "" && affinity_gate_ready(_npc)) array_push(_items, { lbl: "Deepen Bond", key: ord("B") });
+        array_push(_items, { lbl: "Give a Gift", key: ord("F") });
+        // Dorn (shop_open 1) honors Reforge Chits on R.
+        if (_gc.shop_open == 1) array_push(_items, { lbl: "Reforge (Ingot)", key: ord("R") });
+        // Petra's Treasure Trader (tab 2) with an in-progress order: C cancels.
+        if (_gc.shop_open == 0 && variable_instance_exists(_gc, "shop_tab") && _gc.shop_tab == 2
+            && petra_order_active() && global.petra_order.status != "ready") {
+            array_push(_items, { lbl: "Cancel Order", key: ord("C") });
+        }
+    } else if (_ctx == "bairc") {
+        // Bairc sub-modals (naming/capstone/release/detail/hatch) own input already;
+        // don't offer the menu over them.
+        if ((variable_instance_exists(_gc, "bairc_naming")         && _gc.bairc_naming)
+         || (variable_instance_exists(_gc, "bairc_capstone_open")  && _gc.bairc_capstone_open)
+         || (variable_instance_exists(_gc, "bairc_release_confirm")&& _gc.bairc_release_confirm)
+         || (variable_instance_exists(_gc, "bairc_detail_open")    && _gc.bairc_detail_open)
+         || (variable_instance_exists(_gc, "hatch_active")         && _gc.hatch_active)) return _items;
+        if (affinity_gate_ready("bairc")) array_push(_items, { lbl: "Deepen Bond", key: ord("B") });
+        array_push(_items, { lbl: "Give a Gift", key: ord("F") });
+    }
+    return _items;
+}
+
+// Shared modal geometry for _n action rows + a Close row. Centered on the band.
+function touch_amenu_rects(_n) {
+    var _rw = 564, _rh = 84, _gap = 12, _title_h = 66, _pad = 18;
+    var _rows_h = (_n + 1) * (_rh + _gap) - _gap;   // +1 = the Close row
+    var _ph = _title_h + _pad * 2 + _rows_h;
+    var _x1 = GUI_CX - _rw / 2;
+    var _y1 = GUI_CY - _ph / 2;
+    var _rows = [];
+    var _ry = _y1 + _title_h + _pad;
+    for (var _i = 0; _i < _n; _i++) {
+        array_push(_rows, { y1: _ry, y2: _ry + _rh });
+        _ry += _rh + _gap;
+    }
+    return {
+        x1: _x1, y1: _y1, x2: _x1 + _rw, y2: _y1 + _ph,
+        title_h: _title_h, pad: _pad, row_h: _rh,
+        rows: _rows, close: { y1: _ry, y2: _ry + _rh }
+    };
+}

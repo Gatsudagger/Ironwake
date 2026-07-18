@@ -307,10 +307,10 @@ var _arc_d = [
       f: "Whisper a Shadow hex that opens every seam in their defenses.\n- Hexed: +4 damage taken from all hits for 3 turns.\n- Detonations against the hexed target hit twice as hard and spread +2 damage-taken to every other enemy." },
     { s: "Spend 1 Soul. Absorb 10 dmg, +3 per Soul HELD.",
       f: "Weave a spent Soul into a ward the rest of the reserve strengthens.\n- Spend 1 Soul: a shield absorbs 10 damage, +3 more per Soul still held.\n- The reserve-defense: a stocked Arcanist wards twice as hard. Cast BEFORE dumping Souls." },
-    { s: "Void rot: 6 dmg/turn for 4 turns.",
-      f: "Set decay loose in their flesh and let time do the killing.\n- Void DoT: 6 damage per turn for 4 turns (24 total).\n- Feeds Void detonations - bursting it heals you for 30% of the hit." },
-    { s: "Spend 2 Souls. Deal 20 Arcane dmg to ALL enemies.",
-      f: "Tear a rift above the field and let the Arcane pour through onto everything.\n- Spend 2 Souls: 20 Arcane damage to every enemy at once.\n- Best into packs, or to finish a weakened group." },
+    { s: "Void rot that GROWS: 6/8/10/12 dmg over 4 turns.",
+      f: "Set decay loose in their flesh and let time do the killing.\n- Accelerating Void DoT: 6, then 8, 10, 12 damage per turn (36 total).\n- Recast onto lingering void for DOUBLE ticks. Detonating it early heals 30% of the hit - but sacrifices the big late ticks." },
+    { s: "Spend 2 Souls. 20 Arcane to ALL + detonates their statuses.",
+      f: "Tear a rift above the field and let the Arcane pour through onto everything.\n- Spend 2 Souls: 20 Arcane damage to every enemy at once - and it DETONATES each enemy's statuses individually.\n- The cascade turn: spread chills, bleeds and hexes, then pull the sky down on all of it." },
     { s: "Spend 1 Soul. Foe takes 40% of dmg YOU take; heals you.",
       f: "Stitch a Shadow thread between your fate and theirs.\n- Combat-long: the bound enemy suffers 40% of every hit you receive, and you heal the same amount.\n- Bind the biggest thing in the room and let it regret hurting you." },
 ];
@@ -390,9 +390,11 @@ global.abilities_bloodwarden = [
         /*effect_type*/"status", /*effect_value*/8, /*duration*/4, // reflect 8 dmg/hit x 4 turns
         /*self*/true),
 
-    // 7: Undying - ultimate safety net; costs 3 Blood; survive lethal blow at 1 HP
+    // 7: Undying - ultimate safety net; costs 3 Blood; survive lethal blow at 1 HP.
+    //    M 07-16 AP audit: 3 -> 2 AP. Spending a WHOLE turn on not-dying felt dead;
+    //    at 2 AP you can still Leech/Cleave the same turn you brace.
     ability_define("Undying",
-        /*energy*/3, /*secondary*/3,
+        /*energy*/2, /*secondary*/3,
         /*damage*/0, /*dtype*/0,
         /*acc*/-1, /*guaranteed*/true,
         /*crit_type*/-1, /*base_crit*/0,
@@ -408,9 +410,11 @@ global.abilities_bloodwarden = [
         /*effect_type*/"debuff", /*effect_value*/0.5, /*duration*/5, // -50% healing received
         /*self*/false),
 
-    // 9: Bloodfeast - every ability drains 6 HP from targets for 2 turns
+    // 9: Bloodfeast - every ability drains 6 HP from targets for 2 turns.
+    //    M 07-16 AP audit: 3 -> 2 AP. At 3 AP the buff's first turn was always
+    //    wasted (no AP left to swing with it) - a setup ability that ate its own payoff.
     ability_define("Bloodfeast",
-        /*energy*/3, /*secondary*/2,
+        /*energy*/2, /*secondary*/2,
         /*damage*/0, /*dtype*/3,        // blood
         /*acc*/-1, /*guaranteed*/true,
         /*crit_type*/-1, /*base_crit*/0,
@@ -430,8 +434,8 @@ var _bw_d = [
       f: "Command your own blood to close the wound.\n- Costs no AP: spend 2 Blood, heal 14 HP.\n- Mid-fight recovery whenever the reserve is stocked." },
     { s: "Deal 24 physical dmg. Target deals -30% dmg for 3 turns.",
       f: "Bring the full weight of the blow down where the bone is.\n- 24 physical damage. The target deals 30% less damage for 3 turns.\n- Put it on the hardest hitter and take the pressure off yourself." },
-    { s: "Spend 1 Blood. 8 Blood dmg. Target max HP -8.",
-      f: "Steal the strength out of a foe and keep it from coming back.\n- 8 Blood damage; the target's maximum HP drops by 8 for the combat.\n- Stack with bleeds to gut a boss's health pool faster." },
+    { s: "Spend 1 Blood. 8 Blood dmg. Steal 8 max HP (heal 8).",
+      f: "Steal the strength out of a foe and make it your own.\n- 8 Blood damage; the target's max HP drops 8 - and YOUR max HP rises 8 and you heal 8, all for the combat.\n- The theft is real now: gut their pool while you grow yours." },
     { s: "Attackers take 8 dmg per hit for 4 turns.",
       f: "Grow a lattice of thorns from your own spilled blood.\n- Every enemy that hits you takes 8 damage back, for 4 turns.\n- Pair with Iron Skin: they hit softer and bleed for trying." },
     { s: "Spend 3 Blood. Lethal blow: survive at 25% HP, +3 Blood.",
@@ -462,12 +466,14 @@ global.abilities_shadowstrider = [
         /*damage*/14, /*dtype*/0,       // physical
         /*acc*/90, /*guaranteed*/false,
         /*crit_type*/1, /*base_crit*/15, // precision (DEX)
-        /*effect_type*/"damage", /*effect_value*/20, /*duration*/0, // +20 if target debuffed
+        /*effect_type*/"damage", /*effect_value*/12, /*duration*/0, // +12 if target debuffed (was 20; 07-17 nerf - "primer+Snipe spam" was the obviously-best line)
         /*self*/false),
 
     // 1: Bear Trap - place trap (costs 1 Prep); triggers with guaranteed hit + root
+    //    07-17: 2 AP -> 1 AP. At 2 AP it was strictly dominated by Spike Trap (~44 dmg);
+    //    now the cheap opener trap (16 + root) next to Spike (damage) and Snare (stun).
     ability_define("Bear Trap",
-        /*energy*/2, /*secondary*/1,
+        /*energy*/1, /*secondary*/1,
         /*damage*/16, /*dtype*/0,       // physical
         /*acc*/-1, /*guaranteed*/true,  // guaranteed on trigger
         /*crit_type*/1, /*base_crit*/8, // precision (DEX)
@@ -505,8 +511,11 @@ global.abilities_shadowstrider = [
         /*effect_type*/"debuff", /*effect_value*/0.4, /*duration*/2, // -40% ACC all enemies
         /*self*/false),
 
-    // 5: Crippling Shot - physical hit + slow and damage reduction debuff
-    ability_define("Crippling Shot",
+    // 5: Frost Shot (renamed from Crippling Shot, combo batch 07-16) - the SS
+    //    shatter-primer: physical hit + Weaken, plus a bespoke 1-turn Chill rider
+    //    (Step_0) so Shadowstrider has an in-class SHATTER setup. Budget: 10 dmg
+    //    + Weaken ~8 + Chill ~6 = 24 on a 2-AP slot.
+    ability_define("Frost Shot",
         /*energy*/2, /*secondary*/0,
         /*damage*/10, /*dtype*/0,       // physical
         /*acc*/84, /*guaranteed*/false,
@@ -555,8 +564,8 @@ global.abilities_shadowstrider = [
 
 // Plain-English descriptions for Shadowstrider abilities
 var _ss_d = [
-    { s: "Deal 14 physical dmg. +20 if target is debuffed.",
-      f: "One breath, one line, one shot that was always going to land.\n- 14 physical damage, high accuracy, strong Precision crit.\n- +20 damage against a debuffed target - mark first, then fire." },
+    { s: "Deal 14 physical dmg. +12 if target is debuffed.",
+      f: "One breath, one line, one shot that was always going to land.\n- 14 physical damage, high accuracy, strong Precision crit.\n- +12 damage against a debuffed target - mark first, then fire." },
     { s: "Spend 1 Prep. Trap: 16 dmg + Root (melee loses a turn).",
       f: "Set steel jaws where the next foot falls.\n- Guaranteed trap hit: 16 physical damage + Root for 1 turn.\n- A Rooted MELEE enemy can't reach you and skips its turn; ranged foes still fire - use Death Snare's Stun for those." },
     { s: "~(50% + WIS) chance to dodge the next 3 attacks. 2-turn CD.",
@@ -565,8 +574,8 @@ var _ss_d = [
       f: "Flick a needle of something patient into their neck.\n- 6 physical damage + Poison 5/turn for 4 turns (20 total).\n- Cheap - apply it early and let it tick while you work." },
     { s: "Spend 1 Prep. Enemies -40% acc 2t; YOU +15% dodge.",
       f: "Drop the room into a grey blindness only you can read.\n- Every enemy's accuracy drops 40% for 2 turns - and the smoke cloaks YOU: +15% dodge while it lingers.\n- The panic button: buy a safe turn to set traps or catch your breath." },
-    { s: "Deal 10 physical dmg. Target deals -25% dmg for 3 turns.",
-      f: "Put the shot where they carry their strength.\n- 10 physical damage. The target deals 25% less damage for 3 turns.\n- Take the most dangerous enemy down a notch early." },
+    { s: "10 dmg. Weaken -25% 3t + Chill 1t (shatters).",
+      f: "Put a sliver of winter where they carry their strength.\n- 10 physical damage. Weakened: -25% damage for 3 turns. Chilled 1 turn: detonators SHATTER it for +30% damage.\n- Your own shatter-primer - land it, then detonate with Snipe or Assassinate." },
     { s: "Spend 1 Prep. Trap: 26 dmg + Bleed 6/turn for 4 turns.",
       f: "Line the floor with points that keep cutting on the way out.\n- Guaranteed trap hit: 26 physical damage + Bleed 6/turn for 4 turns.\n- The DoT-build trap - feeds bleed payoffs; take Death Snare when you need the Stun instead." },
     { s: "Mark 4t: below half HP it takes +30% from ALL sources.",
@@ -603,8 +612,8 @@ var _gen_d = [
       f:"Cinch the wound tight and keep moving.\n- 1 AP: restore 14 HP, on a 2-turn cooldown.\n- No setup, no resource - patch up between bigger plays." },
     { s:"Heal 10 HP, +1 resource, shake off newest debuff.",
       f:"Spit, straighten up, and shake the worst of it off.\n- Heals 10 HP, refunds 1 Soul / Blood / Prep, and cleanses your newest affliction.\n- The only self-cleanse in the game - your answer to Poison, burns, and hexes." },
-    { s:"+1 AP this turn (once per combat).",
-      f:"Let the fear do something useful for once.\n- Costs no AP: gain +1 AP on the spot. Once per fight.\n- Spend it on the turn that decides the fight." },
+    { s:"Pay 5 HP: gain +1 AP. Once per turn.",
+      f:"Let the fear do something useful - and keep letting it.\n- Costs no AP: pay 5 HP, gain +1 AP. Once per turn, every turn.\n- The HP-as-fuel lever; feeds lifesteal builds that pay the loan back. Ruinous when you're already bleeding out." },
 ];
 for (var _i = 0; _i < array_length(global.abilities_general); _i++) {
     global.abilities_general[_i].desc_short = _gen_d[_i].s;
@@ -637,8 +646,8 @@ array_push(global.abilities_bloodwarden,
 var _bw_x = [
     { s:"Seal up to 3 Blood into 6 shield each (max 18).",
       f:"Set the reserve between yourself and the blade.\n- Convert up to 3 Blood into a ward of 6 shield per Blood sealed (max 18).\n- The Blood DUMP defense - you refill by being hit; seal it before the big swings." },
-    { s:"Deal 18 physical dmg. Target takes +5 dmg for 3 turns.",
-      f:"Swing through the armor and into the frame beneath it.\n- 18 physical damage. The shattered guard takes +5 from every hit for 3 turns.\n- Strong elite opener - break them, then pile on." },
+    { s:"Detonator: 18 dmg. Target takes +5 dmg for 3 turns.",
+      f:"Swing through the armor and into the frame beneath it.\n- 18 physical damage that DETONATES the target's strongest status - then the shattered guard takes +5 from every hit for 3 turns.\n- The committed detonation button - break them, then pile on." },
     { s:"Spend 3 Blood. Deal 22 Blood dmg, heal 20 HP. Ultimate.",
       f:"Their blood, your wound, one motion - the high mark of the art.\n- Spend 3 Blood: 22 Blood damage and a 20 HP heal on impact.\n- Swings a losing fight back in your favor." },
 ];
@@ -657,8 +666,8 @@ var _ss_x = [
       f:"Three cuts in the space most people spend on one.\n- 16 physical damage split across 3 strikes, each rolling its own crit. +3 damage per debuff or DoT on the target.\n- Loves crit scaling; bites softer into heavy armor." },
     { s:"~(50% + WIS) dodge next attack; your next hit +12 dmg.",
       f:"Be somewhere else. Then be the knife.\n- (50% + WIS*2)% chance, capped at 85%, to dodge the next attack; Stun halves the odds.\n- Your next hit deals +12 - vanish, then punish." },
-    { s:"Spend 2 Prep. 12 dmg +5 per debuff on target. Ultimate.",
-      f:"Collect on every weakness you've sold them.\n- Spend 2 Prep: 12 physical damage, +5 per debuff, mark, and trap effect on the target.\n- The payoff finisher - the deeper the setup, the deeper it cuts." },
+    { s:"Spend 2 Prep. 12 dmg, +5/debuff. Kills refund 2 AP.",
+      f:"Collect on every weakness you've sold them - and keep the turn going.\n- Spend 2 Prep: 12 physical damage, +5 per debuff, mark, and trap effect on the target.\n- The spree: every enemy this cast KILLS refunds 2 AP. The multi-kill sweep vs Assassinate's single execute." },
 ];
 for (var _i = 0; _i < 3; _i++) {
     global.abilities_shadowstrider[10 + _i].desc_short = _ss_x[_i].s;
@@ -723,8 +732,8 @@ array_push(global.abilities_bloodwarden,
         /*self*/false));
 global.abilities_bloodwarden[13].desc_short = "Deal 9 physical dmg to ALL enemies. Cheap sweep.";
 global.abilities_bloodwarden[13].desc_full  = "Turn the swing wide and let everything standing catch an edge.\n- 1 AP: 9 physical damage to every enemy.\n- Less per target than a focused hit, but it softens a whole pack at once.";
-global.abilities_bloodwarden[14].desc_short = "Detonate all bleeds: 8 Blood dmg +5 per remaining tick.";
-global.abilities_bloodwarden[14].desc_full  = "Seize every open wound at once and tear them all wider.\n- 8 Blood damage, +5 per remaining Bleed/Poison tick on the target; the stacks are consumed.\n- Build with Gore Strike or Spike Trap, then cash out.";
+global.abilities_bloodwarden[14].desc_short = "Detonator: 8 Blood dmg; bleeds +5/tick, chills shatter.";
+global.abilities_bloodwarden[14].desc_full  = "Seize every open wound at once and tear them all wider.\n- 8 Blood damage, and it DETONATES the target's strongest status: bleeds +5 per remaining tick (consumed), chills SHATTER (+30%), poison spreads Mortality, void heals you.\n- Build with Gore Strike or Spike Trap, then cash out.";
 
 // --- SHADOWSTRIDER: Throat Slit (free primer) + Assassinate (Vex payoff) ---
 array_push(global.abilities_shadowstrider,
@@ -827,6 +836,7 @@ global.abilities_arcanist[15].school = "fire";    // Blazing Palm - burning mele
 global.abilities_bloodwarden[8].school = "poison"; // Plague Touch - plague (no dmg; flavor)
 
 global.abilities_shadowstrider[3].school = "poison"; // Poison Dart - the poison ability
+global.abilities_shadowstrider[5].school = "frost";  // Frost Shot - the SS shatter-primer (07-16)
 
 
 // =============================================================================
@@ -860,11 +870,13 @@ global.abilities_arcanist[_dw_a0 + 3].desc_full  = "Set a soul turning inside a 
 
 var _dw_b0 = array_length(global.abilities_bloodwarden);
 array_push(global.abilities_bloodwarden,
-    // Galvanize - 12 Shock melee; a killing blow grants +1 AP next turn
-    ability_define("Galvanize", 2,0, 12,1, 86,false, 0,8, "damage",0,0, false));
+    // Galvanize - 16 Shock melee; a killing blow grants +1 AP next turn
+    //    07-17: 12 -> 16. At 12 the hit was under budget, so the kill->+1 AP rider
+    //    almost never got to fire; 16 is an honest hit (Gore Strike parity minus bleed).
+    ability_define("Galvanize", 2,0, 16,1, 86,false, 0,8, "damage",0,0, false));
 global.abilities_bloodwarden[_dw_b0].school = "shock";
-global.abilities_bloodwarden[_dw_b0].desc_short = "Melee: 12 Shock dmg. Kill = +1 AP next turn.";
-global.abilities_bloodwarden[_dw_b0].desc_full  = "Put the storm behind your fist.\n- Melee spell: 12 Shock damage. If it kills, the surge carries - +1 AP next turn.\n- The shock-tempo bruiser: finish something and keep swinging.";
+global.abilities_bloodwarden[_dw_b0].desc_short = "Melee: 16 Shock dmg. Kill = +1 AP next turn.";
+global.abilities_bloodwarden[_dw_b0].desc_full  = "Put the storm behind your fist.\n- Melee spell: 16 Shock damage. If it kills, the surge carries - +1 AP next turn.\n- The shock-tempo bruiser: finish something and keep swinging.";
 
 var _dw_s0 = array_length(global.abilities_shadowstrider);
 array_push(global.abilities_shadowstrider,
@@ -874,13 +886,56 @@ global.abilities_shadowstrider[_dw_s0].school = "frost";
 global.abilities_shadowstrider[_dw_s0].desc_short = "Spend 1 Prep. Melee 9 Frost; +9 & refund vs Chilled.";
 global.abilities_shadowstrider[_dw_s0].desc_full  = "A knife kept in the coldest pocket.\n- Melee spell: 9 Frost damage. Against a CHILLED target: +9 damage and the Prep comes back.\n- The cross-class frost dip - pairs with chilling weapons and Arcanist ice.";
 
+// =============================================================================
+// COMBO BATCH (M-approved 2026-07-16; COMBAT_COMBO_PLAN_2026-07-16.md).
+// Ramp coverage for the other two classes (Soul Engine mirrors): Warpath (BW,
+// +2 physical/Blood per turn elapsed) and Compounding Dread (SS, each trap cast
+// while lit permanently adds +4 to trap damage this combat). Both once-per-
+// combat combat-long powers, support category, Vex 500g premium tier.
+// Riders live in obj_combat_controller/Step_0 next to Soul Engine's.
+// =============================================================================
+var _cb_b0 = array_length(global.abilities_bloodwarden);
+array_push(global.abilities_bloodwarden,
+    ability_define("Warpath", 2,0, 0,0, -1,true, -1,0, "status",0,0, true));
+global.abilities_bloodwarden[_cb_b0].desc_short = "Once per combat: phys/Blood hits +2 per turn elapsed.";
+global.abilities_bloodwarden[_cb_b0].desc_full  = "Let the rhythm of the fight wind you tighter with every breath.\n- Once per combat, combat-long: your physical and Blood abilities deal +2 more for every full turn since you started the march.\n- Dead weight in short fights, monstrous in long ones - the boss-fight engine.";
+
+var _cb_s0 = array_length(global.abilities_shadowstrider);
+array_push(global.abilities_shadowstrider,
+    ability_define("Compounding Dread", 2,0, 0,0, -1,true, -1,0, "status",0,0, true));
+global.abilities_shadowstrider[_cb_s0].desc_short = "Once per combat: each trap cast adds +4 to trap dmg.";
+global.abilities_shadowstrider[_cb_s0].desc_full  = "Teach the floor itself to hate them a little more each time.\n- Once per combat, combat-long: every trap you spring afterwards permanently adds +4 to your trap damage this combat.\n- The trap-build ramp - light it early and let the snares compound.";
+
 var _dw_g0 = array_length(global.abilities_general);
 array_push(global.abilities_general,
     // Devil's Flip - 50/50: 26 dmg to your selected target, or 8 to YOU. Runs
     // through the SELF branch (the coin is the roll - no accuracy, no root gate).
     ability_define("Devil's Flip", 1,0, 0,0, -1,true, -1,0, "status",0,0, true));
-global.abilities_general[_dw_g0].desc_short = "Flip: 50% deal 26 dmg - 50% take 8 yourself.";
-global.abilities_general[_dw_g0].desc_full  = "The house always deals; sometimes you ARE the house.\n- Flip a coin: heads, the target takes 26 damage. Tails, YOU take 8.\n- Same average as an honest Strike - for players who'd rather gamble.";
+global.abilities_general[_dw_g0].desc_short = "Flip: 50% deal 26 (+8/win streak) - 50% take 8.";
+global.abilities_general[_dw_g0].desc_full  = "The house always deals; sometimes you ARE the house.\n- Flip a coin: heads, the target takes 26 damage +8 per consecutive win this combat. Tails, YOU take 8 and the streak dies.\n- Ride the streak or cash out - for players who'd rather gamble.";
+
+// =============================================================================
+// COMBAT PLAN v2 (M-approved 2026-07-17; COMBAT_IMPROVEMENT_PLAN_2026-07-17.md).
+// Two new verbs that complete existing engines: Bulwark Slam turns the Sanguine
+// Pact / Poise ward into a spendable (StS Body Slam), Counterblade gives SS a
+// Darkest-Dungeon riposte stance. Combat riders live in obj_combat_controller.
+// Both Vex 400g. Bulwark is NOT a detonator (keep the reaction table stable).
+// =============================================================================
+var _v2_b0 = array_length(global.abilities_bloodwarden);
+array_push(global.abilities_bloodwarden,
+    // Bulwark Slam - consume ALL current shield, deal its value + 8 as physical.
+    // base_damage 8 = the "+8 base"; the shield value is a bespoke rider (Step_0).
+    ability_define("Bulwark Slam", 2,0, 8,0, 82,false, 0,10, "damage",0,0, false));
+global.abilities_bloodwarden[_v2_b0].desc_short = "Consume ALL shield; deal it +8 physical dmg.";
+global.abilities_bloodwarden[_v2_b0].desc_full  = "Turn the wall you built into the blow that lands.\n- Spend your ENTIRE shield; deal that much +8 as physical damage. Power crit.\n- The Blood engine's payoff: get hit -> Blood -> Sanguine Pact ward -> Slam. Only good with a stocked guard.";
+
+var _v2_s0 = array_length(global.abilities_shadowstrider);
+array_push(global.abilities_shadowstrider,
+    // Counterblade - riposte stance; counter every melee attacker until next turn.
+    // self-targeted status (the stance); the 12 counter is a bespoke rider (Step_0).
+    ability_define("Counterblade", 1,0, 0,0, -1,true, -1,0, "status",1,1, true));
+global.abilities_shadowstrider[_v2_s0].desc_short = "Stance: counter every melee attacker for 12.";
+global.abilities_shadowstrider[_v2_s0].desc_full  = "Stand ready, and let them open themselves on your edge.\n- Until your next turn, whenever a melee attack targets you - landed OR dodged - counter it for 12 physical.\n- The knife-fighter's answer to a melee pack; pairs with Shadow Step / Vanish dodges. Dead vs ranged.";
 
 // =============================================================================
 // ATTACK CLASSIFICATION - reach (melee/ranged) x kind (attack/spell).
@@ -897,7 +952,7 @@ function ability_attack_class(ab) {
     switch (ab.name) {
         case "Strike":      case "Gore Strike":   case "Marrow Crush": case "Bonebreaker":
         case "Blood Leech": case "Vital Theft":   case "Plague Touch": case "Crimson Apex":
-        case "Flurry":      case "Killing Spree":
+        case "Flurry":      case "Killing Spree": case "Bulwark Slam":  // Bulwark = melee payoff
         // §3 rework melee additions
         case "Cleave":      case "Rupture":       case "Throat Slit":  case "Assassinate":
         // #26 Arcanist melee kit - the melee SPELLS (dtype != 0 keeps them spells)
@@ -954,11 +1009,37 @@ function ability_cooldown(ab) {
     return 0;
 }
 
+// ability_overcharge_eligible(ab, caster) - true when casting this ability RIGHT
+// NOW would trigger OVERCHARGE (07-16, M-approved): the caster's secondary reserve
+// is FULL and the ability is a secondary spender/consumer whose effect can carry
+// the payout (+2 damage / heal / shield per drained point). Reserve-HELD scalers
+// (Soul Shield, Arcane Echo) are excluded - they already are the hoard payoff.
+// Single source of truth: the Step_0 arming AND the button tag both read this.
+function ability_overcharge_eligible(ab, caster) {
+    if (is_undefined(caster) || !is_struct(ab)) return false;
+    var _spender = (ab.secondary_cost > 0 || ab.name == "Soul Nova" || ab.name == "Soul Rend"
+                    || ab.name == "Sanguine Pact")
+                   && ab.name != "Soul Shield" && ab.name != "Arcane Echo";
+    if (!_spender) return false;
+    var _usable = (ab.base_damage > 0 || ab.effect_type == "heal" || ab.effect_type == "shield"
+                   || ab.name == "Sanguine Pact");
+    if (!_usable) return false;
+    if (variable_struct_exists(caster, "souls"))       return caster.souls       >= caster.souls_max;
+    if (variable_struct_exists(caster, "blood"))       return caster.blood       >= caster.blood_max;
+    if (variable_struct_exists(caster, "preparation")) return caster.preparation >= caster.preparation_max;
+    return false;
+}
+
 // ability_is_detonator(ab) - true for abilities that trigger status reactions on
 // hit (see SYSTEMS_VIABILITY_PASS.md). Accepts a struct or a name string.
+// Combo batch 07-16: Rupture + Bonebreaker join (Bloodwarden finally reaches the
+// reaction table - Rupture's old bespoke bleed rider is deleted; the shared bleed
+// reaction is the same +5/tick), and Rift joins as the CASCADE - being AoE, it
+// detonates each enemy's status individually in the per-target loop.
 function ability_is_detonator(ab) {
     var _n = is_struct(ab) ? ab.name : ab;
-    return (_n == "Snipe" || _n == "Assassinate" || _n == "Arcane Burst" || _n == "Soul Nova");
+    return (_n == "Snipe" || _n == "Assassinate" || _n == "Arcane Burst" || _n == "Soul Nova"
+         || _n == "Rupture" || _n == "Bonebreaker" || _n == "Rift");
 }
 
 
@@ -982,16 +1063,18 @@ function ability_category(ab) {
         case "Marrow Crush": case "Bonebreaker":   case "Crimson Apex":  case "Rupture":
         case "Soulfire":     case "Arcane Burst":  case "Soul Nova":     case "Arcane Echo":
         case "Singularity":  case "Rift":          case "Scorch":        case "Poison Dart":
-        case "Crippling Shot": case "Mana Sever":  case "Vital Theft":   case "Soulbind":
+        case "Frost Shot":   case "Mana Sever":  case "Vital Theft":   case "Soulbind":
         case "Bear Trap":    case "Spike Trap":    case "Death Snare":
         case "Blazing Palm": case "Gravewrack Grip": case "Soul Rend":   // #26 melee kit
         case "Hoarfrost Lance": case "Static Arc": case "Galvanize":     // D§4 wave
-        case "Winter's Bite":   case "Devil's Flip":
+        case "Winter's Bite":   case "Devil's Flip": case "Bulwark Slam":
             return "offense";
 
-        // defense - self-protection
+        // defense - self-protection (Counterblade = reactive stance; pairs with the
+        // SS dodge kit for the same-category discount).
         case "Iron Skin":    case "Bloodthorn Aura": case "Soul Shield": case "Blink":
         case "Shadow Step":  case "Evasive Roll":  case "Vanish":        case "Undying":
+        case "Counterblade":
             return "defense";
 
         // support - heal / buff / resource (incl. sustain-primary hybrids: Void Drain,
@@ -999,6 +1082,7 @@ function ability_category(ab) {
         case "Field Dressing": case "Void Drain":  case "Blood Surge":   case "Second Wind":
         case "Adrenaline Rush": case "Soul Harvest": case "Sanguine Pact": case "Bloodfeast":
         case "Blood Leech":    case "Soul Engine":   // D§4: the ramp power is a self-buff
+        case "Warpath":        case "Compounding Dread":   // 07-16 combo batch ramps
             return "support";
 
         // control - pure debuff / CC, no damage as the point (Entropy is DoT-only
@@ -1247,11 +1331,18 @@ function ability_effect_full(ab) {
         case "Gravewrack Grip": _b = "Cannot miss; void damage ignores armor."; break;
         case "Soul Rend":       _b = "Consumes up to 2 Souls; +8 damage per Soul spent."; break;
         case "Flurry":          _b = "Strikes 3 times; each hit rolls its own crit. +3 damage per debuff on the target."; break;
-        case "Rupture":         _b = "Detonates every bleed/poison on the target: +5 damage per remaining tick, consuming them."; break;
+        case "Rupture":         _b = "Blood detonator: bleeds burst for +5 damage per remaining tick (consumed); other statuses react per the reaction table."; break;
+        case "Bonebreaker":     _b = "Detonates the target's strongest status on hit."; break;
+        case "Rift":            _b = "The cascade: detonates each enemy's statuses individually as it hits them."; break;
+        case "Warpath":         _b = "Once per combat, combat-long: physical and Blood abilities deal +2 per full turn elapsed."; break;
+        case "Compounding Dread": _b = "Once per combat, combat-long: each trap you cast afterwards permanently adds +4 to your trap damage this combat."; break;
+        case "Frost Shot":      _b = "Also Chills the target for 1 turn - detonators SHATTER the chill for +30% damage."; break;
         case "Assassinate":     _b = "Execute: deals DOUBLE damage to a target below 30% HP."; break;
-        case "Killing Spree":   _b = "Deals +6 bonus damage per debuff or trap on the target."; break;
-        case "Entropy":         _b = "Deals DOUBLE damage if the target already carries a void DoT - stack it on itself to ramp up."; break;
-        case "Adrenaline Rush": _b = "Gain +1 AP this turn (once per combat)."; break;
+        case "Killing Spree":   _b = "Deals +5 bonus damage per debuff or trap on the target. Each enemy it KILLS refunds 2 AP."; break;
+        case "Entropy":         _b = "The rot ACCELERATES: each tick deals +2 more than the last (6/8/10/12). Recast onto lingering void for DOUBLE ticks."; break;
+        case "Adrenaline Rush": _b = "Once per turn: pay 5 HP to gain +1 AP."; break;
+        case "Bulwark Slam":    _b = "Consumes ALL your current shield and adds its value to the hit."; break;
+        case "Counterblade":    _b = "Until your next turn, counter EVERY melee attacker (hit or dodged) for 12 physical."; break;
         case "Sanguine Pact":   _b = "Seals up to 3 Blood into 6 shield each."; break;
         case "Hoarfrost Lance": _b = "Chilled targets deal -30% damage; detonators SHATTER the chill for +30% damage."; break;
         case "Glacial Ward":    _b = "Melee enemies that strike you this turn are Chilled."; break;
@@ -1259,7 +1350,7 @@ function ability_effect_full(ab) {
         case "Soul Engine":     _b = "Once per combat, combat-long: spells deal +3 per full turn elapsed."; break;
         case "Galvanize":       _b = "A killing blow grants +1 AP next turn."; break;
         case "Winter's Bite":   _b = "Against a Chilled target: +9 damage and the Prep refunds."; break;
-        case "Devil's Flip":    _b = "A coin flip: 50% the target takes 26 - 50% YOU take 8."; break;
+        case "Devil's Flip":    _b = "A coin flip: 50% the target takes 26 (+8 per consecutive win this combat) - 50% YOU take 8 and the streak resets."; break;
         case "Soul Shield":     _b = "The ward absorbs +3 more per Soul still held."; break;
         case "Marked for Death": _b = "Marked: below half HP the target takes +30% from ALL damage sources."; break;
         case "Smoke Bomb":      _b = "The smoke also cloaks YOU: +15% dodge while it lingers."; break;
@@ -1270,7 +1361,7 @@ function ability_effect_full(ab) {
         case "Vanish":          _b = "~(50% + WIS) chance to dodge the next attack; your next strike deals +12 damage."; break;
         case "Bloodthorn Aura": _b = "Reflect " + string(_ev) + " damage to attackers for " + ability_turns(_ed) + "."; break;
         case "Undying":         _b = "Survive the next lethal blow: surge back to 25% max HP and gain 3 Blood."; break;
-        case "Vital Theft":     _b = "Steal " + string(_ev) + " max HP from the target for this combat."; break;
+        case "Vital Theft":     _b = "Steal " + string(_ev) + " max HP from the target, add it to your own max HP, and heal " + string(_ev) + " - all for this combat."; break;
         case "Bloodfeast":      _b = "Each ability also drains " + string(_ev) + " HP for " + ability_turns(_ed) + "."; break;
         case "Soulbind":        _b = "Lifelink: the bound foe takes " + string(round(_ev * 100)) + "% of damage you take, and it heals you the same (whole combat)."; break;
     }
@@ -1279,9 +1370,9 @@ function ability_effect_full(ab) {
     // Detonators surface their reaction behavior. Kept to one plain-English line here;
     // the full reaction table lives in the Tab/V ability-detail popup and the
     // Compendium > Status Reactions page. See SYSTEMS_VIABILITY_PASS.md.
-    if (ab.name == "Snipe" || ab.name == "Assassinate" || ab.name == "Arcane Burst" || ab.name == "Soul Nova") {
+    if (ability_is_detonator(ab) && ab.name != "Rupture" && ab.name != "Bonebreaker" && ab.name != "Rift") {
         array_push(_parts, "Detonates debuffs for secondary effects.");
-    }
+    }   // (Rupture/Bonebreaker/Rift already disclose it in their bespoke line above)
 
     // Standard effect from the typed status kind / effect_type.
     var _k = ability_status_kind(ab);
@@ -1385,7 +1476,9 @@ function ability_summary(ab) {
             case "Assassinate":     _tag = "x2 if <30% HP"; break;
             case "Killing Spree":   _tag = "+5 per debuff"; break;
             case "Snipe":           _tag = "+" + string(_ev) + " if debuffed"; break;
-            case "Adrenaline Rush": _tag = "+1 AP"; break;
+            case "Adrenaline Rush": _tag = "5 HP -> +1 AP"; break;
+            case "Bulwark Slam":    _tag = "Shield -> +dmg"; break;
+            case "Counterblade":    _tag = "Riposte 12"; break;
             case "Sanguine Pact":   _tag = "Blood -> shield"; break;
             case "Blink":           _tag = "Dodge 1, soften 2 - 2t CD"; break;
             case "Shadow Step":     _tag = "Dodge chance x3 - 2t CD"; break;
@@ -1396,6 +1489,10 @@ function ability_summary(ab) {
             case "Vital Theft":     _tag = "Steal " + string(_ev) + " maxHP"; break;
             case "Bloodfeast":      _tag = "Drain rider " + string(_ed) + "t"; break;
             case "Soulbind":        _tag = "Lifelink " + string(round(_ev * 100)) + "%"; break;
+            case "Warpath":         _tag = "+2/turn ramp"; break;
+            case "Compounding Dread": _tag = "+4 trap ramp"; break;
+            case "Soul Engine":     _tag = "+3/turn ramp"; break;
+            case "Devil's Flip":    _tag = "Coin flip, streaks"; break;
         }
     }
     if (_tag != "") array_push(_p, _tag);
@@ -1568,6 +1665,11 @@ global.traits_all = [
         "Below 40% HP, all damage you deal is increased by 20% (Bloodwarden only).",
         1, "total_boss_kills", 4, "berserker_rage"),
 
+    // M 07-16: the "too many 3-AP abilities" fix - a whole extra action every turn.
+    trait_define("Relentless",
+        "Base AP raised from 3 to 4 every turn (Bloodwarden only).",
+        1, "total_boss_kills", 6, "relentless"),
+
     // -------------------------------------------------------------------------
     // CLASS: SHADOWSTRIDER (class_req 2) - unlocked via boss kills
     // -------------------------------------------------------------------------
@@ -1615,6 +1717,7 @@ function trait_colloquial(effect_id) {
         case "crimson_reserve":  return "You walk into every fight with the tank already part-full of Blood to spend. (Bloodwarden)";
         case "vampiric_edge":    return "Your bleeds and poisons feed you back - every tick of them mends a little of your own flesh. (Bloodwarden)";
         case "berserker_rage":   return "Cornered and bloodied is exactly where you want to be - the closer to death, the harder you hit. (Bloodwarden)";
+        case "relentless":       return "Your fury does not wait. Four actions a turn, every turn - the heavy blows stop costing you the whole round. (Bloodwarden)";
         case "phantom_step":     return "You're a ghost on the first beat - the opening attack of every fight simply passes through you. (Shadowstrider)";
         case "shadow_meld":      return "Slip a blow and answer from the dark - the next strike you land finds something vital. (Shadowstrider)";
         case "serrated_strikes": return "Your edges are wicked - every physical hit leaves a free, lingering bleed. (Shadowstrider)";
@@ -1632,8 +1735,8 @@ function trait_colloquial(effect_id) {
 // ---------------------------------------------------------------------------
 // max_trait_slots()
 // Total active-trait slots available: base 2 + bought bonus_trait_slots
-// (Vex, max +2) + 1 while Crown of the Hollow King is equipped. Single source
-// of truth used by the loadout select/draw code.
+// (Vex, max +4 as of M 07-16) + 1 while Crown of the Hollow King is equipped.
+// Single source of truth used by the loadout select/draw code.
 // ---------------------------------------------------------------------------
 function max_trait_slots() {
     var _m = 2;
@@ -1737,9 +1840,13 @@ function ability_unlock_info(ability_name) {
         case "Bloodfeast":       return { type:"vex", cost:400, goal_type:"", goal_value:0 };
         case "Crimson Apex":     return { type:"vex", cost:400, goal_type:"", goal_value:0 };
         case "Rupture":          return { type:"vex", cost:400, goal_type:"", goal_value:0 };
+        case "Warpath":          return { type:"vex", cost:500, goal_type:"", goal_value:0 };  // 07-16 ramp (Soul Engine tier)
+        case "Bulwark Slam":     return { type:"vex", cost:400, goal_type:"", goal_value:0 };  // 07-17 combat plan v2
         // Shadowstrider
         case "Smoke Bomb":       return { type:"vex", cost:100, goal_type:"", goal_value:0 };
-        case "Crippling Shot":   return { type:"vex", cost:100, goal_type:"", goal_value:0 };
+        case "Frost Shot":       return { type:"vex", cost:100, goal_type:"", goal_value:0 };
+        case "Compounding Dread": return { type:"vex", cost:500, goal_type:"", goal_value:0 };  // 07-16 ramp (Soul Engine tier)
+        case "Counterblade":     return { type:"vex", cost:400, goal_type:"", goal_value:0 };  // 07-17 combat plan v2
         case "Marked for Death": return { type:"vex", cost:100, goal_type:"", goal_value:0 };
         case "Spike Trap":       return { type:"vex", cost:250, goal_type:"", goal_value:0 };
         case "Evasive Roll":     return { type:"vex", cost:250, goal_type:"", goal_value:0 };
@@ -1800,6 +1907,8 @@ function ability_unlock_condition_text(ability_name) {
 // Ability names are unique across all pools, so a name lookup is safe.
 // ---------------------------------------------------------------------------
 function ability_is_unlocked(ability_name) {
+    // TEST LEVER (F8, gc Step): everything reads unlocked while the toggle is on.
+    if (variable_global_exists("debug_unlock_all") && global.debug_unlock_all) return true;
     var _info = ability_unlock_info(ability_name);
     if (_info == undefined) return true;   // free starter
 
@@ -1924,26 +2033,56 @@ function ability_mastery_pick(name, mod_id) {
     return "";
 }
 
-// Return the ability itself when unmastered, or a field-adjusted shallow COPY
-// when picks exist (pools stay pristine; dynamic descriptions read the copy).
+// Apply ONE mastery mod id in place to a mutable ability copy. Shared by the
+// permanent notch picks and the run-scoped Whetstone honing so both use the exact
+// same numbers.
+function ability_apply_mastery_mod(_c, mod_id) {
+    switch (mod_id) {
+        case "dmg":  _c.base_damage     += 3; break;
+        case "acc":  _c.base_acc        += 5; break;
+        case "crit": _c.base_crit       += 4; break;
+        case "val":  _c.effect_value    += 2; break;
+        case "dur":  _c.effect_duration += 1; break;
+        case "valp": _c.effect_value     = ceil(_c.effect_value * 1.2); break;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// RUN-SCOPED HONING (Whetstone shrine, COMBAT_IMPROVEMENT_PLAN_2026-07-17.md §C).
+// The Whetstone event grants a RUN-SCOPED mastery mod on one slotted ability,
+// stacking on top of any permanent notch picks. Storage: global.run_honing
+// { ability_name : mod_id }. Null-safe: absent global = no honing. Cleared in
+// run_state_reset / new-game / load (scr_save). Applied by ability_mastery_resolve.
+// ---------------------------------------------------------------------------
+function ability_run_honing(name) {
+    if (!variable_global_exists("run_honing") || !is_struct(global.run_honing)) return "";
+    return variable_struct_exists(global.run_honing, name) ? variable_struct_get(global.run_honing, name) : "";
+}
+
+function ability_run_honing_set(name, mod_id) {
+    if (!variable_global_exists("run_honing") || !is_struct(global.run_honing)) global.run_honing = {};
+    variable_struct_set(global.run_honing, name, mod_id);
+}
+
+function run_honing_clear() {
+    global.run_honing = {};
+    global.run_whetstone_used = false;   // reset the once-per-run Whetstone gate at every run teardown
+}
+
+// Return the ability itself when untouched, or a field-adjusted shallow COPY when
+// permanent picks OR a run-scoped honing mod exist (pools stay pristine; dynamic
+// descriptions read the copy).
 function ability_mastery_resolve(ab) {
-    var _picks = ability_mastery_picks(ab.name);
-    if (array_length(_picks) == 0) return ab;
+    var _picks  = ability_mastery_picks(ab.name);
+    var _honing = ability_run_honing(ab.name);
+    if (array_length(_picks) == 0 && _honing == "") return ab;
     var _c = {};
     var _keys = variable_struct_get_names(ab);
     for (var _k = 0; _k < array_length(_keys); _k++) {
         variable_struct_set(_c, _keys[_k], variable_struct_get(ab, _keys[_k]));
     }
-    for (var _i = 0; _i < array_length(_picks); _i++) {
-        switch (_picks[_i]) {
-            case "dmg":  _c.base_damage     += 3; break;
-            case "acc":  _c.base_acc        += 5; break;
-            case "crit": _c.base_crit       += 4; break;
-            case "val":  _c.effect_value    += 2; break;
-            case "dur":  _c.effect_duration += 1; break;
-            case "valp": _c.effect_value     = ceil(_c.effect_value * 1.2); break;
-        }
-    }
+    for (var _i = 0; _i < array_length(_picks); _i++) ability_apply_mastery_mod(_c, _picks[_i]);
+    if (_honing != "") ability_apply_mastery_mod(_c, _honing);
     return _c;
 }
 
@@ -1972,6 +2111,8 @@ function borrowed_memory_roll(class_id) {
             var _ab = _p[_i];
             if (_ab.secondary_cost > 0) continue;
             if (_ab.effect_type == "resource") continue;
+            // Off-class dead buttons: the SS trap ramp does nothing without traps.
+            if (_ab.name == "Compounding Dread") continue;
             array_push(_cands, _ab);
             array_push(_srcs, _names[_c]);
         }
@@ -1979,6 +2120,31 @@ function borrowed_memory_roll(class_id) {
     if (array_length(_cands) == 0) return undefined;
     var _k = irandom(array_length(_cands) - 1);
     return { ability: _cands[_k], from_class: _srcs[_k] };
+}
+
+// borrowed_memory_offer(n) - roll n DISTINCT borrowed-memory candidates for the
+// pick-1-of-3 draft (07-16 combo batch: the StS lesson - the CHOICE is the fun).
+// Returns an array of { name, from_class, hint } (hint = desc_short for the row).
+function borrowed_memory_offer(n) {
+    var _cid   = variable_global_exists("chosen_class") ? global.chosen_class : 0;
+    var _offer = [];
+    var _tries = 0;
+    while (array_length(_offer) < n && _tries < 30) {
+        _tries++;
+        var _roll = borrowed_memory_roll(_cid);
+        if (_roll == undefined) break;
+        var _dup = false;
+        for (var _i = 0; _i < array_length(_offer); _i++) {
+            if (_offer[_i].name == _roll.ability.name) { _dup = true; break; }
+        }
+        if (_dup) continue;
+        array_push(_offer, {
+            name:       _roll.ability.name,
+            from_class: _roll.from_class,
+            hint:       variable_struct_exists(_roll.ability, "desc_short") ? _roll.ability.desc_short : ""
+        });
+    }
+    return _offer;
 }
 
 // Grant a borrowed memory for this run (replaces any previous one). Returns the
@@ -2043,6 +2209,8 @@ function trait_get_by_name(trait_name) {
 function trait_is_unlocked(trait_name) {
     var _t = trait_get_by_name(trait_name);
     if (_t == undefined) return false;
+    // TEST LEVER (F8, gc Step): everything reads unlocked while the toggle is on.
+    if (variable_global_exists("debug_unlock_all") && global.debug_unlock_all) return true;
     if (_t.unlock_type == "default") return true;
     if (!variable_global_exists("traits_unlocked")) return false;
     if (!variable_struct_exists(global.traits_unlocked, _t.effect_id)) return false;
@@ -2060,6 +2228,7 @@ function trait_unlock_tier(trait_name) {
         // Tier 3 - powerful / build-defining
         case "Focused Power": case "Chain Caster": case "Plaguebearer":
         case "Arcane Surge": case "Berserker Rage": case "Serrated Strikes":
+        case "Relentless":
             return 3;
     }
     return 2;

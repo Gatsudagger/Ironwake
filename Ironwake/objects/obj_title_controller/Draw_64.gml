@@ -4,7 +4,7 @@
 
 // Deep background
 draw_set_color(make_color_rgb(6, 7, 12));
-draw_rectangle(0, 0, GUI_W, GUI_H, false);
+draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
 
 // -----------------------------------------------------------------------
 // INTRO SCENE BACKDROP + AMBIENT (forest/town/crypt vista, shooting star,
@@ -24,11 +24,12 @@ if (scene_sprite != -1 && sprite_exists(scene_sprite) && _scene_a > 0.01) {
     var _sh  = sprite_get_height(scene_sprite);
     if (_sw > 0 && _sh > 0) {
         // Cover by height (the vista is wider than 16:9) so the full sky/moon
-        // shows and the extra width becomes horizontal pan room.
-        var _ssc0     = GUI_H / _sh;
+        // shows and the extra width becomes horizontal pan room. Wide-aspect
+        // gutters (8b) widen the coverage target so the strips get vista too.
+        var _ssc0     = max(GUI_H / _sh, (GUI_XR - GUI_XL) / _sw);
         var _sdw0     = _sw * _ssc0;
-        var _overscan = max(0, _sdw0 - GUI_W);
-        var _sx0      = -_overscan * _scene_pan;
+        var _overscan = max(0, _sdw0 - (GUI_XR - GUI_XL));
+        var _sx0      = GUI_XL - _overscan * _scene_pan;
 
         // Subtle dolly-in toward the town: the vista scales up a little over the
         // intro (scaled around screen centre) so the backdrop reads as approaching
@@ -65,12 +66,12 @@ if (_scene_a > 0.01) {
         var _fcl = make_color_rgb(86, 96, 118);
         var _fh  = 90;   // band half-height (transparent -> fog -> transparent)
         draw_primitive_begin(pr_trianglestrip);
-        draw_vertex_color(0,     _fy - _fh, _fcl, 0);
-        draw_vertex_color(GUI_W, _fy - _fh, _fcl, 0);
-        draw_vertex_color(0,     _fy,       _fcl, _fa);
-        draw_vertex_color(GUI_W, _fy,       _fcl, _fa);
-        draw_vertex_color(0,     _fy + _fh, _fcl, 0);
-        draw_vertex_color(GUI_W, _fy + _fh, _fcl, 0);
+        draw_vertex_color(GUI_XL, _fy - _fh, _fcl, 0);
+        draw_vertex_color(GUI_XR, _fy - _fh, _fcl, 0);
+        draw_vertex_color(GUI_XL, _fy,       _fcl, _fa);
+        draw_vertex_color(GUI_XR, _fy,       _fcl, _fa);
+        draw_vertex_color(GUI_XL, _fy + _fh, _fcl, 0);
+        draw_vertex_color(GUI_XR, _fy + _fh, _fcl, 0);
         draw_primitive_end();
     }
     draw_set_alpha(1.0);
@@ -98,7 +99,7 @@ if (_scene_a > 0.01) {
             star_y        = 40 + irandom(190);
             var _spd      = 17 + random(9);
             star_dx       = _fromleft ?  _spd : -_spd;
-            star_x        = _fromleft ? -60  : (GUI_W + 60);
+            star_x        = _fromleft ? (GUI_XL - 60) : (GUI_XR + 60);
             star_dy       = 5 + random(5);
             star_maxlife  = 90;
             star_life     = star_maxlife;
@@ -107,7 +108,7 @@ if (_scene_a > 0.01) {
         star_x += star_dx;
         star_y += star_dy;
         star_life--;
-        if (star_life <= 0 || star_x < -90 || star_x > GUI_W + 90) {
+        if (star_life <= 0 || star_x < GUI_XL - 90 || star_x > GUI_XR + 90) {
             star_active = false;
             star_timer  = 300 + irandom(450);   // ~5-12s between streaks
         }
@@ -168,8 +169,8 @@ if (_scene_a > 0.01) {
 
             // Tile across the screen (+ a tile of margin each side). Even tiles
             // normal, odd tiles mirrored so the seams match exactly (seamless).
-            var _first = floor(_pan_px / _tile_w) - 1;
-            var _last  = _first + ceil(GUI_W / _tile_w) + 2;
+            var _first = floor((_pan_px + GUI_XL) / _tile_w) - 1;
+            var _last  = _first + ceil((GUI_XR - GUI_XL) / _tile_w) + 2;
             for (var _t = _first; _t <= _last; _t++) {
                 var _tx  = _t * _tile_w - _pan_px;
                 var _mir = ((_t & 1) == 0) ? 1 : -1;
@@ -183,10 +184,10 @@ if (_scene_a > 0.01) {
 // Atmospheric edge vignette
 draw_set_alpha(0.35);
 draw_set_color(c_black);
-draw_rectangle(0,    0,    270,   GUI_H, false);
-draw_rectangle(1650, 0,    GUI_W, GUI_H, false);
-draw_rectangle(0,    0,    GUI_W, 150,   false);
-draw_rectangle(0,    930,  GUI_W, GUI_H, false);
+draw_rectangle(GUI_XL, 0,    270,    GUI_H, false);
+draw_rectangle(1650,   0,    GUI_XR, GUI_H, false);
+draw_rectangle(GUI_XL, 0,    GUI_XR, 150,   false);
+draw_rectangle(GUI_XL, 930,  GUI_XR, GUI_H, false);
 draw_set_alpha(1.0);
 
 // -----------------------------------------------------------------------
@@ -197,9 +198,9 @@ if (phase == "cutscene") {
     // hiding the sky (stars/moon) above or the fog below. Peaks in the text band.
     var _scrim = make_color_rgb(4, 5, 9);
     draw_primitive_begin(pr_trianglestrip);
-    draw_vertex_color(0,     250, _scrim, 0);    draw_vertex_color(GUI_W, 250, _scrim, 0);
-    draw_vertex_color(0,     540, _scrim, 0.5);  draw_vertex_color(GUI_W, 540, _scrim, 0.5);
-    draw_vertex_color(0,     830, _scrim, 0);    draw_vertex_color(GUI_W, 830, _scrim, 0);
+    draw_vertex_color(GUI_XL, 250, _scrim, 0);    draw_vertex_color(GUI_XR, 250, _scrim, 0);
+    draw_vertex_color(GUI_XL, 540, _scrim, 0.5);  draw_vertex_color(GUI_XR, 540, _scrim, 0.5);
+    draw_vertex_color(GUI_XL, 830, _scrim, 0);    draw_vertex_color(GUI_XR, 830, _scrim, 0);
     draw_primitive_end();
     draw_set_alpha(1.0);
     draw_set_color(c_white);
@@ -258,7 +259,7 @@ if (phase == "cutscene") {
         draw_set_alpha(_hint_a);
         draw_set_font(fnt_ui_small);
         draw_set_color(make_color_rgb(90, 95, 115));
-        draw_text(960, 998, "Press any key to skip");
+        draw_text(960, 998, (input_device() == 2) ? "Tap to skip" : "Press any key to skip");
         draw_set_alpha(1.0);
     }
     draw_set_font(-1);
@@ -515,3 +516,4 @@ draw_set_font(-1);
 
 // Touch (8c): universal Back chip + simulated-key pump - always LAST (topmost).
 ui_draw_touch_back();
+ui_draw_touch_gamepad();   // on-screen d-pad in the left gutter (M 07-17)

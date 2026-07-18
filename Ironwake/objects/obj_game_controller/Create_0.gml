@@ -19,6 +19,14 @@ display_set_gui_size(GUI_W, GUI_H);
 // centered) AND the saved fullscreen preference are both handled by video_apply().
 video_apply();
 
+// Wide-aspect geometry (8b): fit the GUI band to the actual window shape - on a
+// 16:9 PC window this is a no-op; wider (Android phones, ultrawide fullscreen)
+// centers the 1920x1080 band with art-filled gutters. Step re-applies whenever
+// the window shape changes (F11 fullscreen, F7 aspect lever, browser resize).
+gui_geometry_apply();
+geom_last_w = window_get_width();
+geom_last_h = window_get_height();
+
 // -----------------------------------------------------------------------------
 // SPRITE INCLUDE GUARD
 // The female class sprites and all Vael skins are referenced ONLY via
@@ -312,6 +320,7 @@ if (!variable_global_exists("run_boons")) global.run_boons = [];   // active boo
 if (!variable_global_exists("run_curses")) global.run_curses = []; // active curses this run (devil's bargain)
 if (!variable_global_exists("run_borrowed_ability")) global.run_borrowed_ability = "";   // Borrowed Memory (expression #6)
 if (!variable_global_exists("run_borrowed_class"))   global.run_borrowed_class   = "";
+if (!variable_global_exists("run_honing"))           global.run_honing           = {};   // Whetstone run-scoped honing (07-17)
 // Sable exotic find-buff potions (last until 2 bosses slain; see scr_stats potion_* fns).
 if (!variable_global_exists("gold_potion_bosses")) global.gold_potion_bosses = 0;
 if (!variable_global_exists("gold_potion_mult"))   global.gold_potion_mult   = 0;
@@ -758,6 +767,7 @@ ability_view_cursor  = 0;
 equip_slot_selected = 0;
 equip_picker_open   = false;
 equip_picker_index  = 0;
+equip_picker_scroll = 0;    // picker scroll offset (edge-triggered window)
 equip_msg           = "";   // class-restriction warning shown in the picker
 equip_notif_msg     = "";   // brief "Equipped X" confirmation
 equip_notif_timer   = 0;    // counts down from 150; fades in last 30 frames
@@ -778,6 +788,7 @@ consumable_submenu_cursor = 0;
 stash_mode_open  = false;   // full stash deposit/withdraw screen
 stash_mode_side  = 0;       // 0 = carried column, 1 = stash column
 stash_mode_index = 0;
+stash_scroll     = 0;       // active column scroll offset (edge-triggered window)
 stash_mode_tab   = 0;       // 0 = equipment, 1 = consumables (Q/E)
 
 
@@ -839,10 +850,13 @@ sable_confirm = false;
 shop_open         = -1;
 shop_index        = 0;
 shop_notification = "";
-shop_tab          = 0;    // 0 = BUY tab, 1 = SELL tab, 2 = TRADE tab (Petra only)
+shop_tab          = 0;    // 0 = BUY tab, 1 = SELL tab, 2 = TRADE (Petra) / REFORGE (Dorn)
 sell_index        = 0;    // sell-list cursor row
 sell_scroll       = 0;    // sell-list scroll offset (top visible row)
+buy_scroll        = 0;    // Petra BUY-list scroll offset (edge-triggered window)
 sell_confirm_name = "";   // non-empty = rare item awaiting Space confirmation
+reforge_index     = 0;    // REFORGE tab (Dorn, shop_tab == 2): gear-list cursor row
+reforge_scroll    = 0;    // REFORGE tab: gear-list scroll offset
 
 // Petra Treasure Trader tab (shop_tab == 2; Petra only). See PETRA_TT_PHASE1_SPEC.md.
 petra_trade_cursor       = 0;     // stash-list row cursor
@@ -920,10 +934,11 @@ if (!variable_global_exists("traits_unlocked")) {
         focused_power:     false,
         chain_caster:      false,
         plaguebearer:      false,
+        relentless:        false,
     };
 }
 // Backfill newer trait keys onto save files that predate them.
-var _tu_defaults = ["prospector", "last_stand", "focused_power", "chain_caster", "plaguebearer"];
+var _tu_defaults = ["prospector", "last_stand", "focused_power", "chain_caster", "plaguebearer", "relentless"];
 for (var _tui = 0; _tui < array_length(_tu_defaults); _tui++) {
     if (!variable_struct_exists(global.traits_unlocked, _tu_defaults[_tui])) {
         variable_struct_set(global.traits_unlocked, _tu_defaults[_tui], false);
@@ -948,9 +963,9 @@ if (!variable_global_exists("rune_dust"))      global.rune_dust      = 0;
 if (!variable_global_exists("aspect_slots"))   global.aspect_slots   = 2;
 if (!variable_global_exists("aspect_runes"))   global.aspect_runes   = [];
 
-// Maren the Runesmith screen state (Phase 1 tabs: 0 Socket, 1 Runes)
+// Maren the Runesmith screen state
 maren_open         = false;
-maren_tab          = 0;    // 0 = Socket gear, 1 = Runes (owned list)
+maren_tab          = 0;    // 0 Socket Gear, 1 Aspects, 2 Forge, 3 Runes, 4 Spirits
 maren_cursor       = 0;    // row cursor in the active list
 maren_phase        = 0;    // Socket tab: 0 choose item, 1 choose socket, 2 choose rune
 maren_item_sel     = -1;   // chosen equipped-item slot index (0-7) in Socket tab
@@ -959,6 +974,14 @@ maren_scroll       = 0;    // first visible row index (list windowing for long r
 // Confirm modal: undefined = none, else { action, message, warn, cost } describing a
 // pending gold-costing or destructive action awaiting Enter (confirm) / Esc (cancel).
 maren_confirm      = undefined;
+
+// Banshee release ceremony (Spirits tab, BANSHEE_BOTTLE_SPEC.md): a lore popup
+// over Maren's station - bottle opens, banshee rises, melodic scream - then the
+// reward text (unlocked track / dust bounty). Timer drives the animation frames.
+banshee_release_open   = false;
+banshee_release_timer  = 0;
+banshee_release_result = undefined;   // { kind:"track", track } or { kind:"dust", amount }
+banshee_scream_played  = false;
 
 // Sable the Alchemist screen state (tabs: 0 Salvage, 1 Brew, 2 Upgrade)
 sable_open         = false;
@@ -1045,7 +1068,7 @@ kb_tourney = undefined;
 
 // -----------------------------------------------------------------------------
 // 13b. VEX THE TRAINER - permanent upgrades bought with gold (+items for stats)
-// bonus_trait_slots: extra active-trait slots purchased (base 2, +2 max -> 4 total).
+// bonus_trait_slots: extra active-trait slots purchased (base 2, +4 max -> 6 total; M 07-16).
 // unlocked_abilities: names of non-starter abilities purchased into the loadout pool.
 // trait_potency: struct keyed by trait name -> potency tier (0-5); each tier adds
 //                +10% to that trait's magnitude, paid for by permanently sacrificing

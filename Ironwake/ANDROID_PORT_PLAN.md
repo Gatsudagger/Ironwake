@@ -37,24 +37,31 @@ list what's UNREACHABLE — that list should equal the keyboard-only hotkeys + d
 `keyboard_virtual_show(kbv_type_default, kbv_returnkey_done, kbv_autocapitalize_words, false)`
 when the naming modal opens on `os_type == os_android`, `keyboard_virtual_hide()` on close.
 
-## 2. Screen geometry: 20:9 + safe areas (GUI_W/H plan)
+## 2. Screen geometry: 20:9 + safe areas — BUILT 2026-07-17 (design revised, M-approved)
 
-Today: `#macro GUI_W 1920`, `GUI_H 1080` (scr_ui.gml:8-11), UI authored for 16:9.
-Phones are 19.5:9–21:9 (e.g. 2400×1080 = 20:9). Plan — **height-locked, width-flex**:
+**As-built: centered band + art-filled gutters** (M's ruling 07-17 — the original
+width-flex plan required hand-auditing ~177 bare `960` literals in shipping draw code
+a month before Steam launch; rejected as needless PC risk for zero visibility gain).
 
-1. Keep the logical height at 1080: `display_set_gui_maximise` / GUI size set per device
-   to `(1080 * display_aspect) x 1080`, so all vertical layout survives unchanged.
-2. `GUI_W` becomes a runtime read (`display_get_gui_width()` wrapped in a function-macro),
-   `GUI_CX` follows. On 16:9 desktop it evaluates to exactly 1920 — zero change there.
-3. **Literal audit** (the real work): grep `1920|1900|1850` and right-anchored `960`
-   literals in Draw code; anything pinned to the right edge or centered must use
-   GUI_W/GUI_CX. Center-anchored screens (most of our panels) just gain background at
-   the sides — the gothic vista fills naturally.
-4. **Safe areas** (notches/punch-holes): `display_get_safe_area()` insets; only edge-
-   anchored elements care — the touch action bar (1b) and the hub footer get pushed in
-   by the inset. One helper `gui_safe_l()/gui_safe_r()`.
-5. Combat layout check: ability bar at x=240..(240+9*252) fits 1920; on 20:9 it stays
-   centered — fine. Enemy-bar columns at x=990/1485 likewise.
+1. ALL layout stays in 1920×1080 coordinates. `gui_geometry_apply()` (scr_ui.gml, by
+   the GUI macros) fits the band to the window: 16:9-or-narrower keeps the shipped
+   `display_set_gui_size` path byte-for-byte (gutter 0); wider windows get uniform
+   height-locked scale, centered via `display_set_gui_maximise` with equal side
+   gutters. Mouse/touch→GUI mapping follows the transform automatically.
+2. New macros `GUI_GUTTER` / `GUI_XL` / `GUI_XR` = one side's gutter width and the
+   true visible screen edges in GUI units (collapse to 0/0/1920 on 16:9). Every
+   full-bleed draw — backgrounds, dim scrims, vignettes, fog/scrim primitives, the
+   hub gradient/firelight/embers, title vista pan + treeline tiling + shooting-star
+   bounds, `dungeon_bg_draw` cover — spans GUI_XL..GUI_XR so gutters show art, never
+   raw black. UI panels/text/hitboxes untouched (56 rect sites + ~12 specials).
+3. Applied from obj_game_controller Create; its Step re-applies on any window-shape
+   change (F11 fullscreen, browser resize, Android boot/fold).
+4. **Safe areas come free**: content lives in the centered band, ≥~107 GUI px inside
+   the true edges on 19.5:9 — beyond any punch-hole. No inset code needed.
+5. **TEST LEVER (REMOVE BEFORE RELEASE)**: F7 (Windows, obj_game_controller Step)
+   cycles windowed 1440×810 (16:9) → 1755×810 (19.5:9 S25) → 1800×810 (20:9).
+6. Bonus PC fix: ultrawide-monitor fullscreen used to horizontally STRETCH the GUI;
+   it now gets the same centered band + art gutters (only non-16:9 displays change).
 
 ## 3. GameMaker Android export — setup steps (one-time, ~1-2h)
 1. Install per GM's "Required SDKs" help page for LTS 2026 (versions must match GM's
@@ -77,12 +84,16 @@ Phones are 19.5:9–21:9 (e.g. 2400×1080 = 20:9). Plan — **height-locked, wid
 - [ ] **Merchant account** too (required for a PAID app — Steam-first premium pricing
       carries over; set up early, it gates the price field).
 - [ ] Create the app entry: Landscape game, Premium, no ads, no in-app purchases.
-- [ ] **THE GATING RULE (personal accounts created after Nov 2023): before production
-      release you must run a CLOSED TEST with ≥ 20 testers opted-in, continuously, for
-      14 days, then apply for production access.** Plan this into the timeline: recruit
-      20+ testers (friends/Discord/itch followers — they need Google accounts, opt-in
-      link, and the app installed), start the clock EARLY — it can run while Steam EA
-      ships. Testers must stay opted in; churn below 20 can reset eligibility.
+- [ ] **THE GATING RULE (verified 2026-07-17; Google cut 20→12 testers on Dec 11
+      2024): personal accounts created after Nov 2023 must run a CLOSED TEST with
+      ≥ 12 testers opted-in, continuously, for 14 consecutive days, then apply for
+      production access (questionnaire). ORGANIZATION accounts (require a registered
+      business + free D-U-N-S number) and pre-Nov-2023 personal accounts are EXEMPT.**
+      The 14-day clock starts only after the release is approved AND 12 are opted in;
+      Google also expects visible dev activity (updates/feedback response) during the
+      window — an untouched build for 14 days can be rejected. Recruit 12+ testers
+      (friends/Discord/itch followers — Google accounts + opt-in link + install),
+      start EARLY — it can run while Steam EA ships. Churn below 12 pauses the clock.
 - [ ] Store listing: 512px icon, 1024×500 feature graphic, ≥2 phone screenshots
       (reuse Steam capture set at phone aspect), short + full description (reuse
       STEAM_PAGE_KIT.md copy).
@@ -97,8 +108,8 @@ Phones are 19.5:9–21:9 (e.g. 2400×1080 = 20:9). Plan — **height-locked, wid
 
 ## 5. Order of work (proposed chunks, each with its own device test)
 8a. Export setup + first APK on a device (no code changes) — proves toolchain.
-8b. Geometry: GUI_W flex + literal audit + safe-area helpers (testable on Windows by
-    forcing a 20:9 window).
+8b. Geometry: DONE 2026-07-17 (centered band + gutters, §2 as-built; F7 Windows
+    lever for F5 verification).
 8c. Touch: back button, `keyboard_virtual_*` naming, tap-only playthrough fix list.
 8d. Touch action bar (`ui_draw_touch_actions` + `input_touch_tap`) + drag-scroll.
 8e. Closed test build → 20-tester program starts.

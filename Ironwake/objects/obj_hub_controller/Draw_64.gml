@@ -1,4 +1,4 @@
-﻿// =============================================================================
+// =============================================================================
 // obj_hub_controller - Draw GUI event
 // Draws the full hub screen at the native 1920x1080 GUI.
 // Draw order:
@@ -27,7 +27,7 @@ if (!_loadout_is_open) {
 var _pulse  = 0.85 + 0.15 * sin(current_time / 650);
 var _bg_top = make_color_rgb(13, 13, 20);
 var _bg_bot = make_color_rgb(48 * _pulse, 33 * _pulse, 30 * _pulse);
-draw_rectangle_color(0, 0, GUI_W, GUI_H, _bg_top, _bg_top, _bg_bot, _bg_bot, false);
+draw_rectangle_color(GUI_XL, 0, GUI_XR, GUI_H, _bg_top, _bg_top, _bg_bot, _bg_bot, false);
 
 // 1b. Camp scene art - cover-fit to the full GUI, dimmed so panels stay readable.
 //     No-ops cleanly until spr_hub_background is imported (bg_sprite == -1).
@@ -35,7 +35,7 @@ if (bg_sprite != -1 && sprite_exists(bg_sprite)) {
     var _bw = sprite_get_width(bg_sprite);
     var _bh = sprite_get_height(bg_sprite);
     if (_bw > 0 && _bh > 0) {
-        var _bsc = max(GUI_W / _bw, GUI_H / _bh);   // uniform cover scale
+        var _bsc = max((GUI_XR - GUI_XL) / _bw, GUI_H / _bh);   // uniform cover scale (8b: spans gutters)
         var _bdw = _bw * _bsc;
         var _bdh = _bh * _bsc;
         draw_sprite_ext(bg_sprite, 0, (GUI_W - _bdw) / 2, (GUI_H - _bdh) / 2,
@@ -51,7 +51,7 @@ var _flick = 0.72 + 0.10 * sin(current_time / 360) + 0.07 * sin(current_time / 9
 _flick = clamp(_flick, 0.45, 1.0);
 gpu_set_blendmode(bm_add);
 var _glow_col = make_color_rgb(96 * _flick, 52 * _flick, 20 * _flick);   // warm firelight
-draw_rectangle_color(0, 600, GUI_W, GUI_H, c_black, c_black, _glow_col, _glow_col, false);
+draw_rectangle_color(GUI_XL, 600, GUI_XR, GUI_H, c_black, c_black, _glow_col, _glow_col, false);
 gpu_set_blendmode(bm_normal);
 draw_set_alpha(1.0);
 draw_set_color(c_white);
@@ -60,7 +60,7 @@ draw_set_color(c_white);
 for (var _ei = 0; _ei < array_length(hub_embers); _ei++) {
     var _em = hub_embers[_ei];
     _em.y -= _em.spd;                                       // rise
-    if (_em.y < -4) { _em.y = GUI_H + 4; _em.x = irandom(GUI_W); } // wrap to bottom
+    if (_em.y < -4) { _em.y = GUI_H + 4; _em.x = GUI_XL + irandom(GUI_XR - GUI_XL); } // wrap to bottom
     var _ex = _em.x + sin(current_time / 1000 + _em.phase) * _em.drift;
     var _ea = _em.a * (0.7 + 0.3 * sin(current_time / 700 + _em.phase));  // shimmer
     draw_set_color(make_color_rgb(255, 180, 90));
@@ -74,20 +74,20 @@ draw_set_alpha(1.0);
 var _vg    = make_color_rgb(6, 6, 12);
 var _vgmax = 0.55;
 draw_primitive_begin(pr_trianglestrip);   // top
-draw_vertex_color(0, 0, _vg, _vgmax); draw_vertex_color(GUI_W, 0, _vg, _vgmax);
-draw_vertex_color(0, 135, _vg, 0);    draw_vertex_color(GUI_W, 135, _vg, 0);
+draw_vertex_color(GUI_XL, 0, _vg, _vgmax); draw_vertex_color(GUI_XR, 0, _vg, _vgmax);
+draw_vertex_color(GUI_XL, 135, _vg, 0);    draw_vertex_color(GUI_XR, 135, _vg, 0);
 draw_primitive_end();
 draw_primitive_begin(pr_trianglestrip);   // bottom
-draw_vertex_color(0, GUI_H, _vg, _vgmax); draw_vertex_color(GUI_W, GUI_H, _vg, _vgmax);
-draw_vertex_color(0, 945, _vg, 0);        draw_vertex_color(GUI_W, 945, _vg, 0);
+draw_vertex_color(GUI_XL, GUI_H, _vg, _vgmax); draw_vertex_color(GUI_XR, GUI_H, _vg, _vgmax);
+draw_vertex_color(GUI_XL, 945, _vg, 0);        draw_vertex_color(GUI_XR, 945, _vg, 0);
 draw_primitive_end();
 draw_primitive_begin(pr_trianglestrip);   // left
-draw_vertex_color(0, 0, _vg, _vgmax); draw_vertex_color(0, GUI_H, _vg, _vgmax);
-draw_vertex_color(180, 0, _vg, 0);    draw_vertex_color(180, GUI_H, _vg, 0);
+draw_vertex_color(GUI_XL, 0, _vg, _vgmax); draw_vertex_color(GUI_XL, GUI_H, _vg, _vgmax);
+draw_vertex_color(180, 0, _vg, 0);         draw_vertex_color(180, GUI_H, _vg, 0);
 draw_primitive_end();
 draw_primitive_begin(pr_trianglestrip);   // right
-draw_vertex_color(GUI_W, 0, _vg, _vgmax); draw_vertex_color(GUI_W, GUI_H, _vg, _vgmax);
-draw_vertex_color(1740, 0, _vg, 0);       draw_vertex_color(1740, GUI_H, _vg, 0);
+draw_vertex_color(GUI_XR, 0, _vg, _vgmax); draw_vertex_color(GUI_XR, GUI_H, _vg, _vgmax);
+draw_vertex_color(1740, 0, _vg, 0);        draw_vertex_color(1740, GUI_H, _vg, 0);
 draw_primitive_end();
 draw_set_alpha(1.0);
 draw_set_color(c_white);
@@ -124,7 +124,22 @@ var _flav_scale = 1.275;                            // 22px Centaur -> ~28px (25
 var _flav_w     = 700 / _flav_scale;                // ~700px on-screen wrap width (unscaled)
 var _flav_sep   = 26;                               // line spacing scales with the text (~33px on-screen)
 var _flav_h     = string_height_ext(hub_flavor, _flav_sep, _flav_w) * _flav_scale;
-var _flav_y     = min(max(948, 1008 - _flav_h * 0.5), 1070 - _flav_h);
+var _flav_y;
+if (input_device() == 2) {
+    // Touch (M 07-17): keep the lore FULL SIZE (not shrunk) - bottom-anchor it just
+    // above the chip bar (top ~y1005) and let it grow UPWARD into the open band below
+    // the NPC list. Only a rare very-long message shrinks, and only if it would climb
+    // past y888 into the list.
+    var _flav_bot = 1000, _flav_top_min = 888;
+    if (_flav_h > _flav_bot - _flav_top_min) {
+        _flav_scale *= (_flav_bot - _flav_top_min) / _flav_h;
+        _flav_w      = 700 / _flav_scale;
+        _flav_h      = string_height_ext(hub_flavor, _flav_sep, _flav_w) * _flav_scale;
+    }
+    _flav_y = _flav_bot - _flav_h;
+} else {
+    _flav_y = min(max(948, 1008 - _flav_h * 0.5), 1070 - _flav_h);
+}
 draw_set_color(make_color_rgb(12, 11, 9));
 for (var _fox = -2; _fox <= 2; _fox += 2) {
     for (var _foy = -2; _foy <= 2; _foy += 2) {
@@ -499,7 +514,7 @@ if (selected_npc == 7) {
 // Interaction hint or unlock condition
 if (npc_unlocked[selected_npc]) {
     draw_set_color(c_lime);
-    draw_text(_ddx, _ddy + 138, "Press Space to interact");
+    draw_text(_ddx, _ddy + 138, (input_device() == 2) ? "Tap to interact" : "Press Space to interact");
 } else {
     var _hint = "";
     switch (selected_npc) {
@@ -513,10 +528,15 @@ if (npc_unlocked[selected_npc]) {
     draw_text(_ddx, _ddy + 138, _hint);
 }
 
-// Notification message
+// Notification message. M 07-16: WRAP inside the panel - long pet/egg notices
+// (e.g. "A dark egg festers where the altar stood - visit Bairc.") ran off-screen.
+// Small font + 20px sep so two wrapped lines still end above the panel bottom
+// (first line y294, panel bottom y330; measured, not eyeballed).
 if (notification != "") {
+    draw_set_font(fnt_ui_small);
     draw_set_color(c_yellow);
-    draw_text(_ddx, _ddy + 171, notification);
+    draw_text_ext(_ddx, _ddy + 169, notification, 20, _dp_x + _dp_w - 24 - _ddx);
+    draw_set_font(fnt_ui);
 }
 draw_set_font(-1);
 } // end selected_npc < 6
@@ -624,7 +644,7 @@ if (selected_npc < array_length(_port_sprites)) {
     draw_text(_pp_x + _pp_w / 2, _pp_y + _pp_h - 81, _prev_title);
     draw_set_font(fnt_ui_small);
     draw_set_color(make_color_rgb(120, 200, 170));
-    draw_text(_pp_x + _pp_w / 2, _pp_y + _pp_h - 39, "Press Enter to choose dungeon & loadout");
+    draw_text(_pp_x + _pp_w / 2, _pp_y + _pp_h - 39, (input_device() == 2) ? "Tap to choose dungeon & loadout" : "Press Enter to choose dungeon & loadout");
     draw_set_font(-1);
     draw_set_halign(fa_left);
     draw_set_valign(fa_top);
@@ -661,7 +681,7 @@ draw_set_valign(fa_top);
 draw_set_font(fnt_ui_small);
 if (_eb_sel) {
     draw_set_color(c_white);
-    draw_text(_eb_x + _eb_w / 2, _eb_y + 78, "Press Enter or Space to confirm");
+    draw_text(_eb_x + _eb_w / 2, _eb_y + 78, (input_device() == 2) ? "Tap to confirm" : "Press Enter or Space to confirm");
 } else {
     draw_set_color(make_color_rgb(100, 140, 130));
     draw_text(_eb_x + _eb_w / 2, _eb_y + 78, "Scroll down to select");
@@ -739,7 +759,7 @@ if (_gc_ds != noone && _gc_ds.dungeon_select_open) {
     // Dark cover
     draw_set_alpha(0.97);
     draw_set_color(make_color_rgb(8, 8, 18));
-    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
     draw_set_alpha(1.0);
 
     // Title
@@ -1134,7 +1154,7 @@ if (show_history) {
     // Full-screen dark cover
     draw_set_alpha(0.95);
     draw_set_color(make_color_rgb(10, 12, 20));
-    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
     draw_set_alpha(1.0);
 
     // Title
@@ -1255,7 +1275,9 @@ if (show_history) {
     draw_set_halign(fa_center);
     draw_set_font(fnt_ui_small);
     draw_set_color(make_color_rgb(255, 210, 60));
-    draw_text(GUI_CX, 1002, "Lifetime Perm Points - Earned: " + string(_total_earned) + "   Spent: " + string(_total_spent) + "   Available: " + string(global.pending_perm_points));
+    // Touch: lift clear of the persistent chip bar (top ~y1005) which draws over this
+    // hub-context overlay (M 07-17: was hidden behind the menu buttons).
+    draw_text(GUI_CX, (input_device() == 2) ? 958 : 1002, "Lifetime Perm Points - Earned: " + string(_total_earned) + "   Spent: " + string(_total_spent) + "   Available: " + string(global.pending_perm_points));
 
     // Scroll / close hint
     draw_set_color(make_color_rgb(120, 130, 150));
@@ -1314,7 +1336,7 @@ if (instance_exists(obj_game_controller) && variable_global_exists("pending_perm
     if (_gc_hub_d.perm_alloc_open) {
         draw_set_alpha(1.0);
         draw_set_color(make_color_rgb(8, 10, 18));
-        draw_rectangle(0, 0, GUI_W, GUI_H, false);
+        draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
 
         draw_set_halign(fa_center);
         draw_set_font(fnt_ui_title);
@@ -1383,7 +1405,7 @@ if (show_gallery) {
     // Full-screen dark cover
     draw_set_alpha(0.97);
     draw_set_color(make_color_rgb(10, 12, 20));
-    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
     draw_set_alpha(1.0);
 
     // Title
@@ -1678,7 +1700,7 @@ if (instance_exists(obj_game_controller)) {
         // Background - fully opaque; nothing from the hub draws underneath
         draw_set_alpha(1.0);
         draw_set_color(make_color_rgb(8, 10, 18));
-        draw_rectangle(0, 0, GUI_W, GUI_H, false);
+        draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
 
         // --- Tab bar ---
         // Touch (M 07-08 device test: "tapping repeatedly ... only registers
@@ -2035,7 +2057,7 @@ if (instance_exists(obj_game_controller)) {
                 }
                 if (_mp_ab2 != undefined) {
                     draw_set_alpha(0.75); draw_set_color(c_black);
-                    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+                    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
                     draw_set_alpha(1.0);
                     var _mx0 = 560, _my0 = 330, _mx1 = 1360, _my1 = 750;
                     draw_set_color(make_color_rgb(22, 22, 36));
@@ -2356,8 +2378,11 @@ if (instance_exists(obj_game_controller)) {
                 }
 
                 // Icon box (creature sprite shrunk to fit); blank for the "None" row.
-                var _ibs  = _crh - 22;
-                var _ibx0 = _lx + 8, _iby0 = _ry + 6, _ibx1 = _ibx0 + _ibs, _iby1 = _iby0 + _ibs;
+                // Inset clear of the row border AND the active companion's 6px left
+                // accent bar (M 07-17: the box hugged/bled into the border) - 16px
+                // left, 8px top/bottom margins inside the 68px row box.
+                var _ibs  = _crh - 26;
+                var _ibx0 = _lx + 16, _iby0 = _ry + 8, _ibx1 = _ibx0 + _ibs, _iby1 = _iby0 + _ibs;
                 draw_set_color(make_color_rgb(14, 18, 22));
                 draw_rectangle(_ibx0, _iby0, _ibx1, _iby1, false);
                 draw_set_color(_sel ? make_color_rgb(80, 150, 100) : make_color_rgb(40, 50, 60));
@@ -2393,7 +2418,7 @@ if (instance_exists(obj_game_controller)) {
                     // Line 2 right edge: ACTIVE tag for the equipped companion.
                     if (_active) {
                         draw_set_color(make_color_rgb(120, 230, 150));
-                        draw_text(_lx + 660 - 16, _ry + 46, "ACTIVE");
+                        draw_text(_lx + 660 - 16, _ry + 42, "ACTIVE");
                     }
                     draw_set_halign(fa_left);
                     // Line 2: species + archetype + tags, muted. Truncated against the
@@ -2403,7 +2428,7 @@ if (instance_exists(obj_game_controller)) {
                     draw_set_color(make_color_rgb(150, 160, 185));
                     var _cl2 = "(" + pet_species_get(_cp.species).name + ")   " + pet_archetype_name(_cp.archetype) + pet_injury_tag(_cp) + pet_corruption_tag(_cp);
                     var _cl2_max = (_lx + 660 - 16) - _ctx - (_active ? string_width("ACTIVE") + 18 : 0);
-                    draw_text(_ctx, _ry + 46, ui_truncate(_cl2, _cl2_max));
+                    draw_text(_ctx, _ry + 42, ui_truncate(_cl2, _cl2_max));
                 }
             }
 
@@ -2532,7 +2557,7 @@ if (instance_exists(obj_game_controller)) {
 
                 // Footer hint inside the card.
                 draw_set_font(fnt_ui_small); draw_set_color(make_color_rgb(150, 160, 190));
-                draw_text(_cx0 + _ipad, _cy1 - 42, "[Tab] full kit & details");
+                draw_text(_cx0 + _ipad, _cy1 - 42, (input_device() == 2) ? "Hold for full kit & details" : "[Tab] full kit & details");
             } else {
                 draw_set_color(make_color_rgb(18, 20, 30));
                 draw_rectangle(_cx0, _cy0, _cx1, _cy1, false);
@@ -2660,12 +2685,12 @@ if (ending_active) {
     } else if (ending_stage == _st_dawn) {
         // Dawn: no dark scrim - the hub itself brightens under a warm wash.
         draw_set_alpha(0.42);
-        draw_rectangle_color(0, 0, GUI_W, GUI_H,
+        draw_rectangle_color(GUI_XL, 0, GUI_XR, GUI_H,
             make_color_rgb(255, 196, 120), make_color_rgb(255, 196, 120),
             make_color_rgb(40, 28, 30),    make_color_rgb(40, 28, 30), false);
         draw_set_alpha(0.16);
         draw_set_color(c_white);
-        draw_rectangle(0, 0, GUI_W, GUI_H, false);
+        draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
         draw_set_alpha(1.0);
         draw_set_halign(fa_center);
         draw_set_font(fnt_ui_title);
@@ -2679,7 +2704,7 @@ if (ending_active) {
         // Dark stage backdrop for every text/portrait beat
         draw_set_alpha(0.88);
         draw_set_color(make_color_rgb(6, 7, 12));
-        draw_rectangle(0, 0, GUI_W, GUI_H, false);
+        draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
         draw_set_alpha(1.0);
         draw_set_halign(fa_center);
 
@@ -2779,3 +2804,6 @@ if (ending_active) {
 // Touch (8d): action-chip bar, then the Back/menu chip + key pump - always LAST (topmost).
 ui_draw_touch_chips();
 ui_draw_touch_back();
+// Touch (M 07-17): NPC-screen long-press action menu - drawn last so it's modal-topmost.
+ui_draw_touch_action_menu();
+ui_draw_touch_gamepad();   // on-screen d-pad in the left gutter (M 07-17)

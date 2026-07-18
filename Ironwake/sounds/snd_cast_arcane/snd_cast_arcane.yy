@@ -10,7 +10,7 @@
   "compression":0,
   "compressionQuality":4,
   "conversionMode":0,
-  "duration":0.371519,
+  "duration":1.28,
   "exportDir":"",
   "name":"snd_cast_arcane",
   "parent":{
@@ -21,6 +21,6 @@
   "resourceType":"GMSound",
   "resourceVersion":"2.0",
   "sampleRate":44100,
-  "soundFile":"snd_cast_arcane.wav",
+  "soundFile":"snd_cast_arcane.ogg",
   "volume":1.0,
 }

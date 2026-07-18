@@ -4,6 +4,31 @@
 
 ---
 
+## COST DISCIPLINE — HARD RULES (MANDATORY — added 2026-07-17, M's standing order)
+
+M pays real money — subscriptions have been MAXED OUT and hundreds of dollars burned through
+wasted spend (PixelLab silently wasting credits for WEEKS before M caught it by hand; a single
+session burned ~450k tokens across background agents that delivered almost nothing). These are
+not guidelines. Violating them costs M real money.
+
+1. **NO background agents / forks / subagents without M's explicit per-task YES.** A `fork`
+   inherits the ENTIRE current context as its starting cost, so two forks ≈ triple the token
+   spend before they read a single line — and they can silently FAIL or confabulate success
+   (07-17: a fork reported combat wiring "done" and had written none of it). Default to INLINE.
+   If a task seems to warrant an agent, ASK FIRST and state the expected cost.
+2. **NO AI generation (PixelLab / ElevenLabs / any paid API) without M's explicit per-batch
+   YES.** Check the balance/meter at start and report it. Never run generation loops. One
+   candidate, then audition. 2 misses = STOP. (See "AI Generation Credit Budgets" below.)
+3. **Any action expected to consume large tokens or credits requires M's OK BEFORE running it**
+   — not after. When in doubt, ask.
+4. **Cheapest tool for the job.** Targeted `Grep` over broad `Read`; read only the spans you
+   need; don't re-read files already in context; verify on disk with a cheap grep rather than
+   trusting an agent's narrative.
+5. **Report spend honestly** at wrap-up (tokens where visible, gen credits always). If something
+   was wasteful, say so plainly.
+
+---
+
 ## Context Efficiency Rules
 
 ### Auto-Compact Strategy
@@ -81,6 +106,30 @@ unaudited re-rolls (lesson: PixelLab 610-gen session, ~440 wasted).
 
 **PixelLab:** hard cap ~100 gens/session without sign-off; 2 failed rolls = stop
 and switch approach; report spend every wrap-up.
+
+### _for_review Lifecycle (MANDATORY — added 2026-07-17, M's standing order)
+`Ironwake\_for_review\` holds ONLY material actively awaiting M's review. When a
+revision round completes, clean it automatically — no prompt needed:
+
+1. **A review item is RESOLVED when** M has picked/approved it AND the pick is
+   imported + committed, or M has rejected it.
+2. **Before deleting anything**, verify the imported asset actually exists in the
+   committed project (sprite folder / sound folder / yyp entry). Never delete the
+   only copy of something.
+3. **Then delete**: candidate images/sheets, source mp3s whose oggs are committed,
+   conversion intermediates (_ogg/_proc), and rejected material.
+4. **Never touch `_archive\`** (shipped history — e.g. the Steam 1920×1080
+   screenshot crops may be the only local copies) unless M explicitly asks.
+5. Report what was removed in the wrap-up summary.
+
+### Screenshots\ Auto-Cleanup (MANDATORY — added 2026-07-17, M's standing order)
+`Ironwake\Screenshots\` holds M's bug-report / feedback captures. When the issue a
+screenshot documents is RESOLVED (fix applied — verify via F5 when practical), delete
+that screenshot automatically — no prompt needed. **Keep** screenshots whose issue is
+still open (art redesigns, unfixed bugs) and pure reference shots (store/verification
+captures — not bugs). A screenshot is a cheap live re-capture, so deleting a fixed
+one is low-risk; if you're unsure a fix fully landed, say so in the summary. Report
+which screenshots were removed at wrap-up.
 
 ### Communication with M
 - Start each task with: "Starting [TASK_NAME]. Need clarifications on: [X, Y, Z]?" (if any)

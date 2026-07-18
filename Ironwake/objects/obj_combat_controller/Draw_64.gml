@@ -13,7 +13,7 @@
 // -----------------------------------------------------------------------------
 if (!dungeon_bg_draw("combat", 0.30)) {
     draw_set_color(make_color_rgb(18, 18, 28));
-    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
 }
 
 // Reset the hover-status tooltip each frame; the status icon rows (enemy bars +
@@ -97,9 +97,20 @@ for (var _i = 0; _i < _count; _i++) {
         _inspect_target = _c;
     }
 
-    // Status icons below the HP bar for this enemy
+    // Status icons below the HP bar for this enemy. Combo legibility (07-16):
+    // the status the SELECTED ability would detonate pulses, and an enemy under
+    // 2+ distinct statuses gets the gold OVERWHELMED (+15% taken) badge.
     if (variable_struct_exists(_c, "status_effects") && array_length(_c.status_effects) > 0) {
-        ui_draw_enemy_status_icons(_bar_x, _bar_y + _bar_height + 6, _c.status_effects);
+        var _row_react_se = undefined;
+        if (player_turn && selected_ability < array_length(player.abilities)
+            && is_struct(player.abilities[selected_ability])) {
+            var _row_rp = combat_reaction_preview(player.abilities[selected_ability], player, _c);
+            if (_row_rp.idx >= 0 && _row_rp.idx < array_length(_c.status_effects)) {
+                _row_react_se = _c.status_effects[_row_rp.idx];
+            }
+        }
+        ui_draw_enemy_status_icons(_bar_x, _bar_y + _bar_height + 6, _c.status_effects,
+            _row_react_se, combatant_distinct_status_kinds(_c) >= 2);
     }
 
     _living_idx++;
@@ -232,7 +243,9 @@ if (_pet_co != undefined && !_pet_co.is_egg) {
         // #16: fit + anchor by the VISIBLE creature (sprite bbox), not the padded
         // canvas - bonehound/hollow pup stood at half the intended display height.
         // _petx/_pety stay the FEET point (shadow); _pdx/_pdy are the draw anchor.
-        var _pcfit  = pet_sprite_fit(_petspr, _petx, _pety, _peth_t);
+        // M 07-16: cap visible WIDTH too - fitting by height alone blew short, wide
+        // sprites up huge (the luna moth caterpillar drew near knight-sized).
+        var _pcfit  = pet_sprite_fit(_petspr, _petx, _pety, _peth_t, _peth_t * 1.35);
         var _petsc  = _pcfit.scale;
         var _pdx    = _pcfit.x;
         var _pdy    = _pcfit.y;
@@ -415,19 +428,28 @@ for (var _di = 0; _di < array_length(damage_popups); _di++) {
     // a countdown so they appear one after another instead of overlapping exactly.
     if (variable_struct_exists(_dp, "delay") && _dp.delay > 0) {
         _dp.delay--;
+        // Combo-sequence tick (07-16): a popup carrying an sfx plays it the frame
+        // its delay expires - the rising reveal ladder under SHATTER!/HEXED x2!.
+        if (_dp.delay == 0 && variable_struct_exists(_dp, "sfx") && _dp.sfx != -1) {
+            var _dp_si = audio_play_sound(_dp.sfx, 1, false);
+            if (variable_struct_exists(_dp, "pitch")) audio_sound_pitch(_dp_si, _dp.pitch);
+        }
         array_push(_kept_popups, _dp);
         continue;
     }
     _dp.timer--;
     _dp.y -= 1.0;
     if (_dp.timer > 0) {
+        // Splash-text popups (combo sequence) draw their `text`; damage/heal
+        // popups keep drawing the number.
+        var _dp_str = variable_struct_exists(_dp, "text") ? _dp.text : string(_dp.value);
         var _dp_alpha = min(1.0, _dp.timer / 18.0);
         var _dp_scale = lerp(1.0, 1.5, clamp(_dp.timer / 50.0, 0, 1));
         draw_set_alpha(_dp_alpha);
         draw_set_color(c_black);
-        draw_text_transformed(_dp.x + 2, _dp.y + 2, string(_dp.value), _dp_scale, _dp_scale, 0);
+        draw_text_transformed(_dp.x + 2, _dp.y + 2, _dp_str, _dp_scale, _dp_scale, 0);
         draw_set_color(_dp.col);
-        draw_text_transformed(_dp.x, _dp.y, string(_dp.value), _dp_scale, _dp_scale, 0);
+        draw_text_transformed(_dp.x, _dp.y, _dp_str, _dp_scale, _dp_scale, 0);
         draw_set_alpha(1.0);
         array_push(_kept_popups, _dp);
     }
@@ -462,11 +484,14 @@ if (_inspect_target != undefined && global.combat_status_tip == undefined) {
 // Button positions must match ui_draw_ability_buttons: x=240, y=990, 240x75, gap=12.
 // -----------------------------------------------------------------------------
 if (player_turn && !combat_over) {
-    var _btn_w   = 240;
-    var _btn_h   = 75;
-    var _btn_gap = 12;
-    var _btn_x0  = 240;
-    var _btn_y   = 990;
+    // Geometry from the shared source so the USED overlay lands on the real button
+    // rects (touch widens the row - combat_ability_geom).
+    var _abg_used = combat_ability_geom(array_length(player.abilities));
+    var _btn_w   = _abg_used.w;
+    var _btn_h   = _abg_used.h;
+    var _btn_gap = _abg_used.gap;
+    var _btn_x0  = _abg_used.x0;
+    var _btn_y   = _abg_used.y;
 
     for (var _bi = 0; _bi < array_length(player.abilities); _bi++) {
         var _ab   = player.abilities[_bi];
@@ -582,7 +607,7 @@ if (player_turn && !combat_over) {
         // selection is always on screen. Step's mouse hit-test uses the same math.
         var _q_max_vis = 6;
         var _q_vis     = min(_qcount, _q_max_vis);
-        var _q_first   = ui_list_window_first(consumable_quick_cursor, _qcount, _q_max_vis);
+        var _q_first   = ui_list_window("combat_quick", consumable_quick_cursor, _qcount, _q_max_vis);
         var _q_last    = min(_qcount, _q_first + _q_max_vis);
         var _pw     = 750;
         var _ph     = 84 + _q_vis * 108 + 66;
@@ -667,7 +692,7 @@ if (instance_exists(obj_game_controller)) {
 
         draw_set_alpha(0.94);
         draw_set_color(make_color_rgb(8, 10, 18));
-        draw_rectangle(0, 0, GUI_W, GUI_H, false);
+        draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
         draw_set_alpha(1.0);
 
         var _pend_idx   = _gc_alloc_draw.level_alloc_pending_stat;   // -1 = none
@@ -841,7 +866,7 @@ if (show_loot_screen) {
     // Full-screen dark cover
     draw_set_alpha(0.92);
     draw_set_color(make_color_rgb(10, 12, 22));
-    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
     draw_set_alpha(1.0);
 
     // Title
@@ -939,14 +964,14 @@ if (show_loot_screen) {
     // Scroll hint (only when list overflows)
     draw_set_halign(fa_center);
     draw_set_font(fnt_ui_small);
-    if (_count > 8) {
+    if (_count > 8 && input_device() != 2) {   // touch: drag-to-scroll, no keyboard hint
         draw_set_color(make_color_rgb(120, 130, 150));
         draw_text_outline(960, 953, "W/S to scroll");
     }
 
     draw_set_font(fnt_ui);
     draw_set_color(c_white);
-    draw_text(960, 990, "Enter / R to continue");
+    draw_text(960, 990, (input_device() == 2) ? "Tap to continue" : "Enter / R to continue");
 
     draw_set_font(-1);
     draw_set_halign(fa_left);
@@ -995,7 +1020,7 @@ if (combat_over) {
     // Semi-transparent black vignette over the full screen
     draw_set_alpha(0.65);
     draw_set_color(c_black);
-    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
     draw_set_alpha(1.0);
 
     // Centre-screen text
@@ -1244,6 +1269,17 @@ if (combat_over) {
                     array_push(combat_log, "Among the remains: " + _boss_tk.name + " - " + _boss_tk.flavor + ". A gift begging for its owner.");
                 }
                 if (global.current_floor >= 3) {
+                    // Banshee in a Bottle: guaranteed from each dungeon's FINAL boss,
+                    // first kill only (per save). Granted before end_run(1) so the
+                    // victory banking sweeps it straight into Maren's queue - a full
+                    // clear IS the successful extraction. (BANSHEE_BOTTLE_SPEC.md)
+                    banshee_init();
+                    var _bb_dung = variable_global_exists("selected_dungeon") ? global.selected_dungeon : "ashen_vault";
+                    if (!variable_struct_exists(global.banshee_boss_drops, _bb_dung)) {
+                        variable_struct_set(global.banshee_boss_drops, _bb_dung, true);
+                        global.banshee_carried++;
+                        array_push(combat_log, "Among the remains: a corked bottle, faintly wailing. A Banshee in a Bottle!");
+                    }
                     // Full dungeon clear - end run as victory
                     global.just_cleared_boss = false;
                     global.floor_rooms_cleared = [];
@@ -1288,7 +1324,7 @@ if (instance_exists(obj_game_controller)) {
 // if both somehow coexist (they don't - the Esc guard closes this first).
 if (player_turn && !combat_over && ability_detail_open) {
     var _ad_idx = clamp(selected_ability, 0, array_length(player.abilities) - 1);
-    ui_draw_ability_detail(player.abilities[_ad_idx], (input_device() == 1) ? "R3" : "V");
+    ui_draw_ability_detail(player.abilities[_ad_idx], (input_device() == 1) ? "R3" : ((input_device() == 2) ? "Back" : "V"));
 }
 
 // P-key companion inspect (M 07-08) - the full pet profile as an overlay.
@@ -1318,3 +1354,4 @@ ui_draw_tutorial_tip();
 // Combat keeps the top corner (y24): the enemy-bar grid starts at y96, so the
 // default y108 would land on it; the awakening label moves left on touch instead.
 ui_draw_touch_back(24);
+ui_draw_touch_gamepad();   // on-screen d-pad in the left gutter (M 07-17)

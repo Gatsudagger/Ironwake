@@ -291,6 +291,22 @@ function end_run(result) {
     // Reset Last Stand for the next run (consumed at most once per run in combat)
     if (variable_global_exists("last_stand_used")) global.last_stand_used = false;
 
+    // Banshee in a Bottle: carried bottles bank on any SURVIVED run (clear or
+    // extract - "clear counts as the perfect extraction"); death shatters them
+    // with the rest of the unsecured haul. (BANSHEE_BOTTLE_SPEC.md)
+    banshee_init();
+    if (result >= 0 && global.banshee_carried > 0) {
+        global.banshee_banked += global.banshee_carried;
+        var _bb_msg = (global.banshee_carried == 1)
+            ? "The Banshee in a Bottle made it out with you - Maren can release its spirit."
+            : string(global.banshee_carried) + " Banshees in Bottles made it out with you - Maren can release their spirits.";
+        if (variable_global_exists("pet_find_notice")) {
+            global.pet_find_notice = (global.pet_find_notice != "")
+                ? (global.pet_find_notice + "   " + _bb_msg) : _bb_msg;
+        }
+    }
+    global.banshee_carried = 0;
+
     if (result == 1) {
         // Victory - award hub unlock, record best floor, move carried items to safe stash
         global.hub_unlocks++;
@@ -453,6 +469,7 @@ function end_run(result) {
     global.run_current_hp      = 0;
     global.run_borrowed_ability = "";   // Borrowed Memory is run-scoped (expression #6)
     global.run_borrowed_class   = "";
+    run_honing_clear();                 // Whetstone honing is run-scoped (07-17)
     global.run_souls           = 0;
     global.run_blood           = 0;
     global.run_preparation     = 0;
@@ -3110,6 +3127,8 @@ function flagship_craft_cost() { return { gold: cha_price(300), dust: 60 }; }
 // content - locked rows show at Maren greyed with this text (Vex-unlock idiom).
 // "" = unlocked. Quickcast/Echo stay available from the start.
 function flagship_unlock_text(id) {
+    // TEST LEVER (F8, gc Step): recipes read unlocked while the toggle is on.
+    if (variable_global_exists("debug_unlock_all") && global.debug_unlock_all) return "";
     if (id == "cascade") {
         var _bk = variable_global_exists("total_boss_kills") ? global.total_boss_kills : 0;
         return (_bk >= 25) ? "" : ("Locked - slay 25 bosses (" + string(_bk) + "/25)");
@@ -4370,7 +4389,7 @@ function affinity_betrayal_for(new_id) {
         var _lines = affinity_betrayal_lines(_ids[_i]);
         ledger_add(_ids[_i], "milestone", _lines.ledger);
         journal_badge_npc(_ids[_i]);
-        audio_play_sound(snd_sting_heartbreak, 1, false);   // a music box winding down
+        audio_play_sound(snd_betrayal, 1, false);   // reversed sting + cold heartbeat thud (replaced the music box 07-14)
         if (variable_global_exists("pet_find_notice")) {
             global.pet_find_notice = (global.pet_find_notice != "") ? (global.pet_find_notice + "   " + _lines.notice) : _lines.notice;
         }
@@ -4684,6 +4703,7 @@ function quest_tick(obj_type, param, amount) {
                 var _qmsg = "Request complete: " + _d.name + " - report to the tavern board.";
                 global.pet_find_notice = (global.pet_find_notice != "")
                     ? (global.pet_find_notice + "   " + _qmsg) : _qmsg;
+                audio_play_sound(snd_quest_ready, 1, false);   // soft parchment-and-bell ping (turn-in fanfare stays the board's)
             }
         }
     }
@@ -4742,9 +4762,10 @@ function quest_turn_in(id) {
         array_push(_parts, _bi.name + " (stashed)");
     }
     if (variable_struct_exists(_r, "chit") && _r.chit > 0) {
-        board_requests_ensure();
-        global.reforge_chits += _r.chit;
-        array_push(_parts, string(_r.chit) + " Reforge Chit (Dorn honors these)");
+        var _ct = variable_struct_exists(_r, "chit_tier") ? clamp(_r.chit_tier, 0, 4) : 0;
+        reforge_ingot_grant(_ct, _r.chit);
+        tutorial_try_show("dorn_reforge");   // first ingot earned - explain reforge (M 07-17)
+        array_push(_parts, string(_r.chit) + " " + item_rarity_name(_ct) + " Reforge Ingot" + ((_r.chit == 1) ? "" : "s") + " (Dorn honors these)");
     }
     var _rtxt = "their thanks";
     if (array_length(_parts) > 0) {
@@ -4928,10 +4949,84 @@ function board_bootstrap() {
 // no Journal Completed history - the notice comes down.
 // =============================================================================
 
+// =============================================================================
+// TIERED REFORGE INGOTS (M 07-17). global.reforge_ingots[0..4] = counts by rarity
+// tier (0 Common .. 4 Legendary), replacing the old single global.reforge_chits.
+// MECHANIC "tier-or-higher": an item of rarity N is reforged by spending the
+// LOWEST-tier ingot whose tier >= N (higher ingots are universal; a lower ingot
+// can't touch better gear). Board rewards drop ingots scaled to the request's
+// Awakening. Old reforge_chits are intentionally NOT migrated (M: dropped).
+// =============================================================================
+function reforge_ingots_ensure() {
+    if (!variable_global_exists("reforge_ingots") || !is_array(global.reforge_ingots)
+        || array_length(global.reforge_ingots) != 5) {
+        global.reforge_ingots = [0, 0, 0, 0, 0];
+    }
+    return global.reforge_ingots;
+}
+function reforge_ingot_grant(_tier, _n) {
+    reforge_ingots_ensure();
+    global.reforge_ingots[clamp(_tier, 0, 4)] += _n;
+}
+function reforge_ingot_total() {
+    reforge_ingots_ensure();
+    var _t = 0;
+    for (var _i = 0; _i < 5; _i++) _t += global.reforge_ingots[_i];
+    return _t;
+}
+// Lowest tier index with a spendable ingot for an item of the given rarity
+// (tier >= rarity), or -1 if none qualifies.
+function reforge_ingot_tier_for(_rarity) {
+    reforge_ingots_ensure();
+    for (var _i = clamp(_rarity, 0, 4); _i < 5; _i++) {
+        if (global.reforge_ingots[_i] > 0) return _i;
+    }
+    return -1;
+}
+// Spend the lowest qualifying ingot; returns the tier spent, or -1 if none.
+function reforge_ingot_spend(_rarity) {
+    var _t = reforge_ingot_tier_for(_rarity);
+    if (_t >= 0) global.reforge_ingots[_t] -= 1;
+    return _t;
+}
+// Tier icon sprite (direct refs so the compiler keeps them - no string-strip risk).
+function reforge_ingot_sprite(_tier) {
+    switch (clamp(_tier, 0, 4)) {
+        case 0: return spr_icon_reforge_ingot_common;
+        case 1: return spr_icon_reforge_ingot_uncommon;
+        case 2: return spr_icon_reforge_ingot_rare;
+        case 3: return spr_icon_reforge_ingot_epic;
+        case 4: return spr_icon_reforge_ingot_legendary;
+    }
+    return -1;
+}
+// Draw the held ingots as a compact "icon xN" stack (M 07-17: quick-glance hoard at
+// Dorn and in the stash). Only tiers you hold show. Returns the drawn width so the
+// caller can center/place it. Caller sets font; this sets its own colors.
+function ui_draw_reforge_ingot_stack(_x, _y, _icon_sz) {
+    reforge_ingots_ensure();
+    var _cx = _x;
+    draw_set_valign(fa_middle);
+    draw_set_halign(fa_left);
+    for (var _t = 0; _t < 5; _t++) {
+        var _n = global.reforge_ingots[_t];
+        if (_n <= 0) continue;
+        var _spr = reforge_ingot_sprite(_t);
+        if (_spr >= 0) draw_sprite_stretched(_spr, 0, _cx, _y - _icon_sz / 2, _icon_sz, _icon_sz);
+        _cx += _icon_sz + 3;
+        draw_set_color(item_rarity_color(_t));
+        var _lbl = "x" + string(_n);
+        draw_text(_cx, _y, _lbl);
+        _cx += string_width(_lbl) + 18;
+    }
+    draw_set_valign(fa_top);
+    return _cx - _x;
+}
+
 function board_requests_ensure() {
     if (!variable_global_exists("board_requests") || !is_array(global.board_requests)) global.board_requests = [];
     if (!variable_global_exists("board_seq")      || !is_real(global.board_seq))       global.board_seq = 0;
-    if (!variable_global_exists("reforge_chits")  || !is_real(global.reforge_chits))   global.reforge_chits = 0;
+    reforge_ingots_ensure();
     // v2: paid rerolls (cost doubles per use, resets when the board ages at run end)
     // and the rotating SPECIAL posting (every 5 runs, boosted challenge request).
     if (!variable_global_exists("board_rerolls_used")      || !is_real(global.board_rerolls_used))      global.board_rerolls_used = 0;
@@ -5027,7 +5122,7 @@ function board_cull_families() {
 // Build one rolled request def (sans id). All numbers scale with the highest
 // unlocked Awakening; see BOARD_REQUESTS_SPEC.md §4 for the tuning table.
 function board_build_template(t, a, scale, urgent) {
-    var _gold = 0, _dust = 0, _chit = 0;
+    var _gold = 0, _dust = 0, _chit = 0, _ctier = -1;
     var _npc = "vex", _name = "", _obj_type = "", _obj_target = 1, _obj_param = "", _objective = "", _flavor = "";
     switch (t) {
         case "cull": {
@@ -5113,10 +5208,13 @@ function board_build_template(t, a, scale, urgent) {
     // Item roll: urgent always; otherwise 25% on non-challenge (non-chit) templates.
     var _item = urgent || (_chit == 0 && irandom(99) < 25);
     if (urgent) _gold *= 2;
+    // Ingot tier scales with the request's Awakening: early requests give low-tier
+    // ingots, and tier-or-higher makes the high ones from harder content universal.
+    if (_chit > 0) _ctier = clamp(a, 0, 4);
     return {
         id:"", kind:"board", template:t, urgent:urgent, special:false, expires:(urgent ? 1 : 3),
         npc:_npc, name:_name, obj_type:_obj_type, obj_target:_obj_target, obj_param:_obj_param,
-        reward:{ gold:_gold, feed:"", feed_n:0, rune_id:"", rune_tier:0, dust:_dust, item:_item, chit:_chit },
+        reward:{ gold:_gold, feed:"", feed_n:0, rune_id:"", rune_tier:0, dust:_dust, item:_item, chit:_chit, chit_tier:_ctier },
         flavor:_flavor, objective:_objective
     };
 }
@@ -6564,6 +6662,7 @@ function pet_run_complete(result) {
             // Same pick/roll split for the Awakened SPLASH (one off-archetype effect).
             if (_p.raised) _p.splash_pending = true;
             else           pet_assign_splash(_p);
+            audio_play_sound(snd_awakened_cross, 1, false);   // the wing moment: rising swell into one deep bell
         }
         quest_tick("pet_stage", "", _p.stage);                 // Phase 4a quest objective
         return _p;                                             // evolved this run
@@ -6873,6 +6972,7 @@ function pet_bond_gain(pet, amount) {
     pet.bond = pet_bond(pet) + amount;
     var _t1 = pet_bond_tier(pet);
     if (_t1 <= _t0) return "";
+    audio_play_sound(snd_bond_up, 1, false);   // warm two-note motif on a tier crossing
     var _msg = pet.name + "'s bond deepens - " + pet_bond_tier_name(_t1) + ".";
     if (_t1 >= 1 && _t0 < 1) {
         pet_pref_discover(pet.species);
@@ -7642,7 +7742,9 @@ function pet_hatch(pet) {
 // action. State lives on obj_game_controller (see its Create). hatch_cutscene_step()
 // runs from gc Step while hatch_active (owning all input); hatch_cutscene_draw()
 // (scr_ui) renders it over the Bairc screen. pet_hatch() is applied at the reveal.
-#macro HATCH_SHAKE_LEN  50   // frames of trembling before the shell cracks
+#macro HATCH_SHAKE_LEN  110  // frames of trembling before the shell cracks
+                             // (M 07-16: 50 -> 110 so the Zelda-chest-style rising
+                             // build has room to swell before the crack lands)
 #macro HATCH_CRACK_HOLD 7    // frames each crack-animation frame is held
 #macro HATCH_REVEAL_MIN 36   // min frames of reveal before input can dismiss it
 
@@ -7670,6 +7772,10 @@ function hatch_cutscene_start(pet) {
     hatch_t      = 0;
     hatch_frame  = 0;
     hatch_done   = false;
+    audio_play_sound(snd_egg_stir, 1, false);   // shell wobble + tap from inside (SHAKE phase)
+    // M 07-16 (Zelda-chest hatch): rising musical build under the whole tremble+crack,
+    // timed to crest right as the shell breaks (see HATCH_SHAKE_LEN).
+    audio_play_sound(snd_hatch_build, 1, false);
 }
 
 // Advance the cutscene one step (called from gc Step while hatch_active). Runs in gc scope.
@@ -7691,6 +7797,8 @@ function hatch_cutscene_step() {
                         pet_hatch(hatch_pet);
                         hatch_done = true;
                         audio_play_sound(snd_pet_hatch, 1, false);
+                        audio_play_sound(snd_hatch_burst, 1, false);   // crack + warm chime bloom layered over
+                        audio_play_sound(snd_hatch_fanfare, 1, false); // M 07-16: the triumphant "got it!" resolve the build climbs into
                     }
                     hatch_phase = 2; hatch_t = 0;
                 }
@@ -7915,7 +8023,7 @@ function tutorial_catalog() {
         { id:"hub",        title:"The Ironwake Camp",   body:"This is your hub between runs. Visit the camp's merchants and trainers, manage gear and abilities, then approach the dungeon gate to descend. Anything you bank here carries between runs." },
         { id:"loadout",    title:"Prepare to Descend",  body:"Before each run, equip your gear and choose which abilities and traits to bring. You can only take a limited set into the dungeon, so build around how you want to fight. Note the THREE TABS at the top - ABILITIES, TRAITS and COMPANION are picked separately, and it's easy to descend having forgotten your traits. Check all three before you commit." },
         { id:"ascendance", title:"Awakening Tiers",     body:"Higher Awakening tiers make enemies tougher but drop better, rarer loot. Raise the tier when you want more risk for more reward - start low and work up." },
-        { id:"combat_ap",  title:"Action Points (AP)",  body:"Each turn you have 3 AP. Abilities cost AP to use; a basic attack is free. Spend your AP wisely, then end your turn to let the enemy act." },
+        { id:"combat_ap",  title:"Action Points (AP)",  body:"Each turn you have 3 AP (4 with the Bloodwarden Relentless trait). Abilities cost AP to use; a basic attack is free. Spend your AP wisely, then end your turn to let the enemy act." },
         { id:"targeting",  title:"Choosing a Target",   body:"When several foes are present, Tab or click to pick who you hit. The glowing rune beneath an enemy marks your current target." },
         { id:"intent",     title:"Enemy Intent",        body:"Every enemy telegraphs its next move on the chip above its health bar: red for an attack (with the rough damage you'd take), purple for a spell, green for a heal, amber for a status effect. Intents are honest - and if you Stun, Root or Silence a foe, its chip greys out: that move is cancelled." },
         { id:"inspect",    title:"Inspect Your Foes",   body:"Mouse over an enemy (or its health bar) to inspect it. You'll see whether it fights at Melee or Ranged and with Phys or Spell - and which controls stop it: Root halts melee, Silence stops spells, Stun stops anything. Ranged foes ignore Root, so a trap won't keep them off you." },
@@ -7924,6 +8032,7 @@ function tutorial_catalog() {
         { id:"gold_risk",  title:"Gold at Risk",        body:"Gold you FIND during a run is at risk - die and you lose most of it (a quarter is returned as mercy). Gold banked before the run is always safe at camp. The number in brackets on your HUD is what you're gambling: extract to keep it all." },
         { id:"escape_item", title:"A Way Out",          body:"You carry an escape item. On the floor map, press G (or tap the LAMP / WINE button) to use it: the Genie Lamp whisks you back to camp with ALL your loot, free. Devil Wine does the same - but drains 2 random stat points. WARNING: the Wine's toll is PERMANENT - those points are gone from your hero on every future run, not just this one. Cash out a greedy run before the dungeon takes it back." },
         { id:"bond_gates",  title:"Growing Closer",     body:"Someone in camp has warmed to you - their bond has reached a GATE. Crossing a gate now takes a FAVOR: talk to them and take on their gate quest (it appears on the tavern board and in your Journal). Finish it and the friendship deepens, unlocking their next perk. Mind your bonds: friendships DECAY if neglected, and only a few can hold the deepest tiers - deepening one may demote another." },
+        { id:"dorn_reforge", title:"Reforge Ingots",   body:"You earned a REFORGE INGOT. Take unequipped gear to Dorn the Blacksmith and spend an ingot to REROLL its affixes - same item, same rarity, fresh random stats. Ingots are TIERED to rarity: a higher-tier ingot reworks any gear of its tier or below, so a Legendary ingot works on anything while a Common one only touches Common gear. Your ingot hoard shows at Dorn and in your Stash." },
         { id:"corruption_101", title:"Corruption",      body:"A creature in your care is CORRUPTED. The bargain: while it pushes (3 survived runs as your active companion), YOU pay -20% max HP and -10% damage. Each pushed run adds a PERMANENT +15% to its passive gift. You may CURE it at Bairc's any time - the gains earned so far are kept, the burden lifts, but its grand power is forfeit. See it through all 3 runs and it fully corrupts: its gift is 45% stronger forever, the burden ends, and it earns a grand boon. The full table lives in the Compendium under Companions." },
     ];
 }
@@ -8218,7 +8327,7 @@ function item_picker_prompt() {
         case "vex_stat":  return "Choose an item to trade to Vex for the upgrade";
         case "shrine_boon": return "Choose an item to sacrifice at the shrine";
         case "alch_rebirth": return "Choose a class item to reforge (cost scales with rarity)";
-        case "chit_reforge": return "Choose an item - Dorn reworks its affixes (1 Reforge Chit)";
+        case "chit_reforge": return "Choose an item - Dorn reworks its affixes (1 Reforge Ingot)";
         case "gift": return "Choose a gift for " + (variable_struct_exists(global.item_picker.context, "npc_name")
             ? global.item_picker.context.npc_name : "them");
     }
@@ -8271,9 +8380,12 @@ function item_picker_resolve() {
             _p.resolved_purpose = "chit_reforge"; _p.result_msg = "Nothing chosen.";
             item_picker_close(); return;
         }
-        board_requests_ensure();
-        if (global.reforge_chits < 1) {
-            _p.resolved_purpose = "chit_reforge"; _p.result_msg = "No Reforge Chits - the tavern board pays them.";
+        // Tier-or-higher: the item's rarity needs an ingot of that tier or better.
+        var _rf_rar  = variable_struct_exists(_csel.item, "rarity") ? clamp(_csel.item.rarity, 0, 4) : 0;
+        var _rf_tier = reforge_ingot_tier_for(_rf_rar);
+        if (_rf_tier < 0) {
+            _p.resolved_purpose = "chit_reforge";
+            _p.result_msg = "No " + item_rarity_name(_rf_rar) + "-tier (or higher) Reforge Ingot - the tavern board pays them.";
             item_picker_close(); return;
         }
         var _old_cname = _csel.label;
@@ -8281,11 +8393,11 @@ function item_picker_resolve() {
             _p.resolved_purpose = "chit_reforge"; _p.result_msg = "That item has no affixes to rework.";
             item_picker_close(); return;
         }
-        global.reforge_chits -= 1;
+        var _rf_spent = reforge_ingot_spend(_rf_rar);
         save_game();
         _p.resolved_purpose = "chit_reforge";
-        _p.result_msg = "Dorn reworks " + _old_cname + " into " + _csel.item.name + "!   ("
-            + string(global.reforge_chits) + ((global.reforge_chits == 1) ? " chit" : " chits") + " left)";
+        _p.result_msg = "Dorn reworks " + _old_cname + " into " + _csel.item.name + "!   (spent a "
+            + item_rarity_name(_rf_spent) + " ingot)";
         audio_play_sound(snd_forge, 1, false);
         item_picker_close();
         return;
@@ -8661,14 +8773,23 @@ function event_apply_effects(fx) {
             ? ("You recovered a " + _pe.name + " egg - visit Bairc.")
             : ("A " + _pe.name + " follows you home - visit Bairc.");
     }
-    // Borrowed Memory (expression #6) - a temporary other-class ability, this run only
+    // Borrowed Memory (expression #6; 07-16 combo batch: now a pick-1-of-3 DRAFT -
+    // the offer is stashed here and the floor controller opens the choice screen
+    // right after this event's result closes).
     if (variable_struct_exists(fx, "memory") && fx.memory) {
-        var _bm = borrowed_memory_grant();
-        if (_bm != "") {
-            array_push(_sum, "BORROWED MEMORY: " + _bm + " (" + global.run_borrowed_class + " - this run)");
+        var _bm_offer = borrowed_memory_offer(3);
+        if (array_length(_bm_offer) > 0) {
+            global.borrowed_offer = _bm_offer;
+            array_push(_sum, "BORROWED MEMORIES stir - choose one to keep (this run)");
         } else {
             array_push(_sum, "the memory slips away...");
         }
+    }
+    // Borrowed Memory draft pick (the second screen's choice lands here).
+    if (variable_struct_exists(fx, "memory_pick") && fx.memory_pick != "") {
+        global.run_borrowed_ability = fx.memory_pick;
+        global.run_borrowed_class   = variable_struct_exists(fx, "memory_pick_class") ? fx.memory_pick_class : "";
+        array_push(_sum, "BORROWED MEMORY: " + fx.memory_pick + " (" + global.run_borrowed_class + " - this run)");
     }
     // Boon (rare jackpot) - "random" picks an unowned boon, else a specific id
     if (variable_struct_exists(fx, "boon") && fx.boon != "") {
@@ -9155,7 +9276,213 @@ function audio_music_assets() {
         // Sound pass Batch 3 - ambience beds (M routed these under the Music
         // slider rather than a third slider, 07-07)
         snd_amb_rain, snd_amb_cave, snd_amb_torch,
+        // Atmosphere pass sections 2-3 (SOUND_ATMOSPHERE_SPEC.md, 07-14): per-
+        // dungeon beds + title bed + hub station loops, all under Music.
+        snd_amb_ashen, snd_amb_scorched, snd_amb_tundra, snd_amb_title,
+        snd_amb_forge, snd_amb_cauldron, snd_amb_garden, snd_amb_tavern,
+        // Banshee-unlocked jukebox tracks (BANSHEE_BOTTLE_SPEC.md, 07-15;
+        // hub_3/4/5 = Hearthlight / Moth & Lantern / The Wake, dungeon_2/3 =
+        // Blood and Iron / Kingsfall - all M-approved 07-16).
+        snd_music_hub_1, snd_music_hub_2, snd_music_dungeon_1,
+        snd_music_hub_3, snd_music_hub_4, snd_music_hub_5,
+        snd_music_dungeon_2, snd_music_dungeon_3,
+        snd_music_dungeon_4,   // Nocturne (gothic piano, M-approved 07-17)
+        snd_music_hub_6,       // Tempest Road (07-17, dual-pool)
     ];
+}
+
+// =============================================================================
+// BANSHEE IN A BOTTLE - unlockable music tracks (BANSHEE_BOTTLE_SPEC.md, 07-15)
+// A very rare run find: guaranteed on each dungeon's FINAL boss (first kill per
+// save) + a small chest-site chance. Rides the run (die = lost, extract/clear =
+// banked); Maren's Spirits tab releases one for a random not-yet-owned track,
+// or a Rune Dust bounty once every track is owned. Selected tracks replace the
+// default hub / dungeon music via the Settings selectors (per-save).
+// =============================================================================
+
+// The track catalog is code-side truth; saves store track IDS only. pool gates
+// which Settings selector row a track appears under ("hub" / "dungeon").
+function music_track_catalog() {
+    return [
+        { id: "hub_rainlight", name: "Rainlight",     pool: "hub",     snd: snd_music_hub_1 },
+        { id: "hub_emberside", name: "Emberside",     pool: "hub",     snd: snd_music_hub_2 },
+        { id: "dun_longdark",  name: "The Long Dark", pool: "dungeon", snd: snd_music_dungeon_1 },
+        // M-approved from the 07-16 sample rounds. Fulls generated with explicit
+        // evolving-section structure per M ("diversity and variance within the
+        // song so the listener doesn't tire"). GraveDancer concept = parked.
+        { id: "hub_hearthlight", name: "Hearthlight",    pool: "hub",     snd: snd_music_hub_3 },
+        { id: "hub_mothlantern", name: "Moth & Lantern", pool: "hub",     snd: snd_music_hub_4 },
+        { id: "dun_bloodiron",   name: "Blood and Iron", pool: "dungeon", snd: snd_music_dungeon_2 },
+        { id: "dun_kingsfall",   name: "Kingsfall",      pool: "dungeon", snd: snd_music_dungeon_3 },
+        { id: "hub_thewake",     name: "The Wake",       pool: "hub",     snd: snd_music_hub_5 },
+        // 07-17: M's gothic-virtuoso piano ask ("somber but many notes, at times
+        // fast tempo, Castlevania") - approved from sample, dungeon pool.
+        { id: "dun_nocturne",    name: "Nocturne",       pool: "dungeon", snd: snd_music_dungeon_4 },
+        // 07-17: Tempest Road = swirling minor-key waltz x flamenco desert
+        // (Zelda storms/valley homage). M ruled it pool "both": one unlock,
+        // selectable as hub AND dungeon music. (Its sibling Drums of the Deep
+        // was cut entirely - "boring and monotonous".)
+        { id: "hub_tempestroad", name: "Tempest Road",    pool: "both",    snd: snd_music_hub_6 },
+    ];
+}
+
+// Ensure every banshee/jukebox global exists (tolerant defaults for old saves
+// and the title screen, where no slot is loaded yet).
+function banshee_init() {
+    if (!variable_global_exists("banshee_carried"))    global.banshee_carried    = 0;   // run-scoped, never saved
+    if (!variable_global_exists("banshee_banked"))     global.banshee_banked     = 0;   // stash-side, saved
+    if (!variable_global_exists("banshee_boss_drops")) global.banshee_boss_drops = {};  // dungeon_key -> true once granted
+    if (!variable_global_exists("music_unlocked"))     global.music_unlocked     = [];  // array of catalog ids
+    if (!variable_global_exists("music_sel_hub"))      global.music_sel_hub      = "";  // "" = default track
+    if (!variable_global_exists("music_sel_dungeon"))  global.music_sel_dungeon  = "";
+}
+
+function music_track_by_id(track_id) {
+    var _c = music_track_catalog();
+    for (var _i = 0; _i < array_length(_c); _i++) {
+        if (_c[_i].id == track_id) return _c[_i];
+    }
+    return undefined;
+}
+
+function music_track_owned(track_id) {
+    banshee_init();
+    // TEST LEVER (F8, gc Step): every track reads owned while the toggle is on.
+    if (variable_global_exists("debug_unlock_all") && global.debug_unlock_all) return true;
+    for (var _i = 0; _i < array_length(global.music_unlocked); _i++) {
+        if (global.music_unlocked[_i] == track_id) return true;
+    }
+    return false;
+}
+
+// True when a track belongs to the given pool. pool "both" tracks (M 07-17,
+// Tempest Road) count for hub AND dungeon - one unlock covers both selectors.
+function music_pool_match(track_pool, pool) {
+    return (track_pool == pool) || (track_pool == "both");
+}
+
+// Unlocked catalog entries for one pool, catalog order (drives the selector rows).
+function music_pool_unlocked(pool) {
+    banshee_init();
+    var _out = [];
+    var _c = music_track_catalog();
+    for (var _i = 0; _i < array_length(_c); _i++) {
+        if (music_pool_match(_c[_i].pool, pool) && music_track_owned(_c[_i].id)) array_push(_out, _c[_i]);
+    }
+    return _out;
+}
+
+// The selected catalog entry for a pool, or undefined for the default music.
+// Validates ownership so a stale/foreign selection can never silence the game.
+function music_selected_track(pool) {
+    banshee_init();
+    var _sel = (pool == "hub") ? global.music_sel_hub : global.music_sel_dungeon;
+    if (_sel == "") return undefined;
+    var _t = music_track_by_id(_sel);
+    if (_t == undefined || !music_pool_match(_t.pool, pool) || !music_track_owned(_sel)) {
+        if (pool == "hub") global.music_sel_hub = ""; else global.music_sel_dungeon = "";
+        return undefined;
+    }
+    return _t;
+}
+
+// The sound asset the hub should loop (selection or the Rainy_Memories default).
+function music_hub_snd() {
+    var _t = music_selected_track("hub");
+    return (_t == undefined) ? Rainy_Memories : _t.snd;
+}
+
+// Stop whatever hub music is playing - default AND every hub-pool track - so
+// the scattered leave-hub stop sites never need to know about the catalog.
+function music_hub_stop() {
+    audio_stop_sound(Rainy_Memories);
+    var _c = music_track_catalog();
+    for (var _i = 0; _i < array_length(_c); _i++) {
+        if (music_pool_match(_c[_i].pool, "hub")) audio_stop_sound(_c[_i].snd);
+    }
+}
+
+// Stop all dungeon-floor music (default intro/loop pair + custom tracks).
+function music_dungeon_stop() {
+    audio_stop_sound(_2_dungeon_INITIAL);
+    audio_stop_sound(_2_dungeon_LOOP);
+    var _c = music_track_catalog();
+    for (var _i = 0; _i < array_length(_c); _i++) {
+        if (music_pool_match(_c[_i].pool, "dungeon")) audio_stop_sound(_c[_i].snd);
+    }
+}
+
+// Live-apply after a Settings selector change: restart the relevant music only
+// if it is playing RIGHT NOW (hub room / dungeon floor). Elsewhere the change
+// simply takes effect on the next room entry.
+function music_selection_apply(pool) {
+    if (pool == "hub" && room == rm_hub) {
+        music_hub_stop();
+        audio_play_sound(music_hub_snd(), 1, true);
+    } else if (pool == "dungeon" && room == rm_dungeon_floor) {
+        music_dungeon_stop();
+        var _t = music_selected_track("dungeon");
+        if (_t != undefined) {
+            audio_play_sound(_t.snd, 1, true);
+            if (instance_exists(obj_floor_controller)) instance_find(obj_floor_controller, 0).dungeon_music_looping = true;
+        } else {
+            // Back to the default pair: skip the intro mid-floor, just loop.
+            audio_play_sound(_2_dungeon_LOOP, 1, true);
+            if (instance_exists(obj_floor_controller)) instance_find(obj_floor_controller, 0).dungeon_music_looping = true;
+        }
+    }
+}
+
+// Settings selector: cycle a pool's selection by dir (+1/-1) through
+// [Default, ...unlocked tracks in catalog order]. Returns true if it changed
+// (false when the pool has nothing unlocked yet - the row is inert).
+function music_selection_cycle(pool, dir) {
+    var _pool = music_pool_unlocked(pool);
+    var _n = array_length(_pool);
+    if (_n == 0) return false;
+    var _cur = music_selected_track(pool);
+    var _idx = 0;   // 0 = Default, 1.._n = _pool[_idx-1]
+    if (_cur != undefined) {
+        for (var _i = 0; _i < _n; _i++) if (_pool[_i].id == _cur.id) { _idx = _i + 1; break; }
+    }
+    _idx = wrap_index(_idx + dir, _n + 1);
+    var _new_id = (_idx == 0) ? "" : _pool[_idx - 1].id;
+    if (pool == "hub") global.music_sel_hub = _new_id; else global.music_sel_dungeon = _new_id;
+    music_selection_apply(pool);
+    return true;
+}
+
+// Chest-site roll (treasure/vault/reliquary): ~4%, nudged by the active pet's
+// LCK loot bonus, capped well under "expected". Increments the carried count -
+// the bottle rides the run from here (end_run banks or loses it).
+function banshee_chest_try() {
+    banshee_init();
+    var _chance = min(8, 4 + floor(pet_active_lck_loot_pts() / 5));
+    if (irandom(99) >= _chance) return false;
+    global.banshee_carried++;
+    return true;
+}
+
+// Maren release: consume one banked bottle, roll a random NOT-yet-owned track
+// (both pools, equal weight). Returns { kind:"track", track } on an unlock or
+// { kind:"dust", amount } once every track is owned (the 25-dust bounty).
+function banshee_release_roll() {
+    banshee_init();
+    if (global.banshee_banked <= 0) return undefined;
+    global.banshee_banked--;
+    var _locked = [];
+    var _c = music_track_catalog();
+    for (var _i = 0; _i < array_length(_c); _i++) {
+        if (!music_track_owned(_c[_i].id)) array_push(_locked, _c[_i]);
+    }
+    if (array_length(_locked) == 0) {
+        var _bounty = 25;
+        global.rune_dust += _bounty;
+        return { kind: "dust", amount: _bounty };
+    }
+    var _t = _locked[irandom(array_length(_locked) - 1)];
+    array_push(global.music_unlocked, _t.id);
+    return { kind: "track", track: _t };
 }
 
 // -----------------------------------------------------------------------------
@@ -9167,7 +9494,44 @@ function audio_music_assets() {
 // audio_stop_sound sites for music never need to know about ambience.
 // -----------------------------------------------------------------------------
 function ambience_all_assets() {
-    return [snd_amb_rain, snd_amb_cave, snd_amb_torch];
+    return [snd_amb_rain, snd_amb_cave, snd_amb_torch,
+            snd_amb_ashen, snd_amb_scorched, snd_amb_tundra, snd_amb_title,
+            // Hub station loops are Step-driven (hub_station_ambience_update),
+            // but they live in this list so room-change ambience_set calls
+            // sweep them up if a station flag somehow survives a transition.
+            snd_amb_forge, snd_amb_cauldron, snd_amb_garden, snd_amb_tavern];
+}
+
+// Which ambience bed the selected dungeon breathes (spec section 2). The old
+// shared snd_amb_cave bed is retired - each dungeon has its own air.
+function dungeon_ambience_bed() {
+    var _d = variable_global_exists("selected_dungeon") ? global.selected_dungeon : "ashen_vault";
+    switch (_d) {
+        case "scorched_depths": return snd_amb_scorched;
+        case "tundra_tomb":     return snd_amb_tundra;
+        default:                return snd_amb_ashen;
+    }
+}
+
+// HUB STATION FLAVOR (spec section 3): a short quiet loop while that NPC screen
+// is open. Called from obj_game_controller's Step TOP (before any modal exit)
+// so the *_open instance flags are in scope every frame; loops self-stop the
+// frame a screen closes, and room-change ambience_set calls are the backstop.
+function hub_station_ambience_update() {
+    var _hub = (room == rm_hub || room == rm_character_select);
+    var _want_forge    = _hub && (shop_open == 1);   // Dorn only - Petra's stall gets no loop
+    var _want_cauldron = _hub && sable_open;
+    var _want_garden   = _hub && (bairc_open || bairc_intro_open);
+    var _want_tavern   = _hub && (tavern_board_open
+        || (variable_instance_exists(id, "kb_open") && kb_open));   // board + Knucklebones/High Table
+    var _loops = [[snd_amb_forge, _want_forge], [snd_amb_cauldron, _want_cauldron],
+                  [snd_amb_garden, _want_garden], [snd_amb_tavern, _want_tavern]];
+    for (var _i = 0; _i < array_length(_loops); _i++) {
+        var _snd = _loops[_i][0];
+        var _want = _loops[_i][1];
+        if (_want && !audio_is_playing(_snd)) audio_play_sound(_snd, 0, true);
+        else if (!_want && audio_is_playing(_snd)) audio_stop_sound(_snd);
+    }
 }
 
 // _list: the ambience assets this room wants (may be empty). Already-playing
@@ -9206,12 +9570,24 @@ function audio_sfx_assets() {
         snd_attack_construct, snd_death_construct, snd_attack_beast, snd_attack_beast_2,
         snd_death_beast, snd_attack_fire, snd_death_fire, snd_attack_ice, snd_death_ice,
         snd_attack_boss, snd_attack_boss_2, snd_death_boss,
-        snd_cast_elem, snd_cast_elem_2, snd_cast_void, snd_cast_blood, snd_cast_blood_2,
+        snd_cast_elem, snd_cast_elem_2, snd_cast_void, snd_cast_void_2, snd_cast_blood, snd_cast_blood_2,
         snd_cast_arcane, snd_cast_arcane_2, snd_cast_heal, snd_cast_shield,
         snd_cast_buff, snd_cast_buff_2, snd_cast_debuff,
+        // Per-school ability cast SFX (07-17) - split the single snd_cast_elem so
+        // fire/frost/shock/arcane/nature no longer sound identical. 2 takes each -> _2.
+        snd_cast_fire, snd_cast_fire_2, snd_cast_frost, snd_cast_frost_2,
+        snd_cast_shock, snd_cast_shock_2, snd_cast_nature, snd_cast_nature_2,
         snd_sting_levelup, snd_sting_floor, snd_sting_victory, snd_sting_defeat,
-        snd_sting_quest, snd_sting_mystery, snd_sting_heartbreak,
+        snd_sting_quest, snd_sting_mystery,
+        snd_banshee_scream,   // release-ceremony wail (BANSHEE_BOTTLE_SPEC.md)
+        // (snd_sting_heartbreak retired 07-14 - snd_betrayal replaced it at the
+        // betrayal site; the asset stays in the project but never plays.)
         snd_equip, snd_buy, snd_pet_hatch,
+        // Atmosphere pass section 4 - moment stingers (SOUND_ATMOSPHERE_SPEC.md)
+        snd_shrine_hum, snd_curse_whisper, snd_egg_stir, snd_hatch_burst,
+        snd_hatch_build, snd_hatch_fanfare,   // Zelda-chest hatch crescendo (M 07-16)
+        snd_awakened_cross, snd_bond_up, snd_extract, snd_boss_door,
+        snd_betrayal, snd_quest_ready,
         snd_confirm_major, snd_npc_confirm, snd_sell,
         // Batch 2 - economy/items
         snd_gold, snd_potion, snd_forge, snd_rune_socket, snd_page, snd_chest, snd_gate,
@@ -9227,7 +9603,7 @@ function audio_settings_init() {
     if (!variable_global_exists("music_volume")) global.music_volume = 0.7;
     if (!variable_global_exists("sfx_volume"))   global.sfx_volume   = 0.8;
     if (!variable_global_exists("settings_open"))        global.settings_open        = false;
-    if (!variable_global_exists("settings_cursor"))      global.settings_cursor      = 0;   // 0 Music, 1 SFX, 2 Menu Tick, 3 Fullscreen, 4 Tutorial, 5 Reset
+    if (!variable_global_exists("settings_cursor"))      global.settings_cursor      = 0;   // 0 Music, 1 SFX, 2 Hub Track, 3 Dungeon Track, 4 Menu Tick, 5 Fullscreen, 6 Tutorial, 7 Reset
     if (!variable_global_exists("settings_reset_flash")) global.settings_reset_flash = 0;
     if (!variable_global_exists("tutorial_enabled"))     global.tutorial_enabled     = true;
     if (!variable_global_exists("ui_tick_enabled"))      global.ui_tick_enabled      = true;   // the menu-nav glass ping
@@ -9275,6 +9651,21 @@ function audio_apply_volumes() {
     audio_sound_gain(snd_amb_rain,  _mv * 0.50, 0);
     audio_sound_gain(snd_amb_cave,  _mv * 0.55, 0);
     audio_sound_gain(snd_amb_torch, _mv * 0.30, 0);
+    // Atmosphere-pass beds are loudness-normalized at import (M 07-14: raw gens
+    // were "barely audible"), so these trims are the ONLY quiet-maker - raise
+    // here first if F5 says a bed still doesn't read.
+    audio_sound_gain(snd_amb_ashen,    _mv * 0.55, 0);
+    audio_sound_gain(snd_amb_scorched, _mv * 0.55, 0);
+    audio_sound_gain(snd_amb_tundra,   _mv * 0.55, 0);
+    audio_sound_gain(snd_amb_title,    _mv * 0.55, 0);
+    audio_sound_gain(snd_amb_forge,    _mv * 0.50, 0);
+    audio_sound_gain(snd_amb_cauldron, _mv * 0.50, 0);
+    audio_sound_gain(snd_amb_garden,   _mv * 0.50, 0);
+    audio_sound_gain(snd_amb_tavern,   _mv * 0.50, 0);
+    // Banshee jukebox tracks ride the flat music gain (they ARE the music).
+    audio_sound_gain(snd_music_hub_1,     _mv, 0);
+    audio_sound_gain(snd_music_hub_2,     _mv, 0);
+    audio_sound_gain(snd_music_dungeon_1, _mv, 0);
 }
 
 // Adjust one category by delta (e.g. ±0.05), clamp, and re-apply immediately.
@@ -9287,8 +9678,8 @@ function audio_settings_adjust(which, delta) {
 
 // Shared input handler for the settings overlay. Call from a controller's Step
 // while global.settings_open; returns true (so the caller can `exit` and block
-// its own input). W/S pick a row, A/D or <-/-> adjust sliders / toggle fullscreen,
-// Esc/O closes. Rows: 0 Music, 1 SFX, 2 Fullscreen, 3 Tutorial Tips, 4 Reset Tutorial.
+// its own input). W/S pick a row, A/D or <-/-> adjust sliders / cycle tracks /
+// toggle, Esc/O closes. Row order matches ui_draw_settings_overlay (8 rows).
 function audio_settings_handle_input() {
     audio_settings_init();
     video_settings_init();
@@ -9298,10 +9689,11 @@ function audio_settings_handle_input() {
         global.settings_reset_flash--;
     }
 
-    // Rows: 0 Music, 1 SFX, 2 Menu Tick, 3 Fullscreen, 4 Tutorial Tips, 5 Reset Tutorial.
-    if (nav_up())   global.settings_cursor = wrap_index(global.settings_cursor - 1, 6);
-    if (nav_down()) global.settings_cursor = wrap_index(global.settings_cursor + 1, 6);
-    global.settings_cursor = clamp(global.settings_cursor, 0, 5);
+    // Rows: 0 Music, 1 SFX, 2 Hub Music, 3 Dungeon Music, 4 Menu Tick,
+    //       5 Fullscreen, 6 Tutorial Tips, 7 Reset Tutorial.
+    if (nav_up())   global.settings_cursor = wrap_index(global.settings_cursor - 1, 8);
+    if (nav_down()) global.settings_cursor = wrap_index(global.settings_cursor + 1, 8);
+    global.settings_cursor = clamp(global.settings_cursor, 0, 7);
 
     var _left    = nav_left();
     var _right   = nav_right();
@@ -9316,7 +9708,21 @@ function audio_settings_handle_input() {
             if (_left)  audio_settings_adjust(1, -0.05);
             if (_right) audio_settings_adjust(1,  0.05);
         break;
-        case 2: // Menu Tick (the nav glass ping) on/off
+        case 2: // Hub Music track selector (banshee unlocks; per-save selection)
+        case 3: // Dungeon Music track selector
+            if (_left || _right) {
+                var _ms_pool = (global.settings_cursor == 2) ? "hub" : "dungeon";
+                if (music_selection_cycle(_ms_pool, _right ? 1 : -1)) {
+                    audio_play_sound(snd_ui_move, 1, false);
+                    // Selection is progression, not preference: it lives in the SAVE
+                    // (settings.ini is slot-agnostic). No slot loaded (title) = inert row.
+                    if (variable_global_exists("save_slot") && global.save_slot >= 0) save_game();
+                } else {
+                    audio_play_sound(snd_ui_error, 1, false);   // nothing unlocked in this pool yet
+                }
+            }
+        break;
+        case 4: // Menu Tick (the nav glass ping) on/off
             if (_left || _right || _confirm) {
                 global.ui_tick_enabled = !global.ui_tick_enabled;
                 // Turning it ON previews the tick itself; OFF gets the toggle thunk.
@@ -9324,13 +9730,13 @@ function audio_settings_handle_input() {
                 audio_settings_save();
             }
         break;
-        case 3: // Fullscreen
+        case 5: // Fullscreen
             if (_left || _right || _confirm) {
                 video_toggle_fullscreen();
                 audio_play_sound(window_get_fullscreen() ? snd_ui_toggle_on : snd_ui_toggle_off, 1, false);
             }
         break;
-        case 4: // Tutorial Tips on/off
+        case 6: // Tutorial Tips on/off
             if (_left || _right || _confirm) {
                 if (!variable_global_exists("tutorial_enabled")) global.tutorial_enabled = true;
                 global.tutorial_enabled = !global.tutorial_enabled;
@@ -9338,7 +9744,7 @@ function audio_settings_handle_input() {
                 audio_settings_save();
             }
         break;
-        case 5: // Reset Tutorial - clear seen flags so every tip shows again
+        case 7: // Reset Tutorial - clear seen flags so every tip shows again
             if (_left || _right || _confirm) {
                 tutorial_reset_all();
                 global.tutorial_enabled   = true;   // resetting implies you want the tips back

@@ -112,6 +112,8 @@ if (showing_shrine) {
             shrine_notification = "";
             shrine_notification_fail = false;
             shrine_curse_arm    = -1;
+            // A curse altar springs its trap the moment it drops the veil.
+            if (shrine_kind == "curse") audio_play_sound(snd_curse_whisper, 1, false);
         }
         exit;
     }
@@ -227,6 +229,67 @@ if (showing_shrine) {
 
 
 // -----------------------------------------------------------------------------
+// 2b2. THE WHETSTONE - run-scoped ability honing (combat plan v2 §C)
+//   W/S select - Enter confirm - Esc/back: pick_mod -> ability list, ability -> leave.
+//   FREE: hone one slotted ability's mastery mod for the rest of the run.
+// -----------------------------------------------------------------------------
+if (showing_whetstone) {
+    var _wt_n = array_length(whetstone_abilities);
+
+    // Degenerate empty-loadout guard: let the player leave freely.
+    if (_wt_n == 0) {
+        if (input_cancel() || input_back() || input_confirm() || input_confirm_alt()) {
+            showing_whetstone = false;
+            current_rooms[selected_room].cleared = true;
+            global.floor_rooms_cleared[selected_room] = true;
+        }
+        exit;
+    }
+
+    if (whetstone_phase == "ability") {
+        if (input_cancel() || input_back()) {
+            // Leave without honing - the edge stays as it is (no obligation).
+            showing_whetstone = false;
+            current_rooms[selected_room].cleared = true;
+            global.floor_rooms_cleared[selected_room] = true;
+            exit;
+        }
+        if (nav_up())   whetstone_ab_cursor = wrap_index(whetstone_ab_cursor - 1, _wt_n);
+        if (nav_down()) whetstone_ab_cursor = wrap_index(whetstone_ab_cursor + 1, _wt_n);
+        whetstone_ab_cursor = clamp(whetstone_ab_cursor, 0, _wt_n - 1);
+        if (input_confirm() || input_confirm_alt()) {
+            whetstone_phase      = "mod";
+            whetstone_mod_cursor = 0;
+        }
+        exit;
+    }
+
+    // whetstone_phase == "mod": pick one of the ability's two mastery mods.
+    var _wt_ab   = whetstone_abilities[whetstone_ab_cursor];
+    var _wt_mods = ability_mastery_options(_wt_ab);
+    var _wt_mn   = array_length(_wt_mods);
+    if (input_cancel() || input_back()) {
+        whetstone_phase = "ability";   // back up to the ability list
+        exit;
+    }
+    if (nav_up())   whetstone_mod_cursor = wrap_index(whetstone_mod_cursor - 1, _wt_mn);
+    if (nav_down()) whetstone_mod_cursor = wrap_index(whetstone_mod_cursor + 1, _wt_mn);
+    whetstone_mod_cursor = clamp(whetstone_mod_cursor, 0, _wt_mn - 1);
+    if (input_confirm() || input_confirm_alt()) {
+        var _wt_pick = _wt_mods[whetstone_mod_cursor];
+        ability_run_honing_set(_wt_ab.name, _wt_pick.id);
+        global.run_whetstone_used = true;   // once-per-run gate (cleared at run teardown)
+        whetstone_notification = _wt_ab.name + " honed: " + _wt_pick.label + " (this run).";
+        showing_whetstone = false;
+        current_rooms[selected_room].cleared = true;
+        global.floor_rooms_cleared[selected_room] = true;
+        audio_play_sound(snd_forge, 1, false);   // the honing strike on the stone
+    }
+    exit;
+}
+
+
+// -----------------------------------------------------------------------------
 // 2c. EVENT ROOM - interactive stat-gated choice overlay (see SYSTEMS_EVENTS.md)
 //   W/S select choice (skips locked) - Enter confirm - result phase: any key closes
 // -----------------------------------------------------------------------------
@@ -234,6 +297,36 @@ if (showing_event_choice) {
     // Result phase - any key closes the overlay and marks the room cleared.
     if (event_phase == "result") {
         if (input_confirm() || input_confirm_alt() || mouse_check_button_pressed(mb_left)) {
+            // Borrowed Memory DRAFT (07-16 combo batch): if the event just offered
+            // memories, the overlay stays open and becomes the pick-1-of-3 screen -
+            // a synthetic event rendered by the same generic choice UI. The room
+            // clears when the PICK's own result closes (offer is empty by then).
+            if (variable_global_exists("borrowed_offer") && is_array(global.borrowed_offer)
+                && array_length(global.borrowed_offer) > 0) {
+                var _bo = global.borrowed_offer;
+                var _bo_choices = [];
+                for (var _boi = 0; _boi < array_length(_bo); _boi++) {
+                    array_push(_bo_choices, {
+                        label: _bo[_boi].name + " (" + _bo[_boi].from_class + ")",
+                        hint:  _bo[_boi].hint,
+                        cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+                        outcomes: [ { weight: 100,
+                            text: "The " + _bo[_boi].from_class + "'s memory settles into your hands as if they had always known it.",
+                            effects: { memory_pick: _bo[_boi].name, memory_pick_class: _bo[_boi].from_class } } ]
+                    });
+                }
+                global.borrowed_offer = [];
+                event_active = {
+                    id:    "borrowed_pick",
+                    title: "Borrowed Memories",
+                    body:  "Three ghosts of other lives hang in the air, each offering what it knew. Only one will stay with you.",
+                    color: make_color_rgb(150, 130, 220),
+                    choices: _bo_choices
+                };
+                event_phase  = "choices";
+                event_cursor = 0;
+                exit;
+            }
             showing_event_choice = false;
             current_rooms[selected_room].cleared = true;
             global.floor_rooms_cleared[selected_room] = true;
@@ -344,6 +437,8 @@ if (escape_confirm_open) {
                 }
             }
             escape_confirm_open = false;
+            music_dungeon_stop();   // parity with the E-extract path (the lamp path never stopped the track)
+            audio_play_sound(snd_extract, 1, false);   // gate rumble + wind rush out
             end_run(0);   // extraction: keep gold, carried loot -> stash, pet banks growth
             save_game();
             global.current_floor       = 1;
@@ -366,8 +461,8 @@ if (extract_confirm_open) {
         extract_confirm_open = false;
     } else if (input_confirm() || input_confirm_alt()) {
         extract_confirm_open = false;
-        audio_stop_sound(_2_dungeon_INITIAL);
-        audio_stop_sound(_2_dungeon_LOOP);
+        music_dungeon_stop();   // default pair + any banshee-jukebox dungeon track
+        audio_play_sound(snd_extract, 1, false);   // gate rumble + wind rush out
         end_run(0);
         global.current_floor       = 1;
         global.floor_rooms_cleared = [];
@@ -547,9 +642,11 @@ if (input_confirm() || input_confirm_alt()) {
         treasure_gold  = _th_gold;
         treasure_item  = _th_c;
         treasure_timer = 0;
+        treasure_banshee = banshee_chest_try();   // very rare: a Banshee in a Bottle rides the haul
         showing_treasure = true;
         audio_play_sound(snd_chest, 1, false);
         if (treasure_gold > 0) audio_play_sound(snd_gold, 1, false);
+        if (treasure_banshee) audio_play_sound(snd_sting_mystery, 1, false);   // something wails inside the chest...
         show_debug_message("[FLOOR DEBUG] room=" + string(selected_room) + " type=treasure_heal gold=" + string(_th_gold));
 
     } else if (_room.type == "treasure_vault") {
@@ -567,9 +664,11 @@ if (input_confirm() || input_confirm_alt()) {
         treasure_gold  = _tv_gold;
         treasure_item  = _tv_e;
         treasure_timer = 0;
+        treasure_banshee = banshee_chest_try();   // very rare: a Banshee in a Bottle rides the haul
         showing_treasure = true;
         audio_play_sound(snd_chest, 1, false);
         if (treasure_gold > 0) audio_play_sound(snd_gold, 1, false);
+        if (treasure_banshee) audio_play_sound(snd_sting_mystery, 1, false);   // something wails inside the chest...
         loot_item_sting(_tv_e);   // armory find sings its rarity
         show_debug_message("[FLOOR DEBUG] room=" + string(selected_room) + " type=treasure_vault gold=" + string(_tv_gold));
 
@@ -588,9 +687,11 @@ if (input_confirm() || input_confirm_alt()) {
         treasure_gold  = _tr_gold;
         treasure_item  = _tr_e;
         treasure_timer = 0;
+        treasure_banshee = banshee_chest_try();   // very rare: a Banshee in a Bottle rides the haul
         showing_treasure = true;
         audio_play_sound(snd_chest, 1, false);
         if (treasure_gold > 0) audio_play_sound(snd_gold, 1, false);
+        if (treasure_banshee) audio_play_sound(snd_sting_mystery, 1, false);   // something wails inside the chest...
         loot_item_sting(_tr_e, true);   // reliquary: legendary = the relic motif
         show_debug_message("[FLOOR DEBUG] room=" + string(selected_room) + " type=treasure_rare gold=" + string(_tr_gold));
 
@@ -623,16 +724,32 @@ if (input_confirm() || input_confirm_alt()) {
         shrine_curse_arm    = -1;
         shrine_revealed     = false;   // veiled until the player approaches
         showing_shrine      = true;
+        audio_play_sound(snd_shrine_hum, 1, false);   // low choral swell - the altar's pull (still veiled)
         tutorial_try_show("shrine");   // first-altar coach-mark (see SYSTEMS_ONBOARDING.md)
         show_debug_message("[FLOOR DEBUG] room=" + string(selected_room) + " type=shrine kind=" + shrine_kind + " offers=" + string(array_length(shrine_offers)));
 
+    } else if (_room.type == "whetstone") {
+        // The Whetstone - open the run-scoped honing picker. Build the equipped
+        // ability list now (mastery-resolved copies; .name drives the honing key).
+        var _wclass = variable_global_exists("chosen_class") ? global.chosen_class : 0;
+        whetstone_abilities    = abilities_resolve_player_loadout(_wclass);
+        whetstone_phase        = "ability";
+        whetstone_ab_cursor    = 0;
+        whetstone_mod_cursor   = 0;
+        whetstone_notification = "";
+        showing_whetstone      = true;
+        audio_play_sound(snd_shrine_hum, 1, false);   // the grindstone's low ring
+        show_debug_message("[FLOOR DEBUG] room=" + string(selected_room) + " type=whetstone abilities=" + string(array_length(whetstone_abilities)));
+
     } else if (_room.type == "combat" || _room.type == "elite" || _room.type == "boss") {
-        audio_stop_sound(_2_dungeon_INITIAL);
-        audio_stop_sound(_2_dungeon_LOOP);
+        music_dungeon_stop();   // default pair + any banshee-jukebox dungeon track
         global.next_enemy_type    = _room.enemies;
         global.current_room_index = selected_room;
         global.just_cleared_room  = false;
         global.just_cleared_boss  = (_room.type == "boss");
+        // Boss threshold: the iron door groans open as the room transition starts
+        // (audio rides across room_goto - gc is persistent, sounds aren't stopped).
+        if (_room.type == "boss") audio_play_sound(snd_boss_door, 1, false);
 
         show_debug_message("[FLOOR DEBUG] floor=" + string(global.current_floor)
             + " room=" + string(selected_room)

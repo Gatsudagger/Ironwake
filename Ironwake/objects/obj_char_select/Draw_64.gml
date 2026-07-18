@@ -26,7 +26,7 @@ var _panel_x0  = (GUI_W - (3 * _panel_w + 2 * _panel_gap)) / 2; // = 150
 // 1. BACKGROUND
 // -----------------------------------------------------------------------------
 draw_set_color(make_color_rgb(18, 18, 28));
-draw_rectangle(0, 0, GUI_W, GUI_H, false);
+draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
 
 
 // -----------------------------------------------------------------------------
@@ -147,6 +147,20 @@ for (var _i = 0; _i < 3; _i++) {
         draw_text(_mx, _gy + _cellhw + 12, "Male");
         draw_set_color(_m_on ? make_color_rgb(120, 125, 140) : make_color_rgb(255, 220, 120));
         draw_text(_fx, _gy + _cellhw + 12, "Female");
+
+        // Touch (M 07-17): tap the male / female cell to pick that gender - the G
+        // key has no tap target otherwise. Direct-set (not a G toggle) so tapping
+        // the chosen side is a harmless no-op. This cell sits inside the selected
+        // class panel, whose Step click-handler no-ops on the already-selected
+        // class, so there's no double-action.
+        if (input_device() == 2 && mouse_check_button_pressed(mb_left)) {
+            var _gmx = device_mouse_x_to_gui(0);
+            var _gmy = device_mouse_y_to_gui(0);
+            if (_gmy >= _gy - _cellhw && _gmy <= _gy + _cellhw) {
+                if      (_gmx >= _mx - _cellhw && _gmx <= _mx + _cellhw) selected_gender = "m";
+                else if (_gmx >= _fx - _cellhw && _gmx <= _fx + _cellhw) selected_gender = "f";
+            }
+        }
     } else {
         // Single preview, centred and enlarged - scaled to a target display height
         var _ucy = _py + 156;
@@ -272,7 +286,8 @@ draw_text(_alloc_cx, _box_y + _box_h + 21, _stat_descs[selected_stat]);
 // where tapping a stat box adds the point directly)
 draw_set_color(make_color_rgb(140, 145, 155));
 if (input_device() == 2) {
-    draw_text_outline(_alloc_cx, _box_y + _box_h + 51, "Tap a stat to spend a point");
+    draw_text_outline(_alloc_cx, _box_y + _box_h + 51,
+        "Tap a stat to add a point" + (free_points < 4 ? "   -   REMOVE takes one back" : ""));
 } else {
     draw_text_outline(_alloc_cx, _box_y + _box_h + 51, (input_device() == 1)
         ? "A: Add point        LT: Remove point"
@@ -302,6 +317,23 @@ if (input_device() == 2) {
         draw_set_color(c_white);
         draw_text(960, 1027, "CONFIRM");
     }
+    // Touch (M 07-17): stat-point removal (X key) had no tap target - a misclick
+    // during allocation couldn't be undone. This button removes one point from the
+    // last-selected stat (fires the same X the keyboard uses). Shown once any point
+    // is spent; sits left of the CONFIRM slot so they never overlap.
+    if (free_points < 4) {
+        var _rmx1 = 345, _rmy1 = 1008, _rmx2 = 605, _rmy2 = 1071;
+        draw_set_color(make_color_rgb(46, 24, 24));
+        draw_rectangle(_rmx1, _rmy1, _rmx2, _rmy2, false);
+        draw_set_color(make_color_rgb(210, 120, 110));
+        draw_rectangle(_rmx1, _rmy1, _rmx2, _rmy2, true);
+        draw_set_font(fnt_ui);
+        draw_set_halign(fa_center); draw_set_valign(fa_middle);
+        draw_set_color(c_white);
+        draw_text((_rmx1 + _rmx2) / 2, (_rmy1 + _rmy2) / 2, "-  REMOVE");
+        draw_set_halign(fa_left); draw_set_valign(fa_top);
+        if (touch_tapped(_rmx1, _rmy1, _rmx2, _rmy2)) touch_press(ord("X"));
+    }
 } else {
     // Navigation hint
     draw_set_color(make_color_rgb(130, 135, 145));
@@ -330,7 +362,7 @@ if (naming_active) {
     // Dark overlay
     draw_set_alpha(0.88);
     draw_set_color(make_color_rgb(8, 10, 20));
-    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
     draw_set_alpha(1.0);
 
     // Title
@@ -407,7 +439,7 @@ if (portrait_active) {
     // Dark overlay
     draw_set_alpha(0.92);
     draw_set_color(make_color_rgb(8, 10, 20));
-    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
     draw_set_alpha(1.0);
 
     // Title
@@ -485,3 +517,4 @@ draw_set_font(-1);
 
 // Touch (8c): universal Back chip + simulated-key pump - always LAST (topmost).
 ui_draw_touch_back();
+ui_draw_touch_gamepad();   // on-screen d-pad in the left gutter (M 07-17)

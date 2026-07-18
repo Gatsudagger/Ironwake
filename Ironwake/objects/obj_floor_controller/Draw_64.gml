@@ -1,4 +1,4 @@
-﻿// =============================================================================
+// =============================================================================
 // obj_floor_controller - Draw GUI event
 // Draws the branching dungeon floor map at native 1920x1080.
 // Layout:
@@ -35,7 +35,7 @@ var _NW = 195; var _NH = 96;
 // -----------------------------------------------------------------------------
 if (!dungeon_bg_draw("floormap", 0.45)) {
     draw_set_color(make_color_rgb(18, 18, 28));
-    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
 }
 
 
@@ -143,6 +143,7 @@ for (var _i = 0; _i < _count; _i++) {
         case "event":           _tc = _COL_EVENT;          break;
         case "boss":            _tc = _COL_BOSS;           break;
         case "shrine":          _tc = make_color_rgb(210, 170, 90); break;
+        case "whetstone":       _tc = make_color_rgb(150, 190, 210); break;
     }
 
     // Node fill - OPAQUE so the busy floor background never bleeds through and
@@ -211,6 +212,7 @@ for (var _i = 0; _i < _count; _i++) {
         case "event":           _tl = "EVENT";     break;
         case "boss":            _tl = "BOSS";      break;
         case "shrine":          _tl = "SHRINE";    break;
+        case "whetstone":       _tl = "HONE";      break;
     }
     draw_set_halign(fa_right);
     draw_set_valign(fa_bottom);
@@ -231,6 +233,7 @@ for (var _i = 0; _i < _count; _i++) {
             case "event":           _sense_str = "CHOICE";    break;
             case "rest":            _sense_str = "SAFE";      break;
             case "shrine":          _sense_str = "TRIBUTE";   break;
+            case "whetstone":       _sense_str = "HONE";      break;
         }
         if (_sense_str != "") {
             // Brighter readout with a shadow + small pill backing so the Sense hint
@@ -283,6 +286,7 @@ switch (_sel.type) {
     case "event":           _sel_tc = _COL_EVENT;          break;
     case "boss":            _sel_tc = _COL_BOSS;           break;
     case "shrine":          _sel_tc = make_color_rgb(210, 170, 90); break;
+    case "whetstone":       _sel_tc = make_color_rgb(150, 190, 210); break;
 }
 draw_set_color(_sel_tc);
 draw_rectangle(_dp_x, _dp_y, _dp_x + _dp_w, _dp_y + _dp_h, true);
@@ -320,6 +324,7 @@ switch (_sel.type) {
     case "event":           _det_type_str = "Event Room";        break;
     case "boss":            _det_type_str = "Boss Chamber";      break;
     case "shrine":          _det_type_str = "Shrine of Tribute"; break;
+    case "whetstone":       _det_type_str = "The Whetstone";     break;
 }
 draw_set_font(fnt_ui_small);
 draw_set_color(_sel_tc);
@@ -346,6 +351,8 @@ switch (_sel.type) {
         _det_desc = "A choice awaits - risk and\nreward in equal measure.\nYour stats may tip the odds."; break;
     case "boss":
         _det_desc = "The dungeon guardian waits.\nDefeat it to clear the floor."; break;
+    case "whetstone":
+        _det_desc = "A grindstone hums with old power.\nNo enemies present.\nHone one slotted ability for this run - free."; break;
 }
 draw_set_font(fnt_ui);
 draw_set_color(make_color_rgb(170, 180, 200));
@@ -362,7 +369,7 @@ if (_sel.cleared) {
     draw_text(_ddx, _ddy + 255, "Clear a connecting room first.");
 } else {
     draw_set_color(c_lime);
-    draw_text(_ddx, _ddy + 255, "Press Enter to enter");
+    draw_text(_ddx, _ddy + 255, (input_device() == 2) ? "Tap the room to enter" : "Press Enter to enter");
 }
 
 // Reward preview (uncleared rooms only)
@@ -399,7 +406,7 @@ if (!_sel.cleared) {
 if (showing_treasure) {
     draw_set_alpha(0.78);
     draw_set_color(c_black);
-    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
     draw_set_alpha(1.0);
 
     var _float_offset = sin(treasure_timer * 0.1) * 6;
@@ -483,13 +490,28 @@ if (showing_treasure) {
         _enter_y = _pop_cy + 330;
     }
 
+    // Banshee in a Bottle - the off-ladder wail below everything else. Icon +
+    // pale-cyan name line + the extraction warning (the whole tension of the find).
+    if (treasure_banshee) {
+        var _bb_txt = "A BANSHEE IN A BOTTLE!";
+        draw_set_font(fnt_ui);
+        draw_set_color(make_color_rgb(150, 235, 235));
+        draw_sprite_stretched(spr_icon_banshee_bottle, 0,
+            _pop_cx - string_width(_bb_txt) * 0.5 - 44, _enter_y - 6, 36, 36);
+        draw_text(_pop_cx, _enter_y + 12, _bb_txt);
+        draw_set_font(fnt_ui_small);
+        draw_set_color(make_color_rgb(120, 170, 175));
+        draw_text(_pop_cx, _enter_y + 51, "Something wails within. Extract alive to keep it - Maren can free the spirit.");
+        _enter_y += 96;
+    }
+
     if (input_device() == 2) {
         // Touch: framed CONTINUE button (M 07-08, same as rest/event popups).
         ui_draw_touch_continue(_pop_cx, _enter_y - 12);
     } else {
         draw_set_font(fnt_ui_small);
         draw_set_color(c_ltgray);
-        draw_text(_pop_cx, _enter_y, "Press Enter to continue");
+        draw_text(_pop_cx, _enter_y, ((input_device() == 2) ? "Tap to continue" : "Press Enter to continue"));
     }
 
     treasure_timer++;
@@ -507,7 +529,7 @@ if (showing_event) {
     // bleed through and collide with the notice text (rest/heal/treasure screens).
     draw_set_alpha(0.96);
     draw_set_color(c_black);
-    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
     draw_set_alpha(1.0);
 
     var _ef = sin(event_timer * 0.08) * 4.5;
@@ -536,7 +558,7 @@ if (showing_event) {
     } else {
         draw_set_font(fnt_ui_small);
         draw_set_color(c_ltgray);
-        draw_text(_ecx, _ecy + 300, "Press Enter to continue");
+        draw_text(_ecx, _ecy + 300, ((input_device() == 2) ? "Tap to continue" : "Press Enter to continue"));
     }
 
     event_timer++;
@@ -550,12 +572,98 @@ if (showing_event) {
 
 
 // -----------------------------------------------------------------------------
+// 6a2. THE WHETSTONE - run-scoped ability honing picker (combat plan v2 §C)
+// -----------------------------------------------------------------------------
+if (showing_whetstone) {
+    draw_set_alpha(0.95);
+    draw_set_color(c_black);
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
+    draw_set_alpha(1.0);
+
+    var _wt_steel = make_color_rgb(150, 190, 210);
+
+    draw_set_halign(fa_center);
+    draw_set_valign(fa_top);
+    draw_set_font(fnt_ui_title);
+    draw_set_color(_wt_steel);
+    draw_text(GUI_CX, 84, "The Whetstone");
+    draw_set_font(fnt_ui_small);
+    draw_set_color(make_color_rgb(170, 180, 195));
+    draw_text(GUI_CX, 162, "Set one edge sharper for the rest of this run. No cost - the stone asks nothing.");
+
+    var _wt_na = array_length(whetstone_abilities);
+
+    if (_wt_na == 0) {
+        draw_set_font(fnt_ui);
+        draw_set_color(make_color_rgb(150, 150, 170));
+        draw_text(GUI_CX, 520, "You carry no abilities to hone. (Esc to leave.)");
+    } else if (whetstone_phase == "ability") {
+        // Phase 1: pick which slotted ability to hone.
+        draw_set_halign(fa_left);
+        var _wt_rx0 = 420, _wt_rx1 = 1500, _wt_rh = 96, _wt_pitch = 108, _wt_y0 = 270;
+        for (var _wi = 0; _wi < _wt_na; _wi++) {
+            var _wab  = whetstone_abilities[_wi];
+            var _wry  = _wt_y0 + _wi * _wt_pitch;
+            var _wsel = (_wi == whetstone_ab_cursor);
+            draw_set_color(_wsel ? make_color_rgb(28, 42, 52) : make_color_rgb(16, 20, 26));
+            draw_rectangle(_wt_rx0, _wry, _wt_rx1, _wry + _wt_rh, false);
+            draw_set_color(_wsel ? _wt_steel : make_color_rgb(56, 70, 82));
+            draw_rectangle(_wt_rx0, _wry, _wt_rx1, _wry + _wt_rh, true);
+
+            draw_set_font(fnt_ui);
+            draw_set_color(_wsel ? c_white : make_color_rgb(190, 205, 215));
+            draw_text(_wt_rx0 + 26, _wry + 12, _wab.name);
+            draw_set_font(fnt_ui_small);
+            draw_set_color(make_color_rgb(150, 165, 180));
+            // The two edges this ability can take, previewed so the choice is legible.
+            var _wopt = ability_mastery_options(_wab);
+            var _wprev = "";
+            for (var _wo = 0; _wo < array_length(_wopt); _wo++) _wprev += (_wo > 0 ? "   |   " : "") + _wopt[_wo].label;
+            draw_text(_wt_rx0 + 26, _wry + 54, _wprev);
+        }
+        draw_set_halign(fa_center);
+        ui_draw_key_legend(GUI_CX, 990, "W/S: Select      Enter: Choose an edge      Esc: Leave (no honing)");
+    } else {
+        // Phase 2: pick one of the two mastery mods for the chosen ability.
+        var _wcab  = whetstone_abilities[whetstone_ab_cursor];
+        var _wcopt = ability_mastery_options(_wcab);
+        var _wcn   = array_length(_wcopt);
+        draw_set_font(fnt_ui);
+        draw_set_color(make_color_rgb(210, 220, 230));
+        draw_text(GUI_CX, 260, "Hone " + _wcab.name + " - choose its edge for this run:");
+
+        draw_set_halign(fa_left);
+        var _wm_rx0 = 520, _wm_rx1 = 1400, _wm_rh = 108, _wm_pitch = 132, _wm_y0 = 360;
+        for (var _mi = 0; _mi < _wcn; _mi++) {
+            var _mry  = _wm_y0 + _mi * _wm_pitch;
+            var _msel = (_mi == whetstone_mod_cursor);
+            draw_set_color(_msel ? make_color_rgb(28, 42, 52) : make_color_rgb(16, 20, 26));
+            draw_rectangle(_wm_rx0, _mry, _wm_rx1, _mry + _wm_rh, false);
+            draw_set_color(_msel ? _wt_steel : make_color_rgb(56, 70, 82));
+            draw_rectangle(_wm_rx0, _mry, _wm_rx1, _mry + _wm_rh, true);
+            draw_set_font(fnt_ui);
+            draw_set_color(_msel ? c_white : make_color_rgb(190, 205, 215));
+            draw_set_valign(fa_middle);
+            draw_text(_wm_rx0 + 30, _mry + _wm_rh * 0.5, _wcopt[_mi].label);
+            draw_set_valign(fa_top);
+        }
+        draw_set_halign(fa_center);
+        ui_draw_key_legend(GUI_CX, 990, "W/S: Select      Enter: Hone this edge      Esc: Back");
+    }
+
+    ui_draw_gothic_frame(30, 30, 1890, 1050, 30);
+    draw_set_halign(fa_left);
+    draw_set_valign(fa_top);
+}
+
+
+// -----------------------------------------------------------------------------
 // 6b. SHRINE OF TRIBUTE - interactive boon-purchase overlay
 // -----------------------------------------------------------------------------
 if (showing_shrine) {
     draw_set_alpha(0.95);
     draw_set_color(c_black);
-    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
     draw_set_alpha(1.0);
 
     draw_set_halign(fa_center);
@@ -823,7 +931,7 @@ if (showing_event_choice && event_active != undefined) {
     if (!dungeon_bg_draw("combat", 0.84)) {
         draw_set_alpha(0.95);
         draw_set_color(c_black);
-        draw_rectangle(0, 0, GUI_W, GUI_H, false);
+        draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
         draw_set_alpha(1.0);
     }
 
@@ -834,10 +942,10 @@ if (showing_event_choice && event_active != undefined) {
     // 1) Corner vignette: subtractive gradients darken the edges smoothly.
     gpu_set_blendmode(bm_subtract);
     var _vg = make_color_rgb(70, 70, 78);
-    draw_rectangle_color(0, 0, GUI_W, 240, _vg, _vg, c_black, c_black, false);
-    draw_rectangle_color(0, GUI_H - 240, GUI_W, GUI_H, c_black, c_black, _vg, _vg, false);
-    draw_rectangle_color(0, 0, 300, GUI_H, _vg, c_black, c_black, _vg, false);
-    draw_rectangle_color(GUI_W - 300, 0, GUI_W, GUI_H, c_black, _vg, _vg, c_black, false);
+    draw_rectangle_color(GUI_XL, 0, GUI_XR, 240, _vg, _vg, c_black, c_black, false);
+    draw_rectangle_color(GUI_XL, GUI_H - 240, GUI_XR, GUI_H, c_black, c_black, _vg, _vg, false);
+    draw_rectangle_color(GUI_XL, 0, 300, GUI_H, _vg, c_black, c_black, _vg, false);
+    draw_rectangle_color(GUI_W - 300, 0, GUI_XR, GUI_H, c_black, _vg, _vg, c_black, false);
     gpu_set_blendmode(bm_normal);
 
     // 1b) #16 stage 2: M-approved splash art for the four starred events, a
@@ -987,7 +1095,7 @@ if (showing_event_choice && event_active != undefined) {
         } else {
             draw_set_font(fnt_ui_small);
             draw_set_color(c_ltgray);
-            draw_text(GUI_CX, 972, "Press Enter to continue");
+            draw_text(GUI_CX, 972, ((input_device() == 2) ? "Tap to continue" : "Press Enter to continue"));
         }
     } else {
         draw_set_font(fnt_ui_small);
@@ -1177,7 +1285,7 @@ if (escape_confirm_open && escape_confirm_idx >= 0
     var _ec_it   = global.consumable_inventory[escape_confirm_idx];
     var _ec_wine = (_ec_it.effect_type == "escape_wine");
     draw_set_alpha(0.65); draw_set_color(c_black);
-    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
     draw_set_alpha(0.96); draw_set_color(_ec_wine ? make_color_rgb(34, 14, 16) : make_color_rgb(20, 22, 36));
     draw_rectangle(510, 360, 1410, 690, false);
     draw_set_alpha(1.0); draw_set_color(_ec_wine ? make_color_rgb(200, 80, 80) : make_color_rgb(150, 140, 220));
@@ -1214,7 +1322,7 @@ if (escape_confirm_open && escape_confirm_idx >= 0
 // -----------------------------------------------------------------------------
 if (extract_confirm_open) {
     draw_set_alpha(0.65); draw_set_color(c_black);
-    draw_rectangle(0, 0, GUI_W, GUI_H, false);
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
     draw_set_alpha(0.96); draw_set_color(make_color_rgb(16, 32, 18));
     draw_rectangle(510, 360, 1410, 690, false);
     draw_set_alpha(1.0); draw_set_color(make_color_rgb(70, 170, 90));
@@ -1227,6 +1335,13 @@ if (extract_confirm_open) {
     draw_set_color(make_color_rgb(190, 195, 215));
     draw_text_ext(960, 456,
         "The run ends here. You keep all your loot and found gold -\ndeeper floors (and their richer bosses) wait for another day.", 30, 780);
+    // Carried banshee bottles: remind the player what makes it out with them.
+    banshee_init();
+    if (global.banshee_carried > 0) {
+        draw_set_color(make_color_rgb(150, 235, 235));
+        draw_text(960, 552, "Carrying: Banshee in a Bottle x" + string(global.banshee_carried)
+            + "  (banks to Maren on extraction)");
+    }
     draw_set_color(make_color_rgb(150, 160, 185));
     if (input_device() == 2) {
         draw_text(960, 621, "Tap here to confirm - tap outside to cancel");
@@ -1332,3 +1447,4 @@ ui_draw_tutorial_tip();
 // Touch (8d): action-chip bar, then the Back/menu chip + key pump - always LAST (topmost).
 ui_draw_touch_chips();
 ui_draw_touch_back();
+ui_draw_touch_gamepad();   // on-screen d-pad in the left gutter (M 07-17)

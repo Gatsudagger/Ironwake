@@ -382,6 +382,43 @@ if (_need_new_map) {
         }
     }
 
+    // --- THE WHETSTONE (combat plan v2 2026-07-17 §C): seed EXACTLY ONE honing
+    //     altar per run, on FLOOR 1 only. Runs regen floor 1 fresh each time
+    //     (run_seed changes), so one-per-floor-1 == one-per-run; floors 2-3 never
+    //     carry one. Overwrite a low-value intermediate node (event/rest/supply/
+    //     cache) so the >=2 combat guarantee above is untouched. Free: hone one
+    //     slotted ability's mastery mod for the rest of the run. The
+    //     run_whetstone_used gate (reset at every run teardown) makes "once per
+    //     run" robust even if floor 1 is ever regenerated mid-run.
+    if (global.current_floor == 1 && !(variable_global_exists("run_whetstone_used") && global.run_whetstone_used)) {
+        var _whet_placed = false;
+        var _whet_soft = ["event", "rest", "treasure_heal", "treasure"];   // convert-preferred
+        for (var _wp = 0; _wp < array_length(_whet_soft) && !_whet_placed; _wp++) {
+            for (var _wi = 1; _wi < _node_count - 1; _wi++) {
+                if (_map[_wi].type == _whet_soft[_wp]) {
+                    _map[_wi].type     = "whetstone";
+                    _map[_wi].name     = "The Whetstone";
+                    _map[_wi].enemies  = "none";
+                    _map[_wi].gold_min = 0;
+                    _map[_wi].gold_max = 0;
+                    _whet_placed = true;
+                    break;
+                }
+            }
+        }
+        // Fallback: if no soft node existed, convert the first non-fight middle node.
+        for (var _wi2 = 1; _wi2 < _node_count - 1 && !_whet_placed; _wi2++) {
+            if (_map[_wi2].type != "combat" && _map[_wi2].type != "elite") {
+                _map[_wi2].type     = "whetstone";
+                _map[_wi2].name     = "The Whetstone";
+                _map[_wi2].enemies  = "none";
+                _map[_wi2].gold_min = 0;
+                _map[_wi2].gold_max = 0;
+                _whet_placed = true;
+            }
+        }
+    }
+
     global.floor_map            = _map;
     global.floor_map_floor      = global.current_floor;
     global.floor_rooms_cleared  = array_create(_node_count, false);
@@ -442,6 +479,7 @@ treasure_timer   = 0;
 treasure_item    = undefined;
 treasure_item2   = undefined;   // Treasure Hunter's bonus item (treasure rooms only)
 treasure_coins   = [];          // gold-burst coins on the popup (#19 polish, shared sim)
+treasure_banshee = false;       // this chest also held a Banshee in a Bottle (very rare)
 
 showing_event = false;
 event_title   = "";
@@ -480,6 +518,17 @@ escape_confirm_idx  = -1;      // index into global.consumable_inventory
 // popup instead of extracting instantly - a stray E can't end the run anymore.
 extract_confirm_open = false;
 
+// The Whetstone - run-scoped ability honing altar (combat plan v2 §C). A two-phase
+// picker: choose a slotted ability, then choose one of its two mastery mods; the
+// pick is applied run-scoped (ability_run_honing_set) on top of any permanent
+// notches. Seeded once per run on floor 1. FREE (no tribute).
+showing_whetstone      = false;
+whetstone_phase        = "ability";   // "ability" | "mod"
+whetstone_ab_cursor    = 0;
+whetstone_mod_cursor   = 0;
+whetstone_abilities    = [];          // resolved equipped ability structs (filled on open)
+whetstone_notification = "";
+
 // Event room - interactive stat-gated choice overlay (see SYSTEMS_EVENTS.md)
 showing_event_choice = false;
 event_active         = undefined;  // the rolled event struct
@@ -493,9 +542,17 @@ event_coins          = [];         // gold-burst particles on a gold-yielding re
 // 6. DUNGEON MUSIC
 // -----------------------------------------------------------------------------
 audio_apply_volumes();   // honor saved Music/SFX volumes
-audio_play_sound(_2_dungeon_INITIAL, 1, false);
-dungeon_music_looping = false;
-ambience_set([snd_amb_cave, snd_amb_torch]);   // cave air + brazier crackle under the music
+// Banshee jukebox: a selected dungeon track replaces the default INITIAL->LOOP
+// pair entirely (custom tracks are single seamless loops, no intro handoff).
+var _dm_track = music_selected_track("dungeon");
+if (_dm_track != undefined) {
+    audio_play_sound(_dm_track.snd, 1, true);
+    dungeon_music_looping = true;   // true = the Step intro->loop handoff stays dormant
+} else {
+    audio_play_sound(_2_dungeon_INITIAL, 1, false);
+    dungeon_music_looping = false;
+}
+ambience_set([dungeon_ambience_bed(), snd_amb_torch]);   // per-dungeon air + brazier crackle under the music
 
 // The portcullis grinds open once per descent - fresh run arrivals on floor 1
 // only, never on floor advances or returns from combat.

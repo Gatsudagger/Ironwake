@@ -10,7 +10,7 @@
   "compression":0,
   "compressionQuality":4,
   "conversionMode":0,
-  "duration":0.464399,
+  "duration":1.08,
   "exportDir":"",
   "name":"snd_cast_blood_2",
   "parent":{
@@ -21,6 +21,6 @@
   "resourceType":"GMSound",
   "resourceVersion":"2.0",
   "sampleRate":44100,
-  "soundFile":"snd_cast_blood_2.wav",
+  "soundFile":"snd_cast_blood_2.ogg",
   "volume":1.0,
 }
