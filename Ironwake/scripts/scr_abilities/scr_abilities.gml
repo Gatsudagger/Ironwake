@@ -308,7 +308,7 @@ var _arc_d = [
     { s: "Spend 1 Soul. Absorb 10 dmg, +3 per Soul HELD.",
       f: "Weave a spent Soul into a ward the rest of the reserve strengthens.\n- Spend 1 Soul: a shield absorbs 10 damage, +3 more per Soul still held.\n- The reserve-defense: a stocked Arcanist wards twice as hard. Cast BEFORE dumping Souls." },
     { s: "Void rot that GROWS: 6/8/10/12 dmg over 4 turns.",
-      f: "Set decay loose in their flesh and let time do the killing.\n- Accelerating Void DoT: 6, then 8, 10, 12 damage per turn (36 total).\n- Recast onto lingering void for DOUBLE ticks. Detonating it early heals 30% of the hit - but sacrifices the big late ticks." },
+      f: "Rot their flesh from the inside and let it worsen with every heartbeat.\n- Void damage over 4 turns that climbs each turn: 6, 8, 10, 12 (36 total).\n- Cast it again while the rot is still ticking to DOUBLE every remaining tick.\n- Detonate it early for a burst that heals you 30% of the damage - at the cost of the big final ticks." },
     { s: "Spend 2 Souls. 20 Arcane to ALL + detonates their statuses.",
       f: "Tear a rift above the field and let the Arcane pour through onto everything.\n- Spend 2 Souls: 20 Arcane damage to every enemy at once - and it DETONATES each enemy's statuses individually.\n- The cascade turn: spread chills, bleeds and hexes, then pull the sky down on all of it." },
     { s: "Spend 1 Soul. Foe takes 40% of dmg YOU take; heals you.",

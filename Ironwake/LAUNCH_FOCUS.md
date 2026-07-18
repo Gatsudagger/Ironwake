@@ -1,8 +1,9 @@
 # Ironwake — LAUNCH FOCUS (one page, the only tracker you need to open)
 
 **Steam launch: Wed Aug 19 2026 (committed).** Android: no fixed date — background track.
-This is the spine. Detail lives in STEAM_LAUNCH_CHECKLIST.md · PLAY_STORE_KIT.md ·
-STORE_LISTINGS_LOCALIZED.md. Updated 2026-07-17.
+This is the spine. Live per-track status: **STEAM_TRACKING.md** · **ANDROID_TRACKING.md**.
+Detail kits: STEAM_LAUNCH_CHECKLIST.md · PLAY_STORE_KIT.md · STORE_LISTINGS_LOCALIZED.md.
+Updated 2026-07-18.
 
 **Focus decision (07-17):** lock the baseline → finish Steam → keep Android's tester clock
 ticking in parallel. Everything else is PARKED (bottom).

@@ -1090,7 +1090,7 @@ function ui_ability_icon_sprite(ability) {
         case "Blink":            return spr_ability_blink;
         case "Curse":            return spr_ability_curse;
         case "Soul Shield":      return spr_ability_soul_shield;
-        case "Entropy":          return spr_ability_entropy;
+        case "Entropy":          return spr_ability_arcane_echo; // remap 07-17: old Arcane Echo art reads as the chaos-swirl Entropy wants; Arcane Echo gets new 3-ring art. spr_ability_entropy retired.
         case "Rift":             return spr_ability_rift;
         case "Soulbind":         return spr_ability_soulbind;
         // --- Arcanist melee kit (#26, 2026-07-08) ---
@@ -1110,7 +1110,8 @@ function ui_ability_icon_sprite(ability) {
         case "Marrow Crush":     return spr_ability_marrow_crush;
         case "Vital Theft":      return spr_ability_vital_theft;
         case "Bloodthorn Aura":  return spr_ability_bloodthorn_aura;
-        case "Undying":          return spr_ability_undying;
+        case "Undying":          return spr_ability_undying_rise; // 07-17: new wounded-warrior-rising art in its own sprite
+        case "Bulwark Slam":     return spr_ability_undying;    // remap 07-17: reuses the OLD Undying art (M pick); spr_ability_undying now belongs to Bulwark Slam alone.
         case "Plague Touch":     return spr_ability_plague_touch;
         case "Bloodfeast":       return spr_ability_bloodfeast;
         case "Galvanize":        return spr_ability_galvanize;   // D SS4 2026-07-10
@@ -1128,13 +1129,14 @@ function ui_ability_icon_sprite(ability) {
         case "Evasive Roll":     return spr_ability_evasive_roll;
         case "Death Snare":      return spr_ability_death_snare;
         case "Winter's Bite":    return spr_ability_winters_bite; // D SS4 2026-07-10
+        case "Counterblade":     return spr_ability_counterblade; // 07-17 combat plan v2 (new riposte verb)
         // --- General ---
         case "Strike":           return spr_ability_strike;
         case "Field Dressing":   return spr_ability_field_dressing;
         case "Second Wind":      return spr_ability_second_wind;
         case "Adrenaline Rush":  return spr_ability_adrenaline_rush;
         case "Mana Sever":       return spr_ability_mana_sever;
-        case "Arcane Echo":      return spr_ability_arcane_echo;
+        case "Arcane Echo":      return spr_ability_arcane_echo_rings; // 07-17: new 3-ring echo art; spr_ability_arcane_echo (old art) now belongs to Entropy
         case "Singularity":      return spr_ability_singularity;
         case "Sanguine Pact":    return spr_ability_sanguine_pact;
         case "Bonebreaker":      return spr_ability_bonebreaker;

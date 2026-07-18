@@ -66,6 +66,12 @@ not guidelines. Violating them costs M real money.
 - **Only edit `.gml` files** — never touch `.yy` or `.yyp` files
 - **Create new objects/rooms in IDE first**, then write code
 - **Always design before coding**: Agree on mechanics/numbers with M before writing any code
+- **⚠️ If M authorizes creating a sprite asset via the pipeline (write `.yy` + add a `.yyp`
+  resource line), GameMaker MUST be fully CLOSED first.** GM rewrites `Ironwake.yyp` from its
+  in-memory model on save/F5 and will silently CLOBBER external entries, orphaning the sprite →
+  runtime "Variable spr_ability_x not set before reading it". Do it with GM closed, then reopen.
+  PNG-only overwrites of an EXISTING registered sprite (swap the composite + `layers/.../*.png`)
+  are safe anytime — no `.yyp` change. (07-18 lesson.)
 
 ### Design Lock
 - All task documents are **design-locked** — no re-design loops
@@ -106,6 +112,24 @@ unaudited re-rolls (lesson: PixelLab 610-gen session, ~440 wasted).
 
 **PixelLab:** hard cap ~100 gens/session without sign-off; 2 failed rolls = stop
 and switch approach; report spend every wrap-up.
+
+### Icon Art Rules (MANDATORY — added 2026-07-17, M's standing order)
+Too many credits were burned on icons whose art doesn't read as the thing they name.
+1. **Every icon must sensibly match its name/effect.** The art has to read as the ability/
+   trait/item it represents (a diseased finger for Plague Touch, a crosshair for Snipe — not
+   a cat in a box or a reused blood-eye). If the subject is wrong, it's a defect regardless
+   of individual art quality.
+2. **Every icon must be boxed + bordered in the shipped frame style** — the baked-in beveled
+   dark border the Pass-2 set has (see spr_ability_snipe as the reference). Bare full-subject
+   art with no frame (e.g. Compounding Dread, Winter's Bite) is a defect; fix by compositing
+   onto the standard frame (free, PIL) or regenerating with a bordered style ref.
+3. **M must approve every icon before it ships — in BATCHES.** Candidates go to `_for_review\`;
+   no icon reaches the game unapproved. Scope the regen COUNT with M and get an explicit YES
+   before generating a single one (ties to COST DISCIPLINE hard rules).
+4. **Prefer REMAP over REGEN.** Reuse an existing sensible in-game icon via
+   `ui_ability_icon_sprite()` / the trait map (free, one-line .gml swap) whenever one fits;
+   only regenerate when nothing existing fits. Style new art from 2-4 shipped in-game icons
+   (see the style-consistency recipe).
 
 ### _for_review Lifecycle (MANDATORY — added 2026-07-17, M's standing order)
 `Ironwake\_for_review\` holds ONLY material actively awaiting M's review. When a
