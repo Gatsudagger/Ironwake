@@ -40,11 +40,27 @@ gold/dust). The price is the difficulty.
 **Tier gating** (`curse_tier_available(tier)`): t1 always; t2 needs
 `highest_awakening_unlocked() >= 2`; t3 needs `>= 4`. (Same gate idiom as skins.)
 
-**The "better loot" lever:** `curse_loot_asc_bonus()` sums the `loot` field of every
-active curse and is ADDED to the awakening `asc` fed into `drop_weights(source, asc)`.
-`drop_weights` already lerps A0→A5 toward better rarity and clamps 0..5, so "+N tiers"
-shifts the rarity table upward — and **compounds at higher awakening** (high base asc +
-bonus pushes toward the A5 ceiling = §6).
+**The "better loot" lever (REWORKED 2026-07-20):** `curse_loot_tier_bonus()` sums the
+`loot` field of every active curse and is passed to `drop_equipment(..., curse_tiers)`
+as a **post-roll rarity bump** — the same idiom as the Prospector trait (`_rarity++`),
+capped at Legendary. "+N tiers" is now literally true and worth the same at every
+awakening.
+
+> **Why it changed.** It used to be ADDED to the awakening `asc` fed into
+> `drop_weights(source, asc)`, which was broken at both ends of the ladder:
+> - **At A0** the lerp starts common-heavy, so a +2 curse still left ~65% commons on
+>   standard drops (90% → 65%). Players read the promised "+2 rarity tiers" as the
+>   Prospector idiom and saw junk. Found in playtest 07-20.
+> - **At A5** `drop_weights` does `clamp(asc, 0, 5)`, so the bonus was silently eaten
+>   entirely — and at A4 half of it. **Doom** (`loot:2`, no gold/dust) and **Withered**
+>   (`loot:1`) were therefore *pure-downside curses with zero reward* at exactly the
+>   awakening tiers their tier-3 gate restricts them to.
+>
+> Curse tiers are **opt-in per call site** so they can never leak into hub sources:
+> run drops (standard/elite/boss, chest/vault/reliquary, events, Devil's Pact bonus)
+> pass the bonus; Dorn's shop stock and tavern-board item rewards deliberately don't.
+
+Gold/dust rewards (`curse_gold_mult()` / `curse_dust_mult()`, additive like Greed/Runic).
 
 Gold/dust rewards (`curse_gold_mult()` / `curse_dust_mult()`, additive like Greed/Runic).
 
@@ -52,7 +68,7 @@ Gold/dust rewards (`curse_gold_mult()` / `curse_dust_mult()`, additive like Gree
 
 `curse_get/active/grant/accept`, `curse_tier_available`, `curse_offer_roll` (≤3 unowned,
 tier-available, Fisher-Yates), `curse_maxhp_mult`, `curse_incoming_mult`,
-`curse_enemy_hp_mult`, `curse_enemy_damage_mult`, `curse_loot_asc_bonus`,
+`curse_enemy_hp_mult`, `curse_enemy_damage_mult`, `curse_loot_tier_bonus`,
 `curse_gold_mult`, `curse_dust_mult`, `curse_blocks_consumables`, `curse_heal_mult`
 (Withered), `curse_combat_start_hp_frac` (Damnation), `curse_turn_hp_drain` (Blood
 Price), `curse_has_bonus_drops` (Devil's Pact).

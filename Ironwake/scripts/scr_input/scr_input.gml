@@ -425,11 +425,18 @@ function touch_sim_pump() {
 // Tap (mouse pressed-edge) inside a GUI-space rect. PRESS-fired - right for
 // buttons/chips. Lists that must distinguish tap-from-drag use the gesture
 // system below instead (touch_tap_in fires on clean RELEASE).
-function touch_tapped(_x1, _y1, _x2, _y2) {
+// _over_pad_ok: pass true ONLY from the on-screen pad's own buttons. Everyone
+// else gets the pad's footprint masked out - see touch_pad_geom() for why (the
+// pad draws last but taps don't consume, so pad presses were also triggering
+// the tap handlers of overlays drawn underneath: M 07-18 "dpad exits the
+// specific pet menu", and the Journal being un-navigable by pad).
+function touch_tapped(_x1, _y1, _x2, _y2, _over_pad_ok = false) {
     if (!mouse_check_button_pressed(mb_left)) return false;
     var _mx = device_mouse_x_to_gui(0);
     var _my = device_mouse_y_to_gui(0);
-    return (_mx >= _x1 && _mx <= _x2 && _my >= _y1 && _my <= _y2);
+    if (_mx < _x1 || _mx > _x2 || _my < _y1 || _my > _y2) return false;
+    if (!_over_pad_ok && touch_over_pad(_mx, _my)) return false;
+    return true;
 }
 
 // =============================================================================
@@ -495,16 +502,21 @@ function touch_lp()    { return variable_global_exists("tg") && global.tg.lp; }
 function touch_lp_x()  { return global.tg.ox; }
 function touch_lp_y()  { return global.tg.oy; }
 
+// Both of these mask the on-screen pad's footprint for the same reason
+// touch_tapped does - a thumb on the d-pad must not also select a list row
+// underneath it (M 07-18).
 function touch_tap_in(_x1, _y1, _x2, _y2) {
     if (!touch_tap()) return false;
-    return (global.tg.tapx >= _x1 && global.tg.tapx <= _x2
-         && global.tg.tapy >= _y1 && global.tg.tapy <= _y2);
+    if (global.tg.tapx < _x1 || global.tg.tapx > _x2
+     || global.tg.tapy < _y1 || global.tg.tapy > _y2) return false;
+    return !touch_over_pad(global.tg.tapx, global.tg.tapy);
 }
 
 function touch_lp_in(_x1, _y1, _x2, _y2) {
     if (!touch_lp()) return false;
-    return (global.tg.ox >= _x1 && global.tg.ox <= _x2
-         && global.tg.oy >= _y1 && global.tg.oy <= _y2);
+    if (global.tg.ox < _x1 || global.tg.ox > _x2
+     || global.tg.oy < _y1 || global.tg.oy > _y2) return false;
+    return !touch_over_pad(global.tg.ox, global.tg.oy);
 }
 
 // Per-frame vertical drag delta, only while a VERTICAL drag that STARTED

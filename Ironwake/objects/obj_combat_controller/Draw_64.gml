@@ -528,12 +528,16 @@ if (player_turn && !combat_over) {
     // Touch (8c): the End Turn line becomes a real button - framed so it reads
     // as tappable; a tap fires a simulated T through the unchanged handler.
     if (input_device() == 2) {
+        // Lifted 68px (M 07-18: "its almost overlapping with abilities"). It was
+        // 924..984 while the TOUCH ability row is y=984 h=87 (combat_ability_geom)
+        // - they shared an edge exactly, so a slightly high thumb on the leftmost
+        // ability hit End Turn instead. 856..916 leaves a real 68px dead band.
         draw_set_color(make_color_rgb(20, 24, 36));
-        draw_rectangle(750, 924, 1170, 984, false);
+        draw_rectangle(750, 856, 1170, 916, false);
         draw_set_color(_ap_col);
-        draw_rectangle(750, 924, 1170, 984, true);
-        draw_text(960, 940, "END TURN   " + string(player.energy) + " AP remaining");
-        if (touch_tapped(750, 924, 1170, 984)) touch_press(ord("T"));
+        draw_rectangle(750, 856, 1170, 916, true);
+        draw_text(960, 872, "END TURN   " + string(player.energy) + " AP remaining");
+        if (touch_tapped(750, 856, 1170, 916)) touch_press(ord("T"));
     } else {
         draw_set_color(_ap_col);
         draw_text(960, 954, ((input_device() == 1) ? "RT: End Turn   " : "T: End Turn   ") + string(player.energy) + " AP remaining");
@@ -550,10 +554,13 @@ if (player_turn && !combat_over) {
     // Small framed button, far bottom-right so it clears the ability tooltip
     // (x1260-1740). Toggles the quick menu; bound to the C key (Step_0 reads ord("C")).
     // Coords must stay in sync with the click hit-test in Step_0.
-    var _ibx = 1767;
-    var _iby = 990;
-    var _ibw = 141;
-    var _ibh = 63;
+    // Geometry from the shared source (combat_items_button_geom) so the draw and
+    // the Step_0 hit-test can't drift - on touch it relocates to the gutter.
+    var _ibg = combat_items_button_geom();
+    var _ibx = _ibg.x1;
+    var _iby = _ibg.y1;
+    var _ibw = _ibg.w;
+    var _ibh = _ibg.h;
     var _cx  = _ibx + _ibw / 2;
     var _has_consumables = variable_global_exists("consumable_inventory")
                            && array_length(global.consumable_inventory) > 0;
@@ -586,7 +593,11 @@ if (player_turn && !combat_over) {
     draw_set_font(fnt_ui_small);
     draw_set_halign(fa_center);
     draw_set_valign(fa_middle);
-    var _title = (input_device() == 1) ? "[ LT ] ITEMS" : "[ C ] ITEMS";
+    // Touch has no keyboard, so naming the C key there is noise (M 07-18: "it
+    // says C in mobile and it should say keyboard controls"). Inner ternary is
+    // parenthesised - GML/Android rejects an unbracketed nested ternary.
+    var _title = (input_device() == 1) ? "[ LT ] ITEMS"
+               : ((input_device() == 2) ? "ITEMS" : "[ C ] ITEMS");
     draw_set_color(_tcol);
     draw_text(_cx, _iby + _ibh / 2 - 12, _title);
     draw_set_color(_scol);
@@ -648,14 +659,23 @@ if (player_turn && !combat_over) {
             var _qitem  = _qgroups[_qi].item;
             var _qlabel = consumable_group_label(_qgroups[_qi]);
             var _qry    = _py + 75 + (_qi - _q_first) * 108;
-            var _is_cur = (_qi == consumable_quick_cursor);
+            var _is_cur  = (_qi == consumable_quick_cursor);
+            // ARMED row (touch confirm gate): pressed once, awaiting the second
+            // press. It has to look unmistakably different from merely selected,
+            // or the two-step reads as "my tap did nothing".
+            var _is_armed = (consumable_confirm_idx == _qi);
 
             draw_set_alpha(_is_cur ? 1.0 : 0.65);
-            draw_set_color(_is_cur ? make_color_rgb(22, 55, 35) : make_color_rgb(14, 18, 30));
+            draw_set_color(_is_armed ? make_color_rgb(62, 48, 16)
+                                     : (_is_cur ? make_color_rgb(22, 55, 35) : make_color_rgb(14, 18, 30)));
             draw_rectangle(_px + 15, _qry, _px + _pw - 15, _qry + 93, false);
             draw_set_alpha(1.0);
-            draw_set_color(_is_cur ? make_color_rgb(60, 200, 110) : make_color_rgb(35, 80, 52));
+            draw_set_color(_is_armed ? make_color_rgb(245, 195, 80)
+                                     : (_is_cur ? make_color_rgb(60, 200, 110) : make_color_rgb(35, 80, 52)));
             draw_rectangle(_px + 15, _qry, _px + _pw - 15, _qry + 93, true);
+            if (_is_armed) {   // second, inset ring - reads as "armed", not just hovered
+                draw_rectangle(_px + 18, _qry + 3, _px + _pw - 18, _qry + 90, true);
+            }
 
             // Icon badge on the left (visual liveliness - matches the gear/shop look).
             var _qisz = 68;
@@ -667,13 +687,25 @@ if (player_turn && !combat_over) {
             draw_set_color(_is_cur ? c_white : make_color_rgb(160, 175, 195));
             draw_text(_qtx, _qry + 12, _qlabel);
             draw_set_font(fnt_ui_small);
-            draw_set_color(_is_cur ? make_color_rgb(120, 210, 160) : make_color_rgb(80, 110, 95));
-            draw_text(_qtx, _qry + 48, ui_sentence(_qitem.description));
+            if (_is_armed) {
+                draw_set_color(make_color_rgb(245, 205, 120));
+                draw_text(_qtx, _qry + 48, "Tap again to use   -   tap elsewhere to cancel");
+            } else {
+                draw_set_color(_is_cur ? make_color_rgb(120, 210, 160) : make_color_rgb(80, 110, 95));
+                draw_text(_qtx, _qry + 48, ui_sentence(_qitem.description));
+            }
         }
 
-        // Footer hint
-        ui_draw_key_legend(_px + _pw / 2, _py + _ph - 42,
-            (_qcount > 0) ? "W/S: Navigate   Enter/Click: Use   C/Esc: Close" : "C/Esc: Close");
+        // Footer hint - touch names taps, not keys it doesn't have.
+        var _qfoot;
+        if (_qcount == 0) {
+            _qfoot = (input_device() == 2) ? "Tap outside to close" : "C/Esc: Close";
+        } else if (input_device() == 2) {
+            _qfoot = "Tap an item, then tap again to confirm";
+        } else {
+            _qfoot = "W/S: Navigate   Enter/Click: Use   C/Esc: Close";
+        }
+        ui_draw_key_legend(_px + _pw / 2, _py + _ph - 42, _qfoot);
         draw_set_font(-1);
         draw_set_halign(fa_left);
         draw_set_alpha(1.0);
@@ -988,7 +1020,18 @@ if (show_loot_screen) {
 // Only shown once the fight is won (no living enemies), matching the Step gate
 // in the victory path - so it never interrupts an ongoing battle.
 // -----------------------------------------------------------------------------
+// The DRAW gate must match the Step victory chain (level-up -> loot -> overflow),
+// or the modal appears out of order. It used to fire the instant the last enemy
+// died, so the discard prompt flashed up, got buried under the level-up and loot
+// screens, then reappeared afterwards - M 07-18: "clunky and unpolished". Waiting
+// for both screens gives M's preferred option: the pack-full prompts run as one
+// uninterrupted block AFTER the other post-combat screens.
+var _ovf_alloc_open = false;
+if (instance_exists(obj_game_controller)) {
+    _ovf_alloc_open = instance_find(obj_game_controller, 0).level_alloc_open;
+}
 if (!combat_over && consumable_overflow_pending()
+    && !_ovf_alloc_open && !show_loot_screen
     && array_length(combat_living_enemies(combat_state)) == 0) {
     ui_draw_consumable_overflow();
     touch_sim_pump();   // early exit skips the bottom-of-Draw pump (see alloc note)
@@ -1353,5 +1396,8 @@ ui_draw_tutorial_tip();
 // Touch (8c): universal Back chip + simulated-key pump - always LAST (topmost).
 // Combat keeps the top corner (y24): the enemy-bar grid starts at y96, so the
 // default y108 would land on it; the awakening label moves left on touch instead.
-ui_draw_touch_back(24);
+// _force_x: while an overlay owned by THIS controller is up, Esc closes that
+// overlay rather than opening the pause menu - so the chip must read as an X,
+// not the three-bar menu glyph (M 07-18, inspecting an ability in combat).
+ui_draw_touch_back(24, ability_detail_open || consumable_quick_open);
 ui_draw_touch_gamepad();   // on-screen d-pad in the left gutter (M 07-17)

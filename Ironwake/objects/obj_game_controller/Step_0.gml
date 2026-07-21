@@ -28,9 +28,11 @@ if (window_get_width() != geom_last_w || window_get_height() != geom_last_h) {
 // TEST LEVER (8b) - F7 cycles the WINDOWED shape 16:9 -> 19.5:9 (S25) -> 20:9 so
 // the wide-aspect gutters can be F5-verified on a PC monitor without a device
 // build. Drops out of fullscreen first; 810-high shapes fit a 1080p display.
-// REMOVE BEFORE RELEASE (F8 unlock / F9 win-state lever precedent).
+// COMPILED OUT OF RELEASE BUILDS: gated on GM_build_type == "run" (IDE/F5 only;
+// packaged .exe reports "exe"). Keeps the lever for dev without shipping it -
+// replaces the old "REMOVE BEFORE RELEASE" manual step (07-20).
 // =============================================================================
-if (os_type == os_windows && keyboard_check_pressed(vk_f7)) {
+if (GM_build_type == "run" && os_type == os_windows && keyboard_check_pressed(vk_f7)) {
     if (!variable_global_exists("debug_aspect_idx")) global.debug_aspect_idx = 0;
     global.debug_aspect_idx = (global.debug_aspect_idx + 1) mod 3;
     if (global.fullscreen) video_toggle_fullscreen();
@@ -47,9 +49,12 @@ if (os_type == os_windows && keyboard_check_pressed(vk_f7)) {
 // Deliberately a CHECK BYPASS, not a data grant - global.debug_unlock_all is
 // never written to the save, so the real slot's progression is untouched and a
 // relaunch always starts OFF. Audio cue: rising = ON, low = OFF.
-// REMOVE BEFORE RELEASE (F9 win-state lever precedent).
+// COMPILED OUT OF RELEASE BUILDS: gated on GM_build_type == "run" (IDE/F5 only;
+// packaged .exe reports "exe"), so a player - or a Valve build reviewer - can't
+// press F8 to unlock the whole progression system. Keeps the lever for dev
+// without shipping it; replaces the old "REMOVE BEFORE RELEASE" step (07-20).
 // =============================================================================
-if (keyboard_check_pressed(vk_f8)) {
+if (GM_build_type == "run" && keyboard_check_pressed(vk_f8)) {
     if (!variable_global_exists("debug_unlock_all")) global.debug_unlock_all = false;
     global.debug_unlock_all = !global.debug_unlock_all;
     var _dua_si = audio_play_sound(snd_loot_reveal, 1, false);

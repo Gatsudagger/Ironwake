@@ -579,8 +579,9 @@ if (input_confirm() || input_confirm_alt()) {
                     consumable_award(_tc);
                     _t_found = _tc;
                 } else {
-                    var _te_asc = (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0) + curse_loot_asc_bonus();
-                    var _te = drop_equipment(drop_weights("chest", _te_asc));
+                    // Curse loot-tiers are a post-roll rarity bump now, not an awakening offset.
+                    var _te_asc = (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0);
+                    var _te = drop_equipment(drop_weights("chest", _te_asc), true, curse_loot_tier_bonus());
                     array_push(global.run_items_found, _te);
                     array_push(global.carried_items, _te);
                     discover_item(item_base_name(_te));
@@ -656,8 +657,9 @@ if (input_confirm() || input_confirm_alt()) {
         if (_tv_gold > 0) add_gold(_tv_gold);
         if (!variable_global_exists("run_items_found")) global.run_items_found = [];
         if (!variable_global_exists("carried_items"))   global.carried_items   = [];
-        var _tv_asc = (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0) + curse_loot_asc_bonus();
-        var _tv_e = drop_equipment(drop_weights("vault", _tv_asc));
+        // Curse loot-tiers are a post-roll rarity bump now, not an awakening offset.
+        var _tv_asc = (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0);
+        var _tv_e = drop_equipment(drop_weights("vault", _tv_asc), true, curse_loot_tier_bonus());
         array_push(global.run_items_found, _tv_e);
         array_push(global.carried_items, _tv_e);
         discover_item(item_base_name(_tv_e));
@@ -679,8 +681,9 @@ if (input_confirm() || input_confirm_alt()) {
         if (_tr_gold > 0) add_gold(_tr_gold);
         if (!variable_global_exists("run_items_found")) global.run_items_found = [];
         if (!variable_global_exists("carried_items"))   global.carried_items   = [];
-        var _tr_asc = (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0) + curse_loot_asc_bonus();
-        var _tr_e = drop_equipment(drop_weights("reliquary", _tr_asc));
+        // Curse loot-tiers are a post-roll rarity bump now, not an awakening offset.
+        var _tr_asc = (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0);
+        var _tr_e = drop_equipment(drop_weights("reliquary", _tr_asc), true, curse_loot_tier_bonus());
         array_push(global.run_items_found, _tr_e);
         array_push(global.carried_items, _tr_e);
         discover_item(item_base_name(_tr_e));

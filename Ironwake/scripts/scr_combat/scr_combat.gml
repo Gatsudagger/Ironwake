@@ -1339,8 +1339,9 @@ function combat_on_enemy_defeated(target, player, combat_log) {
 
     // Devil's Pact curse: a guaranteed bonus equipment drop from every elite & boss.
     if (curse_has_bonus_drops() && (_drop_type == "elite" || _drop_type == "boss")) {
-        var _bonus_asc = (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0) + curse_loot_asc_bonus();
-        var _bonus_item = drop_equipment(drop_weights(_drop_type, _bonus_asc));
+        // Curse loot-tiers are a post-roll rarity bump now, not an awakening offset.
+        var _bonus_asc = (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0);
+        var _bonus_item = drop_equipment(drop_weights(_drop_type, _bonus_asc), true, curse_loot_tier_bonus());
         if (variable_global_exists("run_items_found")) array_push(global.run_items_found, _bonus_item);
         if (variable_global_exists("carried_items"))   array_push(global.carried_items, _bonus_item);
         discover_item(item_base_name(_bonus_item));

@@ -186,17 +186,19 @@ currency (every wishlist emails the player at launch). Put it on the itch page t
 
 One-time setup (M, ~20 min):
 
-1. Download the **Steamworks SDK**: https://partner.steamgames.com/downloads/list ->
-   unzip anywhere, e.g. `C:\steamworks_sdk\`. steamcmd is inside at
-   `sdk\tools\ContentBuilder\builder\steamcmd.exe`.
+1. [x] **DONE 07-20.** Steamworks SDK downloaded (`steamworks_sdk_164.zip`) and extracted to
+   **`C:\Users\miles\steamworks_sdk\`** (NOT `C:\steamworks_sdk` — user folder, no admin needed).
+   steamcmd verified at:
+   `C:\Users\miles\steamworks_sdk\sdk\tools\ContentBuilder\builder\steamcmd.exe`
 2. In GameMaker: **Create Executable** for Windows (same flow as the itch builds), take
    the **Zip**, and extract its contents into `tools\steam\content\` (so
    `tools\steam\content\Ironwake.exe` exists at the top level).
-3. Run the upload (PowerShell):
+3. Run the upload (PowerShell) — **login is `perluptis`** (the Steamworks account):
    ```
-   C:\steamworks_sdk\sdk\tools\ContentBuilder\builder\steamcmd.exe +login <your_steam_login> +run_app_build "C:\Users\miles\GameMakerProjects\Ironwake\tools\steam\scripts\app_build_4954740.vdf" +quit
+   C:\Users\miles\steamworks_sdk\sdk\tools\ContentBuilder\builder\steamcmd.exe +login perluptis +run_app_build "C:\Users\miles\GameMakerProjects\Ironwake\tools\steam\scripts\app_build_4954740.vdf" +quit
    ```
-   First run asks for password + Steam Guard code, then caches the session.
+   First run asks for password + Steam Guard code, then caches the session. Must be run by M
+   in a normal terminal — it's interactive (Steam Guard), so it can't be automated.
 4. Dashboard -> App Admin -> **SteamPipe -> Builds**: your upload appears; set it **live
    on the `default` branch** ("Set build live on branch"). Make a private `beta` branch
    too - free stranger-playtest channel using the 1719510 beta package keys.

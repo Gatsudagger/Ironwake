@@ -1500,7 +1500,8 @@ function drop_weights(source, asc) {
 // (task #19): each floor past the first counts as one extra awakening tier on
 // the lerp, then hard floors cut the bottom tiers entirely - a floor-2 boss
 // never drops common, a floor-3 boss never drops below rare. Sits on top of the
-// awakening lerp (asc already carries any curse loot-tier bonus).
+// awakening lerp. (Curse loot-tiers are NOT in `asc` any more - they're applied
+// as a post-roll rarity bump inside drop_equipment. See curse_loot_tier_bonus.)
 // ---------------------------------------------------------------------------
 function boss_drop_weights(asc, fl) {
     var _w = drop_weights("boss", asc + max(0, fl - 1));
@@ -1510,14 +1511,19 @@ function boss_drop_weights(asc, fl) {
 }
 
 // ---------------------------------------------------------------------------
-// drop_equipment(rarity_weights, do_discover)
+// drop_equipment(rarity_weights, do_discover, curse_tiers)
 // Full drop pipeline: pick rarity, clone a base item, roll and apply affixes.
 // rarity_weights: [common%, uncommon%, rare%, epic%, legendary%]
 // Common=0 affixes, uncommon=1, rare=1-2 (50/50), epic=2, legendary=fixed.
 // do_discover (default true): record the item in the codex. Shop stock passes
 // false so items are only discovered when actually bought.
 // ---------------------------------------------------------------------------
-function drop_equipment(rarity_weights, do_discover = true) {
+// curse_tiers: literal rarity levels ADDED after the roll (curse "Loot rarity +N
+// tiers"). Opt-in per call site - run drops pass curse_loot_tier_bonus(), hub
+// sources (Dorn's stock, vault previews) pass nothing so curses can never leak
+// into shop inventory. See the bump below for why this is post-roll, not an
+// awakening offset.
+function drop_equipment(rarity_weights, do_discover = true, curse_tiers = 0) {
     if (!variable_global_exists("loot_table_common")
         || !variable_global_exists("loot_table_uncommon")
         || !variable_global_exists("loot_table_rare")) {
@@ -1535,6 +1541,15 @@ function drop_equipment(rarity_weights, do_discover = true) {
 
     // Prospector trait: loot rolls one quality tier better (capped at Legendary)
     if (trait_active("Prospector") && _rarity < 4) _rarity++;
+
+    // Curse loot tiers: a LITERAL rarity bump, matching the "Loot rarity +N tiers"
+    // reward text (same idiom as Prospector above). This used to be added to the
+    // awakening fed into drop_weights, which was wrong twice: at A0 the lerp starts
+    // common-heavy so +2 left 65% commons (read as broken), and at A5 the
+    // clamp(asc,0,5) in drop_weights ate the bonus entirely - Doom and Withered
+    // became pure-downside curses with literally no reward at the tier they're
+    // gated to. Post-roll bump is worth the same at every awakening. (07-20)
+    if (curse_tiers > 0 && _rarity < 4) _rarity = min(4, _rarity + curse_tiers);
 
     // Legendaries - return clone with pre-set affixes and unique fields
     if (_rarity == 4 && variable_global_exists("loot_table_legendary")
@@ -2415,9 +2430,12 @@ function handle_enemy_drops(enemy_type) {
     if (!variable_global_exists("rune_inventory")) global.rune_inventory = [];
     if (!variable_global_exists("rune_dust"))      global.rune_dust      = 0;
 
-    // Drop rarity scales with the awakening tier of the current run, plus any
-    // loot-tier bonus from active curses (devil's bargain - better loot for risk).
-    var _drop_asc = (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0) + curse_loot_asc_bonus();
+    // Drop rarity scales with the awakening tier of the current run. Curse
+    // loot-tiers are NOT folded in here any more - they're a post-roll rarity bump
+    // passed to drop_equipment (see the bump in drop_equipment for why). Keeping
+    // them out also stops curses from silently shrinking _cons_chance below.
+    var _drop_asc   = (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0);
+    var _curse_loot = curse_loot_tier_bonus();
     // Faerie's Tear potion + active Boon pet: extra equipment-drop chance (percentage points).
     var _loot_pot = potion_loot_bonus_pts() + pet_active_boon_loot_pts() + pet_active_lck_loot_pts() + pet_active_splash_loot_pts() + pet_active_egg_bonus("loot");
     // Lucky Find trait (07-08 identity split): +5 loot-find points, same currency
@@ -2467,7 +2485,7 @@ function handle_enemy_drops(enemy_type) {
         }
         // 4% equipment drop (+ Faerie's Tear bonus) - rarity weights scale with awakening.
         if (irandom(99) < 4 + _loot_pot) {
-            var _item = drop_equipment(drop_weights("standard", _drop_asc));
+            var _item = drop_equipment(drop_weights("standard", _drop_asc), true, _curse_loot);
             array_push(global.run_items_found, _item);
             array_push(global.carried_items, _item);
             discover_item(item_base_name(_item));
@@ -2490,7 +2508,7 @@ function handle_enemy_drops(enemy_type) {
         }
         // 28% equipment drop (+ Faerie's Tear bonus) - rarity weights scale with awakening.
         if (irandom(99) < 28 + _loot_pot) {
-            var _item = drop_equipment(drop_weights("elite", _drop_asc));
+            var _item = drop_equipment(drop_weights("elite", _drop_asc), true, _curse_loot);
             array_push(global.run_items_found, _item);
             array_push(global.carried_items, _item);
             discover_item(item_base_name(_item));
@@ -2501,7 +2519,7 @@ function handle_enemy_drops(enemy_type) {
         // Guaranteed equipment - rarity weights scale with awakening AND floor
         // (boss_drop_weights: F2 = uncommon+, F3 = rare+ hard floors).
         var _boss_fl = variable_global_exists("current_floor") ? global.current_floor : 1;
-        var _item = drop_equipment(boss_drop_weights(_drop_asc, _boss_fl));
+        var _item = drop_equipment(boss_drop_weights(_drop_asc, _boss_fl), true, _curse_loot);
         array_push(global.run_items_found, _item);
         array_push(global.carried_items, _item);
         discover_item(item_base_name(_item));
@@ -4035,8 +4053,12 @@ function curse_enemy_damage_mult() {
 }
 
 // --- Reward multipliers ----------------------------------------------------
-// Loot-tier bonus added to the awakening fed into drop_weights (sums all curses).
-function curse_loot_asc_bonus() {
+// Loot RARITY-TIER bonus from active curses (sums all curses). Passed to
+// drop_equipment as a post-roll rarity bump - NOT added to the awakening fed into
+// drop_weights. The old name (curse_loot_asc_bonus) described the old, broken
+// behaviour: as an awakening offset it did almost nothing at A0 and was eaten
+// entirely by clamp(asc,0,5) at A5. Renamed 07-20 so the name can't mislead again.
+function curse_loot_tier_bonus() {
     if (!variable_global_exists("run_curses")) return 0;
     var _b = 0;
     var _cat = curse_catalog();
@@ -8693,7 +8715,9 @@ function event_resolve_choice(choice) {
 // result screen (concrete gains: gold, HP, item/consumable/dust/rune/boon names).
 function event_apply_effects(fx) {
     if (fx == undefined) return "";
-    var _asc = (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0) + curse_loot_asc_bonus();
+    // Curse loot-tiers are a post-roll rarity bump now, not an awakening offset.
+    var _asc        = (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0);
+    var _curse_loot = curse_loot_tier_bonus();
     var _sum = [];
 
     // Gold
@@ -8736,7 +8760,7 @@ function event_apply_effects(fx) {
             for (var _ewi = 0; _ewi < fx.item_min; _ewi++) { _ev_spill += _ev_w[_ewi]; _ev_w[_ewi] = 0; }
             _ev_w[fx.item_min] += _ev_spill;
         }
-        var _it = drop_equipment(_ev_w);
+        var _it = drop_equipment(_ev_w, true, _curse_loot);
         array_push(global.run_items_found, _it);
         array_push(global.carried_items, _it);
         array_push(_sum, _it.name + " [" + item_rarity_name(_it.rarity) + "]");
@@ -9928,4 +9952,53 @@ function video_toggle_fullscreen() {
     ini_write_real("video", "fullscreen", global.fullscreen ? 1 : 0);
     ini_close();
     video_apply();
+}
+
+// =============================================================================
+// TOUCH SETTINGS - on-screen d-pad enable + SIZE, persisted in settings.ini
+// ([touch] section). Slot-agnostic like audio/video. M 07-18 on the S25: the
+// shipped d-pad was "too small and too close together" - the size is now a
+// player-facing slider because the right number is device- and thumb-dependent
+// and can't be guessed from here. Default 1.25 = M's "25% bigger" baseline.
+// =============================================================================
+#macro TOUCH_PAD_SCALE_DEF 1.25
+#macro TOUCH_PAD_SCALE_MIN 0.80
+#macro TOUCH_PAD_SCALE_MAX 2.00
+#macro TOUCH_PAD_SCALE_STEP 0.15
+
+function touch_settings_init() {
+    if (!variable_global_exists("touch_gamepad_off")) global.touch_gamepad_off = false;
+    if (!variable_global_exists("touch_pad_scale"))   global.touch_pad_scale   = TOUCH_PAD_SCALE_DEF;
+
+    if (!variable_global_exists("touch_loaded")) {
+        global.touch_loaded = true;
+        ini_open("settings.ini");
+        global.touch_gamepad_off = (ini_read_real("touch", "gamepad_off", 0) >= 0.5);
+        global.touch_pad_scale   = clamp(ini_read_real("touch", "pad_scale", TOUCH_PAD_SCALE_DEF),
+                                         TOUCH_PAD_SCALE_MIN, TOUCH_PAD_SCALE_MAX);
+        ini_close();
+    }
+}
+
+// Persist the touch prefs. Called after any change so a crash never loses them.
+function touch_settings_save() {
+    ini_open("settings.ini");
+    ini_write_real("touch", "gamepad_off", global.touch_gamepad_off ? 1 : 0);
+    ini_write_real("touch", "pad_scale",   global.touch_pad_scale);
+    ini_close();
+}
+
+// Nudge the d-pad size by delta (the settings row passes +/- TOUCH_PAD_SCALE_STEP).
+function touch_pad_scale_adjust(delta) {
+    touch_settings_init();
+    global.touch_pad_scale = clamp(global.touch_pad_scale + delta,
+                                   TOUCH_PAD_SCALE_MIN, TOUCH_PAD_SCALE_MAX);
+    touch_settings_save();
+}
+
+// Flip the on-screen d-pad off/on (Settings row; direct tap always still works).
+function touch_gamepad_toggle() {
+    touch_settings_init();
+    global.touch_gamepad_off = !global.touch_gamepad_off;
+    touch_settings_save();
 }

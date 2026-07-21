@@ -525,6 +525,23 @@ if (_enemy_type == "boss") {
     else if (_enc_roll < _enc_row[0] + _enc_row[1])               _enc_count = 3;
     else if (_enc_roll < _enc_row[0] + _enc_row[1] + _enc_row[2]) _enc_count = 4;
     else                                                          _enc_count = (_enc_row[3] > 0) ? 5 : 4;
+
+    // OPENING-FIGHT GRACE (M 07-18: "lvl 1 first fight some players ran into 4
+    // mobs instantly"). A0's 4-pack chance is only 10%, which is fine variety by
+    // fight five - the problem is purely that it can land on a player's FIRST
+    // fight, at level 1 with no gear, as their first impression of the game.
+    // So we cap the opening fight at 3 instead of flattening A0's weights, which
+    // would make every early run feel the same.
+    // floor_rooms_cleared flags a node when it's ENTERED, so the opening fight
+    // sees a count of 0 or 1 depending on ordering; <= 1 covers both. Erring one
+    // fight wide is harmless here - a 2-3 pack is never the wrong opener.
+    if (_enc_floor == 1 && _enc_count > 3 && variable_global_exists("floor_rooms_cleared")) {
+        var _fr_done = 0;
+        for (var _fri = 0; _fri < array_length(global.floor_rooms_cleared); _fri++) {
+            if (global.floor_rooms_cleared[_fri]) _fr_done++;
+        }
+        if (_fr_done <= 1) _enc_count = 3;
+    }
 }
 
 var enemies = [enemy1, enemy2];
@@ -814,6 +831,11 @@ combat_music_stopped = false;
 // Consumable quick menu (combat-native popup, separate from the character menu)
 consumable_quick_open   = false;
 consumable_quick_cursor = 0;
+// TOUCH confirm-arming (M 07-18: "items in combat need a confirm press prompt").
+// A single stray tap used to consume an item outright - irreversible, and easy to
+// do with a thumb. Holds the grouped-row index that is ARMED and awaiting a second
+// press; -1 = nothing armed. Touch only; desktop keeps one-press use.
+consumable_confirm_idx  = -1;
 
 // Full-screen ability breakdown popup (V key) - same view as the loadout/Vex Tab
 // popup (ui_draw_ability_detail). Tab stays bound to target-cycling in combat.

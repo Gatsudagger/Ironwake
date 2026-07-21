@@ -77,35 +77,158 @@ Creature Collector · Gothic · Character Customization · Indie · Replay Value
 
 ## 4. Early Access questionnaire (paste-ready answers)
 
+> **v2 — rewritten 2026-07-20 after Steam rejected v1** for answers that "do not fully explain
+> what a customer can expect." Every answer below is expanded with concrete, checkable specifics.
+> Rejection notes and what changed: see §4b.
+
 **Why Early Access?**
-> Ironwake is a solo-developed game whose core loop — combat, loot, town bonds, and companion
-> raising — is complete and deeply playable today. Early Access is where its economy, combat
-> balance, and bond pacing get tuned against real players before 1.0, and where the community
-> can shape which systems grow next.
+> Ironwake is built by one developer, and it is the kind of game that only finishes correctly
+> with players in the room.
+>
+> The game is content-complete and playable start to finish today — three classes, three
+> dungeons, a full companion-raising arc, the town-bond system, and an endless post-victory
+> difficulty ladder. What it has *not* had is thousands of hours of play from people who didn't
+> build it. A roguelite lives or dies on numbers I cannot tune alone: which of the 60+ abilities
+> are dead picks, whether the gold and crafting economy inflates by Awakening 3, how fast the
+> town-bond web should open, and which builds quietly dominate. I have my own data from
+> development, but a solo developer testing his own systems is the worst possible sample size.
+>
+> Early Access is how I get that sample. My goals for the period are specific: find and fix the
+> dead ability picks, rebalance the run economy against real player pacing, complete the platform
+> work (controller, Steam Deck, achievements, cloud saves), and add the content the roadmap
+> already scopes — a fourth dungeon biome and additional bosses.
+>
+> I want to be clear about commitment, because it matters more than the feature list: Ironwake
+> has been in active daily development for months and is already feature-rich rather than a
+> skeleton. I am not using Early Access to fund a concept or to find out whether I'll finish. I
+> am using it to finish *well*. I intend to ship regular updates throughout the period, read and
+> respond on the discussion boards, and carry the game through to a 1.0 release.
 
 **Approximately how long will this game be in Early Access?**
-> `[M: pick one — suggest]` Roughly 6 months, extending only if community feedback warrants it.
+> Roughly 6 to 9 months.
+>
+> That estimate covers the planned 1.0 work: the platform features (controller, Steam Deck
+> verification, achievements, cloud saves), the fourth dungeon and additional bosses, and the
+> combat balance rework. If community feedback surfaces something substantial that
+> deserves to be in 1.0, I would rather extend than ship early — but I will say so publicly on
+> the store page and in a patch note rather than let the date drift quietly.
 
 **How is the full version planned to differ from the Early Access version?**
-> Version 1.0 is planned to add: a full ending arc and finale for the three dungeons, controller
-> + Steam Deck support with key remapping, Steam achievements and cloud saves, additional
-> companions, events and unique items, and extensive balance work driven by Early Access
-> feedback.
+> Version 1.0 will be the Early Access game plus the following. This is the list of what is
+> genuinely missing today:
+>
+> **Content**
+> - A fourth dungeon biome, joining the Ashen Vault, Scorched Depths, and Tundra Tomb — with its
+>   own enemy set, environment art, and boss.
+> - Additional bosses, including multi-phase boss encounters, across the existing dungeons.
+> - More enemies, items, legendaries, abilities, and event rooms, with priorities set by what
+>   Early Access players say the game runs short of.
+>
+> **Combat and balance**
+> - A combat rework pass built around clearer tactical verbs, aimed at eliminating abilities that
+>   are never worth picking and widening the range of viable builds.
+> - Broad economy and difficulty rebalancing driven directly by Early Access play data — run
+>   pacing, gold and crafting-material flow, loot rarity curves, and the Awakening difficulty
+>   ladder.
+>
+> **Platform and accessibility**
+> - Full controller support with remappable inputs, and Steam Deck compatibility (targeting
+>   Verified).
+> - Steam achievements.
+> - Steam Cloud saves.
+>
+> Everything above is planned but not present today. Players buying in Early Access should judge
+> the purchase on the current version described below, not on this list.
+>
+> **Beyond 1.0:** multi-language localization is a goal I'm actively working toward, but I'm not
+> promising it as part of the 1.0 release. Ironwake is a text-heavy game and retrofitting
+> translation support into it is a large job; I'd rather do it properly after 1.0 than rush it or
+> let it delay the content work above. The game is English-only for now.
 
 **What is the current state of the Early Access version?**
-> Fully playable start to endless endgame: three classes, three multi-floor dungeons with
-> procedural layouts, 60+ discoverable items with lore art, eight elemental schools, a complete
-> companion system (hatching through Awakening), the full town-bond system including betrayal
-> consequences, two dice mini-games, boons, curses, event rooms, a quest journal, onboarding,
-> settings, and three save slots. Keyboard + mouse only, Windows only, at this time.
+> Ironwake is fully playable from a new character through to the ending and beyond into an
+> endless endgame. It is not a prototype or a vertical slice; the features listed in the "About
+> This Game" section above are all implemented and in the build today. Specifically:
+>
+> - **Three character classes**, with character creation (portrait, gender, skin, stat
+>   allocation), permanent cross-run progression, and three save slots.
+> - **Three multi-floor dungeons** — Ashen Vault, Scorched Depths, Tundra Tomb — with
+>   procedurally generated branching floor layouts that differ every run.
+> - **Turn-based combat** on a 3-action-point economy: eight elemental schools, telegraphed enemy
+>   intent, a typed status system with setup-and-detonate combos, and weapon roles that change how
+>   a turn plays.
+> - **The full town-bond system**, including quest gates, betrayal, and its lasting consequences
+>   for how the townsfolk treat you.
+> - **The complete companion system** — ten eggs, hatching through to the Awakened stage, bonding,
+>   feeding, the garden, corruption and injury, and capstone abilities.
+> - **Loot and crafting**: affix-rolled gear, socketable runes, hand-authored legendaries with
+>   painted splash art, an item codex with lore and stat ranges, reforging, potion brewing, and
+>   salvage.
+> - **Run variety**: shrines selling run-warping boons, curse altars, stat-gated event rooms,
+>   treasure vaults, and a procedural tavern-request board.
+> - **An ending and an endless endgame** — the "Ironwake Stands" victory arc is implemented, and
+>   the Awakening difficulty ladder rescales enemies and loot indefinitely afterward.
+> - **Two dice mini-games**, a quest journal, in-game onboarding tips, a compendium explaining the
+>   game's mechanics, and music and SFX volume settings.
+>
+> **Current limitations, stated plainly:** Windows only. Keyboard and mouse only — controller and
+> Steam Deck support are not yet in. English only. No Steam achievements or Cloud saves yet.
+> Balance across the full Awakening ladder is first-pass and will change during Early Access.
 
 **Will the game be priced differently during and after Early Access?**
-> The price may increase modestly at 1.0 to reflect the added content. Early Access buyers
-> keep the game, of course.
+> The price will likely increase modestly at 1.0 to reflect the added content — a fourth dungeon,
+> additional bosses, and the platform features listed above. Anyone who buys during
+> Early Access owns the game permanently and receives the 1.0 update and everything in between at
+> no additional cost. There are no microtransactions, no DLC planned at launch, and no loot boxes.
 
 **How are you planning on involving the Community in your development process?**
-> Steam discussion boards and regular patch notes. Balance and feature updates will ship on a
-> steady cadence, with a public roadmap of what feedback is changing.
+> The Steam discussion boards are the primary channel, and as a solo developer I read them
+> directly — there is no support layer between players and the person making the changes.
+>
+> Concretely, here is how community input reaches the build:
+>
+> - **Bug reports and balance threads on the Steam forums.** I maintain pinned threads for bug
+>   reports, balance feedback, and feature requests, and reply in them myself.
+> - **A public roadmap pinned to the store page**, updated with each significant patch, showing
+>   what is being worked on next and — importantly — which items moved up or onto the list
+>   *because* players asked for them.
+> - **Patch notes that credit the feedback behind each change.** When a change comes from a
+>   forum thread or a reported bug, the note says so, so players can see the loop closing.
+>
+> The areas where community input will have the most direct impact are exactly the ones a solo
+> developer can't resolve alone: which abilities and builds feel dead or overpowered, whether run
+> length and economy pacing feel right, difficulty tuning across the Awakening ladder, and which
+> content players want more of first — more dungeons, more bosses, more items, or more companions.
+> That last question in particular will shape the order the 1.0 content ships in.
+
+---
+
+## 4b. Steam rejection log
+
+**2026-07-20 — Release request REJECTED.** Reason: Early Access answers "do not fully explain what
+a customer can expect from your app." Steam flagged all five narrative questions (Why EA / how long
+/ how the full version differs / current state / community involvement) as needing expansion.
+
+What changed in v2 (§4 above):
+- Every answer expanded from 2–3 sentences to a specific, checkable answer.
+- **Why EA** now states concrete goals and directly addresses the commitment-to-finish question
+  Steam asks about.
+- **How long** now gives a range ("roughly 6 to 9 months") — v1 left an unresolved `[M: pick one]`
+  placeholder.
+- **Full version differs** now itemizes missing features under Content / Combat / Platform, and
+  explicitly tells buyers to judge the purchase on the current build.
+- **Current state** now enumerates implemented systems and, per Steam's guidance, points back to
+  the About This Game section — plus an explicit limitations paragraph (Windows-only, KB+M only,
+  English-only, no achievements/Cloud).
+- **Community** now names channels and describes the specific decisions players will influence.
+- **Corrected a factual error in v1:** it listed "a full ending arc and finale" as planned 1.0
+  content, but the "Ironwake Stands" win state already shipped. Moved to current state.
+- **Localization demoted from a 1.0 promise to a stated post-1.0 goal** (M call, 07-20). It is
+  ~thousands of hardcoded strings for a solo dev already committed to a 4th biome, a combat
+  rework, and full platform work inside 6–9 months. Under-promising here is cheap; missing a
+  publicly-listed 1.0 feature is not.
+
+Reference: https://partner.steamgames.com/doc/store/earlyaccess#qanda
 
 ---
 

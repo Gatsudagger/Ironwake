@@ -330,10 +330,14 @@ if (player_turn) {
     // -------------------------------------------------------------------------
     // Small framed button, far bottom-right so it clears the ability tooltip
     // (x1260-1740). Must stay in sync with the draw in Draw_64.
-    var _ibx = 1767;
-    var _iby = 990;
-    var _ibw = 141;
-    var _ibh = 63;
+    // Shared geometry (scr_ui combat_items_button_geom) - was duplicated literals
+    // here and in Draw_64, which is exactly how the two drift apart. On touch the
+    // button relocates into the right gutter, and this hit-test follows for free.
+    var _ibg = combat_items_button_geom();
+    var _ibx = _ibg.x1;
+    var _iby = _ibg.y1;
+    var _ibw = _ibg.w;
+    var _ibh = _ibg.h;
 
     // C key or ITEMS button click to toggle. The menu always opens - when the
     // run buffer is empty it shows "No consumables held." rather than doing
@@ -341,6 +345,7 @@ if (player_turn) {
     if (input_hotkey("C")) {
         consumable_quick_open = !consumable_quick_open;
         if (consumable_quick_open) consumable_quick_cursor = 0;
+        consumable_confirm_idx = -1;   // never reopen with a row still armed
     }
 
     if (mouse_check_button_pressed(mb_left)) {
@@ -349,6 +354,7 @@ if (player_turn) {
         if (_iqmx >= _ibx && _iqmx < _ibx + _ibw && _iqmy >= _iby && _iqmy < _iby + _ibh) {
             consumable_quick_open = !consumable_quick_open;
             if (consumable_quick_open) consumable_quick_cursor = 0;
+            consumable_confirm_idx = -1;
         }
     }
 
@@ -362,12 +368,16 @@ if (player_turn) {
             // Esc closes it (C is handled by the toggle above).
             if (input_cancel()) consumable_quick_open = false;
         } else {
-            // Navigation (hold-repeat + wrap)
-            if (nav_up())   consumable_quick_cursor = wrap_index(consumable_quick_cursor - 1, _qcount);
-            if (nav_down()) consumable_quick_cursor = wrap_index(consumable_quick_cursor + 1, _qcount);
+            // Navigation (hold-repeat + wrap). Moving off an armed row disarms it,
+            // so a confirm can never land on an item you didn't mean to pick.
+            if (nav_up())   { consumable_quick_cursor = wrap_index(consumable_quick_cursor - 1, _qcount); consumable_confirm_idx = -1; }
+            if (nav_down()) { consumable_quick_cursor = wrap_index(consumable_quick_cursor + 1, _qcount); consumable_confirm_idx = -1; }
             // Esc closes. (C is handled by the toggle above - checking it here too
             // would re-close it in the same frame it opens, so it's intentionally absent.)
             if (input_cancel()) {
+                // An armed row swallows the first cancel: Esc means "never mind,
+                // don't use that" before it means "close the menu".
+                if (consumable_confirm_idx != -1) { consumable_confirm_idx = -1; exit; }
                 consumable_quick_open = false;
                 exit;
             }
@@ -402,7 +412,22 @@ if (player_turn) {
                 }
             }
 
+            // TOUCH CONFIRM GATE (M 07-18). On a phone the first press only ARMS
+            // the row - the second press on that same row actually uses it. Using
+            // a consumable is irreversible and a thumb is imprecise, so a single
+            // stray tap must never spend a rare potion. Desktop is unchanged: a
+            // mouse click / Enter on the highlighted row uses it outright.
+            if (_use_item && input_device() == 2) {
+                if (consumable_confirm_idx != _use_idx) {
+                    consumable_confirm_idx  = _use_idx;
+                    consumable_quick_cursor = _use_idx;
+                    _use_item = false;              // swallow this press - it armed the row
+                    play_sfx_var("snd_ui_move", -1);
+                }
+            }
+
             if (_use_item) {
+                consumable_confirm_idx = -1;        // spent (or refused) - always disarm
                 // Map the grouped row back to a real inventory index (the first instance).
                 var _real_idx = _qgroups[_use_idx].first_index;
                 var _citem = _qgroups[_use_idx].item;

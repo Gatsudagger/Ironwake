@@ -535,7 +535,23 @@ if (npc_unlocked[selected_npc]) {
 if (notification != "") {
     draw_set_font(fnt_ui_small);
     draw_set_color(c_yellow);
-    draw_text_ext(_ddx, _ddy + 169, notification, 20, _dp_x + _dp_w - 24 - _ddx);
+    var _nw = _dp_x + _dp_w - 24 - _ddx;
+    var _ntext = notification;
+    // Clamp to the 2-line budget (2 * 20px sep). `notification` is fed by ~20
+    // concatenating event sources (pet finds, bonds, board completes/expiries),
+    // so a busy run stacked 3-4 messages that spilled over the panel border and
+    // the portrait - M 07-20 ("request completed text spills over majorly").
+    // The full text always survives in the Journal; here we just trim to fit,
+    // backing up to a word boundary. "..." not "…" (font-safe, en-dash lesson).
+    if (string_height_ext(_ntext, 20, _nw) > 40) {
+        var _cut = string_length(_ntext);
+        while (_cut > 1 && string_height_ext(string_copy(_ntext, 1, _cut) + "...", 20, _nw) > 40) _cut -= 4;
+        var _clip = string_copy(_ntext, 1, max(1, _cut));
+        var _sp = string_last_pos(" ", _clip);
+        if (_sp > 0) _clip = string_copy(_clip, 1, _sp - 1);
+        _ntext = _clip + "...";
+    }
+    draw_text_ext(_ddx, _ddy + 169, _ntext, 20, _nw);
     draw_set_font(fnt_ui);
 }
 draw_set_font(-1);

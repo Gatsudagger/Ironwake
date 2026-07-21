@@ -161,7 +161,15 @@ function ui_draw_key_legend(cx, y, txt, label_col = undefined, translate = true)
 // top-right; tapping fires a simulated Esc, so each screen's EXISTING cancel
 // handler reacts (shop closes, modal backs out, hub opens the pause menu).
 // ---------------------------------------------------------------------------
-function ui_draw_touch_back(_top = 108) {
+// _force_x: the caller says "an overlay of MINE is open, so Esc will CLOSE it,
+// not open a menu". Needed because some overlays live on the room controller
+// rather than the game controller, so __input_ctx() still reports the base
+// screen - combat's ability_detail_open is the case M hit 07-18: the chip showed
+// the three-bar MENU glyph while it was actually the popup's only exit.
+// Deliberately NOT folded into ui_input_blocked(): that function gates real
+// input all over the codebase, and widening it to satisfy a glyph would risk
+// changing combat's input handling.
+function ui_draw_touch_back(_top = 108, _force_x = false) {
     // default y=108 clears the gold/dust readouts that live top-right on the
     // vendor screens (M 07-08: the chip covered them); combat passes 24 to stay
     // above the enemy-bar grid and shifts its awakening label left instead.
@@ -174,10 +182,16 @@ function ui_draw_touch_back(_top = 108) {
     // Event choice = forced (Esc is dead there); a close chip would promise an
     // exit that can't happen, so draw nothing (M softlocked on it 07-08).
     if (_ctx == "event") return;
-    var _is_menu = (_ctx == "hub" || _ctx == "floor" || _ctx == "combat" || _ctx == "loot");
+    var _is_menu = !_force_x
+        && (_ctx == "hub" || _ctx == "floor" || _ctx == "combat" || _ctx == "loot");
     var _s  = 78;
-    var _x1 = GUI_W - _s - 24, _y1 = _top;
-    var _x2 = GUI_W - 24,      _y2 = _top + _s;
+    // Anchored to the SCREEN's right edge (GUI_XR), not the 1920 band's (GUI_W),
+    // so on a letterboxed phone it sits out in the gutter instead of on top of
+    // the content (M 07-18: in the loadout it covered the topmost ability /
+    // companion depending on tab). On PC the gutter is 0 and GUI_XR == GUI_W,
+    // so this is byte-identical to the old placement - no desktop change.
+    var _x2 = GUI_XR - 24,     _y1 = _top;
+    var _x1 = _x2 - _s,        _y2 = _top + _s;
     // Pressed-state: acknowledge the finger the moment it lands on the chip
     // (no hover/key-click on glass - an unacknowledged tap reads as a miss).
     var _bk_press = mouse_check_button(mb_left)
@@ -261,6 +275,31 @@ function ui_draw_touch_chips() {
                     }
                 }
             }
+            break;
+        case "loadout":
+            // The loadout had NO chips at all (it fell through to `default:
+            // return`), so two keyboard-only verbs were invisible on a phone:
+            // Tab (ability details) and M (spend a mastery notch). M 07-18 hit
+            // both - "no touch method for tab for abilities in loadout" and
+            // "no touch command for mastery/notch [M]".
+            // Both are pool-tab verbs only (loadout_tab == 0), so gate them on
+            // the SAME conditions the Step handler checks - no dead chips.
+            var _ld_gc = instance_exists(obj_game_controller) ? instance_find(obj_game_controller, 0) : noone;
+            if (_ld_gc != noone && _ld_gc.loadout_tab == 0) {
+                array_push(_chips, { lbl: "DETAILS", key: vk_tab, hot: false });
+                // MASTERY only when the highlighted ability actually has an
+                // unspent notch - otherwise M just prints a progress line, and a
+                // permanently-lit button would read as broken.
+                var _ld_pool = abilities_class_pool(
+                    variable_global_exists("chosen_class") ? global.chosen_class : 0);
+                if (_ld_gc.loadout_cursor < array_length(_ld_pool)) {
+                    var _ld_nm = _ld_pool[_ld_gc.loadout_cursor].name;
+                    if (ability_mastery_pending(_ld_nm) > 0) {
+                        array_push(_chips, { lbl: "MASTERY", key: ord("M"), hot: true });
+                    }
+                }
+            }
+            if (array_length(_chips) == 0) return;
             break;
         case "board":
             array_push(_chips, { lbl: "KNUCKLEBONES", key: ord("K"), hot: false });
@@ -401,20 +440,79 @@ function ui_draw_touch_action_menu() {
 // Draw GUI. Toggle-off via global.touch_gamepad_off (a Settings row can flip it).
 // v1 = d-pad + confirm; back/tab/examine buttons come after the feel is tuned.
 // ---------------------------------------------------------------------------
-function ui_draw_touch_gamepad() {
-    if (input_device() != 2) return;
-    if (variable_global_exists("touch_gamepad_off") && global.touch_gamepad_off) return;
-    if (GUI_GUTTER < 120) return;   // needs letterbox gutter room
+// ---------------------------------------------------------------------------
+// touch_pad_geom() - the on-screen d-pad's LAYOUT, split out of the draw call
+// (M 07-18) so the hit-test can be asked about BEFORE the pad draws.
+//
+// Why this exists: the pad is drawn LAST in every room controller's Draw GUI so
+// it sits on top, but touch_tapped() is NON-CONSUMING - so a press on the pad
+// ALSO fired the tap handler of whatever overlay had drawn underneath it
+// earlier in the same frame. At Bairc that underlying handler is tap-to-close,
+// which is why M saw "dpad exits the specific pet menu you pull up"; in the
+// Journal the presses were being eaten by the panel beneath. Exposing the rects
+// lets touch_tapped() mask the pad's own footprint out for everyone else.
+//
+// Returns undefined when no pad is on screen (all three early-outs below), so
+// callers can treat "no pad" as "nothing to mask".
+// ---------------------------------------------------------------------------
+function touch_pad_geom() {
+    if (input_device() != 2) return undefined;
+    touch_settings_init();
+    if (global.touch_gamepad_off) return undefined;
+    if (GUI_GUTTER < 120) return undefined;   // needs letterbox gutter room
 
-    // Sized to FIT the gutter so the cross never runs off-screen (M 07-17): the cross
-    // half-width is 2.7*_bs, and _bs = (gutter-18)/5.4 keeps it ~9px inside the edge.
-    var _gut  = GUI_GUTTER;
-    var _bs   = min((_gut - 18) / 5.4, 46);          // d-pad button half-size
-    var _step = _bs * 1.7;                            // centre-to-centre
-    var _cy   = GUI_H - (_step + _bs) - 40;          // low, for thumb reach; clears the bottom
-    var _lcx  = GUI_XL / 2;                           // LEFT gutter centre  -> d-pad (left thumb)
-    var _rcx  = (GUI_W + GUI_XR) / 2;                 // RIGHT gutter centre -> OK   (right thumb)
-    var _tgl  = _bs * 0.44;                           // triangle glyph half-size
+    var _scl  = clamp(global.touch_pad_scale, TOUCH_PAD_SCALE_MIN, TOUCH_PAD_SCALE_MAX);
+    var _bs   = 46 * _scl;                            // d-pad button HALF-size
+    var _step = _bs * 2.35;                           // centre-to-centre: > 2*_bs = real gap
+    var _half = _step + _bs;                          // cross half-extent
+    var _abs  = _bs * 1.25;                           // OK button half-size
+
+    // GUI_XL is NEGATIVE (-gutter) and GUI_XR is 1920+gutter - they're the visible
+    // screen EDGES, not widths. An earlier pass added GUI_GUTTER to GUI_XR to get a
+    // "full width", which double-counted the right gutter and let the OK button be
+    // clamped to a point off the right of the screen. Clamp to GUI_XR directly.
+    var _cy   = GUI_H - _half - 30;                                 // low, for thumb reach
+    // Sit as far LEFT as the screen allows so the cross uses the gutter rather
+    // than the play area (cross left edge lands 10px inside the screen edge).
+    // With no gutter GUI_XL is 0 and this is just _half+10, as before.
+    var _lcx  = GUI_XL + _half + 10;                                // LEFT  -> d-pad (left thumb)
+    var _rcx  = min((GUI_W + GUI_XR) / 2, GUI_XR - _abs - 10);      // RIGHT -> OK    (right thumb)
+
+    return {
+        bs: _bs, step: _step, half: _half, abs: _abs,
+        cy: _cy, lcx: _lcx, rcx: _rcx,
+        tgl: _bs * 0.44,                              // triangle glyph half-size
+        // Masking rects: the cross bbox and the OK button bbox.
+        cx1: _lcx - _half, cy1: _cy - _half, cx2: _lcx + _half, cy2: _cy + _half,
+        ox1: _rcx - _abs,  oy1: _cy - _abs,  ox2: _rcx + _abs,  oy2: _cy + _abs
+    };
+}
+
+// True when a GUI-space point lands on the on-screen pad (either the direction
+// cross or the OK button). touch_tapped() uses this to keep pad presses from
+// leaking through to the UI underneath.
+function touch_over_pad(_mx, _my) {
+    var _g = touch_pad_geom();
+    if (is_undefined(_g)) return false;
+    if (point_in_rectangle(_mx, _my, _g.cx1, _g.cy1, _g.cx2, _g.cy2)) return true;
+    return point_in_rectangle(_mx, _my, _g.ox1, _g.oy1, _g.ox2, _g.oy2);
+}
+
+function ui_draw_touch_gamepad() {
+    var _g = touch_pad_geom();
+    if (is_undefined(_g)) return;
+
+    // GEOMETRY (rewritten 07-18, M on S25: "too small and too close together").
+    // The v2 bug was arithmetic, not taste: _bs is a HALF-size (buttons are 2*_bs
+    // wide) but centre-to-centre was only 1.7*_bs, so adjacent buttons physically
+    // OVERLAPPED by ~30% - hence "too close together". Spacing must exceed 2*_bs.
+    // Size is no longer clamped to the gutter (that cap is what made it tiny: a
+    // ~210px S25 gutter yielded _bs=35); it's now a player-scaled value that may
+    // bleed over the low-left play area, which is the only way to be thumb-sized.
+    // Position is clamped to the screen so it can never run off-edge (the v1 bug).
+    // Layout now lives in touch_pad_geom() so touch_tapped() can mask these rects.
+    var _bs = _g.bs, _step = _g.step, _tgl = _g.tgl, _abs = _g.abs;
+    var _cy = _g.cy, _lcx = _g.lcx, _rcx = _g.rcx;
 
     var _mx = device_mouse_x_to_gui(0), _my = device_mouse_y_to_gui(0);
     var _down = mouse_check_button(mb_left);
@@ -448,8 +546,7 @@ function ui_draw_touch_gamepad() {
     }
     if (!_any_dir) _hold.key = -1;
 
-    // OK / confirm button in the RIGHT gutter (right thumb) - a bit larger.
-    var _abs = _bs * 1.25;
+    // OK / confirm button in the RIGHT gutter (right thumb) - a bit larger (_abs above).
     var _aon = _down && point_in_rectangle(_mx, _my, _rcx - _abs, _cy - _abs, _rcx + _abs, _cy + _abs);
     draw_set_alpha(_aon ? 0.95 : 0.5);
     draw_set_color(_aon ? make_color_rgb(24, 52, 26) : make_color_rgb(16, 22, 18));
@@ -461,7 +558,8 @@ function ui_draw_touch_gamepad() {
     draw_set_font(fnt_ui); draw_set_color(c_white);
     draw_text(_rcx, _cy + 1, "OK");
     draw_set_halign(fa_left); draw_set_valign(fa_top); draw_set_font(-1);
-    if (touch_tapped(_rcx - _abs, _cy - _abs, _rcx + _abs, _cy + _abs)) touch_press(vk_enter);
+    // true = "this IS the pad" - bypass the pad-footprint mask in touch_tapped.
+    if (touch_tapped(_rcx - _abs, _cy - _abs, _rcx + _abs, _cy + _abs, true)) touch_press(vk_enter);
 
     draw_set_alpha(1.0); draw_set_color(c_white);
 }
@@ -1871,10 +1969,24 @@ function ui_draw_journal() {
             draw_set_font(fnt_ui); draw_set_color(make_color_rgb(150, 156, 175));
             draw_text(_list_x1, _top + 12, "No one yet. Talk to the townsfolk.");
         }
+        // Windowed like the quests list (M 07-20): the met-NPC roster (7+ hub
+        // townsfolk) overran the panel bottom with no scroll. Keyboard-only nav,
+        // so windowing touches the draw only. 7 portrait rows fit _top.._bot.
         var _row_h = 96;
-        for (var _i = 0; _i < _n; _i++) {
+        var _rl_vis   = 7;
+        var _rl_first = ui_list_window("journal_rels", _cur, _n, _rl_vis);
+        var _rl_last  = min(_n, _rl_first + _rl_vis);
+        var _rl_y0    = _top;
+        if (_rl_first > 0) {
+            draw_set_font(fnt_ui_small); draw_set_color(make_color_rgb(150, 160, 190));
+            draw_set_halign(fa_center);
+            ui_draw_scroll_more((_list_x1 + _list_x2) / 2, _rl_y0, true, string(_rl_first) + " more");
+            draw_set_halign(fa_left);
+            _rl_y0 += 26;
+        }
+        for (var _i = _rl_first; _i < _rl_last; _i++) {
             var _id = _ids[_i];
-            var _ry = _top + _i * _row_h;
+            var _ry = _rl_y0 + (_i - _rl_first) * _row_h;
             var _hot = (_i == _cur);
             draw_set_color(_hot ? make_color_rgb(40, 42, 58) : make_color_rgb(20, 21, 30));
             draw_rectangle(_list_x1 - 6, _ry, _list_x2 + 6, _ry + _row_h - 10, false);
@@ -1895,6 +2007,12 @@ function ui_draw_journal() {
                 draw_set_color(make_color_rgb(235, 180, 80));
                 draw_circle(_list_x2 - 16, _ry + 22, 7, false);
             }
+        }
+        if (_rl_last < _n) {
+            draw_set_font(fnt_ui_small); draw_set_color(make_color_rgb(150, 160, 190));
+            draw_set_halign(fa_center);
+            ui_draw_scroll_more((_list_x1 + _list_x2) / 2, _rl_y0 + (_rl_last - _rl_first) * _row_h, false, string(_n - _rl_last) + " more");
+            draw_set_halign(fa_left);
         }
         // ---- Profile pane ----
         if (_n > 0) {
@@ -1998,13 +2116,34 @@ function ui_draw_journal() {
             draw_set_font(fnt_ui); draw_set_color(make_color_rgb(150, 156, 175));
             draw_text(_list_x1, _top + 12, "No quests yet.");
         }
+        // Windowed list (M 07-20 screenshot: a full COMPLETED history ran off the
+        // bottom of the panel with no scroll). Edge-triggered window follows the
+        // cursor; drawn-triangle "N more" indicators show what's clipped. Mirrors
+        // the tavern-board list above. No mouse hit-test here (W/S nav only), so the
+        // window only affects the draw.
+        // 7 (not 8): the window can straddle ALL THREE group headers at once
+        // (ACTIVE + AVAILABLE + COMPLETED = 99px), which at 8 rows shoved the "N more"
+        // down-hint below the panel border (M 07-20 "3 more" shot). 7 rows + 3 headers
+        // + both hints still fit _top.._bot (196..936).
+        var _ql_vis   = 7;
+        var _ql_first = ui_list_window("journal_quests", _qcur, _qn, _ql_vis);
+        var _ql_last  = min(_qn, _ql_first + _ql_vis);
         var _qy = _top;
+        if (_ql_first > 0) {
+            draw_set_font(fnt_ui_small); draw_set_color(make_color_rgb(150, 160, 190));
+            draw_set_halign(fa_center);
+            ui_draw_scroll_more((_list_x1 + _list_x2) / 2, _qy, true, string(_ql_first) + " more");
+            draw_set_halign(fa_left);
+            _qy += 26;
+        }
         var _last_status = "";
-        for (var _i2 = 0; _i2 < _qn; _i2++) {
+        for (var _i2 = _ql_first; _i2 < _ql_last; _i2++) {
             var _qid = _rows[_i2];
             var _qd  = quest_def(_qid);
             var _qs  = quest_state(_qid);
             // Group header when the status band changes (rows are pre-grouped).
+            // The "" seed forces a header on the first WINDOWED row too, so a window
+            // that opens mid-COMPLETED still shows which section you're in.
             if (_qs.status != _last_status) {
                 _last_status = _qs.status;
                 draw_set_font(fnt_ui_small);
@@ -2031,6 +2170,12 @@ function ui_draw_journal() {
                 draw_circle(_list_x2 - 16, _qy + 16, 7, false);
             }
             _qy += 76;
+        }
+        if (_ql_last < _qn) {
+            draw_set_font(fnt_ui_small); draw_set_color(make_color_rgb(150, 160, 190));
+            draw_set_halign(fa_center);
+            ui_draw_scroll_more((_list_x1 + _list_x2) / 2, _qy, false, string(_qn - _ql_last) + " more");
+            draw_set_halign(fa_left);
         }
         // ---- Quest detail pane ----
         if (_qn > 0) {
@@ -2069,9 +2214,25 @@ function ui_draw_journal() {
     } else if (_gc.journal_tab == 2) {
         // ============ COMPENDIUM (moved from the character menu, 2026-07-04) ======
         var _cs   = ui_compendium_sections();
-        var _csel = clamp(_gc.compendium_section, 0, array_length(_cs) - 1);
-        for (var _ci = 0; _ci < array_length(_cs); _ci++) {
-            var _cy  = _top + _ci * 66;
+        var _ccount = array_length(_cs);
+        var _csel = clamp(_gc.compendium_section, 0, _ccount - 1);
+        // Windowed like the other journal lists (M 07-20): 13+ sections overran the
+        // panel bottom (this list never had scrolling - it just grew past the frame
+        // as sections were added). Cursor is _csel (its own nav var); no headers,
+        // no mouse hit-test. 10 rows fit _top.._bot.
+        var _cp_vis   = 10;
+        var _cp_first = ui_list_window("journal_compendium", _csel, _ccount, _cp_vis);
+        var _cp_last  = min(_ccount, _cp_first + _cp_vis);
+        var _cy0 = _top;
+        if (_cp_first > 0) {
+            draw_set_font(fnt_ui_small); draw_set_color(make_color_rgb(150, 160, 190));
+            draw_set_halign(fa_center);
+            ui_draw_scroll_more((_list_x1 + _list_x2) / 2, _cy0, true, string(_cp_first) + " more");
+            draw_set_halign(fa_left);
+            _cy0 += 26;
+        }
+        for (var _ci = _cp_first; _ci < _cp_last; _ci++) {
+            var _cy  = _cy0 + (_ci - _cp_first) * 66;
             var _chot = (_ci == _csel);
             draw_set_color(_chot ? make_color_rgb(40, 42, 58) : make_color_rgb(20, 21, 30));
             draw_rectangle(_list_x1 - 6, _cy, _list_x2 + 6, _cy + 56, false);
@@ -2080,6 +2241,12 @@ function ui_draw_journal() {
             draw_set_font(fnt_ui);
             draw_set_color(_chot ? c_white : make_color_rgb(180, 186, 205));
             draw_text(_list_x1 + 12, _cy + 12, _cs[_ci].title);
+        }
+        if (_cp_last < _ccount) {
+            draw_set_font(fnt_ui_small); draw_set_color(make_color_rgb(150, 160, 190));
+            draw_set_halign(fa_center);
+            ui_draw_scroll_more((_list_x1 + _list_x2) / 2, _cy0 + (_cp_last - _cp_first) * 66, false, string(_ccount - _cp_last) + " more");
+            draw_set_halign(fa_left);
         }
         // Detail: the section's entries (term + text lines).
         var _cdy = _top + 6;
@@ -2373,7 +2540,11 @@ function ui_draw_tavern_board() {
         draw_set_halign(fa_left);
         if (journal_quest_badged(_qid)) {
             draw_set_color(make_color_rgb(235, 180, 80));
-            draw_circle(_rx + 2, _qy + 60, 7, false);
+            // "unseen" dot sits in the empty gap BETWEEN the reward row (y+9) and
+            // the expiry row (y+48) so it can't overlap the right-aligned expiry
+            // text - "2 runs lef[dot]" collision, M 07-20. y+60 put it into the
+            // expiry line; y+38 is clear of both rows.
+            draw_circle(_rx + 2, _qy + 38, 6, false);
         }
         _qy += 108;
     }
@@ -3705,7 +3876,7 @@ function ui_draw_pet_detail(pet, inline = false) {
         }
         _y += 98;
         draw_set_font(fnt_ui_small); draw_set_color(make_color_rgb(140, 150, 175));
-        draw_text(_lx, _y, pet_stat_name(_pri) + " governs its gift - and every stat helps any creature. Hover a chip for details."); _y += 40;
+        draw_text(_lx, _y, pet_stat_name(_pri) + " governs its gift - and every stat helps any creature. Hover a chip for details."); _y += 36;
 
         // ---- PASSIVES (left column) & ABILITIES (right column) ----
         draw_set_color(make_color_rgb(60, 64, 90)); draw_line(_lx, _y, _rx, _y); _y += 16;
@@ -3725,14 +3896,18 @@ function ui_draw_pet_detail(pet, inline = false) {
             draw_text_ext(_lx, _cyL, "None yet - it earns traits as it grows.", 28, _colw);
             _cyL += 54;
         } else {
+            // Tightened inter-entry gaps (was +2 / +14) so a max-trait pet - the
+            // 5-trait fully-corrupted Fortune - keeps its last trait clear of the
+            // "[Tab] - Close" footer instead of spilling into it (M 07-20). Line
+            // spacing (30/26) is unchanged, so no desc lines touch.
             for (var _pi = 0; _pi < array_length(_pl); _pi++) {
                 var _pe = _pl[_pi];
                 draw_set_font(fnt_ui); draw_set_color(make_color_rgb(228, 190, 90));
                 draw_text_ext(_lx, _cyL, _pe.name, 30, _colw);
-                _cyL += string_height_ext(_pe.name, 30, _colw) + 2;
+                _cyL += string_height_ext(_pe.name, 30, _colw) + 1;
                 draw_set_font(fnt_ui_small); draw_set_color(make_color_rgb(195, 200, 216));
                 draw_text_ext(_lx + 18, _cyL, _pe.desc, 26, _colw - 18);
-                _cyL += string_height_ext(_pe.desc, 26, _colw - 18) + 14;
+                _cyL += string_height_ext(_pe.desc, 26, _colw - 18) + 6;
             }
         }
 
@@ -3747,19 +3922,26 @@ function ui_draw_pet_detail(pet, inline = false) {
                 var _ae = _al[_ai];
                 draw_set_font(fnt_ui); draw_set_color(make_color_rgb(150, 210, 235));
                 draw_text_ext(_mid, _cyR, _ae.name, 30, _colw);
-                _cyR += string_height_ext(_ae.name, 30, _colw) + 2;
+                _cyR += string_height_ext(_ae.name, 30, _colw) + 1;   // gaps tightened to match the passives column (M 07-20)
                 draw_set_font(fnt_ui_small); draw_set_color(make_color_rgb(195, 200, 216));
                 draw_text_ext(_mid + 18, _cyR, _ae.desc, 26, _colw - 18);
-                _cyR += string_height_ext(_ae.desc, 26, _colw - 18) + 14;
+                _cyR += string_height_ext(_ae.desc, 26, _colw - 18) + 6;
             }
         }
-        if (pet.stage < PET_STAGE_ADULT) {
-            draw_set_font(fnt_ui_small); draw_set_color(make_color_rgb(150, 160, 190));
-            draw_text(_lx, max(_cyL, _cyR) + 6, "On reaching Adult it gains a capstone ability.");
-        } else if (pet.stage == PET_STAGE_ADULT) {
-            // Tease the last rung: the Stage-4 crossing and its gate (design 2026-07-03).
-            draw_set_font(fnt_ui_small); draw_set_color(make_color_rgb(150, 160, 190));
-            draw_text(_lx, max(_cyL, _cyR) + 6, "Beyond lies the Awakened crossing - full-clear at Awakening A5, Soul-bound.");
+        // These footer teasers are decorative - only draw them when the trait
+        // columns leave room above the "[Tab] - Close" hint (_y2 - 39). A maxed
+        // pet whose traits fill the card simply omits the teaser rather than
+        // overrunning the footer (M 07-20). Traits themselves always fit now.
+        var _teaser_y = max(_cyL, _cyR) + 6;
+        if (_teaser_y <= _y2 - 90) {
+            if (pet.stage < PET_STAGE_ADULT) {
+                draw_set_font(fnt_ui_small); draw_set_color(make_color_rgb(150, 160, 190));
+                draw_text(_lx, _teaser_y, "On reaching Adult it gains a capstone ability.");
+            } else if (pet.stage == PET_STAGE_ADULT) {
+                // Tease the last rung: the Stage-4 crossing and its gate (design 2026-07-03).
+                draw_set_font(fnt_ui_small); draw_set_color(make_color_rgb(150, 160, 190));
+                draw_text(_lx, _teaser_y, "Beyond lies the Awakened crossing - full-clear at Awakening A5, Soul-bound.");
+            }
         }
     }
 
@@ -4941,14 +5123,52 @@ function ui_draw_ground_shadow(cx, baseline_y, sprite_display_width) {
 // high ability count ON-SCREEN instead of running off the right edge like the fixed
 // 252 pitch did. Returns {x0, w, gap, pitch, y, h}.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// combat_items_button_geom() - the single source of truth for the combat ITEMS
+// button rect, shared by the draw (Draw_64) and the click hit-test (Step_0),
+// which previously duplicated the literals in both files.
+//
+// On TOUCH with a letterbox gutter the button moves OUT of the play area and
+// sits in the right gutter above the on-screen OK button (M 07-18: "items can
+// go above ok button on mobile we have that extra width and space"). That frees
+// the whole 1920 band for the ability row, which at 5 abilities (Expanded
+// Arsenal) was otherwise running underneath it.
+//
+// `.gutter` tells combat_ability_geom whether the band is clear.
+// ---------------------------------------------------------------------------
+function combat_items_button_geom() {
+    if (input_device() == 2) {
+        var _pg = touch_pad_geom();   // undefined when no pad / no gutter room
+        if (!is_undefined(_pg)) {
+            var _gw = clamp(GUI_GUTTER - 28, 141, 210);
+            var _gh = 76;
+            return {
+                x1: _pg.rcx - _gw / 2,
+                // Stacked above the OK button, with a clear gap between them.
+                y1: _pg.cy - _pg.abs - 28 - _gh,
+                w: _gw, h: _gh, gutter: true
+            };
+        }
+    }
+    return { x1: 1767, y1: 990, w: 141, h: 63, gutter: false };
+}
+
 function combat_ability_geom(_count) {
     if (input_device() == 2 && _count > 0) {
+        // The row is centred inside a band that STOPS SHORT of the ITEMS button
+        // (obj_combat_controller Draw_64: x1767..1908, y990..1053). With a
+        // symmetric 42px margin the row ran to x1878, so at 5 abilities
+        // (Expanded Arsenal) the last button sat under ITEMS - and taps being
+        // non-consuming, using ability 5 also opened the item menu. M 07-18.
         var _gap   = 14;
-        var _marg  = 42;
-        var _avail = GUI_W - _marg * 2;
+        var _lm    = 42;                              // left margin
+        // Only reserve room on the right when ITEMS is still IN the band. With a
+        // gutter it moves out above the OK button and the full width is ours.
+        var _rm    = combat_items_button_geom().gutter ? 42 : 165;
+        var _avail = GUI_W - _lm - _rm;
         var _w     = min((_avail - (_count - 1) * _gap) / _count, 360);   // cap so a few aren't absurd
         var _pitch = _w + _gap;
-        var _x0    = (GUI_W - (_pitch * _count - _gap)) / 2;              // centre the row
+        var _x0    = _lm + (_avail - (_pitch * _count - _gap)) / 2;       // centre within the band
         return { x0: _x0, w: _w, gap: _gap, pitch: _pitch, y: 984, h: 87 };
     }
     return { x0: 240, w: 240, gap: 12, pitch: 252, y: 990, h: 75 };
@@ -6961,10 +7181,51 @@ function ui_draw_ability_detail(ab, close_key_label = "Tab", scroll_y = 0) {
     // ========================= FOOTER =========================
     draw_set_halign(fa_center);
     draw_set_font(fnt_ui_small);
-    draw_set_color(make_color_rgb(150, 160, 190));
-    var _footer = "[" + close_key_label + "] or [Esc] - Close";
-    if (global.ui_ability_detail_max_scroll > 0) _footer += "      [W/S] Scroll";
-    draw_text_outline((_x1 + _x2) / 2, _y2 - 39, _footer);
+    if (input_device() == 2) {
+        // TOUCH (M 07-18: inspecting an ability in combat "touching does nothing
+        // to exit the inspection" - the only way out was the top-right chip).
+        // The keyboard footer names keys a phone doesn't have, so replace it with
+        // a real CLOSE button, and also accept a tap on the dimmed area outside
+        // the panel. Both fire Esc, which every caller of this popup already
+        // handles - no per-screen wiring. Fixing it HERE covers combat, the
+        // loadout and the trainer at once, since all three share this function.
+        // RIGHT end of the footer strip - the only corner free of collisions:
+        //  - NOT footer-centred: combat's End Turn button is 750..1170 x 856..916
+        //    and draws EARLIER in the frame, so (taps being non-consuming) a
+        //    centred CLOSE would also end the player's turn. 1368 clears 1170.
+        //  - NOT the panel's top-right: the role-category chip pins itself to the
+        //    right margin (_rx - _chip_w) whenever the ability name is long.
+        // The footer's keyboard hint is replaced by this on touch, so it's empty.
+        var _cb_w = 132, _cb_h = 52;
+        var _cb_x2 = _x2 - 30,       _cb_y1 = _y2 - 60;
+        var _cb_x1 = _cb_x2 - _cb_w, _cb_y2 = _cb_y1 + _cb_h;
+        var _cb_on = mouse_check_button(mb_left)
+            && point_in_rectangle(device_mouse_x_to_gui(0), device_mouse_y_to_gui(0),
+                                  _cb_x1, _cb_y1, _cb_x2, _cb_y2);
+        draw_set_alpha(_cb_on ? 0.95 : 0.82);
+        draw_set_color(_cb_on ? make_color_rgb(52, 44, 26) : make_color_rgb(14, 16, 24));
+        draw_rectangle(_cb_x1, _cb_y1, _cb_x2, _cb_y2, false);
+        draw_set_alpha(1.0);
+        draw_set_color(_cb_on ? make_color_rgb(245, 195, 80) : make_color_rgb(150, 130, 90));
+        draw_rectangle(_cb_x1, _cb_y1, _cb_x2, _cb_y2, true);
+        draw_set_valign(fa_middle);
+        draw_set_color(_cb_on ? make_color_rgb(245, 205, 120) : make_color_rgb(215, 200, 165));
+        draw_text((_cb_x1 + _cb_x2) / 2, (_cb_y1 + _cb_y2) / 2 + 1, "CLOSE");
+        draw_set_valign(fa_top);
+
+        if (touch_tapped(_cb_x1, _cb_y1, _cb_x2, _cb_y2)) touch_press(vk_escape);
+        // Tap-outside-to-dismiss: anywhere on the scrim that isn't the panel.
+        else if (touch_tapped(GUI_XL, 0, GUI_XR, GUI_H)
+                 && !point_in_rectangle(device_mouse_x_to_gui(0), device_mouse_y_to_gui(0),
+                                        _x1, _y1, _x2, _y2)) {
+            touch_press(vk_escape);
+        }
+    } else {
+        draw_set_color(make_color_rgb(150, 160, 190));
+        var _footer = "[" + close_key_label + "] or [Esc] - Close";
+        if (global.ui_ability_detail_max_scroll > 0) _footer += "      [W/S] Scroll";
+        draw_text_outline((_x1 + _x2) / 2, _y2 - 39, _footer);
+    }
     draw_set_halign(fa_left); draw_set_valign(fa_top);
     draw_set_color(c_white);
     draw_set_font(-1);
@@ -8311,8 +8572,11 @@ function ui_draw_character_menu() {
         draw_rectangle(_al_x1, _al_y1, _al_x2, _al_y2, false);
         ui_draw_gothic_frame(_al_x1, _al_y1, _al_x2, _al_y2, 26);
 
+        // Reserve a fixed strip at the bottom of the left pane for the CLASS
+        // PASSIVE box (drawn after the list). The loadout list fits above it.
+        var _al_list_y2 = _al_y2 - 168;
         var _alr_pad = 16;
-        var _alr_h   = min(108, ((_al_y2 - _al_y1) - _alr_pad * 2) / _acnt);
+        var _alr_h   = min(108, ((_al_list_y2 - _al_y1) - _alr_pad * 2) / _acnt);
         for (var _ab = 0; _ab < _acnt; _ab++) {
             var _a  = _abs[_ab];
             var _ay = _al_y1 + _alr_pad + _ab * _alr_h;
@@ -8335,6 +8599,32 @@ function ui_draw_character_menu() {
             draw_set_color(make_color_rgb(228, 190, 90));
             draw_text(_al_x1 + 30 + _aic + 16, _ay + 48, string(_a.energy_cost) + " AP");
         }
+
+        // ---- CLASS PASSIVE (pinned bottom of the left pane; always shown) ----
+        // The class resource passive (Arcanist on-kill Souls, etc.) fired in the
+        // combat log but had no inspect surface anywhere - you couldn't read what
+        // your class actually does (M 07-20). Pinned here so it shows regardless of
+        // which ability is highlighted. chosen_class: 0 Arcanist / 1 Bloodwarden /
+        // 2 Shadowstrider (same mapping as the cost line's resource name below).
+        var _cp_y1 = _al_y2 - 160, _cp_y2 = _al_y2 - 16;
+        var _cpi_cls, _cpi_desc;
+        switch (variable_global_exists("chosen_class") ? global.chosen_class : 0) {
+            case 1:  _cpi_cls = "Bloodwarden";
+                     _cpi_desc = "+1 Blood each time you take a hit. Your crimson payoffs spend it - several also cost HP."; break;
+            case 2:  _cpi_cls = "Shadowstrider";
+                     _cpi_desc = "+1 Preparation at the start of each turn while no trap of yours is armed. Powers your traps and executes."; break;
+            default: _cpi_cls = "Arcanist";
+                     _cpi_desc = "+2 Souls whenever one of your hits kills an enemy. Your soul-spending spells cash it in."; break;
+        }
+        draw_set_color(make_color_rgb(20, 24, 40));
+        draw_rectangle(_al_x1 + 16, _cp_y1, _al_x2 - 16, _cp_y2, false);
+        draw_set_color(make_color_rgb(120, 90, 190));
+        draw_rectangle(_al_x1 + 16, _cp_y1, _al_x2 - 16, _cp_y2, true);
+        draw_set_halign(fa_left); draw_set_valign(fa_top);
+        draw_set_font(fnt_ui_small); draw_set_color(make_color_rgb(180, 150, 235));
+        draw_text(_al_x1 + 32, _cp_y1 + 12, "CLASS PASSIVE  -  " + _cpi_cls);
+        draw_set_font(fnt_ui); draw_set_color(make_color_rgb(214, 200, 240));
+        draw_text_ext(_al_x1 + 32, _cp_y1 + 46, _cpi_desc, 28, (_al_x2 - 16) - (_al_x1 + 32) - 16);
 
         // ===== RIGHT: breakdown of the selected ability =====
         var _ad = _abs[_acur];

@@ -15,5 +15,10 @@
 	"FileExclusion" "*.pdb"
 	"FileExclusion" "steam_appid.txt"
 	"FileExclusion" "*.log"
+	// Stray Steam shortcut to an UNRELATED game (appid 1159290) that rides along in
+	// the GameMaker export - it lives in the project's Included Files and points at
+	// M's local Steam .ico path. Never ship it. Remove it from Included Files to stop
+	// it at the source too. (Found 07-20 in the first real build.)
+	"FileExclusion" "*.url"
 }
 

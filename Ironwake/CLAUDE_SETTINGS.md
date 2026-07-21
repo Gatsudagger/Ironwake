@@ -92,6 +92,23 @@ Whenever adding or changing any on-screen text or UI element:
 - Measure with `string_width()`/`string_height()` against the actual box rect before placing — don't eyeball offsets
 - Too much time has been lost fixing minor overlap errors across pages; catch them before handoff
 
+### Touch Compatibility Check (MANDATORY — added 2026-07-18, M's standing order)
+Ironwake ships on Android. M hit a **softlock** on the new whetstone shrine because it had
+NO touch controls — he only escaped via the on-screen d-pad. That must never happen again.
+
+**Every new or changed interactive screen/feature gets a touch pass IN THE SAME TASK — automatic,
+no prompt needed.** Before marking any UI work complete:
+- **Every verb needs a touch path**: a direct tap target, an ACTIONS-chip entry, or confirmed
+  d-pad reachability. Keyboard/gamepad-only verbs are a DEFECT on a shipping mobile title.
+- **Hit-testing lives in the DRAW events** (draw + hit-test together, like the chip bar), NOT
+  Step. Step-only greps give FALSE POSITIVES — the 07-17 audit "found" walls at the shrine,
+  event choices, and level-up that were all actually touch-complete in Draw.
+- **Check the letter-hotkey pattern specifically**: single-touch only maps to mouse, which only
+  covers on-screen buttons — so bare letter hotkeys (B/F/R/C/Tab) are invisible to touch users.
+- **Tab-equivalents**: any "hold/press Tab to inspect" affordance needs a long-press or explicit
+  touch target (M 07-18: Bairc pet inspect + loadout abilities both missing one).
+- Gate touch-only UI on `input_device() == 2`.
+
 ### Reference Sync (MANDATORY — added 2026-07-09)
 Whenever a game mechanic changes, sweep and update **every in-game reference** to it in the same task:
 - Compendium/codex entries, tutorials, ability/trait/item descriptions, tooltips, shop text, key legends

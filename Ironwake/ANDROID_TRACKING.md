@@ -1,11 +1,18 @@
 # Ironwake — ANDROID / Google Play Tracker
 
-**Living status doc. Updated 2026-07-18.** Spine = LAUNCH_FOCUS.md (Track B). Detail kits:
+**Living status doc. Updated 2026-07-20.** Spine = LAUNCH_FOCUS.md (Track B). Detail kits:
 PLAY_STORE_KIT.md · PRIVACY_POLICY.md · ANDROID_PORT_PLAN.md · STORE_LISTINGS_LOCALIZED.md.
 
 Legend: `[x]` done · `[~]` in progress / partial · `[ ]` not started · 🔴 blocker · ⏱ time-sensitive.
 
-> ## 📍 YOU ARE HERE (2026-07-18)
+> ## 📍 YOU ARE HERE (2026-07-20)
+> **07-20: Android developer verification registered** (see KEY FACTS) — identity/distribution
+> paperwork only, **no release-track progress, clock not started**. Status below is unchanged.
+>
+> 🔴 **ANR on S25 losing runs is still the launch-blocker.** Get the Play vitals trace (suspect:
+> main-thread `save_game()`) BEFORE testers are onboarded — 12 people hitting run-loss on day 1
+> of a 14-day continuous clock is the worst possible time to find it.
+>
 > Identity verification **CLEARED**. Account + app draft exist. **Release keystore already set up
 > (07-07) and signing works** — M built a Release AAB on 07-17 (gradle `compressReleaseAssets`).
 > The real gap: **no release has actually been uploaded to a Play testing track yet** (Internal
@@ -30,6 +37,11 @@ Legend: `[x]` done · `[~]` in progress / partial · `[ ]` not started · 🔴 b
   -XX:MaxMetaspaceSize=1024m` (fixed first-AAB OOM; bump to 6-8g if it recurs).
 - **PRIVACY POLICY URL (live, public):** https://gist.github.com/Gatsudagger/fb18d8750a7d450fa5d1ac236f49427c
   (paste into Play "Set privacy policy" + Data safety; also for Steam if needed).
+- **Android developer verification: REGISTERED (07-20).** Google confirmed "all of your apps have
+  been successfully registered to meet Android developer verification requirements."
+  ⚠️ **This is NOT a release approval and does NOT start the 12×14 closed-test clock.** It is the
+  separate identity-verification program covering distribution (incl. sideloading / non-Play
+  stores). It changes nothing about the release-track gap below. Don't read it as "Play approved."
 
 ---
 
@@ -91,14 +103,14 @@ blocked once published; paid→free is always allowed — so set Paid now to pre
       **INDIVIDUAL** (Seahorse Games isn't a registered business). Needs legal name + address + bank
       (payout) + US tax interview (W-9). May take time to verify → closed test waits on it.
 - [x] App set to **Paid**, price **$4.99** entered for all listed countries (07-18).
-- [ ] 🔴 **BLOCKER (07-18): "Remove Rest of World to make your app paid."** Paid apps can't include the
-      "New countries/regions" / Rest-of-World auto-add bucket (App pricing shows 2 unpriceable rows:
-      New countries/regions USD + EUR — pricing them → "remove rest of world"; leaving blank → "set a
-      price"; catch-22). FIX IS NOT ON THE PRICING PAGE (it only prices targeted countries, no add/
-      remove buttons there). Root = the app's COUNTRY TARGETING includes auto-add-new-regions. Resume:
-      go to the CLOSED TEST track → Countries/regions → target SPECIFIC countries + turn OFF "auto-add
-      new countries/regions" so the New-regions bucket disappears from pricing. OR Google Play support
-      clears the flag. KNOWN QUIRK (support thread 404639482). NEEDS exact 2026 click-path confirmed.
+- [x] ✅ **BLOCKER CLEARED (07-18 late): "Remove Rest of World to make your app paid."**
+      CONFIRMED CLICK-PATH (2026 UI): Closed testing → **Manage track** → **Countries/regions** tab →
+      remove the **Rest of world** bucket. Paid apps cannot include the auto-add-new-regions bucket
+      (no price can exist for an unknown future country) — that's the whole catch-22; the pricing page
+      is the WRONG surface (it only prices already-targeted countries). Then a SECOND round of the same
+      rule fired: **remove China, Cuba, Iran, Sudan** — these four cannot host a paid app at all
+      (sanctions + no Play billing), so they're free-only territories. Unchecked all four → **saved
+      clean, no warnings**. KNOWN QUIRK (support thread 404639482).
 - [ ] **License testers** (Play Console → Setup → License testing) — add the 12 tester Gmail accounts so
       they download the PAID app FREE (paid-app closed testers otherwise must buy it; internal testers
       already free). This is how the 12-tester closed test works on a paid app.
@@ -114,14 +126,38 @@ blocked once published; paid→free is always allowed — so set Paid now to pre
 - [ ] Apply for production access (after the 14-day closed test completes).
 
 ## QUALITY (not gating, do around the above)
-- [~] On-screen gamepad overlay v2 built — needs S25 device tuning
-- [ ] 🔧 **FIX (M flagged 07-18, S25): on-screen D-PAD is too CRAMPED and OVERLAPPING** in the
-      current committed version (c70e8ba). ui_draw_touch_gamepad (scr_ui) — buttons overlap; re-space
-      / resize the d-pad cross + OK so they don't collide. Fix next session.
-- [ ] 🔧 **FIX (M flagged 07-18, S25): no touch target to INSPECT a creature from the Bairc pet
-      screen** — creature-inspection is Tab-only; touch users can't open it. Add a touch tap/hold
-      target (or ACTIONS-chip entry) on the Bairc pet list. Same class as the touch-verb gaps in
-      the 07-17 touch-wall audit. Fix next session.
+
+### ⚠️ STANDING RULE (M 07-18, after the whetstone-shrine softlock)
+**EVERY new UI/feature must be touch-checked AT BUILD TIME, automatically — no exceptions.**
+M hit a NO-TOUCH-CONTROLS softlock on the new whetstone shrine and only escaped via the d-pad.
+Hit-testing lives in the **DRAW** events (draw + hit-test together), NOT Step — Step-only reads
+give FALSE POSITIVES (07-17 lesson). Any new interactive screen ships with: a tap target for
+every verb, or an ACTIONS-chip entry, or confirmed d-pad reachability.
+
+### 07-18 S25 playtest batch (M's phone notes)
+- [x] **D-PAD too small / too close together — GEOMETRY FIXED.** Root cause was arithmetic, not
+      taste: `_bs` is a HALF-size (button = 2*_bs wide) but centre-to-centre spacing was `1.7*_bs`,
+      so the four buttons **overlapped by ~30% by construction**. Also `_bs` was clamped to the
+      gutter (`(gutter-18)/5.4`) → a ~210px S25 gutter yielded `_bs=35`, hence "too small".
+      NOW: spacing `2.35*_bs` (real gap), size = `46 * global.touch_pad_scale` (gutter cap removed,
+      may bleed over the low-left play area), position clamped to screen so it can't run off-edge.
+- [x] **D-pad USER-SCALABLE — backend done.** New `[touch]` section in settings.ini +
+      `touch_settings_init/save`, `touch_pad_scale_adjust`, `touch_gamepad_toggle` (scr_stats, after
+      the video block). Macros TOUCH_PAD_SCALE_DEF **1.25** (= M's "25% bigger") / MIN 0.80 / MAX
+      2.00 / STEP 0.15. Self-initializing, so the game runs correctly at 1.25 even before the UI lands.
+- [ ] **D-pad size SLIDER + on/off row in Settings overlay** — NOT YET WIRED. Needs 3 sites:
+      `ui_draw_settings_overlay` (scr_ui ~6133) row draw, the settings input handler (scr_stats
+      ~9684+) cursor/row count, and the touch tap-track block at the END of the overlay.
+      NOTE: `global.touch_gamepad_off` was referenced but **never set anywhere** — no row ever existed.
+- [ ] **Tutorial popup on new-character screen (before class choice)**: tell the player they can use
+      touch OR the d-pad, and resize/disable it in Settings. (M's ask; use the coach-mark system.)
+- [ ] 🔧 **WHETSTONE SHRINE has NO touch controls** (softlock class — M escaped only via d-pad).
+- [ ] 🔧 **Popup/overlay messages should be LARGER** — they're overlays, so there's free room to
+      make them more legible on a phone.
+- [ ] 🔧 **D-pad must reach EVERYTHING incl. END TURN** + move the End Turn button UP (nearly
+      overlapping the ability row). M chose **combat fix + FULL SCREEN AUDIT** for unreachable verbs.
+- [ ] 🔧 **No touch equivalent of Tab to INSPECT a creature from the Bairc pet screen** (Tab-only).
+- [ ] 🔧 **Loadout: is there a touch equivalent of Tab for abilities?** — verify, add if missing.
 - [~] Touch-wall fixes + keyboard-hint hiding on mobile — built, verify on device after F5
 
 ---
