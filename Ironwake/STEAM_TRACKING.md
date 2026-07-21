@@ -40,8 +40,9 @@ Legend: `[x]` done · `[~]` in progress / partial · `[ ]` not started · 🔴 b
 > 1. Store page approval (Valve, EA resubmit round 2 pending) → then flip Coming Soon (14-day clock)
 > 2. Request Build Review (3-5 biz days) — do the MOMENT the page is approved
 > 3. Deferred code: combat HP-bar overlap reorder + a re-upload (cheap now the pipeline works)
-> 4. Housekeeping: git-commit the 07-20 polish batch (still uncommitted); delete
->    `The Bloodline.url` from GM Included Files.
+> 4. Housekeeping: [x] 07-20 polish batch COMMITTED b894c87 + pushed ironwake/pets-phase2-ui-polish.
+>    [ ] STILL TODO: delete `The Bloodline.url` from GM Included Files (rides along in every build,
+>    incl. Android AAB; depot vdf excludes it from Steam but source is unchanged).
 > ⏱ **Build review is 3-5 business days PER ROUND** and the build isn't uploaded yet. Checklist
 > targeted "Jul 28-ish". With Aug 19 committed and a page round now burned, start the upload as soon
 > as the page is resubmitted — don't wait for approval (only the *review request* needs approval).
