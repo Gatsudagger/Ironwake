@@ -231,3 +231,38 @@ durable details live in the `project_*` memories). Captured here so they aren't 
 2. **Define the 3 NPCs** (§1) — pick what they are; design-lock the Rune system first (biggest).
 3. **Run variety** (§3) — boons/events to make it feel like a roguelite.
 4. Content + onboarding (§4, §5) as the base fills out.
+
+---
+
+## FUTURE FEATURE BACKLOG — captured 2026-07-23 (M's list, "when we return to game dev")
+Big-ticket depth/polish features to build post-launch-push. Each needs a design-lock pass
+(own `SYSTEMS_*.md`) before building — do NOT start mid-session; these are parked while Steam
++ Google Play launch work is the priority.
+
+1. **CURSED ITEMS (in the original GDD, discussed repeatedly, never built).** Two flavors:
+   (a) **one-of-a-kind uniques that result from cursed shrines** — the curse altar yields a
+   bespoke cursed item; (b) **curse an existing epic/legendary** — take a high-rarity item and
+   curse it: rename it, alter its stats/effects, add downside+upside. Ties into the cursed-shrine
+   system (we just added the reveal laugh / selection whisper audio 07-23). Design-lock: what the
+   curse changes (stat swing? new affix class? drawback+payoff?), the rename system, uniqueness.
+
+2. **ABILITY TALENT WEBS (replace the bland mastery system).** Current ability mastery reads
+   random + unflavorful — generic "+5 accuracy" bumps. Want a **bespoke talent web per ability**
+   that shapes HOW that ability plays (branching, flavorful nodes), not a flat stat trickle.
+   (Note: mastery already flagged "bland" in COMBAT_IMPROVEMENT_PLAN_2026-07-17.) Design-lock:
+   web shape, node count/ability, currency to spend, respec rules.
+
+3. **PET DIVERGENT GROWTH / MORE TALENTS.** Pets should feel unique + hand-shaped, with divergent
+   growth paths — but with **some RNG so you can't instantly craft the exact pet you want** (roll +
+   nurture, not pure choice). Extends the existing pet bond/capstone system. Design-lock: talent
+   pool per species, how RNG gates choices, how divergence expresses in combat/aura.
+
+4. **BAIRC'S GARDEN — SPATIAL PET VISITING.** Current garden is a flat 2D panel of pets bouncing
+   horizontally (reads amateurish). Want to **move around the garden and visit pets** in a real
+   space. Heavy ART/ANIMATION cost (per-pet idle/interact anims, a walkable garden scene). Design-
+   lock: garden layout, movement model, per-pet animation set, PixelLab budget.
+
+5. **ATTACK / SPELL ANIMATIONS (combat game-feel).** Add real attack + spell animations to make
+   combat fun and invigorating vs the current static presentation. Large ART/ANIMATION effort
+   (per-ability VFX/anim). Ties into SYSTEMS_COMBAT_FX.md (spell VFX gigapack already partly wired).
+   Design-lock: which abilities get bespoke anims first, reuse vs new, PixelLab/asset budget.

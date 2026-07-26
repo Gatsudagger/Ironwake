@@ -514,6 +514,29 @@ draw_set_alpha(1.0);
 draw_set_color(c_white);
 draw_set_font(-1);
 
+// Touch SETTINGS button (07-24 audit): O had a pad path (Select) but nothing on
+// touch - a phone player couldn't reach volume/d-pad settings until camp. Menu
+// phase only; hidden while the overlay itself is up.
+if (input_device() == 2 && phase == "title"
+    && !(variable_global_exists("settings_open") && global.settings_open)) {
+    var _tsb_x1 = 1650, _tsb_y1 = 984, _tsb_x2 = 1890, _tsb_y2 = 1050;
+    draw_set_alpha(0.82);
+    draw_set_color(make_color_rgb(14, 16, 24));
+    draw_rectangle(_tsb_x1, _tsb_y1, _tsb_x2, _tsb_y2, false);
+    draw_set_alpha(1.0);
+    draw_set_color(make_color_rgb(110, 100, 75));
+    draw_rectangle(_tsb_x1, _tsb_y1, _tsb_x2, _tsb_y2, true);
+    draw_set_font(fnt_ui_small);
+    draw_set_halign(fa_center);
+    draw_set_valign(fa_middle);
+    draw_set_color(make_color_rgb(215, 200, 165));
+    draw_text((_tsb_x1 + _tsb_x2) / 2, (_tsb_y1 + _tsb_y2) / 2 + 1, "SETTINGS");
+    draw_set_halign(fa_left);
+    draw_set_valign(fa_top);
+    draw_set_font(-1);
+    if (touch_tapped(_tsb_x1, _tsb_y1, _tsb_x2, _tsb_y2)) touch_press(ord("O"));
+}
+
 // Touch (8c): universal Back chip + simulated-key pump - always LAST (topmost).
 ui_draw_touch_back();
 ui_draw_touch_gamepad();   // on-screen d-pad in the left gutter (M 07-17)

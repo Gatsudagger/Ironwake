@@ -596,7 +596,7 @@ global.loot_table_rare = [
     create_item("Shadowstep Boots",    "boots",   2, "DEX", 5, "move between shadows",          74),
     create_item("Colossus Stompers",   "boots",   2, "CON", 6, "each step shakes the floor",    78),
     // Amulet
-    create_item("Medallion of Endurance","amulet",2, "CON", 5, "endures where others break",    72),
+    create_item("Enduring Medallion",   "amulet",2, "CON", 5, "endures where others break",    72),
     create_item("Warden's Eye",        "amulet",  2, "WIS", 5, "see threats before they strike", 75),
     _sch_ember,   // +4 Fire school damage (demo)
     // Ring
@@ -674,6 +674,34 @@ global.school_affix_pool = [
     { school: "void",   stat_name: "school_void",   prefix: "Voidtouched",  suffix: "of the Void"    },
     { school: "shadow", stat_name: "school_shadow", prefix: "Umbral",       suffix: "of Shadow"      },
     { school: "blood",  stat_name: "school_blood",  prefix: "Sanguine",     suffix: "of Bloodletting"},
+];
+
+// -----------------------------------------------------------------------------
+// ITEM NAME FUSION (see ITEM_NAMING_FUSION.md).
+// When a weapon's elemental rider lands on an item that ALREADY ends in a stat
+// affix's "of {noun}", we fuse the two into ONE lore phrase instead of the
+// awkward double "of X of Y" (e.g. "Blade of Charm of Frost" -> "Blade of
+// Frostbound Charm"). Resolution (item_fused_elem_suffix): bespoke pair override
+// first, else composed "of {name_combine_adj[element]} {statNoun}".
+//
+// name_combine_adj: the adjective each weapon element lends to the fused phrase.
+// Falls back to the element's display prefix if an element is missing here.
+global.name_combine_adj = {
+    frost: "Frostbound",     // reads great as-is
+    burn:  "Emberwreathed",  // cooler than the plain display prefix "Flaming"
+    shock: "Stormbound",     // drops the awkward mid-name hyphen of "Storm-touched"
+};
+
+// name_bespoke_pairs: hand-authored phrases for specific element x stat combos,
+// overriding the composed default. Grow this freely - any pair NOT listed still
+// auto-fuses cleanly, so there is never an awkward name. Keys: elem = weapon
+// element ("burn"/"frost"/"shock"); stat = the stat affix's stat_name.
+global.name_bespoke_pairs = [
+    { elem: "frost", stat: "CHA",       phrase: "of Winterheart"    },
+    { elem: "burn",  stat: "CHA",       phrase: "of the Ember Muse"  },
+    { elem: "shock", stat: "INT",       phrase: "of the Tempest Mind"},
+    { elem: "frost", stat: "crit_flat", phrase: "of Shatterfrost"    },
+    { elem: "burn",  stat: "STR",       phrase: "of the Forgeborn"   },
 ];
 
 

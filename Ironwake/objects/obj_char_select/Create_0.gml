@@ -76,3 +76,16 @@ class_descriptions = [
     "Sustain drain tank. Wins by attrition. Secondary resource: Blood.",
     "Evasion ranger. Avoids damage through traps. Secondary resource: Preparation.",
 ];
+
+// -----------------------------------------------------------------------------
+// TOUCH CONTROLS INTRO (07-24, ANDROID_TRACKING: popup on the new-character
+// screen, before class choice). One-time note for touch players: tap and the
+// on-screen d-pad both work, and the d-pad is resizable/removable in Settings.
+// Seen-flag lives in settings.ini [touch] (device-level, beside the d-pad prefs
+// it points at) - NOT the save: save_game() mid-char-create would write a stub
+// character into the slot.
+// -----------------------------------------------------------------------------
+touch_settings_init();
+ini_open("settings.ini");
+touch_intro_open = (input_device() == 2) && (ini_read_real("touch", "intro_seen", 0) < 0.5);
+ini_close();

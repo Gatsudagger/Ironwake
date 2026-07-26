@@ -62,6 +62,22 @@ if (GM_build_type == "run" && keyboard_check_pressed(vk_f8)) {
     show_debug_message("[TEST] debug_unlock_all = " + string(global.debug_unlock_all));
 }
 
+// =============================================================================
+// TEST LEVER (07-24) - F9 toggles FORCED TOUCH MODE on Windows: input_device()
+// reads 2, so the full touch UI (chips, on-screen d-pad, tap targets, long-press,
+// swipes) runs and is driven by the mouse - no phone needed. Pairs with F7's
+// phone-aspect lever for a desktop approximation of the S25. Never persisted;
+// relaunch always starts OFF. Audio cue: rising = ON, low = OFF.
+// COMPILED OUT OF RELEASE BUILDS: gated on GM_build_type == "run" (IDE/F5 only).
+// =============================================================================
+if (GM_build_type == "run" && os_type == os_windows && keyboard_check_pressed(vk_f9)) {
+    if (!variable_global_exists("debug_force_touch")) global.debug_force_touch = false;
+    global.debug_force_touch = !global.debug_force_touch;
+    var _dft_si = audio_play_sound(snd_ui_toggle_on, 1, false);
+    audio_sound_pitch(_dft_si, global.debug_force_touch ? 1.4 : 0.7);
+    show_debug_message("[TEST] debug_force_touch = " + string(global.debug_force_touch));
+}
+
 // Hub station flavor loops (SOUND_ATMOSPHERE_SPEC.md section 3): keep each open
 // NPC screen's quiet bed in lock-step with its *_open flag. Runs above every
 // modal early-exit below so a loop can never stick on while one is up.
@@ -1847,7 +1863,7 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open) {
         if (input_detail() || input_cancel()) bairc_detail_open = false;
         exit;
     }
-    if (input_detail() && _bp_n > 0) {
+    if ((input_detail() || input_inject_take("bairc:detail")) && _bp_n > 0) {
         bairc_detail_open = true;
         exit;
     }
@@ -1919,8 +1935,16 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open) {
         else if (input_hotkey("4") || input_inject_take("bairc:feed4")) _feed_key = 3;
         else if (input_hotkey("5") || input_inject_take("bairc:feed5")) _feed_key = 4;
         else if (input_hotkey("6") || input_inject_take("bairc:feed6")) _feed_key = 5;
-        if (_feed_key >= 0) {
-            var _feed_idx = bairc_feed_page * 6 + _feed_key;   // hotkeys address the visible page
+        // Pad/touch action-menu feeds inject an ABSOLUTE index ("bairc:feedabs<i>") -
+        // the digit path above is page-relative and capped at 6, which silently hid
+        // feed types 7+ from pad/touch players (07-24 audit).
+        var _feed_abs = -1;
+        for (var _fai = 0; _fai < array_length(_owned); _fai++) {
+            if (input_inject_take("bairc:feedabs" + string(_fai))) { _feed_abs = _fai; break; }
+        }
+        if (_feed_key >= 0 || _feed_abs >= 0) {
+            var _feed_idx = (_feed_abs >= 0) ? _feed_abs
+                : bairc_feed_page * 6 + _feed_key;   // hotkeys address the visible page
             if (_feed_idx >= array_length(_owned)) {
                 if (!_bp.is_egg && pet_feed_pouch_total() <= 0)
                     bairc_notification = "No feed on hand - buy some from Petra the Trader.";

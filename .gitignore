@@ -1,0 +1,5 @@
+# Trailer renders + source footage: regeneratable via build_trailer.py; source lives in Videos\
+Ironwake/Ironwake Trailer/*.mp4
+Ironwake/Ironwake Trailer/_build/
+# Audition copies duplicated from Ironwake/sounds/
+Ironwake/Ironwake Trailer/music_candidates/dungeon_*.ogg

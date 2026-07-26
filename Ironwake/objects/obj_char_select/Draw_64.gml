@@ -518,3 +518,47 @@ draw_set_font(-1);
 // Touch (8c): universal Back chip + simulated-key pump - always LAST (topmost).
 ui_draw_touch_back();
 ui_draw_touch_gamepad();   // on-screen d-pad in the left gutter (M 07-17)
+
+// TOUCH CONTROLS INTRO (07-24) - drawn after the chip/d-pad so it tops both.
+// Step exits while it's open; GOT IT persists [touch] intro_seen and closes.
+if (touch_intro_open) {
+    draw_set_alpha(0.72);
+    draw_set_color(c_black);
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
+    draw_set_alpha(1.0);
+    var _tix1 = GUI_CX - 495, _tiy1 = GUI_CY - 285, _tix2 = GUI_CX + 495, _tiy2 = GUI_CY + 285;
+    draw_set_color(make_color_rgb(14, 16, 24));
+    draw_rectangle(_tix1, _tiy1, _tix2, _tiy2, false);
+    ui_draw_gothic_frame(_tix1, _tiy1, _tix2, _tiy2, 24);
+    draw_set_halign(fa_center);
+    draw_set_valign(fa_top);
+    draw_set_font(fnt_ui_title);
+    draw_set_color(make_color_rgb(228, 205, 140));
+    draw_text(GUI_CX, _tiy1 + 42, "Touch Controls");
+    draw_set_font(fnt_ui);
+    draw_set_color(make_color_rgb(200, 208, 222));
+    draw_text_ext(GUI_CX, _tiy1 + 132,
+        "Play however feels best: TAP things directly, or use the on-screen D-PAD to move a cursor and confirm."
+        + "\n\nHOLD an ability or creature to examine it."
+        + "\n\nThe D-pad can be RESIZED or turned OFF any time via the SETTINGS chip at camp.",
+        45, 900);
+    var _tib_x1 = GUI_CX - 165, _tib_y1 = _tiy2 - 129, _tib_x2 = GUI_CX + 165, _tib_y2 = _tiy2 - 66;
+    draw_set_color(make_color_rgb(20, 34, 58));
+    draw_rectangle(_tib_x1, _tib_y1, _tib_x2, _tib_y2, false);
+    draw_set_color(make_color_rgb(80, 160, 220));
+    draw_rectangle(_tib_x1, _tib_y1, _tib_x2, _tib_y2, true);
+    draw_set_valign(fa_middle);
+    draw_set_color(c_white);
+    draw_text(GUI_CX, (_tib_y1 + _tib_y2) / 2, "GOT IT");
+    draw_set_valign(fa_top);
+    if (touch_tapped(_tib_x1, _tib_y1, _tib_x2, _tib_y2, true)) {
+        touch_intro_open = false;
+        ini_open("settings.ini");
+        ini_write_real("touch", "intro_seen", 1);
+        ini_close();
+    }
+    draw_set_halign(fa_left);
+    draw_set_valign(fa_top);
+    draw_set_color(c_white);
+    draw_set_font(-1);
+}

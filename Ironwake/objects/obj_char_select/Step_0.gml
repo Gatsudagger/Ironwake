@@ -13,6 +13,10 @@
 //   Mouse click (stat box)- select stat + add point if pool > 0
 // =============================================================================
 
+// Touch-controls intro popup (07-24): while up it owns the screen - the GOT IT
+// tap is handled in Draw_64 (draw + hit-test together, per the touch rule).
+if (touch_intro_open) exit;
+
 // Stat name lookup shared by the add and remove sections
 var _stat_names = ["STR", "DEX", "CON", "INT", "WIS", "CHA"];
 

@@ -27,6 +27,10 @@
 // claims it back inside the getters below.
 function input_device() {
     if (os_type == os_android || os_type == os_ios) return 2;
+    // Dev lever (F9, gc Step, IDE-run only): force touch mode on Windows so the
+    // whole touch UI - taps, long-press, drag, chips, d-pad - is mouse-testable
+    // without a phone. The entire touch stack reads the mouse anyway.
+    if (variable_global_exists("debug_force_touch") && global.debug_force_touch) return 2;
     if (!variable_global_exists("input_last_device")) global.input_last_device = 0;
     return global.input_last_device;
 }
@@ -251,9 +255,13 @@ function __input_pad_hotkey_map() {
                  _s[$ "H"] = gp_face4;      _s[$ "P"] = gp_stickl;
                  _s[$ "B"] = gp_stickr;                              _m[$ "hub"]      = _s;
         _s = {}; _s[$ "E"] = gp_shoulderrb; _s[$ "G"] = gp_stickr;
-                 _s[$ "J"] = gp_shoulderlb; _s[$ "I"] = gp_start;    _m[$ "floor"]    = _s;
+                 _s[$ "J"] = gp_shoulderlb; _s[$ "I"] = gp_start;
+                 _s[$ "P"] = gp_stickl;                              _m[$ "floor"]    = _s;
         _s = {}; _s[$ "T"] = gp_shoulderrb; _s[$ "C"] = gp_shoulderlb;
-                 _s[$ "V"] = gp_stickr;     _s[$ "I"] = gp_start;    _m[$ "combat"]   = _s;
+                 _s[$ "V"] = gp_stickr;     _s[$ "I"] = gp_start;
+                 // 07-24 audit: G (companion guard) + P (perm-points overlay)
+                 // were keyboard-only in combat.
+                 _s[$ "G"] = gp_stickl;     _s[$ "P"] = gp_select;   _m[$ "combat"]   = _s;
         _s = {}; _s[$ "E"] = gp_shoulderrb;                          _m[$ "loot"]     = _s;
         _s = {}; _s[$ "1"] = gp_face3;      _s[$ "2"] = gp_face4;
                  _s[$ "3"] = gp_shoulderrb;                          _m[$ "shrine"]   = _s;
@@ -268,7 +276,8 @@ function __input_pad_hotkey_map() {
         _s = {}; _s[$ "F"] = gp_shoulderrb; _s[$ "R"] = gp_shoulderlb;
                  _s[$ "C"] = gp_shoulderlb; _s[$ "B"] = gp_stickr;   _m[$ "shop"]     = _s;
         _s = {}; _s[$ "F"] = gp_shoulderrb; _s[$ "B"] = gp_stickr;   _m[$ "bairc"]    = _s;
-        _s = {}; _s[$ "X"] = gp_shoulderlb;                          _m[$ "charsel"]  = _s;
+        // 07-24 audit: gender toggle had no pad path (cells are tap/keyboard only).
+        _s = {}; _s[$ "X"] = gp_shoulderlb; _s[$ "G"] = gp_shoulderrb; _m[$ "charsel"]  = _s;
         _s = {}; _s[$ "O"] = gp_select;                              _m[$ "title"]    = _s;
         global.input_pad_hkmap = _m;
     }

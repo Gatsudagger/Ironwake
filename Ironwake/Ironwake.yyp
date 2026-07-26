@@ -101,6 +101,7 @@
     {"id":{"name":"snd_cast_void","path":"sounds/snd_cast_void/snd_cast_void.yy",},},
     {"id":{"name":"snd_chest","path":"sounds/snd_chest/snd_chest.yy",},},
     {"id":{"name":"snd_confirm_major","path":"sounds/snd_confirm_major/snd_confirm_major.yy",},},
+    {"id":{"name":"snd_curse_laugh","path":"sounds/snd_curse_laugh/snd_curse_laugh.yy",},},
     {"id":{"name":"snd_curse_whisper","path":"sounds/snd_curse_whisper/snd_curse_whisper.yy",},},
     {"id":{"name":"snd_death_beast","path":"sounds/snd_death_beast/snd_death_beast.yy",},},
     {"id":{"name":"snd_death_boss","path":"sounds/snd_death_boss/snd_death_boss.yy",},},

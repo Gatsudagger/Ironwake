@@ -5,13 +5,26 @@ PLAY_STORE_KIT.md · PRIVACY_POLICY.md · ANDROID_PORT_PLAN.md · STORE_LISTINGS
 
 Legend: `[x]` done · `[~]` in progress / partial · `[ ]` not started · 🔴 blocker · ⏱ time-sensitive.
 
+> ## 📍 (2026-07-26) ⏱ TARGET API 36 REQUIRED — fix BEFORE the closed test
+> Play Console issue (verbatim intent): **apps must target Android 16 (API 36) from Aug 30,
+> 2026** or updates are blocked; our AAB targets API 35. NOT a past mistake — API 35 was the
+> requirement when we built (Google ratchets annually every ~Aug 30). Since production will
+> land after Aug 30, the closed test must run on an API-36 build or we rebuild mid-process.
+> **FIX (M, in IDE):** Android Studio SDK Manager → install API 36 platform → GM Android
+> settings → Target SDK 36 (Min stays 23; runtime update if GM lacks 36) → rebuild Release
+> AAB (version bump 1.0.0.1) → upload to Internal track → verify on S25 → Play sends the
+> "no longer affected" confirmation. Do this before recruiting testers.
+>
 > ## 📍 YOU ARE HERE (2026-07-20)
 > **07-20: Android developer verification registered** (see KEY FACTS) — identity/distribution
 > paperwork only, **no release-track progress, clock not started**. Status below is unchanged.
 >
-> 🔴 **ANR on S25 losing runs is still the launch-blocker.** Get the Play vitals trace (suspect:
-> main-thread `save_game()`) BEFORE testers are onboarded — 12 people hitting run-loss on day 1
-> of a 14-day continuous clock is the worst possible time to find it.
+> ⚠️ **ANR DOWNGRADED 07-23 — unconfirmed, needs clean-install repro (was 🔴 launch-blocker).**
+> M: no one else reported it, and he had **duplicate Ironwake installs** on his phone (a plausible
+> cause). Retesting on a single clean install before treating it as real. Kept on record: "no
+> reports" is weak — there are still ZERO external testers to hit it — and main-thread `save_game()`
+> is a real risk regardless, so the cheap code check + atomic-save hardening stay on the list. Not
+> gating the launch path for now. (Full context: memory `project_anr_and_run_resume_0718`.)
 >
 > Identity verification **CLEARED**. Account + app draft exist. **Release keystore already set up
 > (07-07) and signing works** — M built a Release AAB on 07-17 (gradle `compressReleaseAssets`).
@@ -25,7 +38,8 @@ Legend: `[x]` done · `[~]` in progress / partial · `[ ]` not started · 🔴 b
 
 ## KEY FACTS (do not lose)
 - **Package / application id:** `com.seahorsegames.ironwake` (lowercase, PERMANENT — never changes).
-- **GM Android config target:** target SDK 35, min SDK 23, arm64, version 1.0.0.0, display name "Ironwake".
+- **GM Android config target:** target SDK 35 → ⏱ **MUST become 36** (Play deadline Aug 30 2026,
+  see 07-26 YOU-ARE-HERE), min SDK 23, arm64, version 1.0.0.0 → bump per upload, display name "Ironwake".
 - **Account type:** PERSONAL (Seahorse Games = public dev name only, no registered business). $25 paid 07-17.
 - **Logins/contacts:** Console login + private contact = miles.colopy@gmail.com · **public store-listing
   email = seahorse.gameco@gmail.com** · public dev name = "Seahorse Games".
@@ -145,23 +159,71 @@ every verb, or an ACTIONS-chip entry, or confirmed d-pad reachability.
       `touch_settings_init/save`, `touch_pad_scale_adjust`, `touch_gamepad_toggle` (scr_stats, after
       the video block). Macros TOUCH_PAD_SCALE_DEF **1.25** (= M's "25% bigger") / MIN 0.80 / MAX
       2.00 / STEP 0.15. Self-initializing, so the game runs correctly at 1.25 even before the UI lands.
-- [ ] **D-pad size SLIDER + on/off row in Settings overlay** — NOT YET WIRED. Needs 3 sites:
-      `ui_draw_settings_overlay` (scr_ui ~6133) row draw, the settings input handler (scr_stats
-      ~9684+) cursor/row count, and the touch tap-track block at the END of the overlay.
-      NOTE: `global.touch_gamepad_off` was referenced but **never set anywhere** — no row ever existed.
-- [ ] **Tutorial popup on new-character screen (before class choice)**: tell the player they can use
-      touch OR the d-pad, and resize/disable it in Settings. (M's ask; use the coach-mark system.)
-- [ ] 🔧 **WHETSTONE SHRINE has NO touch controls** (softlock class — M escaped only via d-pad).
-- [ ] 🔧 **Popup/overlay messages should be LARGER** — they're overlays, so there's free room to
-      make them more legible on a phone.
-- [ ] 🔧 **D-pad must reach EVERYTHING incl. END TURN** + move the End Turn button UP (nearly
-      overlapping the ability row). M chose **combat fix + FULL SCREEN AUDIT** for unreachable verbs.
-- [ ] 🔧 **No touch equivalent of Tab to INSPECT a creature from the Bairc pet screen** (Tab-only).
-- [ ] 🔧 **Loadout: is there a touch equivalent of Tab for abilities?** — verify, add if missing.
+- [x] **D-pad size SLIDER + on/off row in Settings overlay — WIRED 07-24** as ONE combined row
+      (panel is height-capped at 1080): row 7 "On-screen D-pad" — A/D sizes (slider), Enter
+      toggles off/on (OFF pill), tap-the-track sets size directly. Reset Tutorial moved to row 8.
+      All 3 sites done (overlay draw, scr_stats handler 9-row cursor, tap-track block).
+- [x] **Tutorial popup on new-character screen — BUILT 07-24.** Self-contained popup in
+      obj_char_select (NOT the coach-mark system: tutorial_dismiss → save_game() mid-char-create
+      would stub the slot). Touch-only; explains tap vs d-pad + SETTINGS chip resize/disable;
+      seen-flag = settings.ini [touch] intro_seen (device-level). GOT IT closes; Step exits while up.
+- [x] 🔧 **WHETSTONE SHRINE touch controls — FIXED 07-24** (was the softlock class): tap rows to
+      select / tap-again to confirm in both phases + explicit LEAVE/BACK button (simulated Esc),
+      all hit-tested in Draw_64 like the shrine.
+- [ ] 🔧 **Popup/overlay messages should be LARGER** — folded into the MOBILE READABILITY pass
+      (07-24): overlays get a legibility bump alongside the hub redesign.
+- [~] 🔧 **D-pad must reach EVERYTHING incl. END TURN** — combat fix DONE 07-24: d-pad DOWN
+      focuses END TURN (gold armed border), confirm ends the turn, UP/sideways returns to the
+      ability row (end_turn_focus; button lift itself shipped 07-18). FULL SCREEN AUDIT for other
+      unreachable verbs still pending.
+
+### 07-24 FULL SCREEN AUDIT — keyboard verbs missing a touch and/or gamepad path
+Method: every `input_hotkey`/raw `keyboard_check_pressed` site diffed against the pad hotkey
+map (`__input_pad_hotkey_map`), touch chip bar, action menus, and Draw-side tap handlers
+(Draw checked directly — Step-only greps false-positive). Nav/confirm/cancel verbs count as
+covered via the on-screen d-pad. Verified COVERED and skipped here: board K/T/R, shrine 1/2/3,
+floor G/E/J/I, hub chips, Maren/Sable/charmenu tab taps, loadout Tab/M chips, victory/extract
+overlays (click fallbacks), knucklebones play (pure nav), title menu + slot picker taps,
+char-select gender (tap cells), gift popup (click).
+**NEW DEV LEVER (07-24): F9 = forced touch mode on Windows** (IDE-run only, compiled out of
+release like F7/F8). input_device() reads 2, so chips/d-pad/taps/long-press/swipes all run and
+are driven by the mouse — test the whole touch UI without the phone. Pair with F7 (phone
+aspect) for a desktop S25 approximation. Real-device passes still needed for thumb ergonomics,
+multi-touch, and Android-only quirks before shipping.
+
+ALL 9 FIXED 07-24 (same session, M's call):
+- [x] 🔴 **Combat `G` — companion guard**: pad `G`→L3 in the combat map + touch "GUARD: ON/OFF"
+      button left of END TURN (490-730 × 856-916), drawn only under the Step handler's own gate
+      (guarded-stance Warrior companion active).
+- [x] 🟠 **Char menu `U` — unequip slot**: touch "UNEQUIP SLOT" footer button on the Equipment
+      tab (only while the selected slot holds an item; sits where the hidden key legend was).
+- [x] 🟠 **Loadout companion `B` — pet stance**: STANCE chip on the companion tab, gated to a
+      pet row with a non-empty `pet_stance_list` (Fortune pets excluded — no dead chip).
+- [x] 🟡 **Title `O` — Settings**: touch SETTINGS button bottom-right of the title menu phase.
+- [x] 🟡 **Char menu `T` — epithet**: title line is now tappable; hint reads "tap:" on touch.
+- [x] 🟡 **Char select `G` — gender on pad**: `G`→RT added to the charsel map (legend
+      auto-translates to the pad glyph).
+- [x] 🟡 **Mid-run `P` overlay**: pad `P`→L3 (floor) / Select (combat) + flashing UPGRADE chip
+      on the floor map when points are pending (mirrors the hub chip). Touch-in-combat left
+      uncovered deliberately — a combat chip bar would collide with the widened ability row,
+      and the floor chip covers the same spend between fights.
+- [x] ⚪ **Bairc feeds beyond 6**: pad/touch feed submenu now lists ALL owned feeds via new
+      absolute `bairc:feedabs<i>` tags (menu height auto-scales; keyboard 1-6+D/A paging
+      unchanged).
+- [x] ⚪ **Knucklebones `H` — rules**: RULES chip in the new "kb" chip-bar context (same chip
+      toggles the overlay closed).
+- [x] 🔧 **Bairc pet INSPECT on touch — FIXED 07-24**: "Details" entry added to the creature
+      action submenu (tag bairc:detail → same Tab detail popup).
+- [x] 🔧 **Loadout Tab equivalent — VERIFIED PRESENT 07-24**: long-press examine already wired
+      (obj_hub_controller Step ~485 + "Hold an ability to examine" hint).
 - [~] Touch-wall fixes + keyboard-hint hiding on mobile — built, verify on device after F5
 
 ---
 
-## NEXT ACTION
-1. F5 + commit current batch. 2. Create + back up the release keystore. 3. Build Release AAB.
-4. Upload to Internal testing. Then Phase 2 setup tasks in parallel, then Closed testing to start ⏱.
+## NEXT ACTION (updated 07-26)
+1. ⏱ Target SDK 35→36 in GM (+API 36 platform via SDK Manager) → rebuild AAB (1.0.0.1) →
+   upload to Internal track → verify on S25 (clears the Play API-level issue).
+2. Finish merchant/payments verification (Phase 5) + add License testers.
+3. Recruit to 12 valid Google-account testers (~8 usable now; swap the Yahoo addr).
+4. Promote the API-36 AAB to Closed testing → ⏱ 14-day clock starts.
+5. 🔴 Before production: swap public merchant address off M's home address.

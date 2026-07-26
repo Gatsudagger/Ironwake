@@ -112,8 +112,10 @@ if (showing_shrine) {
             shrine_notification = "";
             shrine_notification_fail = false;
             shrine_curse_arm    = -1;
-            // A curse altar springs its trap the moment it drops the veil.
-            if (shrine_kind == "curse") audio_play_sound(snd_curse_whisper, 1, false);
+            // A curse altar springs its trap the moment it drops the veil - the
+            // unseen tormentor's haunting laugh (the whisper now marks the SELECTION,
+            // when the player actually embraces a curse below).
+            if (shrine_kind == "curse") audio_play_sound(snd_curse_laugh, 1, false);
         }
         exit;
     }
@@ -152,6 +154,8 @@ if (showing_shrine) {
                     var _cid = shrine_offers[shrine_cursor];
                     var _res = curse_accept(_cid);
                     if (_res == "") {
+                        // The player submits to the curse - the altar's whisper seals it.
+                        audio_play_sound(snd_curse_whisper, 1, false);
                         var _cd = curse_get(_cid);
                         shrine_notification = "You embrace " + _cd.name + ". The altar is sated.";
                         shrine_notification_fail = false;

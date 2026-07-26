@@ -621,6 +621,20 @@ if (showing_whetstone) {
             for (var _wo = 0; _wo < array_length(_wopt); _wo++) _wprev += (_wo > 0 ? "   |   " : "") + _wopt[_wo].label;
             draw_text(_wt_rx0 + 26, _wry + 54, _wprev);
         }
+        // Touch: tap a row to select it, tap the selected row again to choose
+        // its edge (simulated Enter). The LEAVE button below covers Esc.
+        if (input_device() == 2 && mouse_check_button_pressed(mb_left)) {
+            var _wtx = device_mouse_x_to_gui(0);
+            var _wty = device_mouse_y_to_gui(0);
+            for (var _wti = 0; _wti < _wt_na; _wti++) {
+                var _wty0 = _wt_y0 + _wti * _wt_pitch;
+                if (_wtx >= _wt_rx0 && _wtx <= _wt_rx1 && _wty >= _wty0 && _wty <= _wty0 + _wt_rh) {
+                    if (_wti != whetstone_ab_cursor) whetstone_ab_cursor = _wti;
+                    else touch_press(vk_enter);
+                    break;
+                }
+            }
+        }
         draw_set_halign(fa_center);
         ui_draw_key_legend(GUI_CX, 990, "W/S: Select      Enter: Choose an edge      Esc: Leave (no honing)");
     } else {
@@ -647,8 +661,40 @@ if (showing_whetstone) {
             draw_text(_wm_rx0 + 30, _mry + _wm_rh * 0.5, _wcopt[_mi].label);
             draw_set_valign(fa_top);
         }
+        // Touch: tap a mod row to select it, tap the selected row again to hone
+        // (simulated Enter). The BACK button below covers Esc.
+        if (input_device() == 2 && mouse_check_button_pressed(mb_left)) {
+            var _wmx = device_mouse_x_to_gui(0);
+            var _wmy = device_mouse_y_to_gui(0);
+            for (var _wmi = 0; _wmi < _wcn; _wmi++) {
+                var _wmy0 = _wm_y0 + _wmi * _wm_pitch;
+                if (_wmx >= _wm_rx0 && _wmx <= _wm_rx1 && _wmy >= _wmy0 && _wmy <= _wmy0 + _wm_rh) {
+                    if (_wmi != whetstone_mod_cursor) whetstone_mod_cursor = _wmi;
+                    else touch_press(vk_enter);
+                    break;
+                }
+            }
+        }
         draw_set_halign(fa_center);
         ui_draw_key_legend(GUI_CX, 990, "W/S: Select      Enter: Hone this edge      Esc: Back");
+    }
+
+    // Touch (07-24 softlock fix): key legends draw nothing on a phone, so the
+    // whetstone had NO way out by touch. Explicit bottom button - LEAVE from the
+    // ability list / empty stone, BACK from the edge picker (simulated Esc).
+    if (input_device() == 2) {
+        var _wlb_txt = (_wt_na > 0 && whetstone_phase != "ability") ? "BACK" : "LEAVE";
+        draw_set_color(make_color_rgb(20, 28, 34));
+        draw_rectangle(GUI_CX - 180, 954, GUI_CX + 180, 1020, false);
+        draw_set_color(_wt_steel);
+        draw_rectangle(GUI_CX - 180, 954, GUI_CX + 180, 1020, true);
+        draw_set_font(fnt_ui);
+        draw_set_color(c_white);
+        draw_set_halign(fa_center);
+        draw_set_valign(fa_middle);
+        draw_text(GUI_CX, 987, _wlb_txt);
+        draw_set_valign(fa_top);
+        if (touch_tapped(GUI_CX - 180, 954, GUI_CX + 180, 1020)) touch_press(vk_escape);
     }
 
     ui_draw_gothic_frame(30, 30, 1890, 1050, 30);

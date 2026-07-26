@@ -681,6 +681,11 @@ need_player_status_tick = false;
 // Index into player.abilities for the currently highlighted button
 selected_ability = 0;
 
+// D-pad End Turn reachability (07-24, ANDROID_TRACKING): DOWN from the ability
+// row focuses the END TURN button so confirm ends the turn; UP/sideways returns
+// to the abilities. Keyboard T / touch tap are unaffected.
+end_turn_focus = false;
+
 // Index into the living enemy list (not the full combatant array) for the
 // currently targeted enemy. Cycled with Tab. Reset to 0 after each kill via
 // the safety fallback in Step_0.

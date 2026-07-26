@@ -251,6 +251,10 @@ function ui_draw_touch_chips() {
         case "floor":
             array_push(_chips, { lbl: "JOURNAL", key: ord("J"), hot: journal_any_badge() });
             array_push(_chips, { lbl: "HERO",    key: ord("I"), hot: false });
+            // 07-24 audit: the mid-run P perm-points overlay was keyboard-only.
+            if (variable_global_exists("pending_perm_points") && global.pending_perm_points > 0) {
+                array_push(_chips, { lbl: "UPGRADE", key: ord("P"), hot: true });
+            }
             // Escape-item chip only when one is actually carried (mirrors the
             // "[G] Use ..." keyboard hint; a dead LAMP button confused M 07-08).
             // Named after the item so DEVIL WINE doesn't masquerade as a lamp.
@@ -299,7 +303,28 @@ function ui_draw_touch_chips() {
                     }
                 }
             }
+            // Companion tab (2): B cycles the highlighted pet's stance - pad had RT,
+            // touch had nothing (07-24 audit). Gated to a pet row that actually HAS
+            // stances (Fortune pets return an empty list), so it's never a dead chip.
+            if (_ld_gc != noone && _ld_gc.loadout_tab == 2) {
+                var _ld_row = 0;
+                for (var _ldp = 0; _ldp < pet_count(); _ldp++) {
+                    if (global.pet_roster[_ldp].is_egg) continue;
+                    if (_ld_row == _ld_gc.loadout_cursor) {
+                        if (array_length(pet_stance_list(global.pet_roster[_ldp])) > 0) {
+                            array_push(_chips, { lbl: "STANCE", key: ord("B"), hot: false });
+                        }
+                        break;
+                    }
+                    _ld_row++;
+                }
+            }
             if (array_length(_chips) == 0) return;
+            break;
+        case "kb":
+            // Knucklebones: play is pure d-pad nav, but the H rules overlay had no
+            // touch path (07-24 audit). Same chip toggles it closed again.
+            array_push(_chips, { lbl: "RULES", key: ord("H"), hot: false });
             break;
         case "board":
             array_push(_chips, { lbl: "KNUCKLEBONES", key: ord("K"), hot: false });
@@ -1465,7 +1490,7 @@ function item_splash_sprite(base_name) {
         case "Whispergloves": return spr_item_art_whispergloves;
         case "Shadowstep Boots": return spr_item_art_shadowstep_boots;
         case "Colossus Stompers": return spr_item_art_colossus_stompers;
-        case "Medallion of Endurance": return spr_item_art_medallion_of_endurance;
+        case "Enduring Medallion": return spr_item_art_medallion_of_endurance;
         case "Warden's Eye": return spr_item_art_wardens_eye;
         case "Wraithbone Signet": return spr_item_art_wraithbone_signet;
         case "Bloodpact Ring": return spr_item_art_bloodpact_ring;
@@ -1546,12 +1571,14 @@ function ui_input_blocked() {
 function bairc_pad_menu_items(_pet, _level) {
     var _items = [];
     if (_level == 1) {
+        // ALL owned feeds, absolute-indexed (07-24 audit: the old min(6) cap +
+        // page-relative feedN tags hid feed types 7+ from pad/touch; the menu's
+        // height auto-scales, and the Step consumer reads feedabs<i> directly).
         var _owned = pet_feed_owned_list();
-        var _fmax  = min(6, array_length(_owned));   // matches the 1-6 keyboard range
-        for (var _i = 0; _i < _fmax; _i++) {
+        for (var _i = 0; _i < array_length(_owned); _i++) {
             var _cnt = pet_feed_pouch_count(_owned[_i].id);
             array_push(_items, { label: _owned[_i].name + "  x" + string(_cnt),
-                                 tag:   "bairc:feed" + string(_i + 1) });
+                                 tag:   "bairc:feedabs" + string(_i) });
         }
         if (array_length(_items) == 0) {
             array_push(_items, { label: "No feed on hand - visit Petra", tag: "" });
@@ -1573,6 +1600,9 @@ function bairc_pad_menu_items(_pet, _level) {
         }
         array_push(_items, { label: pet_named(_pet) ? "Rename (20 dust)" : "Name", tag: "bairc:N" });
     }
+    // Touch/pad path to the Tab detail popup (07-24: Tab-only = invisible on a
+    // phone; M hit it on the S25). Same popup the keyboard opens.
+    array_push(_items, { label: "Details", tag: "bairc:detail" });
     array_push(_items, { label: "Donate to the Garden", tag: "bairc:R" });
     return _items;
 }
@@ -6343,6 +6373,7 @@ function ui_draw_tutorial_tip() {
 function ui_draw_settings_overlay() {
     audio_settings_init();
     video_settings_init();
+    touch_settings_init();
 
     // Dim the screen behind the panel
     draw_set_alpha(0.78);
@@ -6351,8 +6382,8 @@ function ui_draw_settings_overlay() {
     draw_set_alpha(1.0);
 
     // Panel (tall enough for: Music, SFX, Hub Music, Dungeon Music, Menu Tick,
-    // Fullscreen, Tutorial Tips, Reset Tutorial)
-    var _pw = 840, _ph = 978;
+    // Fullscreen, Tutorial Tips, On-screen D-pad, Reset Tutorial)
+    var _pw = 840, _ph = 1050;
     var _px = GUI_CX - _pw / 2;
     var _py = GUI_CY - _ph / 2;
     draw_set_color(make_color_rgb(18, 22, 36));
@@ -6559,9 +6590,57 @@ function ui_draw_settings_overlay() {
     draw_set_color(c_white);
     draw_text(_tpx + _tpw / 2, _tpy + _tph / 2, _tut_on ? "ON" : "OFF");
 
-    // --- Eighth row: Reset Tutorial (re-show every tip) ---
-    var _rry  = _try + 72;
-    var _rsel = (global.settings_cursor == 7);
+    // --- Eighth row: On-screen D-pad (touch prefs, M 07-18 S25 batch). One row
+    //     does both jobs because the panel is height-capped at 1080: A/D nudges
+    //     the size (0.80-2.00, step 0.15), Enter toggles the pad entirely, and
+    //     the slider reads OFF while disabled. Persisted by touch_settings_save. ---
+    var _dry  = _try + 84;
+    var _dsel = (global.settings_cursor == 7);
+    if (_dsel) {
+        draw_set_alpha(0.20);
+        draw_set_color(make_color_rgb(80, 140, 220));
+        draw_rectangle(_px + 30, _dry - 21, _px + _pw - 30, _dry + 45, false);
+        draw_set_alpha(1.0);
+    }
+    draw_set_halign(fa_left);
+    draw_set_valign(fa_middle);
+    draw_set_font(fnt_ui);
+    draw_set_color(_dsel ? c_white : make_color_rgb(170, 180, 200));
+    draw_text(_px + 60, _dry + 12, (_dsel ? "> " : "  ") + "On-screen D-pad");
+    var _dby = _dry + 3;
+    if (global.touch_gamepad_off) {
+        // Disabled: OFF pill in the toggle-row style; Enter/tap re-enables.
+        draw_set_color(make_color_rgb(45, 50, 66));
+        draw_rectangle(_bar_x, _dby, _bar_x + 138, _dby + _bar_h + 6, false);
+        draw_set_color(_dsel ? make_color_rgb(120, 190, 255) : make_color_rgb(70, 85, 110));
+        draw_rectangle(_bar_x, _dby, _bar_x + 138, _dby + _bar_h + 6, true);
+        draw_set_halign(fa_center);
+        draw_set_color(c_white);
+        draw_text(_bar_x + 69, _dby + (_bar_h + 6) / 2, "OFF");
+        draw_set_halign(fa_left);
+        draw_set_font(fnt_ui_small);
+        draw_set_color(make_color_rgb(140, 150, 170));
+        draw_text(_bar_x + 138 + 24, _dby + (_bar_h + 6) / 2, "(Enter: turn back on)");
+        draw_set_font(fnt_ui);
+    } else {
+        // Enabled: size slider in the volume-row style, x0.80..x2.00.
+        var _dfrac = clamp((global.touch_pad_scale - TOUCH_PAD_SCALE_MIN)
+                         / (TOUCH_PAD_SCALE_MAX - TOUCH_PAD_SCALE_MIN), 0, 1);
+        draw_set_color(make_color_rgb(35, 42, 60));
+        draw_rectangle(_bar_x, _dby, _bar_x + _bar_w, _dby + _bar_h, false);
+        var _dfill = floor(_bar_w * _dfrac);
+        draw_set_color(_dsel ? make_color_rgb(90, 170, 235) : make_color_rgb(60, 110, 150));
+        if (_dfill > 0) draw_rectangle(_bar_x, _dby, _bar_x + _dfill, _dby + _bar_h, false);
+        draw_set_color(make_color_rgb(70, 85, 110));
+        draw_rectangle(_bar_x, _dby, _bar_x + _bar_w, _dby + _bar_h, true);
+        draw_set_halign(fa_left);
+        draw_set_color(c_white);
+        draw_text(_bar_x + _bar_w + 24, _dby + _bar_h / 2, "x" + string_format(global.touch_pad_scale, 1, 2));
+    }
+
+    // --- Ninth row: Reset Tutorial (re-show every tip) ---
+    var _rry  = _dry + 72;
+    var _rsel = (global.settings_cursor == 8);
     if (_rsel) {
         draw_set_alpha(0.20);
         draw_set_color(make_color_rgb(80, 140, 220));
@@ -6596,8 +6675,8 @@ function ui_draw_settings_overlay() {
         var _stmx   = device_mouse_x_to_gui(0);
         var _stmy   = device_mouse_y_to_gui(0);
         var _st_ys  = [ _row_y, _row_y + _row_h, _row_y + 2 * _row_h, _row_y + 3 * _row_h,
-                        _ky, _fry, _try, _rry ];
-        for (var _sri = 0; _sri < 8; _sri++) {
+                        _ky, _fry, _try, _dry, _rry ];
+        for (var _sri = 0; _sri < 9; _sri++) {
             var _sry = _st_ys[_sri];
             if (_stmx < _px + 30 || _stmx > _px + _pw - 30 || _stmy < _sry - 21 || _stmy > _sry + 45) continue;
             global.settings_cursor = _sri;
@@ -6610,6 +6689,16 @@ function ui_draw_settings_overlay() {
                 }
             } else if (_sri <= 3) {
                 touch_press(ord("D"));   // music selector: cycle to the next freed track
+            } else if (_sri == 7) {
+                // D-pad row: tap the track to set the size directly while the pad is
+                // on; tapping the rest of the row (or the OFF pill) toggles it.
+                if (!global.touch_gamepad_off && _stmx >= _bar_x && _stmx <= _bar_x + _bar_w) {
+                    var _dtgt = lerp(TOUCH_PAD_SCALE_MIN, TOUCH_PAD_SCALE_MAX,
+                                     clamp((_stmx - _bar_x) / _bar_w, 0, 1));
+                    touch_pad_scale_adjust(_dtgt - global.touch_pad_scale);
+                } else {
+                    touch_press(vk_enter);
+                }
             } else {
                 touch_press(vk_enter);   // Menu Tick / Fullscreen / Tutorial / Reset: act
             }
@@ -7689,16 +7778,23 @@ function ui_draw_character_menu() {
             var _ep_txt = player_epithet_text();
             var _ep_n   = epithet_unlocked_count();
             draw_set_font(fnt_ui_small);
+            // Touch (07-24 audit): tapping the title line cycles it (simulated T);
+            // the hint reads "tap" instead of "[T]" on a phone.
+            var _ep_hint_verb = (input_device() == 2) ? "tap:" : "[T]";
             if (_ep_txt != "") {
                 draw_set_color(make_color_rgb(205, 170, 235));
                 draw_text(_lvl_x, _content_y + 69, "\"" + _ep_txt + "\"");
                 draw_set_color(make_color_rgb(110, 100, 130));
-                draw_text(_lvl_x + string_width("\"" + _ep_txt + "\"") + 30, _content_y + 72, "[T] change title (" + string(_ep_n) + " earned)");
+                draw_text(_lvl_x + string_width("\"" + _ep_txt + "\"") + 30, _content_y + 72, _ep_hint_verb + " change title (" + string(_ep_n) + " earned)");
             } else {
                 draw_set_color(make_color_rgb(110, 100, 130));
                 draw_text(_lvl_x, _content_y + 72, (_ep_n > 0)
-                    ? "[T] choose a title (" + string(_ep_n) + " earned)"
+                    ? _ep_hint_verb + " choose a title (" + string(_ep_n) + " earned)"
                     : "Untitled - deeds in the dark earn titles");
+            }
+            if (input_device() == 2 && _ep_n > 0
+                && touch_tapped(_lvl_x - 12, _content_y + 54, _lvl_x + 600, _content_y + 105)) {
+                touch_press(ord("T"));
             }
             draw_set_font(fnt_ui);
             draw_set_color(c_white);
@@ -8357,6 +8453,23 @@ function ui_draw_character_menu() {
             ui_draw_key_legend(960, 1035, "W/S: Browse Pack   Enter: Equip   A/<-: Back to Slots   (click 'Sort' to reorder)");
         } else {
             ui_draw_key_legend(960, 1035, "W/S: Slots   Enter: Equip   U: Unequip   D/->: Browse Found Items");
+            // Touch UNEQUIP (07-24 audit): tap-users could swap gear via the picker
+            // but never EMPTY a slot - U had no touch path. Button only while the
+            // selected slot actually holds an item (the U handler's own condition),
+            // in the footer space the hidden key legend leaves free.
+            if (input_device() == 2 && global.inventory[_sel_inv] != undefined) {
+                draw_set_color(make_color_rgb(38, 24, 20));
+                draw_rectangle(810, 972, 1110, 1032, false);
+                draw_set_color(make_color_rgb(200, 120, 90));
+                draw_rectangle(810, 972, 1110, 1032, true);
+                draw_set_font(fnt_ui_small);
+                draw_set_valign(fa_middle);
+                draw_set_color(make_color_rgb(235, 190, 165));
+                draw_text(960, 1003, "UNEQUIP SLOT");
+                draw_set_valign(fa_top);
+                draw_set_font(fnt_ui);
+                if (touch_tapped(810, 972, 1110, 1032)) touch_press(ord("U"));
+            }
         }
         draw_set_halign(fa_left);
 

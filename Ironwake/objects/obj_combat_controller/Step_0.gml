@@ -567,6 +567,12 @@ if (player_turn) {
         if (nav_right()) selected_ability = wrap_index(selected_ability + 1, _ability_count);
     }
 
+    // D-pad End Turn reachability (07-24): DOWN focuses the END TURN button,
+    // UP or sideways drops back to the ability row. The confirm gate at the
+    // cast-attempt block below ends the turn while focused.
+    if (nav_down()) end_turn_focus = true;
+    if (nav_up() || nav_left() || nav_right()) end_turn_focus = false;
+
     // --- Tab key cycles through living enemies ---
     if (input_detail()) {
         var _living_count = 0;
@@ -724,7 +730,13 @@ if (player_turn) {
     }
 
     // --- Cast attempt (Space, Enter, click, or 1-4 hotkey) ---
-    if (input_confirm_alt() || input_confirm() || _should_cast) {
+    if (_should_cast) end_turn_focus = false;   // an explicit cast always retakes focus
+    if ((input_confirm() || input_confirm_alt()) && end_turn_focus) {
+        // Confirm while END TURN is focused: end the turn through the unchanged
+        // T-key handler (the simulated press is read next frame, like touch).
+        end_turn_focus = false;
+        touch_press(ord("T"));
+    } else if (input_confirm_alt() || input_confirm() || _should_cast) {
 
         var ab = player.abilities[selected_ability];
 

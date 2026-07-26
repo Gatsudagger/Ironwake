@@ -860,15 +860,67 @@ function make_elem_affix(element, rarity) {
     };
 }
 
+// affix_suffix_noun(suffix) - the meaningful noun in an "of X" affix suffix, with
+// the leading "of "/"of the " stripped: "of the Void" -> "Void", "of Charm" ->
+// "Charm". Used by the elemental name-fusion below (ITEM_NAMING_FUSION.md).
+function affix_suffix_noun(suffix) {
+    var _s = suffix;
+    if (string_pos("of the ", _s) == 1)  _s = string_delete(_s, 1, 7);
+    else if (string_pos("of ", _s) == 1) _s = string_delete(_s, 1, 3);
+    return _s;
+}
+
+// item_fused_elem_suffix(elem, last_affix) - the FUSED "of ..." phrase used when a
+// weapon's elemental rider lands on an item that already ends in a stat affix's
+// "of {noun}". Instead of an awkward double "of X of Y" we compose one lore
+// phrase (ITEM_NAMING_FUSION.md): a bespoke override for special element x stat
+// pairs, else "of {elementAdjective} {statNoun}".
+function item_fused_elem_suffix(elem, last_affix) {
+    var _elem_key = elem.element;   // "burn" / "frost" / "shock"
+    var _stat_key = variable_struct_exists(last_affix, "stat_name") ? last_affix.stat_name : "";
+
+    // 1) Bespoke override for a specific element x stat combo.
+    if (variable_global_exists("name_bespoke_pairs")) {
+        var _bp = global.name_bespoke_pairs;
+        for (var _i = 0; _i < array_length(_bp); _i++) {
+            if (_bp[_i].elem == _elem_key && _bp[_i].stat == _stat_key) return _bp[_i].phrase;
+        }
+    }
+
+    // 2) Composed "of {elementAdjective} {statNoun}". Adjective falls back to the
+    //    element's own display prefix if no combine-adjective is registered.
+    var _adj = elem.prefix;
+    if (variable_global_exists("name_combine_adj")
+        && variable_struct_exists(global.name_combine_adj, _elem_key)) {
+        _adj = variable_struct_get(global.name_combine_adj, _elem_key);
+    }
+    return "of " + _adj + " " + affix_suffix_noun(last_affix.suffix);
+}
+
 // apply_elemental_affix_to_item(item, elem) - store the affix, fold its name in
-// (prefix form, or suffix form if a stat affix already prefixed the name), and
-// bump gold value.
+// (prefix form, or FUSED suffix form if a stat affix already suffixed the name),
+// and bump gold value.
 function apply_elemental_affix_to_item(item, elem) {
     if (elem == undefined) return;
     item.elem_affix = elem;
     var _has_prefix = (variable_struct_exists(item, "affixes") && array_length(item.affixes) >= 2);
-    if (_has_prefix) item.name = item.name + " " + elem.suffix;
-    else             item.name = elem.prefix + " " + item.name;
+    if (_has_prefix) {
+        // The item already ends in the last stat affix's "of {noun}". Fuse the two
+        // into one lore phrase rather than stacking a second "of ..." (double-of).
+        var _affs      = item.affixes;
+        var _last      = _affs[array_length(_affs) - 1];
+        var _stat_tail = " " + _last.suffix;                // e.g. " of Charm"
+        var _nlen = string_length(item.name);
+        var _tlen = string_length(_stat_tail);
+        if (_nlen > _tlen && string_copy(item.name, _nlen - _tlen + 1, _tlen) == _stat_tail) {
+            item.name = string_copy(item.name, 1, _nlen - _tlen) + " " + item_fused_elem_suffix(elem, _last);
+        } else {
+            // Tail not where expected (unexpected) - fall back to the plain append.
+            item.name = item.name + " " + elem.suffix;
+        }
+    } else {
+        item.name = elem.prefix + " " + item.name;
+    }
     item.gold_value = round(item.gold_value * 1.25);
 }
 
@@ -9608,7 +9660,7 @@ function audio_sfx_assets() {
         // betrayal site; the asset stays in the project but never plays.)
         snd_equip, snd_buy, snd_pet_hatch,
         // Atmosphere pass section 4 - moment stingers (SOUND_ATMOSPHERE_SPEC.md)
-        snd_shrine_hum, snd_curse_whisper, snd_egg_stir, snd_hatch_burst,
+        snd_shrine_hum, snd_curse_whisper, snd_curse_laugh, snd_egg_stir, snd_hatch_burst,
         snd_hatch_build, snd_hatch_fanfare,   // Zelda-chest hatch crescendo (M 07-16)
         snd_awakened_cross, snd_bond_up, snd_extract, snd_boss_door,
         snd_betrayal, snd_quest_ready,
@@ -9627,7 +9679,7 @@ function audio_settings_init() {
     if (!variable_global_exists("music_volume")) global.music_volume = 0.7;
     if (!variable_global_exists("sfx_volume"))   global.sfx_volume   = 0.8;
     if (!variable_global_exists("settings_open"))        global.settings_open        = false;
-    if (!variable_global_exists("settings_cursor"))      global.settings_cursor      = 0;   // 0 Music, 1 SFX, 2 Hub Track, 3 Dungeon Track, 4 Menu Tick, 5 Fullscreen, 6 Tutorial, 7 Reset
+    if (!variable_global_exists("settings_cursor"))      global.settings_cursor      = 0;   // 0 Music, 1 SFX, 2 Hub Track, 3 Dungeon Track, 4 Menu Tick, 5 Fullscreen, 6 Tutorial, 7 D-pad, 8 Reset
     if (!variable_global_exists("settings_reset_flash")) global.settings_reset_flash = 0;
     if (!variable_global_exists("tutorial_enabled"))     global.tutorial_enabled     = true;
     if (!variable_global_exists("ui_tick_enabled"))      global.ui_tick_enabled      = true;   // the menu-nav glass ping
@@ -9707,6 +9759,7 @@ function audio_settings_adjust(which, delta) {
 function audio_settings_handle_input() {
     audio_settings_init();
     video_settings_init();
+    touch_settings_init();
 
     // Tick down the "tutorial reset" confirmation flash (drawn by the overlay).
     if (variable_global_exists("settings_reset_flash") && global.settings_reset_flash > 0) {
@@ -9714,10 +9767,10 @@ function audio_settings_handle_input() {
     }
 
     // Rows: 0 Music, 1 SFX, 2 Hub Music, 3 Dungeon Music, 4 Menu Tick,
-    //       5 Fullscreen, 6 Tutorial Tips, 7 Reset Tutorial.
-    if (nav_up())   global.settings_cursor = wrap_index(global.settings_cursor - 1, 8);
-    if (nav_down()) global.settings_cursor = wrap_index(global.settings_cursor + 1, 8);
-    global.settings_cursor = clamp(global.settings_cursor, 0, 7);
+    //       5 Fullscreen, 6 Tutorial Tips, 7 On-screen D-pad, 8 Reset Tutorial.
+    if (nav_up())   global.settings_cursor = wrap_index(global.settings_cursor - 1, 9);
+    if (nav_down()) global.settings_cursor = wrap_index(global.settings_cursor + 1, 9);
+    global.settings_cursor = clamp(global.settings_cursor, 0, 8);
 
     var _left    = nav_left();
     var _right   = nav_right();
@@ -9768,7 +9821,15 @@ function audio_settings_handle_input() {
                 audio_settings_save();
             }
         break;
-        case 7: // Reset Tutorial - clear seen flags so every tip shows again
+        case 7: // On-screen D-pad: A/D sizes it, Enter toggles it off/on entirely
+            if (_left)  { touch_pad_scale_adjust(-TOUCH_PAD_SCALE_STEP); audio_play_sound(snd_ui_move, 1, false); }
+            if (_right) { touch_pad_scale_adjust( TOUCH_PAD_SCALE_STEP); audio_play_sound(snd_ui_move, 1, false); }
+            if (_confirm) {
+                touch_gamepad_toggle();
+                audio_play_sound(global.touch_gamepad_off ? snd_ui_toggle_off : snd_ui_toggle_on, 1, false);
+            }
+        break;
+        case 8: // Reset Tutorial - clear seen flags so every tip shows again
             if (_left || _right || _confirm) {
                 tutorial_reset_all();
                 global.tutorial_enabled   = true;   // resetting implies you want the tips back

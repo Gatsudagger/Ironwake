@@ -534,12 +534,37 @@ if (player_turn && !combat_over) {
         // ability hit End Turn instead. 856..916 leaves a real 68px dead band.
         draw_set_color(make_color_rgb(20, 24, 36));
         draw_rectangle(750, 856, 1170, 916, false);
-        draw_set_color(_ap_col);
+        // D-pad focus (07-24): gold double border while END TURN is the d-pad's
+        // target (end_turn_focus, Step) so confirm-to-end-turn reads as armed.
+        draw_set_color(end_turn_focus ? make_color_rgb(255, 224, 120) : _ap_col);
         draw_rectangle(750, 856, 1170, 916, true);
+        if (end_turn_focus) draw_rectangle(753, 859, 1167, 913, true);
         draw_text(960, 872, "END TURN   " + string(player.energy) + " AP remaining");
         if (touch_tapped(750, 856, 1170, 916)) touch_press(ord("T"));
+        // Companion GUARD toggle (07-24 audit: the G call-off verb had no touch
+        // path). Same gate as the Step handler, so the button only exists when a
+        // guarded-stance Warrior companion is actually intercepting. Sits left of
+        // END TURN, clear of the d-pad gutter (its footprint is masked anyway).
+        var _gd_pet = pet_active();
+        if (_gd_pet != undefined && !_gd_pet.is_egg && _gd_pet.stage >= PET_STAGE_YOUNGADULT
+            && _gd_pet.archetype == PET_ARCH_COMBATANT && pet_stance(_gd_pet) == "guarded") {
+            var _gd_off = pet_guard_off(_gd_pet);
+            draw_set_color(make_color_rgb(20, 24, 36));
+            draw_rectangle(490, 856, 730, 916, false);
+            draw_set_color(_gd_off ? make_color_rgb(150, 120, 70) : make_color_rgb(120, 150, 190));
+            draw_rectangle(490, 856, 730, 916, true);
+            draw_set_font(fnt_ui_small);
+            draw_set_color(_gd_off ? make_color_rgb(215, 180, 120) : make_color_rgb(190, 210, 235));
+            draw_text(610, 872, _gd_off ? "GUARD: OFF" : "GUARD: ON");
+            draw_set_font(fnt_ui);
+            if (touch_tapped(490, 856, 730, 916)) touch_press(ord("G"));
+        }
     } else {
-        draw_set_color(_ap_col);
+        if (end_turn_focus) {
+            draw_set_color(make_color_rgb(255, 224, 120));
+            draw_rectangle(700, 936, 1220, 992, true);
+        }
+        draw_set_color(end_turn_focus ? make_color_rgb(255, 224, 120) : _ap_col);
         draw_text(960, 954, ((input_device() == 1) ? "RT: End Turn   " : "T: End Turn   ") + string(player.energy) + " AP remaining");
     }
     draw_set_font(-1);
