@@ -35,6 +35,15 @@ function input_device() {
     return global.input_last_device;
 }
 
+// True only where the on-screen d-pad exists at all: native mobile builds, or
+// the F9 dev lever that fakes touch on Windows. Desktop/HTML5 hide the Settings
+// d-pad row entirely (M 07-28: a d-pad size slider on Windows reads as
+// confusing and out of place).
+function touch_platform() {
+    if (os_type == os_android || os_type == os_ios) return true;
+    return variable_global_exists("debug_force_touch") && global.debug_force_touch;
+}
+
 // First connected pad slot (XInput 0-3, then DInput 4-11), -1 if none.
 function input_pad() {
     for (var _i = 0; _i < 12; _i++) if (gamepad_is_connected(_i)) return _i;

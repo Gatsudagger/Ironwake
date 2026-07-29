@@ -183,47 +183,14 @@ if (combatant_has_status_kind(player, "stun")) _px_draw += irandom_range(-3, 3);
 // Normalise display size: larger canvases (skins, female class sprites) scale down
 // to the same ~345px display height (native 1080p; was 230px at 720p).
 var _pscale = 345 / max(1, sprite_get_height(_pspr));
-// Ground shadow beneath the player so the sprite reads against busy backgrounds.
-// Baseline raised to ~0.94 of the canvas height so it sits at the model's feet
-// rather than at the empty bottom of the sprite canvas.
-ui_draw_ground_shadow(_px_draw + sprite_get_width(_pspr) * _pscale * 0.5,
-                      _py_draw + sprite_get_height(_pspr) * _pscale * 0.94,
-                      sprite_get_width(_pspr) * _pscale);
-draw_sprite_ext(_pspr, _pfr, _px_draw, _py_draw, _pscale, _pscale, 0, c_white, 1.0);
-if (player.hit_flash > 0) {
-    player.hit_flash--;
-    gpu_set_blendmode(bm_add);
-    draw_sprite_ext(_pspr, _pfr, _px_draw, _py_draw, _pscale, _pscale, 0, c_white, (player.hit_flash / 15.0) * 0.8);
-    gpu_set_blendmode(bm_normal);
-}
-// --- Cast windup FX (07-09 art track, code-first) ---
-// SPELL casts flare the caster in the school's color and shed rising school-tinted
-// motes for ~26 frames. Purely code-drawn (stateless motes derived from the timer),
-// no cast-frame art needed; melee attacks keep the slide lunge instead.
-if (cast_fx_timer > 0) {
-    cast_fx_timer--;
-    var _cfa = cast_fx_timer / 26.0;   // 1 at cast -> 0
-    gpu_set_blendmode(bm_add);
-    draw_sprite_ext(_pspr, _pfr, _px_draw, _py_draw, _pscale, _pscale, 0, cast_fx_color, 0.45 * _cfa);
-    var _cf_cx = _px_draw + sprite_get_width(_pspr) * _pscale * 0.5;
-    var _cf_fy = _py_draw + sprite_get_height(_pspr) * _pscale * 0.90;
-    for (var _cfi = 0; _cfi < 10; _cfi++) {
-        var _cfp = (_cfi * 137.5) mod 97;                          // per-mote phase scramble
-        var _cfx = _cf_cx + (((_cfp * 3.7) mod 120) - 60);
-        var _cfy = _cf_fy - (1 - _cfa) * (140 + (_cfp mod 90)) - (_cfp mod 40);
-        draw_set_alpha(0.5 * _cfa);
-        draw_set_color(merge_color(cast_fx_color, c_white, 0.35));
-        draw_rectangle(_cfx - 2, _cfy - 5, _cfx + 2, _cfy + 5, false);
-    }
-    draw_set_alpha(1.0);
-    gpu_set_blendmode(bm_normal);
-}
 
 // --- Active pet companion (Pets Phase 3: combat presence) --------------------
-// The equipped pet stands beside the player, facing east toward the enemies, idling via
-// its looping directional sprite. All archetypes are PRESENT (sells the "it's with you"
-// lore); only Combatant pets will act on their own turn (a later slice). Display height
-// grows with Stage so evolution reads at a glance. Bottom-centre origin -> draw at feet.
+// Drawn BEFORE the player's shadow + sprite (M 07-27 screenshot: a giant corrupt
+// bug drew OVER the player - the pet is the depth row BEHIND them, so it must
+// render first and let the player overlap it). The equipped pet stands beside
+// the player, facing east toward the enemies, idling via its looping directional
+// sprite. All archetypes are PRESENT (sells the "it's with you" lore); only
+// Combatant pets act on their own turn. Display height grows with Stage.
 var _pet_co = pet_active();
 if (_pet_co != undefined && !_pet_co.is_egg) {
     var _petspr = pet_sprite(_pet_co, "e");
@@ -292,6 +259,49 @@ if (_pet_co != undefined && !_pet_co.is_egg) {
         // the player's level block (ui_draw_combat_hud).
     }
 }
+
+// Ground shadow beneath the player so the sprite reads against busy backgrounds.
+// Sized by the VISIBLE model (sprite bbox), not the padded canvas - the canvas
+// width made the player's shadow read LARGER than a giant pet's (M 07-27
+// screenshot), because skin canvases are mostly empty margin. Baseline at ~0.94
+// of the canvas height so it sits at the model's feet.
+var _p_vis_l = sprite_get_bbox_left(_pspr) * _pscale;
+var _p_vis_w = (sprite_get_bbox_right(_pspr) - sprite_get_bbox_left(_pspr) + 1) * _pscale;
+ui_draw_ground_shadow(_px_draw + _p_vis_l + _p_vis_w * 0.5,
+                      _py_draw + sprite_get_height(_pspr) * _pscale * 0.94,
+                      _p_vis_w * 0.9);
+draw_sprite_ext(_pspr, _pfr, _px_draw, _py_draw, _pscale, _pscale, 0, c_white, 1.0);
+if (player.hit_flash > 0) {
+    player.hit_flash--;
+    gpu_set_blendmode(bm_add);
+    draw_sprite_ext(_pspr, _pfr, _px_draw, _py_draw, _pscale, _pscale, 0, c_white, (player.hit_flash / 15.0) * 0.8);
+    gpu_set_blendmode(bm_normal);
+}
+// --- Cast windup FX (07-09 art track, code-first) ---
+// SPELL casts flare the caster in the school's color and shed rising school-tinted
+// motes for ~26 frames. Purely code-drawn (stateless motes derived from the timer),
+// no cast-frame art needed; melee attacks keep the slide lunge instead.
+if (cast_fx_timer > 0) {
+    cast_fx_timer--;
+    var _cfa = cast_fx_timer / 26.0;   // 1 at cast -> 0
+    gpu_set_blendmode(bm_add);
+    draw_sprite_ext(_pspr, _pfr, _px_draw, _py_draw, _pscale, _pscale, 0, cast_fx_color, 0.45 * _cfa);
+    var _cf_cx = _px_draw + sprite_get_width(_pspr) * _pscale * 0.5;
+    var _cf_fy = _py_draw + sprite_get_height(_pspr) * _pscale * 0.90;
+    for (var _cfi = 0; _cfi < 10; _cfi++) {
+        var _cfp = (_cfi * 137.5) mod 97;                          // per-mote phase scramble
+        var _cfx = _cf_cx + (((_cfp * 3.7) mod 120) - 60);
+        var _cfy = _cf_fy - (1 - _cfa) * (140 + (_cfp mod 90)) - (_cfp mod 40);
+        draw_set_alpha(0.5 * _cfa);
+        draw_set_color(merge_color(cast_fx_color, c_white, 0.35));
+        draw_rectangle(_cfx - 2, _cfy - 5, _cfx + 2, _cfy + 5, false);
+    }
+    draw_set_alpha(1.0);
+    gpu_set_blendmode(bm_normal);
+}
+
+// (Pet companion block MOVED above the player draw - M 07-27 screenshot: it
+// rendered over the player. The pet is the depth row behind them.)
 // Looping status VFX (poison gas, flames, blind mist, ...) over the player sprite.
 if (variable_struct_exists(player, "status_effects")) {
     ui_draw_status_fx(_px_draw + sprite_get_width(_pspr) * _pscale * 0.5, _py_draw,
@@ -939,15 +949,55 @@ if (show_loot_screen) {
 
     // Item rows (staggered reveal: Step advances loot_reveal_shown + plays the
     // tick/stinger; rows past it stay hidden until their beat lands)
-    var _count   = array_length(global.run_items_found);
-    var _visible = min(8, _count);
+    var _item_n  = array_length(global.run_items_found);
+    var _lt_count = _item_n + array_length(loot_special_rows);   // (not `_count` - already declared earlier this event, GM2044)
+    var _visible = min(8, _lt_count);
     _visible = min(_visible, loot_reveal_shown);
 
     for (var _i = 0; _i < _visible; _i++) {
         var _idx = _i + loot_screen_scroll;
-        if (_idx >= _count) break;
-        var _item = global.run_items_found[_idx];
+        if (_idx >= _lt_count) break;
         var _iy   = 240 + _i * 98;
+
+        // SPECIAL rows (M 07-28 spectacle): pet eggs, the Banshee Bottle, and
+        // signature trinkets drawn gold-framed after the item rows.
+        if (_idx >= _item_n) {
+            var _sp = loot_special_rows[_idx - _item_n];
+            draw_set_alpha(0.6);
+            draw_set_color(make_color_rgb(40, 32, 12));
+            draw_rectangle(360, _iy - 8, 1560, _iy + 75, false);
+            draw_set_alpha(1.0);
+            draw_set_color(make_color_rgb(210, 175, 90));
+            draw_rectangle(360, _iy - 8, 1560, _iy + 75, true);
+            var _sp_spr = -1;
+            if (_sp.kind == "pet")          _sp_spr = pet_sprite(_sp.pet);
+            else if (_sp.kind == "banshee") _sp_spr = asset_get_index("spr_icon_banshee_bottle");
+            else if (_sp.kind == "trinket") _sp_spr = asset_get_index("spr_icon_trinket_" + _sp.id);
+            if (_sp_spr >= 0) {
+                // Origin-aware centering into the 66px icon box (pet art is
+                // often feet-anchored, so place by top-left + origin offset).
+                var _sp_w  = sprite_get_width(_sp_spr);
+                var _sp_h  = sprite_get_height(_sp_spr);
+                var _sp_sc = 66 / max(1, max(_sp_w, _sp_h));
+                draw_sprite_ext(_sp_spr, pet_anim_frame(_sp_spr),
+                    372 + (66 - _sp_w * _sp_sc) / 2 + sprite_get_xoffset(_sp_spr) * _sp_sc,
+                    _iy  + (66 - _sp_h * _sp_sc) / 2 + sprite_get_yoffset(_sp_spr) * _sp_sc,
+                    _sp_sc, _sp_sc, 0, c_white, 1);
+            }
+            draw_set_font(fnt_ui);
+            draw_set_halign(fa_left);
+            draw_set_color(make_color_rgb(255, 220, 130));
+            draw_text(456, _iy + 8, _sp.label);
+            draw_set_font(fnt_ui_small);
+            draw_set_color(make_color_rgb(205, 198, 170));
+            draw_text(456, _iy + 42, _sp.sub);
+            draw_set_halign(fa_right);
+            draw_set_color(make_color_rgb(235, 200, 110));
+            draw_text(1530, _iy + 8, _sp.tag);
+            draw_set_halign(fa_left);
+            continue;
+        }
+        var _item = global.run_items_found[_idx];
 
         // Row background
         draw_set_alpha(0.5);
@@ -1018,10 +1068,33 @@ if (show_loot_screen) {
         }
     }
 
+    // Fortune's Favor chip (POTENCY V2, Lucky Find T5): once-per-run reroll of
+    // the top listed equipment drop. Rect (1560,96)-(1870,168) MUST match the
+    // Step_0 hit-test. Greyed once spent or when the top row is a consumable.
+    if (trait_transcended("Lucky Find")) {
+        var _ffd_used = variable_global_exists("fortune_favor_used") && global.fortune_favor_used;
+        var _ffd_idx  = clamp(loot_screen_scroll, 0, max(0, _item_n - 1));
+        var _ffd_top  = (_item_n > 0 && loot_screen_scroll < _item_n) ? global.run_items_found[_ffd_idx] : undefined;
+        var _ffd_eq   = is_struct(_ffd_top) && variable_struct_exists(_ffd_top, "rarity")
+            && !(variable_struct_exists(_ffd_top, "item_category") && _ffd_top.item_category == "consumable");
+        var _ffd_on   = !_ffd_used && _ffd_eq;
+        draw_set_color(_ffd_on ? make_color_rgb(40, 34, 14) : make_color_rgb(18, 19, 26));
+        draw_rectangle(1560, 96, 1870, 168, false);
+        draw_set_color(_ffd_on ? make_color_rgb(210, 175, 90) : make_color_rgb(50, 52, 66));
+        draw_rectangle(1560, 96, 1870, 168, true);
+        draw_set_halign(fa_center);
+        draw_set_font(fnt_ui_small);
+        draw_set_color(_ffd_on ? make_color_rgb(235, 210, 140) : make_color_rgb(100, 104, 118));
+        draw_text(1715, 104, "FORTUNE'S FAVOR" + ((input_device() == 2) ? "" : "  [V]"));
+        draw_text(1715, 134, _ffd_used ? "spent this run"
+            : (_ffd_eq ? "reroll the top item" : "scroll to an equipment find"));
+        draw_set_halign(fa_left);
+    }
+
     // Scroll hint (only when list overflows)
     draw_set_halign(fa_center);
     draw_set_font(fnt_ui_small);
-    if (_count > 8 && input_device() != 2) {   // touch: drag-to-scroll, no keyboard hint
+    if (_lt_count > 8 && input_device() != 2) {   // touch: drag-to-scroll, no keyboard hint
         draw_set_color(make_color_rgb(120, 130, 150));
         draw_text_outline(960, 953, "W/S to scroll");
     }
@@ -1129,30 +1202,58 @@ if (combat_over) {
         _summary_y += 42;
     }
 
+    // IRONMAN settlement (SYSTEMS_RUN_RESUME.md): on defeat end_run(-1) already
+    // ran at the death frame - current_run_* are zeroed and run_count bumped -
+    // so the screen reads the last_run_* snapshot end_run left behind.
+    var _res_gold  = global.current_run_gold;
+    var _res_kills = global.current_run_kills;
+    var _res_kept  = floor(global.current_run_gold * 0.25);
+    var _res_runno = global.run_count + 1;
+    if (combat_result == -1 && defeat_settled) {
+        _res_gold  = global.last_run_gold;
+        _res_kills = global.last_run_kills;
+        _res_kept  = global.last_run_mercy_gold;
+        _res_runno = global.run_count;
+    }
+
     draw_set_color(c_yellow);
     var _gold_suffix = "";
     if (combat_result != 1) {
-        _gold_suffix = "  |  Kept: " + string(floor(global.current_run_gold * 0.25)) + "g";
+        _gold_suffix = "  |  Kept: " + string(_res_kept) + "g";
     }
     draw_text(_cx, _summary_y,
-        "Gold earned: " + string(global.current_run_gold) + "g" + _gold_suffix);
+        "Gold earned: " + string(_res_gold) + "g" + _gold_suffix);
     _summary_y += 42;
 
     draw_set_color(c_white);
-    draw_text(_cx, _summary_y, "Enemies defeated: " + string(global.current_run_kills));
+    draw_text(_cx, _summary_y, "Enemies defeated: " + string(_res_kills));
     _summary_y += 42;
 
     if (combat_result != 1) {
         draw_set_color(make_color_rgb(180, 150, 80));
-        draw_text(_cx, _summary_y, "Salvaged: " + string(floor(global.current_run_gold * 0.25)) + "g kept");
+        draw_text(_cx, _summary_y, "Salvaged: " + string(_res_kept) + "g kept");
         _summary_y += 42;
         if (variable_global_exists("last_run_mercy_item") && global.last_run_mercy_item != "") {
             draw_text(_cx, _summary_y, "Salvaged item: " + global.last_run_mercy_item);
             _summary_y += 42;
         }
+        // THE IRON VOW (SYSTEMS_IRON_VOW.md): say what this death cost.
+        if (variable_global_exists("vow_mode") && global.vow_mode > 0) {
+            if (vow_fallen) {
+                draw_set_color(make_color_rgb(220, 90, 80));
+                draw_text(_cx, _summary_y, (global.vow_mode == 2) ? "THE VOW WAS ABSOLUTE." : "THE IRON VOW IS BROKEN.");
+                _summary_y += 42;
+                draw_text(_cx, _summary_y, "This story ends here. Only a gravestone remains.");
+            } else {
+                draw_set_color(make_color_rgb(220, 150, 90));
+                draw_text(_cx, _summary_y, "The Vow holds - " + string(global.vow_lives_left)
+                    + ((global.vow_lives_left == 1) ? " life remains." : " lives remain."));
+            }
+            _summary_y += 42;
+        }
     }
 
-    draw_text(_cx, _summary_y, "Run " + string(global.run_count + 1));
+    draw_text(_cx, _summary_y, "Run " + string(_res_runno));
     _summary_y += 54;
 
     // Continue / return prompt - hidden when extract popup is open
@@ -1160,6 +1261,8 @@ if (combat_over) {
         draw_set_color(c_white);
         if (combat_result == 1) {
             draw_text(_cx, _summary_y, "Press R to continue");
+        } else if (vow_fallen) {
+            draw_text_outline(_cx, _summary_y, "Press R to let the story end");
         } else {
             draw_text_outline(_cx, _summary_y, "Press R to return to camp");
         }
@@ -1183,14 +1286,17 @@ if (combat_over) {
         draw_set_color(make_color_rgb(60, 80, 140));
         draw_rectangle(360, 360, 1560, 735, true);
 
+        var _bx_descent = variable_global_exists("descent_active") && global.descent_active;
         draw_set_halign(fa_center);
         draw_set_valign(fa_top);
         draw_set_font(fnt_ui_title);
-        draw_set_color(c_white);
-        draw_text(_cx, 396, "FLOOR " + string(global.current_floor) + " CLEARED");
+        draw_set_color(_bx_descent ? make_color_rgb(235, 200, 110) : c_white);
+        draw_text(_cx, 396, _bx_descent
+            ? ("THE DESCENT  -  FLOOR " + string(global.current_floor) + " CLEARED")
+            : ("FLOOR " + string(global.current_floor) + " CLEARED"));
         draw_set_font(fnt_ui);
         draw_set_color(make_color_rgb(160, 175, 210));
-        draw_text(_cx, 459, "What will you do?");
+        draw_text(_cx, 459, _bx_descent ? "Bank your haul, or dare the deeper dark?" : "What will you do?");
 
         // Extract button
         draw_set_color(make_color_rgb(16, 36, 16));
@@ -1199,10 +1305,12 @@ if (combat_over) {
         draw_rectangle(402, 510, 930, 623, true);
         draw_set_font(fnt_ui);
         draw_set_color(c_white);
-        draw_text_outline(666, 533, "[ E ]  Extract to Camp");
+        draw_text_outline(666, 533, _bx_descent ? "[ E ]  Retreat  -  Bank It All" : "[ E ]  Extract to Camp");
         draw_set_font(fnt_ui_small);
         draw_set_color(make_color_rgb(140, 210, 140));
-        draw_text(666, 579, "Keep all rewards  *  Safe");
+        draw_text(666, 579, _bx_descent
+            ? ("Everything found is kept  *  Floor " + string(global.current_floor) + " recorded")
+            : "Keep all rewards  *  Safe");
 
         // Continue button
         draw_set_color(make_color_rgb(30, 22, 10));
@@ -1214,7 +1322,9 @@ if (combat_over) {
         draw_text(1254, 533, "[ Enter ]  Descend Deeper");
         draw_set_font(fnt_ui_small);
         draw_set_color(make_color_rgb(220, 190, 120));
-        draw_text(1254, 579, "Floor " + string(global.current_floor + 1) + "  *  Harder enemies");
+        draw_text(1254, 579, _bx_descent
+            ? ("Floor " + string(global.current_floor + 1) + "  *  a random dungeon stirs  *  death drops the unbanked")
+            : ("Floor " + string(global.current_floor + 1) + "  *  Harder enemies"));
 
         // #3: armed button gets a bright double border + an explicit confirm line.
         if (boss_extract_arm == "extract") {
@@ -1289,10 +1399,10 @@ if (combat_over) {
                 boss_extract_arm  = "";
                 boss_extract_open = false;
                 audio_stop_sound(MusicBox1);
-                global.just_cleared_boss   = false;
-                global.floor_rooms_cleared = [];
-                global.current_floor++;
-                room_goto(rm_dungeon_floor);
+                // Floor advance (incl. THE DESCENT theme/Awakening roll) lives in
+                // run_floor_advance (scr_save) - shared with the floor-map resume
+                // popup so the two paths can never drift. (SYSTEMS_RUN_RESUME.md)
+                run_floor_advance();
                 exit;
             }
         }
@@ -1323,31 +1433,16 @@ if (combat_over) {
                 // Fires before the extract/continue/victory branch so the credit banks
                 // regardless of what the player does next.
                 floor_clear_credit(variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0);
-                // Phase 2 pets: a rare boss-egg drop (odds scale with Awakening, never
-                // guaranteed). The egg lands in Bairc's stable (persistent across runs);
-                // surfaced in the log now and as a hub notice on return.
-                var _boss_egg = pet_try_boss_egg(variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0);
-                if (_boss_egg != undefined) {
-                    array_push(combat_log, "Among the remains: a " + _boss_egg.name + " egg! Bairc can raise it.");
-                    global.pet_find_notice = "You recovered a " + _boss_egg.name + " egg - visit Bairc.";
-                }
-                // Signature gift trinket roll (Phase 4b, 3%): extraction-gated keepsake.
-                var _boss_tk = gift_try_boss_trinket();
-                if (_boss_tk != undefined) {
-                    array_push(combat_log, "Among the remains: " + _boss_tk.name + " - " + _boss_tk.flavor + ". A gift begging for its owner.");
-                }
-                if (global.current_floor >= 3) {
-                    // Banshee in a Bottle: guaranteed from each dungeon's FINAL boss,
-                    // first kill only (per save). Granted before end_run(1) so the
-                    // victory banking sweeps it straight into Maren's queue - a full
-                    // clear IS the successful extraction. (BANSHEE_BOTTLE_SPEC.md)
-                    banshee_init();
-                    var _bb_dung = variable_global_exists("selected_dungeon") ? global.selected_dungeon : "ashen_vault";
-                    if (!variable_struct_exists(global.banshee_boss_drops, _bb_dung)) {
-                        variable_struct_set(global.banshee_boss_drops, _bb_dung, true);
-                        global.banshee_carried++;
-                        array_push(combat_log, "Among the remains: a corked bottle, faintly wailing. A Banshee in a Bottle!");
-                    }
+                // Egg / trinket / banshee rolls moved to the VICTORY FRAME in
+                // Step (M 07-28) so they list on the loot screen as SPECIAL
+                // rows - same deterministic stream, granted before this branch.
+                // THE DESCENT never full-clears - every floor boss opens the
+                // retreat/descend choice instead (SYSTEMS_ENDLESS.md §3).
+                var _in_descent = variable_global_exists("descent_active") && global.descent_active;
+                if (global.current_floor >= 3 && !_in_descent) {
+                    // Banshee already granted at the victory frame; end_run(1)
+                    // sweeps it into Maren's queue - a full clear IS the
+                    // successful extraction. (BANSHEE_BOTTLE_SPEC.md)
                     // Full dungeon clear - end run as victory
                     global.just_cleared_boss = false;
                     global.floor_rooms_cleared = [];
@@ -1356,7 +1451,15 @@ if (combat_over) {
                     room_goto(rm_hub);
                     exit;
                 } else {
-                    // Floor boss cleared - open extract choice popup, don't advance yet
+                    // Floor boss cleared - open extract choice popup, don't advance yet.
+                    // IRONMAN resume (SYSTEMS_RUN_RESUME.md): bank the boss-granted
+                    // persistents (pet egg, Petra floor credit) NOW, then checkpoint
+                    // with extract_pending so a crash at this popup re-offers the
+                    // same choice on the floor map instead of re-fighting the boss
+                    // (a free re-fight would re-roll the egg and the loot).
+                    save_game();
+                    global.run_extract_pending = true;
+                    run_checkpoint_write(undefined);
                     boss_extract_open = true;
                     boss_extract_arm  = "";   // #3: nothing armed yet
                     exit;
@@ -1366,8 +1469,19 @@ if (combat_over) {
             room_goto(rm_dungeon_floor);
         } else {
             audio_stop_sound(_15_game_over_INITIAL);
-            end_run(-1);
-            room_goto(rm_hub);
+            // IRONMAN settlement: end_run(-1) already ran at the death frame
+            // (Step). Guarded, not removed, in case a future defeat path skips it.
+            if (!defeat_settled) end_run(-1);
+            // THE IRON VOW: a fallen character has no hub to return to - the
+            // save is already gone. Back to the title (the slot now shows the
+            // gravestone). Mirrors pause_quit_to_title's teardown.
+            if (vow_fallen) {
+                run_state_reset();
+                audio_stop_all();
+                room_goto(rm_title);
+            } else {
+                room_goto(rm_hub);
+            }
         }
     }
 }

@@ -92,6 +92,28 @@ Whenever adding or changing any on-screen text or UI element:
 - Measure with `string_width()`/`string_height()` against the actual box rect before placing — don't eyeball offsets
 - Too much time has been lost fixing minor overlap errors across pages; catch them before handoff
 
+### Scrollable Overflow + Visual-First UI (MANDATORY — added 2026-07-27, M's standing order)
+M: "prioritize making a submenu or pop up etc — anything with abundant information or
+lists — to be scrollable with a vertical scroll bar... we are working off too much text
+on screen and less ui/visual communication."
+1. **Any submenu/popup/panel with abundant info or a list that can overflow gets vertical
+   scrolling WITH a visible scroll bar** (track + proportional thumb). A "+N more" text
+   line with no way to reach the tail is a DEFECT (07-27: Bairc feed pouch).
+2. **Page/scroll size must come from the MEASURED visible row capacity**, never a
+   hard-coded row count — squeezed boxes shrink capacity and orphan the tail.
+3. **Prefer visual/interactive communication over walls of text**: layered inspection
+   (the Tab-on-creatures pattern), item cards shown visually, two-step screens with
+   animation + SFX for meaningful actions — instead of packing everything into one
+   text-dense panel.
+4. **Destructive or irreversible one-click actions (rerolls, spends, sacrifices) need a
+   confirmation step or secondary screen** (07-27: Dorn reforge one-clicked a legendary).
+5. **Every "checkout" confirm (store/shop/trainer spends) is a BORDERED OVERLAY POPUP
+   with CONFIRM/CANCEL buttons — never a question in the bottom notification line**
+   (M 07-27: "that should be our default with any checkout store/shop/trainer mechanic").
+   Use `ui_draw_checkout_confirm()` (scr_ui) and make the owning Step MODAL while armed
+   — swallow nav/tabs/row toggles so the pending action can't shift under the popup
+   (the inline-confirm transmute bug: Enter deselected the rune it was committing).
+
 ### Touch Compatibility Check (MANDATORY — added 2026-07-18, M's standing order)
 Ironwake ships on Android. M hit a **softlock** on the new whetstone shrine because it had
 NO touch controls — he only escaped via the on-screen d-pad. That must never happen again.

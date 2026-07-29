@@ -12,6 +12,23 @@
 //   Escape       - dismiss last-run summary or close history
 // =============================================================================
 
+// IRONMAN RUN-RESUME (SYSTEMS_RUN_RESUME.md) - FIRST and fully modal: a loaded
+// slot with an interrupted run FORCE-resumes into the dungeon. No abandon
+// option (M 07-28: declining would grant a mid-floor extract the game never
+// offers - quit-outs could bank loot that should be at risk). The hub is
+// locked behind the single RESUME button until the dive is re-entered.
+if (variable_global_exists("resume_pending") && global.resume_pending) {
+    if (input_confirm() || input_confirm_alt() || input_inject_take("resume:go")) {
+        global.resume_pending = false;
+        run_checkpoint_apply(global.resume_data);
+        global.resume_data = undefined;
+        audio_play_sound(snd_confirm_major, 1, false);
+        music_hub_stop();
+        room_goto(rm_dungeon_floor);
+    }
+    exit;
+}
+
 // ENDING SEQUENCE (WIN_STATE_SPEC.md) - fully modal; any confirm key advances the
 // stage. Stage layout mirrors the Draw block: intro, one per speaker, absence beat
 // (only if someone was betrayed), dawn, epilogue, credits, finale.
@@ -29,6 +46,56 @@ if (ending_active) {
         }
     }
     exit;
+}
+
+// AWAKENING BOOST POPUP (SYSTEMS_ENDLESS.md §1) - a first-time tier clear earned
+// a pick: raise ONE other dungeon's awakening by +1. Fully modal on hub arrival;
+// the ending sequence outranks it. Card geometry MUST match Draw_64.
+if (!variable_instance_exists(id, "awaken_boost_open")) {
+    awaken_boost_open       = false;
+    awaken_boost_cursor     = 0;
+    awaken_boost_done_timer = 0;
+    awaken_boost_done_name  = "";
+}
+if (!awaken_boost_open && variable_global_exists("awaken_boost_pending") && global.awaken_boost_pending
+    && (!variable_global_exists("ending_pending") || !global.ending_pending) && !ending_active) {
+    if (array_length(awaken_boost_options()) == 0) {
+        global.awaken_boost_pending = false;   // both other dungeons already capped
+    } else {
+        awaken_boost_open   = true;
+        awaken_boost_cursor = 0;
+        audio_play_sound(snd_sting_levelup, 1, false);
+    }
+}
+if (awaken_boost_open) {
+    var _ab_opts = awaken_boost_options();
+    if (array_length(_ab_opts) == 0) { awaken_boost_open = false; global.awaken_boost_pending = false; exit; }
+    if (nav_up()   || input_dir_left())  awaken_boost_cursor = wrap_index(awaken_boost_cursor - 1, array_length(_ab_opts));
+    if (nav_down() || input_dir_right()) awaken_boost_cursor = wrap_index(awaken_boost_cursor + 1, array_length(_ab_opts));
+    var _ab_go = input_confirm() || input_confirm_alt();
+    if (mouse_check_button_pressed(mb_left)) {
+        var _abmx = device_mouse_x_to_gui(0), _abmy = device_mouse_y_to_gui(0);
+        for (var _abi = 0; _abi < array_length(_ab_opts); _abi++) {
+            var _abx = 960 + (_abi - (array_length(_ab_opts) - 1) / 2) * 460 - 210;
+            if (_abmx >= _abx && _abmx < _abx + 420 && _abmy >= 420 && _abmy < 700) {
+                if (awaken_boost_cursor == _abi) _ab_go = true;   // second tap confirms
+                else awaken_boost_cursor = _abi;
+                break;
+            }
+        }
+    }
+    if (_ab_go && awaken_boost_cursor < array_length(_ab_opts)) {
+        var _ab_pick = _ab_opts[awaken_boost_cursor];
+        variable_struct_set(global.dungeon_ascendance_unlocked, _ab_pick.key, _ab_pick.cur + 1);
+        global.awaken_boost_pending = false;
+        global.awaken_boost_from    = "";
+        awaken_boost_open       = false;
+        awaken_boost_done_timer = 165;
+        awaken_boost_done_name  = _ab_pick.name + " rises to Awakening " + string(_ab_pick.cur + 1) + "!";
+        audio_play_sound(snd_confirm_major, 1, false);
+        save_game();
+    }
+    exit;   // modal - nothing else on the hub moves while the choice is up
 }
 
 // Onboarding coach-mark is modal - freeze the hub entirely while one is up. gc owns
@@ -79,13 +146,25 @@ if (input_hotkey("O") && !ui_input_blocked() && !show_history && !_dsel_open) {
 }
 
 // -----------------------------------------------------------------------------
+// 0a2. BOND DIALOGUE window (M 07-28): modal - any confirm/cancel/tap closes.
+// Runs BEFORE the pause block so Esc closes the dialogue, not opens the menu.
+// -----------------------------------------------------------------------------
+if (bond_dialog_open) {
+    if (input_confirm() || input_confirm_alt() || input_cancel()
+        || mouse_check_button_pressed(mb_left)) {
+        bond_dialog_open = false;
+    }
+    exit;
+}
+
+// -----------------------------------------------------------------------------
 // 0b. PAUSE / ESC MENU - Resume / Settings / Quit to Title
 // pause_menu_step() freezes the hub while the menu (or its Settings sub-screen)
 // is open; otherwise Esc opens it when nothing else is up.
 // -----------------------------------------------------------------------------
 if (pause_menu_step()) exit;
 if (input_cancel() && !ui_input_blocked() && !global.ui_overlay_latch
-    && !_dsel_open && !show_history && !show_last_run && !show_gallery) {
+    && !_dsel_open && !show_history && !show_last_run) {
     pause_menu_open();
     exit;
 }
@@ -102,22 +181,18 @@ if (instance_exists(obj_game_controller)) {
         if (nav_left()) {
             _gc_dsel.dungeon_select_cursor = wrap_index(_gc_dsel.dungeon_select_cursor - 1, 3);
             var _dk = _dungeon_keys[_gc_dsel.dungeon_select_cursor];
-            var _max_asc = variable_global_exists("dungeon_ascendance_unlocked")
-                ? variable_struct_get(global.dungeon_ascendance_unlocked, _dk) : 0;
-            _gc_dsel.dungeon_select_asc = min(_gc_dsel.dungeon_select_asc, _max_asc);
+            _gc_dsel.dungeon_select_asc = min(_gc_dsel.dungeon_select_asc, dungeon_max_ascendance(_dk));
         }
         if (nav_right()) {
             _gc_dsel.dungeon_select_cursor = wrap_index(_gc_dsel.dungeon_select_cursor + 1, 3);
             var _dk = _dungeon_keys[_gc_dsel.dungeon_select_cursor];
-            var _max_asc = variable_global_exists("dungeon_ascendance_unlocked")
-                ? variable_struct_get(global.dungeon_ascendance_unlocked, _dk) : 0;
-            _gc_dsel.dungeon_select_asc = min(_gc_dsel.dungeon_select_asc, _max_asc);
+            _gc_dsel.dungeon_select_asc = min(_gc_dsel.dungeon_select_asc, dungeon_max_ascendance(_dk));
         }
 
-        // Q/E change ascendance (capped by unlocked max for this dungeon)
+        // Q/E change ascendance (capped by unlocked max for this dungeon; post-win
+        // the shared A6+ endless frontier applies - dungeon_max_ascendance).
         var _cur_dk   = _dungeon_keys[_gc_dsel.dungeon_select_cursor];
-        var _cur_max_asc = variable_global_exists("dungeon_ascendance_unlocked")
-            ? variable_struct_get(global.dungeon_ascendance_unlocked, _cur_dk) : 0;
+        var _cur_max_asc = dungeon_max_ascendance(_cur_dk);
         if (input_tab_prev()) {
             _gc_dsel.dungeon_select_asc = max(0, _gc_dsel.dungeon_select_asc - 1);
         }
@@ -125,10 +200,44 @@ if (instance_exists(obj_game_controller)) {
             _gc_dsel.dungeon_select_asc = min(_cur_max_asc, _gc_dsel.dungeon_select_asc + 1);
         }
 
+        // THE DESCENT toggle (SYSTEMS_ENDLESS.md §3) - post-win only. [V] arms
+        // descent mode, [G] cycles the hardcore severity while armed; the banner
+        // at (330,972)-(1250,1050) / severity chip (1270,972)-(1590,1050) is
+        // tappable (geometry MUST match the hub Draw_64 banner).
+        if (variable_global_exists("ironwake_stands") && global.ironwake_stands) {
+            if (!variable_global_exists("descent_pending"))  global.descent_pending  = false;
+            if (!variable_global_exists("descent_hardcore")) global.descent_hardcore = 0;
+            var _dsc_tap = false, _dsc_hc_tap = false;
+            if (mouse_check_button_pressed(mb_left)) {
+                var _dmx = device_mouse_x_to_gui(0), _dmy = device_mouse_y_to_gui(0);
+                _dsc_tap    = (_dmx >= 330  && _dmx < 1250 && _dmy >= 972 && _dmy < 1050);
+                _dsc_hc_tap = (_dmx >= 1270 && _dmx < 1590 && _dmy >= 972 && _dmy < 1050);
+            }
+            if (input_hotkey("V") || _dsc_tap) {
+                global.descent_pending = !global.descent_pending;
+                audio_play_sound(snd_npc_confirm, 1, false);
+            }
+            if ((input_hotkey("G") || _dsc_hc_tap) && global.descent_pending) {
+                global.descent_hardcore = (global.descent_hardcore + 1) mod 3;
+                audio_play_sound(snd_npc_confirm, 1, false);
+            }
+        }
+
         // Enter: confirm dungeon + ascendance, open loadout
         if (input_confirm() || input_confirm_alt()) {
             global.selected_dungeon    = _dungeon_keys[_gc_dsel.dungeon_select_cursor];
             global.selected_ascendance = _gc_dsel.dungeon_select_asc;
+            // THE DESCENT overrides the choice: random first theme, floor-1 tier.
+            if (variable_global_exists("descent_pending") && global.descent_pending
+                && variable_global_exists("ironwake_stands") && global.ironwake_stands) {
+                global.descent_pending     = false;   // one-shot arm
+                global.descent_active      = true;
+                global.descent_floor       = 1;
+                global.selected_dungeon    = _dungeon_keys[irandom(2)];
+                global.selected_ascendance = 5.5;     // floor 1 = A5 + 0.5
+            } else {
+                global.descent_active = false;
+            }
             _gc_dsel.dungeon_select_open = false;
 
             // Open loadout (same logic as the Enter Dungeon handler below)
@@ -258,40 +367,62 @@ if (instance_exists(obj_game_controller)) {
             exit;
         }
 
-        // --- Mastery pick modal (expression #2). While open it owns all input. ---
-        if (_gc_ld.mastery_pick_open) {
-            if (input_cancel()) { _gc_ld.mastery_pick_open = false; exit; }
-            if (nav_up() || nav_down()) _gc_ld.mastery_pick_cursor = 1 - _gc_ld.mastery_pick_cursor;
+        // --- Talent-web view (SYSTEMS_TALENT_WEBS.md). While open it owns all
+        //     input. W/S walk 6 nodes then SAVE & CLOSE then CLOSE (full
+        //     keyboard/pad parity - M 07-27), A/D hop branch (or between the
+        //     two buttons), Enter STAGES/unstages a node or fires a button.
+        //     Staged picks only become permanent on SAVE & CLOSE; CLOSE/Esc
+        //     discards them. Touch taps are hit-tested in Draw_64. ---
+        if (_gc_ld.web_view_open) {
+            if (input_cancel()) {
+                if (array_length(_gc_ld.web_view_staged) > 0) notification = "Unsaved weaves discarded.";
+                _gc_ld.web_view_open = false;
+                exit;
+            }
+            var _wv_ab = undefined;
+            for (var _wvi = 0; _wvi < _ld_pool_sz; _wvi++) {
+                if (_ld_pool[_wvi].name == _gc_ld.web_view_ability) { _wv_ab = _ld_pool[_wvi]; break; }
+            }
+            if (_wv_ab == undefined) { _gc_ld.web_view_open = false; exit; }
+            if (nav_down()) _gc_ld.web_view_cursor = wrap_index(_gc_ld.web_view_cursor + 1, 8);
+            if (nav_up())   _gc_ld.web_view_cursor = wrap_index(_gc_ld.web_view_cursor - 1, 8);
+            if (nav_left() || nav_right()) {
+                if (_gc_ld.web_view_cursor < 6) _gc_ld.web_view_cursor = wrap_index(_gc_ld.web_view_cursor + 3, 6);
+                else _gc_ld.web_view_cursor = (_gc_ld.web_view_cursor == 6) ? 7 : 6;
+            }
             if (input_confirm()) {
-                var _mp_ab = undefined;
-                for (var _mpi = 0; _mpi < _ld_pool_sz; _mpi++) {
-                    if (_ld_pool[_mpi].name == _gc_ld.mastery_pick_ability) { _mp_ab = _ld_pool[_mpi]; break; }
+                if (_gc_ld.web_view_cursor == 6) {
+                    // SAVE & CLOSE - commit every staged node.
+                    var _wv_stn = array_length(_gc_ld.web_view_staged);
+                    if (_wv_stn > 0) {
+                        var _wv_cres = ability_web_commit_staged(_wv_ab.name, _gc_ld.web_view_staged);
+                        if (_wv_cres == "") {
+                            notification = _wv_ab.name + ": " + string(_wv_stn) + " node" + ((_wv_stn == 1) ? "" : "s") + " woven (permanent).";
+                            if (room == rm_hub || room == rm_character_select) save_game();
+                        } else notification = _wv_cres;
+                    }
+                    _gc_ld.web_view_open = false;
+                } else if (_gc_ld.web_view_cursor == 7) {
+                    // CLOSE - back out, nothing committed.
+                    if (array_length(_gc_ld.web_view_staged) > 0) notification = "Unsaved weaves discarded.";
+                    _gc_ld.web_view_open = false;
+                } else {
+                    var _wv_order = ["p1", "p2", "pk", "t1", "t2", "tk"];
+                    var _wv_id    = _wv_order[_gc_ld.web_view_cursor];
+                    var _wv_res   = ability_web_stage_toggle(_wv_ab.name, _wv_id, _gc_ld.web_view_staged);
+                    if (_wv_res != "") notification = _wv_res;
                 }
-                if (_mp_ab != undefined) {
-                    var _mp_opts = ability_mastery_options(_mp_ab);
-                    var _mp_res  = ability_mastery_pick(_mp_ab.name, _mp_opts[_gc_ld.mastery_pick_cursor].id);
-                    if (_mp_res == "") {
-                        notification = _mp_ab.name + " mastered: " + _mp_opts[_gc_ld.mastery_pick_cursor].label
-                            + ((ability_mastery_pending(_mp_ab.name) > 0) ? "   (another notch awaits)" : "");
-                        if (room == rm_hub || room == rm_character_select) save_game();
-                    } else notification = _mp_res;
-                }
-                _gc_ld.mastery_pick_open = false;
             }
             exit;
         }
-        // M on a pool row with an unspent notch opens the pick modal.
+        // M on a pool row opens its talent web (always - progress is visible
+        // even with nothing to spend).
         if (input_hotkey("M") && _gc_ld.loadout_tab == 0 && _gc_ld.loadout_cursor < _ld_pool_sz) {
-            var _mn = _ld_pool[_gc_ld.loadout_cursor].name;
-            if (ability_mastery_pending(_mn) > 0) {
-                _gc_ld.mastery_pick_open    = true;
-                _gc_ld.mastery_pick_ability = _mn;
-                _gc_ld.mastery_pick_cursor  = 0;
-                exit;
-            } else {
-                notification = _mn + ": " + string(ability_casts(_mn)) + " casts - next notch at "
-                    + ((ability_notches_earned(_mn) < 1) ? "25" : ((ability_notches_earned(_mn) < 2) ? "75" : "max (2/2)"));
-            }
+            _gc_ld.web_view_open    = true;
+            _gc_ld.web_view_ability = _ld_pool[_gc_ld.loadout_cursor].name;
+            _gc_ld.web_view_cursor  = 0;
+            _gc_ld.web_view_staged  = [];
+            exit;
         }
         // Companion-tab pet-kit detail popup (Tab). While up, only Tab/Esc closes it.
         if (_gc_ld.companion_detail_open) {
@@ -635,7 +766,7 @@ if (instance_exists(obj_game_controller)) {
     var _gc_hub = instance_find(obj_game_controller, 0);
 
     // T: open stash screen (not while perm alloc or gallery is open)
-    if (!_gc_hub.perm_alloc_open && !show_gallery && input_hotkey("T")) {
+    if (!_gc_hub.perm_alloc_open && input_hotkey("T")) {
         _gc_hub.stash_mode_open  = true;
         _gc_hub.stash_mode_index = 0;
         _gc_hub.stash_mode_side  = 0;
@@ -734,146 +865,10 @@ if (show_history) {
 
 
 // -----------------------------------------------------------------------------
-// 0c. ITEM GALLERY OVERLAY - intercepts input while open. G no longer OPENS it
-// from the hub (M 2026-07-06): the Item Codex lives in the Journal now
-// (J -> Item Codex -> Enter). G still closes an open gallery for old muscle
-// memory; Esc works too.
+// 0c. ITEM GALLERY - moved to obj_game_controller 07-28 (codex_* vars) so the
+// codex opens mid-run too. While it is open, ui_input_blocked() reports true
+// and everything below is frozen by the guards that already consult it.
 // -----------------------------------------------------------------------------
-var _loadout_is_open_step = instance_exists(obj_game_controller)
-    && instance_find(obj_game_controller, 0).loadout_open;
-if (!_loadout_is_open_step && input_hotkey("G") && show_gallery) {
-    show_gallery        = false;
-    gallery_detail_item = undefined;
-}
-
-if (show_gallery) {
-    // Build master item list (same logic as Draw does - needed for scroll bounds)
-    var _gal_all = [];
-    if (variable_global_exists("loot_table_common"))    { for (var _gi = 0; _gi < array_length(global.loot_table_common);    _gi++) array_push(_gal_all, global.loot_table_common[_gi]);    }
-    if (variable_global_exists("loot_table_uncommon"))  { for (var _gi = 0; _gi < array_length(global.loot_table_uncommon);  _gi++) array_push(_gal_all, global.loot_table_uncommon[_gi]);  }
-    if (variable_global_exists("loot_table_rare"))      { for (var _gi = 0; _gi < array_length(global.loot_table_rare);      _gi++) array_push(_gal_all, global.loot_table_rare[_gi]);      }
-    if (variable_global_exists("loot_table_legendary")) { for (var _gi = 0; _gi < array_length(global.loot_table_legendary); _gi++) array_push(_gal_all, global.loot_table_legendary[_gi]); }
-    var _gal_count    = array_length(_gal_all);
-    var _gal_visible  = 12;
-    var _gal_max_scroll = max(0, _gal_count - _gal_visible);
-
-    if (nav_up()) {
-        if (gallery_cursor > 0) {
-            gallery_cursor--;
-            if (gallery_cursor < gallery_scroll) gallery_scroll = gallery_cursor;
-        }
-    }
-    if (nav_down()) {
-        if (gallery_cursor < _gal_count - 1) {
-            gallery_cursor++;
-            if (gallery_cursor >= gallery_scroll + _gal_visible) gallery_scroll = gallery_cursor - _gal_visible + 1;
-        }
-    }
-    // Mouse wheel scrolling
-    var _wheel = mouse_wheel_up() - mouse_wheel_down();
-    if (_wheel != 0) {
-        gallery_scroll = clamp(gallery_scroll - _wheel, 0, _gal_max_scroll);
-    }
-
-    // Enter/click on a discovered item opens detail
-    if ((input_confirm())
-        && gallery_cursor >= 0 && gallery_cursor < _gal_count) {
-        var _sel = _gal_all[gallery_cursor];
-        var _disc = false;
-        if (variable_global_exists("items_discovered")) {
-            for (var _di = 0; _di < array_length(global.items_discovered); _di++) {
-                if (global.items_discovered[_di] == _sel.name) { _disc = true; break; }
-            }
-        }
-        if (_disc) {
-            gallery_detail_item = (gallery_detail_item == _sel) ? undefined : _sel;
-        }
-    }
-
-    // Mouse click on gallery rows
-    if (mouse_check_button_pressed(mb_left)) {
-        var _gmx = device_mouse_x_to_gui(0);
-        var _gmy = device_mouse_y_to_gui(0);
-        // List rows: x=30-1095, y=120+i*69, h=63
-        for (var _gri = 0; _gri < _gal_visible; _gri++) {
-            var _gry = 120 + _gri * 69;
-            if (_gmx >= 30 && _gmx < 1095 && _gmy >= _gry && _gmy < _gry + 63) {
-                var _abs_i = gallery_scroll + _gri;
-                if (_abs_i < _gal_count) {
-                    gallery_cursor = _abs_i;
-                    var _sel2 = _gal_all[_abs_i];
-                    var _disc2 = false;
-                    if (variable_global_exists("items_discovered")) {
-                        for (var _di2 = 0; _di2 < array_length(global.items_discovered); _di2++) {
-                            if (global.items_discovered[_di2] == _sel2.name) { _disc2 = true; break; }
-                        }
-                    }
-                    if (_disc2) {
-                        gallery_detail_item = (gallery_detail_item == _sel2) ? undefined : _sel2;
-                    } else {
-                        gallery_detail_item = undefined;
-                    }
-                }
-                break;
-            }
-        }
-        // Close detail panel X button: x=1853-1883, y=108-138
-        if (_gmx >= 1853 && _gmx < 1883 && _gmy >= 108 && _gmy < 138 && gallery_detail_item != undefined) {
-            gallery_detail_item = undefined;
-        }
-    }
-
-    // Alt+click on a discovered gallery row opens the comparison panel
-    if (mouse_check_button_pressed(mb_left) && keyboard_check(vk_alt)) {
-        var _gax = device_mouse_x_to_gui(0);
-        var _gay = device_mouse_y_to_gui(0);
-        for (var _gari = 0; _gari < _gal_visible; _gari++) {
-            var _gary = 120 + _gari * 69;
-            if (_gax >= 30 && _gax < 1095 && _gay >= _gary && _gay < _gary + 63) {
-                var _gabs = gallery_scroll + _gari;
-                if (_gabs < _gal_count) {
-                    var _gcit = _gal_all[_gabs];
-                    var _gcdisc = false;
-                    if (variable_global_exists("items_discovered")) {
-                        for (var _gdi = 0; _gdi < array_length(global.items_discovered); _gdi++) {
-                            if (global.items_discovered[_gdi] == _gcit.name) { _gcdisc = true; break; }
-                        }
-                    }
-                    if (_gcdisc && variable_struct_exists(_gcit, "slot")
-                            && instance_exists(obj_game_controller)) {
-                        var _gcgc = instance_find(obj_game_controller, 0);
-                        _gcgc.comparison_item     = _gcit;
-                        _gcgc.comparison_equipped = undefined;
-                        if (variable_global_exists("inventory")) {
-                            var _gcsi = comparison_target_index(_gcit);   // ring-aware target
-                            if (_gcsi >= 0 && _gcsi < array_length(global.inventory)) {
-                                _gcgc.comparison_equipped = global.inventory[_gcsi];
-                            }
-                        }
-                        _gcgc.comparison_open = true;
-                    }
-                }
-                break;
-            }
-        }
-    }
-
-    if (input_cancel()) {
-        if (instance_exists(obj_game_controller)
-                && instance_find(obj_game_controller, 0).comparison_open) {
-            var _gcesc = instance_find(obj_game_controller, 0);
-            _gcesc.comparison_open     = false;
-            _gcesc.comparison_item     = undefined;
-            _gcesc.comparison_equipped = undefined;
-        } else if (gallery_detail_item != undefined) {
-            gallery_detail_item = undefined;
-        } else {
-            show_gallery = false;
-        }
-    }
-
-    exit; // block NPC navigation while gallery is open
-}
 
 
 // -----------------------------------------------------------------------------
@@ -983,15 +978,24 @@ if (input_confirm() || input_confirm_alt()) {
 // message is the ask. Auto-gated by the ui_input_blocked() exit above, so it
 // never fires while a shop screen is open.
 // -----------------------------------------------------------------------------
-if (input_hotkey("B") && selected_npc < array_length(affinity_npc_ids()) && !show_history && !show_gallery) {
+if (input_hotkey("B") && selected_npc < array_length(affinity_npc_ids()) && !show_history) {
     var _bond_ids = affinity_npc_ids();
     var _bond_id  = _bond_ids[selected_npc];
     if (affinity_gate_ready(_bond_id)) {
         var _adv = affinity_try_advance(_bond_id);
+        // M 07-28 rework: the whole exchange happens in ONE bordered dialogue
+        // window at the NPC - the ask, the progress reminder, and the crossing
+        // (a FINISHED favor now turns in right here; no tavern-board trip).
+        bond_dialog_open = true;
+        bond_dialog_npc  = _bond_id;
         if (_adv == "") {
-            notification = npc_names[selected_npc] + ": your bond deepens to " + affinity_tier_name(_bond_id) + ".";
+            bond_dialog_title = npc_names[selected_npc] + "  -  " + affinity_tier_name(_bond_id);
+            bond_dialog_body  = "Something settles between you - warmer than words.\n\nYour bond with "
+                + npc_names[selected_npc] + " deepens to " + affinity_tier_name(_bond_id) + ".";
+            audio_play_sound(snd_quest_ready, 1, false);
         } else {
-            notification = _adv;   // gate-quest ask / progress reminder
+            bond_dialog_title = npc_names[selected_npc];
+            bond_dialog_body  = _adv;   // gate-quest ask / progress reminder
         }
         if (room == rm_hub || room == rm_character_select) save_game();
     }
@@ -1005,7 +1009,7 @@ if (input_hotkey("B") && selected_npc < array_length(affinity_npc_ids()) && !sho
 // 3. ENTER DUNGEON - dungeon button must be highlighted (the slot AFTER the last NPC)
 // Opens dungeon selection overlay; loadout opens after dungeon is chosen.
 // -----------------------------------------------------------------------------
-if (!show_gallery && selected_npc == array_length(npc_names)
+if (selected_npc == array_length(npc_names)
     && (input_confirm() || input_confirm_alt())) {
     if (instance_exists(obj_game_controller)) {
         var _gc_e = instance_find(obj_game_controller, 0);
@@ -1022,9 +1026,7 @@ if (!show_gallery && selected_npc == array_length(npc_names)
                 if (_dungeon_keys2[_dki] == _cur_dk2) { _gc_e.dungeon_select_cursor = _dki; break; }
             }
             var _cur_asc2 = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
-            var _max_asc2 = variable_global_exists("dungeon_ascendance_unlocked")
-                ? variable_struct_get(global.dungeon_ascendance_unlocked, _cur_dk2) : 0;
-            _gc_e.dungeon_select_asc  = min(_cur_asc2, _max_asc2);
+            _gc_e.dungeon_select_asc  = min(_cur_asc2, dungeon_max_ascendance(_cur_dk2));
             _gc_e.dungeon_select_open = true;
             // Onboarding: first time the dungeon/awakening selector opens.
             tutorial_try_show("ascendance");
@@ -1138,9 +1140,7 @@ if (mouse_check_button_pressed(mb_left)) {
                     if (_dkeys3[_dki3] == _cur_dk3) { _gc_e2.dungeon_select_cursor = _dki3; break; }
                 }
                 var _cur_asc3 = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
-                var _max_asc3 = variable_global_exists("dungeon_ascendance_unlocked")
-                    ? variable_struct_get(global.dungeon_ascendance_unlocked, _cur_dk3) : 0;
-                _gc_e2.dungeon_select_asc  = min(_cur_asc3, _max_asc3);
+                _gc_e2.dungeon_select_asc  = min(_cur_asc3, dungeon_max_ascendance(_cur_dk3));
                 _gc_e2.dungeon_select_open = true;
                 // Onboarding: first time the dungeon/awakening selector opens.
                 tutorial_try_show("ascendance");

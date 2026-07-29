@@ -816,8 +816,7 @@ if (_gc_ds != noone && _gc_ds.dungeon_select_open) {
         var _di  = _draw_order[_doi];
         var _dkey = _dungeons[_di];
         var _dcol = _dung_color[_di];
-        var _unlocked_asc = variable_global_exists("dungeon_ascendance_unlocked")
-            ? variable_struct_get(global.dungeon_ascendance_unlocked, _dkey) : 0;
+        var _unlocked_asc = dungeon_max_ascendance(_dkey);   // A6+ frontier post-win
 
         var _is_center = (_di == _cursor);
         var _is_left   = (_di == _left_i && !_is_center);
@@ -1124,9 +1123,12 @@ if (_gc_ds != noone && _gc_ds.dungeon_select_open) {
     draw_set_color(make_color_rgb(60, 64, 90));
     draw_line(_fxx, _fxy, _fx_x2 - 21, _fxy);
     _fxy += 15;
-    var _fx_unl = variable_global_exists("dungeon_ascendance_unlocked")
-        ? variable_struct_get(global.dungeon_ascendance_unlocked, _fx_dkey) : 0;
-    for (var _ft = 0; _ft <= 5; _ft++) {
+    var _fx_unl = dungeon_max_ascendance(_fx_dkey);   // A6+ frontier post-win
+    // Post-win the ladder is endless: show a 6-row window that keeps the
+    // selected tier visible (pre-win this is exactly the old A0-A5 table).
+    var _ft_lo = clamp(_fx_a - 3, 0, max(0, _fx_unl - 5));
+    for (var _fti = 0; _fti <= 5; _fti++) {
+        var _ft = _ft_lo + _fti;
         var _ft_sel  = (_ft == _fx_a);
         var _ft_lock = (_ft > _fx_unl);
         if (_ft_sel) {
@@ -1155,6 +1157,46 @@ if (_gc_ds != noone && _gc_ds.dungeon_select_open) {
     draw_set_color(make_color_rgb(75, 82, 110));
     draw_set_valign(fa_bottom);
     ui_draw_key_legend(GUI_CX, 1073, "A / D: Cycle Dungeon     Q / E: Awakening     Enter: Confirm     Esc: Back");
+    // -------------------------------------------------------------------------
+    // THE DESCENT banner (SYSTEMS_ENDLESS.md §3) - post-win only. Rects MUST
+    // match the Step_0 hit-tests: banner (330,972)-(1250,1050), severity chip
+    // (1270,972)-(1590,1050). [V] arms it; [G]/tap cycles severity while armed.
+    // -------------------------------------------------------------------------
+    if (variable_global_exists("ironwake_stands") && global.ironwake_stands) {
+        var _dsb_on  = variable_global_exists("descent_pending") && global.descent_pending;
+        var _dsb_hc  = variable_global_exists("descent_hardcore") ? global.descent_hardcore : 0;
+        var _dsb_best = variable_global_exists("descent_best") ? global.descent_best : 0;
+        if (!variable_instance_exists(id, "descent_pulse")) descent_pulse = 0;
+        descent_pulse += 0.08;
+        var _dsb_p = 0.5 + 0.5 * sin(descent_pulse);
+        draw_set_color(_dsb_on ? make_color_rgb(38, 20, 44) : make_color_rgb(14, 15, 24));
+        draw_rectangle(330, 972, 1250, 1050, false);
+        draw_set_color(_dsb_on ? merge_color(make_color_rgb(200, 130, 255), c_white, _dsb_p * 0.5) : make_color_rgb(70, 60, 96));
+        draw_rectangle(330, 972, 1250, 1050, true);
+        draw_set_halign(fa_left);
+        draw_set_font(fnt_ui);
+        draw_set_color(_dsb_on ? make_color_rgb(230, 200, 255) : make_color_rgb(150, 140, 175));
+        draw_text(354, 981, _dsb_on ? "THE DESCENT  -  ARMED" : "THE DESCENT" + ((input_device() == 2) ? "" : "   [V]"));
+        draw_set_font(fnt_ui_small);
+        draw_set_color(make_color_rgb(140, 135, 165));
+        draw_text(354, 1017, _dsb_on
+            ? "Enter begins the fall: endless floors, random dungeons, Depthforged spoils."
+            : ("Endless floors beyond the win.  Deepest: " + ((_dsb_best > 0) ? ("Floor " + string(_dsb_best)) : "never entered")));
+        // Severity chip (only meaningful while armed).
+        var _dsb_hc_names = ["STANDARD", "HARDCORE", "MERCILESS"];
+        var _dsb_hc_descs = ["death keeps worn gear", "death takes 1 worn item", "each worn item 50/50"];
+        draw_set_color(_dsb_on ? ((_dsb_hc > 0) ? make_color_rgb(46, 14, 14) : make_color_rgb(20, 22, 30)) : make_color_rgb(14, 15, 24));
+        draw_rectangle(1270, 972, 1590, 1050, false);
+        draw_set_color(_dsb_on ? ((_dsb_hc > 0) ? make_color_rgb(220, 80, 80) : make_color_rgb(80, 84, 104)) : make_color_rgb(50, 52, 66));
+        draw_rectangle(1270, 972, 1590, 1050, true);
+        draw_set_halign(fa_center);
+        draw_set_font(fnt_ui_small);
+        draw_set_color(_dsb_on ? ((_dsb_hc > 0) ? make_color_rgb(255, 140, 140) : make_color_rgb(170, 175, 195)) : make_color_rgb(90, 94, 112));
+        draw_text(1430, 981, _dsb_hc_names[_dsb_hc] + ((_dsb_on && input_device() != 2) ? "   [G]" : ""));
+        draw_text(1430, 1017, _dsb_hc_descs[_dsb_hc]);
+        draw_set_halign(fa_left);
+    }
+
     draw_set_font(-1);
     draw_set_halign(fa_left);
     draw_set_valign(fa_top);
@@ -1413,275 +1455,10 @@ if (instance_exists(obj_game_controller) && variable_global_exists("pending_perm
 }
 
 // -----------------------------------------------------------------------------
-// 12. ITEM GALLERY OVERLAY - shown when show_gallery is true
-// Full-screen dark cover; list on left (x=20-740), detail panel on right (x=760-1260).
+// 12. ITEM CODEX OVERLAY - moved to scr_ui/obj_game_controller 07-28 so it
+// also opens mid-run from the Journal. State: gc codex_* vars.
 // -----------------------------------------------------------------------------
-if (show_gallery) {
-
-    // Full-screen dark cover
-    draw_set_alpha(0.97);
-    draw_set_color(make_color_rgb(10, 12, 20));
-    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
-    draw_set_alpha(1.0);
-
-    // Title
-    draw_set_font(fnt_ui_title);
-    draw_set_halign(fa_center);
-    draw_set_color(c_white);
-    draw_text(GUI_CX, 30, "ITEM CODEX");
-    draw_set_halign(fa_left);
-
-    // Build master item list (common -> uncommon -> rare -> legendary)
-    var _gal_all = [];
-    if (variable_global_exists("loot_table_common"))    { for (var _gi = 0; _gi < array_length(global.loot_table_common);    _gi++) array_push(_gal_all, global.loot_table_common[_gi]);    }
-    if (variable_global_exists("loot_table_uncommon"))  { for (var _gi = 0; _gi < array_length(global.loot_table_uncommon);  _gi++) array_push(_gal_all, global.loot_table_uncommon[_gi]);  }
-    if (variable_global_exists("loot_table_rare"))      { for (var _gi = 0; _gi < array_length(global.loot_table_rare);      _gi++) array_push(_gal_all, global.loot_table_rare[_gi]);      }
-    if (variable_global_exists("loot_table_legendary")) { for (var _gi = 0; _gi < array_length(global.loot_table_legendary); _gi++) array_push(_gal_all, global.loot_table_legendary[_gi]); }
-    var _gal_count   = array_length(_gal_all);
-    var _gal_visible = 12;
-    var _row_h       = 69;
-    var _list_y0     = 120;
-
-    // Build discovered set for fast lookup
-    var _disc_set = [];
-    if (variable_global_exists("items_discovered")) {
-        for (var _di = 0; _di < array_length(global.items_discovered); _di++) {
-            array_push(_disc_set, global.items_discovered[_di]);
-        }
-    }
-    var _disc_count = array_length(_disc_set);
-
-    // -------------------------------------------------------------------------
-    // LEFT PANEL - scrollable item list (x=30, w=1080)
-    // -------------------------------------------------------------------------
-    for (var _ri = 0; _ri < _gal_visible; _ri++) {
-        var _abs_i = gallery_scroll + _ri;
-        if (_abs_i >= _gal_count) break;
-
-        var _it    = _gal_all[_abs_i];
-        var _ry    = _list_y0 + _ri * _row_h;
-        var _is_cur = (_abs_i == gallery_cursor);
-
-        // Check discovered
-        var _disc = false;
-        for (var _dci = 0; _dci < _disc_count; _dci++) {
-            if (_disc_set[_dci] == _it.name) { _disc = true; break; }
-        }
-
-        // Row background
-        var _bg_col = _is_cur ? make_color_rgb(28, 38, 65) : make_color_rgb(14, 16, 28);
-        draw_set_alpha(_disc ? 1.0 : 0.55);
-        draw_set_color(_bg_col);
-        draw_rectangle(30, _ry, 1110, _ry + _row_h - 3, false);
-        draw_set_alpha(1.0);
-        var _is_equipped_gal = false;
-        if (_disc && variable_global_exists("inventory")) {
-            for (var _ei = 0; _ei < array_length(global.inventory); _ei++) {
-                if (global.inventory[_ei] != undefined && global.inventory[_ei].name == _it.name) {
-                    _is_equipped_gal = true; break;
-                }
-            }
-        }
-        var _bord_col = _is_cur        ? make_color_rgb(70, 100, 200)
-            : (_is_equipped_gal        ? make_color_rgb(55, 185, 95)
-            :                            make_color_rgb(35, 40, 62));
-        draw_set_color(_bord_col);
-        draw_rectangle(30, _ry, 1110, _ry + _row_h - 3, true);
-
-        // Rarity color badge (left 6px strip)
-        var _rar_col = item_rarity_color(_it.rarity);
-        draw_set_alpha(_disc ? 1.0 : 0.4);
-        draw_set_color(_rar_col);
-        draw_rectangle(30, _ry, 36, _ry + _row_h - 3, false);
-        draw_set_alpha(1.0);
-
-        // Item name or ???
-        draw_set_font(fnt_ui);
-        draw_set_halign(fa_left);
-        draw_set_valign(fa_top);
-        if (_disc) {
-            draw_set_color(_rar_col);
-            draw_text(45, _ry + 8, _it.name);
-        } else {
-            draw_set_color(make_color_rgb(55, 60, 85));
-            draw_text(45, _ry + 8, "???");
-        }
-
-        // Slot label (right side)
-        var _slot_str = string_upper(string(_it.slot));
-        draw_set_font(fnt_ui_small);
-        draw_set_halign(fa_right);
-        draw_set_color(_disc ? make_color_rgb(140, 150, 190) : make_color_rgb(40, 45, 68));
-        draw_text(1103, _ry + 8, _slot_str);
-
-        // Stat preview (second line, only if discovered)
-        if (_disc) {
-            draw_set_halign(fa_left);
-            draw_set_color(make_color_rgb(100, 110, 145));
-            draw_text(45, _ry + 38, _it.effect_desc);
-        }
-    }
-
-    // Scroll indicator
-    if (_gal_count > _gal_visible) {
-        draw_set_font(fnt_ui_small);
-        draw_set_halign(fa_center);
-        draw_set_color(make_color_rgb(70, 80, 110));
-        draw_text(570, _list_y0 + _gal_visible * _row_h + 6,
-            string(gallery_scroll + 1) + " - " + string(min(gallery_scroll + _gal_visible, _gal_count))
-            + " of " + string(_gal_count) + "  (W/S or mouse wheel)");
-    }
-
-    // Discovered count
-    draw_set_font(fnt_ui_small);
-    draw_set_halign(fa_right);
-    draw_set_color(make_color_rgb(80, 100, 150));
-    draw_text(1103, 78, string(_disc_count) + " / " + string(_gal_count) + " discovered");
-
-    // -------------------------------------------------------------------------
-    // RIGHT PANEL - detail view (x=1140, w=750) or empty state
-    // -------------------------------------------------------------------------
-    var _dp_x = 1140;
-    var _dp_y = 120;
-    var _dp_w = 750;
-    var _dp_h = 840;
-
-    draw_set_alpha(0.85);
-    draw_set_color(make_color_rgb(12, 14, 26));
-    draw_rectangle(_dp_x, _dp_y, _dp_x + _dp_w, _dp_y + _dp_h, false);
-    draw_set_alpha(1.0);
-    draw_set_color(make_color_rgb(45, 55, 90));
-    draw_rectangle(_dp_x, _dp_y, _dp_x + _dp_w, _dp_y + _dp_h, true);
-
-    if (gallery_detail_item != undefined) {
-        var _d   = gallery_detail_item;
-        var _dx  = _dp_x + 27;
-        var _txw = _dp_w - 54;
-        var _is_leg = (variable_struct_exists(_d, "rarity") && _d.rarity == 4);
-
-        // Rarity strip at top of detail panel
-        draw_set_color(item_rarity_color(_d.rarity));
-        draw_rectangle(_dp_x, _dp_y, _dp_x + _dp_w, _dp_y + 6, false);
-
-        draw_set_halign(fa_left);
-        draw_set_valign(fa_top);
-
-        // --- Splash art box (splash sprite if it exists, else scaled item icon) ---
-        var _art_sz = 198;
-        var _art_x  = _dp_x + (_dp_w - _art_sz) / 2;
-        var _art_y  = _dp_y + 21;
-        draw_set_color(make_color_rgb(8, 10, 18));
-        draw_rectangle(_art_x, _art_y, _art_x + _art_sz, _art_y + _art_sz, false);
-        draw_set_color(item_rarity_color(_d.rarity));
-        draw_rectangle(_art_x, _art_y, _art_x + _art_sz, _art_y + _art_sz, true);
-        var _splash = item_splash_sprite(item_base_name(_d));
-        if (_splash != -1 && sprite_exists(_splash)) {
-            ui_draw_sprite_cover(_splash, 0, _art_x + 3, _art_y + 3, _art_sz - 6, _art_sz - 6, 1.0);
-        } else {
-            // Fallback: enlarge the item icon, centered in the box. Unframed (#10):
-            // the art box above IS the frame - the icon's own box read as an
-            // icon-within-an-icon (Chipped Spear et al.).
-            ui_draw_item_icon(_art_x + (_art_sz - 150) / 2, _art_y + (_art_sz - 150) / 2, 150, _d, false);
-        }
-
-        // --- Name + rarity/slot ---
-        var _ly = _art_y + _art_sz + 18;
-        draw_set_font(fnt_ui_title);
-        draw_set_halign(fa_center);
-        draw_set_color(item_rarity_color(_d.rarity));
-        draw_text_ext(_dp_x + _dp_w / 2, _ly, _d.name, -1, _txw);
-        _ly += string_height_ext(_d.name, -1, _txw) + 6;
-        draw_set_font(fnt_ui_small);
-        draw_set_color(make_color_rgb(130, 140, 185));
-        var _rs_line = string_upper(item_rarity_name(_d.rarity)) + "  *  " + string_upper(string(_d.slot));
-        draw_text(_dp_x + _dp_w / 2, _ly, _rs_line);
-        _ly += string_height(_rs_line) + 12;
-        draw_set_halign(fa_left);
-
-        // Divider
-        draw_set_color(make_color_rgb(45, 55, 90));
-        draw_line(_dx, _ly, _dp_x + _dp_w - 27, _ly);
-        _ly += 15;
-
-        // --- Lore (legendary, gold) OR generic description ---
-        if (_is_leg && variable_struct_exists(_d, "lore") && _d.lore != "") {
-            draw_set_font(fnt_ui);
-            draw_set_color(make_color_rgb(235, 205, 120));
-            draw_text_ext(_dx, _ly, _d.lore, -1, _txw);
-            _ly += string_height_ext(_d.lore, -1, _txw) + 12;
-        } else {
-            draw_set_font(fnt_ui);
-            draw_set_color(make_color_rgb(170, 185, 215));
-            var _gdesc = item_generic_desc(_d);
-            draw_text_ext(_dx, _ly, _gdesc, -1, _txw);
-            _ly += string_height_ext(_gdesc, -1, _txw) + 6;
-            // one-line flavor from the item's effect_desc, when present
-            if (variable_struct_exists(_d, "effect_desc") && _d.effect_desc != "") {
-                draw_set_font(fnt_ui_small);
-                draw_set_color(make_color_rgb(110, 122, 150));
-                var _flav = "\"" + ui_sentence(_d.effect_desc) + "\"";
-                draw_text_ext(_dx, _ly, _flav, -1, _txw);
-                _ly += string_height_ext(_flav, -1, _txw) + 9;
-            }
-        }
-
-        // --- Stat ranges reference ---
-        draw_set_color(make_color_rgb(45, 55, 90));
-        draw_line(_dx, _ly, _dp_x + _dp_w - 27, _ly);
-        _ly += 15;
-        draw_set_font(fnt_ui);
-        draw_set_color(make_color_rgb(150, 165, 200));
-        draw_text(_dx, _ly, "Rolls & Stats");
-        _ly += string_height("Rolls & Stats") + 6;
-        draw_set_font(fnt_ui_small);
-        draw_set_color(make_color_rgb(190, 200, 225));
-        var _ranges = item_stat_ranges_text(_d);
-        draw_text_ext(_dx, _ly, _ranges, -1, _txw);
-        _ly += string_height_ext(_ranges, -1, _txw) + 12;
-
-        // --- Unique effect (legendary) ---
-        if (variable_struct_exists(_d, "unique_desc") && _d.unique_desc != "") {
-            draw_set_font(fnt_ui);
-            draw_set_color(make_color_rgb(255, 200, 60));
-            draw_text(_dx, _ly, "Unique Effect");
-            _ly += string_height("Unique Effect") + 6;
-            draw_set_color(make_color_rgb(255, 220, 100));
-            draw_text_ext(_dx + 9, _ly, _d.unique_desc, -1, _txw - 9);
-        }
-
-        // Gold value
-        draw_set_color(make_color_rgb(45, 55, 90));
-        draw_line(_dx, _dp_y + _dp_h - 90, _dp_x + _dp_w - 27, _dp_y + _dp_h - 90);
-        draw_set_font(fnt_ui);
-        draw_set_color(make_color_rgb(200, 170, 60));
-        draw_text(_dx, _dp_y + _dp_h - 69, "Value:  " + string(_d.gold_value) + "g");
-
-        // Close hint
-        draw_set_font(fnt_ui_small);
-        draw_set_halign(fa_right);
-        draw_set_color(make_color_rgb(70, 80, 118));
-        draw_text_outline(_dp_x + _dp_w - 27, _dp_y + _dp_h - 69, "Esc / click to close");
-        draw_set_halign(fa_left);
-
-    } else {
-        // Empty state
-        draw_set_font(fnt_ui);
-        draw_set_halign(fa_center);
-        draw_set_valign(fa_middle);
-        draw_set_color(make_color_rgb(45, 52, 82));
-        draw_text(_dp_x + _dp_w / 2, _dp_y + _dp_h / 2, "Select a discovered item\nto view details");
-        draw_set_valign(fa_top);
-    }
-
-    // Footer hint
-    draw_set_font(fnt_ui_small);
-    draw_set_halign(fa_center);
-    draw_set_color(make_color_rgb(60, 68, 100));
-    ui_draw_key_legend(GUI_CX, 1044, "W/S: Navigate   Enter: Inspect   G / Esc: Close Gallery");
-    draw_set_halign(fa_left);
-    draw_set_alpha(1.0);
-    draw_set_font(-1);
-}
+ui_draw_item_codex();
 
 
 // -----------------------------------------------------------------------------
@@ -1855,18 +1632,18 @@ if (instance_exists(obj_game_controller)) {
                 draw_set_halign(fa_right);
                 draw_set_color(c_yellow);
                 draw_text(_lx + 972, _ry + 6, "[" + string(_ab.energy_cost) + " AP]");
-                // Mastery (expression #2): unspent notch = pulsing gold call-to-action;
-                // spent picks = quiet pip count on the row's lower right.
-                var _mast_pend  = ability_mastery_pending(_ab.name);
-                var _mast_picks = array_length(ability_mastery_picks(_ab.name));
-                if (_mast_pend > 0) {
+                // Talent web: unspent point = pulsing gold call-to-action;
+                // woven nodes = quiet count on the row's lower right.
+                var _web_pend  = ability_web_mp_pending(_ab.name);
+                var _web_picks = array_length(ability_web_picks(_ab.name));
+                if (_web_pend > 0) {
                     draw_set_alpha(0.6 + 0.4 * (0.5 + 0.5 * sin(current_time / 250)));
                     draw_set_color(make_color_rgb(255, 205, 90));
-                    draw_text(_lx + 972, _ry + 39, "NOTCH!  [M]");
+                    draw_text(_lx + 972, _ry + 39, "WEB PT!  [M]");   // kept short - shares line 2 with the row description
                     draw_set_alpha(1.0);
-                } else if (_mast_picks > 0) {
+                } else if (_web_picks > 0) {
                     draw_set_color(make_color_rgb(200, 170, 100));
-                    draw_text(_lx + 972, _ry + 39, "Mastery " + string(_mast_picks) + "/2");
+                    draw_text(_lx + 972, _ry + 39, "Web " + string(_web_picks) + "/" + string(ability_web_cap()));
                 }
                 draw_set_halign(fa_left);
 
@@ -2007,9 +1784,13 @@ if (instance_exists(obj_game_controller)) {
             // #6: the gold-shortfall flash reddens the bar like the loadout-full flash.
             var _bar_red = _gc_ov.loadout_full_timer > 0
                 || (variable_instance_exists(_gc_ov, "loadout_gold_timer") && _gc_ov.loadout_gold_timer > 0);
+            // M 07-28: the thin pulsing frame alone still read as "just another
+            // row" - when the cursor is ON the bar the fill itself now breathes
+            // and an outer glow halo makes focus unmistakable at a glance.
+            var _cf_pulse = 0.5 + 0.5 * sin(current_time / 200);
             draw_set_color(_bar_red                        ? make_color_rgb(40, 10, 10)
-                         : (_conf_sel                      ? make_color_rgb(16, 70, 25)
-                         : (_conf_cur                      ? make_color_rgb(45, 38, 14)
+                         : (_conf_sel                      ? merge_color(make_color_rgb(16, 70, 25),  make_color_rgb(45, 160, 70),  _cf_pulse * 0.65)
+                         : (_conf_cur                      ? merge_color(make_color_rgb(45, 38, 14),  make_color_rgb(110, 92, 32),  _cf_pulse * 0.65)
                          : (_ov_sel_cnt == _loadout_max    ? make_color_rgb(14, 48, 18)
                                                            : make_color_rgb(14, 16, 28)))));
             draw_rectangle(_desc_x, 998, _desc_x + _desc_w, 1043, false);
@@ -2019,11 +1800,17 @@ if (instance_exists(obj_game_controller)) {
                          : (_ov_sel_cnt == _loadout_max    ? make_color_rgb(35, 95, 45)
                                                            : make_color_rgb(35, 40, 65)))));
             draw_rectangle(_desc_x, 998, _desc_x + _desc_w, 1043, true);
-            // Focused confirm bar gets the same thick pulsing frame as the ability
-            // cursor - focus is unmistakable whether it's on a row or on this bar.
+            // Focused confirm bar: thick pulsing frame + a soft glow halo that
+            // radiates outward. Green when the loadout is complete (ready to
+            // launch), gold while picks are still missing.
             if (_conf_cur) {
-                var _cf_pulse = 0.65 + 0.35 * (0.5 + 0.5 * sin(current_time / 200));
-                draw_set_alpha(_cf_pulse);
+                var _cf_gcol = _conf_sel ? make_color_rgb(90, 235, 120) : make_color_rgb(255, 205, 90);
+                for (var _cf_gi = 1; _cf_gi <= 8; _cf_gi++) {
+                    draw_set_alpha((0.28 + 0.22 * _cf_pulse) * (1 - _cf_gi / 9));
+                    draw_set_color(_cf_gcol);
+                    draw_rectangle(_desc_x - _cf_gi, 998 - _cf_gi, _desc_x + _desc_w + _cf_gi, 1043 + _cf_gi, true);
+                }
+                draw_set_alpha(0.65 + 0.35 * _cf_pulse);
                 draw_set_color(_conf_sel ? make_color_rgb(120, 235, 140) : make_color_rgb(255, 205, 90));
                 draw_rectangle(_desc_x - 1, 997, _desc_x + _desc_w + 1, 1044, true);
                 draw_rectangle(_desc_x - 2, 996, _desc_x + _desc_w + 2, 1045, true);
@@ -2057,7 +1844,7 @@ if (instance_exists(obj_game_controller)) {
 
             // --- Controls hint: y=1050 ---
             draw_set_color(make_color_rgb(65, 75, 100));
-            if (input_device() != 2) ui_draw_key_legend(GUI_CX, 1050, "W/S: Navigate   Q/E: Switch Tab   Enter: Toggle   Tab: Details   M: Mastery   Space: Confirm   Esc: Cancel");
+            if (input_device() != 2) ui_draw_key_legend(GUI_CX, 1050, "W/S: Navigate   Q/E: Switch Tab   Enter: Toggle   Tab: Details   M: Talent Web   Space: Confirm   Esc: Cancel");
             draw_set_halign(fa_left);
 
             // --- Tab ability-detail popup, drawn over the loadout (P7) ---
@@ -2065,45 +1852,253 @@ if (instance_exists(obj_game_controller)) {
                 ui_draw_ability_detail(_ov_pool[_gc_ov.loadout_cursor], (input_device() == 1) ? "Y" : "Tab", _gc_ov.ability_detail_scroll);
             }
 
-            // --- Mastery pick modal (expression #2), over everything on this tab ---
-            if (_gc_ov.mastery_pick_open) {
-                var _mp_ab2 = undefined;
-                for (var _mpj = 0; _mpj < _ov_pool_sz; _mpj++) {
-                    if (_ov_pool[_mpj].name == _gc_ov.mastery_pick_ability) { _mp_ab2 = _ov_pool[_mpj]; break; }
+            // --- Talent-web view (SYSTEMS_TALENT_WEBS.md), over everything on
+            //     this tab. Hit-testing for touch/mouse lives HERE in Draw (the
+            //     chip-bar rule): tap a node to select it, tap the selected node
+            //     again to weave it; CLOSE button bottom-center. ---
+            if (_gc_ov.web_view_open) {
+                var _wv_ab2 = undefined;
+                for (var _wvj = 0; _wvj < _ov_pool_sz; _wvj++) {
+                    if (_ov_pool[_wvj].name == _gc_ov.web_view_ability) { _wv_ab2 = _ov_pool[_wvj]; break; }
                 }
-                if (_mp_ab2 != undefined) {
-                    draw_set_alpha(0.75); draw_set_color(c_black);
+                if (_wv_ab2 != undefined) {
+                    draw_set_alpha(0.8); draw_set_color(c_black);
                     draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
                     draw_set_alpha(1.0);
-                    var _mx0 = 560, _my0 = 330, _mx1 = 1360, _my1 = 750;
+                    var _wx0 = 460, _wy0 = 130, _wx1 = 1460, _wy1 = 985;
                     draw_set_color(make_color_rgb(22, 22, 36));
-                    draw_rectangle(_mx0, _my0, _mx1, _my1, false);
+                    draw_rectangle(_wx0, _wy0, _wx1, _wy1, false);
                     draw_set_color(make_color_rgb(255, 205, 90));
-                    draw_rectangle(_mx0, _my0, _mx1, _my1, true);
+                    draw_rectangle(_wx0, _wy0, _wx1, _wy1, true);
+
+                    var _wv_name   = _wv_ab2.name;
+                    var _wv_nodes  = ability_web_nodes(_wv_ab2);
+                    var _wv_order  = ["p1", "p2", "pk", "t1", "t2", "tk"];
+                    var _wv_staged = _gc_ov.web_view_staged;
+                    var _wv_stn    = array_length(_wv_staged);
+                    var _wv_pend   = ability_web_mp_pending(_wv_name);
+                    var _wv_avail  = _wv_pend - _wv_stn;          // points left AFTER staged assignments
+                    var _wv_spent  = array_length(ability_web_picks(_wv_name));
+                    var _wv_next   = ability_web_next_threshold(_wv_name);
+
+                    // Header
                     draw_set_halign(fa_center);
                     draw_set_font(fnt_ui_title);
                     draw_set_color(make_color_rgb(255, 215, 120));
-                    draw_text(GUI_CX, _my0 + 30, "MASTERY: " + _mp_ab2.name);
+                    draw_text(GUI_CX, _wy0 + 26, "TALENT WEB - " + _wv_name);
                     draw_set_font(fnt_ui_small);
                     draw_set_color(make_color_rgb(170, 175, 195));
-                    draw_text(GUI_CX, _my0 + 96, string(ability_casts(_mp_ab2.name)) + " lifetime casts - its edge is yours to choose. Permanent.");
-                    var _mp_o = ability_mastery_options(_mp_ab2);
-                    for (var _mo = 0; _mo < 2; _mo++) {
-                        var _oy  = _my0 + 150 + _mo * 108;
-                        var _on  = (_gc_ov.mastery_pick_cursor == _mo);
-                        draw_set_color(_on ? make_color_rgb(52, 44, 26) : make_color_rgb(28, 28, 44));
-                        draw_rectangle(_mx0 + 60, _oy, _mx1 - 60, _oy + 84, false);
-                        draw_set_color(_on ? make_color_rgb(255, 205, 90) : make_color_rgb(60, 62, 90));
-                        draw_rectangle(_mx0 + 60, _oy, _mx1 - 60, _oy + 84, true);
-                        draw_set_font(fnt_ui);
-                        draw_set_color(_on ? c_white : make_color_rgb(175, 180, 200));
-                        draw_text(GUI_CX, _oy + 24, _mp_o[_mo].label);
+                    var _wv_hdr = string(_wv_avail) + " point" + ((_wv_avail == 1) ? "" : "s") + " to spend"
+                        + ((_wv_stn > 0) ? (" (" + string(_wv_stn) + " staged)") : "") + "   -   "
+                        + string(_wv_spent) + "/" + string(ability_web_cap()) + " woven   -   "
+                        + string(ability_casts(_wv_name)) + " lifetime casts"
+                        + ((_wv_next > 0) ? ("  (next point at " + string(_wv_next) + ")") : "");
+                    draw_text(GUI_CX, _wy0 + 72, _wv_hdr);
+
+                    // Node geometry: root top-center, POWER branch left column,
+                    // TWIST branch right column, mid-tier cross-link. 68px+ tap
+                    // discs (touch rule: >=48px targets).
+                    var _wv_rx = GUI_CX,        _wv_ry = _wy0 + 175;
+                    var _wv_px = GUI_CX - 220,  _wv_tx = GUI_CX + 220;
+                    var _wv_yy = [_wy0 + 300, _wy0 + 430, _wy0 + 575];   // tiers 1/2/3
+                    var _wv_nx = [_wv_px, _wv_px, _wv_px, _wv_tx, _wv_tx, _wv_tx];
+                    var _wv_ny = [_wv_yy[0], _wv_yy[1], _wv_yy[2], _wv_yy[0], _wv_yy[1], _wv_yy[2]];
+
+                    // Edges first (under the discs). Lit gold when both ends are
+                    // woven (the root always counts as woven).
+                    var _wv_edges = [[-1, 0], [0, 1], [1, 2], [-1, 3], [3, 4], [4, 5], [1, 4]];
+                    for (var _we = 0; _we < array_length(_wv_edges); _we++) {
+                        var _we_a = _wv_edges[_we][0], _we_b = _wv_edges[_we][1];
+                        var _we_ax = (_we_a < 0) ? _wv_rx : _wv_nx[_we_a];
+                        var _we_ay = (_we_a < 0) ? _wv_ry : _wv_ny[_we_a];
+                        var _we_on = ((_we_a < 0) || ability_web_owned_or_staged(_wv_name, _wv_order[_we_a], _wv_staged))
+                                  && ability_web_owned_or_staged(_wv_name, _wv_order[_we_b], _wv_staged);
+                        draw_set_color(_we_on ? make_color_rgb(255, 205, 90) : make_color_rgb(55, 58, 82));
+                        draw_line_width(_we_ax, _we_ay, _wv_nx[_we_b], _wv_ny[_we_b], _we_on ? 4 : 2);
                     }
+
+                    // Root disc: the ability itself, tinted by its school.
+                    draw_set_color(school_color(ability_school(_wv_ab2)));
+                    draw_circle(_wv_rx, _wv_ry, 30, false);
+                    draw_set_color(make_color_rgb(255, 205, 90));
+                    draw_circle(_wv_rx, _wv_ry, 30, true);
                     draw_set_font(fnt_ui_small);
-                    draw_set_color(make_color_rgb(120, 125, 150));
-                    ui_draw_key_legend(GUI_CX, _my1 - 48, "W/S: Choose     Enter: Commit     Esc: Not yet");
-                    draw_set_halign(fa_center);
+                    draw_set_color(make_color_rgb(200, 205, 225));
+                    draw_text(_wv_rx, _wv_ry - 62, "ROOT");
+
+                    // Branch headers
+                    draw_set_color(make_color_rgb(200, 130, 90));
+                    draw_text(_wv_px, _wy0 + 240, "POWER");
+                    draw_set_color(make_color_rgb(120, 170, 220));
+                    draw_text(_wv_tx, _wy0 + 240, "TWIST");
+
+                    // Nodes
+                    var _wv_pulse = 0.5 + 0.5 * sin(current_time / 250);
+                    for (var _wn = 0; _wn < 6; _wn++) {
+                        var _n_node  = _wv_nodes[_wn];
+                        var _n_id    = _wv_order[_wn];
+                        var _n_x     = _wv_nx[_wn], _n_y = _wv_ny[_wn];
+                        var _n_r     = (_n_node.tier == 3) ? 40 : 34;
+                        var _n_owned  = ability_web_owned(_wv_name, _n_id);
+                        var _n_staged = ability_web_staged_has(_wv_staged, _n_id);
+                        var _n_lit    = _n_owned || _n_staged;
+                        var _n_reach  = ability_web_reachable_staged(_wv_name, _n_id, _wv_staged);
+                        var _n_buy    = (!_n_lit && _n_reach && _wv_avail > 0 && (_wv_spent + _wv_stn) < ability_web_cap());
+                        var _n_sel    = (_gc_ov.web_view_cursor == _wn);
+                        // Fill
+                        if (_n_lit)        draw_set_color(make_color_rgb(72, 58, 26));
+                        else if (_n_reach) draw_set_color(make_color_rgb(34, 34, 52));
+                        else               draw_set_color(make_color_rgb(24, 24, 36));
+                        draw_circle(_n_x, _n_y, _n_r, false);
+                        // Ring: owned = solid gold, staged = pulsing pale gold (not yet permanent)
+                        if (_n_owned)      { draw_set_color(make_color_rgb(255, 205, 90)); }
+                        else if (_n_staged){ draw_set_alpha(0.55 + 0.45 * _wv_pulse); draw_set_color(make_color_rgb(255, 240, 190)); }
+                        else if (_n_buy)   { draw_set_alpha(0.45 + 0.55 * _wv_pulse); draw_set_color(make_color_rgb(255, 205, 90)); }
+                        else if (_n_reach) { draw_set_color(make_color_rgb(110, 115, 145)); }
+                        else               { draw_set_color(make_color_rgb(55, 58, 82)); }
+                        draw_circle(_n_x, _n_y, _n_r, true);
+                        if (_n_node.tier == 3) draw_circle(_n_x, _n_y, _n_r - 5, true);   // double ring = keystone
+                        draw_set_alpha(1.0);
+                        // Selection ring
+                        if (_n_sel) { draw_set_color(c_white); draw_circle(_n_x, _n_y, _n_r + 6, true); }
+                        // Center glyph: woven/staged star / open plus / locked dash
+                        draw_set_font(fnt_ui);
+                        draw_set_color(_n_lit ? make_color_rgb(255, 225, 150) : (_n_reach ? make_color_rgb(150, 155, 180) : make_color_rgb(70, 74, 100)));
+                        draw_text(_n_x, _n_y - 12, _n_lit ? "*" : (_n_reach ? "+" : "-"));
+                        // Title + label, outward of each column. MEASURED against
+                        // the panel edge (UI-collision rule) - a label that would
+                        // overflow is omitted here; the detail strip always
+                        // carries the full text for the selected node.
+                        draw_set_font(fnt_ui_small);
+                        var _n_tcol  = _n_lit ? make_color_rgb(255, 215, 120) : (_n_reach ? make_color_rgb(185, 190, 210) : make_color_rgb(95, 100, 125));
+                        var _n_tx    = (_wn < 3) ? (_n_x - _n_r - 16) : (_n_x + _n_r + 16);
+                        var _n_avail = (_wn < 3) ? (_n_tx - (_wx0 + 16)) : ((_wx1 - 16) - _n_tx);
+                        draw_set_halign((_wn < 3) ? fa_right : fa_left);
+                        draw_set_color(_n_tcol);
+                        if (string_width(_n_node.title) <= _n_avail) draw_text(_n_tx, _n_y - 24, _n_node.title);
+                        draw_set_color(make_color_rgb(120, 125, 150));
+                        if (string_width(_n_node.label) <= _n_avail) draw_text(_n_tx, _n_y + 2, _n_node.label);
+                        draw_set_halign(fa_center);
+                    }
+
+                    // Detail strip: the selected node spelled out (fixed strip, no
+                    // floating tooltip - collision-proof by construction).
+                    var _ds_y0 = _wy1 - 210, _ds_y1 = _wy1 - 118;
+                    draw_set_color(make_color_rgb(28, 28, 44));
+                    draw_rectangle(_wx0 + 24, _ds_y0, _wx1 - 24, _ds_y1, false);
+                    draw_set_color(make_color_rgb(60, 62, 90));
+                    draw_rectangle(_wx0 + 24, _ds_y0, _wx1 - 24, _ds_y1, true);
+                    if (_gc_ov.web_view_cursor < 6) {
+                        var _ds_node   = _wv_nodes[_gc_ov.web_view_cursor];
+                        var _ds_id     = _wv_order[_gc_ov.web_view_cursor];
+                        var _ds_owned  = ability_web_owned(_wv_name, _ds_id);
+                        var _ds_staged = ability_web_staged_has(_wv_staged, _ds_id);
+                        var _ds_reach  = ability_web_reachable_staged(_wv_name, _ds_id, _wv_staged);
+                        var _ds_status;
+                        if (_ds_owned) {
+                            _ds_status = "WOVEN - permanent.";
+                            if (variable_struct_exists(_ds_node, "schools")) {
+                                var _ds_wf = ability_web_pick_full(_wv_name, _ds_id);
+                                if (ability_web_id_param(_ds_wf) != "") _ds_status = "WOVEN - permanent (" + school_label(ability_web_id_param(_ds_wf)) + ").";
+                            }
+                        }
+                        else if (_ds_staged) {
+                            _ds_status = "STAGED - select again to remove. SAVE & CLOSE makes it permanent.";
+                            if (variable_struct_exists(_ds_node, "schools")) {
+                                var _ds_sf = ability_web_staged_full(_wv_staged, _ds_id);
+                                _ds_status = "STAGED: " + school_label(ability_web_id_param(_ds_sf))
+                                    + " - select again to cycle schools (past the last removes). SAVE & CLOSE makes it permanent.";
+                            }
+                        }
+                        else if (!_ds_reach)                               _ds_status = "Locked - weave an adjoining node first.";
+                        else if (_wv_spent + _wv_stn >= ability_web_cap()) _ds_status = "Web cap reached (" + string(ability_web_cap()) + " of 6) - its shape is set.";
+                        else if (_wv_avail <= 0)                           _ds_status = (_wv_next > 0) ? ("No point to spend - next at " + string(_wv_next) + " casts.") : "No point to spend.";
+                        else                                               _ds_status = "Stage for 1 Talent Point (nothing is permanent until SAVE & CLOSE).";
+                        draw_set_font(fnt_ui);
+                        draw_set_color(c_white);
+                        draw_text(GUI_CX, _ds_y0 + 16, _ds_node.title + "  -  " + _ds_node.label);
+                        draw_set_font(fnt_ui_small);
+                        draw_set_color(make_color_rgb(170, 175, 195));
+                        draw_text(GUI_CX, _ds_y0 + 54, _ds_status);
+                    } else {
+                        draw_set_font(fnt_ui);
+                        draw_set_color(c_white);
+                        draw_text(GUI_CX, _ds_y0 + 16, (_gc_ov.web_view_cursor == 6) ? "SAVE & CLOSE" : "CLOSE");
+                        draw_set_font(fnt_ui_small);
+                        draw_set_color(make_color_rgb(170, 175, 195));
+                        draw_text(GUI_CX, _ds_y0 + 54, (_gc_ov.web_view_cursor == 6)
+                            ? ("Make " + string(_wv_stn) + " staged node" + ((_wv_stn == 1) ? "" : "s") + " permanent and leave.")
+                            : ((_wv_stn > 0) ? "Leave WITHOUT saving - staged nodes are discarded." : "Leave the web."));
+                    }
+
+                    // SAVE & CLOSE + CLOSE buttons (touch needs an explicit way
+                    // out - whetstone rule; both sit on the keyboard/pad cursor
+                    // path as positions 6 and 7 so every input method reaches
+                    // them). SAVE commits the staged nodes; CLOSE discards.
+                    var _sv_x0 = GUI_CX - 260, _sv_x1 = GUI_CX - 10;
+                    var _cl_x0 = GUI_CX + 10,  _cl_x1 = GUI_CX + 260;
+                    var _bt_y0 = _wy1 - 82,    _bt_y1 = _wy1 - 22;
+                    var _sv_sel = (_gc_ov.web_view_cursor == 6);
+                    var _cl_sel = (_gc_ov.web_view_cursor == 7);
+                    // SAVE & CLOSE - gold when it has staged work to commit
+                    draw_set_color((_wv_stn > 0) ? make_color_rgb(52, 44, 26) : make_color_rgb(34, 34, 48));
+                    draw_rectangle(_sv_x0, _bt_y0, _sv_x1, _bt_y1, false);
+                    draw_set_color((_wv_stn > 0) ? make_color_rgb(255, 205, 90) : make_color_rgb(90, 95, 120));
+                    draw_rectangle(_sv_x0, _bt_y0, _sv_x1, _bt_y1, true);
+                    if (_sv_sel) { draw_set_color(c_white); draw_rectangle(_sv_x0 - 4, _bt_y0 - 4, _sv_x1 + 4, _bt_y1 + 4, true); }
+                    draw_set_font(fnt_ui);
+                    draw_set_color((_wv_stn > 0) ? make_color_rgb(255, 225, 150) : make_color_rgb(150, 155, 180));
+                    draw_text((_sv_x0 + _sv_x1) * 0.5, _bt_y0 + 14, "SAVE & CLOSE" + ((_wv_stn > 0) ? (" (" + string(_wv_stn) + ")") : ""));
+                    // CLOSE (discard)
+                    draw_set_color(make_color_rgb(40, 34, 34));
+                    draw_rectangle(_cl_x0, _bt_y0, _cl_x1, _bt_y1, false);
+                    draw_set_color(make_color_rgb(180, 120, 90));
+                    draw_rectangle(_cl_x0, _bt_y0, _cl_x1, _bt_y1, true);
+                    if (_cl_sel) { draw_set_color(c_white); draw_rectangle(_cl_x0 - 4, _bt_y0 - 4, _cl_x1 + 4, _bt_y1 + 4, true); }
+                    draw_set_font(fnt_ui);
+                    draw_set_color(make_color_rgb(230, 200, 170));
+                    draw_text((_cl_x0 + _cl_x1) * 0.5, _bt_y0 + 14, "CLOSE");
+                    if (input_device() != 2) {
+                        draw_set_font(fnt_ui_small);
+                        draw_set_color(make_color_rgb(120, 125, 150));
+                        ui_draw_key_legend(GUI_CX, _wy1 - 110, "W/S: Move   A/D: Branch   Enter: Stage / Button   Esc: Discard & Close");
+                    }
                     draw_set_halign(fa_left);
+
+                    // --- Touch/mouse hit-testing (Draw-event rule). Buttons act
+                    //     on first tap; nodes select on first tap, stage/unstage
+                    //     on a second tap of the same node. ---
+                    if (mouse_check_button_pressed(mb_left)) {
+                        var _wv_mx = device_mouse_x_to_gui(0);
+                        var _wv_my = device_mouse_y_to_gui(0);
+                        if (_wv_my >= _bt_y0 && _wv_my <= _bt_y1 && _wv_mx >= _sv_x0 && _wv_mx <= _sv_x1) {
+                            // SAVE & CLOSE
+                            if (_wv_stn > 0) {
+                                var _sv_res = ability_web_commit_staged(_wv_name, _wv_staged);
+                                if (_sv_res == "") {
+                                    notification = _wv_name + ": " + string(_wv_stn) + " node" + ((_wv_stn == 1) ? "" : "s") + " woven (permanent).";
+                                    if (room == rm_hub || room == rm_character_select) save_game();
+                                } else notification = _sv_res;
+                            }
+                            _gc_ov.web_view_open = false;
+                        } else if (_wv_my >= _bt_y0 && _wv_my <= _bt_y1 && _wv_mx >= _cl_x0 && _wv_mx <= _cl_x1) {
+                            // CLOSE (discard)
+                            if (_wv_stn > 0) notification = "Unsaved weaves discarded.";
+                            _gc_ov.web_view_open = false;
+                        } else {
+                            for (var _wt = 0; _wt < 6; _wt++) {
+                                var _wt_r = (_wv_nodes[_wt].tier == 3) ? 40 : 34;
+                                if (point_distance(_wv_mx, _wv_my, _wv_nx[_wt], _wv_ny[_wt]) <= _wt_r + 10) {
+                                    if (_gc_ov.web_view_cursor == _wt) {
+                                        // Second tap on the selected node = stage/unstage.
+                                        var _wt_res = ability_web_stage_toggle(_wv_name, _wv_order[_wt], _wv_staged);
+                                        if (_wt_res != "") notification = _wt_res;
+                                    } else _gc_ov.web_view_cursor = _wt;
+                                    break;
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
@@ -2675,6 +2670,91 @@ if (variable_global_exists("settings_open") && global.settings_open) {
 ui_draw_pause_menu();
 
 // Item-sacrifice picker modal - topmost (Vex stat/trait trade)
+// -----------------------------------------------------------------------------
+// AWAKENING BOOST POPUP (SYSTEMS_ENDLESS.md §1) - card geometry MUST match the
+// Step_0 hit-test: x = 960 + (i - (n-1)/2)*460 - 210, w 420, y 420-700.
+// -----------------------------------------------------------------------------
+if (variable_instance_exists(id, "awaken_boost_open") && awaken_boost_open) {
+    if (!variable_instance_exists(id, "awaken_boost_pulse")) awaken_boost_pulse = 0;
+    awaken_boost_pulse += 0.09;
+    var _abp = 0.5 + 0.5 * sin(awaken_boost_pulse);
+    var _ab_opts = awaken_boost_options();
+
+    draw_set_alpha(0.88);
+    draw_set_color(make_color_rgb(6, 6, 14));
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
+    draw_set_alpha(1.0);
+
+    // Radiant title - twin expanding rings pulse behind it (the "fun little
+    // animation": the wave of your triumph rolling outward).
+    for (var _abr = 0; _abr < 2; _abr++) {
+        var _ab_rad = 70 + ((awaken_boost_pulse * 40 + _abr * 60) mod 120);
+        draw_set_alpha(0.35 * (1 - _ab_rad / 190));
+        draw_set_color(make_color_rgb(235, 200, 110));
+        draw_circle(960, 255, _ab_rad, true);
+        draw_circle(960, 255, _ab_rad + 2, true);
+    }
+    draw_set_alpha(1.0);
+    draw_set_halign(fa_center);
+    draw_set_valign(fa_top);
+    draw_set_font(fnt_ui_title);
+    draw_set_color(merge_color(make_color_rgb(235, 200, 110), c_white, _abp * 0.5));
+    draw_text_outline(960, 225, "THE AWAKENING SPREADS");
+    draw_set_font(fnt_ui);
+    draw_set_color(make_color_rgb(200, 190, 170));
+    draw_text(960, 305, "Your triumph echoes through the deep places. Another dungeon stirs to answer it.");
+    draw_set_color(make_color_rgb(150, 150, 175));
+    draw_text(960, 345, "Choose which awakening deepens:");
+
+    for (var _abi = 0; _abi < array_length(_ab_opts); _abi++) {
+        var _abo = _ab_opts[_abi];
+        var _abx = 960 + (_abi - (array_length(_ab_opts) - 1) / 2) * 460 - 210;
+        var _sel = (awaken_boost_cursor == _abi);
+        draw_set_color(_sel ? make_color_rgb(44, 36, 16) : make_color_rgb(16, 17, 26));
+        draw_rectangle(_abx, 420, _abx + 420, 700, false);
+        draw_set_color(_sel ? merge_color(make_color_rgb(210, 175, 90), c_white, _abp * 0.6) : make_color_rgb(60, 62, 80));
+        draw_rectangle(_abx, 420, _abx + 420, 700, true);
+        if (_sel) draw_rectangle(_abx - 4, 416, _abx + 424, 704, true);
+        draw_set_font(fnt_ui);
+        draw_set_color(_sel ? c_white : make_color_rgb(180, 185, 210));
+        draw_text(_abx + 210, 455, _abo.name);
+        draw_set_font(fnt_ui_title);
+        draw_set_color(_sel ? make_color_rgb(235, 210, 140) : make_color_rgb(120, 118, 100));
+        draw_text(_abx + 210, 520, "A" + string(_abo.cur) + "  ->  A" + string(_abo.cur + 1));
+        draw_set_font(fnt_ui_small);
+        draw_set_color(make_color_rgb(140, 145, 165));
+        draw_text(_abx + 210, 615, "Awakening " + string(_abo.cur + 1) + " unlocks without the climb");
+        if (_sel) {
+            draw_set_color(make_color_rgb(235, 210, 140));
+            draw_text(_abx + 210, 655, (input_device() == 2) ? "tap again to bless" : "[Enter] bless this dungeon");
+        }
+    }
+
+    draw_set_font(fnt_ui_small);
+    draw_set_color(make_color_rgb(120, 125, 150));
+    ui_draw_key_legend(960, 760, "W/S or A/D: Choose    Enter: Bless    (or tap a card)");
+    draw_set_halign(fa_left);
+    draw_set_font(-1);
+}
+// Post-pick celebration banner (runs after the modal closes).
+if (variable_instance_exists(id, "awaken_boost_done_timer") && awaken_boost_done_timer > 0) {
+    awaken_boost_done_timer--;
+    var _abd_a = min(1, awaken_boost_done_timer / 40);
+    draw_set_alpha(0.75 * _abd_a);
+    draw_set_color(make_color_rgb(30, 24, 8));
+    draw_rectangle(360, 130, 1560, 205, false);
+    draw_set_alpha(_abd_a);
+    draw_set_color(make_color_rgb(210, 175, 90));
+    draw_rectangle(360, 130, 1560, 205, true);
+    draw_set_halign(fa_center);
+    draw_set_font(fnt_ui);
+    draw_set_color(make_color_rgb(240, 215, 150));
+    draw_text_outline(960, 152, awaken_boost_done_name);
+    draw_set_halign(fa_left);
+    draw_set_alpha(1.0);
+    draw_set_font(-1);
+}
+
 ui_draw_item_picker();
 ui_draw_gift_popup();    // gift reaction + bond delta/progress (Phase 4b) - over the picker layer
 
@@ -2814,6 +2894,99 @@ if (ending_active) {
     draw_set_halign(fa_left);
     draw_set_valign(fa_top);
     draw_set_alpha(1.0);
+    draw_set_font(-1);
+}
+
+// BOND DIALOGUE window (M 07-28 rework): the deepen-relationship exchange in
+// ONE bordered opaque window at the NPC - portrait, the ask / progress / the
+// crossing itself. Standing popup rule: bordered frame + dimmed backdrop.
+if (bond_dialog_open) {
+    draw_set_alpha(0.72);
+    draw_set_color(make_color_rgb(6, 8, 14));
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
+    var _bdx0 = 460, _bdy0 = 300, _bdx1 = 1460, _bdy1 = 780;
+    draw_set_alpha(0.97);
+    draw_set_color(make_color_rgb(22, 20, 30));
+    draw_rectangle(_bdx0, _bdy0, _bdx1, _bdy1, false);
+    draw_set_alpha(1.0);
+    draw_set_color(make_color_rgb(200, 170, 110));
+    draw_rectangle(_bdx0, _bdy0, _bdx1, _bdy1, true);
+    draw_rectangle(_bdx0 + 6, _bdy0 + 6, _bdx1 - 6, _bdy1 - 6, true);
+    // Portrait - same art mapping as the ending farewell scene.
+    var _bd_port = -1;
+    switch (bond_dialog_npc) {
+        case "dorn":  _bd_port = Blacksmith_1__Dark_Gritty_; break;
+        case "sable": _bd_port = Alcehmist_2__Flirty_;       break;
+        case "maren": _bd_port = Runesmith_3__Facewrap_;     break;
+        case "vex":   _bd_port = Trainer_2__Sullen_;         break;
+        case "petra": _bd_port = Merchant_7__Voluptuous_;    break;
+        case "vael":  _bd_port = Aesthete_2__Gothic_;        break;
+        case "bairc": _bd_port = asset_get_index("spr_npc_bairc_portrait"); break;
+    }
+    var _bd_tx = _bdx0 + 40;   // text column start (moves right when a portrait draws)
+    if (_bd_port != -1 && sprite_exists(_bd_port)) {
+        ui_draw_sprite_cover(_bd_port, 0, _bdx0 + 36, _bdy0 + 66, 330, 330, 1.0);
+        ui_draw_gothic_frame(_bdx0 + 36, _bdy0 + 66, _bdx0 + 366, _bdy0 + 396, 15);
+        _bd_tx = _bdx0 + 410;
+    }
+    draw_set_halign(fa_left);
+    draw_set_valign(fa_top);
+    draw_set_font(fnt_ui);
+    draw_set_color(make_color_rgb(255, 225, 150));
+    draw_text(_bd_tx, _bdy0 + 40, bond_dialog_title);
+    draw_set_font(fnt_ui_small);
+    draw_set_color(make_color_rgb(215, 220, 235));
+    draw_text_ext(_bd_tx, _bdy0 + 104, bond_dialog_body, 30, _bdx1 - 48 - _bd_tx);
+    draw_set_halign(fa_center);
+    draw_set_color(make_color_rgb(140, 150, 175));
+    draw_set_font(fnt_ui_small);
+    ui_draw_key_legend((_bdx0 + _bdx1) / 2, _bdy1 - 46,
+        (input_device() == 2) ? "Tap to continue" : "Enter / Esc: Continue");
+    draw_set_halign(fa_left);
+    draw_set_font(-1);
+}
+
+// IRONMAN RUN-RESUME popup (SYSTEMS_RUN_RESUME.md) - modal over the whole hub
+// (the Step gate exits before any hub handler while this is pending). Single
+// RESUME button by design: an interrupted run can only be played out. Button
+// hit-test lives here in Draw (touch rule) and injects "resume:go" for the Step.
+if (variable_global_exists("resume_pending") && global.resume_pending) {
+    draw_set_alpha(0.72);
+    draw_set_color(make_color_rgb(6, 8, 14));
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
+    var _rz0 = 560, _rw0 = 372, _rz1 = 1360, _rw1 = 708;
+    draw_set_alpha(0.97);
+    draw_set_color(make_color_rgb(22, 20, 30));
+    draw_rectangle(_rz0, _rw0, _rz1, _rw1, false);
+    draw_set_alpha(1.0);
+    draw_set_color(make_color_rgb(200, 170, 110));
+    draw_rectangle(_rz0, _rw0, _rz1, _rw1, true);
+    draw_rectangle(_rz0 + 6, _rw0 + 6, _rz1 - 6, _rw1 - 6, true);
+    draw_set_halign(fa_center);
+    draw_set_font(fnt_ui);
+    draw_set_color(make_color_rgb(255, 225, 150));
+    draw_text((_rz0 + _rz1) / 2, _rw0 + 24, "AN UNFINISHED DIVE");
+    draw_set_font(fnt_ui_small);
+    draw_set_color(make_color_rgb(210, 214, 228));
+    var _rd = global.resume_data;
+    var _rd_dung = "the dungeon";
+    if (is_struct(_rd) && variable_struct_exists(_rd, "selected_dungeon")) {
+        switch (_rd.selected_dungeon) {
+            case "ashen_vault":     _rd_dung = "the Ashen Vault";     break;
+            case "scorched_depths": _rd_dung = "the Scorched Depths"; break;
+            case "tundra_tomb":     _rd_dung = "the Tundra Tomb";     break;
+        }
+    }
+    var _rd_floor = (is_struct(_rd) && variable_struct_exists(_rd, "current_floor")) ? _rd.current_floor : 1;
+    draw_text_ext((_rz0 + _rz1) / 2, _rw0 + 84,
+        "Your dive through " + _rd_dung + " was interrupted on floor " + string(_rd_floor)
+        + ".\nIronwake does not forget. You return where you fell -\nthe dive ends only in extraction or death.",
+        30, (_rz1 - _rz0) - 90);
+    draw_set_halign(fa_left);
+    var _rmx = device_mouse_x_to_gui(0), _rmy = device_mouse_y_to_gui(0);
+    var _rmp = mouse_check_button_pressed(mb_left);
+    ui_confirm_button((_rz0 + _rz1) / 2 - 220, _rw1 - 90, (_rz0 + _rz1) / 2 + 220, _rw1 - 24,
+        "RESUME THE DIVE  [Enter]", make_color_rgb(120, 210, 130), _rmx, _rmy, _rmp, "resume:go");
     draw_set_font(-1);
 }
 

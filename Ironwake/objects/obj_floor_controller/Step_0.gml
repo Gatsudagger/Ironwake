@@ -9,6 +9,30 @@
 // Accessibility rule: room is enterable if it has no parents OR any parent cleared.
 // =============================================================================
 
+// IRONMAN resume watcher (SYSTEMS_RUN_RESUME.md): rooms can resolve IN PLACE on
+// the floor map (treasure/event/shrine popups mark cleared without a room
+// change), so re-checkpoint whenever the floor state moves (1s throttle).
+// Runs before every early exit below so popup-modal frames still count.
+if (run_ckpt_cooldown > 0) run_ckpt_cooldown--;
+var _fck_cleared = 0;
+for (var _fck_i = 0; _fck_i < array_length(global.floor_rooms_cleared); _fck_i++) {
+    if (global.floor_rooms_cleared[_fck_i]) _fck_cleared++;
+}
+var _fck_sig = string(_fck_cleared)
+    + "|" + string(global.current_run_gold)
+    + "|" + string(global.run_xp)
+    + "|" + string(array_length(global.run_boons))
+    + "|" + string(array_length(global.run_curses))
+    + "|" + string(array_length(global.carried_items))
+    + "|" + string(array_length(global.consumable_inventory))
+    + "|" + string(array_length(global.run_trinkets));
+if (run_ckpt_sig == "") run_ckpt_sig = _fck_sig;   // arrival baseline (Create just wrote)
+if (_fck_sig != run_ckpt_sig && run_ckpt_cooldown <= 0) {
+    run_ckpt_sig      = _fck_sig;
+    run_ckpt_cooldown = 60;
+    run_checkpoint_write(undefined);
+}
+
 if (ui_input_blocked()) exit;
 
 // Pause / Esc menu - freeze the floor while it (or its Settings sub-screen) is open.
@@ -22,14 +46,115 @@ if (!dungeon_music_looping && !audio_is_playing(_2_dungeon_INITIAL)) {
     audio_play_sound(_2_dungeon_LOOP, 1, true);
 }
 
+// IRONMAN resume (SYSTEMS_RUN_RESUME.md): the boss EXTRACT/CONTINUE choice,
+// re-offered on the floor map after a crash-at-the-popup resume. Fully modal,
+// no cancel - the choice must be made, exactly like the combat popup. Arm-then-
+// confirm mirrors the combat version so a stray press can't commit either way.
+// Buttons are drawn + hit-tested in Draw_64 (touch rule) via injected tags.
+if (showing_extract) {
+    var _fx_extract  = input_hotkey("E") || input_inject_take("fxresume:extract");
+    var _fx_continue = input_confirm() || input_confirm_alt() || input_inject_take("fxresume:continue");
+    if (_fx_extract) {
+        if (extract_arm != "extract") {
+            extract_arm = "extract";
+        } else {
+            showing_extract = false;
+            end_run(0);
+            global.current_floor       = 1;
+            global.floor_rooms_cleared = [];
+            global.floor_map_floor     = -1;
+            room_goto(rm_hub);
+            exit;
+        }
+    } else if (_fx_continue) {
+        if (extract_arm != "continue") {
+            extract_arm = "continue";
+        } else {
+            showing_extract = false;
+            run_floor_advance();
+            exit;
+        }
+    }
+    exit;
+}
+
 // --- Shared item-sacrifice picker (Shrine item tribute) ---
 // Captures input while open (screen frozen); exits the frame it closes so the
 // confirming keypress doesn't fall through. On resolve the boon is already
 // granted; here we close the shrine + mark the room cleared. See SYSTEMS_ITEM_PICKER.md.
 if (variable_global_exists("item_picker") && global.item_picker.open
-    && global.item_picker.purpose == "shrine_boon") {
+    && (global.item_picker.purpose == "shrine_boon" || global.item_picker.purpose == "cartographer"
+        || global.item_picker.purpose == "courier")) {
     item_picker_step();
     exit;
+}
+// SPECTRAL COURIER resolution (THE DESCENT, SYSTEMS_ENDLESS.md §3): each pick
+// moves one carried find to the home stash; multi-item couriers reopen the
+// picker until the sends run out. Cancel = the courier departs early.
+if (variable_global_exists("item_picker") && global.item_picker.purpose == "courier"
+    && !global.item_picker.open) {
+    if (!variable_instance_exists(id, "courier_picks_left")) { courier_picks_left = 0; courier_sent = ""; }
+    var _co_done = false;
+    if (global.item_picker.resolved_purpose == "courier") {
+        global.item_picker.resolved_purpose = "";
+        var _co_pick = global.item_picker.context.chosen;
+        if (is_struct(_co_pick)) {
+            for (var _cri = array_length(global.carried_items) - 1; _cri >= 0; _cri--) {
+                if (global.carried_items[_cri] == _co_pick) { array_delete(global.carried_items, _cri, 1); break; }
+            }
+            array_push(global.equipment_stash, _co_pick);
+            courier_sent += ((courier_sent != "") ? ", " : "") + _co_pick.name;
+        }
+        courier_picks_left--;
+        // More sends left and more gear carried? The courier waits.
+        var _co_next = [];
+        for (var _cni = 0; _cni < array_length(global.carried_items); _cni++) {
+            var _cn_it = global.carried_items[_cni];
+            if (is_struct(_cn_it)) array_push(_co_next, { item: _cn_it, label: _cn_it.name, val: item_sell_value(_cn_it) });
+        }
+        if (courier_picks_left > 0 && array_length(_co_next) > 0) {
+            item_picker_open("courier", { chosen: undefined, left: courier_picks_left }, _co_next);
+        } else {
+            _co_done = true;
+        }
+    } else {
+        _co_done = true;   // cancelled - the courier departs
+    }
+    if (_co_done) {
+        global.item_picker.purpose = "";   // consume so this block runs once
+        event_title  = "SPECTRAL COURIER";
+        event_body   = (courier_sent != "")
+            ? ("A pale figure gathers your burden and fades upward.\n\nSent home: " + courier_sent + ".")
+            : "The pale figure waits, then fades upward\nwith empty hands.";
+        event_color  = make_color_rgb(180, 150, 235);
+        showing_event = true;   // its dismiss marks the room cleared (block below)
+        event_timer   = 0;
+        courier_sent  = "";
+        // No mid-run save (saves are hub-gated) - the stash mutation lives in
+        // memory and the hub-arrival save banks it whatever happens next.
+    }
+}
+// Cartographer's Cut (POTENCY V2, Treasure Hunter T5): grant the chosen bonus
+// item. A cancel (Esc) defaults to the first find so the trait's guaranteed
+// item is never lost to a slipped keypress.
+if (variable_global_exists("item_picker") && global.item_picker.purpose == "cartographer"
+    && !global.item_picker.open) {
+    var _cc_pick = undefined;
+    if (global.item_picker.resolved_purpose == "cartographer") {
+        _cc_pick = global.item_picker.context.chosen;
+        global.item_picker.resolved_purpose = "";
+    } else {
+        _cc_pick = global.item_picker.context.c1;   // cancelled - default keep
+    }
+    global.item_picker.purpose = "";   // consume so this block runs once
+    if (is_struct(_cc_pick)) {
+        array_push(global.run_items_found, _cc_pick);
+        array_push(global.carried_items, _cc_pick);
+        discover_item(item_base_name(_cc_pick));
+        loot_item_sting(_cc_pick);
+        if (treasure_item == undefined) treasure_item = _cc_pick;
+        else                            treasure_item2 = _cc_pick;
+    }
 }
 if (variable_global_exists("item_picker") && global.item_picker.resolved_purpose == "shrine_boon") {
     shrine_notification = global.item_picker.result_msg;
@@ -39,15 +164,19 @@ if (variable_global_exists("item_picker") && global.item_picker.resolved_purpose
     global.floor_rooms_cleared[selected_room] = true;
     global.item_picker.resolved_purpose = "";   // consume the one-shot
     // Rare: the crumbling altar reveals a pet egg (item-tribute claim path).
+    var _se2_pet = false;
     if (irandom(99) < 20) {
         var _se2 = pet_grant_altar_egg("egg_shrine");
+        _se2_pet = true;
         shrine_notification += _se2.is_egg ? "  An egg rests in the rubble..." : ("  A " + _se2.name + " stirs in the rubble...");
     }
     // Sacrifice celebration: sparkle flutter + result popup over the floor map.
+    // A pet find takes the HEADLINE + the legendary sting (M 07-28 spectacle).
     shrine_celebrate_timer = 150;
-    shrine_celebrate_title = "OFFERING ACCEPTED";
+    shrine_celebrate_title = _se2_pet ? "SOMETHING STIRS IN THE RUBBLE!" : "OFFERING ACCEPTED";
     shrine_celebrate_sub   = shrine_notification;
     shrine_celebrate_seed  = irandom(10000);
+    if (_se2_pet) audio_play_sound(loot_rarity_sound(4), 1, false);
 }
 
 
@@ -114,8 +243,9 @@ if (showing_shrine) {
             shrine_curse_arm    = -1;
             // A curse altar springs its trap the moment it drops the veil - the
             // unseen tormentor's haunting laugh (the whisper now marks the SELECTION,
-            // when the player actually embraces a curse below).
-            if (shrine_kind == "curse") audio_play_sound(snd_curse_laugh, 1, false);
+            // when the player actually embraces a curse below). Gain boosted
+            // (M 07-29: never noticed it - it sat under the shrine hum).
+            if (shrine_kind == "curse") audio_play_sound(snd_curse_laugh, 1, false, 1.7);
         }
         exit;
     }
@@ -166,6 +296,13 @@ if (showing_shrine) {
                         if (irandom(99) < 25) {
                             var _ce = pet_grant_altar_egg("egg_curse");
                             shrine_notification += _ce.is_egg ? "  A dark egg festers in the ashes..." : ("  A " + _ce.name + " lurks in the dark...");
+                            // Pet-find spectacle (M 07-28): even a curse-born
+                            // creature gets the headline popup + sting.
+                            shrine_celebrate_timer = 150;
+                            shrine_celebrate_title = _ce.is_egg ? "SOMETHING FESTERS IN THE ASHES!" : "SOMETHING FOLLOWS FROM THE DARK!";
+                            shrine_celebrate_sub   = shrine_notification;
+                            shrine_celebrate_seed  = irandom(10000);
+                            audio_play_sound(loot_rarity_sound(4), 1, false);
                         }
                     } else {
                         shrine_notification = _res;
@@ -212,15 +349,19 @@ if (showing_shrine) {
                     current_rooms[selected_room].cleared = true;
                     global.floor_rooms_cleared[selected_room] = true;
                     // Rare: the crumbling altar reveals a pet egg.
+                    var _se_pet = false;
                     if (irandom(99) < 20) {
                         var _se = pet_grant_altar_egg("egg_shrine");
+                        _se_pet = true;
                         shrine_notification += _se.is_egg ? "  An egg rests in the rubble..." : ("  A " + _se.name + " stirs in the rubble...");
                     }
-                    // Claim celebration (gold/dust tribute path).
+                    // Claim celebration (gold/dust tribute path). A pet find
+                    // takes the HEADLINE + legendary sting (M 07-28 spectacle).
                     shrine_celebrate_timer = 150;
-                    shrine_celebrate_title = "BOON CLAIMED";
+                    shrine_celebrate_title = _se_pet ? "SOMETHING STIRS IN THE RUBBLE!" : "BOON CLAIMED";
                     shrine_celebrate_sub   = shrine_notification;
                     shrine_celebrate_seed  = irandom(10000);
+                    if (_se_pet) audio_play_sound(loot_rarity_sound(4), 1, false);
                 } else {
                     shrine_notification = _res;
                     shrine_notification_fail = true;   // #13: can't-afford etc. read as failure
@@ -268,9 +409,10 @@ if (showing_whetstone) {
         exit;
     }
 
-    // whetstone_phase == "mod": pick one of the ability's two mastery mods.
+    // whetstone_phase == "mod": pick one of the ability's reachable unowned
+    // web nodes (talent-web rework - run-scoped, cap-exempt).
     var _wt_ab   = whetstone_abilities[whetstone_ab_cursor];
-    var _wt_mods = ability_mastery_options(_wt_ab);
+    var _wt_mods = ability_web_whetstone_options(_wt_ab);
     var _wt_mn   = array_length(_wt_mods);
     if (input_cancel() || input_back()) {
         whetstone_phase = "ability";   // back up to the ability list
@@ -283,11 +425,21 @@ if (showing_whetstone) {
         var _wt_pick = _wt_mods[whetstone_mod_cursor];
         ability_run_honing_set(_wt_ab.name, _wt_pick.id);
         global.run_whetstone_used = true;   // once-per-run gate (cleared at run teardown)
-        whetstone_notification = _wt_ab.name + " honed: " + _wt_pick.label + " (this run).";
+        audio_play_sound(snd_forge, 1, false);   // the honing strike on the stone
+        // Lantern of the Last Door (07-28 legendary): the stone offers ONE more
+        // honing before it sleeps (per-visit flag; the altar spawns once per run).
+        if (legendary_worn("lantern_last_door")
+            && (!variable_instance_exists(id, "whetstone_second_done") || !whetstone_second_done)) {
+            whetstone_second_done = true;
+            whetstone_phase = "ability";
+            whetstone_notification = _wt_ab.name + " honed: " + _wt_pick.title
+                + ".  The Lantern glows - the stone offers ONE more.";
+            exit;
+        }
+        whetstone_notification = _wt_ab.name + " honed: " + _wt_pick.title + " (this run).";
         showing_whetstone = false;
         current_rooms[selected_room].cleared = true;
         global.floor_rooms_cleared[selected_room] = true;
-        audio_play_sound(snd_forge, 1, false);   // the honing strike on the stone
     }
     exit;
 }
@@ -360,6 +512,7 @@ if (showing_event_choice) {
             if (_cost > 0) global.gold = max(0, global.gold - _cost);
 
             global.event_gold_gained = 0;
+            global.event_hp_hit      = 0;
             var _out     = event_resolve_choice(_ch);
             var _rewards = event_apply_effects(_out.effects);
             event_result_text = _out.text + (_rewards != "" ? "\n\n" + _rewards : "");
@@ -370,6 +523,28 @@ if (showing_event_choice) {
             event_coins = [];
             if (global.event_gold_gained > 0) {
                 event_coins = ui_seed_coin_burst(min(6 + (global.event_gold_gained div 10), 24), GUI_CX, 640);
+            }
+            // HP-hit feedback (M 07-28): hurt grunt + brief map shake + a
+            // floating "-N" riding the HUD HP readout - the loss is visible the
+            // moment it lands instead of surfacing next combat.
+            if (global.event_hp_hit > 0) {
+                play_player_vocal("snd_player_hurt", -1);
+                hp_shake_timer = 18;
+                hp_hit_popup   = { value: global.event_hp_hit, timer: 90 };
+            }
+            // Pet-find spectacle (M 07-28): a creature/egg is a headline, not a
+            // buried sentence - sparkle celebration + legendary-grade sting,
+            // drawn over the event result panel.
+            if (variable_global_exists("event_pet_found") && global.event_pet_found != undefined) {
+                var _epf = global.event_pet_found;
+                shrine_celebrate_timer = 150;
+                shrine_celebrate_title = _epf.is_egg ? "AN EGG AMONG THE SPOILS!" : "A CREATURE JOINS YOU!";
+                shrine_celebrate_sub   = _epf.is_egg
+                    ? ("A " + (pet_egg_label(_epf) != "" ? pet_egg_label(_epf) : "mysterious egg") + " - Bairc can raise it.")
+                    : ("A living " + _epf.name + " - it will wait with Bairc at camp.");
+                shrine_celebrate_seed  = irandom(10000);
+                audio_play_sound(loot_rarity_sound(4), 1, false);
+                global.event_pet_found = undefined;
             }
             show_debug_message("[FLOOR DEBUG] event=" + event_active.id
                 + " choice=" + _ch.label + " result=" + _out.text);
@@ -570,12 +745,30 @@ if (input_confirm() || input_confirm_alt()) {
         treasure_item2 = undefined;
         // Treasure Hunter (audit §6 rework): the trait adds one GUARANTEED extra item on
         // top of the normal 40% roll - so 1 item always, 2 when the roll also hits.
+        // POTENCY V2 ranks: +5%/rank chance the trait's bonus item rolls a rarity
+        // tier higher. TRANSCEND "Cartographer's Cut": the bonus item is a
+        // pick-1-of-2 (shared item picker, resolved above next frame).
         var _t_item_rolls = (irandom(99) < 40 ? 1 : 0) + (trait_active("Treasure Hunter") ? 1 : 0);
         if (_t_item_rolls > 0) {
             if (!variable_global_exists("run_items_found"))      global.run_items_found      = [];
             if (!variable_global_exists("consumable_inventory")) global.consumable_inventory = [];
             if (!variable_global_exists("carried_items"))        global.carried_items        = [];
             for (var _tri = 0; _tri < _t_item_rolls; _tri++) {
+                var _t_is_bonus = trait_active("Treasure Hunter") && (_tri == _t_item_rolls - 1);
+                var _t_tb = curse_loot_tier_bonus_for("chest")
+                    + ((_t_is_bonus && irandom(99) < 5 * trait_potency_r14("Treasure Hunter")) ? 1 : 0);
+                // Cartographer's Cut: the trait's bonus slot becomes a choice of two
+                // fresh equipment rolls instead of one auto-grant.
+                if (_t_is_bonus && trait_transcended("Treasure Hunter")) {
+                    var _cc_asc = (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0);
+                    var _cc1 = drop_equipment(drop_weights("chest", _cc_asc), true, _t_tb);
+                    var _cc2 = drop_equipment(drop_weights("chest", _cc_asc), true, _t_tb);
+                    item_picker_open("cartographer", { chosen: undefined, c1: _cc1, c2: _cc2 }, [
+                        { item: _cc1, label: _cc1.name, val: item_sell_value(_cc1) },
+                        { item: _cc2, label: _cc2.name, val: item_sell_value(_cc2) }
+                    ]);
+                    continue;
+                }
                 var _t_found = undefined;
                 if (irandom(99) < 70) {
                     var _tc = roll_consumable_weighted(global.consumables_standard);
@@ -585,7 +778,7 @@ if (input_confirm() || input_confirm_alt()) {
                 } else {
                     // Curse loot-tiers are a post-roll rarity bump now, not an awakening offset.
                     var _te_asc = (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0);
-                    var _te = drop_equipment(drop_weights("chest", _te_asc), true, curse_loot_tier_bonus());
+                    var _te = drop_equipment(drop_weights("chest", _te_asc), true, _t_tb);
                     array_push(global.run_items_found, _te);
                     array_push(global.carried_items, _te);
                     discover_item(item_base_name(_te));
@@ -619,6 +812,17 @@ if (input_confirm() || input_confirm_alt()) {
         var _rest_flat = (trait_active("Quick Recovery") ? round(25 * trait_potency_mult("Quick Recovery")) : 15)
                        + 4 * _rest_tier;
         var _rest_max  = out_of_combat_max_hp();
+        // Quick Recovery TRANSCEND "Second Wind" (POTENCY V2): the first rest
+        // each run grants +5 max HP for the run (run_bonus_max_hp - a flat
+        // post-mult term in out_of_combat_max_hp AND combat_apply_start_traits).
+        var _rest_sw = "";
+        if (trait_transcended("Quick Recovery")
+            && (!variable_global_exists("second_wind_used") || !global.second_wind_used)) {
+            global.second_wind_used = true;
+            global.run_bonus_max_hp = (variable_global_exists("run_bonus_max_hp") ? global.run_bonus_max_hp : 0) + 5;
+            _rest_max = out_of_combat_max_hp();
+            _rest_sw  = "\nSecond Wind: +5 max HP for this run!";
+        }
         var _rest_amt  = _rest_flat + round(_rest_max * 0.05);
         if (!variable_global_exists("run_current_hp") || global.run_current_hp <= 0) global.run_current_hp = _rest_max;
         var _rest_before = global.run_current_hp;
@@ -626,7 +830,7 @@ if (input_confirm() || input_confirm_alt()) {
         var _rest_gain = global.run_current_hp - _rest_before;
         event_title  = "REST SITE";
         event_body   = "You find a sheltered alcove and catch\nyour breath in the darkness.\n\n+" + string(_rest_gain)
-                     + " HP restored" + ((_rest_gain < _rest_amt) ? " (you were near full)" : "") + ".";
+                     + " HP restored" + ((_rest_gain < _rest_amt) ? " (you were near full)" : "") + "." + _rest_sw;
         event_color  = make_color_rgb(80, 200, 120);
         showing_event = true;
         event_timer   = 0;
@@ -663,7 +867,7 @@ if (input_confirm() || input_confirm_alt()) {
         if (!variable_global_exists("carried_items"))   global.carried_items   = [];
         // Curse loot-tiers are a post-roll rarity bump now, not an awakening offset.
         var _tv_asc = (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0);
-        var _tv_e = drop_equipment(drop_weights("vault", _tv_asc), true, curse_loot_tier_bonus());
+        var _tv_e = drop_equipment(drop_weights("vault", _tv_asc), true, curse_loot_tier_bonus_for("vault"));
         array_push(global.run_items_found, _tv_e);
         array_push(global.carried_items, _tv_e);
         discover_item(item_base_name(_tv_e));
@@ -687,7 +891,7 @@ if (input_confirm() || input_confirm_alt()) {
         if (!variable_global_exists("carried_items"))   global.carried_items   = [];
         // Curse loot-tiers are a post-roll rarity bump now, not an awakening offset.
         var _tr_asc = (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0);
-        var _tr_e = drop_equipment(drop_weights("reliquary", _tr_asc), true, curse_loot_tier_bonus());
+        var _tr_e = drop_equipment(drop_weights("reliquary", _tr_asc), true, curse_loot_tier_bonus_for("reliquary"));
         array_push(global.run_items_found, _tr_e);
         array_push(global.carried_items, _tr_e);
         discover_item(item_base_name(_tr_e));
@@ -703,21 +907,43 @@ if (input_confirm() || input_confirm_alt()) {
         show_debug_message("[FLOOR DEBUG] room=" + string(selected_room) + " type=treasure_rare gold=" + string(_tr_gold));
 
     } else if (_room.type == "event") {
-        // Event room - roll an event and open the interactive choice overlay.
-        event_active      = event_roll();
-        event_cursor      = event_first_unlocked(event_active);
-        event_phase       = "choose";
-        event_result_text = "";
-        showing_event_choice = true;
-        audio_play_sound(snd_sting_mystery, 1, false);   // something odd in this room...
-        show_debug_message("[FLOOR DEBUG] room=" + string(selected_room) + " type=event id=" + event_active.id);
+        // THE DESCENT courier (SYSTEMS_ENDLESS.md §3, M's ask): in the Descent an
+        // event room is sometimes a SPECTRAL COURIER - send 1 / 2 / 3 (ultra-rare)
+        // carried finds home mid-descent: banked without retreating, so greed
+        // keeps its tension. Uses the shared item picker; resolved at the top of
+        // this Step alongside the shrine/cartographer purposes.
+        var _co_cands = [];
+        if (variable_global_exists("descent_active") && global.descent_active) {
+            for (var _coi = 0; _coi < array_length(global.carried_items); _coi++) {
+                var _co_it = global.carried_items[_coi];
+                if (is_struct(_co_it)) array_push(_co_cands, { item: _co_it, label: _co_it.name, val: item_sell_value(_co_it) });
+            }
+        }
+        if (array_length(_co_cands) > 0 && irandom(99) < 35) {
+            var _co_roll = irandom(99);
+            courier_picks_left = (_co_roll < 70) ? 1 : ((_co_roll < 95) ? 2 : 3);
+            courier_sent       = "";
+            item_picker_open("courier", { chosen: undefined, left: courier_picks_left }, _co_cands);
+            audio_play_sound(snd_sting_mystery, 1, false);
+            show_debug_message("[FLOOR DEBUG] room=" + string(selected_room) + " type=event COURIER n=" + string(courier_picks_left));
+        } else {
+            // Event room - roll an event and open the interactive choice overlay.
+            event_active      = event_roll();
+            event_cursor      = event_first_unlocked(event_active);
+            event_phase       = "choose";
+            event_result_text = "";
+            showing_event_choice = true;
+            audio_play_sound(snd_sting_mystery, 1, false);   // something odd in this room...
+            show_debug_message("[FLOOR DEBUG] room=" + string(selected_room) + " type=event id=" + event_active.id);
+        }
 
     } else if (_room.type == "shrine") {
-        // Shrine altar - roll its nature (~33% cursed; curse altars are the rarer,
-        // riskier surprise), then roll the matching offers. If the chosen kind has
-        // nothing left to give, fall back to the other kind. The nature stays VEILED
+        // Shrine altar - roll its nature (~25% cursed; curse altars are the rarer,
+        // riskier surprise - at 33% they read as common as blessings, M 07-28),
+        // then roll the matching offers. If the chosen kind has nothing left to
+        // give, fall back to the other kind. The nature stays VEILED
         // (shrine_revealed=false) until the player chooses to approach the altar.
-        shrine_kind = (irandom(99) < 33) ? "curse" : "blessing";
+        shrine_kind = (irandom(99) < 25) ? "curse" : "blessing";
         if (shrine_kind == "curse") {
             shrine_offers = curse_offer_roll();
             if (array_length(shrine_offers) == 0) { shrine_kind = "blessing"; shrine_offers = boon_offer_roll(); }

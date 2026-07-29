@@ -156,18 +156,18 @@ function abilities_resolve_player_loadout(class_id) {
             if (_lname == "") continue;
             for (var _ai = 0; _ai < array_length(_pool); _ai++) {
                 if (_pool[_ai].name == _lname) {
-                    // Mastery (expression #2): hand out a mod-adjusted copy when picks exist.
-                    array_push(_out, ability_mastery_resolve(_pool[_ai]));
+                    // Talent webs: hand out a node-adjusted copy when picks exist.
+                    array_push(_out, ability_web_resolve(_pool[_ai]));
                     break;
                 }
             }
         }
         if (array_length(_out) >= 4 && array_length(_out) <= _max) return _out;
     }
-    // Fallback class defaults get mastery too (same name-keyed picks).
+    // Fallback class defaults get their webs too (same name-keyed picks).
     var _def = abilities_get_loadout(class_id);
     var _dout = [];
-    for (var _di = 0; _di < array_length(_def); _di++) array_push(_dout, ability_mastery_resolve(_def[_di]));
+    for (var _di = 0; _di < array_length(_def); _di++) array_push(_dout, ability_web_resolve(_def[_di]));
     return _dout;
 }
 
@@ -1000,13 +1000,16 @@ function ability_attack_class_tag(ab) {
 // the counter in a per-combat player.ability_cd slot array (NOT on the shared
 // ability struct). Pass an ability struct.
 function ability_cooldown(ab) {
+    var _cd = 0;
     switch (ab.name) {
-        case "Blink":          return 2;
-        case "Shadow Step":    return 2;
-        case "Field Dressing": return 2;   // was once-per-combat; now a 2-turn CD like Blink
-        case "Void Drain":     return 2;   // cheap 1-AP heal/Soul, gated by a 2-turn CD
+        case "Blink":          _cd = 2; break;
+        case "Shadow Step":    _cd = 2; break;
+        case "Field Dressing": _cd = 2; break;   // was once-per-combat; now a 2-turn CD like Blink
+        case "Void Drain":     _cd = 2; break;   // cheap 1-AP heal/Soul, gated by a 2-turn CD
     }
-    return 0;
+    // Talent-web Swift Recovery node: resolved copies carry cd_mod (floors at 1).
+    if (_cd > 0 && is_struct(ab) && variable_struct_exists(ab, "cd_mod")) _cd = max(1, _cd + ab.cd_mod);
+    return _cd;
 }
 
 // ability_overcharge_eligible(ab, caster) - true when casting this ability RIGHT
@@ -1037,6 +1040,9 @@ function ability_overcharge_eligible(ab, caster) {
 // reaction is the same +5/tick), and Rift joins as the CASCADE - being AoE, it
 // detonates each enemy's status individually in the per-target loop.
 function ability_is_detonator(ab) {
+    // Talent-web keystone (Unstable Charge / Concussive Impact / bespoke):
+    // a resolved copy carrying the "detonate" rider joins the reaction table.
+    if (is_struct(ab) && ability_web_copy_has_rider(ab, "detonate")) return true;
     var _n = is_struct(ab) ? ab.name : ab;
     return (_n == "Snipe" || _n == "Assassinate" || _n == "Arcane Burst" || _n == "Soul Nova"
          || _n == "Rupture" || _n == "Bonebreaker" || _n == "Rift");
@@ -1169,6 +1175,30 @@ function ability_effective_cost(ab, caster) {
 
     if (is_undefined(caster)) return _cost;
     var _is_spell = ability_class_is_spell(ability_attack_class(ab));
+
+    // Talent-web Opening Gambit keystone: the FIRST cast of this ability each
+    // combat costs -1 AP (can reach 0). Flag is burned at cast commit, same
+    // pattern as Quickcast below.
+    if (_cost > 0 && ability_web_copy_has_rider(ab, "first_free")
+        && !ability_web_first_cast_used(caster, ab.name)) {
+        _cost -= 1;
+    }
+
+    // Blink "Counterphase" web keystone (task #14): a full Blink evade armed a
+    // 1-AP discount on the NEXT ability. Cleared at cast commit (the same site
+    // that burns the first-cast flags), so display and charge always agree.
+    if (_cost > 0 && variable_struct_exists(caster, "blink_tempo_ready") && caster.blink_tempo_ready) {
+        _cost -= 1;
+    }
+
+    // Expanded Arsenal TRANSCEND "Deep Reserves" (POTENCY V2): the first cast of
+    // EVERY slotted ability each combat costs -1 AP. Same flag pattern as the
+    // web keystone above; burned at cast commit alongside it.
+    if (_cost > 0 && trait_transcended("Expanded Arsenal")
+        && variable_struct_exists(caster, "potency_first_casts")
+        && !variable_struct_exists(caster.potency_first_casts, ab.name)) {
+        _cost -= 1;
+    }
 
     // Quickcast aspect rune: the first SPELL each combat costs -1 AP (can reach 0).
     if (_cost > 0 && _is_spell
@@ -1948,120 +1978,471 @@ function abilities_class_pool(class_id) {
 }
 
 // =============================================================================
-// ABILITY MASTERY NOTCHES (expression #2, EXPRESSION_IDEAS.md). Lifetime casts
-// are tracked per ability NAME (per save slot); at 25 and 75 casts the ability
-// earns a NOTCH, and each notch is spent on ONE of two micro-mods (permanent).
-// Picks may repeat (stack) or differ - "your Snipe isn't my Snipe".
-// Storage: global.ability_casts { name: count }, global.ability_mastery
-// { name: [mod_id, ...] } - both saved. Mods are applied by handing out
-// MODIFIED COPIES of the pool structs at loadout resolve, so the dynamic
-// descriptions (built from live fields) update themselves and the global pools
-// are never mutated.
+// ABILITY TALENT WEBS (SYSTEMS_TALENT_WEBS.md, design-locked 2026-07-27).
+// Replaces the mastery-notch system. Every ability has a 7-node "wishbone":
+// a free root (the ability itself) + a POWER branch (p1/p2/pk) and a TWIST
+// branch (t1/t2/tk) with a keystone at each branch end. Mastery Points (MP)
+// come from lifetime casts of THAT ability (10/30/60/100); the SPEND CAP is
+// 4 of 6 nodes - a full branch costs 3, so one keystone + one dip, never both.
+// Webs are GENERATED from the ability's shape here; bespoke name-keyed node
+// overrides arrive in Phase 3. Picks are handed out as field-adjusted COPIES
+// at loadout resolve (pools stay pristine; dynamic descriptions read the
+// copy). Storage: global.ability_casts { name: count } and
+// global.ability_web { name: [node_ids] } - both saved (SAVE_FORMAT v4;
+// pre-v4 mastery picks are dropped on load and every earned MP returns as
+// pending, so old saves re-pick - a strict buff).
 // =============================================================================
 
-function ability_mastery_thresholds() { return [25, 75]; }
+function ability_web_thresholds() { return [10, 30, 60, 100]; }
+function ability_web_cap()        { return 4; }
 
 function ability_casts(name) {
     if (!variable_global_exists("ability_casts") || !is_struct(global.ability_casts)) return 0;
     return variable_struct_exists(global.ability_casts, name) ? variable_struct_get(global.ability_casts, name) : 0;
 }
 
-// Notches earned so far (0-2) from lifetime casts.
-function ability_notches_earned(name) {
+// MP earned so far from lifetime casts, clamped to the spend cap (0-4).
+function ability_web_mp_earned(name) {
     var _c = ability_casts(name);
-    var _th = ability_mastery_thresholds();
+    var _th = ability_web_thresholds();
     var _n = 0;
     for (var _i = 0; _i < array_length(_th); _i++) if (_c >= _th[_i]) _n++;
-    return _n;
+    return min(_n, ability_web_cap());
 }
 
-// The mod ids already picked for this ability (array, newest last).
-function ability_mastery_picks(name) {
-    if (!variable_global_exists("ability_mastery") || !is_struct(global.ability_mastery)) return [];
-    return variable_struct_exists(global.ability_mastery, name) ? variable_struct_get(global.ability_mastery, name) : [];
+// The node ids already bought for this ability (array, newest last).
+function ability_web_picks(name) {
+    if (!variable_global_exists("ability_web") || !is_struct(global.ability_web)) return [];
+    return variable_struct_exists(global.ability_web, name) ? variable_struct_get(global.ability_web, name) : [];
 }
 
-// Notches earned but not yet spent on a pick.
-function ability_mastery_pending(name) {
-    return max(0, ability_notches_earned(name) - array_length(ability_mastery_picks(name)));
+// MP earned but not yet spent on a node.
+function ability_web_mp_pending(name) {
+    return max(0, ability_web_mp_earned(name) - array_length(ability_web_picks(name)));
+}
+
+// Cast count of the next threshold that still yields a spendable MP (-1 = all
+// 4 earned). Feeds the web view's "next point at N casts" line.
+function ability_web_next_threshold(name) {
+    var _c = ability_casts(name);
+    var _th = ability_web_thresholds();
+    for (var _i = 0; _i < array_length(_th); _i++) if (_c < _th[_i]) return _th[_i];
+    return -1;
 }
 
 // Count one cast (called from the combat controller at cast commit). Pushes a
-// log line when a notch threshold is crossed so the moment lands in the fight.
-function ability_mastery_count_cast(name, combat_log) {
+// log line when an MP threshold is crossed so the moment lands in the fight.
+function ability_web_count_cast(name, combat_log) {
     if (!variable_global_exists("ability_casts") || !is_struct(global.ability_casts)) global.ability_casts = {};
-    var _before = ability_notches_earned(name);
+    var _before = ability_web_mp_earned(name);
     variable_struct_set(global.ability_casts, name, ability_casts(name) + 1);
-    if (ability_notches_earned(name) > _before && is_array(combat_log)) {
-        array_push(combat_log, "MASTERY NOTCH earned: " + name + "!  (pick its edge at the loadout)");
-    }
-}
-
-// The two micro-mods this ability's notches choose between. Generic, derived
-// from the ability's shape (a hand-tuned table can override later):
-//   damaging        -> +3 damage  vs  +5 accuracy (+4% crit when it can't miss)
-//   timed effect    -> +2 effect  vs  +1 turn
-//   instant effect  -> +2 effect  vs  +20% effect
-// Returns [{ id, label }, { id, label }].
-function ability_mastery_options(ab) {
-    if (ab.base_damage > 0) {
-        var _b = (ab.guaranteed_hit || ab.base_acc >= 100)
-            ? { id:"crit", label:"+4% crit chance" }
-            : { id:"acc",  label:"+5 accuracy" };
-        return [ { id:"dmg", label:"+3 base damage" }, _b ];
-    }
-    if (ab.effect_duration > 0) {
-        return [ { id:"val",  label:"+2 effect strength" },
-                 { id:"dur",  label:"+1 turn duration" } ];
-    }
-    return [ { id:"val",  label:"+2 effect strength" },
-             { id:"valp", label:"+20% effect strength" } ];
-}
-
-function ability_mastery_mod_label(ab, mod_id) {
-    var _o = ability_mastery_options(ab);
-    for (var _i = 0; _i < array_length(_o); _i++) if (_o[_i].id == mod_id) return _o[_i].label;
-    return mod_id;
-}
-
-// Spend a pending notch on a mod. "" ok / reason.
-function ability_mastery_pick(name, mod_id) {
-    if (ability_mastery_pending(name) <= 0) return "No notch to spend.";
-    if (!variable_global_exists("ability_mastery") || !is_struct(global.ability_mastery)) global.ability_mastery = {};
-    if (!variable_struct_exists(global.ability_mastery, name)) variable_struct_set(global.ability_mastery, name, []);
-    array_push(variable_struct_get(global.ability_mastery, name), mod_id);
-    return "";
-}
-
-// Apply ONE mastery mod id in place to a mutable ability copy. Shared by the
-// permanent notch picks and the run-scoped Whetstone honing so both use the exact
-// same numbers.
-function ability_apply_mastery_mod(_c, mod_id) {
-    switch (mod_id) {
-        case "dmg":  _c.base_damage     += 3; break;
-        case "acc":  _c.base_acc        += 5; break;
-        case "crit": _c.base_crit       += 4; break;
-        case "val":  _c.effect_value    += 2; break;
-        case "dur":  _c.effect_duration += 1; break;
-        case "valp": _c.effect_value     = ceil(_c.effect_value * 1.2); break;
+    if (ability_web_mp_earned(name) > _before && is_array(combat_log)) {
+        array_push(combat_log, "TALENT POINT earned: " + name + "!  (open its web at the loadout)");
     }
 }
 
 // ---------------------------------------------------------------------------
-// RUN-SCOPED HONING (Whetstone shrine, COMBAT_IMPROVEMENT_PLAN_2026-07-17.md §C).
-// The Whetstone event grants a RUN-SCOPED mastery mod on one slotted ability,
-// stacking on top of any permanent notch picks. Storage: global.run_honing
-// { ability_name : mod_id }. Null-safe: absent global = no honing. Cleared in
-// run_state_reset / new-game / load (scr_save). Applied by ability_mastery_resolve.
+// WEB GENERATION. A node: { id, branch ("P"/"T"), tier (1-3), title, label,
+// mods (field-mod id array, see ability_web_apply_mod), rider ("" or a key
+// the combat controller checks - riders only ever ride DAMAGING abilities;
+// pure-debuff abilities must not gain on-hit riders, see
+// project_debuff_no_attack_riders). Templates key off the same shape axes the
+// old mastery options used, widened with attack-class and cooldown.
+// ---------------------------------------------------------------------------
+function ability_web_node(id, branch, tier, title, label, mods, rider) {
+    return { id: id, branch: branch, tier: tier, title: title, label: label, mods: mods, rider: rider };
+}
+
+// Webs must ALWAYS generate from the PRISTINE pool struct - a resolved copy's
+// shifted fields (e.g. an AP-cost node lowering energy_cost) would otherwise
+// regenerate a different template and silently remap owned node ids. Accepts
+// a struct or a name; searches every pool (borrowed abilities included).
+function ability_web_pristine(ab_or_name) {
+    var _nm = is_struct(ab_or_name) ? ab_or_name.name : ab_or_name;
+    var _pools = [global.abilities_arcanist, global.abilities_bloodwarden,
+                  global.abilities_shadowstrider, global.abilities_general];
+    for (var _p = 0; _p < array_length(_pools); _p++) {
+        for (var _i = 0; _i < array_length(_pools[_p]); _i++) {
+            if (_pools[_p][_i].name == _nm) return _pools[_p][_i];
+        }
+    }
+    return is_struct(ab_or_name) ? ab_or_name : undefined;
+}
+
+function ability_web_nodes(ab) {
+    ab = ability_web_pristine(ab);
+    var _n        = [];
+    var _is_spell = ability_class_is_spell(ability_attack_class(ab));
+    var _sure     = (ab.guaranteed_hit || ab.base_acc >= 100);
+    var _has_cd   = (ability_cooldown(ab) > 0);
+    var _has_dur  = (ab.effect_duration > 0);
+    if (ab.base_damage > 0) {
+        // DAMAGING - POWER = raw output, TWIST = tempo/reliability. Keystones
+        // draw from a TRANSFORMATIVE POOL via a deterministic per-name hash so
+        // sibling abilities diverge (M 07-27: "the talents are all too
+        // identical"); bespoke signature overrides below replace these wholesale.
+        var _h = 0;
+        for (var _hc = 1; _hc <= string_length(ab.name); _hc++) _h += ord(string_char_at(ab.name, _hc));
+        array_push(_n, ability_web_node("p1", "P", 1, "Keen Edge", "+3 base damage", ["dmg"], ""));
+        array_push(_n, _sure
+            ? ability_web_node("p2", "P", 2, "Deadly Precision", "+4% crit chance", ["crit"], "")
+            : ability_web_node("p2", "P", 2, "True Aim", "+5 accuracy", ["acc"], ""));
+        var _pk;
+        if (_is_spell) {
+            switch (_h mod 4) {
+                case 0:  _pk = ability_web_node("pk", "P", 3, "Unstable Charge", "Hits DETONATE the target's statuses", [], "detonate"); break;
+                case 1:  _pk = ability_web_attune_node("pk", ab); break;
+                case 2:  _pk = ability_web_node("pk", "P", 3, "Forking Torrent", "Echoes 50% of its damage to another enemy", [], "splash:50"); break;
+                default: _pk = ability_web_node("pk", "P", 3, "Overwhelm", "Hits inflict Vulnerable (1 turn)", [], "hit_vuln");
+            }
+        } else {
+            switch (_h mod 3) {
+                case 0:  _pk = ability_web_node("pk", "P", 3, "Executioner's Rhythm", "Killing blows refund 1 AP", [], "kill_ap"); break;
+                case 1:  _pk = ability_web_node("pk", "P", 3, "Headsman's Edge", "+50% damage below 25% HP", [], "execute:50"); break;
+                default: _pk = ability_web_node("pk", "P", 3, "Concussive Impact", "Hits DETONATE the target's statuses", [], "detonate");
+            }
+        }
+        array_push(_n, _pk);
+        array_push(_n, _sure
+            ? ability_web_node("t1", "T", 1, "Heavy Hand", "+15% base damage", ["dmgp"], "")
+            : ability_web_node("t1", "T", 1, "Killer Instinct", "+4% crit chance", ["crit"], ""));
+        if (_has_cd)       array_push(_n, ability_web_node("t2", "T", 2, "Swift Recovery", "Cooldown -1 turn", ["cdm"], ""));
+        else if (_has_dur) array_push(_n, ability_web_node("t2", "T", 2, "Lasting Mark", "+1 turn effect duration", ["dur"], ""));
+        else               array_push(_n, ability_web_node("t2", "T", 2, "Brutal Momentum", "+15% base damage", ["dmgp"], ""));
+        var _tk;
+        switch ((_h div 7) mod 3) {
+            case 0:  _tk = ability_web_node("tk", "T", 3, "Opening Gambit", "First cast each combat costs 1 less AP", [], "first_free"); break;
+            case 1:  _tk = ability_web_node("tk", "T", 3, "Red Harvest", "Heals you for 25% of damage dealt", [], "lifesteal:25"); break;
+            default: _tk = _is_spell
+                ? ability_web_node("tk", "T", 3, "Culling Wave", "+50% damage below 25% HP", [], "execute:50")
+                : ability_web_node("tk", "T", 3, "Cleaving Follow-through", "Echoes 50% of its damage to another enemy", [], "splash:50");
+        }
+        array_push(_n, _tk);
+    } else if (_has_dur) {
+        // TIMED EFFECT, no damage (pure debuffs/buffs - no on-hit riders).
+        // Value nodes name the CONCRETE unit + numbers via ability_web_val_node
+        // (M 07-28: "+2 effect strength" on Blink says nothing).
+        array_push(_n, ability_web_val_node(ab, "p1", "P", 1, "Deeper Roots", "add"));
+        array_push(_n, ability_web_val_node(ab, "p2", "P", 2, "Concentration", "mult20"));
+        array_push(_n, ability_web_node("pk", "P", 3, "Lingering Grip", "+2 turns duration", ["dur2"], ""));
+        array_push(_n, ability_web_node("t1", "T", 1, "Endurance", "+1 turn duration", ["dur"], ""));
+        if (_has_cd)                   array_push(_n, ability_web_node("t2", "T", 2, "Swift Recovery", "Cooldown -1 turn", ["cdm"], ""));
+        else if (ab.energy_cost >= 2)  array_push(_n, ability_web_node("t2", "T", 2, "Efficient Form", "Costs 1 less AP", ["apc"], ""));
+        else                           array_push(_n, ability_web_val_node(ab, "t2", "T", 2, "Deeper Roots II", "add"));
+        array_push(_n, ability_web_node("tk", "T", 3, "Opening Gambit", "First cast each combat costs 1 less AP", [], "first_free"));
+    } else {
+        // INSTANT EFFECT (heals, shields, resource bursts).
+        array_push(_n, ability_web_val_node(ab, "p1", "P", 1, "Deeper Roots", "add"));
+        array_push(_n, ability_web_val_node(ab, "p2", "P", 2, "Concentration", "mult20"));
+        array_push(_n, ability_web_val_node(ab, "pk", "P", 3, "Overflowing Power", "mult50"));
+        array_push(_n, (ab.energy_cost >= 2)
+            ? ability_web_node("t1", "T", 1, "Efficient Form", "Costs 1 less AP", ["apc"], "")
+            : ability_web_val_node(ab, "t1", "T", 1, "Deeper Roots II", "add"));
+        if (_has_cd) array_push(_n, ability_web_node("t2", "T", 2, "Swift Recovery", "Cooldown -1 turn", ["cdm"], ""));
+        else         array_push(_n, ability_web_val_node(ab, "t2", "T", 2, "Concentration II", "mult20"));
+        array_push(_n, ability_web_node("tk", "T", 3, "Opening Gambit", "First cast each combat costs 1 less AP", [], "first_free"));
+    }
+    // Bespoke SIGNATURE overrides (Phase 3 pulled forward, M 07-27): a
+    // hand-authored node replaces the template node with the same id.
+    var _bs = ability_web_bespoke(ab);
+    for (var _bi = 0; _bi < array_length(_bs); _bi++) {
+        for (var _bj = 0; _bj < array_length(_n); _bj++) {
+            if (_n[_bj].id == _bs[_bi].id) { _n[_bj] = _bs[_bi]; break; }
+        }
+    }
+    return _n;
+}
+
+// What this ability's effect_value MEANS, in the player's words - feeds the
+// generic web-node descriptions (M 07-28: "+2 effect strength" on Blink says
+// nothing; "+2 healing (14 -> 16)" is the standard we want).
+function ability_web_val_noun(ab) {
+    switch (ab.effect_type) {
+        case "heal":     return "healing";
+        case "shield":   return "shield";
+        case "dot":      return "damage per turn";
+        case "resource": return "resource gained";
+        case "debuff":   return "debuff potency";
+        case "status":   return "effect potency";
+    }
+    return "effect strength";
+}
+
+// Build a generic value node with a CONCRETE description (unit + base -> new
+// numbers). kind: "add" (+2 flat), "mult20" (x1.2), "mult50" (x1.5).
+// FRACTION-VALUED abilities (a -30% debuff stores 0.3) always get the
+// multiplicative rider - the flat +2 would explode a 0.3 fraction to 2.3
+// ("-230%"), which was a live defect in the launch template. The shown numbers
+// mirror the rider math exactly (ceil for whole values, 95% cap for fractions).
+function ability_web_val_node(ab, _id, _br, _lv, _nm, _kind) {
+    var _v    = ab.effect_value;
+    var _frac = (_v > 0 && _v < 1);
+    var _noun = ability_web_val_noun(ab);
+    var _desc, _rider;
+    if (_kind == "add" && !_frac) {
+        _rider = ["val"];
+        _desc  = "+2 " + _noun + "  (" + string(_v) + " -> " + string(_v + 2) + ")";
+    } else if (_kind == "mult50") {
+        _rider = ["valh"];
+        _desc  = _frac
+            ? ("+50% " + _noun + "  (" + string(round(_v * 100)) + "% -> " + string(round(min(0.95, _v * 1.5) * 100)) + "%)")
+            : ("+50% " + _noun + "  (" + string(_v) + " -> " + string(ceil(_v * 1.5)) + ")");
+    } else {
+        _rider = ["valp"];
+        _desc  = _frac
+            ? ("+20% " + _noun + "  (" + string(round(_v * 100)) + "% -> " + string(round(min(0.95, _v * 1.2) * 100)) + "%)")
+            : ("+20% " + _noun + "  (" + string(_v) + " -> " + string(ceil(_v * 1.2)) + ")");
+    }
+    return ability_web_node(_id, _br, _lv, _nm, _desc, _rider, "");
+}
+
+// School adjacency for Attunement choice nodes - which schools an ability can
+// convert to (never its own; elemental trio cross-converts, dark schools stay
+// in their family). Player-facing choice: this is a rare point of expression.
+function ability_web_attune_schools(school) {
+    switch (school) {
+        case "arcane": return ["fire", "frost", "shock"];
+        case "fire":   return ["frost", "shock"];
+        case "frost":  return ["fire", "shock"];
+        case "shock":  return ["fire", "frost"];
+        case "blood":  return ["void", "shadow"];
+        case "void":   return ["blood", "shadow"];
+        case "shadow": return ["void", "poison"];
+        case "poison": return ["shadow", "void"];
+    }
+    return ["fire", "frost", "shock"];
+}
+
+// An Attunement CHOICE node: staging it cycles through the offered schools
+// (stored as "pk@fire"). Converting rebases what +school% gear feeds the
+// ability, its log color and its VFX tint.
+function ability_web_attune_node(id, ab) {
+    var _sc  = ability_web_attune_schools(ability_school(ab));
+    var _lbl = "Convert its school: ";
+    for (var _i = 0; _i < array_length(_sc); _i++) _lbl += ((_i > 0) ? " / " : "") + school_label(_sc[_i]);
+    var _nd = ability_web_node(id, (id == "pk") ? "P" : "T", 3, "Attunement", _lbl, [], "");
+    _nd.schools = _sc;
+    return _nd;
+}
+
+// Hand-authored signature nodes (M 07-27: unique, ability-changing usage).
+// Each returned node REPLACES the template node with the same id. All numbers
+// first-pass/tunable; riders are the shared primitives wired in the combat
+// controller, so bespoke here means curated PAIRINGS + names, not new systems.
+function ability_web_bespoke(ab) {
+    var _out = [];
+    switch (ab.name) {
+        // --- Arcanist ---
+        case "Soulfire":
+            array_push(_out, ability_web_node("pk", "P", 3, "Pyre Unending", "Killing blows refund 1 AP", [], "kill_ap"));
+            var _sf = ability_web_node("tk", "T", 3, "Cinderheart", "Soulfire burns as FIRE - fire gear now feeds it", [], "");
+            _sf.school_to = "fire";
+            array_push(_out, _sf);
+            break;
+        case "Arcane Burst": {
+            var _abu = ability_web_attune_node("pk", ab);
+            _abu.title = "Prismatic Burst";
+            array_push(_out, _abu);
+            break;
+        }
+        case "Void Drain":
+            array_push(_out, ability_web_node("tk", "T", 3, "Hungering Maw", "Critical hits grant +1 class resource", [], "crit_sec:1"));
+            break;
+        case "Singularity":
+            array_push(_out, ability_web_node("pk", "P", 3, "Event Horizon", "Its crush DETONATES statuses on enemies it hits", [], "detonate"));
+            break;
+        case "Entropy":
+            array_push(_out, ability_web_node("pk", "P", 3, "Entropic Collapse", "Hits DETONATE the target's statuses", [], "detonate"));
+            break;
+        case "Scorch":
+            array_push(_out, ability_web_node("pk", "P", 3, "Wildfire", "The flames leap - echoes 50% damage to another enemy", [], "splash:50"));
+            break;
+        // --- Weak-baseline self-synergy pass (task #14, M-approved 07-28: "weak
+        // unupgraded is fine - its talents amplify it and make it synergize with
+        // itself, and only players who experiment discover this") ---
+        case "Static Arc":
+            array_push(_out, ability_web_node("p2", "P", 2, "Live Wire", "Hits SHOCK the target (1 turn) - your own next Arc chains to ALL", [], "hit_shock"));
+            array_push(_out, ability_web_node("pk", "P", 3, "Storm Unbound", "Its chain carries FULL damage (100% instead of 50%)", [], "chain_full"));
+            array_push(_out, ability_web_node("tk", "T", 3, "Closed Circuit", "Killing blows refund 1 AP", [], "kill_ap"));
+            break;
+        case "Devil's Flip":
+            array_push(_out, ability_web_node("pk", "P", 3, "Loaded Coin", "The streak grows +12 per win instead of +8", [], "flip_hot"));
+            array_push(_out, ability_web_node("tk", "T", 3, "Devil's Insurance", "A LOSS deals you no damage (the streak still dies)", [], "flip_safe"));
+            break;
+        case "Glacial Ward":
+            array_push(_out, ability_web_node("pk", "P", 3, "Deep Freeze", "The ward's rebuke Chills RANGED attackers too", [], "ward_reach"));
+            break;
+        case "Galvanize":
+            array_push(_out, ability_web_node("pk", "P", 3, "Chain Reaction", "Also triggers on landing a CRIT, not just a kill", [], "galv_crit"));
+            break;
+        case "Blink":
+            array_push(_out, ability_web_node("tk", "T", 3, "Counterphase", "When Blink fully evades an attack, your next ability costs 1 less AP", [], "blink_tempo"));
+            break;
+        // --- Bloodwarden ---
+        case "Blood Leech":
+            array_push(_out, ability_web_node("pk", "P", 3, "Exsanguinate", "Heals you for 50% of damage dealt", [], "lifesteal:50"));
+            break;
+        case "Gore Strike":
+            array_push(_out, ability_web_node("pk", "P", 3, "Butcher's Rhythm", "+50% damage below 25% HP", [], "execute:50"));
+            break;
+        case "Iron Skin":
+            array_push(_out, ability_web_node("tk", "T", 3, "Iron Bulwark", "Also raises a 6-point shield on cast", [], "cast_shield:6"));
+            break;
+        case "Undying":
+            array_push(_out, ability_web_node("tk", "T", 3, "Blood Ward", "Also raises an 8-point shield on cast", [], "cast_shield:8"));
+            break;
+        case "Plague Touch":
+            array_push(_out, ability_web_node("pk", "P", 3, "Pandemic", "Its plague spreads to a second enemy", [], "status_splash"));
+            break;
+        // --- Shadowstrider ---
+        case "Snipe":
+            array_push(_out, ability_web_node("pk", "P", 3, "Deadeye", "Critical Snipes leave the target Vulnerable (2 turns)", [], "crit_vuln:2"));
+            break;
+        case "Poison Dart":
+            array_push(_out, ability_web_node("pk", "P", 3, "Virulent Spread", "Its venom jumps to a second enemy", [], "status_splash"));
+            break;
+        case "Bear Trap":
+            array_push(_out, ability_web_node("tk", "T", 3, "Serrated Jaws", "+15% damage and +1 turn of root", ["dmgp", "dur"], ""));
+            break;
+        case "Death Snare":
+            array_push(_out, ability_web_node("pk", "P", 3, "Sprung Ruin", "Hits DETONATE the target's statuses", [], "detonate"));
+            break;
+        case "Frost Shot":
+            array_push(_out, ability_web_node("pk", "P", 3, "Shattering Volley", "Echoes 50% of its damage to another enemy", [], "splash:50"));
+            break;
+        // --- General pool ---
+        case "Vanish":
+            array_push(_out, ability_web_node("pk", "P", 3, "Shadow Feint", "Also grants +1 class resource on cast", [], "cast_sec:1"));
+            break;
+    }
+    return _out;
+}
+
+// ---------------------------------------------------------------------------
+// PARAMETERIZED PICKS. A stored pick id is "pk" for plain nodes or "pk@fire"
+// for choice nodes (Attunement school picks) - base id before the "@", the
+// chosen parameter after. All ownership/reachability compares BASE ids.
+// ---------------------------------------------------------------------------
+function ability_web_id_base(id) {
+    var _p = string_pos("@", id);
+    return (_p > 0) ? string_copy(id, 1, _p - 1) : id;
+}
+
+function ability_web_id_param(id) {
+    var _p = string_pos("@", id);
+    return (_p > 0) ? string_copy(id, _p + 1, string_length(id) - _p) : "";
+}
+
+function ability_web_node_by_id(ab, id) {
+    var _b = ability_web_id_base(id);
+    var _n = ability_web_nodes(ab);
+    for (var _i = 0; _i < array_length(_n); _i++) if (_n[_i].id == _b) return _n[_i];
+    return undefined;
+}
+
+function ability_web_owned(name, id) {
+    var _b = ability_web_id_base(id);
+    var _p = ability_web_picks(name);
+    for (var _i = 0; _i < array_length(_p); _i++) if (ability_web_id_base(_p[_i]) == _b) return true;
+    return false;
+}
+
+// The stored FULL pick id ("tk@fire") for a base id, "" if not picked.
+function ability_web_pick_full(name, base_id) {
+    var _p = ability_web_picks(name);
+    for (var _i = 0; _i < array_length(_p); _i++) if (ability_web_id_base(_p[_i]) == base_id) return _p[_i];
+    return "";
+}
+
+// Purchase reachability from PERMANENT picks only (run-scoped honing never
+// unlocks purchases). Tier 1 is always open; the mid-tier cross-link means
+// p2 opens off p1 OR t2 (and t2 off t1 OR p2); keystones need their own
+// branch's mid node.
+function ability_web_reachable(name, node_id) {
+    // (param renamed from `id` - assigning to `id` trips GM1008, it's the
+    // readonly built-in instance id)
+    var _nid = ability_web_id_base(node_id);
+    switch (_nid) {
+        case "p1": case "t1": return true;
+        case "p2": return ability_web_owned(name, "p1") || ability_web_owned(name, "t2");
+        case "t2": return ability_web_owned(name, "t1") || ability_web_owned(name, "p2");
+        case "pk": return ability_web_owned(name, "p2");
+        case "tk": return ability_web_owned(name, "t2");
+    }
+    return false;
+}
+
+// Spend a pending MP on a node. "" ok / reason (shown as-is in the UI).
+function ability_web_buy(name, id) {
+    if (ability_web_owned(name, id))          return "Already woven.";
+    if (!ability_web_reachable(name, id))     return "A prior node must be woven first.";
+    if (array_length(ability_web_picks(name)) >= ability_web_cap()) return "Web cap reached (4 of 6).";
+    if (ability_web_mp_pending(name) <= 0)    return "No Talent Point to spend.";
+    if (!variable_global_exists("ability_web") || !is_struct(global.ability_web)) global.ability_web = {};
+    if (!variable_struct_exists(global.ability_web, name)) variable_struct_set(global.ability_web, name, []);
+    array_push(variable_struct_get(global.ability_web, name), id);
+    return "";
+}
+
+// Apply ONE field-mod id in place to a mutable ability copy. Shared by the
+// permanent web picks and the run-scoped Whetstone honing so both use the
+// exact same numbers.
+function ability_web_apply_mod(_c, mod_id) {
+    switch (mod_id) {
+        case "dmg":  _c.base_damage     += 3; break;
+        case "acc":  _c.base_acc        += 5; break;
+        case "crit": _c.base_crit       += 4; break;
+        // FRACTION GUARD (M 07-28): some pure-effect abilities store a percent
+        // FRACTION in effect_value (a -30% debuff is 0.3). A flat +2 or a ceil()
+        // there turned "-30%" into "-230%"/"-100%". Fractions bump by +10
+        // percentage points on "val" (legacy saves may hold such picks; the
+        // template no longer emits them) and scale WITHOUT ceil, capped at 95%.
+        case "val":  _c.effect_value    += (_c.effect_value > 0 && _c.effect_value < 1) ? 0.1 : 2; break;
+        case "dur":  _c.effect_duration += 1; break;
+        case "dur2": _c.effect_duration += 2; break;
+        case "valp": _c.effect_value     = (_c.effect_value > 0 && _c.effect_value < 1)
+            ? min(0.95, _c.effect_value * 1.2) : ceil(_c.effect_value * 1.2); break;
+        case "valh": _c.effect_value     = (_c.effect_value > 0 && _c.effect_value < 1)
+            ? min(0.95, _c.effect_value * 1.5) : ceil(_c.effect_value * 1.5); break;
+        case "dmgp": _c.base_damage      = ceil(_c.base_damage * 1.15); break;
+        case "apc":  _c.energy_cost      = max(1, _c.energy_cost - 1); break;
+        case "cdm":  _c.cd_mod           = (variable_struct_exists(_c, "cd_mod") ? _c.cd_mod : 0) - 1; break;
+    }
+}
+
+// Apply one whole NODE (field mods + rider tag + school changes) to a mutable
+// copy. `param` is the pick's "@" parameter ("fire" for an Attunement choice).
+function ability_web_apply_node(_c, node, param) {
+    if (is_undefined(node)) return;
+    for (var _i = 0; _i < array_length(node.mods); _i++) ability_web_apply_mod(_c, node.mods[_i]);
+    // School conversion: curated (school_to on the node) or the player's
+    // Attunement choice (param). School is metadata (SYSTEMS_ELEMENT_SCHOOLS) -
+    // +school% gear affixes, log colors and VFX tints all follow the field.
+    if (variable_struct_exists(node, "school_to") && node.school_to != "") _c.school = node.school_to;
+    if (param != "" && variable_struct_exists(node, "schools")) _c.school = param;
+    if (node.rider != "") {
+        if (!variable_struct_exists(_c, "web_riders")) _c.web_riders = [];
+        array_push(_c.web_riders, node.rider);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// RUN-SCOPED HONING (Whetstone shrine). Since the web rework the shrine
+// grants ONE currently-reachable unowned web NODE of choice, run-scoped and
+// exempt from the 4-MP spend cap (a taste of the road not taken). Storage:
+// global.run_honing { ability_name : node_id }. Null-safe: absent global = no
+// honing; a stale pre-web mod id simply matches no node and does nothing.
+// Cleared in run_state_reset / new-game / load (scr_save). Applied by
+// ability_web_resolve.
 // ---------------------------------------------------------------------------
 function ability_run_honing(name) {
     if (!variable_global_exists("run_honing") || !is_struct(global.run_honing)) return "";
     return variable_struct_exists(global.run_honing, name) ? variable_struct_get(global.run_honing, name) : "";
 }
 
-function ability_run_honing_set(name, mod_id) {
+function ability_run_honing_set(name, node_id) {
     if (!variable_global_exists("run_honing") || !is_struct(global.run_honing)) global.run_honing = {};
-    variable_struct_set(global.run_honing, name, mod_id);
+    variable_struct_set(global.run_honing, name, node_id);
 }
 
 function run_honing_clear() {
@@ -2069,11 +2450,12 @@ function run_honing_clear() {
     global.run_whetstone_used = false;   // reset the once-per-run Whetstone gate at every run teardown
 }
 
-// Return the ability itself when untouched, or a field-adjusted shallow COPY when
-// permanent picks OR a run-scoped honing mod exist (pools stay pristine; dynamic
-// descriptions read the copy).
-function ability_mastery_resolve(ab) {
-    var _picks  = ability_mastery_picks(ab.name);
+// Return the ability itself when untouched, or a field-adjusted shallow COPY
+// when web picks OR a run-scoped honing node exist (pools stay pristine;
+// dynamic descriptions read the copy). Rider keys land on _c.web_riders for
+// the combat controller (see ability_web_copy_has_rider).
+function ability_web_resolve(ab) {
+    var _picks  = ability_web_picks(ab.name);
     var _honing = ability_run_honing(ab.name);
     if (array_length(_picks) == 0 && _honing == "") return ab;
     var _c = {};
@@ -2081,9 +2463,187 @@ function ability_mastery_resolve(ab) {
     for (var _k = 0; _k < array_length(_keys); _k++) {
         variable_struct_set(_c, _keys[_k], variable_struct_get(ab, _keys[_k]));
     }
-    for (var _i = 0; _i < array_length(_picks); _i++) ability_apply_mastery_mod(_c, _picks[_i]);
-    if (_honing != "") ability_apply_mastery_mod(_c, _honing);
+    for (var _i = 0; _i < array_length(_picks); _i++) {
+        ability_web_apply_node(_c, ability_web_node_by_id(ab, _picks[_i]), ability_web_id_param(_picks[_i]));
+    }
+    if (_honing != "" && !ability_web_owned(ab.name, _honing)) {
+        ability_web_apply_node(_c, ability_web_node_by_id(ab, _honing), ability_web_id_param(_honing));
+    }
     return _c;
+}
+
+// True when a RESOLVED ability copy carries a web rider. Safe on pristine
+// pool structs (no web_riders field = false). Rider keys may carry a numeric
+// parameter after a colon ("lifesteal:25") - matching is by key.
+function ability_web_copy_has_rider(ab, key) {
+    if (!is_struct(ab) || !variable_struct_exists(ab, "web_riders")) return false;
+    for (var _i = 0; _i < array_length(ab.web_riders); _i++) {
+        var _r = ab.web_riders[_i];
+        if (_r == key || string_pos(key + ":", _r) == 1) return true;
+    }
+    return false;
+}
+
+// The numeric parameter of a carried rider ("lifesteal:25" -> 25), or `def`.
+function ability_web_rider_value(ab, key, def) {
+    if (!is_struct(ab) || !variable_struct_exists(ab, "web_riders")) return def;
+    for (var _i = 0; _i < array_length(ab.web_riders); _i++) {
+        var _r = ab.web_riders[_i];
+        if (string_pos(key + ":", _r) == 1) return real(string_copy(_r, string_length(key) + 2, string_length(_r)));
+    }
+    return def;
+}
+
+// Per-combat first-cast tracking for the Opening Gambit keystone (mirrors the
+// Quickcast rune's caster-field pattern; lazily created, reset by each new
+// combat's fresh player struct). Marked at cast COMMIT, read by
+// ability_effective_cost.
+function ability_web_first_cast_used(caster, name) {
+    if (is_undefined(caster) || !variable_struct_exists(caster, "web_first_casts")) return false;
+    return variable_struct_exists(caster.web_first_casts, name);
+}
+
+function ability_web_first_cast_mark(caster, name) {
+    if (is_undefined(caster)) return;
+    if (!variable_struct_exists(caster, "web_first_casts")) caster.web_first_casts = {};
+    variable_struct_set(caster.web_first_casts, name, true);
+}
+
+// ---------------------------------------------------------------------------
+// WEB-VIEW STAGING (M 07-27): picks are assigned TENTATIVELY in the view and
+// only become permanent on SAVE & CLOSE - CLOSE/Esc discards. `staged` is the
+// view's working array of node ids (lives on the game controller while the
+// view is open; never saved).
+// ---------------------------------------------------------------------------
+function ability_web_staged_has(staged, id) {
+    var _b = ability_web_id_base(id);
+    for (var _i = 0; _i < array_length(staged); _i++) if (ability_web_id_base(staged[_i]) == _b) return true;
+    return false;
+}
+
+// The staged FULL entry ("tk@fire") for a base id, "" if not staged.
+function ability_web_staged_full(staged, base_id) {
+    for (var _i = 0; _i < array_length(staged); _i++) if (ability_web_id_base(staged[_i]) == base_id) return staged[_i];
+    return "";
+}
+
+function ability_web_owned_or_staged(name, id, staged) {
+    return ability_web_owned(name, id) || ability_web_staged_has(staged, id);
+}
+
+// Reachability where staged nodes count as woven (same wishbone rules).
+function ability_web_reachable_staged(name, node_id, staged) {
+    // (param renamed from `id` - same GM1008 readonly-builtin fix as above)
+    var _nid = ability_web_id_base(node_id);
+    switch (_nid) {
+        case "p1": case "t1": return true;
+        case "p2": return ability_web_owned_or_staged(name, "p1", staged) || ability_web_owned_or_staged(name, "t2", staged);
+        case "t2": return ability_web_owned_or_staged(name, "t1", staged) || ability_web_owned_or_staged(name, "p2", staged);
+        case "pk": return ability_web_owned_or_staged(name, "p2", staged);
+        case "tk": return ability_web_owned_or_staged(name, "t2", staged);
+    }
+    return false;
+}
+
+// Toggle a node in the staged set (mutates `staged` in place). CHOICE nodes
+// (Attunement) cycle: first select stages school[0], selecting again advances
+// to the next school, and past the last removes the stage. Unstaging a support
+// node also drops any staged nodes it was holding up (fixed-point sweep).
+// Returns "" ok / reason for the notification line.
+function ability_web_stage_toggle(name, id, staged) {
+    var _base = ability_web_id_base(id);
+    if (ability_web_owned(name, _base)) return "Already woven - permanent.";
+    var _node   = ability_web_node_by_id(ability_web_pristine(name), _base);
+    var _choice = (!is_undefined(_node) && variable_struct_exists(_node, "schools"));
+    if (ability_web_staged_has(staged, _base)) {
+        var _full = ability_web_staged_full(staged, _base);
+        for (var _i = array_length(staged) - 1; _i >= 0; _i--) {
+            if (ability_web_id_base(staged[_i]) == _base) array_delete(staged, _i, 1);
+        }
+        if (_choice) {
+            // Advance the school choice; only fall through to unstage past the end.
+            var _cur = ability_web_id_param(_full);
+            var _idx = -1;
+            for (var _s = 0; _s < array_length(_node.schools); _s++) if (_node.schools[_s] == _cur) { _idx = _s; break; }
+            if (_idx >= 0 && _idx < array_length(_node.schools) - 1) {
+                array_push(staged, _base + "@" + _node.schools[_idx + 1]);
+                return "";
+            }
+        }
+        var _dropped = true;
+        while (_dropped) {
+            _dropped = false;
+            for (var _j = array_length(staged) - 1; _j >= 0; _j--) {
+                if (!ability_web_reachable_staged(name, staged[_j], staged)) { array_delete(staged, _j, 1); _dropped = true; break; }
+            }
+        }
+        return "";
+    }
+    if (array_length(ability_web_picks(name)) + array_length(staged) >= ability_web_cap()) return "Web cap reached (" + string(ability_web_cap()) + " of 6).";
+    if (ability_web_mp_pending(name) - array_length(staged) <= 0) return "No Talent Point left to assign.";
+    if (!ability_web_reachable_staged(name, _base, staged)) return "A prior node must be woven first.";
+    array_push(staged, _choice ? (_base + "@" + _node.schools[0]) : _base);
+    return "";
+}
+
+// Make every staged node permanent, in stage order (staging already validated
+// the chain, so ability_web_buy succeeds link by link).
+function ability_web_commit_staged(name, staged) {
+    for (var _i = 0; _i < array_length(staged); _i++) {
+        var _r = ability_web_buy(name, staged[_i]);
+        if (_r != "") return _r;
+    }
+    return "";
+}
+
+// ---------------------------------------------------------------------------
+// VEX REWEAVE (respec, SYSTEMS_TALENT_WEBS.md - pulled forward from P2).
+// Unweaving clears an ability's picks; earned MP derives from lifetime casts,
+// so the cleared picks return as pending Talent Points with no bookkeeping.
+// ---------------------------------------------------------------------------
+// Every ability with at least one woven pick, alphabetical (stable between
+// visits). Entries: { name, picks }.
+function ability_web_respec_list() {
+    var _out = [];
+    if (!variable_global_exists("ability_web") || !is_struct(global.ability_web)) return _out;
+    var _names = variable_struct_get_names(global.ability_web);
+    for (var _i = 0; _i < array_length(_names); _i++) {
+        var _p = variable_struct_get(global.ability_web, _names[_i]);
+        if (is_array(_p) && array_length(_p) > 0) array_push(_out, { name: _names[_i], picks: array_length(_p) });
+    }
+    array_sort(_out, function(_a, _b) { return (_a.name < _b.name) ? -1 : ((_a.name > _b.name) ? 1 : 0); });
+    return _out;
+}
+
+function ability_web_respec(name) {
+    if (!variable_global_exists("ability_web") || !is_struct(global.ability_web)) return;
+    if (variable_struct_exists(global.ability_web, name)) variable_struct_remove(global.ability_web, name);
+}
+
+// The Whetstone's offer: every REACHABLE unowned node (run-scoped, exempt
+// from the 4-MP cap). Never empty - the cap leaves at least one reachable
+// node unowned in every legal pick state.
+function ability_web_whetstone_options(ab) {
+    ab = ability_web_pristine(ab);
+    var _n = ability_web_nodes(ab);
+    var _out = [];
+    for (var _i = 0; _i < array_length(_n); _i++) {
+        if (!ability_web_owned(ab.name, _n[_i].id) && ability_web_reachable(ab.name, _n[_i].id)) {
+            if (variable_struct_exists(_n[_i], "schools")) {
+                // Choice node at the shrine: offer ONE deterministic school (the
+                // full choice UI is the hub web view's; the stone keeps its list
+                // short - max 3 base options fit the overlay).
+                var _sc = _n[_i].schools[0];
+                array_push(_out, {
+                    id: _n[_i].id + "@" + _sc, branch: _n[_i].branch, tier: _n[_i].tier,
+                    title: "Attune: " + school_label(_sc),
+                    label: "Convert its school to " + school_label(_sc) + " for this run",
+                    mods: [], rider: ""
+                });
+            } else array_push(_out, _n[_i]);
+        }
+    }
+    return _out;
 }
 
 // =============================================================================
@@ -2273,17 +2833,19 @@ function ability_in_loadout(ability_name) {
 
 // ---------------------------------------------------------------------------
 // loadout_list_scroll(cursor, pool_sz, max_vis)
-// Scroll offset (index of the first visible row) for the loadout ability list,
-// which can now exceed the screen with the general pool + expansion abilities.
-// Shared by the renderer (Draw_64) and the mouse hit-test (Step_0) so the two
-// always agree on which row sits at which y. The list stays put until the cursor
-// nears the bottom of the window, then scrolls to keep the cursor visible.
+// Scroll offset (index of the first visible row) for the loadout ability list
+// and the Vex trainer tabs. Shared by the renderer (Draw_64) and the mouse
+// hit-test (Step_0) so the two always agree on which row sits at which y.
+// 07-28 (M): now EDGE-RIDING - the selector moves within the visible window
+// and the list shifts only when the cursor hits the top/bottom edge. The old
+// stateless version pinned the cursor one row from the bottom while the rows
+// slid underneath it ("scrolls 1 off the bottom then stays in that region").
+// Delegates to the shared persistent ui_list_window; a single key is safe
+// because every caller resets its cursor to 0 on open/tab-switch, which snaps
+// the stored offset back to the top.
 // ---------------------------------------------------------------------------
 function loadout_list_scroll(cursor, pool_sz, max_vis) {
-    if (pool_sz <= max_vis) return 0;
-    var _cur = clamp(cursor, 0, pool_sz - 1);
-    if (_cur <= max_vis - 2) return 0;
-    return min(_cur - (max_vis - 2), pool_sz - max_vis);
+    return ui_list_window("loadout_shared", cursor, pool_sz, max_vis);
 }
 
 // ---------------------------------------------------------------------------
@@ -2312,15 +2874,80 @@ function class_locked_abilities(class_id) {
 // stat that is sacrificed to power it. Boolean traits are not upgradable.
 // ---------------------------------------------------------------------------
 function trait_upgradable_list() {
-    return [
-        { name: "Thick Skin",       stat: "CON", effect: "+10% max HP while equipped" },
-        { name: "Scavenger",        stat: "CHA", effect: "+15% gold from all sources" },
-        { name: "Quick Recovery",   stat: "WIS", effect: "Rest rooms heal 25 HP" },
-        { name: "Arcane Surge",     stat: "INT", effect: "+25% dmg on 4+ AP abilities" },
-        { name: "Berserker Rage",   stat: "STR", effect: "+20% dmg below 40% HP" },
-        { name: "Serrated Strikes", stat: "DEX", effect: "Free 3 dmg bleed on phys hits" },
-        { name: "Vampiric Edge",    stat: "CON", effect: "+2 HP per bleed/poison tick" },
-    ];
+    // POTENCY V2 (SYSTEMS_POTENCY_V2.md, M-approved 07-27): EVERY unlocked trait
+    // for this class is upgradable - numeric traits keep %-magnitude ranks,
+    // on/off traits gain a bespoke rank knob, rank 5 is a Transcend.
+    var _cid = variable_global_exists("chosen_class") ? global.chosen_class : 0;
+    var _out = [];
+    for (var _i = 0; _i < array_length(global.traits_all); _i++) {
+        var _t = global.traits_all[_i];
+        if (_t.class_req != -1 && _t.class_req != _cid) continue;
+        if (!trait_is_unlocked(_t.name)) continue;
+        array_push(_out, { name: _t.name, effect: _t.description });
+    }
+    return _out;
+}
+
+// ---------------------------------------------------------------------------
+// trait_potency_info(name) - the V2 per-trait upgrade text: what ranks 1-4 turn
+// (knob) and the rank-5 Transcend (tname/teffect). Drives the tab-4 rows and
+// the detail popup; the EFFECTS are wired at each trait's mechanic site.
+// ---------------------------------------------------------------------------
+function trait_potency_info(name) {
+    switch (name) {
+        case "Sense":            return { knob: "+3% event-check success per rank", tname: "Omniscience",         teffect: "Sense reads the WHOLE floor: hints on every uncleared room, and treasure rooms reveal their gold." };
+        case "Scavenger":        return { knob: "+10% gold-find strength per rank", tname: "Weighted Purse",      teffect: "+1% damage per 500 gold held (cap +10%)." };
+        case "Thick Skin":       return { knob: "+10% max-HP strength per rank",    tname: "Stone Hide",          teffect: "Above 80% HP you take 15% less damage." };
+        case "Quick Recovery":   return { knob: "+10% rest-heal strength per rank", tname: "Second Wind",         teffect: "The first rest each run also grants +5 max HP for the rest of the run." };
+        case "Treasure Hunter":  return { knob: "+5% per rank: bonus item rolls a rarity tier higher", tname: "Cartographer's Cut", teffect: "The bonus treasure-room item is a pick-1-of-2." };
+        case "Blessed Thirst":   return { knob: "+4% preserve chance per rank (20% to 36%)", tname: "Bottomless", teffect: "The first consumable you use each combat is always preserved." };
+        case "Lucky Find":       return { knob: "+10% gold/loot-find strength per rank", tname: "Fortune's Favor", teffect: "Once per run, reroll a loot drop from the loot screen ([R])." };
+        case "Battle Hardened":  return { knob: "+3 max-HP cap per rank (15 to 27)", tname: "Unbreakable",        teffect: "The cap is removed entirely." };
+        case "Salvager":         return { knob: "Rank 2: keep 3 items on death; rank 4: keep 4", tname: "Nothing Wasted", teffect: "Death also keeps ALL equipped items." };
+        case "Iron Will":        return { knob: "Later statuses -10% duration per rank", tname: "Unshakable",     teffect: "The ignored status kind can't be applied to you again that combat." };
+        case "Expanded Arsenal": return { knob: "+2% ability damage per rank",       tname: "Deep Reserves",      teffect: "The first cast of every slotted ability each combat costs 1 less AP." };
+        case "Prospector":       return { knob: "+5% per rank: the quality bump is two tiers", tname: "Motherlode", teffect: "Combat loot can never roll common." };
+        case "Last Stand":       return { knob: "After it triggers: +10% damage per rank for that combat", tname: "Deathless", teffect: "Triggers once per FLOOR instead of once per run." };
+        case "Focused Power":    return { knob: "+10% focus-bonus strength per rank", tname: "Annihilating Focus", teffect: "The focused strike also applies Exposed." };
+        case "Chain Caster":     return { knob: "+10% splash strength per rank",     tname: "Storm Conductor",    teffect: "Splash hits can critically strike." };
+        case "Plaguebearer":     return { knob: "Spread duration +12.5% per rank (full at rank 4)", tname: "Patient Zero", teffect: "When an afflicted enemy dies, its damage-over-time jumps fresh to a random living enemy." };
+        case "Soul Siphon":      return { knob: "Ranks 2/4: +1 Soul at combat start", tname: "Harvest",           teffect: "Spell killing blows grant +2 Souls instead of +1." };
+        case "Ley Tap":          return { knob: "+3% turn-1 spell damage per rank",  tname: "Ley Torrent",        teffect: "The bonus AP returns every 3rd turn." };
+        case "Arcane Surge":     return { knob: "+10% surge strength per rank",      tname: "Overchannel",        teffect: "3-AP casts refund 1 AP when they crit." };
+        case "Crimson Reserve":  return { knob: "Ranks 2/4: start with 5 / 6 Blood", tname: "Overflow",           teffect: "Blood cap +4, and up to 4 Blood carries between combats." };
+        case "Vampiric Edge":    return { knob: "+10% heal strength per rank",       tname: "Exsanguinating Feast", teffect: "Its healing is doubled while below 40% HP." };
+        case "Berserker Rage":   return { knob: "+10% rage strength per rank",       tname: "Blood Frenzy",       teffect: "The threshold rises to below 60% HP." };
+        case "Relentless":       return { knob: "Rank 2: 1 unspent AP carries to next turn; rank 4: 2", tname: "Tireless", teffect: "Turn 1 of every combat has 5 AP." };
+        case "Phantom Step":     return { knob: "+2% dodge per rank",                tname: "Afterimage",         teffect: "Once per combat, a hit that would land instead misses." };
+        case "Shadow Meld":      return { knob: "Meld crits +10% crit damage per rank", tname: "One With the Dark", teffect: "Also triggers when an enemy misses you for ANY reason." };
+        case "Serrated Strikes": return { knob: "+10% bleed strength per rank",      tname: "Flaying Edge",       teffect: "Bleeding enemies take +10% damage from you." };
+    }
+    return { knob: "+10% strength per rank", tname: "Transcend", teffect: "" };
+}
+
+// ---------------------------------------------------------------------------
+// trait_potency_rank_cost(next_tier) - the V2 tiered mixed costs (M 07-27).
+// next_tier is the rank being bought (current tier + 1, 1..5). Gold parts get
+// vex_price + cha_price at the spend site; Vex Companion (affinity 3+) takes
+// 1 point off the stat-sacrifice ranks.
+// ---------------------------------------------------------------------------
+function trait_potency_rank_cost(next_tier) {
+    var _comp = affinity_at_least("vex", 3) ? 1 : 0;
+    if (next_tier <= 1) return { kind: "gold",  gold: 150, dust: 5 };
+    if (next_tier == 2) return { kind: "gold",  gold: 300, dust: 10 };
+    if (next_tier == 3) return { kind: "stats", points: 4 - _comp };
+    if (next_tier == 4) return { kind: "stats", points: 5 - _comp };
+    return { kind: "item", min_rarity: 3 };
+}
+
+// Rank-1..4 knob level (0 while the trait isn't equipped - potency amplifies a
+// trait, it never fires on its own). Rank 5 is the Transcend, not a 5th knob.
+function trait_potency_r14(name) {
+    return trait_active(name) ? min(trait_potency_tier(name), 4) : 0;
+}
+
+function trait_transcended(name) {
+    return trait_active(name) && trait_potency_tier(name) >= 5;
 }
 
 // ---------------------------------------------------------------------------
@@ -2392,7 +3019,8 @@ function trait_potency_tier(trait_name) {
 }
 
 function trait_potency_mult(trait_name) {
-    return 1 + 0.10 * trait_potency_tier(trait_name);
+    // V2: magnitude ranks are 1-4 only (+40% max); rank 5 is the Transcend.
+    return 1 + 0.10 * min(trait_potency_tier(trait_name), 4);
 }
 
 // trait_maxhp_mult() - STATIC max-HP multiplier from equipped traits. Thick Skin

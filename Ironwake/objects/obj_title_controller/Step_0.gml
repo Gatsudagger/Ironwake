@@ -96,9 +96,9 @@ if (phase == "cutscene") {
         }
 
         if (input_confirm() || input_confirm_alt()) {
-            var _any_save_t = (slot_previews[0] != undefined
-                            || slot_previews[1] != undefined
-                            || slot_previews[2] != undefined);
+            var _any_save_t = (slot_preview_loadable(slot_previews[0])
+                            || slot_preview_loadable(slot_previews[1])
+                            || slot_preview_loadable(slot_previews[2]));
             if (selected == 0) {
                 slot_mode     = "new_game";
                 slot_selected = 0;
@@ -154,8 +154,8 @@ if (phase == "cutscene") {
         var _preview = slot_previews[slot_selected];
 
         if (slot_mode == "load_game") {
-            if (_preview == undefined) {
-                // Empty slot - can't load, do nothing
+            if (!slot_preview_loadable(_preview)) {
+                // Empty slot or a Vow memorial gravestone - can't load, do nothing
             } else {
                 global.save_slot = slot_selected;
                 // Wipe all run/meta globals to defaults FIRST so nothing from a
@@ -178,6 +178,12 @@ if (phase == "cutscene") {
                 // Game never inherits a previously-loaded save's gold/run history/
                 // inventory/stats (and never writes them into the new slot).
                 new_game_reset();
+                // A New Game claiming this slot orphans any interrupted-run
+                // checkpoint the OLD character left (SYSTEMS_RUN_RESUME.md) -
+                // delete it so the identity guards never even see it. Same for
+                // a fallen Vow character's gravestone (SYSTEMS_IRON_VOW.md).
+                run_checkpoint_delete();
+                vow_memorial_delete(slot_selected);
                 audio_stop_sound(Viking_March);
                 room_goto(rm_character_select);
             }

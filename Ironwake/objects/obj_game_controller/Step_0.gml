@@ -2,6 +2,13 @@
 // taps/drags/long-presses. No-op on non-touch devices.
 touch_gesture_update();
 
+// IRONMAN resume (SYSTEMS_RUN_RESUME.md): Android is about to suspend the game
+// (phone call, home button - the OS may kill us without another frame) - flush
+// the run checkpoint NOW. os_is_paused() is best-effort on some devices, so the
+// room-boundary + watcher writes remain the primary safety net; this only
+// tightens the loss window. No-op outside a run or once combat is decided.
+if (os_is_paused()) run_checkpoint_write_now();
+
 // Latch whether any gc-managed overlay/modal is open at the START of this Step,
 // BEFORE the ESC-close handlers below clear their flags. The hub AND floor pause-
 // menu triggers check this so the same Esc press that closes an overlay (inventory,
@@ -145,21 +152,27 @@ if (tutorial_is_active()) {
 // drives the Shrine picker (no double-stepping). See SYSTEMS_ITEM_PICKER.md.
 if (variable_global_exists("item_picker") && global.item_picker.open
     && (global.item_picker.purpose == "vex_trait" || global.item_picker.purpose == "vex_stat"
+        || global.item_picker.purpose == "vex_potency"
         || global.item_picker.purpose == "alch_rebirth" || global.item_picker.purpose == "gift"
-        || global.item_picker.purpose == "chit_reforge")) {
+        || global.item_picker.purpose == "chit_reforge"
+        || global.item_picker.purpose == "maren_sunder" || global.item_picker.purpose == "cursed_rebirth")) {
     item_picker_step();
     exit;
 }
 if (variable_global_exists("item_picker") && global.item_picker.resolved_purpose != "") {
     var _rp = global.item_picker.resolved_purpose;
-    if (_rp == "vex_trait" || _rp == "vex_stat") {
+    if (_rp == "vex_trait" || _rp == "vex_stat" || _rp == "vex_potency") {
         trainer_notification = global.item_picker.result_msg;
         global.item_picker.resolved_purpose = "";   // consume the one-shot
-    } else if (_rp == "alch_rebirth") {
+    } else if (_rp == "alch_rebirth" || _rp == "cursed_rebirth") {
         sable_notification = global.item_picker.result_msg;
         global.item_picker.resolved_purpose = "";
+        if (_rp == "cursed_rebirth") ui_checkout_vfx(spr_vfx_void, 960, 540);   // the dark answers
     } else if (_rp == "chit_reforge") {
         shop_notification = global.item_picker.result_msg;   // Dorn's window shows the result
+        global.item_picker.resolved_purpose = "";
+    } else if (_rp == "maren_sunder") {
+        maren_notification = global.item_picker.result_msg;
         global.item_picker.resolved_purpose = "";
     }
 }
@@ -413,6 +426,144 @@ if (tavern_board_open) {
     exit;
 }
 
+// --- ITEM CODEX gallery (moved from obj_hub_controller 07-28): opens from the
+// Journal's Item Codex tab, anywhere the Journal opens. Owns all input while up
+// (ui_input_blocked reports true). Input mirrors the old hub block 1:1.
+if (codex_open && room == Room1) codex_open = false;   // safety: never blocks combat
+if (codex_open) {
+    // G still closes for old muscle memory; Esc/back chip is the real path.
+    if (input_hotkey("G")) {
+        codex_open        = false;
+        codex_detail_item = undefined;
+        exit;
+    }
+
+    // Build master item list (same logic as Draw does - needed for scroll bounds)
+    var _gal_all = [];
+    if (variable_global_exists("loot_table_common"))    { for (var _gi = 0; _gi < array_length(global.loot_table_common);    _gi++) array_push(_gal_all, global.loot_table_common[_gi]);    }
+    if (variable_global_exists("loot_table_uncommon"))  { for (var _gi = 0; _gi < array_length(global.loot_table_uncommon);  _gi++) array_push(_gal_all, global.loot_table_uncommon[_gi]);  }
+    if (variable_global_exists("loot_table_rare"))      { for (var _gi = 0; _gi < array_length(global.loot_table_rare);      _gi++) array_push(_gal_all, global.loot_table_rare[_gi]);      }
+    if (variable_global_exists("loot_table_legendary")) { for (var _gi = 0; _gi < array_length(global.loot_table_legendary); _gi++) array_push(_gal_all, global.loot_table_legendary[_gi]); }
+    var _gal_count      = array_length(_gal_all);
+    var _gal_visible    = 12;
+    var _gal_max_scroll = max(0, _gal_count - _gal_visible);
+
+    if (nav_up()) {
+        if (codex_cursor > 0) {
+            codex_cursor--;
+            if (codex_cursor < codex_scroll) codex_scroll = codex_cursor;
+        }
+    }
+    if (nav_down()) {
+        if (codex_cursor < _gal_count - 1) {
+            codex_cursor++;
+            if (codex_cursor >= codex_scroll + _gal_visible) codex_scroll = codex_cursor - _gal_visible + 1;
+        }
+    }
+    // Mouse wheel scrolling
+    var _wheel = mouse_wheel_up() - mouse_wheel_down();
+    if (_wheel != 0) {
+        codex_scroll = clamp(codex_scroll - _wheel, 0, _gal_max_scroll);
+    }
+
+    // Enter/click on a discovered item opens detail
+    if ((input_confirm())
+        && codex_cursor >= 0 && codex_cursor < _gal_count) {
+        var _sel = _gal_all[codex_cursor];
+        var _disc = false;
+        if (variable_global_exists("items_discovered")) {
+            for (var _di = 0; _di < array_length(global.items_discovered); _di++) {
+                if (global.items_discovered[_di] == _sel.name) { _disc = true; break; }
+            }
+        }
+        if (_disc) {
+            codex_detail_item = (codex_detail_item == _sel) ? undefined : _sel;
+        }
+    }
+
+    // Mouse click on gallery rows
+    if (mouse_check_button_pressed(mb_left)) {
+        var _gmx = device_mouse_x_to_gui(0);
+        var _gmy = device_mouse_y_to_gui(0);
+        // List rows: x=30-1095, y=120+i*69, h=63
+        for (var _gri = 0; _gri < _gal_visible; _gri++) {
+            var _gry = 120 + _gri * 69;
+            if (_gmx >= 30 && _gmx < 1095 && _gmy >= _gry && _gmy < _gry + 63) {
+                var _abs_i = codex_scroll + _gri;
+                if (_abs_i < _gal_count) {
+                    codex_cursor = _abs_i;
+                    var _sel2 = _gal_all[_abs_i];
+                    var _disc2 = false;
+                    if (variable_global_exists("items_discovered")) {
+                        for (var _di2 = 0; _di2 < array_length(global.items_discovered); _di2++) {
+                            if (global.items_discovered[_di2] == _sel2.name) { _disc2 = true; break; }
+                        }
+                    }
+                    if (_disc2) {
+                        codex_detail_item = (codex_detail_item == _sel2) ? undefined : _sel2;
+                    } else {
+                        codex_detail_item = undefined;
+                    }
+                }
+                break;
+            }
+        }
+        // Close detail panel X button: x=1853-1883, y=108-138
+        if (_gmx >= 1853 && _gmx < 1883 && _gmy >= 108 && _gmy < 138 && codex_detail_item != undefined) {
+            codex_detail_item = undefined;
+        }
+    }
+
+    // Alt+click on a discovered gallery row opens the comparison panel.
+    // Hub-only: the floor's Draw doesn't render the comparison overlay, so
+    // opening it there would be an invisible state eating the next Esc.
+    if (room == rm_hub && mouse_check_button_pressed(mb_left) && keyboard_check(vk_alt)) {
+        var _gax = device_mouse_x_to_gui(0);
+        var _gay = device_mouse_y_to_gui(0);
+        for (var _gari = 0; _gari < _gal_visible; _gari++) {
+            var _gary = 120 + _gari * 69;
+            if (_gax >= 30 && _gax < 1095 && _gay >= _gary && _gay < _gary + 63) {
+                var _gabs = codex_scroll + _gari;
+                if (_gabs < _gal_count) {
+                    var _gcit = _gal_all[_gabs];
+                    var _gcdisc = false;
+                    if (variable_global_exists("items_discovered")) {
+                        for (var _gdi = 0; _gdi < array_length(global.items_discovered); _gdi++) {
+                            if (global.items_discovered[_gdi] == _gcit.name) { _gcdisc = true; break; }
+                        }
+                    }
+                    if (_gcdisc && variable_struct_exists(_gcit, "slot")) {
+                        comparison_item     = _gcit;
+                        comparison_equipped = undefined;
+                        if (variable_global_exists("inventory")) {
+                            var _gcsi = comparison_target_index(_gcit);   // ring-aware target
+                            if (_gcsi >= 0 && _gcsi < array_length(global.inventory)) {
+                                comparison_equipped = global.inventory[_gcsi];
+                            }
+                        }
+                        comparison_open = true;
+                    }
+                }
+                break;
+            }
+        }
+    }
+
+    if (input_cancel()) {
+        if (comparison_open) {
+            comparison_open     = false;
+            comparison_item     = undefined;
+            comparison_equipped = undefined;
+        } else if (codex_detail_item != undefined) {
+            codex_detail_item = undefined;
+        } else {
+            codex_open = false;
+        }
+    }
+
+    exit; // codex owns input while open
+}
+
 // --- JOURNAL (Phase 4a): J toggles the overlay at the hub / on the floor map. While
 // open it owns all input (ui_input_blocked() reports true, freezing every room
 // controller). VIEW/TRACK ONLY (Phase 4b) - actions live at the Tavern board.
@@ -434,15 +585,14 @@ if (journal_open) {
         exit;
     }
     if (journal_tab == 3) {
-        // Item Codex (moved here from the hub G screen): Enter opens the full
-        // gallery at camp (it needs the hub's splash panes); view-only elsewhere.
-        if ((input_confirm())
-            && room == rm_hub && instance_exists(obj_hub_controller)) {
-            var _jh = instance_find(obj_hub_controller, 0);
-            _jh.show_gallery        = true;
-            _jh.gallery_scroll      = 0;
-            _jh.gallery_cursor      = -1;
-            _jh.gallery_detail_item = undefined;
+        // Item Codex: Enter opens the full gallery ANYWHERE the Journal opens
+        // (hub + floor map) - the camp-only gate died 07-28 when M's hardcore
+        // test run couldn't reach the codex mid-dive.
+        if (input_confirm()) {
+            codex_open        = true;
+            codex_scroll      = 0;
+            codex_cursor      = -1;
+            codex_detail_item = undefined;
             journal_open = false;
         }
         exit;
@@ -809,7 +959,7 @@ if (input_hotkey("B")) {
 // from the hub list felt out of place - you hand it over in person). One shared
 // handler for all seven windows; guarded against every sub-modal that owns input.
 // =============================================================================
-if (input_hotkey("F") && room == rm_hub && !text_entry_active()
+if (input_hotkey("F") && room == rm_hub && !text_entry_active() && !menu_open
     && !(variable_global_exists("item_picker") && global.item_picker.open)) {
     var _gift_npc = "", _gift_notify = -1;   // -1 = none; else which notification var
     if (shop_open != -1 && !stash_mode_open) {
@@ -845,19 +995,25 @@ if (input_hotkey("F") && room == rm_hub && !text_entry_active()
 }
 
 // =============================================================================
-// SHOP INPUT - runs before menu_open guard; gc handles all buy/sell logic
+// SHOP INPUT - runs before menu_open guard; gc handles all buy/sell logic.
+// Stands down while the I character menu is up (M 07-28: inventory popped over
+// the shop but arrows/enter kept driving the shop underneath) - the menu block
+// owns input until it closes, then control falls back to the shop.
 // =============================================================================
-if (shop_open != -1 && !stash_mode_open) {
+if (shop_open != -1 && !stash_mode_open && !menu_open) {
 
     // Q/E: cycle tabs. Petra (shop_open == 0) has BUY/SELL/TRADE; Dorn has BUY/SELL/REFORGE.
+    // The reforge confirm/anim screen (reforge_stage > 0) is MODAL - tab cycling and
+    // the [R] jump are locked out until it resolves (the roll may already be paid for).
+    var _rf_modal = variable_instance_exists(id, "reforge_stage") && reforge_stage > 0;
     var _shop_ntabs = 3;
-    if (input_tab_next()) {
+    if (input_tab_next() && !_rf_modal) {
         shop_tab = (shop_tab + 1) mod _shop_ntabs;
         sell_index = 0; sell_scroll = 0; buy_scroll = 0; sell_confirm_name = ""; shop_notification = "";
         reforge_index = 0; reforge_scroll = 0;
         petra_trade_confirm = false; petra_trade_selected = []; petra_trade_notification = "";
     }
-    if (input_tab_prev()) {
+    if (input_tab_prev() && !_rf_modal) {
         shop_tab = (shop_tab + _shop_ntabs - 1) mod _shop_ntabs;
         sell_index = 0; sell_scroll = 0; buy_scroll = 0; sell_confirm_name = ""; shop_notification = "";
         reforge_index = 0; reforge_scroll = 0;
@@ -866,7 +1022,7 @@ if (shop_open != -1 && !stash_mode_open) {
 
     // Dorn's affix rework lives on its own REFORGE tab now (shop_tab == 2). [R] is a
     // shortcut that jumps straight to it from any Dorn tab.
-    if (shop_open == 1 && input_hotkey("R")) {
+    if (shop_open == 1 && input_hotkey("R") && !_rf_modal) {
         shop_tab = 2; reforge_index = 0; reforge_scroll = 0; shop_notification = "";
     }
 
@@ -1013,9 +1169,204 @@ if (shop_open != -1 && !stash_mode_open) {
         var _rf_n    = array_length(_rf_list);
         reforge_index = clamp(reforge_index, 0, max(0, _rf_n - 1));
 
+        // ---- TWO-STEP REWORK SCREEN (M 07-27: a legendary got rerolled in ONE
+        // click - destructive spends get a confirmation screen now, standing rule).
+        // Stage 0 = gear list below. Stage 1 = confirm card (item + cost, commit or
+        // back out). Stage 2 = forge animation, input locked (the roll is already
+        // paid + made, but VEILED until the reveal). Stage 3 = result card.
+        // Draw side = ui_draw_reforge_confirm (buttons hit-test there, inject tags
+        // "reforge:commit"/"reforge:back"/"reforge:done" per the touch rule).
+        if (!variable_instance_exists(id, "reforge_stage")) {
+            reforge_stage = 0; reforge_target = undefined; reforge_before = undefined;
+            reforge_anim_t = 0; reforge_spent_tier = -1; reforge_is_recast = false;
+            dorn_ck_open = false; dorn_ck_title = ""; dorn_ck_body = "";
+            forge_open = false; forge_phase = 0; forge_cursor = 0;
+            forge_slot_pick = 0; forge_fx_pick = 0; forge_result = undefined;
+        }
+
+        // THE LEGENDARY FORGE (M locked 07-28) - modal over the reforge tab.
+        // Phases: 0 pick slot, 1 pick effect, 2 NAME IT (keyboard_string, the
+        // char-select idiom; text_entry_active() stands global hotkeys down),
+        // 3 result card. Draw = ui_draw_legendary_forge (row taps inject
+        // forge:row<i>; DONE injects forge:done).
+        if (forge_open) {
+            if (forge_phase == 2) {
+                if (string_length(keyboard_string) > 20) keyboard_string = string_copy(keyboard_string, 1, 20);
+                if (input_cancel() || input_back()) {
+                    forge_phase = 1; forge_cursor = forge_fx_pick; keyboard_string = "";
+                    if (input_device() == 2) keyboard_virtual_hide();
+                    exit;
+                }
+                if (keyboard_check_pressed(vk_enter)) {
+                    var _fname = string_trim(keyboard_string);
+                    if (_fname == "") exit;   // no nameless legendaries
+                    var _f_fx   = forge_effect_catalog()[clamp(forge_fx_pick, 0, array_length(forge_effect_catalog()) - 1)];
+                    var _f_slot = forge_slot_list()[clamp(forge_slot_pick, 0, array_length(forge_slot_list()) - 1)];
+                    var _f_it   = forge_build_item(_f_slot, _f_fx, _fname);
+                    forge_components_ensure();
+                    global.forge_comp_frame -= 1;
+                    global.forge_comp_core  -= 1;
+                    global.forge_comp_quint -= 1;
+                    array_push(global.equipment_stash, _f_it);
+                    discover_item(item_base_name(_f_it));
+                    save_game();
+                    forge_result    = _f_it;
+                    forge_phase     = 3;
+                    keyboard_string = "";
+                    if (input_device() == 2) keyboard_virtual_hide();
+                    audio_play_sound(snd_confirm_major, 1, false);
+                    ui_checkout_vfx(spr_vfx_impact, 960, 520);
+                }
+                exit;
+            }
+            if (forge_phase == 3) {
+                if (input_confirm() || input_cancel() || input_inject_take("forge:done")) {
+                    forge_open = false; forge_result = undefined;
+                }
+                exit;
+            }
+            var _f_rows = (forge_phase == 0) ? array_length(forge_slot_list()) : array_length(forge_effect_catalog());
+            if (input_cancel() || input_back()) {
+                if (forge_phase == 1) { forge_phase = 0; forge_cursor = forge_slot_pick; }
+                else forge_open = false;
+                exit;
+            }
+            if (nav_up())   forge_cursor = wrap_index(forge_cursor - 1, _f_rows);
+            if (nav_down()) forge_cursor = wrap_index(forge_cursor + 1, _f_rows);
+            forge_cursor = clamp(forge_cursor, 0, _f_rows - 1);
+            var _f_tap = -1;
+            for (var _fti = 0; _fti < _f_rows; _fti++) {
+                if (input_inject_take("forge:row" + string(_fti))) { _f_tap = _fti; break; }
+            }
+            if (_f_tap >= 0) forge_cursor = _f_tap;
+            if (input_confirm() || _f_tap >= 0) {
+                if (forge_phase == 0) { forge_slot_pick = forge_cursor; forge_phase = 1; forge_cursor = 0; }
+                else {
+                    forge_fx_pick = forge_cursor; forge_phase = 2; keyboard_string = "";
+                    if (input_device() == 2) keyboard_virtual_show(kbv_type_default, kbv_returnkey_done, kbv_autocapitalize_words, false);
+                }
+            }
+            exit;
+        }
+
+        // Mythril Frame checkout popup (modal; Dorn's forge component).
+        if (dorn_ck_open) {
+            if (input_cancel() || input_back() || input_inject_take("dorn:cancel")) { dorn_ck_open = false; exit; }
+            if (input_confirm() || input_inject_take("dorn:ok")) {
+                dorn_ck_open = false;
+                reforge_ingots_ensure();
+                var _df_g = forge_frame_cost();
+                if (global.gold < _df_g) {
+                    shop_notification = "The frame asks " + string(_df_g) + "g.";
+                    audio_play_sound(snd_ui_error, 1, false);
+                } else if (global.reforge_ingots[4] < 1) {
+                    shop_notification = "The frame asks a LEGENDARY Reforge Ingot - Sunder a legendary at Maren, or the board pays them.";
+                    audio_play_sound(snd_ui_error, 1, false);
+                } else {
+                    global.gold -= _df_g;
+                    global.reforge_ingots[4] -= 1;
+                    forge_components_ensure();
+                    global.forge_comp_frame += 1;
+                    save_game();
+                    shop_notification = "MYTHRIL FRAME struck. (" + string(global.forge_comp_frame) + " held)";
+                    audio_play_sound(snd_confirm_major, 1, false);
+                    ui_checkout_vfx(spr_vfx_fire, 960, 540);
+                }
+                exit;
+            }
+            exit;
+        }
+        if (reforge_stage > 0) {
+            if (reforge_target == undefined) { reforge_stage = 0; exit; }
+            if (reforge_stage == 1) {
+                if (input_cancel() || input_back() || input_inject_take("reforge:back")) {
+                    reforge_stage = 0; reforge_target = undefined;
+                } else if (input_confirm() || input_inject_take("reforge:commit")) {
+                    // Snapshot the item's OLD face for the before-card, then roll.
+                    var _rb = reforge_target;
+                    reforge_before = {
+                        label: _rb.name,
+                        rar:   variable_struct_exists(_rb, "rarity") ? clamp(_rb.rarity, 0, 4) : 0,
+                        stat:  ui_item_stat_str(_rb),
+                    };
+                    if (reforge_is_recast) {
+                        // LEGENDARY RECAST (M 07-28 legendary sinks): gold, not an
+                        // ingot - the legendary becomes a DIFFERENT legendary.
+                        var _rc_g = legendary_recast_cost();
+                        if (global.gold < _rc_g) {
+                            shop_notification = "Recasting a legendary asks " + string(_rc_g) + "g.";
+                            audio_play_sound(snd_ui_error, 1, false);
+                            reforge_stage = 0; reforge_target = undefined;
+                        } else if (legendary_recast(_rb)) {
+                            global.gold -= _rc_g;
+                            reforge_spent_tier = -1;   // no ingot spent
+                            audio_play_sound(snd_forge, 1, false);
+                            reforge_stage = 2; reforge_anim_t = 0;
+                            if (room == rm_hub || room == rm_character_select) save_game();
+                        } else {
+                            shop_notification = "The forge refuses - nothing else to become.";
+                            audio_play_sound(snd_ui_error, 1, false);
+                            reforge_stage = 0; reforge_target = undefined;
+                        }
+                    } else if (chit_reforge_item(_rb)) {
+                        reforge_spent_tier = reforge_ingot_spend(reforge_before.rar);
+                        audio_play_sound(snd_forge, 1, false);
+                        reforge_stage = 2; reforge_anim_t = 0;
+                        if (room == rm_hub || room == rm_character_select) save_game();
+                    } else {
+                        shop_notification = "That item has no affixes to rework.";
+                        audio_play_sound(snd_ui_error, 1, false);
+                        reforge_stage = 0; reforge_target = undefined;
+                    }
+                }
+            } else if (reforge_stage == 2) {
+                reforge_anim_t++;
+                // Enter / tap skips straight to the reveal.
+                if (input_confirm() || mouse_check_button_pressed(mb_left)) reforge_anim_t = max(reforge_anim_t, 90);
+                if (reforge_anim_t >= 90) {
+                    reforge_stage = 3;
+                    audio_play_sound(snd_confirm_major, 1, false);
+                    // Gigapack impact burst over the NEW card at the reveal (M 07-28).
+                    ui_checkout_vfx(spr_vfx_impact, 1185, 540);
+                }
+            } else {   // stage 3: result shown
+                reforge_anim_t++;   // keeps the reveal burst animating
+                if (input_confirm() || input_cancel() || input_back() || input_inject_take("reforge:done")) {
+                    shop_notification = reforge_is_recast
+                        ? ("Dorn recast " + reforge_before.label + " into " + reforge_target.name + "!  (-" + string(legendary_recast_cost()) + "g)")
+                        : ("Dorn reworked " + reforge_before.label + " into " + reforge_target.name
+                            + "  (spent a " + item_rarity_name(reforge_spent_tier) + " ingot)");
+                    reforge_stage = 0; reforge_target = undefined; reforge_before = undefined;
+                    reforge_is_recast = false;
+                }
+            }
+            exit;
+        }
+
         if (input_cancel() || input_back()) {
             shop_open = -1; shop_tab = 0; shop_index = 0;
             reforge_index = 0; reforge_scroll = 0; shop_notification = "";
+            exit;
+        }
+
+        // [G] / chip - strike a Mythril Frame; [V] / chip - open THE LEGENDARY
+        // FORGE once all three components are held (M locked 07-28).
+        if (input_hotkey("G") || input_inject_take("dorn:frame")) {
+            dorn_ck_open  = true;
+            dorn_ck_title = "STRIKE A MYTHRIL FRAME?";
+            dorn_ck_body  = string(forge_frame_cost()) + "g + 1 LEGENDARY Reforge Ingot\nbecome Dorn's share of the LEGENDARY FORGE.";
+            exit;
+        }
+        if (input_hotkey("V") || input_inject_take("dorn:forge")) {
+            if (forge_components_ready()) {
+                forge_open = true; forge_phase = 0; forge_cursor = 0;
+                shop_notification = "";
+            } else {
+                forge_components_ensure();
+                shop_notification = "The LEGENDARY FORGE asks all three: Frame " + string(global.forge_comp_frame)
+                    + " / Core " + string(global.forge_comp_core) + " / Quintessence " + string(global.forge_comp_quint) + ".";
+                audio_play_sound(snd_ui_error, 1, false);
+            }
             exit;
         }
 
@@ -1026,20 +1377,21 @@ if (shop_open != -1 && !stash_mode_open) {
             if (input_confirm()) {
                 var _rc = _rf_list[reforge_index];
                 var _rr = variable_struct_exists(_rc.item, "rarity") ? clamp(_rc.item.rarity, 0, 4) : 0;
-                var _rt = reforge_ingot_tier_for(_rr);   // -1 = no ingot of that tier or higher
-                if (_rt < 0) {
-                    shop_notification = "No " + item_rarity_name(_rr) + "-tier (or higher) Reforge Ingot - the tavern board pays them.";
-                    audio_play_sound(snd_ui_error, 1, false);
+                if (_rr >= 4) {
+                    // LEGENDARY RECAST (M 07-28): gold-only, no ingot gate.
+                    reforge_target = _rc.item; reforge_stage = 1;
+                    reforge_is_recast = true;
+                    reforge_anim_t = 0; shop_notification = "";
                 } else {
-                    var _oldn = _rc.label;
-                    if (chit_reforge_item(_rc.item)) {
-                        var _sp = reforge_ingot_spend(_rr);
-                        shop_notification = "Dorn reworks " + _oldn + " into " + _rc.item.name + "!  (spent a " + item_rarity_name(_sp) + " ingot)";
-                        audio_play_sound(snd_forge, 1, false);
-                        if (room == rm_hub || room == rm_character_select) save_game();
-                    } else {
-                        shop_notification = "That item has no affixes to rework.";
+                    var _rt = reforge_ingot_tier_for(_rr);   // -1 = no ingot of that tier or higher
+                    if (_rt < 0) {
+                        shop_notification = "No " + item_rarity_name(_rr) + "-tier (or higher) Reforge Ingot - the tavern board pays them.";
                         audio_play_sound(snd_ui_error, 1, false);
+                    } else {
+                        // Open the confirmation screen - nothing is spent or rolled yet.
+                        reforge_target = _rc.item; reforge_stage = 1;
+                        reforge_is_recast = false;
+                        reforge_anim_t = 0; shop_notification = "";
                     }
                 }
             }
@@ -1073,7 +1425,27 @@ if (shop_open != -1 && !stash_mode_open) {
                 for (var _rri = _rwin0; _rri < _rwin1; _rri++) {
                     var _rry = 255 + (_rri - _rwin0) * 102;
                     if (_rmx >= 642 && _rmx < 1488 && _rmy >= _rry && _rmy < _rry + 96) {
-                        reforge_index = _rri; shop_notification = ""; break;
+                        if (_rri == reforge_index) {
+                            // Second tap on the selected row = Enter (opens the
+                            // confirmation screen) - the touch path to rework.
+                            var _rc2 = _rf_list[_rri];
+                            var _rr2 = variable_struct_exists(_rc2.item, "rarity") ? clamp(_rc2.item.rarity, 0, 4) : 0;
+                            if (_rr2 >= 4) {
+                                reforge_target = _rc2.item; reforge_stage = 1;
+                                reforge_is_recast = true;
+                                reforge_anim_t = 0; shop_notification = "";
+                            } else if (reforge_ingot_tier_for(_rr2) < 0) {
+                                shop_notification = "No " + item_rarity_name(_rr2) + "-tier (or higher) Reforge Ingot - the tavern board pays them.";
+                                audio_play_sound(snd_ui_error, 1, false);
+                            } else {
+                                reforge_target = _rc2.item; reforge_stage = 1;
+                                reforge_is_recast = false;
+                                reforge_anim_t = 0; shop_notification = "";
+                            }
+                        } else {
+                            reforge_index = _rri; shop_notification = "";
+                        }
+                        break;
                     }
                 }
             }
@@ -1087,15 +1459,40 @@ if (shop_open != -1 && !stash_mode_open) {
     // writes global.petra_order. Logic lives in scr_stats (PETRA_TT_PHASE1_SPEC.md).
     // =========================================================================
     if (shop_tab == 2 && shop_open == 0) {
-        // Esc/Backspace: cancel a pending confirm first, else close the shop.
+        // Rune-blueprint mode state (M 07-27 distributed rune economy). Mode 0 =
+        // the original 3-gear trade; mode 1 = trade 5 same-tier runes for a CHOSEN
+        // rune blueprint order. Draw = the trade tab in scr_ui (mode chip + rows
+        // hit-test THERE, injecting petra:* tags consumed below - touch rule).
+        if (!variable_instance_exists(id, "petra_trade_mode")) {
+            petra_trade_mode = 0; petra_rune_phase = 0; petra_rune_sel = [];
+            petra_rune_cursor = 0; petra_rune_scroll = 0;
+            petra_rune_result_cursor = 0; petra_rune_result_scroll = 0;
+            petra_reveal_open = false;
+        }
+
+        // --- ORDER REVEAL popup (M 07-28: the yield vanished into a stash stack -
+        // now it's EXAMINED before it goes). Modal: Enter/Esc/DONE closes.
+        if (petra_reveal_open) {
+            if (input_confirm() || input_cancel() || input_back() || input_inject_take("petra:revealdone")) {
+                petra_reveal_open   = false;
+                global.petra_reveal = undefined;
+            }
+            exit;
+        }
+
+        // Esc/Backspace: cancel a pending confirm first, then step back a rune
+        // phase (result-pick -> rune-pick), else close the shop.
         if (input_cancel() || input_back()) {
             if (petra_trade_confirm) {
                 petra_trade_confirm      = false;
                 petra_trade_notification = "";
+            } else if (petra_trade_mode == 1 && petra_rune_phase == 1) {
+                petra_rune_phase = 0; petra_trade_notification = "";
             } else {
                 shop_open = -1; shop_tab = 0; shop_index = 0;
                 sell_index = 0; sell_scroll = 0; sell_confirm_name = "";
                 shop_notification = ""; petra_trade_notification = "";
+                petra_trade_mode = 0; petra_rune_phase = 0; petra_rune_sel = [];
             }
             exit;
         }
@@ -1103,9 +1500,17 @@ if (shop_open != -1 && !stash_mode_open) {
         // --- An order exists: collect (ready) or cancel (in progress) ---
         if (petra_order_active()) {
             if (global.petra_order.status == "ready") {
-                if (input_confirm() || input_confirm_alt()) {
+                if (input_confirm() || input_confirm_alt() || input_inject_take("petra:collect")) {
                     petra_trade_notification = petra_collect();
                     petra_trade_confirm = false;
+                    // The reveal moment (matching Dorn's forge reveal): burst + the
+                    // examine popup (petra_collect stocked global.petra_reveal).
+                    audio_play_sound(snd_confirm_major, 1, false);
+                    ui_checkout_vfx(spr_vfx_arcane, 960, 460);   // Gigapack collect burst
+                    petra_collect_time = current_time;
+                    if (variable_global_exists("petra_reveal") && global.petra_reveal != undefined) {
+                        petra_reveal_open = true;
+                    }
                 }
             } else {
                 // In progress: C cancels (two-step confirm).
@@ -1122,6 +1527,115 @@ if (shop_open != -1 && !stash_mode_open) {
             exit;
         }
 
+        // --- No order: [R] / mode chip flips GEAR TRADE <-> RUNE BLUEPRINTS ---
+        if (input_hotkey("R") || input_inject_take("petra:mode")) {
+            petra_trade_mode = 1 - petra_trade_mode;
+            petra_rune_phase = 0; petra_rune_sel = [];
+            petra_rune_cursor = 0; petra_rune_scroll = 0;
+            petra_trade_confirm = false; petra_trade_notification = "";
+            exit;
+        }
+
+        // --- RUNE BLUEPRINT MODE: pick 5 same-tier runes, then choose the result ---
+        if (petra_trade_mode == 1) {
+            rune_inventory_sort();
+            var _pr_inv = variable_global_exists("rune_inventory") ? global.rune_inventory : [];
+            if (petra_rune_phase == 0) {
+                var _pr_n = array_length(_pr_inv);
+                // Draw-side row taps inject an absolute index.
+                var _pr_tap = -1;
+                for (var _pi = 0; _pi < _pr_n; _pi++) {
+                    if (input_inject_take("petra:runerow" + string(_pi))) { _pr_tap = _pi; break; }
+                }
+                if (_pr_tap >= 0) petra_rune_cursor = _pr_tap;
+                if (_pr_n > 0) {
+                    if (nav_up())   petra_rune_cursor = wrap_index(petra_rune_cursor - 1, _pr_n);
+                    if (nav_down()) petra_rune_cursor = wrap_index(petra_rune_cursor + 1, _pr_n);
+                    petra_rune_cursor = clamp(petra_rune_cursor, 0, _pr_n - 1);
+                    if (petra_rune_cursor < petra_rune_scroll)      petra_rune_scroll = petra_rune_cursor;
+                    if (petra_rune_cursor >= petra_rune_scroll + 8) petra_rune_scroll = petra_rune_cursor - 7;
+
+                    // Enter (or a row tap) toggles the pick - max 5, all same tier.
+                    if (input_confirm() || _pr_tap >= 0) {
+                        var _pci   = petra_rune_cursor;
+                        var _pfound = -1;
+                        for (var _psi = 0; _psi < array_length(petra_rune_sel); _psi++) {
+                            if (petra_rune_sel[_psi] == _pci) { _pfound = _psi; break; }
+                        }
+                        if (_pfound >= 0) {
+                            array_delete(petra_rune_sel, _pfound, 1);
+                            petra_trade_notification = "";
+                        } else if (array_length(petra_rune_sel) >= 5) {
+                            petra_trade_notification = "Already chose 5 - deselect one first (Enter).";
+                        } else if (array_length(petra_rune_sel) > 0
+                            && _pr_inv[petra_rune_sel[0]].tier != _pr_inv[_pci].tier) {
+                            petra_trade_notification = "All 5 runes must share a tier.";
+                        } else {
+                            array_push(petra_rune_sel, _pci);
+                            petra_trade_notification = "";
+                        }
+                    }
+                }
+                // Space / the CHOOSE button: with 5 picked, move to the result pick.
+                if (input_confirm_alt() || input_inject_take("petra:runego")) {
+                    if (array_length(petra_rune_sel) != 5) {
+                        petra_trade_notification = "Select 5 same-tier runes first (Enter to toggle).";
+                    } else {
+                        petra_rune_phase = 1;
+                        petra_rune_result_cursor = 0; petra_rune_result_scroll = 0;
+                        petra_trade_notification = "";
+                    }
+                }
+            } else {
+                // Phase 1: choose the blueprint (any non-flagship catalog rune, at
+                // the picked tier). Enter/tap arms the checkout POPUP (M 07-27
+                // standing rule); while armed the list is modal-locked.
+                var _bp_pool = rune_blueprint_pool();
+                var _bp_n    = array_length(_bp_pool);
+                var _bp_tier = (array_length(petra_rune_sel) > 0 && petra_rune_sel[0] < array_length(_pr_inv))
+                    ? _pr_inv[petra_rune_sel[0]].tier : 1;
+
+                if (petra_trade_confirm) {
+                    // MODAL: only place or cancel (popup buttons / Enter; Esc is
+                    // handled by the shared cancel block at the top).
+                    if (input_inject_take("petra:cancelbp")) {
+                        petra_trade_confirm = false; petra_trade_notification = "";
+                    } else if (input_confirm() || input_inject_take("petra:placebp")) {
+                        petra_trade_confirm = false;
+                        var _bp_res = petra_start_rune_order(petra_rune_sel, _bp_pool[petra_rune_result_cursor]);
+                        if (_bp_res == "") {
+                            petra_trade_notification = "Blueprint order placed! Earn it by clearing floors.";
+                            audio_play_sound(snd_npc_confirm, 1, false);
+                            petra_rune_sel = []; petra_rune_phase = 0;
+                        } else {
+                            petra_trade_notification = _bp_res;
+                            audio_play_sound(snd_ui_error, 1, false);
+                        }
+                    }
+                    exit;
+                }
+
+                var _bp_tap  = -1;
+                for (var _bi = 0; _bi < _bp_n; _bi++) {
+                    if (input_inject_take("petra:runeres" + string(_bi))) { _bp_tap = _bi; break; }
+                }
+                if (_bp_tap >= 0 && _bp_tap != petra_rune_result_cursor) {
+                    petra_rune_result_cursor = _bp_tap;
+                }
+                if (nav_up())   petra_rune_result_cursor = wrap_index(petra_rune_result_cursor - 1, _bp_n);
+                if (nav_down()) petra_rune_result_cursor = wrap_index(petra_rune_result_cursor + 1, _bp_n);
+                petra_rune_result_cursor = clamp(petra_rune_result_cursor, 0, max(0, _bp_n - 1));
+                if (petra_rune_result_cursor < petra_rune_result_scroll)      petra_rune_result_scroll = petra_rune_result_cursor;
+                if (petra_rune_result_cursor >= petra_rune_result_scroll + 8) petra_rune_result_scroll = petra_rune_result_cursor - 7;
+
+                if (input_confirm() || (_bp_tap >= 0 && _bp_tap == petra_rune_result_cursor)) {
+                    petra_trade_confirm = true;   // popup drawn by the trade-tab draw
+                    petra_trade_notification = "";
+                }
+            }
+            exit;
+        }
+
         // --- No order: choose 3 same-tier stash items, then place ---
         var _stash_n = array_length(global.equipment_stash);
 
@@ -1130,10 +1644,17 @@ if (shop_open != -1 && !stash_mode_open) {
         // Space confirms and places, Esc cancels (the shop Esc handler above clears
         // petra_trade_confirm). Geometry lives in the scr_ui trade-tab popup.
         if (petra_trade_confirm) {
+            // Draw-side taps: lever rows + the CONFIRM button (petra:* tags).
+            if (input_inject_take("petra:lever0")) petra_trade_lever = false;
+            if (input_inject_take("petra:lever1")) petra_trade_lever = true;
             if (nav_up() || nav_down() || input_detail()) petra_trade_lever = !petra_trade_lever;
-            if (input_confirm() || input_confirm_alt()) {
+            if (input_confirm() || input_confirm_alt() || input_inject_take("petra:place")) {
                 var _res = petra_place_order(petra_trade_selected, petra_trade_lever);
-                if (_res == "") { petra_trade_notification = "Order placed! Earn it by clearing floors."; petra_trade_selected = []; }
+                if (_res == "") {
+                    petra_trade_notification = "Order placed! Earn it by clearing floors.";
+                    petra_trade_selected = [];
+                    audio_play_sound(snd_npc_confirm, 1, false);
+                }
                 else            { petra_trade_notification = _res; }
                 petra_trade_confirm = false;
             }
@@ -1153,8 +1674,15 @@ if (shop_open != -1 && !stash_mode_open) {
         // always-on toggle was easy to miss and its notification overlapped the
         // instruction line; M 07-08.)
 
-        // Enter toggles selection of the highlighted item (max 3, all same tier).
-        if ((input_confirm()) && _stash_n > 0) {
+        // Row taps (drawn + hit-tested in the trade-tab draw) select-and-toggle.
+        var _pg_tap = -1;
+        for (var _pgi = 0; _pgi < _stash_n; _pgi++) {
+            if (input_inject_take("petra:gearrow" + string(_pgi))) { _pg_tap = _pgi; break; }
+        }
+        if (_pg_tap >= 0) petra_trade_cursor = _pg_tap;
+
+        // Enter (or a row tap) toggles selection of the highlighted item (max 3, all same tier).
+        if ((input_confirm() || _pg_tap >= 0) && _stash_n > 0) {
             var _ci    = petra_trade_cursor;
             var _found = -1;
             for (var _si = 0; _si < array_length(petra_trade_selected); _si++) {
@@ -1185,8 +1713,8 @@ if (shop_open != -1 && !stash_mode_open) {
             }
         }
 
-        // Space: when 3 are chosen, open the no-takeback preview.
-        if (input_confirm_alt()) {
+        // Space (or the PLACE ORDER button): when 3 are chosen, open the preview.
+        if (input_confirm_alt() || input_inject_take("petra:placeopen")) {
             if (array_length(petra_trade_selected) != 3) {
                 petra_trade_notification = "Select 3 same-tier items first (Enter to toggle).";
             } else {
@@ -1381,10 +1909,11 @@ if (shop_open != -1 && !stash_mode_open) {
 }
 
 // =============================================================================
-// TRAINER INPUT (Vex) - runs before the menu_open guard. Four sections:
-//   tab 0 Stats   tab 1 Trait Slots   tab 2 Abilities   tab 3 Potency
+// TRAINER INPUT (Vex) - runs before the menu_open guard. Six sections:
+//   tab 0 Stats   tab 1 Trait Slots   tab 2 Abilities   tab 3 Traits
+//   tab 4 Potency   tab 5 Reweave (talent-web respec)
 // =============================================================================
-if (trainer_open) {
+if (trainer_open && !menu_open) {   // I menu owns input while open (see shop block)
     var _tr_class = variable_global_exists("chosen_class") ? global.chosen_class : 0;
 
     // --- Tab: examine the highlighted ability (tab 2) or trait (tab 3) before buying.
@@ -1458,9 +1987,11 @@ if (trainer_open) {
             }
         }
 
-        // Apply +/- with caps: can't exceed a stat's available points, nor the total
-        // (5, or 4 with Vex's Companion perk - vex_potency_points).
-        var _sp_need = vex_potency_points();
+        // Apply +/- with caps: can't exceed a stat's available points, nor the total.
+        // POTENCY V2: the point count comes from the rank being bought (set at open;
+        // falls back to the legacy vex_potency_points for safety).
+        var _sp_need = variable_instance_exists(id, "trainer_statpick_need")
+            ? trainer_statpick_need : vex_potency_points();
         if (_dec || _inc) {
             trainer_statpick_confirm = false;   // any change disarms the confirm
             var _cs    = trainer_statpick_cursor;
@@ -1489,8 +2020,7 @@ if (trainer_open) {
                 if (!variable_global_exists("trait_potency")) global.trait_potency = {};
                 variable_struct_set(global.trait_potency, trainer_statpick_trait, _sp_tier + 1);
                 save_game();
-                trainer_notification = trainer_statpick_trait + " potency raised to Tier " + string(_sp_tier + 1)
-                    + "  (+" + string((_sp_tier + 1) * 10) + "% strength).";
+                trainer_notification = trainer_statpick_trait + " potency raised to Rank " + string(_sp_tier + 1) + ".";
                 trainer_statpick_confirm = false;
                 trainer_statpick_open    = false;
             }
@@ -1516,7 +2046,8 @@ if (trainer_open) {
         exit;
     }
 
-    // Q/E - switch section tabs (5 tabs: Stats | Trait Slots | Abilities | Traits | Potency)
+    // Q/E - switch section tabs (5 tabs: Stats | Trait Slots | Abilities | Traits |
+    // Potency). REWEAVE moved to Vael the Aesthete (M 07-28 - the term fits her).
     if (input_tab_prev()) {
         trainer_tab = (trainer_tab - 1 + 5) mod 5;
         trainer_cursor = 0; trainer_confirm = false; trainer_notification = "";
@@ -1539,8 +2070,9 @@ if (trainer_open) {
     if (mouse_check_button_pressed(mb_left)) {
         var _tmx = device_mouse_x_to_gui(0);
         var _tmy = device_mouse_y_to_gui(0);
+        // Geometry MUST match the 5-tab bar in ui_draw_trainer_screen (60 + t*360, 345 wide).
         for (var _tbi = 0; _tbi < 5; _tbi++) {
-            var _tbx = 68 + _tbi * 360;
+            var _tbx = 60 + _tbi * 360;
             if (_tmx >= _tbx && _tmx < _tbx + 345 && _tmy >= 96 && _tmy < 144 && trainer_tab != _tbi) {
                 trainer_tab = _tbi; trainer_cursor = 0;
                 trainer_confirm = false; trainer_notification = "";
@@ -1550,9 +2082,9 @@ if (trainer_open) {
         // the screen and are windowed to 8 rows (matching the draw side).
         var _tr_vis    = _tr_rows;
         var _tr_hscroll = 0;
-        if (trainer_tab == 2 || trainer_tab == 3) {
+        if (trainer_tab == 2 || trainer_tab == 3 || trainer_tab == 4) {
             // Tab 3 (Traits) windows to 7 rows so the trade-item readout at y=626
-            // doesn't overlap the last row; Tab 2 (Abilities) has no readout, shows 8.
+            // doesn't overlap the last row; Tabs 2/4 have no readout, show 8.
             var _tr_window = (trainer_tab == 3) ? 7 : 8;
             _tr_vis     = min(_tr_window, _tr_rows);
             _tr_hscroll = loadout_list_scroll(trainer_cursor, _tr_rows, _tr_window);
@@ -1662,27 +2194,75 @@ if (trainer_open) {
             }
         }
     }
-    // === TAB 4: TRAIT POTENCY - sacrifice 5 permanent stat points per tier ===
+    // === TAB 4: TRAIT POTENCY (V2, SYSTEMS_POTENCY_V2.md) - tiered mixed costs:
+    // ranks 1-2 gold+dust, ranks 3-4 the stat allocator, rank 5 an Epic+ offering ===
     else if (trainer_tab == 4) {
         var _ups  = trait_upgradable_list();
         var _up   = _ups[clamp(trainer_cursor, 0, array_length(_ups) - 1)];
         var _tier = trait_potency_tier(_up.name);
 
-        // Choosing a trait opens the stat picker (handled at the top of this block):
-        // you sacrifice 5 points from ANY stat you choose, not a fixed one.
-        if (_act) {
+        if (_act || _commit) {
             if (_tier >= 5) {
-                trainer_notification = _up.name + " is already at max potency (Tier 5, +50%).";
+                trainer_notification = _up.name + " has already Transcended.";
             } else {
-                trainer_statpick_open    = true;
-                trainer_statpick_trait   = _up.name;
-                trainer_statpick_cursor  = 0;
-                trainer_statpick_confirm = false;
-                trainer_statpick_alloc   = [0, 0, 0, 0, 0, 0];
-                trainer_notification     = "";
+                var _pc = trait_potency_rank_cost(_tier + 1);
+                if (_pc.kind == "gold") {
+                    var _pg = vex_price(cha_price(_pc.gold));   // Vex Friend perk: 10% off
+                    var _pd = _pc.dust;
+                    var _pdust_have = variable_global_exists("rune_dust") ? global.rune_dust : 0;
+                    if (trainer_confirm) {
+                        if (global.gold >= _pg && _pdust_have >= _pd) {
+                            global.gold      -= _pg;
+                            global.rune_dust -= _pd;
+                            if (!variable_global_exists("trait_potency")) global.trait_potency = {};
+                            variable_struct_set(global.trait_potency, _up.name, _tier + 1);
+                            affinity_add("vex", 2);   // function-use drip (potency)
+                            save_game();
+                            trainer_confirm      = false;
+                            trainer_notification = _up.name + " potency raised to Rank " + string(_tier + 1) + ".";
+                            audio_play_sound(snd_npc_confirm, 1, false);
+                        }
+                    } else if (_act) {
+                        if (global.gold < _pg) {
+                            trainer_notification = "Not enough gold - Rank " + string(_tier + 1) + " costs " + string(_pg) + "g + " + string(_pd) + " dust.";
+                            audio_play_sound(snd_ui_error, 1, false);
+                        } else if (_pdust_have < _pd) {
+                            trainer_notification = "Need " + string(_pd) + " rune dust (you have " + string(_pdust_have) + ").";
+                            audio_play_sound(snd_ui_error, 1, false);
+                        } else {
+                            trainer_confirm      = true;
+                            trainer_notification = "Raise " + _up.name + " to Rank " + string(_tier + 1) + " for " + string(_pg) + "g + " + string(_pd) + " dust?";
+                        }
+                    }
+                } else if (_pc.kind == "stats") {
+                    // Ranks 3-4: the stat allocator - point count comes from the
+                    // V2 cost table (Vex Companion perk takes one off).
+                    if (_act) {
+                        trainer_statpick_open    = true;
+                        trainer_statpick_trait   = _up.name;
+                        trainer_statpick_need    = _pc.points;
+                        trainer_statpick_cursor  = 0;
+                        trainer_statpick_confirm = false;
+                        trainer_statpick_alloc   = [0, 0, 0, 0, 0, 0];
+                        trainer_notification     = "";
+                    }
+                } else if (_act) {
+                    // Rank 5: the Transcend offering - one Epic+ item via the picker.
+                    if (!trainer_has_item(3)) {
+                        trainer_notification = "Transcending " + _up.name + " asks an Epic or better item from your stash/pack.";
+                        audio_play_sound(snd_ui_error, 1, false);
+                    } else {
+                        var _tinfo = trait_potency_info(_up.name);
+                        item_picker_open("vex_potency",
+                            { trait_name: _up.name, tname: _tinfo.tname },
+                            item_picker_candidates_by_rarity(3));
+                        trainer_notification = "";
+                    }
+                }
             }
         }
     }
+    // (REWEAVE moved to Vael the Aesthete, M 07-28 - see the vael_open handler.)
 
     exit;
 }
@@ -1924,7 +2504,12 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open) {
         // Pouches deeper than the 6 hotkey rows page with [A]/[D] (M 07-09: overflow
         // items were listed as "+N more" but could never be seen or selected).
         var _owned      = pet_feed_owned_list();
-        var _feed_pages = max(1, ceil(array_length(_owned) / 6));
+        // Page size = the row capacity the Draw pass measured last frame
+        // (_gc.bairc_feed_vis) - NOT a flat 6. When the boxes above squeeze the
+        // FEED box below 6 rows, 6-wide pages hid the tail forever (M 07-27:
+        // "+2 more in the pouch but i cant see what i want").
+        var _feed_vis   = variable_instance_exists(id, "bairc_feed_vis") ? max(1, bairc_feed_vis) : 6;
+        var _feed_pages = max(1, ceil(array_length(_owned) / _feed_vis));
         if (input_hotkey("D")) bairc_feed_page = (bairc_feed_page + 1) mod _feed_pages;
         if (input_hotkey("A")) bairc_feed_page = (bairc_feed_page - 1 + _feed_pages) mod _feed_pages;
         bairc_feed_page = clamp(bairc_feed_page, 0, _feed_pages - 1);
@@ -1942,9 +2527,12 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open) {
         for (var _fai = 0; _fai < array_length(_owned); _fai++) {
             if (input_inject_take("bairc:feedabs" + string(_fai))) { _feed_abs = _fai; break; }
         }
+        // A number key past the visible window ([5] when only 4 rows fit) would
+        // silently feed an item on the NEXT page - drop it instead.
+        if (_feed_key >= _feed_vis) _feed_key = -1;
         if (_feed_key >= 0 || _feed_abs >= 0) {
             var _feed_idx = (_feed_abs >= 0) ? _feed_abs
-                : bairc_feed_page * 6 + _feed_key;   // hotkeys address the visible page
+                : bairc_feed_page * _feed_vis + _feed_key;   // hotkeys address the visible page
             if (_feed_idx >= array_length(_owned)) {
                 if (!_bp.is_egg && pet_feed_pouch_total() <= 0)
                     bairc_notification = "No feed on hand - buy some from Petra the Trader.";
@@ -2022,7 +2610,7 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open) {
 // Socket tab is a 3-phase flow: 0 pick item -> 1 pick socket -> 2 pick rune.
 // Layout constants here MUST match ui_draw_maren_screen() in scr_ui.
 // =============================================================================
-if (variable_instance_exists(id, "maren_open") && maren_open) {
+if (variable_instance_exists(id, "maren_open") && maren_open && !menu_open) {
     // --- Banshee release ceremony popup: owns ALL input while open. Any key
     //     first skips to the reveal, then closes. (Drawn by ui_draw_maren.) ---
     if (banshee_release_open) {
@@ -2176,14 +2764,52 @@ if (variable_instance_exists(id, "maren_open") && maren_open) {
         if (maren_phase == 0)      _m_rows = max(1, _m_arows0);
         else                       _m_rows = max(1, array_length(_m_asp));
     } else if (maren_tab == 2) {
-        if (maren_phase == 0)      _m_rows = 3;                                       // Combine/Split/Craft menu
+        if (maren_phase == 0)      _m_rows = 5;                                       // Combine/Split/Craft/Sunder/Runeheart menu
         else if (maren_phase == 1) _m_rows = max(1, array_length(_m_groups));         // Combine groups
         else if (maren_phase == 2) _m_rows = max(1, array_length(global.rune_inventory)); // Split list
+        else if (maren_phase == 4) _m_rows = max(1, array_length(maren_core_candidates())); // Runeheart sacrifice list
         else                       _m_rows = max(1, array_length(_m_flags));          // Flagship list
     } else if (maren_tab == 3) {
         _m_rows = max(1, array_length(global.rune_inventory));                        // Runes (owned list)
     } else {
         _m_rows = 1;                                                                  // Spirits: single Release action row
+    }
+
+    // LEGENDARY FORGE - Runeheart Core checkout popup (M locked 07-28). MODAL.
+    if (!variable_instance_exists(id, "maren_ck_open")) {
+        maren_ck_open = false; maren_ck_rune_idx = -1;
+        maren_ck_title = ""; maren_ck_body = "";
+    }
+    if (maren_ck_open) {
+        if (input_cancel() || input_back() || input_inject_take("maren:cancel")) {
+            maren_ck_open = false; maren_notification = "";
+            exit;
+        }
+        if (input_confirm() || input_inject_take("maren:ok")) {
+            maren_ck_open = false;
+            var _mk_dust = variable_global_exists("rune_dust") ? global.rune_dust : 0;
+            if (_mk_dust < 40) {
+                maren_notification = "A Runeheart Core asks 40 dust (you have " + string(_mk_dust) + ").";
+                audio_play_sound(snd_ui_error, 1, false);
+            } else if (maren_ck_rune_idx >= 0 && maren_ck_rune_idx < array_length(global.rune_inventory)
+                && global.rune_inventory[maren_ck_rune_idx].tier >= 3) {
+                var _mk_nm = rune_title(global.rune_inventory[maren_ck_rune_idx]);
+                array_delete(global.rune_inventory, maren_ck_rune_idx, 1);
+                global.rune_dust -= 40;
+                forge_components_ensure();
+                global.forge_comp_core += 1;
+                save_game();
+                maren_notification = "RUNEHEART CORE forged from " + _mk_nm + ". (" + string(global.forge_comp_core) + " held)";
+                audio_play_sound(snd_confirm_major, 1, false);
+                ui_checkout_vfx(spr_vfx_arcane, 960, 540);
+                maren_phase = 0; maren_cursor = 0; maren_scroll = 0;
+            } else {
+                maren_notification = "That rune is gone.";
+                audio_play_sound(snd_ui_error, 1, false);
+            }
+            exit;
+        }
+        exit;   // modal - swallow everything else while the popup is up
     }
 
     // Esc / Backspace - step back one phase, else close the screen
@@ -2351,9 +2977,30 @@ if (variable_instance_exists(id, "maren_open") && maren_open) {
         } else if (maren_tab == 2) {
             // -------- FORGE TAB --------
             if (maren_phase == 0) {
-                // Sub-menu: 0 Combine, 1 Split, 2 Craft Flagship
-                maren_phase = clamp(maren_cursor, 0, 2) + 1;
-                maren_cursor = 0; maren_scroll = 0; maren_notification = "";
+                // Sub-menu: 0 Combine, 1 Split, 2 Craft Flagship, 3 Sunder
+                // Legendary, 4 Runeheart Core (LEGENDARY FORGE component)
+                if (maren_cursor == 4) {
+                    if (array_length(maren_core_candidates()) == 0) {
+                        maren_notification = "A Runeheart Core asks a tier-III or better rune - you hold none unsocketed.";
+                        audio_play_sound(snd_ui_error, 1, false);
+                    } else {
+                        maren_phase = 4; maren_cursor = 0; maren_scroll = 0; maren_notification = "";
+                    }
+                } else if (maren_cursor == 3) {
+                    // SUNDER (M 07-28 legendary sinks): pick a legendary via the
+                    // shared picker; the picker resolve pays out ingot/dust/rune.
+                    var _snd_cands = item_picker_candidates_by_rarity(4);
+                    if (array_length(_snd_cands) == 0) {
+                        maren_notification = "You hold no unequipped legendaries to sunder.";
+                        audio_play_sound(snd_ui_error, 1, false);
+                    } else {
+                        item_picker_open("maren_sunder", {}, _snd_cands);
+                        maren_notification = "";
+                    }
+                } else {
+                    maren_phase = clamp(maren_cursor, 0, 2) + 1;
+                    maren_cursor = 0; maren_scroll = 0; maren_notification = "";
+                }
             } else if (maren_phase == 1) {
                 // Combine -> confirm (consumes 3 runes).
                 if (array_length(_m_groups) > 0) {
@@ -2385,6 +3032,19 @@ if (variable_instance_exists(id, "maren_open") && maren_open) {
                         warn: _spwarn
                     };
                     maren_cursor = clamp(maren_cursor, 0, max(0, array_length(global.rune_inventory) - 1));
+                }
+            } else if (maren_phase == 4) {
+                // RUNEHEART CORE (LEGENDARY FORGE, M locked 07-28): pick the
+                // tier-III+ rune to sacrifice; commit via the checkout popup.
+                var _mc_cands = maren_core_candidates();
+                if (array_length(_mc_cands) > 0) {
+                    var _mc_i  = _mc_cands[clamp(maren_cursor, 0, array_length(_mc_cands) - 1)];
+                    var _mc_rn = global.rune_inventory[_mc_i];
+                    maren_ck_open     = true;
+                    maren_ck_rune_idx = _mc_i;
+                    maren_ck_title    = "FORGE A RUNEHEART CORE?";
+                    maren_ck_body     = rune_title(_mc_rn) + " + 40 rune dust\nbecome Maren's share of the LEGENDARY FORGE. The rune is consumed.";
+                    maren_notification = "";
                 }
             } else {
                 // Craft Flagship
@@ -2426,35 +3086,146 @@ if (variable_instance_exists(id, "maren_open") && maren_open) {
 // SABLE THE ALCHEMIST - Salvage / Brew / Upgrade (see SYSTEMS_SABLE.md).
 // Layout constants here MUST match ui_draw_sable_screen() in scr_ui.
 // =============================================================================
-if (variable_instance_exists(id, "sable_open") && sable_open) {
+if (variable_instance_exists(id, "sable_open") && sable_open && !menu_open) {
     rune_inventory_sort();   // keep the rune/aspect pool alphabetical (display + index ops read this)
     var _s_gear   = sable_salvageable_gear();
     var _s_rinv   = variable_global_exists("rune_inventory") ? global.rune_inventory : [];
     var _s_brew   = sable_brew_catalog_priced();
     var _s_groups = sable_upgrade_groups();
 
+    // Transmute selection state (phase 3 of tab 0 - M 07-27 rune sink) + the
+    // checkout-popup descriptor (what a confirmed sable_confirm will DO) + the
+    // Chaotic Brew pick-3 state (tab 2, M 07-28).
+    if (!variable_instance_exists(id, "sable_trans_sel")) {
+        sable_trans_sel     = [];
+        sable_confirm_kind  = "";
+        sable_confirm_idx   = -1;
+        sable_confirm_label = "";
+        sable_confirm_title = "";
+        sable_confirm_body  = "";
+        sable_chaos_open    = false;
+        sable_chaos_sel     = [];
+        sable_chaos_kind    = "chaotic";   // "chaotic" | "quint" (LEGENDARY FORGE)
+    }
+
     // Row count for the active tab + phase
     var _s_rows = 1;
     if (sable_tab == 0) {
-        if (sable_phase == 0)      _s_rows = 2;                                    // Gear / Runes menu
+        if (sable_phase == 0)      _s_rows = 3;                                    // Gear / Runes / Transmute menu
         else if (sable_phase == 1) _s_rows = max(1, array_length(_s_gear));        // Gear list
-        else                       _s_rows = max(1, array_length(_s_rinv));        // Rune list
+        else                       _s_rows = max(1, array_length(_s_rinv));        // Rune list (salvage AND transmute)
     } else if (sable_tab == 1) {
         _s_rows = max(1, array_length(_s_brew));                                   // Brew list
     } else if (sable_tab == 2) {
-        _s_rows = max(1, array_length(_s_groups));                                 // Upgrade list
+        // Fusion groups + the always-present CHAOTIC BREW + QUINTESSENCE rows;
+        // in pick mode the rows are the whole potion pouch instead.
+        _s_rows = sable_chaos_open
+            ? max(1, variable_global_exists("consumable_inventory") ? array_length(global.consumable_inventory) : 0)
+            : (array_length(_s_groups) + 2);
     } else {
-        _s_rows = 1;                                                               // Rebirth - single action row
+        _s_rows = 2;    // Rebirth: class rebirth + CURSED rebirth (M 07-28)
     }
 
     // Esc / Backspace - cancel a pending salvage confirm first, then step back
     // (Salvage sub-list -> menu), else close.
     if (input_cancel() || input_back()) {
         if (sable_confirm) { sable_confirm = false; sable_notification = ""; exit; }
-        if (sable_tab == 0 && sable_phase > 0) { sable_phase = 0; sable_cursor = 0; }
+        if (sable_tab == 0 && sable_phase > 0)  { sable_phase = 0; sable_cursor = 0; sable_trans_sel = []; }
+        else if (sable_tab == 2 && sable_chaos_open) { sable_chaos_open = false; sable_chaos_sel = []; sable_cursor = 0; }
         else                                    { sable_open = false; }
         sable_notification = "";
         exit;
+    }
+
+    // CHECKOUT MODAL (M 07-27 standing rule): while the confirm popup is up, only
+    // commit (Enter / CONFIRM button) or cancel (Esc above / CANCEL button) are
+    // heard - nav, tabs and row toggles are locked so the pending action can't
+    // shift under the popup (the old bottom-line confirm let Enter deselect the
+    // very rune it was about to transmute - M's bug report).
+    if (sable_confirm) {
+        if (input_inject_take("sable:cancel")) {
+            sable_confirm = false; sable_notification = "";
+            exit;
+        }
+        if (input_confirm() || input_inject_take("sable:ok")) {
+            sable_confirm = false;
+            switch (sable_confirm_kind) {
+                case "gear": {
+                    var _gd = sable_salvage_gear_at(sable_confirm_idx);
+                    sable_notification = (_gd >= 0) ? ("Salvaged " + sable_confirm_label + " for " + string(_gd) + " dust.") : "Could not salvage.";
+                    if (_gd >= 0) { audio_play_sound(snd_sell, 1, false); affinity_add("sable", 2); }
+                    sable_cursor = clamp(sable_cursor, 0, max(0, array_length(sable_salvageable_gear()) - 1));
+                } break;
+                case "rune": {
+                    var _rd = sable_salvage_rune_at(sable_confirm_idx);
+                    sable_notification = (_rd >= 0) ? ("Scrapped " + sable_confirm_label + " for " + string(_rd) + " dust.") : "Could not scrap.";
+                    if (_rd >= 0) { audio_play_sound(snd_sell, 1, false); affinity_add("sable", 2); }
+                    sable_cursor = clamp(sable_cursor, 0, max(0, array_length(global.rune_inventory) - 1));
+                } break;
+                case "transmute": {
+                    var _t_out = { title: "" };
+                    var _t_res = sable_transmute_runes(sable_trans_sel, _t_out);
+                    if (_t_res == "") {
+                        sable_notification = "The cauldron yields... " + _t_out.title + "!";
+                        audio_play_sound(snd_confirm_major, 1, false);
+                        ui_checkout_vfx(spr_vfx_void, 960, 540);   // Gigapack cauldron burst
+                        affinity_add("sable", 2);   // function-use drip (transmute)
+                        sable_trans_sel = [];
+                        sable_cursor = clamp(sable_cursor, 0, max(0, array_length(global.rune_inventory) - 1));
+                    } else {
+                        sable_notification = _t_res;
+                        audio_play_sound(snd_ui_error, 1, false);
+                    }
+                } break;
+                case "fusion": {
+                    var _f_res = sable_upgrade(sable_confirm_label);
+                    if (_f_res == "") {
+                        sable_notification = "Fused 3x " + sable_confirm_label + " into their improved form!";
+                        audio_play_sound(snd_npc_confirm, 1, false);
+                        affinity_add("sable", 2);   // function-use drip (upgrade)
+                        sable_cursor = 0;
+                    } else {
+                        sable_notification = _f_res;
+                        audio_play_sound(snd_ui_error, 1, false);
+                    }
+                } break;
+                case "chaotic": {
+                    var _c_res = sable_chaotic_fuse(sable_chaos_sel);
+                    if (_c_res == "") {
+                        sable_notification = "The cauldron shudders... a CHAOTIC BREW settles out!";
+                        audio_play_sound(snd_confirm_major, 1, false);
+                        ui_checkout_vfx(spr_vfx_void, 960, 540);   // Gigapack cauldron burst
+                        affinity_add("sable", 2);   // function-use drip (chaos)
+                        sable_chaos_sel  = [];
+                        sable_chaos_open = false;
+                        sable_cursor     = 0;
+                    } else {
+                        sable_notification = _c_res;
+                        audio_play_sound(snd_ui_error, 1, false);
+                    }
+                } break;
+                case "quint": {
+                    // LEGENDARY FORGE component (M locked 07-28).
+                    var _q_res = sable_quintessence_distill(sable_chaos_sel);
+                    if (_q_res == "") {
+                        forge_components_ensure();
+                        sable_notification = "QUINTESSENCE distilled - Sable's share of the forge is ready. ("
+                            + string(global.forge_comp_quint) + " held)";
+                        audio_play_sound(snd_confirm_major, 1, false);
+                        ui_checkout_vfx(spr_vfx_arcane, 960, 540);
+                        affinity_add("sable", 2);   // function-use drip (forge craft)
+                        sable_chaos_sel  = [];
+                        sable_chaos_open = false;
+                        sable_cursor     = 0;
+                    } else {
+                        sable_notification = _q_res;
+                        audio_play_sound(snd_ui_error, 1, false);
+                    }
+                } break;
+            }
+            exit;
+        }
+        exit;   // modal - swallow everything else while the popup is up
     }
 
     // Q/E (or <-/->) - switch tab (3 tabs; Q/<- left, E/-> right)
@@ -2486,7 +3257,10 @@ if (variable_instance_exists(id, "sable_open") && sable_open) {
             }
         }
         if (!_s_hit_tab && _smx >= 300 && _smx < 1620) {
-            var _srow = floor((_smy - 285) / 72);
+            // Fusion-tab rows start one diagram lower (y364, see the draw side);
+            // every other list starts at the standard y285.
+            var _srow_base = (sable_tab == 2 && !sable_chaos_open) ? 364 : 285;
+            var _srow = floor((_smy - _srow_base) / 72);
             // The salvage gear/rune lists (tab 0, phase 1/2) are WINDOWED in the draw
             // (ui_list_window_first, _svis=9) - map the clicked screen row back to the
             // real list index via the same window offset. Other tabs aren't windowed
@@ -2494,8 +3268,17 @@ if (variable_instance_exists(id, "sable_open") && sable_open) {
             var _sfirst = 0;
             var _svis_now = _s_rows;
             if (sable_tab == 0 && sable_phase >= 1) {
-                var _sid  = (sable_phase == 1) ? "sable_gear" : "sable_rune";   // phase 1 gear / 2 rune - separate scroll state
+                // phase 1 gear / 2 rune / 3 transmute - separate scroll state each
+                var _sid  = (sable_phase == 1) ? "sable_gear" : ((sable_phase == 2) ? "sable_rune" : "sable_trans");
                 _sfirst   = ui_list_window(_sid, sable_cursor, _s_rows, 9);
+                _svis_now = min(_s_rows - _sfirst, 9);
+            } else if (sable_tab == 1) {
+                // Brew tab windowed since the 07-28 catalog expansion (18 recipes).
+                _sfirst   = ui_list_window("sable_brew", sable_cursor, _s_rows, 9);
+                _svis_now = min(_s_rows - _sfirst, 9);
+            } else if (sable_tab == 2 && sable_chaos_open) {
+                // Chaotic Brew pick-3 list windows over the whole potion pouch.
+                _sfirst   = ui_list_window("sable_chaos", sable_cursor, _s_rows, 9);
                 _svis_now = min(_s_rows - _sfirst, 9);
             }
             if (_srow >= 0 && _srow < _svis_now) {
@@ -2510,40 +3293,76 @@ if (variable_instance_exists(id, "sable_open") && sable_open) {
     if (_s_act) {
         if (sable_tab == 0) {
             if (sable_phase == 0) {
-                sable_phase = (sable_cursor == 0) ? 1 : 2; sable_cursor = 0; sable_notification = "";
+                sable_phase = sable_cursor + 1; sable_cursor = 0; sable_notification = "";
+                sable_trans_sel = [];
             } else if (sable_phase == 1) {
                 if (array_length(_s_gear) > 0) {
+                    // Enter arms the checkout popup - the commit lives in the modal
+                    // handler above (M 07-27 standing rule: popup, not bottom text).
                     var _gsel = clamp(sable_cursor, 0, array_length(_s_gear) - 1);
                     var _gname = _s_gear[_gsel].item.name;
-                    if (!sable_confirm) {
-                        // First press arms the confirm (shows the dust payout); no loss yet.
-                        sable_confirm = true;
-                        var _gprev = sable_salvage_gear_dust(_s_gear[_gsel].item.rarity);
-                        sable_notification = "Salvage " + _gname + " for " + string(_gprev) + " dust?   Enter: confirm   Esc: back";
-                    } else {
-                        sable_confirm = false;
-                        var _gd = sable_salvage_gear_at(_gsel);
-                        sable_notification = (_gd >= 0) ? ("Salvaged " + _gname + " for " + string(_gd) + " dust.") : "Could not salvage.";
-                        if (_gd >= 0) audio_play_sound(snd_sell, 1, false);
-                        if (_gd >= 0) affinity_add("sable", 2);   // function-use drip (salvage)
-                        sable_cursor = clamp(sable_cursor, 0, max(0, array_length(sable_salvageable_gear()) - 1));
-                    }
+                    var _gprev = sable_salvage_gear_dust(_s_gear[_gsel].item.rarity);
+                    sable_confirm       = true;
+                    sable_confirm_kind  = "gear";
+                    sable_confirm_idx   = _gsel;
+                    sable_confirm_label = _gname;
+                    sable_confirm_title = "SALVAGE THIS GEAR?";
+                    sable_confirm_body  = _gname + "\nmelts down for " + string(_gprev) + " rune dust. It cannot be reclaimed.";
+                    sable_notification  = "";
                 }
-            } else {
+            } else if (sable_phase == 2) {
                 if (array_length(_s_rinv) > 0) {
                     var _rsel = clamp(sable_cursor, 0, array_length(_s_rinv) - 1);
                     var _rname = _s_rinv[_rsel].name + " " + rune_tier_roman(_s_rinv[_rsel].tier);
-                    if (!sable_confirm) {
-                        sable_confirm = true;
-                        var _rprev = sable_salvage_rune_dust(_s_rinv[_rsel].tier);
-                        sable_notification = "Scrap " + _rname + " for " + string(_rprev) + " dust?   Enter: confirm   Esc: back";
+                    var _rprev = sable_salvage_rune_dust(_s_rinv[_rsel].tier);
+                    sable_confirm       = true;
+                    sable_confirm_kind  = "rune";
+                    sable_confirm_idx   = _rsel;
+                    sable_confirm_label = _rname;
+                    sable_confirm_title = "SCRAP THIS RUNE?";
+                    sable_confirm_body  = _rname + "\nis scrapped whole for " + string(_rprev) + " rune dust. Nothing else comes back.";
+                    sable_notification  = "";
+                }
+            } else {
+                // -------- TRANSMUTE (phase 3, M 07-27) -------- pick any 3 SAME-TIER
+                // runes -> 1 random next-tier rune. Enter toggles a rune in/out of
+                // the pick; the 3rd pick (or Enter with 3 already picked) arms the
+                // checkout POPUP - the commit lives in the modal handler above, so
+                // Enter can never deselect the rune it's committing (M's bug).
+                if (array_length(_s_rinv) > 0) {
+                    var _tsel   = clamp(sable_cursor, 0, array_length(_s_rinv) - 1);
+                    var _t_pos  = -1;
+                    for (var _ti = 0; _ti < array_length(sable_trans_sel); _ti++) {
+                        if (sable_trans_sel[_ti] == _tsel) { _t_pos = _ti; break; }
+                    }
+                    var _t_arm = false;
+                    if (_t_pos >= 0) {
+                        array_delete(sable_trans_sel, _t_pos, 1);   // deselect
+                        sable_notification = "";
+                    } else if (array_length(sable_trans_sel) < 3) {
+                        if (array_length(sable_trans_sel) > 0
+                            && _s_rinv[sable_trans_sel[0]].tier != _s_rinv[_tsel].tier) {
+                            sable_notification = "All three must share a tier.";
+                            audio_play_sound(snd_ui_error, 1, false);
+                        } else {
+                            array_push(sable_trans_sel, _tsel);
+                            _t_arm = (array_length(sable_trans_sel) == 3);
+                        }
                     } else {
-                        sable_confirm = false;
-                        var _rd = sable_salvage_rune_at(_rsel);
-                        sable_notification = (_rd >= 0) ? ("Scrapped " + _rname + " for " + string(_rd) + " dust.") : "Could not scrap.";
-                        if (_rd >= 0) audio_play_sound(snd_sell, 1, false);
-                        if (_rd >= 0) affinity_add("sable", 2);   // function-use drip (scrap)
-                        sable_cursor = clamp(sable_cursor, 0, max(0, array_length(global.rune_inventory) - 1));
+                        _t_arm = true;   // 3 already picked - Enter re-opens the popup
+                    }
+                    if (_t_arm) {
+                        var _tt = _s_rinv[sable_trans_sel[0]].tier;
+                        var _t_names = "";
+                        for (var _tn = 0; _tn < 3; _tn++) {
+                            _t_names += (_tn > 0 ? ", " : "") + rune_title(_s_rinv[sable_trans_sel[_tn]]);
+                        }
+                        sable_confirm       = true;
+                        sable_confirm_kind  = "transmute";
+                        sable_confirm_title = "TRANSMUTE 3 RUNES?";
+                        sable_confirm_body  = _t_names + "\nmelt into ONE RANDOM tier-" + rune_tier_roman(_tt + 1)
+                            + " rune for " + string(sable_transmute_cost(_tt)) + "g. All three are consumed.";
+                        sable_notification  = "";
                     }
                 }
             }
@@ -2557,22 +3376,102 @@ if (variable_instance_exists(id, "sable_open") && sable_open) {
                 if (_bres == "") affinity_add("sable", 2);   // function-use drip (brew)
             }
         } else if (sable_tab == 2) {
-            if (array_length(_s_groups) > 0) {
+            if (sable_chaos_open) {
+                // -------- CHAOTIC BREW pick-3 (M 07-28) -------- Enter toggles a
+                // potion; the 3rd pick arms the checkout popup (commit in the
+                // modal handler above). ANY mix - that's the point.
+                var _ch_inv = variable_global_exists("consumable_inventory") ? global.consumable_inventory : [];
+                if (array_length(_ch_inv) > 0) {
+                    var _chsel = clamp(sable_cursor, 0, array_length(_ch_inv) - 1);
+                    var _ch_pos = -1;
+                    for (var _chi = 0; _chi < array_length(sable_chaos_sel); _chi++) {
+                        if (sable_chaos_sel[_chi] == _chsel) { _ch_pos = _chi; break; }
+                    }
+                    var _ch_arm = false;
+                    if (_ch_pos >= 0) {
+                        array_delete(sable_chaos_sel, _ch_pos, 1);   // deselect
+                        sable_notification = "";
+                    } else if (array_length(sable_chaos_sel) < 3) {
+                        array_push(sable_chaos_sel, _chsel);
+                        _ch_arm = (array_length(sable_chaos_sel) == 3);
+                    } else {
+                        _ch_arm = true;   // 3 already picked - re-open the popup
+                    }
+                    if (_ch_arm) {
+                        var _ch_names = "";
+                        for (var _chn = 0; _chn < 3; _chn++) {
+                            _ch_names += (_chn > 0 ? ", " : "") + _ch_inv[sable_chaos_sel[_chn]].name;
+                        }
+                        sable_confirm = true;
+                        if (sable_chaos_kind == "quint") {
+                            // LEGENDARY FORGE component (M locked 07-28).
+                            sable_confirm_kind  = "quint";
+                            sable_confirm_title = "DISTILL QUINTESSENCE?";
+                            sable_confirm_body  = _ch_names + "\nboil down into ONE Quintessence for "
+                                + string(forge_quint_cost()) + "g - Sable's share of the Legendary Forge.";
+                        } else {
+                            var _ch_cost = sable_chaotic_cost();
+                            sable_confirm_kind  = "chaotic";
+                            sable_confirm_title = "BREW SOMETHING CHAOTIC?";
+                            sable_confirm_body  = _ch_names + "\nswirl into ONE Chaotic Brew for "
+                                + string(_ch_cost.gold) + "g + " + string(_ch_cost.dust)
+                                + " dust. What it does is decided when you drink it - and sometimes it bites.";
+                        }
+                        sable_notification  = "";
+                    }
+                }
+            } else if (sable_cursor >= array_length(_s_groups)) {
+                // The always-present rows: CHAOTIC BREW (groups) and QUINTESSENCE
+                // (groups+1, LEGENDARY FORGE component) - both enter pick-3 mode.
+                var _ch_have = variable_global_exists("consumable_inventory") ? array_length(global.consumable_inventory) : 0;
+                var _ch_kind = (sable_cursor == array_length(_s_groups)) ? "chaotic" : "quint";
+                if (_ch_have < 3) {
+                    sable_notification = "You need at least 3 potions (you hold " + string(_ch_have) + ").";
+                    audio_play_sound(snd_ui_error, 1, false);
+                } else {
+                    sable_chaos_open = true; sable_chaos_sel = []; sable_cursor = 0;
+                    sable_chaos_kind = _ch_kind;
+                    sable_notification = "";
+                }
+            } else if (array_length(_s_groups) > 0) {
+                // Fusion - arms the checkout popup (standing rule: no instant
+                // 3-potion spends). Recipes now list ALWAYS (07-28); a row you
+                // can't afford yet just says how many you're short.
                 var _usel = clamp(sable_cursor, 0, array_length(_s_groups) - 1);
-                var _ug = _s_groups[_usel];
-                var _ures = sable_upgrade(_ug.from);
-                sable_notification = (_ures == "") ? ("Upgraded 3x " + _ug.from + " into " + _ug.to + "!") : _ures;
-                if (_ures == "") audio_play_sound(snd_npc_confirm, 1, false);
-                if (_ures == "") affinity_add("sable", 2);   // function-use drip (upgrade)
-                sable_cursor = 0;
+                var _ug   = _s_groups[_usel];
+                if (_ug.count < 3) {
+                    sable_notification = "Need 3x " + _ug.from + " (you hold " + string(_ug.count) + ") - find, buy or brew more.";
+                    audio_play_sound(snd_ui_error, 1, false);
+                } else {
+                    var _uc = sable_upgrade_cost();
+                    sable_confirm       = true;
+                    sable_confirm_kind  = "fusion";
+                    sable_confirm_label = _ug.from;
+                    sable_confirm_title = "FUSE THESE POTIONS?";
+                    sable_confirm_body  = "3x " + _ug.from + "  ->  1x " + _ug.to + "\nfor "
+                        + string(_uc.gold) + "g + " + string(_uc.dust) + " dust. The three are consumed.";
+                    sable_notification  = "";
+                }
             }
         } else {
-            // -------- REBIRTH TAB -------- open the shared item picker on class gear.
-            var _reb = item_picker_candidates_class_specific();
-            if (array_length(_reb) == 0) {
-                sable_notification = "You hold no class-specific gear (Uncommon+) to reforge.";
+            // -------- REBIRTH TAB -------- row 0 = class rebirth (shared picker);
+            // row 1 = CURSED REBIRTH (M 07-28 legendary sinks): feed a legendary
+            // to the dark, get it back stronger + cursed.
+            if (sable_cursor == 0) {
+                var _reb = item_picker_candidates_class_specific();
+                if (array_length(_reb) == 0) {
+                    sable_notification = "You hold no class-specific gear (Uncommon+) to reforge.";
+                } else {
+                    item_picker_open("alch_rebirth", {}, _reb);
+                }
             } else {
-                item_picker_open("alch_rebirth", {}, _reb);
+                var _crc = item_picker_candidates_by_rarity(4);
+                if (array_length(_crc) == 0) {
+                    sable_notification = "You hold no unequipped legendaries to offer the dark.";
+                    audio_play_sound(snd_ui_error, 1, false);
+                } else {
+                    item_picker_open("cursed_rebirth", {}, _crc);
+                }
             }
         }
     }
@@ -2586,32 +3485,130 @@ if (variable_instance_exists(id, "sable_open") && sable_open) {
 // Single list: Enter buys an unowned skin or equips an owned one.
 // Layout constants here MUST match ui_draw_vael_screen() in scr_ui.
 // =============================================================================
-if (variable_instance_exists(id, "vael_open") && vael_open) {
+if (variable_instance_exists(id, "vael_open") && vael_open && !menu_open) {
     var _v_cat  = vael_skin_catalog();
     var _v_rows = max(1, array_length(_v_cat));
 
+    // REWEAVE tab state (moved from Vex trainer tab 5, M 07-28 - "the term fits
+    // her and she needs more rolls").
+    if (!variable_instance_exists(id, "vael_rw_cursor")) {
+        vael_rw_cursor = 0; vael_rw_detail = false; vael_rw_name = "";
+        vael_confirm = false; vael_confirm_title = ""; vael_confirm_body = "";
+    }
+
     if (input_cancel() || input_back()) {
+        if (vael_confirm)   { vael_confirm = false; vael_notification = ""; exit; }
+        if (vael_rw_detail) { vael_rw_detail = false; exit; }
         vael_open = false; vael_notification = "";
         exit;
     }
 
     // --- Tab switching (Q/E step left/right or click the tab headers; geometry
-    //     matches ui_draw_vael_screen). 0 Skins / 1 Portrait / 2 Tints. ---
+    //     matches ui_draw_vael_screen). 0 Skins / 1 Portrait / 2 Tints / 3 Reweave. ---
     var _vt_prev = vael_tab;
     if (input_tab_prev()) vael_tab = max(0, vael_tab - 1);
-    if (input_tab_next()) vael_tab = min(2, vael_tab + 1);
+    if (input_tab_next()) vael_tab = min(3, vael_tab + 1);
     if (mouse_check_button_pressed(mb_left)) {
         var _vtm_x = device_mouse_x_to_gui(0);
         var _vtm_y = device_mouse_y_to_gui(0);
         if (_vtm_y >= 96 && _vtm_y <= 144) {
-            if (_vtm_x >= 720 - 108 && _vtm_x <= 720 + 108) vael_tab = 0;
-            if (_vtm_x >= 960 - 108 && _vtm_x <= 960 + 108) vael_tab = 1;
-            if (_vtm_x >= 1200 - 108 && _vtm_x <= 1200 + 108) vael_tab = 2;
+            // 4 headers centred on x960 (960 + (t - 1.5) * 240, +-108) - matches draw.
+            for (var _vth = 0; _vth < 4; _vth++) {
+                var _vthx = 960 + (_vth - 1.5) * 240;
+                if (_vtm_x >= _vthx - 108 && _vtm_x <= _vthx + 108) vael_tab = _vth;
+            }
         }
     }
     if (vael_tab != _vt_prev) {
-        vael_notification = "";
+        vael_notification = ""; vael_confirm = false; vael_rw_detail = false;
         if (vael_tab == 1) vael_portrait_cursor = clamp(global.chosen_portrait, 0, max(0, array_length(global.portrait_sprites) - 1));
+    }
+
+    // --- REWEAVE tab (3): unweave an ability's talent web; its picks return as
+    // Talent Points (moved from Vex, M 07-28). Checkout POPUP per standing rule.
+    if (vael_tab == 3) {
+        // Tab key: mechanic explainer (ui_draw_reweave_detail) toggles.
+        if (vael_rw_detail) {
+            if (input_detail()) vael_rw_detail = false;
+            exit;
+        }
+        if (input_detail()) { vael_rw_detail = true; exit; }
+
+        // Checkout modal (M 07-27 standing rule): commit or cancel only.
+        if (vael_confirm) {
+            if (input_inject_take("vael:cancel")) { vael_confirm = false; vael_notification = ""; exit; }
+            if (input_confirm() || input_inject_take("vael:ok")) {
+                vael_confirm = false;
+                var _rwc_g = cha_price(100);
+                var _rwc_d = 10;
+                var _rwc_dust = variable_global_exists("rune_dust") ? global.rune_dust : 0;
+                if (global.gold >= _rwc_g && _rwc_dust >= _rwc_d) {
+                    global.gold      -= _rwc_g;
+                    global.rune_dust -= _rwc_d;
+                    ability_web_respec(vael_rw_name);
+                    affinity_add("vael", 2);   // function-use drip (reweave)
+                    ui_checkout_vfx(spr_vfx_arcane, 900, 500);   // Gigapack unweave burst
+                    save_game();
+                    vael_rw_cursor    = 0;
+                    vael_notification = vael_rw_name + " unwoven - its Talent Points returned. Reweave from the loadout ([M]).";
+                    audio_play_sound(snd_npc_confirm, 1, false);
+                } else {
+                    vael_notification = "Not enough - reweaving costs " + string(_rwc_g) + "g + " + string(_rwc_d) + " dust.";
+                    audio_play_sound(snd_ui_error, 1, false);
+                }
+                exit;
+            }
+            exit;   // modal - swallow everything else
+        }
+
+        var _rw_list = ability_web_respec_list();
+        var _rw_n    = array_length(_rw_list);
+        if (_rw_n > 0) {
+            if (nav_up())   { vael_rw_cursor = wrap_index(vael_rw_cursor - 1, _rw_n); vael_notification = ""; }
+            if (nav_down()) { vael_rw_cursor = wrap_index(vael_rw_cursor + 1, _rw_n); vael_notification = ""; }
+            vael_rw_cursor = clamp(vael_rw_cursor, 0, _rw_n - 1);
+
+            var _rw_act = input_confirm();
+            // Row taps (geometry MUST mirror ui_draw_vael_reweave_tab: x300..1500,
+            // y225, 72 pitch, 10 visible, window id "vael_reweave").
+            if (mouse_check_button_pressed(mb_left)) {
+                var _rwm_x = device_mouse_x_to_gui(0), _rwm_y = device_mouse_y_to_gui(0);
+                if (_rwm_x >= 300 && _rwm_x < 1500) {
+                    var _rw_vis = 10;
+                    var _rw_scr = ui_list_window("vael_reweave", vael_rw_cursor, _rw_n, _rw_vis);
+                    var _rw_row = floor((_rwm_y - 225) / 72);
+                    if (_rw_row >= 0 && _rw_row < _rw_vis) {
+                        var _rw_abs = _rw_scr + _rw_row;
+                        if (_rw_abs < _rw_n) {
+                            if (vael_rw_cursor == _rw_abs) _rw_act = true;
+                            else { vael_rw_cursor = _rw_abs; vael_notification = ""; }
+                        }
+                    }
+                }
+            }
+
+            if (_rw_act) {
+                var _rw   = _rw_list[vael_rw_cursor];
+                var _rw_g = cha_price(100);
+                var _dust = variable_global_exists("rune_dust") ? global.rune_dust : 0;
+                if (global.gold < _rw_g) {
+                    vael_notification = "Not enough gold - reweaving costs " + string(_rw_g) + "g + 10 dust.";
+                    audio_play_sound(snd_ui_error, 1, false);
+                } else if (_dust < 10) {
+                    vael_notification = "Need 10 rune dust (you have " + string(_dust) + ") - salvage at Sable or Maren.";
+                    audio_play_sound(snd_ui_error, 1, false);
+                } else {
+                    vael_rw_name       = _rw.name;
+                    vael_confirm       = true;
+                    vael_confirm_title = "REWEAVE THIS ABILITY?";
+                    vael_confirm_body  = _rw.name + " unweaves for " + string(_rw_g) + "g + 10 rune dust.\nIts "
+                        + string(_rw.picks) + " woven pick" + (_rw.picks == 1 ? "" : "s")
+                        + " return as Talent Points - reweave from the loadout ([M]). Cast progress is never lost.";
+                    vael_notification  = "";
+                }
+            }
+        }
+        exit;
     }
 
     // --- Portrait tab: carousel browse + 100g change ---
@@ -2994,8 +3991,9 @@ if (mouse_check_button_pressed(mb_left)) {
                             _mused = consumable_use_out_of_combat(_mit);
                         }
                         if (_mused) {
-                            // Blessed Thirst (was Lucky Find): 20% chance the item is not consumed.
-                            if (trait_active("Blessed Thirst") && irandom(99) < 20) {
+                            // Blessed Thirst (was Lucky Find): 20% chance the item is not
+                            // consumed. POTENCY V2: +4% per rank.
+                            if (trait_active("Blessed Thirst") && irandom(99) < 20 + 4 * trait_potency_r14("Blessed Thirst")) {
                                 if (instance_exists(obj_combat_controller)) {
                                     array_push(instance_find(obj_combat_controller, 0).combat_log,
                                         "Blessed Thirst - " + _mit.name + " is not consumed!");
@@ -3298,6 +4296,21 @@ if (menu_tab == 3) {
                     var _ctrl_c = instance_find(obj_combat_controller, 0);
                     var _player = _ctrl_c.player;
                     _used = true;
+                    // CHAOTIC BREW (M 07-28): payoff rolled at drink time - resolve into
+                    // a FRESH local struct (never mutate the menu's shared item struct).
+                    // Always costs the 1 AP (mystery tax), even when it rolls AP.
+                    var _was_chaotic = false;
+                    if (_item.effect_type == "chaotic") {
+                        _was_chaotic = true;
+                        var _ch = chaotic_brew_roll();
+                        array_push(_ctrl_c.combat_log, "The Chaotic Brew " + _ch.label + "!");
+                        if (_ch.sting) {
+                            var _bite = irandom_range(8, 15);
+                            _player.HP = max(1, _player.HP - _bite);
+                            array_push(_ctrl_c.combat_log, "...but it curdles going down - " + string(_bite) + " damage!");
+                        }
+                        _item = { name: "Chaotic Brew", effect_type: _ch.effect_type, effect_value: _ch.value };
+                    }
                     if (_item.effect_type == "heal") {
                         var _heal = min(_player.max_HP - _player.HP, _item.effect_value);
                         _player.HP += _heal;
@@ -3357,8 +4370,9 @@ if (menu_tab == 3) {
                             + " - loot chance +" + string(_item.effect_value) + "% until 2 bosses fall!");
                     }
                     // AP-restore items are free; everything else costs 1 AP on your turn.
+                    // (A Chaotic Brew that ROLLED an AP effect still pays - mystery tax.)
                     if (_ctrl_c.player_turn) {
-                        if (_item.effect_type != "energy" && _item.effect_type != "resource_ap") {
+                        if ((_item.effect_type != "energy" && _item.effect_type != "resource_ap") || _was_chaotic) {
                             _ctrl_c.player.energy -= 1;
                             array_push(_ctrl_c.combat_log, "  [-1 AP]");
                         }
@@ -3371,8 +4385,9 @@ if (menu_tab == 3) {
                     _used = consumable_use_out_of_combat(_item);
                 }
                 if (_used) {
-                    // Blessed Thirst (was Lucky Find): 20% chance the item is not consumed.
-                    if (trait_active("Blessed Thirst") && irandom(99) < 20) {
+                    // Blessed Thirst (was Lucky Find): 20% chance the item is not
+                    // consumed. POTENCY V2: +4% per rank.
+                    if (trait_active("Blessed Thirst") && irandom(99) < 20 + 4 * trait_potency_r14("Blessed Thirst")) {
                         if (instance_exists(obj_combat_controller)) {
                             array_push(instance_find(obj_combat_controller, 0).combat_log,
                                 "Blessed Thirst - " + _item.name + " is not consumed!");

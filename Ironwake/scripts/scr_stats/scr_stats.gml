@@ -116,7 +116,11 @@ function add_gold(amount) {
         amount = ceil(amount * (1 + 0.15 * trait_potency_mult("Scavenger")));
     }
     // Lucky Find (the NEW one, 07-08 identity split): +5% gold from all sources.
-    if (trait_active("Lucky Find")) amount = ceil(amount * 1.05);
+    // POTENCY V2: strength scales +10%/rank like the other numeric traits.
+    if (trait_active("Lucky Find")) amount = ceil(amount * (1 + 0.05 * trait_potency_mult("Lucky Find")));
+    // Beggar's Fortune (07-28 legendary): +25% found gold - shops tax it back
+    // at +10% (beggar_price_mult in cha_price).
+    if (legendary_worn("beggars_fortune")) amount = ceil(amount * 1.25);
     // Gear "gold_find" affix (e.g. "of Greed"/"Lucky", +N%): boosts found gold.
     // apply_equipment_stats sums it across base stat + affixes + gear runes; a
     // throwaway struct is passed because we only need the returned gold_find total.
@@ -148,7 +152,27 @@ function player_effective_cha() {
 function cha_discount() { return clamp(player_effective_cha() * 0.015, 0, 0.30); }
 
 // Apply the CHA discount to a base gold price (min 1). Used at every NPC gold cost.
-function cha_price(base_gold) { return max(1, round(base_gold * (1 - cha_discount()))); }
+// legendary_worn(effect_id) - is a legendary with this unique_effect currently
+// EQUIPPED? Live scan of the worn slots (10 entries - cheap) so hub screens
+// react the moment gear changes. Hub-side legendary hooks read this; combat
+// hooks use the per-combat player flags instead.
+function legendary_worn(effect_id) {
+    if (!variable_global_exists("inventory")) return false;
+    for (var _i = 0; _i < array_length(global.inventory); _i++) {
+        var _it = global.inventory[_i];
+        if (is_struct(_it) && variable_struct_exists(_it, "unique_effect")
+            && _it.unique_effect == effect_id) return true;
+    }
+    return false;
+}
+
+// Hollow King's Signet (-15%) and Beggar's Fortune (+10% - its gold-find boon's
+// tax) both bend every vendor price, on top of the Charisma discount.
+function signet_price_mult() { return legendary_worn("hollow_kings_signet") ? 0.85 : 1.0; }
+function beggar_price_mult() { return legendary_worn("beggars_fortune")     ? 1.10 : 1.0; }
+function cha_price(base_gold) {
+    return max(1, round(base_gold * (1 - cha_discount()) * signet_price_mult() * beggar_price_mult()));
+}
 
 // Gold-find fraction - 1% more earned gold per CHA point, capped at 30%.
 function cha_gold_find() { return clamp(player_effective_cha() * 0.01, 0, 0.30); }
@@ -217,6 +241,12 @@ function trainer_consume_rare_item() { return trainer_consume_item(2); }
 // On defeat, gold earned this run is clawed back; floor at 0.
 // ---------------------------------------------------------------------------
 function end_run(result) {
+    // IRONMAN resume: the run is concluding by a REAL exit (clear, extract, or
+    // death) - the checkpoint must not survive it. Deleted first so nothing
+    // below can leave a resurrectable file behind. (SYSTEMS_RUN_RESUME.md)
+    run_checkpoint_delete();
+    global.run_extract_pending = false;
+
     var _perm_earned = 0;
     var _end_level   = 1;
     if (variable_global_exists("run_level")) {
@@ -334,6 +364,21 @@ function end_run(result) {
                 if (global.selected_ascendance >= _cur_max && _cur_max < 5) {
                     var _new_max = min(5, _cur_max + 1);
                     variable_struct_set(global.dungeon_ascendance_unlocked, _dung_key, _new_max);
+                    // AWAKENING BOOST (SYSTEMS_ENDLESS.md §1): a FIRST-TIME tier
+                    // clear also earns a popup pick - raise ONE other dungeon's
+                    // awakening by +1 (cap A5). Shown on hub arrival.
+                    global.awaken_boost_pending = true;
+                    global.awaken_boost_from    = _dung_key;
+                }
+                // A6+ PROPAGATING UNLOCKS (SYSTEMS_ENDLESS.md §2, post-win only):
+                // clearing the endless frontier in ANY dungeon opens the next
+                // tier in ALL of them.
+                if (variable_global_exists("ironwake_stands") && global.ironwake_stands
+                    && global.selected_ascendance >= 5) {
+                    if (!variable_global_exists("endless_awakening_unlocked")) global.endless_awakening_unlocked = 5;
+                    if (global.selected_ascendance >= global.endless_awakening_unlocked) {
+                        global.endless_awakening_unlocked = global.selected_ascendance + 1;
+                    }
                 }
                 // Bonus gold reward scales with ascendance tier (table shared with
                 // the dungeon-select AWAKENING EFFECTS panel via awaken_clear_gold_bonus)
@@ -355,6 +400,11 @@ function end_run(result) {
                         && global.dungeon_a5_clears.tundra_tomb) {
                         global.ironwake_stands = true;
                         global.ending_pending  = true;
+                        // THE IRON VOW (SYSTEMS_IRON_VOW.md): winning under a
+                        // Vow grants its exclusive epithet (cosmetic prestige;
+                        // changeable at Vael afterward like any epithet).
+                        if (variable_global_exists("vow_mode") && global.vow_mode == 1) global.player_epithet = "the Thrice-Tempered";
+                        if (variable_global_exists("vow_mode") && global.vow_mode == 2) global.player_epithet = "the Unbroken";
                     }
                 }
             }
@@ -397,7 +447,11 @@ function end_run(result) {
         // Salvage items on death - Salvager trait keeps 2 random items instead of 1
         global.last_run_mercy_item  = "";
         global.consumable_inventory = [];
-        var _salvage_count = trait_active("Salvager") ? 2 : 1;
+        // POTENCY V2 ranks: keep 3 at rank 2, 4 at rank 4. (The TRANSCEND
+        // "Nothing Wasted" - equipped items also survive - is honored at the
+        // equipped-items death handler, not this carried-items pool.)
+        var _sv_r = trait_potency_r14("Salvager");
+        var _salvage_count = trait_active("Salvager") ? (2 + (_sv_r >= 2 ? 1 : 0) + (_sv_r >= 4 ? 1 : 0)) : 1;
         if (array_length(_at_risk) > 0) {
             var _used_idxs = [];
             var _pool_sz   = array_length(_at_risk);
@@ -425,8 +479,54 @@ function end_run(result) {
             }
         }
 
+        // DESCENT HARDCORE (SYSTEMS_ENDLESS.md §3): death in a hardcore descent
+        // can also claim EQUIPPED gear. Severity 1 "Hardcore": one random
+        // equipped slot. Severity 2 "Merciless": every equipped item 50/50.
+        // Salvager's TRANSCEND "Nothing Wasted" (POTENCY V2) protects it all.
+        if (variable_global_exists("descent_active") && global.descent_active
+            && variable_global_exists("descent_hardcore") && global.descent_hardcore > 0
+            && variable_global_exists("inventory")) {
+            if (trait_transcended("Salvager")) {
+                if (variable_global_exists("pet_find_notice"))
+                    global.pet_find_notice = "Nothing Wasted: the dark took nothing you wore.";
+            } else {
+                var _hc_lost = "";
+                if (global.descent_hardcore == 1) {
+                    var _hc_slots = [];
+                    for (var _hi = 0; _hi < array_length(global.inventory); _hi++) {
+                        if (global.inventory[_hi] != undefined) array_push(_hc_slots, _hi);
+                    }
+                    if (array_length(_hc_slots) > 0) {
+                        var _hs = _hc_slots[irandom(array_length(_hc_slots) - 1)];
+                        _hc_lost = global.inventory[_hs].name;
+                        global.inventory[_hs] = undefined;
+                    }
+                } else {
+                    for (var _hi2 = 0; _hi2 < array_length(global.inventory); _hi2++) {
+                        if (global.inventory[_hi2] == undefined) continue;
+                        if (irandom(1) == 0) {
+                            _hc_lost += ((_hc_lost != "") ? ", " : "") + global.inventory[_hi2].name;
+                            global.inventory[_hi2] = undefined;
+                        }
+                    }
+                }
+                if (_hc_lost != "" && variable_global_exists("pet_find_notice")) {
+                    global.pet_find_notice = "The Descent claimed what you wore: " + _hc_lost + ".";
+                }
+            }
+        }
+
         global.carried_items = [];
         global.secured_items = [];
+    }
+
+    // THE DESCENT bookkeeping: record the deepest floor reached (any outcome),
+    // then normalize the fractional effective tier back to A5 and stand down.
+    if (variable_global_exists("descent_active") && global.descent_active) {
+        if (!variable_global_exists("descent_best")) global.descent_best = 0;
+        global.descent_best        = max(global.descent_best, global.current_floor);
+        global.descent_active      = false;
+        global.selected_ascendance = 5;
     }
 
     // Permanent-point conversion - any SAFE return to the hub (full clear OR
@@ -1126,6 +1226,9 @@ function out_of_combat_max_hp() {
     if (_bm != 1.0) _max = max(1, round(_max * _bm));
     var _cm = curse_maxhp_mult();
     if (_cm != 1.0) _max = max(1, round(_max * _cm));
+    // Flat run-scoped max-HP bonus (Second Wind, POTENCY V2) - post-mults, the
+    // same way combat_apply_start_traits adds its flat bonuses.
+    if (variable_global_exists("run_bonus_max_hp")) _max += global.run_bonus_max_hp;
     return _max;
 }
 
@@ -1186,6 +1289,18 @@ function consumable_use_out_of_combat(item) {
     // Sable's exotic find-buff potions apply out of combat too (drink between floors).
     if (_et == "gold_find_pot") { potion_drink_gold(item.effect_value);  return true; }
     if (_et == "loot_find_pot") { potion_drink_loot(item.effect_value);  return true; }
+    // CHAOTIC BREW (M 07-28): out of combat it settles into a heal (40-90 to the
+    // persistent run HP); the sting bites GOLD here - there is no safe HP-loss
+    // channel outside combat. Combat drinking gets the full outcome table.
+    if (_et == "chaotic") {
+        var _ch_max = out_of_combat_max_hp();
+        if (!variable_global_exists("run_current_hp") || global.run_current_hp <= 0) {
+            global.run_current_hp = _ch_max;
+        }
+        global.run_current_hp = min(_ch_max, global.run_current_hp + irandom_range(40, 90));
+        if (irandom(99) < 35) global.gold = max(0, global.gold - 20);   // it curdles
+        return true;
+    }
     return false;
 }
 
@@ -1362,6 +1477,14 @@ function item_merge_dup_affixes(item) {
         var _row = item.affixes[_mi];
         var _merged = false;
         if (is_struct(_row) && variable_struct_exists(_row, "stat_name") && variable_struct_exists(_row, "stat_value")) {
+            // Affix row duplicating the item's BASE stat folds into stat_value
+            // (07-28: several authored legendaries shipped "+4 DEX  +2 DEX";
+            // their table defs are fixed, this repairs copies already in saves).
+            if (variable_struct_exists(item, "stat_name") && variable_struct_exists(item, "stat_value")
+                && _row.stat_name == item.stat_name) {
+                item.stat_value += _row.stat_value;
+                continue;
+            }
             for (var _mj = 0; _mj < array_length(_out); _mj++) {
                 var _prev = _out[_mj];
                 if (is_struct(_prev) && variable_struct_exists(_prev, "stat_name")
@@ -1493,6 +1616,41 @@ function apply_affixes_to_item(item, affixes) {
 // Returns the maximum ascendance/awakening tier unlocked across ALL dungeons.
 // Used by the shop (Dorn) to permanently grow with meta progression.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// awaken_boost_options() - dungeons eligible for the Awakening Boost popup:
+// every dungeon EXCEPT the one that earned it, below the A5 pre-win cap.
+// Entries: { key, name, cur }.
+// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// dungeon_max_ascendance(key) - the highest SELECTABLE Awakening for a dungeon.
+// Pre-win: its own ladder unlock (0-5). Post-win (SYSTEMS_ENDLESS.md §2): the
+// shared endless frontier applies everywhere (A6+ propagating unlocks).
+// ---------------------------------------------------------------------------
+function dungeon_max_ascendance(dkey) {
+    var _u = variable_global_exists("dungeon_ascendance_unlocked")
+        ? variable_struct_get(global.dungeon_ascendance_unlocked, dkey) : 0;
+    if (variable_global_exists("ironwake_stands") && global.ironwake_stands) {
+        var _e = variable_global_exists("endless_awakening_unlocked") ? global.endless_awakening_unlocked : 5;
+        _u = max(_u, _e);
+    }
+    return _u;
+}
+
+function awaken_boost_options() {
+    var _out = [];
+    if (!variable_global_exists("dungeon_ascendance_unlocked")) return _out;
+    var _keys  = ["ashen_vault", "scorched_depths", "tundra_tomb"];
+    var _names = ["Ashen Vault", "Scorched Depths", "Tundra Tomb"];
+    var _from  = variable_global_exists("awaken_boost_from") ? global.awaken_boost_from : "";
+    for (var _i = 0; _i < 3; _i++) {
+        if (_keys[_i] == _from) continue;
+        var _u = variable_struct_get(global.dungeon_ascendance_unlocked, _keys[_i]);
+        if (_u >= 5) continue;
+        array_push(_out, { key: _keys[_i], name: _names[_i], cur: _u });
+    }
+    return _out;
+}
+
 function highest_awakening_unlocked() {
     var _max_awk = 0;
     if (variable_global_exists("dungeon_ascendance_unlocked")) {
@@ -1506,6 +1664,168 @@ function highest_awakening_unlocked() {
 
 // ---------------------------------------------------------------------------
 // drop_weights(source, asc)
+// legendary_owned(base_name) - does the player already hold a copy of this
+// legendary anywhere (worn slots, hub stash, carried pack)? Compared by BASE
+// name so Depthforged tags/renames don't hide a duplicate. Feeds the
+// dupe-protection reroll in drop_equipment (M 07-28).
+function legendary_owned(base_name) {
+    if (variable_global_exists("inventory")) {
+        for (var _i = 0; _i < array_length(global.inventory); _i++) {
+            var _it = global.inventory[_i];
+            if (is_struct(_it) && item_base_name(_it) == base_name) return true;
+        }
+    }
+    if (variable_global_exists("equipment_stash")) {
+        for (var _i = 0; _i < array_length(global.equipment_stash); _i++) {
+            var _it = global.equipment_stash[_i];
+            if (is_struct(_it) && item_base_name(_it) == base_name) return true;
+        }
+    }
+    if (variable_global_exists("carried_items")) {
+        for (var _i = 0; _i < array_length(global.carried_items); _i++) {
+            var _it = global.carried_items[_i];
+            if (is_struct(_it) && item_base_name(_it) == base_name) return true;
+        }
+    }
+    return false;
+}
+
+// LEGENDARY RECAST (M 07-28 legendary sinks): Dorn re-forges a legendary into a
+// DIFFERENT one for gold. Mutates the struct IN PLACE so every container slot
+// sees the recast item; rolls avoid the input always and owned copies softly.
+function legendary_recast_cost() { return cha_price(500); }
+function legendary_recast(item) {
+    if (!variable_global_exists("loot_table_legendary")) return false;
+    var _tbl = global.loot_table_legendary;
+    if (array_length(_tbl) < 2) return false;
+    var _cur  = item_base_name(item);
+    var _pick = undefined;
+    for (var _try = 0; _try < 8; _try++) {
+        var _cand = _tbl[irandom(array_length(_tbl) - 1)];
+        if (item_base_name(_cand) == _cur) continue;
+        if (_try < 5 && legendary_owned(item_base_name(_cand))) continue;   // soft dupe-avoid
+        _pick = _cand; break;
+    }
+    if (_pick == undefined) return false;
+    var _new  = clone_item(_pick);
+    var _keys = variable_struct_get_names(_new);
+    for (var _k = 0; _k < array_length(_keys); _k++) {
+        variable_struct_set(item, _keys[_k], variable_struct_get(_new, _keys[_k]));
+    }
+    var _ec = item_empower_context();
+    item_empower(item, _ec.asc, _ec.df);   // A6+/Descent scaling like fresh drops
+    discover_item(item_base_name(item));
+    return true;
+}
+
+// =============================================================================
+// THE LEGENDARY FORGE (M locked 07-28): three vendor components combine at
+// Dorn's anvil into a CUSTOM legendary - the player picks the slot, one of 5
+// forge-exclusive effects, and NAMES it. Components (saved):
+//   forge_comp_frame - Dorn,  Mythril Frame:  400g + 1 Legendary Ingot
+//   forge_comp_core  - Maren, Runeheart Core: 40 dust + a tier-III+ rune
+//   forge_comp_quint - Sable, Quintessence:   200g + any 3 potions distilled
+// =============================================================================
+
+function forge_components_ensure() {
+    if (!variable_global_exists("forge_comp_frame")) global.forge_comp_frame = 0;
+    if (!variable_global_exists("forge_comp_core"))  global.forge_comp_core  = 0;
+    if (!variable_global_exists("forge_comp_quint")) global.forge_comp_quint = 0;
+}
+function forge_components_ready() {
+    forge_components_ensure();
+    return global.forge_comp_frame > 0 && global.forge_comp_core > 0 && global.forge_comp_quint > 0;
+}
+function forge_frame_cost() { return cha_price(400); }
+function forge_quint_cost() { return cha_price(200); }
+
+// The 5 forge-exclusive effects. Every id rides an EXISTING class-item channel
+// (the equip scan in obj_combat_controller Create is generic over unique_effect
+// strings), so all of them are real with zero new combat wiring.
+function forge_effect_catalog() {
+    return [
+        { id: "class_start_shield", name: "Bulwark Heart",   desc: "Start every combat with a 12-point shield" },
+        { id: "class_lifesteal",    name: "Thirsting Edge",  desc: "Your melee damage heals you for 10%" },
+        { id: "class_crit",         name: "Killer's Eye",    desc: "+8% to all your critical rolls" },
+        { id: "class_spell_dmg",    name: "Archon's Breath", desc: "Your spells deal +12% damage" },
+        { id: "class_kill_ap",      name: "Reaper's Tempo",  desc: "Killing blows refund 1 AP" },
+    ];
+}
+function forge_slot_list() {
+    return ["weapon", "ranged_weapon", "offhand", "helm", "chest", "gloves", "boots", "amulet", "ring"];
+}
+
+// Runeheart Core candidates: rune_inventory INDICES of tier-III+ runes (the
+// sacrifice pool for Maren's forge component).
+function maren_core_candidates() {
+    var _out = [];
+    if (!variable_global_exists("rune_inventory")) return _out;
+    for (var _i = 0; _i < array_length(global.rune_inventory); _i++) {
+        if (global.rune_inventory[_i].tier >= 3) array_push(_out, _i);
+    }
+    return _out;
+}
+
+// Build the forged legendary. Components are NOT spent here - the caller spends
+// them at commit so a failed build never eats materials.
+function forge_build_item(_slot, _fx, _name) {
+    var _statmap = { weapon: "STR", ranged_weapon: "DEX", offhand: "CON", helm: "INT",
+                     chest: "CON", gloves: "DEX", boots: "CON", amulet: "WIS", ring: "CHA" };
+    var _stat = variable_struct_exists(_statmap, _slot) ? variable_struct_get(_statmap, _slot) : "CON";
+    var _it = create_item(_name, _slot, 4, _stat, 5,
+        "forged at Dorn's anvil from three vendors' craft", 400);
+    _it.class_req     = -1;
+    _it.player_forged = true;
+    // Boosted affixes: two epic-grade rolls at x1.25 - then the PLAYER'S name is
+    // restored (apply_affixes_to_item decorates the name with prefix/suffix).
+    apply_affixes_to_item(_it, roll_affixes(3, 2, item_affix_exclusions(_it), _slot, _name, 0));
+    for (var _i = 0; _i < array_length(_it.affixes); _i++) {
+        _it.affixes[_i].stat_value = ceil(_it.affixes[_i].stat_value * 1.25);
+    }
+    _it.name      = _name;
+    _it.base_name = _name;
+    _it.unique_effect = _fx.id;
+    _it.unique_desc   = _fx.desc;
+    _it.lore = "Forged in Ironwake by " + (variable_global_exists("player_name") ? global.player_name : "a wanderer")
+        + " - frame by Dorn, core by Maren, quintessence by Sable. There is exactly one.";
+    return _it;
+}
+
+// CURSED REBIRTH builder (M 07-28; first slice of the parked cursed-items
+// feature): the sacrificed legendary returns with base stat / weapon damage /
+// affixes boosted ~x1.5 AND one CURSE - a negative affix on a channel the
+// equip math already handles, so every curse is real. Keeps its unique effect.
+function cursed_rebirth_make(src) {
+    var _it = clone_item(src);
+    var _bn = item_base_name(src);
+    _it.base_name = "Cursed " + _bn;
+    _it.name      = "Cursed " + _bn;
+    _it.rarity    = 4;
+    _it.cursed    = true;
+    if (variable_struct_exists(_it, "stat_value"))    _it.stat_value    = ceil(_it.stat_value * 1.5);
+    if (variable_struct_exists(_it, "weapon_damage") && _it.weapon_damage > 0) _it.weapon_damage = ceil(_it.weapon_damage * 1.5);
+    if (variable_struct_exists(_it, "affixes")) {
+        for (var _i = 0; _i < array_length(_it.affixes); _i++) {
+            _it.affixes[_i].stat_value = ceil(_it.affixes[_i].stat_value * 1.5);
+        }
+    } else {
+        _it.affixes = [];
+    }
+    var _curses = [
+        { stat_name: "bonus_max_hp", stat_value: -12, suffix: "of Withering"    },
+        { stat_name: "crit_flat",    stat_value: -4,  suffix: "of Dulled Fate"  },
+        { stat_name: "dodge_flat",   stat_value: -5,  suffix: "of Leaden Feet"  },
+        { stat_name: "gold_find",    stat_value: -15, suffix: "of the Beggared" },
+        { stat_name: "CON",          stat_value: -2,  suffix: "of Rot"          },
+        { stat_name: "WIS",          stat_value: -2,  suffix: "of Whispers"     },
+    ];
+    var _c = _curses[irandom(array_length(_curses) - 1)];
+    array_push(_it.affixes, { suffix: _c.suffix, prefix: "", stat_name: _c.stat_name, stat_value: _c.stat_value });
+    _it.gold_value = 250;
+    _it.lore = "A legendary fed back to the dark. What crawled out is stronger than what went in - and it kept something of yours in exchange.";
+    return _it;
+}
+
 // Returns rarity weights [common%, uncommon%, rare%, epic%, legendary%] for a
 // drop SOURCE, scaled by awakening tier `asc` (0..5). Each source lerps from an
 // A0 baseline (common-heavy; rares/legendaries very rare) to an A5 ceiling.
@@ -1575,6 +1895,46 @@ function boss_drop_weights(asc, fl) {
 // sources (Dorn's stock, vault previews) pass nothing so curses can never leak
 // into shop inventory. See the bump below for why this is post-roll, not an
 // awakening offset.
+// Run call sites should get the curse component via curse_loot_tier_bonus_for(
+// source) - below Awakening 2 only boss/vault/reliquary drops receive it.
+// ---------------------------------------------------------------------------
+// item_empower(item, eff_asc, depth_floor) - endless item-level scaling
+// (SYSTEMS_ENDLESS.md): past effective Awakening 5 an item's numeric power
+// grows +6%/tier compounding - primary stat, weapon damage, every affix
+// magnitude. Descent drops also get the "Depthforged - Floor N" name tag
+// (base_name stays untouched, so the codex identity is safe).
+// ---------------------------------------------------------------------------
+function item_empower(item, eff_asc, depth_floor = 0) {
+    if (!is_struct(item) || eff_asc <= 5) return item;
+    var _m = power(1.06, eff_asc - 5);
+    if (variable_struct_exists(item, "stat_value") && item.stat_value > 0)
+        item.stat_value = max(item.stat_value + 1, round(item.stat_value * _m));
+    if (variable_struct_exists(item, "weapon_damage") && item.weapon_damage > 0)
+        item.weapon_damage = max(item.weapon_damage + 1, round(item.weapon_damage * _m));
+    if (variable_struct_exists(item, "affixes")) {
+        for (var _emp_i = 0; _emp_i < array_length(item.affixes); _emp_i++) {
+            var _emp_af = item.affixes[_emp_i];
+            if (variable_struct_exists(_emp_af, "stat_value") && _emp_af.stat_value > 0)
+                _emp_af.stat_value = max(_emp_af.stat_value + 1, round(_emp_af.stat_value * _m));
+        }
+    }
+    item.item_level = eff_asc;
+    if (depth_floor > 0) {
+        item.depth_floor = depth_floor;
+        item.name = item.name + "  [Depthforged - Floor " + string(depth_floor) + "]";
+        item.gold_value = round(item.gold_value * _m);
+    }
+    return item;
+}
+
+// The effective tier + descent floor drop_equipment feeds item_empower with.
+function item_empower_context() {
+    var _asc = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
+    var _df  = (variable_global_exists("descent_active") && global.descent_active
+                && variable_global_exists("descent_floor")) ? global.descent_floor : 0;
+    return { asc: _asc, df: _df };
+}
+
 function drop_equipment(rarity_weights, do_discover = true, curse_tiers = 0) {
     if (!variable_global_exists("loot_table_common")
         || !variable_global_exists("loot_table_uncommon")
@@ -1591,8 +1951,16 @@ function drop_equipment(rarity_weights, do_discover = true, curse_tiers = 0) {
         if (_roll < _cum) { _rarity = _r; break; }
     }
 
-    // Prospector trait: loot rolls one quality tier better (capped at Legendary)
-    if (trait_active("Prospector") && _rarity < 4) _rarity++;
+    // Prospector trait: loot rolls one quality tier better (capped at Legendary).
+    // POTENCY V2: +5%/rank chance the bump is TWO tiers; TRANSCEND "Motherlode":
+    // combat loot can never roll common.
+    // (legendary_owned lives just below drop_equipment's caller chain - see the
+    // dupe-protection reroll in the legendary branch.)
+    if (trait_active("Prospector") && _rarity < 4) {
+        _rarity++;
+        if (_rarity < 4 && irandom(99) < 5 * trait_potency_r14("Prospector")) _rarity++;
+    }
+    if (trait_transcended("Prospector") && _rarity == 0) _rarity = 1;
 
     // Curse loot tiers: a LITERAL rarity bump, matching the "Loot rarity +N tiers"
     // reward text (same idiom as Prospector above). This used to be added to the
@@ -1603,11 +1971,31 @@ function drop_equipment(rarity_weights, do_discover = true, curse_tiers = 0) {
     // gated to. Post-roll bump is worth the same at every awakening. (07-20)
     if (curse_tiers > 0 && _rarity < 4) _rarity = min(4, _rarity + curse_tiers);
 
+    var _gate_asc = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
+
+    // LEGENDARY AWAKENING GATE (M 07-28: TWO legendaries dropped on an A0 first
+    // run off a +1 curse shrine - "+1 should mean RAREs at A0, not legendaries").
+    // Below Awakening 2 nothing may roll OR be bumped to legendary: the ceiling
+    // applies AFTER the native roll, Prospector and curse bumps, so those still
+    // pay out - capped at Epic. The perm-level equip gate stays as the second
+    // fence for A2+ lucky finds.
+    if (_gate_asc < 2) _rarity = min(_rarity, 3);
+
     // Legendaries - return clone with pre-set affixes and unique fields
     if (_rarity == 4 && variable_global_exists("loot_table_legendary")
         && array_length(global.loot_table_legendary) > 0) {
         var _leg_tbl = global.loot_table_legendary;
-        var _leg_item = clone_item(_leg_tbl[irandom(array_length(_leg_tbl) - 1)]);
+        var _leg_pick = _leg_tbl[irandom(array_length(_leg_tbl) - 1)];
+        // DUPE PROTECTION (M 07-27/28: "same Crown of the Hollow King 3x" -
+        // curse loot-tier bumps funnel rolls into a small table): if a copy is
+        // already owned ANYWHERE (worn / stash / carried), reroll once. Repeats
+        // stay possible (two rolls can still collide) but stop being the norm.
+        if (array_length(_leg_tbl) > 1 && legendary_owned(item_base_name(_leg_pick))) {
+            _leg_pick = _leg_tbl[irandom(array_length(_leg_tbl) - 1)];
+        }
+        var _leg_item = clone_item(_leg_pick);
+        var _leg_ec = item_empower_context();
+        item_empower(_leg_item, _leg_ec.asc, _leg_ec.df);   // A6+/Descent scaling
         if (do_discover) discover_item(item_base_name(_leg_item));
         return _leg_item;
     }
@@ -1651,6 +2039,11 @@ function drop_equipment(rarity_weights, do_discover = true, curse_tiers = 0) {
 
     // Sockets follow the FINAL rarity (epic was bumped from a rare base above).
     _item.socket_count = rune_sockets_for_rarity(_item.rarity);
+
+    // A6+/Descent item-level scaling (SYSTEMS_ENDLESS.md) - past effective
+    // Awakening 5, numeric power compounds and Descent drops get depth-tagged.
+    var _emp_ec = item_empower_context();
+    item_empower(_item, _emp_ec.asc, _emp_ec.df);
 
     if (do_discover) discover_item(item_base_name(_item));
     return _item;
@@ -2470,9 +2863,25 @@ function floor_compute_reachable(rooms) {
 }
 
 // ---------------------------------------------------------------------------
+// loot_room_seed(slot, salt)
+// Deterministic RNG seed for a room's reward rolls (IRONMAN resume, M 07-28:
+// quitting at the loot screen must not re-roll drops on the re-fight). Keyed
+// by run + floor + room + the enemy's spawn slot, so kill ORDER can't reshuffle
+// the outcomes either. Callers save random_get_seed() and restore it after.
+// ---------------------------------------------------------------------------
+function loot_room_seed(_slot, _salt) {
+    var _rs = variable_global_exists("run_seed")           ? global.run_seed           : 1;
+    var _fl = variable_global_exists("current_floor")      ? global.current_floor      : 1;
+    var _ri = variable_global_exists("current_room_index") ? global.current_room_index : 0;
+    return (_rs * 7919 + _fl * 613 + _ri * 53 + _slot * 17 + _salt) mod 2147483647;
+}
+
+// ---------------------------------------------------------------------------
 // handle_enemy_drops(enemy_type)
 // Rolls drops for a defeated enemy, pushes results into global inventories,
 // and returns a log string describing what dropped ("" if nothing dropped).
+// Callers that care about quit-scum determinism seed the RNG around this call
+// via loot_room_seed (both combat kill paths do).
 // ---------------------------------------------------------------------------
 function handle_enemy_drops(enemy_type) {
     if (!variable_global_exists("run_items_found"))      global.run_items_found      = [];
@@ -2484,10 +2893,9 @@ function handle_enemy_drops(enemy_type) {
 
     // Drop rarity scales with the awakening tier of the current run. Curse
     // loot-tiers are NOT folded in here any more - they're a post-roll rarity bump
-    // passed to drop_equipment (see the bump in drop_equipment for why). Keeping
+    // passed to drop_equipment via curse_loot_tier_bonus_for(source). Keeping
     // them out also stops curses from silently shrinking _cons_chance below.
     var _drop_asc   = (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0);
-    var _curse_loot = curse_loot_tier_bonus();
     // Faerie's Tear potion + active Boon pet: extra equipment-drop chance (percentage points).
     var _loot_pot = potion_loot_bonus_pts() + pet_active_boon_loot_pts() + pet_active_lck_loot_pts() + pet_active_splash_loot_pts() + pet_active_egg_bonus("loot");
     // Lucky Find trait (07-08 identity split): +5 loot-find points, same currency
@@ -2537,7 +2945,7 @@ function handle_enemy_drops(enemy_type) {
         }
         // 4% equipment drop (+ Faerie's Tear bonus) - rarity weights scale with awakening.
         if (irandom(99) < 4 + _loot_pot) {
-            var _item = drop_equipment(drop_weights("standard", _drop_asc), true, _curse_loot);
+            var _item = drop_equipment(drop_weights("standard", _drop_asc), true, curse_loot_tier_bonus_for("standard"));
             array_push(global.run_items_found, _item);
             array_push(global.carried_items, _item);
             discover_item(item_base_name(_item));
@@ -2545,33 +2953,39 @@ function handle_enemy_drops(enemy_type) {
         }
 
     } else if (enemy_type == "elite") {
-        // Awakening taper (60% - 4%/tier, min 40%).
+        // M 07-29: elites ALWAYS pay equipment ("over nerfed... should have
+        // some guaranteed loot even if just uncommon for lower awakenings").
+        // The old either/or paid a lone potion 40-60% of the time and NOTHING
+        // ~1 fight in 3. Now mirrors the boss branch: guaranteed item with an
+        // UNCOMMON floor (the common weight pours up a tier), and the
+        // consumable is a BONUS rider at the same 07-08-tuned taper - the
+        // potion economy is unchanged, only the guarantee is new.
+        var _ew = drop_weights("elite", _drop_asc);
+        _ew[1] += _ew[0]; _ew[0] = 0;   // never common (M: "even if just uncommon")
+        var _item = drop_equipment(_ew, true, curse_loot_tier_bonus_for("elite"));
+        array_push(global.run_items_found, _item);
+        array_push(global.carried_items, _item);
+        discover_item(item_base_name(_item));
+        var _e_result = _item.name + " [" + item_rarity_name(_item.rarity) + "]";
+        // Bonus consumable rider (60% - 4%/tier, min 40%; Famine curse blocks).
+        // Pool mix as before: at low tiers most rolls downgrade to the standard
+        // pool (A0: 60% -> A5: 0%) so elite-tier potions are grown into.
         var _elite_cons_chance = max(40, 60 - _drop_asc * 4);
-        if (!curse_blocks_consumables() && irandom(99) < _elite_cons_chance) {   // Famine curse: no consumable drops
-            // Consumable rarity scales with awakening (M 07-08): at low tiers most
-            // elite drops downgrade to the standard pool (A0: 60% -> A5: 0%), so
-            // elite-tier consumables are something you grow into.
+        if (!curse_blocks_consumables() && irandom(99) < _elite_cons_chance) {
             var _elite_std_mix = max(0, 60 - _drop_asc * 12);
             var _elite_pool = (irandom(99) < _elite_std_mix) ? global.consumables_standard : global.consumables_elite;
             var _c = roll_consumable_weighted(_elite_pool);
             array_push(global.run_items_found, _c);
             var _fit = consumable_award(_c);
-            return _c.name + " [Consumable]" + (_fit ? "" : " (PACK FULL)") + _rune_suffix;
+            _e_result += " + " + _c.name + (_fit ? "" : " (PACK FULL)");
         }
-        // 28% equipment drop (+ Faerie's Tear bonus) - rarity weights scale with awakening.
-        if (irandom(99) < 28 + _loot_pot) {
-            var _item = drop_equipment(drop_weights("elite", _drop_asc), true, _curse_loot);
-            array_push(global.run_items_found, _item);
-            array_push(global.carried_items, _item);
-            discover_item(item_base_name(_item));
-            return _item.name + " [" + item_rarity_name(_item.rarity) + "]" + _rune_suffix;
-        }
+        return _e_result + _rune_suffix;
 
     } else if (enemy_type == "boss") {
         // Guaranteed equipment - rarity weights scale with awakening AND floor
         // (boss_drop_weights: F2 = uncommon+, F3 = rare+ hard floors).
         var _boss_fl = variable_global_exists("current_floor") ? global.current_floor : 1;
-        var _item = drop_equipment(boss_drop_weights(_drop_asc, _boss_fl), true, _curse_loot);
+        var _item = drop_equipment(boss_drop_weights(_drop_asc, _boss_fl), true, curse_loot_tier_bonus_for("boss"));
         array_push(global.run_items_found, _item);
         array_push(global.carried_items, _item);
         discover_item(item_base_name(_item));
@@ -2792,25 +3206,38 @@ function rune_get(id) {
 function rune_value(rune) {
     var _def = rune_get(rune.id);
     if (_def == undefined) return 0;
-    var _t = clamp(rune.tier, 1, 3);
-    return _def.vals[_t - 1];
+    var _t = max(1, rune.tier);
+    if (_t <= 3) return _def.vals[_t - 1];
+    // Endless tiers (IV+, post-win combining): compound +40% per tier past III
+    // on the authored tier-III value; the max() guarantees at least +1 per tier
+    // so small bases (+1/+2 runes) can't stall on rounding.
+    return max(_def.vals[2] + (_t - 3), round(_def.vals[2] * power(1.4, _t - 3)));
 }
 
-// Build a rune instance struct from an id + tier.
+// Build a rune instance struct from an id + tier. No upper clamp - tiers past
+// III exist once endless combining unlocks (rune_combine_tier_cap).
 function rune_make(id, tier) {
     var _def = rune_get(id);
     return {
         id:     id,
         name:   (_def != undefined) ? _def.name   : id,
         domain: (_def != undefined) ? _def.domain : "gear",
-        tier:   clamp(tier, 1, 3),
+        tier:   max(1, tier),
     };
 }
 
-// Tier number -> roman numeral for display.
+// Tier number -> roman numeral for display. Generic (IV, V, ... XIII, ...)
+// because endless combining makes arbitrary tiers real.
 function rune_tier_roman(t) {
-    switch (t) { case 1: return "I"; case 2: return "II"; case 3: return "III"; }
-    return string(t);
+    var _n = floor(t);
+    if (_n <= 0 || _n > 3999) return string(t);
+    var _vals = [1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1];
+    var _syms = ["M","CM","D","CD","C","XC","L","XL","X","IX","V","IV","I"];
+    var _out  = "";
+    for (var _i = 0; _i < array_length(_vals); _i++) {
+        while (_n >= _vals[_i]) { _out += _syms[_i]; _n -= _vals[_i]; }
+    }
+    return _out;
 }
 
 // Full human-readable line, e.g. "Vitality II - +12 Max HP".
@@ -3106,14 +3533,23 @@ function maren_unlock_aspect_slot() {
 // lower + dust refund; Craft Flagship -> a tier-III Quickcast/Echo for gold+dust.
 // =============================================================================
 
-// Combinable groups: distinct {id, tier, count, name} present 3+ times, tier < 3.
+// Source-tier cap for combining. Base game: I/II combine up (III is the top).
+// Past that (III -> IV -> V -> ...) unlocks with IRONWAKE STANDS - the same
+// gate as A6+/the Descent (M locked 07-27), so the A0-A5 climb keeps the
+// authored rune curve while post-win players can chase endless tiers.
+function rune_combine_tier_cap() {
+    return (variable_global_exists("ironwake_stands") && global.ironwake_stands) ? 9999 : 3;
+}
+
+// Combinable groups: distinct {id, tier, count, name} present 3+ times, below
+// the current source-tier cap (see rune_combine_tier_cap).
 function rune_combine_groups() {
     var _out = [];
     if (!variable_global_exists("rune_inventory")) return _out;
     var _seen = [];
     for (var _i = 0; _i < array_length(global.rune_inventory); _i++) {
         var _r = global.rune_inventory[_i];
-        if (_r.tier >= 3) continue;
+        if (_r.tier >= rune_combine_tier_cap()) continue;
         var _key = _r.id + "|" + string(_r.tier);
         var _dup = false;
         for (var _k = 0; _k < array_length(_seen); _k++) { if (_seen[_k] == _key) { _dup = true; break; } }
@@ -3128,15 +3564,22 @@ function rune_combine_groups() {
     return _out;
 }
 
-// Combine cost {gold, dust} by source tier (1->2 vs 2->3). Gold is CHA-discounted.
+// Combine cost {gold, dust} by source tier. Gold is CHA-discounted. Endless
+// tiers double per step from III->IV = 400g + 60 dust (M locked 07-27).
 function rune_combine_cost(tier) {
     if (tier <= 1) return { gold: cha_price(50),  dust: 10 };
-    return { gold: cha_price(150), dust: 30 };
+    if (tier == 2) return { gold: cha_price(150), dust: 30 };
+    var _mult = power(2, tier - 3);
+    return { gold: cha_price(400 * _mult), dust: 60 * _mult };
 }
 
 // Combine 3x (id, tier) -> 1x (id, tier+1), paying gold+dust. "" on success else reason.
 function maren_combine_rune(id, tier) {
-    if (tier >= 3) return "Already max tier.";
+    if (tier >= rune_combine_tier_cap()) {
+        return (rune_combine_tier_cap() <= 3)
+            ? "Tier III is my limit... until Ironwake stands."
+            : "Already max tier.";
+    }
     var _cost = rune_combine_cost(tier);
     if (global.gold < _cost.gold) return "Need " + string(_cost.gold) + "g.";
     if (!variable_global_exists("rune_dust") || global.rune_dust < _cost.dust) return "Need " + string(_cost.dust) + " dust.";
@@ -3166,9 +3609,11 @@ function rune_socket_cost() { return floor(30 * maren_fee_mult()); }
 function rune_split_cost() { return { gold: cha_price(20) }; }
 
 // Dust refunded when splitting a tier-N rune (≈ half the combine dust that built it;
-// tier-I scrap returns a small flat amount and no lower-tier rune).
+// tier-I scrap returns a small flat amount and no lower-tier rune). Endless tiers
+// track their doubled combine dust (IV refunds 30, V refunds 60, ...).
 function rune_split_dust(tier) {
-    if (tier >= 3) return 15;
+    if (tier >= 4) return 30 * power(2, tier - 4);
+    if (tier == 3) return 15;
     if (tier == 2) return 5;
     return 3;
 }
@@ -3287,7 +3732,7 @@ function sable_salvage_gear_dust(rarity) {
     return 1;
 }
 function sable_salvage_rune_dust(tier) {
-    if (tier >= 3) return 40;
+    if (tier >= 3) return 40 * power(2, tier - 3);   // endless tiers keep pace
     if (tier == 2) return 16;
     return 6;
 }
@@ -3321,6 +3766,69 @@ function sable_salvage_gear_at(combined_index) {
     return _dust;
 }
 
+// =============================================================================
+// SABLE TRANSMUTE (M 07-27, distributed rune economy): melt any 3 SAME-TIER
+// runes (mixed types welcome - this is the junk-singles drain) into ONE RANDOM
+// rune of the NEXT tier. The gamble half of the leftover-rune sink; Petra's
+// blueprint order is the planned half. Source tier obeys the same post-win cap
+// as Maren's combine (rune_combine_tier_cap), so pre-win output tops out at III.
+// =============================================================================
+
+function sable_transmute_cost(tier) { return cha_price(60 * max(1, tier)); }
+
+// Shared pool: every catalog rune id minus flagship recipes (those stay behind
+// Maren's craft + their unlock gates). Sable's transmute rolls from it; Petra's
+// blueprint chooser lists it.
+function rune_blueprint_pool() {
+    var _cat  = rune_catalog();
+    var _bans = rune_flagship_ids();
+    var _pool = [];
+    for (var _i = 0; _i < array_length(_cat); _i++) {
+        var _banned = false;
+        for (var _b = 0; _b < array_length(_bans); _b++) {
+            if (_bans[_b] == _cat[_i].id) { _banned = true; break; }
+        }
+        if (!_banned) array_push(_pool, _cat[_i].id);
+    }
+    return _pool;
+}
+
+function sable_transmute_roll_id() {
+    var _pool = rune_blueprint_pool();
+    return _pool[irandom(array_length(_pool) - 1)];
+}
+
+// Transmute the 3 rune_inventory indices in idx_array. "" on success (the new
+// rune's title lands in the by-ref out struct), else the refusal reason.
+function sable_transmute_runes(idx_array, out) {
+    if (array_length(idx_array) != 3) return "Choose exactly 3 runes.";
+    var _inv = global.rune_inventory;
+    for (var _i = 0; _i < 3; _i++) {
+        if (idx_array[_i] < 0 || idx_array[_i] >= array_length(_inv)) return "Choose exactly 3 runes.";
+    }
+    var _t = _inv[idx_array[0]].tier;
+    if (_inv[idx_array[1]].tier != _t || _inv[idx_array[2]].tier != _t) return "All three must share a tier.";
+    if (_t >= rune_combine_tier_cap()) {
+        return (rune_combine_tier_cap() <= 3)
+            ? "Tier III is the ceiling - until Ironwake stands."
+            : "Already max tier.";
+    }
+    var _fee = sable_transmute_cost(_t);
+    if (global.gold < _fee) return "Need " + string(_fee) + "g.";
+    // Delete highest-index-first so the earlier indices stay valid.
+    var _sorted = [idx_array[0], idx_array[1], idx_array[2]];
+    array_sort(_sorted, false);
+    array_delete(_inv, _sorted[0], 1);
+    array_delete(_inv, _sorted[1], 1);
+    array_delete(_inv, _sorted[2], 1);
+    global.gold -= _fee;
+    var _new = rune_make(sable_transmute_roll_id(), _t + 1);
+    array_push(_inv, _new);
+    out.title = rune_title(_new);
+    save_game();
+    return "";
+}
+
 // Salvage an unsocketed rune by inventory index (fully scrapped). Returns dust, or -1.
 function sable_salvage_rune_at(rune_inv_index) {
     if (!variable_global_exists("rune_inventory")) return -1;
@@ -3338,6 +3846,20 @@ function sable_salvage_rune_at(rune_inv_index) {
 // --- Brew (alchemy-exclusive consumables) ---
 function sable_brew_catalog() {
     return [
+        // --- Baseline brews (M 07-28: "sable should have a vast list... right now
+        // we can only find tier 0 or buy them"). Names/effects mirror the drop
+        // pools exactly (global.consumables_standard/elite) so icons + fusion
+        // ladders already resolve. Cheap gold, token dust.
+        { id:"salve",    name:"Healing Salve",         effect:"heal",           value:25, desc:"Restore 25 HP",                    gold_val:20, dust:2,  gold:cha_price(10) },
+        { id:"tonic",    name:"Energy Tonic",          effect:"energy",         value:1,  desc:"Gain +1 AP this turn (free to use)", gold_val:15, dust:3,  gold:cha_price(12) },
+        { id:"antidote", name:"Antidote",              effect:"cleanse_dot",    value:0,  desc:"Clear all active DoT effects",     gold_val:18, dust:2,  gold:cha_price(8) },
+        { id:"salts",    name:"Smelling Salts",        effect:"cleanse_debuff", value:0,  desc:"Remove one active debuff",         gold_val:16, dust:2,  gold:cha_price(8) },
+        { id:"gsalve",   name:"Greater Healing Salve", effect:"heal",           value:50, desc:"Restore 50 HP",                    gold_val:45, dust:10, gold:cha_price(22) },
+        { id:"adren",    name:"Adrenaline Vial",       effect:"energy",         value:3,  desc:"Gain +3 AP this turn (free to use)", gold_val:55, dust:14, gold:cha_price(30) },
+        { id:"purif",    name:"Purification Draught",  effect:"cleanse_all",    value:0,  desc:"Clear all negative effects",       gold_val:50, dust:10, gold:cha_price(24) },
+        { id:"warden",   name:"Warden's Tonic",        effect:"heal_dot",       value:8,  desc:"Restore 8 HP per turn for 3 turns", gold_val:48, dust:12, gold:cha_price(26) },
+        { id:"laegis",   name:"Lesser Aegis Draught",  effect:"shield",         value:15, desc:"Gain a 15-point shield",           gold_val:30, dust:10, gold:cha_price(16) },
+        // --- Alchemy exclusives (her original list) ---
         { id:"aegis",   name:"Aegis Draught",          effect:"shield",      value:30, desc:"Gain a 30-point shield",            gold_val:40, dust:25, gold:cha_price(30) },
         { id:"master",  name:"Master Healing Draught", effect:"heal",        value:90, desc:"Restore 90 HP",                     gold_val:70, dust:30, gold:cha_price(40) },
         { id:"phoenix", name:"Phoenix Tonic",          effect:"heal_dot",    value:15, desc:"Restore 15 HP per turn for 3 turns",gold_val:60, dust:35, gold:cha_price(40) },
@@ -3411,16 +3933,97 @@ function sable_upgrade_cost() {
     return { gold: floor(cha_price(20) * _m), dust: floor(10 * _m) };
 }
 
+// =============================================================================
+// CHAOTIC BREW (M 07-28: "the potions combine if not matching may yield positive
+// or negative results (like skyrim)... make it more experimental"). Fuse ANY 3
+// potions - mismatched welcome - into one Chaotic Brew. Drinking it rolls a REAL
+// effect on the spot (heal / shield / regen / AP / resource), sometimes with a
+// sting. The junk-consumable drain beside the exact-match fusion ladder.
+// =============================================================================
+
+function sable_chaotic_cost() {
+    var _m = sable_cost_mult();
+    return { gold: floor(cha_price(12) * _m), dust: floor(5 * _m) };
+}
+
+// Fuse the 3 consumable_inventory indices. "" on success else the reason.
+function sable_chaotic_fuse(indices) {
+    if (array_length(indices) != 3) return "Choose exactly 3 potions.";
+    var _inv = global.consumable_inventory;
+    for (var _i = 0; _i < 3; _i++) {
+        if (indices[_i] < 0 || indices[_i] >= array_length(_inv)) return "Choose exactly 3 potions.";
+    }
+    var _cost = sable_chaotic_cost();
+    if (global.gold < _cost.gold) return "Need " + string(_cost.gold) + "g.";
+    if (!variable_global_exists("rune_dust") || global.rune_dust < _cost.dust) return "Need " + string(_cost.dust) + " dust.";
+    var _sorted = [indices[0], indices[1], indices[2]];
+    array_sort(_sorted, false);
+    array_delete(_inv, _sorted[0], 1);
+    array_delete(_inv, _sorted[1], 1);
+    array_delete(_inv, _sorted[2], 1);
+    global.gold      -= _cost.gold;
+    global.rune_dust -= _cost.dust;
+    array_push(_inv, create_consumable("Chaotic Brew", "chaotic", 0,
+        "Sable's mismatched fusion - drink and find out. Sometimes it bites.", 35));
+    save_game();
+    return "";
+}
+
+// QUINTESSENCE (LEGENDARY FORGE component, M locked 07-28): distill ANY 3
+// potions + gold into Sable's share of the forge. Mirrors the chaotic fuse's
+// consumption; yields no consumable - the component counter is the product.
+function sable_quintessence_distill(indices) {
+    if (array_length(indices) != 3) return "Choose exactly 3 potions.";
+    var _inv = global.consumable_inventory;
+    for (var _i = 0; _i < 3; _i++) {
+        if (indices[_i] < 0 || indices[_i] >= array_length(_inv)) return "Choose exactly 3 potions.";
+    }
+    var _fee = forge_quint_cost();
+    if (global.gold < _fee) return "Need " + string(_fee) + "g.";
+    var _sorted = [indices[0], indices[1], indices[2]];
+    array_sort(_sorted, false);
+    array_delete(_inv, _sorted[0], 1);
+    array_delete(_inv, _sorted[1], 1);
+    array_delete(_inv, _sorted[2], 1);
+    global.gold -= _fee;
+    forge_components_ensure();
+    global.forge_comp_quint += 1;
+    save_game();
+    return "";
+}
+
+// What a Chaotic Brew actually DOES, rolled at drink time. Every outcome routes
+// through an EXISTING consumable effect channel (real, both in and out of
+// combat); the optional sting is applied by the drink site (HP bite in combat,
+// gold bite at camp - out-of-combat has no HP-loss channel).
+function chaotic_brew_roll() {
+    var _r = irandom(99);
+    var _out;
+    if      (_r < 22) _out = { effect_type:"heal",        value: irandom_range(40, 90), label:"mends flesh in a rush" };
+    else if (_r < 42) _out = { effect_type:"shield",      value: irandom_range(20, 40), label:"hardens into a ward" };
+    else if (_r < 62) _out = { effect_type:"heal_dot",    value: irandom_range(10, 18), label:"soaks in slowly" };
+    else if (_r < 82) _out = { effect_type:"energy",      value: irandom_range(2, 4),   label:"crackles with vigor" };
+    else              _out = { effect_type:"resource_ap", value: irandom_range(2, 4),   label:"sings with ley-light" };
+    // The sting (~1 in 3): the payoff still lands, but the brew curdles and bites.
+    _out.sting = (irandom(99) < 35);
+    return _out;
+}
+
 // Standard consumables held 3+ times that have an upgrade target. [{from,to,count}].
 function sable_upgrade_groups() {
+    // 07-28 (M: "i wanted baseline potions combined into better versions" - the
+    // ladder existed but a recipe only APPEARED once 3 copies were held, so it
+    // was invisible): now EVERY recipe lists always, with the held count; rows
+    // grey until fusable. Commit still requires 3 (sable_upgrade validates).
     var _out = [];
-    if (!variable_global_exists("consumable_inventory")) return _out;
     var _map = sable_upgrade_map();
     for (var _m = 0; _m < array_length(_map); _m++) {
         var _cnt = 0;
-        for (var _i = 0; _i < array_length(global.consumable_inventory); _i++)
-            if (global.consumable_inventory[_i].name == _map[_m].from) _cnt++;
-        if (_cnt >= 3) array_push(_out, { from: _map[_m].from, to: _map[_m].to, count: _cnt });
+        if (variable_global_exists("consumable_inventory")) {
+            for (var _i = 0; _i < array_length(global.consumable_inventory); _i++)
+                if (global.consumable_inventory[_i].name == _map[_m].from) _cnt++;
+        }
+        array_push(_out, { from: _map[_m].from, to: _map[_m].to, count: _cnt });
     }
     return _out;
 }
@@ -4053,22 +4656,31 @@ function curse_accept(id) {
     return "";
 }
 
-// Roll up to 3 distinct, tier-available curses the player doesn't already carry.
+// Roll up to 3 distinct, tier-available curses the player doesn't already
+// carry, dealt from the FULL shuffled pool - loot curses included freely.
+// (07-29 REVERT of the 07-28 loot-scarcity deal (1-in-3 loot inclusion, max
+// one per altar): it starved small pools down to 2 bland options and gutted
+// the altar's drama - M: "i was wrong to take away multiple loot options per
+// shrine, it added more decision making and hard choices. it should be
+// exciting and powerful." Low-awakening loot power stays tempered where it
+// matters: the below-A2 premium-source gate in curse_loot_tier_bonus_for,
+// and cursed shrines themselves are the rarer 25% shrine roll.)
 function curse_offer_roll() {
-    var _cat = curse_catalog();
+    var _cat  = curse_catalog();
     var _pool = [];
     for (var _i = 0; _i < array_length(_cat); _i++) {
         if (curse_active(_cat[_i].id)) continue;
         if (!curse_tier_available(_cat[_i].tier)) continue;
         array_push(_pool, _cat[_i].id);
     }
-    // Fisher-Yates partial shuffle
+    // Fisher-Yates shuffle, deal the top 3.
     for (var _i = array_length(_pool) - 1; _i > 0; _i--) {
         var _j = irandom(_i);
         var _t = _pool[_i]; _pool[_i] = _pool[_j]; _pool[_j] = _t;
     }
     var _out = [];
-    for (var _i = 0; _i < min(3, array_length(_pool)); _i++) array_push(_out, _pool[_i]);
+    for (var _i = 0; _i < array_length(_pool) && array_length(_out) < 3; _i++)
+        array_push(_out, _pool[_i]);
     return _out;
 }
 
@@ -4118,6 +4730,20 @@ function curse_loot_tier_bonus() {
         if (curse_active(_cat[_i].id)) _b += _cat[_i].loot;
     }
     return _b;
+}
+
+// The bump a given drop SOURCE actually receives. Below Awakening 2 only boss
+// and premium-chest drops (vault/reliquary) get curse loot tiers - M 07-28
+// round 2: a floor-1 boss at 25% Epic was fine, but every mob and chest riding
+// the same bump made "+1 tier" feel ever-present. At A2+ loot is scaled for it
+// and the bump applies everywhere, as the reward text says. Trait bumps
+// (Prospector, Treasure Hunter) are NOT curses and bypass this on purpose.
+function curse_loot_tier_bonus_for(source) {
+    var _b = curse_loot_tier_bonus();
+    if (_b <= 0) return 0;
+    var _asc = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
+    if (_asc >= 2) return _b;
+    return (source == "boss" || source == "vault" || source == "reliquary") ? _b : 0;
 }
 
 // Gold-find multiplier from curses (additive, 1.0 = no change).
@@ -4341,11 +4967,21 @@ function affinity_try_advance(id) {
     }
     var _qd = quest_def(_qid);
     if (_qs.status == "active") {
-        return "\"" + _qd.name + "\" is underway - " + _qd.objective + ".";
+        // All-in-one turn-in (M 07-28): a FINISHED favor completes right here
+        // at the NPC - no tavern-board round trip. quest_turn_in crosses the
+        // gate itself (the board turn-in path still works as an alternative).
+        if (_qs.progress >= _qd.obj_target) {
+            var _ti = quest_turn_in(_qid);
+            return _ti;   // "" = crossed
+        }
+        return "\"" + _qd.name + "\" is underway - " + _qd.objective
+            + "  (" + string(min(_qs.progress, _qd.obj_target)) + "/" + string(_qd.obj_target)
+            + ").\n\nCome back to me when it's done.";
     }
     quest_start(_qid);
     ledger_add(id, "quest", "They asked something of you first: \"" + _qd.name + "\".");
-    return npc_display_name(id) + " asks: " + _qd.objective + "   (\"" + _qd.name + "\" - on the board & Journal)";
+    return npc_display_name(id) + " asks: " + _qd.objective
+        + "\n\n(\"" + _qd.name + "\" - tracked in your Journal. Return here when it's done.)";
 }
 
 // Cross a tier NOW (gate-quest turn-in, done-quest recross, or future-NPC fallback).
@@ -4774,7 +5410,11 @@ function quest_tick(obj_type, param, amount) {
         if (_s.progress != _was) {
             journal_badge_quest(_s.id);
             if (_s.progress >= _d.obj_target && variable_global_exists("pet_find_notice")) {
-                var _qmsg = "Request complete: " + _d.name + " - report to the tavern board.";
+                // Gate favors complete AT the NPC (M 07-28 all-in-one rework);
+                // ordinary board requests still report to the board.
+                var _qmsg = quest_is_gate(_d)
+                    ? ("Favor complete: " + _d.name + " - return to " + npc_display_name(_d.npc) + ".")
+                    : ("Request complete: " + _d.name + " - report to the tavern board.");
                 global.pet_find_notice = (global.pet_find_notice != "")
                     ? (global.pet_find_notice + "   " + _qmsg) : _qmsg;
                 audio_play_sound(snd_quest_ready, 1, false);   // soft parchment-and-bell ping (turn-in fanfare stays the board's)
@@ -5949,11 +6589,73 @@ function petra_place_order(indices, dust_bias) {
     return "";
 }
 
+// --- Rune blueprint orders (M 07-27, distributed rune economy) --------------
+// Trade 5 mixed SAME-TIER runes + a broker fee for a blueprint order that
+// delivers ONE CHOSEN rune of that tier after clearing floors. The PLANNED half
+// of the leftover-rune sink (Sable's transmute is the gamble half). Shares the
+// single petra_order slot with gear trades via order.kind == "rune".
+function petra_rune_order_gold(tier) { return floor(80 * max(1, tier) * petra_gold_mult()); }
+function petra_rune_order_floors()   { return max(1, 3 - petra_delivery_reduction()); }
+
+function petra_order_is_rune() {
+    return petra_order_active()
+        && variable_struct_exists(global.petra_order, "kind")
+        && global.petra_order.kind == "rune";
+}
+
+function petra_start_rune_order(indices, result_id) {
+    if (petra_order_active())       return "Collect your current order first.";
+    if (array_length(indices) != 5) return "Choose exactly 5 runes.";
+    var _inv = global.rune_inventory;
+    var _t = -1;
+    for (var _i = 0; _i < 5; _i++) {
+        var _ix = indices[_i];
+        if (_ix < 0 || _ix >= array_length(_inv)) return "Invalid selection.";
+        if (_t == -1) _t = _inv[_ix].tier;
+        else if (_inv[_ix].tier != _t) return "All 5 runes must share a tier.";
+    }
+    if (rune_get(result_id) == undefined) return "Invalid blueprint.";
+    var _fee = petra_rune_order_gold(_t);
+    if (global.gold < _fee) return "Need " + string(_fee) + "g.";
+    // Consume the 5 (high-index-first so the remaining indices stay valid) + fee.
+    var _sorted = [];
+    for (var _i = 0; _i < 5; _i++) array_push(_sorted, indices[_i]);
+    array_sort(_sorted, false);
+    for (var _i = 0; _i < 5; _i++) array_delete(_inv, _sorted[_i], 1);
+    global.gold -= _fee;
+    global.petra_order = {
+        kind:            "rune",
+        rune_id:         result_id,
+        rune_tier:       _t,
+        input_tier:      _t,     // legacy readers (tier displays) stay in range
+        output_tier:     _t,
+        req_awakening:   0,
+        cost_floors:     petra_rune_order_floors(),
+        progress_floors: 0,
+        dust_bias:       false,
+        status:          "in_progress",
+    };
+    affinity_add("petra", 4);   // placing an order is the deepest Petra interaction
+    if (room == rm_hub || room == rm_character_select) save_game();
+    return "";
+}
+
 function petra_cancel_order() {
     if (!petra_order_active()) return "No order to cancel.";
-    var _in = global.petra_order.input_tier;
     var _band    = petra_cancel_band();
     var _recover = min(3, irandom_range(_band[0], _band[1]));
+    if (petra_order_is_rune()) {
+        // Rune blueprint: the 5 inputs were mixed and are gone - recover random
+        // runes of the same tier instead (same band as gear).
+        var _rt = global.petra_order.rune_tier;
+        for (var _i = 0; _i < _recover; _i++)
+            array_push(global.rune_inventory, rune_make(sable_transmute_roll_id(), _rt));
+        global.petra_order = undefined;
+        if (room == rm_hub || room == rm_character_select) save_game();
+        return "Order cancelled. Recovered " + string(_recover) + " rune" + (_recover == 1 ? "" : "s")
+            + ". (Gold not refunded.)";
+    }
+    var _in = global.petra_order.input_tier;
     for (var _i = 0; _i < _recover; _i++) array_push(global.equipment_stash, petra_base_item(_in));
     global.petra_order = undefined;
     if (room == rm_hub || room == rm_character_select) save_game();
@@ -5964,11 +6666,25 @@ function petra_cancel_order() {
 function petra_collect() {
     if (!petra_order_active())              return "Nothing to collect.";
     if (global.petra_order.status != "ready") return "Your order isn't ready yet.";
+    if (petra_order_is_rune()) {
+        var _rn = rune_make(global.petra_order.rune_id, global.petra_order.rune_tier);
+        array_push(global.rune_inventory, _rn);
+        // ORDER REVEAL (M 07-28): the collect opens an examine popup instead of
+        // the yield vanishing into a stack - captured before the order clears.
+        global.petra_reveal = { is_rune: true, rune: _rn, item: undefined,
+            input_tier: global.petra_order.rune_tier, input_count: 5, dust_bias: false };
+        global.petra_order = undefined;
+        if (room == rm_hub || room == rm_character_select) save_game();
+        return "Collected the blueprint rune: " + rune_title(_rn) + "!";
+    }
     var _out  = global.petra_order.output_tier;
     var _bias = global.petra_order.dust_bias;
     var _item = petra_make_item(_out, _bias);
     array_push(global.equipment_stash, _item);
     discover_item(item_base_name(_item));
+    // ORDER REVEAL (M 07-28): see the rune branch above.
+    global.petra_reveal = { is_rune: false, rune: undefined, item: _item,
+        input_tier: global.petra_order.input_tier, input_count: 3, dust_bias: _bias };
     global.petra_order = undefined;
     if (room == rm_hub || room == rm_character_select) save_game();
     return "Collected a " + item_rarity_name(_out) + " item: " + _item.name + "!";
@@ -5978,6 +6694,12 @@ function petra_collect() {
 function petra_order_status_text() {
     if (!petra_order_active()) return "No active order.";
     var _o = global.petra_order;
+    if (petra_order_is_rune()) {
+        var _bp = rune_get(_o.rune_id);
+        var _bpn = ((_bp != undefined) ? _bp.name : _o.rune_id) + " " + rune_tier_roman(_o.rune_tier);
+        if (_o.status == "ready") return "READY - the " + _bpn + " blueprint rune awaits collection.";
+        return "Blueprint: " + _bpn + "    " + string(_o.progress_floors) + " / " + string(_o.cost_floors) + " floors";
+    }
     if (_o.status == "ready") return "READY - a " + item_rarity_name(_o.output_tier) + " awaits collection.";
     var _awk = (_o.req_awakening > 0) ? ("   (floors must be A" + string(_o.req_awakening) + "+)") : "";
     return item_rarity_name(_o.input_tier) + " -> " + item_rarity_name(_o.output_tier)
@@ -8404,6 +9126,17 @@ function item_picker_prompt() {
         case "chit_reforge": return "Choose an item - Dorn reworks its affixes (1 Reforge Ingot)";
         case "gift": return "Choose a gift for " + (variable_struct_exists(global.item_picker.context, "npc_name")
             ? global.item_picker.context.npc_name : "them");
+        case "cartographer": return "Cartographer's Cut - choose which find to keep";
+        case "courier": return "The courier waits - send a find home ("
+            + string(variable_struct_exists(global.item_picker.context, "left")
+                ? global.item_picker.context.left : 1) + " send"
+            + ((variable_struct_exists(global.item_picker.context, "left")
+                && global.item_picker.context.left == 1) ? "" : "s") + " left, Esc keeps carrying)";
+        case "vex_potency": return "Offer an Epic or better item - "
+            + (variable_struct_exists(global.item_picker.context, "trait_name")
+                ? global.item_picker.context.trait_name : "the trait") + " will TRANSCEND";
+        case "maren_sunder":   return "Choose a legendary to SUNDER - it becomes a Legendary Ingot + 50 dust + a tier-III rune";
+        case "cursed_rebirth": return "Feed a legendary to the dark (+" + string(cha_price(300)) + "g) - it returns STRONGER, and cursed";
     }
     return "Choose an item";
 }
@@ -8413,6 +9146,11 @@ function item_picker_verb() {
         case "alch_rebirth": return "Reforge";
         case "chit_reforge": return "Rework";
         case "gift":         return "Give";
+        case "cartographer": return "Keep";
+        case "courier":      return "Send home";
+        case "vex_potency":  return "Offer";
+        case "maren_sunder":   return "Sunder";
+        case "cursed_rebirth": return "Sacrifice";
     }
     return "Trade away";
 }
@@ -8423,6 +9161,23 @@ function item_picker_resolve() {
     var _p    = global.item_picker;
     var _ctx  = _p.context;
     var _msg  = "";
+
+    // CARTOGRAPHER'S CUT (POTENCY V2): nothing is removed - the player is
+    // CHOOSING which fresh treasure find to keep. The floor controller grants
+    // context.chosen when it consumes the one-shot.
+    if (_p.purpose == "cartographer" || _p.purpose == "courier") {
+        // Neither purpose removes anything here - the floor controller moves the
+        // chosen item when it consumes the one-shot.
+        var _cc_sel = (_p.cursor >= 0 && _p.cursor < array_length(_p.candidates))
+                      ? _p.candidates[_p.cursor].item : undefined;
+        var _cc_purpose = _p.purpose;
+        _ctx.chosen         = _cc_sel;
+        _p.resolved_purpose = _cc_purpose;
+        _p.result_msg       = (_cc_sel != undefined)
+            ? (((_cc_purpose == "courier") ? "Sent home: " : "Kept: ") + _cc_sel.name) : "";
+        item_picker_close();
+        return;
+    }
 
     // GIFT (Phase 4b): candidates span five pools, so removal is its own path
     // (gift_remove_candidate) - the shared remover below only knows the gear arrays.
@@ -8517,6 +9272,63 @@ function item_picker_resolve() {
         return;
     }
 
+    // MAREN SUNDER (M 07-28 legendary sinks): split a legendary into parts -
+    // 1 Legendary Reforge Ingot + 50 rune dust + a random tier-III rune.
+    if (_p.purpose == "maren_sunder") {
+        var _ms_sel = (_p.cursor >= 0 && _p.cursor < array_length(_p.candidates))
+                      ? _p.candidates[_p.cursor] : undefined;
+        if (_ms_sel == undefined) {
+            _p.resolved_purpose = "maren_sunder"; _p.result_msg = "Nothing chosen.";
+            item_picker_close(); return;
+        }
+        var _ms_name = _ms_sel.label;
+        item_picker_remove_selected();
+        reforge_ingots_ensure();
+        global.reforge_ingots[4] += 1;
+        if (!variable_global_exists("rune_dust")) global.rune_dust = 0;
+        global.rune_dust += 50;
+        var _ms_rn = rune_make(sable_transmute_roll_id(), 3);
+        array_push(global.rune_inventory, _ms_rn);
+        save_game();
+        _p.resolved_purpose = "maren_sunder";
+        _p.result_msg = "Sundered " + _ms_name + " - a Legendary Ingot, 50 dust and " + rune_title(_ms_rn) + " remain.";
+        audio_play_sound(snd_confirm_major, 1, false);
+        item_picker_close();
+        return;
+    }
+
+    // SABLE CURSED REBIRTH (M 07-28 legendary sinks; first slice of the parked
+    // cursed-items feature): the legendary returns STRONGER, but branded with a
+    // real curse. Gate: 300g fee, checked before anything is destroyed.
+    if (_p.purpose == "cursed_rebirth") {
+        var _cr_sel = (_p.cursor >= 0 && _p.cursor < array_length(_p.candidates))
+                      ? _p.candidates[_p.cursor] : undefined;
+        if (_cr_sel == undefined) {
+            _p.resolved_purpose = "cursed_rebirth"; _p.result_msg = "Nothing chosen.";
+            item_picker_close(); return;
+        }
+        var _cr_fee = cha_price(300);
+        if (global.gold < _cr_fee) {
+            _p.resolved_purpose = "cursed_rebirth";
+            _p.result_msg = "Not enough - the dark asks " + string(_cr_fee) + "g with the offering.";
+            audio_play_sound(snd_ui_error, 1, false);
+            item_picker_close(); return;
+        }
+        var _cr_new = cursed_rebirth_make(_cr_sel.item);
+        var _cr_src = _cr_sel.source;
+        item_picker_remove_selected();
+        global.gold -= _cr_fee;
+        if (_cr_src == 0) array_push(global.equipment_stash, _cr_new);
+        else              array_push(global.carried_items, _cr_new);
+        discover_item(item_base_name(_cr_new));
+        save_game();
+        _p.resolved_purpose = "cursed_rebirth";
+        _p.result_msg = "The dark accepts... " + _cr_new.name + " crawls back out.";
+        audio_play_sound(snd_confirm_major, 1, false);
+        item_picker_close();
+        return;
+    }
+
     var _name = item_picker_remove_selected();
     switch (_p.purpose) {
         case "vex_trait":
@@ -8526,6 +9338,15 @@ function item_picker_resolve() {
             affinity_add("vex", 2);   // function-use drip (trait unlock)
             save_game();
             _msg = "Unlocked " + _ctx.trait_name + "!   (traded: " + _name + ")";
+            break;
+        case "vex_potency":
+            // POTENCY V2 rank 5: the Transcend offering - one Epic+ item.
+            if (!variable_global_exists("trait_potency")) global.trait_potency = {};
+            variable_struct_set(global.trait_potency, _ctx.trait_name, 5);
+            affinity_add("vex", 2);   // function-use drip (transcendence)
+            save_game();
+            _msg = _ctx.trait_name + " TRANSCENDS - " + _ctx.tname + "!   (offered: " + _name + ")";
+            audio_play_sound(snd_confirm_major, 1, false);
             break;
         case "vex_stat":
             global.gold -= _ctx.gold;
@@ -8627,9 +9448,9 @@ function item_picker_step() {
 // EVENT ROOMS - interactive, stat-gated risk/reward choice rooms.
 // See SYSTEMS_EVENTS.md. The catalog is data-driven; a choice resolves to one
 // outcome by "weighted" (fixed integer weights) or "check" (stat-scaled
-// success/fail). Outcomes apply an `effects` struct. HP changes are DEFERRED to
-// the next combat via pending_trap_damage / pending_rest_heal (reusing the
-// trap/rest hooks - there is no persistent overworld HP bar).
+// success/fail). Outcomes apply an `effects` struct. HP changes apply LIVE to
+// run_current_hp (M 07-28) - the floor HUD reads it, so both heals and damage
+// show the moment they land; damage floors at 1 (events can't kill outright).
 // =============================================================================
 
 // Effective character stat = base allocation + run XP bonuses (+ perm CHA bonus).
@@ -8650,7 +9471,8 @@ function event_check_chance(stat_name, base_pct, per_point, ref) {
     var _s = player_effective_stat(stat_name);
     // Sense trait: a flat +5% to every stat-check's success odds (read of the room
     // tips the bet in your favor). Folded into the base before the curve + clamp.
-    var _sense_bonus = trait_active("Sense") ? 5 : 0;
+    // POTENCY V2 ranks: +3% per rank on top of the base 5.
+    var _sense_bonus = trait_active("Sense") ? (5 + 3 * trait_potency_r14("Sense")) : 0;
     // Sharp Eye pet capstone (C5): a further +10% - it sees the angles.
     return clamp(base_pct + _sense_bonus + pet_active_sharpeye() + (_s - ref) * per_point, 10, 90);
 }
@@ -8767,9 +9589,9 @@ function event_resolve_choice(choice) {
 // result screen (concrete gains: gold, HP, item/consumable/dust/rune/boon names).
 function event_apply_effects(fx) {
     if (fx == undefined) return "";
-    // Curse loot-tiers are a post-roll rarity bump now, not an awakening offset.
-    var _asc        = (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0);
-    var _curse_loot = curse_loot_tier_bonus();
+    // Curse loot-tiers are a post-roll rarity bump now, not an awakening offset
+    // (applied per-source via curse_loot_tier_bonus_for at the item roll below).
+    var _asc = (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0);
     var _sum = [];
 
     // Gold
@@ -8782,9 +9604,8 @@ function event_apply_effects(fx) {
         }
         else { global.gold = max(0, global.gold - abs(fx.gold)); array_push(_sum, string(fx.gold) + " gold"); }
     }
-    // HP - heals apply immediately (the floor HUD reads run_current_hp, so a
-    // deferred heal looks broken); trap DAMAGE stays deferred to next combat
-    // where armor and last-stand can respond.
+    // HP - both directions apply immediately (the floor HUD reads
+    // run_current_hp; deferred changes read as broken/invisible - M 07-28).
     if (variable_struct_exists(fx, "hp") && fx.hp != 0) {
         if (fx.hp > 0) {
             var _ev_max = out_of_combat_max_hp();
@@ -8793,9 +9614,17 @@ function event_apply_effects(fx) {
             global.run_current_hp = min(_ev_max, global.run_current_hp + fx.hp);
             array_push(_sum, "+" + string(global.run_current_hp - _ev_before) + " HP");
         } else {
-            if (!variable_global_exists("pending_trap_damage")) global.pending_trap_damage = 0;
-            global.pending_trap_damage += abs(fx.hp);
-            array_push(_sum, string(fx.hp) + " HP (next combat)");
+            // M 07-28: damage lands LIVE like heals do - the floor HUD drops on
+            // the spot with a hurt grunt + map shake (floor controller reads
+            // event_hp_hit). Same floor-at-1 rule the old next-combat consume
+            // used (combat Create), so events still can't kill outright.
+            var _ev_dmax = out_of_combat_max_hp();
+            if (!variable_global_exists("run_current_hp") || global.run_current_hp <= 0) global.run_current_hp = _ev_dmax;
+            var _ev_dbefore = global.run_current_hp;
+            global.run_current_hp = max(1, global.run_current_hp - abs(fx.hp));
+            var _ev_dtaken = _ev_dbefore - global.run_current_hp;
+            array_push(_sum, "-" + string(_ev_dtaken) + " HP");
+            global.event_hp_hit = _ev_dtaken;   // floor controller: grunt + shake + floating -N
         }
     }
     // Equipment item - fx.item is a drop-source string ("chest"/"vault"/...)
@@ -8812,7 +9641,7 @@ function event_apply_effects(fx) {
             for (var _ewi = 0; _ewi < fx.item_min; _ewi++) { _ev_spill += _ev_w[_ewi]; _ev_w[_ewi] = 0; }
             _ev_w[fx.item_min] += _ev_spill;
         }
-        var _it = drop_equipment(_ev_w, true, _curse_loot);
+        var _it = drop_equipment(_ev_w, true, curse_loot_tier_bonus_for(fx.item));
         array_push(global.run_items_found, _it);
         array_push(global.carried_items, _it);
         array_push(_sum, _it.name + " [" + item_rarity_name(_it.rarity) + "]");
@@ -8848,6 +9677,9 @@ function event_apply_effects(fx) {
         global.pet_find_notice = _pe.is_egg
             ? ("You recovered a " + _pe.name + " egg - visit Bairc.")
             : ("A " + _pe.name + " follows you home - visit Bairc.");
+        // M 07-28 spectacle: the floor controller fires the sparkle celebration
+        // + sting off this one-shot so the find can't slip by unnoticed.
+        global.event_pet_found = _pe;
     }
     // Borrowed Memory (expression #6; 07-16 combo batch: now a pick-1-of-3 DRAFT -
     // the offer is stashed here and the floor controller opens the choice screen
@@ -9768,9 +10600,18 @@ function audio_settings_handle_input() {
 
     // Rows: 0 Music, 1 SFX, 2 Hub Music, 3 Dungeon Music, 4 Menu Tick,
     //       5 Fullscreen, 6 Tutorial Tips, 7 On-screen D-pad, 8 Reset Tutorial.
-    if (nav_up())   global.settings_cursor = wrap_index(global.settings_cursor - 1, 9);
-    if (nav_down()) global.settings_cursor = wrap_index(global.settings_cursor + 1, 9);
+    // Row 7 exists only on touch platforms (see touch_platform) - the cursor
+    // hops over it on desktop/HTML5, where the row isn't drawn.
+    if (nav_up()) {
+        global.settings_cursor = wrap_index(global.settings_cursor - 1, 9);
+        if (!touch_platform() && global.settings_cursor == 7) global.settings_cursor = 6;
+    }
+    if (nav_down()) {
+        global.settings_cursor = wrap_index(global.settings_cursor + 1, 9);
+        if (!touch_platform() && global.settings_cursor == 7) global.settings_cursor = 8;
+    }
     global.settings_cursor = clamp(global.settings_cursor, 0, 8);
+    if (!touch_platform() && global.settings_cursor == 7) global.settings_cursor = 8;
 
     var _left    = nav_left();
     var _right   = nav_right();
@@ -9860,6 +10701,15 @@ function pause_menu_open() {
     global.pause_cursor = 0;
 }
 
+// Pause menu rows - shared by pause_menu_step and ui_draw_pause_menu so the
+// hit-test and the drawn list can never drift. "Save Game" appears ONLY at the
+// hub: saves are hub-gated (never mid-run), and M 07-27 asked for an explicit
+// save so a hub chore session can end without running a dungeon to bank it.
+function pause_menu_options() {
+    if (room == rm_hub) return ["Resume", "Save Game", "Settings", "Quit to Title"];
+    return ["Resume", "Settings", "Quit to Title"];
+}
+
 // Returns true while the pause menu (or its Settings sub-screen) is capturing
 // input, so the calling controller can `exit` and freeze the screen beneath it.
 function pause_menu_step() {
@@ -9875,7 +10725,8 @@ function pause_menu_step() {
 
     if (!global.pause_open) return false;
 
-    var _opt_count = 3;   // 0 Resume, 1 Settings, 2 Quit to Title
+    var _opts      = pause_menu_options();
+    var _opt_count = array_length(_opts);
     if (nav_up())   global.pause_cursor--;
     if (nav_down()) global.pause_cursor++;
     global.pause_cursor = ((global.pause_cursor mod _opt_count) + _opt_count) mod _opt_count;
@@ -9899,16 +10750,23 @@ function pause_menu_step() {
 
     var _confirm = input_confirm() || input_confirm_alt() || (mouse_check_button_pressed(mb_left) && _hover != -1);
     if (_confirm) {
-        switch (global.pause_cursor) {
-            case 0:  // Resume
+        // Dispatch on the LABEL, not the index - the row list is dynamic
+        // ("Save Game" only exists at the hub).
+        switch (_opts[global.pause_cursor]) {
+            case "Resume":
                 global.pause_open = false;
                 break;
-            case 1:  // Settings - opens over the pause menu, returns here on close
+            case "Save Game":   // hub only (saves are hub-gated)
+                save_game();
+                global.pause_saved_time = current_time;   // "Game saved." flash in the draw
+                audio_play_sound(snd_ui_confirm, 1, false);
+                break;
+            case "Settings":    // opens over the pause menu, returns here on close
                 audio_settings_init();
                 global.settings_cursor = 0;
                 global.settings_open   = true;
                 break;
-            case 2:  // Quit to Title
+            case "Quit to Title":
                 global.pause_open = false;
                 pause_quit_to_title();
                 break;
@@ -9918,12 +10776,15 @@ function pause_menu_step() {
 }
 
 // Drop any open persistent-controller overlays and return to the title screen.
-// Saves only from the hub (meta-progression is already banked there); a run in
-// progress is simply abandoned, exactly like closing the game mid-run.
+// Saves only from the hub (meta-progression is already banked there). A run in
+// progress is CHECKPOINTED, not abandoned (IRONMAN save & quit - the same
+// protection Android backgrounding gets; SYSTEMS_RUN_RESUME.md): loading the
+// slot force-resumes the dive, so quitting can never bank or dodge anything.
 function pause_quit_to_title() {
     if (room == rm_hub && variable_global_exists("save_slot") && global.save_slot >= 0) {
         save_game();
     }
+    run_checkpoint_write_now();   // no-op outside a run or once combat is over
 
     if (instance_exists(obj_game_controller)) {
         var _gc = instance_find(obj_game_controller, 0);

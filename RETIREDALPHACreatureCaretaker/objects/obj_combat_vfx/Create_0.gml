@@ -1,0 +1,11 @@
+vfx_type  = 0;
+lifetime  = 30;
+max_life  = 30;
+radius    = 20;
+col1      = c_white;
+col2      = c_white;
+target_x  = 0;
+target_y  = 0;
+angle     = 0;
+scale     = 1.0;
+depth     = -10;

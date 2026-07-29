@@ -42,6 +42,37 @@ global.__sprite_includes = [
     spr_icon_consumable_devil_wine,
     // Genie Lamp icon: same string-ref pattern as Devil Wine above.
     spr_icon_consumable_genie_lamp,
+    // Chaotic Brew icon (07-28): same string-ref pattern.
+    spr_icon_consumable_chaotic_brew,
+    // Quintessence icon (07-28 M pick): string-ref from the Sable cauldron row.
+    spr_icon_consumable_quintessence,
+    // Rarity-banded armor variant icons (07-29 loot-variance pass, M: "use them
+    // ALL"): resolved by string in ui_armor_icon_variant (scr_ui), bands c/u/r/e/l.
+    spr_icon_chest_robe_c,  spr_icon_chest_robe_c2, spr_icon_chest_robe_c3,
+    spr_icon_chest_robe_u,  spr_icon_chest_robe_u2, spr_icon_chest_robe_u3,
+    spr_icon_chest_robe_r,  spr_icon_chest_robe_r2, spr_icon_chest_robe_r3,
+    spr_icon_chest_robe_r4, spr_icon_chest_robe_e,  spr_icon_chest_robe_e2,
+    spr_icon_chest_robe_e3, spr_icon_chest_robe_l,  spr_icon_chest_robe_l2,
+    spr_icon_chest_plate_c,  spr_icon_chest_plate_c2, spr_icon_chest_plate_c3,
+    spr_icon_chest_plate_c4, spr_icon_chest_plate_u,  spr_icon_chest_plate_u2,
+    spr_icon_chest_plate_u3, spr_icon_chest_plate_r,  spr_icon_chest_plate_r2,
+    spr_icon_chest_plate_r3, spr_icon_chest_plate_e,  spr_icon_chest_plate_e2,
+    spr_icon_chest_plate_e3, spr_icon_chest_plate_l,  spr_icon_chest_plate_l2,
+    spr_icon_chest_plate_l3,
+    spr_icon_chest_leather_c,  spr_icon_chest_leather_c2, spr_icon_chest_leather_c3,
+    spr_icon_chest_leather_c4, spr_icon_chest_leather_u,  spr_icon_chest_leather_u2,
+    spr_icon_chest_leather_u3, spr_icon_chest_leather_u4, spr_icon_chest_leather_r,
+    spr_icon_chest_leather_r2, spr_icon_chest_leather_r3, spr_icon_chest_leather_e,
+    spr_icon_chest_leather_e2, spr_icon_chest_leather_e3, spr_icon_chest_leather_l,
+    spr_icon_chest_leather_l2,
+    spr_icon_helm_hood_c,  spr_icon_helm_hood_c2, spr_icon_helm_hood_c3,
+    spr_icon_helm_hood_c4, spr_icon_helm_hood_u,  spr_icon_helm_hood_u2,
+    spr_icon_helm_hood_u3, spr_icon_helm_hood_u4, spr_icon_helm_hood_r,
+    spr_icon_helm_hood_r2, spr_icon_helm_hood_r3, spr_icon_helm_hood_e,
+    spr_icon_helm_hood_e2, spr_icon_helm_hood_e3, spr_icon_helm_hood_l,
+    spr_icon_helm_hood_l2,
+    // Lesser Aegis Draught icon (07-28): same string-ref pattern.
+    spr_icon_consumable_lesser_aegis,
     // Sable Brew-tab cauldron centrepiece: resolved by string in ui_draw_sable_screen
     // (asset_get_index guard so the tab worked pre-import), so it must be listed.
     spr_sable_cauldron,
@@ -320,7 +351,8 @@ if (!variable_global_exists("run_boons")) global.run_boons = [];   // active boo
 if (!variable_global_exists("run_curses")) global.run_curses = []; // active curses this run (devil's bargain)
 if (!variable_global_exists("run_borrowed_ability")) global.run_borrowed_ability = "";   // Borrowed Memory (expression #6)
 if (!variable_global_exists("run_borrowed_class"))   global.run_borrowed_class   = "";
-if (!variable_global_exists("run_honing"))           global.run_honing           = {};   // Whetstone run-scoped honing (07-17)
+if (!variable_global_exists("run_honing"))           global.run_honing           = {};   // Whetstone run-scoped honing (07-17; stores web node ids since the talent-web rework)
+if (!variable_global_exists("ability_web"))          global.ability_web          = {};   // talent-web picks { name: [node_ids] } (SAVE v4)
 // Sable exotic find-buff potions (last until 2 bosses slain; see scr_stats potion_* fns).
 if (!variable_global_exists("gold_potion_bosses")) global.gold_potion_bosses = 0;
 if (!variable_global_exists("gold_potion_mult"))   global.gold_potion_mult   = 0;
@@ -639,7 +671,134 @@ _leg_thief.unique_effect = "thief_of_hours";
 _leg_thief.unique_desc   = "Gain +1 AP on the first turn of every combat";
 _leg_thief.lore = "A dying mage spent her final spell not to survive, but to keep the last seconds of her life - and bound them into this ring. Whoever wears it begins each fight already a heartbeat ahead, spending borrowed time she will never get back.";
 
-global.loot_table_legendary = [ _leg_brand, _leg_aegis, _leg_crown, _leg_thief ];
+// --- 07-28 EXPANSION (M approved all 10; "same Crown 3x" variety report) ------
+// Every unique effect rides an existing mechanic; wiring lives at the same
+// sites as the original four (flag scan in obj_combat_controller Create_0).
+var _leg_rebuke = create_item("Duelist's Rebuke", "gloves", 4, "DEX", 4,
+    "the answer arrives before the question ends", 400);
+_leg_rebuke.class_req     = -1;
+_leg_rebuke.affixes       = [{ suffix: "of Ruin", prefix: "Runed", stat_name: "crit_flat", stat_value: 4 }];
+_leg_rebuke.unique_effect = "duelists_rebuke";
+_leg_rebuke.unique_desc   = "After you dodge, your next ability deals +50% damage";
+_leg_rebuke.lore = "Stitched for a duelist who never blocked - only stepped aside and made the miss cost everything. The leather still remembers the rhythm: their blade passes, yours answers.";
+
+var _leg_treads = create_item("Gravewalker Treads", "boots", 4, "CON", 4,
+    "they have walked out of places nothing walks out of", 400);
+_leg_treads.class_req     = -1;
+_leg_treads.affixes       = [{ suffix: "of Vitality", prefix: "Vital", stat_name: "bonus_max_hp", stat_value: 12 }];
+_leg_treads.unique_effect = "gravewalker_treads";
+_leg_treads.unique_desc   = "Once per run, survive a killing blow at 1 HP";
+_leg_treads.lore = "Their first owner was buried in them. Their second owner found them on his own feet, standing outside the grave, with no memory of digging. They know one trick, and it only works once - but once is the whole difference.";
+
+var _leg_chalice = create_item("Sanguine Chalice", "amulet", 4, "CON", 4,
+    "it does not spill; it keeps", 400);
+_leg_chalice.class_req     = -1;
+_leg_chalice.affixes       = [{ suffix: "of Might", prefix: "Iron", stat_name: "STR", stat_value: 2 }];
+_leg_chalice.unique_effect = "sanguine_chalice";
+_leg_chalice.unique_desc   = "Overkill damage on killing blows heals you (up to 15)";
+_leg_chalice.lore = "A chalice worn as a pendant, mouth upturned. Whatever violence exceeds what the dying could hold, the cup catches - and offers back to the hand that swung.";
+
+var _leg_loop = create_item("Stormcaller's Loop", "ring", 4, "INT", 6,
+    "lightning never asks for one target", 400);
+_leg_loop.class_req     = -1;
+_leg_loop.affixes       = [];   // same-stat affix folded into base (M rule 07-09: never "+4 INT +2 INT")
+_leg_loop.unique_effect = "stormcallers_loop";
+_leg_loop.unique_desc   = "Single-target spells echo 15% of their damage to another enemy";
+_leg_loop.lore = "Forged in a storm that struck the same tower nine times, as if correcting itself. Spells cast through it arrive the same way - mostly where they were sent, and a little where they wanted to go.";
+
+var _leg_miser = create_item("Miser's Blade", "weapon", 4, "STR", 4,
+    "it cuts deeper for the rich", 400);
+_leg_miser.class_req     = -1;
+_leg_miser.affixes       = [{ suffix: "of Greed", prefix: "Lucky", stat_name: "gold_find", stat_value: 6 }];
+_leg_miser.unique_effect = "misers_blade";
+_leg_miser.unique_desc   = "+1 damage per 150 gold held (max +8)";
+_leg_miser.lore = "A merchant-prince had it forged with a hollow hilt to hide his fortune. The blade learned to love the weight - the fuller the purse behind the swing, the hungrier the edge in front of it.";
+
+var _leg_veil = create_item("Veil of the Patient Dark", "offhand", 4, "WIS", 4,
+    "the dark does not hide you; it simply goes first", 400);
+_leg_veil.class_req     = -1;
+_leg_veil.affixes       = [{ suffix: "of Shadows", prefix: "Ghost", stat_name: "dodge_flat", stat_value: 5 }];
+_leg_veil.unique_effect = "veil_patient_dark";
+_leg_veil.unique_desc   = "Enter every combat concealed - the first enemy attack on you misses";
+_leg_veil.lore = "Cut from a shadow that outlived the thing that cast it. Carried on the arm, it drapes its bearer in the moment before being noticed - and holds that moment open exactly once per fight.";
+
+var _leg_longshot = create_item("Longshot's Memory", "ranged_weapon", 4, "DEX", 6,
+    "it has already made this shot", 400);
+_leg_longshot.class_req     = -1;
+_leg_longshot.affixes       = [];   // same-stat affix folded into base
+_leg_longshot.unique_effect = "longshots_memory";
+_leg_longshot.unique_desc   = "Your first hit each combat is a guaranteed critical";
+_leg_longshot.lore = "Its maker fired one perfect shot and spent thirty years failing to repeat it - so she built the memory into the weapon instead. Every fight, it gets to be that morning again. Once.";
+
+var _leg_line = create_item("Aegis of the Unbroken Line", "chest", 4, "CON", 6,
+    "the line held; the line holds", 400);
+_leg_line.class_req     = -1;
+_leg_line.affixes       = [];   // same-stat affix folded into base
+_leg_line.unique_effect = "aegis_unbroken_line";
+_leg_line.unique_desc   = "Poise grants 3 shield per unspent AP (cap doubled)";
+_leg_line.lore = "Worn by the last soldier of a shield-wall that never broke - it simply, eventually, had one man left. Patience sits differently on those shoulders: every held breath becomes wall.";
+
+var _leg_signet = create_item("Hollow King's Signet", "ring", 4, "CHA", 6,
+    "his credit, at least, survived him", 400);
+_leg_signet.class_req     = -1;
+_leg_signet.affixes       = [];   // same-stat affix folded into base
+_leg_signet.unique_effect = "hollow_kings_signet";
+_leg_signet.unique_desc   = "All vendor prices reduced 15%";
+_leg_signet.lore = "The Hollow King's seal still closes deals in Ironwake - merchants honor it without quite knowing why, the way one honors a debt to someone who might yet walk back in. Pairs uneasily well with his crown.";
+
+var _leg_censer = create_item("Ember Saint's Censer", "amulet", 4, "INT", 6,
+    "what it blesses, burns longer", 400);
+_leg_censer.class_req     = -1;
+_leg_censer.affixes       = [];   // same-stat affix folded into base
+_leg_censer.unique_effect = "ember_saints_censer";
+_leg_censer.unique_desc   = "Your damage-over-time effects tick +2 harder";
+_leg_censer.lore = "Swung by a saint who preached that no fire should be lit halfway. The incense never quite burns out, and neither does anything its bearer sets alight - poison, flame or wound, all of it lingers meaner.";
+
+// --- Second wave (M approved 5 more, same day) --------------------------------
+var _leg_shard = create_item("Oathbreaker's Shard", "weapon", 4, "STR", 4,
+    "every ending it delivers, it keeps a piece of", 400);
+_leg_shard.class_req     = -1;
+_leg_shard.affixes       = [{ suffix: "of Grit", prefix: "Sturdy", stat_name: "CON", stat_value: 2 }];
+_leg_shard.unique_effect = "oathbreakers_shard";
+_leg_shard.unique_desc   = "Killing blows grant +1 max HP for the rest of the run (max +20)";
+_leg_shard.lore = "A fragment of a sword that broke swearing the wrong oath. It has been trying to become whole ever since - and it has decided your body will do. Every life it ends, it invests.";
+
+var _leg_lantern = create_item("Lantern of the Last Door", "offhand", 4, "WIS", 6,
+    "it lights the option you almost missed", 400);
+_leg_lantern.class_req     = -1;
+_leg_lantern.affixes       = [];   // same-stat affix folded into base
+_leg_lantern.unique_effect = "lantern_last_door";
+_leg_lantern.unique_desc   = "The Whetstone offers a second honing each run";
+_leg_lantern.lore = "Carried by a scholar who mapped the vaults by what everyone else walked past. Held near the Whetstone, its light finds one more edge in the stone - the sharpening the dark kept for itself.";
+
+var _leg_diadem = create_item("Crownfire Diadem", "helm", 4, "INT", 6,
+    "no fire should be spent halfway", 400);
+_leg_diadem.class_req     = -1;
+_leg_diadem.affixes       = [];   // same-stat affix folded into base
+_leg_diadem.unique_effect = "crownfire_diadem";
+_leg_diadem.unique_desc   = "OVERCHARGE deals +3 damage per point drained (instead of +2)";
+_leg_diadem.lore = "Beaten from the crown of a king who ruled by burning everything he had, every time. Worn now, it teaches the same arithmetic to your reserve: hold nothing back, and the holding-nothing hits harder.";
+
+var _leg_beggar = create_item("Beggar's Fortune", "amulet", 4, "CHA", 4,
+    "wealth finds it; merchants smell it", 400);
+_leg_beggar.class_req     = -1;
+_leg_beggar.affixes       = [{ suffix: "of Greed", prefix: "Lucky", stat_name: "gold_find", stat_value: 6 }];
+_leg_beggar.unique_effect = "beggars_fortune";
+_leg_beggar.unique_desc   = "Found gold +25%, but every shop charges you +10%";
+_leg_beggar.lore = "A beggar wore it and died the richest man in Ironwake - because he never once got to spend at a fair price. Coins leap to the wearer's hand, and every merchant in town somehow knows it.";
+
+var _leg_reliq = create_item("Kindled Reliquary", "ring", 4, "WIS", 4,
+    "the fire inside never fully goes out", 400);
+_leg_reliq.class_req     = -1;
+_leg_reliq.affixes       = [{ suffix: "of Vitality", prefix: "Vital", stat_name: "bonus_max_hp", stat_value: 8 }];
+_leg_reliq.unique_effect = "kindled_reliquary";
+_leg_reliq.unique_desc   = "Start every combat with +2 of your class resource";
+_leg_reliq.lore = "A reliquary ring holding an ember of something that refuses naming. Between fights it smolders; when blades come out, its warmth is already banked in your chest - a head start the dark never accounts for.";
+
+global.loot_table_legendary = [ _leg_brand, _leg_aegis, _leg_crown, _leg_thief,
+    _leg_rebuke, _leg_treads, _leg_chalice, _leg_loop, _leg_miser,
+    _leg_veil, _leg_longshot, _leg_line, _leg_signet, _leg_censer,
+    _leg_shard, _leg_lantern, _leg_diadem, _leg_beggar, _leg_reliq ];
 
 // --- AFFIX POOL - 10 affixes, rolled at drop time for uncommon+ items ---
 // u_val/r_val/e_val = stat bonus at uncommon / rare / epic rarity.
@@ -1045,6 +1204,14 @@ bairc_pad_menu_level   = 0;      //   0 = action list, 1 = feed list. Keyboard k
 // Tavern Requests board. See PHASE4A_SPEC.md / PHASE4B_SPEC.md. ---
 journal_open    = false;
 journal_tab     = 0;    // 0 = Relationships, 1 = Quests
+
+// --- ITEM CODEX gallery (moved off obj_hub_controller 07-28 so it opens
+// mid-run too - M: hardcore can't detour to camp to read it). Opened from the
+// Journal's Item Codex tab; ui_draw_item_codex draws it at hub AND floor. ---
+codex_open        = false;
+codex_scroll      = 0;
+codex_cursor      = -1;
+codex_detail_item = undefined;
 // P companion-inspect overlay (floor + combat; M 07-08). Freezes all room
 // controllers via ui_input_blocked while open.
 pet_inspect_open = false;
@@ -1082,10 +1249,11 @@ vael_tab             = 0;   // 0 = Skins (transmog), 1 = Portrait (100g portrait
 vael_portrait_cursor = 0;   // browse index into global.portrait_sprites on the Portrait tab
 vael_tint_cursor     = 0;   // row index into vael_tint_catalog() on the Tints tab
 
-// Ability mastery pick modal (expression #2; opened with M on the loadout Abilities tab)
-mastery_pick_open    = false;
-mastery_pick_ability = "";   // ability NAME whose pending notch is being spent
-mastery_pick_cursor  = 0;    // 0/1 = which of the two micro-mods is highlighted
+// Talent-web view (SYSTEMS_TALENT_WEBS.md; opened with M on the loadout Abilities tab)
+web_view_open    = false;
+web_view_ability = "";   // ability NAME whose web is on screen
+web_view_cursor  = 0;    // 0-5 = node order [p1,p2,pk,t1,t2,tk], 6 = SAVE & CLOSE, 7 = CLOSE
+web_view_staged  = [];   // node ids assigned this session - permanent only on SAVE & CLOSE
 
 // Knucklebones (expression #1; opened with K at the Tavern Requests board)
 kb_open = false;

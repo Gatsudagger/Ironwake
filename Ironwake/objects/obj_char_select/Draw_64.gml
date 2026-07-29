@@ -508,6 +508,85 @@ if (portrait_active) {
 }
 
 
+// -----------------------------------------------------------------------------
+// THE IRON VOW - mode choice overlay (SYSTEMS_IRON_VOW.md). Drawn over the
+// whole screen after portrait confirm. Cards are hit-tested HERE (touch rule):
+// tap selects, tap-again / CHOOSE button proceeds; Step consumes the tags.
+// -----------------------------------------------------------------------------
+if (vow_active) {
+    draw_set_alpha(0.86);
+    draw_set_color(c_black);
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
+    draw_set_alpha(1.0);
+    draw_set_halign(fa_center);
+    draw_set_valign(fa_top);
+    draw_set_font(fnt_ui_title);
+    draw_set_color(make_color_rgb(228, 205, 140));
+    draw_text(GUI_CX, 96, "SWEAR A VOW?");
+    draw_set_font(fnt_ui_small);
+    draw_set_color(make_color_rgb(160, 168, 185));
+    draw_text(GUI_CX, 168, "How this story is allowed to end. The Vow cannot be changed later.");
+
+    var _vow_names = ["STANDARD", "THE IRON VOW", "THE UNBROKEN VOW"];
+    var _vow_sub   = ["The Ironwake you know.", "Three lives. Ever.", "One life. No mercy."];
+    var _vow_body  = [
+        "Defeat costs your unbanked haul,\nnever your character.\n\nThe full game, endlessly.",
+        "Every defeat consumes a life.\nThe third death is FINAL -\nthe save is erased forever.\n\nFall triumphant and be named\nthe Thrice-Tempered.",
+        "Your first death is your last.\nThe save is erased forever.\n\nFall triumphant and be named\nthe Unbroken.",
+    ];
+    var _vow_cols  = [make_color_rgb(130, 195, 255), make_color_rgb(220, 150, 90), make_color_rgb(220, 90, 80)];
+    var _mvx = device_mouse_x_to_gui(0);
+    var _mvy = device_mouse_y_to_gui(0);
+    var _mvp = mouse_check_button_pressed(mb_left);
+    for (var _v = 0; _v < 3; _v++) {
+        var _vx = 150 + _v * 552;
+        var _vy0 = 246, _vy1 = 810;
+        var _vsel = (_v == selected_vow);
+        draw_set_color(_vsel ? make_color_rgb(26, 30, 44) : make_color_rgb(14, 16, 24));
+        draw_rectangle(_vx, _vy0, _vx + 516, _vy1, false);
+        draw_set_color(_vsel ? _vow_cols[_v] : make_color_rgb(50, 56, 75));
+        draw_rectangle(_vx, _vy0, _vx + 516, _vy1, true);
+        if (_vsel) draw_rectangle(_vx + 5, _vy0 + 5, _vx + 511, _vy1 - 5, true);
+        draw_set_font(fnt_ui);
+        draw_set_color(_vow_cols[_v]);
+        draw_text(_vx + 258, _vy0 + 42, _vow_names[_v]);
+        draw_set_color(make_color_rgb(210, 214, 228));
+        draw_text(_vx + 258, _vy0 + 96, _vow_sub[_v]);
+        draw_set_font(fnt_ui_small);
+        draw_set_color(make_color_rgb(165, 172, 190));
+        draw_text_ext(_vx + 258, _vy0 + 168, _vow_body[_v], 34, 456);
+        // Hit-test in Draw (touch rule): tap selects; tapping the selected card proceeds.
+        if (_mvp && _mvx >= _vx && _mvx < _vx + 516 && _mvy >= _vy0 && _mvy < _vy1) {
+            input_inject(_vsel ? "vow:go" : ("vow:pick" + string(_v)));
+        }
+    }
+
+    // CHOOSE button + key legend
+    var _vbx1 = GUI_CX - 165, _vby1 = 876, _vbx2 = GUI_CX + 165, _vby2 = 942;
+    draw_set_color(make_color_rgb(20, 34, 58));
+    draw_rectangle(_vbx1, _vby1, _vbx2, _vby2, false);
+    draw_set_color(make_color_rgb(80, 160, 220));
+    draw_rectangle(_vbx1, _vby1, _vbx2, _vby2, true);
+    draw_set_font(fnt_ui);
+    draw_set_color(c_white);
+    draw_set_valign(fa_middle);
+    draw_text(GUI_CX, (_vby1 + _vby2) / 2, "CHOOSE");
+    draw_set_valign(fa_top);
+    if (_mvp && _mvx >= _vbx1 && _mvx < _vbx2 && _mvy >= _vby1 && _mvy < _vby2) input_inject("vow:go");
+    draw_set_font(fnt_ui_small);
+    draw_set_color(make_color_rgb(140, 150, 175));
+    ui_draw_key_legend(GUI_CX, 984, "A/D: Select   Enter: Choose   Esc: Back");
+
+    // Vow confirm popup (checkout standing rule) - topmost, modal in Step.
+    if (vow_confirm_open) {
+        var _vcn = (selected_vow == 2) ? "THE UNBROKEN VOW" : "THE IRON VOW";
+        var _vcb = (selected_vow == 2)
+            ? "Swear it, and your FIRST death erases this character's save forever.\nOnly a gravestone will remain."
+            : "Swear it, and every defeat consumes a life.\nYour THIRD death erases this character's save forever.\nOnly a gravestone will remain.";
+        ui_draw_checkout_confirm(_vcn, _vcb, "vow:ok", "vow:cancel");
+    }
+}
+
 // Reset draw state
 draw_set_halign(fa_left);
 draw_set_valign(fa_top);

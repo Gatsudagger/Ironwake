@@ -190,7 +190,12 @@ function enemy_is_ranged(name) {
         case "Skeleton Archer": case "Lava Spitter": case "Frost Shard": case "Pale Archivist":
             return true;
     }
-    return false;
+    // Spellcasters cast from beyond the snare (M 07-28 AI pass): a rooted wraith
+    // losing its whole TURN - spells included - read as wrong and made Root a
+    // near-universal lock (only 4 of ~25 enemies escaped it). Casters are
+    // ranged-reach now: SILENCE is their counter, Root only stops the melee
+    // line. The Melee/Ranged intent tag under each HP bar updates itself.
+    return enemy_is_spellcaster(name);
 }
 function enemy_is_spellcaster(name) {
     switch (name) {

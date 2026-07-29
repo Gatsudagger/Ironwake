@@ -246,11 +246,12 @@ Big-ticket depth/polish features to build post-launch-push. Each needs a design-
    system (we just added the reveal laugh / selection whisper audio 07-23). Design-lock: what the
    curse changes (stat swing? new affix class? drawback+payoff?), the rename system, uniqueness.
 
-2. **ABILITY TALENT WEBS (replace the bland mastery system).** Current ability mastery reads
-   random + unflavorful — generic "+5 accuracy" bumps. Want a **bespoke talent web per ability**
-   that shapes HOW that ability plays (branching, flavorful nodes), not a flat stat trickle.
-   (Note: mastery already flagged "bland" in COMBAT_IMPROVEMENT_PLAN_2026-07-17.) Design-lock:
-   web shape, node count/ability, currency to spend, respec rules.
+2. **ABILITY TALENT WEBS — ✅ DESIGN-LOCKED 2026-07-27, see `SYSTEMS_TALENT_WEBS.md`.**
+   7-node wishbone per ability (4-of-6 spend cap, MP from lifetime casts 10/30/60/100),
+   template-generated + bespoke overrides for 18 signature abilities, and **class trunks**
+   folded in (5 permanently-exclusive this-or-that rows, free pick at L2/5/8/11/14 —
+   subsumes the "expand class passives" roadmap item). Build order P1 core → P2 trunks →
+   P3 bespoke. Awaiting build slot; M may still veto/swap the §3.5 signature list.
 
 3. **PET DIVERGENT GROWTH / MORE TALENTS.** Pets should feel unique + hand-shaped, with divergent
    growth paths — but with **some RNG so you can't instantly craft the exact pet you want** (roll +

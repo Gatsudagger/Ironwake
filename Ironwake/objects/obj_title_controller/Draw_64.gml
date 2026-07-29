@@ -310,9 +310,9 @@ if (phase == "cutscene") {
     draw_set_alpha(menu_alpha);
 
     // Check if any save exists to enable Load Game
-    var _any_save = (slot_previews[0] != undefined
-                  || slot_previews[1] != undefined
-                  || slot_previews[2] != undefined);
+    var _any_save = (slot_preview_loadable(slot_previews[0])
+                  || slot_preview_loadable(slot_previews[1])
+                  || slot_preview_loadable(slot_previews[2]));
 
     var _options = ["NEW GAME", "LOAD GAME", "CREDITS"];
     for (var _i = 0; _i < 3; _i++) {
@@ -387,7 +387,9 @@ if (phase == "cutscene") {
         var _is_sel  = (_s == slot_selected);
         var _preview = slot_previews[_s];
         var _occupied = (_preview != undefined);
-        var _locked  = (slot_mode == "load_game" && !_occupied);
+        var _memorial = _occupied && variable_struct_exists(_preview, "memorial") && _preview.memorial;
+        // Memorials dim in load mode too - a gravestone can never be loaded.
+        var _locked  = (slot_mode == "load_game" && !slot_preview_loadable(_preview));
 
         // Card background
         var _bg_col;
@@ -422,6 +424,33 @@ if (phase == "cutscene") {
             draw_set_font(fnt_ui);
             draw_set_color(make_color_rgb(55, 65, 90));
             draw_text(_mid, _card_y + 180, "- Empty -");
+        } else if (_memorial) {
+            // THE IRON VOW gravestone (SYSTEMS_IRON_VOW.md): the character fell.
+            var _mem_classes = ["Arcanist", "Bloodwarden", "Shadowstrider"];
+            var _mem_cid  = clamp(variable_struct_exists(_preview, "class_id") ? _preview.class_id : 0, 0, 2);
+            var _mem_ep   = variable_struct_exists(_preview, "epithet") ? _preview.epithet : "";
+            draw_set_font(fnt_ui);
+            draw_set_color(make_color_rgb(150, 150, 160));
+            draw_text(_mid, _card_y + 76, "+  HERE  LIES  +");
+            draw_set_color(make_color_rgb(200, 200, 210));
+            draw_text(_mid, _card_y + 116, _preview.player_name);
+            draw_set_font(fnt_ui_small);
+            draw_set_color(make_color_rgb(120, 125, 140));
+            draw_text(_mid, _card_y + 158, _mem_classes[_mem_cid] + ((_mem_ep != "") ? (", " + _mem_ep) : ""));
+            draw_text(_mid, _card_y + 194, "Runs: " + string(variable_struct_exists(_preview, "run_count") ? _preview.run_count : 0)
+                + "   Best floor: " + string(variable_struct_exists(_preview, "best_floor") ? _preview.best_floor : 0));
+            var _mem_vow = (variable_struct_exists(_preview, "vow_mode") && _preview.vow_mode == 2)
+                ? "THE VOW WAS ABSOLUTE" : "THE IRON VOW IS BROKEN";
+            draw_set_color(make_color_rgb(170, 90, 80));
+            draw_text(_mid, _card_y + 232, _mem_vow);
+            // "The story ends here." sits in the same bottom band as the
+            // overwrite warning (_card_y + _card_h - 54) - suppressed when the
+            // warning shows, same pattern as the win sigil below (M 07-28
+            // screenshot: the two collided on a selected gravestone).
+            if (!(_is_sel && slot_mode == "new_game")) {
+                draw_set_color(make_color_rgb(120, 125, 140));
+                draw_text(_mid, _card_y + 268, "The story ends here.");
+            }
         } else {
             // Character name
             draw_set_font(fnt_ui);
@@ -437,10 +466,22 @@ if (phase == "cutscene") {
             // Win-state sigil (WIN_STATE_SPEC.md): this save beat all 3 dungeons at A5.
             // Suppressed on the selected card in new_game mode - the overwrite warning
             // draws in the same bottom band (_card_y + _card_h - 54).
-            if (variable_struct_exists(_preview, "ironwake_stands") && _preview.ironwake_stands
-                && !(_is_sel && slot_mode == "new_game")) {
+            var _stands = variable_struct_exists(_preview, "ironwake_stands") && _preview.ironwake_stands;
+            if (_stands && !(_is_sel && slot_mode == "new_game")) {
                 draw_set_color(make_color_rgb(228, 190, 90));
                 draw_text(_mid, _card_y + 270, "* IRONWAKE STANDS *");
+                draw_set_color(make_color_rgb(140, 155, 180));
+            }
+            // THE IRON VOW badge (SYSTEMS_IRON_VOW.md). Sits on the sigil line
+            // when there's no sigil; below it when the save has both. Suppressed
+            // with the sigil in new_game-selected (overwrite warning band).
+            if (variable_struct_exists(_preview, "vow_mode") && _preview.vow_mode > 0
+                && !(_is_sel && slot_mode == "new_game")) {
+                var _vb_txt = (_preview.vow_mode == 2)
+                    ? "THE UNBROKEN VOW - 1 LIFE"
+                    : "THE IRON VOW - " + string(_preview.vow_lives_left) + ((_preview.vow_lives_left == 1) ? " LIFE" : " LIVES");
+                draw_set_color(make_color_rgb(200, 120, 90));
+                draw_text(_mid, _card_y + (_stands ? 296 : 270), _vb_txt);
                 draw_set_color(make_color_rgb(140, 155, 180));
             }
         }

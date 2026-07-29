@@ -13,6 +13,14 @@
 // =============================================================================
 
 
+// Event HP-hit jolt (M 07-28): a short whole-map shake when an event costs HP.
+// World-matrix translate covers every draw below; reset at the end of this event
+// so later objects draw unshaken. Mirrors combat's screen_shake idiom.
+if (hp_shake_timer > 0) {
+    hp_shake_timer--;
+    matrix_set(matrix_world, matrix_build(irandom_range(-5, 5), irandom_range(-3, 3), 0, 0, 0, 0, 1, 1, 1));
+}
+
 // Node type colors
 var _COL_COMBAT        = make_color_rgb(200, 100,  80);
 var _COL_ELITE         = make_color_rgb(220,  70,  70);
@@ -118,6 +126,19 @@ for (var _i = 0; _i < _count; _i++) {
 }
 draw_set_alpha(1.0);
 
+// Mouse/tap-to-move (M 07-29 accessibility: mouse-only must fully play the
+// map). Hit-test lives HERE with the node geometry (touch rule). Gated on the
+// BARE map - any floor overlay, popup, or gc-owned screen owns its own clicks.
+var _map_click = mouse_check_button_pressed(mb_left)
+    && !showing_event && !showing_shrine && !showing_treasure
+    && !showing_event_choice && !escape_confirm_open && !showing_extract
+    && !(variable_global_exists("pause_open")    && global.pause_open)
+    && !(variable_global_exists("settings_open") && global.settings_open)
+    && !(variable_global_exists("item_picker")   && global.item_picker.open)
+    && !ui_input_blocked();
+var _map_mx = device_mouse_x_to_gui(0);
+var _map_my = device_mouse_y_to_gui(0);
+
 // --- Pass 2: Node boxes ---
 draw_set_font(fnt_ui_small);
 for (var _i = 0; _i < _count; _i++) {
@@ -129,6 +150,19 @@ for (var _i = 0; _i < _count; _i++) {
     var _reach  = _reachable[_i];             // still on a takeable path
     var _future = _reach && !_acc && !_room.cleared;  // reachable but not yet open
     var _dead   = !_reach && !_room.cleared;  // abandoned branch - unselectable
+
+    // Click: select any live node (detail panel updates); click the SELECTED
+    // frontier node again to enter - injected as a confirm so Step's ENTER
+    // ROOM path (floor_room_enterable gating included) stays the only door.
+    if (_map_click
+        && _map_mx >= _nx - 1 && _map_mx <= _nx + _NW + 1
+        && _map_my >= _ny - 1 && _map_my <= _ny + _NH + 1) {
+        _map_click = false;   // one node per click
+        if (!_dead) {
+            if (_is_sel && _acc) touch_press(vk_enter);
+            else                 selected_room = _i;
+        }
+    }
 
     // Type color
     var _tc = c_white;
@@ -219,8 +253,10 @@ for (var _i = 0; _i < _count; _i++) {
     draw_set_color(_acc ? _tc : make_color_rgb(40, 46, 62));
     draw_text(_nx + _NW - 9, _ny + _NH - 6, _tl);
 
-    // Sense trait: show extra difficulty hint for uncleared accessible rooms
-    if (!_room.cleared && _acc && trait_active("Sense")) {
+    // Sense trait: show extra difficulty hint for uncleared accessible rooms.
+    // TRANSCEND "Omniscience" (POTENCY V2): hints show on EVERY uncleared room
+    // (the whole floor read at a glance), and treasure rooms reveal their gold.
+    if (!_room.cleared && (_acc || trait_transcended("Sense")) && trait_active("Sense")) {
         var _sense_str = "";
         switch (_room.type) {
             case "combat":          _sense_str = "MED *";    break;
@@ -234,6 +270,11 @@ for (var _i = 0; _i < _count; _i++) {
             case "rest":            _sense_str = "SAFE";      break;
             case "shrine":          _sense_str = "TRIBUTE";   break;
             case "whetstone":       _sense_str = "HONE";      break;
+        }
+        if (trait_transcended("Sense")
+            && (_room.type == "treasure" || _room.type == "treasure_heal" || _room.type == "treasure_vault")
+            && variable_struct_exists(_room, "gold_max") && _room.gold_max > 0) {
+            _sense_str = "~" + string(round((_room.gold_min + _room.gold_max) / 2)) + "g";
         }
         if (_sense_str != "") {
             // Brighter readout with a shadow + small pill backing so the Sense hint
@@ -615,10 +656,11 @@ if (showing_whetstone) {
             draw_text(_wt_rx0 + 26, _wry + 12, _wab.name);
             draw_set_font(fnt_ui_small);
             draw_set_color(make_color_rgb(150, 165, 180));
-            // The two edges this ability can take, previewed so the choice is legible.
-            var _wopt = ability_mastery_options(_wab);
+            // The web nodes this ability could take (titles only - labels would
+            // overflow the row with 3 options), previewed so the choice is legible.
+            var _wopt = ability_web_whetstone_options(_wab);
             var _wprev = "";
-            for (var _wo = 0; _wo < array_length(_wopt); _wo++) _wprev += (_wo > 0 ? "   |   " : "") + _wopt[_wo].label;
+            for (var _wo = 0; _wo < array_length(_wopt); _wo++) _wprev += (_wo > 0 ? "   |   " : "") + _wopt[_wo].title;
             draw_text(_wt_rx0 + 26, _wry + 54, _wprev);
         }
         // Touch: tap a row to select it, tap the selected row again to choose
@@ -638,13 +680,13 @@ if (showing_whetstone) {
         draw_set_halign(fa_center);
         ui_draw_key_legend(GUI_CX, 990, "W/S: Select      Enter: Choose an edge      Esc: Leave (no honing)");
     } else {
-        // Phase 2: pick one of the two mastery mods for the chosen ability.
+        // Phase 2: pick one of the chosen ability's reachable unowned web nodes.
         var _wcab  = whetstone_abilities[whetstone_ab_cursor];
-        var _wcopt = ability_mastery_options(_wcab);
+        var _wcopt = ability_web_whetstone_options(_wcab);
         var _wcn   = array_length(_wcopt);
         draw_set_font(fnt_ui);
         draw_set_color(make_color_rgb(210, 220, 230));
-        draw_text(GUI_CX, 260, "Hone " + _wcab.name + " - choose its edge for this run:");
+        draw_text(GUI_CX, 260, "Hone " + _wcab.name + " - borrow one unwoven strand for this run:");
 
         draw_set_halign(fa_left);
         var _wm_rx0 = 520, _wm_rx1 = 1400, _wm_rh = 108, _wm_pitch = 132, _wm_y0 = 360;
@@ -658,7 +700,7 @@ if (showing_whetstone) {
             draw_set_font(fnt_ui);
             draw_set_color(_msel ? c_white : make_color_rgb(190, 205, 215));
             draw_set_valign(fa_middle);
-            draw_text(_wm_rx0 + 30, _mry + _wm_rh * 0.5, _wcopt[_mi].label);
+            draw_text(_wm_rx0 + 30, _mry + _wm_rh * 0.5, _wcopt[_mi].title + "  -  " + _wcopt[_mi].label);
             draw_set_valign(fa_top);
         }
         // Touch: tap a mod row to select it, tap the selected row again to hone
@@ -1290,8 +1332,23 @@ var _hud_hp     = (variable_global_exists("run_current_hp") && global.run_curren
 draw_set_font(fnt_ui);
 draw_set_halign(fa_left);
 draw_set_valign(fa_top);
-draw_set_color(make_color_rgb(225, 95, 95));
+// Bright flash while the HP-hit jolt runs, then the usual muted red.
+draw_set_color((hp_shake_timer > 0) ? make_color_rgb(255, 70, 60) : make_color_rgb(225, 95, 95));
 draw_text(30, 30, "HP: " + string(_hud_hp) + " / " + string(_hud_max_hp));
+// Floating "-N" from an event HP hit: rises off the readout and fades.
+if (hp_hit_popup != undefined) {
+    hp_hit_popup.timer--;
+    if (hp_hit_popup.timer <= 0) {
+        hp_hit_popup = undefined;
+    } else {
+        var _hpp_y = 30 - (90 - hp_hit_popup.timer) * 0.55;
+        draw_set_alpha(min(1, hp_hit_popup.timer / 30));
+        draw_set_color(make_color_rgb(255, 90, 70));
+        draw_text(30 + string_width("HP: " + string(_hud_hp) + " / " + string(_hud_max_hp)) + 18,
+                  _hpp_y, "-" + string(hp_hit_popup.value));
+        draw_set_alpha(1.0);
+    }
+}
 draw_set_color(c_yellow);
 // Split the readout: banked total vs gold FOUND THIS RUN (the at-risk share you
 // lose most of on death). "Gold: 812g (+130g this run - at risk)".
@@ -1467,6 +1524,10 @@ ui_draw_consumable_overflow();
 // J-key Journal overlay (Phase 4a) - view/track mid-run; actions are hub-only.
 ui_draw_journal();
 
+// Full Item Codex gallery - opens from the Journal's codex tab mid-run too
+// (07-28: M's hardcore test couldn't reach it at camp).
+ui_draw_item_codex();
+
 // P-key companion inspect (M 07-08) - the full pet profile as an overlay.
 if (instance_exists(obj_game_controller)) {
     var _gc_pi = instance_find(obj_game_controller, 0);
@@ -1482,6 +1543,48 @@ if (instance_exists(obj_game_controller)) {
     }
 }
 
+// IRONMAN resume (SYSTEMS_RUN_RESUME.md): re-offered boss EXTRACT/CONTINUE
+// choice. Bordered overlay popup (standing checkout rule), arm-then-confirm;
+// hit-tests live here in Draw (touch rule) and inject tags for the Step.
+if (showing_extract) {
+    draw_set_alpha(0.66);
+    draw_set_color(make_color_rgb(6, 8, 14));
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
+    var _fx0 = 560, _fy0 = 372, _fx1 = 1360, _fy1 = 708;
+    draw_set_alpha(0.97);
+    draw_set_color(make_color_rgb(22, 20, 30));
+    draw_rectangle(_fx0, _fy0, _fx1, _fy1, false);
+    draw_set_alpha(1.0);
+    draw_set_color(make_color_rgb(200, 170, 110));
+    draw_rectangle(_fx0, _fy0, _fx1, _fy1, true);
+    draw_rectangle(_fx0 + 6, _fy0 + 6, _fx1 - 6, _fy1 - 6, true);
+    var _fx_desc = variable_global_exists("descent_active") && global.descent_active;
+    draw_set_halign(fa_center);
+    draw_set_font(fnt_ui);
+    draw_set_color(make_color_rgb(255, 225, 150));
+    draw_text((_fx0 + _fx1) / 2, _fy0 + 24, _fx_desc ? "THE FLOOR LIES QUIET" : "THE FLOOR IS CLEARED");
+    draw_set_font(fnt_ui_small);
+    draw_set_color(make_color_rgb(210, 214, 228));
+    var _fx_body = "You return where the dive was interrupted - the boss of floor "
+        + string(global.current_floor) + " is slain and the choice still stands.\n"
+        + (_fx_desc ? "Retreat to bank everything you carry, or descend deeper into the dark."
+                    : "Extract to bank everything you carry, or press on to the next floor.");
+    if (extract_arm != "") {
+        _fx_body += "\n\nPress again to confirm.";
+    }
+    draw_text_ext((_fx0 + _fx1) / 2, _fy0 + 84, _fx_body, 30, (_fx1 - _fx0) - 90);
+    draw_set_halign(fa_left);
+    var _fmx = device_mouse_x_to_gui(0), _fmy = device_mouse_y_to_gui(0);
+    var _fmp = mouse_check_button_pressed(mb_left);
+    var _fx_col_e = (extract_arm == "extract")  ? make_color_rgb(190, 255, 200) : make_color_rgb(120, 210, 130);
+    var _fx_col_c = (extract_arm == "continue") ? make_color_rgb(255, 220, 150) : make_color_rgb(200, 170, 110);
+    ui_confirm_button(_fx0 + 60, _fy1 - 90, (_fx0 + _fx1) / 2 - 30, _fy1 - 24,
+        (_fx_desc ? "RETREAT" : "EXTRACT") + "  [E]", _fx_col_e, _fmx, _fmy, _fmp, "fxresume:extract");
+    ui_confirm_button((_fx0 + _fx1) / 2 + 30, _fy1 - 90, _fx1 - 60, _fy1 - 24,
+        (_fx_desc ? "DESCEND" : "CONTINUE") + "  [Enter]", _fx_col_c, _fmx, _fmy, _fmp, "fxresume:continue");
+    draw_set_font(-1);
+}
+
 // Pause / Esc menu + its Settings sub-screen (drawn here since the floor doesn't
 // otherwise host the settings overlay during a run)
 if (variable_global_exists("settings_open") && global.settings_open) ui_draw_settings_overlay();
@@ -1494,3 +1597,6 @@ ui_draw_tutorial_tip();
 ui_draw_touch_chips();
 ui_draw_touch_back();
 ui_draw_touch_gamepad();   // on-screen d-pad in the left gutter (M 07-17)
+
+// Reset the HP-hit shake translate so objects drawing after us are unshaken.
+matrix_set(matrix_world, matrix_build_identity());

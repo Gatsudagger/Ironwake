@@ -37,6 +37,13 @@ naming_blocked_flash = 0;
 portrait_active   = false;
 selected_portrait = 0;
 
+// THE IRON VOW step (SYSTEMS_IRON_VOW.md) - after portrait, before the hub.
+// 0 = Standard (default), 1 = THE IRON VOW (3 lives), 2 = THE UNBROKEN VOW (1).
+// Picking a Vow opens a bordered CONFIRM/CANCEL popup (checkout standing rule).
+vow_active       = false;
+selected_vow     = 0;
+vow_confirm_open = false;
+
 // Cosmetic gender for the chosen class's combat sprite ("m"/"f"). Toggled with Q/E
 // on the class-select screen; committed to global.player_gender at confirm.
 selected_gender = "m";

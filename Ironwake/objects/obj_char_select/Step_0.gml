@@ -21,8 +21,10 @@ if (touch_intro_open) exit;
 var _stat_names = ["STR", "DEX", "CON", "INT", "WIS", "CHA"];
 
 // --- Mouse input (GUI space) ---
-// Handled early (before naming_active branch) so clicks on panels/boxes register each frame.
-if (!naming_active && !confirmed) {
+// Handled early (before naming_active branch) so clicks on panels/boxes register
+// each frame. Gated off during the Vow step so card taps can't leak through to
+// the class panels / stat boxes underneath the overlay.
+if (!naming_active && !confirmed && !vow_active && !portrait_active) {
     var _mx = device_mouse_x_to_gui(0);
     var _my = device_mouse_y_to_gui(0);
     if (mouse_check_button_pressed(mb_left)) {
@@ -120,9 +122,62 @@ if (portrait_active) {
 
     if (input_confirm() || input_confirm_alt()) {
         global.chosen_portrait = selected_portrait;
-        save_game();
-        confirmed = true;
-        room_goto(rm_hub);
+        // THE IRON VOW step comes before the save + hub (SYSTEMS_IRON_VOW.md).
+        portrait_active = false;
+        vow_active      = true;
+        selected_vow    = 0;
+        exit;
+    }
+
+    exit;
+}
+
+
+// -----------------------------------------------------------------------------
+// THE IRON VOW - mode choice (SYSTEMS_IRON_VOW.md, M-locked 07-28)
+// A / D cycles the three cards (Standard default). Enter on Standard proceeds;
+// Enter on a Vow opens the CONFIRM/CANCEL popup (its buttons are hit-tested in
+// Draw_64 and inject vow:ok / vow:cancel). Esc steps back to portraits.
+// -----------------------------------------------------------------------------
+if (vow_active) {
+    if (vow_confirm_open) {
+        if (input_inject_take("vow:ok") || input_confirm() || input_confirm_alt()) {
+            vow_confirm_open      = false;
+            global.vow_mode       = selected_vow;
+            global.vow_lives_left = (selected_vow == 2) ? 1 : 3;
+            save_game();
+            confirmed = true;
+            room_goto(rm_hub);
+        } else if (input_inject_take("vow:cancel") || input_cancel()) {
+            vow_confirm_open = false;
+        }
+        exit;
+    }
+
+    if (nav_left())  selected_vow = wrap_index(selected_vow - 1, 3);
+    if (nav_right()) selected_vow = wrap_index(selected_vow + 1, 3);
+    // Card taps (hit-tested in Draw_64): first tap selects, tap-again confirms.
+    if (input_inject_take("vow:pick0")) selected_vow = 0;
+    if (input_inject_take("vow:pick1")) selected_vow = 1;
+    if (input_inject_take("vow:pick2")) selected_vow = 2;
+
+    if (input_cancel()) {   // back to portrait choice (all devices)
+        vow_active      = false;
+        portrait_active = true;
+        exit;
+    }
+
+    if (input_confirm() || input_confirm_alt() || input_inject_take("vow:go")) {
+        if (selected_vow == 0) {
+            // Standard Ironwake - no popup, exactly the old flow.
+            global.vow_mode       = 0;
+            global.vow_lives_left = 0;
+            save_game();
+            confirmed = true;
+            room_goto(rm_hub);
+        } else {
+            vow_confirm_open = true;
+        }
     }
 
     exit;

@@ -4,6 +4,14 @@
 // enemies, runs combat_init, and sets up all controller state.
 // =============================================================================
 
+// IRONMAN resume (SYSTEMS_RUN_RESUME.md): live-HP watcher state (Step top) +
+// the defeat-settlement latch (end_run(-1) runs at the death frame; the Draw
+// result handler must not run it again).
+run_ckpt_sig      = "";
+run_ckpt_cooldown = 0;
+defeat_settled    = false;
+vow_fallen        = false;   // THE IRON VOW: this defeat was the character's last
+
 
 // -----------------------------------------------------------------------------
 // 1. BUILD PLAYER STRUCT
@@ -219,7 +227,7 @@ player.abilities = abilities_resolve_player_loadout(_class_id);
 // pool, granted by rare event outcomes. Appended after the loadout so it gets the
 // next button/hotkey; duplicates are impossible (it never comes from the own pool).
 var _borrowed = borrowed_memory_resolve();
-if (_borrowed != undefined) array_push(player.abilities, ability_mastery_resolve(_borrowed));
+if (_borrowed != undefined) array_push(player.abilities, ability_web_resolve(_borrowed));
 
 // Per-combat ability cooldown counters (turns), one slot per loadout ability.
 // Decremented at the start of each player turn; set when a cooldown ability
@@ -286,6 +294,22 @@ player.heartstone_aegis  = false;  // heal 5 HP on enemy death
 player.thief_of_hours    = 0;      // # of equipped Thief of Hours rings (+1 AP first turn each, stacks)
 player.crown_hollow_king = false;  // +1 trait slot (hub loadout screen)
 player.gatewarden_used   = false;  // tracks if the 0-AP proc is available this combat
+// 07-28 expansion legendaries (M approved 10) - flags read at their effect sites.
+player.leg_rebuke        = false;  // Duelist's Rebuke: after a dodge, next ability this turn +50%
+player.leg_rebuke_primed = false;  // set by the dodge, consumed by the next ability
+player.leg_treads        = false;  // Gravewalker Treads: survive lethal at 1 HP once per RUN
+player.leg_chalice       = false;  // Sanguine Chalice: overkill on kills heals (cap 15)
+player.leg_loop          = false;  // Stormcaller's Loop: single-target spells echo 15%
+player.leg_miser         = false;  // Miser's Blade: +1 dmg per 150g held (cap +8)
+player.leg_veil          = false;  // Veil of the Patient Dark: first enemy attack auto-misses
+player.leg_veil_ready    = false;  // per-combat charge for the veil
+player.leg_longshot      = false;  // Longshot's Memory: first hit each combat auto-crits
+player.leg_longshot_used = false;  // per-combat spent flag
+player.leg_line          = false;  // Aegis of the Unbroken Line: poise 3/AP, cap doubled
+player.leg_censer        = false;  // Ember Saint's Censer: DoT ticks +2
+player.leg_shard         = false;  // Oathbreaker's Shard: kills grant +1 run max HP (cap +20)
+player.leg_diadem        = false;  // Crownfire Diadem: Overcharge pays 3/point
+player.leg_reliquary     = false;  // Kindled Reliquary: +2 class resource at combat start
 
 // Class-weapon ability affixes (set by equipped class-locked weapons; see obj_game_controller/Create_0)
 player.cf_first_spell_ap  = false;  // Cracked Focus  - first spell each combat costs 1 less AP (min 1)
@@ -305,6 +329,21 @@ for (var _li = 0; _li < array_length(global.inventory); _li++) {
     if (_lit.unique_effect == "heartstone_aegis")  player.heartstone_aegis  = true;
     if (_lit.unique_effect == "thief_of_hours")    player.thief_of_hours   += 1;
     if (_lit.unique_effect == "crown_hollow_king") player.crown_hollow_king = true;
+    // 07-28 expansion legendaries
+    if (_lit.unique_effect == "duelists_rebuke")     player.leg_rebuke   = true;
+    if (_lit.unique_effect == "gravewalker_treads")  player.leg_treads   = true;
+    if (_lit.unique_effect == "sanguine_chalice")    player.leg_chalice  = true;
+    if (_lit.unique_effect == "stormcallers_loop")   player.leg_loop     = true;
+    if (_lit.unique_effect == "misers_blade")        player.leg_miser    = true;
+    if (_lit.unique_effect == "veil_patient_dark")   { player.leg_veil = true; player.leg_veil_ready = true; }
+    if (_lit.unique_effect == "longshots_memory")    player.leg_longshot = true;
+    if (_lit.unique_effect == "aegis_unbroken_line") player.leg_line     = true;
+    if (_lit.unique_effect == "ember_saints_censer") player.leg_censer   = true;
+    if (_lit.unique_effect == "oathbreakers_shard")  player.leg_shard    = true;
+    if (_lit.unique_effect == "crownfire_diadem")    player.leg_diadem   = true;
+    if (_lit.unique_effect == "kindled_reliquary")   player.leg_reliquary = true;
+    // (hollow_kings_signet / beggars_fortune / lantern_last_door are hub-side -
+    // legendary_worn() in scr_stats reads the worn slots directly.)
     // Class-weapon affixes
     if (_lit.unique_effect == "class_first_spell_ap") player.cf_first_spell_ap   = true;
     if (_lit.unique_effect == "class_spell_dmg")      player.spell_dmg_bonus     = 0.12;
@@ -319,6 +358,13 @@ for (var _li = 0; _li < array_length(global.inventory); _li++) {
 // Add to current energy (still the base 3 here) so it stays correct if base AP changes.
 if (player.thief_of_hours > 0) {
     player.energy += player.thief_of_hours;
+}
+
+// Kindled Reliquary (07-28 legendary): the class reserve starts warm (+2).
+if (player.leg_reliquary) {
+    if      (variable_struct_exists(player, "souls"))       player.souls       = min(player.souls_max,       player.souls + 2);
+    else if (variable_struct_exists(player, "blood"))       player.blood       = min(player.blood_max,       player.blood + 2);
+    else if (variable_struct_exists(player, "preparation")) player.preparation = min(player.preparation_max, player.preparation + 2);
 }
 
 // Ashkeeper Blade: start each combat with a shield (stacks with any other shield grant)
@@ -612,6 +658,7 @@ for (var _ei = 0; _ei < array_length(enemies); _ei++) {
     _e.status_effects = [];
     _e.reach = enemy_is_ranged(_e.name)      ? "ranged" : "melee";
     _e.kind  = enemy_is_spellcaster(_e.name) ? "spell"  : "attack";
+    _e.drop_slot = _ei;   // spawn slot - keys the deterministic reward seed (loot_room_seed)
 }
 
 
@@ -655,6 +702,11 @@ loot_reveal_shown  = 0;    // rows currently revealed
 loot_best_row      = 0;    // index of the highest-rarity item (first if tied)
 loot_best_rarity   = 0;
 loot_sting_played  = false;
+// SPECIAL loot rows (M 07-28 spectacle): pet eggs, the Banshee Bottle, and
+// signature trinkets list WITH the haul instead of hiding in the combat log.
+// Rolled once at the victory frame (Step) on the room's deterministic stream.
+loot_special_rows  = [];   // { kind:"pet"|"banshee"|"trinket", label, sub, tag, ... }
+boss_drops_rolled  = false;
 
 // Boss floor-completion XP bonus granted at most once per combat
 boss_bonus_granted = false;

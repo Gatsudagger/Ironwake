@@ -1,0 +1,12 @@
+event_inherited();
+battle_species = SPECIES.GLOWMOTH;
+sprite_index = spr_npc_wizard;
+npc_name   = "Elder Tomlin";
+dialog     = "Welcome to Fernhaven. Creatures here thrive on patience and care. Tend yours well.";
+skin_col   = make_colour_rgb(195, 155, 105);
+shirt_col  = make_colour_rgb(75, 60, 110);
+pants_col  = make_colour_rgb(55, 45, 75);
+hair_col   = make_colour_rgb(215, 208, 198);
+hair_style = 0;
+patrol_r   = 55;
+spd        = 0.65;

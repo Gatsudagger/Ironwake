@@ -13,10 +13,14 @@
 // both directions (unknown fields ignored, missing fields defaulted), so bump this
 // ONLY when a field's MEANING changes and add the fix-up in load_game's migration
 // block - never repurpose an old field name without one.
-#macro SAVE_FORMAT_VERSION 3
+#macro SAVE_FORMAT_VERSION 4
 // v2 (2026-07-08): weapon flat damage became a per-item RANGE roll (was fixed per
 // rarity) and caster ranged weapons gained a rolled wpn_school. Loading a v1 save
 // re-rolls every non-hand-tuned weapon once (item_migrate_weapon_fields force flag).
+// v4 (2026-07-27): mastery notches became TALENT WEBS (SYSTEMS_TALENT_WEBS.md).
+// ability_casts carries over unchanged; the old ability_mastery picks are DROPPED
+// on load (not read), so every MP earned from casts returns as pending - old
+// slots re-pick their webs, a strict buff. New field: ability_web { name: [ids] }.
 
 // ---------------------------------------------------------------------------
 // get_slot_preview(slot_num)
@@ -25,7 +29,10 @@
 // ---------------------------------------------------------------------------
 function get_slot_preview(slot_num) {
     var _fname = "ironwake_save_" + string(slot_num) + ".json";
-    if (!file_exists(_fname)) return undefined;
+    // THE IRON VOW: a fallen character's slot shows a memorial gravestone
+    // instead of reading empty (SYSTEMS_IRON_VOW.md). Not loadable - see
+    // slot_preview_loadable.
+    if (!file_exists(_fname)) return vow_memorial_read(slot_num);
     var _file = file_text_open_read(_fname);
     var _json = "";
     while (!file_text_eof(_file)) {
@@ -44,7 +51,21 @@ function get_slot_preview(slot_num) {
         best_floor:           variable_struct_exists(_s, "best_floor")           ? _s.best_floor           : 0,
         dungeon_clears_total: variable_struct_exists(_s, "dungeon_clears_total") ? _s.dungeon_clears_total : 0,
         ironwake_stands:      variable_struct_exists(_s, "ironwake_stands")      ? _s.ironwake_stands      : false,
+        memorial:             false,
+        vow_mode:             variable_struct_exists(_s, "vow_mode")             ? _s.vow_mode             : 0,
+        vow_lives_left:       variable_struct_exists(_s, "vow_lives_left")       ? _s.vow_lives_left       : 0,
     };
+}
+
+// ---------------------------------------------------------------------------
+// slot_preview_loadable(p)
+// True when a slot preview is a LIVING character. Memorial gravestones occupy
+// the card visually but can never be loaded (and don't enable the Load menu).
+// ---------------------------------------------------------------------------
+function slot_preview_loadable(_p) {
+    if (_p == undefined) return false;
+    if (variable_struct_exists(_p, "memorial") && _p.memorial) return false;
+    return true;
 }
 
 function save_game() {
@@ -143,8 +164,8 @@ function save_game() {
         player_epithet: variable_global_exists("player_epithet") ? global.player_epithet : "",
 
         // Ability mastery (expression #2): lifetime casts + spent notch picks
-        ability_casts:   variable_global_exists("ability_casts")   ? global.ability_casts   : {},
-        ability_mastery: variable_global_exists("ability_mastery") ? global.ability_mastery : {},
+        ability_casts:   variable_global_exists("ability_casts") ? global.ability_casts : {},
+        ability_web:     variable_global_exists("ability_web")   ? global.ability_web   : {},
 
         // Boons (run-scoped)
         run_boons:      variable_global_exists("run_boons")      ? global.run_boons      : [],
@@ -202,6 +223,21 @@ function save_game() {
         dungeon_a5_clears:           variable_global_exists("dungeon_a5_clears")           ? global.dungeon_a5_clears           : { ashen_vault: false, scorched_depths: false, tundra_tomb: false },
         ironwake_stands:             variable_global_exists("ironwake_stands")             ? global.ironwake_stands             : false,
         ending_pending:              variable_global_exists("ending_pending")              ? global.ending_pending              : false,
+        // Awakening Boost popup (SYSTEMS_ENDLESS.md §1) - earned but unspent picks survive a quit.
+        awaken_boost_pending:        variable_global_exists("awaken_boost_pending")        ? global.awaken_boost_pending        : false,
+        awaken_boost_from:           variable_global_exists("awaken_boost_from")           ? global.awaken_boost_from           : "",
+        // A6+ endless frontier (SYSTEMS_ENDLESS.md §2) - shared across dungeons post-win.
+        endless_awakening_unlocked:  variable_global_exists("endless_awakening_unlocked")  ? global.endless_awakening_unlocked  : 5,
+        // THE DESCENT (SYSTEMS_ENDLESS.md §3): deepest-floor record + severity preference.
+        descent_best:                variable_global_exists("descent_best")                ? global.descent_best                : 0,
+        descent_hardcore:            variable_global_exists("descent_hardcore")            ? global.descent_hardcore            : 0,
+        // THE LEGENDARY FORGE (M locked 07-28): vendor component counts.
+        forge_comp_frame:            variable_global_exists("forge_comp_frame")            ? global.forge_comp_frame            : 0,
+        forge_comp_core:             variable_global_exists("forge_comp_core")             ? global.forge_comp_core             : 0,
+        forge_comp_quint:            variable_global_exists("forge_comp_quint")            ? global.forge_comp_quint            : 0,
+        // THE IRON VOW (SYSTEMS_IRON_VOW.md): opt-in hardcore mode + lives left.
+        vow_mode:                    variable_global_exists("vow_mode")                    ? global.vow_mode                    : 0,
+        vow_lives_left:              variable_global_exists("vow_lives_left")              ? global.vow_lives_left              : 0,
         total_boss_kills:            variable_global_exists("total_boss_kills")            ? global.total_boss_kills            : 0,
         highest_run_level:           variable_global_exists("highest_run_level")           ? global.highest_run_level           : 1,
         perm_hp_battle_hardened:     variable_global_exists("perm_hp_battle_hardened")     ? global.perm_hp_battle_hardened     : 0,
@@ -219,11 +255,37 @@ function save_game() {
         music_sel_dungeon:  variable_global_exists("music_sel_dungeon")  ? global.music_sel_dungeon  : "",
     };
 
-    var _json = json_stringify(_save);
-    var _fname = "ironwake_save_" + string(global.save_slot) + ".json";
-    var _file = file_text_open_write(_fname);
+    save_write_atomic("ironwake_save_" + string(global.save_slot) + ".json", json_stringify(_save));
+}
+
+// ---------------------------------------------------------------------------
+// save_write_atomic(fname, json)
+// ATOMIC WRITE (task #2, approved 07-23): write to a temp file first, verify
+// it parses back, then swap it in. A crash/kill mid-write can no longer
+// truncate the real file - the worst case is a stale-but-valid file. Shared
+// by save_game and the IRONMAN run-resume checkpoint (SYSTEMS_RUN_RESUME.md).
+// ---------------------------------------------------------------------------
+function save_write_atomic(_fname, _json) {
+    var _tmp = _fname + ".tmp";
+    var _file = file_text_open_write(_tmp);
     file_text_write_string(_file, _json);
     file_text_close(_file);
+    // Verify the temp round-trips before touching the real file. json_stringify
+    // emits a single line, so one read covers the whole payload.
+    var _ok = false;
+    if (file_exists(_tmp)) {
+        var _vf = file_text_open_read(_tmp);
+        var _vtxt = file_text_read_string(_vf);
+        file_text_close(_vf);
+        try { var _parsed = json_parse(_vtxt); _ok = is_struct(_parsed); } catch (_e) { _ok = false; }
+    }
+    if (_ok) {
+        if (file_exists(_fname)) file_delete(_fname);
+        file_rename(_tmp, _fname);
+    } else if (file_exists(_tmp)) {
+        // Bad write - keep the old file untouched, discard the temp.
+        file_delete(_tmp);
+    }
 }
 
 
@@ -367,9 +429,13 @@ function new_game_reset() {
     global.school_tints   = {};
     global.player_epithet = "";
 
+    // THE IRON VOW - a new character is Standard until the creation Vow step says otherwise.
+    global.vow_mode       = 0;
+    global.vow_lives_left = 0;
+
     // Ability mastery
-    global.ability_casts   = {};
-    global.ability_mastery = {};
+    global.ability_casts = {};
+    global.ability_web   = {};
 
     // Run modifiers
     global.run_boons  = [];
@@ -390,6 +456,16 @@ function new_game_reset() {
     global.dungeon_a5_clears           = { ashen_vault: false, scorched_depths: false, tundra_tomb: false };
     global.ironwake_stands             = false;
     global.ending_pending              = false;
+    global.awaken_boost_pending        = false;
+    global.awaken_boost_from           = "";
+    global.endless_awakening_unlocked  = 5;
+    global.descent_best                = 0;
+    global.descent_hardcore            = 0;
+    global.descent_active              = false;
+    global.descent_pending             = false;
+    global.forge_comp_frame            = 0;
+    global.forge_comp_core             = 0;
+    global.forge_comp_quint            = 0;
     global.total_boss_kills            = 0;
     global.highest_run_level           = 1;
     global.perm_hp_battle_hardened     = 0;
@@ -733,8 +809,13 @@ function load_game() {
     if (variable_struct_exists(_s, "ability_casts") && is_struct(_s.ability_casts)) {
         global.ability_casts = _s.ability_casts;
     }
-    if (variable_struct_exists(_s, "ability_mastery") && is_struct(_s.ability_mastery)) {
-        global.ability_mastery = _s.ability_mastery;
+    // v4 talent webs: pre-v4 saves carry "ability_mastery" instead - deliberately
+    // NOT read (old picks drop; MP recomputes from casts and returns as pending,
+    // so old slots re-pick their webs). ability_web resets to empty either way
+    // so a v4 load never inherits a previous session's picks.
+    global.ability_web = {};
+    if (variable_struct_exists(_s, "ability_web") && is_struct(_s.ability_web)) {
+        global.ability_web = _s.ability_web;
     }
     // 07-16: "Crippling Shot" was renamed "Frost Shot" (combo batch - it gained the
     // Chill rider and the frost identity). Sweep every name-keyed store so old saves
@@ -755,10 +836,10 @@ function load_game() {
         variable_struct_set(global.ability_casts, "Frost Shot", variable_struct_get(global.ability_casts, "Crippling Shot"));
         variable_struct_remove(global.ability_casts, "Crippling Shot");
     }
-    if (variable_global_exists("ability_mastery") && is_struct(global.ability_mastery)
-        && variable_struct_exists(global.ability_mastery, "Crippling Shot")) {
-        variable_struct_set(global.ability_mastery, "Frost Shot", variable_struct_get(global.ability_mastery, "Crippling Shot"));
-        variable_struct_remove(global.ability_mastery, "Crippling Shot");
+    if (variable_global_exists("ability_web") && is_struct(global.ability_web)
+        && variable_struct_exists(global.ability_web, "Crippling Shot")) {
+        variable_struct_set(global.ability_web, "Frost Shot", variable_struct_get(global.ability_web, "Crippling Shot"));
+        variable_struct_remove(global.ability_web, "Crippling Shot");
     }
     // Boons and curses are run-scoped (cleared in end_run). A save can only hold
     // non-empty values if it was written mid-run (boon_grant/curse_grant save on
@@ -823,6 +904,20 @@ function load_game() {
     }
     if (variable_struct_exists(_s, "ironwake_stands")) global.ironwake_stands = _s.ironwake_stands;
     if (variable_struct_exists(_s, "ending_pending"))  global.ending_pending  = _s.ending_pending;
+    global.awaken_boost_pending = variable_struct_exists(_s, "awaken_boost_pending") ? _s.awaken_boost_pending : false;
+    global.awaken_boost_from    = variable_struct_exists(_s, "awaken_boost_from")    ? _s.awaken_boost_from    : "";
+    global.endless_awakening_unlocked = variable_struct_exists(_s, "endless_awakening_unlocked") ? _s.endless_awakening_unlocked : 5;
+    global.descent_best     = variable_struct_exists(_s, "descent_best")     ? _s.descent_best     : 0;
+    global.descent_hardcore = variable_struct_exists(_s, "descent_hardcore") ? _s.descent_hardcore : 0;
+    global.descent_active   = false;   // runs never persist - a loaded save is always in the hub
+    global.descent_pending  = false;
+    // THE LEGENDARY FORGE components (M locked 07-28) - additive, default 0.
+    global.forge_comp_frame = variable_struct_exists(_s, "forge_comp_frame") ? _s.forge_comp_frame : 0;
+    global.forge_comp_core  = variable_struct_exists(_s, "forge_comp_core")  ? _s.forge_comp_core  : 0;
+    global.forge_comp_quint = variable_struct_exists(_s, "forge_comp_quint") ? _s.forge_comp_quint : 0;
+    // THE IRON VOW (SYSTEMS_IRON_VOW.md) - pre-Vow saves are Standard.
+    global.vow_mode       = variable_struct_exists(_s, "vow_mode")       ? _s.vow_mode       : 0;
+    global.vow_lives_left = variable_struct_exists(_s, "vow_lives_left") ? _s.vow_lives_left : 0;
 
     // New progression counters
     if (variable_struct_exists(_s, "dungeon_clears_total"))    global.dungeon_clears_total    = _s.dungeon_clears_total;
@@ -835,6 +930,29 @@ function load_game() {
     // report: quit-to-title mid-run leaked run state on the persistent gc; Enter
     // Dungeon then skipped loadout and resumed the old session's floor).
     run_state_reset();
+
+    // IRONMAN RUN-RESUME (SYSTEMS_RUN_RESUME.md): an interrupted run FORCE-
+    // resumes - the hub Step gates everything behind the RESUME popup while
+    // resume_pending is set, then run_checkpoint_apply consumes the file.
+    // A corrupt/stale checkpoint is forfeited (deleted + hub notice), never an
+    // escape hatch and never a softlock.
+    global.resume_pending = false;
+    global.resume_data    = undefined;
+    var _ck = run_checkpoint_peek();
+    if (_ck != undefined) {
+        if (_ck.ok) {
+            global.resume_pending = true;
+            global.resume_data    = _ck.data;
+        } else {
+            run_checkpoint_delete();
+            var _ck_msg = "Your interrupted dive could not be recovered - the run is forfeit.";
+            if (variable_global_exists("pet_find_notice") && global.pet_find_notice != "") {
+                global.pet_find_notice += "   " + _ck_msg;
+            } else {
+                global.pet_find_notice = _ck_msg;
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -863,4 +981,397 @@ function run_state_reset() {
     global.run_trinkets         = [];
     global.banshee_carried      = 0;   // run-scoped bottles never survive a run teardown
     run_honing_clear();                 // Whetstone honing is run-scoped - never survives a run teardown
+    // POTENCY V2 run-scoped state (Second Wind / Fortune's Favor / Overflow).
+    global.second_wind_used     = false;
+    global.run_bonus_max_hp     = 0;
+    global.fortune_favor_used   = false;
+    global.blood_carry          = 0;
+    global.gravewalker_used     = false;   // Gravewalker Treads (07-28 legendary), once per run
+    global.oathbreaker_hp       = 0;       // Oathbreaker's Shard (07-28 legendary), run max-HP counter
+    // THE DESCENT is run-scoped - a fresh run never starts mid-fall.
+    global.descent_active       = false;
+    global.descent_floor        = 0;
+    // IRONMAN resume: a torn-down run has no pending extract choice. The
+    // checkpoint FILE is deliberately NOT deleted here - load_game calls this
+    // before peeking at the file, and quit-to-title calls it after writing one.
+    global.run_extract_pending  = false;
+}
+
+// =============================================================================
+// IRONMAN RUN-RESUME CHECKPOINT (SYSTEMS_RUN_RESUME.md, M-locked 07-18/07-28)
+// A per-slot file holding the run-scoped state so an INTERRUPTED run continues
+// instead of being lost. Ironman rules: consumed the moment it is applied,
+// force-resumed (no abandon), deleted the frame a defeat lands, and mirrors
+// live combat HP so a rage-quit can never reset a losing fight in the player's
+// favor. Persistent state stays in the main save; floor maps regenerate
+// deterministically from run_seed and are never serialized.
+// =============================================================================
+#macro RESUME_FORMAT_VERSION 1
+
+function run_checkpoint_file() {
+    return "ironwake_resume_" + string(global.save_slot) + ".json";
+}
+
+function run_checkpoint_delete() {
+    if (!variable_global_exists("save_slot") || global.save_slot < 0) return;
+    var _f = run_checkpoint_file();
+    if (file_exists(_f)) file_delete(_f);
+    if (file_exists(_f + ".tmp")) file_delete(_f + ".tmp");
+}
+
+// ---------------------------------------------------------------------------
+// run_checkpoint_write(live)
+// Serializes the run. `live` is the combat controller's player struct (or
+// undefined) - passing it overrides HP/resources with the LIVE mid-fight
+// values, the anti-cheese half of the design: resuming re-fights the room at
+// the HP you actually had while the enemies reset to full.
+// ---------------------------------------------------------------------------
+function run_checkpoint_write(_live) {
+    if (!variable_global_exists("save_slot") || global.save_slot < 0) return;
+    if (!variable_global_exists("current_floor") || !variable_global_exists("run_seed")) return;
+
+    var _hp   = variable_global_exists("run_current_hp")  ? global.run_current_hp  : 0;
+    var _soul = variable_global_exists("run_souls")       ? global.run_souls       : 0;
+    var _bld  = variable_global_exists("run_blood")       ? global.run_blood       : 0;
+    var _prp  = variable_global_exists("run_preparation") ? global.run_preparation : 0;
+    if (_live != undefined) {
+        _hp = _live.HP;
+        if (variable_struct_exists(_live, "souls"))       _soul = _live.souls;
+        if (variable_struct_exists(_live, "blood"))       _bld  = _live.blood;
+        if (variable_struct_exists(_live, "preparation")) _prp  = _live.preparation;
+        // Never snapshot a dead player - the defeat handler owns that frame
+        // (deletes the file and settles the run). Belt-and-braces vs ordering.
+        if (_hp <= 0) return;
+    }
+
+    var _c = {
+        // Identity + stale-detection guards (a New Game reusing the slot must
+        // not inherit the old character's run - see run_checkpoint_peek).
+        resume_version: RESUME_FORMAT_VERSION,
+        save_version:   SAVE_FORMAT_VERSION,
+        saved_at:       date_datetime_string(date_current_datetime()),
+        player_name:    variable_global_exists("player_name") ? global.player_name : "",
+        run_count:      variable_global_exists("run_count")   ? global.run_count   : 0,
+
+        // Route - the floor map itself regenerates from run_seed + current_floor.
+        run_seed:            global.run_seed,
+        current_floor:       global.current_floor,
+        floor_rooms_cleared: variable_global_exists("floor_rooms_cleared") ? global.floor_rooms_cleared : [],
+        current_room_index:  variable_global_exists("current_room_index")  ? global.current_room_index  : 0,
+        selected_dungeon:    variable_global_exists("selected_dungeon")    ? global.selected_dungeon    : "ashen_vault",
+        selected_ascendance: variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0,
+        descent_active:      variable_global_exists("descent_active")      ? global.descent_active      : false,
+        descent_floor:       variable_global_exists("descent_floor")       ? global.descent_floor       : 0,
+        extract_pending:     variable_global_exists("run_extract_pending") ? global.run_extract_pending : false,
+
+        // Progress. gold is included because add_gold mutates it LIVE mid-run -
+        // the hub save predates every pickup and spend (shrine tributes) since.
+        gold:                global.gold,
+        current_run_gold:    variable_global_exists("current_run_gold")   ? global.current_run_gold   : 0,
+        current_run_kills:   variable_global_exists("current_run_kills")  ? global.current_run_kills  : 0,
+        run_xp:              variable_global_exists("run_xp")             ? global.run_xp             : 0,
+        run_level:           variable_global_exists("run_level")          ? global.run_level          : 1,
+        pending_stat_points: variable_global_exists("pending_stat_points") ? global.pending_stat_points : 0,
+        run_stat_bonuses:    variable_global_exists("run_stat_bonuses")   ? global.run_stat_bonuses   : { STR: 0, DEX: 0, CON: 0, INT: 0, WIS: 0, CHA: 0 },
+        run_current_hp:      _hp,
+        run_souls:           _soul,
+        run_blood:           _bld,
+        run_preparation:     _prp,
+        run_bonus_max_hp:    variable_global_exists("run_bonus_max_hp")   ? global.run_bonus_max_hp   : 0,
+
+        // Collections. carried_items/consumables are the real payload - the
+        // main save intentionally omits mid-run finds so abandons revert.
+        carried_items:        variable_global_exists("carried_items")        ? global.carried_items        : [],
+        secured_items:        variable_global_exists("secured_items")        ? global.secured_items        : [],
+        consumable_inventory: variable_global_exists("consumable_inventory") ? global.consumable_inventory : [],
+        run_items_found:      variable_global_exists("run_items_found")      ? global.run_items_found      : [],
+        run_found_pets:       variable_global_exists("run_found_pets")       ? global.run_found_pets       : [],
+        run_trinkets:         variable_global_exists("run_trinkets")         ? global.run_trinkets         : [],
+        run_boons:            variable_global_exists("run_boons")            ? global.run_boons            : [],
+        run_curses:           variable_global_exists("run_curses")           ? global.run_curses           : [],
+        run_honing:           variable_global_exists("run_honing")           ? global.run_honing           : {},
+        events_seen_this_run: variable_global_exists("events_seen_this_run") ? global.events_seen_this_run : [],
+        // Equip/loadout can change mid-run (loot-screen equips, Borrowed Memory),
+        // so snapshot them rather than trusting the stale hub save.
+        inventory:            variable_global_exists("inventory")            ? global.inventory            : [],
+        player_loadout:       variable_global_exists("player_loadout")       ? global.player_loadout       : [],
+        player_traits:        variable_global_exists("player_traits")        ? global.player_traits        : [],
+
+        // Run-scoped flags and counters.
+        second_wind_used:    variable_global_exists("second_wind_used")    ? global.second_wind_used    : false,
+        fortune_favor_used:  variable_global_exists("fortune_favor_used")  ? global.fortune_favor_used  : false,
+        blood_carry:         variable_global_exists("blood_carry")         ? global.blood_carry         : 0,
+        gravewalker_used:    variable_global_exists("gravewalker_used")    ? global.gravewalker_used    : false,
+        oathbreaker_hp:      variable_global_exists("oathbreaker_hp")      ? global.oathbreaker_hp      : 0,
+        last_stand_used:     variable_global_exists("last_stand_used")     ? global.last_stand_used     : false,
+        gift_given:          variable_global_exists("gift_given")          ? global.gift_given          : false,
+        pet_treats_run:      variable_global_exists("pet_treats_run")      ? global.pet_treats_run      : 0,
+        banshee_carried:     variable_global_exists("banshee_carried")     ? global.banshee_carried     : 0,
+        run_borrowed_ability: variable_global_exists("run_borrowed_ability") ? global.run_borrowed_ability : "",
+        run_borrowed_class:   variable_global_exists("run_borrowed_class")   ? global.run_borrowed_class   : "",
+        pending_fire_stacks: variable_global_exists("pending_fire_stacks") ? global.pending_fire_stacks : 0,
+        pending_ap_penalty:  variable_global_exists("pending_ap_penalty")  ? global.pending_ap_penalty  : 0,
+        gold_potion_bosses:  variable_global_exists("gold_potion_bosses")  ? global.gold_potion_bosses  : 0,
+        loot_potion_bosses:  variable_global_exists("loot_potion_bosses")  ? global.loot_potion_bosses  : 0,
+
+        // Persistent-scope state that still MUTATES mid-run (rune drops, dust
+        // trickle, kill-quest ticks, codex discoveries). The main save is
+        // hub-stale during a dive, so without these a resume would lose every
+        // rune/tick/discovery from the run's earlier rooms.
+        rune_inventory:   variable_global_exists("rune_inventory")   ? global.rune_inventory   : [],
+        rune_dust:        variable_global_exists("rune_dust")        ? global.rune_dust        : 0,
+        quests:           (variable_global_exists("quests") && is_array(global.quests)) ? global.quests : [],
+        total_kills:      variable_global_exists("total_kills")      ? global.total_kills      : 0,
+        items_discovered: variable_global_exists("items_discovered") ? global.items_discovered : [],
+    };
+    save_write_atomic(run_checkpoint_file(), json_stringify(_c));
+}
+
+// ---------------------------------------------------------------------------
+// run_checkpoint_update_hp(live)
+// Mid-combat writes must NOT re-serialize globals: gold/XP/items earned during
+// the fight would land in a checkpoint whose room is still uncleared, and the
+// resume's re-fight would then earn them AGAIN (dupe). The on-disk checkpoint
+// from floor entry IS the room-entry state - so in combat we only patch the
+// live HP/resource fields into it (the anti-rage-quit mirror) and leave every
+// other field exactly as it was when the player walked in.
+// ---------------------------------------------------------------------------
+function run_checkpoint_update_hp(_live) {
+    if (_live == undefined || _live.HP <= 0) return;
+    var _ck = run_checkpoint_peek();
+    if (_ck == undefined || !_ck.ok) return;
+    var _c = _ck.data;
+    _c.run_current_hp = _live.HP;
+    if (variable_struct_exists(_live, "souls"))       _c.run_souls       = _live.souls;
+    if (variable_struct_exists(_live, "blood"))       _c.run_blood       = _live.blood;
+    if (variable_struct_exists(_live, "preparation")) _c.run_preparation = _live.preparation;
+    save_write_atomic(run_checkpoint_file(), json_stringify(_c));
+}
+
+// ---------------------------------------------------------------------------
+// run_checkpoint_write_now()
+// Context-aware write for "the player is leaving RIGHT NOW" moments (quit to
+// title mid-run, os_is_paused backgrounding). In combat it passes the LIVE
+// player struct; once combat_over it writes NOTHING - the disk state is
+// already correct (victory: the last mid-fight checkpoint stands, so the room
+// is re-fought at the HP you had and its rewards are forfeit; defeat: the
+// checkpoint was deleted the frame the death landed, never resurrected).
+// ---------------------------------------------------------------------------
+function run_checkpoint_write_now() {
+    if (room == Room1) {
+        if (instance_exists(obj_combat_controller)) {
+            var _cc = instance_find(obj_combat_controller, 0);
+            if (_cc.combat_over) return;
+            run_checkpoint_update_hp(_cc.player);   // patch-only: see run_checkpoint_update_hp
+        }
+        return;
+    }
+    if (room == rm_dungeon_floor) run_checkpoint_write(undefined);
+}
+
+// ---------------------------------------------------------------------------
+// run_checkpoint_peek()
+// Reads + validates the slot's checkpoint WITHOUT touching global state.
+// Returns undefined (no file), { ok: true, data } (valid), or { ok: false }
+// (corrupt/version-mismatched/stale - caller deletes it and forfeits the run;
+// M's rule: a broken checkpoint is never a free escape, but never a softlock).
+// Stale = identity guards don't match the save just loaded (a New Game reused
+// the slot between the crash and this load).
+// ---------------------------------------------------------------------------
+function run_checkpoint_peek() {
+    if (!variable_global_exists("save_slot") || global.save_slot < 0) return undefined;
+    var _f = run_checkpoint_file();
+    if (!file_exists(_f)) return undefined;
+    var _file = file_text_open_read(_f);
+    var _json = "";
+    while (!file_text_eof(_file)) {
+        _json += file_text_read_string(_file);
+        file_text_readln(_file);
+    }
+    file_text_close(_file);
+    var _c = undefined;
+    try { _c = json_parse(_json); } catch (_e) { return { ok: false }; }
+    if (!is_struct(_c)) return { ok: false };
+    if (!variable_struct_exists(_c, "resume_version") || _c.resume_version != RESUME_FORMAT_VERSION) return { ok: false };
+    if (!variable_struct_exists(_c, "save_version")   || _c.save_version   != SAVE_FORMAT_VERSION)   return { ok: false };
+    if (!variable_struct_exists(_c, "run_seed") || !variable_struct_exists(_c, "current_floor"))     return { ok: false };
+    var _nm = variable_global_exists("player_name") ? global.player_name : "";
+    var _rc = variable_global_exists("run_count")   ? global.run_count   : 0;
+    if (!variable_struct_exists(_c, "player_name") || _c.player_name != _nm) return { ok: false };
+    if (!variable_struct_exists(_c, "run_count")   || _c.run_count   != _rc) return { ok: false };
+    return { ok: true, data: _c };
+}
+
+// ---------------------------------------------------------------------------
+// run_checkpoint_apply(c)
+// Restores the run from a peeked checkpoint and CONSUMES the file (ironman:
+// a checkpoint is used exactly once). Caller then room_goto(rm_dungeon_floor);
+// the floor controller regenerates the map from run_seed and, if the crash
+// happened at the boss extract choice, re-opens that popup via
+// global.run_extract_pending.
+// ---------------------------------------------------------------------------
+function run_checkpoint_apply(_c) {
+    global.run_seed            = _c.run_seed;
+    global.current_floor       = _c.current_floor;
+    global.floor_map_floor     = -1;   // force map regen from the restored seed
+    // The regen resets floor_rooms_cleared to all-false, so the restored flags
+    // go through a stash the floor controller re-applies AFTER building the map.
+    global.resume_rooms_cleared = variable_struct_exists(_c, "floor_rooms_cleared") ? _c.floor_rooms_cleared : undefined;
+    global.current_room_index  = variable_struct_exists(_c, "current_room_index")  ? _c.current_room_index  : 0;
+    global.selected_dungeon    = variable_struct_exists(_c, "selected_dungeon")    ? _c.selected_dungeon    : "ashen_vault";
+    global.selected_ascendance = variable_struct_exists(_c, "selected_ascendance") ? _c.selected_ascendance : 0;
+    global.descent_active      = variable_struct_exists(_c, "descent_active")      ? _c.descent_active      : false;
+    global.descent_floor       = variable_struct_exists(_c, "descent_floor")       ? _c.descent_floor       : 0;
+    global.run_extract_pending = variable_struct_exists(_c, "extract_pending")     ? _c.extract_pending     : false;
+
+    global.gold                = variable_struct_exists(_c, "gold")                ? _c.gold                : global.gold;
+    global.current_run_gold    = variable_struct_exists(_c, "current_run_gold")    ? _c.current_run_gold    : 0;
+    global.current_run_kills   = variable_struct_exists(_c, "current_run_kills")   ? _c.current_run_kills   : 0;
+    global.run_xp              = variable_struct_exists(_c, "run_xp")              ? _c.run_xp              : 0;
+    global.run_level           = variable_struct_exists(_c, "run_level")           ? _c.run_level           : 1;
+    global.pending_stat_points = variable_struct_exists(_c, "pending_stat_points") ? _c.pending_stat_points : 0;
+    global.run_stat_bonuses    = variable_struct_exists(_c, "run_stat_bonuses")    ? _c.run_stat_bonuses    : { STR: 0, DEX: 0, CON: 0, INT: 0, WIS: 0, CHA: 0 };
+    global.run_current_hp      = variable_struct_exists(_c, "run_current_hp")      ? _c.run_current_hp      : 0;
+    global.run_souls           = variable_struct_exists(_c, "run_souls")           ? _c.run_souls           : 0;
+    global.run_blood           = variable_struct_exists(_c, "run_blood")           ? _c.run_blood           : 0;
+    global.run_preparation     = variable_struct_exists(_c, "run_preparation")     ? _c.run_preparation     : 0;
+    global.run_bonus_max_hp    = variable_struct_exists(_c, "run_bonus_max_hp")    ? _c.run_bonus_max_hp    : 0;
+
+    global.carried_items        = variable_struct_exists(_c, "carried_items")        ? _c.carried_items        : [];
+    global.secured_items        = variable_struct_exists(_c, "secured_items")        ? _c.secured_items        : [];
+    // Same dup-row hygiene the main load runs on inventory/stash (covers run loot
+    // checkpointed before the 07-28 legendary same-stat fold).
+    for (var _cmi = 0; _cmi < array_length(global.carried_items); _cmi++) item_merge_dup_affixes(global.carried_items[_cmi]);
+    for (var _cmi = 0; _cmi < array_length(global.secured_items); _cmi++) item_merge_dup_affixes(global.secured_items[_cmi]);
+    global.consumable_inventory = variable_struct_exists(_c, "consumable_inventory") ? _c.consumable_inventory : [];
+    global.run_items_found      = variable_struct_exists(_c, "run_items_found")      ? _c.run_items_found      : [];
+    global.run_found_pets       = variable_struct_exists(_c, "run_found_pets")       ? _c.run_found_pets       : [];
+    global.run_trinkets         = variable_struct_exists(_c, "run_trinkets")         ? _c.run_trinkets         : [];
+    global.run_boons            = variable_struct_exists(_c, "run_boons")            ? _c.run_boons            : [];
+    global.run_curses           = variable_struct_exists(_c, "run_curses")           ? _c.run_curses           : [];
+    global.run_honing           = variable_struct_exists(_c, "run_honing")           ? _c.run_honing           : {};
+    global.events_seen_this_run = variable_struct_exists(_c, "events_seen_this_run") ? _c.events_seen_this_run : [];
+    if (variable_struct_exists(_c, "inventory"))      global.inventory      = _c.inventory;
+    if (variable_struct_exists(_c, "player_loadout")) global.player_loadout = _c.player_loadout;
+    if (variable_struct_exists(_c, "player_traits"))  global.player_traits  = _c.player_traits;
+
+    global.second_wind_used     = variable_struct_exists(_c, "second_wind_used")     ? _c.second_wind_used     : false;
+    global.fortune_favor_used   = variable_struct_exists(_c, "fortune_favor_used")   ? _c.fortune_favor_used   : false;
+    global.blood_carry          = variable_struct_exists(_c, "blood_carry")          ? _c.blood_carry          : 0;
+    global.gravewalker_used     = variable_struct_exists(_c, "gravewalker_used")     ? _c.gravewalker_used     : false;
+    global.oathbreaker_hp       = variable_struct_exists(_c, "oathbreaker_hp")       ? _c.oathbreaker_hp       : 0;
+    global.last_stand_used      = variable_struct_exists(_c, "last_stand_used")      ? _c.last_stand_used      : false;
+    global.gift_given           = variable_struct_exists(_c, "gift_given")           ? _c.gift_given           : false;
+    global.pet_treats_run       = variable_struct_exists(_c, "pet_treats_run")       ? _c.pet_treats_run       : 0;
+    global.banshee_carried      = variable_struct_exists(_c, "banshee_carried")      ? _c.banshee_carried      : 0;
+    global.run_borrowed_ability = variable_struct_exists(_c, "run_borrowed_ability") ? _c.run_borrowed_ability : "";
+    global.run_borrowed_class   = variable_struct_exists(_c, "run_borrowed_class")   ? _c.run_borrowed_class   : "";
+    global.pending_fire_stacks  = variable_struct_exists(_c, "pending_fire_stacks")  ? _c.pending_fire_stacks  : 0;
+    global.pending_ap_penalty   = variable_struct_exists(_c, "pending_ap_penalty")   ? _c.pending_ap_penalty   : 0;
+    global.gold_potion_bosses   = variable_struct_exists(_c, "gold_potion_bosses")   ? _c.gold_potion_bosses   : 0;
+    global.loot_potion_bosses   = variable_struct_exists(_c, "loot_potion_bosses")   ? _c.loot_potion_bosses   : 0;
+
+    // Persistent-scope state that mutated mid-run (see the write side).
+    if (variable_struct_exists(_c, "rune_inventory"))   global.rune_inventory   = _c.rune_inventory;
+    if (variable_struct_exists(_c, "rune_dust"))        global.rune_dust        = _c.rune_dust;
+    if (variable_struct_exists(_c, "quests") && is_array(_c.quests)) global.quests = _c.quests;
+    if (variable_struct_exists(_c, "total_kills"))      global.total_kills      = _c.total_kills;
+    if (variable_struct_exists(_c, "items_discovered")) global.items_discovered = _c.items_discovered;
+
+    // Not mid-transition: the floor controller Create derives these on arrival.
+    global.just_cleared_boss = false;
+    global.just_cleared_room = false;
+
+    // The loadout was committed when this run started - re-latch the flag so
+    // nothing routes the player back through dungeon-select/loadout.
+    if (instance_exists(obj_game_controller)) {
+        instance_find(obj_game_controller, 0).loadout_confirmed = true;
+    }
+
+    // IRONMAN: the checkpoint is consumed the moment it is loaded.
+    run_checkpoint_delete();
+}
+
+// ---------------------------------------------------------------------------
+// run_floor_advance()
+// Single source for the boss CONTINUE choice: advance the floor (Descent
+// floors re-roll their theme and deepen the effective Awakening) and re-enter
+// the dungeon. Called from the combat extract popup AND the floor-map resume
+// popup so the two can never drift. (SYSTEMS_ENDLESS.md §3 for the Descent math.)
+// ---------------------------------------------------------------------------
+function run_floor_advance() {
+    global.run_extract_pending = false;
+    global.just_cleared_boss   = false;
+    global.floor_rooms_cleared = [];
+    global.current_floor++;
+    if (variable_global_exists("descent_active") && global.descent_active) {
+        var _dsc_keys = ["ashen_vault", "scorched_depths", "tundra_tomb"];
+        global.selected_dungeon    = _dsc_keys[irandom(2)];
+        global.descent_floor       = global.current_floor;
+        global.selected_ascendance = 5 + global.current_floor * 0.5;
+    }
+    room_goto(rm_dungeon_floor);
+}
+
+// =============================================================================
+// THE IRON VOW - memorials + the fall (SYSTEMS_IRON_VOW.md, M-locked 07-28).
+// A fallen Vow character leaves a small gravestone record where the save was;
+// the title screen draws it on the slot card. A New Game claiming the slot
+// deletes it (obj_title_controller, beside the stale-checkpoint delete).
+// =============================================================================
+function vow_memorial_file(_slot) {
+    return "ironwake_memorial_" + string(_slot) + ".json";
+}
+
+function vow_memorial_delete(_slot) {
+    var _f = vow_memorial_file(_slot);
+    if (file_exists(_f)) file_delete(_f);
+    if (file_exists(_f + ".tmp")) file_delete(_f + ".tmp");
+}
+
+function vow_memorial_read(_slot) {
+    var _f = vow_memorial_file(_slot);
+    if (!file_exists(_f)) return undefined;
+    var _file = file_text_open_read(_f);
+    var _json = "";
+    while (!file_text_eof(_file)) {
+        _json += file_text_read_string(_file);
+        file_text_readln(_file);
+    }
+    file_text_close(_file);
+    var _m = undefined;
+    try { _m = json_parse(_json); } catch (_e) { return undefined; }
+    if (!is_struct(_m)) return undefined;
+    _m.memorial = true;   // the flag the slot card + loadable check key off
+    return _m;
+}
+
+// ---------------------------------------------------------------------------
+// vow_fall()
+// The final death: write the gravestone, then delete the save file and the
+// resume checkpoint. Runs INSIDE the defeat-settlement frame (after
+// end_run(-1) has updated the lifetime stats), so killing the app on the
+// death screen cannot preserve the character. (SYSTEMS_IRON_VOW.md)
+// ---------------------------------------------------------------------------
+function vow_fall() {
+    if (!variable_global_exists("save_slot") || global.save_slot < 0) return;
+    var _mem = {
+        player_name:          variable_global_exists("player_name")          ? global.player_name          : "Unknown",
+        class_id:             variable_global_exists("chosen_class")         ? global.chosen_class         : 0,
+        epithet:              variable_global_exists("player_epithet")       ? global.player_epithet       : "",
+        best_floor:           variable_global_exists("best_floor")           ? global.best_floor           : 0,
+        run_count:            variable_global_exists("run_count")            ? global.run_count            : 0,
+        dungeon_clears_total: variable_global_exists("dungeon_clears_total") ? global.dungeon_clears_total : 0,
+        ironwake_stands:      variable_global_exists("ironwake_stands")      ? global.ironwake_stands      : false,
+        vow_mode:             global.vow_mode,
+        died_at:              date_datetime_string(date_current_datetime()),
+    };
+    save_write_atomic(vow_memorial_file(global.save_slot), json_stringify(_mem));
+    var _sf = "ironwake_save_" + string(global.save_slot) + ".json";
+    if (file_exists(_sf)) file_delete(_sf);
+    if (file_exists(_sf + ".tmp")) file_delete(_sf + ".tmp");
+    run_checkpoint_delete();
+    // Unbind the slot so NOTHING can save_game() the dead character back into
+    // existence between here and the next slot claim (save_game no-ops at -1).
+    global.save_slot = -1;
 }

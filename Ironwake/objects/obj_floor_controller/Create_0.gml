@@ -423,6 +423,18 @@ if (_need_new_map) {
     global.floor_map_floor      = global.current_floor;
     global.floor_rooms_cleared  = array_create(_node_count, false);
 
+    // IRONMAN resume (SYSTEMS_RUN_RESUME.md): a resumed run regenerates this
+    // exact map from the restored run_seed - re-apply which rooms were already
+    // cleared (the fresh array above would wipe them). Length-guarded so a
+    // mismatched stash can never corrupt a map; consumed either way.
+    if (variable_global_exists("resume_rooms_cleared")
+        && is_array(global.resume_rooms_cleared)) {
+        if (array_length(global.resume_rooms_cleared) == _node_count) {
+            global.floor_rooms_cleared = global.resume_rooms_cleared;
+        }
+        global.resume_rooms_cleared = undefined;
+    }
+
 } else {
     // Returning from a room transition - restore cleared state for just-completed room
     if (returning_from_combat
@@ -536,6 +548,8 @@ event_cursor         = 0;
 event_phase          = "choose";   // "choose" | "result"
 event_result_text    = "";
 event_coins          = [];         // gold-burst particles on a gold-yielding result
+hp_shake_timer       = 0;          // event HP-hit map jolt (Draw_64 world-matrix shake)
+hp_hit_popup         = undefined;  // { value, timer } floating "-N" by the HUD HP readout
 
 
 // -----------------------------------------------------------------------------
@@ -559,3 +573,19 @@ ambience_set([dungeon_ambience_bed(), snd_amb_torch]);   // per-dungeon air + br
 if (global.current_floor == 1 && !returning_from_combat) {
     audio_play_sound(snd_gate, 1, false);
 }
+
+
+// -----------------------------------------------------------------------------
+// 7. IRONMAN RESUME CHECKPOINT (SYSTEMS_RUN_RESUME.md)
+// Every floor-map arrival (run start, floor advance, return from combat) writes
+// the ~2-4 KB checkpoint - a crash never loses more than the current room. If
+// the run was resumed at the boss EXTRACT choice, re-offer that popup here
+// (arm-then-confirm, mirroring the combat version; input in Step, draw+hit-test
+// in Draw_64). It is modal with no cancel - the choice must be made, same as
+// the combat popup it replaces.
+// -----------------------------------------------------------------------------
+showing_extract = variable_global_exists("run_extract_pending") && global.run_extract_pending;
+extract_arm     = "";
+run_ckpt_sig      = "";
+run_ckpt_cooldown = 0;
+run_checkpoint_write(undefined);

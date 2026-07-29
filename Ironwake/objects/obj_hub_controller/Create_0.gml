@@ -127,14 +127,18 @@ if (variable_global_exists("pet_roster")) pet_migrate_retired_species();
 show_history   = false;
 history_scroll = 0;
 
+// BOND DIALOGUE window (M 07-28 rework): the deepen-relationship exchange runs
+// in ONE bordered window at the NPC - ask, progress, and the crossing itself.
+bond_dialog_open  = false;
+bond_dialog_npc   = "";   // affinity id ("petra"...) for the portrait
+bond_dialog_title = "";
+bond_dialog_body  = "";
+
 
 // -----------------------------------------------------------------------------
-// 5. ITEM GALLERY STATE
+// 5. ITEM GALLERY STATE - moved to obj_game_controller (codex_* vars) 07-28 so
+// the codex opens mid-run too.
 // -----------------------------------------------------------------------------
-show_gallery        = false;
-gallery_scroll      = 0;    // top visible row index
-gallery_cursor      = -1;   // highlighted row (-1 = none)
-gallery_detail_item = undefined;   // item struct shown in detail panel (undefined = closed)
 
 // Hub music + ambience bed (night rain outside, torch crackle at the gate).
 // music_hub_snd() honors the per-save Settings selection (banshee jukebox);

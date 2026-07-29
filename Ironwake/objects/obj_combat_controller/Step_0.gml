@@ -7,6 +7,28 @@
 
 // Stash is hub-only - no stash access during combat.
 
+// IRONMAN resume anti-cheese watcher (SYSTEMS_RUN_RESUME.md): mirror the LIVE
+// player HP/resources into the checkpoint whenever they change (1s throttle),
+// so killing the app mid-fight resumes the re-fight at the HP you actually had
+// while the enemies reset to full - a rage-quit is always a net loss. Runs
+// before every early exit below; suspended once the fight is decided
+// (victory keeps the pre-fight checkpoint, defeat deleted it).
+if (!combat_over && is_struct(player)) {
+    if (run_ckpt_cooldown > 0) run_ckpt_cooldown--;
+    var _ck_sig = string(player.HP)
+        + "|" + (variable_struct_exists(player, "souls")       ? string(player.souls)       : "")
+        + "|" + (variable_struct_exists(player, "blood")       ? string(player.blood)       : "")
+        + "|" + (variable_struct_exists(player, "preparation") ? string(player.preparation) : "");
+    if (_ck_sig != run_ckpt_sig && run_ckpt_cooldown <= 0) {
+        run_ckpt_sig      = _ck_sig;
+        run_ckpt_cooldown = 60;
+        // Patch-only (NOT a full write): a full write here would checkpoint the
+        // gold/XP/items already earned this fight against a still-uncleared
+        // room, and the resume's re-fight would earn them all AGAIN.
+        run_checkpoint_update_hp(player);
+    }
+}
+
 // Freeze all combat input when any overlay is open (menu, stash, shop,
 // level-up alloc). Level alloc input is handled in obj_game_controller Step
 // so it keeps working even while this Step is frozen.
@@ -75,7 +97,7 @@ if (show_loot_screen) {
     // fires the haul's ONE rarity stinger as it lands (SOUND_ATMOSPHERE_SPEC.md
     // section 1). Rows beyond the visible window count as "revealed" with the
     // last visible one so the stinger can't be lost to scrolling.
-    var _lr_count   = array_length(global.run_items_found);
+    var _lr_count   = array_length(global.run_items_found) + array_length(loot_special_rows);
     var _lr_visible = min(8, _lr_count);
     if (loot_reveal_shown < _lr_visible) {
         if (loot_reveal_timer mod 8 == 0) {
@@ -101,12 +123,43 @@ if (show_loot_screen) {
     }
     if (nav_up())   loot_screen_scroll = max(0, loot_screen_scroll - 1);
     if (nav_down()) {
-        var _max_scroll = max(0, array_length(global.run_items_found) - 5);
+        var _max_scroll = max(0, array_length(global.run_items_found) + array_length(loot_special_rows) - 5);
         loot_screen_scroll = min(_max_scroll, loot_screen_scroll + 1);
     }
+    // Fortune's Favor (POTENCY V2, Lucky Find T5): once per run, reroll the TOP
+    // LISTED equipment drop. [V] or the chip at (1560,96)-(1870,168) - geometry
+    // MUST match the Draw_64 chip. Scroll moves which item sits on top.
+    var _ff_idx = clamp(loot_screen_scroll, 0, max(0, array_length(global.run_items_found) - 1));
+    // Scrolled past the items onto a SPECIAL row -> nothing rerollable on top.
+    var _ff_old = (array_length(global.run_items_found) > 0 && loot_screen_scroll < array_length(global.run_items_found))
+        ? global.run_items_found[_ff_idx] : undefined;
+    var _ff_ok  = trait_transcended("Lucky Find")
+        && (!variable_global_exists("fortune_favor_used") || !global.fortune_favor_used)
+        && is_struct(_ff_old) && variable_struct_exists(_ff_old, "rarity")
+        && !(variable_struct_exists(_ff_old, "item_category") && _ff_old.item_category == "consumable");
+    var _ff_tap = false;
+    if (mouse_check_button_pressed(mb_left)) {
+        var _ffmx = device_mouse_x_to_gui(0), _ffmy = device_mouse_y_to_gui(0);
+        _ff_tap = (_ffmx >= 1560 && _ffmx < 1870 && _ffmy >= 96 && _ffmy < 168);
+    }
+    if (_ff_ok && (input_hotkey("V") || _ff_tap)) {
+        global.fortune_favor_used = true;
+        for (var _ffi = array_length(global.carried_items) - 1; _ffi >= 0; _ffi--) {
+            if (global.carried_items[_ffi] == _ff_old) { array_delete(global.carried_items, _ffi, 1); break; }
+        }
+        var _ff_asc = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
+        var _ff_src = variable_global_exists("next_enemy_type") ? global.next_enemy_type : "standard";
+        var _ff_new = drop_equipment(drop_weights(_ff_src, _ff_asc), true, curse_loot_tier_bonus_for(_ff_src));
+        array_push(global.carried_items, _ff_new);
+        discover_item(item_base_name(_ff_new));
+        global.run_items_found[_ff_idx] = _ff_new;
+        loot_item_sting(_ff_new);
+        exit;   // consume this press - never fall through to the close handlers
+    }
     if (input_confirm() || input_confirm_alt() || input_hotkey("R")
-        || (mouse_check_button_pressed(mb_left) && device_mouse_y_to_gui(0) >= 960)) {
+        || (mouse_check_button_pressed(mb_left) && device_mouse_y_to_gui(0) >= 960 && !_ff_tap)) {
         show_loot_screen = false;
+        loot_special_rows = [];   // consumed with the haul so the screen can't re-arm
         // Clear run_items_found so the loot screen cannot re-trigger, then let the
         // victory path below finish combat NEXT frame - it resolves any pack-full
         // consumable-overflow discard first. Setting combat_over here skipped that
@@ -150,10 +203,13 @@ if (_result == 1) {
         // (Traits tab) for gold + a rarity-matched item. See SYSTEMS_VEX_REWORK.md.
         if (variable_global_exists("total_boss_kills")) global.total_boss_kills++;
 
-        // Battle Hardened: boss kill grants +3 permanent max HP (max +15 total)
+        // Battle Hardened: boss kill grants +3 permanent max HP (max +15 total).
+        // POTENCY V2: +3 cap per rank (15 -> 27); TRANSCEND "Unbreakable" removes
+        // the cap entirely.
         if (trait_active("Battle Hardened") && variable_global_exists("perm_hp_battle_hardened")) {
-            if (global.perm_hp_battle_hardened < 15) {
-                global.perm_hp_battle_hardened = min(15, global.perm_hp_battle_hardened + 3);
+            var _bh_cap = trait_transcended("Battle Hardened") ? 999999 : (15 + 3 * trait_potency_r14("Battle Hardened"));
+            if (global.perm_hp_battle_hardened < _bh_cap) {
+                global.perm_hp_battle_hardened = min(_bh_cap, global.perm_hp_battle_hardened + 3);
                 if (instance_exists(obj_game_controller)) {
                     var _gc_bh = instance_find(obj_game_controller, 0);
                     _gc_bh.trait_notif_msg   = "Battle Hardened: permanent +3 max HP!";
@@ -186,6 +242,58 @@ if (_result == 1) {
             array_push(combat_log, "A tarnished GENIE LAMP tumbles from the remains! (Floor map: [G] to use)");
         }
     }
+    // BOSS SPECTACLE DROPS (M 07-28): the egg / signature-trinket / banshee
+    // rolls used to run at the R-dismiss in Draw_64 - AFTER the loot screen -
+    // so they never listed with the haul. Rolled HERE once instead, on the same
+    // deterministic stream (loot_room_seed; SYSTEMS_RUN_RESUME.md - a re-fight
+    // after a crash still cannot re-roll them), and pushed as SPECIAL rows the
+    // loot screen appends after the item rows.
+    if (!combat_over && !boss_drops_rolled
+        && variable_global_exists("next_enemy_type") && global.next_enemy_type == "boss"
+        && variable_global_exists("just_cleared_boss") && global.just_cleared_boss) {
+        boss_drops_rolled = true;
+        var _bsr_seed = random_get_seed();
+        random_set_seed(loot_room_seed(0, 2));
+        // Phase 2 pets: rare boss-egg drop (odds scale with Awakening). Lands in
+        // Bairc's stable; the hub notice on return stays as a second reminder.
+        var _bsr_egg = pet_try_boss_egg(variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0);
+        if (_bsr_egg != undefined) {
+            var _bsr_lbl = _bsr_egg.is_egg
+                ? ("Mysterious " + (pet_egg_label(_bsr_egg) != "" ? pet_egg_label(_bsr_egg) : "Egg"))
+                : ("A living " + _bsr_egg.name);
+            array_push(combat_log, "Among the remains: " + _bsr_lbl + "! Bairc can raise it.");
+            global.pet_find_notice = _bsr_egg.is_egg
+                ? ("You recovered a " + (pet_egg_label(_bsr_egg) != "" ? pet_egg_label(_bsr_egg) : "mysterious egg") + " - visit Bairc.")
+                : ("A " + _bsr_egg.name + " follows you home - visit Bairc.");
+            array_push(loot_special_rows, { kind: "pet", pet: _bsr_egg, label: _bsr_lbl,
+                sub: _bsr_egg.is_egg ? "Something alive waits inside - Bairc can raise it."
+                                     : "It pads after you, already loyal - Bairc will see to it.",
+                tag: "[COMPANION]" });
+        }
+        // Signature gift trinket roll (Phase 4b, 3%): extraction-gated keepsake.
+        var _bsr_tk = gift_try_boss_trinket();
+        if (_bsr_tk != undefined) {
+            array_push(combat_log, "Among the remains: " + _bsr_tk.name + " - " + _bsr_tk.flavor + ". A gift begging for its owner.");
+            array_push(loot_special_rows, { kind: "trinket", id: _bsr_tk.id, label: _bsr_tk.name,
+                sub: _bsr_tk.flavor + " - a gift begging for its owner.", tag: "[KEEPSAKE]" });
+        }
+        // Banshee in a Bottle: guaranteed from each dungeon's FINAL boss, first
+        // kill only (BANSHEE_BOTTLE_SPEC.md). Granted here so it LISTS; the
+        // R-dismiss full-clear branch banks it via end_run(1) as before.
+        var _bsr_desc = variable_global_exists("descent_active") && global.descent_active;
+        if (global.current_floor >= 3 && !_bsr_desc) {
+            banshee_init();
+            var _bsr_dung = variable_global_exists("selected_dungeon") ? global.selected_dungeon : "ashen_vault";
+            if (!variable_struct_exists(global.banshee_boss_drops, _bsr_dung)) {
+                variable_struct_set(global.banshee_boss_drops, _bsr_dung, true);
+                global.banshee_carried++;
+                array_push(combat_log, "Among the remains: a corked bottle, faintly wailing. A Banshee in a Bottle!");
+                array_push(loot_special_rows, { kind: "banshee", label: "Banshee in a Bottle",
+                    sub: "A corked bottle, faintly wailing - Maren can free the song at camp.", tag: "[SONG]" });
+            }
+        }
+        random_set_seed(_bsr_seed);
+    }
     // Open level-up stat allocation if points are waiting
     if (!combat_over && global.pending_stat_points > 0
         && instance_exists(obj_game_controller)) {
@@ -195,9 +303,11 @@ if (_result == 1) {
         }
         exit;
     }
-    // Show loot screen once all points are allocated
-    if (!combat_over && variable_global_exists("run_items_found")
-        && array_length(global.run_items_found) > 0
+    // Show loot screen once all points are allocated (special rows alone - a
+    // boss egg with no item drops - still open it: the spectacle IS the point).
+    if (!combat_over
+        && ((variable_global_exists("run_items_found") && array_length(global.run_items_found) > 0)
+            || array_length(loot_special_rows) > 0)
         && !show_loot_screen) {
         show_loot_screen = true;
         // Arm the staggered reveal + find the best item for the ONE stinger
@@ -212,6 +322,12 @@ if (_result == 1) {
             var _lbr  = variable_struct_exists(_lbit, "rarity") ? _lbit.rarity : 0;
             if (_lbr > loot_best_rarity) { loot_best_rarity = _lbr; loot_best_row = _lbi; }
         }
+        // A special row (pet/banshee/trinket) is the haul's headline: its first
+        // row carries the legendary-grade stinger regardless of item rarities.
+        if (array_length(loot_special_rows) > 0) {
+            loot_best_rarity = 4;
+            loot_best_row    = array_length(global.run_items_found);
+        }
         exit;
     }
     // Resolve any pack-full consumable pickups before combat closes (after the
@@ -224,6 +340,13 @@ if (_result == 1) {
     if (!combat_over) {
         combat_over   = true;
         combat_result = 1;
+        // Crimson Reserve TRANSCEND "Overflow" (POTENCY V2): bank up to 4 of the
+        // Blood still in the tank for the next combat (read at start traits).
+        if (player.class_id == 1 && variable_struct_exists(player, "blood")
+            && trait_transcended("Crimson Reserve")) {
+            global.blood_carry = min(player.blood, 4);
+            if (global.blood_carry > 0) array_push(combat_log, "Overflow: " + string(global.blood_carry) + " Blood is kept warm for the next fight.");
+        }
         // Victory hierarchy: boss (floor-completing) wins get the grand harpsichord
         // flourish, ordinary fights a light music-box chime so it never wears thin.
         var _is_boss_win = variable_global_exists("next_enemy_type") && global.next_enemy_type == "boss";
@@ -236,6 +359,27 @@ if (_result == 1) {
 if (_result == -1) {
     combat_over   = true;
     combat_result = -1;
+    // IRONMAN resume: death is SETTLED the frame it lands (SYSTEMS_RUN_RESUME.md)
+    // - checkpoint gone, mercy/clawback resolved, and the result committed to
+    // disk BEFORE the defeat screen even draws. Killing the app here changes
+    // nothing. The Draw result handler skips its own end_run via defeat_settled.
+    run_checkpoint_delete();
+    end_run(-1);
+    // THE IRON VOW (SYSTEMS_IRON_VOW.md): a defeat consumes a life inside the
+    // same settle frame. The final death writes the gravestone and erases the
+    // save instead of saving it - alt-F4 on the death screen changes nothing.
+    if (variable_global_exists("vow_mode") && global.vow_mode > 0) {
+        global.vow_lives_left = max(0, global.vow_lives_left - 1);
+        if (global.vow_lives_left <= 0) {
+            vow_fall();
+            vow_fallen = true;
+        } else {
+            save_game();
+        }
+    } else {
+        save_game();
+    }
+    defeat_settled = true;
     audio_play_sound(snd_sting_defeat, 1, false);
     array_push(combat_log, "Defeated...");
     // Close stash if open when combat ends
@@ -443,6 +587,21 @@ if (player_turn) {
                 } else {
                     combat_state.used_consumable = true;   // board "clean fights" requests
                     audio_play_sound(snd_potion, 1, false);
+                    // CHAOTIC BREW (M 07-28): its real payoff is rolled AT DRINK TIME.
+                    // Resolve into a FRESH local struct - never mutate _citem, stacked
+                    // brews share the group representative. Sting = an HP bite that
+                    // lands alongside the payoff (never lethal).
+                    if (_citem.effect_type == "chaotic") {
+                        var _ch = chaotic_brew_roll();
+                        array_push(combat_log, "The Chaotic Brew " + _ch.label + "!");
+                        if (_ch.sting) {
+                            var _bite = irandom_range(8, 15);
+                            player.HP = max(1, player.HP - _bite);
+                            array_push(combat_log, "...but it curdles going down - " + string(_bite) + " damage!");
+                            array_push(damage_popups, { value: _bite, x: 475, y: 545, timer: 45, col: c_red });
+                        }
+                        _citem = { name: "Chaotic Brew", effect_type: _ch.effect_type, effect_value: _ch.value };
+                    }
                     if (_citem.effect_type == "heal") {
                         var _qheal = min(player.max_HP - player.HP, _citem.effect_value);
                         player.HP += _qheal;
@@ -520,8 +679,14 @@ if (player_turn) {
                     // AP-restore items are free; everything else costs 1 AP.
                     if (!_q_is_ap) player.energy -= 1;
                     // Blessed Thirst (was Lucky Find): 20% chance the item is not consumed.
-                    if (trait_active("Blessed Thirst") && irandom(99) < 20) {
-                        array_push(combat_log, "Blessed Thirst - " + _citem.name + " is not consumed!");
+                    // POTENCY V2: +4%/rank (20-36%); TRANSCEND "Bottomless": the FIRST
+                    // consumable each combat is always preserved.
+                    var _bt_first = trait_transcended("Blessed Thirst")
+                        && (!variable_struct_exists(player, "bottomless_used") || !player.bottomless_used);
+                    if (trait_active("Blessed Thirst")
+                        && (_bt_first || irandom(99) < 20 + 4 * trait_potency_r14("Blessed Thirst"))) {
+                        if (_bt_first) player.bottomless_used = true;
+                        array_push(combat_log, (_bt_first ? "Bottomless" : "Blessed Thirst") + " - " + _citem.name + " is not consumed!");
                     } else {
                         array_delete(global.consumable_inventory, _real_idx, 1);
                     }
@@ -650,10 +815,14 @@ if (player_turn) {
             player.poise_shield = 0;
             if (player.energy > 0) {
                 array_push(combat_log, "Turn ended - " + string(player.energy) + " AP unspent.");
+                // Aegis of the Unbroken Line (07-28 legendary): poise converts at 3
+                // shield per unspent AP and the cap doubles.
+                var _poise_rate = (variable_struct_exists(player, "leg_line") && player.leg_line) ? 3 : 2;
+                var _poise_capm = (variable_struct_exists(player, "leg_line") && player.leg_line) ? 2 : 1;
                 // POISE (07-17): unspent AP braces you - 2 shield each (cap 6, 8 with
                 // Relentless), expiring at the start of your next turn (StS block model).
                 if (!variable_struct_exists(player, "shield_hp")) player.shield_hp = 0;
-                player.poise_shield = min(player.energy * 2, (trait_active("Relentless") ? 8 : 6));
+                player.poise_shield = min(player.energy * _poise_rate, (trait_active("Relentless") ? 8 : 6) * _poise_capm);
                 player.shield_hp += player.poise_shield;
                 array_push(combat_log, "Poise braces you (+" + string(player.poise_shield) + " shield).");
             }
@@ -1013,12 +1182,26 @@ if (player_turn) {
                                 player.shadow_meld_crit = false;
                                 array_push(combat_log, "Shadow Meld: strike from the shadows - guaranteed crit!");
                             }
+                            // Longshot's Memory (07-28 legendary): the FIRST damaging
+                            // hit each combat is a guaranteed crit (same 999 idiom).
+                            var _ls_crit = variable_struct_exists(player, "leg_longshot")
+                                           && player.leg_longshot && !player.leg_longshot_used
+                                           && ab.base_damage > 0;
+                            if (_ls_crit) {
+                                player.leg_longshot_used = true;
+                                array_push(combat_log, "Longshot's Memory: it has made this shot before - guaranteed crit!");
+                            }
                             _crit_result = combat_roll_crit(
                                 player.stats,
                                 ab.base_crit + rune_aspect_spell_crit(ab) + boon_value("duelist") + _wpn_crit + _react_crit_bonus
-                                    + (_sm_crit ? 999 : 0),
+                                    + ((_sm_crit || _ls_crit) ? 999 : 0),
                                 ab.crit_type
                             );
+                            // Shadow Meld potency ranks (POTENCY V2): meld-guaranteed crits
+                            // cut deeper - +10% crit damage per rank.
+                            if (_sm_crit && _crit_result.critted) {
+                                _crit_result.multiplier += 0.10 * trait_potency_r14("Shadow Meld");
+                            }
                         }
 
                         // --- Damage calculation ---
@@ -1219,9 +1402,15 @@ if (player_turn) {
 
                         // Arcane Surge: 3-AP (committed-cast) abilities deal +25% damage (Arcanist
                         // only). Audit fix 2026-07-03: was >= 4, which no ability costs - a no-op.
+                        // TRANSCEND "Overchannel" (POTENCY V2): a critting 3-AP cast refunds 1 AP
+                        // (once per cast - this block runs per cast, not per splash target).
                         if (player.class_id == 0 && trait_active("Arcane Surge")
                             && variable_struct_exists(ab, "energy_cost") && ab.energy_cost >= 3) {
                             _final_dmg = floor(_final_dmg * (1 + 0.25 * trait_potency_mult("Arcane Surge")));
+                            if (trait_transcended("Arcane Surge") && _crit_result.critted) {
+                                player.energy += 1;
+                                array_push(combat_log, "Overchannel: the surge snaps back - 1 AP refunded!");
+                            }
                         }
                         // Soul Engine (D§4, M-approved 07-09): the lit engine adds +3 flat
                         // to SPELLS per full turn elapsed since ignition (combat-long).
@@ -1257,15 +1446,70 @@ if (player_turn) {
                             else if (variable_struct_exists(player, "preparation")) { _oc_pts = player.preparation; player.preparation = 0; }
                             player.overcharge_armed = false;
                             if (_oc_pts > 0) {
-                                _final_dmg += _oc_pts * 2;
-                                player.overcharge_hit_pts = _oc_pts;   // read by the splash sequence below
-                                array_push(combat_log, "OVERCHARGE! The reserve empties into the blow - +" + string(_oc_pts * 2) + " damage!");
+                                // Crownfire Diadem (07-28 legendary): the drain pays +3
+                                // damage per point instead of +2.
+                                var _oc_rate = (variable_struct_exists(player, "leg_diadem") && player.leg_diadem) ? 3 : 2;
+                                _final_dmg += _oc_pts * _oc_rate;
+                                player.overcharge_hit_pts  = _oc_pts;                 // read by the splash sequence below
+                                player.overcharge_hit_dmg  = _oc_pts * _oc_rate;     // read by the popup
+                                array_push(combat_log, "OVERCHARGE! The reserve empties into the blow - +" + string(_oc_pts * _oc_rate) + " damage!");
                             }
                         }
-                        // Berserker Rage: below 40% HP deal +20% damage (Bloodwarden only)
+                        // Berserker Rage: below 40% HP deal +20% damage (Bloodwarden only).
+                        // TRANSCEND "Blood Frenzy" (POTENCY V2): threshold rises to 60%.
                         if (player.class_id == 1 && trait_active("Berserker Rage")
-                            && player.HP <= floor(player.max_HP * 0.40)) {
+                            && player.HP <= floor(player.max_HP * (trait_transcended("Berserker Rage") ? 0.60 : 0.40))) {
                             _final_dmg = floor(_final_dmg * (1 + 0.20 * trait_potency_mult("Berserker Rage")));
+                        }
+                        // Last Stand fury (POTENCY V2 ranks): +10%/rank after it triggers,
+                        // rest of combat. Mirrored in combat_estimate_hit.
+                        if (variable_struct_exists(player, "last_stand_fury") && player.last_stand_fury > 0) {
+                            _final_dmg = max(1, floor(_final_dmg * (1 + player.last_stand_fury)));
+                        }
+                        // Expanded Arsenal potency ranks (POTENCY V2): +2% ability damage per
+                        // rank. Mirrored in combat_estimate_hit.
+                        var _ea_r = trait_potency_r14("Expanded Arsenal");
+                        if (_ea_r > 0) {
+                            _final_dmg = max(1, floor(_final_dmg * (1 + 0.02 * _ea_r)));
+                        }
+                        // Scavenger TRANSCEND "Weighted Purse" (POTENCY V2): +1% damage per
+                        // 500 gold held, cap +10%. Mirrored in combat_estimate_hit.
+                        if (trait_transcended("Scavenger") && global.gold >= 500) {
+                            _final_dmg = max(1, floor(_final_dmg * (1 + min(0.10, 0.01 * (global.gold div 500)))));
+                        }
+                        // Miser's Blade (07-28 legendary): +1 flat damage per 150g held,
+                        // cap +8. Flat (not %) so it matters most on cheap pokes.
+                        if (variable_struct_exists(player, "leg_miser") && player.leg_miser && _deals_damage) {
+                            _final_dmg += min(8, global.gold div 150);
+                        }
+                        // Duelist's Rebuke (07-28 legendary): the dodge-primed +50%,
+                        // consumed by this damaging ability.
+                        if (variable_struct_exists(player, "leg_rebuke_primed") && player.leg_rebuke_primed && _deals_damage) {
+                            player.leg_rebuke_primed = false;
+                            _final_dmg = max(1, floor(_final_dmg * 1.5));
+                            array_push(combat_log, "Duelist's Rebuke: the answer lands (+50%)!");
+                        }
+                        // Ley Tap potency ranks (POTENCY V2): +3%/rank spell damage on
+                        // ROUND 1 (the borrowed surge of the opening). Mirrored in estimate.
+                        if (player.class_id == 0 && combat_state.round == 1
+                            && ability_class_is_spell(ability_attack_class(ab))) {
+                            var _lt_r = trait_potency_r14("Ley Tap");
+                            if (_lt_r > 0) _final_dmg = max(1, floor(_final_dmg * (1 + 0.03 * _lt_r)));
+                        }
+                        // Serrated Strikes TRANSCEND "Flaying Edge" (POTENCY V2): a target
+                        // already bleeding takes +10% from you (checked before this cast's
+                        // own Serrated bleed is pushed below).
+                        if (trait_transcended("Serrated Strikes") && _deals_damage
+                            && variable_struct_exists(target, "status_effects")) {
+                            var _fe_bleeding = false;
+                            for (var _fe_i = 0; _fe_i < array_length(target.status_effects); _fe_i++) {
+                                var _fe_se = target.status_effects[_fe_i];
+                                if (variable_struct_exists(_fe_se, "element") && _fe_se.element == "bleed") { _fe_bleeding = true; break; }
+                            }
+                            if (_fe_bleeding) {
+                                _final_dmg = max(1, floor(_final_dmg * 1.10));
+                                array_push(combat_log, "Flaying Edge: the wound tears wider (+10%)!");
+                            }
                         }
                         // Serrated Strikes: physical ATTACKS apply 1 bleed stack (Shadowstrider
                         // only). Gated on _deals_damage so a pure debuff (e.g. Marked for Death,
@@ -1300,7 +1544,19 @@ if (player_turn) {
                         if (_pet_corr_dm != 1.0) _final_dmg = max(1, round(_final_dmg * _pet_corr_dm));
 
                         // Focused Power: an AoE funneled to one target hits 50% harder.
-                        if (_focused_burst) _final_dmg = round(_final_dmg * 1.5);
+                        // POTENCY V2: +10% focus-bonus strength per rank (1.5x -> up to 1.7x);
+                        // TRANSCEND "Annihilating Focus" also applies Exposed to the target.
+                        if (_focused_burst) {
+                            _final_dmg = round(_final_dmg * (1 + 0.5 * trait_potency_mult("Focused Power")));
+                            if (trait_transcended("Focused Power") && !target.is_defeated
+                                && variable_struct_exists(target, "status_effects")) {
+                                array_push(target.status_effects, {
+                                    name: "Exposed", effect_type: "debuff", kind: "vulnerable",
+                                    effect_value: 2, duration: 2, source: "player"
+                                });
+                                array_push(combat_log, "Annihilating Focus: " + target.name + " is laid EXPOSED!");
+                            }
+                        }
                         // AoE falloff (1.0 = full damage to every enemy).
                         if (_is_aoe && _aoe_falloff != 1.0) _final_dmg = max(1, round(_final_dmg * _aoe_falloff));
 
@@ -1503,8 +1759,12 @@ if (player_turn) {
                             }
                         }
                         // Overcharge splash rides the same sequence, one step later.
+                        // (Popup reads overcharge_hit_dmg so the Crownfire Diadem's
+                        // 3-per-point rate shows honestly.)
                         if (_deals_damage && variable_struct_exists(player, "overcharge_hit_pts") && player.overcharge_hit_pts > 0) {
-                            array_push(damage_popups, { value: 0, text: "OVERCHARGE +" + string(player.overcharge_hit_pts * 2) + "!",
+                            var _oc_pop = variable_struct_exists(player, "overcharge_hit_dmg")
+                                ? player.overcharge_hit_dmg : player.overcharge_hit_pts * 2;
+                            array_push(damage_popups, { value: 0, text: "OVERCHARGE +" + string(_oc_pop) + "!",
                                 x: _vfx_ex, y: _vfx_ey - 225, timer: 44, delay: 34, col: make_color_rgb(255, 230, 120),
                                 sfx: snd_loot_reveal, pitch: 1.4 });
                             player.overcharge_hit_pts = 0;
@@ -1534,7 +1794,16 @@ if (player_turn) {
                         // Attack audio keyed to the ABILITY (damage type), not the class.
                         // See play_ability_cast_sfx / SYSTEMS_COMBAT_FX.md.
                         play_ability_cast_sfx(ab, player, true);
-                        ability_mastery_count_cast(ab.name, combat_log);   // expression #2
+                        ability_web_count_cast(ab.name, combat_log);   // talent-web MP
+                        // Opening Gambit: burn the first-cast flag AFTER the AP was
+                        // charged at the discounted rate (same as Quickcast below).
+                        if (ability_web_copy_has_rider(ab, "first_free")) ability_web_first_cast_mark(player, ab.name);
+                        // Deep Reserves (POTENCY V2): burn the potency first-cast flag too.
+                        if (variable_struct_exists(player, "potency_first_casts"))
+                            variable_struct_set(player.potency_first_casts, ab.name, true);
+                        // Counterphase (task #14): the armed 1-AP discount is spent by this cast.
+                        if (variable_struct_exists(player, "blink_tempo_ready")) player.blink_tempo_ready = false;
+                        ability_web_cast_riders(ab, player, combat_log);   // bespoke on-cast riders (shield/resource)
 
                         // --- Hit log - damaging abilities report damage; pure debuffs/utility
                         //     just report the cast (the debuff itself is logged when applied). ---
@@ -1680,6 +1949,23 @@ if (player_turn) {
                             array_push(combat_log, "Anchor rune: " + target.name + " is Weakened!");
                         }
 
+                        // --- Talent-web Overwhelm keystone (damaging spells): hits leave
+                        // the target Vulnerable - flat bonus damage taken, 1 turn (same
+                        // shape as Hex Spread / shock-affix vulnerables). ---
+                        if (ability_web_copy_has_rider(ab, "hit_vuln") && !target.is_defeated
+                            && variable_struct_exists(target, "status_effects")) {
+                            array_push(target.status_effects, {
+                                name:         "Vulnerable",
+                                effect_type:  "debuff",
+                                kind:         "vulnerable",
+                                effect_value: 2,
+                                duration:     1,
+                                element:      "",
+                                source:       "player"
+                            });
+                            array_push(combat_log, "Overwhelm: " + target.name + " is left Vulnerable!");
+                        }
+
                         // --- Soulbind: bind this enemy's fate to yours (audit §6 build -
                         // reflect 40% of damage you take AND heal you the same; combat-long).
                         if (ab.name == "Soulbind" && !target.is_defeated) {
@@ -1719,6 +2005,102 @@ if (player_turn) {
                         // --- Defeat check on target (shared kill handler) ---
                         if (target.HP <= 0) {
                             combat_on_enemy_defeated(target, player, combat_log);
+                            // Soul Siphon TRANSCEND "Harvest" (POTENCY V2): SPELL killing
+                            // blows grant +2 Souls - the defeat handler granted the first,
+                            // this tops up the second.
+                            if (player.class_id == 0 && variable_struct_exists(player, "souls")
+                                && trait_transcended("Soul Siphon")
+                                && ability_class_is_spell(ability_attack_class(ab))) {
+                                player.souls = min(player.souls_max, player.souls + 1);
+                                array_push(combat_log, "Harvest: the soul comes in whole (+1 more).");
+                            }
+                        }
+
+                        // --- Talent-web Executioner's Rhythm keystone: killing blows with
+                        // this ability refund 1 AP (bursts above the cap like AP items). ---
+                        if (target.is_defeated && ability_web_copy_has_rider(ab, "kill_ap")) {
+                            player.energy += 1;
+                            array_push(combat_log, "Executioner's Rhythm: the AP returns.");
+                        }
+
+                        // --- Talent-web transformative riders (keystone pool + bespoke,
+                        //     M 07-27). Shared primitives; the web assigns them per ability. ---
+                        // Execute: finish the wounded (own defeat check, Winter's Bite pattern).
+                        var _wr_exe = ability_web_rider_value(ab, "execute", 0);
+                        if (_wr_exe > 0 && _final_dmg > 0 && !target.is_defeated && target.HP <= target.max_HP * 0.25) {
+                            var _wr_ed = max(1, round(_final_dmg * _wr_exe / 100));
+                            combat_apply_damage(target, _wr_ed);
+                            array_push(combat_log, "Execution! +" + string(_wr_ed) + " to the wounded " + target.name + ".");
+                            if (target.HP <= 0) combat_on_enemy_defeated(target, player, combat_log);
+                        }
+                        // Lifesteal: drink a share of the damage dealt.
+                        var _wr_ls = ability_web_rider_value(ab, "lifesteal", 0);
+                        if (_wr_ls > 0 && _final_dmg > 0) {
+                            var _wr_hp = min(ceil(_final_dmg * _wr_ls / 100), player.max_HP - player.HP);
+                            if (_wr_hp > 0) {
+                                player.HP += _wr_hp;
+                                array_push(combat_log, "Siphoned " + string(_wr_hp) + " HP from the wound.");
+                            }
+                        }
+                        // Splash: echo a share of the damage to one other enemy
+                        // (Static Arc chain pattern, single fork).
+                        var _wr_sp = ability_web_rider_value(ab, "splash", 0);
+                        if (_wr_sp > 0 && _final_dmg > 0) {
+                            var _wr_others = [];
+                            var _wr_slots  = [];
+                            var _wr_live   = 0;
+                            for (var _wri = 0; _wri < array_length(combat_state.combatants); _wri++) {
+                                var _wrc = combat_state.combatants[_wri];
+                                if (_wrc.is_player || _wrc.is_defeated) continue;
+                                if (_wrc != target) { array_push(_wr_others, _wrc); array_push(_wr_slots, _wr_live); }
+                                _wr_live++;
+                            }
+                            if (array_length(_wr_others) > 0) {
+                                var _wr_pick = irandom(array_length(_wr_others) - 1);
+                                var _wr_t    = _wr_others[_wr_pick];
+                                var _wr_sd   = combat_resolve_damage(max(1, round(_final_dmg * _wr_sp / 100)),
+                                    variable_struct_exists(ab, "damage_type") ? ab.damage_type : 0, _wr_t.armor, _wr_t.el_resist);
+                                if (_wr_sd < 1) _wr_sd = 1;
+                                combat_apply_damage(_wr_t, _wr_sd);
+                                _wr_t.hit_flash = max(_wr_t.hit_flash, 10);
+                                array_push(damage_popups, { value: _wr_sd, x: 1620 + _wr_slots[_wr_pick] * (-120), y: 233 + _wr_slots[_wr_pick] * 105 - 60, timer: 45, col: make_color_rgb(200, 170, 255) });
+                                array_push(combat_log, ab.name + " forks to " + _wr_t.name + " for " + string(_wr_sd) + "!");
+                                if (_wr_t.HP <= 0) combat_on_enemy_defeated(_wr_t, player, combat_log);
+                            }
+                        }
+                        // Crit riders: resource on crit (Hungering Maw) / Vulnerable on crit (Deadeye).
+                        if (_crit_result.critted) {
+                            var _wr_cs = ability_web_rider_value(ab, "crit_sec", 0);
+                            if (_wr_cs > 0) combat_grant_secondary(player, _wr_cs, "Hungering Maw", combat_log);
+                            var _wr_cv = ability_web_rider_value(ab, "crit_vuln", 0);
+                            if (_wr_cv > 0 && !target.is_defeated && variable_struct_exists(target, "status_effects")) {
+                                array_push(target.status_effects, {
+                                    name: "Vulnerable", effect_type: "debuff", kind: "vulnerable",
+                                    effect_value: 2, duration: _wr_cv, element: "", source: "player"
+                                });
+                                array_push(combat_log, "Deadeye: " + target.name + " is left Vulnerable!");
+                            }
+                        }
+                        // Status splash (Pandemic / Virulent Spread): this ability's
+                        // status also lands on one other enemy.
+                        if (ability_web_copy_has_rider(ab, "status_splash")) {
+                            var _wr_kind = ability_status_kind(ab);
+                            if (_wr_kind != "") {
+                                var _wr_o2 = [];
+                                for (var _wrj = 0; _wrj < array_length(combat_state.combatants); _wrj++) {
+                                    var _wc2 = combat_state.combatants[_wrj];
+                                    if (!_wc2.is_player && !_wc2.is_defeated && _wc2 != target) array_push(_wr_o2, _wc2);
+                                }
+                                if (array_length(_wr_o2) > 0) {
+                                    var _wr_t2 = _wr_o2[irandom(array_length(_wr_o2) - 1)];
+                                    array_push(_wr_t2.status_effects, {
+                                        name: ab.name, effect_type: ab.effect_type, kind: _wr_kind,
+                                        effect_value: ab.effect_value, duration: max(1, ab.effect_duration),
+                                        element: ability_status_element(ab), source: "player"
+                                    });
+                                    array_push(combat_log, ab.name + " spreads to " + _wr_t2.name + "!");
+                                }
+                            }
                         }
 
                         // --- Momentum (audit §6): Strike refunds its AP when it fells the
@@ -1730,7 +2112,10 @@ if (player_turn) {
 
                         // --- Galvanize (D§4, M-approved 07-09): a killing blow banks
                         //     +1 AP for NEXT turn (granted in combat_next_turn).
-                        if (ab.name == "Galvanize" && target.is_defeated) {
+                        // "Chain Reaction" web keystone (task #14): a landed CRIT also
+                        // triggers the surge, not just a killing blow.
+                        if (ab.name == "Galvanize" && (target.is_defeated
+                            || (ability_web_copy_has_rider(ab, "galv_crit") && _crit_result.critted))) {
                             player.galvanize_ap = 1;
                             array_push(combat_log, "Galvanize - the surge carries: +1 AP next turn!");
                         }
@@ -1796,11 +2181,13 @@ if (player_turn) {
                             if (array_length(_sa_others) > 0) {
                                 var _sa_first = _sa_shocked ? 0 : irandom(array_length(_sa_others) - 1);
                                 var _sa_count = _sa_shocked ? array_length(_sa_others) : 1;
+                                // "Storm Unbound" web keystone (task #14): full-damage chain.
+                                var _sa_rate  = ability_web_copy_has_rider(ab, "chain_full") ? 1.0 : 0.5;
                                 if (_sa_shocked) array_push(combat_log, "The shock ARCS to everything standing!");
                                 for (var _sahi = 0; _sahi < _sa_count; _sahi++) {
                                     var _sa_idx = _sa_shocked ? _sahi : _sa_first;
                                     var _sa_t   = _sa_others[_sa_idx];
-                                    var _sa_dmg = combat_resolve_damage(max(1, round(_final_dmg * 0.5)), 1, _sa_t.armor, _sa_t.el_resist);
+                                    var _sa_dmg = combat_resolve_damage(max(1, round(_final_dmg * _sa_rate)), 1, _sa_t.armor, _sa_t.el_resist);
                                     if (_sa_dmg < 1) _sa_dmg = 1;
                                     combat_apply_damage(_sa_t, _sa_dmg);
                                     _sa_t.hit_flash = max(_sa_t.hit_flash, 10);
@@ -1808,6 +2195,18 @@ if (player_turn) {
                                     array_push(combat_log, "Static Arc chains to " + _sa_t.name + " for " + string(_sa_dmg) + "!");
                                     if (_sa_t.HP <= 0) combat_on_enemy_defeated(_sa_t, player, combat_log);
                                 }
+                            }
+                            // "Live Wire" web node (task #14): the Arc leaves the target
+                            // SHOCKED, so the caster's own NEXT Arc chains to everything.
+                            // Applied AFTER this cast's chain check - the setup pays off
+                            // on the next cast, not retroactively.
+                            if (ability_web_copy_has_rider(ab, "hit_shock")
+                                && !target.is_defeated && variable_struct_exists(target, "status_effects")) {
+                                array_push(target.status_effects, {
+                                    name: "Shocked", effect_type: "status", kind: "status",
+                                    effect_value: 0, duration: 1, element: "shock", source: "player"
+                                });
+                                array_push(combat_log, "Live Wire: " + target.name + " is SHOCKED - the next arc will leap!");
                             }
                         }
 
@@ -1840,15 +2239,46 @@ if (player_turn) {
                         //     splashes 40% to every OTHER living enemy. ---
                         if (!_is_aoe && trait_active("Chain Caster") && ab.base_damage > 0
                             && (ab.damage_type == 1 || ab.damage_type == 2 || ab.damage_type == 3)) {
-                            var _splash = max(1, round(_final_dmg * 0.4));
+                            // POTENCY V2: +10% splash strength per rank (40% -> up to 56%);
+                            // TRANSCEND "Storm Conductor": each splash can crit (own roll).
+                            var _splash = max(1, round(_final_dmg * 0.4 * trait_potency_mult("Chain Caster")));
                             for (var _cci = 0; _cci < array_length(combat_state.combatants); _cci++) {
                                 var _ccc = combat_state.combatants[_cci];
                                 if (_ccc.is_player || _ccc.is_defeated || _ccc == target) continue;
-                                combat_apply_damage(_ccc, _splash);
+                                var _cc_dmg = _splash;
+                                if (trait_transcended("Chain Caster") && ab.crit_type != -1) {
+                                    var _cc_cr = combat_roll_crit(player.stats, ab.base_crit, ab.crit_type);
+                                    if (_cc_cr.critted) {
+                                        _cc_dmg = round(_cc_dmg * _cc_cr.multiplier);
+                                        array_push(combat_log, "Storm Conductor: the arc CRITS " + _ccc.name + "!");
+                                    }
+                                }
+                                combat_apply_damage(_ccc, _cc_dmg);
                                 _ccc.hit_flash = max(_ccc.hit_flash, 10);
                                 array_push(combat_log, "Chain Caster: " + _ccc.name
-                                    + " takes " + string(_splash) + " splash damage!");
+                                    + " takes " + string(_cc_dmg) + " splash damage!");
                                 if (_ccc.HP <= 0) combat_on_enemy_defeated(_ccc, player, combat_log);
+                            }
+                        }
+
+                        // --- Stormcaller's Loop (07-28 legendary): single-target SPELLS
+                        //     echo 15% to ONE other living enemy (any spell school - the
+                        //     lightweight cousin of Chain Caster's elemental splash). ---
+                        if (!_is_aoe && variable_struct_exists(player, "leg_loop") && player.leg_loop
+                            && ab.base_damage > 0 && ability_class_is_spell(ability_attack_class(ab))) {
+                            var _sl_hosts = [];
+                            for (var _sli = 0; _sli < array_length(combat_state.combatants); _sli++) {
+                                var _slc = combat_state.combatants[_sli];
+                                if (!_slc.is_player && !_slc.is_defeated && _slc != target) array_push(_sl_hosts, _slc);
+                            }
+                            if (array_length(_sl_hosts) > 0) {
+                                var _sl_t   = _sl_hosts[irandom(array_length(_sl_hosts) - 1)];
+                                var _sl_dmg = max(1, round(_final_dmg * 0.15));
+                                combat_apply_damage(_sl_t, _sl_dmg);
+                                _sl_t.hit_flash = max(_sl_t.hit_flash, 10);
+                                array_push(combat_log, "Stormcaller's Loop: the spell strays - " + _sl_t.name
+                                    + " takes " + string(_sl_dmg) + " echo damage!");
+                                if (_sl_t.HP <= 0) combat_on_enemy_defeated(_sl_t, player, combat_log);
                             }
                         }
 
@@ -1883,6 +2313,14 @@ if (player_turn) {
                                     _status_dur += 1;
                                 }
                                 var _status_kind = ability_status_kind(ab);
+                                // Escalating control resist (M 07-28): chained
+                                // stun/root/silence fizzles more each time - see
+                                // combat_control_resist_try. Damage already landed.
+                                var _ctrl_resisted = combat_control_resist_try(target, _status_kind);
+                                if (_ctrl_resisted) {
+                                    array_push(combat_log, target.name + " fights through " + ab.name + " - the control fails to take hold!");
+                                }
+                                if (!_ctrl_resisted) {
                                 var _status = {
                                     name:         ab.name,
                                     effect_type:  ab.effect_type,
@@ -1936,13 +2374,18 @@ if (player_turn) {
 
                                 // Plaguebearer: single-target debuffs/DoTs also strike every
                                 // OTHER living enemy at half duration.
+                                // POTENCY V2 ranks: spread duration +12.5%/rank of the full
+                                // value - 50% / 62.5% / 75% / 87.5% / 100% at rank 4.
                                 if (!_is_aoe && trait_active("Plaguebearer")) {
-                                    var _pb_dur = max(1, floor(_status_dur / 2));
+                                    var _pb_frac = 0.5 + 0.125 * trait_potency_r14("Plaguebearer");
+                                    var _pb_dur = max(1, floor(_status_dur * _pb_frac));
                                     var _pb_spread = false;
                                     for (var _pbi = 0; _pbi < array_length(combat_state.combatants); _pbi++) {
                                         var _pbc = combat_state.combatants[_pbi];
                                         if (_pbc.is_player || _pbc.is_defeated || _pbc == target) continue;
                                         if (!variable_struct_exists(_pbc, "status_effects")) continue;
+                                        // Spread controls ramp each victim's own resist counter too.
+                                        if (combat_control_resist_try(_pbc, _status_kind)) continue;
                                         array_push(_pbc.status_effects, {
                                             name:         ab.name,
                                             effect_type:  ab.effect_type,
@@ -1956,6 +2399,7 @@ if (player_turn) {
                                     }
                                     if (_pb_spread) array_push(combat_log, "Plaguebearer spreads " + ab.name + " to all enemies!");
                                 }
+                                }   // end !_ctrl_resisted
                             }
 
                             // Frost Shot (07-16 combo batch): the SS shatter-primer's second
@@ -2011,12 +2455,22 @@ if (player_turn) {
             } else {
                 // --- Self-targeted ability ---
                 array_push(combat_log, player.name + " used " + ab.name + ".");
+                // Talent-web MP + Opening Gambit flag for ALL self-casts (movement
+                // included - Blink/Shadow Step never earned mastery before the web
+                // rework, which left their webs unreachable).
+                ability_web_count_cast(ab.name, combat_log);
+                if (ability_web_copy_has_rider(ab, "first_free")) ability_web_first_cast_mark(player, ab.name);
+                // Deep Reserves (POTENCY V2): burn the potency first-cast flag too.
+                if (variable_struct_exists(player, "potency_first_casts"))
+                    variable_struct_set(player.potency_first_casts, ab.name, true);
+                // Counterphase (task #14): the armed 1-AP discount is spent by this cast.
+                if (variable_struct_exists(player, "blink_tempo_ready")) player.blink_tempo_ready = false;
+                ability_web_cast_riders(ab, player, combat_log);   // bespoke on-cast riders (shield/resource)
                 if (ab.name == "Blink" || ab.name == "Shadow Step") {
                     audio_play_sound(snd_move_whoosh, 1, false);   // movement keeps its whoosh
                 } else {
                     // Support cast - sound keyed to the effect kind (heal/shield/buff/...).
                     play_ability_cast_sfx(ab, player, false);
-                    ability_mastery_count_cast(ab.name, combat_log);   // expression #2
                     // Self-cast VFX over the player: heal spell for restores, otherwise a
                     // generic buff burst (shields, stat-ups, resource gains, self-debuffs).
                     vfx_spr       = (ab.effect_type == "heal") ? spr_vfx_heal : spr_vfx_buff;
@@ -2098,8 +2552,11 @@ if (player_turn) {
                     if (!variable_struct_exists(player, "shield_hp")) player.shield_hp = 0;
                     player.shield_hp += ab.effect_value;
                     player.glacial_ward_turns = 1;
+                    // "Deep Freeze" web keystone (task #14): stash whether the rebuke
+                    // reaches RANGED attackers too (read at the rebuke site).
+                    player.glacial_ward_reach_all = ability_web_copy_has_rider(ab, "ward_reach");
                     array_push(combat_log, "Glacial Ward raised - " + string(ab.effect_value)
-                        + " shield; melee attackers will be Chilled.");
+                        + " shield; " + (player.glacial_ward_reach_all ? "ALL" : "melee") + " attackers will be Chilled.");
                 }
 
                 // --- Soul Engine (D§4): once per combat, combat-long ramp - spells
@@ -2156,8 +2613,10 @@ if (player_turn) {
                             if (_df_live == selected_target) { _df_t = _dfc; _df_slot = _df_live; break; }
                             _df_live++;
                         }
+                        // "Loaded Coin" web keystone (task #14): the streak pays +12/win.
+                        var _df_rate = ability_web_copy_has_rider(ab, "flip_hot") ? 12 : 8;
                         if (_df_t != undefined) {
-                            var _df_base = 26 + player.flip_streak * 8;
+                            var _df_base = 26 + player.flip_streak * _df_rate;
                             var _df_dmg = combat_resolve_damage(_df_base, 0, _df_t.armor, _df_t.el_resist);
                             if (_df_dmg < 1) _df_dmg = 1;
                             combat_apply_damage(_df_t, _df_dmg);
@@ -2165,11 +2624,17 @@ if (player_turn) {
                             array_push(damage_popups, { value: _df_dmg, x: 1620 + _df_slot * (-120), y: 233 + _df_slot * 105 - 60, timer: 50, col: make_color_rgb(235, 190, 90) });
                             player.flip_streak += 1;
                             array_push(combat_log, "DEVIL'S FLIP - heads! " + _df_t.name + " takes " + string(_df_dmg)
-                                + ((player.flip_streak >= 2) ? (" (streak " + string(player.flip_streak) + " - next flip +" + string(player.flip_streak * 8) + ")") : "") + "!");
+                                + ((player.flip_streak >= 2) ? (" (streak " + string(player.flip_streak) + " - next flip +" + string(player.flip_streak * _df_rate) + ")") : "") + "!");
                             if (_df_t.HP <= 0) combat_on_enemy_defeated(_df_t, player, combat_log);
                         } else {
                             array_push(combat_log, "Devil's Flip finds no one to collect from.");
                         }
+                    } else if (ability_web_copy_has_rider(ab, "flip_safe")) {
+                        // "Devil's Insurance" web keystone (task #14): the loss costs no
+                        // HP - only the streak dies.
+                        array_push(combat_log, "DEVIL'S FLIP - tails! The house waves the debt"
+                            + ((player.flip_streak > 0) ? (" - but the " + string(player.flip_streak) + "-win streak dies") : "") + ".");
+                        player.flip_streak = 0;
                     } else {
                         combat_apply_damage(player, 8);
                         player.hit_flash = 15;
@@ -2188,6 +2653,9 @@ if (player_turn) {
                 if (ab.name == "Blink") {
                     player.blink_charges = 3;
                     player.ability_cd[selected_ability] = ability_cooldown(ab);
+                    // "Counterphase" web keystone (task #14): remember the rider so the
+                    // full-dodge consume (enemy-turn block) can arm the AP discount.
+                    player.blink_tempo_rider = ability_web_copy_has_rider(ab, "blink_tempo");
                     array_push(combat_log, "Hero blinks - the next attack is fully evaded, the two after are softened!");
                 }
 
@@ -2378,6 +2846,10 @@ if (player_turn) {
                 // Vampiric Edge: Bloodwarden heals 2 HP per DoT tick from player effects
                 if (_se.source == "player" && player.class_id == 1 && trait_active("Vampiric Edge")) {
                     var _vamp_heal = round(2 * trait_potency_mult("Vampiric Edge"));
+                    // TRANSCEND "Exsanguinating Feast" (POTENCY V2): doubled below 40% HP.
+                    if (trait_transcended("Vampiric Edge") && player.HP <= floor(player.max_HP * 0.40)) {
+                        _vamp_heal *= 2;
+                    }
                     player.HP = min(player.max_HP, player.HP + _vamp_heal);
                     array_push(combat_log, "Vampiric Edge: +" + string(_vamp_heal) + " HP.");
                 }
@@ -2416,6 +2888,11 @@ if (player_turn) {
                     actor.is_defeated = true;
                     enemy_death_sound(actor.name);
                     array_push(combat_log, actor.name + " succumbs to " + _dot_fl + "!");
+                    // IRONMAN resume: deterministic reward stream per kill, same
+                    // as the direct-kill path (loot_room_seed) - no quit-scum
+                    // re-rolls. Restored right after the drop roll.
+                    var _dot_lseed = random_get_seed();
+                    random_set_seed(loot_room_seed(variable_struct_exists(actor, "drop_slot") ? actor.drop_slot : 0, 1));
                     // --- Gold drop on DoT kill ---
                     var _gold_drop = irandom(actor.gold_max - actor.gold_min) + actor.gold_min;
                     add_gold(_gold_drop);
@@ -2433,6 +2910,7 @@ if (player_turn) {
                     if (_drop_result != "") {
                         array_push(combat_log, "Loot: " + _drop_result + "!");
                     }
+                    random_set_seed(_dot_lseed);   // back to the live stream
                     // --- XP grant on DoT kill ---
                     var _dot_xp_base;
                     if (variable_struct_exists(actor, "xp_value")) {
@@ -2529,6 +3007,12 @@ if (player_turn) {
         if (player.blink_charges >= 3) {
             player.blink_charges = 2;
             array_push(combat_log, actor.name + "'s attack passes through thin air!");
+            // "Counterphase" web keystone (task #14): the full evade arms a 1-AP
+            // discount on the caster's next ability (consumed at cast commit).
+            if (variable_struct_exists(player, "blink_tempo_rider") && player.blink_tempo_rider) {
+                player.blink_tempo_ready = true;
+                array_push(combat_log, "Counterphase: the missed swing feeds your tempo - next ability costs 1 less AP!");
+            }
             enemy_roll_intent(actor, player, combat_state.round + 1, true);   // action spent on the whiff
             combat_next_turn(combat_state);
             player_turn      = combat_state.active.is_player;
@@ -2668,6 +3152,19 @@ if (player_turn) {
                 } else {
                     array_push(combat_log, actor.name + " " + ((_eab.msg != "") ? _eab.msg : ("mends " + string(_ehl) + " HP")) + ".");
                 }
+                // A2+ CLEANSE RIDER (M 07-28 AI pass): the mend also shakes hostile
+                // statuses off its target - controls first, so a support enemy can
+                // free a snared ally. One status at A2+, two at A4+. Same
+                // awakening-gated-smarts idiom as the A3 targeting above.
+                var _cl_asc = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
+                if (_cl_asc >= 2) {
+                    var _cl_n = (_cl_asc >= 4) ? 2 : 1;
+                    repeat (_cl_n) {
+                        var _cl_name = combat_cleanse_one(_htgt);
+                        if (_cl_name == "") break;
+                        array_push(combat_log, actor.name + "'s mending unravels " + _cl_name + "!");
+                    }
+                }
 
             } else if (_eab.kind == "spell") {
                 // A5 boss enrage applies to spells too (same helper as the swing path).
@@ -2689,9 +3186,19 @@ if (player_turn) {
                 // debuff / dot / control -> typed status on the player
                 if (variable_struct_exists(player, "iron_will_active") && player.iron_will_active) {
                     player.iron_will_active = false;
+                    // TRANSCEND "Unshakable" (POTENCY V2): the absorbed KIND is
+                    // banned for the rest of the combat (checked below).
+                    if (trait_transcended("Iron Will")) player.iron_will_banned = _eab.status_kind;
                     array_push(combat_log, "Iron Will absorbs " + actor.name + "'s " + _eab.name + "!");
+                } else if (variable_struct_exists(player, "iron_will_banned")
+                    && player.iron_will_banned != "" && player.iron_will_banned == _eab.status_kind) {
+                    array_push(combat_log, "Unshakable: " + _eab.name + " cannot take hold of you again!");
                 } else {
                     var _edur = (_eab.kind == "dot") ? _eab.turns : (_eab.turns + 1);
+                    // Iron Will potency ranks (POTENCY V2): later statuses run
+                    // -10% duration per rank (floors at 1 turn).
+                    var _iw_r = trait_potency_r14("Iron Will");
+                    if (_iw_r > 0) _edur = max(1, floor(_edur * (1 - 0.10 * _iw_r)));
                     array_push(player.status_effects, {
                         name:         _eab.name,
                         effect_type:  (_eab.kind == "dot") ? "dot" : "debuff",
@@ -2732,15 +3239,41 @@ if (player_turn) {
         // --- Primary attack hit roll ---
         // Enemies don't have a full stats struct; pass a minimal anonymous struct
         // with only the DEX field that combat_roll_hit() needs.
-        var _hit = combat_roll_hit(_enemy_acc + 9, player.dodge + combat_smoke_dodge(player), false);
+        // Phantom Step potency ranks (POTENCY V2): +2% flat dodge per rank.
+        var _pp_dodge = (variable_struct_exists(player, "phantom_dodge")) ? player.phantom_dodge : 0;
+        var _hit = combat_roll_hit(_enemy_acc + 9, player.dodge + combat_smoke_dodge(player) + _pp_dodge, false);
+
+        // Phantom Step TRANSCEND "Afterimage" (POTENCY V2): once per combat, a
+        // swing that would land passes through an afterimage instead.
+        if (_hit == "hit" && variable_struct_exists(player, "afterimage_ready") && player.afterimage_ready) {
+            player.afterimage_ready = false;
+            _hit = "dodge";
+            array_push(combat_log, "AFTERIMAGE! " + actor.name + "'s blow parts empty shadow.");
+        }
+        // Veil of the Patient Dark (07-28 legendary): the first enemy attack each
+        // combat parts the concealment instead of you (same idiom as Afterimage).
+        if (_hit == "hit" && variable_struct_exists(player, "leg_veil_ready") && player.leg_veil_ready) {
+            player.leg_veil_ready = false;
+            _hit = "dodge";
+            array_push(combat_log, "THE VEIL PARTS! " + actor.name + " strikes where you no longer are.");
+        }
 
         if (_hit != "hit") {
             array_push(combat_log, (_hit == "dodge")
                 ? ("You dodged " + actor.name + "'s attack!")
                 : (actor.name + " attacked but missed!"));
+            // Duelist's Rebuke (07-28 legendary): a dodge primes +50% on your next
+            // damaging ability (Shadow Meld idiom - persists until consumed).
+            if (_hit == "dodge" && variable_struct_exists(player, "leg_rebuke") && player.leg_rebuke) {
+                player.leg_rebuke_primed = true;
+                array_push(combat_log, "Duelist's Rebuke: the miss will cost them - your next ability strikes +50% harder!");
+            }
             // Shadow Meld (audit §6 rework): a successful dodge primes a guaranteed crit
             // on your next damaging attack (dodge feeds offense, not more dodge).
-            if (_hit == "dodge" && player.class_id == 2 && trait_active("Shadow Meld")) {
+            // TRANSCEND "One With the Dark" (POTENCY V2): ANY miss primes it, not
+            // just a dodge.
+            if ((_hit == "dodge" || trait_transcended("Shadow Meld"))
+                && player.class_id == 2 && trait_active("Shadow Meld")) {
                 player.shadow_meld_crit = true;
                 array_push(combat_log, "Shadow Meld: you slip into the dark - your next attack is a guaranteed CRIT!");
             }
@@ -2867,7 +3400,9 @@ if (player_turn) {
             //     lands a blow while the ward stands is Chilled (frost weaken; the
             //     same status detonators shatter).
             if (variable_struct_exists(player, "glacial_ward_turns") && player.glacial_ward_turns > 0
-                && ((variable_struct_exists(actor, "reach") ? actor.reach : "melee") == "melee")
+                && (((variable_struct_exists(actor, "reach") ? actor.reach : "melee") == "melee")
+                    // "Deep Freeze" web keystone (task #14): the rebuke reaches ranged too.
+                    || (variable_struct_exists(player, "glacial_ward_reach_all") && player.glacial_ward_reach_all))
                 && variable_struct_exists(actor, "status_effects") && !actor.is_defeated) {
                 array_push(actor.status_effects, {
                     name: "Chilled", effect_type: "debuff", kind: "weaken",

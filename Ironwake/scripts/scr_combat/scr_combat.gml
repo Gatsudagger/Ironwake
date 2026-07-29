@@ -114,6 +114,15 @@ function actor_turn_ap(actor) {
 function combat_next_turn(combat_state) {
     var count = array_length(combat_state.combatants);
 
+    // Relentless potency r2/r4 (POTENCY V2): unspent AP carries to the player's
+    // next turn (1 at rank 2, 2 at rank 4). Banked as the player's turn ends.
+    var _out = combat_state.active;
+    if (is_struct(_out) && variable_struct_exists(_out, "is_player") && _out.is_player) {
+        var _rl_r = trait_potency_r14("Relentless");
+        var _rl_c = (_rl_r >= 4) ? 2 : ((_rl_r >= 2) ? 1 : 0);
+        if (_rl_c > 0 && _out.class_id == 1) _out.relentless_carry = min(_out.energy, _rl_c);
+    }
+
     combat_state.turn_index++;
     if (combat_state.turn_index >= count) {
         combat_state.turn_index = 0;
@@ -126,6 +135,17 @@ function combat_next_turn(combat_state) {
     // Fully restore energy at the start of each turn (Relentless raises the
     // player's base to 4 - see actor_turn_ap).
     actor.energy = actor_turn_ap(actor);
+    if (actor.is_player && variable_struct_exists(actor, "relentless_carry") && actor.relentless_carry > 0) {
+        actor.energy += actor.relentless_carry;
+        actor.relentless_carry = 0;
+    }
+
+    // Ley Tap TRANSCEND "Ley Torrent" (POTENCY V2): the bonus AP returns every
+    // 3rd round (round 4, 7, 10... - round 1's came from combat start).
+    if (actor.is_player && actor.class_id == 0 && trait_transcended("Ley Tap")
+        && combat_state.round > 1 && ((combat_state.round - 1) mod 3) == 0) {
+        actor.energy += 1;
+    }
 
     // Galvanize (D§4, M-approved 07-09): a killing blow last turn banked +1 AP.
     if (actor.is_player && variable_struct_exists(actor, "galvanize_ap") && actor.galvanize_ap > 0) {
@@ -400,8 +420,23 @@ function combat_estimate_hit(ability, caster, target) {
             _final += caster.dread_bonus;
         }
         if (caster.class_id == 1 && trait_active("Berserker Rage")
-            && caster.HP <= floor(caster.max_HP * 0.40))
+            && caster.HP <= floor(caster.max_HP * (trait_transcended("Berserker Rage") ? 0.60 : 0.40)))
             _final = floor(_final * (1 + 0.20 * trait_potency_mult("Berserker Rage")));
+        // Last Stand fury + Expanded Arsenal potency ranks (POTENCY V2) - both
+        // mirrored here so the hit-preview matches the real hit.
+        if (variable_struct_exists(caster, "last_stand_fury") && caster.last_stand_fury > 0)
+            _final = max(1, floor(_final * (1 + caster.last_stand_fury)));
+        var _ea_est = trait_potency_r14("Expanded Arsenal");
+        if (_ea_est > 0 && variable_struct_exists(caster, "is_player") && caster.is_player)
+            _final = max(1, floor(_final * (1 + 0.02 * _ea_est)));
+        if (trait_transcended("Scavenger") && global.gold >= 500
+            && variable_struct_exists(caster, "is_player") && caster.is_player)
+            _final = max(1, floor(_final * (1 + min(0.10, 0.01 * (global.gold div 500)))));
+        var _lt_est = trait_potency_r14("Ley Tap");
+        if (_lt_est > 0 && caster.class_id == 0 && instance_exists(obj_combat_controller)
+            && instance_find(obj_combat_controller, 0).combat_state.round == 1
+            && ability_class_is_spell(ability_attack_class(ability)))
+            _final = max(1, floor(_final * (1 + 0.03 * _lt_est)));
     }
     var _est_aspect = rune_aspect_damage_pct(ability);
     if (_live_tgt && _est_aspect > 0) _final = round(_final * (1 + _est_aspect));
@@ -536,21 +571,30 @@ function combat_check_blink(target, combat_log) {
 // dungeon-select AWAKENING EFFECTS panel, so the advertised numbers can never
 // drift from what combat actually applies.
 // ---------------------------------------------------------------------------
+// awaken_endless_mult(asc) - A6+ compounding (SYSTEMS_ENDLESS.md §2): +12% per
+// tier past 5, unbounded. The Descent feeds FRACTIONAL effective tiers
+// (5 + floor*0.5) through the same curve - power() handles both.
+function awaken_endless_mult(asc) {
+    return (asc > 5) ? power(1.12, asc - 5) : 1.0;
+}
+
 function awaken_hp_mult(asc) {
     // A4/A5 top-end bumped (C1, M-approved 07-09) alongside the behavior ladder +
     // the new Awakening XP mult - the player curve rises with it.
     var _tbl = [1.00, 1.20, 1.45, 1.75, 2.20, 2.75];
-    return _tbl[clamp(asc, 0, array_length(_tbl) - 1)];
+    return _tbl[clamp(asc, 0, array_length(_tbl) - 1)] * awaken_endless_mult(asc);
 }
 function awaken_dmg_mult(asc) {
     var _tbl = [1.00, 1.15, 1.35, 1.60, 1.90, 2.45];
-    return _tbl[clamp(asc, 0, array_length(_tbl) - 1)];
+    return _tbl[clamp(asc, 0, array_length(_tbl) - 1)] * awaken_endless_mult(asc);
 }
 
 // awaken_clear_gold_bonus(asc) - flat gold paid on a full-run completion at this
 // tier (end_run victory path + dungeon-select panel; same single-source rule).
 function awaken_clear_gold_bonus(asc) {
     var _tbl = [0, 50, 100, 150, 200, 300];
+    // A6+: +60 per endless tier on top of the A5 payout.
+    if (asc > 5) return 300 + 60 * round(asc - 5);
     return _tbl[clamp(asc, 0, array_length(_tbl) - 1)];
 }
 
@@ -574,7 +618,9 @@ function awaken_xp_mult(asc = undefined) {
     var _asc = (asc != undefined) ? asc
         : (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0);
     var _tbl = [1.00, 1.15, 1.30, 1.50, 1.75, 2.00];
-    return _tbl[clamp(_asc, 0, array_length(_tbl) - 1)];
+    // A6+: +8%/tier compounding on top of the A5 rate (matches the gold curve).
+    var _endless = (_asc > 5) ? power(1.08, _asc - 5) : 1.0;
+    return _tbl[clamp(_asc, 0, array_length(_tbl) - 1)] * _endless;
 }
 
 // ---------------------------------------------------------------------------
@@ -587,8 +633,10 @@ function awaken_enemy_acc_bonus(asc = undefined) {
     var _asc = (asc != undefined) ? asc
         : (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0);
     var _tbl = [0, 0, 5, 10, 18, 28];
+    // A6+: +2 accuracy per endless tier (flat, so dodge stays viable-but-fading).
+    var _end_acc = (_asc > 5) ? floor(2 * (_asc - 5)) : 0;
     _asc = clamp(_asc, 0, array_length(_tbl) - 1);
-    return _tbl[_asc];
+    return _tbl[_asc] + _end_acc;
 }
 
 // awaken_enemy_heal_mult() - enemy healing scales with Awakening (mirrors the dmg
@@ -598,8 +646,9 @@ function awaken_enemy_heal_mult(asc = undefined) {
     var _asc = (asc != undefined) ? asc
         : (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0);
     var _tbl = [1.0, 1.15, 1.35, 1.6, 1.9, 2.3];
+    var _end_heal = awaken_endless_mult(_asc);
     _asc = clamp(_asc, 0, array_length(_tbl) - 1);
-    return _tbl[_asc];
+    return _tbl[_asc] * _end_heal;
 }
 
 // ---------------------------------------------------------------------------
@@ -630,14 +679,35 @@ function combat_evasion_chance(target) {
 function combat_apply_start_traits(player) {
     // Crimson Reserve: Bloodwarden only - start combat with 4 Blood (of 10).
     // Audit fix 2026-07-03: was +20 vs a 10-cap bar, i.e. a mislabeled full bar.
+    // POTENCY V2: ranks 2/4 start with 5/6; TRANSCEND "Overflow" raises the cap
+    // by 4 and pours in the Blood carried from the previous combat (banked at
+    // victory in obj_combat_controller).
     if (player.class_id == 1 && variable_struct_exists(player, "blood")
         && trait_active("Crimson Reserve")) {
-        player.blood = min(player.blood_max, player.blood + 4);
+        if (trait_transcended("Crimson Reserve")) {
+            player.blood_max += 4;
+            if (variable_global_exists("blood_carry") && global.blood_carry > 0) {
+                player.blood = min(player.blood_max, player.blood + global.blood_carry);
+                global.blood_carry = 0;
+            }
+        }
+        var _cr_r = trait_potency_r14("Crimson Reserve");
+        player.blood = min(player.blood_max, player.blood + 4 + (_cr_r >= 2 ? 1 : 0) + (_cr_r >= 4 ? 1 : 0));
     }
 
     // Phantom Step: first enemy attack each combat auto-misses
     // phantom_step_active is consumed by combat_check_phantom_step()
+    // POTENCY V2: +2% flat dodge per rank; TRANSCEND "Afterimage" banks one
+    // once-per-combat forced miss (consumed in the enemy swing roll).
     player.phantom_step_active = trait_active("Phantom Step");
+    player.phantom_dodge       = 2 * trait_potency_r14("Phantom Step");
+    player.afterimage_ready    = trait_transcended("Phantom Step");
+
+    // Soul Siphon potency r2/r4 (POTENCY V2): +1 Soul at combat start each.
+    if (player.class_id == 0 && variable_struct_exists(player, "souls") && trait_active("Soul Siphon")) {
+        var _ss_r = trait_potency_r14("Soul Siphon");
+        player.souls = min(player.souls_max, player.souls + (_ss_r >= 2 ? 1 : 0) + (_ss_r >= 4 ? 1 : 0));
+    }
 
     // Ley Tap: +1 bonus AP at combat start (Arcanist only).
     // Bugfix 07-16: was `player.AP += 1` but the combat player struct's field is
@@ -648,17 +718,37 @@ function combat_apply_start_traits(player) {
 
     // Relentless (M 07-16): Bloodwarden's base AP is 4 - the struct is built with
     // energy: 3, so top up the FIRST turn here; combat_next_turn covers the rest.
+    // TRANSCEND "Tireless" (POTENCY V2): turn 1 has 5 AP.
     if (player.class_id == 1 && trait_active("Relentless")) {
         player.energy = max(player.energy, 4);
+        if (trait_transcended("Relentless")) player.energy += 1;
     }
 
     // Iron Will: first status effect applied to the player this combat is absorbed
+    // POTENCY V2: ranks shorten later statuses (-10%/rank); TRANSCEND "Unshakable"
+    // bans the absorbed status kind for the rest of the combat (kind recorded at
+    // the absorb site in obj_combat_controller).
     player.iron_will_active = trait_active("Iron Will");
+    player.iron_will_banned = "";
+
+    // Expanded Arsenal TRANSCEND "Deep Reserves" (POTENCY V2): per-ability
+    // first-cast -1 AP flags, fresh each combat (mirrors the web keystone flags).
+    player.potency_first_casts = {};
+
+    // Last Stand potency (POTENCY V2): fury damage bonus armed when it triggers.
+    player.last_stand_fury = 0;
 
     // Battle Hardened: apply accumulated permanent HP bonus
     if (variable_global_exists("perm_hp_battle_hardened") && global.perm_hp_battle_hardened > 0) {
         player.max_HP += global.perm_hp_battle_hardened;
         player.HP      = min(player.HP + global.perm_hp_battle_hardened, player.max_HP);
+    }
+
+    // Second Wind run bonus (POTENCY V2): flat max-HP granted at the first rest,
+    // mirrored from out_of_combat_max_hp so the in-fight bar agrees.
+    if (variable_global_exists("run_bonus_max_hp") && global.run_bonus_max_hp > 0) {
+        player.max_HP += global.run_bonus_max_hp;
+        player.HP      = min(player.HP + global.run_bonus_max_hp, player.max_HP);
     }
 
     // Shadow Meld (audit §6 rework): after a dodge, the next attack is a guaranteed crit.
@@ -667,6 +757,9 @@ function combat_apply_start_traits(player) {
     // Aspect-rune flagship per-combat flags (Quickcast / Echo).
     player.rune_first_spell_used = false;   // Quickcast: first spell each combat costs -1 AP
     player.rune_first_aoe_used   = false;   // Echo: first AoE each combat echoes for 50%
+
+    // Talent-web Opening Gambit keystone: per-ability first-cast flags (fresh each combat).
+    player.web_first_casts = {};
 
     // Aegis boon: begin each combat with a shield.
     if (boon_active("aegis")) {
@@ -735,12 +828,38 @@ function combat_try_last_stand(player, combat_log) {
         return true;
     }
 
+    // Gravewalker Treads (07-28 legendary): once per RUN, walk out of the grave
+    // at 1 HP. Fires after the deliberate/per-combat saves but BEFORE Last Stand,
+    // so the trait's own once-per-run charge is preserved. global.gravewalker_used
+    // resets in run_state_reset.
+    if (variable_struct_exists(player, "leg_treads") && player.leg_treads
+        && (!variable_global_exists("gravewalker_used") || !global.gravewalker_used)) {
+        global.gravewalker_used = true;
+        player.HP = 1;
+        array_push(combat_log, "GRAVEWALKER TREADS! You have walked out of worse - 1 HP, still standing.");
+        return true;
+    }
+
     if (!trait_active("Last Stand")) return false;
-    if (variable_global_exists("last_stand_used") && global.last_stand_used) return false;
+    // TRANSCEND "Deathless" (POTENCY V2): once per FLOOR instead of once per
+    // run - a use recorded on an earlier floor doesn't spend this floor's.
+    var _ls_floor = variable_global_exists("current_floor") ? global.current_floor : 1;
+    if (variable_global_exists("last_stand_used") && global.last_stand_used) {
+        if (!trait_transcended("Last Stand")) return false;
+        if (variable_global_exists("last_stand_floor") && global.last_stand_floor == _ls_floor) return false;
+    }
 
     player.HP = 1;
     if (variable_global_exists("last_stand_used")) global.last_stand_used = true;
-    array_push(combat_log, "LAST STAND! You cling to life at 1 HP.");
+    global.last_stand_floor = _ls_floor;
+    // POTENCY V2 ranks: defiance - +10% damage per rank for the rest of this combat.
+    var _ls_r = trait_potency_r14("Last Stand");
+    if (_ls_r > 0) {
+        player.last_stand_fury = 0.10 * _ls_r;
+        array_push(combat_log, "LAST STAND! You cling to life at 1 HP - fury sharpens your blows (+" + string(_ls_r * 10) + "% damage).");
+    } else {
+        array_push(combat_log, "LAST STAND! You cling to life at 1 HP.");
+    }
     return true;
 }
 
@@ -860,6 +979,53 @@ function combat_control_block_reason(combatant, attack_class) {
     var _spell = (attack_class == "melee_spell" || attack_class == "ranged_spell");
     if (_melee && combat_has_status(combatant, "root"))    return "rooted";
     if (_spell && combat_has_status(combatant, "silence")) return "silenced";
+    return "";
+}
+
+// combat_control_resist_try(target, kind) - ESCALATING CONTROL RESIST (M 07-28:
+// a lvl-0 Shadowstrider perma-locked whole floors by re-casting Bear Trap every
+// turn). The first control of a combat always sticks; each control that has
+// already stuck to this enemy raises the next one's resist chance by 30 points
+// (30% / 60% / 90%, capped there). ALL control kinds share the one counter, so
+// alternating Root and Stun doesn't dodge the ramp. State lives on the enemy
+// clone -> resets automatically every combat. Returns true if this application
+// should FIZZLE (caller logs it; any damage part of the ability still lands).
+function combat_control_resist_try(target, kind) {
+    if (kind != "stun" && kind != "root" && kind != "silence") return false;
+    if (!is_struct(target)) return false;
+    if (variable_struct_exists(target, "is_player") && target.is_player) return false;
+    if (!variable_struct_exists(target, "control_stuck_n")) target.control_stuck_n = 0;
+    if (irandom(99) < min(90, 30 * target.control_stuck_n)) return true;
+    target.control_stuck_n += 1;
+    return false;
+}
+
+// combat_cleanse_one(c) - strip ONE hostile status from an enemy combatant:
+// control first (stun > root > silence), then the newest player-sourced effect.
+// Returns the removed status's display name, or "" if nothing to cleanse.
+// (M 07-28 AI pass: A2+ enemy heals carry this as a rider - see the heal branch
+// in obj_combat_controller Step - so perma-control has an in-fiction answer.)
+function combat_cleanse_one(c) {
+    if (!variable_struct_exists(c, "status_effects")) return "";
+    var _pri = ["stun", "root", "silence"];
+    for (var _p = 0; _p < array_length(_pri); _p++) {
+        for (var _i = array_length(c.status_effects) - 1; _i >= 0; _i--) {
+            var _se = c.status_effects[_i];
+            if (combat_status_kind_of(_se) == _pri[_p]) {
+                var _nm = variable_struct_exists(_se, "name") ? _se.name : ("the " + _pri[_p]);
+                array_delete(c.status_effects, _i, 1);
+                return _nm;
+            }
+        }
+    }
+    for (var _i = array_length(c.status_effects) - 1; _i >= 0; _i--) {
+        var _se = c.status_effects[_i];
+        if (variable_struct_exists(_se, "source") && _se.source == "player") {
+            var _nm = variable_struct_exists(_se, "name") ? _se.name : "a lingering effect";
+            array_delete(c.status_effects, _i, 1);
+            return _nm;
+        }
+    }
     return "";
 }
 
@@ -1025,8 +1191,20 @@ function combat_tick_statuses(c, log) {
         var _se = c.status_effects[_i];
         var _se_kind = combat_status_kind_of(_se);
         if (_se_kind == "dot") {
-            combat_apply_damage(c, _se.effect_value);
-            array_push(log, _cname + " takes " + string(_se.effect_value) + " " + _se.name + " damage!");
+            // Ember Saint's Censer (07-28 legendary): the bearer's afflictions on
+            // ENEMIES tick +2 harder (player-sourced DoTs only - never the ones
+            // eating the player).
+            var _es_bonus = 0;
+            if (!variable_struct_exists(c, "is_player") || !c.is_player) {
+                if (variable_struct_exists(_se, "source") && _se.source == "player"
+                    && instance_exists(obj_combat_controller)) {
+                    var _es_pl = instance_find(obj_combat_controller, 0).player;
+                    if (variable_struct_exists(_es_pl, "leg_censer") && _es_pl.leg_censer) _es_bonus = 2;
+                }
+            }
+            combat_apply_damage(c, _se.effect_value + _es_bonus);
+            array_push(log, _cname + " takes " + string(_se.effect_value + _es_bonus) + " " + _se.name + " damage!"
+                + (_es_bonus > 0 ? "  (Censer +2)" : ""));
             // Accelerating DoT (Entropy 07-16): each tick grows by `accel` (6/8/10/12).
             if (variable_struct_exists(_se, "accel") && _se.accel > 0) _se.effect_value += _se.accel;
         } else if (_se_kind == "regen") {
@@ -1315,10 +1493,106 @@ function play_ability_cast_sfx(ab, caster, is_offensive) {
 // the single-target and AoE damage paths so kill rewards never diverge.
 // (#17 resolved as WORKING AS INTENDED, M 07-09: a Soulfire killing blow pays
 // its own +2 AND the on-kill class harvest's +2 - the stack is deliberate.)
+// Grant N of the player's class secondary resource (Cascade-rune pattern).
+// Talent-web rider support; logs with the given source label.
+function combat_grant_secondary(player, n, label, combat_log) {
+    if (variable_struct_exists(player, "souls")) {
+        player.souls = min(player.souls_max, player.souls + n);
+        array_push(combat_log, label + ": +" + string(n) + " Soul" + ((n == 1) ? "" : "s") + ".");
+    } else if (variable_struct_exists(player, "blood")) {
+        player.blood = min(player.blood_max, player.blood + n);
+        array_push(combat_log, label + ": +" + string(n) + " Blood.");
+    } else if (variable_struct_exists(player, "preparation")) {
+        player.preparation = min(player.preparation_max, player.preparation + n);
+        array_push(combat_log, label + ": +" + string(n) + " Preparation.");
+    }
+}
+
+// Talent-web ON-CAST riders (bespoke nodes - Iron Bulwark / Blood Ward /
+// Shadow Feint): shields and resource gifts that fire at cast commit
+// regardless of targeting. Called from BOTH cast paths in the controller.
+function ability_web_cast_riders(ab, player, combat_log) {
+    var _sh = ability_web_rider_value(ab, "cast_shield", 0);
+    if (_sh > 0) {
+        if (!variable_struct_exists(player, "shield_hp")) player.shield_hp = 0;
+        player.shield_hp += _sh;
+        array_push(combat_log, "Talent: +" + string(_sh) + " shield.");
+    }
+    var _cs = ability_web_rider_value(ab, "cast_sec", 0);
+    if (_cs > 0) combat_grant_secondary(player, _cs, "Talent", combat_log);
+}
+
 function combat_on_enemy_defeated(target, player, combat_log) {
     target.is_defeated = true;
     enemy_death_sound(target.name);
     array_push(combat_log, target.name + " defeated!");
+
+    // Sanguine Chalice (07-28 legendary): overkill damage (HP driven below 0)
+    // returns to the bearer as healing, up to 15.
+    if (variable_struct_exists(player, "leg_chalice") && player.leg_chalice && target.HP < 0) {
+        var _sc_heal = min(15, -target.HP);
+        var _sc_real = min(player.max_HP - player.HP, _sc_heal);
+        if (_sc_real > 0) {
+            player.HP += _sc_real;
+            array_push(combat_log, "Sanguine Chalice: the excess returns to you (+" + string(_sc_real) + " HP).");
+        }
+    }
+
+    // Oathbreaker's Shard (07-28 legendary): each killing blow swells the run's
+    // vitality - +1 max HP for the rest of the run, cap +20. Rides the
+    // run_bonus_max_hp channel (Second Wind built it); counter resets with the run.
+    if (variable_struct_exists(player, "leg_shard") && player.leg_shard) {
+        if (!variable_global_exists("oathbreaker_hp")) global.oathbreaker_hp = 0;
+        if (global.oathbreaker_hp < 20) {
+            global.oathbreaker_hp   += 1;
+            if (!variable_global_exists("run_bonus_max_hp")) global.run_bonus_max_hp = 0;
+            global.run_bonus_max_hp += 1;
+            player.max_HP += 1;
+            player.HP     += 1;
+            array_push(combat_log, "Oathbreaker's Shard drinks the ending (+1 max HP this run).");
+        }
+    }
+
+    // Plaguebearer TRANSCEND "Patient Zero" (POTENCY V2): the corpse's player-
+    // sourced DoTs jump fresh to a random living enemy.
+    if (trait_transcended("Plaguebearer") && variable_struct_exists(target, "status_effects")
+        && instance_exists(obj_combat_controller)) {
+        var _pz_cs = instance_find(obj_combat_controller, 0).combat_state;
+        var _pz_hosts = [];
+        for (var _pz_i = 0; _pz_i < array_length(_pz_cs.combatants); _pz_i++) {
+            var _pz_c = _pz_cs.combatants[_pz_i];
+            if (!_pz_c.is_player && !_pz_c.is_defeated && _pz_c != target
+                && variable_struct_exists(_pz_c, "status_effects")) array_push(_pz_hosts, _pz_c);
+        }
+        if (array_length(_pz_hosts) > 0) {
+            var _pz_jumped = false;
+            var _pz_host = _pz_hosts[irandom(array_length(_pz_hosts) - 1)];
+            for (var _pz_s = 0; _pz_s < array_length(target.status_effects); _pz_s++) {
+                var _pz_se = target.status_effects[_pz_s];
+                if (combat_status_kind_of(_pz_se) != "dot") continue;
+                if (!variable_struct_exists(_pz_se, "source") || _pz_se.source != "player") continue;
+                array_push(_pz_host.status_effects, {
+                    name:         _pz_se.name,
+                    effect_type:  _pz_se.effect_type,
+                    kind:         "dot",
+                    effect_value: _pz_se.effect_value,
+                    duration:     max(2, _pz_se.duration),
+                    element:      variable_struct_exists(_pz_se, "element") ? _pz_se.element : "",
+                    source:       "player"
+                });
+                _pz_jumped = true;
+            }
+            if (_pz_jumped) array_push(combat_log, "Patient Zero: the affliction leaps to " + _pz_host.name + "!");
+        }
+    }
+
+    // IRONMAN resume (SYSTEMS_RUN_RESUME.md): every reward roll for this kill
+    // (gold, drops, runes, Devil's Pact bonus) runs on a deterministic stream
+    // keyed to run/floor/room/spawn-slot, so quitting at the loot screen and
+    // re-fighting yields IDENTICAL rewards - no quit-scum re-rolls. The real
+    // RNG stream is restored right after the reward block.
+    var _lseed_saved = random_get_seed();
+    random_set_seed(loot_room_seed(variable_struct_exists(target, "drop_slot") ? target.drop_slot : 0, 1));
 
     // Gold drop (Greed boon: +50%; curse gold-find reward stacks on top)
     var _gold_drop = irandom(target.gold_max - target.gold_min) + target.gold_min;
@@ -1341,12 +1615,14 @@ function combat_on_enemy_defeated(target, player, combat_log) {
     if (curse_has_bonus_drops() && (_drop_type == "elite" || _drop_type == "boss")) {
         // Curse loot-tiers are a post-roll rarity bump now, not an awakening offset.
         var _bonus_asc = (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0);
-        var _bonus_item = drop_equipment(drop_weights(_drop_type, _bonus_asc), true, curse_loot_tier_bonus());
+        var _bonus_item = drop_equipment(drop_weights(_drop_type, _bonus_asc), true, curse_loot_tier_bonus_for(_drop_type));
         if (variable_global_exists("run_items_found")) array_push(global.run_items_found, _bonus_item);
         if (variable_global_exists("carried_items"))   array_push(global.carried_items, _bonus_item);
         discover_item(item_base_name(_bonus_item));
         array_push(combat_log, "Devil's Pact: " + _bonus_item.name + " [" + item_rarity_name(_bonus_item.rarity) + "]!");
     }
+
+    random_set_seed(_lseed_saved);   // reward block over - back to the live stream
 
     // XP grant (floor-scaled)
     var _xp_base  = variable_struct_exists(target, "xp_value") ? target.xp_value : 10;
