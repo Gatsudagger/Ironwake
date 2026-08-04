@@ -150,7 +150,7 @@ if (variable_global_exists("item_picker") && global.item_picker.purpose == "cart
     if (is_struct(_cc_pick)) {
         array_push(global.run_items_found, _cc_pick);
         array_push(global.carried_items, _cc_pick);
-        discover_item(item_base_name(_cc_pick));
+        discover_item(item_base_name(_cc_pick), _cc_pick.rarity);
         loot_item_sting(_cc_pick);
         if (treasure_item == undefined) treasure_item = _cc_pick;
         else                            treasure_item2 = _cc_pick;
@@ -265,8 +265,8 @@ if (showing_shrine) {
     }
 
     if (_sh_n > 0) {
-        if (nav_up())   { shrine_cursor = wrap_index(shrine_cursor - 1, _sh_n); shrine_notification = ""; shrine_notification_fail = false; shrine_curse_arm = -1; }
-        if (nav_down()) { shrine_cursor = wrap_index(shrine_cursor + 1, _sh_n); shrine_notification = ""; shrine_notification_fail = false; shrine_curse_arm = -1; }
+        if (nav_up())   { shrine_cursor = wrap_index(shrine_cursor - 1, _sh_n); shrine_notification = ""; shrine_notification_fail = false; shrine_curse_arm = -1; shrine_reroll_arm = false; }
+        if (nav_down()) { shrine_cursor = wrap_index(shrine_cursor + 1, _sh_n); shrine_notification = ""; shrine_notification_fail = false; shrine_curse_arm = -1; shrine_reroll_arm = false; }
         shrine_cursor = clamp(shrine_cursor, 0, _sh_n - 1);
 
         if (shrine_kind == "curse") {
@@ -312,10 +312,41 @@ if (showing_shrine) {
             }
         } else {
             // Blessing altar - pay tribute (gold / dust / item) for a boon.
+            // V2 (07-29): [R] rerolls the whole offer for (10 + 10 x awakening)
+            // dust, ONCE per shrine, arm-then-confirm (rerolls are spends).
+            if (input_hotkey("R")) {
+                var _rr_cost = shrine_reroll_cost();
+                var _rr_dust = variable_global_exists("rune_dust") ? global.rune_dust : 0;
+                if (shrine_rerolled) {
+                    shrine_notification = "The altar has already reshuffled its gifts once.";
+                    shrine_notification_fail = true;
+                } else if (_rr_dust < _rr_cost) {
+                    shrine_notification = "Reroll needs " + string(_rr_cost) + " dust - you carry " + string(_rr_dust) + ".";
+                    shrine_notification_fail = true;
+                    shrine_reroll_arm = false;
+                } else if (!shrine_reroll_arm) {
+                    shrine_reroll_arm = true;
+                    shrine_notification = "Reshuffle the offer for " + string(_rr_cost) + " dust? Press [R] again to commit.";
+                    shrine_notification_fail = false;
+                } else {
+                    shrine_reroll_arm = false;
+                    shrine_rerolled   = true;
+                    global.rune_dust -= _rr_cost;
+                    shrine_offers     = boon_offer_roll();
+                    shrine_cursor     = 0;
+                    shrine_curse_arm  = -1;
+                    shrine_notification = "The altar reshuffles its gifts (-" + string(_rr_cost) + " dust).";
+                    shrine_notification_fail = false;
+                    audio_play_sound(snd_shrine_hum, 1, false);
+                    save_game();
+                }
+            }
+
             var _pay_method = "";
             if (input_hotkey("1")) _pay_method = "gold";
             else if (input_hotkey("2")) _pay_method = "dust";
             else if (input_hotkey("3")) _pay_method = "item";
+            if (_pay_method != "") shrine_reroll_arm = false;   // any pay press disarms the pending reroll
 
             if (_pay_method == "item") {
                 // Item tribute now opens the shared picker (select + confirm) instead of
@@ -343,7 +374,9 @@ if (showing_shrine) {
                 var _res = boon_pay(_bid, _pay_method);
                 if (_res == "") {
                     var _bd = boon_get(_bid);
-                    shrine_notification = "Claimed " + _bd.name + "! The altar crumbles.";
+                    // V2 presentation: the claim lands like a drop - a named line,
+                    // not a receipt ("The altar accepts. PYRE'S FAVOR settles over you.").
+                    shrine_notification = "The altar accepts. " + string_upper(_bd.name) + " settles over you.";
                     shrine_notification_fail = false;
                     showing_shrine = false;
                     current_rooms[selected_room].cleared = true;
@@ -453,6 +486,22 @@ if (showing_event_choice) {
     // Result phase - any key closes the overlay and marks the room cleared.
     if (event_phase == "result") {
         if (input_confirm() || input_confirm_alt() || mouse_check_button_pressed(mb_left)) {
+            // THE ASHEN DUELIST (DESIGN_DUELIST_CHALLENGE.md): the accepted duel
+            // launches as this result closes - room marked cleared first so both
+            // outcomes (win or his 1-HP mercy) return to a settled floor map.
+            if (variable_global_exists("duel_launch") && global.duel_launch) {
+                global.duel_launch = false;
+                showing_event_choice = false;
+                current_rooms[selected_room].cleared = true;
+                global.floor_rooms_cleared[selected_room] = true;
+                music_dungeon_stop();
+                global.next_enemy_type    = "duel";
+                global.current_room_index = selected_room;
+                global.just_cleared_room  = false;
+                global.just_cleared_boss  = false;
+                room_goto(Room1);
+                exit;
+            }
             // Borrowed Memory DRAFT (07-16 combo batch): if the event just offered
             // memories, the overlay stays open and becomes the pick-1-of-3 screen -
             // a synthetic event rendered by the same generic choice UI. The room
@@ -781,7 +830,7 @@ if (input_confirm() || input_confirm_alt()) {
                     var _te = drop_equipment(drop_weights("chest", _te_asc), true, _t_tb);
                     array_push(global.run_items_found, _te);
                     array_push(global.carried_items, _te);
-                    discover_item(item_base_name(_te));
+                    discover_item(item_base_name(_te), _te.rarity);
                     _t_found = _te;
                 }
                 if (treasure_item == undefined) treasure_item = _t_found;
@@ -870,7 +919,7 @@ if (input_confirm() || input_confirm_alt()) {
         var _tv_e = drop_equipment(drop_weights("vault", _tv_asc), true, curse_loot_tier_bonus_for("vault"));
         array_push(global.run_items_found, _tv_e);
         array_push(global.carried_items, _tv_e);
-        discover_item(item_base_name(_tv_e));
+        discover_item(item_base_name(_tv_e), _tv_e.rarity);
         treasure_gold  = _tv_gold;
         treasure_item  = _tv_e;
         treasure_timer = 0;
@@ -894,7 +943,7 @@ if (input_confirm() || input_confirm_alt()) {
         var _tr_e = drop_equipment(drop_weights("reliquary", _tr_asc), true, curse_loot_tier_bonus_for("reliquary"));
         array_push(global.run_items_found, _tr_e);
         array_push(global.carried_items, _tr_e);
-        discover_item(item_base_name(_tr_e));
+        discover_item(item_base_name(_tr_e), _tr_e.rarity);
         treasure_gold  = _tr_gold;
         treasure_item  = _tr_e;
         treasure_timer = 0;
@@ -955,6 +1004,8 @@ if (input_confirm() || input_confirm_alt()) {
         shrine_notification = "";
         shrine_notification_fail = false;
         shrine_curse_arm    = -1;
+        shrine_rerolled     = false;   // V2: one dust reroll per shrine (blessings)
+        shrine_reroll_arm   = false;   // two-press confirm on the reroll spend
         shrine_revealed     = false;   // veiled until the player approaches
         showing_shrine      = true;
         audio_play_sound(snd_shrine_hum, 1, false);   // low choral swell - the altar's pull (still veiled)

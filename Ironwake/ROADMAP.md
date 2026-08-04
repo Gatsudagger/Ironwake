@@ -267,3 +267,28 @@ Big-ticket depth/polish features to build post-launch-push. Each needs a design-
    combat fun and invigorating vs the current static presentation. Large ART/ANIMATION effort
    (per-ability VFX/anim). Ties into SYSTEMS_COMBAT_FX.md (spell VFX gigapack already partly wired).
    Design-lock: which abilities get bespoke anims first, reuse vs new, PixelLab/asset budget.
+
+6. **CLOAK / BACK EQUIPMENT SLOT — parked 2026-07-30 (M, sparked by Veil of the Patient Dark).**
+   A 9th gear slot with its own identity: dodge / movement / on-combat-start effects / resists —
+   the "sneaky and travel-worn" affix space nothing else owns. Natural post-launch content-update
+   headline. Costs that parked it pre-launch: needs a full common→legendary item family + icons
+   (a slot with 4 items reads as a hole), touches equipment UI/loadout/stash/drops/affixes/shop/
+   reforge/compare/save format (each with touch-parity + overlap audits), and inflates total
+   player stat budget — quietly un-tunes enemy balance 3 weeks before launch. Design-lock: slot
+   identity + affix pool, item family list, whether Veil of the Patient Dark (now helm) migrates
+   in as its first legendary, drop-table weighting, save migration.
+
+7. **CRIT SPLIT, PHASE 2 — ranged phys vs melee phys (M 07-31).** Phase 1 SHIPPED 07-31:
+   crit is now labeled everywhere ("+X% Crit (all)"), and typed affixes exist — "of Hexruin"
+   (+spell crit, INT/WIS rolls) / "of Bloodshed" (+phys crit, STR/DEX rolls), rolled from the
+   shared affix pool, wired through _equip_apply_stat → combat_roll_crit. Phase 2: split phys
+   crit further into RANGED and MELEE channels (crit_ranged / crit_melee), keyed off the
+   ability's reach class. Design-lock: affix naming, whether existing crit_phys migrates or
+   coexists, stat-page presentation.
+
+8. **QUESTS / TAVERN REQUESTS REWORK (M 07-31: "mindless click and ignore, click and redeem").**
+   The board requests + gate quests need real decisions: stakes, choices, chained steps, or
+   risk/reward variants instead of fetch-counter + redeem. Own design session — lock the quest
+   verb set (choose/escort/sacrifice/timed?), how requests surface mid-run, and reward shape
+   (the board already pays Reforge Ingots; deepen, don't inflate). HIGH leverage on the
+   "town remembers" fantasy but touches journal UI, board UI, and run generation.

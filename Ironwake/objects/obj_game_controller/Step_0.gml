@@ -1,3 +1,7 @@
+// Pinch-zoom gesture (SYSTEMS_PINCH_ZOOM.md): tracked BEFORE the one-finger
+// classifier so a two-finger pinch mutes taps/drags for the whole frame.
+touch_pinch_update();
+
 // Touch gesture classifier (8d): updated once per frame, before anything reads
 // taps/drags/long-presses. No-op on non-touch devices.
 touch_gesture_update();
@@ -18,6 +22,82 @@ global.ui_overlay_latch = ui_input_blocked()
     || (variable_global_exists("item_picker") && global.item_picker.open)
     || comparison_open;
 
+// FORGE-RESULT REVEAL (07-31): modal close - one confirm/cancel press takes the
+// item. The keys are CLEARED so the craft screen underneath never sees the same
+// press (its input block also stands down on forge_result_up() as belt+braces).
+if (variable_global_exists("forge_result") && global.forge_result != undefined) {
+    var _fr_close = keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_space)
+                 || keyboard_check_pressed(vk_escape)
+                 || (gamepad_is_connected(0) && (gamepad_button_check_pressed(0, gp_face1)
+                                              || gamepad_button_check_pressed(0, gp_face2)));
+    if (_fr_close) {
+        global.forge_result = undefined;
+        audio_play_sound(snd_page, 1, false);
+    }
+    keyboard_clear(vk_enter);
+    keyboard_clear(vk_space);
+    keyboard_clear(vk_escape);
+}
+
+// CURSED REBIRTH ritual timer (07-31): ~3.5s of dark ceremony, skippable with
+// any confirm; the forge-result reveal fires when it completes. Keys cleared so
+// the skip press can't leak into the Sable screen (whose block also stands down).
+if (cursed_ritual_t >= 0) {
+    cursed_ritual_t++;
+    var _crit_skip = keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_space)
+                  || keyboard_check_pressed(vk_escape)
+                  || (gamepad_is_connected(0) && gamepad_button_check_pressed(0, gp_face1));
+    if (_crit_skip) cursed_ritual_t = max(cursed_ritual_t, 210);
+    keyboard_clear(vk_enter);
+    keyboard_clear(vk_space);
+    keyboard_clear(vk_escape);
+    if (cursed_ritual_t >= 210) {
+        forge_result_open("CURSED REBIRTH", "The dark gives it back... changed.",
+            cursed_ritual_item, cursed_ritual_prev, [], make_color_rgb(220, 90, 100));
+        audio_play_sound(snd_confirm_major, 1, false);
+        cursed_ritual_t    = -1;
+        cursed_ritual_item = undefined;
+        cursed_ritual_prev = undefined;
+    }
+}
+
+// STATS-PAGE GUIDED TOUR (07-31): arms on the first Stats-tab open; while it
+// runs, Enter/Space/N = next step, Esc = skip out - all CLEARED so the menu's
+// own handlers (Esc closes the menu) never see the press. Steps are drawn by
+// ui_draw_stats_tour at the end of the Stats tab.
+if (menu_open && menu_tab == 0) {
+    if (stats_tour_step < 0 && !tutorial_seen_has("stats_tour")
+        && variable_global_exists("chosen_class")   // page draws stats only with a character
+        && (!variable_global_exists("tutorial_enabled") || global.tutorial_enabled)) {
+        stats_tour_step = 0;
+    }
+    if (stats_tour_step >= 0) {
+        var _st_next = keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_space)
+                    || keyboard_check_pressed(ord("N"))
+                    || (gamepad_is_connected(0) && gamepad_button_check_pressed(0, gp_face1));
+        var _st_skip = keyboard_check_pressed(vk_escape)
+                    || (gamepad_is_connected(0) && gamepad_button_check_pressed(0, gp_face2));
+        if (_st_skip) {
+            tutorial_mark_seen("stats_tour");
+            stats_tour_step = -1;
+            audio_play_sound(snd_page, 1, false);
+        } else if (_st_next) {
+            stats_tour_step++;
+            audio_play_sound(snd_page, 1, false);
+            if (stats_tour_step > 5) {   // past the last step = done
+                tutorial_mark_seen("stats_tour");
+                stats_tour_step = -1;
+            }
+        }
+        keyboard_clear(vk_enter);
+        keyboard_clear(vk_space);
+        keyboard_clear(vk_escape);
+        keyboard_clear(ord("N"));
+    }
+} else if (stats_tour_step >= 0 && !menu_open) {
+    stats_tour_step = -1;   // menu closed mid-tour: not marked seen, re-offers next open
+}
+
 // Global fullscreen toggle (F11) - works in every room, persists in settings.ini.
 if (keyboard_check_pressed(vk_f11)) {
     video_toggle_fullscreen();
@@ -29,6 +109,33 @@ if (window_get_width() != geom_last_w || window_get_height() != geom_last_h) {
     geom_last_w = window_get_width();
     geom_last_h = window_get_height();
     gui_geometry_apply();
+}
+
+// =============================================================================
+// TEST LEVER (08-01, M) - F12 in the HUB grants one IDENTIFIED egg of every
+// 07-31 expansion species (8 new + the 2 signature backlog) so a fresh save
+// can test hatching, the garden and bond flow without grinding drops. Species
+// whose art hasn't been imported yet hatch INVISIBLE until their sprites land -
+// the egg/hatch/roster flow itself still works. Does NOT touch the boss-egg
+// once-per-save ledger, so signature drops remain testable at bosses.
+// COMPILED OUT OF RELEASE BUILDS: gated on GM_build_type == "run" (IDE/F5 only).
+// =============================================================================
+if (GM_build_type == "run" && room == rm_hub && keyboard_check_pressed(vk_f12)) {
+    var _dev_species = ["duskraven", "pale_widow", "shellback", "thorn_boar",
+                        "glimmer_slime", "sporeling", "voidkit", "ironshell_beetle",
+                        "crypt_bat", "hoarfrost_drake"];
+    for (var _dvi = 0; _dvi < array_length(_dev_species); _dvi++) {
+        var _dp = pet_make(_dev_species[_dvi], "egg_event", -1, PET_STAGE_BABY, true);
+        _dp.identified = true;   // skip Bairc's identify fee - straight to hatchable
+        if (_dev_species[_dvi] == "crypt_bat" || _dev_species[_dvi] == "hoarfrost_drake") {
+            _dp.signature = true;   // boss-kin flag so their UI treatment shows
+        }
+        pet_add(_dp);
+    }
+    if (instance_exists(obj_hub_controller)) {
+        instance_find(obj_hub_controller, 0).notification = "DEV: 10 expansion eggs delivered to Bairc.";
+    }
+    audio_play_sound(snd_confirm_major, 1, false);
 }
 
 // =============================================================================
@@ -70,6 +177,28 @@ if (GM_build_type == "run" && keyboard_check_pressed(vk_f8)) {
 }
 
 // =============================================================================
+// TEST LEVER (07-30) - F6 cycles the pinch-zoom transform x1.0 -> x1.5 -> x2.5
+// (view centered) so zoomed taps / fixed on-screen controls can be F5-verified
+// on a PC monitor, where a two-finger pinch can't be simulated. Pairs with F9
+// forced-touch for the full mobile approximation. Panning can't be simulated -
+// device-verify that half on the S25.
+// COMPILED OUT OF RELEASE BUILDS: gated on GM_build_type == "run" (IDE/F5 only).
+// =============================================================================
+if (GM_build_type == "run" && os_type == os_windows && keyboard_check_pressed(vk_f6)) {
+    zoom_state_init();
+    var _zl = global.zoom;
+    var _zt = 1.0;
+    if (_zl.z < 1.2)      _zt = 1.5;
+    else if (_zl.z < 2.0) _zt = 2.5;
+    _zl.z  = _zt;
+    _zl.vx = _zl.vis_w * (1 - 1 / _zt) / 2;   // centre the zoomed view
+    _zl.vy = GUI_H     * (1 - 1 / _zt) / 2;
+    zoom_pan_clamp();
+    zoom_apply();
+    show_debug_message("[TEST] zoom lever -> x" + string(_zt));
+}
+
+// =============================================================================
 // TEST LEVER (07-24) - F9 toggles FORCED TOUCH MODE on Windows: input_device()
 // reads 2, so the full touch UI (chips, on-screen d-pad, tap targets, long-press,
 // swipes) runs and is driven by the mouse - no phone needed. Pairs with F7's
@@ -83,6 +212,21 @@ if (GM_build_type == "run" && os_type == os_windows && keyboard_check_pressed(vk
     var _dft_si = audio_play_sound(snd_ui_toggle_on, 1, false);
     audio_sound_pitch(_dft_si, global.debug_force_touch ? 1.4 : 0.7);
     show_debug_message("[TEST] debug_force_touch = " + string(global.debug_force_touch));
+}
+
+// =============================================================================
+// TEST LEVER (07-30) - F10 arms the Ashen Duelist: the NEXT event room entered
+// becomes the duel (floor 2+ still required; the lever also bypasses the
+// once-per-run gate so win AND loss can be tested in one run). Players never
+// see this - the hidden 8% roll is untouched. Rising cue = armed, low = off.
+// COMPILED OUT OF RELEASE BUILDS: gated on GM_build_type == "run" (IDE/F5 only).
+// =============================================================================
+if (GM_build_type == "run" && os_type == os_windows && keyboard_check_pressed(vk_f10)) {
+    if (!variable_global_exists("debug_force_duel")) global.debug_force_duel = false;
+    global.debug_force_duel = !global.debug_force_duel;
+    var _dfd_si = audio_play_sound(snd_ui_toggle_on, 1, false);
+    audio_sound_pitch(_dfd_si, global.debug_force_duel ? 1.4 : 0.7);
+    show_debug_message("[TEST] debug_force_duel = " + string(global.debug_force_duel));
 }
 
 // Hub station flavor loops (SOUND_ATMOSPHERE_SPEC.md section 3): keep each open
@@ -155,7 +299,8 @@ if (variable_global_exists("item_picker") && global.item_picker.open
         || global.item_picker.purpose == "vex_potency"
         || global.item_picker.purpose == "alch_rebirth" || global.item_picker.purpose == "gift"
         || global.item_picker.purpose == "chit_reforge"
-        || global.item_picker.purpose == "maren_sunder" || global.item_picker.purpose == "cursed_rebirth")) {
+        || global.item_picker.purpose == "maren_sunder" || global.item_picker.purpose == "cursed_rebirth"
+        || global.item_picker.purpose == "statreq_rebirth")) {
     item_picker_step();
     exit;
 }
@@ -164,7 +309,7 @@ if (variable_global_exists("item_picker") && global.item_picker.resolved_purpose
     if (_rp == "vex_trait" || _rp == "vex_stat" || _rp == "vex_potency") {
         trainer_notification = global.item_picker.result_msg;
         global.item_picker.resolved_purpose = "";   // consume the one-shot
-    } else if (_rp == "alch_rebirth" || _rp == "cursed_rebirth") {
+    } else if (_rp == "alch_rebirth" || _rp == "cursed_rebirth" || _rp == "statreq_rebirth") {
         sable_notification = global.item_picker.result_msg;
         global.item_picker.resolved_purpose = "";
         if (_rp == "cursed_rebirth") ui_checkout_vfx(spr_vfx_void, 960, 540);   // the dark answers
@@ -426,9 +571,10 @@ if (tavern_board_open) {
     exit;
 }
 
-// --- ITEM CODEX gallery (moved from obj_hub_controller 07-28): opens from the
-// Journal's Item Codex tab, anywhere the Journal opens. Owns all input while up
-// (ui_input_blocked reports true). Input mirrors the old hub block 1:1.
+// --- ITEM CODEX gallery - RETIRED IN PLACE (07-29 M pass): the Journal's codex
+// tab is now the full inline codex (bestiary-style), so nothing sets codex_open
+// anymore and this block never runs. Kept one F5-verified session for safety;
+// delete this block + ui_draw_item_codex together when cleaning up.
 if (codex_open && room == Room1) codex_open = false;   // safety: never blocks combat
 if (codex_open) {
     // G still closes for old muscle memory; Esc/back chip is the real path.
@@ -585,15 +731,29 @@ if (journal_open) {
         exit;
     }
     if (journal_tab == 3) {
-        // Item Codex: Enter opens the full gallery ANYWHERE the Journal opens
-        // (hub + floor map) - the camp-only gate died 07-28 when M's hardcore
-        // test run couldn't reach the codex mid-dive.
-        if (input_confirm()) {
-            codex_open        = true;
-            codex_scroll      = 0;
-            codex_cursor      = -1;
-            codex_detail_item = undefined;
-            journal_open = false;
+        // Item Codex: inline browse (07-29 M pass - the old Enter-hop into a
+        // separate full-screen gallery was redundant; the tab IS the codex now,
+        // mirroring the Bestiary's list + detail). W/S walks every entry;
+        // discovered rows show their record, the rest stay ???.
+        var _jx_list = item_codex_master_list();
+        var _jx_n    = array_length(_jx_list);
+        if (_jx_n > 0) {
+            journal_cursor = clamp(journal_cursor, 0, _jx_n - 1);
+            // Section headers occupy rows but can't be selected - normalize a
+            // fresh cursor off one, and hop over them while navigating.
+            if (codex_entry_is_header(_jx_list[journal_cursor])) journal_cursor = codex_nav_move(journal_cursor, 1, _jx_list);
+            if (nav_up())   journal_cursor = codex_nav_move(journal_cursor, -1, _jx_list);
+            if (nav_down()) journal_cursor = codex_nav_move(journal_cursor,  1, _jx_list);
+            // Mouse wheel walks the list too (it's ~150 entries deep). No wrap:
+            // stepping past either end stays put (codex_nav_move wraps, so a
+            // wrapped result moving against the scroll direction means "end").
+            var _jx_wheel = mouse_wheel_up() - mouse_wheel_down();
+            repeat (abs(_jx_wheel)) {
+                var _jx_d   = (_jx_wheel > 0) ? -1 : 1;
+                var _jx_try = codex_nav_move(journal_cursor, _jx_d, _jx_list);
+                if ((_jx_d > 0 && _jx_try < journal_cursor) || (_jx_d < 0 && _jx_try > journal_cursor)) break;
+                journal_cursor = _jx_try;
+            }
         }
         exit;
     }
@@ -702,10 +862,12 @@ if (stash_mode_open) {
     // Category tabs: 0 = equipment, 1 = consumables. Q/E flip the tab (matching
     // the journal/Maren/loadout idiom); both columns show only that category, so
     // the two item families no longer interleave in one long list.
+    // Consumables navigate by GROUP (identical items share one xN row - see
+    // ui_consumable_groups), equipment by individual item.
     var _left_count  = (stash_mode_tab == 0) ? array_length(global.carried_items)
-                                             : array_length(global.consumable_inventory);
+                                             : array_length(ui_consumable_groups(global.consumable_inventory));
     var _right_count = (stash_mode_tab == 0) ? array_length(global.equipment_stash)
-                                             : array_length(global.consumable_stash);
+                                             : array_length(ui_consumable_groups(global.consumable_stash));
     var _cur_count   = (stash_mode_side == 0) ? _left_count : _right_count;
 
     // Rewired to scr_input (INPUT_ABSTRACTION_SPEC.md chunk 1 template) - keyboard
@@ -749,23 +911,39 @@ if (stash_mode_open) {
                 var _it = global.carried_items[stash_mode_index];
                 array_delete(global.carried_items, stash_mode_index, 1);
                 array_push(global.equipment_stash, _it);
-            } else if (stash_mode_tab == 1 && stash_mode_index < array_length(global.consumable_inventory)) {
-                var _it = global.consumable_inventory[stash_mode_index];
-                array_delete(global.consumable_inventory, stash_mode_index, 1);
-                array_push(global.consumable_stash, _it);
+            } else if (stash_mode_tab == 1) {
+                // Grouped row: move ONE copy of the selected kind per press.
+                var _lg = ui_consumable_groups(global.consumable_inventory);
+                if (stash_mode_index < array_length(_lg)) {
+                    var _src = _lg[stash_mode_index].first_index;
+                    var _it  = global.consumable_inventory[_src];
+                    array_delete(global.consumable_inventory, _src, 1);
+                    array_push(global.consumable_stash, _it);
+                }
             }
-            stash_mode_index = clamp(stash_mode_index, 0, max(0, _left_count - 2));
+            // Re-clamp against the POST-move count (a grouped xN row survives a
+            // single-copy move, so the stale pre-move count would bump the cursor).
+            var _post_l = (stash_mode_tab == 0) ? array_length(global.carried_items)
+                                                : array_length(ui_consumable_groups(global.consumable_inventory));
+            stash_mode_index = clamp(stash_mode_index, 0, max(0, _post_l - 1));
         } else {
             if (stash_mode_tab == 0 && stash_mode_index < array_length(global.equipment_stash)) {
                 var _it = global.equipment_stash[stash_mode_index];
                 array_delete(global.equipment_stash, stash_mode_index, 1);
                 array_push(global.carried_items, _it);
-            } else if (stash_mode_tab == 1 && stash_mode_index < array_length(global.consumable_stash)) {
-                var _it = global.consumable_stash[stash_mode_index];
-                array_delete(global.consumable_stash, stash_mode_index, 1);
-                array_push(global.consumable_inventory, _it);
+            } else if (stash_mode_tab == 1) {
+                // Grouped row: move ONE copy of the selected kind per press.
+                var _rg = ui_consumable_groups(global.consumable_stash);
+                if (stash_mode_index < array_length(_rg)) {
+                    var _src = _rg[stash_mode_index].first_index;
+                    var _it  = global.consumable_stash[_src];
+                    array_delete(global.consumable_stash, _src, 1);
+                    array_push(global.consumable_inventory, _it);
+                }
             }
-            stash_mode_index = clamp(stash_mode_index, 0, max(0, _right_count - 2));
+            var _post_r = (stash_mode_tab == 0) ? array_length(global.equipment_stash)
+                                                : array_length(ui_consumable_groups(global.consumable_stash));
+            stash_mode_index = clamp(stash_mode_index, 0, max(0, _post_r - 1));
         }
         // Persist the deposit/withdraw immediately (stash is hub-only state).
         if (room == rm_hub || room == rm_character_select) save_game();
@@ -802,7 +980,7 @@ if (stash_mode_open) {
             if (stash_mode_side != 0) { stash_mode_side = 0; stash_mode_index = 0; stash_scroll = 0; }
             else if (_smy >= _list_top) {
                 var _lcnt   = (stash_mode_tab == 0) ? array_length(global.carried_items)
-                                                    : array_length(global.consumable_inventory);
+                                                    : array_length(ui_consumable_groups(global.consumable_inventory));
                 var _lscr   = clamp(stash_scroll, 0, max(0, _lcnt - _rows_vis));
                 var _lrow   = _lscr + floor((_smy - _list_top) / _row_h);
                 if (_lrow >= 0 && _lrow < _lcnt) stash_mode_index = _lrow;
@@ -813,7 +991,7 @@ if (stash_mode_open) {
             if (stash_mode_side != 1) { stash_mode_side = 1; stash_mode_index = 0; stash_scroll = 0; }
             else if (_smy >= _list_top) {
                 var _rcnt   = (stash_mode_tab == 0) ? array_length(global.equipment_stash)
-                                                    : array_length(global.consumable_stash);
+                                                    : array_length(ui_consumable_groups(global.consumable_stash));
                 var _rscr   = clamp(stash_scroll, 0, max(0, _rcnt - _rows_vis));
                 var _rrow   = _rscr + floor((_smy - _list_top) / _row_h);
                 if (_rrow >= 0 && _rrow < _rcnt) stash_mode_index = _rrow;
@@ -1000,7 +1178,7 @@ if (input_hotkey("F") && room == rm_hub && !text_entry_active() && !menu_open
 // the shop but arrows/enter kept driving the shop underneath) - the menu block
 // owns input until it closes, then control falls back to the shop.
 // =============================================================================
-if (shop_open != -1 && !stash_mode_open && !menu_open) {
+if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()) {
 
     // Q/E: cycle tabs. Petra (shop_open == 0) has BUY/SELL/TRADE; Dorn has BUY/SELL/REFORGE.
     // The reforge confirm/anim screen (reforge_stage > 0) is MODAL - tab cycling and
@@ -1180,9 +1358,15 @@ if (shop_open != -1 && !stash_mode_open && !menu_open) {
             reforge_stage = 0; reforge_target = undefined; reforge_before = undefined;
             reforge_anim_t = 0; reforge_spent_tier = -1; reforge_is_recast = false;
             dorn_ck_open = false; dorn_ck_title = ""; dorn_ck_body = "";
+            dorn_ck_kind = "frame";
             forge_open = false; forge_phase = 0; forge_cursor = 0;
             forge_slot_pick = 0; forge_fx_pick = 0; forge_result = undefined;
         }
+
+        // First-visit coach-mark (M 07-29: "Strike a Mythril Frame" read as
+        // gibberish without the Legendary Forge context). Idempotent - the
+        // seen-flag guard inside makes repeat calls free.
+        tutorial_try_show("legendary_forge");
 
         // THE LEGENDARY FORGE (M locked 07-28) - modal over the reforge tab.
         // Phases: 0 pick slot, 1 pick effect, 2 NAME IT (keyboard_string, the
@@ -1208,7 +1392,7 @@ if (shop_open != -1 && !stash_mode_open && !menu_open) {
                     global.forge_comp_core  -= 1;
                     global.forge_comp_quint -= 1;
                     array_push(global.equipment_stash, _f_it);
-                    discover_item(item_base_name(_f_it));
+                    discover_item(item_base_name(_f_it), _f_it.rarity);
                     save_game();
                     forge_result    = _f_it;
                     forge_phase     = 3;
@@ -1255,6 +1439,23 @@ if (shop_open != -1 && !stash_mode_open && !menu_open) {
             if (input_confirm() || input_inject_take("dorn:ok")) {
                 dorn_ck_open = false;
                 reforge_ingots_ensure();
+                // Ingot fuse checkout (M 07-29): 3 same-tier -> 1 next tier.
+                if (dorn_ck_kind == "combine") {
+                    var _cmb2 = reforge_combine_tier();
+                    if (_cmb2 < 0) {
+                        shop_notification = "Nothing to fuse - it asks 3 ingots of one tier.";
+                        audio_play_sound(snd_ui_error, 1, false);
+                    } else {
+                        global.reforge_ingots[_cmb2]     -= 3;
+                        global.reforge_ingots[_cmb2 + 1] += 1;
+                        save_game();
+                        shop_notification = "Dorn fuses 3 " + item_rarity_name(_cmb2)
+                            + " ingots into 1 " + item_rarity_name(_cmb2 + 1) + "!";
+                        audio_play_sound(snd_forge, 1, false);
+                        ui_checkout_vfx(spr_vfx_fire, 960, 540);
+                    }
+                    exit;
+                }
                 var _df_g = forge_frame_cost();
                 if (global.gold < _df_g) {
                     shop_notification = "The frame asks " + string(_df_g) + "g.";
@@ -1353,8 +1554,30 @@ if (shop_open != -1 && !stash_mode_open && !menu_open) {
         // FORGE once all three components are held (M locked 07-28).
         if (input_hotkey("G") || input_inject_take("dorn:frame")) {
             dorn_ck_open  = true;
+            dorn_ck_kind  = "frame";
             dorn_ck_title = "STRIKE A MYTHRIL FRAME?";
-            dorn_ck_body  = string(forge_frame_cost()) + "g + 1 LEGENDARY Reforge Ingot\nbecome Dorn's share of the LEGENDARY FORGE.";
+            // 07-29 reword (M: the old two-liner was confusing): say what the
+            // frame IS and what comes next, not just the price.
+            dorn_ck_body  = "Pay " + string(forge_frame_cost()) + "g + 1 LEGENDARY Reforge Ingot and Dorn strikes"
+                + "\nthe MYTHRIL FRAME - his third of the LEGENDARY FORGE."
+                + "\nGather Maren's RUNEHEART CORE and Sable's QUINTESSENCE,"
+                + "\nthen return here and press [V] to forge a custom legendary.";
+            exit;
+        }
+        // [C] / chip - fuse 3 same-tier ingots into 1 of the next tier (M 07-29:
+        // low-tier ingots' real role once rerolling commons stops being worth it).
+        if (input_hotkey("C") || input_inject_take("dorn:combine")) {
+            var _cmb = reforge_combine_tier();
+            if (_cmb < 0) {
+                shop_notification = "Fusing asks 3 Reforge Ingots of one tier (Legendary ingots don't fuse).";
+                audio_play_sound(snd_ui_error, 1, false);
+            } else {
+                dorn_ck_open  = true;
+                dorn_ck_kind  = "combine";
+                dorn_ck_title = "FUSE INGOTS?";
+                dorn_ck_body  = "3 " + item_rarity_name(_cmb) + " Reforge Ingots fuse into"
+                    + "\n1 " + item_rarity_name(_cmb + 1) + " Reforge Ingot.";
+            }
             exit;
         }
         if (input_hotkey("V") || input_inject_take("dorn:forge")) {
@@ -1817,7 +2040,7 @@ if (shop_open != -1 && !stash_mode_open && !menu_open) {
                 global.gold -= _dprice;
                 array_push(global.equipment_stash, _dentry.item);
                 affinity_add("dorn", 2);   // function-use drip (gear buy)
-                discover_item(item_base_name(_dentry.item));
+                discover_item(item_base_name(_dentry.item), _dentry.item.rarity);
                 global.dorn_stock[shop_index].sold = true;
                 audio_play_sound(snd_buy, 1, false);
                 shop_notification = "Purchased - added to equipment stash.";
@@ -1913,7 +2136,7 @@ if (shop_open != -1 && !stash_mode_open && !menu_open) {
 //   tab 0 Stats   tab 1 Trait Slots   tab 2 Abilities   tab 3 Traits
 //   tab 4 Potency   tab 5 Reweave (talent-web respec)
 // =============================================================================
-if (trainer_open && !menu_open) {   // I menu owns input while open (see shop block)
+if (trainer_open && !menu_open && !forge_result_up()) {   // I menu owns input while open (see shop block)
     var _tr_class = variable_global_exists("chosen_class") ? global.chosen_class : 0;
 
     // --- Tab: examine the highlighted ability (tab 2) or trait (tab 3) before buying.
@@ -2060,6 +2283,12 @@ if (trainer_open && !menu_open) {   // I menu owns input while open (see shop bl
     // W/S - navigate rows
     if (nav_up())   { trainer_cursor = wrap_index(trainer_cursor - 1, _tr_rows); trainer_confirm = false; trainer_notification = ""; }
     if (nav_down()) { trainer_cursor = wrap_index(trainer_cursor + 1, _tr_rows); trainer_confirm = false; trainer_notification = ""; }
+    // Mouse wheel walks the row cursor too (clamped, not wrapped). M 07-30.
+    var _trw = mouse_wheel_down() - mouse_wheel_up();
+    if (_trw != 0) {
+        trainer_cursor = clamp(trainer_cursor + _trw, 0, max(0, _tr_rows - 1));
+        trainer_confirm = false; trainer_notification = "";
+    }
     trainer_cursor = clamp(trainer_cursor, 0, max(0, _tr_rows - 1));
 
     // Enter = act, Space = commit a sacrifice
@@ -2610,7 +2839,7 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open) {
 // Socket tab is a 3-phase flow: 0 pick item -> 1 pick socket -> 2 pick rune.
 // Layout constants here MUST match ui_draw_maren_screen() in scr_ui.
 // =============================================================================
-if (variable_instance_exists(id, "maren_open") && maren_open && !menu_open) {
+if (variable_instance_exists(id, "maren_open") && maren_open && !menu_open && !forge_result_up()) {
     // --- Banshee release ceremony popup: owns ALL input while open. Any key
     //     first skips to the reveal, then closes. (Drawn by ui_draw_maren.) ---
     if (banshee_release_open) {
@@ -3086,7 +3315,8 @@ if (variable_instance_exists(id, "maren_open") && maren_open && !menu_open) {
 // SABLE THE ALCHEMIST - Salvage / Brew / Upgrade (see SYSTEMS_SABLE.md).
 // Layout constants here MUST match ui_draw_sable_screen() in scr_ui.
 // =============================================================================
-if (variable_instance_exists(id, "sable_open") && sable_open && !menu_open) {
+if (variable_instance_exists(id, "sable_open") && sable_open && !menu_open && !forge_result_up()
+    && cursed_ritual_t < 0) {
     rune_inventory_sort();   // keep the rune/aspect pool alphabetical (display + index ops read this)
     var _s_gear   = sable_salvageable_gear();
     var _s_rinv   = variable_global_exists("rune_inventory") ? global.rune_inventory : [];
@@ -3123,7 +3353,7 @@ if (variable_instance_exists(id, "sable_open") && sable_open && !menu_open) {
             ? max(1, variable_global_exists("consumable_inventory") ? array_length(global.consumable_inventory) : 0)
             : (array_length(_s_groups) + 2);
     } else {
-        _s_rows = 2;    // Rebirth: class rebirth + CURSED rebirth (M 07-28)
+        _s_rows = 3;    // Rebirth: class / attunement (M 07-29) / cursed (M 07-28)
     }
 
     // Esc / Backspace - cancel a pending salvage confirm first, then step back
@@ -3455,14 +3685,22 @@ if (variable_instance_exists(id, "sable_open") && sable_open && !menu_open) {
             }
         } else {
             // -------- REBIRTH TAB -------- row 0 = class rebirth (shared picker);
-            // row 1 = CURSED REBIRTH (M 07-28 legendary sinks): feed a legendary
-            // to the dark, get it back stronger + cursed.
+            // row 1 = ATTUNEMENT rebirth (M 07-29): re-set an item's stat req;
+            // row 2 = CURSED REBIRTH (M 07-28 legendary sinks).
             if (sable_cursor == 0) {
                 var _reb = item_picker_candidates_class_specific();
                 if (array_length(_reb) == 0) {
                     sable_notification = "You hold no class-specific gear (Uncommon+) to reforge.";
                 } else {
                     item_picker_open("alch_rebirth", {}, _reb);
+                }
+            } else if (sable_cursor == 1) {
+                var _sqc = item_picker_candidates_statreq();
+                if (array_length(_sqc) == 0) {
+                    sable_notification = "Nothing you hold carries a stat requirement (Rare+ gear gates).";
+                    audio_play_sound(snd_ui_error, 1, false);
+                } else {
+                    item_picker_open("statreq_rebirth", {}, _sqc);
                 }
             } else {
                 var _crc = item_picker_candidates_by_rarity(4);

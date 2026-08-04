@@ -24,28 +24,56 @@ Complements (does not replace) post-launch per-screen readability passes.
    1920×1080 canvas.
 6. Touch-gated: gesture only when input_device() == 2. Desktop unaffected.
 
-## Architecture (single source of truth)
-Globals: zoom_scale (1.0–2.5), zoom_ox, zoom_oy (screen-px offsets).
-Two transforms driven together from ONE state, applied every frame by the
-persistent obj_game_controller:
-- **GUI layer:** display_set_gui_maximise(zoom_scale, zoom_scale, ox, oy)
-  (falls back to display_set_gui_size(1920,1080) at 1.0 — the current setup,
-  SYSTEMS_RESOLUTION.md). device_mouse_*_to_gui passes through this transform,
-  so EVERY existing GUI hit-test keeps working untouched. ⚠ F5-VERIFY FIRST:
-  confirm taps land correctly while zoomed before polishing anything else.
-- **Room camera:** camera_set_view_size(cam, 1920/scale, 1080/scale) + view
-  position offset with the same focal math, so room-space content (combat
-  enemies, hub scene) stays glued to its GUI overlays. Restored at 1.0.
-Gesture tracking lives beside touch_gesture_update (two-touch distance +
-midpoint deltas; GameMaker multi-touch device_mouse_x/y(0|1)).
+## Architecture (AS BUILT 2026-07-30)
+One state struct `global.zoom` (scr_ui): z (1.0–ZOOM_MAX 2.5), vx/vy (pan in
+GUI units from the base view origin), plus the base window fit recorded by
+gui_geometry_apply (sx/sy scale, ox centering offset, l0 = GUI x at the
+window's left edge, vis_w = visible width incl gutters).
+- **GUI layer only.** The whole game renders in Draw GUI (no Draw_0 events
+  exist anywhere), so zooming the GUI layer zooms everything — the spec's
+  room-camera half was unnecessary and was NOT built. `zoom_apply()` pushes
+  display_set_gui_maximise(sx*z, sy*z, ox*z − vx*sx*z, −vy*sy*z); at 1.0 it
+  restores the exact shipped calls. device_mouse_*_to_gui passes through the
+  transform, so every existing hit-test keeps working untouched.
+- **Gesture:** `touch_pinch_update()` (scr_input), called at the top of
+  obj_game_controller Step BEFORE touch_gesture_update. Two fingers =
+  device_mouse_check_button(0|1); positions read via device_mouse_raw_* (raw
+  window px — to_gui would feed back through the transform being changed).
+  Zoom-about-midpoint and two-finger pan both fall out of one anchor equation
+  (the GUI point that started under the midpoint stays under it). While a
+  pinch is live (+10 cooldown frames) the one-finger classifier is muted so
+  lifting the pinch can't fire a stray tap. Release below 1.1x snaps to 1.0.
+- **Fixed controls (decision #4):** zgx()/zgy()/ziv() (scr_ui) map a nominal
+  GUI coordinate to the zoomed coordinate that renders at the same physical
+  pixel. touch_pad_geom() transforms its whole geometry struct (so pad draw +
+  hit-test + footprint mask all follow); ui_draw_touch_back and
+  ui_draw_touch_chips map their rect corners and draw labels via
+  draw_text_transformed at ziv() scale.
+- **Settings:** [touch] pinch_zoom (1=ON default) via touch_settings_init/save;
+  `pinch_zoom_toggle()` hard-resets the transform when turning OFF. Settings
+  overlay row 8 "Pinch Zoom" (touch platforms only; touch panel row pitches
+  squeezed 108→96 / 84→76 to fit the 10th row in the 1050 panel).
+- **Intros:** one-time hub popup ([touch] zoom_intro_seen, device-level;
+  obj_hub_controller Create/Step/Draw_64, modal, measured-height panel) + a
+  PINCH line folded into the char-create Touch Controls intro (panel now
+  auto-sizes from measured text height).
+- **Dev lever:** F6 (IDE-only, GM_build_type=="run") cycles x1.0→x1.5→x2.5
+  centered so zoomed taps + fixed controls can be verified on PC (pairs with
+  F9 forced-touch). Two-finger PAN cannot be simulated — device-verify on S25.
+- **HTML5:** unsupported (browser gate in touch_pinch_update + geometry apply).
+- Window shape change (fold/rotate/F7 lever) resets zoom to 1.0 (stale anchor
+  math is never reused). Zoom persists across rooms (gc is persistent).
 
-## Surfaces / reference sync
-Settings overlay row + settings.ini, hub one-time popup, char-create touch
-intro line, compendium not needed (device UX, not a game mechanic), F5 test
-list: zoomed taps on hub menus / combat targeting / stash / d-pad fixedness /
-toggle OFF resets / snap-back / persistence across rooms (zoom persists;
-panning is the player's job).
+## F5 / device test list
+Zoomed taps on hub menus / combat targeting / stash rows; d-pad + back chip +
+action chips stay put (and stay tappable) while zoomed; toggle OFF resets;
+snap-back below 1.1x; settings row reachable by W/S + tap; hub popup shows
+once and persists; char-create intro line; F6 lever cycles on PC.
+Known accepted quirk: the first finger of a pinch briefly counts as a normal
+press before the second lands — press-fired buttons under finger #1 can
+trigger; start pinches on empty space (watch for complaints, fix later if real).
 
 ## Status
-Spec written 07-28 late session; implementation started same session — see
-memory project_endgame_batch_0727 for how far it got before handoff.
+**BUILT 2026-07-30 (this file is the as-built record). Awaiting M's F5 +
+S25 device pass.** The 07-28 "implementation started" note was stale — nothing
+had actually landed in .gml; built fresh this session.

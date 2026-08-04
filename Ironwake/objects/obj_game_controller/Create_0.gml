@@ -46,6 +46,23 @@ global.__sprite_includes = [
     spr_icon_consumable_chaotic_brew,
     // Quintessence icon (07-28 M pick): string-ref from the Sable cauldron row.
     spr_icon_consumable_quintessence,
+    // Icon-collision pass (07-29 round 3, M approved all 36): banded sets for
+    // the six families that shared one sprite each + jewelry keyword splits +
+    // 6th wand/sword variants. Same string-ref pattern as the batch below.
+    spr_icon_helm_plate_c,   spr_icon_helm_plate_c2,  spr_icon_helm_plate_u,
+    spr_icon_helm_plate_r,   spr_icon_helm_plate_e,   spr_icon_helm_plate_l,
+    spr_icon_gloves_plate_c, spr_icon_gloves_plate_u, spr_icon_gloves_plate_r,
+    spr_icon_gloves_plate_e, spr_icon_gloves_plate_l,
+    spr_icon_gloves_cloth_c, spr_icon_gloves_cloth_u, spr_icon_gloves_cloth_r,
+    spr_icon_gloves_cloth_e, spr_icon_gloves_cloth_l,
+    spr_icon_boots_plate_c,  spr_icon_boots_plate_u,  spr_icon_boots_plate_r,
+    spr_icon_boots_plate_e,  spr_icon_boots_plate_l,
+    spr_icon_boots_leather_c, spr_icon_boots_leather_u, spr_icon_boots_leather_r,
+    spr_icon_boots_leather_e, spr_icon_boots_leather_l,
+    spr_icon_chest_void_c,   spr_icon_chest_void_u,   spr_icon_chest_void_r,
+    spr_icon_chest_void_e,   spr_icon_chest_void_l,
+    spr_icon_amulet_emberheart, spr_icon_ring_venom,  spr_icon_ring_pact,
+    spr_icon_weapon_sword_f, spr_icon_weapon_wand_f,
     // Rarity-banded armor variant icons (07-29 loot-variance pass, M: "use them
     // ALL"): resolved by string in ui_armor_icon_variant (scr_ui), bands c/u/r/e/l.
     spr_icon_chest_robe_c,  spr_icon_chest_robe_c2, spr_icon_chest_robe_c3,
@@ -177,11 +194,44 @@ global.__sprite_includes = [
     spr_pet_golemite_baby_s,         spr_pet_golemite_baby_e,
     spr_pet_golemite_youngadult_s,   spr_pet_golemite_youngadult_e,
     spr_pet_golemite_adult_s,        spr_pet_golemite_adult_e,
-    // Boss-signature species (Tundra Tomb, batch 3) - rimefox imported 2026-07-04;
-    // crypt_bat + hoarfrost_drake deferred to the next PixelLab cycle.
+    // Boss-signature species (Tundra Tomb, batch 3) - rimefox imported 2026-07-04.
     spr_pet_rimefox_baby_s,          spr_pet_rimefox_baby_e,
     spr_pet_rimefox_youngadult_s,    spr_pet_rimefox_youngadult_e,
     spr_pet_rimefox_adult_s,         spr_pet_rimefox_adult_e,
+    // Creatures expansion batch 1 (08-01) - crypt_bat/hoarfrost_drake boss-signature
+    // + duskraven/voidkit standard, 3 stages x south/east animated idle.
+    spr_pet_crypt_bat_baby_s,        spr_pet_crypt_bat_baby_e,
+    spr_pet_crypt_bat_youngadult_s,  spr_pet_crypt_bat_youngadult_e,
+    spr_pet_crypt_bat_adult_s,       spr_pet_crypt_bat_adult_e,
+    spr_pet_hoarfrost_drake_baby_s,  spr_pet_hoarfrost_drake_baby_e,
+    spr_pet_hoarfrost_drake_youngadult_s, spr_pet_hoarfrost_drake_youngadult_e,
+    spr_pet_hoarfrost_drake_adult_s, spr_pet_hoarfrost_drake_adult_e,
+    spr_pet_duskraven_baby_s,        spr_pet_duskraven_baby_e,
+    spr_pet_duskraven_youngadult_s,  spr_pet_duskraven_youngadult_e,
+    spr_pet_duskraven_adult_s,       spr_pet_duskraven_adult_e,
+    spr_pet_voidkit_baby_s,          spr_pet_voidkit_baby_e,
+    spr_pet_voidkit_youngadult_s,    spr_pet_voidkit_youngadult_e,
+    spr_pet_voidkit_adult_s,         spr_pet_voidkit_adult_e,
+    // Creatures expansion batch 2 (08-02) - the remaining 6 generic species,
+    // 3 stages x south/east animated idle. Same string-ref pattern.
+    spr_pet_pale_widow_baby_s,       spr_pet_pale_widow_baby_e,
+    spr_pet_pale_widow_youngadult_s, spr_pet_pale_widow_youngadult_e,
+    spr_pet_pale_widow_adult_s,      spr_pet_pale_widow_adult_e,
+    spr_pet_shellback_baby_s,        spr_pet_shellback_baby_e,
+    spr_pet_shellback_youngadult_s,  spr_pet_shellback_youngadult_e,
+    spr_pet_shellback_adult_s,       spr_pet_shellback_adult_e,
+    spr_pet_thorn_boar_baby_s,       spr_pet_thorn_boar_baby_e,
+    spr_pet_thorn_boar_youngadult_s, spr_pet_thorn_boar_youngadult_e,
+    spr_pet_thorn_boar_adult_s,      spr_pet_thorn_boar_adult_e,
+    spr_pet_glimmer_slime_baby_s,    spr_pet_glimmer_slime_baby_e,
+    spr_pet_glimmer_slime_youngadult_s, spr_pet_glimmer_slime_youngadult_e,
+    spr_pet_glimmer_slime_adult_s,   spr_pet_glimmer_slime_adult_e,
+    spr_pet_sporeling_baby_s,        spr_pet_sporeling_baby_e,
+    spr_pet_sporeling_youngadult_s,  spr_pet_sporeling_youngadult_e,
+    spr_pet_sporeling_adult_s,       spr_pet_sporeling_adult_e,
+    spr_pet_ironshell_beetle_baby_s, spr_pet_ironshell_beetle_baby_e,
+    spr_pet_ironshell_beetle_youngadult_s, spr_pet_ironshell_beetle_youngadult_e,
+    spr_pet_ironshell_beetle_adult_s, spr_pet_ironshell_beetle_adult_e,
     // Keeper species brought to 3-stage animated (new directional/young-adult sprites).
     spr_pet_bonehound_youngadult_s, spr_pet_bonehound_youngadult_e,
     spr_pet_hollow_pup_baby_s,       spr_pet_hollow_pup_baby_e,
@@ -349,6 +399,13 @@ global.current_run_gold  = 0;
 global.current_run_kills = 0;
 if (!variable_global_exists("run_boons")) global.run_boons = [];   // active boons this run (Shrine tribute)
 if (!variable_global_exists("run_curses")) global.run_curses = []; // active curses this run (devil's bargain)
+// The Ashen Duelist (DESIGN_DUELIST_CHALLENGE.md): lifetime rival ledger (saved)
+// + run-scoped duel state.
+if (!variable_global_exists("duelist_encounters"))   global.duelist_encounters   = 0;
+if (!variable_global_exists("duelist_tokens"))       global.duelist_tokens       = 0;
+if (!variable_global_exists("duel_offered_this_run")) global.duel_offered_this_run = false;
+if (!variable_global_exists("duel_launch"))          global.duel_launch          = false;
+if (!variable_global_exists("duel_active"))          global.duel_active          = false;
 if (!variable_global_exists("run_borrowed_ability")) global.run_borrowed_ability = "";   // Borrowed Memory (expression #6)
 if (!variable_global_exists("run_borrowed_class"))   global.run_borrowed_class   = "";
 if (!variable_global_exists("run_honing"))           global.run_honing           = {};   // Whetstone run-scoped honing (07-17; stores web node ids since the talent-web rework)
@@ -639,7 +696,7 @@ global.loot_table_rare = [
 // --- LEGENDARY LOOT TABLE - boss-drop only (5% weight) ---
 // Each legendary has fixed affixes and a unique effect hook (unique_effect string).
 // unique_desc is the in-game text shown in gold; unique_effect is the code identifier.
-var _leg_brand = create_item("Gatewarden's Brand", "weapon", 4, "STR", 4,
+var _leg_brand = create_item("Gatewarden's Brand", "weapon", 4, "STR", 5,
     "carried by those who sealed the vault gates", 400);
 _leg_brand.class_req    = -1;
 _leg_brand.affixes      = [{ suffix: "of Grit", prefix: "Sturdy", stat_name: "CON", stat_value: 2 }];
@@ -647,12 +704,12 @@ _leg_brand.unique_effect = "gatewarden_brand";
 _leg_brand.unique_desc   = "First ability each combat costs 0 AP";
 _leg_brand.lore = "Forged for the wardens who chained the vault shut from the inside, knowing they would never leave. Its edge still remembers the weight of the gate - and swings as if no burden could ever slow the first blow.";
 
-var _leg_aegis = create_item("Heartstone Aegis", "chest", 4, "CON", 4,
+var _leg_aegis = create_item("Heartstone Aegis", "chest", 4, "CON", 6,
     "warm to the touch, even in the coldest vault", 400);
 _leg_aegis.class_req    = -1;
 _leg_aegis.affixes      = [{ suffix: "of Clarity", prefix: "Wise", stat_name: "WIS", stat_value: 2 }];
 _leg_aegis.unique_effect = "heartstone_aegis";
-_leg_aegis.unique_desc   = "Heal 5 HP whenever an enemy dies";
+_leg_aegis.unique_desc   = "Heal 6 HP whenever an enemy dies";
 _leg_aegis.lore = "A shard of the vault's buried heart, still beating long after the body around it failed. Those who wear it feel a borrowed warmth with every enemy that falls - the stone feeding on endings to keep its bearer from one.";
 
 var _leg_crown = create_item("Crown of the Hollow King", "helm", 4, "INT", 4,
@@ -663,7 +720,7 @@ _leg_crown.unique_effect = "crown_hollow_king";
 _leg_crown.unique_desc   = "+1 trait slot while equipped (3 total)";
 _leg_crown.lore = "The Hollow King walked into the deepest vault and never came out; his court still sets a throne for his return. To wear his crown is to carry a little of that endless waiting - and the wider, sharper mind of someone who has stopped expecting an answer.";
 
-var _leg_thief = create_item("Thief of Hours", "ring", 4, "DEX", 2,
+var _leg_thief = create_item("Thief of Hours", "ring", 4, "DEX", 6,
     "inscribed with the last seconds of a dying mage", 400);
 _leg_thief.class_req    = -1;
 _leg_thief.affixes      = [{ suffix: "of Clarity", prefix: "Wise", stat_name: "WIS", stat_value: 2 }];
@@ -690,12 +747,12 @@ _leg_treads.unique_effect = "gravewalker_treads";
 _leg_treads.unique_desc   = "Once per run, survive a killing blow at 1 HP";
 _leg_treads.lore = "Their first owner was buried in them. Their second owner found them on his own feet, standing outside the grave, with no memory of digging. They know one trick, and it only works once - but once is the whole difference.";
 
-var _leg_chalice = create_item("Sanguine Chalice", "amulet", 4, "CON", 4,
+var _leg_chalice = create_item("Sanguine Chalice", "amulet", 4, "CON", 6,
     "it does not spill; it keeps", 400);
 _leg_chalice.class_req     = -1;
 _leg_chalice.affixes       = [{ suffix: "of Might", prefix: "Iron", stat_name: "STR", stat_value: 2 }];
 _leg_chalice.unique_effect = "sanguine_chalice";
-_leg_chalice.unique_desc   = "Overkill damage on killing blows heals you (up to 15)";
+_leg_chalice.unique_desc   = "Overkill damage on killing blows heals you (up to 20)";
 _leg_chalice.lore = "A chalice worn as a pendant, mouth upturned. Whatever violence exceeds what the dying could hold, the cup catches - and offers back to the hand that swung.";
 
 var _leg_loop = create_item("Stormcaller's Loop", "ring", 4, "INT", 6,
@@ -703,24 +760,26 @@ var _leg_loop = create_item("Stormcaller's Loop", "ring", 4, "INT", 6,
 _leg_loop.class_req     = -1;
 _leg_loop.affixes       = [];   // same-stat affix folded into base (M rule 07-09: never "+4 INT +2 INT")
 _leg_loop.unique_effect = "stormcallers_loop";
-_leg_loop.unique_desc   = "Single-target spells echo 15% of their damage to another enemy";
+_leg_loop.unique_desc   = "Single-target spells echo 25% of their damage to another enemy";
 _leg_loop.lore = "Forged in a storm that struck the same tower nine times, as if correcting itself. Spells cast through it arrive the same way - mostly where they were sent, and a little where they wanted to go.";
 
-var _leg_miser = create_item("Miser's Blade", "weapon", 4, "STR", 4,
+var _leg_miser = create_item("Miser's Blade", "weapon", 4, "STR", 5,
     "it cuts deeper for the rich", 400);
 _leg_miser.class_req     = -1;
 _leg_miser.affixes       = [{ suffix: "of Greed", prefix: "Lucky", stat_name: "gold_find", stat_value: 6 }];
 _leg_miser.unique_effect = "misers_blade";
-_leg_miser.unique_desc   = "+1 damage per 150 gold held (max +8)";
+_leg_miser.unique_desc   = "+1 damage per 125 gold held (max +10)";
 _leg_miser.lore = "A merchant-prince had it forged with a hollow hilt to hide his fortune. The blade learned to love the weight - the fuller the purse behind the swing, the hungrier the edge in front of it.";
 
-var _leg_veil = create_item("Veil of the Patient Dark", "offhand", 4, "WIS", 4,
+// 07-30: reslotted offhand -> helm (M: a veil belongs on the head; offhand
+// never read right). veil_slot_fixup() migrates the stale slot in old saves.
+var _leg_veil = create_item("Veil of the Patient Dark", "helm", 4, "WIS", 4,
     "the dark does not hide you; it simply goes first", 400);
 _leg_veil.class_req     = -1;
 _leg_veil.affixes       = [{ suffix: "of Shadows", prefix: "Ghost", stat_name: "dodge_flat", stat_value: 5 }];
 _leg_veil.unique_effect = "veil_patient_dark";
 _leg_veil.unique_desc   = "Enter every combat concealed - the first enemy attack on you misses";
-_leg_veil.lore = "Cut from a shadow that outlived the thing that cast it. Carried on the arm, it drapes its bearer in the moment before being noticed - and holds that moment open exactly once per fight.";
+_leg_veil.lore = "Cut from a shadow that outlived the thing that cast it. Drawn across the brow, it drapes its bearer in the moment before being noticed - and holds that moment open exactly once per fight.";
 
 var _leg_longshot = create_item("Longshot's Memory", "ranged_weapon", 4, "DEX", 6,
     "it has already made this shot", 400);
@@ -735,7 +794,7 @@ var _leg_line = create_item("Aegis of the Unbroken Line", "chest", 4, "CON", 6,
 _leg_line.class_req     = -1;
 _leg_line.affixes       = [];   // same-stat affix folded into base
 _leg_line.unique_effect = "aegis_unbroken_line";
-_leg_line.unique_desc   = "Poise grants 3 shield per unspent AP (cap doubled)";
+_leg_line.unique_desc   = "End your turn with AP unspent: each grants 3 shield instead of 2, and the cap is doubled";
 _leg_line.lore = "Worn by the last soldier of a shield-wall that never broke - it simply, eventually, had one man left. Patience sits differently on those shoulders: every held breath becomes wall.";
 
 var _leg_signet = create_item("Hollow King's Signet", "ring", 4, "CHA", 6,
@@ -771,12 +830,12 @@ _leg_lantern.unique_effect = "lantern_last_door";
 _leg_lantern.unique_desc   = "The Whetstone offers a second honing each run";
 _leg_lantern.lore = "Carried by a scholar who mapped the vaults by what everyone else walked past. Held near the Whetstone, its light finds one more edge in the stone - the sharpening the dark kept for itself.";
 
-var _leg_diadem = create_item("Crownfire Diadem", "helm", 4, "INT", 6,
+var _leg_diadem = create_item("Crownfire Diadem", "helm", 4, "INT", 7,
     "no fire should be spent halfway", 400);
 _leg_diadem.class_req     = -1;
 _leg_diadem.affixes       = [];   // same-stat affix folded into base
 _leg_diadem.unique_effect = "crownfire_diadem";
-_leg_diadem.unique_desc   = "OVERCHARGE deals +3 damage per point drained (instead of +2)";
+_leg_diadem.unique_desc   = "OVERCHARGE deals +4 damage per point drained (instead of +2)";
 _leg_diadem.lore = "Beaten from the crown of a king who ruled by burning everything he had, every time. Worn now, it teaches the same arithmetic to your reserve: hold nothing back, and the holding-nothing hits harder.";
 
 var _leg_beggar = create_item("Beggar's Fortune", "amulet", 4, "CHA", 4,
@@ -815,6 +874,10 @@ global.affix_pool = [
     { suffix: "of Ruin",     prefix: "Runed",   stat_name: "crit_flat",    u_val: 3, r_val: 5,  e_val: 8  },
     { suffix: "of Shadows",  prefix: "Ghost",   stat_name: "dodge_flat",   u_val: 3, r_val: 5,  e_val: 8  },
     { suffix: "of Greed",    prefix: "Lucky",   stat_name: "gold_find",    u_val: 3, r_val: 5,  e_val: 8  },
+    // Typed crit (07-31, M): narrower than "of Ruin" so they roll higher.
+    // Spell crit feeds INT/WIS (Arcane/Effect) rolls only; phys crit STR/DEX.
+    { suffix: "of Hexruin",  prefix: "Hexed",   stat_name: "crit_spell",   u_val: 4, r_val: 7,  e_val: 11 },
+    { suffix: "of Bloodshed", prefix: "Honed",  stat_name: "crit_phys",    u_val: 4, r_val: 7,  e_val: 11 },
 ];
 
 // School-damage affix pool (SYSTEMS_ELEMENT_SCHOOLS.md §F1, Phase 2).
@@ -1354,3 +1417,18 @@ if (!variable_global_exists("dungeon_clears_total")) global.dungeon_clears_total
 dungeon_select_open   = false;
 dungeon_select_cursor = 0;   // 0 = ashen_vault, 1 = scorched_depths, 2 = tundra_tomb
 dungeon_select_asc    = 0;
+
+// CURSED REBIRTH ritual (07-31): -1 = idle; >=0 counts frames of the dark
+// ceremony overlay (gc Step advances it, hub Draw renders it, reveal pops at
+// the end). Item/prev carried through to the forge-result popup.
+cursed_ritual_t    = -1;
+cursed_ritual_item = undefined;
+cursed_ritual_prev = undefined;
+// Forge-result reveal popup (07-31, shared by every craft) - closed state.
+if (!variable_global_exists("forge_result")) global.forge_result = undefined;
+
+// STATS-PAGE GUIDED TOUR (07-31, M: first-open walkthrough with Next/Skip).
+// -1 = inactive; 0..5 = current step. Armed the first time the I-menu opens on
+// the Stats tab; persistence rides tutorial_seen ("stats_tour"), so Settings'
+// "Reset tutorial" re-arms it.
+stats_tour_step = -1;

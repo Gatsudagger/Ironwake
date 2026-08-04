@@ -56,18 +56,9 @@ gpu_set_blendmode(bm_normal);
 draw_set_alpha(1.0);
 draw_set_color(c_white);
 
-// 1c. Drifting embers - updated and drawn here, behind every panel.
-for (var _ei = 0; _ei < array_length(hub_embers); _ei++) {
-    var _em = hub_embers[_ei];
-    _em.y -= _em.spd;                                       // rise
-    if (_em.y < -4) { _em.y = GUI_H + 4; _em.x = GUI_XL + irandom(GUI_XR - GUI_XL); } // wrap to bottom
-    var _ex = _em.x + sin(current_time / 1000 + _em.phase) * _em.drift;
-    var _ea = _em.a * (0.7 + 0.3 * sin(current_time / 700 + _em.phase));  // shimmer
-    draw_set_color(make_color_rgb(255, 180, 90));
-    draw_set_alpha(_ea);
-    draw_rectangle(_ex, _em.y, _ex + _em.size, _em.y + _em.size, false);
-}
-draw_set_alpha(1.0);
+// 1c. Drifting embers - MOVED to the foreground pass near the end of this
+// event (M 07-31: "drift over even the menus" - they were invisible behind
+// the panels). Update + draw both happen there.
 
 // 1d. Vignette - soft dark edge bands fading inward so corners sink, center
 //     reads. Drawn under the panels (depth only; never darkens UI text).
@@ -379,7 +370,278 @@ draw_set_font(-1);
 
 
 // -----------------------------------------------------------------------------
-// 5. NPC LIST - center (x=630, y=105, w=660, h=840)
+// 5. NPC SHOWCASE - center column (x=630..1290, y=105..945)
+// CAROUSEL (default; SYSTEMS_HUB_CAROUSEL.md, M design-locked 07-30): ONE NPC
+// on stage - the animated actor sprite at a readable size with name/bond/role
+// beneath - plus a JUMP STRIP of face-chips (tap = jump straight to that NPC;
+// hot-dots keep off-stage badges visible). The legacy stacked list survives
+// below behind settings.ini [ui] hub_carousel=0 (Windows/HTML5 reversion -
+// Android is always carousel). All carousel hit-tests live HERE beside their
+// drawn rects (touch rule) and fire the SAME simulated keys the Step handlers
+// already consume (touch_press) - one dispatch path, no drift.
+// -----------------------------------------------------------------------------
+if (hub_use_carousel) {
+    var _cv_n     = array_length(npc_names);
+    var _cv_focus = (selected_npc < _cv_n);              // false = gate button focused
+    var _cv_idx   = _cv_focus ? selected_npc : carousel_last;
+    var _cv_x1 = 630, _cv_x2 = 1290, _cv_y1 = 105, _cv_y2 = 945;
+    var _cv_cx = (_cv_x1 + _cv_x2) / 2;
+    var _cv_ids  = ["dorn", "sable", "maren", "vex", "petra", "vael", "bairc", ""];
+    var _cv_lock = !npc_unlocked[_cv_idx];
+    var _cv_aff  = affinity_npc_ids();
+
+    // Taps fire only while the hub itself owns input: every overlay and hub
+    // modal must swallow them (a tap on a shop's CLOSE must not also engage the
+    // stage underneath - global.ui_overlay_latch holds the start-of-frame
+    // blocked state and covers exactly that close-tap frame).
+    var _cv_hit = !ui_input_blocked() && !global.ui_overlay_latch
+        && !bond_dialog_open && !ending_active && !zoom_intro_open
+        && !show_history
+        && !(variable_instance_exists(id, "awaken_boost_open") && awaken_boost_open)
+        && !(variable_global_exists("resume_pending") && global.resume_pending)
+        && !(variable_global_exists("settings_open")  && global.settings_open)
+        && !(variable_global_exists("pause_open")     && global.pause_open)
+        && !(variable_global_exists("item_picker")    && global.item_picker.open)
+        && !(variable_global_exists("gift_popup")     && global.gift_popup != undefined);
+    if (instance_exists(obj_game_controller)
+        && instance_find(obj_game_controller, 0).dungeon_select_open) _cv_hit = false;
+
+    // Board turn-in count - shared by the stage banner and the strip hot-dot.
+    var _cv_board_ready = 0;
+    var _cv_bq = journal_quest_rows();
+    for (var _cv_qi = 0; _cv_qi < array_length(_cv_bq); _cv_qi++)
+        if (quest_is_complete(_cv_bq[_cv_qi])) _cv_board_ready++;
+
+    // ---- stage panel ----
+    draw_set_alpha(0.4);
+    draw_set_color(c_black);
+    draw_rectangle(_cv_x1 + 6, _cv_y1 + 6, _cv_x2 + 6, _cv_y2 + 6, false);
+    draw_set_alpha(0.78);
+    draw_set_color(make_color_rgb(20, 25, 40));
+    draw_rectangle(_cv_x1, _cv_y1, _cv_x2, _cv_y2, false);
+    draw_set_alpha(1.0);
+    if (_cv_focus) ui_draw_gothic_frame(_cv_x1, _cv_y1, _cv_x2, _cv_y2, 10);
+    draw_set_color(_cv_focus ? make_color_rgb(80, 160, 220) : make_color_rgb(45, 55, 75));
+    draw_rectangle(_cv_x1, _cv_y1, _cv_x2, _cv_y2, true);
+    draw_rectangle(_cv_x1, _cv_y1, _cv_x2, _cv_y1 + 4, false);   // accent strip
+
+    // ---- stage art: animated idle actor, bottom-anchored at y540 / 400px tall.
+    // Own frame state (carousel_frame) - never touches the NPC screens' shared
+    // global.npc_actor, so an open screen's actor can't double-advance. ----
+    if (carousel_prev != _cv_idx) { carousel_prev = _cv_idx; carousel_frame = 0; }
+    carousel_frame += 0.105;   // ~6.3 fps, same cadence as the NPC-screen actor
+    if (_cv_idx == 7) {
+        // Tavern Requests: the posting board fills the stage box.
+        var _cv_tb = asset_get_index("spr_tavern_board");
+        if (_cv_tb >= 0 && sprite_exists(_cv_tb)) {
+            ui_draw_sprite_cover(_cv_tb, 0, _cv_cx - 255, 150, 510, 390, 1.0);
+        } else {
+            draw_set_color(make_color_rgb(52, 36, 24));
+            draw_rectangle(_cv_cx - 255, 150, _cv_cx + 255, 540, false);
+            draw_set_color(make_color_rgb(30, 20, 13));
+            draw_rectangle(_cv_cx - 237, 168, _cv_cx + 237, 522, true);
+            draw_set_halign(fa_center); draw_set_valign(fa_middle);
+            draw_set_font(fnt_ui);
+            draw_set_color(make_color_rgb(226, 205, 160));
+            draw_text(_cv_cx, 345, "Tavern Requests");
+            draw_set_valign(fa_top); draw_set_font(-1);
+        }
+    } else {
+        var _cv_spr = asset_get_index("spr_npc_" + _cv_ids[_cv_idx] + "_idle");
+        if (_cv_spr >= 0 && sprite_exists(_cv_spr)) {
+            var _cv_nf = sprite_get_number(_cv_spr);
+            if (carousel_frame >= _cv_nf) carousel_frame -= _cv_nf;
+            var _cv_sc = 400 / max(1, sprite_get_height(_cv_spr));
+            draw_sprite_ext(_cv_spr, floor(carousel_frame) mod _cv_nf,
+                _cv_cx, 540, _cv_sc, _cv_sc, 0, c_white, _cv_lock ? 0.35 : 1.0);
+        } else if (_cv_idx < 6) {
+            // Actor sprite missing: static portrait cover-crop fallback.
+            var _cv_ports = [ Blacksmith_1__Dark_Gritty_, Alcehmist_2__Flirty_,
+                Runesmith_3__Facewrap_, Trainer_2__Sullen_,
+                Merchant_7__Voluptuous_, Aesthete_2__Gothic_ ];
+            ui_draw_sprite_cover(_cv_ports[_cv_idx], 0, _cv_cx - 200, 140, 400, 400, 1.0);
+        } else {
+            // Bairc fallback: his profile art, head-anchored like the panel crop.
+            var _cv_bf = asset_get_index("spr_npc_bairc_portrait");
+            if (_cv_bf >= 0 && sprite_exists(_cv_bf))
+                ui_draw_sprite_cover(_cv_bf, 0, _cv_cx - 200, 140, 400, 400, 1.0, 0);
+        }
+    }
+
+    // ---- rotate arrows (72x140 - finger sized; they fire the same keys the
+    // keyboard uses, so Step's nav/gate-focus logic is the single authority).
+    // Touch fires on clean RELEASE (touch_tap_in) so starting a swipe on an
+    // arrow can't also step the carousel; desktop mouse is press-fired. ----
+    var _cv_ay1 = 300, _cv_ay2 = 440, _cv_amy = (_cv_ay1 + _cv_ay2) / 2;
+    draw_set_alpha(0.55);
+    draw_set_color(make_color_rgb(14, 18, 32));
+    draw_rectangle(642,  _cv_ay1, 714,  _cv_ay2, false);
+    draw_rectangle(1206, _cv_ay1, 1278, _cv_ay2, false);
+    draw_set_alpha(1.0);
+    draw_set_color(make_color_rgb(120, 170, 220));
+    draw_triangle(700,  _cv_ay1 + 40, 700,  _cv_ay2 - 40, 662,  _cv_amy, false);
+    draw_triangle(1220, _cv_ay1 + 40, 1220, _cv_ay2 - 40, 1258, _cv_amy, false);
+    var _cv_touch = (input_device() == 2);
+    var _cv_al = _cv_touch ? touch_tap_in(642,  _cv_ay1, 714,  _cv_ay2)
+                           : touch_tapped(642,  _cv_ay1, 714,  _cv_ay2);
+    var _cv_ar = _cv_touch ? touch_tap_in(1206, _cv_ay1, 1278, _cv_ay2)
+                           : touch_tapped(1206, _cv_ay1, 1278, _cv_ay2);
+    if (_cv_hit && _cv_al) touch_press(vk_left);
+    if (_cv_hit && _cv_ar) touch_press(vk_right);
+
+    // ---- name - measured auto-fit so the longest ("Bairc the Creature
+    // Keeper") can never cross the arrows or the panel border ----
+    var _cv_name = npc_names[_cv_idx] + (_cv_lock ? "  [Locked]" : "");
+    draw_set_font(fnt_ui_title);
+    draw_set_halign(fa_center);
+    draw_set_valign(fa_top);
+    var _cv_ns = min(1, 600 / max(1, string_width(_cv_name)));
+    draw_set_color(make_color_rgb(16, 24, 42));
+    draw_text_transformed(_cv_cx + 2, 558, _cv_name, _cv_ns, _cv_ns, 0);
+    draw_set_color(_cv_lock ? c_gray : c_white);
+    draw_text_transformed(_cv_cx, 556, _cv_name, _cv_ns, _cv_ns, 0);
+
+    // ---- bond: tier hearts + line (NPCs 0..6 are affinity-wired; the board
+    // row shows its turn-in banner instead) ----
+    var _cv_line_y = 646;
+    draw_set_font(fnt_ui_small);
+    if (_cv_idx < array_length(_cv_aff)) {
+        var _cv_id   = _cv_aff[_cv_idx];
+        var _cv_tier = affinity_tier(_cv_id);
+        var _cv_rdy  = affinity_gate_ready(_cv_id);
+        // 4 heart slots, filled = tier (red row at Lover, blue below; empty dark)
+        var _cv_hs = asset_get_index("spr_heart_fx");
+        if (_cv_hs >= 0 && sprite_exists(_cv_hs)) {
+            var _cv_hcol = (_cv_tier >= 4) ? make_color_rgb(235, 70, 95)
+                                           : make_color_rgb(95, 155, 240);
+            for (var _cv_h = 0; _cv_h < 4; _cv_h++) {
+                var _cv_hx = _cv_cx - 72 + _cv_h * 38;
+                if (_cv_h < _cv_tier)
+                    draw_sprite_stretched_ext(_cv_hs, 0, _cv_hx, 604, 30, 30, _cv_hcol, 1.0);
+                else
+                    draw_sprite_stretched_ext(_cv_hs, 0, _cv_hx, 604, 30, 30, make_color_rgb(70, 76, 92), 0.35);
+            }
+        }
+        if (_cv_rdy) {
+            draw_set_color(c_aqua);
+            var _cv_bt = "Bond ready - visit to deepen";
+            if (input_device() == 0)      _cv_bt = "[B] Deepen bond - ready";
+            else if (input_device() == 1) _cv_bt = "[R3] Deepen bond - ready";
+            draw_text(_cv_cx, _cv_line_y, _cv_bt);
+        } else {
+            draw_set_color(make_color_rgb(210, 190, 130));
+            draw_text(_cv_cx, _cv_line_y, "Bond: " + affinity_tier_name_for(_cv_tier));
+            if (_cv_tier < 4) {
+                // slim progress bar toward the next gate
+                var _cv_bx = _cv_cx - 160, _cv_by = _cv_line_y + 30;
+                draw_set_color(make_color_rgb(40, 44, 56));
+                draw_rectangle(_cv_bx, _cv_by, _cv_bx + 320, _cv_by + 8, false);
+                draw_set_color(make_color_rgb(210, 190, 130));
+                draw_rectangle(_cv_bx, _cv_by, _cv_bx + 320 * affinity_progress_frac(_cv_id), _cv_by + 8, false);
+                draw_set_color(make_color_rgb(90, 96, 110));
+                draw_rectangle(_cv_bx, _cv_by, _cv_bx + 320, _cv_by + 8, true);
+            }
+        }
+    } else {
+        if (_cv_board_ready > 0) {
+            draw_set_color(make_color_rgb(120, 220, 140));
+            draw_text(_cv_cx, _cv_line_y, string(_cv_board_ready) + " ready to turn in");
+        } else {
+            draw_set_color(make_color_rgb(150, 160, 185));
+            draw_text(_cv_cx, _cv_line_y, "Postings from the townsfolk");
+        }
+    }
+
+    // ---- role line (wrapped + measured so the hint below can never collide;
+    // longest current description is 2 lines at 600px) ----
+    draw_set_color(make_color_rgb(180, 190, 210));
+    var _cv_role = _cv_lock ? "Not yet available." : npc_descriptions[_cv_idx];
+    draw_text_ext(_cv_cx, 700, _cv_role, 27, 600);
+    var _cv_hint_y = min(700 + string_height_ext(_cv_role, 27, 600) + 15, 792);
+
+    // ---- nav hint ----
+    draw_set_color(make_color_rgb(110, 120, 145));
+    var _cv_hint = "Swipe or tap the arrows  -  tap the portrait to visit";
+    if (input_device() == 0)      _cv_hint = "A/D to rotate  -  Enter to visit  -  S: Dungeon Gate";
+    else if (input_device() == 1) _cv_hint = "D-Pad to rotate  -  A to visit  -  Down: Dungeon Gate";
+    draw_text(_cv_cx, _cv_hint_y, _cv_hint);
+    draw_set_font(-1);
+
+    // ---- JUMP STRIP: one face-chip per NPC (66px = finger sized), tap to jump
+    // straight there. Hot-dots keep off-stage badges visible: gold = bond gate
+    // ready, green = board turn-ins waiting. ----
+    var _cv_ch  = 66;
+    var _cv_gap = 12;
+    var _cv_sx  = _cv_cx - (_cv_n * _cv_ch + (_cv_n - 1) * _cv_gap) / 2;   // 8 chips = 612px
+    var _cv_sy  = 822;
+    // Trade-symbol icons, not portrait thumbnails (M 07-31): the 66px faces
+    // were unreadable and duplicated the portrait already on screen.
+    var _cv_chip_icons = [ spr_icon_npc_dorn, spr_icon_npc_sable,
+        spr_icon_npc_maren, spr_icon_npc_vex,
+        spr_icon_npc_petra, spr_icon_npc_vael,
+        spr_icon_npc_bairc, spr_icon_npc_board ];
+    for (var _cv_i = 0; _cv_i < _cv_n; _cv_i++) {
+        var _cvx1 = _cv_sx + _cv_i * (_cv_ch + _cv_gap);
+        var _cvx2 = _cvx1 + _cv_ch;
+        var _cvy1 = _cv_sy, _cvy2 = _cv_sy + _cv_ch;
+        draw_set_alpha(1.0);
+        draw_set_color(make_color_rgb(12, 14, 24));
+        draw_rectangle(_cvx1, _cvy1, _cvx2, _cvy2, false);
+        var _cv_ca = (_cv_i == _cv_idx) ? 1.0 : 0.62;   // on-stage chip brightest
+        // 64px art into the chip with a 1px inset so the border stays clean.
+        draw_sprite_stretched_ext(_cv_chip_icons[_cv_i], 0,
+            _cvx1 + 1, _cvy1 + 1, _cv_ch - 2, _cv_ch - 2, c_white, _cv_ca);
+        // Border - teal double-line for the on-stage NPC.
+        var _cv_cur = (_cv_i == _cv_idx);
+        draw_set_color(_cv_cur ? make_color_rgb(80, 160, 220) : make_color_rgb(45, 55, 75));
+        draw_rectangle(_cvx1, _cvy1, _cvx2, _cvy2, true);
+        if (_cv_cur) draw_rectangle(_cvx1 - 1, _cvy1 - 1, _cvx2 + 1, _cvy2 + 1, true);
+        // Hot-dot badge (pulsing): bond gate ready / board turn-ins.
+        var _cv_dot = 0;
+        if (_cv_i < array_length(_cv_aff)) { if (affinity_gate_ready(_cv_aff[_cv_i])) _cv_dot = 1; }
+        else if (_cv_board_ready > 0) _cv_dot = 2;
+        if (_cv_dot > 0) {
+            draw_set_color(c_black);
+            draw_circle(_cvx2 - 8, _cvy1 + 8, 9, false);
+            draw_set_color((_cv_dot == 1) ? make_color_rgb(245, 195, 80) : make_color_rgb(120, 220, 140));
+            draw_set_alpha(0.7 + 0.3 * sin(current_time / 300));
+            draw_circle(_cvx2 - 8, _cvy1 + 8, 7, false);
+            draw_set_alpha(1.0);
+        }
+        // Tap = jump straight to this NPC (press-fired; the strip sits below
+        // the swipe zone so a swipe can never start here).
+        if (_cv_hit && touch_tapped(_cvx1, _cvy1, _cvx2, _cvy2)) {
+            selected_npc  = _cv_i;
+            carousel_last = _cv_i;
+            notification  = "";
+        }
+    }
+
+    // ---- stage tap = visit (engage). Touch fires on clean RELEASE so a swipe
+    // can't also open the screen; desktop click is press-fired. Sets the
+    // selection first so the simulated Enter engages THIS NPC even when the
+    // gate button held focus. ----
+    var _cv_sgo = _cv_touch ? touch_tap_in(720, 120, 1200, 810)
+                            : touch_tapped(720, 120, 1200, 810);
+    if (_cv_hit && _cv_sgo) {
+        selected_npc  = _cv_idx;
+        carousel_last = _cv_idx;
+        touch_press(vk_enter);
+    }
+    // Horizontal swipe anywhere on the stage rotates - arrives as Q/E via the
+    // shared gesture classifier, consumed by input_tab_* in Step (touch-only
+    // by construction: the classifier only arms on the touch device).
+    if (_cv_hit) touch_swipe_tab(_cv_x1, _cv_y1, _cv_x2, 810);
+
+    draw_set_halign(fa_left);
+    draw_set_valign(fa_top);
+    draw_set_alpha(1.0);
+    draw_set_font(-1);
+
+} else {
+// -----------------------------------------------------------------------------
+// 5b. LEGACY NPC LIST - center (x=630, y=105, w=660, h=840); the pre-carousel
+// stacked list, kept behind the [ui] hub_carousel=0 reversion flag.
 // Each row is 81px tall with a 15px gap between rows.
 // -----------------------------------------------------------------------------
 var _nl_x      = 630;
@@ -429,6 +691,7 @@ for (var _i = 0; _i < array_length(npc_names); _i++) {
 draw_set_font(-1);
 
 draw_set_valign(fa_top);
+} // end carousel / legacy list
 
 
 // -----------------------------------------------------------------------------
@@ -597,16 +860,16 @@ var _port_sprites = [
 // NPC slots: cover-cropped portrait with fade-in. Enter Dungeon slot: preview the
 // currently chosen dungeon (was blank before).
 if (selected_npc < array_length(_port_sprites)) {
-    ui_draw_sprite_cover(_port_sprites[selected_npc], 0, _pp_x, _pp_y, _pp_w, _pp_h, portrait_fade_alpha);
+    // Contain-fit (07-31, M): cover-crop was cutting hoods/heads - show the art whole.
+    ui_draw_sprite_contain(_port_sprites[selected_npc], 0, _pp_x, _pp_y, _pp_w, _pp_h, portrait_fade_alpha);
 } else if (selected_npc == 6) {
     // NPC beyond the authored portrait set (Bairc): use his hub sprite if imported,
     // else a captioned placeholder so the panel never falls through to the gate art.
     var _np_spr = asset_get_index("spr_npc_bairc_portrait");   // M-supplied profile art
     if (_np_spr < 0) _np_spr = asset_get_index("spr_npc_bairc_idle");
     if (_np_spr >= 0) {
-        // v_anchor 0: his portrait is full-bleed 512px - a centered cover-crop in this
-        // wider box scalped the top of his head, so the crop bites the bottom instead.
-        ui_draw_sprite_cover(_np_spr, 0, _pp_x, _pp_y, _pp_w, _pp_h, portrait_fade_alpha, 0);
+        // Contain-fit (07-31): whole portrait visible, no crop bias games needed.
+        ui_draw_sprite_contain(_np_spr, 0, _pp_x, _pp_y, _pp_w, _pp_h, portrait_fade_alpha);
     } else {
         draw_set_halign(fa_center); draw_set_valign(fa_middle);
         draw_set_font(fnt_ui_title); draw_set_color(make_color_rgb(120, 130, 160));
@@ -700,7 +963,15 @@ if (_eb_sel) {
     draw_text(_eb_x + _eb_w / 2, _eb_y + 78, (input_device() == 2) ? "Tap to confirm" : "Press Enter or Space to confirm");
 } else {
     draw_set_color(make_color_rgb(100, 140, 130));
-    draw_text(_eb_x + _eb_w / 2, _eb_y + 78, "Scroll down to select");
+    // Carousel mode: down hops focus to this button (no scrolling list); touch
+    // just taps it directly (the Step hit-test fires regardless of focus).
+    var _eb_hint = "Scroll down to select";
+    if (hub_use_carousel) {
+        if (input_device() == 2)      _eb_hint = "Tap to confirm";
+        else if (input_device() == 1) _eb_hint = "D-Pad Down, then A";
+        else                          _eb_hint = "Press S, then Enter";
+    }
+    draw_text(_eb_x + _eb_w / 2, _eb_y + 78, _eb_hint);
 }
 draw_set_font(-1);
 
@@ -718,16 +989,22 @@ draw_set_color(c_gray);
 // (ui_draw_touch_chips, drawn at the end of this event) - no text here.
 if (input_device() != 2) {
     var _hub_pad_ui = (input_device() == 1);
-    var _foot_txt = _hub_pad_ui
-        ? "D-Pad: Navigate   A: Interact   LT: Journal (Quests / Codex / Bestiary)   Y: History   RT: Stash   L3: Upgrade   Select: Settings"
-        : "W/S: Navigate   Enter / Space: Interact   J: Journal (Quests / Codex / Bestiary)   H: History   T: Stash   P: Upgrade   O: Settings";
+    // The nav prefix is shared with the Journal-badge overdraw below so the
+    // measured segment position can never drift from the drawn text. Keyboard
+    // wording follows the layout: the carousel rotates on A/D (W/S = gate).
+    var _foot_nav = _hub_pad_ui
+        ? "D-Pad: Navigate   A: Interact   "
+        : (hub_use_carousel ? "A/D: Rotate   W/S: Gate   Enter / Space: Interact   "
+                            : "W/S: Navigate   Enter / Space: Interact   ");
+    var _foot_txt = _foot_nav + (_hub_pad_ui
+        ? "LT: Journal (Quests / Codex / Bestiary)   Y: History   RT: Stash   L3: Upgrade   Select: Settings"
+        : "J: Journal (Quests / Codex / Bestiary)   H: History   T: Stash   P: Upgrade   O: Settings");
     draw_text_outline(GUI_CX, 1073, _foot_txt);
     // Unread-Journal cue: overdraw the "J: Journal" segment in flashing gold (M 2026-07-04:
     // the old floating pulse dot read as disjoint clutter). Alpha pulse over the same
     // pixels; same font/valign as the footer so it registers exactly.
     if (journal_any_badge()) {
-        var _jseg_pre = _hub_pad_ui ? "D-Pad: Navigate   A: Interact   "
-                                    : "W/S: Navigate   Enter / Space: Interact   ";
+        var _jseg_pre = _foot_nav;
         var _jseg     = _hub_pad_ui ? "LT: Journal" : "J: Journal";
         var _jb_x = GUI_CX - string_width(_foot_txt) / 2 + string_width(_jseg_pre);
         draw_set_halign(fa_left);
@@ -1886,6 +2163,9 @@ if (instance_exists(obj_game_controller)) {
                     draw_set_font(fnt_ui_title);
                     draw_set_color(make_color_rgb(255, 215, 120));
                     draw_text(GUI_CX, _wy0 + 26, "TALENT WEB - " + _wv_name);
+                    // Subtitle sits BELOW the measured title height (07-29: the fixed
+                    // +72 offset ran into the title font's descenders on long names).
+                    var _wv_title_h = string_height("TALENT WEB - " + _wv_name);
                     draw_set_font(fnt_ui_small);
                     draw_set_color(make_color_rgb(170, 175, 195));
                     var _wv_hdr = string(_wv_avail) + " point" + ((_wv_avail == 1) ? "" : "s") + " to spend"
@@ -1893,7 +2173,7 @@ if (instance_exists(obj_game_controller)) {
                         + string(_wv_spent) + "/" + string(ability_web_cap()) + " woven   -   "
                         + string(ability_casts(_wv_name)) + " lifetime casts"
                         + ((_wv_next > 0) ? ("  (next point at " + string(_wv_next) + ")") : "");
-                    draw_text(GUI_CX, _wy0 + 72, _wv_hdr);
+                    draw_text(GUI_CX, _wy0 + 26 + max(46, _wv_title_h) + 6, _wv_hdr);
 
                     // Node geometry: root top-center, POWER branch left column,
                     // TWIST branch right column, mid-tier cross-link. 68px+ tap
@@ -2116,6 +2396,7 @@ if (instance_exists(obj_game_controller)) {
             for (var _tri = 0; _tri < array_length(global.traits_all); _tri++) {
                 var _tr = global.traits_all[_tri];
                 if (_tr.class_req != -1 && _tr.class_req != _ov_class) continue;
+                if (_tr.unlock_type == "duelist" && !trait_is_unlocked(_tr.name)) continue;   // hidden until earned
                 var _unl = variable_struct_get(global.traits_unlocked, _tr.effect_id);
                 if (_unl) {
                     array_push(_tr_avail, _tr);
@@ -2657,7 +2938,10 @@ if (_hb_gc != noone) {
         || (variable_instance_exists(_hb_gc, "bairc_open")   && _hb_gc.bairc_open);
 }
 if (!_hb_screen) {
-    npc_hearts_consume_pending(1605, 600);   // near the NPC portrait panel
+    // Carousel: hearts burst at the stage actor's chest; legacy list: near the
+    // right-hand portrait panel.
+    if (hub_use_carousel) npc_hearts_consume_pending(960, 380);
+    else                  npc_hearts_consume_pending(1605, 600);
     npc_hearts_draw();
 }
 
@@ -2756,6 +3040,46 @@ if (variable_instance_exists(id, "awaken_boost_done_timer") && awaken_boost_done
 }
 
 ui_draw_item_picker();
+
+// CURSED REBIRTH ritual overlay (07-31) - the dark ceremony between commit and
+// reveal. Timed by gc Step (cursed_ritual_t); any confirm/tap hurries it.
+if (instance_exists(obj_game_controller)) {
+    var _crg = instance_find(obj_game_controller, 0);
+    if (variable_instance_exists(_crg, "cursed_ritual_t") && _crg.cursed_ritual_t >= 0) {
+        var _crt = _crg.cursed_ritual_t;
+        var _crf = min(1, _crt / 45);                        // veil ramp-in
+        draw_set_alpha(0.88 * _crf);
+        draw_set_color(c_black);
+        draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
+        // Blood pulse breathing under the veil.
+        var _crp = 0.5 + 0.5 * sin(_crt / 9);
+        draw_set_alpha(0.18 * _crf * _crp);
+        draw_set_color(make_color_rgb(140, 20, 30));
+        draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
+        // Ring of ember-motes closing in on the offering.
+        var _crr = 330 - 140 * min(1, _crt / 195);
+        draw_set_color(make_color_rgb(190, 60, 80));
+        for (var _cri = 0; _cri < 12; _cri++) {
+            var _cra2 = _crt / 40 + _cri * (pi / 6);
+            draw_set_alpha(_crf * (0.35 + 0.65 * abs(sin(_cra2 * 3 + _crt / 30))));
+            draw_circle(GUI_CX + cos(_cra2) * _crr, 540 + sin(_cra2) * _crr * 0.72, 6, false);
+        }
+        draw_set_alpha(_crf);
+        draw_set_halign(fa_center); draw_set_valign(fa_middle);
+        draw_set_font(fnt_ui_title);
+        draw_set_color(make_color_rgb(205, 90, 105));
+        var _cr_line = (_crt > 120) ? "Something gives it back" : "The dark considers the offering";
+        draw_text(GUI_CX, 540, _cr_line + string_repeat(".", 1 + (_crt div 20) mod 3));
+        draw_set_font(fnt_ui_small);
+        draw_set_color(make_color_rgb(150, 130, 140));
+        draw_text(GUI_CX, 640, (input_device() == 2) ? "tap to hurry it" : "Enter: hurry it");
+        draw_set_halign(fa_left); draw_set_valign(fa_top);
+        draw_set_alpha(1.0); draw_set_color(c_white); draw_set_font(-1);
+        if (touch_tapped(GUI_XL, 0, GUI_XR, GUI_H)) touch_press(vk_enter);
+    }
+}
+
+ui_draw_forge_result();   // craft/forge reveal popup (07-31) - over screens + picker
 ui_draw_gift_popup();    // gift reaction + bond delta/progress (Phase 4b) - over the picker layer
 
 // Onboarding coach-mark - drawn last so it sits on top of the hub (see SYSTEMS_ONBOARDING.md).
@@ -2825,7 +3149,7 @@ if (ending_active) {
                 case "bairc": _port = asset_get_index("spr_npc_bairc_portrait"); break;
             }
             if (_port != -1 && sprite_exists(_port)) {
-                ui_draw_sprite_cover(_port, 0, 730, 150, 460, 460, 1.0);
+                ui_draw_sprite_contain(_port, 0, 730, 150, 460, 460, 1.0);
                 ui_draw_gothic_frame(730, 150, 1190, 610, 15);
             }
             draw_set_font(fnt_ui);
@@ -2925,7 +3249,7 @@ if (bond_dialog_open) {
     }
     var _bd_tx = _bdx0 + 40;   // text column start (moves right when a portrait draws)
     if (_bd_port != -1 && sprite_exists(_bd_port)) {
-        ui_draw_sprite_cover(_bd_port, 0, _bdx0 + 36, _bdy0 + 66, 330, 330, 1.0);
+        ui_draw_sprite_contain(_bd_port, 0, _bdx0 + 36, _bdy0 + 66, 330, 330, 1.0);
         ui_draw_gothic_frame(_bdx0 + 36, _bdy0 + 66, _bdx0 + 366, _bdy0 + 396, 15);
         _bd_tx = _bdx0 + 410;
     }
@@ -2990,9 +3314,77 @@ if (variable_global_exists("resume_pending") && global.resume_pending) {
     draw_set_font(-1);
 }
 
+// FOREGROUND EMBERS (M 07-31): the campfire motes drift over every panel and
+// menu so the atmosphere stays visible. 1-3px at <=0.52 alpha - they dust the
+// UI without ever obscuring a word. Drawn before the touch chrome so chips,
+// d-pad and coach-marks stay clean on top.
+for (var _ei = 0; _ei < array_length(hub_embers); _ei++) {
+    var _em = hub_embers[_ei];
+    _em.y -= _em.spd;                                       // rise
+    if (_em.y < -4) { _em.y = GUI_H + 4; _em.x = GUI_XL + irandom(GUI_XR - GUI_XL); } // wrap to bottom
+    var _ex = _em.x + sin(current_time / 1000 + _em.phase) * _em.drift;
+    var _ea = _em.a * (0.7 + 0.3 * sin(current_time / 700 + _em.phase));  // shimmer
+    draw_set_color(make_color_rgb(255, 180, 90));
+    draw_set_alpha(_ea);
+    draw_rectangle(_ex, _em.y, _ex + _em.size, _em.y + _em.size, false);
+}
+draw_set_alpha(1.0);
+draw_set_color(c_white);
+
 // Touch (8d): action-chip bar, then the Back/menu chip + key pump - always LAST (topmost).
 ui_draw_touch_chips();
 ui_draw_touch_back();
 // Touch (M 07-17): NPC-screen long-press action menu - drawn last so it's modal-topmost.
 ui_draw_touch_action_menu();
 ui_draw_touch_gamepad();   // on-screen d-pad in the left gutter (M 07-17)
+
+// PINCH ZOOM INTRO (SYSTEMS_PINCH_ZOOM.md decision #3) - drawn after the touch
+// chrome so it tops everything. Step exits while it's open; GOT IT (or any
+// confirm key, handled in Step) persists [touch] zoom_intro_seen and closes.
+// Panel height is MEASURED from the wrapped text so the copy can never collide
+// with the button (UI collision rule).
+if (zoom_intro_open) {
+    draw_set_alpha(0.72);
+    draw_set_color(c_black);
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
+    draw_set_alpha(1.0);
+    var _zi_txt = "Two-finger PINCH zooms the whole screen - handy wherever the text runs small."
+        + "\n\nTwo-finger DRAG pans while zoomed. Pinch back down to snap to normal view."
+        + "\n\nYour d-pad and buttons stay put while you zoom. Pinch Zoom can be turned OFF any time in SETTINGS.";
+    draw_set_font(fnt_ui);
+    var _zi_th  = string_height_ext(_zi_txt, 45, 900);
+    var _zi_ph  = 132 + _zi_th + 36 + 63 + 66;   // title zone + text + gap + button + bottom pad
+    var _zix1 = GUI_CX - 495, _ziy1 = GUI_CY - _zi_ph / 2;
+    var _zix2 = GUI_CX + 495, _ziy2 = _ziy1 + _zi_ph;
+    draw_set_color(make_color_rgb(14, 16, 24));
+    draw_rectangle(_zix1, _ziy1, _zix2, _ziy2, false);
+    ui_draw_gothic_frame(_zix1, _ziy1, _zix2, _ziy2, 24);
+    draw_set_halign(fa_center);
+    draw_set_valign(fa_top);
+    draw_set_font(fnt_ui_title);
+    draw_set_color(make_color_rgb(228, 205, 140));
+    draw_text(GUI_CX, _ziy1 + 42, "Pinch to Zoom");
+    draw_set_font(fnt_ui);
+    draw_set_color(make_color_rgb(200, 208, 222));
+    draw_text_ext(GUI_CX, _ziy1 + 132, _zi_txt, 45, 900);
+    var _zib_x1 = GUI_CX - 165, _zib_y1 = _ziy2 - 129, _zib_x2 = GUI_CX + 165, _zib_y2 = _ziy2 - 66;
+    draw_set_color(make_color_rgb(20, 34, 58));
+    draw_rectangle(_zib_x1, _zib_y1, _zib_x2, _zib_y2, false);
+    draw_set_color(make_color_rgb(80, 160, 220));
+    draw_rectangle(_zib_x1, _zib_y1, _zib_x2, _zib_y2, true);
+    draw_set_valign(fa_middle);
+    draw_set_color(c_white);
+    draw_text(GUI_CX, (_zib_y1 + _zib_y2) / 2, "GOT IT");
+    draw_set_valign(fa_top);
+    if (touch_tapped(_zib_x1, _zib_y1, _zib_x2, _zib_y2, true)) {
+        zoom_intro_open = false;
+        ini_open("settings.ini");
+        ini_write_real("touch", "zoom_intro_seen", 1);
+        ini_close();
+        audio_play_sound(snd_page, 1, false);
+    }
+    draw_set_halign(fa_left);
+    draw_set_valign(fa_top);
+    draw_set_color(c_white);
+    draw_set_font(-1);
+}

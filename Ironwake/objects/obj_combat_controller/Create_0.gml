@@ -91,6 +91,11 @@ _derived.ranged_elem = _equip_bonus.ranged_elem;
 // resolver reads player.derived.school_dmg[ability_school(ab)] and adds it as a
 // separate truly-flat post-crit component, mitigated by the ability's own type.
 _derived.school_dmg = _equip_bonus.school_dmg;
+// Ember Memory (wyrmling innate, 08-01): +5% Fire school damage on the gear channel.
+var _inn_fire = pet_active_innate("fire");
+if (_inn_fire > 0) {
+    _derived.school_dmg.fire = (variable_struct_exists(_derived.school_dmg, "fire") ? _derived.school_dmg.fire : 0) + _inn_fire;
+}
 
 // Assemble the player combat struct.
 // HP and DODGE come from derived values; armor and el_resist are from the
@@ -285,22 +290,34 @@ player.dodge += _equip_bonus.dodge_flat;
 // crit_flat stored in stats so combat_roll_crit can read it from attacker_stats
 // (+ Keen egg: active hatchling adds flat crit-chance points on the same channel)
 player.stats.crit_bonus = _equip_bonus.crit_flat + pet_active_egg_bonus("crit") + pet_active_kit_crit();   // gear + egg + Charmed (C5)
+// Typed crit gear (07-31): spell-only / phys-only crit channels, applied by
+// combat_roll_crit according to the roll's crit_type (STR/DEX = phys, INT/WIS = spell).
+// Species innates (08-01, pillar B): Lunar Grace / Pack Snarl ride the same channels.
+player.stats.crit_spell_bonus = _equip_bonus.crit_spell + pet_active_innate("crit_spell");
+player.stats.crit_phys_bonus  = _equip_bonus.crit_phys  + pet_active_innate("crit_phys");
+// Species innates, defensive plates (08-01): Cathedral Calm / Runeshell / Riveted Plate.
+player.equip_armor += pet_active_innate("armor");
+player.el_resist   += pet_active_innate("el_resist");
 // gold_find stored for future hook; add_gold will check this when implemented
 player.gold_find_pct = _equip_bonus.gold_find;
 
 // Detect equipped legendary unique effects
 player.gatewarden_brand  = false;  // first ability each combat costs 0 AP
-player.heartstone_aegis  = false;  // heal 5 HP on enemy death
+player.heartstone_aegis  = false;  // heal 6 HP on enemy death (07-29 buff)
 player.thief_of_hours    = 0;      // # of equipped Thief of Hours rings (+1 AP first turn each, stacks)
 player.crown_hollow_king = false;  // +1 trait slot (hub loadout screen)
 player.gatewarden_used   = false;  // tracks if the 0-AP proc is available this combat
 // 07-28 expansion legendaries (M approved 10) - flags read at their effect sites.
 player.leg_rebuke        = false;  // Duelist's Rebuke: after a dodge, next ability this turn +50%
 player.leg_rebuke_primed = false;  // set by the dodge, consumed by the next ability
+// Duelist Arts (DESIGN_DUELIST_CHALLENGE.md)
+player.measured_riposte_active = false;  // Measured Riposte: first melee blow answered at 18 (until next turn)
+player.leg_ashen         = false;  // The Ashen Blade: dodge/riposte arms -1 AP on the next ability
+player.ashen_tempo_ready = false;  // the armed discount (burned at cast commit, like Counterphase)
 player.leg_treads        = false;  // Gravewalker Treads: survive lethal at 1 HP once per RUN
-player.leg_chalice       = false;  // Sanguine Chalice: overkill on kills heals (cap 15)
-player.leg_loop          = false;  // Stormcaller's Loop: single-target spells echo 15%
-player.leg_miser         = false;  // Miser's Blade: +1 dmg per 150g held (cap +8)
+player.leg_chalice       = false;  // Sanguine Chalice: overkill on kills heals (cap 20, 07-29 buff)
+player.leg_loop          = false;  // Stormcaller's Loop: single-target spells echo 25% (07-29 buff)
+player.leg_miser         = false;  // Miser's Blade: +1 dmg per 125g held (cap +10, 07-29 buff)
 player.leg_veil          = false;  // Veil of the Patient Dark: first enemy attack auto-misses
 player.leg_veil_ready    = false;  // per-combat charge for the veil
 player.leg_longshot      = false;  // Longshot's Memory: first hit each combat auto-crits
@@ -308,7 +325,7 @@ player.leg_longshot_used = false;  // per-combat spent flag
 player.leg_line          = false;  // Aegis of the Unbroken Line: poise 3/AP, cap doubled
 player.leg_censer        = false;  // Ember Saint's Censer: DoT ticks +2
 player.leg_shard         = false;  // Oathbreaker's Shard: kills grant +1 run max HP (cap +20)
-player.leg_diadem        = false;  // Crownfire Diadem: Overcharge pays 3/point
+player.leg_diadem        = false;  // Crownfire Diadem: Overcharge pays 4/point (07-29 buff)
 player.leg_reliquary     = false;  // Kindled Reliquary: +2 class resource at combat start
 
 // Class-weapon ability affixes (set by equipped class-locked weapons; see obj_game_controller/Create_0)
@@ -331,6 +348,7 @@ for (var _li = 0; _li < array_length(global.inventory); _li++) {
     if (_lit.unique_effect == "crown_hollow_king") player.crown_hollow_king = true;
     // 07-28 expansion legendaries
     if (_lit.unique_effect == "duelists_rebuke")     player.leg_rebuke   = true;
+    if (_lit.unique_effect == "ashen_blade")         player.leg_ashen    = true;
     if (_lit.unique_effect == "gravewalker_treads")  player.leg_treads   = true;
     if (_lit.unique_effect == "sanguine_chalice")    player.leg_chalice  = true;
     if (_lit.unique_effect == "stormcallers_loop")   player.leg_loop     = true;
@@ -400,6 +418,9 @@ if (variable_global_exists("next_enemy_type")) {
 } else {
     _enemy_type = "standard";
 }
+// Duel state defaults OFF for every ordinary combat (belt + braces - a stale
+// flag would wrongly arm the 1-HP mercy net and the riposte).
+if (_enemy_type != "duel") global.duel_active = false;
 var enemy1;
 var enemy2;
 
@@ -426,6 +447,40 @@ if (_enemy_type == "elite") {
     var _support_idx = irandom(array_length(_std_pool) - 1);
     enemy1 = enemy_clone(_eli_pool[_elite_idx]);
     enemy2 = enemy_clone(_std_pool[_support_idx]);
+
+} else if (_enemy_type == "duel") {
+    // THE ASHEN DUELIST (DESIGN_DUELIST_CHALLENGE.md, M-locked 07-29): a strict
+    // 1v1 rival on a humanoid elite frame. Melee/phys, high dodge, and a duel-
+    // specific riposte (every melee blow he survives answers for a flat 12 -
+    // Counterblade's own number, wired in Step). He grows +10% per PREVIOUS
+    // duel fought, forever - the ledger (duelist_encounters) never resets.
+    enemy1 = enemy_clone(_eli_pool[0]);
+    enemy1.name              = "The Ashen Duelist";
+    var _duel_prev   = variable_global_exists("duelist_encounters") ? global.duelist_encounters : 0;
+    var _duel_growth = 1.10 * power(1.10, _duel_prev);
+    enemy1.HP                = round(85 * _duel_growth); enemy1.max_HP = enemy1.HP;
+    enemy1.damage            = round(13 * _duel_growth);
+    enemy1.armor             = 7;  enemy1.el_resist = 7;
+    enemy1.dodge             = 18; enemy1.acc       = 85;
+    enemy1.xp_value          = 30;
+    enemy1.gold_min          = 45; enemy1.gold_max  = 70;
+    enemy1.telegraph_turn    = 4;
+    enemy1.telegraph_damage  = round(21 * _duel_growth);
+    enemy1.telegraph_message = "The Duelist coils for the perfect thrust!";
+    enemy1.mechanic_type     = "none"; enemy1.mechanic_value = 0; enemy1.mechanic_turns = 0;
+    if (variable_struct_exists(enemy1, "reach")) enemy1.reach = "melee";
+    enemy1.abilities = [
+        enemy_ability("Quickstep Cut",   "spell",  30, 3, round(12 * _duel_growth),
+            { msg: "slips inside your guard - a quickstep cut", reach: "melee" }),
+        enemy_ability("Disarming Feint", "debuff", 22, 4, 0.15,
+            { status_kind: "weaken", turns: 2, msg: "flicks your wrist aside - your blows weaken" }),
+    ];
+    enemy2 = undefined;
+    // Duel state: entry HP is the mercy-restore point; PAR grades the rewards.
+    global.duel_active      = true;
+    global.duel_mercy_fired = false;
+    global.duel_entry_hp    = player.HP;
+    global.duel_par         = duel_turn_par();
 
 } else if (_enemy_type == "boss") {
     var _floor = variable_global_exists("current_floor") ? global.current_floor : 1;
@@ -550,7 +605,9 @@ if (_enemy_type == "elite") {
 // -----------------------------------------------------------------------------
 var _enc_floor = clamp((variable_global_exists("current_floor") ? global.current_floor : 1), 1, 3);
 var _enc_count = 2;
-if (_enemy_type == "boss") {
+if (_enemy_type == "duel") {
+    _enc_count = 1;   // the duel is STRICTLY 1v1 (M-locked)
+} else if (_enemy_type == "boss") {
     if (irandom(99) < (15 + _enc_floor * 12)) _enc_count = 3;          // boss + 1, sometimes 2 adds
 } else if (_enemy_type == "elite") {
     if (irandom(99) < (25 + _enc_floor * 12)) _enc_count = 3;          // elite + 1, sometimes 2
@@ -590,7 +647,7 @@ if (_enemy_type == "boss") {
     }
 }
 
-var enemies = [enemy1, enemy2];
+var enemies = (enemy2 == undefined) ? [enemy1] : [enemy1, enemy2];
 while (array_length(enemies) < _enc_count) {
     var _ex_mob = enemy_clone(_std_pool[irandom(array_length(_std_pool) - 1)]);
     if (_enemy_type == "boss") { _ex_mob.HP = 35; _ex_mob.max_HP = 35; _ex_mob.damage = 6; }
@@ -762,8 +819,14 @@ combat_over = false;
 victory_pause_timer  = 0;
 victory_pause_frames = 60;   // ~1 second at 60 fps
 
-// 0 = ongoing, 1 = player won, -1 = player lost
+// 0 = ongoing, 1 = player won, -1 = player lost, 2 = duel mercy (loss, never a death)
 combat_result = 0;
+
+// Ashen Duelist bookkeeping (DESIGN_DUELIST_CHALLENGE.md): grading fires once
+// on the victory frame; the grade string feeds the result overlay.
+duel_rewards_granted = false;
+duel_grade           = "";
+duel_grade_round     = 0;
 
 // True when it is the player's turn to act; false during enemy turns
 player_turn = combat_state.active.is_player;
@@ -784,6 +847,39 @@ enemy_turn_delay = 60;
 array_push(combat_log,
     "Combat begins! " + combat_state.combatants[0].name + " acts first."
 );
+
+// The duel opens with its terms (PAR chip also rides the intent area in Draw).
+if (global.duel_active) {
+    array_push(combat_log, "A DUEL - strict one-on-one. Your companion sits out.");
+    array_push(combat_log, "PAR: " + string(global.duel_par) + " turns. Beat it for his finest prize.");
+}
+
+// Duelist's Poise (Duelist Arts trait, DESIGN_DUELIST_CHALLENGE.md): one foe,
+// one breath - every ONE-ON-ONE combat opens with +1 AP (the duel included).
+if (trait_active("Duelist's Poise") && array_length(combat_state.combatants) - 1 == 1) {
+    player.energy += 1;
+    array_push(combat_log, "Duelist's Poise: single combat - +1 AP.");
+}
+
+// Long Winter (hoarfrost_drake signature move, 08-01 pillar D): the first action
+// of an elite or boss freezes in its throat - a 1-turn stun laid at the gate,
+// before anyone moves (the control check reads stun pre-tick, so it costs the
+// full first action). Once per combat by construction.
+if (pet_active_sig_move("long_winter")
+    && variable_global_exists("next_enemy_type")
+    && (global.next_enemy_type == "elite" || global.next_enemy_type == "boss")
+    && variable_struct_exists(enemy1, "status_effects")) {
+    array_push(enemy1.status_effects, {
+        name:         "Long Winter",
+        effect_type:  "debuff",
+        kind:         "stun",
+        effect_value: 0,
+        duration:     1,
+        element:      "frost",
+        source:       "pet"
+    });
+    array_push(combat_log, "[Companion] " + pet_active().name + " breathes the LONG WINTER - " + enemy1.name + "'s first move freezes in its throat.");
+}
 
 // -----------------------------------------------------------------------------
 // 5b. DUNGEON FLOOR PASSIVES - consume the pending room-entry effects.

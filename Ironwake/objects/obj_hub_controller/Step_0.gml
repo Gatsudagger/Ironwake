@@ -48,6 +48,21 @@ if (ending_active) {
     exit;
 }
 
+// PINCH ZOOM INTRO (SYSTEMS_PINCH_ZOOM.md decision #3) - one-time touch popup,
+// fully modal. Resume/ending outrank it (it re-shows next visit if unseen).
+// Keyboard/pad path here; the GOT IT tap lives with the button in Draw_64.
+if (!variable_instance_exists(id, "zoom_intro_open")) zoom_intro_open = false;
+if (zoom_intro_open) {
+    if (input_confirm() || input_confirm_alt() || input_cancel()) {
+        zoom_intro_open = false;
+        ini_open("settings.ini");
+        ini_write_real("touch", "zoom_intro_seen", 1);
+        ini_close();
+        audio_play_sound(snd_page, 1, false);
+    }
+    exit;
+}
+
 // AWAKENING BOOST POPUP (SYSTEMS_ENDLESS.md §1) - a first-time tier clear earned
 // a pick: raise ONE other dungeon's awakening by +1. Fully modal on hub arrival;
 // the ending sequence outranks it. Card geometry MUST match Draw_64.
@@ -460,6 +475,10 @@ if (instance_exists(obj_game_controller)) {
 
             if (nav_up())   _gc_ld.loadout_cursor = wrap_index(_gc_ld.loadout_cursor - 1, _ld_max_cur + 1);
             if (nav_down()) _gc_ld.loadout_cursor = wrap_index(_gc_ld.loadout_cursor + 1, _ld_max_cur + 1);
+            // Mouse wheel walks the same cursor (edge-scroll follows it); clamped,
+            // not wrapped - wheeling past the end of a list shouldn't teleport. M 07-30.
+            var _ldw = mouse_wheel_down() - mouse_wheel_up();
+            if (_ldw != 0) _gc_ld.loadout_cursor = clamp(_gc_ld.loadout_cursor + _ldw, 0, _ld_max_cur);
 
             // Space or Enter at confirm row: commit and enter dungeon
             if ((input_confirm() || input_confirm_alt())
@@ -529,6 +548,7 @@ if (instance_exists(obj_game_controller)) {
             for (var _tri = 0; _tri < array_length(global.traits_all); _tri++) {
                 var _tr = global.traits_all[_tri];
                 if (_tr.class_req != -1 && _tr.class_req != _ld_class) continue;
+                if (_tr.unlock_type == "duelist" && !trait_is_unlocked(_tr.name)) continue;   // hidden until earned
                 var _unl = variable_struct_get(global.traits_unlocked, _tr.effect_id);
                 if (_unl) {
                     array_push(_tr_avail, _tr);
@@ -704,6 +724,7 @@ if (instance_exists(obj_game_controller)) {
                 for (var _ltta = 0; _ltta < array_length(global.traits_all); _ltta++) {
                     var _ltt = global.traits_all[_ltta];
                     if (_ltt.class_req != -1 && _ltt.class_req != _ld_class) continue;
+                    if (_ltt.unlock_type == "duelist" && !trait_is_unlocked(_ltt.name)) continue;   // hidden until earned
                     if (variable_struct_get(global.traits_unlocked, _ltt.effect_id)) {
                         array_push(_ldtr_avail, _ltt);
                     } else {
@@ -872,13 +893,41 @@ if (show_history) {
 
 
 // -----------------------------------------------------------------------------
-// 1. NPC LIST NAVIGATION
+// 1. NPC NAVIGATION
 // Clearing the notification on any navigation keypress keeps the UI clean.
+// selected_npc keeps its exact legacy meaning in BOTH layouts (0..N-1 = NPC,
+// N = the Enter Dungeon button) so every handler below - and the right-hand
+// detail/portrait panels - work unchanged.
 // -----------------------------------------------------------------------------
-// Positions: one row per NPC (0..N-1) plus the Enter-Dungeon button at index N.
 var _npc_slots = array_length(npc_names) + 1;
-if (nav_up())   { selected_npc = wrap_index(selected_npc - 1, _npc_slots); notification = ""; }
-if (nav_down()) { selected_npc = wrap_index(selected_npc + 1, _npc_slots); notification = ""; }
+if (hub_use_carousel) {
+    // CAROUSEL (SYSTEMS_HUB_CAROUSEL.md): left/right rotate the stage with the
+    // global hold-repeat nav (wrap-around); up/down hop focus to the persistent
+    // DUNGEON GATE button and back. A horizontal swipe on the stage arrives as
+    // Q/E via touch_swipe_tab - handled with input_tab_* so pad shoulders
+    // rotate too. The stage/arrow/chip TAPS live in Draw_64 with their rects
+    // and fire these same keys (touch_press), so this is the only dispatch.
+    var _cn = array_length(npc_names);
+    if (selected_npc < _cn) {
+        carousel_last = selected_npc;   // keep the stage memory in sync
+        if (nav_left())  { selected_npc = wrap_index(selected_npc - 1, _cn); notification = ""; }
+        if (nav_right()) { selected_npc = wrap_index(selected_npc + 1, _cn); notification = ""; }
+        if (input_tab_next())      { selected_npc = wrap_index(selected_npc + 1, _cn); notification = ""; }
+        else if (input_tab_prev()) { selected_npc = wrap_index(selected_npc - 1, _cn); notification = ""; }
+        carousel_last = selected_npc;
+        if (nav_up() || nav_down()) { selected_npc = _cn; notification = ""; }   // focus the gate
+    } else {
+        // Gate focused: any direction returns to the carousel where you left it.
+        if (nav_up() || nav_down() || nav_left() || nav_right()) {
+            selected_npc = carousel_last;
+            notification = "";
+        }
+    }
+} else {
+    // LEGACY stacked list (settings.ini [ui] hub_carousel=0 reversion).
+    if (nav_up())   { selected_npc = wrap_index(selected_npc - 1, _npc_slots); notification = ""; }
+    if (nav_down()) { selected_npc = wrap_index(selected_npc + 1, _npc_slots); notification = ""; }
+}
 
 
 // -----------------------------------------------------------------------------
@@ -1054,7 +1103,9 @@ if (mouse_check_button_pressed(mb_left)) {
     var _hmx = device_mouse_x_to_gui(0);
     var _hmy = device_mouse_y_to_gui(0);
 
-    // NPC rows: x=630-1290, y=105+i*96, h=81
+    // NPC rows: x=630-1290, y=105+i*96, h=81. LEGACY LIST ONLY - the carousel
+    // handles its own stage/arrow/chip taps in Draw_64, beside the drawn rects.
+    if (!hub_use_carousel)
     for (var _hni = 0; _hni < array_length(npc_names); _hni++) {
         var _hnry = 105 + _hni * 96;
         if (_hmx >= 630 && _hmx < 1290 && _hmy >= _hnry && _hmy < _hnry+81) {

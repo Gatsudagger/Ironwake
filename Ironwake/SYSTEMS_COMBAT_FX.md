@@ -1,5 +1,21 @@
 # SYSTEMS — Combat FX (Audio rebind + Spell VFX)
 
+> **07-29 TRIAL EXPANSION (built, awaiting F5):** 9 new one-shot VFX from owned
+> packs (0 gens), resolved by `ability_attack_vfx` / `ability_support_vfx`
+> (scr_abilities, after ability_school_list). Attacks now key on element
+> SCHOOL: fire/arcane/void keep their sprites, physical keeps impact, NEW
+> frost (`spr_vfx_frost` blue sparkle), shock (`spr_vfx_shock` zap), poison
+> (`spr_vfx_poison` green skull), blood (`spr_vfx_blood` splatter), shadow
+> (`spr_vfx_shadow` Necromancer crescent). Self-casts split the old
+> sword+/heal pair: shield→`spr_vfx_shield` (warded shield), resource→
+> `spr_vfx_gain` (absorb motes), self-debuff + blood/void/shadow status
+> pacts→`spr_vfx_dark` (skull smoke), Blink/Evasive Roll/Vanish→
+> `spr_vfx_haste` (clock), other buffs keep `spr_vfx_buff` (sword+). Each
+> entry carries its own `ticks` so longer animations play out. Import:
+> tools/import_combat_vfx_0729.py. GAP: no grey twins yet — Vael tints still
+> only recolor the four original attack bursts. If the trial lands, round 2 =
+> full catalogue (per-ability signatures, PixelLab bespoke where packs lack).
+
 Goal: make combat feel more varied + fitting by keying **sound and impact VFX to the
 ability itself** (damage type + effect kind) instead of a coarse per-class split. M
 approved both the audio rebind and importing the Super Pixel Effects Gigapack spell

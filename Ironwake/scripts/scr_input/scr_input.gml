@@ -273,7 +273,8 @@ function __input_pad_hotkey_map() {
                  _s[$ "G"] = gp_stickl;     _s[$ "P"] = gp_select;   _m[$ "combat"]   = _s;
         _s = {}; _s[$ "E"] = gp_shoulderrb;                          _m[$ "loot"]     = _s;
         _s = {}; _s[$ "1"] = gp_face3;      _s[$ "2"] = gp_face4;
-                 _s[$ "3"] = gp_shoulderrb;                          _m[$ "shrine"]   = _s;
+                 // Shrine V2 (07-29): R = reroll the blessing offer (dust spend).
+                 _s[$ "3"] = gp_shoulderrb; _s[$ "R"] = gp_stickr;   _m[$ "shrine"]   = _s;
         _s = {}; _s[$ "K"] = gp_shoulderrb; _s[$ "T"] = gp_shoulderlb;
                  _s[$ "R"] = gp_stickr;                              _m[$ "board"]    = _s;
         _s = {}; _s[$ "H"] = gp_face4;                               _m[$ "kb"]       = _s;
@@ -478,6 +479,13 @@ function touch_gesture_update() {
     _g.lp  = false;
     _g.dx  = 0;
     _g.dy  = 0;
+    // While a two-finger pinch is in progress (or just ended - cool frames),
+    // the one-finger classifier stays mute so lifting the pinch can't fire a
+    // stray tap/drag on whatever sat under the fingers.
+    if (variable_global_exists("zoom") && (global.zoom.active || global.zoom.cool > 0)) {
+        _g.held = false;  _g.drag = false;  _g.lp_done = true;
+        return;
+    }
     if (input_device() != 2) { _g.held = false; _g.drag = false; return; }
     var _mx = device_mouse_x_to_gui(0);
     var _my = device_mouse_y_to_gui(0);
@@ -510,6 +518,62 @@ function touch_gesture_update() {
             _g.tapy = _my;
         }
         _g.drag = false;
+    }
+}
+
+// =============================================================================
+// PINCH ZOOM gesture tracker (SYSTEMS_PINCH_ZOOM.md). Called once per frame at
+// the top of obj_game_controller's Step, BEFORE touch_gesture_update so the
+// one-finger classifier sees the pinch/cooldown state. Two fingers down =
+// pinch: distance ratio scales zoom around the pinch midpoint, midpoint drag
+// pans (both fall out of one anchor equation: the GUI point that started under
+// the midpoint stays under it). Releasing below 1.1x snaps back to 1.0.
+// One-finger input is COMPLETELY unchanged (locked decision #1).
+// =============================================================================
+function touch_pinch_update() {
+    zoom_state_init();
+    touch_settings_init();
+    var _zs = global.zoom;
+    if (_zs.cool > 0) _zs.cool--;
+    if (os_browser != browser_not_a_browser) return;   // HTML5: unsupported
+    if (input_device() != 2) return;                   // touch-gated (decision #6)
+    if (global.pinch_zoom_off) {
+        // Toggle OFF = gesture ignored + transform hard-reset (decision #2).
+        if (_zs.z > 1 || _zs.active) { _zs.z = 1; _zs.vx = 0; _zs.vy = 0; _zs.active = false; zoom_apply(); }
+        return;
+    }
+
+    var _f0 = device_mouse_check_button(0, mb_left);
+    var _f1 = device_mouse_check_button(1, mb_left);
+    if (_f0 && _f1) {
+        // Raw WINDOW coordinates: to_gui would feed back through the transform
+        // we're changing mid-gesture; raw px stay stable while we retune it.
+        var _ax = device_mouse_raw_x(0), _ay = device_mouse_raw_y(0);
+        var _bx = device_mouse_raw_x(1), _by = device_mouse_raw_y(1);
+        var _d  = max(1, point_distance(_ax, _ay, _bx, _by));
+        var _mx = (_ax + _bx) / 2;
+        var _my = (_ay + _by) / 2;
+        if (!_zs.active) {
+            _zs.active = true;
+            _zs.d0 = _d;
+            _zs.z0 = _zs.z;
+            // The GUI point currently under the pinch midpoint - the anchor
+            // both zooming and two-finger panning are solved against.
+            _zs.g0x = (_zs.l0 + _zs.vx) + _mx / (_zs.sx * _zs.z);
+            _zs.g0y =  _zs.vy           + _my / (_zs.sy * _zs.z);
+        } else {
+            _zs.z  = clamp(_zs.z0 * (_d / _zs.d0), 1.0, ZOOM_MAX);
+            _zs.vx = (_zs.g0x - _mx / (_zs.sx * _zs.z)) - _zs.l0;
+            _zs.vy =  _zs.g0y - _my / (_zs.sy * _zs.z);
+            zoom_pan_clamp();
+            zoom_apply();
+        }
+        _zs.cool = 10;   // keep the tap classifier mute through the release
+    } else if (_zs.active) {
+        _zs.active = false;
+        if (_zs.z < 1.1) { _zs.z = 1; _zs.vx = 0; _zs.vy = 0; }   // snap-back (decision #1)
+        zoom_pan_clamp();
+        zoom_apply();
     }
 }
 

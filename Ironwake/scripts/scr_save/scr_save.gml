@@ -118,8 +118,10 @@ function save_game() {
         unlocked_abilities: variable_global_exists("unlocked_abilities") ? global.unlocked_abilities : [],
         trait_potency:      variable_global_exists("trait_potency")      ? global.trait_potency      : {},
 
-        // Item codex (discovered item names)
+        // Item codex (discovered item names + best rarity seen per base, 07-29)
         items_discovered: global.items_discovered,
+        items_discovered_best: (variable_global_exists("items_discovered_best") && is_struct(global.items_discovered_best))
+            ? global.items_discovered_best : {},
 
         // Run history log
         run_history: global.run_history,
@@ -208,7 +210,11 @@ function save_game() {
         // garden, and the one-time lore ledger + any still-unshown queued lines.
         pet_pref_discovered: (variable_global_exists("pet_pref_discovered") && is_struct(global.pet_pref_discovered)) ? global.pet_pref_discovered : {},
         bairc_donated:   (variable_global_exists("bairc_donated")   && is_array(global.bairc_donated))    ? global.bairc_donated   : [],
+        // Garden memorial stones (08-01): pets lost to the injury ladder.
+        bairc_memorials: (variable_global_exists("bairc_memorials") && is_array(global.bairc_memorials))  ? global.bairc_memorials : [],
         bairc_lore_seen: (variable_global_exists("bairc_lore_seen") && is_struct(global.bairc_lore_seen)) ? global.bairc_lore_seen : {},
+        // Boss-signature once-per-save ledger (07-31): species id -> true once found.
+        pet_sig_history: (variable_global_exists("pet_sig_history") && is_struct(global.pet_sig_history)) ? global.pet_sig_history : {},
         bairc_lore_queue:(variable_global_exists("bairc_lore_queue")&& is_array(global.bairc_lore_queue)) ? global.bairc_lore_queue : [],
 
         // Onboarding: which tips this profile has already seen (per-slot).
@@ -239,6 +245,9 @@ function save_game() {
         vow_mode:                    variable_global_exists("vow_mode")                    ? global.vow_mode                    : 0,
         vow_lives_left:              variable_global_exists("vow_lives_left")              ? global.vow_lives_left              : 0,
         total_boss_kills:            variable_global_exists("total_boss_kills")            ? global.total_boss_kills            : 0,
+        // The Ashen Duelist (DESIGN_DUELIST_CHALLENGE.md): lifetime rival ledger.
+        duelist_encounters:          variable_global_exists("duelist_encounters")          ? global.duelist_encounters          : 0,
+        duelist_tokens:              variable_global_exists("duelist_tokens")              ? global.duelist_tokens              : 0,
         highest_run_level:           variable_global_exists("highest_run_level")           ? global.highest_run_level           : 1,
         perm_hp_battle_hardened:     variable_global_exists("perm_hp_battle_hardened")     ? global.perm_hp_battle_hardened     : 0,
         chosen_portrait:             variable_global_exists("chosen_portrait")             ? global.chosen_portrait             : 0,
@@ -360,6 +369,7 @@ function new_game_reset() {
 
     // Item codex
     global.items_discovered = [];
+    global.items_discovered_best = {};
 
     // Run history log
     global.run_history = [];
@@ -403,8 +413,10 @@ function new_game_reset() {
     global.pet_feed_pouch    = {};
     global.pet_pref_discovered = {};
     global.bairc_donated       = [];
+    global.bairc_memorials     = [];
     global.bairc_lore_seen     = {};
     global.bairc_lore_queue    = [];
+    global.pet_sig_history     = {};   // no signature kin found yet (07-31)
 
     // Shop stock (per-slot). Cleared so no previous character's Dorn/Petra stock
     // bleeds in; left empty here, then either restored by load_game() or freshly
@@ -443,6 +455,10 @@ function new_game_reset() {
     global.run_borrowed_ability = "";   // Borrowed Memory (run-scoped)
     global.run_borrowed_class   = "";
     run_honing_clear();                 // Whetstone honing (run-scoped, never persisted)
+    // Shrine V2 / duel / web-P3 run-scoped state (07-29): never crosses a reset.
+    global.gambler_cd = 0; global.gambler_proc = false;
+    global.feast_stacks = 0; global.bloodtithe_bank = 0; global.unbroken_shield = 0;
+    global.duel_offered_this_run = false; global.duel_launch = false; global.duel_active = false;
     global.gold_potion_bosses = 0;   // exotic find-buff potions never carry across a load
     global.loot_potion_bosses = 0;
 
@@ -467,6 +483,8 @@ function new_game_reset() {
     global.forge_comp_core             = 0;
     global.forge_comp_quint            = 0;
     global.total_boss_kills            = 0;
+    global.duelist_encounters          = 0;   // Ashen Duelist: lifetime duels fought (+10% stats each)
+    global.duelist_tokens              = 0;   // Ashen Duelist: gold-tier tokens (Duelist Arts ladder)
     global.highest_run_level           = 1;
     global.perm_hp_battle_hardened     = 0;
     global.selected_ascendance         = 0;
@@ -642,6 +660,8 @@ function load_game() {
     if (variable_struct_exists(_s, "items_discovered") && is_array(_s.items_discovered)) {
         global.items_discovered = _s.items_discovered;
     }
+    global.items_discovered_best = (variable_struct_exists(_s, "items_discovered_best") && is_struct(_s.items_discovered_best))
+        ? _s.items_discovered_best : {};
 
     // Run history
     if (variable_struct_exists(_s, "run_history") && is_array(_s.run_history)) {
@@ -686,6 +706,15 @@ function load_game() {
         global.consumable_stash = _s.consumable_stash;
     }
 
+    // Veil of the Patient Dark offhand -> helm reslot (07-30): fix the stale
+    // slot on saved copies, stash the Veil if it now collides with a worn helm.
+    veil_slot_fixup();
+
+    // CODEX PASS round 2 (07-29): pre-pass saves only stored discovered NAMES,
+    // so epics found before the ledger existed show at rare tint. Rebuild what
+    // we can from items the player still owns (worn + stash just restored).
+    codex_backfill_owned();
+
     // NPC affinity (thin track). Restore the saved relationships; affinity_ensure()
     // backfills any missing NPC keys/fields so older saves load cleanly.
     if (variable_struct_exists(_s, "npc_affinity") && is_struct(_s.npc_affinity)) {
@@ -728,8 +757,26 @@ function load_game() {
     // Bond-axis extras (older saves lack these keys -> empty defaults).
     global.pet_pref_discovered = (variable_struct_exists(_s, "pet_pref_discovered") && is_struct(_s.pet_pref_discovered)) ? _s.pet_pref_discovered : {};
     global.bairc_donated       = (variable_struct_exists(_s, "bairc_donated")    && is_array(_s.bairc_donated))    ? _s.bairc_donated    : [];
+    // Explicit either-way assignment (slot-leak rule, cf. pet_sig_history).
+    global.bairc_memorials     = (variable_struct_exists(_s, "bairc_memorials")  && is_array(_s.bairc_memorials))  ? _s.bairc_memorials  : [];
     global.bairc_lore_seen     = (variable_struct_exists(_s, "bairc_lore_seen")  && is_struct(_s.bairc_lore_seen)) ? _s.bairc_lore_seen  : {};
     global.bairc_lore_queue    = (variable_struct_exists(_s, "bairc_lore_queue") && is_array(_s.bairc_lore_queue)) ? _s.bairc_lore_queue : [];
+    // Boss-signature once-per-save ledger (07-31). Explicit assignment either way
+    // so slot-switching in one session can never leak another save's ledger.
+    // Older saves lack the key: seed it here from what the save already owns
+    // (roster + Bairc's garden, both loaded just above).
+    if (variable_struct_exists(_s, "pet_sig_history") && is_struct(_s.pet_sig_history)) {
+        global.pet_sig_history = _s.pet_sig_history;
+    } else {
+        global.pet_sig_history = {};
+        var _sh_seed = array_concat(global.pet_roster, global.bairc_donated);
+        var _sh_cat  = pet_species_signature_catalog();
+        for (var _shi = 0; _shi < array_length(_sh_seed); _shi++) {
+            if (!is_struct(_sh_seed[_shi]) || !variable_struct_exists(_sh_seed[_shi], "species")) continue;
+            for (var _shj = 0; _shj < array_length(_sh_cat); _shj++)
+                if (_sh_cat[_shj].id == _sh_seed[_shi].species) global.pet_sig_history[$ _sh_seed[_shi].species] = true;
+        }
+    }
     pet_migrate_retired_species();   // re-skin any retired humanoid-species pets to a real creature
     // Carried consumable pack (run buffer) - restore so withdrawn/carried-forward
     // potions survive a reload. Older saves lack this key; the gc-Create default ([])
@@ -851,6 +898,10 @@ function load_game() {
     global.run_borrowed_ability = "";   // Borrowed Memory: run-scoped, same reasoning
     global.run_borrowed_class   = "";
     run_honing_clear();                 // Whetstone honing: run-scoped, same reasoning
+    // Shrine V2 / duel / web-P3 run-scoped state (07-29): same reasoning.
+    global.gambler_cd = 0; global.gambler_proc = false;
+    global.feast_stacks = 0; global.bloodtithe_bank = 0; global.unbroken_shield = 0;
+    global.duel_offered_this_run = false; global.duel_launch = false; global.duel_active = false;
     global.gold_potion_bosses = 0;   // exotic find-buff potions never carry across a load
     global.loot_potion_bosses = 0;
     if (variable_struct_exists(_s, "tutorial_seen") && is_struct(_s.tutorial_seen)) {
@@ -922,6 +973,8 @@ function load_game() {
     // New progression counters
     if (variable_struct_exists(_s, "dungeon_clears_total"))    global.dungeon_clears_total    = _s.dungeon_clears_total;
     if (variable_struct_exists(_s, "total_boss_kills"))        global.total_boss_kills        = _s.total_boss_kills;
+    if (variable_struct_exists(_s, "duelist_encounters"))      global.duelist_encounters      = _s.duelist_encounters;
+    if (variable_struct_exists(_s, "duelist_tokens"))          global.duelist_tokens          = _s.duelist_tokens;
     if (variable_struct_exists(_s, "highest_run_level"))       global.highest_run_level       = _s.highest_run_level;
     if (variable_struct_exists(_s, "perm_hp_battle_hardened")) global.perm_hp_battle_hardened = _s.perm_hp_battle_hardened;
     if (variable_struct_exists(_s, "chosen_portrait"))         global.chosen_portrait         = _s.chosen_portrait;
@@ -1123,6 +1176,8 @@ function run_checkpoint_write(_live) {
         quests:           (variable_global_exists("quests") && is_array(global.quests)) ? global.quests : [],
         total_kills:      variable_global_exists("total_kills")      ? global.total_kills      : 0,
         items_discovered: variable_global_exists("items_discovered") ? global.items_discovered : [],
+        items_discovered_best: (variable_global_exists("items_discovered_best") && is_struct(global.items_discovered_best))
+            ? global.items_discovered_best : {},
     };
     save_write_atomic(run_checkpoint_file(), json_stringify(_c));
 }
@@ -1277,6 +1332,13 @@ function run_checkpoint_apply(_c) {
     if (variable_struct_exists(_c, "quests") && is_array(_c.quests)) global.quests = _c.quests;
     if (variable_struct_exists(_c, "total_kills"))      global.total_kills      = _c.total_kills;
     if (variable_struct_exists(_c, "items_discovered")) global.items_discovered = _c.items_discovered;
+    if (variable_struct_exists(_c, "items_discovered_best") && is_struct(_c.items_discovered_best)) {
+        global.items_discovered_best = _c.items_discovered_best;
+    }
+    // Veil reslot fixup + CODEX PASS round 2 (07-29): same order as the main
+    // load (worn + carried/secured run loot restored above).
+    veil_slot_fixup();
+    codex_backfill_owned();
 
     // Not mid-transition: the floor controller Create derives these on arrival.
     global.just_cleared_boss = false;

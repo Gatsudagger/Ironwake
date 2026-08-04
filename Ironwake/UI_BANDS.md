@@ -26,6 +26,44 @@ Verified bands (file references are approximate anchors, not exact lines):
 | 372–708 | IRONMAN resume popup (modal) |
 | NPC panel rows | Bond line + "Favor: …" progress at x+210 (truncated to 470px) |
 
+### Hub CAROUSEL center column (x630–1290, carousel mode 07-31)
+| Band (y) | Owner |
+|---|---|
+| 105–945 | Stage panel (border + accent strip at top) |
+| 140–540 | Stage art (actor bottom-anchored y540, ≤400px tall; arrows 300–440) |
+| 556–~600 | NPC name (fnt_ui_title, measured auto-fit ≤600px wide) |
+| 604–634 | Bond heart slots (4× 30px) |
+| 646–684 | Bond/board line + progress bar (646 text, 676–684 bar) |
+| 700–~781 | Role line (wrapped 600px, ≤3 lines measured) |
+| ~730–792 | Nav hint (measured: role bottom +15, clamped ≤792) |
+| 822–888 | Jump strip (8× 66px chips; below the swipe zone y≤810) |
+| 888–1000 | (touch) flavor line band — unchanged, sits below the strip |
+
+## Character menu STATS tab (scr_ui, content_y=135; x: left col 60, mid col 540, right col 1230)
+| Band (y) | Owner |
+|---|---|
+| 135–210 | Class / level / HP header + epithet line |
+| 261–405 | Core stat grid (2 cols; hover popup floats at cursor) |
+| 429–648 | Offense: damage bonuses (left) / crit rates + notes (mid) |
+| 711–873 | Defense: dodge/reduction/HP/Armor (left) / accuracy + notes (mid) |
+| 876–961 | Fortune header + Gold Find / Loot Find (mid col x540, 07-31) |
+| 945–981 | Gold + Run/Floor footer (left col x60) |
+| 1008–1041 | Bonds summary line (left, truncated 1120px) |
+| (overlay) | Stats guided tour: dim + highlight rect + measured card (07-31) |
+
+## Sable REBIRTH tab (scr_ui ui_draw_sable_screen)
+| Band (y) | Owner |
+|---|---|
+| 225 | Title + M's flavor line (fit-scaled) |
+| 285–495 | 3 craft rows (72px stride, name + tagline only) |
+| 531–963 | Detail panel: selected craft's full body + cost list + eligibility |
+| 999 | sable_notification (unchanged) |
+| 1026 | Key legend (unchanged) |
+
+## Shared modals (07-31, drawn over screens)
+- Forge-result reveal popup: centered, MEASURED height (item card / lines).
+- Cursed-rebirth ritual overlay: full-screen veil, text at y540/y640.
+
 ## Loadout overlay (hub Draw_64, loadout section)
 | Band (y) | Owner |
 |---|---|

@@ -151,7 +151,7 @@ if (show_loot_screen) {
         var _ff_src = variable_global_exists("next_enemy_type") ? global.next_enemy_type : "standard";
         var _ff_new = drop_equipment(drop_weights(_ff_src, _ff_asc), true, curse_loot_tier_bonus_for(_ff_src));
         array_push(global.carried_items, _ff_new);
-        discover_item(item_base_name(_ff_new));
+        discover_item(item_base_name(_ff_new), _ff_new.rarity);
         global.run_items_found[_ff_idx] = _ff_new;
         loot_item_sting(_ff_new);
         exit;   // consume this press - never fall through to the close handlers
@@ -177,6 +177,27 @@ if (show_loot_screen) {
 // caught immediately at the start of the next, before any new input is read.
 // -----------------------------------------------------------------------------
 var _result = combat_check_victory(combat_state);
+
+// -----------------------------------------------------------------------------
+// DUEL MERCY (DESIGN_DUELIST_CHALLENGE.md): the Duelist's blow stopped at 1 HP
+// (combat_try_last_stand). Close the fight as result 2 - a loss that is NEVER a
+// death - and restore the player to the HP they entered the room with. The exit
+// each frame freezes the fight under the result overlay; duel_active stays true
+// until the Draw-side dismiss returns to the floor.
+// -----------------------------------------------------------------------------
+if (global.duel_active && variable_global_exists("duel_mercy_fired") && global.duel_mercy_fired) {
+    if (!combat_over) {
+        combat_over   = true;
+        combat_result = 2;
+        player.HP     = clamp(global.duel_entry_hp, 1, player.max_HP);
+        array_push(combat_log, "He binds your wounds himself, unhurried.");
+        array_push(combat_log, "\"Keep the arm. Come back when it's faster.\"");
+        global.duelist_encounters += 1;   // the ledger remembers every crossing
+        save_game();                      // meta-persistent - bank it now
+        audio_play_sound(snd_sting_floor, 1, false);
+    }
+    exit;
+}
 
 if (_result == 1) {
     // Hold briefly on the killing blow so the final hit's damage number and the combat
@@ -231,6 +252,66 @@ if (_result == 1) {
             }
         }
     }
+    // DUEL VICTORY GRADING (DESIGN_DUELIST_CHALLENGE.md): fired once, on the
+    // victory frame, BEFORE the loot-screen check below so the prize item lists
+    // with the haul. GOLD (<= par): a Duelist Token (cap 3; post-arc pays 25
+    // dust instead) + an item at elite weights +1 tier. SILVER (<= par+2):
+    // elite-weighted item + 25 dust. BRONZE (any win): 15 dust + a 50g purse.
+    if (!combat_over && global.duel_active && !duel_rewards_granted) {
+        duel_rewards_granted = true;
+        global.duelist_encounters += 1;   // he remembers this one bitterly
+        duel_grade_round = combat_state.round;
+        var _dg_par = variable_global_exists("duel_par") ? global.duel_par : duel_turn_par();
+        var _dg_asc = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
+        if (!variable_global_exists("rune_dust")) global.rune_dust = 0;
+        if (duel_grade_round <= _dg_par) {
+            duel_grade = "GOLD";
+            if (global.duelist_tokens < 3) {
+                global.duelist_tokens += 1;
+                array_push(combat_log, "He presses a DUELIST TOKEN into your hand (" + string(global.duelist_tokens) + "/3). Duelist Arts await at Vex.");
+                // The token ladder unlocks land immediately; Vex's DUELIST ARTS
+                // panel is where the full ladder reads out.
+                if (global.duelist_tokens == 1) {
+                    array_push(combat_log, "DUELIST ARTS: MEASURED RIPOSTE learned - find it in your loadout's general pool.");
+                }
+                if (global.duelist_tokens == 2) {
+                    if (variable_global_exists("traits_unlocked")) global.traits_unlocked[$ "duelist_poise"] = true;
+                    array_push(combat_log, "DUELIST ARTS: DUELIST'S POISE learned - a new trait waits in your loadout.");
+                }
+                if (global.duelist_tokens == 3) {
+                    var _dg_blade = duelist_make_ashen_blade();
+                    if (!variable_global_exists("equipment_stash")) global.equipment_stash = [];
+                    array_push(global.equipment_stash, _dg_blade);
+                    array_push(global.run_items_found, _dg_blade);
+                    discover_item(item_base_name(_dg_blade), _dg_blade.rarity);
+                    array_push(combat_log, "DUELIST ARTS: he unbuckles THE ASHEN BLADE itself and hands it over (sent to your stash for safekeeping).");
+                }
+            } else {
+                global.rune_dust += 25;
+                array_push(combat_log, "The arc is complete - he pays in dust instead (+25).");
+            }
+            var _dg_item = drop_equipment(drop_weights("elite", _dg_asc), true, 1);
+            array_push(global.run_items_found, _dg_item);
+            array_push(global.carried_items, _dg_item);
+            discover_item(item_base_name(_dg_item), _dg_item.rarity);
+            array_push(combat_log, "\"...So the stories were short by half. Take it. It was never mine to keep.\"");
+            array_push(combat_log, "Prize: " + _dg_item.name + " [" + item_rarity_name(_dg_item.rarity) + "]");
+        } else if (duel_grade_round <= _dg_par + 2) {
+            duel_grade = "SILVER";
+            global.rune_dust += 25;
+            var _dg_item2 = drop_equipment(drop_weights("elite", _dg_asc), true, 0);
+            array_push(global.run_items_found, _dg_item2);
+            array_push(global.carried_items, _dg_item2);
+            discover_item(item_base_name(_dg_item2), _dg_item2.rarity);
+            array_push(combat_log, "\"Close. Two bells late, but close.\"  (+" + _dg_item2.name + ", +25 dust)");
+        } else {
+            duel_grade = "BRONZE";
+            global.rune_dust += 15;
+            add_gold(50);
+            array_push(combat_log, "\"You won. Slowly.\"  (+50g, +15 dust)");
+        }
+        save_game();   // tokens/ledger are meta-persistent - bank them at the victory frame
+    }
     // Genie Lamp: ~1.5% drop from ELITE and BOSS kills only (design 2026-07-04).
     // A free mid-run escape - rub it on the floor map [G] to extract with all loot.
     if (!combat_over && !genie_lamp_rolled && variable_global_exists("next_enemy_type")
@@ -252,6 +333,22 @@ if (_result == 1) {
         && variable_global_exists("next_enemy_type") && global.next_enemy_type == "boss"
         && variable_global_exists("just_cleared_boss") && global.just_cleared_boss) {
         boss_drops_rolled = true;
+        // Boss-Blooded quirk (08-01, pillar C): the carried creature stood with
+        // you at this boss's FIRST fall (its signature kin not yet in the
+        // once-per-save ledger). No RNG - checked BEFORE the egg roll below can
+        // mark that ledger.
+        var _bb_pet = pet_active();
+        if (_bb_pet != undefined && !_bb_pet.is_egg) {
+            var _bb_sig = pet_boss_signature_species(
+                variable_global_exists("selected_dungeon") ? global.selected_dungeon : "",
+                variable_global_exists("current_floor")    ? global.current_floor    : 1);
+            if (_bb_sig != "" && (!variable_global_exists("pet_sig_history")
+                || !is_struct(global.pet_sig_history)
+                || !variable_struct_exists(global.pet_sig_history, _bb_sig))) {
+                var _bb_msg = pet_quirk_add(_bb_pet, "boss_blooded", "", "stood with you at a boss's first fall");
+                if (_bb_msg != "") array_push(combat_log, "[Companion] " + _bb_msg);
+            }
+        }
         var _bsr_seed = random_get_seed();
         random_set_seed(loot_room_seed(0, 2));
         // Phase 2 pets: rare boss-egg drop (odds scale with Awakening). Lands in
@@ -347,6 +444,19 @@ if (_result == 1) {
             global.blood_carry = min(player.blood, 4);
             if (global.blood_carry > 0) array_push(combat_log, "Overflow: " + string(global.blood_carry) + " Blood is kept warm for the next fight.");
         }
+        // Soul Shield "Unbroken" web keystone (P3, 07-29 - LIVETEST WATCH): the
+        // shield left standing at victory carries to the next combat (max 10).
+        if (variable_struct_exists(player, "shield_hp") && player.shield_hp > 0
+            && variable_struct_exists(player, "abilities")) {
+            for (var _ubi = 0; _ubi < array_length(player.abilities); _ubi++) {
+                var _uba = player.abilities[_ubi];
+                if (_uba.name == "Soul Shield" && ability_web_copy_has_rider(_uba, "unbroken")) {
+                    global.unbroken_shield = min(10, player.shield_hp);
+                    array_push(combat_log, "Unbroken: " + string(global.unbroken_shield) + " of the ward refuses to fall - it will stand in the next fight.");
+                    break;
+                }
+            }
+        }
         // Victory hierarchy: boss (floor-completing) wins get the grand harpsichord
         // flourish, ordinary fights a light music-box chime so it never wears thin.
         var _is_boss_win = variable_global_exists("next_enemy_type") && global.next_enemy_type == "boss";
@@ -418,6 +528,7 @@ if (player_turn) {
         player.adrenaline_turn_used = false;
         player.interrupt_used       = false;
         player.counterblade_active  = false;
+        player.measured_riposte_active = false;   // Duelist Arts: the answer expires with the turn
         if (variable_struct_exists(player, "poise_shield") && player.poise_shield > 0) {
             player.shield_hp = max(0, player.shield_hp - player.poise_shield);
             player.poise_shield = 0;
@@ -464,7 +575,9 @@ if (player_turn) {
             // now, already seen, or single foe), teach the intent chips, then
             // inspect-on-hover. One tip at a time.
             if (!(_foe_count > 1 && tutorial_try_show("targeting"))) {
-                if (!tutorial_try_show("intent")) tutorial_try_show("inspect");
+                if (!tutorial_try_show("intent")) {
+                    if (!tutorial_try_show("inspect")) tutorial_try_show("weakness");   // P2 gem (08-01)
+                }
             }
         }
     }
@@ -730,6 +843,18 @@ if (player_turn) {
     if (_ability_count > 0) {
         if (nav_left())  selected_ability = wrap_index(selected_ability - 1, _ability_count);
         if (nav_right()) selected_ability = wrap_index(selected_ability + 1, _ability_count);
+        // Mouse wheel cycles the selection too (M 07-30) - anywhere on screen
+        // EXCEPT over the combat log, which keeps its own wheel scroll (the
+        // rect here mirrors the log wheel gate at the top of this event).
+        var _abw = mouse_wheel_down() - mouse_wheel_up();
+        if (_abw != 0) {
+            var _abw_mx = device_mouse_x_to_gui(0);
+            var _abw_my = device_mouse_y_to_gui(0);
+            if (!(_abw_mx >= 30 && _abw_mx <= 1200 && _abw_my >= 735 && _abw_my <= 945)) {
+                selected_ability = wrap_index(selected_ability + _abw, _ability_count);
+                end_turn_focus = false;
+            }
+        }
     }
 
     // D-pad End Turn reachability (07-24): DOWN focuses the END TURN button,
@@ -997,6 +1122,16 @@ if (player_turn) {
                 array_push(combat_log, "Cracked Focus - first spell costs 1 less AP!");
             }
 
+            // Third Wind blessing (Shrine V2, 07-29): this cast is the 3rd of the
+            // combat - it costs 1 less AP. Mirrors ability_effective_cost (the
+            // counter increments after the spend, so both read the same phase).
+            if (ab.energy_cost > 0 && boon_active("thirdwind")
+                && variable_struct_exists(player, "boon_cast_count")
+                && (player.boon_cast_count mod 3) == 2) {
+                ab.energy_cost -= 1;
+                array_push(combat_log, "Third Wind - the third breath comes free: -1 AP!");
+            }
+
             // OVERCHARGE arming (07-16 combo batch, M-approved): casting a secondary-
             // resource spender while the reserve is FULL drains the WHOLE reserve -
             // the excess pays out at +2 damage / heal / shield per point. Armed here
@@ -1031,6 +1166,9 @@ if (player_turn) {
             // after the resource spend commits, so the first of a category always pays full.
             player.turn_cast_categories[$ ability_category(ab)] = true;
 
+            // Third Wind blessing: count the committed cast (per-combat rhythm).
+            if (variable_struct_exists(player, "boon_cast_count")) player.boon_cast_count += 1;
+
             // Cast windup FX (07-09 art track): SPELL casts flare the caster in the
             // school's color (melee keeps its lunge). Drawn in Draw_64 by the sprite.
             if (ability_class_is_spell(ability_attack_class(ab))) {
@@ -1044,6 +1182,33 @@ if (player_turn) {
             if (ab.name == "Smoke Bomb") {
                 player.smoke_dodge_turns = ab.effect_duration;
                 array_push(combat_log, "The smoke cloaks you too - +15% dodge while it lingers.");
+                // "Acrid Haze" web node (P3, 07-29): the smoke also WEAKENS every
+                // enemy inside it (-15% damage for the blind's duration).
+                // "Choking Cloud" keystone (P3): enemies caught in it lose their
+                // planned move - their intent is wiped and rerolled as a plain swing.
+                var _smk_weaken   = ability_web_copy_has_rider(ab, "smoke_weaken");
+                var _smk_confound = ability_web_copy_has_rider(ab, "smoke_confound");
+                if (_smk_weaken || _smk_confound) {
+                    var _smk_hit = 0;
+                    for (var _smi = 0; _smi < array_length(combat_state.combatants); _smi++) {
+                        var _smc = combat_state.combatants[_smi];
+                        if (_smc.is_player || _smc.is_defeated) continue;
+                        if (_smk_weaken && variable_struct_exists(_smc, "status_effects")) {
+                            array_push(_smc.status_effects, {
+                                name: "Acrid Haze", effect_type: "debuff", kind: "weaken",
+                                effect_value: 0.15, duration: max(1, ab.effect_duration),
+                                element: "", source: "player"
+                            });
+                        }
+                        if (_smk_confound && variable_struct_exists(_smc, "intent") && _smc.intent != undefined
+                            && _smc.intent.eab != undefined) {
+                            _smc.intent.eab = undefined;   // the planned move is lost in the smoke
+                            _smk_hit++;
+                        }
+                    }
+                    if (_smk_weaken)         array_push(combat_log, "Acrid Haze - everything in the smoke swings 15% softer.");
+                    if (_smk_confound && _smk_hit > 0) array_push(combat_log, "Choking Cloud - " + string(_smk_hit) + " foe" + ((_smk_hit == 1) ? " loses" : "s lose") + " their planned move in the smoke!");
+                }
             }
 
             if (!ab.self_targeted) {
@@ -1097,6 +1262,19 @@ if (player_turn) {
                   // Void Scepter (class weapon): a spell crit refunds 1 AP - once per cast,
                   // even if an AoE crits multiple targets.
                   var _scepter_refunded = false;
+
+                  // Duelist boon V2 (Shrine 07-29): crits restore 1 class resource -
+                  // once per cast (same guard shape as the Scepter, so AoE crits
+                  // can't fountain resources).
+                  var _duelist_refunded = false;
+
+                  // Whetstone Echo blessing (Shrine V2): the FIRST damaging ability
+                  // each combat echoes at 40% power on everything it hit. Evaluated
+                  // once for the cast; consumed after the loop only if it fired.
+                  var _whet_now = boon_active("whetecho")
+                                  && variable_struct_exists(player, "whet_echo_used")
+                                  && !player.whet_echo_used;
+                  var _whet_fired = false;
 
                   // Resolve the ability against each target independently.
                   for (var _tgi = 0; _tgi < array_length(_targets); _tgi++) {
@@ -1267,10 +1445,12 @@ if (player_turn) {
                         // (Marked for Death etc.) leaves it intact for your next damaging strike.
                         var _vanish_fired = false;
                         if (_deals_damage && variable_struct_exists(player, "vanish_bonus") && player.vanish_bonus) {
-                            _dmg += 12;
+                            // "Deeper Shadow" web node (P3): +18 instead of +12.
+                            var _van_amt = variable_struct_exists(player, "vanish_bonus_amt") ? player.vanish_bonus_amt : 12;
+                            _dmg += _van_amt;
                             player.vanish_bonus = false;
                             _vanish_fired = true;
-                            array_push(combat_log, "Vanish: ambush strike for +12 damage!");
+                            array_push(combat_log, "Vanish: ambush strike for +" + string(_van_amt) + " damage!");
                         }
                         // Detonation reaction - pre-crit damage component (replaces the old flat
                         // Snipe +20). Burn/Stun resolve via the crit roll above; Blind via the hit
@@ -1364,6 +1544,11 @@ if (player_turn) {
                                 _final_dmg += combat_resolve_damage(_fl_hit, ab.damage_type, target.armor, target.el_resist);
                             }
                         } else {
+                            // P3 rider (08-01): STR 25 - Snipe drawn on a heavier bow
+                            // cuts +15% deeper when it crits.
+                            if (_crit_result.critted && ab.name == "Snipe" && ability_stat_rider_active("Snipe")) {
+                                _crit_result.multiplier += 0.15;
+                            }
                             if (_crit_result.critted) {
                                 _dmg = round(_dmg * _crit_result.multiplier);
                             }
@@ -1424,7 +1609,8 @@ if (player_turn) {
                         // Mirrored in combat_estimate_hit so the preview shows it.
                         if (variable_struct_exists(player, "warpath_active") && player.warpath_active
                             && _deals_damage && (ab.damage_type == 0 || ab.damage_type == 3)) {
-                            _final_dmg += 2 * max(0, combat_state.round - player.warpath_round);
+                            var _wp_rate = variable_struct_exists(player, "warpath_rate") ? player.warpath_rate : 2;
+                            _final_dmg += _wp_rate * max(0, combat_state.round - player.warpath_round);
                         }
                         // Compounding Dread (07-16): accumulated trap bonus - flat, post-crit,
                         // mirrored in combat_estimate_hit. The +4 increments after each trap
@@ -1446,9 +1632,10 @@ if (player_turn) {
                             else if (variable_struct_exists(player, "preparation")) { _oc_pts = player.preparation; player.preparation = 0; }
                             player.overcharge_armed = false;
                             if (_oc_pts > 0) {
-                                // Crownfire Diadem (07-28 legendary): the drain pays +3
-                                // damage per point instead of +2.
-                                var _oc_rate = (variable_struct_exists(player, "leg_diadem") && player.leg_diadem) ? 3 : 2;
+                                // Crownfire Diadem (07-28 legendary; buffed 07-29 M pass -
+                                // +3 was outdamaged by any +5-dmg basic item): the drain
+                                // pays +4 damage per point instead of +2.
+                                var _oc_rate = (variable_struct_exists(player, "leg_diadem") && player.leg_diadem) ? 4 : 2;
                                 _final_dmg += _oc_pts * _oc_rate;
                                 player.overcharge_hit_pts  = _oc_pts;                 // read by the splash sequence below
                                 player.overcharge_hit_dmg  = _oc_pts * _oc_rate;     // read by the popup
@@ -1477,10 +1664,11 @@ if (player_turn) {
                         if (trait_transcended("Scavenger") && global.gold >= 500) {
                             _final_dmg = max(1, floor(_final_dmg * (1 + min(0.10, 0.01 * (global.gold div 500)))));
                         }
-                        // Miser's Blade (07-28 legendary): +1 flat damage per 150g held,
-                        // cap +8. Flat (not %) so it matters most on cheap pokes.
+                        // Miser's Blade (07-28 legendary; buffed 07-29): +1 flat damage
+                        // per 125g held, cap +10. Flat (not %) so it matters most on
+                        // cheap pokes.
                         if (variable_struct_exists(player, "leg_miser") && player.leg_miser && _deals_damage) {
-                            _final_dmg += min(8, global.gold div 150);
+                            _final_dmg += min(10, global.gold div 125);
                         }
                         // Duelist's Rebuke (07-28 legendary): the dodge-primed +50%,
                         // consumed by this damaging ability.
@@ -1535,9 +1723,10 @@ if (player_turn) {
                         var _aspect_dmg_pct = rune_aspect_damage_pct(ab);
                         if (_aspect_dmg_pct > 0) _final_dmg = round(_final_dmg * (1 + _aspect_dmg_pct));
 
-                        // Boons: Bloodlust / Glass Cannon (+ Executioner vs low-HP targets).
+                        // Boons: Bloodlust / Glass Cannon (+ Executioner vs low-HP targets,
+                        // + the V2 Bloodlust below-half ramp and Feast of Crows stacks).
                         var _thf = (target.max_HP > 0) ? (target.HP / target.max_HP) : 1;
-                        var _boon_dm = boon_damage_mult(_thf);
+                        var _boon_dm = boon_damage_mult(_thf, player);
                         if (_boon_dm != 1.0) _final_dmg = max(1, round(_final_dmg * _boon_dm));
                         // Corruption (Pets §7): pushing a corrupted active pet saps your damage.
                         var _pet_corr_dm = pet_corruption_player_dmg_mult();
@@ -1586,6 +1775,12 @@ if (player_turn) {
                             }
                         }
 
+                        // Rider damage layers (07-29 M): weapon/school bonuses still add
+                        // into _final_dmg (one total in the log), but each also records a
+                        // {amt, col} entry here so the popup site can float it as its OWN
+                        // school-colored number beside the base hit.
+                        var _rider_pops = [];
+
                         // Elemental weapon affix: a small separate elemental hit on a damaging
                         // ability of the weapon's reach class, resolved vs el_resist (not the
                         // ability's own type). The setup status is applied later. (§C)
@@ -1593,6 +1788,7 @@ if (player_turn) {
                             var _elem_hit = combat_resolve_damage(_elem_aff.dmg, 1, target.armor, target.el_resist);
                             if (_elem_hit > 0) {
                                 _final_dmg += _elem_hit;
+                                array_push(_rider_pops, { amt: _elem_hit, col: school_color(elem_element_name(_elem_aff.element)) });
                                 array_push(combat_log, ab.name + " - " + school_label(elem_element_name(_elem_aff.element)) + " strike (+" + string(_elem_hit) + ")!");
                             }
                         }
@@ -1609,8 +1805,28 @@ if (player_turn) {
                                     var _sch_hit = combat_resolve_damage(_sch_bonus, ab.damage_type, target.armor, target.el_resist);
                                     if (_sch_hit > 0) {
                                         _final_dmg += _sch_hit;
+                                        array_push(_rider_pops, { amt: _sch_hit, col: school_color(_sch) });
                                         array_push(combat_log, ab.name + " - " + school_label(_sch) + " damage (+" + string(_sch_hit) + ")!");
                                     }
+                                }
+                            }
+                        }
+
+                        // SCHOOL WEAKNESS (P2, M-approved 08-01): a damaging ability of the
+                        // school this enemy is WEAK to hits +30% - and refunds 1 AP, ONCE
+                        // PER ENEMY PER COMBAT (flag on the clone; a 4-pack offers up to 4
+                        // refunds across the fight, never a per-turn loop). SMT-style: the
+                        // glyph beside its intent tag telegraphs it (perfect information).
+                        if (_deals_damage && _final_dmg > 0) {
+                            var _wk = enemy_weak_school(target.name);
+                            if (_wk != "" && _wk == ability_school(ab)) {
+                                _final_dmg = round(_final_dmg * 1.30);
+                                if (!variable_struct_exists(target, "weak_refunded") || !target.weak_refunded) {
+                                    target.weak_refunded = true;
+                                    player.energy += 1;
+                                    array_push(combat_log, "EXPOSED WEAKNESS! " + school_label(_wk) + " sears " + target.name + " (+30% damage, +1 AP)!");
+                                } else {
+                                    array_push(combat_log, "Weakness struck - " + school_label(_wk) + " sears " + target.name + " (+30% damage)!");
                                 }
                             }
                         }
@@ -1726,7 +1942,16 @@ if (player_turn) {
                         var _vfx_ey = 233  + _vfx_slot * 105;
                         if (_deals_damage) {
                             var _pop_col = (_crit_result.critted) ? c_yellow : make_color_rgb(255, 100, 100);
-                            array_push(damage_popups, { value: _final_dmg, x: _vfx_ex, y: _vfx_ey - 105, timer: 50, col: _pop_col });
+                            // Base number excludes the rider layers - they float as their
+                            // own colored numbers just after (M 07-29: "see the layers
+                            // play out"). The log keeps the single combined total.
+                            var _pop_base = _final_dmg;
+                            for (var _rpi = 0; _rpi < array_length(_rider_pops); _rpi++) _pop_base -= _rider_pops[_rpi].amt;
+                            array_push(damage_popups, { value: _pop_base, x: _vfx_ex, y: _vfx_ey - 105, timer: 50, col: _pop_col });
+                            for (var _rpi = 0; _rpi < array_length(_rider_pops); _rpi++) {
+                                array_push(damage_popups, { value: _rider_pops[_rpi].amt, x: _vfx_ex + 64, y: _vfx_ey - 68 - _rpi * 34,
+                                    timer: 46, delay: 8 + _rpi * 8, col: _rider_pops[_rpi].col });
+                            }
                         }
                         // ===== Sequenced combo presentation (07-16, COMBAT_COMBO_PLAN §A3) =====
                         // A detonating hit READS as a sequence: damage number, then the
@@ -1776,20 +2001,15 @@ if (player_turn) {
                         attack_anim_dst_y     = _vfx_ey;
                         attack_anim_is_player = true;
 
-                        // VFX impact sprite keyed to damage type (3 = blood reuses physical impact).
-                        // 0 phys -> impact burst, 1 elem -> fiery explosion, 2 drain/void -> violet
-                        // explosion, default -> arcane lightning. All are multi-frame Gigapack effects.
-                        var _ab_dtype = variable_struct_exists(ab, "damage_type") ? ab.damage_type : 0;
-                        var _vfx_spr_list = [spr_vfx_impact, spr_vfx_fire, spr_vfx_void, spr_vfx_impact];
-                        if (_ab_dtype >= 0 && _ab_dtype <= 3) {
-                            vfx_spr = _vfx_spr_list[_ab_dtype];
-                        } else {
-                            vfx_spr = spr_vfx_arcane;
-                        }
+                        // VFX impact keyed to the ability's element SCHOOL (bespoke bursts for
+                        // frost/shock/poison/blood/shadow, 07-29); physical keeps the impact
+                        // burst. See ability_attack_vfx (scr_abilities).
+                        var _vfxp = ability_attack_vfx(ab);
+                        vfx_spr       = _vfxp.spr;
                         vfx_x         = _vfx_ex;
                         vfx_y         = _vfx_ey;
-                        vfx_timer     = 20;
-                        vfx_timer_max = 20;
+                        vfx_timer     = _vfxp.ticks;
+                        vfx_timer_max = _vfxp.ticks;
                         vfx_school    = ability_school(ab);   // spell-tint blend key
                         // Attack audio keyed to the ABILITY (damage type), not the class.
                         // See play_ability_cast_sfx / SYSTEMS_COMBAT_FX.md.
@@ -1803,6 +2023,7 @@ if (player_turn) {
                             variable_struct_set(player.potency_first_casts, ab.name, true);
                         // Counterphase (task #14): the armed 1-AP discount is spent by this cast.
                         if (variable_struct_exists(player, "blink_tempo_ready")) player.blink_tempo_ready = false;
+                if (variable_struct_exists(player, "ashen_tempo_ready")) player.ashen_tempo_ready = false;   // Ashen Blade discount spent
                         ability_web_cast_riders(ab, player, combat_log);   // bespoke on-cast riders (shield/resource)
 
                         // --- Hit log - damaging abilities report damage; pure debuffs/utility
@@ -1869,6 +2090,8 @@ if (player_turn) {
                             var _base_heal = ab.effect_value;
                             var _leech_pct = rune_aspect_drain_heal_pct(ab);
                             if (_leech_pct > 0) _base_heal = round(_base_heal * (1 + _leech_pct));
+                            // P3 rider (08-01): INT 20 - the blood arts read deeper.
+                            if (ab.name == "Blood Leech" && ability_stat_rider_active("Blood Leech")) _base_heal += 4;
                             var _heal_amt = combat_heal_after_mortality(player, _base_heal);
                             var _heal = min(player.max_HP - player.HP, _heal_amt);
                             player.HP += _heal;
@@ -2002,6 +2225,18 @@ if (player_turn) {
                             array_push(combat_log, "Soulbind: " + target.name + "'s fate is tied to yours.");
                         }
 
+                        // ASHEN DUELIST RIPOSTE (DESIGN_DUELIST_CHALLENGE.md): every
+                        // melee blow he survives is answered at a flat 12 - the same
+                        // number as the player's own Counterblade.
+                        if (global.duel_active && target.HP > 0 && !target.is_defeated
+                            && ability_class_is_melee(_atk_class) && _final_dmg > 0) {
+                            combat_apply_damage(player, 12);
+                            player.hit_flash = max(player.hit_flash, 8);
+                            array_push(damage_popups, { value: 12, x: 475, y: 545, timer: 40, delay: 10, col: make_color_rgb(230, 140, 100) });
+                            array_push(combat_log, "Riposte! The Duelist answers the blow for 12.");
+                            if (player.HP <= 0 && !combat_try_last_stand(player, combat_log)) player.is_defeated = true;
+                        }
+
                         // --- Defeat check on target (shared kill handler) ---
                         if (target.HP <= 0) {
                             combat_on_enemy_defeated(target, player, combat_log);
@@ -2068,8 +2303,31 @@ if (player_turn) {
                                 if (_wr_t.HP <= 0) combat_on_enemy_defeated(_wr_t, player, combat_log);
                             }
                         }
+                        // Whetstone Echo (Shrine V2): the first damaging ability rings
+                        // twice - 40% of the landed damage repeats on this target.
+                        if (_whet_now && _final_dmg > 0 && !target.is_defeated) {
+                            var _we_dmg = max(1, round(_final_dmg * 0.40));
+                            combat_apply_damage(target, _we_dmg);
+                            target.hit_flash = max(target.hit_flash, 10);
+                            var _we_slot = 0;
+                            for (var _wei = 0; _wei < array_length(combat_state.combatants); _wei++) {
+                                if (combat_state.combatants[_wei] == target) break;
+                                if (!combat_state.combatants[_wei].is_player) _we_slot++;
+                            }
+                            array_push(damage_popups, { value: _we_dmg, x: 1620 + _we_slot * (-120) + 52,
+                                y: 233 + _we_slot * 105 - 140, timer: 45, delay: 14, col: make_color_rgb(170, 220, 255) });
+                            array_push(combat_log, "Whetstone Echo - " + ab.name + " rings twice for " + string(_we_dmg) + "!");
+                            _whet_fired = true;
+                            if (target.HP <= 0 && !target.is_defeated) combat_on_enemy_defeated(target, player, combat_log);
+                        }
+
                         // Crit riders: resource on crit (Hungering Maw) / Vulnerable on crit (Deadeye).
                         if (_crit_result.critted) {
+                            // Duelist boon V2: the perfect cut pays back 1 class resource.
+                            if (!_duelist_refunded && boon_active("duelist")) {
+                                combat_grant_secondary(player, 1, "Duelist boon", combat_log);
+                                _duelist_refunded = true;
+                            }
                             var _wr_cs = ability_web_rider_value(ab, "crit_sec", 0);
                             if (_wr_cs > 0) combat_grant_secondary(player, _wr_cs, "Hungering Maw", combat_log);
                             var _wr_cv = ability_web_rider_value(ab, "crit_vuln", 0);
@@ -2261,9 +2519,9 @@ if (player_turn) {
                             }
                         }
 
-                        // --- Stormcaller's Loop (07-28 legendary): single-target SPELLS
-                        //     echo 15% to ONE other living enemy (any spell school - the
-                        //     lightweight cousin of Chain Caster's elemental splash). ---
+                        // --- Stormcaller's Loop (07-28 legendary; buffed 07-29 to 25%):
+                        //     single-target SPELLS echo to ONE other living enemy (any
+                        //     spell school - Chain Caster's lightweight cousin). ---
                         if (!_is_aoe && variable_struct_exists(player, "leg_loop") && player.leg_loop
                             && ab.base_damage > 0 && ability_class_is_spell(ability_attack_class(ab))) {
                             var _sl_hosts = [];
@@ -2273,7 +2531,7 @@ if (player_turn) {
                             }
                             if (array_length(_sl_hosts) > 0) {
                                 var _sl_t   = _sl_hosts[irandom(array_length(_sl_hosts) - 1)];
-                                var _sl_dmg = max(1, round(_final_dmg * 0.15));
+                                var _sl_dmg = max(1, round(_final_dmg * 0.25));
                                 combat_apply_damage(_sl_t, _sl_dmg);
                                 _sl_t.hit_flash = max(_sl_t.hit_flash, 10);
                                 array_push(combat_log, "Stormcaller's Loop: the spell strays - " + _sl_t.name
@@ -2294,6 +2552,13 @@ if (player_turn) {
                                 if (ab.effect_type == "dot" && variable_struct_exists(player, "derived")) {
                                     _status_ev += player.derived.dot_dmg_bonus;
                                 }
+                                // P3 riders (08-01): WIS 25 sharpens Entropy's every tick;
+                                // STR/WIS-braced roots (Gravewrack Grip / Bear Trap) hold
+                                // one extra turn.
+                                if (ab.name == "Entropy" && ability_stat_rider_active("Entropy")) _status_ev += 1;
+                                if ((ab.name == "Gravewrack Grip" || ab.name == "Bear Trap")
+                                    && ability_status_kind(ab) == "root"
+                                    && ability_stat_rider_active(ab.name)) _status_dur += 1;
                                 // Entropy escalation (M ask): if the target already carries a
                                 // void DoT, this cast deals DOUBLE damage - so stacking Entropy
                                 // on itself ramps up instead of being a flat re-apply.
@@ -2355,6 +2620,14 @@ if (player_turn) {
                                     default:           _kind_phrase = ab.name;
                                 }
                                 array_push(combat_log, ab.name + " -> " + target.name + ": " + _kind_phrase + " (" + ability_turns(_status_dur) + ").");
+
+                                // P3 rider (08-01): CON 25 - Marrow Crush also braces
+                                // YOU: the follow-through hardens into +4 shield.
+                                if (ab.name == "Marrow Crush" && ability_stat_rider_active("Marrow Crush")) {
+                                    if (!variable_struct_exists(player, "shield_hp")) player.shield_hp = 0;
+                                    player.shield_hp += 4;
+                                    array_push(combat_log, "The crushing follow-through braces you (+4 shield).");
+                                }
 
                                 // INTERRUPT (07-17): a STUN, or a ROOT on a MELEE foe, that
                                 // lands while the target is winding up a charged/heavy attack
@@ -2440,12 +2713,15 @@ if (player_turn) {
                   // Echo consumes its once-per-combat charge after the full AoE resolves.
                   if (_echo_now) player.rune_first_aoe_used = true;
 
+                  // Whetstone Echo consumes its charge only when it actually rang.
+                  if (_whet_fired) player.whet_echo_used = true;
+
                   // Compounding Dread (07-16): each trap cast while the dread is lit
                   // compounds the permanent (this-combat) trap bonus by +4. Incremented
                   // AFTER resolution so the first trap after lighting it gets +0.
                   if (variable_struct_exists(player, "dread_active") && player.dread_active
                       && (ab.name == "Bear Trap" || ab.name == "Spike Trap" || ab.name == "Death Snare")) {
-                      player.dread_bonus += 4;
+                      player.dread_bonus += variable_struct_exists(player, "dread_rate") ? player.dread_rate : 4;
                       array_push(combat_log, "The dread compounds - traps now +" + string(player.dread_bonus) + " damage this combat.");
                   }
                   // OVERCHARGE safety: a fully-missed cast keeps the reserve (generous).
@@ -2459,30 +2735,57 @@ if (player_turn) {
                 // included - Blink/Shadow Step never earned mastery before the web
                 // rework, which left their webs unreachable).
                 ability_web_count_cast(ab.name, combat_log);
-                if (ability_web_copy_has_rider(ab, "first_free")) ability_web_first_cast_mark(player, ab.name);
+                if (ability_web_copy_has_rider(ab, "first_free")) {
+                    // 0-AP Opening Gambit (07-29): the spend already waived the
+                    // secondary cost for this first cast - say so before burning
+                    // the flag.
+                    if (ability_gambit_waives_secondary(ab, player)) {
+                        array_push(combat_log, "Opening Gambit - the first " + ab.name + " costs nothing!");
+                    }
+                    ability_web_first_cast_mark(player, ab.name);
+                }
                 // Deep Reserves (POTENCY V2): burn the potency first-cast flag too.
                 if (variable_struct_exists(player, "potency_first_casts"))
                     variable_struct_set(player.potency_first_casts, ab.name, true);
                 // Counterphase (task #14): the armed 1-AP discount is spent by this cast.
                 if (variable_struct_exists(player, "blink_tempo_ready")) player.blink_tempo_ready = false;
+                if (variable_struct_exists(player, "ashen_tempo_ready")) player.ashen_tempo_ready = false;   // Ashen Blade discount spent
                 ability_web_cast_riders(ab, player, combat_log);   // bespoke on-cast riders (shield/resource)
-                if (ab.name == "Blink" || ab.name == "Shadow Step") {
+                if (ab.name == "Shadow Step") {
                     audio_play_sound(snd_move_whoosh, 1, false);   // movement keeps its whoosh
                 } else {
-                    // Support cast - sound keyed to the effect kind (heal/shield/buff/...).
-                    play_ability_cast_sfx(ab, player, false);
-                    // Self-cast VFX over the player: heal spell for restores, otherwise a
-                    // generic buff burst (shields, stat-ups, resource gains, self-debuffs).
-                    vfx_spr       = (ab.effect_type == "heal") ? spr_vfx_heal : spr_vfx_buff;
+                    if (ab.name == "Blink") {
+                        // Blink flutter (M 07-30: it shared the Shadow Step whoosh and,
+                        // sitting in the whoosh branch, skipped the VFX block entirely):
+                        // pitched-up arcane shimmer over a fast whoosh - short, instant,
+                        // magical - and it falls through to the haste-clock burst below.
+                        var _bk_sh = audio_play_sound(snd_cast_arcane_2, 1, false);
+                        audio_sound_pitch(_bk_sh, 1.35);
+                        var _bk_wh = audio_play_sound(snd_move_whoosh, 1, false);
+                        audio_sound_pitch(_bk_wh, 1.55);
+                    } else {
+                        // Support cast - sound keyed to the effect kind (heal/shield/buff/...).
+                        play_ability_cast_sfx(ab, player, false);
+                    }
+                    // Self-cast VFX over the player, keyed to what the ability does
+                    // (heal/shield/resource/self-debuff/evasion/dark pact/offense buff)
+                    // instead of the old heal-or-sword split. See ability_support_vfx.
+                    var _vfxp = ability_support_vfx(ab);
+                    vfx_spr       = _vfxp.spr;
                     vfx_x         = 330;
                     vfx_y         = 360;
-                    vfx_timer     = 20;
-                    vfx_timer_max = 20;
+                    vfx_timer     = _vfxp.ticks;
+                    vfx_timer_max = _vfxp.ticks;
                     vfx_school    = ability_school(ab);   // spell-tint blend key
                 }
 
                 if (ab.effect_type == "heal") {
                     var _self_heal_base = ab.effect_value;
+                    // P3 rider (08-01): CHA 20 - a healer's bedside manner, +20%.
+                    if ((ab.name == "Field Dressing" || ab.name == "Second Wind")
+                        && ability_stat_rider_active(ab.name)) {
+                        _self_heal_base = round(_self_heal_base * 1.20);
+                    }
                     // OVERCHARGE (07-16): a heal spender cast at a FULL reserve drains
                     // what's left for +2 healing per point (e.g. Blood Surge at 10 Blood:
                     // pay 2, drain the other 8, heal 14 + 16).
@@ -2504,6 +2807,22 @@ if (player_turn) {
                         array_push(damage_popups, { value: _heal, x: 475, y: 545, timer: 45, col: c_lime });
                     }
                     array_push(combat_log, player.name + " restored " + string(_heal) + " HP.");
+                    // --- Talent-web riders on self-heals (07-29 bespoke pass) ---
+                    // Mender's Rite: the dressing also shakes off the newest debuff
+                    // (same pop-newest idiom as Second Wind's cleanse).
+                    if (ability_web_copy_has_rider(ab, "self_cleanse")
+                        && variable_struct_exists(player, "status_effects") && array_length(player.status_effects) > 0) {
+                        var _fd_cl = player.status_effects[array_length(player.status_effects) - 1];
+                        array_delete(player.status_effects, array_length(player.status_effects) - 1, 1);
+                        array_push(combat_log, "The dressing draws out "
+                            + (variable_struct_exists(_fd_cl, "type") ? _fd_cl.type : "an affliction") + "!");
+                    }
+                    // Crimson Overflow: healing past full hardens into a shield.
+                    if (ability_web_copy_has_rider(ab, "overheal_shield") && _heal_amt > _heal) {
+                        var _ovh = _heal_amt - _heal;
+                        player.shield_hp += _ovh;
+                        array_push(combat_log, "Crimson Overflow - " + string(_ovh) + " excess mending hardens into a shield!");
+                    }
                     // Field Dressing: 2-turn cooldown (was once-per-combat). The generic CD
                     // gate above blocks re-casts so AP is no longer wasted on a no-op.
                     if (ab.name == "Field Dressing") player.ability_cd[selected_ability] = ability_cooldown(ab);
@@ -2513,6 +2832,13 @@ if (player_turn) {
                 //     Mirrors the on-hit path above; revives the dead data path. ---
                 if (ab.effect_type == "resource" && ab.effect_value > 0) {
                     var _sres_amt = ab.effect_value;
+                    // "Reaper's Tempo" web node (P3, 07-29): +1 extra when an enemy
+                    // died this round (combat_on_enemy_defeated stamps the round).
+                    if (ability_web_copy_has_rider(ab, "harvest_kill")
+                        && variable_global_exists("last_kill_round") && global.last_kill_round == combat_state.round) {
+                        _sres_amt += 1;
+                        array_push(combat_log, "Reaper's Tempo: the fresh death pays one more.");
+                    }
                     if (variable_struct_exists(player, "souls")) {
                         player.souls = min(player.souls_max, player.souls + _sres_amt);
                         array_push(combat_log, ab.name + ": +" + string(_sres_amt) + " Souls.");
@@ -2523,15 +2849,30 @@ if (player_turn) {
                         player.preparation = min(player.preparation_max, player.preparation + _sres_amt);
                         array_push(combat_log, ab.name + ": +" + string(_sres_amt) + " Preparation.");
                     }
+                    // "Soulmend" web keystone (P3, 07-29 - the Arcanist's only
+                    // self-sustain): Soul Harvest also heals 3 HP per resource gained.
+                    if (ability_web_copy_has_rider(ab, "soulmend")) {
+                        var _sm_heal = min(_sres_amt * 3, player.max_HP - player.HP);
+                        if (_sm_heal > 0) {
+                            player.HP += _sm_heal;
+                            array_push(combat_log, "Soulmend: the gathered souls knit flesh (+" + string(_sm_heal) + " HP).");
+                        }
+                    }
                 }
 
                 // --- Iron Skin: set flat damage reduction for N turns ---
                 if (ab.name == "Iron Skin") {
                     player.damage_reduction   = ab.effect_value;
-                    player.iron_skin_duration = ab.effect_duration;
+                    // P3 rider (08-01): WIS 20 - the skin holds a 4th turn.
+                    player.iron_skin_duration = ab.effect_duration + (ability_stat_rider_active("Iron Skin") ? 1 : 0);
+                    // "Sharp Edges" web node (P3, 07-29): while the skin holds, melee
+                    // blows that land take the reduction value back (fired at the
+                    // enemy melee-hit sites, next to the Bloodthorn reflect).
+                    player.sharp_edges_value  = ability_web_copy_has_rider(ab, "sharp_edges") ? ab.effect_value : 0;
                     array_push(combat_log,
                         "Hero activates Iron Skin - incoming damage reduced by "
-                        + string(ab.effect_value) + " for " + string(ab.effect_duration) + " turns.");
+                        + string(ab.effect_value) + " for " + string(player.iron_skin_duration) + " turns."
+                        + ((player.sharp_edges_value > 0) ? " Its edges are SHARP." : ""));
                 }
 
                 // --- Soul Shield: add to the damage-absorbing shield pool ---
@@ -2539,10 +2880,14 @@ if (player_turn) {
                     // D§3 rework (M-approved 07-09): +3 shield per Soul HELD (not
                     // spent) - the reserve-defense identity, vs Iron Skin's flat
                     // mitigation. A stocked Arcanist wards ~2x harder.
-                    var _ss_bonus = variable_struct_exists(player, "souls") ? player.souls * 3 : 0;
-                    player.shield_hp += ab.effect_value + _ss_bonus;
+                    // "Soulweave" web node (P3, 07-29): the per-Soul rate rises to +4.
+                    var _ss_rate  = ability_web_copy_has_rider(ab, "soul_dense") ? 4 : 3;
+                    var _ss_bonus = variable_struct_exists(player, "souls") ? player.souls * _ss_rate : 0;
+                    // P3 rider (08-01): CON 20 - a sturdier frame carries a wider ward.
+                    var _ss_flat  = ability_stat_rider_active("Soul Shield") ? 5 : 0;
+                    player.shield_hp += ab.effect_value + _ss_bonus + _ss_flat;
                     array_push(combat_log,
-                        "Soul Shield raised - absorbs the next " + string(ab.effect_value + _ss_bonus) + " damage"
+                        "Soul Shield raised - absorbs the next " + string(ab.effect_value + _ss_bonus + _ss_flat) + " damage"
                         + ((_ss_bonus > 0) ? " (+" + string(_ss_bonus) + " from Souls held)." : "."));
                 }
 
@@ -2578,8 +2923,12 @@ if (player_turn) {
                         array_push(combat_log, "The march is already on.");
                     } else {
                         player.warpath_active = true;
-                        player.warpath_round  = combat_state.round;
-                        array_push(combat_log, "WARPATH - every turn from here hits +2 harder.");
+                        // "First Blood" (P3): the march starts a turn pre-lit.
+                        // "Crescendo" (P3): the ramp climbs +3/turn instead of +2.
+                        player.warpath_round  = combat_state.round - (ability_web_copy_has_rider(ab, "ramp_prelit") ? 1 : 0);
+                        player.warpath_rate   = ability_web_copy_has_rider(ab, "ramp_fast") ? 3 : 2;
+                        array_push(combat_log, "WARPATH - every turn from here hits +" + string(player.warpath_rate) + " harder"
+                            + ((player.warpath_round < combat_state.round) ? " (already marching)" : "") + ".");
                     }
                 }
 
@@ -2591,7 +2940,12 @@ if (player_turn) {
                     } else {
                         player.dread_active = true;
                         if (!variable_struct_exists(player, "dread_bonus")) player.dread_bonus = 0;
-                        array_push(combat_log, "COMPOUNDING DREAD - every trap from here teaches the next to cut deeper (+4 each).");
+                        // "Crescendo" (P3): +6 per trap; "Old Fear" (P3): starts pre-lit
+                        // so the FIRST trap after lighting already carries the bonus.
+                        player.dread_rate = ability_web_copy_has_rider(ab, "ramp_fast") ? 6 : 4;
+                        if (ability_web_copy_has_rider(ab, "ramp_prelit")) player.dread_bonus += player.dread_rate;
+                        array_push(combat_log, "COMPOUNDING DREAD - every trap from here teaches the next to cut deeper (+"
+                            + string(player.dread_rate) + " each" + ((player.dread_bonus > 0) ? (", +" + string(player.dread_bonus) + " already gathered") : "") + ").");
                     }
                 }
 
@@ -2652,6 +3006,8 @@ if (player_turn) {
                 //     25% less if they land. Resolved in the incoming-attack block below. ---
                 if (ab.name == "Blink") {
                     player.blink_charges = 3;
+                    // "Afterimage Veil" web node (P3, 07-29): softening 50/25 -> 60/35.
+                    player.blink_soft_rider = ability_web_copy_has_rider(ab, "blink_soft");
                     player.ability_cd[selected_ability] = ability_cooldown(ab);
                     // "Counterphase" web keystone (task #14): remember the rider so the
                     // full-dodge consume (enemy-turn block) can arm the AP discount.
@@ -2666,6 +3022,23 @@ if (player_turn) {
                     player.ability_cd[selected_ability] = ability_cooldown(ab);
                     array_push(combat_log, "Hero readies evasion - "
                         + string(combat_evasion_chance(player)) + "% to dodge each of the next 3 attacks!");
+                }
+
+                // --- Counterblade: arm the riposte stance (07-29 fix - the cast never
+                //     SET the flag; it was initialized, checked and cleared but never
+                //     armed, so the stance had never fired). Cleared at the player's
+                //     next turn start alongside the other per-turn flags. ---
+                if (ab.name == "Counterblade") {
+                    player.counterblade_active = true;
+                    array_push(combat_log, "Counterblade raised - every melee blow will be answered with 12 physical!");
+                }
+
+                // --- Measured Riposte (Duelist Arts, DESIGN_DUELIST_CHALLENGE.md):
+                //     until your next turn, the FIRST melee blow is answered at 18
+                //     (150% of Counterblade). One perfect answer, then it is spent. ---
+                if (ab.name == "Measured Riposte") {
+                    player.measured_riposte_active = true;
+                    array_push(combat_log, "Measured Riposte - the first melee blow will be answered with 18 physical!");
                 }
 
                 // --- Bloodthorn Aura: reflect flat damage on each incoming hit ---
@@ -2707,26 +3080,48 @@ if (player_turn) {
                         player.preparation = min(player.preparation_max, player.preparation + 1);
                         array_push(combat_log, "Second Wind: +1 Preparation.");
                     }
-                    if (variable_struct_exists(player, "status_effects") && array_length(player.status_effects) > 0) {
-                        var _sw_cl = player.status_effects[array_length(player.status_effects) - 1];
-                        array_delete(player.status_effects, array_length(player.status_effects) - 1, 1);
-                        array_push(combat_log, "Second Wind shakes off "
-                            + (variable_struct_exists(_sw_cl, "type") ? _sw_cl.type : "an affliction") + ".");
+                    // "Clean Break" web node (P3, 07-29): cleanses the TWO newest.
+                    var _sw_pops = ability_web_copy_has_rider(ab, "cleanse_two") ? 2 : 1;
+                    repeat (_sw_pops) {
+                        if (variable_struct_exists(player, "status_effects") && array_length(player.status_effects) > 0) {
+                            var _sw_cl = player.status_effects[array_length(player.status_effects) - 1];
+                            array_delete(player.status_effects, array_length(player.status_effects) - 1, 1);
+                            array_push(combat_log, "Second Wind shakes off "
+                                + (variable_struct_exists(_sw_cl, "type") ? _sw_cl.type : "an affliction") + ".");
+                        }
+                    }
+                    // "Adrenal Memory" web keystone (P3, 07-29): cast below half HP,
+                    // it also snaps 1 AP back into your legs.
+                    if (ability_web_copy_has_rider(ab, "adrenal_memory")
+                        && player.max_HP > 0 && player.HP < player.max_HP * 0.5) {
+                        player.energy += 1;
+                        array_push(combat_log, "Adrenal Memory: the body remembers - +1 AP!");
                     }
                 }
 
                 // --- Adrenaline Rush (07-17 rework): once per TURN, pay 5 HP -> +1 AP.
                 //     The HP-as-fuel lever; loves lifesteal builds, ruinous when bleeding out. ---
                 if (ab.name == "Adrenaline Rush") {
-                    if (variable_struct_exists(player, "adrenaline_turn_used") && player.adrenaline_turn_used) {
+                    // "Numbed Nerves" web node (P3, 07-29): the push costs 3 HP.
+                    var _ar_cost = ability_web_copy_has_rider(ab, "rush_cheap") ? 3 : 5;
+                    // "Overdrive" web keystone (P3, 07-29 - LIVETEST WATCH): once per
+                    // COMBAT, the once-per-turn limit may be broken a single time.
+                    var _ar_blocked = variable_struct_exists(player, "adrenaline_turn_used") && player.adrenaline_turn_used;
+                    if (_ar_blocked && ability_web_copy_has_rider(ab, "overdrive")
+                        && !(variable_struct_exists(player, "overdrive_used") && player.overdrive_used)) {
+                        player.overdrive_used = true;
+                        _ar_blocked = false;
+                        array_push(combat_log, "OVERDRIVE - the nerves fire twice!");
+                    }
+                    if (_ar_blocked) {
                         array_push(combat_log, "Adrenaline Rush already spent this turn.");
-                    } else if (player.HP <= 5) {
-                        array_push(combat_log, "Not enough HP to push - Adrenaline Rush needs more than 5 HP.");
+                    } else if (player.HP <= _ar_cost) {
+                        array_push(combat_log, "Not enough HP to push - Adrenaline Rush needs more than " + string(_ar_cost) + " HP.");
                     } else {
-                        player.HP -= 5;
+                        player.HP -= _ar_cost;
                         player.energy += 1;
                         player.adrenaline_turn_used = true;
-                        array_push(combat_log, "Adrenaline Rush: 5 HP -> +1 AP!");
+                        array_push(combat_log, "Adrenaline Rush: " + string(_ar_cost) + " HP -> +1 AP!");
                     }
                 }
 
@@ -2741,7 +3136,9 @@ if (player_turn) {
                     } else {
                         player.blood -= _sp_spend;
                         if (!variable_struct_exists(player, "shield_hp")) player.shield_hp = 0;
-                        var _sp_ward = _sp_spend * 6;
+                        // "Rich Veins" web node (P3, 07-29): 7 shield per Blood sealed.
+                        var _sp_rate = ability_web_copy_has_rider(ab, "pact_dense") ? 7 : 6;
+                        var _sp_ward = _sp_spend * _sp_rate;
                         // OVERCHARGE (07-16): sealed at a FULL reserve, the Pact takes ALL
                         // the Blood - the first 3 at its own 6/point rate, the rest at +2.
                         if (variable_struct_exists(player, "overcharge_armed") && player.overcharge_armed) {
@@ -2754,7 +3151,16 @@ if (player_turn) {
                             }
                         }
                         player.shield_hp += _sp_ward;
-                        array_push(combat_log, "Sanguine Pact: seals the Blood into a " + string(_sp_ward) + "-point ward.");
+                        // "Blood Debt" web keystone (P3, 07-29): track the pact's share
+                        // of the shield - the hit that SHATTERS it repays its full value
+                        // to the attacker (resolved at the shield-absorb sites).
+                        if (ability_web_copy_has_rider(ab, "blood_debt")) {
+                            player.pact_shield     = (variable_struct_exists(player, "pact_shield") ? player.pact_shield : 0) + _sp_ward;
+                            player.pact_debt       = _sp_ward;
+                            player.pact_debt_armed = true;
+                        }
+                        array_push(combat_log, "Sanguine Pact: seals the Blood into a " + string(_sp_ward) + "-point ward."
+                            + (ability_web_copy_has_rider(ab, "blood_debt") ? " Breaking it will cost them." : ""));
                     }
                 }
 
@@ -2763,6 +3169,8 @@ if (player_turn) {
                     player.is_untargetable    = true;
                     player.untargetable_turns = 1;
                     player.vanish_bonus       = true;
+                    // "Deeper Shadow" web node (P3, 07-29): the ambush strike hits +18.
+                    player.vanish_bonus_amt   = ability_web_copy_has_rider(ab, "vanish_sharp") ? 18 : 12;
                     array_push(combat_log, "Hero vanishes - "
                         + string(combat_evasion_chance(player)) + "% to dodge the next attack, next strike empowered!");
                 }
@@ -2812,6 +3220,23 @@ if (player_turn) {
             exit;
         }
 
+        // Still Breath (rimefox signature move, 08-01 pillar D): the first enemy
+        // to act each combat draws breath in the cold - -25% outgoing damage for
+        // 2 turns. Once per combat; the flag rides the per-combat player struct.
+        if (pet_active_sig_move("still_breath") && !variable_struct_exists(player, "sig_still_done")) {
+            player.sig_still_done = true;
+            array_push(actor.status_effects, {
+                name:         "Still Breath",
+                effect_type:  "debuff",
+                kind:         "weaken",
+                effect_value: 0.25,
+                duration:     2,
+                element:      "frost",
+                source:       "pet"
+            });
+            array_push(combat_log, "[Companion] " + pet_active().name + "'s STILL BREATH settles over " + actor.name + " (-25% damage, 2 turns).");
+        }
+
         // Capture control state BEFORE the tick decrements durations, so a 1-turn
         // control still costs the enemy this turn. reach/kind decide which apply:
         // stun=all, root=melee enemies, silence=spellcasters. See SYSTEMS_ATTACK_CLASS.md.
@@ -2827,6 +3252,17 @@ if (player_turn) {
         // Runs before the enemy attacks so DoT can kill the enemy before they act.
         var _se_count = array_length(actor.status_effects);
         var _se_keep  = [];
+        // Mandate from Heaven (P4, 08-01): stamp each player-sourced status with
+        // the round its first tick sees it (~its application round). The cleanse
+        // guard treats UNSTAMPED as just-applied, so a status cleansed before it
+        // ever ticked is still protected.
+        for (var _mh_i = 0; _mh_i < _se_count; _mh_i++) {
+            var _mh_se = actor.status_effects[_mh_i];
+            if (variable_struct_exists(_mh_se, "source") && _mh_se.source == "player"
+                && !variable_struct_exists(_mh_se, "applied_round")) {
+                _mh_se.applied_round = combat_state.round;
+            }
+        }
         // Counts DoT popups spawned this tick so stacked effects (e.g. two poisons)
         // can be staggered in time/space instead of overlapping into one number.
         var _dot_pop_n = 0;
@@ -2957,7 +3393,20 @@ if (player_turn) {
                 if (_se.duration > 0) {
                     array_push(_se_keep, _se);
                 } else {
-                    array_push(combat_log, _se.name + " wore off " + actor.name + ".");
+                    // Venom Thread (pale_widow innate, 08-01): your Bleed/Poison
+                    // cling one extra turn (once per application - vt_ext flags it).
+                    var _vt_el = variable_struct_exists(_se, "element") ? _se.element : "";
+                    if (pet_active_innate("dot_turns") > 0
+                        && variable_struct_exists(_se, "source") && _se.source == "player"
+                        && (_vt_el == "bleed" || _vt_el == "poison")
+                        && !variable_struct_exists(_se, "vt_ext")) {
+                        _se.vt_ext   = true;
+                        _se.duration = pet_active_innate("dot_turns");
+                        array_push(_se_keep, _se);
+                        array_push(combat_log, "Venom Thread: the " + _se.name + " clings to " + actor.name + "!");
+                    } else {
+                        array_push(combat_log, _se.name + " wore off " + actor.name + ".");
+                    }
                 }
             }
         }
@@ -3001,10 +3450,32 @@ if (player_turn) {
         // charge sets it below; the damage paths (spell + basic + double-strike) read it.
         var _incoming_mult = 1.0;
 
+        // --- (07-29 fix) Classify the INCOMING ACTION before the reaction stack. ---
+        // Dodges and ripostes used to run blind: Shadow Step burned a charge and
+        // printed "the blow connects!" against a mob that was about to HEAL, and
+        // Counterblade keyed off the mob's static reach instead of the attack it
+        // is actually making. Resolve the intent first, then classify:
+        //   _in_hostile  - the action targets the player at all (anything but a heal)
+        //   _in_damaging - it deals damage (basic swing or damage spell)
+        //   _in_melee_blow - damaging AND melee-delivered (riposte-able). An eab may
+        //     carry its own reach tag (e.g. boss nukes are ranged casts even on a
+        //     melee boss); otherwise delivery inherits the mob's reach.
+        if (!variable_struct_exists(actor, "intent") || actor.intent == undefined) {
+            enemy_roll_intent(actor, player, combat_state.round, false);
+        }
+        var _in_eab      = actor.intent.eab;
+        var _in_hostile  = (_in_eab == undefined) || (_in_eab.kind != "heal");
+        var _in_damaging = (_in_eab == undefined) || (_in_eab.kind == "spell");
+        var _in_reach    = variable_struct_exists(actor, "reach") ? actor.reach : "melee";
+        if (_in_eab != undefined && variable_struct_exists(_in_eab, "reach") && _in_eab.reach != "") {
+            _in_reach = _in_eab.reach;
+        }
+        var _in_melee_blow = _in_hostile && _in_damaging && (_in_reach == "melee");
+
         // --- Blink: staged guard. 1st incoming attack = guaranteed full dodge; 2nd
         //     takes 50% damage; 3rd takes 25% less; then it ends. One charge consumed
         //     per enemy turn so it spans multiple foes (the 2-4 mob case). ---
-        if (player.blink_charges >= 3) {
+        if (_in_hostile && player.blink_charges >= 3) {
             player.blink_charges = 2;
             array_push(combat_log, actor.name + "'s attack passes through thin air!");
             // "Counterphase" web keystone (task #14): the full evade arms a 1-AP
@@ -3019,19 +3490,23 @@ if (player_turn) {
             if (player_turn) { abilities_used_this_turn = []; if (instance_exists(obj_game_controller)) instance_find(obj_game_controller, 0).items_used_this_turn = 0; need_player_status_tick = true; }
             enemy_turn_timer = enemy_turn_delay;
             exit;
-        } else if (player.blink_charges == 2) {
-            _incoming_mult *= 0.5;   // 2nd attack: 50% damage reduction if it lands
+        } else if (_in_damaging && player.blink_charges == 2) {
+            // "Afterimage Veil" web node (P3): 50% -> 60% softening.
+            var _bl_soft2 = (variable_struct_exists(player, "blink_soft_rider") && player.blink_soft_rider) ? 0.40 : 0.5;
+            _incoming_mult *= _bl_soft2;   // 2nd attack softened if it lands
             player.blink_charges = 1;
-            array_push(combat_log, "A blink afterimage softens the blow (50% reduced)!");
-        } else if (player.blink_charges == 1) {
-            _incoming_mult *= 0.75;  // 3rd attack: 25% damage reduction if it lands
+            array_push(combat_log, "A blink afterimage softens the blow (" + string(round((1 - _bl_soft2) * 100)) + "% reduced)!");
+        } else if (_in_damaging && player.blink_charges == 1) {
+            // "Afterimage Veil" web node (P3): 25% -> 35% softening.
+            var _bl_soft3 = (variable_struct_exists(player, "blink_soft_rider") && player.blink_soft_rider) ? 0.65 : 0.75;
+            _incoming_mult *= _bl_soft3;   // 3rd attack softened if it lands
             player.blink_charges = 0;
-            array_push(combat_log, "Blink's last shimmer dampens the hit (25% reduced)!");
+            array_push(combat_log, "Blink's last shimmer dampens the hit (" + string(round((1 - _bl_soft3) * 100)) + "% reduced)!");
         }
 
         // --- Vanish: chance-based untargetable window (Wisdom-scaled). Consumes one
         //     charge per incoming attack; whiffs on a successful roll, else falls through. ---
-        if (player.is_untargetable) {
+        if (_in_hostile && player.is_untargetable) {
             player.untargetable_turns--;
             if (player.untargetable_turns <= 0) player.is_untargetable = false;
             if (irandom(99) < combat_evasion_chance(player)) {
@@ -3047,19 +3522,53 @@ if (player_turn) {
             }
         }
 
-        // --- Counterblade (07-17): riposte stance - a MELEE attacker eats 12 physical,
-        //     whether its blow lands or is dodged. Fires once per attacking melee enemy
-        //     (each enemy runs this section on its own turn); the stance clears at the
-        //     player's next turn start. A riposte that kills ends that enemy's turn. ---
+        // --- Counterblade (07-17): riposte stance - a MELEE BLOW is answered with 12
+        //     physical, whether it lands or is dodged. (07-29 fix) Keys off the attack
+        //     the enemy is ACTUALLY making - a melee-delivered damage spell triggers it,
+        //     a ranged spell or a hex/heal does not, regardless of the mob's class.
+        //     Fires once per attacking melee enemy (each enemy runs this section on its
+        //     own turn); the stance clears at the player's next turn start. A riposte
+        //     that kills ends that enemy's turn. ---
         if (variable_struct_exists(player, "counterblade_active") && player.counterblade_active
-            && (variable_struct_exists(actor, "reach") ? actor.reach : "melee") == "melee"
-            && !actor.is_defeated
-            && !(variable_struct_exists(actor, "intent") && actor.intent != undefined && actor.intent.kind == "heal")) {
+            && _in_melee_blow
+            && !actor.is_defeated) {
             var _cb_dmg = combat_resolve_damage(12, 0, actor.armor, actor.el_resist);
             if (_cb_dmg < 1) _cb_dmg = 1;
             combat_apply_damage(actor, _cb_dmg);
             actor.hit_flash = max(actor.hit_flash, 10);
             array_push(combat_log, "Counterblade ripostes " + actor.name + " for " + string(_cb_dmg) + "!");
+            // The Ashen Blade: a riposte arms -1 AP on your next ability.
+            if (player.leg_ashen && !player.ashen_tempo_ready) {
+                player.ashen_tempo_ready = true;
+                array_push(combat_log, "The Ashen Blade hums - your next ability costs 1 less AP.");
+            }
+            if (actor.HP <= 0 && !actor.is_defeated) {
+                combat_on_enemy_defeated(actor, player, combat_log);
+                combat_next_turn(combat_state);
+                player_turn = combat_state.active.is_player;
+                if (player_turn) { abilities_used_this_turn = []; if (instance_exists(obj_game_controller)) instance_find(obj_game_controller, 0).items_used_this_turn = 0; need_player_status_tick = true; }
+                enemy_turn_timer = enemy_turn_delay;
+                exit;
+            }
+        }
+
+        // --- Measured Riposte (Duelist Arts): the FIRST melee blow until your next
+        //     turn is answered at 18 - then the answer is spent. Same per-attack
+        //     melee classification as Counterblade; the two stack (both fire). ---
+        if (variable_struct_exists(player, "measured_riposte_active") && player.measured_riposte_active
+            && _in_melee_blow
+            && !actor.is_defeated) {
+            player.measured_riposte_active = false;
+            var _mr_dmg = combat_resolve_damage(18, 0, actor.armor, actor.el_resist);
+            if (_mr_dmg < 1) _mr_dmg = 1;
+            combat_apply_damage(actor, _mr_dmg);
+            actor.hit_flash = max(actor.hit_flash, 10);
+            array_push(combat_log, "Measured Riposte! " + actor.name + " takes " + string(_mr_dmg) + " for the approach.");
+            // The Ashen Blade: a riposte arms -1 AP on your next ability.
+            if (player.leg_ashen && !player.ashen_tempo_ready) {
+                player.ashen_tempo_ready = true;
+                array_push(combat_log, "The Ashen Blade hums - your next ability costs 1 less AP.");
+            }
             if (actor.HP <= 0 && !actor.is_defeated) {
                 combat_on_enemy_defeated(actor, player, combat_log);
                 combat_next_turn(combat_state);
@@ -3071,7 +3580,7 @@ if (player_turn) {
         }
 
         // --- Shadow Step: dodge CHANCE on each of the next 3 attacks (charge-based) ---
-        if (player.shadow_step_charges > 0) {
+        if (_in_hostile && player.shadow_step_charges > 0) {
             player.shadow_step_charges--;
             if (irandom(99) < combat_evasion_chance(player)) {
                 array_push(combat_log, actor.name + "'s attack is dodged!");
@@ -3082,12 +3591,12 @@ if (player_turn) {
                 enemy_turn_timer = enemy_turn_delay;
                 exit;
             } else {
-                array_push(combat_log, "The dodge mistimes - the blow connects!");
+                array_push(combat_log, "The dodge mistimes - " + actor.name + " isn't shaken!");
             }
         }
 
         // --- Check Phantom Step (auto-miss the very first enemy attack each combat) ---
-        if (combat_check_phantom_step(player, combat_log)) {
+        if (_in_hostile && combat_check_phantom_step(player, combat_log)) {
             enemy_roll_intent(actor, player, combat_state.round + 1, true);   // action spent on the auto-miss
             combat_next_turn(combat_state);
             player_turn      = combat_state.active.is_player;
@@ -3161,7 +3670,14 @@ if (player_turn) {
                     var _cl_n = (_cl_asc >= 4) ? 2 : 1;
                     repeat (_cl_n) {
                         var _cl_name = combat_cleanse_one(_htgt);
-                        if (_cl_name == "") break;
+                        if (_cl_name == "") {
+                            // Mandate from Heaven (P4): the seal held - say so, so
+                            // the 2000g purchase is FELT every time it matters.
+                            if (combat_any_mandate_protected(_htgt)) {
+                                array_push(combat_log, actor.name + "'s mending falters - the MANDATE holds your claim!");
+                            }
+                            break;
+                        }
                         array_push(combat_log, actor.name + "'s mending unravels " + _cl_name + "!");
                     }
                 }
@@ -3179,6 +3695,28 @@ if (player_turn) {
                 attack_anim_timer = 20; attack_anim_src_x = _sa_x; attack_anim_src_y = _sa_y;
                 attack_anim_dst_x = 435; attack_anim_dst_y = 465; attack_anim_is_player = false; attack_anim_enemy_idx = _sa_slot;
                 array_push(combat_log, actor.name + " " + ((_eab.msg != "") ? _eab.msg : "casts a spell") + " for " + string(_sdmg) + " damage!");
+                // --- "Sharp Edges" (P3): a MELEE-delivered damage spell still counts
+                //     as a melee blow - the iron answers it too. ---
+                if (variable_struct_exists(player, "sharp_edges_value") && player.sharp_edges_value > 0
+                    && player.iron_skin_duration > 0 && _in_melee_blow && !actor.is_defeated) {
+                    combat_apply_damage(actor, player.sharp_edges_value);
+                    actor.hit_flash = max(actor.hit_flash, 8);
+                    array_push(combat_log, "Sharp Edges: " + actor.name + " cuts itself on the iron for " + string(player.sharp_edges_value) + "!");
+                    if (actor.HP <= 0 && !actor.is_defeated) combat_on_enemy_defeated(actor, player, combat_log);
+                }
+                // --- "Blood Debt" (P3): a spell can shatter the pact ward too
+                //     (combat_mitigate_player flagged it; the attacker is known here). ---
+                if (variable_struct_exists(player, "pact_debt_due") && player.pact_debt_due) {
+                    player.pact_debt_due   = false;
+                    player.pact_debt_armed = false;
+                    if (player.pact_debt > 0 && !actor.is_defeated) {
+                        combat_apply_damage(actor, player.pact_debt);
+                        actor.hit_flash = max(actor.hit_flash, 12);
+                        array_push(combat_log, "BLOOD DEBT - the shattered pact repays " + actor.name + " with " + string(player.pact_debt) + "!");
+                        if (actor.HP <= 0 && !actor.is_defeated) combat_on_enemy_defeated(actor, player, combat_log);
+                    }
+                    player.pact_debt = 0;
+                }
                 if (player.class_id == 1 && variable_struct_exists(player, "blood")) player.blood = min(player.blood_max, player.blood + 1);
                 if (player.HP <= 0 && !combat_try_last_stand(player, combat_log)) player.is_defeated = true;
 
@@ -3199,6 +3737,8 @@ if (player_turn) {
                     // -10% duration per rank (floors at 1 turn).
                     var _iw_r = trait_potency_r14("Iron Will");
                     if (_iw_r > 0) _edur = max(1, floor(_edur * (1 - 0.10 * _iw_r)));
+                    // Warding V2 (Shrine 07-29): hostile afflictions run 1 turn shorter.
+                    if (boon_active("warding")) _edur = max(1, _edur - 1);
                     array_push(player.status_effects, {
                         name:         _eab.name,
                         effect_type:  (_eab.kind == "dot") ? "dot" : "debuff",
@@ -3222,6 +3762,11 @@ if (player_turn) {
 
         // --- Determine base damage for this turn (handles telegraph spike) ---
         var _base_dmg = enemy_get_attack_damage(actor, combat_state.round);
+        // ASHEN DUELIST: the execute swing - below 25% HP he cuts 50% harder.
+        if (global.duel_active && player.max_HP > 0 && player.HP < player.max_HP * 0.25) {
+            _base_dmg = round(_base_dmg * 1.5);
+            array_push(combat_log, "The Duelist sees the opening - an execute swing!");
+        }
         // A5 BOSS ENRAGE (C1, M-approved 07-09): in a boss room at Awakening 5,
         // every enemy swing gains +10% per round past round 6 - no turtling.
         _base_dmg = max(1, round(_base_dmg * awaken_boss_enrage_mult(combat_state.round)));
@@ -3257,6 +3802,17 @@ if (player_turn) {
             _hit = "dodge";
             array_push(combat_log, "THE VEIL PARTS! " + actor.name + " strikes where you no longer are.");
         }
+        // Slip Between (voidkit innate, 08-01): the FIRST blow aimed at you each
+        // combat has a 10% chance to part around empty night. One roll per combat
+        // (the lazy flag lives on the per-combat player struct).
+        if (_hit == "hit" && pet_active_innate("slip") > 0
+            && !variable_struct_exists(player, "innate_slip_rolled")) {
+            player.innate_slip_rolled = true;
+            if (irandom(99) < pet_active_innate("slip")) {
+                _hit = "dodge";
+                array_push(combat_log, "[Companion] " + pet_active().name + " flickers - " + actor.name + "'s blow slips between worlds.");
+            }
+        }
 
         if (_hit != "hit") {
             array_push(combat_log, (_hit == "dodge")
@@ -3267,6 +3823,11 @@ if (player_turn) {
             if (_hit == "dodge" && variable_struct_exists(player, "leg_rebuke") && player.leg_rebuke) {
                 player.leg_rebuke_primed = true;
                 array_push(combat_log, "Duelist's Rebuke: the miss will cost them - your next ability strikes +50% harder!");
+            }
+            // The Ashen Blade (Duelist Arts): a dodge arms -1 AP on your next ability.
+            if (_hit == "dodge" && player.leg_ashen && !player.ashen_tempo_ready) {
+                player.ashen_tempo_ready = true;
+                array_push(combat_log, "The Ashen Blade hums - your next ability costs 1 less AP.");
             }
             // Shadow Meld (audit §6 rework): a successful dodge primes a guaranteed crit
             // on your next damaging attack (dodge feeds offense, not more dodge).
@@ -3294,6 +3855,9 @@ if (player_turn) {
             // Subtract flat damage reduction (Iron Skin), then equipment armor
             _final_dmg = max(0, _final_dmg - player.damage_reduction);
             _final_dmg = max(1, _final_dmg - player.equip_armor);
+            // Boon flat armor (Shrine V2): Ironhide +2 / Feast of Crows +2 per corpse.
+            var _bfa = boon_flat_armor();
+            if (_bfa > 0) _final_dmg = max(1, _final_dmg - _bfa);
             if (variable_struct_exists(player, "derived") && player.derived.phys_dmg_reduction > 0) {
                 _final_dmg = max(1, ceil(_final_dmg * (1.0 - (player.derived.phys_dmg_reduction / 100.0))));
             }
@@ -3303,6 +3867,13 @@ if (player_turn) {
             if (pet_egg_ward_mult() != 1.0) _final_dmg = max(1, round(_final_dmg * pet_egg_ward_mult()));
             // Curse penalties (Exposed/Ruin): flat % incoming-damage increase.
             if (curse_incoming_mult() != 1.0) _final_dmg = max(1, round(_final_dmg * curse_incoming_mult()));
+            // Mire Stare (gloomtoad innate, 08-01): the first enemy attack that
+            // lands each combat sinks into the mire - 10% weaker.
+            if (pet_active_innate("mire") > 0 && !variable_struct_exists(player, "innate_mire_done")) {
+                player.innate_mire_done = true;
+                _final_dmg = max(1, round(_final_dmg * (1 - pet_active_innate("mire") / 100)));
+                array_push(combat_log, "[Companion] Mire Stare drags at " + actor.name + "'s blow.");
+            }
             // Blink softening: 2nd/3rd charge takes 50%/25%-reduced damage if the hit lands.
             if (_incoming_mult < 1.0) _final_dmg = max(1, round(_final_dmg * _incoming_mult));
             // Evasive Roll (audit §6 build): the armed roll halves the next hit above 10,
@@ -3321,7 +3892,7 @@ if (player_turn) {
             // at 0 HP it collapses - injury tier +1 (existing ladder benches it for
             // the rest of the run; capped below the permadeath tier, a KO never
             // kills outright). The pool refills between runs / when fed.
-            var _gpet = pet_active();
+            var _gpet = global.duel_active ? undefined : pet_active();   // duel: companion sits out - no intercepts
             var _g_can = false, _g_body = false;
             if (_gpet != undefined && !_gpet.is_egg && _gpet.stage >= PET_STAGE_YOUNGADULT
                 && !pet_guard_off(_gpet)   // called off mid-fight (G) = no intercepts
@@ -3341,14 +3912,31 @@ if (player_turn) {
                 array_push(combat_log, "[Companion] " + _gpet.name + " intercepts the blow (-" + string(_gcut)
                     + ")!  [" + string(pet_hp(_gpet)) + "/" + string(pet_max_hp(_gpet)) + " HP]");
                 if (_gko) {
-                    _gpet.injured = min(_gpet.injured + 1, PET_INJURY_DEATH - 1);
-                    array_push(combat_log, "[Companion] " + _gpet.name
-                        + " collapses from its wounds - out for the rest of the run!");
+                    // Deathdodger quirk (08-01, pillar C): once per run it shrugs
+                    // the KO and stays standing at 1 HP.
+                    if (pet_quirk_has(_gpet, "deathdodger")
+                        && (!variable_struct_exists(_gpet, "dd_run") || _gpet.dd_run != global.run_count)) {
+                        _gpet.dd_run  = global.run_count;
+                        _gpet.hp_dmg  = pet_max_hp(_gpet) - 1;
+                        array_push(combat_log, "[Companion] DEATHDODGER - " + _gpet.name + " refuses to fall (1 HP)!");
+                    } else {
+                        // Memory (pillar C): the KO is remembered - by dungeon, and
+                        // for this run (Deathdodger is earned by surviving one).
+                        pet_mem_bump_dungeon(_gpet, "mem_ko");
+                        _gpet.mem_ko_this_run = true;
+                        _gpet.injured = min(_gpet.injured + 1, PET_INJURY_DEATH - 1);
+                        array_push(combat_log, "[Companion] " + _gpet.name
+                            + " collapses from its wounds - out for the rest of the run!");
+                    }
                 }
             }
             // How much the player's defenses shaved off this swing (armor/Iron Skin/etc.),
             // measured before Soul Shield (which logs its own absorb line separately).
             var _dmg_blocked = max(0, _gross_incoming - _final_dmg);
+            // Second Skin blessing (Shrine V2): the first hit each combat is halved -
+            // before the shield so the ward isn't spent on the waived half.
+            _final_dmg = boon_second_skin_apply(player, _final_dmg, combat_log);
+
             // Soul Shield absorbs damage before it reaches HP.
             if (variable_struct_exists(player, "shield_hp") && player.shield_hp > 0 && _final_dmg > 0) {
                 var _sa = min(player.shield_hp, _final_dmg);
@@ -3356,6 +3944,12 @@ if (player_turn) {
                 // Poise is spent first (07-17): decrement the tracker so its turn-start
                 // expiry only removes what survived, never a persistent ward.
                 if (variable_struct_exists(player, "poise_shield") && player.poise_shield > 0) player.poise_shield = max(0, player.poise_shield - _sa);
+                // "Blood Debt" (P3): the pact's share depletes with the ward; the hit
+                // that shatters the whole shield triggers the repayment below.
+                if (variable_struct_exists(player, "pact_shield") && player.pact_shield > 0) {
+                    player.pact_shield = max(0, player.pact_shield - _sa);
+                    if (player.shield_hp <= 0 && player.pact_debt_armed) player.pact_debt_due = true;
+                }
                 _final_dmg -= _sa;
                 array_push(combat_log, "Soul Shield absorbs " + string(_sa) + " damage.");
             }
@@ -3364,6 +3958,27 @@ if (player_turn) {
             // absorb keeps the fight untouched (defense play stays rewarded).
             if (_final_dmg > 0) combat_state.player_took_damage = true;
             combat_apply_damage(player, _final_dmg);
+            // Bramble Hide / Spore Cloud (thorn_boar / sporeling innates, 08-01):
+            // striking you has a price. Thorns route through the universal damage
+            // sink (deaths sweep like any DoT kill); the spore is a 2/turn poison.
+            if (pet_active_innate("thorns") > 0 && actor.HP > 0) {
+                combat_apply_damage(actor, pet_active_innate("thorns"));
+                array_push(combat_log, "[Companion] Brambles bite " + actor.name + " for " + string(pet_active_innate("thorns")) + "!");
+            }
+            if (pet_active_innate("spore") > 0 && actor.HP > 0
+                && variable_struct_exists(actor, "status_effects")
+                && irandom(99) < pet_active_innate("spore")) {
+                array_push(actor.status_effects, {
+                    name:         "Spore Cloud",
+                    effect_type:  "dot",
+                    kind:         "dot",
+                    effect_value: 2,
+                    duration:     2,
+                    element:      "poison",
+                    source:       "pet"
+                });
+                array_push(combat_log, "[Companion] Spores bloom across " + actor.name + " - Poisoned!");
+            }
             // Player takes a hit - gendered human "damage" grunt (snd_player_hurt[_f]).
             play_player_vocal("snd_player_hurt", -1);
             // VFX: hit flash, popup, enemy attack slide, screen shake
@@ -3423,6 +4038,17 @@ if (player_turn) {
                 array_push(combat_log,
                     "Bloodthorn Aura: " + actor.name + " takes "
                     + string(player.bloodthorn_value) + " reflected damage!");
+                // Bloodthorn companion change (P3, M 07-29): the thorns stay under
+                // the skin - MELEE attackers also start Bleeding (2/turn, 2 turns).
+                // Keeps Bloodthorn distinct now that Iron Skin can reflect too:
+                // reflect + DoT = the anti-melee-pack tool.
+                if (_in_melee_blow && !actor.is_defeated && variable_struct_exists(actor, "status_effects")) {
+                    array_push(actor.status_effects, {
+                        name: "Thorn Bleed", effect_type: "dot", kind: "dot",
+                        effect_value: 2, duration: 2, element: "bleed", source: "player"
+                    });
+                    array_push(combat_log, "The thorns stay in - " + actor.name + " is Bleeding!");
+                }
                 // Reflect can be the killing blow - run the shared kill handler
                 // (same rule as Soulbind below), or the enemy stands at 0 HP.
                 if (actor.HP <= 0 && !actor.is_defeated) combat_on_enemy_defeated(actor, player, combat_log);
@@ -3431,6 +4057,34 @@ if (player_turn) {
                     player.bloodthorn_active = false;
                     array_push(combat_log, "Bloodthorn Aura fades.");
                 }
+            }
+
+            // --- "Sharp Edges" web node (P3, 07-29): while Iron Skin holds, a melee
+            //     blow that LANDS takes the skin's reduction value back as damage. ---
+            if (variable_struct_exists(player, "sharp_edges_value") && player.sharp_edges_value > 0
+                && player.iron_skin_duration > 0 && _in_melee_blow && !actor.is_defeated) {
+                combat_apply_damage(actor, player.sharp_edges_value);
+                actor.hit_flash = max(actor.hit_flash, 8);
+                array_push(damage_popups, { value: player.sharp_edges_value, x: _ea_src_x, y: _ea_src_y - 45,
+                    timer: 40, delay: 8, col: make_color_rgb(190, 190, 210) });
+                array_push(combat_log, "Sharp Edges: " + actor.name + " cuts itself on the iron for " + string(player.sharp_edges_value) + "!");
+                if (actor.HP <= 0 && !actor.is_defeated) combat_on_enemy_defeated(actor, player, combat_log);
+            }
+
+            // --- "Blood Debt" web keystone (P3, 07-29): this blow shattered the
+            //     pact ward - it repays its full sealed value to the attacker. ---
+            if (variable_struct_exists(player, "pact_debt_due") && player.pact_debt_due) {
+                player.pact_debt_due   = false;
+                player.pact_debt_armed = false;
+                if (player.pact_debt > 0 && !actor.is_defeated) {
+                    combat_apply_damage(actor, player.pact_debt);
+                    actor.hit_flash = max(actor.hit_flash, 12);
+                    array_push(damage_popups, { value: player.pact_debt, x: _ea_src_x, y: _ea_src_y - 60,
+                        timer: 45, delay: 10, col: make_color_rgb(220, 60, 60) });
+                    array_push(combat_log, "BLOOD DEBT - the shattered pact repays " + actor.name + " with " + string(player.pact_debt) + "!");
+                    if (actor.HP <= 0 && !actor.is_defeated) combat_on_enemy_defeated(actor, player, combat_log);
+                }
+                player.pact_debt = 0;
             }
 
             // --- Soulbind: the bound enemy shares your pain - 40% reflected AND the
@@ -3475,6 +4129,11 @@ if (player_turn) {
                 array_push(combat_log, (_hit2 == "dodge")
                     ? ("You dodged " + actor.name + "'s second strike!")
                     : (actor.name + "'s second strike missed!"));
+                // The Ashen Blade (Duelist Arts): a dodge arms -1 AP on your next ability.
+                if (_hit2 == "dodge" && player.leg_ashen && !player.ashen_tempo_ready) {
+                    player.ashen_tempo_ready = true;
+                    array_push(combat_log, "The Ashen Blade hums - your next ability costs 1 less AP.");
+                }
             } else {
                 var _gross_incoming2 = actor.mechanic_value + combat_status_total(player, "vulnerable");
                 var _final_dmg2 = combat_resolve_damage(
@@ -3485,6 +4144,9 @@ if (player_turn) {
                 );
                 _final_dmg2 += combat_status_total(player, "vulnerable");
                 _final_dmg2 = max(1, _final_dmg2 - player.equip_armor);
+                // Boon flat armor (Shrine V2): covers the double strike too.
+                var _bfa2 = boon_flat_armor();
+                if (_bfa2 > 0) _final_dmg2 = max(1, _final_dmg2 - _bfa2);
                 if (boon_active("warding")) _final_dmg2 = max(1, round(_final_dmg2 * boon_incoming_mult()));
                 if (pet_egg_ward_mult() != 1.0) _final_dmg2 = max(1, round(_final_dmg2 * pet_egg_ward_mult()));   // Warding egg
                 if (curse_incoming_mult() != 1.0) _final_dmg2 = max(1, round(_final_dmg2 * curse_incoming_mult()));
@@ -3498,12 +4160,20 @@ if (player_turn) {
                     }
                     array_push(combat_log, "Evasive Roll! The blow is halved (+1 Preparation).");
                 }
+                // Second Skin covers the double strike too (if the first hit of the
+                // combat somehow IS the second strike).
+                _final_dmg2 = boon_second_skin_apply(player, _final_dmg2, combat_log);
                 var _dmg_blocked2 = max(0, _gross_incoming2 - _final_dmg2);
                 // Soul Shield absorbs the second strike too.
                 if (variable_struct_exists(player, "shield_hp") && player.shield_hp > 0 && _final_dmg2 > 0) {
                     var _sa2 = min(player.shield_hp, _final_dmg2);
                     player.shield_hp -= _sa2;
                     if (variable_struct_exists(player, "poise_shield") && player.poise_shield > 0) player.poise_shield = max(0, player.poise_shield - _sa2);
+                    // "Blood Debt" (P3): pact tracking covers the double strike too.
+                    if (variable_struct_exists(player, "pact_shield") && player.pact_shield > 0) {
+                        player.pact_shield = max(0, player.pact_shield - _sa2);
+                        if (player.shield_hp <= 0 && player.pact_debt_armed) player.pact_debt_due = true;
+                    }
                     _final_dmg2 -= _sa2;
                     array_push(combat_log, "Soul Shield absorbs " + string(_sa2) + " damage.");
                 }
@@ -3530,6 +4200,15 @@ if (player_turn) {
                     array_push(combat_log,
                         "Bloodthorn Aura: " + actor.name + " takes "
                         + string(player.bloodthorn_value) + " reflected damage!");
+                    // Bloodthorn companion change (P3, M 07-29): the double strike is
+                    // melee by nature - the thorns stay in and it Bleeds (2/2t).
+                    if (!actor.is_defeated && variable_struct_exists(actor, "status_effects")) {
+                        array_push(actor.status_effects, {
+                            name: "Thorn Bleed", effect_type: "dot", kind: "dot",
+                            effect_value: 2, duration: 2, element: "bleed", source: "player"
+                        });
+                        array_push(combat_log, "The thorns stay in - " + actor.name + " is Bleeding!");
+                    }
                     // Reflect can be the killing blow here too.
                     if (actor.HP <= 0 && !actor.is_defeated) combat_on_enemy_defeated(actor, player, combat_log);
                     player.bloodthorn_duration--;
@@ -3537,6 +4216,28 @@ if (player_turn) {
                         player.bloodthorn_active = false;
                         array_push(combat_log, "Bloodthorn Aura fades.");
                     }
+                }
+
+                // --- "Sharp Edges" (P3): the double strike is melee - the iron answers. ---
+                if (variable_struct_exists(player, "sharp_edges_value") && player.sharp_edges_value > 0
+                    && player.iron_skin_duration > 0 && !actor.is_defeated) {
+                    combat_apply_damage(actor, player.sharp_edges_value);
+                    actor.hit_flash = max(actor.hit_flash, 8);
+                    array_push(combat_log, "Sharp Edges: " + actor.name + " cuts itself on the iron for " + string(player.sharp_edges_value) + "!");
+                    if (actor.HP <= 0 && !actor.is_defeated) combat_on_enemy_defeated(actor, player, combat_log);
+                }
+
+                // --- "Blood Debt" (P3): the second strike can shatter the pact too. ---
+                if (variable_struct_exists(player, "pact_debt_due") && player.pact_debt_due) {
+                    player.pact_debt_due   = false;
+                    player.pact_debt_armed = false;
+                    if (player.pact_debt > 0 && !actor.is_defeated) {
+                        combat_apply_damage(actor, player.pact_debt);
+                        actor.hit_flash = max(actor.hit_flash, 12);
+                        array_push(combat_log, "BLOOD DEBT - the shattered pact repays " + actor.name + " with " + string(player.pact_debt) + "!");
+                        if (actor.HP <= 0 && !actor.is_defeated) combat_on_enemy_defeated(actor, player, combat_log);
+                    }
+                    player.pact_debt = 0;
                 }
 
                 // --- Soulbind lifelink covers the double strike too (audit §6 build). ---

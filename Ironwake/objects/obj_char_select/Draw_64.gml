@@ -605,7 +605,17 @@ if (touch_intro_open) {
     draw_set_color(c_black);
     draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
     draw_set_alpha(1.0);
-    var _tix1 = GUI_CX - 495, _tiy1 = GUI_CY - 285, _tix2 = GUI_CX + 495, _tiy2 = GUI_CY + 285;
+    // Panel height is MEASURED from the wrapped text (the pinch line grew the
+    // copy past the old fixed 570 box) so it can never collide with the button.
+    var _ti_txt = "Play however feels best: TAP things directly, or use the on-screen D-PAD to move a cursor and confirm."
+        + "\n\nHOLD an ability or creature to examine it."
+        + "\n\nPINCH with two fingers any time to zoom the screen; pinch back down to reset."
+        + "\n\nThe D-pad can be RESIZED or turned OFF any time via the SETTINGS chip at camp.";
+    draw_set_font(fnt_ui);
+    var _ti_th = string_height_ext(_ti_txt, 45, 900);
+    var _ti_ph = 132 + _ti_th + 36 + 63 + 66;   // title zone + text + gap + button + bottom pad
+    var _tix1 = GUI_CX - 495, _tiy1 = GUI_CY - _ti_ph / 2;
+    var _tix2 = GUI_CX + 495, _tiy2 = _tiy1 + _ti_ph;
     draw_set_color(make_color_rgb(14, 16, 24));
     draw_rectangle(_tix1, _tiy1, _tix2, _tiy2, false);
     ui_draw_gothic_frame(_tix1, _tiy1, _tix2, _tiy2, 24);
@@ -616,11 +626,7 @@ if (touch_intro_open) {
     draw_text(GUI_CX, _tiy1 + 42, "Touch Controls");
     draw_set_font(fnt_ui);
     draw_set_color(make_color_rgb(200, 208, 222));
-    draw_text_ext(GUI_CX, _tiy1 + 132,
-        "Play however feels best: TAP things directly, or use the on-screen D-PAD to move a cursor and confirm."
-        + "\n\nHOLD an ability or creature to examine it."
-        + "\n\nThe D-pad can be RESIZED or turned OFF any time via the SETTINGS chip at camp.",
-        45, 900);
+    draw_text_ext(GUI_CX, _tiy1 + 132, _ti_txt, 45, 900);
     var _tib_x1 = GUI_CX - 165, _tib_y1 = _tiy2 - 129, _tib_x2 = GUI_CX + 165, _tib_y2 = _tiy2 - 66;
     draw_set_color(make_color_rgb(20, 34, 58));
     draw_rectangle(_tib_x1, _tib_y1, _tib_x2, _tib_y2, false);

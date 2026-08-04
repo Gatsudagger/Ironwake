@@ -219,3 +219,29 @@ hub_flavor = hub_flavor_lines[irandom(array_length(hub_flavor_lines) - 1)];
 // saved tutorial flags. See SYSTEMS_ONBOARDING.md.
 // -----------------------------------------------------------------------------
 tutorial_try_show("hub");
+
+// -----------------------------------------------------------------------------
+// 8. PINCH ZOOM INTRO (SYSTEMS_PINCH_ZOOM.md, locked decision #3) - one-time
+// popup on the first HUB visit on a touch device. Seen-flag is DEVICE-level in
+// settings.ini [touch] (like the char-create touch intro), not the save. The
+// browser gate matches touch_pinch_update: no pinch support on HTML5.
+// -----------------------------------------------------------------------------
+touch_settings_init();
+ini_open("settings.ini");
+zoom_intro_open = (input_device() == 2)
+    && (os_browser == browser_not_a_browser)
+    && (ini_read_real("touch", "zoom_intro_seen", 0) < 0.5);
+
+// -----------------------------------------------------------------------------
+// 9. HUB NPC CAROUSEL (SYSTEMS_HUB_CAROUSEL.md, M design-locked 07-30).
+// One layout on all platforms, but Windows/HTML5 keep a REVERSION flag: set
+// [ui] hub_carousel=0 in settings.ini to restore the legacy stacked list.
+// Android is always carousel - it exists for phone legibility. Read on every
+// hub entry so a flip needs no restart.
+// -----------------------------------------------------------------------------
+hub_use_carousel = (os_type == os_android)
+    || (ini_read_real("ui", "hub_carousel", 1) >= 0.5);
+ini_close();
+carousel_last  = 0;     // NPC shown on stage while the gate button holds focus
+carousel_prev  = -1;    // stage anim: last NPC drawn (frame reset on change)
+carousel_frame = 0;     // stage anim: idle frame accumulator

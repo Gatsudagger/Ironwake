@@ -251,6 +251,13 @@ function combat_roll_crit(attacker_stats, ability_base_crit, crit_type) {
     if (variable_struct_exists(attacker_stats, "crit_bonus")) {
         chance += attacker_stats.crit_bonus;
     }
+    // Typed crit gear (07-31): STR/DEX (Power/Precision) rolls take phys crit,
+    // INT/WIS (Arcane/Effect) rolls take spell crit. Enemies carry neither.
+    if (crit_type <= 1) {
+        if (variable_struct_exists(attacker_stats, "crit_phys_bonus"))  chance += attacker_stats.crit_phys_bonus;
+    } else {
+        if (variable_struct_exists(attacker_stats, "crit_spell_bonus")) chance += attacker_stats.crit_spell_bonus;
+    }
 
     if (irandom(99) >= chance) return result; // no crit
 
@@ -412,7 +419,8 @@ function combat_estimate_hit(ability, caster, target) {
             && (ability.damage_type == 0 || ability.damage_type == 3)
             && instance_exists(obj_combat_controller)) {
             var _wp_round = variable_struct_exists(caster, "warpath_round") ? caster.warpath_round : 0;
-            _final += 2 * max(0, instance_find(obj_combat_controller, 0).combat_state.round - _wp_round);
+            var _wp_rate  = variable_struct_exists(caster, "warpath_rate")  ? caster.warpath_rate  : 2;   // Crescendo (P3)
+            _final += _wp_rate * max(0, instance_find(obj_combat_controller, 0).combat_state.round - _wp_round);
         }
         // Compounding Dread (07-16): mirror the accumulated trap bonus in the preview.
         if (variable_struct_exists(caster, "dread_bonus") && caster.dread_bonus > 0
@@ -442,7 +450,7 @@ function combat_estimate_hit(ability, caster, target) {
     if (_live_tgt && _est_aspect > 0) _final = round(_final * (1 + _est_aspect));
     if (_live_tgt) {
         var _est_thf = (target.max_HP > 0) ? (target.HP / target.max_HP) : 1;
-        var _est_bm  = boon_damage_mult(_est_thf);
+        var _est_bm  = boon_damage_mult(_est_thf, caster);
         if (_est_bm != 1.0) _final = max(1, round(_final * _est_bm));
         var _est_corr = pet_corruption_player_dmg_mult();
         if (_est_corr != 1.0) _final = max(1, round(_final * _est_corr));
@@ -514,6 +522,44 @@ function combat_apply_damage(target_struct, damage) {
     var prev_hp         = target_struct.HP;
     target_struct.HP    = max(0, target_struct.HP - damage);
     var actual_dealt    = prev_hp - target_struct.HP;
+    // Blood Tithe blessing (Shrine V2, 07-29): bank 1 gold per HP the PLAYER
+    // loses, any source (hits, spells, DoT ticks all funnel through this sink).
+    // The pouch pays out in end_run on extraction; death forfeits it.
+    if (actual_dealt > 0 && variable_struct_exists(target_struct, "is_player")
+        && target_struct.is_player && boon_active("bloodtithe")) {
+        if (!variable_global_exists("bloodtithe_bank")) global.bloodtithe_bank = 0;
+        global.bloodtithe_bank += actual_dealt;
+    }
+    // Echo Shriek (crypt_bat signature move, 08-01 pillar D): the FIRST time the
+    // player falls below 40% max HP each combat, the shriek lays EVERY living
+    // enemy Exposed. Hooked here because every damage path funnels through this
+    // sink; the once-flag rides the per-combat player struct.
+    if (actual_dealt > 0 && variable_struct_exists(target_struct, "is_player") && target_struct.is_player
+        && variable_struct_exists(target_struct, "max_HP") && target_struct.max_HP > 0
+        && target_struct.HP < target_struct.max_HP * 0.40
+        && !variable_struct_exists(target_struct, "sig_shriek_done")
+        && pet_active_sig_move("echo_shriek")
+        && instance_exists(obj_combat_controller)) {
+        target_struct.sig_shriek_done = true;
+        var _es_cc = instance_find(obj_combat_controller, 0);
+        var _es_n  = 0;
+        for (var _es_i = 0; _es_i < array_length(_es_cc.combat_state.combatants); _es_i++) {
+            var _es_c = _es_cc.combat_state.combatants[_es_i];
+            if (_es_c.is_player || _es_c.is_defeated) continue;
+            if (!variable_struct_exists(_es_c, "status_effects")) continue;
+            array_push(_es_c.status_effects, {
+                name:         "Echo Shriek",
+                effect_type:  "debuff",
+                kind:         "vulnerable",
+                effect_value: 2,
+                duration:     2,
+                element:      "",
+                source:       "pet"
+            });
+            _es_n++;
+        }
+        if (_es_n > 0) array_push(_es_cc.combat_log, "[Companion] " + pet_active().name + " SHRIEKS into the dark - every foe is laid Exposed!");
+    }
     return actual_dealt;
 }
 
@@ -774,6 +820,32 @@ function combat_apply_start_traits(player) {
         if (!variable_struct_exists(player, "shield_hp")) player.shield_hp = 0;
         player.shield_hp += _bast;
     }
+
+    // --- Shrine Blessings V2 (07-29): per-combat blessing state ---------------
+    player.second_skin_used = false;   // Second Skin: first hit each combat halved
+    player.whet_echo_used   = false;   // Whetstone Echo: first damaging ability echoes 40%
+    player.boon_cast_count  = 0;       // Third Wind: every 3rd cast this combat -1 AP
+    global.feast_stacks     = 0;       // Feast of Crows: corpses this combat (dmg/armor stacks)
+
+    // --- Talent-web P3 (07-29): per-combat bespoke-node state -----------------
+    player.overdrive_used   = false;   // Adrenaline Rush "Overdrive": once per combat
+    player.sharp_edges_value = 0;      // Iron Skin "Sharp Edges": armed at cast
+    player.pact_shield = 0; player.pact_debt = 0;                  // Sanguine Pact "Blood Debt"
+    player.pact_debt_armed = false; player.pact_debt_due = false;
+    global.last_kill_round  = -1;      // Soul Harvest "Reaper's Tempo" round stamp
+    // Soul Shield "Unbroken": the remnant banked at last victory carries in.
+    if (variable_global_exists("unbroken_shield") && global.unbroken_shield > 0) {
+        if (!variable_struct_exists(player, "shield_hp")) player.shield_hp = 0;
+        player.shield_hp += global.unbroken_shield;
+        global.unbroken_shield = 0;
+    }
+    // Gambler's Icon cooldown ledger: a proc last fight arms 2 resting fights
+    // (proc -> rest -> rest -> eligible). Eligibility is read at the drop roll
+    // (boon_gambler_tier_bonus) as gambler_cd == 0.
+    if (!variable_global_exists("gambler_cd"))   global.gambler_cd   = 0;
+    if (!variable_global_exists("gambler_proc")) global.gambler_proc = false;
+    if (global.gambler_proc)        { global.gambler_cd = 2; global.gambler_proc = false; }
+    else if (global.gambler_cd > 0) { global.gambler_cd -= 1; }
 }
 
 // ---------------------------------------------------------------------------
@@ -802,6 +874,18 @@ function combat_check_phantom_step(player, combat_log) {
 // ---------------------------------------------------------------------------
 function combat_try_last_stand(player, combat_log) {
     if (player.HP > 0) return false;
+    // THE ASHEN DUELIST'S MERCY (DESIGN_DUELIST_CHALLENGE.md, M-locked 07-29):
+    // in a duel his killing blow STOPS at 1 HP - the duel ends, he heals you to
+    // room-entry HP, and it is NEVER a death: no gravestone, no Iron Vow life,
+    // no once-per-run trait consumed. This is the single lethal gate, so every
+    // damage source in the duel funnels through here. The Step_0 mercy block
+    // sees duel_mercy_fired next frame and closes the fight.
+    if (variable_global_exists("duel_active") && global.duel_active) {
+        player.HP = 1;
+        global.duel_mercy_fired = true;
+        array_push(combat_log, "The blade stops a hair from your throat. The duel is over.");
+        return true;
+    }
     // UNDYING fires first (Bloodwarden cast, armed per-cast - spend it before the
     // once-per-run trait). Audit §6 build: on trigger you surge back to 25% max HP
     // and your defiance grants 3 Blood. This function is the single lethal gate,
@@ -1005,6 +1089,29 @@ function combat_control_resist_try(target, kind) {
 // Returns the removed status's display name, or "" if nothing to cleanse.
 // (M 07-28 AI pass: A2+ enemy heals carry this as a rider - see the heal branch
 // in obj_combat_controller Step - so perma-control has an in-fiction answer.)
+// Mandate from Heaven (P4, M-approved 07-30): true while a player-sourced
+// status is under heaven's seal and cannot be cleansed - 2 turns from
+// application (3 Transcended). Unstamped = just applied = protected; the enemy
+// status tick stamps applied_round on first sight. The control-resist ramp is
+// deliberately NOT bypassed (resist is the enemy fighting through, not a cleanse).
+function combat_status_mandate_protected(se) {
+    if (!trait_active("Mandate from Heaven")) return false;
+    if (!variable_struct_exists(se, "source") || se.source != "player") return false;
+    var _n = trait_transcended("Mandate from Heaven") ? 3 : 2;
+    if (!variable_struct_exists(se, "applied_round")) return true;
+    if (!instance_exists(obj_combat_controller)) return true;
+    return (instance_find(obj_combat_controller, 0).combat_state.round - se.applied_round) < _n;
+}
+
+// True when the combatant carries at least one Mandate-sealed status (for the
+// "the mending fails" log line at the enemy-heal cleanse rider).
+function combat_any_mandate_protected(c) {
+    if (!variable_struct_exists(c, "status_effects")) return false;
+    for (var _i = 0; _i < array_length(c.status_effects); _i++)
+        if (combat_status_mandate_protected(c.status_effects[_i])) return true;
+    return false;
+}
+
 function combat_cleanse_one(c) {
     if (!variable_struct_exists(c, "status_effects")) return "";
     var _pri = ["stun", "root", "silence"];
@@ -1012,6 +1119,7 @@ function combat_cleanse_one(c) {
         for (var _i = array_length(c.status_effects) - 1; _i >= 0; _i--) {
             var _se = c.status_effects[_i];
             if (combat_status_kind_of(_se) == _pri[_p]) {
+                if (combat_status_mandate_protected(_se)) continue;   // P4: the seal holds
                 var _nm = variable_struct_exists(_se, "name") ? _se.name : ("the " + _pri[_p]);
                 array_delete(c.status_effects, _i, 1);
                 return _nm;
@@ -1021,6 +1129,7 @@ function combat_cleanse_one(c) {
     for (var _i = array_length(c.status_effects) - 1; _i >= 0; _i--) {
         var _se = c.status_effects[_i];
         if (variable_struct_exists(_se, "source") && _se.source == "player") {
+            if (combat_status_mandate_protected(_se)) continue;   // P4: the seal holds
             var _nm = variable_struct_exists(_se, "name") ? _se.name : "a lingering effect";
             array_delete(c.status_effects, _i, 1);
             return _nm;
@@ -1265,6 +1374,10 @@ function combat_heal_after_mortality(c, amount) {
     if (variable_struct_exists(c, "is_player") && c.is_player && curse_heal_mult() != 1.0) {
         amount = amount * curse_heal_mult();
     }
+    // Empty Comfort (hollow_pup innate, 08-01): +5% to all healing the player receives.
+    if (variable_struct_exists(c, "is_player") && c.is_player && pet_active_innate("heal_recv") > 0) {
+        amount = amount * (1 + pet_active_innate("heal_recv") / 100);
+    }
     var _m = combat_status_max(c, "mortality");
     if (_m <= 0) return max(0, floor(amount));
     return max(0, floor(amount * (1 - _m)));
@@ -1280,6 +1393,9 @@ function combat_mitigate_player(player, raw, dtype, log) {
     _d += combat_status_total(player, "vulnerable");
     _d = max(0, _d - player.damage_reduction);
     _d = max(1, _d - player.equip_armor);
+    // Boon flat armor (Shrine V2): Ironhide +2 / Feast of Crows +2 per corpse.
+    var _bfa = boon_flat_armor();
+    if (_bfa > 0) _d = max(1, _d - _bfa);
     if (dtype == 0 && variable_struct_exists(player, "derived") && player.derived.phys_dmg_reduction > 0) {
         _d = max(1, ceil(_d * (1.0 - (player.derived.phys_dmg_reduction / 100.0))));
     }
@@ -1289,9 +1405,18 @@ function combat_mitigate_player(player, raw, dtype, log) {
     if (pet_egg_ward_mult() != 1.0) _d = max(1, round(_d * pet_egg_ward_mult()));
     // Curse penalties (Exposed/Ruin): flat % incoming-damage increase.
     if (curse_incoming_mult() != 1.0) _d = max(1, round(_d * curse_incoming_mult()));
+    // Second Skin blessing (Shrine V2): the first hit each combat is halved -
+    // applied before the shield so the ward isn't spent on the waived half.
+    _d = boon_second_skin_apply(player, _d, log);
     if (variable_struct_exists(player, "shield_hp") && player.shield_hp > 0 && _d > 0) {
         var _sa = min(player.shield_hp, _d);
         player.shield_hp -= _sa;
+        // "Blood Debt" (P3): the pact share depletes here too; the caller (which
+        // knows the attacker) resolves pact_debt_due after the damage lands.
+        if (variable_struct_exists(player, "pact_shield") && player.pact_shield > 0) {
+            player.pact_shield = max(0, player.pact_shield - _sa);
+            if (player.shield_hp <= 0 && player.pact_debt_armed) player.pact_debt_due = true;
+        }
         _d -= _sa;
         array_push(log, "Soul Shield absorbs " + string(_sa) + " damage.");
     }
@@ -1527,10 +1652,75 @@ function combat_on_enemy_defeated(target, player, combat_log) {
     enemy_death_sound(target.name);
     array_push(combat_log, target.name + " defeated!");
 
+    // Stamp the round of the latest kill ("Reaper's Tempo" web node reads it -
+    // Soul Harvest pays +1 when an enemy died this same round).
+    if (instance_exists(obj_combat_controller)) {
+        global.last_kill_round = instance_find(obj_combat_controller, 0).combat_state.round;
+    }
+
+    // Last Words (duskraven innate, 08-01): +15 gold when an ELITE falls. The
+    // elite is the FIRST enemy slot of an elite encounter; its escort adds pay
+    // nothing. (DoT kills use the inline Step_0 path and skip this - v1 scope.)
+    if (pet_active_innate("elite_gold") > 0
+        && variable_global_exists("next_enemy_type") && global.next_enemy_type == "elite"
+        && instance_exists(obj_combat_controller)) {
+        var _lw_cs = instance_find(obj_combat_controller, 0).combat_state;
+        for (var _lw_i = 0; _lw_i < array_length(_lw_cs.combatants); _lw_i++) {
+            if (_lw_cs.combatants[_lw_i].is_player) continue;
+            if (_lw_cs.combatants[_lw_i] == target) {
+                add_gold(pet_active_innate("elite_gold"));
+                array_push(combat_log, "[Companion] " + pet_active().name + " collects " + target.name
+                    + "'s last words (+" + string(pet_active_innate("elite_gold")) + "g).");
+            }
+            break;   // only the first enemy slot is the elite
+        }
+    }
+
+    // Feast of Crows blessing (Shrine V2, 07-29): each corpse crowns you - +8%
+    // damage and +2 armor per stack until the combat ends (reset per combat).
+    if (boon_active("feast")) {
+        if (!variable_global_exists("feast_stacks")) global.feast_stacks = 0;
+        global.feast_stacks += 1;
+        array_push(combat_log, "Feast of Crows: the crown swells (+"
+            + string(global.feast_stacks * 8) + "% damage, +" + string(global.feast_stacks * 2) + " armor).");
+    }
+
+    // Pyre's Favor blessing (Shrine V2, 07-29): the corpse's remaining afflictions
+    // detonate - every unspent DoT tick (value x turns left) erupts as one blast
+    // onto each other living enemy. DoT builds turn packs into chain reactions.
+    if (boon_active("pyre") && variable_struct_exists(target, "status_effects")
+        && instance_exists(obj_combat_controller)) {
+        var _py_sum = 0;
+        for (var _py_i = 0; _py_i < array_length(target.status_effects); _py_i++) {
+            var _py_se = target.status_effects[_py_i];
+            if (combat_status_kind_of(_py_se) != "dot") continue;
+            var _py_dur = variable_struct_exists(_py_se, "duration") ? _py_se.duration : 0;
+            _py_sum += max(0, _py_se.effect_value * _py_dur);
+        }
+        if (_py_sum > 0) {
+            var _py_cs   = instance_find(obj_combat_controller, 0).combat_state;
+            var _py_hits = [];
+            for (var _py_j = 0; _py_j < array_length(_py_cs.combatants); _py_j++) {
+                var _py_c = _py_cs.combatants[_py_j];
+                if (!_py_c.is_player && !_py_c.is_defeated && _py_c != target) array_push(_py_hits, _py_c);
+            }
+            if (array_length(_py_hits) > 0) {
+                array_push(combat_log, "PYRE'S FAVOR - " + target.name + "'s afflictions detonate for "
+                    + string(_py_sum) + " to every other foe!");
+                for (var _py_k = 0; _py_k < array_length(_py_hits); _py_k++) {
+                    var _py_t = _py_hits[_py_k];
+                    combat_apply_damage(_py_t, _py_sum);
+                    _py_t.hit_flash = max(_py_t.hit_flash, 12);
+                    if (_py_t.HP <= 0 && !_py_t.is_defeated) combat_on_enemy_defeated(_py_t, player, combat_log);
+                }
+            }
+        }
+    }
+
     // Sanguine Chalice (07-28 legendary): overkill damage (HP driven below 0)
     // returns to the bearer as healing, up to 15.
     if (variable_struct_exists(player, "leg_chalice") && player.leg_chalice && target.HP < 0) {
-        var _sc_heal = min(15, -target.HP);
+        var _sc_heal = min(20, -target.HP);   // cap 15 -> 20 (07-29 M buff pass)
         var _sc_real = min(player.max_HP - player.HP, _sc_heal);
         if (_sc_real > 0) {
             player.HP += _sc_real;
@@ -1596,10 +1786,18 @@ function combat_on_enemy_defeated(target, player, combat_log) {
 
     // Gold drop (Greed boon: +50%; curse gold-find reward stacks on top)
     var _gold_drop = irandom(target.gold_max - target.gold_min) + target.gold_min;
-    if (boon_active("greed")) _gold_drop = round(_gold_drop * (1 + boon_value("greed")));
+    if (boon_active("greed")) {
+        _gold_drop = round(_gold_drop * (1 + boon_value("greed")));
+        // Greed V2 (07-29): elite/boss kills also drop a bonus purse (+75g).
+        var _gr_type = variable_global_exists("next_enemy_type") ? global.next_enemy_type : "standard";
+        if (_gr_type == "elite" || _gr_type == "boss") {
+            _gold_drop += 75;
+            array_push(combat_log, "Greed: a heavy purse tumbles loose (+75g).");
+        }
+    }
     _gold_drop = round(_gold_drop * curse_gold_mult());
     _gold_drop = round(_gold_drop * potion_gold_mult());   // Goldfinger Elixir (+gold, 2-boss buff)
-    _gold_drop = round(_gold_drop * (1 + pet_active_boon_gold_pct() + pet_active_lck_gold_pct() + pet_active_splash_gold_pct() + pet_active_egg_bonus("gold")));   // Fortune pet gift + universal LCK + Gilded-Soul splash + Gilded-egg hatchling
+    _gold_drop = round(_gold_drop * (1 + pet_active_boon_gold_pct() + pet_active_lck_gold_pct() + pet_active_splash_gold_pct() + pet_active_egg_bonus("gold") + pet_active_innate("gold") / 100));   // Fortune pet gift + universal LCK + Gilded-Soul splash + Gilded-egg hatchling + Gemcrust innate (08-01)
     add_gold(_gold_drop);
     global.current_run_kills++;
     global.total_kills++;   // lifetime counter - was initialized/saved/shown but never incremented (hub always read 0)
@@ -1618,7 +1816,7 @@ function combat_on_enemy_defeated(target, player, combat_log) {
         var _bonus_item = drop_equipment(drop_weights(_drop_type, _bonus_asc), true, curse_loot_tier_bonus_for(_drop_type));
         if (variable_global_exists("run_items_found")) array_push(global.run_items_found, _bonus_item);
         if (variable_global_exists("carried_items"))   array_push(global.carried_items, _bonus_item);
-        discover_item(item_base_name(_bonus_item));
+        discover_item(item_base_name(_bonus_item), _bonus_item.rarity);
         array_push(combat_log, "Devil's Pact: " + _bonus_item.name + " [" + item_rarity_name(_bonus_item.rarity) + "]!");
     }
 
@@ -1675,7 +1873,7 @@ function combat_on_enemy_defeated(target, player, combat_log) {
 
     // Heartstone Aegis: heal 5 HP on enemy death
     if (variable_struct_exists(player, "heartstone_aegis") && player.heartstone_aegis) {
-        var _aegis_heal = min(5, player.max_HP - player.HP);
+        var _aegis_heal = min(6, player.max_HP - player.HP);   // 5 -> 6 (07-29 M buff pass)
         if (_aegis_heal > 0) {
             player.HP += _aegis_heal;
             array_push(combat_log, "Heartstone Aegis: +" + string(_aegis_heal) + " HP.");
@@ -1736,6 +1934,8 @@ function combat_check_victory(combat_state) {
 // caller then adds a brief pause before enemies). Numbers are conservative + TBD-balance.
 // ---------------------------------------------------------------------------
 function combat_pet_act(combat_state, player, combat_log, damage_popups) {
+    // Ashen Duelist (M-locked): the duel is STRICTLY 1v1 - the companion sits out.
+    if (variable_global_exists("duel_active") && global.duel_active) return false;
     var _p = pet_active();
     if (_p == undefined || _p.is_egg || _p.stage < PET_STAGE_YOUNGADULT) return false;
     var _adult = (_p.stage >= PET_STAGE_ADULT);
@@ -1743,7 +1943,7 @@ function combat_pet_act(combat_state, player, combat_log, damage_popups) {
     _imult *= pet_hunger_mult(_p);              // hungry -25%; STARVING = benched (07-08)
     if (_imult <= 0) return false;
     if (pet_hp(_p) <= 0) return false;          // #20: knocked out - benched until healed (run end / food)
-    var _cmult     = pet_corruption_mult(_p) * pet_bond_mult(_p);   // corruption +15%/run + Soul-bound +5% (§5 Axis 3)
+    var _cmult     = pet_corruption_mult(_p) * pet_bond_mult(_p) * pet_quirk_mult(_p);   // corruption +15%/run + Soul-bound +5% (§5 Axis 3) + quirks (08-01 pillar C)
     var _fulfilled = pet_is_fulfilled(_p);       // fully corrupted -> grand archetype ability
     var _kit = pet_kit_mods(_p);                 // named-kit modifiers (traits/abilities, Pets §5)
 

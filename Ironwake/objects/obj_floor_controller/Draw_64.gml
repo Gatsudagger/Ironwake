@@ -854,6 +854,38 @@ if (showing_shrine) {
     draw_text(_sh_x + _sh_ic * 2 + string_width(_sh_g) + string_width(_sh_l), 198, _sh_v);
     draw_set_halign(fa_center);
 
+    // --- V2 reroll chip (blessing altars only): one dust reshuffle per shrine.
+    // Drawn beside the header band, right of the scrim (x1620..1856 sits clear of
+    // the rows at x330..1590 and the centered readout). Tap = press R (arm/commit
+    // handled in Step); grayed once used or when dust can't cover it.
+    if (!_is_curse) {
+        var _rr_cost  = shrine_reroll_cost();
+        var _rr_can   = !shrine_rerolled && _sdu >= _rr_cost;
+        var _rr_x0 = 1620, _rr_y0 = 158, _rr_x1 = 1856, _rr_y1 = 212;
+        draw_set_color(_rr_can ? make_color_rgb(35, 30, 18) : make_color_rgb(22, 22, 26));
+        draw_rectangle(_rr_x0, _rr_y0, _rr_x1, _rr_y1, false);
+        draw_set_color(shrine_reroll_arm ? make_color_rgb(255, 230, 140)
+            : (_rr_can ? make_color_rgb(200, 160, 120) : make_color_rgb(70, 70, 80)));
+        draw_rectangle(_rr_x0, _rr_y0, _rr_x1, _rr_y1, true);
+        draw_set_font(fnt_ui_small);
+        draw_set_halign(fa_center);
+        if (shrine_rerolled) {
+            draw_set_color(make_color_rgb(110, 110, 122));
+            draw_text((_rr_x0 + _rr_x1) * 0.5, _rr_y0 + 14, "REROLLED");
+        } else {
+            var _rr_txt = (shrine_reroll_arm ? "CONFIRM " : "[R] REROLL ") + string(_rr_cost);
+            var _rr_tw  = string_width(_rr_txt) + 26;
+            var _rr_tx  = (_rr_x0 + _rr_x1) * 0.5 - _rr_tw * 0.5;
+            draw_set_halign(fa_left);
+            draw_set_color(_rr_can ? make_color_rgb(230, 220, 190) : make_color_rgb(120, 110, 110));
+            draw_text(_rr_tx, _rr_y0 + 14, _rr_txt);
+            draw_sprite_stretched(spr_icon_dust, 0, _rr_tx + string_width(_rr_txt) + 4, _rr_y0 + 13, 24, 24);
+            draw_set_halign(fa_center);
+        }
+        // Touch: the chip is the button (arm on first tap, commit on second).
+        if (input_device() == 2 && touch_tapped(_rr_x0, _rr_y0, _rr_x1, _rr_y1)) touch_press(ord("R"));
+    }
+
     // Hover-inspect capture for the suggested "[3] Sacrifice ..." item; drawn last
     // (after the gothic frame) so the tooltip sits on top of everything.
     var _shrine_tip_item = undefined;
@@ -978,6 +1010,15 @@ if (showing_shrine) {
         // 07-10 restack: rows end at y922 (490 + 2*150 + 132) - the line sits
         // between the last row and the y990 key legend.
         draw_text(GUI_CX, 940, shrine_notification);
+    } else if (!_is_curse && _sn > 0) {
+        // V2 flavor whisper: the highlighted blessing's one-liner rides the empty
+        // notification slot (the rows are too dense for a 4th text line each).
+        var _flv_bd = boon_get(shrine_offers[shrine_cursor]);
+        if (_flv_bd != undefined && variable_struct_exists(_flv_bd, "flavor")) {
+            draw_set_font(fnt_ui_small);
+            draw_set_color(make_color_rgb(170, 150, 120));
+            draw_text(GUI_CX, 940, "\"" + _flv_bd.flavor + "\"");
+        }
     }
     if (input_device() == 2) {
         // Touch instruction line (the offer rows + price labels are the buttons)
@@ -992,7 +1033,7 @@ if (showing_shrine) {
             ? ((_sn == 0)
                 ? "No curse remains  -  Esc: Leave"
                 : "W/S: Select     Enter: Embrace the curse - confirms twice  (the altar will not release you)")
-            : "W/S: Select     1: Gold     2: Dust     3: Item     Esc: Leave");
+            : "W/S: Select     1: Gold     2: Dust     3: Item     R: Reroll     Esc: Leave");
     }
     draw_set_halign(fa_center);
 

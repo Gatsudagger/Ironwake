@@ -191,7 +191,7 @@ var _pscale = 345 / max(1, sprite_get_height(_pspr));
 // the player, facing east toward the enemies, idling via its looping directional
 // sprite. All archetypes are PRESENT (sells the "it's with you" lore); only
 // Combatant pets act on their own turn. Display height grows with Stage.
-var _pet_co = pet_active();
+var _pet_co = global.duel_active ? undefined : pet_active();   // duel: the companion waits outside the hall
 if (_pet_co != undefined && !_pet_co.is_egg) {
     var _petspr = pet_sprite(_pet_co, "e");
     if (_petspr >= 0) {
@@ -221,6 +221,20 @@ if (_pet_co != undefined && !_pet_co.is_egg) {
         // Procedural attack lunge: on a Combatant strike (global.pet_lunge_t0), the pet
         // surges toward the enemies (right) and snaps back over ~260ms, with a squash-
         // stretch and a white impact flash at the apex. Purely code-driven (no attack art).
+        // Facing (M 07-29): everyone holds the east combat facing EXCEPT a
+        // Guardian tending the hero (mender/cleanser stance) - it turns to face
+        // them. Mirrored around the visible-center anchor so the flip doesn't
+        // shift the creature sideways (draw x holds the sprite ORIGIN, so the
+        // mirrored origin is reflected across the feet anchor _petx).
+        var _face_sign = 1;
+        if (_pet_co.archetype == PET_ARCH_GUARDIAN) {
+            var _gstance = pet_stance(_pet_co);
+            if (_gstance == "mender" || _gstance == "cleanser") {
+                _face_sign = -1;
+                _pdx = 2 * _petx - _pdx;
+            }
+        }
+
         var _lunge_dx = 0, _sx = _petsc, _flash = 0;
         var _lt0 = variable_global_exists("pet_lunge_t0") ? global.pet_lunge_t0 : -100000;
         var _lprog = (current_time - _lt0) / 260;
@@ -239,19 +253,19 @@ if (_pet_co != undefined && !_pet_co.is_egg) {
         if (_aura >= 0) {
             var _apulse = 0.22 + 0.12 * sin(current_time / 340);
             gpu_set_blendmode(bm_add);
-            draw_sprite_ext(_petspr, pet_anim_frame(_petspr), _pdx + _lunge_dx, _pdy + 4, _sx * 1.10, _petsc * 1.10, 0, _aura, _apulse);
-            draw_sprite_ext(_petspr, pet_anim_frame(_petspr), _pdx + _lunge_dx, _pdy + 2, _sx * 1.04, _petsc * 1.04, 0, _aura, _apulse * 0.8);
+            draw_sprite_ext(_petspr, pet_anim_frame(_petspr), _pdx + _lunge_dx, _pdy + 4, _face_sign * _sx * 1.10, _petsc * 1.10, 0, _aura, _apulse);
+            draw_sprite_ext(_petspr, pet_anim_frame(_petspr), _pdx + _lunge_dx, _pdy + 2, _face_sign * _sx * 1.04, _petsc * 1.04, 0, _aura, _apulse * 0.8);
             gpu_set_blendmode(bm_normal);
         }
-        draw_sprite_ext(_petspr, pet_anim_frame(_petspr), _pdx + _lunge_dx, _pdy, _sx, _petsc, 0, c_white, 1.0);
+        draw_sprite_ext(_petspr, pet_anim_frame(_petspr), _pdx + _lunge_dx, _pdy, _face_sign * _sx, _petsc, 0, c_white, 1.0);
         // Corruption dressing (07-09 art track): pushing = violet flicker,
         // fulfilled = dark aura + orbiting motes. Same transform as the base draw.
         ui_draw_pet_corruption_fx(_pet_co, _petspr, pet_anim_frame(_petspr),
-            _pdx + _lunge_dx, _pdy, _sx, _petsc, _petx + _lunge_dx, _pety - _peth_t * 0.5);
+            _pdx + _lunge_dx, _pdy, _face_sign * _sx, _petsc, _petx + _lunge_dx, _pety - _peth_t * 0.5);
         // Additive white flash on the sprite at the strike apex.
         if (_flash > 0) {
             gpu_set_blendmode(bm_add);
-            draw_sprite_ext(_petspr, pet_anim_frame(_petspr), _pdx + _lunge_dx, _pdy, _sx, _petsc, 0, c_white, _flash);
+            draw_sprite_ext(_petspr, pet_anim_frame(_petspr), _pdx + _lunge_dx, _pdy, _face_sign * _sx, _petsc, 0, c_white, _flash);
             gpu_set_blendmode(bm_normal);
         }
         // Guard/HP chip MOVED (M 07-09): the over-head text was awkward and hard to
@@ -555,7 +569,7 @@ if (player_turn && !combat_over) {
         // path). Same gate as the Step handler, so the button only exists when a
         // guarded-stance Warrior companion is actually intercepting. Sits left of
         // END TURN, clear of the d-pad gutter (its footprint is masked anyway).
-        var _gd_pet = pet_active();
+        var _gd_pet = global.duel_active ? undefined : pet_active();   // duel: no companion, no GUARD button
         if (_gd_pet != undefined && !_gd_pet.is_egg && _gd_pet.stage >= PET_STAGE_YOUNGADULT
             && _gd_pet.archetype == PET_ARCH_COMBATANT && pet_stance(_gd_pet) == "guarded") {
             var _gd_off = pet_guard_off(_gd_pet);
@@ -1137,6 +1151,31 @@ if (!combat_over && consumable_overflow_pending()
 }
 
 
+// DUEL PAR CHIP (DESIGN_DUELIST_CHALLENGE.md): visible from round 1 - par,
+// current round, and the grade the clock currently reads (gold/steel/bronze
+// tint). Top-center strip, measured width, clear of the side HUDs and the log.
+if (global.duel_active && !combat_over) {
+    var _dp_par = variable_global_exists("duel_par") ? global.duel_par : 6;
+    var _dp_rnd = combat_state.round;
+    var _dp_txt = "DUEL  -  PAR " + string(_dp_par) + " TURNS  -  ROUND " + string(_dp_rnd);
+    var _dp_col = (_dp_rnd <= _dp_par) ? make_color_rgb(235, 200, 110)
+                : ((_dp_rnd <= _dp_par + 2) ? make_color_rgb(200, 205, 215) : make_color_rgb(205, 140, 100));
+    draw_set_font(fnt_ui_small);
+    var _dp_w  = string_width(_dp_txt) + 44;
+    var _dp_x0 = GUI_CX - _dp_w * 0.5, _dp_y0 = 8, _dp_x1 = GUI_CX + _dp_w * 0.5, _dp_y1 = 48;
+    draw_set_alpha(0.85);
+    draw_set_color(make_color_rgb(26, 20, 14));
+    draw_rectangle(_dp_x0, _dp_y0, _dp_x1, _dp_y1, false);
+    draw_set_alpha(1.0);
+    draw_set_color(_dp_col);
+    draw_rectangle(_dp_x0, _dp_y0, _dp_x1, _dp_y1, true);
+    draw_set_halign(fa_center);
+    draw_set_valign(fa_top);
+    draw_text(GUI_CX, _dp_y0 + 10, _dp_txt);
+    draw_set_halign(fa_left);
+    draw_set_font(-1);
+}
+
 // -----------------------------------------------------------------------------
 // 5. COMBAT RESULT OVERLAY
 // Drawn on top of everything when combat is resolved.
@@ -1185,12 +1224,36 @@ if (combat_over) {
         draw_text(_cx + 5, _cy + 5, "DEFEATED");
         draw_set_color(c_red);
         draw_text(_cx, _cy, "DEFEATED");
+
+    } else if (combat_result == 2) {
+        // Duel mercy (DESIGN_DUELIST_CHALLENGE.md): a loss, never a death.
+        draw_set_color(make_color_rgb(70, 45, 20));
+        draw_text(_cx + 5, _cy + 5, "THE DUEL ENDS");
+        draw_set_color(make_color_rgb(230, 170, 110));
+        draw_text(_cx, _cy, "THE DUEL ENDS");
     }
 
     // Run summary
     draw_set_font(fnt_ui);
     draw_set_halign(fa_center);
     var _summary_y = _cy + 75;
+
+    // Duel epilogue lines - the grade on a win, his mercy on a loss.
+    if (combat_result == 2) {
+        draw_set_color(make_color_rgb(215, 190, 160));
+        draw_text(_cx, _summary_y, "His blade stopped a hair short. He binds your wounds himself.");
+        _summary_y += 42;
+        draw_set_color(make_color_rgb(180, 160, 140));
+        draw_text(_cx, _summary_y, "\"Keep the arm. Come back when it's faster.\"  -  your run continues.");
+        _summary_y += 54;
+    } else if (combat_result == 1 && duel_grade != "") {
+        var _dg_col = (duel_grade == "GOLD") ? make_color_rgb(235, 200, 110)
+                    : ((duel_grade == "SILVER") ? make_color_rgb(200, 205, 215) : make_color_rgb(205, 140, 100));
+        draw_set_color(_dg_col);
+        draw_text(_cx, _summary_y, duel_grade + " DUEL  -  won in " + string(duel_grade_round)
+            + " of PAR " + string(variable_global_exists("duel_par") ? global.duel_par : 6) + " turns");
+        _summary_y += 42;
+    }
 
     // Epithet (expression #5): the fallen/triumphant get their title read out.
     var _res_ep = player_epithet_text();
@@ -1218,7 +1281,7 @@ if (combat_over) {
 
     draw_set_color(c_yellow);
     var _gold_suffix = "";
-    if (combat_result != 1) {
+    if (combat_result == -1) {
         _gold_suffix = "  |  Kept: " + string(_res_kept) + "g";
     }
     draw_text(_cx, _summary_y,
@@ -1229,7 +1292,7 @@ if (combat_over) {
     draw_text(_cx, _summary_y, "Enemies defeated: " + string(_res_kills));
     _summary_y += 42;
 
-    if (combat_result != 1) {
+    if (combat_result == -1) {
         draw_set_color(make_color_rgb(180, 150, 80));
         draw_text(_cx, _summary_y, "Salvaged: " + string(_res_kept) + "g kept");
         _summary_y += 42;
@@ -1259,7 +1322,7 @@ if (combat_over) {
     // Continue / return prompt - hidden when extract popup is open
     if (!boss_extract_open) {
         draw_set_color(c_white);
-        if (combat_result == 1) {
+        if (combat_result == 1 || combat_result == 2) {
             draw_text(_cx, _summary_y, "Press R to continue");
         } else if (vow_fallen) {
             draw_text_outline(_cx, _summary_y, "Press R to let the story end");
@@ -1418,7 +1481,10 @@ if (combat_over) {
     // Defeat calls end_run(-1) to claw back run gold and returns to the hub.
     // -------------------------------------------------------------------------
     if (input_hotkey("R") || input_confirm() || input_confirm_alt() || mouse_check_button_pressed(mb_left)) {
-        if (combat_result == 1) {
+        if (combat_result == 1 || combat_result == 2) {
+            // Duel over (win or mercy) - stand the rival down before returning.
+            // Result 2 already restored HP to room entry in the Step mercy block.
+            global.duel_active = false;
             // Save HP and secondary resources to carry into the next room
             global.run_current_hp = player.HP;
             if (variable_struct_exists(player, "souls"))       global.run_souls       = player.souls;

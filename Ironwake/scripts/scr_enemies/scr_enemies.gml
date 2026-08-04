@@ -107,16 +107,20 @@ function enemy_define(
 // enemy_ability(name, kind, chance, cooldown, value, extra)
 // Builds one enemy-ability struct. kind ∈ "spell" (typed damage) / "debuff" /
 // "dot" (status on player) / "control" (stun/root/silence) / "heal" (self).
-// `extra` (optional struct) may set: dtype (0-3), status_kind, turns, msg.
+// `extra` (optional struct) may set: dtype (0-3), status_kind, turns, msg,
+// reach ("melee"/"ranged" - the DELIVERY of this specific attack; when empty the
+// attack inherits the mob's own reach. Lets a melee boss cast a ranged nuke that
+// Counterblade correctly ignores, or a caster throw a melee blow it answers).
 // ---------------------------------------------------------------------------
 function enemy_ability(name, kind, chance, cooldown, value, extra) {
     var _a = { name: name, kind: kind, chance: chance, cooldown: cooldown,
-               value: value, dtype: 0, status_kind: "", turns: 1, msg: "" };
+               value: value, dtype: 0, status_kind: "", turns: 1, msg: "", reach: "" };
     if (extra != undefined) {
         if (variable_struct_exists(extra, "dtype"))       _a.dtype = extra.dtype;
         if (variable_struct_exists(extra, "status_kind")) _a.status_kind = extra.status_kind;
         if (variable_struct_exists(extra, "turns"))       _a.turns = extra.turns;
         if (variable_struct_exists(extra, "msg"))         _a.msg = extra.msg;
+        if (variable_struct_exists(extra, "reach"))       _a.reach = extra.reach;
     }
     return _a;
 }
@@ -174,7 +178,7 @@ function boss_ability_set(floor, dungeon) {
     var _dtype     = (dungeon == "tundra_tomb") ? 1 : ((dungeon == "scorched_depths") ? 1 : 2); // elemental / drain
     var _nuke_name = (dungeon == "tundra_tomb") ? "Frozen Lance" : ((dungeon == "scorched_depths") ? "Molten Barrage" : "Soul Rend");
     return [
-        enemy_ability(_nuke_name, "spell", 45, 2, _nuke_dmg, { dtype: _dtype, msg: "unleashes " + _nuke_name }),
+        enemy_ability(_nuke_name, "spell", 45, 2, _nuke_dmg, { dtype: _dtype, msg: "unleashes " + _nuke_name, reach: "ranged" }),
         enemy_ability("Crushing Slam", "control", 30, 4, 0, { status_kind: "stun", turns: 1, msg: "slams the ground - you are stunned" }),
     ];
 }
@@ -379,6 +383,59 @@ function enemy_intent_blocked(c) {
     if (combat_has_status(c, "stun"))                       return "stunned";
     if (combat_has_status(c, "root")    && _reach == "melee") return "rooted";
     if (combat_has_status(c, "silence") && _kind  == "spell") return "silenced";
+    return "";
+}
+
+// =============================================================================
+// SCHOOL WEAKNESSES (COMBAT_DEEPENING_PROPOSAL.md P2, M-approved 08-01)
+// Archetype axis: undead->fire, construct/sentinel->shock, wraith/spirit->
+// arcane, beast->frost - EXCEPT fire-born->frost (quench) and ice-born->fire
+// (thaw), so nothing is weak to its own element. Name-keyed so enemy_clone
+// copies need no new field and every pool (incl. bosses) is covered. The
+// Ashen Duelist has NO weakness (pure duel) - absent = "".
+// Hitting a weakness: +30% damage + 1 AP refund ONCE PER ENEMY PER COMBAT
+// (hook in obj_combat_controller Step_0; glyph beside the intent-row tag).
+// =============================================================================
+function enemy_weak_school(name) {
+    switch (name) {
+        // Ashen Vault
+        case "Ashen Skeleton":      return "fire";
+        case "Skeleton Archer":     return "fire";
+        case "Vault Crawler":       return "frost";
+        case "Dungeon Wraith":      return "arcane";
+        case "Bone Colossus":       return "fire";    // standard AND boss frame
+        case "Stone Golem":         return "shock";
+        case "Vault Guardian":      return "fire";
+        case "Vault Wraith":        return "arcane";
+        case "Vault Sentinel":      return "shock";
+        case "Grave Stalker":       return "frost";
+        case "Bone Sovereign":      return "fire";
+        case "Malgrath the Warden": return "arcane";
+        // Scorched Depths (fire-born -> frost)
+        case "Cinder Imp":          return "frost";
+        case "Magma Slug":          return "frost";
+        case "Ash Wraith":          return "arcane";
+        case "Lava Spitter":        return "frost";
+        case "Fire Drake":          return "frost";
+        case "Smoldering Revenant": return "arcane";
+        case "Cinder Golem":        return "shock";
+        case "Infernal Revenant":   return "arcane";
+        case "Forge Tyrant":        return "shock";
+        case "Molten Revenant":     return "arcane";
+        case "The Ashen Colossus":  return "shock";
+        // Tundra Tomb (ice-born -> fire)
+        case "Ice Specter":         return "fire";
+        case "Frost Shard":         return "fire";
+        case "Frozen Thrall":       return "fire";
+        case "Snowbound Wraith":    return "arcane";
+        case "Glacial Lurker":      return "shock";
+        case "Pale Archivist":      return "arcane";
+        case "Glacial Beast":       return "shock";
+        case "Frozen Sentinel":     return "shock";
+        case "Glacial Warden":      return "fire";
+        case "Tomb Archon":         return "arcane";
+        case "The Eternal Frost":   return "fire";
+    }
     return "";
 }
 

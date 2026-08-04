@@ -1,11 +1,106 @@
 # COMBAT DEEPENING PROPOSAL — build expression & fun (2026-07-29)
 
-**Status: PROPOSAL — nothing here is built. M reviews, picks, and design-locks
-before any implementation.** Written per M's 07-28 notes: "frost shot says
+**Status: DESIGN-LOCKED by M 2026-07-30.** Locked decisions:
+- **Build order:** pinch zoom first (built 07-30), then P1 retype + P4 Mandate
+  as one session, then P2 weaknesses. P3 riders stay parked.
+  (07-30 later same day: M slid the HUB CAROUSEL in ahead of combat —
+  SYSTEMS_HUB_CAROUSEL.md; effective order: carousel → P1+P4 → P2.)
+- **P2 weakness axis: CREATURE ARCHETYPE**, not dungeon. Tag each enemy by what
+  it is — undead→fire, construct/sentinel→shock, beast→frost, wraith→arcane —
+  so variety survives inside each dungeon. (Bestiary "families" are per-dungeon;
+  archetype is a NEW per-enemy tag added at P2 build time.)
+- **AP refund: ONCE PER ENEMY PER COMBAT** (M's call) — each distinct enemy can
+  grant the 1-AP Exposed Weakness refund one time per fight. A 4-pack offers up
+  to 4 refunds total across the combat; no per-turn ad-infinitum loop.
+- **P4 Mandate ships with FULL POTENCY RANKS** (R2–4 gold find w/ Legendary
+  equipped, TRANSCEND = 3-turn protection).
+- **P1 retype list:** full per-class audit table to be drafted at P1 build
+  session start and approved by M before edits (per doc §2 candidates).
+
+Written per M's 07-28 notes: "frost shot says
 physical… that's the goal, people making their own builds like fire warden or
 poison archer", "more ways for classes to utilize other stats", the Mandate
 from Heaven trait idea, and "do some research on games known for fun turn
 based combat."
+
+---
+
+## ✅ BUILT 08-01 (ALL FOUR PHASES, one session — M approved each table live; awaiting F5)
+- **P1**: Poison Dart (7 dmg) + Frost Shot (12 dmg) retyped dtype 1; **Death
+  Snare stays physical (M's call** — silence-blocking trap placement felt wrong).
+- **P2**: map below shipped verbatim in `enemy_weak_school()` (scr_enemies,
+  name-keyed); +30% & once-per-enemy AP refund at the player damage site;
+  school-colored diamond on the intent chip; "weakness" coach-mark.
+- **P4**: Mandate from Heaven trait live (Vex 2000g + Legendary; cleanse guard
+  in combat_cleanse_one via applied_round stamps; R2-4 +4%/rank gold find w/
+  Legendary; Transcend "Divine Right" = 3 turns; "the MANDATE holds" log line).
+- **P3 SLIM (M approved after explainer)**: 9 off-stat riders live
+  (ability_stat_rider catalog + threshold check; RIDER section in the Tab
+  detail + loadout detail, gold when active / grey with "you: N" when not):
+  Entropy WIS25 +1/tick · Soul Shield CON20 +5 · Gravewrack Grip STR25 root 2t
+  · Blood Leech INT20 +4 heal · Iron Skin WIS20 4 turns · Marrow Crush CON25
+  +4 shield · Bear Trap WIS25 root +1t · Snipe STR25 +15% crit dmg · Field
+  Dressing/Second Wind CHA20 +20% healing.
+
+## BUILD-SESSION AUDIT TABLES (08-01 — drafted per the lock; M approved live)
+
+### A. P1 retype table (full audit of all 41 abilities)
+
+Audited every ability across Arcanist (18), Bloodwarden (15), Shadowstrider
+(16 incl. Winter's Bite) + general pool (5). Arcanist is already fully
+elemental; Bloodwarden's kit is blood-typed (dtype 3) where flavored;
+Winter's Bite was born dtype 1. **Exactly THREE abilities are elementally
+flavored but physically typed — all Shadowstrider:**
+
+| ability | today | retype to | base dmg | notes |
+|---|---|---|---|---|
+| Poison Dart | dtype 0 phys + school poison | dtype 1 elemental | 6 → 7 | "poison archer" unlocked; INT gear scales it; el_resist not armor |
+| Frost Shot | dtype 0 phys + school frost | dtype 1 elemental | 10 → 12 | THE bug M reported 07-28; frost affix gear + (P2) frost weaknesses apply |
+| Death Snare | dtype 0 phys, no school | dtype 1 + school poison | 32 → 34 | fits the tendril art (M's lock note). ⚠ becomes a SPELL for control gating — an enemy SILENCE could block placing it (root won't). Can stay physical if that feels wrong. |
+
+Everything else stays: traps/blades/Snipe are honestly physical, blood kit is
+blood, DoT *statuses* (bleed/poison elements) are unaffected either way.
+Desc_short/full strings for the three get their element words updated same
+edit. Crit stays DEX-typed (they become spells for silence purposes but keep
+the phys-crit channel — the DEX identity survives).
+
+### B. P2 per-enemy weakness map (archetype axis, locked 07-30; draft assignments)
+
+Rule of thumb applied: undead→fire, construct/sentinel→shock, wraith/spirit→
+arcane, beast→frost — EXCEPT fire-born creatures→frost (quench) and ice-born
+→fire (thaw), so each dungeon still reads varied and no enemy is weak to its
+own element. Bosses DO have weaknesses (build payoff); the Ashen Duelist has
+NONE (pure duel). Implementation: name-keyed `enemy_weak_school(name)` map —
+zero edits to the enemy_define pools, clones inherit automatically.
+
+| Ashen Vault | weak | Scorched Depths | weak | Tundra Tomb | weak |
+|---|---|---|---|---|---|
+| Ashen Skeleton | fire | Cinder Imp | frost | Ice Specter | fire |
+| Skeleton Archer | fire | Magma Slug | frost | Frost Shard | fire |
+| Vault Crawler | frost | Ash Wraith | arcane | Frozen Thrall | fire |
+| Dungeon Wraith | arcane | Lava Spitter | frost | Snowbound Wraith | arcane |
+| Bone Colossus (std+boss) | fire | Fire Drake | frost | Glacial Lurker | shock |
+| Stone Golem | shock | Smoldering Revenant | arcane | Pale Archivist | arcane |
+| Vault Guardian | fire | Cinder Golem | shock | Glacial Beast | shock |
+| Vault Wraith | arcane | Infernal Revenant | arcane | Frozen Sentinel | shock |
+| Vault Sentinel | shock | Forge Tyrant (boss) | shock | Glacial Warden (boss) | fire |
+| Grave Stalker | frost | Molten Revenant (boss) | arcane | Tomb Archon (boss) | arcane |
+| Bone Sovereign (boss) | fire | The Ashen Colossus (boss) | shock | The Eternal Frost (boss) | fire |
+| Malgrath the Warden (boss) | arcane | | | |
+
+Spread: fire 10 / arcane 9 / shock 8 / frost 7 — every school has real
+targets, frost's smaller count offset by owning most of Scorched Depths.
+
+Hitting a weakness: **+30% damage + 1 AP refund ONCE PER ENEMY PER COMBAT**
+(locked), "EXPOSED WEAKNESS!" log line, school glyph beside the intent-row
+Melee/Ranged tag (perfect information), one coach-mark.
+
+### C. P4 Mandate from Heaven — as locked (no open questions)
+
+Vex trait: 2000g + Legendary sacrifice. R1: statuses YOU apply uncleansable
+2 turns (applied_round stamp; cleanse sites skip young statuses). R2–4:
++gold find while a Legendary is equipped. TRANSCEND: 3-turn protection.
+Control-resist ramp NOT bypassed.
 
 ---
 

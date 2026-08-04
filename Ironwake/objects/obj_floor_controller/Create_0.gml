@@ -510,6 +510,10 @@ shrine_notification_fail = false;   // #13: failure notifications draw red
 // #7: embracing a curse is ARM-THEN-CONFIRM - the first Enter on a row warns,
 // the second (same row) commits. -1 = nothing armed; moving the cursor disarms.
 shrine_curse_arm   = -1;
+// Shrine V2 (07-29): one dust reroll of a blessing offer per shrine, with a
+// two-press confirm (rerolls are spends - arm then commit, like the curse rows).
+shrine_rerolled    = false;
+shrine_reroll_arm  = false;
 // Whether the player has APPROACHED the altar (committed). While false the altar's
 // nature (blessing/curse) is veiled and the player may still leave freely. Once they
 // approach, the kind is revealed - and a CURSE altar then traps them (no Esc, must

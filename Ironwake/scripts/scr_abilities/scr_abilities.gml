@@ -81,8 +81,21 @@ function ability_can_cast(ability, caster) {
 // SECONDARY resource cost (souls / blood / preparation), ignoring AP. Split out of
 // ability_can_cast so the UI can gate on the synergy-discounted AP cost
 // (ability_effective_cost) while still checking the secondary resource separately.
+// Opening Gambit on a FREE (0-AP) ability (07-29 M pass): the web keystone's
+// AP discount has nothing to discount there, so on those abilities the FIRST
+// cast each combat waives the secondary-resource cost instead (e.g. Blood
+// Surge's 2 Blood). Checked by the resource gate AND the spend so they can
+// never disagree.
+function ability_gambit_waives_secondary(ability, caster) {
+    if (is_undefined(caster)) return false;
+    return ability.energy_cost <= 0 && ability.secondary_cost > 0
+        && ability_web_copy_has_rider(ability, "first_free")
+        && !ability_web_first_cast_used(caster, ability.name);
+}
+
 function ability_secondary_ok(ability, caster) {
     if (ability.secondary_cost <= 0) return true;
+    if (ability_gambit_waives_secondary(ability, caster)) return true;
     if      (variable_struct_exists(caster, "souls"))       return caster.souls       >= ability.secondary_cost;
     else if (variable_struct_exists(caster, "blood"))       return caster.blood       >= ability.secondary_cost;
     else if (variable_struct_exists(caster, "preparation")) return caster.preparation >= ability.secondary_cost;
@@ -98,7 +111,7 @@ function ability_secondary_ok(ability, caster) {
 function ability_spend_resources(ability, caster) {
     caster.energy -= ability.energy_cost;
 
-    if (ability.secondary_cost > 0) {
+    if (ability.secondary_cost > 0 && !ability_gambit_waives_secondary(ability, caster)) {
         if      (variable_struct_exists(caster, "souls"))       caster.souls       -= ability.secondary_cost;
         else if (variable_struct_exists(caster, "blood"))       caster.blood       -= ability.secondary_cost;
         else if (variable_struct_exists(caster, "preparation")) caster.preparation -= ability.secondary_cost;
@@ -494,9 +507,11 @@ global.abilities_shadowstrider = [
     //    Niche: apply sustained poison at the same energy cost as Snipe.
     //    Crit bumped to 10 so it crits at a reasonable rate despite lower base damage;
     //    crit still trails Snipe (15) to preserve Snipe's identity as the precision burst.
+    //    P1 RETYPE (08-01, M-approved): truly elemental now - INT gear scales it,
+    //    el_resist (not armor) cuts it. +1 base so parity-stat damage is unchanged.
     ability_define("Poison Dart",
         /*energy*/1, /*secondary*/0,
-        /*damage*/6, /*dtype*/0,        // physical
+        /*damage*/7, /*dtype*/1,        // elemental (school: poison)
         /*acc*/88, /*guaranteed*/false,
         /*crit_type*/1, /*base_crit*/10, // precision (DEX); was 6
         /*effect_type*/"dot", /*effect_value*/5, /*duration*/4, // poison 5/turn x 4
@@ -515,9 +530,12 @@ global.abilities_shadowstrider = [
     //    shatter-primer: physical hit + Weaken, plus a bespoke 1-turn Chill rider
     //    (Step_0) so Shadowstrider has an in-class SHATTER setup. Budget: 10 dmg
     //    + Weaken ~8 + Chill ~6 = 24 on a 2-AP slot.
+    //    P1 RETYPE (08-01, M-approved): the exact bug M reported 07-28 - it said
+    //    "physical" while wearing a frost school tag. Truly elemental now; +2 base
+    //    so parity-stat damage is unchanged, INT investment pure upside.
     ability_define("Frost Shot",
         /*energy*/2, /*secondary*/0,
-        /*damage*/10, /*dtype*/0,       // physical
+        /*damage*/12, /*dtype*/1,       // elemental (school: frost)
         /*acc*/84, /*guaranteed*/false,
         /*crit_type*/1, /*base_crit*/8, // precision (DEX)
         /*effect_type*/"debuff", /*effect_value*/0.25, /*duration*/3, // -25% dmg + slow
@@ -570,12 +588,12 @@ var _ss_d = [
       f: "Set steel jaws where the next foot falls.\n- Guaranteed trap hit: 16 physical damage + Root for 1 turn.\n- A Rooted MELEE enemy can't reach you and skips its turn; ranged foes still fire - use Death Snare's Stun for those." },
     { s: "~(50% + WIS) chance to dodge the next 3 attacks. 2-turn CD.",
       f: "Walk half a step behind your own shadow and let the blows guess.\n- Each of the next 3 incoming attacks has a (50% + WIS*2)% dodge chance, capped at 85%. Stun halves the odds.\n- 1 AP on a 2-turn cooldown - strong against a pack." },
-    { s: "Deal 6 physical dmg. Poison: 5 dmg/turn for 4 turns.",
-      f: "Flick a needle of something patient into their neck.\n- 6 physical damage + Poison 5/turn for 4 turns (20 total).\n- Cheap - apply it early and let it tick while you work." },
+    { s: "Deal 7 Poison dmg. Poison: 5 dmg/turn for 4 turns.",
+      f: "Flick a needle of something patient into their neck.\n- 7 Poison damage + Poison 5/turn for 4 turns (20 total). Scales with INT gear; armor can't blunt it.\n- Cheap - apply it early and let it tick while you work." },
     { s: "Spend 1 Prep. Enemies -40% acc 2t; YOU +15% dodge.",
       f: "Drop the room into a grey blindness only you can read.\n- Every enemy's accuracy drops 40% for 2 turns - and the smoke cloaks YOU: +15% dodge while it lingers.\n- The panic button: buy a safe turn to set traps or catch your breath." },
-    { s: "10 dmg. Weaken -25% 3t + Chill 1t (shatters).",
-      f: "Put a sliver of winter where they carry their strength.\n- 10 physical damage. Weakened: -25% damage for 3 turns. Chilled 1 turn: detonators SHATTER it for +30% damage.\n- Your own shatter-primer - land it, then detonate with Snipe or Assassinate." },
+    { s: "12 Frost dmg. Weaken -25% 3t + Chill 1t (shatters).",
+      f: "Put a sliver of winter where they carry their strength.\n- 12 Frost damage - scales with INT gear, cuts through armor (el_resist applies). Weakened: -25% damage for 3 turns. Chilled 1 turn: detonators SHATTER it for +30% damage.\n- Your own shatter-primer - land it, then detonate with Snipe or Assassinate." },
     { s: "Spend 1 Prep. Trap: 26 dmg + Bleed 6/turn for 4 turns.",
       f: "Line the floor with points that keep cutting on the way out.\n- Guaranteed trap hit: 26 physical damage + Bleed 6/turn for 4 turns.\n- The DoT-build trap - feeds bleed payoffs; take Death Snare when you need the Stun instead." },
     { s: "Mark 4t: below half HP it takes +30% from ALL sources.",
@@ -604,6 +622,9 @@ global.abilities_general = [
     ability_define("Field Dressing",  1,0,  0,0,   -1,true,  -1,0, "heal",14,0,   true),
     ability_define("Second Wind",     2,0,  0,0,   -1,true,  -1,0, "heal",10,0,   true),
     ability_define("Adrenaline Rush", 0,0,  0,0,   -1,true,  -1,0, "status",1,0,  true),
+    // The Ashen Duelist's 1st token (DESIGN_DUELIST_CHALLENGE.md): unlocks via
+    // the duelist_tokens goal - never sold, only earned in the duel.
+    ability_define("Measured Riposte", 1,0,  0,0,  -1,true,  -1,0, "status",18,1, true),
 ];
 var _gen_d = [
     { s:"Deal 10 physical dmg. Refunds its AP on a kill.",
@@ -614,6 +635,8 @@ var _gen_d = [
       f:"Spit, straighten up, and shake the worst of it off.\n- Heals 10 HP, refunds 1 Soul / Blood / Prep, and cleanses your newest affliction.\n- The only self-cleanse in the game - your answer to Poison, burns, and hexes." },
     { s:"Pay 5 HP: gain +1 AP. Once per turn.",
       f:"Let the fear do something useful - and keep letting it.\n- Costs no AP: pay 5 HP, gain +1 AP. Once per turn, every turn.\n- The HP-as-fuel lever; feeds lifesteal builds that pay the loan back. Ruinous when you're already bleeding out." },
+    { s:"Until next turn: first melee blow is answered for 18.",
+      f:"The Ashen Duelist's own opening, learned the hard way.\n- 1 AP: until your next turn, the FIRST melee blow against you is answered with 18 physical - half again Counterblade's riposte.\n- One perfect answer instead of Counterblade's standing stance. Ranged attacks slip past it." },
 ];
 for (var _i = 0; _i < array_length(global.abilities_general); _i++) {
     global.abilities_general[_i].desc_short = _gen_d[_i].s;
@@ -837,6 +860,60 @@ global.abilities_bloodwarden[8].school = "poison"; // Plague Touch - plague (no 
 
 global.abilities_shadowstrider[3].school = "poison"; // Poison Dart - the poison ability
 global.abilities_shadowstrider[5].school = "frost";  // Frost Shot - the SS shatter-primer (07-16)
+
+
+// =============================================================================
+// P3 OFF-STAT RIDERS (COMBAT_DEEPENING_PROPOSAL.md P3 slim, M-approved 08-01).
+// One small bonus per listed ability that switches ON while a NON-primary stat
+// meets its threshold - the answer to "you ignore every stat but your primary".
+// Shown as a "Rider:" line in the ability detail popup (grey until met);
+// effects fire at each ability's resolution site in obj_combat_controller.
+// =============================================================================
+function ability_stat_rider(ability_name) {
+    switch (ability_name) {
+        case "Entropy":         return { stat:"WIS", at:25, label:"every tick +1 damage" };
+        case "Soul Shield":     return { stat:"CON", at:20, label:"+5 base absorb" };
+        case "Gravewrack Grip": return { stat:"STR", at:25, label:"the Root holds 2 turns" };
+        case "Blood Leech":     return { stat:"INT", at:20, label:"+4 healing" };
+        case "Iron Skin":       return { stat:"WIS", at:20, label:"holds 4 turns" };
+        case "Marrow Crush":    return { stat:"CON", at:25, label:"also braces you: +4 shield" };
+        case "Bear Trap":       return { stat:"WIS", at:25, label:"the Root holds 2 turns" };
+        case "Snipe":           return { stat:"STR", at:25, label:"+15% crit damage" };
+        case "Field Dressing":  return { stat:"CHA", at:20, label:"+20% healing" };
+        case "Second Wind":     return { stat:"CHA", at:20, label:"+20% healing" };
+    }
+    return undefined;
+}
+
+// The player's CURRENT total in a stat: the combat player struct mid-fight
+// (base + gear + run + perm already summed there), rebuilt the same way at camp.
+function ability_rider_stat_total(stat) {
+    if (instance_exists(obj_combat_controller)) {
+        var _ps = instance_find(obj_combat_controller, 0).player.stats;
+        if (is_struct(_ps) && variable_struct_exists(_ps, stat)) return variable_struct_get(_ps, stat);
+    }
+    var _t = { STR:0, DEX:0, CON:0, INT:0, WIS:0, CHA:0 };
+    if (variable_global_exists("chosen_stats") && is_struct(global.chosen_stats)) {
+        var _ks = ["STR", "DEX", "CON", "INT", "WIS", "CHA"];
+        for (var _i = 0; _i < 6; _i++) {
+            if (variable_struct_exists(global.chosen_stats, _ks[_i]))
+                variable_struct_set(_t, _ks[_i], variable_struct_get(global.chosen_stats, _ks[_i]));
+        }
+    }
+    apply_equipment_stats(_t);   // folds gear stat affixes onto the copy
+    var _v = variable_struct_get(_t, stat);
+    if (variable_global_exists("run_stat_bonuses") && is_struct(global.run_stat_bonuses)
+        && variable_struct_exists(global.run_stat_bonuses, stat)) _v += variable_struct_get(global.run_stat_bonuses, stat);
+    var _pk = perm_bonus_key(stat);
+    if (_pk != "" && variable_global_exists(_pk)) _v += variable_global_get(_pk);
+    return _v;
+}
+
+function ability_stat_rider_active(ability_name) {
+    var _r = ability_stat_rider(ability_name);
+    if (_r == undefined) return false;
+    return ability_rider_stat_total(_r.stat) >= _r.at;
+}
 
 
 // =============================================================================
@@ -1074,6 +1151,7 @@ function ability_category(ab) {
         case "Blazing Palm": case "Gravewrack Grip": case "Soul Rend":   // #26 melee kit
         case "Hoarfrost Lance": case "Static Arc": case "Galvanize":     // D§4 wave
         case "Winter's Bite":   case "Devil's Flip": case "Bulwark Slam":
+        case "Blood Leech":     // 07-29 M ruling: it's a damaging attack that happens to heal
             return "offense";
 
         // defense - self-protection (Counterblade = reactive stance; pairs with the
@@ -1083,11 +1161,11 @@ function ability_category(ab) {
         case "Counterblade":
             return "defense";
 
-        // support - heal / buff / resource (incl. sustain-primary hybrids: Void Drain,
-        // Blood Leech - judgment calls, tunable).
+        // support - heal / buff / resource (Void Drain stays sustain-primary; Blood
+        // Leech moved to offense 07-29 - it leads with the bite, not the heal).
         case "Field Dressing": case "Void Drain":  case "Blood Surge":   case "Second Wind":
         case "Adrenaline Rush": case "Soul Harvest": case "Sanguine Pact": case "Bloodfeast":
-        case "Blood Leech":    case "Soul Engine":   // D§4: the ramp power is a self-buff
+        case "Soul Engine":   // D§4: the ramp power is a self-buff
         case "Warpath":        case "Compounding Dread":   // 07-16 combo batch ramps
             return "support";
 
@@ -1191,6 +1269,12 @@ function ability_effective_cost(ab, caster) {
         _cost -= 1;
     }
 
+    // The Ashen Blade (Duelist Arts legendary): a dodge or riposte armed a 1-AP
+    // discount on the NEXT ability. Same commit-burn pattern as Counterphase.
+    if (_cost > 0 && variable_struct_exists(caster, "ashen_tempo_ready") && caster.ashen_tempo_ready) {
+        _cost -= 1;
+    }
+
     // Expanded Arsenal TRANSCEND "Deep Reserves" (POTENCY V2): the first cast of
     // EVERY slotted ability each combat costs -1 AP. Same flag pattern as the
     // web keystone above; burned at cast commit alongside it.
@@ -1214,6 +1298,15 @@ function ability_effective_cost(ab, caster) {
     if (_cost > 1 && _is_spell
         && variable_struct_exists(caster, "cf_first_spell_ap") && caster.cf_first_spell_ap
         && variable_struct_exists(caster, "cf_used") && !caster.cf_used) {
+        _cost -= 1;
+    }
+
+    // Third Wind blessing (Shrine V2, 07-29): every 3rd ability cast in a combat
+    // costs 1 less AP. The counter (boon_cast_count) increments at cast commit, so
+    // when it reads 2 mod 3 the NEXT cast is the third - display and charge agree.
+    if (_cost > 0 && boon_active("thirdwind")
+        && variable_struct_exists(caster, "boon_cast_count")
+        && (caster.boon_cast_count mod 3) == 2) {
         _cost -= 1;
     }
 
@@ -1309,6 +1402,65 @@ function ability_school_list() {
     return ["fire", "frost", "shock", "arcane", "blood", "void", "shadow", "poison"];
 }
 
+// =============================================================================
+// CAST VFX RESOLVERS (07-29 trial). One-shot burst animation per cast. Before
+// this, every non-heal self-cast shared the spr_vfx_buff sword+ and attacks
+// only split four ways by damage type. Returns { spr, ticks } - ticks feeds
+// vfx_timer/vfx_timer_max so longer animations get room to play (the combat
+// Draw event maps the countdown onto the sprite's sub-images).
+// Vael-tint gap: the new sprites have no grayscale twins yet, so purchased
+// spell tints still only recolor the four original attack bursts
+// (school_vfx_sprite falls through to the authored art).
+// =============================================================================
+
+// Attack impact keyed to the ability's element SCHOOL; physical ("" school)
+// keeps the classic impact burst.
+function ability_attack_vfx(ab) {
+    switch (ability_school(ab)) {
+        case "fire":   return { spr: spr_vfx_fire,   ticks: 20 };
+        case "frost":  return { spr: spr_vfx_frost,  ticks: 20 };
+        case "shock":  return { spr: spr_vfx_shock,  ticks: 16 };
+        case "arcane": return { spr: spr_vfx_arcane, ticks: 20 };
+        case "blood":  return { spr: spr_vfx_blood,  ticks: 18 };
+        case "void":   return { spr: spr_vfx_void,   ticks: 20 };
+        case "shadow": return { spr: spr_vfx_shadow, ticks: 16 };
+        case "poison": return { spr: spr_vfx_poison, ticks: 24 };
+    }
+    return { spr: spr_vfx_impact, ticks: 20 };
+}
+
+// Self-cast burst keyed to what the ability DOES:
+//   heal -> restore | shield -> warded shield | resource -> absorb motes |
+//   self-debuff -> skull smoke | evasion/tempo statuses -> haste clock |
+//   dark self-pacts (blood/void/shadow school statuses) -> skull smoke |
+//   everything else (offense buffs) keeps the classic sword+ burst.
+function ability_support_vfx(ab) {
+    switch (ab.effect_type) {
+        case "heal":     return { spr: spr_vfx_heal,   ticks: 20 };
+        case "shield":   return { spr: spr_vfx_shield, ticks: 24 };
+        case "resource": return { spr: spr_vfx_gain,   ticks: 26 };
+        case "debuff":   return { spr: spr_vfx_dark,   ticks: 20 };
+    }
+    var _n = ab.name;
+    if (_n == "Blink" || _n == "Evasive Roll" || _n == "Vanish" || _n == "Adrenaline Rush") {
+        return { spr: spr_vfx_haste, ticks: 26 };
+    }
+    // The three once-per-combat ramp powers read as charging up - absorb motes.
+    // (Also the only castable route to spr_vfx_gain: no slottable ability
+    // self-casts effect_type "resource" - Soul Harvest is engine-triggered.)
+    if (_n == "Soul Engine" || _n == "Warpath" || _n == "Compounding Dread") {
+        return { spr: spr_vfx_gain, ticks: 26 };
+    }
+    // Dark self-pacts: dark-school statuses, plus the physical-typed ones whose
+    // fantasy is clearly grim (cheating death, thorned blood).
+    var _sch = ability_school(ab);
+    if (_sch == "blood" || _sch == "void" || _sch == "shadow"
+        || _n == "Undying" || _n == "Bloodthorn Aura") {
+        return { spr: spr_vfx_dark, ticks: 20 };
+    }
+    return { spr: spr_vfx_buff, ticks: 20 };
+}
+
 
 // =============================================================================
 // DYNAMIC ABILITY DESCRIPTIONS (single source of truth).
@@ -1372,7 +1524,7 @@ function ability_effect_full(ab) {
         case "Entropy":         _b = "The rot ACCELERATES: each tick deals +2 more than the last (6/8/10/12). Recast onto lingering void for DOUBLE ticks."; break;
         case "Adrenaline Rush": _b = "Once per turn: pay 5 HP to gain +1 AP."; break;
         case "Bulwark Slam":    _b = "Consumes ALL your current shield and adds its value to the hit."; break;
-        case "Counterblade":    _b = "Until your next turn, counter EVERY melee attacker (hit or dodged) for 12 physical."; break;
+        case "Counterblade":    _b = "Until your next turn, counter EVERY melee blow - weapon or spell - for 12 physical (hit or dodged). Ranged attacks slip past."; break;
         case "Sanguine Pact":   _b = "Seals up to 3 Blood into 6 shield each."; break;
         case "Hoarfrost Lance": _b = "Chilled targets deal -30% damage; detonators SHATTER the chill for +30% damage."; break;
         case "Glacial Ward":    _b = "Melee enemies that strike you this turn are Chilled."; break;
@@ -1634,6 +1786,13 @@ global.traits_all = [
         "The first status effect applied to you each combat is ignored.",
         -1, "dungeon_clears_total", 8, "iron_will"),
 
+    // THE ASHEN DUELIST's 2nd token (DESIGN_DUELIST_CHALLENGE.md): hidden
+    // progression - unlocks at 2 Duelist Tokens, never sold by Vex, and never
+    // listed anywhere while locked (see trait_is_unlocked / the loadout lists).
+    trait_define("Duelist's Poise",
+        "Start each one-on-one combat with +1 AP.",
+        -1, "duelist", 2, "duelist_poise"),
+
     trait_define("Expanded Arsenal",
         "Take 5 abilities into each run instead of 4.",
         -1, "dungeon_clears_total", 4, "expanded_arsenal"),
@@ -1649,6 +1808,13 @@ global.traits_all = [
     trait_define("Last Stand",
         "Once per run, survive a lethal blow at 1 HP.",
         -1, "total_boss_kills", 3, "last_stand"),
+
+    // Mandate from Heaven (P4, COMBAT_DEEPENING_PROPOSAL.md, M-approved 07-30):
+    // the premium late-game answer to the A2+ enemy cleanse AI. Sold by Vex only
+    // - 2000g + a LEGENDARY sacrifice (trait_unlock_cost special-cases it).
+    trait_define("Mandate from Heaven",
+        "The heavens ratify your claims: statuses YOU apply cannot be cleansed for 2 turns - enemy menders' hands falter.",
+        -1, "vex", 0, "mandate_heaven"),
 
     // -------------------------------------------------------------------------
     // UNIVERSAL - AoE-themed (the burst-vs-spread levers)
@@ -1836,6 +2002,8 @@ function ability_unlock_info(ability_name) {
         // General pool
         case "Second Wind":      return { type:"vex", cost:100, goal_type:"", goal_value:0 };
         case "Adrenaline Rush":  return { type:"vex", cost:250, goal_type:"", goal_value:0 };
+        // Duelist Arts (DESIGN_DUELIST_CHALLENGE.md): earned, never bought.
+        case "Measured Riposte": return { type:"goal", cost:0, goal_type:"duelist_tokens", goal_value:1 };
         // Arcanist
         case "Soul Harvest":     return { type:"vex", cost:100, goal_type:"", goal_value:0 };
         case "Curse":            return { type:"vex", cost:100, goal_type:"", goal_value:0 };
@@ -1911,6 +2079,8 @@ function goal_met(goal_type, goal_value) {
             return variable_global_exists("dungeon_clears_total") && global.dungeon_clears_total >= goal_value;
         case "char_level":
             return variable_global_exists("highest_run_level") && global.highest_run_level >= goal_value;
+        case "duelist_tokens":   // Duelist Arts ladder (DESIGN_DUELIST_CHALLENGE.md)
+            return variable_global_exists("duelist_tokens") && global.duelist_tokens >= goal_value;
     }
     return false;
 }
@@ -1926,6 +2096,7 @@ function ability_unlock_condition_text(ability_name) {
         case "char_level":           return "Unlock: reach level " + string(_info.goal_value) + " in a run";
         case "total_boss_kills":     return "Unlock: defeat " + string(_info.goal_value) + " bosses (lifetime)";
         case "dungeon_clears_total": return "Unlock: clear " + string(_info.goal_value) + " dungeons";
+        case "duelist_tokens":       return "Unlock: a certain duelist parts with a token...";   // hidden progression - stays cryptic
     }
     return "Locked";
 }
@@ -2129,7 +2300,9 @@ function ability_web_nodes(ab) {
         if (_has_cd)                   array_push(_n, ability_web_node("t2", "T", 2, "Swift Recovery", "Cooldown -1 turn", ["cdm"], ""));
         else if (ab.energy_cost >= 2)  array_push(_n, ability_web_node("t2", "T", 2, "Efficient Form", "Costs 1 less AP", ["apc"], ""));
         else                           array_push(_n, ability_web_val_node(ab, "t2", "T", 2, "Deeper Roots II", "add"));
-        array_push(_n, ability_web_node("tk", "T", 3, "Opening Gambit", "First cast each combat costs 1 less AP", [], "first_free"));
+        array_push(_n, (ab.energy_cost <= 0 && ab.secondary_cost > 0)
+            ? ability_web_node("tk", "T", 3, "Opening Gambit", "First cast each combat costs no class resource", [], "first_free")
+            : ability_web_node("tk", "T", 3, "Opening Gambit", "First cast each combat costs 1 less AP", [], "first_free"));
     } else {
         // INSTANT EFFECT (heals, shields, resource bursts).
         array_push(_n, ability_web_val_node(ab, "p1", "P", 1, "Deeper Roots", "add"));
@@ -2140,7 +2313,9 @@ function ability_web_nodes(ab) {
             : ability_web_val_node(ab, "t1", "T", 1, "Deeper Roots II", "add"));
         if (_has_cd) array_push(_n, ability_web_node("t2", "T", 2, "Swift Recovery", "Cooldown -1 turn", ["cdm"], ""));
         else         array_push(_n, ability_web_val_node(ab, "t2", "T", 2, "Concentration II", "mult20"));
-        array_push(_n, ability_web_node("tk", "T", 3, "Opening Gambit", "First cast each combat costs 1 less AP", [], "first_free"));
+        array_push(_n, (ab.energy_cost <= 0 && ab.secondary_cost > 0)
+            ? ability_web_node("tk", "T", 3, "Opening Gambit", "First cast each combat costs no class resource", [], "first_free")
+            : ability_web_node("tk", "T", 3, "Opening Gambit", "First cast each combat costs 1 less AP", [], "first_free"));
     }
     // Bespoke SIGNATURE overrides (Phase 3 pulled forward, M 07-27): a
     // hand-authored node replaces the template node with the same id.
@@ -2276,17 +2451,63 @@ function ability_web_bespoke(ab) {
             array_push(_out, ability_web_node("pk", "P", 3, "Chain Reaction", "Also triggers on landing a CRIT, not just a kill", [], "galv_crit"));
             break;
         case "Blink":
+            array_push(_out, ability_web_node("t1", "T", 1, "Afterimage Veil", "The 2nd/3rd attacks are softened 60%/35% (up from 50%/25%)", [], "blink_soft"));
             array_push(_out, ability_web_node("tk", "T", 3, "Counterphase", "When Blink fully evades an attack, your next ability costs 1 less AP", [], "blink_tempo"));
+            break;
+        case "Smoke Bomb":
+            array_push(_out, ability_web_node("t1", "T", 1, "Acrid Haze", "The smoke also WEAKENS enemies inside it (-15% damage)", [], "smoke_weaken"));
+            array_push(_out, ability_web_node("tk", "T", 3, "Choking Cloud", "Enemies caught in the smoke lose their planned move", [], "smoke_confound"));
+            break;
+        case "Soul Harvest":
+            array_push(_out, ability_web_node("t1", "T", 1, "Reaper's Tempo", "+1 extra Soul if an enemy died this round", [], "harvest_kill"));
+            array_push(_out, ability_web_node("tk", "T", 3, "Soulmend", "Also heals 3 HP per Soul it gathers", [], "soulmend"));
+            break;
+        case "Adrenaline Rush":
+            array_push(_out, ability_web_node("t1", "T", 1, "Numbed Nerves", "The push costs 3 HP instead of 5", [], "rush_cheap"));
+            array_push(_out, ability_web_node("tk", "T", 3, "Overdrive", "Once per combat, it can fire TWICE in one turn", [], "overdrive"));
+            break;
+        case "Second Wind":
+            array_push(_out, ability_web_node("t1", "T", 1, "Clean Break", "Cleanses your TWO newest afflictions", [], "cleanse_two"));
+            array_push(_out, ability_web_node("tk", "T", 3, "Adrenal Memory", "Also refunds 1 AP when cast below half HP", [], "adrenal_memory"));
             break;
         // --- Bloodwarden ---
         case "Blood Leech":
             array_push(_out, ability_web_node("pk", "P", 3, "Exsanguinate", "Heals you for 50% of damage dealt", [], "lifesteal:50"));
             break;
+        case "Blood Surge":
+            // 07-29 M pass: the template gave it FOUR near-identical +healing
+            // nodes (Deeper Roots I/II + Concentration I/II). The Twist branch
+            // becomes the blood-economy line instead: cheaper casts, then
+            // overheal that doesn't waste.
+            array_push(_out, ability_web_node("t1", "T", 1, "Thick Blood", "Costs 1 less Blood (2 -> 1)", ["secc"], ""));
+            array_push(_out, ability_web_node("t2", "T", 2, "Crimson Overflow", "Healing past full hardens into a shield", [], "overheal_shield"));
+            break;
         case "Gore Strike":
             array_push(_out, ability_web_node("pk", "P", 3, "Butcher's Rhythm", "+50% damage below 25% HP", [], "execute:50"));
             break;
         case "Iron Skin":
+            // P3 (07-29): t2 was a template clone. "Sharp Edges" rides the
+            // per-attack melee classification - while the skin holds, melee
+            // blows that land take its reduction value back as damage.
+            array_push(_out, ability_web_node("t2", "T", 2, "Sharp Edges", "While Iron Skin holds, melee blows that hit you take its reduction back", [], "sharp_edges"));
             array_push(_out, ability_web_node("tk", "T", 3, "Iron Bulwark", "Also raises a 6-point shield on cast", [], "cast_shield:6"));
+            break;
+        case "Soul Shield":
+            // P3 (07-29): scale its Soul identity, then let the wall outlive the fight.
+            array_push(_out, ability_web_node("t1", "T", 1, "Soulweave", "+4 shield per Soul held (up from +3)", [], "soul_dense"));
+            array_push(_out, ability_web_node("tk", "T", 3, "Unbroken", "Shield left standing at victory carries to the next combat (max 10)", [], "unbroken"));
+            break;
+        case "Sanguine Pact":
+            array_push(_out, ability_web_node("t1", "T", 1, "Rich Veins", "Each Blood seals into 7 shield (up from 6)", [], "pact_dense"));
+            array_push(_out, ability_web_node("tk", "T", 3, "Blood Debt", "The pact ward SHATTERING deals its full value to the one who broke it", [], "blood_debt"));
+            break;
+        case "Warpath":
+            array_push(_out, ability_web_node("t1", "T", 1, "First Blood", "The march starts a turn pre-lit (+2 on the first swing)", [], "ramp_prelit"));
+            array_push(_out, ability_web_node("tk", "T", 3, "Crescendo", "The ramp climbs harder: +3 per turn instead of +2", [], "ramp_fast"));
+            break;
+        case "Compounding Dread":
+            array_push(_out, ability_web_node("t1", "T", 1, "Old Fear", "The dread starts pre-lit - your first trap already carries the bonus", [], "ramp_prelit"));
+            array_push(_out, ability_web_node("tk", "T", 3, "Crescendo", "Each trap teaches the next +6 instead of +4", [], "ramp_fast"));
             break;
         case "Undying":
             array_push(_out, ability_web_node("tk", "T", 3, "Blood Ward", "Also raises an 8-point shield on cast", [], "cast_shield:8"));
@@ -2312,7 +2533,14 @@ function ability_web_bespoke(ab) {
             break;
         // --- General pool ---
         case "Vanish":
+            array_push(_out, ability_web_node("t1", "T", 1, "Deeper Shadow", "The ambush strike hits +18 (up from +12)", [], "vanish_sharp"));
             array_push(_out, ability_web_node("pk", "P", 3, "Shadow Feint", "Also grants +1 class resource on cast", [], "cast_sec:1"));
+            break;
+        case "Field Dressing":
+            // 07-29 M pass: the template's t1 was a Deeper Roots clone. Power
+            // stays the raw-healing line; the Twist branch opens with utility -
+            // go bigger heals or go cleanse.
+            array_push(_out, ability_web_node("t1", "T", 1, "Mender's Rite", "Also cleanses your newest debuff", [], "self_cleanse"));
             break;
     }
     return _out;
@@ -2406,6 +2634,7 @@ function ability_web_apply_mod(_c, mod_id) {
             ? min(0.95, _c.effect_value * 1.5) : ceil(_c.effect_value * 1.5); break;
         case "dmgp": _c.base_damage      = ceil(_c.base_damage * 1.15); break;
         case "apc":  _c.energy_cost      = max(1, _c.energy_cost - 1); break;
+        case "secc": _c.secondary_cost   = max(1, _c.secondary_cost - 1); break;   // Thick Blood etc. (floors at 1)
         case "cdm":  _c.cd_mod           = (variable_struct_exists(_c, "cd_mod") ? _c.cd_mod : 0) - 1; break;
     }
 }
@@ -2772,6 +3001,10 @@ function trait_is_unlocked(trait_name) {
     // TEST LEVER (F8, gc Step): everything reads unlocked while the toggle is on.
     if (variable_global_exists("debug_unlock_all") && global.debug_unlock_all) return true;
     if (_t.unlock_type == "default") return true;
+    // Duelist Arts (DESIGN_DUELIST_CHALLENGE.md): earned with tokens, never bought.
+    if (_t.unlock_type == "duelist") {
+        return variable_global_exists("duelist_tokens") && global.duelist_tokens >= _t.unlock_value;
+    }
     if (!variable_global_exists("traits_unlocked")) return false;
     if (!variable_struct_exists(global.traits_unlocked, _t.effect_id)) return false;
     return variable_struct_get(global.traits_unlocked, _t.effect_id);
@@ -2797,6 +3030,9 @@ function trait_unlock_tier(trait_name) {
 // trait_unlock_cost(name) - { gold, min_rarity, item_label } for a Vex purchase.
 // min_rarity: 1 uncommon+, 2 rare+, 4 legendary.
 function trait_unlock_cost(trait_name) {
+    // Mandate from Heaven (P4): the premium purchase - 2000g + a Legendary.
+    if (trait_name == "Mandate from Heaven")
+        return { gold:vex_price(cha_price(2000)), min_rarity:4, item_label:"Legendary" };
     // Gold is CHA-discounted + Vex Friend perk (the item requirement is unaffected).
     switch (trait_unlock_tier(trait_name)) {
         case 1: return { gold:vex_price(cha_price(200)), min_rarity:1, item_label:"Uncommon" };
@@ -2813,6 +3049,7 @@ function trait_vex_purchasable(class_id) {
     for (var _i = 0; _i < array_length(global.traits_all); _i++) {
         var _t = global.traits_all[_i];
         if (_t.unlock_type == "default") continue;
+        if (_t.unlock_type == "duelist") continue;   // Duelist Arts: earned, never sold
         if (_t.class_req != -1 && _t.class_req != class_id) continue;
         if (trait_is_unlocked(_t.name)) continue;
         array_push(_out, _t);
@@ -2921,6 +3158,7 @@ function trait_potency_info(name) {
         case "Phantom Step":     return { knob: "+2% dodge per rank",                tname: "Afterimage",         teffect: "Once per combat, a hit that would land instead misses." };
         case "Shadow Meld":      return { knob: "Meld crits +10% crit damage per rank", tname: "One With the Dark", teffect: "Also triggers when an enemy misses you for ANY reason." };
         case "Serrated Strikes": return { knob: "+10% bleed strength per rank",      tname: "Flaying Edge",       teffect: "Bleeding enemies take +10% damage from you." };
+        case "Mandate from Heaven": return { knob: "Ranks 2-4: +4% gold find per rank while a Legendary is equipped", tname: "Divine Right", teffect: "The seal holds for 3 turns instead of 2." };
     }
     return { knob: "+10% strength per rank", tname: "Transcend", teffect: "" };
 }

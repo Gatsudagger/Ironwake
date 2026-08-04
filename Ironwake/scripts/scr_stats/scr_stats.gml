@@ -44,6 +44,13 @@ function restock_shops() {
         var _dprice  = max(1, floor(_di.gold_value * _dmarkup * _dorn_disc));
         array_push(global.dorn_stock, { item: _di, price: _dprice, sold: false });
     }
+    // Rare thrill (M 07-29): below A4 Dorn's weights hold NO legendaries, but a
+    // 1-in-200 restock still sneaks one in - a jackpot, not an expectation.
+    if (_dorn_awk < 4 && irandom(199) == 0 && array_length(global.dorn_stock) > 0) {
+        var _dlj  = drop_equipment([0, 0, 0, 0, 100], false);
+        var _dljp = max(1, floor(_dlj.gold_value * 3.2 * _dorn_disc));
+        global.dorn_stock[0] = { item: _dlj, price: _dljp, sold: false };
+    }
     // Dorn Lover perk (Master's Pick): he always holds back something Rare or better.
     if (affinity_at_least("dorn", 4)) {
         var _has_rare = false;
@@ -118,6 +125,12 @@ function add_gold(amount) {
     // Lucky Find (the NEW one, 07-08 identity split): +5% gold from all sources.
     // POTENCY V2: strength scales +10%/rank like the other numeric traits.
     if (trait_active("Lucky Find")) amount = ceil(amount * (1 + 0.05 * trait_potency_mult("Lucky Find")));
+    // Mandate from Heaven potency R2-4 (P4, 08-01): +4%/rank gold find while a
+    // Legendary is equipped - the heavens favor a ratified claim.
+    if (trait_active("Mandate from Heaven") && player_has_legendary_equipped()) {
+        var _mh_r = max(0, trait_potency_r14("Mandate from Heaven") - 1);
+        if (_mh_r > 0) amount = ceil(amount * (1 + 0.04 * _mh_r));
+    }
     // Beggar's Fortune (07-28 legendary): +25% found gold - shops tax it back
     // at +10% (beggar_price_mult in cha_price).
     if (legendary_worn("beggars_fortune")) amount = ceil(amount * 1.25);
@@ -162,6 +175,17 @@ function legendary_worn(effect_id) {
         var _it = global.inventory[_i];
         if (is_struct(_it) && variable_struct_exists(_it, "unique_effect")
             && _it.unique_effect == effect_id) return true;
+    }
+    return false;
+}
+
+// ANY legendary equipped (P4 Mandate ranks 2-4 read this - the heavens favor a
+// ratified claim). Same equipped-scan as legendary_worn, keyed on rarity.
+function player_has_legendary_equipped() {
+    if (!variable_global_exists("inventory")) return false;
+    for (var _i = 0; _i < array_length(global.inventory); _i++) {
+        var _it = global.inventory[_i];
+        if (is_struct(_it) && variable_struct_exists(_it, "rarity") && _it.rarity >= 4) return true;
     }
     return false;
 }
@@ -299,6 +323,18 @@ function end_run(result) {
     if (_pet_corr != "" && variable_global_exists("pet_find_notice")) {
         global.pet_find_notice = (global.pet_find_notice != "")
             ? (global.pet_find_notice + "   " + _pet_corr) : _pet_corr;
+    }
+    // Memories -> quirks (08-01, pillar C): the carried pet's history resolves.
+    var _pet_qk = pet_quirk_resolve_run_end(result);
+    if (_pet_qk != "" && variable_global_exists("pet_find_notice")) {
+        global.pet_find_notice = (global.pet_find_notice != "")
+            ? (global.pet_find_notice + "   " + _pet_qk) : _pet_qk;
+    }
+    // Garden deepening (08-01): the donated residents grow too on a survived run.
+    var _gdn_msg = bairc_garden_run_tick(result);
+    if (_gdn_msg != "" && variable_global_exists("pet_find_notice")) {
+        global.pet_find_notice = (global.pet_find_notice != "")
+            ? (global.pet_find_notice + "   " + _gdn_msg) : _gdn_msg;
     }
     // Hunger upkeep (07-08): the whole roster works up an appetite each run.
     // Runs AFTER pet_run_complete so its gates read pre-drain hunger; a pet that
@@ -576,6 +612,30 @@ function end_run(result) {
     global.run_items_found     = [];
     // consumable_inventory is managed per-result above for defeat;
     // for victory/extract it is left intact so potions carry forward.
+    // Blood Tithe blessing (Shrine V2, 07-29): the pouch of pain-gold pays out on
+    // a SURVIVED run (extract/clear); death forfeits it. Paid before the boon list
+    // clears below so boon_active still sees it.
+    if (variable_global_exists("bloodtithe_bank") && global.bloodtithe_bank > 0) {
+        if (result >= 0 && boon_active("bloodtithe")) {
+            add_gold(global.bloodtithe_bank);
+            if (variable_global_exists("pet_find_notice")) {
+                var _bt_msg = "Blood Tithe pays out: +" + string(global.bloodtithe_bank) + "g for the blood you spilled.";
+                global.pet_find_notice = (global.pet_find_notice != "")
+                    ? (global.pet_find_notice + "   " + _bt_msg) : _bt_msg;
+            }
+        }
+        global.bloodtithe_bank = 0;
+    }
+    // Shrine V2 run-scoped counters die with the run.
+    global.gambler_cd   = 0;
+    global.gambler_proc = false;
+    global.feast_stacks = 0;
+    global.unbroken_shield = 0;   // Soul Shield "Unbroken" carryover ends with the run
+    // Ashen Duelist run-scoped state (the lifetime ledger persists in the save).
+    global.duel_offered_this_run = false;
+    global.duel_launch           = false;
+    global.duel_active           = false;
+
     global.current_floor       = 1;
     global.floor_rooms_cleared = [];
     global.run_boons           = [];   // boons last one run only - clear for the next
@@ -637,15 +697,199 @@ function end_run(result) {
 }
 
 // ---------------------------------------------------------------------------
-// discover_item(item_name)
+// discover_item(item_name, rarity)
 // Records an item name as discovered. Called on drop and on shop purchase.
+// CODEX PASS (07-29, M: "not a single epic item"): epics are RARE bases rolled
+// up to rarity 3 at drop time, so name-only discovery could never show them.
+// The optional rarity records the BEST rarity ever seen per base
+// (global.items_discovered_best, saved) - the codex tints and labels from it.
 // ---------------------------------------------------------------------------
-function discover_item(item_name) {
+function discover_item(item_name, rarity = -1) {
     if (!variable_global_exists("items_discovered")) global.items_discovered = [];
+    if (!variable_global_exists("items_discovered_best") || !is_struct(global.items_discovered_best)) {
+        global.items_discovered_best = {};
+    }
+    if (rarity >= 0) {
+        var _prev = variable_struct_exists(global.items_discovered_best, item_name)
+            ? variable_struct_get(global.items_discovered_best, item_name) : -1;
+        if (rarity > _prev) variable_struct_set(global.items_discovered_best, item_name, rarity);
+    }
     for (var _di = 0; _di < array_length(global.items_discovered); _di++) {
         if (global.items_discovered[_di] == item_name) return;
     }
     array_push(global.items_discovered, item_name);
+}
+
+// True when a base item name has been discovered (codex lookup).
+function item_is_discovered(item_name) {
+    if (!variable_global_exists("items_discovered")) return false;
+    for (var _di = 0; _di < array_length(global.items_discovered); _di++) {
+        if (global.items_discovered[_di] == item_name) return true;
+    }
+    return false;
+}
+
+// Best rarity this base has ever been SEEN at (drop/purchase), or its own base
+// rarity when nothing better is recorded. Feeds the codex tint + "seen at" tag.
+function item_discovered_best_rarity(base_item) {
+    var _r = variable_struct_exists(base_item, "rarity") ? base_item.rarity : 0;
+    if (variable_global_exists("items_discovered_best") && is_struct(global.items_discovered_best)
+        && variable_struct_exists(global.items_discovered_best, base_item.name)) {
+        _r = max(_r, variable_struct_get(global.items_discovered_best, base_item.name));
+    }
+    return _r;
+}
+
+// The codex's master list, in display order with SECTION HEADER rows:
+// COMMON / UNCOMMON / RARE / EPIC / LEGENDARY / EARNED. SINGLE SOURCE for the
+// journal tab, its Step nav and the discovered counter - the old gallery built
+// this in four places and silently drifted (07-29 pass).
+// EPIC SECTION (07-29 round 2, M: "it goes from rare to legendary... no
+// purple"): epics have no loot table of their own - they are rare bases rolled
+// to rarity 3 with 2 greater affixes - so each rare base gets a dedicated
+// purple entry here, ??? until that base has been SEEN at epic
+// (items_discovered_best ledger). Cached once: create_item rolls weapon damage
+// at creation, so rebuilding the epic clones every frame would flicker.
+function item_codex_master_list() {
+    if (variable_global_exists("codex_master_cache") && is_array(global.codex_master_cache)
+        && array_length(global.codex_master_cache) > 0) return global.codex_master_cache;
+    var _out = [];
+    if (variable_global_exists("loot_table_common")) {
+        array_push(_out, { codex_header: true, title: "COMMON", name: "", slot: "", rarity: 0 });
+        for (var _gi = 0; _gi < array_length(global.loot_table_common);   _gi++) array_push(_out, global.loot_table_common[_gi]);
+    }
+    if (variable_global_exists("loot_table_uncommon")) {
+        array_push(_out, { codex_header: true, title: "UNCOMMON", name: "", slot: "", rarity: 1 });
+        for (var _gi = 0; _gi < array_length(global.loot_table_uncommon); _gi++) array_push(_out, global.loot_table_uncommon[_gi]);
+    }
+    if (variable_global_exists("loot_table_rare")) {
+        array_push(_out, { codex_header: true, title: "RARE", name: "", slot: "", rarity: 2 });
+        for (var _gi = 0; _gi < array_length(global.loot_table_rare);     _gi++) array_push(_out, global.loot_table_rare[_gi]);
+        // EPIC band: one purple entry per rare base, viewed at rarity 3.
+        array_push(_out, { codex_header: true, title: "EPIC", name: "", slot: "", rarity: 3 });
+        for (var _gi = 0; _gi < array_length(global.loot_table_rare);     _gi++) {
+            var _ep = clone_item(global.loot_table_rare[_gi]);
+            _ep.rarity       = 3;
+            _ep.codex_epic   = true;
+            _ep.socket_count = rune_sockets_for_rarity(3);
+            array_push(_out, _ep);
+        }
+    }
+    if (variable_global_exists("loot_table_legendary")) {
+        array_push(_out, { codex_header: true, title: "LEGENDARY", name: "", slot: "", rarity: 4 });
+        for (var _gi = 0; _gi < array_length(global.loot_table_legendary); _gi++) array_push(_out, global.loot_table_legendary[_gi]);
+    }
+    // Earned specials outside the drop pools - listed as ??? until found, so
+    // the codex itself teases the hidden progression.
+    array_push(_out, { codex_header: true, title: "EARNED", name: "", slot: "", rarity: 4 });
+    if (!variable_global_exists("codex_ashen_blade")) global.codex_ashen_blade = duelist_make_ashen_blade();
+    array_push(_out, global.codex_ashen_blade);
+    // Only latch the cache once the loot tables actually existed - caching an
+    // early/incomplete build would truncate the codex for the whole session.
+    if (variable_global_exists("loot_table_common")) global.codex_master_cache = _out;
+    return _out;
+}
+
+// True for the non-selectable section-title rows in the codex list.
+function codex_entry_is_header(e) {
+    return is_struct(e) && variable_struct_exists(e, "codex_header") && e.codex_header;
+}
+
+// Per-ROW discovery: base rows light up when the name has been seen at all;
+// EPIC rows only when the base has been SEEN at epic (the best-rarity ledger -
+// item_discovered_best_rarity can't be used here, it floors at the entry's own
+// rarity which is already 3 on the epic clones).
+function codex_entry_discovered(e) {
+    if (codex_entry_is_header(e)) return false;
+    if (variable_struct_exists(e, "codex_epic") && e.codex_epic) {
+        if (variable_global_exists("items_discovered_best") && is_struct(global.items_discovered_best)
+            && variable_struct_exists(global.items_discovered_best, e.name)) {
+            return variable_struct_get(global.items_discovered_best, e.name) >= 3;
+        }
+        return false;
+    }
+    return item_is_discovered(e.name);
+}
+
+// Cursor move that hops over header rows (wraps like the other journal tabs).
+function codex_nav_move(cur, dir, list) {
+    var _n = array_length(list);
+    if (_n <= 0) return 0;
+    var _i = wrap_index(cur + dir, _n);
+    var _g = 0;
+    while (codex_entry_is_header(list[_i]) && _g < _n) { _i = wrap_index(_i + dir, _n); _g++; }
+    return _i;
+}
+
+// Backfill the best-rarity ledger from everything the player currently OWNS
+// (worn gear, hub stash, carried run loot). Pre-codex-pass saves only stored
+// discovered NAMES, so epics found before 07-29 had no recorded rarity - this
+// lights up any epic still in the player's possession the moment the save
+// loads. (Epics found and sold before the pass are unrecoverable - nothing
+// ever wrote their rarity down.)
+function codex_backfill_owned() {
+    var _pools = [];
+    if (variable_global_exists("inventory")       && is_array(global.inventory))       array_push(_pools, global.inventory);
+    if (variable_global_exists("equipment_stash") && is_array(global.equipment_stash)) array_push(_pools, global.equipment_stash);
+    if (variable_global_exists("run_items_found") && is_array(global.run_items_found)) array_push(_pools, global.run_items_found);
+    if (variable_global_exists("carried_items")   && is_array(global.carried_items))   array_push(_pools, global.carried_items);
+    if (variable_global_exists("secured_items")   && is_array(global.secured_items))   array_push(_pools, global.secured_items);
+    for (var _pi = 0; _pi < array_length(_pools); _pi++) {
+        var _pool = _pools[_pi];
+        for (var _ii = 0; _ii < array_length(_pool); _ii++) {
+            var _it = _pool[_ii];
+            if (is_struct(_it) && variable_struct_exists(_it, "item") && is_struct(_it.item)) _it = _it.item;
+            if (is_struct(_it) && variable_struct_exists(_it, "rarity")) {
+                discover_item(item_base_name(_it), _it.rarity);
+            }
+        }
+    }
+}
+
+// veil_slot_fixup() - one-time save migration (07-30): Veil of the Patient Dark
+// moved offhand -> helm. Saved item structs carry the stale slot baked in, and
+// the equip flow places items by item.slot, so without this an old Veil would
+// keep equipping into the offhand forever. Mutates in place (structs are
+// references); if the fixed Veil was EQUIPPED next to another helm, the Veil
+// steps down to the stash rather than double-occupying the slot.
+function veil_slot_fixup() {
+    var _pools = [];
+    if (variable_global_exists("inventory")       && is_array(global.inventory))       array_push(_pools, global.inventory);
+    if (variable_global_exists("equipment_stash") && is_array(global.equipment_stash)) array_push(_pools, global.equipment_stash);
+    if (variable_global_exists("run_items_found") && is_array(global.run_items_found)) array_push(_pools, global.run_items_found);
+    if (variable_global_exists("carried_items")   && is_array(global.carried_items))   array_push(_pools, global.carried_items);
+    if (variable_global_exists("secured_items")   && is_array(global.secured_items))   array_push(_pools, global.secured_items);
+    for (var _pi = 0; _pi < array_length(_pools); _pi++) {
+        var _pool = _pools[_pi];
+        for (var _ii = 0; _ii < array_length(_pool); _ii++) {
+            var _it = _pool[_ii];
+            if (is_struct(_it) && variable_struct_exists(_it, "item") && is_struct(_it.item)) _it = _it.item;
+            if (is_struct(_it) && item_base_name(_it) == "Veil of the Patient Dark"
+                && variable_struct_exists(_it, "slot") && _it.slot == "offhand") {
+                _it.slot = "helm";
+            }
+        }
+    }
+    // Equipped-slot collision: two "helm" items in the equipped array means the
+    // migrated Veil shares the slot with a real helm - stash the Veil.
+    if (variable_global_exists("inventory") && is_array(global.inventory)
+        && variable_global_exists("equipment_stash") && is_array(global.equipment_stash)) {
+        var _helms = 0;
+        for (var _hi = 0; _hi < array_length(global.inventory); _hi++) {
+            var _hit = global.inventory[_hi];
+            if (is_struct(_hit) && variable_struct_exists(_hit, "slot") && _hit.slot == "helm") _helms++;
+        }
+        if (_helms > 1) {
+            for (var _vi = array_length(global.inventory) - 1; _vi >= 0; _vi--) {
+                var _vit = global.inventory[_vi];
+                if (is_struct(_vit) && item_base_name(_vit) == "Veil of the Patient Dark") {
+                    array_delete(global.inventory, _vi, 1);
+                    array_push(global.equipment_stash, _vit);
+                    break;
+                }
+            }
+        }
+    }
 }
 
 // item_base_name(item) - the codex identity of an item. Affixes mutate `name`
@@ -669,6 +913,8 @@ function item_stat_archetype(stat_name) {
         case "CHA": return "presence - prices and gold find";
         case "bonus_max_hp": return "extra health";
         case "crit_flat":    return "critical strike chance";
+        case "crit_spell":   return "spell critical chance";
+        case "crit_phys":    return "physical critical chance";
         case "dodge_flat":   return "evasion";
         case "gold_find":    return "gold found";
     }
@@ -759,6 +1005,9 @@ function item_stat_ranges_text(base_item) {
         _txt += "\n  Uncommon: 1 affix  (+1 stat, or +5 HP / +3% crit-dodge-gold)";
     } else if (_rar == 2) {
         _txt += "\n  Rare: 1-2 affixes  (+2 stat, or +10 HP / +5%)";
+        _txt += "\n  Epic: 2 affixes    (+3 stat, or +15 HP / +8%)";
+    } else if (_rar == 3) {
+        // The codex's dedicated EPIC entries (rare bases viewed at rarity 3).
         _txt += "\n  Epic: 2 affixes    (+3 stat, or +15 HP / +8%)";
     }
     return _txt;
@@ -1714,7 +1963,7 @@ function legendary_recast(item) {
     }
     var _ec = item_empower_context();
     item_empower(item, _ec.asc, _ec.df);   // A6+/Descent scaling like fresh drops
-    discover_item(item_base_name(item));
+    discover_item(item_base_name(item), item.rarity);
     return true;
 }
 
@@ -1796,33 +2045,43 @@ function forge_build_item(_slot, _fx, _name) {
 // affixes boosted ~x1.5 AND one CURSE - a negative affix on a channel the
 // equip math already handles, so every curse is real. Keeps its unique effect.
 function cursed_rebirth_make(src) {
+    // 07-31 REBALANCE (M + GDD: "mega strength and mega weakness" - the old
+    // x1.5 + one -12 HP affix was "pointless"): stats DOUBLE, and the curse is
+    // a fight-altering wound. The curse never lands on the item's own primary
+    // stat, so the boon can't be silently washed out.
     var _it = clone_item(src);
     var _bn = item_base_name(src);
-    _it.base_name = "Cursed " + _bn;
-    _it.name      = "Cursed " + _bn;
-    _it.rarity    = 4;
-    _it.cursed    = true;
-    if (variable_struct_exists(_it, "stat_value"))    _it.stat_value    = ceil(_it.stat_value * 1.5);
-    if (variable_struct_exists(_it, "weapon_damage") && _it.weapon_damage > 0) _it.weapon_damage = ceil(_it.weapon_damage * 1.5);
+    _it.base_name   = "Cursed " + _bn;   // codex identity (discover_item)
+    _it.splash_base = _bn;               // reveal popup falls back to the original splash art
+    _it.rarity      = 4;
+    _it.cursed      = true;
+    if (variable_struct_exists(_it, "stat_value"))    _it.stat_value    = ceil(_it.stat_value * 2);
+    if (variable_struct_exists(_it, "weapon_damage") && _it.weapon_damage > 0) _it.weapon_damage = ceil(_it.weapon_damage * 2);
     if (variable_struct_exists(_it, "affixes")) {
         for (var _i = 0; _i < array_length(_it.affixes); _i++) {
-            _it.affixes[_i].stat_value = ceil(_it.affixes[_i].stat_value * 1.5);
+            _it.affixes[_i].stat_value = ceil(_it.affixes[_i].stat_value * 2);
         }
     } else {
         _it.affixes = [];
     }
     var _curses = [
-        { stat_name: "bonus_max_hp", stat_value: -12, suffix: "of Withering"    },
-        { stat_name: "crit_flat",    stat_value: -4,  suffix: "of Dulled Fate"  },
-        { stat_name: "dodge_flat",   stat_value: -5,  suffix: "of Leaden Feet"  },
-        { stat_name: "gold_find",    stat_value: -15, suffix: "of the Beggared" },
-        { stat_name: "CON",          stat_value: -2,  suffix: "of Rot"          },
-        { stat_name: "WIS",          stat_value: -2,  suffix: "of Whispers"     },
+        { stat_name: "bonus_max_hp", stat_value: -30, suffix: "of Withering",    epithet: "Withered"   },
+        { stat_name: "crit_flat",    stat_value: -12, suffix: "of Dulled Fate",  epithet: "Dulled"     },
+        { stat_name: "dodge_flat",   stat_value: -12, suffix: "of Leaden Feet",  epithet: "Leaden"     },
+        { stat_name: "gold_find",    stat_value: -40, suffix: "of the Beggared", epithet: "Beggared"   },
+        { stat_name: "CON",          stat_value: -6,  suffix: "of Rot",          epithet: "Rotting"    },
+        { stat_name: "WIS",          stat_value: -6,  suffix: "of Whispers",     epithet: "Whispering" },
+        { stat_name: "STR",          stat_value: -6,  suffix: "of Palsy",        epithet: "Palsied"    },
+        { stat_name: "INT",          stat_value: -6,  suffix: "of the Hollowed", epithet: "Hollowed"   },
     ];
+    var _prim = variable_struct_exists(_it, "stat_name") ? _it.stat_name : "";
     var _c = _curses[irandom(array_length(_curses) - 1)];
+    while (_c.stat_name == _prim) _c = _curses[irandom(array_length(_curses) - 1)];
     array_push(_it.affixes, { suffix: _c.suffix, prefix: "", stat_name: _c.stat_name, stat_value: _c.stat_value });
+    // The curse lives in the TITLE (M 07-31): "Cursed Crown of the Hollow King, Withered".
+    _it.name = "Cursed " + _bn + ", " + _c.epithet;
     _it.gold_value = 250;
-    _it.lore = "A legendary fed back to the dark. What crawled out is stronger than what went in - and it kept something of yours in exchange.";
+    _it.lore = "A legendary fed back to the dark. What crawled out is far stronger than what went in - and it kept something of yours in exchange.";
     return _it;
 }
 
@@ -1859,6 +2118,11 @@ function drop_weights(source, asc) {
         _sum += _w[_i];
     }
     _w[0] = max(0, 100 - _sum);
+    // Dorn's legendary shelf is END-GAME stock (M 07-29: a legendary for sale
+    // right after A2 read as wrong - the linear lerp was granting ~1% per slot
+    // from A2 up). Below A4 the weights hold none; restock_shops adds a
+    // 1-in-200 jackpot roll instead.
+    if (source == "dorn" && asc < 4 && _w[4] > 0) { _w[0] += _w[4]; _w[4] = 0; }
     // Premium sources have no common floor: route the leftover into uncommon.
     if (_a0[0] == 0 && _a5[0] == 0) {
         _w[1] += _w[0];
@@ -1996,7 +2260,7 @@ function drop_equipment(rarity_weights, do_discover = true, curse_tiers = 0) {
         var _leg_item = clone_item(_leg_pick);
         var _leg_ec = item_empower_context();
         item_empower(_leg_item, _leg_ec.asc, _leg_ec.df);   // A6+/Descent scaling
-        if (do_discover) discover_item(item_base_name(_leg_item));
+        if (do_discover) discover_item(item_base_name(_leg_item), 4);
         return _leg_item;
     }
 
@@ -2045,7 +2309,7 @@ function drop_equipment(rarity_weights, do_discover = true, curse_tiers = 0) {
     var _emp_ec = item_empower_context();
     item_empower(_item, _emp_ec.asc, _emp_ec.df);
 
-    if (do_discover) discover_item(item_base_name(_item));
+    if (do_discover) discover_item(item_base_name(_item), _item.rarity);
     return _item;
 }
 
@@ -2548,6 +2812,67 @@ function item_stat_requirement(item) {
     return _none;
 }
 
+// =============================================================================
+// ARMOR WEIGHT CLASSES (M-approved 07-31, SYSTEMS_ARMOR_CLASSES.md).
+// Class is DERIVED at read time (never stored - no save migration): base_name
+// keywords first, primary-stat fallback. Baseline Armor / El Resist per slot x
+// class x rarity, folded into apply_equipment_stats below.
+// =============================================================================
+
+// item_weight_class(item) -> "heavy" / "medium" / "cloth" / "" (not body armor).
+function item_weight_class(item) {
+    if (!is_struct(item)) return "";
+    var _slot = variable_struct_exists(item, "slot") ? item.slot : "";
+    if (_slot != "chest" && _slot != "helm" && _slot != "gloves" && _slot != "boots") return "";
+    var _n = string_lower(variable_struct_exists(item, "base_name") ? item.base_name
+            : (variable_struct_exists(item, "name") ? item.name : ""));
+    var _heavy  = ["plate", "mail", "visor", "bulwark", "iron", "tower", "greaves"];
+    var _medium = ["leather", "hide", "scale", "brigand", "chain"];
+    var _cloth  = ["robe", "cloth", "hood", "wrap", "silk", "veil", "tatter"];
+    for (var _i = 0; _i < array_length(_heavy);  _i++) if (string_pos(_heavy[_i],  _n) > 0) return "heavy";
+    for (var _i = 0; _i < array_length(_medium); _i++) if (string_pos(_medium[_i], _n) > 0) return "medium";
+    for (var _i = 0; _i < array_length(_cloth);  _i++) if (string_pos(_cloth[_i],  _n) > 0) return "cloth";
+    var _sn = variable_struct_exists(item, "stat_name") ? item.stat_name : "";
+    if (_sn == "STR" || _sn == "CON") return "heavy";
+    if (_sn == "DEX")                 return "medium";
+    return "cloth";   // INT / WIS / CHA / none
+}
+
+// item_base_armor(item) - baseline flat Armor from the weight-class table.
+// Shields get their own baseline (stacks with any of-Warding affix).
+function item_base_armor(item) {
+    if (!is_struct(item)) return 0;
+    var _rar = clamp(variable_struct_exists(item, "rarity") ? item.rarity : 0, 0, 4);
+    if (item_is_shield_offhand(item)) {
+        return [1, 2, 2, 3, 4][_rar];
+    }
+    var _wc = item_weight_class(item);
+    if (_wc == "") return 0;
+    var _slot = item.slot;
+    if (_wc == "heavy") {
+        if (_slot == "chest") return [1, 2, 2, 3, 4][_rar];
+        if (_slot == "helm")  return [1, 1, 2, 2, 3][_rar];
+        return [0, 1, 1, 1, 2][_rar];               // gloves / boots
+    }
+    if (_wc == "medium") {
+        if (_slot == "chest") return [0, 1, 1, 2, 2][_rar];
+        if (_slot == "helm")  return [0, 1, 1, 1, 2][_rar];
+        return [0, 0, 1, 1, 1][_rar];               // gloves / boots
+    }
+    return 0;                                        // cloth pays with skin
+}
+
+// item_base_el_resist(item) - cloth compensation (M-approved): cloth chest/helm
+// ward spells instead of blades. Uses the existing el_resist channel.
+function item_base_el_resist(item) {
+    if (!is_struct(item)) return 0;
+    if (item_weight_class(item) != "cloth") return 0;
+    var _slot = item.slot;
+    if (_slot != "chest" && _slot != "helm") return 0;
+    var _rar = clamp(variable_struct_exists(item, "rarity") ? item.rarity : 0, 0, 4);
+    return [1, 1, 2, 2, 3][_rar];
+}
+
 // player_base_stat(stat_name) - the wearer's effective innate stat outside combat:
 // char-create base + permanent (Vex) bonus + in-run growth. Excludes EQUIPMENT
 // bonuses so requirements never depend on equip order (no bootstrap paradox).
@@ -2636,7 +2961,7 @@ function apply_equipment_stats(stats_struct) {
     // melee_dmg_bonus / ranged_dmg_bonus - reach-gated flat weapon damage. NOT applied to
     // stats_struct; summed into the cast resolver's _dmg per the ability's reach class
     // (SYSTEMS_WEAPON_ROLES.md §B). Melee weapon -> melee abilities, ranged weapon -> ranged.
-    var _bonus = { armor: 0, el_resist: 0, bonus_max_hp: 0, crit_flat: 0, dodge_flat: 0, gold_find: 0,
+    var _bonus = { armor: 0, el_resist: 0, bonus_max_hp: 0, crit_flat: 0, crit_spell: 0, crit_phys: 0, dodge_flat: 0, gold_find: 0,
                    melee_dmg_bonus: 0, ranged_dmg_bonus: 0, ranged_school: "",
                    melee_elem: undefined, ranged_elem: undefined,
                    // Flat "+X <school> damage" accumulator (SYSTEMS_ELEMENT_SCHOOLS.md §C).
@@ -2696,6 +3021,11 @@ function apply_equipment_stats(stats_struct) {
                 }
             }
         }
+
+        // Weight-class baseline Armor / El Resist (M-approved 07-31,
+        // SYSTEMS_ARMOR_CLASSES.md) - derived from the item, on top of affixes.
+        _bonus.armor     += item_base_armor(_it);
+        _bonus.el_resist += item_base_el_resist(_it);
     }
     return _bonus;
 }
@@ -2715,6 +3045,8 @@ function _equip_apply_stat(stats_struct, bonus, stat_name, stat_value) {
     else if (stat_name == "el_resist")   { bonus.el_resist   += stat_value; }
     else if (stat_name == "bonus_max_hp"){ bonus.bonus_max_hp += stat_value; }
     else if (stat_name == "crit_flat")   { bonus.crit_flat   += stat_value; }
+    else if (stat_name == "crit_spell")  { bonus.crit_spell  += stat_value; }   // spell-only crit (07-31)
+    else if (stat_name == "crit_phys")   { bonus.crit_phys   += stat_value; }   // phys-only crit (07-31)
     else if (stat_name == "dodge_flat")  { bonus.dodge_flat  += stat_value; }
     else if (stat_name == "gold_find")   { bonus.gold_find   += stat_value; }
     // "school_<name>" -> flat school-damage accumulator (only known schools).
@@ -2945,11 +3277,13 @@ function handle_enemy_drops(enemy_type) {
         }
         // 4% equipment drop (+ Faerie's Tear bonus) - rarity weights scale with awakening.
         if (irandom(99) < 4 + _loot_pot) {
-            var _item = drop_equipment(drop_weights("standard", _drop_asc), true, curse_loot_tier_bonus_for("standard"));
+            var _gt = boon_gambler_tier_bonus();   // Gambler's Icon: fast fights roll +1 tier
+            var _item = drop_equipment(drop_weights("standard", _drop_asc), true, curse_loot_tier_bonus_for("standard") + _gt);
             array_push(global.run_items_found, _item);
             array_push(global.carried_items, _item);
-            discover_item(item_base_name(_item));
-            return _item.name + " [" + item_rarity_name(_item.rarity) + "]" + _rune_suffix;
+            discover_item(item_base_name(_item), _item.rarity);
+            return _item.name + " [" + item_rarity_name(_item.rarity) + "]"
+                + ((_gt > 0) ? "  (GAMBLER'S ICON!)" : "") + _rune_suffix;
         }
 
     } else if (enemy_type == "elite") {
@@ -2962,11 +3296,13 @@ function handle_enemy_drops(enemy_type) {
         // potion economy is unchanged, only the guarantee is new.
         var _ew = drop_weights("elite", _drop_asc);
         _ew[1] += _ew[0]; _ew[0] = 0;   // never common (M: "even if just uncommon")
-        var _item = drop_equipment(_ew, true, curse_loot_tier_bonus_for("elite"));
+        var _gt = boon_gambler_tier_bonus();   // Gambler's Icon: fast fights roll +1 tier
+        var _item = drop_equipment(_ew, true, curse_loot_tier_bonus_for("elite") + _gt);
         array_push(global.run_items_found, _item);
         array_push(global.carried_items, _item);
-        discover_item(item_base_name(_item));
-        var _e_result = _item.name + " [" + item_rarity_name(_item.rarity) + "]";
+        discover_item(item_base_name(_item), _item.rarity);
+        var _e_result = _item.name + " [" + item_rarity_name(_item.rarity) + "]"
+            + ((_gt > 0) ? "  (GAMBLER'S ICON!)" : "");
         // Bonus consumable rider (60% - 4%/tier, min 40%; Famine curse blocks).
         // Pool mix as before: at low tiers most rolls downgrade to the standard
         // pool (A0: 60% -> A5: 0%) so elite-tier potions are grown into.
@@ -2985,11 +3321,13 @@ function handle_enemy_drops(enemy_type) {
         // Guaranteed equipment - rarity weights scale with awakening AND floor
         // (boss_drop_weights: F2 = uncommon+, F3 = rare+ hard floors).
         var _boss_fl = variable_global_exists("current_floor") ? global.current_floor : 1;
-        var _item = drop_equipment(boss_drop_weights(_drop_asc, _boss_fl), true, curse_loot_tier_bonus_for("boss"));
+        var _gt = boon_gambler_tier_bonus();   // Gambler's Icon: fast fights roll +1 tier
+        var _item = drop_equipment(boss_drop_weights(_drop_asc, _boss_fl), true, curse_loot_tier_bonus_for("boss") + _gt);
         array_push(global.run_items_found, _item);
         array_push(global.carried_items, _item);
-        discover_item(item_base_name(_item));
-        var _result = _item.name + " [" + item_rarity_name(_item.rarity) + "]";
+        discover_item(item_base_name(_item), _item.rarity);
+        var _result = _item.name + " [" + item_rarity_name(_item.rarity) + "]"
+            + ((_gt > 0) ? "  (GAMBLER'S ICON!)" : "");
         // 50% bonus consumable (suppressed by the Famine curse). Same awakening
         // pool mix as elites, gentler (bosses stay a bit premium): A0 40% -> A5 0%.
         if (!curse_blocks_consumables() && irandom(99) < 50) {
@@ -3170,7 +3508,7 @@ function rune_catalog() {
         { id:"finesse",    name:"Finesse",    domain:"gear",   stat_name:"DEX",          vals:[1,2,4],    blurb:"+# DEX" },
         { id:"fortitude",  name:"Fortitude",  domain:"gear",   stat_name:"CON",          vals:[1,2,4],    blurb:"+# CON" },
         { id:"insight",    name:"Insight",    domain:"gear",   stat_name:"INT",          vals:[1,2,4],    blurb:"+# INT" },
-        { id:"keen",       name:"Keen",       domain:"gear",   stat_name:"crit_flat",    vals:[3,6,12],   blurb:"+#% Crit chance" },
+        { id:"keen",       name:"Keen",       domain:"gear",   stat_name:"crit_flat",    vals:[3,6,12],   blurb:"+#% Crit chance (all attacks)" },
         { id:"warding",    name:"Warding",    domain:"gear",   stat_name:"el_resist",    vals:[5,10,18],  blurb:"+#% Elemental resist" },
         { id:"evasion",    name:"Evasion",    domain:"gear",   stat_name:"dodge_flat",   vals:[2,4,8],    blurb:"+# Dodge" },
         // ---- ASPECT RUNES (combat effects wired in Phase 2) ----
@@ -3207,6 +3545,9 @@ function rune_value(rune) {
     var _def = rune_get(rune.id);
     if (_def == undefined) return 0;
     var _t = max(1, rune.tier);
+    // Runic Affinity V2 (07-29): while the boon holds, socketed runes act 1 tier
+    // higher, capped at V - runes already at V+ (endless combining) are untouched.
+    if (_t < 5 && boon_active("runic")) _t += 1;
     if (_t <= 3) return _def.vals[_t - 1];
     // Endless tiers (IV+, post-win combining): compound +40% per tier past III
     // on the authored tier-III value; the max() guarantees at least +1 per tier
@@ -4460,18 +4801,50 @@ function epithet_unlocked_count() {
 // reset every run (in end_run). Effects are queried via boon_active / boon_value.
 // =============================================================================
 
+// SHRINE BLESSINGS V2 (07-29, DESIGN_SHRINE_BLESSINGS_V2.md): every entry carries
+// kind ("plain" = the reworked classic pool / "creative" = the build-around pool)
+// and a one-line flavor whisper shown for the highlighted offer. The shrine offer
+// rolls 2 creative + 1 plain (boon_offer_roll).
 function boon_catalog() {
     return [
-        { id:"bloodlust",   name:"Bloodlust",     desc:"+15% damage dealt",                   cost:120, value:0.15 },
-        { id:"ironhide",    name:"Ironhide",      desc:"+20% max HP",                          cost:120, value:0.20 },
-        { id:"duelist",     name:"Duelist",       desc:"+10% crit chance",                     cost:120, value:10 },
-        { id:"vampirism",   name:"Vampirism",     desc:"Heal 5 HP on each kill",               cost:140, value:5 },
-        { id:"warding",     name:"Warding",       desc:"Take 12% less damage",                 cost:140, value:0.12 },
-        { id:"greed",       name:"Greed",         desc:"+50% gold from kills",                 cost:80,  value:0.50 },
-        { id:"runic",       name:"Runic Affinity",desc:"+50% rune dust from kills",            cost:80,  value:0.50 },
-        { id:"executioner", name:"Executioner",   desc:"+25% damage to enemies below 30% HP",  cost:140, value:0.25 },
-        { id:"aegis",       name:"Aegis",         desc:"Start each combat with a 15 shield",   cost:120, value:15 },
-        { id:"glasscannon", name:"Glass Cannon",  desc:"+30% damage, -15% max HP",             cost:160, value:0.30 },
+        // --- Plain pool (all 10 classics kept; 6 got their one-line rework) ----
+        { id:"bloodlust",   kind:"plain", name:"Bloodlust",     desc:"+15% damage, rising to +25% while below half HP",              cost:120, value:0.15,
+          flavor:"It wants to see you bleeding when you swing." },
+        { id:"ironhide",    kind:"plain", name:"Ironhide",      desc:"+20% max HP and +2 armor",                                     cost:120, value:0.20,
+          flavor:"Skin like kettle-iron, and twice as stubborn." },
+        { id:"duelist",     kind:"plain", name:"Duelist",       desc:"+10% crit chance, and your crits restore 1 class resource",    cost:120, value:10,
+          flavor:"Every perfect cut pays for the next." },
+        { id:"vampirism",   kind:"plain", name:"Vampirism",     desc:"Heal 5 HP on each kill",                                       cost:140, value:5,
+          flavor:"The dead owe you. Collect." },
+        { id:"warding",     kind:"plain", name:"Warding",       desc:"Take 12% less damage; hostile afflictions run 1 turn shorter", cost:140, value:0.12,
+          flavor:"Poisons sour and blades slide half a finger wide." },
+        { id:"greed",       kind:"plain", name:"Greed",         desc:"+50% gold from kills; elites and bosses drop a +75g purse",    cost:80,  value:0.50,
+          flavor:"Champions carry the heaviest pockets." },
+        { id:"runic",       kind:"plain", name:"Runic Affinity",desc:"+50% rune dust; your socketed runes act 1 tier higher (cap V)",cost:80,  value:0.50,
+          flavor:"The old letters remember what they used to mean." },
+        { id:"executioner", kind:"plain", name:"Executioner",   desc:"+25% damage to enemies below 30% HP",                          cost:140, value:0.25,
+          flavor:"Finish what you start." },
+        { id:"aegis",       kind:"plain", name:"Aegis",         desc:"Start each combat with a 15 shield",                           cost:120, value:15,
+          flavor:"A borrowed shieldwall, one prayer wide." },
+        { id:"glasscannon", kind:"plain", name:"Glass Cannon",  desc:"+30% damage, -15% max HP",                                     cost:160, value:0.30,
+          flavor:"Burn brighter. Break easier. Choose anyway." },
+        // --- Creative pool (8 build-arounds, M-locked 07-29) --------------------
+        { id:"pyre",        kind:"creative", name:"Pyre's Favor",   desc:"Enemies you kill detonate: their afflictions erupt onto your other foes", cost:130, value:0,
+          flavor:"Let every corpse be a lantern." },
+        { id:"secondskin",  kind:"creative", name:"Second Skin",    desc:"The first hit you take each combat is halved",                            cost:110, value:0,
+          flavor:"The altar keeps the first blow for itself." },
+        { id:"gambler",     kind:"creative", name:"Gambler's Icon", desc:"Win a combat within 3 turns: its loot rolls 1 rarity higher (icon then rests 2 fights)", cost:140, value:0,
+          flavor:"Fortune loves the quick and forgets the careful." },
+        { id:"whetecho",    kind:"creative", name:"Whetstone Echo", desc:"Your first ability each combat echoes at 40% power",                      cost:150, value:0,
+          flavor:"Strike once. The stone remembers twice." },
+        { id:"bloodtithe",  kind:"creative", name:"Blood Tithe",    desc:"Bank 1 gold for every HP you lose; the pouch pays out on extraction",     cost:90,  value:0,
+          flavor:"Pain, weighed and paid in silver." },
+        { id:"thirdwind",   kind:"creative", name:"Third Wind",     desc:"Every 3rd ability you cast in a combat costs 1 less AP",                  cost:130, value:0,
+          flavor:"One, two - and the third comes free as breath." },
+        { id:"feast",       kind:"creative", name:"Feast of Crows", desc:"Each foe that falls in a fight: +8% damage and +2 armor until it ends",   cost:120, value:0,
+          flavor:"The crows crown whoever feeds them." },
+        { id:"silvertongue",kind:"creative", name:"Silvered Tongue",desc:"Every event room offers you one extra, honeyed way through",              cost:100, value:0,
+          flavor:"Doors open for a voice that rings true." },
     ];
 }
 
@@ -4494,13 +4867,68 @@ function boon_value(id) {
 }
 
 // Outgoing-damage multiplier from boons (Bloodlust + Glass Cannon, + Executioner
-// when the target is below 30% HP). target_hp_frac in 0..1.
-function boon_damage_mult(target_hp_frac) {
+// when the target is below 30% HP). target_hp_frac in 0..1. `player` is optional
+// (the combat player struct): with it, Bloodlust's V2 ramp reads the caster's own
+// HP (+25% total below half). Feast of Crows stacks are global (per-combat).
+function boon_damage_mult(target_hp_frac, player = undefined) {
     var _m = 1.0;
-    if (boon_active("bloodlust"))   _m += boon_value("bloodlust");
+    if (boon_active("bloodlust")) {
+        var _bl = boon_value("bloodlust");
+        if (player != undefined && variable_struct_exists(player, "max_HP")
+            && player.max_HP > 0 && player.HP < player.max_HP * 0.5) _bl = 0.25;
+        _m += _bl;
+    }
     if (boon_active("glasscannon")) _m += boon_value("glasscannon");
     if (boon_active("executioner") && target_hp_frac <= 0.30) _m += boon_value("executioner");
+    // Feast of Crows: +8% per enemy that has died this combat (reset per combat).
+    if (boon_active("feast") && variable_global_exists("feast_stacks") && global.feast_stacks > 0) {
+        _m += 0.08 * global.feast_stacks;
+    }
     return _m;
+}
+
+// Flat armor from boons, applied alongside player.equip_armor in every player
+// mitigation chain (basic attack / double strike / combat_mitigate_player):
+// Ironhide V2 grants +2; Feast of Crows adds +2 per corpse this combat.
+function boon_flat_armor() {
+    var _a = 0;
+    if (boon_active("ironhide")) _a += 2;
+    if (boon_active("feast") && variable_global_exists("feast_stacks")) _a += 2 * global.feast_stacks;
+    return _a;
+}
+
+// Second Skin: the FIRST hit the player takes each combat is halved. Called at
+// the end of each mitigation chain, right before the shield absorb. Consumes the
+// per-combat flag (set in combat_apply_start_traits) only when it actually fires.
+function boon_second_skin_apply(player, dmg, log) {
+    if (dmg > 1 && boon_active("secondskin")
+        && variable_struct_exists(player, "second_skin_used") && !player.second_skin_used) {
+        player.second_skin_used = true;
+        var _h = ceil(dmg / 2);
+        array_push(log, "Second Skin turns the blow - " + string(dmg) + " becomes " + string(_h) + "!");
+        return _h;
+    }
+    return dmg;
+}
+
+// Gambler's Icon: +1 loot rarity tier for drops rolled while the fight is still
+// within 3 rounds, unless the icon is resting (2-fight cooldown after a proc -
+// bookkeeping lives in combat_apply_start_traits). Marks the proc so the NEXT
+// combat start arms the cooldown; same-fight drops all keep the bump.
+function boon_gambler_tier_bonus() {
+    if (!boon_active("gambler")) return 0;
+    if (variable_global_exists("gambler_cd") && global.gambler_cd > 0) return 0;
+    if (!instance_exists(obj_combat_controller)) return 0;
+    var _cs = instance_find(obj_combat_controller, 0).combat_state;
+    if (_cs == undefined || _cs.round > 3) return 0;
+    global.gambler_proc = true;
+    return 1;
+}
+
+// Shrine reroll (V2): (10 + 10 x awakening) dust, once per shrine.
+function shrine_reroll_cost() {
+    var _asc = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
+    return 10 + 10 * clamp(_asc, 0, 5);
 }
 
 // Incoming-damage multiplier from boons (Warding).
@@ -4546,18 +4974,35 @@ function boon_item_tribute_pick(cost) {
     return _best;
 }
 
-// Roll up to 3 distinct boons the player doesn't already own, for a shrine offer.
+// Roll up to 3 distinct unowned boons for a shrine offer. V2 shape: 2 from the
+// CREATIVE pool + 1 from the PLAIN pool; when a pool runs dry the other tops up.
 function boon_offer_roll() {
     var _cat = boon_catalog();
-    var _pool = [];
-    for (var _i = 0; _i < array_length(_cat); _i++) if (!boon_active(_cat[_i].id)) array_push(_pool, _cat[_i].id);
-    // Fisher-Yates partial shuffle
-    for (var _i = array_length(_pool) - 1; _i > 0; _i--) {
+    var _creative = [];
+    var _plain    = [];
+    for (var _i = 0; _i < array_length(_cat); _i++) {
+        if (boon_active(_cat[_i].id)) continue;
+        if (_cat[_i].kind == "creative") array_push(_creative, _cat[_i].id);
+        else                             array_push(_plain,    _cat[_i].id);
+    }
+    // Fisher-Yates shuffle both pools.
+    for (var _i = array_length(_creative) - 1; _i > 0; _i--) {
         var _j = irandom(_i);
-        var _t = _pool[_i]; _pool[_i] = _pool[_j]; _pool[_j] = _t;
+        var _t = _creative[_i]; _creative[_i] = _creative[_j]; _creative[_j] = _t;
+    }
+    for (var _i = array_length(_plain) - 1; _i > 0; _i--) {
+        var _j = irandom(_i);
+        var _t = _plain[_i]; _plain[_i] = _plain[_j]; _plain[_j] = _t;
     }
     var _out = [];
-    for (var _i = 0; _i < min(3, array_length(_pool)); _i++) array_push(_out, _pool[_i]);
+    for (var _i = 0; _i < min(2, array_length(_creative)); _i++) array_push(_out, _creative[_i]);
+    if (array_length(_plain) > 0) array_push(_out, _plain[0]);
+    // Top up to 3 from whichever pool still has spares.
+    var _ci = 2; var _pi = 1;
+    while (array_length(_out) < 3 && (_ci < array_length(_creative) || _pi < array_length(_plain))) {
+        if (_ci < array_length(_creative))   { array_push(_out, _creative[_ci]); _ci++; }
+        else                                 { array_push(_out, _plain[_pi]);    _pi++; }
+    }
     return _out;
 }
 
@@ -5703,6 +6148,15 @@ function reforge_ingot_spend(_rarity) {
     if (_t >= 0) global.reforge_ingots[_t] -= 1;
     return _t;
 }
+// Lowest ingot tier (0-3) holding 3 or more - the tier a FUSE would combine
+// (3 -> 1 of the next tier up; Legendary ingots don't fuse). -1 = nothing to
+// fuse. (M 07-29: once rerolling commons stops being worth the time, low-tier
+// ingots' real role is fusing upward.)
+function reforge_combine_tier() {
+    reforge_ingots_ensure();
+    for (var _t = 0; _t <= 3; _t++) if (global.reforge_ingots[_t] >= 3) return _t;
+    return -1;
+}
 // Tier icon sprite (direct refs so the compiler keeps them - no string-strip risk).
 function reforge_ingot_sprite(_tier) {
     switch (clamp(_tier, 0, 4)) {
@@ -6681,7 +7135,7 @@ function petra_collect() {
     var _bias = global.petra_order.dust_bias;
     var _item = petra_make_item(_out, _bias);
     array_push(global.equipment_stash, _item);
-    discover_item(item_base_name(_item));
+    discover_item(item_base_name(_item), _item.rarity);
     // ORDER REVEAL (M 07-28): see the rune branch above.
     global.petra_reveal = { is_rune: false, rune: undefined, item: _item,
         input_tier: global.petra_order.input_tier, input_count: 3, dust_bias: _bias };
@@ -7133,7 +7587,10 @@ function pet_hunger_run_tick() {
         var _p = _r[_i];
         if (!is_struct(_p) || _p.is_egg) continue;
         pet_hunger(_p);   // ensure the field exists
-        _p.hunger = max(0, _p.hunger - ((_p == _act) ? 20 : 10));
+        var _drain = (_p == _act) ? 20 : 10;
+        // Grateful Belly quirk (08-01, pillar C): hunger drains 25% slower.
+        if (pet_quirk_has(_p, "grateful_belly")) _drain = round(_drain * 0.75);
+        _p.hunger = max(0, _p.hunger - _drain);
     }
 }
 
@@ -7187,6 +7644,15 @@ function pet_feed_preferred_catalog() {
         { id:"pref_nightowl",    species:"nightowl",    name:"Twilight Vole",       growth:7, gold:100, perk:"none", blurb:"caught at dusk - the only hour a nightowl deigns to hunt" },
         { id:"pref_bonehound",   species:"bonehound",   name:"Grave-Marrow Bone",   growth:7, gold:100, perk:"none", blurb:"old bone, older marrow - a bonehound gnaws it for days" },
         { id:"pref_hollow_pup",  species:"hollow_pup",  name:"Hearthmilk Sop",      growth:7, gold:100, perk:"none", blurb:"warm bread in sweet milk - it makes the hollow eyes shine" },
+        // 07-31 expansion slate (M-approved) - one favorite per new species.
+        { id:"pref_duskraven",        species:"duskraven",        name:"Gallowseed Handful",  growth:7, gold:100, perk:"none", blurb:"seeds from the hanging tree - it caws thanks in borrowed voices" },
+        { id:"pref_pale_widow",       species:"pale_widow",       name:"Silk-Wrapped Fly",    growth:7, gold:100, perk:"none", blurb:"a delicacy bound in its own thread - it unwraps it slowly" },
+        { id:"pref_shellback",        species:"shellback",        name:"Cave-Moss Wedge",     growth:7, gold:100, perk:"none", blurb:"slow food for a slow eater - it naps mid-bite" },
+        { id:"pref_thorn_boar",       species:"thorn_boar",       name:"Bramble Truffle",     growth:7, gold:100, perk:"none", blurb:"dug from under thorn roots - it eats the spikes first" },
+        { id:"pref_glimmer_slime",    species:"glimmer_slime",    name:"Cracked Geode",       growth:7, gold:100, perk:"none", blurb:"it dissolves the stone and keeps the sparkle" },
+        { id:"pref_sporeling",        species:"sporeling",        name:"Rotwood Chips",       growth:7, gold:100, perk:"none", blurb:"damp and half-mulched - it burrows in before eating" },
+        { id:"pref_voidkit",          species:"voidkit",          name:"Starlit Minnow",      growth:7, gold:100, perk:"none", blurb:"a fish that never saw the sun - it bats it around first" },
+        { id:"pref_ironshell_beetle", species:"ironshell_beetle", name:"Rust Flakes",         growth:7, gold:100, perk:"none", blurb:"scraped from old armor - it eats its greens" },
         // Boss-signature species (every species has a favorite - design §5).
         { id:"pref_vaultling",       species:"vaultling",       name:"Runedust Gravel",     growth:7, gold:100, perk:"none", blurb:"crushed ward-stone - it chews the glow right out of it" },
         { id:"pref_marrow_adder",    species:"marrow_adder",    name:"Gilded Knucklebones", growth:7, gold:100, perk:"none", blurb:"dice cut from a king's hand - it swallows them crown-first" },
@@ -7316,8 +7782,9 @@ function pet_feed_crowd_mult(pet) {
     return 0.25;
 }
 // The growth a feed item would actually grant this pet right now (min 1 - never wasted).
+// The garden BLESSING (08-01, pillar A) boosts every feed: +1%/2 residents, cap +10%.
 function pet_feed_effective_growth(pet, f) {
-    return max(1, round(f.growth * pet_feed_crowd_mult(pet)));
+    return max(1, round(f.growth * pet_feed_crowd_mult(pet) * (1 + bairc_garden_blessing_pct() / 100)));
 }
 
 // Apply an owned feed (by id) to a pet - spends one from the pouch (no gold). Fills growth
@@ -7360,6 +7827,15 @@ function pet_feed_apply(pet, feed_id) {
         return pet.name + " is well-fed and its growth is FULL - complete a run with it active to evolve.";
     }
     variable_struct_set(pet_feed_pouch(), feed_id, pet_feed_pouch_count(feed_id) - 1);
+    // Grateful Belly memory (08-01, pillar C): a STARVING creature remembers who
+    // fed it - three such meals earn the quirk. Read pre-meal, before the restore.
+    if (pet_hunger_state(pet) == "starving" && pet_mem_bump(pet, "mem_starve_feeds") >= 3) {
+        var _gb_msg = pet_quirk_add(pet, "grateful_belly", "", "was fed three times at the edge of starving");
+        if (_gb_msg != "" && variable_global_exists("pet_find_notice")) {
+            global.pet_find_notice = (global.pet_find_notice != "")
+                ? (global.pet_find_notice + "   " + _gb_msg) : _gb_msg;
+        }
+    }
     // Hunger restore scales with the meal's heft (scraps +20 ... favorites +80).
     pet_hunger(pet);
     pet.hunger = min(100, pet.hunger + 10 + _f.growth * 10);
@@ -7631,10 +8107,81 @@ function pet_active_sharpeye() {
     if (_p == undefined || _p.is_egg || pet_injury_mult(_p.injured) <= 0) return 0;
     return pet_kit_mods(_p).sharpeye;
 }
-// Sharp Eye's shrine discount: boon prices -15% while it watches the exchange.
+
+// --- Species INNATES (08-01, PETS_RESEARCH_0801.md pillar B, M-approved) ------
+// One small always-on named passive per GENERIC species (~half a capstone) so
+// species is identity, not a skin. Signature (boss) species carry a MOVE
+// instead (pillar D) - they return undefined here. fx ids are consumed at the
+// effect sites via pet_active_innate.
+function pet_species_innate(species_id) {
+    switch (species_id) {
+        case "luna_moth":        return { name:"Lunar Grace",    fx:"crit_spell", val:3,  desc:"+3% Spell Crit while it is your companion." };
+        case "bone_stag":        return { name:"Cathedral Calm", fx:"armor",      val:1,  desc:"+1 Armor while it is your companion." };
+        case "saber_hound":      return { name:"Pack Snarl",     fx:"crit_phys",  val:2,  desc:"+2% Phys Crit while it is your companion." };
+        case "gloomtoad":        return { name:"Mire Stare",     fx:"mire",       val:10, desc:"The first enemy attack on you each combat deals 10% less." };
+        case "wyrmling":         return { name:"Ember Memory",   fx:"fire",       val:3,  desc:"Your Fire-school abilities strike for +3 bonus Fire damage." };
+        case "nightowl":         return { name:"Long Watch",     fx:"event",      val:5,  desc:"+5% success on event stat-checks." };
+        case "bonehound":        return { name:"Grave Loyal",    fx:"bond",       val:25, desc:"Its bond grows 25% faster." };
+        case "hollow_pup":       return { name:"Empty Comfort",  fx:"heal_recv",  val:5,  desc:"+5% to all healing you receive." };
+        case "duskraven":        return { name:"Last Words",     fx:"elite_gold", val:15, desc:"It collects last words - +15 gold whenever an ELITE dies." };
+        case "pale_widow":       return { name:"Venom Thread",   fx:"dot_turns",  val:1,  desc:"Your Bleed and Poison last 1 extra turn." };
+        case "shellback":        return { name:"Runeshell",      fx:"armor_res",  val:1,  desc:"+1 Armor and +1 El Resist while it is your companion." };
+        case "thorn_boar":       return { name:"Bramble Hide",   fx:"thorns",     val:2,  desc:"Enemies that strike you take 2 damage back." };
+        case "glimmer_slime":    return { name:"Gemcrust",       fx:"gold",       val:4,  desc:"+4% gold find while it is your companion." };
+        case "sporeling":        return { name:"Spore Cloud",    fx:"spore",      val:5,  desc:"Enemies that strike you have a 5% chance to be Poisoned." };
+        case "voidkit":          return { name:"Slip Between",   fx:"slip",       val:10, desc:"The first blow aimed at you each combat has a 10% chance to miss." };
+        case "ironshell_beetle": return { name:"Riveted Plate",  fx:"armor",      val:2,  desc:"+2 Armor while it is your companion." };
+    }
+    return undefined;
+}
+
+// The ACTIVE companion's innate value for an effect id (0 when absent). Innates
+// are always-on while the creature is carried and hatched - deliberately NOT
+// injury/hunger-gated (they are what the creature IS, not what it does).
+function pet_active_innate(fx) {
+    var _p = pet_active();
+    if (_p == undefined || _p.is_egg) return 0;
+    var _in = pet_species_innate(_p.species);
+    if (_in == undefined) return 0;
+    if (_in.fx == fx) return _in.val;
+    if (_in.fx == "armor_res" && (fx == "armor" || fx == "el_resist")) return _in.val;   // Runeshell plates both
+    return 0;
+}
+
+// --- SIGNATURE MOVES (08-01, PETS_RESEARCH_0801.md pillar D, M-approved) ------
+// Each boss species carries ONE loud once-per-combat auto ability echoing its
+// boss - the real payoff of a once-per-save signature egg. Tundra trio built
+// this session; the other six land in later sessions (their species return
+// undefined until then, so nothing false shows on any sheet).
+function pet_species_sig_move(species_id) {
+    switch (species_id) {
+        case "rimefox":         return { name:"Still Breath", fx:"still_breath", desc:"Once per combat: the first enemy to act draws breath in the cold - -25% damage for 2 turns." };
+        case "crypt_bat":       return { name:"Echo Shriek",  fx:"echo_shriek",  desc:"Once per combat: the first time you fall below 40% HP, its shriek lays EVERY enemy Exposed." };
+        case "hoarfrost_drake": return { name:"Long Winter",  fx:"long_winter",  desc:"Once per combat: an elite or boss's first action freezes in its throat - delayed one turn." };
+    }
+    return undefined;
+}
+
+// True when the ACTIVE companion carries this move AND is fit to act (moves are
+// actions - injury, KO and starvation bench them; duels sit the companion out).
+function pet_active_sig_move(fx) {
+    if (variable_global_exists("duel_active") && global.duel_active) return false;
+    var _p = pet_active();
+    if (_p == undefined || _p.is_egg) return false;
+    if (pet_injury_mult(_p.injured) <= 0 || pet_hp(_p) <= 0 || pet_hunger_mult(_p) <= 0) return false;
+    var _sm = pet_species_sig_move(_p.species);
+    return (_sm != undefined && _sm.fx == fx);
+}
 // Single price source for the shrine draw AND the payment handler.
+// V2 (07-29): the catalog's base cost is scaled by the run's Awakening tier
+// (0.40x at A0 up to 1.15x at A5) so early shrines are a real purchase, then
+// Sharp Eye's -15% pet discount applies on top. Dust/item tribute derive from
+// the scaled figure as before (boon_dust_cost / item_tribute_value).
 function shrine_boon_price(base_cost) {
-    return (pet_active_sharpeye() > 0) ? max(1, round(base_cost * 0.85)) : base_cost;
+    var _asc   = variable_global_exists("selected_ascendance") ? clamp(global.selected_ascendance, 0, 5) : 0;
+    var _curve = [0.40, 0.55, 0.70, 0.85, 1.00, 1.15];
+    var _c     = max(1, round(base_cost * _curve[_asc]));
+    return (pet_active_sharpeye() > 0) ? max(1, round(_c * 0.85)) : _c;
 }
 
 // --- Pet stats (Pets §5): three weak, archetype-tied stats that modestly modify their
@@ -7707,6 +8254,8 @@ function pet_stat_name(which) {
 //   SPR - hardy spirit: 5%/pt chance to resist gaining an injury tier (cap 50%).
 //   LCK - fortune: +0.5%/pt gold and +0.3/pt loot find for ANY active creature.
 function pet_active_pwr_guard() {
+    // Ashen Duelist: "no pets, no gods, no debts" - the passive guard sits out too.
+    if (variable_global_exists("duel_active") && global.duel_active) return 0;
     var _p = pet_active();
     if (_p == undefined || _p.is_egg) return 0;
     return min(0.08, pet_stat(_p, "pow") * 0.005) * pet_hunger_mult(_p);   // hunger (07-08)
@@ -7764,6 +8313,9 @@ function pet_bond_mult(pet) { return (pet_bond_tier(pet) >= 3) ? 1.05 : 1.0; }
 // lore fragments queue for Bairc's next audience (sparse, one-time - design §10).
 function pet_bond_gain(pet, amount) {
     if (!is_struct(pet) || pet.is_egg || amount <= 0) return "";
+    // Grave Loyal (bonehound innate, 08-01): its bond grows 25% faster.
+    var _inn_b = pet_species_innate(pet.species);
+    if (_inn_b != undefined && _inn_b.fx == "bond") amount = max(1, round(amount * (1 + _inn_b.val / 100)));
     var _t0 = pet_bond_tier(pet);
     pet.bond = pet_bond(pet) + amount;
     var _t1 = pet_bond_tier(pet);
@@ -7799,6 +8351,7 @@ function bairc_lore_lines() {
         first_devoted:   "The way it watches you. I have seen that look before - in another life.\n\nSo has it.",
         first_soulbound: "Some bonds outlast the grave, stranger.\n\nThis one already has.",
         first_donation:  "I will watch over this one.\n\n...They all find their way back to my garden, in the end.",
+        first_loss:      "Set no more flowers than this stone can carry, stranger.\n\nIt is not gone. Nothing that was loved here is ever gone.",
     };
 }
 function bairc_lore_queue() {
@@ -7871,6 +8424,9 @@ function pet_egg_passive_text(pet) {
 function pet_passive_list(pet) {
     var _out = [];
     if (!is_struct(pet) || pet.is_egg) return _out;
+    // Species INNATE first (08-01, pillar B): what this creature IS.
+    var _inn = pet_species_innate(pet.species);
+    if (_inn != undefined) array_push(_out, { name: _inn.name + "  (innate)", desc: _inn.desc });
     // Egg-type passive (kept after hatch).
     if (variable_struct_exists(pet, "egg_type") && pet.egg_type != "") {
         var _et = pet_egg_type_get(pet.egg_type);
@@ -7900,6 +8456,9 @@ function pet_passive_list(pet) {
             array_push(_out, { name: _kit[_i].name + "  (Awakened gift)", desc: _kit[_i].desc });
         }
     }
+    // Quirks (08-01, pillar C): what it has LIVED - listed last, story attached.
+    var _qk = pet_quirk_list(pet);
+    for (var _qi = 0; _qi < array_length(_qk); _qi++) array_push(_out, _qk[_qi]);
     return _out;
 }
 
@@ -7909,6 +8468,9 @@ function pet_passive_list(pet) {
 function pet_ability_list(pet) {
     var _out = [];
     if (!is_struct(pet) || pet.is_egg) return _out;
+    // Signature MOVE first (08-01, pillar D): the boss kin's inheritance.
+    var _sgm = pet_species_sig_move(pet.species);
+    if (_sgm != undefined) array_push(_out, { name: _sgm.name + "  (signature)", desc: _sgm.desc });
     if (pet.archetype == PET_ARCH_COMBATANT) {
         var _cd  = round((pet.stage >= PET_STAGE_ADULT) ? 16 : 8) * pet_stat_mult(pet, "pow");   // mirrors combat_pet_act
         _cd = round(_cd);
@@ -7995,9 +8557,13 @@ function pet_on_run_end(result) {
         _p.injured += 1;
         if (_p.injured >= PET_INJURY_DEATH) {
             var _lost = _p.name;
+            // Garden deepening (08-01): the lost creature gets a memorial stone
+            // in Bairc's garden instead of a silent delete.
+            array_push(bairc_memorials(), { name: _lost, species: _p.species });
+            bairc_lore_unlock("first_loss");
             array_delete(global.pet_roster, global.active_pet, 1);   // the carried pet is the active one
             global.active_pet = -1;
-            return _lost + " succumbed to its injuries and is lost.";
+            return _lost + " succumbed to its injuries and is lost. A stone waits in Bairc's garden.";
         }
         return _p.name + " was hurt by your fall (injury " + string(_p.injured) + "/" + string(PET_INJURY_DEATH) + ").";
     }
@@ -8067,6 +8633,168 @@ function pet_corruption_tag(pet) {
         case "fulfilled": return "  [FULLY CORRUPTED]";
     }
     return "";
+}
+
+// --- MEMORIES -> QUIRKS (08-01, PETS_RESEARCH_0801.md pillar C, M-approved) ---
+// A pet's run history writes named QUIRKS onto it: max 2 per pet, first-earned
+// lock, one dungeon-flavored quirk per dungeon. Counters live as lazy fields on
+// the pet struct (pets save wholesale, so old pets Just Work). Effects apply in
+// combat through pet_quirk_mult (rides combat_pet_act's _cmult), plus bespoke
+// hooks (Deathdodger at the intercept-KO site, Grateful Belly in hunger drain).
+
+function dungeon_display_name(dkey) {
+    switch (dkey) {
+        case "ashen_vault":     return "Ashen Vault";
+        case "scorched_depths": return "Scorched Depths";
+        case "tundra_tomb":     return "Tundra Tomb";
+    }
+    return dkey;
+}
+
+function pet_quirks(pet) {
+    if (!is_struct(pet)) return [];
+    if (!variable_struct_exists(pet, "quirks") || !is_array(pet.quirks)) pet.quirks = [];
+    return pet.quirks;
+}
+function pet_quirk_count(pet) { return array_length(pet_quirks(pet)); }
+function pet_quirk_has(pet, id) {
+    var _q = pet_quirks(pet);
+    for (var _i = 0; _i < array_length(_q); _i++) if (_q[_i].id == id) return true;
+    return false;
+}
+function pet_quirk_has_dungeon(pet, dungeon) {
+    var _q = pet_quirks(pet);
+    for (var _i = 0; _i < array_length(_q); _i++)
+        if (variable_struct_exists(_q[_i], "dungeon") && _q[_i].dungeon == dungeon && _q[_i].dungeon != "") return true;
+    return false;
+}
+
+function pet_quirk_label(id, dungeon) {
+    var _dl = (dungeon != "") ? dungeon_display_name(dungeon) : "";
+    switch (id) {
+        case "vengeful":       return "Vengeful (" + _dl + ")";
+        case "flinches":       return "Flinches (" + _dl + ")";
+        case "master":         return "Master of the " + _dl;
+        case "curse_eater":    return "Curse-Eater";
+        case "deathdodger":    return "Deathdodger";
+        case "grateful_belly": return "Grateful Belly";
+        case "boss_blooded":   return "Boss-Blooded";
+    }
+    return id;
+}
+function pet_quirk_desc(id) {
+    switch (id) {
+        case "vengeful":       return "+10% to everything it does there - it remembers.";
+        case "flinches":       return "-10% to everything it does there - it remembers too well.";
+        case "master":         return "+5% to everything it does there.";
+        case "curse_eater":    return "+5% to everything it does while any curse rides you.";
+        case "deathdodger":    return "Once per run it shrugs off the blow that would fell it (left at 1 HP).";
+        case "grateful_belly": return "Its hunger drains 25% slower.";
+        case "boss_blooded":   return "+3% to everything it does against elites and bosses.";
+    }
+    return "";
+}
+
+// Grant a quirk. Enforces the cap (2), duplicate ids, and dungeon exclusivity
+// (first dungeon-quirk earned per dungeon wins). Returns the notice ("" if not granted).
+function pet_quirk_add(pet, id, dungeon, story) {
+    if (!is_struct(pet) || pet_quirk_count(pet) >= 2) return "";
+    if (pet_quirk_has(pet, id)) return "";
+    if (dungeon != "" && pet_quirk_has_dungeon(pet, dungeon)) return "";
+    array_push(pet_quirks(pet), { id: id, dungeon: dungeon, story: story });
+    return pet.name + " develops a QUIRK - " + pet_quirk_label(id, dungeon) + " (" + story + ").";
+}
+
+// The sheet list: [{name, desc}] with the story line attached.
+function pet_quirk_list(pet) {
+    var _out = [];
+    if (!is_struct(pet) || pet.is_egg) return _out;
+    var _q = pet_quirks(pet);
+    for (var _i = 0; _i < array_length(_q); _i++) {
+        var _e = _q[_i];
+        array_push(_out, { name: pet_quirk_label(_e.id, _e.dungeon) + "  (quirk)",
+                           desc: pet_quirk_desc(_e.id) + "  It " + _e.story + "." });
+    }
+    return _out;
+}
+
+// Context multiplier for everything the pet does in combat (rides _cmult in
+// combat_pet_act, so strikes, heals and shields all feel the memory).
+function pet_quirk_mult(pet) {
+    var _m = 1.0;
+    var _q = pet_quirks(pet);
+    if (array_length(_q) == 0) return _m;
+    var _dung   = variable_global_exists("selected_dungeon") ? global.selected_dungeon : "";
+    var _rank   = variable_global_exists("next_enemy_type")  ? global.next_enemy_type  : "";
+    var _cursed = variable_global_exists("run_curses") && is_array(global.run_curses) && array_length(global.run_curses) > 0;
+    for (var _i = 0; _i < array_length(_q); _i++) {
+        switch (_q[_i].id) {
+            case "vengeful":     if (_q[_i].dungeon == _dung) _m *= 1.10; break;
+            case "flinches":     if (_q[_i].dungeon == _dung) _m *= 0.90; break;
+            case "master":       if (_q[_i].dungeon == _dung) _m *= 1.05; break;
+            case "curse_eater":  if (_cursed) _m *= 1.05; break;
+            case "boss_blooded": if (_rank == "elite" || _rank == "boss") _m *= 1.03; break;
+        }
+    }
+    return _m;
+}
+
+// Lazy memory counters. pet_mem_bump: plain counter; _dungeon variant keys a
+// struct by the CURRENT run's dungeon. Both return the new count.
+function pet_mem_bump(pet, key) {
+    if (!is_struct(pet)) return 0;
+    if (!variable_struct_exists(pet, key)) variable_struct_set(pet, key, 0);
+    variable_struct_set(pet, key, variable_struct_get(pet, key) + 1);
+    return variable_struct_get(pet, key);
+}
+function pet_mem_bump_dungeon(pet, key) {
+    if (!is_struct(pet)) return 0;
+    var _dung = variable_global_exists("selected_dungeon") ? global.selected_dungeon : "";
+    if (_dung == "") return 0;
+    if (!variable_struct_exists(pet, key) || !is_struct(variable_struct_get(pet, key))) variable_struct_set(pet, key, {});
+    var _s = variable_struct_get(pet, key);
+    var _n = (variable_struct_exists(_s, _dung) ? variable_struct_get(_s, _dung) : 0) + 1;
+    variable_struct_set(_s, _dung, _n);
+    return _n;
+}
+
+// Run-end quirk resolution for the carried pet: thresholds -> grants, with the
+// notice for the hub. Called from end_run after injuries/corruption resolve
+// (a permadead pet is already gone - pet_active() is then undefined and we skip).
+function pet_quirk_resolve_run_end(result) {
+    var _p = pet_active();
+    if (_p == undefined || _p.is_egg) return "";
+    var _dung = variable_global_exists("selected_dungeon") ? global.selected_dungeon : "";
+    var _dl   = dungeon_display_name(_dung);
+    var _msgs = "";
+    // #1 KO'd twice in this dungeon -> Vengeful vs Flinches, odds weighted by
+    // bond (tier 2+ = 70% Vengeful: trust turns fear into fury).
+    if (_dung != "" && variable_struct_exists(_p, "mem_ko") && is_struct(_p.mem_ko)
+        && variable_struct_exists(_p.mem_ko, _dung) && variable_struct_get(_p.mem_ko, _dung) >= 2
+        && !pet_quirk_has_dungeon(_p, _dung)) {
+        var _id1 = (irandom(99) < ((pet_bond_tier(_p) >= 2) ? 70 : 40)) ? "vengeful" : "flinches";
+        var _m1  = pet_quirk_add(_p, _id1, _dung, "was knocked out twice in the " + _dl);
+        if (_m1 != "") _msgs += _m1;
+    }
+    // #2 three FULL CLEARS of a dungeon while carried -> Master of it.
+    if (result == 1 && _dung != "" && pet_mem_bump_dungeon(_p, "mem_clears") >= 3) {
+        var _m2 = pet_quirk_add(_p, "master", _dung, "cleared the " + _dl + " three times at your side");
+        if (_m2 != "") _msgs += (_msgs != "" ? "   " : "") + _m2;
+    }
+    // #3 carried through 5 cursed runs -> Curse-Eater.
+    if (result >= 0 && variable_global_exists("run_curses") && is_array(global.run_curses)
+        && array_length(global.run_curses) > 0
+        && pet_mem_bump(_p, "mem_curse_runs") >= 5) {
+        var _m3 = pet_quirk_add(_p, "curse_eater", "", "was carried through five cursed runs");
+        if (_m3 != "") _msgs += (_msgs != "" ? "   " : "") + _m3;
+    }
+    // #4 hit 0 HP but the run survived -> Deathdodger.
+    if (result >= 0 && variable_struct_exists(_p, "mem_ko_this_run") && _p.mem_ko_this_run) {
+        var _m4 = pet_quirk_add(_p, "deathdodger", "", "went down fighting, and came home anyway");
+        if (_m4 != "") _msgs += (_msgs != "" ? "   " : "") + _m4;
+    }
+    if (variable_struct_exists(_p, "mem_ko_this_run")) _p.mem_ko_this_run = false;
+    return _msgs;
 }
 
 // --- Pet KIT: named abilities & traits per archetype (Pets §5) ----------------
@@ -8347,6 +9075,16 @@ function pet_species_catalog() {
         { id:"nightowl",    name:"Nightowl",    blurb:"keeps watch through the longest dark" },
         { id:"bonehound",   name:"Bonehound",   blurb:"loyal even past death" },
         { id:"hollow_pup",  name:"Hollow Pup",  blurb:"hollow-eyed, but its tail still wags" },
+        // 07-31 expansion slate (M-approved). Art lands in batches - species
+        // without sprites never roll (pet_species_random is art-gated).
+        { id:"duskraven",        name:"Duskraven",        blurb:"a tattered crow that collects last words" },
+        { id:"pale_widow",       name:"Pale Widow",       blurb:"a bone-white spider that spins in silence" },
+        { id:"shellback",        name:"Shellback",        blurb:"a tortoise carved with runes nobody wrote" },
+        { id:"thorn_boar",       name:"Thorn Boar",       blurb:"a piglet bristling with living brambles" },
+        { id:"glimmer_slime",    name:"Glimmer Slime",    blurb:"an ooze studded with swallowed gemstones" },
+        { id:"sporeling",        name:"Sporeling",        blurb:"a waddling toadstool that hums in the damp" },
+        { id:"voidkit",          name:"Voidkit",          blurb:"a kitten cut from the night between stars" },
+        { id:"ironshell_beetle", name:"Ironshell Beetle", blurb:"a beetle born wearing riveted plate" },
     ];
 }
 
@@ -8386,7 +9124,14 @@ function pet_species_get(id) {
 
 function pet_species_random() {
     var _c = pet_species_catalog();
-    return _c[irandom(array_length(_c) - 1)].id;
+    // Art-gated (07-31): species whose sprites haven't been imported yet never
+    // roll from any source (starter already filtered; this covers altar eggs,
+    // board rewards and every other generic grant).
+    var _ok = [];
+    for (var _i = 0; _i < array_length(_c); _i++)
+        if (pet_species_has_art(_c[_i].id)) array_push(_ok, _c[_i].id);
+    if (array_length(_ok) == 0) return _c[irandom(array_length(_c) - 1)].id;
+    return _ok[irandom(array_length(_ok) - 1)];
 }
 
 // Safe read of the player-named flag. Pets created before the naming feature lack the
@@ -8434,6 +9179,42 @@ function pet_migrate_retired_species() {
 function bairc_donated() {
     if (!variable_global_exists("bairc_donated") || !is_array(global.bairc_donated)) global.bairc_donated = [];
     return global.bairc_donated;
+}
+
+// --- Garden deepening (08-01, PETS_RESEARCH_0801.md pillar A, M-approved) ----
+// Memorial stones: pets lost to the injury ladder rest in the garden forever.
+function bairc_memorials() {
+    if (!variable_global_exists("bairc_memorials") || !is_array(global.bairc_memorials)) global.bairc_memorials = [];
+    return global.bairc_memorials;
+}
+
+// Donated creatures KEEP GROWING: 1 tick per SURVIVED run (extract or clear),
+// hatch/stage-up at 2 ticks for a baby then 3 per stage after (~8 runs
+// egg->adult). The garden caps at Adult - only carried creatures Awaken.
+// Returns a one-line hub notice the first time something stages up ("" else).
+function bairc_garden_run_tick(result) {
+    if (result < 0) return "";
+    var _d = bairc_donated();
+    var _grown = "";
+    for (var _i = 0; _i < array_length(_d); _i++) {
+        var _r = _d[_i];
+        if (!is_struct(_r)) continue;
+        if (!variable_struct_exists(_r, "gg")) _r.gg = 0;   // lazy: old saves' residents start growing now
+        if (_r.stage >= PET_STAGE_ADULT) continue;
+        _r.gg += 1;
+        var _need = (_r.stage == PET_STAGE_BABY) ? 2 : 3;
+        if (_r.gg >= _need) {
+            _r.stage += 1;
+            _r.gg = 0;
+            if (_grown == "") _grown = _r.name + " has grown into a " + pet_stage_name(_r.stage) + " in Bairc's garden.";
+        }
+    }
+    return _grown;
+}
+
+// The garden tends back: +1% feed growth value per 2 residents, cap +10%.
+function bairc_garden_blessing_pct() {
+    return min(10, array_length(bairc_donated()) div 2);
 }
 
 // DONATE the pet at roster index _idx to Bairc (design §6: donation, not release - the
@@ -8746,6 +9527,8 @@ function pet_active_egg_bonus(kind) {
 // Warding-egg incoming-damage multiplier for the active pet (1.0 if none). Mirrors the
 // Warding boon's shape so combat can apply it at every player damage-mitigation site.
 function pet_egg_ward_mult() {
+    // Ashen Duelist: the hatchling's ward waits outside the hall with the rest.
+    if (variable_global_exists("duel_active") && global.duel_active) return 1.0;
     var _w = pet_active_egg_bonus("ward");
     return (_w > 0) ? (1.0 - _w) : 1.0;
 }
@@ -8762,11 +9545,35 @@ function pet_egg_label(pet) {
 // (one per boss, found nowhere else); duplicates are allowed - a later, higher-Awakening
 // kill yields a stronger copy of the same kin. Returns the granted pet, or undefined.
 function pet_try_boss_egg(awk) {
-    var _chance = min(14, 4 + awk);                      // 4% A0 +1%/awk -> 9% A5 (playtest-tuned from +2%/awk, M 2026-07-03)
-    if (irandom(99) >= _chance) return undefined;
     var _dung  = variable_global_exists("selected_dungeon") ? global.selected_dungeon : "ashen_vault";
     var _floor = variable_global_exists("current_floor")    ? global.current_floor    : 1;
-    return pet_grant_from_source("egg_boss", pet_boss_signature_species(_dung, _floor));
+    var _sig   = pet_boss_signature_species(_dung, _floor);
+    // ONCE PER SAVE (M 07-31: repeat drops made signatures "feel common and
+    // meaningless"): each boss's signature kin can be found exactly once per
+    // save file. First-kill chance raised so it stays chaseable; after that,
+    // the boss never rolls again. History persists in the save; on old saves
+    // it seeds lazily from the roster + Bairc's garden.
+    if (_sig != "") {
+        if (!variable_global_exists("pet_sig_history") || !is_struct(global.pet_sig_history)) {
+            global.pet_sig_history = {};
+            var _seed = [];
+            if (variable_global_exists("pet_roster") && is_array(global.pet_roster))
+                _seed = array_concat(_seed, global.pet_roster);
+            if (variable_global_exists("bairc_donated") && is_array(global.bairc_donated))
+                _seed = array_concat(_seed, global.bairc_donated);
+            var _sigcat = pet_species_signature_catalog();
+            for (var _i = 0; _i < array_length(_seed); _i++) {
+                if (!is_struct(_seed[_i]) || !variable_struct_exists(_seed[_i], "species")) continue;
+                for (var _j = 0; _j < array_length(_sigcat); _j++)
+                    if (_sigcat[_j].id == _seed[_i].species) global.pet_sig_history[$ _seed[_i].species] = true;
+            }
+        }
+        if (variable_struct_exists(global.pet_sig_history, _sig)) return undefined;
+    }
+    var _chance = min(20, 10 + awk * 2);   // 10% A0 +2%/awk -> 20% A5 (07-31 once-per-save rework)
+    if (irandom(99) >= _chance) return undefined;
+    if (_sig != "") global.pet_sig_history[$ _sig] = true;
+    return pet_grant_from_source("egg_boss", _sig);
 }
 
 // Grant a pet egg/creature from a Shrine (blessing) or Curse altar, appending a themed
@@ -8823,12 +9630,14 @@ function tutorial_catalog() {
         { id:"targeting",  title:"Choosing a Target",   body:"When several foes are present, Tab or click to pick who you hit. The glowing rune beneath an enemy marks your current target." },
         { id:"intent",     title:"Enemy Intent",        body:"Every enemy telegraphs its next move on the chip above its health bar: red for an attack (with the rough damage you'd take), purple for a spell, green for a heal, amber for a status effect. Intents are honest - and if you Stun, Root or Silence a foe, its chip greys out: that move is cancelled." },
         { id:"inspect",    title:"Inspect Your Foes",   body:"Mouse over an enemy (or its health bar) to inspect it. You'll see whether it fights at Melee or Ranged and with Phys or Spell - and which controls stop it: Root halts melee, Silence stops spells, Stun stops anything. Ranged foes ignore Root, so a trap won't keep them off you." },
+        { id:"weakness",   title:"Exposed Weaknesses",  body:"The small colored GEM beside an enemy's intent chip is the school it is WEAK to - Fire, Frost, Shock or Arcane. Hit it with a matching-school ability for +30% damage, and the FIRST weakness strike on each enemy refunds 1 AP. Carrying one off-school ability can pay for itself every fight." },
         { id:"vex",        title:"Vex the Trainer",     body:"Vex teaches new abilities and traits for gold (and the occasional item). Learn abilities here, then slot them on the loadout screen before a run." },
-        { id:"shrine",     title:"Altars",              body:"A shrine is an altar. A Blessing altar sells boons for tribute; a Cursed altar lets you take on a curse - a run-long penalty - in exchange for far better spoils. Choose how greedy you dare to be." },
+        { id:"shrine",     title:"Altars",              body:"A shrine is an altar. A Blessing altar sells boons for tribute - prices scale with your Awakening, and once per shrine [R] rerolls the offer for rune dust. A Cursed altar lets you take on a curse - a run-long penalty - in exchange for far better spoils. Choose how greedy you dare to be." },
         { id:"gold_risk",  title:"Gold at Risk",        body:"Gold you FIND during a run is at risk - die and you lose most of it (a quarter is returned as mercy). Gold banked before the run is always safe at camp. The number in brackets on your HUD is what you're gambling: extract to keep it all." },
         { id:"escape_item", title:"A Way Out",          body:"You carry an escape item. On the floor map, press G (or tap the LAMP / WINE button) to use it: the Genie Lamp whisks you back to camp with ALL your loot, free. Devil Wine does the same - but drains 2 random stat points. WARNING: the Wine's toll is PERMANENT - those points are gone from your hero on every future run, not just this one. Cash out a greedy run before the dungeon takes it back." },
         { id:"bond_gates",  title:"Growing Closer",     body:"Someone in camp has warmed to you - their bond has reached a GATE. Crossing a gate now takes a FAVOR: talk to them and take on their gate quest (it appears on the tavern board and in your Journal). Finish it and the friendship deepens, unlocking their next perk. Mind your bonds: friendships DECAY if neglected, and only a few can hold the deepest tiers - deepening one may demote another." },
         { id:"dorn_reforge", title:"Reforge Ingots",   body:"You earned a REFORGE INGOT. Take unequipped gear to Dorn the Blacksmith and spend an ingot to REROLL its affixes - same item, same rarity, fresh random stats. Ingots are TIERED to rarity: a higher-tier ingot reworks any gear of its tier or below, so a Legendary ingot works on anything while a Common one only touches Common gear. Your ingot hoard shows at Dorn and in your Stash." },
+        { id:"legendary_forge", title:"Dorn's Forge",   body:"Two crafts live here. REWORK GEAR: spend a Reforge Ingot of the gear's tier (or higher) to reroll an item's affixes - and FUSE 3 ingots of one tier into 1 of the next tier when the low ones pile up. THE LEGENDARY FORGE: the camp's oldest craft asks three components - Dorn strikes the MYTHRIL FRAME (gold + a Legendary Ingot), Maren seals the RUNEHEART CORE, Sable distills the QUINTESSENCE. Bring all three back to Dorn to forge - and NAME - a legendary that exists nowhere else." },
         { id:"corruption_101", title:"Corruption",      body:"A creature in your care is CORRUPTED. The bargain: while it pushes (3 survived runs as your active companion), YOU pay -20% max HP and -10% damage. Each pushed run adds a PERMANENT +15% to its passive gift. You may CURE it at Bairc's any time - the gains earned so far are kept, the burden lifts, but its grand power is forfeit. See it through all 3 runs and it fully corrupts: its gift is 45% stronger forever, the burden ends, and it earns a grand boon. The full table lives in the Compendium under Companions." },
     ];
 }
@@ -9010,6 +9819,45 @@ function item_picker_candidates_class_specific() {
     return _out;
 }
 
+// --- Attunement Rebirth (Sable tab 3, M 07-29) -------------------------------
+// Re-set an item's stat REQUIREMENT to a random OTHER stat (same value - the
+// rarity curve). Gold-only and repeatable: a gamble you chase until the req
+// suits the class that actually wants the item (M's Bloodwarden vs a 12-DEX
+// Ashkeeper blade). Writes the explicit req_stat/req_value override that
+// item_stat_requirement() honors above the computed default.
+function statreq_rebirth_cost(rarity) {
+    if (rarity >= 4) return cha_price(300);
+    if (rarity >= 3) return cha_price(180);
+    return cha_price(100);
+}
+function statreq_rebirth_pool() { return ["STR", "DEX", "INT", "CON"]; }
+// Every held (unequipped) item that carries a stat requirement.
+function item_picker_candidates_statreq() {
+    var _out = [];
+    var _in_hub = (room == rm_hub || room == rm_character_select);
+    for (var _s = 0; _s < 2; _s++) {
+        if (_s == 0 && !_in_hub) continue;
+        var _arr = (_s == 0) ? global.equipment_stash : global.carried_items;
+        for (var _i = 0; _i < array_length(_arr); _i++) {
+            var _it = _arr[_i];
+            if (!is_struct(_it)) continue;
+            var _rq = item_stat_requirement(_it);
+            if (_rq.stat == "") continue;
+            var _rar = variable_struct_exists(_it, "rarity") ? _it.rarity : 0;
+            var _val = variable_struct_exists(_it, "gold_value") ? _it.gold_value : 0;
+            var _nm  = variable_struct_exists(_it, "name") ? _it.name : "item";
+            array_push(_out, { source:_s, idx:_i, item:_it,
+                label:_nm + "  (asks " + _rq.stat + " " + string(_rq.value) + ")",
+                rarity:_rar, value:_val });
+        }
+    }
+    array_sort(_out, function(a, b) {
+        if (a.rarity != b.rarity) return a.rarity - b.rarity;
+        return a.value - b.value;
+    });
+    return _out;
+}
+
 // --- Reforge Chit (Dorn; BOARD_REQUESTS_SPEC.md §7) ---------------------------
 // Every held item carrying rolled affixes (stash + pack; equipped gear must be
 // unequipped first). The chit rerolls affixes IN PLACE - nothing is consumed.
@@ -9137,6 +9985,7 @@ function item_picker_prompt() {
                 ? global.item_picker.context.trait_name : "the trait") + " will TRANSCEND";
         case "maren_sunder":   return "Choose a legendary to SUNDER - it becomes a Legendary Ingot + 50 dust + a tier-III rune";
         case "cursed_rebirth": return "Feed a legendary to the dark (+" + string(cha_price(300)) + "g) - it returns STRONGER, and cursed";
+        case "statreq_rebirth": return "Choose an item to RE-ATTUNE - its stat requirement re-sets to a random other stat";
     }
     return "Choose an item";
 }
@@ -9151,6 +10000,7 @@ function item_picker_verb() {
         case "vex_potency":  return "Offer";
         case "maren_sunder":   return "Sunder";
         case "cursed_rebirth": return "Sacrifice";
+        case "statreq_rebirth": return "Re-attune";
     }
     return "Trade away";
 }
@@ -9218,6 +10068,7 @@ function item_picker_resolve() {
             item_picker_close(); return;
         }
         var _old_cname = _csel.label;
+        var _rf_prev   = clone_item(_csel.item);   // pre-rework snapshot for the reveal
         if (!chit_reforge_item(_csel.item)) {
             _p.resolved_purpose = "chit_reforge"; _p.result_msg = "That item has no affixes to rework.";
             item_picker_close(); return;
@@ -9227,6 +10078,10 @@ function item_picker_resolve() {
         _p.resolved_purpose = "chit_reforge";
         _p.result_msg = "Dorn reworks " + _old_cname + " into " + _csel.item.name + "!   (spent a "
             + item_rarity_name(_rf_spent) + " ingot)";
+        forge_result_open("DORN'S REWORK", "The hammer falls - the metal remembers new shapes.",
+            _csel.item, _rf_prev,
+            ["Spent a " + item_rarity_name(_rf_spent) + " Reforge Ingot"],
+            make_color_rgb(228, 160, 90));
         audio_play_sound(snd_forge, 1, false);
         item_picker_close();
         return;
@@ -9263,11 +10118,58 @@ function item_picker_resolve() {
         global.rune_dust -= _cost.dust;
         if (_src == 0) array_push(global.equipment_stash, _new);
         else           array_push(global.carried_items, _new);
-        discover_item(item_base_name(_new));
+        discover_item(item_base_name(_new), _new.rarity);
         save_game();
         _p.resolved_purpose = "alch_rebirth";
         _p.result_msg = "Reforged " + _old_name + " into " + _new.name + "!";
+        forge_result_open("CLASS REBIRTH", "Melted down... and remade for other hands.",
+            _new, _sel.item, [], make_color_rgb(190, 220, 195));
         audio_play_sound(snd_confirm_major, 1, false);   // a rebirth deserves the chime
+        item_picker_close();
+        return;
+    }
+
+    // ATTUNEMENT REBIRTH (M 07-29): nothing is destroyed - the chosen item's
+    // stat requirement re-sets to a random OTHER stat at the same value. Random,
+    // so chasing a specific stat may take several pulls (the intended gamble).
+    if (_p.purpose == "statreq_rebirth") {
+        var _sq_sel = (_p.cursor >= 0 && _p.cursor < array_length(_p.candidates))
+                      ? _p.candidates[_p.cursor] : undefined;
+        if (_sq_sel == undefined) {
+            _p.resolved_purpose = "statreq_rebirth"; _p.result_msg = "Nothing chosen.";
+            item_picker_close(); return;
+        }
+        var _sq_it = _sq_sel.item;
+        var _sq_rq = item_stat_requirement(_sq_it);
+        if (_sq_rq.stat == "") {
+            _p.resolved_purpose = "statreq_rebirth"; _p.result_msg = "That item asks nothing of its wearer.";
+            item_picker_close(); return;
+        }
+        var _sq_fee = statreq_rebirth_cost(variable_struct_exists(_sq_it, "rarity") ? _sq_it.rarity : 2);
+        if (global.gold < _sq_fee) {
+            _p.resolved_purpose = "statreq_rebirth";
+            _p.result_msg = "Not enough - re-attuning asks " + string(_sq_fee) + "g.";
+            audio_play_sound(snd_ui_error, 1, false);
+            item_picker_close(); return;
+        }
+        var _sq_pool = statreq_rebirth_pool();
+        var _sq_opts = [];
+        for (var _sq_i = 0; _sq_i < array_length(_sq_pool); _sq_i++) {
+            if (_sq_pool[_sq_i] != _sq_rq.stat) array_push(_sq_opts, _sq_pool[_sq_i]);
+        }
+        var _sq_new = _sq_opts[irandom(array_length(_sq_opts) - 1)];
+        global.gold -= _sq_fee;
+        _sq_it.req_stat  = _sq_new;
+        _sq_it.req_value = _sq_rq.value;
+        save_game();
+        _p.resolved_purpose = "statreq_rebirth";
+        _p.result_msg = _sq_it.name + " re-attunes - it now asks " + _sq_new + " " + string(_sq_rq.value) + ".";
+        forge_result_open("ATTUNEMENT REBIRTH", "The item re-learns whose hands it answers.",
+            _sq_it, undefined,
+            ["Now asks:  " + _sq_new + " " + string(_sq_rq.value),
+             "Asked before:  " + _sq_rq.stat + " " + string(_sq_rq.value)],
+            make_color_rgb(160, 200, 235));
+        audio_play_sound(snd_confirm_major, 1, false);
         item_picker_close();
         return;
     }
@@ -9292,6 +10194,10 @@ function item_picker_resolve() {
         save_game();
         _p.resolved_purpose = "maren_sunder";
         _p.result_msg = "Sundered " + _ms_name + " - a Legendary Ingot, 50 dust and " + rune_title(_ms_rn) + " remain.";
+        forge_result_open("SUNDERED", _ms_name + " breaks along its oldest seam.",
+            undefined, undefined,
+            ["+1 Legendary Reforge Ingot", "+50 Rune Dust", "+  " + rune_title(_ms_rn)],
+            make_color_rgb(150, 110, 220));
         audio_play_sound(snd_confirm_major, 1, false);
         item_picker_close();
         return;
@@ -9320,11 +10226,23 @@ function item_picker_resolve() {
         global.gold -= _cr_fee;
         if (_cr_src == 0) array_push(global.equipment_stash, _cr_new);
         else              array_push(global.carried_items, _cr_new);
-        discover_item(item_base_name(_cr_new));
+        discover_item(item_base_name(_cr_new), _cr_new.rarity);
         save_game();
         _p.resolved_purpose = "cursed_rebirth";
         _p.result_msg = "The dark accepts... " + _cr_new.name + " crawls back out.";
-        audio_play_sound(snd_confirm_major, 1, false);
+        // CEREMONY (07-31, M: "cursed rebirth should be a grand affair"): a dark
+        // ritual overlay plays first (gc Step times it; hub Draw renders it),
+        // THEN the forge-result reveal pops with the reborn item.
+        var _gcr = instance_find(obj_game_controller, 0);
+        if (_gcr != noone) {
+            _gcr.cursed_ritual_t    = 0;
+            _gcr.cursed_ritual_item = _cr_new;
+            _gcr.cursed_ritual_prev = _cr_sel.item;
+        } else {
+            forge_result_open("CURSED REBIRTH", "The dark accepts the offering... and gives it back changed.",
+                _cr_new, _cr_sel.item, [], make_color_rgb(220, 90, 100));
+        }
+        audio_play_sound(snd_forge, 1, false);
         item_picker_close();
         return;
     }
@@ -9474,7 +10392,8 @@ function event_check_chance(stat_name, base_pct, per_point, ref) {
     // POTENCY V2 ranks: +3% per rank on top of the base 5.
     var _sense_bonus = trait_active("Sense") ? (5 + 3 * trait_potency_r14("Sense")) : 0;
     // Sharp Eye pet capstone (C5): a further +10% - it sees the angles.
-    return clamp(base_pct + _sense_bonus + pet_active_sharpeye() + (_s - ref) * per_point, 10, 90);
+    // Long Watch (nightowl innate, 08-01): +5% on the same channel.
+    return clamp(base_pct + _sense_bonus + pet_active_sharpeye() + pet_active_innate("event") + (_s - ref) * per_point, 10, 90);
 }
 
 // event_effect_phrase(fx) - short plain-language summary of an effects struct,
@@ -9699,6 +10618,12 @@ function event_apply_effects(fx) {
         global.run_borrowed_class   = variable_struct_exists(fx, "memory_pick_class") ? fx.memory_pick_class : "";
         array_push(_sum, "BORROWED MEMORY: " + fx.memory_pick + " (" + global.run_borrowed_class + " - this run)");
     }
+    // The Ashen Duelist: arm the duel - the floor controller launches the 1v1
+    // combat when this event's result screen closes.
+    if (variable_struct_exists(fx, "duel") && fx.duel) {
+        global.duel_launch = true;
+        array_push(_sum, "THE DUEL BEGINS  -  PAR: " + string(duel_turn_par()) + " TURNS");
+    }
     // Boon (rare jackpot) - "random" picks an unowned boon, else a specific id
     if (variable_struct_exists(fx, "boon") && fx.boon != "") {
         var _bid = fx.boon;
@@ -9744,7 +10669,100 @@ function event_roll() {
 
     var _chosen = _avail[irandom(array_length(_avail) - 1)];
     array_push(global.events_seen_this_run, _chosen.id);
+
+    // THE ASHEN DUELIST (DESIGN_DUELIST_CHALLENGE.md): a hidden ~8% override on
+    // the event roll - never floor 1, at most once per run. No map icon, no
+    // catalog entry: every meeting is a surprise.
+    if (!variable_global_exists("duel_offered_this_run")) global.duel_offered_this_run = false;
+    // F10 test lever (gc Step): forces this event to be the duel and bypasses
+    // the once-per-run gate so win + loss are testable in a single run.
+    var _force_duel = variable_global_exists("debug_force_duel") && global.debug_force_duel;
+    if (global.current_floor >= 2
+        && (_force_duel || (!global.duel_offered_this_run && irandom(99) < 8))) {
+        if (_force_duel) global.debug_force_duel = false;
+        global.duel_offered_this_run = true;
+        _chosen = duelist_event();
+    }
+
+    // Silvered Tongue blessing (Shrine V2, 07-29): every event offers one extra,
+    // honeyed way through - a CHA-checked coax appended as a 4th row (every event
+    // authors exactly 3; four rows end at y930, still clear of the footer).
+    // The Ashen Duelist is exempt - "blades only" brooks no honeyed third way.
+    if (boon_active("silvertongue") && _chosen.id != "ashen_duelist" && array_length(_chosen.choices) <= 3) {
+        var _st_fl    = clamp(global.current_floor - 1, 0, 2);
+        var _st_golds = [35, 55, 85];
+        var _st_dusts = [4, 6, 9];
+        var _st_gold  = _st_golds[_st_fl];
+        var _st_dust  = _st_dusts[_st_fl];
+        array_push(_chosen.choices, {
+            label: "Invoke the Silvered Tongue", hint: "CHA check - your blessed voice coaxes a parting gift from the moment",
+            cost_gold: 0, req_stat: "", req_amount: 0, resolve: "check",
+            check_stat: "CHA", check_base: 55, check_per: 6, check_ref: 5,
+            success: { text: "The words land like struck silver. Something is pressed into your hands before the moment closes.",
+                       effects: { gold: _st_gold, dust: _st_dust } },
+            fail:    { text: "The silver rings false this once. The moment closes politely, and empty.",
+                       effects: {} } });
+    }
     return _chosen;
+}
+
+// =============================================================================
+// THE ASHEN DUELIST (DESIGN_DUELIST_CHALLENGE.md, M-locked 07-29). A recurring
+// rival: strict 1v1 with a turn PAR, graded rewards, a token ladder (Duelist
+// Arts at Vex), and a mercy loss - his killing blow stops at 1 HP, he heals you
+// to room-entry HP, and it is NEVER a death (Iron Vow safe). He grows +10% per
+// lifetime duel fought (global.duelist_encounters, meta-persistent) and never
+// retires. Rolled as a hidden event override (see event_roll).
+// =============================================================================
+
+// Turn PAR by awakening tier (M-locked): A0-A1: 7, A2-A3: 6, A4-A5: 5.
+function duel_turn_par() {
+    var _asc = variable_global_exists("selected_ascendance") ? clamp(global.selected_ascendance, 0, 5) : 0;
+    if (_asc >= 4) return 5;
+    if (_asc >= 2) return 6;
+    return 7;
+}
+
+// The challenge event struct (not in the catalog - event_roll overrides with it).
+function duelist_event() {
+    var _enc = variable_global_exists("duelist_encounters") ? global.duelist_encounters : 0;
+    var _body = (_enc == 0)
+        ? "A figure waits in the empty hall, blade drawn and lowered. Ash-grey coat, unhurried eyes. \"Blades only. No pets, no gods, no debts. Beat me before the " + string(duel_turn_par()) + "th bell and take what I carry.\""
+        : ((_enc >= 5)
+            ? "The Ashen Duelist again - of course. The salute is almost warm now. \"You again. Good. I've been practicing.\""
+            : "The Ashen Duelist waits, blade already drawn. \"So the stories keep growing. Show me they aren't short by half.\"");
+    return {
+        id: "ashen_duelist",
+        title: "The Ashen Duelist",
+        body: _body,
+        color: make_color_rgb(205, 125, 95),
+        choices: [
+            { label: "Accept the duel", hint: "A strict 1v1 - your companion sits out. Beat the PAR of " + string(duel_turn_par()) + " turns for his finest prize",
+              cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+              outcomes: [ { weight: 100,
+                  text: "He salutes, and the hall goes quiet as a held breath. \"Begin.\"",
+                  effects: { duel: true } } ] },
+            { label: "Decline with a nod", hint: "He bears no grudge - walk away freely",
+              cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+              outcomes: [ { weight: 100,
+                  text: "He returns the nod and steps back into the gloom. \"Another bell, then.\"",
+                  effects: {} } ] }
+        ]
+    };
+}
+
+// The Ashen Blade - the Duelist's own sword, handed over with the 3rd token.
+// Built here at the grant site only; it lives in NO drop pool. Sent straight to
+// the stash so a later death this run can never take it back.
+function duelist_make_ashen_blade() {
+    var _b = create_item("The Ashen Blade", "weapon", 4, "DEX", 5,
+        "his own sword, worn to a whisper of grey", 400);
+    _b.class_req     = -1;
+    _b.affixes       = [{ suffix: "of the Answer", prefix: "Ashen", stat_name: "crit_flat", stat_value: 3 }];
+    _b.unique_effect = "ashen_blade";
+    _b.unique_desc   = "After you dodge or riposte, your next ability costs 1 less AP";
+    _b.lore = "He carried it through every duel he never lost, and handed it over the day someone finally deserved it. The edge is patient - it learned long ago that the reply matters more than the first word.";
+    return _b;
 }
 
 // The event catalog (13 events: 7 v1 + 6 §6 variety). Magnitudes scale by floor _fl (0..2).
@@ -10599,19 +11617,20 @@ function audio_settings_handle_input() {
     }
 
     // Rows: 0 Music, 1 SFX, 2 Hub Music, 3 Dungeon Music, 4 Menu Tick,
-    //       5 Fullscreen, 6 Tutorial Tips, 7 On-screen D-pad, 8 Reset Tutorial.
-    // Row 7 exists only on touch platforms (see touch_platform) - the cursor
-    // hops over it on desktop/HTML5, where the row isn't drawn.
+    //       5 Fullscreen, 6 Tutorial Tips, 7 On-screen D-pad, 8 Pinch Zoom,
+    //       9 Reset Tutorial.
+    // Rows 7-8 exist only on touch platforms (see touch_platform) - the cursor
+    // hops over them on desktop/HTML5, where the rows aren't drawn.
     if (nav_up()) {
-        global.settings_cursor = wrap_index(global.settings_cursor - 1, 9);
-        if (!touch_platform() && global.settings_cursor == 7) global.settings_cursor = 6;
+        global.settings_cursor = wrap_index(global.settings_cursor - 1, 10);
+        if (!touch_platform() && (global.settings_cursor == 7 || global.settings_cursor == 8)) global.settings_cursor = 6;
     }
     if (nav_down()) {
-        global.settings_cursor = wrap_index(global.settings_cursor + 1, 9);
-        if (!touch_platform() && global.settings_cursor == 7) global.settings_cursor = 8;
+        global.settings_cursor = wrap_index(global.settings_cursor + 1, 10);
+        if (!touch_platform() && (global.settings_cursor == 7 || global.settings_cursor == 8)) global.settings_cursor = 9;
     }
-    global.settings_cursor = clamp(global.settings_cursor, 0, 8);
-    if (!touch_platform() && global.settings_cursor == 7) global.settings_cursor = 8;
+    global.settings_cursor = clamp(global.settings_cursor, 0, 9);
+    if (!touch_platform() && (global.settings_cursor == 7 || global.settings_cursor == 8)) global.settings_cursor = 9;
 
     var _left    = nav_left();
     var _right   = nav_right();
@@ -10670,7 +11689,13 @@ function audio_settings_handle_input() {
                 audio_play_sound(global.touch_gamepad_off ? snd_ui_toggle_off : snd_ui_toggle_on, 1, false);
             }
         break;
-        case 8: // Reset Tutorial - clear seen flags so every tip shows again
+        case 8: // Pinch Zoom on/off (SYSTEMS_PINCH_ZOOM.md; touch platforms only)
+            if (_left || _right || _confirm) {
+                pinch_zoom_toggle();
+                audio_play_sound(global.pinch_zoom_off ? snd_ui_toggle_off : snd_ui_toggle_on, 1, false);
+            }
+        break;
+        case 9: // Reset Tutorial - clear seen flags so every tip shows again
             if (_left || _right || _confirm) {
                 tutorial_reset_all();
                 global.tutorial_enabled   = true;   // resetting implies you want the tips back
@@ -10891,6 +11916,7 @@ function video_toggle_fullscreen() {
 function touch_settings_init() {
     if (!variable_global_exists("touch_gamepad_off")) global.touch_gamepad_off = false;
     if (!variable_global_exists("touch_pad_scale"))   global.touch_pad_scale   = TOUCH_PAD_SCALE_DEF;
+    if (!variable_global_exists("pinch_zoom_off"))    global.pinch_zoom_off    = false;
 
     if (!variable_global_exists("touch_loaded")) {
         global.touch_loaded = true;
@@ -10898,6 +11924,8 @@ function touch_settings_init() {
         global.touch_gamepad_off = (ini_read_real("touch", "gamepad_off", 0) >= 0.5);
         global.touch_pad_scale   = clamp(ini_read_real("touch", "pad_scale", TOUCH_PAD_SCALE_DEF),
                                          TOUCH_PAD_SCALE_MIN, TOUCH_PAD_SCALE_MAX);
+        // Pinch zoom (SYSTEMS_PINCH_ZOOM.md): stored as pinch_zoom 1=ON (default).
+        global.pinch_zoom_off    = (ini_read_real("touch", "pinch_zoom", 1) < 0.5);
         ini_close();
     }
 }
@@ -10907,7 +11935,22 @@ function touch_settings_save() {
     ini_open("settings.ini");
     ini_write_real("touch", "gamepad_off", global.touch_gamepad_off ? 1 : 0);
     ini_write_real("touch", "pad_scale",   global.touch_pad_scale);
+    ini_write_real("touch", "pinch_zoom",  global.pinch_zoom_off ? 0 : 1);
     ini_close();
+}
+
+// Flip pinch zoom off/on (Settings row). Turning it OFF hard-resets the
+// transform to 1.0 so a player can never be stranded zoomed-in with the
+// gesture disabled (locked decision #2).
+function pinch_zoom_toggle() {
+    touch_settings_init();
+    global.pinch_zoom_off = !global.pinch_zoom_off;
+    touch_settings_save();
+    if (global.pinch_zoom_off && variable_global_exists("zoom")) {
+        global.zoom.z = 1;  global.zoom.vx = 0;  global.zoom.vy = 0;
+        global.zoom.active = false;
+        zoom_apply();
+    }
 }
 
 // Nudge the d-pad size by delta (the settings row passes +/- TOUCH_PAD_SCALE_STEP).
