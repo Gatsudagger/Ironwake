@@ -1,97 +1,167 @@
-# Ironwake — Steam Achievements (design for M sign-off)
+# Ironwake — Steam Achievements (DESIGN-LOCKED 2026-08-04, merged)
 
-32 achievements. Drafted 2026-07-17 for the Steam launch (STEAM_LAUNCH_CHECKLIST.md §4.3).
-You enter these in App Admin → Stats & Achievements; Claude wires `steam_set_achievement("API_NAME")`
-at each firing hook once GMEXT-Steamworks is installed. Deliberately front-loaded with easy
-"onboarding" unlocks (high completion % helps Steam's discovery algorithm), tapering to hard
-mastery + a few hidden/spoiler ones.
+**Merge of the 07-17 draft (32, epithet-grounded) + M's 08-04 additions (~34 after dupe
+unification). Final: 63 achievements.** M approved the merge 08-04. Steam sweet spot is
+15–40 but roguelites run 50–80 routinely; trim candidates flagged at bottom if M wants fewer.
 
-**Feasibility key:**
-- `TRACKED` = fires off state the game already stores (often an existing `epithet_*` check or counter). Trivial.
-- `HOOK` = needs a one-line `steam_set_achievement` at an existing event site (a "first X"). Easy.
-- `+FLAG` = needs a tiny new counter/flag first, then a hook. Small.
+Wiring: GMEXT-Steamworks (Steam builds only; all calls guarded `steam_initialised()`,
+Android/itch no-op). Thin wrapper `ach_unlock("ACH_X")` + post-run/post-load
+`achievements_sync()` that walks epithets/counters (also retro-grants for existing saves).
 
-Hidden = don't reveal name/desc until unlocked (spoilers / thematic reveal).
+**Key:** TRACKED = existing state/epithet. HOOK = one line at existing event site.
++FLAG = tiny new counter first. Hidden = ✔ (no name/desc until unlocked).
 
----
+## Onboarding
+| API | Display | Condition | How |
+|---|---|---|---|
+| ACH_FIRST_BLOOD | First Blood | win first battle | HOOK |
+| ACH_GRAVEBREAKER | The Gravebreaker | clear a full dungeon | TRACKED epithet |
+| ACH_ITS_ALIVE | It's Alive | hatch first companion | HOOK |
+| ACH_FIRST_LEGEND | Hand-Authored | first legendary drop | HOOK |
+| ACH_ACQUAINTED | Getting Acquainted | first bond tier-up | HOOK |
+| ACH_REFORGED | Reforged | reforge at Dorn | HOOK |
 
-## Onboarding (early, high completion %)
-| API name | Display | Description | Hidden | Firing hook |
-|---|---|---|---|---|
-| ACH_FIRST_BLOOD | First Blood | Win your first battle. | — | HOOK: first combat victory (`total_kills` first ↑ / victory) |
-| ACH_GRAVEBREAKER | The Gravebreaker | Clear a full dungeon. | — | TRACKED: `epithet_unlocked("gravebreaker")` / `dungeon_clears_total>=1` |
-| ACH_ITS_ALIVE | It's Alive | Hatch your first companion. | — | HOOK: pet hatch event (`snd_pet_hatch` site) |
-| ACH_FIRST_LEGEND | Hand-Authored | Find your first legendary item. | — | HOOK: first drop of rarity 4 (`discover_item` / drop) |
-| ACH_ACQUAINTED | Getting Acquainted | Raise any keeper to the first bond tier. | — | HOOK: first affinity tier-up |
-| ACH_REFORGED | Reforged | Rework an item's affixes at Dorn. | — | HOOK: `chit_reforge_item` success (the new REFORGE tab) |
+## Progression
+| API | Display | Condition | How |
+|---|---|---|---|
+| ACH_KILLS_100 | Hundredfold | 100 lifetime kills | TRACKED total_kills |
+| ACH_SLAYER | Slayer of Hundreds | 500 lifetime kills | TRACKED epithet |
+| ACH_KILLS_1000 | Thousandfold | 1,000 lifetime kills | TRACKED total_kills |
+| ACH_SURVIVOR | The Survivor | finish 25 runs | TRACKED epithet |
+| ACH_GOLDHAND | The Goldhanded | 10,000 lifetime dungeon gold | TRACKED epithet |
+| ACH_LEGEND | The Legend | permanent level 10 | TRACKED epithet |
+| ACH_COLLECTOR | Collector | discover half the codex | +FLAG count |
+| ACH_CURATOR | Curator | complete the codex | +FLAG count |
+| ACH_FC_DEPTHS | Gatekeeper of Ash | first full clear: Scorched Depths | +FLAG per-dungeon |
+| ACH_FC_TOMB | Gatekeeper of Frost | first full clear: Tundra Tomb | +FLAG per-dungeon |
+| ACH_FC_VAULT | Gatekeeper of Dust | first full clear: Ashen Vault | +FLAG per-dungeon |
 
-## Progression milestones
-| API name | Display | Description | Hidden | Firing hook |
-|---|---|---|---|---|
-| ACH_SLAYER | Slayer of Hundreds | 500 lifetime kills. | — | TRACKED: `epithet_unlocked("slayer")` / `total_kills>=500` |
-| ACH_SURVIVOR | The Survivor | Finish 25 runs. | — | TRACKED: `epithet_unlocked("survivor")` / `run_count>=25` |
-| ACH_GOLDHAND | The Goldhanded | Earn 10,000 lifetime gold in the dungeons. | — | TRACKED: `epithet_unlocked("goldhand")` |
-| ACH_LEGEND | The Legend | Reach permanent level 10. | — | TRACKED: `epithet_unlocked("legend")` |
-| ACH_COLLECTOR | Collector | Discover half the item codex. | — | +FLAG: discovered-count ≥ half of catalog |
-| ACH_CURATOR | Curator | Complete the item codex. | — | +FLAG: all items discovered |
+## Combat skill
+| API | Display | Condition | How |
+|---|---|---|---|
+| ACH_BOSSES_10 | Bossbreaker | slay 10 bosses | TRACKED total_boss_kills |
+| ACH_DUELIST_5 | Old Rivals | face the Ashen Duelist 5× | TRACKED duelist_encounters |
+| ACH_NO_DAMAGE | Perfect Read | win a combat taking 0 damage | +FLAG combat flag |
+| ACH_ABSORB_500 | Anvil Soul | absorb 500+ dmg in one run (incl. shield/block/mitigation) | +FLAG run accumulator |
+| ACH_CRITS_50 | Critical Habit | 50 lifetime crits | +FLAG lifetime counter |
+| ACH_CRITS_500 | Executioner's Rhythm | 500 lifetime crits | +FLAG same counter |
+| ACH_DETONATE_25 | Detonator | 25 status detonations | +FLAG lifetime counter |
 
 ## Class mastery
-| API name | Display | Description | Hidden | Firing hook |
-|---|---|---|---|---|
-| ACH_CLR_ARCANIST | Soulbinder | Clear a dungeon as the Arcanist. | — | +FLAG: dungeon clear + `class_id==0` |
-| ACH_CLR_BLOOD | Bloodsworn | Clear a dungeon as the Bloodwarden. | — | +FLAG: clear + `class_id==1` |
-| ACH_CLR_SHADOW | Nightfall | Clear a dungeon as the Shadowstrider. | — | +FLAG: clear + `class_id==2` |
+| API | Display | Condition | How |
+|---|---|---|---|
+| ACH_CLR_ARCANIST | Soulbinder | clear a dungeon as Arcanist | +FLAG class at clear |
+| ACH_CLR_BLOOD | Bloodsworn | clear as Bloodwarden | +FLAG |
+| ACH_CLR_SHADOW | Nightfall | clear as Shadowstrider | +FLAG |
 
-## Dungeon mastery (hard — the A5 epithets)
-| API name | Display | Description | Hidden | Firing hook |
-|---|---|---|---|---|
-| ACH_FLAMEWALKER | Flamewalker | Full-clear the Scorched Depths at Awakening 5. | — | TRACKED: `epithet_unlocked("flamewalker")` |
-| ACH_TOMBWARDEN | Tombwarden | Full-clear the Tundra Tomb at Awakening 5. | — | TRACKED: `epithet_unlocked("tombwarden")` |
-| ACH_VAULTBREAKER | Vaultbreaker | Full-clear the Ashen Vault at Awakening 5. | — | TRACKED: `epithet_unlocked("vaultbreaker")` |
+## Dungeon mastery (A5 epithets)
+| API | Display | Condition | How |
+|---|---|---|---|
+| ACH_FLAMEWALKER | Flamewalker | Scorched Depths full clear @ A5 | TRACKED epithet |
+| ACH_TOMBWARDEN | Tombwarden | Tundra Tomb full clear @ A5 | TRACKED epithet |
+| ACH_VAULTBREAKER | Vaultbreaker | Ashen Vault full clear @ A5 | TRACKED epithet |
 
-## Companion
-| API name | Display | Description | Hidden | Firing hook |
-|---|---|---|---|---|
-| ACH_SOULBOUND | The Soul-bound | Raise a companion to Soul-bound (Bond 18). | — | TRACKED: `epithet_unlocked("soulbound")` |
-| ACH_AWAKENER | The Awakener | Raise a companion to its Awakened form. | — | TRACKED: `epithet_unlocked("awakener")` |
-| ACH_CORRUPTED | What Have You Done | Let a companion fall to corruption. | ✔ | HOOK: pet reaches corrupted stage |
+## Companions
+| API | Display | Condition | How |
+|---|---|---|---|
+| ACH_SPECIES_5 | Growing Menagerie | hatch 5 different species | +FLAG species set |
+| ACH_SPECIES_10 | Full Menagerie | hatch 10 different species | +FLAG same |
+| ACH_SCION_1 | Blood of the Boss | hatch a scion (signature) species | HOOK signature flag |
+| ACH_SCION_2 | Twice-Marked | hatch 2 different scion species | +FLAG scion set |
+| ACH_SCION_ADULT | Scion Ascendant | raise a scion to adulthood | HOOK stage+signature |
+| ACH_SOULBOUND | The Soul-bound | bond 18 (Soul-bound) | TRACKED epithet |
+| ACH_AWAKENER | The Awakener | raise to Awakened form | TRACKED epithet |
+| ACH_CORRUPTED ✔ | What Have You Done | a companion falls to corruption | HOOK |
+| ACH_CORRUPT_ADULT ✔ | Loved Anyway | corrupted companion reaches adulthood uncured | HOOK stage+corruption |
+| ACH_PET_CURE | Purged Clean | cure a companion's corruption | HOOK pet_corruption_cure |
 
-## Town bonds
-| API name | Display | Description | Hidden | Firing hook |
-|---|---|---|---|---|
-| ACH_BELOVED | The Beloved | Reach Lover with someone in Ironwake. | — | TRACKED: `epithet_unlocked("beloved")` |
-| ACH_REMEMBERS | The Town Remembers | Betray one of Ironwake's keepers. | ✔ | HOOK: betrayal event (betrayed flag) |
-| ACH_KEPT_WORD | Kept Your Word | Complete a keeper's personal quest line. | — | +FLAG: a keeper questline completes |
-| ACH_PILLAR | Pillar of the Community | Reach Friend or higher with every keeper. | — | +FLAG: all affinities ≥ Friend |
+## Town
+| API | Display | Condition | How |
+|---|---|---|---|
+| ACH_BELOVED | The Beloved | reach Lover with someone | TRACKED epithet |
+| ACH_REMEMBERS ✔ | The Town Remembers | betray a keeper | HOOK betrayal |
+| ACH_KEPT_WORD | Kept Your Word | complete a keeper questline | +FLAG |
+| ACH_PILLAR | Pillar of the Community | Friend+ with every keeper | +FLAG |
+| ACH_BOARD_25 | The Town Provides | complete 25 board requests | +FLAG lifetime counter |
 
-## Endgame / mastery
-| API name | Display | Description | Hidden | Firing hook |
-|---|---|---|---|---|
-| ACH_ASCENDING | Ascending | Clear a run at Awakening 1 or higher. | — | HOOK: clear with `awakening_level>=1` |
-| ACH_DEEP_END | Into the Deep End | Reach Awakening 5. | — | HOOK: `awakening_level>=5` reached |
-| ACH_DEATHLESS | The Deathless | Earn 10 full clears with no death between them. | — | TRACKED: `epithet_unlocked("deathless")` |
-| ACH_STANDS | IRONWAKE STANDS | Reach the ending — the town endures. | ✔ | TRACKED: `global.ironwake_stands == true` |
+## Endgame
+| API | Display | Condition | How |
+|---|---|---|---|
+| ACH_ASCENDING | Ascending | clear a run at Awakening 1+ | HOOK |
+| ACH_AWAKENING_3 | The Ladder Climbs | reach Awakening 3 | HOOK |
+| ACH_DEEP_END | Into the Deep End | reach Awakening 5 | HOOK |
+| ACH_DESCENT_OPEN | Beyond the Veil | unlock The Descent (triple-A5 win) | HOOK |
+| ACH_DESCENT_10 | Ten Fathoms | Descent floor 10 | TRACKED descent_floor |
+| ACH_DESCENT_25 | The Long Fall | Descent floor 25 | TRACKED descent_floor |
+| ACH_DESCENT_50 | Bottom of the World | Descent floor 50 | TRACKED descent_floor |
+| ACH_DEATHLESS | The Deathless | 10 full clears with no death between | TRACKED epithet |
+| ACH_STANDS ✔ | IRONWAKE STANDS | reach the ending | TRACKED flag |
 
-## Skill / fun / hidden
-| API name | Display | Description | Hidden | Firing hook |
-|---|---|---|---|---|
-| ACH_HIGH_ROLLER | High Roller | Win the High Table dice tournament. | — | HOOK: High Table victory |
-| ACH_BONES | Bones | Win a game of Knucklebones. | — | HOOK: Knucklebones win |
-| ACH_PACT_BOUND | Pact-Bound | Complete a run while carrying a curse. | ✔ | +FLAG: curse active at clear |
-| ACH_BANSHEE | Banshee in a Bottle | Free the banshee. | ✔ | HOOK: banshee music unlock (SAVE v3) |
+## Risk
+| API | Display | Condition | How |
+|---|---|---|---|
+| ACH_PACT_BOUND ✔ | Pact-Bound | win a run carrying a curse | +FLAG |
+| ACH_CURSES_3 | Glutton for Punishment | win a run with 3+ curses | +FLAG same site |
+| ACH_MEGA_CURSE | Pact Sealed | win a run with a mega curse | +FLAG same site |
+| ACH_IRON_VOW | Iron Vow | win under a Vow (hardcore) | HOOK vow flag at win |
 
----
+## Elaborate / fun
+| API | Display | Condition | How |
+|---|---|---|---|
+| ACH_HIGH_ROLLER | High Roller | win the High Table tournament | HOOK |
+| ACH_BONES | Bones | win a game of Knucklebones | HOOK |
+| ACH_BREW | Cauldron Roulette | drink a Chaotic Brew and survive the run | +FLAG |
+| ACH_REBIRTH | Born Again Wrong | complete a cursed-rebirth ceremony | HOOK |
+| ACH_FORGE_LEGEND | Smith of Legends | forge a legendary | HOOK |
+| ACH_WEB_COMPLETE | Web Complete | fill an entire talent web | HOOK node count |
+| ACH_BANSHEE ✔ | Banshee in a Bottle | free your first song | HOOK |
+| ACH_SONGS_5 | Growing Choir | free 5 songs | TRACKED freed count |
+| ACH_SONGS_ALL | The Choir Complete | free every song | TRACKED count==pool |
 
-## Notes for wiring (later session)
-- **Cheapest to ship first:** the 12 `TRACKED` ones — the `epithet_unlocked()` / counter checks
-  already exist, so wiring is a single call at the point epithets/counters update (e.g. a
-  post-run `achievements_sync()` that walks the epithet ids). No new state.
-- **`+FLAG` ones** (codex tiers, per-class clears, questline, all-friends, curse-at-clear) each
-  need a tiny bit of new tracking — batch them when we do the SDK session.
-- **Steam rule:** achievements are boolean; back the count-based ones (kills/gold/runs) with a
-  Steam *stat* only if you want the % progress bar, otherwise a plain boolean at the threshold
-  is fine and simpler.
-- **Count check:** 32 is a healthy roguelite spread (Steam sweet spot ~15–40). If you want fewer,
-  the first cut candidates are ACH_BONES + ACH_PACT_BOUND. If more, add per-dungeon *first-clear*
-  (non-A5) and an "Awakening 3" mid-tier.
-- Order in the dashboard by the groups above (Steam shows them in entry order).
+## Wiring status (08-04, first pass — extension-safe, compiles without GMEXT)
+**CORE BUILT** in scr_stats.gml (end of file): `ach_unlock()` (dynamic
+asset_get_index/script_execute — no-ops without the extension), `ach_counters_init()`
+(+ save/load in scr_save, no version bump), `ach_record_hatch()`, `achievements_sync()`
+(walks all state-derived conditions; called every ~5s from gc Step + at pet_hatch;
+this is also the retro-grant path).
+
+**LIVE via sync (~40):** all 11 epithet-backed, FIRST_BLOOD/KILLS_100/KILLS_1000,
+BOSSES_10, DUELIST_5, STANDS, ASCENDING/AWAKENING_3/DEEP_END (from run-record
+ascendance), DESCENT_OPEN (triple-A5 derive), DESCENT_10/25/50 (descent_best + live),
+BANSHEE/SONGS_5/SONGS_ALL, ITS_ALIVE, SPECIES_5/10 + SCION_1/2 (lifetime sets fed by
+pet_hatch), SCION_ADULT, CORRUPTED, CORRUPT_ADULT, PET_CURE (also hooked at cure site),
+AWAKENER, plus the counter thresholds below once their sites are wired.
+
+**TODO — counter increment sites (fields exist, currently never increment):**
+- `global.ach_counters.crits++` at the crit application site (scr_combat damage roll)
+- `global.ach_counters.detonations++` where the detonation reaction APPLIES (caller of
+  combat_detonator_pick in scr_combat — NOT the picker itself, scr_ui mirrors it)
+- `global.ach_run_absorbed += <dmg before mitigation>` at the player damage-taken site;
+  reset to 0 at run start
+- `global.ach_counters.board_done++` at tavern-board request completion
+
+**TODO — event hooks (one ach_unlock() line each):** ACQUAINTED (first bond tier-up),
+REFORGED (chit_reforge_item success), FIRST_LEGEND (rarity-4 drop site), REMEMBERS
+(betrayal event), KEPT_WORD (keeper questline complete), HIGH_ROLLER (High Table win),
+BONES (Knucklebones win), BREW (Chaotic Brew + run survive), REBIRTH (ceremony
+complete), FORGE_LEGEND (forge success), WEB_COMPLETE (talent web full), NO_DAMAGE
+(combat win w/ zero damage flag), IRON_VOW / PACT_BOUND / CURSES_3 / MEGA_CURSE (win
+site, reading vow_mode + active curse count), FC_DEPTHS/TOMB/VAULT + CLR_* (run-record
+dungeon+class at clear — verify records carry class), COLLECTOR/CURATOR (codex
+discovery count fn), PILLAR (all keepers ≥ Friend tier).
+
+**TODO — outside code:** GMEXT-Steamworks import (GM closed), 63 dashboard definitions
+(Steamworks admin → Stats & Achievements), 63 icons (PIL composite → _for_review).
+
+## Build notes
+- **63 total.** Trim candidates if M wants ~50: ACH_KILLS_1000, ACH_BONES, ACH_CRITS_500,
+  ACH_PET_CURE, per-dungeon Gatekeepers (fold into ACH_GRAVEBREAKER). Do NOT trim M's
+  explicit 08-04 asks (absorb/crits/detonate, scion+corrupted ladders, Descent 10/25/50,
+  song ladder).
+- New counters (+FLAG) persist as struct_exists-guarded optional save fields — no
+  SAVE_FORMAT_VERSION bump expected.
+- Retro-grant on first boot: achievements_sync() walks all TRACKED conditions.
+- Steam stats (progress bars) skipped v1 — plain booleans at thresholds.
+- Icons: 63 composited from existing in-game art (PIL, zero credits), 256×256, batched to
+  _for_review\ for M approval. Dashboard entry order = the groups above.
+- Steam allows adding achievements post-launch; shipped API names are permanent.

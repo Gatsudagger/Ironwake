@@ -248,6 +248,9 @@ function save_game() {
         // The Ashen Duelist (DESIGN_DUELIST_CHALLENGE.md): lifetime rival ledger.
         duelist_encounters:          variable_global_exists("duelist_encounters")          ? global.duelist_encounters          : 0,
         duelist_tokens:              variable_global_exists("duelist_tokens")              ? global.duelist_tokens              : 0,
+        // STEAM ACHIEVEMENTS lifetime counters (08-04) - optional struct, healed
+        // by ach_counters_init() on older saves. No SAVE_FORMAT_VERSION bump.
+        ach_counters:                variable_global_exists("ach_counters")                ? global.ach_counters                : undefined,
         highest_run_level:           variable_global_exists("highest_run_level")           ? global.highest_run_level           : 1,
         perm_hp_battle_hardened:     variable_global_exists("perm_hp_battle_hardened")     ? global.perm_hp_battle_hardened     : 0,
         chosen_portrait:             variable_global_exists("chosen_portrait")             ? global.chosen_portrait             : 0,
@@ -975,6 +978,8 @@ function load_game() {
     if (variable_struct_exists(_s, "total_boss_kills"))        global.total_boss_kills        = _s.total_boss_kills;
     if (variable_struct_exists(_s, "duelist_encounters"))      global.duelist_encounters      = _s.duelist_encounters;
     if (variable_struct_exists(_s, "duelist_tokens"))          global.duelist_tokens          = _s.duelist_tokens;
+    if (variable_struct_exists(_s, "ach_counters") && is_struct(_s.ach_counters)) global.ach_counters = _s.ach_counters;
+    ach_counters_init();   // heal missing fields on older saves (achievements, 08-04)
     if (variable_struct_exists(_s, "highest_run_level"))       global.highest_run_level       = _s.highest_run_level;
     if (variable_struct_exists(_s, "perm_hp_battle_hardened")) global.perm_hp_battle_hardened = _s.perm_hp_battle_hardened;
     if (variable_struct_exists(_s, "chosen_portrait"))         global.chosen_portrait         = _s.chosen_portrait;

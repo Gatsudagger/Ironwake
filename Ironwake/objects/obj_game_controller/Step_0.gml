@@ -4663,4 +4663,14 @@ if (instance_exists(obj_combat_controller)) {
     if (_ctrl.player_turn) items_used_this_turn = 0;
 }
 
+// STEAM ACHIEVEMENTS periodic sync (08-04): every ~5s walk the state-derived
+// conditions (kills, epithets, descent floor, songs, roster states...). Cheap
+// (a few short array walks) and a no-op without the Steamworks extension.
+// Event-shaped achievements fire ach_unlock() at their own sites instead.
+ach_sync_clock++;
+if (ach_sync_clock >= 300) {
+    ach_sync_clock = 0;
+    achievements_sync();
+}
+
 

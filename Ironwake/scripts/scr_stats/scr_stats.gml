@@ -8623,6 +8623,7 @@ function pet_corruption_on_run_end(result) {
 function pet_corruption_cure(pet) {
     if (!is_struct(pet) || pet.is_egg || pet_corr_state(pet) != "pushing") return "";
     pet.corruption_state = "cured";
+    ach_unlock("ACH_PET_CURE");
     return pet.name + " is purged - it keeps its dark strength, but the grand power is lost.";
 }
 
@@ -9311,6 +9312,8 @@ function pet_hatch(pet) {
     if (!is_struct(pet) || !pet.is_egg) return false;
     pet.is_egg = false;
     pet.stage  = PET_STAGE_BABY;
+    ach_record_hatch(pet);        // lifetime species/scion sets (achievements)
+    achievements_sync();
     return true;
 }
 
@@ -11966,4 +11969,157 @@ function touch_gamepad_toggle() {
     touch_settings_init();
     global.touch_gamepad_off = !global.touch_gamepad_off;
     touch_settings_save();
+}
+
+// ============================================================================
+// STEAM ACHIEVEMENTS (2026-08-04, ACHIEVEMENTS_SPEC.md - design-locked 63).
+// EXTENSION-SAFE: GMEXT-Steamworks may not be installed yet, so every Steam
+// call resolves DYNAMICALLY (asset_get_index + script_execute). This compiles
+// and silently no-ops on builds without the extension (Android / itch / IDE
+// before the import) - the counters still accumulate so nothing is lost.
+// achievements_sync() derives every state-based achievement from live save
+// state (also the retro-grant path for existing players); one-shot event
+// achievements call ach_unlock() at their sites. Per-achievement wiring
+// status: ACHIEVEMENTS_SPEC.md.
+// ============================================================================
+
+function ach_available() {
+    var _init = asset_get_index("steam_initialised");
+    if (_init == -1) return false;
+    return script_execute(_init);
+}
+
+function ach_unlock(_api) {
+    // Session-level dedup only: Steam itself dedups re-sets server-side, so a
+    // fresh session harmlessly re-sends anything already earned.
+    if (!variable_global_exists("ach_session_sent")) global.ach_session_sent = {};
+    if (variable_struct_exists(global.ach_session_sent, _api)) return;
+    if (!ach_available()) return;
+    var _set = asset_get_index("steam_set_achievement");
+    if (_set == -1) return;
+    script_execute(_set, _api);
+    global.ach_session_sent[$ _api] = true;
+}
+
+// Lifetime counters that no existing system tracks. Saved as one guarded
+// optional struct (scr_save) - absent on older saves, healed here.
+function ach_counters_init() {
+    if (!variable_global_exists("ach_counters")) global.ach_counters = {};
+    var _c = global.ach_counters;
+    if (!variable_struct_exists(_c, "crits"))           _c.crits = 0;
+    if (!variable_struct_exists(_c, "detonations"))     _c.detonations = 0;
+    if (!variable_struct_exists(_c, "board_done"))      _c.board_done = 0;
+    if (!variable_struct_exists(_c, "species_hatched")) _c.species_hatched = [];
+    if (!variable_struct_exists(_c, "scions_hatched"))  _c.scions_hatched = [];
+    if (!variable_global_exists("ach_run_absorbed"))    global.ach_run_absorbed = 0;  // run-scoped, reset at run start
+}
+
+// Record a hatch into the lifetime species sets (called from pet_hatch).
+function ach_record_hatch(_pet) {
+    ach_counters_init();
+    var _sp  = (is_struct(_pet) && variable_struct_exists(_pet, "species")) ? _pet.species : "";
+    if (_sp == "") return;
+    var _c = global.ach_counters;
+    var _have = false;
+    for (var _i = 0; _i < array_length(_c.species_hatched); _i++)
+        if (_c.species_hatched[_i] == _sp) { _have = true; break; }
+    if (!_have) array_push(_c.species_hatched, _sp);
+    var _scion = variable_struct_exists(_pet, "signature") && _pet.signature;
+    if (_scion) {
+        var _have_s = false;
+        for (var _j = 0; _j < array_length(_c.scions_hatched); _j++)
+            if (_c.scions_hatched[_j] == _sp) { _have_s = true; break; }
+        if (!_have_s) array_push(_c.scions_hatched, _sp);
+    }
+}
+
+// Walk every state-derived condition; cheap (a few short array walks), safe to
+// call from a slow timer. Fires nothing when Steam is absent.
+function achievements_sync() {
+    if (!ach_available()) return;
+    ach_counters_init();
+
+    // --- Epithet-backed (the TRACKED set) ---
+    var _eps = [
+        ["gravebreaker", "ACH_GRAVEBREAKER"], ["survivor",    "ACH_SURVIVOR"],
+        ["goldhand",     "ACH_GOLDHAND"],     ["legend",      "ACH_LEGEND"],
+        ["deathless",    "ACH_DEATHLESS"],    ["flamewalker", "ACH_FLAMEWALKER"],
+        ["tombwarden",   "ACH_TOMBWARDEN"],   ["vaultbreaker","ACH_VAULTBREAKER"],
+        ["soulbound",    "ACH_SOULBOUND"],    ["awakener",    "ACH_AWAKENER"],
+        ["beloved",      "ACH_BELOVED"],
+    ];
+    for (var _i = 0; _i < array_length(_eps); _i++)
+        if (epithet_unlocked(_eps[_i][0])) ach_unlock(_eps[_i][1]);
+
+    // --- Lifetime counters already in the game ---
+    var _tk = variable_global_exists("total_kills") ? global.total_kills : 0;
+    if (_tk >= 1)    ach_unlock("ACH_FIRST_BLOOD");
+    if (_tk >= 100)  ach_unlock("ACH_KILLS_100");
+    if (_tk >= 1000) ach_unlock("ACH_KILLS_1000");
+    if (variable_global_exists("total_boss_kills")   && global.total_boss_kills   >= 10) ach_unlock("ACH_BOSSES_10");
+    if (variable_global_exists("duelist_encounters") && global.duelist_encounters >= 5)  ach_unlock("ACH_DUELIST_5");
+
+    // --- Win state / awakening ladder (from run records) ---
+    if (variable_global_exists("ironwake_stands") && global.ironwake_stands) ach_unlock("ACH_STANDS");
+    if (variable_global_exists("run_history")) {
+        for (var _r = 0; _r < array_length(global.run_history); _r++) {
+            var _rec = global.run_history[_r];
+            if (_rec.result == 1 && variable_struct_exists(_rec, "ascendance")) {
+                if (_rec.ascendance >= 1) ach_unlock("ACH_ASCENDING");
+            }
+            if (variable_struct_exists(_rec, "ascendance")) {
+                if (_rec.ascendance >= 3) ach_unlock("ACH_AWAKENING_3");
+                if (_rec.ascendance >= 5) ach_unlock("ACH_DEEP_END");
+            }
+        }
+    }
+    // Descent unlock = the triple-A5 win condition itself.
+    if (epithet_a5_clear("scorched_depths") && epithet_a5_clear("tundra_tomb")
+        && epithet_a5_clear("ashen_vault")) ach_unlock("ACH_DESCENT_OPEN");
+
+    // --- The Descent depth ladder: saved best + the live floor mid-fall ---
+    var _deep = variable_global_exists("descent_best") ? global.descent_best : 0;
+    if (variable_global_exists("descent_active") && global.descent_active
+        && variable_global_exists("descent_floor")) _deep = max(_deep, global.descent_floor);
+    if (_deep >= 10) ach_unlock("ACH_DESCENT_10");
+    if (_deep >= 25) ach_unlock("ACH_DESCENT_25");
+    if (_deep >= 50) ach_unlock("ACH_DESCENT_50");
+
+    // --- Banshee songs (the real unlock array; the F8 debug lever does NOT
+    //     touch music_unlocked, so this can't false-fire) ---
+    banshee_init();
+    var _songs = array_length(global.music_unlocked);
+    if (_songs >= 1) ach_unlock("ACH_BANSHEE");
+    if (_songs >= 5) ach_unlock("ACH_SONGS_5");
+    if (_songs >= array_length(music_track_catalog())) ach_unlock("ACH_SONGS_ALL");
+
+    // --- Companions: lifetime hatch sets + live roster states ---
+    var _c = global.ach_counters;
+    if (array_length(_c.species_hatched) >= 1)  ach_unlock("ACH_ITS_ALIVE");
+    if (array_length(_c.species_hatched) >= 5)  ach_unlock("ACH_SPECIES_5");
+    if (array_length(_c.species_hatched) >= 10) ach_unlock("ACH_SPECIES_10");
+    if (array_length(_c.scions_hatched)  >= 1)  ach_unlock("ACH_SCION_1");
+    if (array_length(_c.scions_hatched)  >= 2)  ach_unlock("ACH_SCION_2");
+    var _ros = pet_roster();
+    for (var _p = 0; _p < array_length(_ros); _p++) {
+        var _pt = _ros[_p];
+        if (_pt.is_egg) continue;
+        var _adult = (_pt.stage >= PET_STAGE_ADULT);
+        var _scion = variable_struct_exists(_pt, "signature") && _pt.signature;
+        if (_scion && _adult)                          ach_unlock("ACH_SCION_ADULT");
+        if (pet_is_fulfilled(_pt))                     ach_unlock("ACH_CORRUPTED");
+        if (pet_is_fulfilled(_pt) && _adult)           ach_unlock("ACH_CORRUPT_ADULT");
+        if (pet_corr_state(_pt) == "cured")            ach_unlock("ACH_PET_CURE");
+        if (_pt.stage >= PET_STAGE_AWAKENED)           ach_unlock("ACH_AWAKENER");
+        // ACH_ITS_ALIVE also from the live roster (covers pre-tracking saves).
+        ach_unlock("ACH_ITS_ALIVE");
+    }
+
+    // --- New lifetime counters (sites wired per ACHIEVEMENTS_SPEC.md) ---
+    if (_c.crits >= 50)        ach_unlock("ACH_CRITS_50");
+    if (_c.crits >= 500)       ach_unlock("ACH_CRITS_500");
+    if (_c.detonations >= 25)  ach_unlock("ACH_DETONATE_25");
+    if (_c.board_done >= 25)   ach_unlock("ACH_BOARD_25");
+    if (variable_global_exists("ach_run_absorbed") && global.ach_run_absorbed >= 500)
+        ach_unlock("ACH_ABSORB_500");
 }

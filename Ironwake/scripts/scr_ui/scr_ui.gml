@@ -8758,6 +8758,35 @@ function ui_compendium_sections() {
 // room is active (obj_game_controller's own Draw GUI is unreliable when the
 // object is persistent and sprite-less).
 // ---------------------------------------------------------------------------
+// =============================================================================
+// SHARED TOAST (08-04, M standing order after the equip-notif collision: every
+// transient floating notice draws TOPMOST with a measured backdrop box - never
+// bare draw_text over a busy screen). Call at the END of the owning screen's
+// Draw so nothing paints over it, and document the y-band in UI_BANDS.md.
+// =============================================================================
+function ui_draw_toast(_msg, _cx, _ytop, _alpha = 1.0, _txt_col = undefined) {
+    if (_msg == "" || _alpha <= 0) return;
+    if (_txt_col == undefined) _txt_col = make_color_rgb(100, 220, 130);
+    draw_set_font(fnt_ui);
+    var _tw = string_width(_msg);
+    var _th = string_height(_msg);
+    var _x1 = _cx - _tw / 2 - 27, _x2 = _cx + _tw / 2 + 27;
+    var _y2 = _ytop + _th + 24;
+    draw_set_alpha(0.93 * _alpha);
+    draw_set_color(make_color_rgb(16, 18, 30));
+    draw_rectangle(_x1, _ytop, _x2, _y2, false);
+    draw_set_alpha(_alpha);
+    draw_set_color(make_color_rgb(245, 195, 80));
+    draw_rectangle(_x1, _ytop, _x2, _y2, true);
+    draw_set_halign(fa_center);
+    draw_set_valign(fa_top);
+    draw_set_color(_txt_col);
+    draw_text(_cx, _ytop + 12, _msg);
+    draw_set_halign(fa_left);
+    draw_set_color(c_white);
+    draw_set_alpha(1.0);
+}
+
 function ui_draw_character_menu() {
     if (!instance_exists(obj_game_controller)) return;
     var _gc = instance_find(obj_game_controller, 0);
@@ -9283,17 +9312,9 @@ function ui_draw_character_menu() {
         var _sel_pos    = clamp(_gc.equip_slot_selected, 0, EQUIP_SLOT_COUNT - 1);
         var _sel_inv    = equip_display_to_inv(_sel_pos);
 
-        // Equip confirmation notification (fades over 150 frames, fully opaque first 120)
-        if (variable_instance_exists(_gc, "equip_notif_timer") && _gc.equip_notif_timer > 0) {
-            var _nf = clamp(_gc.equip_notif_timer / 30.0, 0, 1.0);
-            draw_set_alpha(_nf);
-            draw_set_halign(fa_center);
-            draw_set_font(fnt_ui);
-            draw_set_color(make_color_rgb(100, 220, 130));
-            draw_text(960, 110, _gc.equip_notif_msg);
-            draw_set_halign(fa_left);
-            draw_set_alpha(1.0);
-        }
+        // Equip confirmation toast: moved to the END of this function (topmost,
+        // boxed via ui_draw_toast) - it used to draw bare here at y110, under the
+        // frame art and through the tab row (08-04 screenshot).
 
         // Stash / Pack counts in top-right
         var _stash_count = variable_global_exists("equipment_stash") ? array_length(global.equipment_stash) : 0;
@@ -10250,6 +10271,12 @@ function ui_draw_character_menu() {
             ui_draw_key_legend(960, 1035, "Enter: Browse Items   Q/E: Switch Tab   I: Close");
         }
         draw_set_halign(fa_left);
+    }
+
+    // Equip confirmation toast - LAST so it sits above every panel + the frame
+    // (band 52-115, UI_BANDS.md; fades over its final 30 frames).
+    if (variable_instance_exists(_gc, "equip_notif_timer") && _gc.equip_notif_timer > 0) {
+        ui_draw_toast(_gc.equip_notif_msg, 960, 52, clamp(_gc.equip_notif_timer / 30.0, 0, 1.0));
     }
     draw_set_font(-1);
 }
@@ -15733,23 +15760,32 @@ function forge_result_open(_title, _flavor, _item, _prev, _lines, _accent) {
 // tests live in Draw per the input rule).
 // =============================================================================
 function ui_draw_stats_tour() {
-    if (stats_tour_step < 0) return;
-    var _ts = clamp(stats_tour_step, 0, 5);
+    // Tour state lives on gc; this draws from whichever room controller owns the
+    // menu (hub/floor/combat), so it must NOT read stats_tour_step bare (1.0.2
+    // live crash: floor controller had no such variable).
+    if (!instance_exists(obj_game_controller)) return;
+    if (!variable_instance_exists(obj_game_controller.id, "stats_tour_step")) return;
+    if (obj_game_controller.stats_tour_step < 0) return;
+    var _ts = clamp(obj_game_controller.stats_tour_step, 0, 5);
     // Highlight rects {x1,y1,x2,y2} + card anchor per step (1920x1080 GUI).
+    // Re-measured 08-04 against the live stats layout (content_y=135; left col
+    // x60, mid col x540, right col x1230) so every edge lands in a GAP between
+    // text lines - the 07-31 rects sliced the ranged-dmg line, crit notes,
+    // armor row and Fortune header mid-line.
     var _steps = [
-        { r: [42, 246, 648, 423],    cx: 700,  cy: 258,
+        { r: [42, 246, 648, 417],    cx: 700,  cy: 258,
           t: "Your six core stats",
           b: "The number shown is Base + Gear combined. Hover any stat to see the split - equip requirements test your BASE stat only, so gear can't carry you into gear." },
-        { r: [42, 420, 534, 660],    cx: 600,  cy: 430,
+        { r: [42, 423, 528, 682],    cx: 600,  cy: 430,
           t: "Damage bonuses",
           b: "Each ability type scales off its own stat: STR drives Phys, INT drives Elemental, WIS drives DoTs and effects, CHA adds a little to everything. Weapon damage adds only to abilities that match the weapon's reach (melee or ranged)." },
-        { r: [522, 420, 1196, 663],  cx: 60,   cy: 430,
+        { r: [522, 423, 1196, 676],  cx: 60,   cy: 430,
           t: "Critical chance",
           b: "Four crit rates - every ability rolls the ONE matching its style: Power (STR), Precision (DEX), Arcane (INT) or Effect (WIS). Gear crit adds on top: \"Crit (all)\" boosts every roll; Spell Crit and Phys Crit boost only their half." },
-        { r: [42, 696, 1196, 878],   cx: 600,  cy: 260,
+        { r: [42, 699, 1196, 912],   cx: 600,  cy: 260,
           t: "Staying alive",
           b: "Dodge avoids a hit outright. Phys reduction shaves a percentage, then Armor subtracts a flat amount (a landed hit always deals at least 1). Accuracy is your to-hit bonus, applied before the foe's dodge." },
-        { r: [522, 861, 1196, 984],  cx: 60,   cy: 690,
+        { r: [522, 870, 1196, 982],  cx: 60,   cy: 690,
           t: "Fortune",
           b: "Gold Find boosts every coin you pick up; Loot Find raises the chance enemies drop equipment at all. Gear affixes, charisma, companions, potions and traits all feed these numbers." },
         { r: [1212, 120, 1818, 1010], cx: 570, cy: 400,

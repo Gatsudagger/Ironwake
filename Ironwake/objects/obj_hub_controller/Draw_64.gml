@@ -2902,25 +2902,13 @@ if (instance_exists(obj_game_controller)) {
     }
 }
 
-// Trait unlock notification toast (renders above all other UI)
+// Trait unlock notification toast (renders above all other UI) - shared
+// ui_draw_toast (08-04); band y21-90 documented in UI_BANDS.md.
 if (instance_exists(obj_game_controller)) {
     var _gc_toast = instance_find(obj_game_controller, 0);
     if (_gc_toast.trait_notif_timer > 0 && _gc_toast.trait_notif_msg != "") {
-        var _t_alpha = min(1.0, _gc_toast.trait_notif_timer / 30.0);
-        draw_set_alpha(_t_alpha);
-        draw_set_color(make_color_rgb(12, 10, 24));
-        draw_rectangle(390, 21, 1530, 78, false);
-        draw_set_color(make_color_rgb(140, 88, 220));
-        draw_rectangle(390, 21, 1530, 78, true);
-        draw_set_font(fnt_ui);
-        draw_set_halign(fa_center);
-        draw_set_valign(fa_middle);
-        draw_set_color(c_white);
-        draw_text(GUI_CX, 50, _gc_toast.trait_notif_msg);
-        draw_set_halign(fa_left);
-        draw_set_valign(fa_top);
-        draw_set_alpha(1.0);
-        draw_set_font(-1);
+        ui_draw_toast(_gc_toast.trait_notif_msg, GUI_CX, 21,
+                      min(1.0, _gc_toast.trait_notif_timer / 30.0), c_white);
     }
 }
 

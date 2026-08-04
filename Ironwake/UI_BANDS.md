@@ -93,6 +93,17 @@ Verified bands (file references are approximate anchors, not exact lines):
 - Tutorial coach-marks: drawn last; keep panels clear of active tutorial anchor.
 - Notification lines (hub `notification`, shop `shop_notification`): single
   line, screen-specific y — check the target screen before reusing.
+- **TOASTS (08-04 STANDARD, M's order): every transient floating notice goes
+  through `ui_draw_toast()` (scr_ui) — measured backdrop box + border, called
+  at the END of the owning Draw so it's topmost. NEVER bare `draw_text`.**
+  - Trait-unlock toast: y21–~90 centered (hub + floor + combat; clears combat
+    enemy grid at y96 and floor's top-LEFT HP band).
+  - Character-menu equip toast: y52–~115 centered, above frame + tabs.
+
+## Character menu (all tabs, scr_ui ui_draw_character_menu)
+| Band (y) | Owner |
+|---|---|
+| 52–~115 | Equip-confirmation toast (ui_draw_toast, drawn LAST/topmost) |
 
 *Started 07-29 from verified reads; extend as screens are touched. Unlisted
 screens are NOT collision-free — they're unaudited.*

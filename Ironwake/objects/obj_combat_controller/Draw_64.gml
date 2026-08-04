@@ -1598,6 +1598,17 @@ ui_draw_pause_menu();
 // Onboarding coach-mark - drawn last so it sits on top of the combat scene.
 ui_draw_tutorial_tip();
 
+// Trait unlock toast (08-04): was hub-only, so traits unlocked mid-combat
+// expired unseen (timer 120 < any fight). Shared ui_draw_toast, band y21-90
+// (clears the enemy-bar grid at y96).
+if (instance_exists(obj_game_controller)) {
+    var _gc_tn = instance_find(obj_game_controller, 0);
+    if (_gc_tn.trait_notif_timer > 0 && _gc_tn.trait_notif_msg != "") {
+        ui_draw_toast(_gc_tn.trait_notif_msg, GUI_CX, 21,
+                      min(1.0, _gc_tn.trait_notif_timer / 30.0), c_white);
+    }
+}
+
 // Touch (8c): universal Back chip + simulated-key pump - always LAST (topmost).
 // Combat keeps the top corner (y24): the enemy-bar grid starts at y96, so the
 // default y108 would land on it; the awakening label moves left on touch instead.

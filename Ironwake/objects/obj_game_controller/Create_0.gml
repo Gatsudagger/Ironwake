@@ -1432,3 +1432,8 @@ if (!variable_global_exists("forge_result")) global.forge_result = undefined;
 // the Stats tab; persistence rides tutorial_seen ("stats_tour"), so Settings'
 // "Reset tutorial" re-arms it.
 stats_tour_step = -1;
+
+// STEAM ACHIEVEMENTS (08-04): lifetime counter struct + periodic sync clock.
+// No-ops entirely until GMEXT-Steamworks is installed (see scr_stats).
+ach_counters_init();
+ach_sync_clock = 0;

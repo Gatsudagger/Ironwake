@@ -1634,6 +1634,16 @@ ui_draw_pause_menu();
 // Onboarding coach-mark - drawn last so it sits on top of the floor + shrine overlay.
 ui_draw_tutorial_tip();
 
+// Trait unlock toast (08-04): was hub-only; now shows wherever it fires.
+// Shared ui_draw_toast; centered, so it clears the top-LEFT HP/gold band.
+if (instance_exists(obj_game_controller)) {
+    var _gc_tn = instance_find(obj_game_controller, 0);
+    if (_gc_tn.trait_notif_timer > 0 && _gc_tn.trait_notif_msg != "") {
+        ui_draw_toast(_gc_tn.trait_notif_msg, GUI_CX, 21,
+                      min(1.0, _gc_tn.trait_notif_timer / 30.0), c_white);
+    }
+}
+
 // Touch (8d): action-chip bar, then the Back/menu chip + key pump - always LAST (topmost).
 ui_draw_touch_chips();
 ui_draw_touch_back();
