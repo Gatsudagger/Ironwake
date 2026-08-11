@@ -144,6 +144,8 @@ if (variable_global_exists("item_picker")) {
     if (global.item_picker.resolved_purpose == "gift") global.item_picker.resolved_purpose = "";
     if (global.item_picker.open) exit;
 }
+// Cursed-rebirth reagent stage (M 08-05): same freeze - gc steps the modal.
+if (variable_global_exists("reagent_picker") && global.reagent_picker != undefined) exit;
 
 // -----------------------------------------------------------------------------
 // 0. AUDIO SETTINGS OVERLAY - captures all input while open; O opens it
@@ -389,6 +391,8 @@ if (instance_exists(obj_game_controller)) {
         //     Staged picks only become permanent on SAVE & CLOSE; CLOSE/Esc
         //     discards them. Touch taps are hit-tested in Draw_64. ---
         if (_gc_ld.web_view_open) {
+            // Talent tour owns all input while it runs (gc Step advances it).
+            if (variable_instance_exists(_gc_ld, "talent_tour_step") && _gc_ld.talent_tour_step >= 0) exit;
             if (input_cancel()) {
                 if (array_length(_gc_ld.web_view_staged) > 0) notification = "Unsaved weaves discarded.";
                 _gc_ld.web_view_open = false;
@@ -1130,6 +1134,7 @@ if (mouse_check_button_pressed(mb_left)) {
                         tutorial_try_show("vex");   // Onboarding: first Vex open
                     } else if (_hni == 2) {
                         _gc_mc.maren_open = true; _gc_mc.maren_tab = 0;
+                        tutorial_try_show("maren_forge");   // onboarding: first Maren open - explain tempering (M 08-04)
                         _gc_mc.maren_phase = 0; _gc_mc.maren_item_sel = -1;
                         _gc_mc.maren_cursor = 0; _gc_mc.maren_notification = "";
                     } else if (_hni == 1) {

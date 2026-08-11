@@ -168,6 +168,9 @@ function save_game() {
         // Ability mastery (expression #2): lifetime casts + spent notch picks
         ability_casts:   variable_global_exists("ability_casts") ? global.ability_casts : {},
         ability_web:     variable_global_exists("ability_web")   ? global.ability_web   : {},
+        // Class trunks (P2, 08-05): 3 classes x 5 rows, -1/0/1. Optional field -
+        // stale saves read as "nothing picked", no format bump.
+        trunk_picks:     variable_global_exists("trunk_picks")   ? global.trunk_picks   : [[-1,-1,-1,-1,-1],[-1,-1,-1,-1,-1],[-1,-1,-1,-1,-1]],
 
         // Boons (run-scoped)
         run_boons:      variable_global_exists("run_boons")      ? global.run_boons      : [],
@@ -451,6 +454,7 @@ function new_game_reset() {
     // Ability mastery
     global.ability_casts = {};
     global.ability_web   = {};
+    global.trunk_picks   = [[-1,-1,-1,-1,-1],[-1,-1,-1,-1,-1],[-1,-1,-1,-1,-1]];
 
     // Run modifiers
     global.run_boons  = [];
@@ -867,6 +871,13 @@ function load_game() {
     if (variable_struct_exists(_s, "ability_web") && is_struct(_s.ability_web)) {
         global.ability_web = _s.ability_web;
     }
+    // Class trunks (P2, 08-05): reset-then-read so a load never inherits a
+    // previous session's picks; trunk_picks_init() heals any malformed shape.
+    global.trunk_picks = [[-1,-1,-1,-1,-1],[-1,-1,-1,-1,-1],[-1,-1,-1,-1,-1]];
+    if (variable_struct_exists(_s, "trunk_picks") && is_array(_s.trunk_picks)) {
+        global.trunk_picks = _s.trunk_picks;
+        trunk_picks_init();
+    }
     // 07-16: "Crippling Shot" was renamed "Frost Shot" (combo batch - it gained the
     // Chill rider and the frost identity). Sweep every name-keyed store so old saves
     // keep the ability equipped/unlocked/mastered. Idempotent - no version gate
@@ -1092,11 +1103,17 @@ function run_checkpoint_write(_live) {
     var _soul = variable_global_exists("run_souls")       ? global.run_souls       : 0;
     var _bld  = variable_global_exists("run_blood")       ? global.run_blood       : 0;
     var _prp  = variable_global_exists("run_preparation") ? global.run_preparation : 0;
+    // Deployed trap board (08-11, task #28): only ever non-empty when this write
+    // happens MID-COMBAT (traps are combat-scoped, a fresh board every fight).
+    // Without it a resume re-fought the room with the AP/Prep spent on traps
+    // gone but every trap silently wiped.
+    var _trp = [];
     if (_live != undefined) {
         _hp = _live.HP;
         if (variable_struct_exists(_live, "souls"))       _soul = _live.souls;
         if (variable_struct_exists(_live, "blood"))       _bld  = _live.blood;
         if (variable_struct_exists(_live, "preparation")) _prp  = _live.preparation;
+        if (variable_struct_exists(_live, "traps") && is_array(_live.traps)) _trp = _live.traps;
         // Never snapshot a dead player - the defeat handler owns that frame
         // (deletes the file and settles the run). Belt-and-braces vs ordering.
         if (_hp <= 0) return;
@@ -1135,6 +1152,7 @@ function run_checkpoint_write(_live) {
         run_souls:           _soul,
         run_blood:           _bld,
         run_preparation:     _prp,
+        run_traps:           _trp,
         run_bonus_max_hp:    variable_global_exists("run_bonus_max_hp")   ? global.run_bonus_max_hp   : 0,
 
         // Collections. carried_items/consumables are the real payload - the
@@ -1205,6 +1223,9 @@ function run_checkpoint_update_hp(_live) {
     if (variable_struct_exists(_live, "souls"))       _c.run_souls       = _live.souls;
     if (variable_struct_exists(_live, "blood"))       _c.run_blood       = _live.blood;
     if (variable_struct_exists(_live, "preparation")) _c.run_preparation = _live.preparation;
+    // Trap board rides the same live patch (task #28) - the entry checkpoint
+    // holds [] so a resume before any deploy still starts a clean board.
+    if (variable_struct_exists(_live, "traps") && is_array(_live.traps)) _c.run_traps = _live.traps;
     save_write_atomic(run_checkpoint_file(), json_stringify(_c));
 }
 
@@ -1295,6 +1316,9 @@ function run_checkpoint_apply(_c) {
     global.run_souls           = variable_struct_exists(_c, "run_souls")           ? _c.run_souls           : 0;
     global.run_blood           = variable_struct_exists(_c, "run_blood")           ? _c.run_blood           : 0;
     global.run_preparation     = variable_struct_exists(_c, "run_preparation")     ? _c.run_preparation     : 0;
+    // Guarded restore, default [] (task #28): pre-08-11 checkpoints have no
+    // run_traps field. Consumed (and cleared) by obj_combat_controller Create.
+    global.run_traps           = (variable_struct_exists(_c, "run_traps") && is_array(_c.run_traps)) ? _c.run_traps : [];
     global.run_bonus_max_hp    = variable_struct_exists(_c, "run_bonus_max_hp")    ? _c.run_bonus_max_hp    : 0;
 
     global.carried_items        = variable_struct_exists(_c, "carried_items")        ? _c.carried_items        : [];

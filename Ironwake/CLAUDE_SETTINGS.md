@@ -26,6 +26,58 @@ not guidelines. Violating them costs M real money.
    trusting an agent's narrative.
 5. **Report spend honestly** at wrap-up (tokens where visible, gen credits always). If something
    was wasteful, say so plainly.
+6. **NO SILENT SPEC DEVIATIONS — added 2026-08-07 after M lost thousands of credits to this.**
+   M: *"I've lost thousands of credits over the past 2 months because of these silent decisions
+   on your part."* If ANYTHING blocks generating output that meets every established convention
+   — a corrupted style reference, a missing view mode, an unclear naming rule — **STOP AND ASK.
+   Do not generate a "close enough" batch.** Flagging a deviation in passing is NOT permission
+   to proceed. If you are about to write "I couldn't do X so I did Y instead" before a batch,
+   that sentence is the signal to stop and ask. For any large batch, generate ONE cheap test
+   first and confirm it satisfies every convention before committing the rest.
+   *Two violations in one session (08-06/07) wasted ~700 generations: art generated with no
+   style anchor, then art generated with no valid facing.*
+
+---
+
+## ART GENERATION — VERIFY AGAINST THE GAME FIRST (⚠ HARD RULE, added 2026-08-08)
+
+M: *"I would like a hard rule where you verify against yourself and previous work
+and verify with me when it comes to generating art/animations. We should be using
+our own game as a baseline instead of having so much offputting inconsistency."*
+
+**Before ANY art/animation generation, in order, no exceptions:**
+1. **Open the closest existing in-game asset(s)** to what's being made (same
+   category: pet adult → shipped pet adults; NPC → shipped NPCs; icon → shipped
+   icons). Record their CANVAS SIZE, PIPELINE, frame count, facing set, and style.
+2. **Match every one of those parameters.** The game itself is the baseline —
+   never a fresh aesthetic judgement, never a cheaper tool's defaults.
+3. **Show M the baseline + the generation plan (tool, size, count, cost) and get
+   his YES** before the first call of any batch.
+
+Known baselines (verified 08-08): pet ADULTS 124px (bone_stag 152), animated
+multi-frame, 8-direction/character pipeline; pet BABIES may be small/cute;
+class sprites 92px 8-dir. A 64px adult beside a 124px shipped adult reads
+"jarringly childish" — this exact failure happened 08-07/08 and M had to flag it
+repeatedly.
+
+---
+
+## SPRITE FACING CONVENTION — ALWAYS (added 2026-08-07)
+
+**Every creature/character sprite needs BOTH facings. This is not optional and never has been.**
+
+| Suffix | Meaning | Used by |
+|---|---|---|
+| `<base>_s` | **SOUTH — front-on, facing the viewer** | pet station, garden, journal, compendium — the view players actually look at |
+| `<base>_e` | **EAST — side profile facing RIGHT** | combat |
+
+A left-facing profile satisfies NEITHER. `_e` can be made free by mirroring a right-facing
+profile; `_s` always requires real front-view art. Verify against
+`sprites/spr_pet_voidkit_baby_s` vs `spr_pet_voidkit_baby_e` before generating anything.
+
+Pet stage art is `baby` / `youngadult` / `adult` (adolescent reuses baby at 1.25x; awakened
+currently reuses adult). Eggs are per egg-TYPE, not per species. 4/8-directional is wanted
+eventually for Bairc's garden — prefer pipelines that extend that way once a roster is settled.
 
 ---
 

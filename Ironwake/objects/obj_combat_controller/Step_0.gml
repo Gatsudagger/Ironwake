@@ -176,6 +176,20 @@ if (show_loot_screen) {
 // Evaluated at the top of every frame so a kill on the previous frame is
 // caught immediately at the start of the next, before any new input is read.
 // -----------------------------------------------------------------------------
+// Thickened Vitae trunk node (P2, 08-05): +2 max HP per Blood held. Synced as a
+// tracked delta every frame so gains arrive as the tank fills and leave as it
+// drains (current HP rises with the ceiling, and is clamped when it falls).
+if (player.class_id == 1 && variable_struct_exists(player, "blood") && trunk_has("blood_hp")) {
+    var _tv_want = 2 * player.blood;
+    var _tv_has  = variable_struct_exists(player, "trunk_vitae_hp") ? player.trunk_vitae_hp : 0;
+    if (_tv_want != _tv_has) {
+        player.max_HP += _tv_want - _tv_has;
+        if (_tv_want > _tv_has) player.HP += _tv_want - _tv_has;
+        else player.HP = min(player.HP, max(1, player.max_HP));
+        player.trunk_vitae_hp = _tv_want;
+    }
+}
+
 var _result = combat_check_victory(combat_state);
 
 // -----------------------------------------------------------------------------
@@ -239,12 +253,24 @@ if (_result == 1) {
             }
         }
     }
+    // Slagpearl (magma_leech signature move, 08-05 pillar D): every combat victory
+    // the leech sweats out a cooling slagpearl - +8 gold. Once per victory via the
+    // per-combat player struct (this block re-runs during the victory pause);
+    // benched/starving companions pay nothing (fit-to-act gate), duels sit out.
+    if (pet_active_sig_move("slagpearl") && !variable_struct_exists(player, "sig_slag_done")) {
+        player.sig_slag_done = true;
+        add_gold(8);
+        array_push(combat_log, "[Companion] " + pet_active().name + " sweats out a SLAGPEARL (+8g).");
+    }
     // Board challenge requests (BOARD_REQUESTS_SPEC.md §6) - scored once per victory.
     // Swift uses the threshold-tick trick: victory on round n ticks every T >= n so a
     // def with obj_param T completes exactly when n <= T.
     if (!combat_over && !board_ticks_granted) {
         board_ticks_granted = true;
-        if (!combat_state.player_took_damage) quest_tick("flawless_fight", "", 1);
+        if (!combat_state.player_took_damage) {
+            quest_tick("flawless_fight", "", 1);
+            ach_unlock("ACH_NO_DAMAGE");   // achievement hook (08-05 wiring): flawless win
+        }
         if (!combat_state.used_consumable)    quest_tick("clean_fight", "", 1);
         if (variable_global_exists("next_enemy_type") && global.next_enemy_type == "boss") {
             for (var _bst = clamp(combat_state.round, 1, 12); _bst <= 12; _bst++) {
@@ -539,6 +565,13 @@ if (player_turn) {
                 if (player.ability_cd[_cdi] > 0) player.ability_cd[_cdi]--;
             }
         }
+        // Fifth Pulse dark gift (08-04): the cursed metal beats once every 5th
+        // round - +1 AP per equipped Pulse (same unclamped idiom as Void Scepter).
+        var _dg_fp = dark_gift_total("ap_pulse");
+        if (_dg_fp > 0 && combat_state.round mod 5 == 0 && combat_state.round > 0) {
+            player.energy += _dg_fp;
+            array_push(combat_log, "FIFTH PULSE - the dark metal beats: +" + string(_dg_fp) + " AP!");
+        }
         var _hp_pre_tick = player.HP;
         combat_tick_statuses(player, combat_log);
         // Board "flawless" requests: DoT ticks count as taking damage (the Blood
@@ -706,6 +739,7 @@ if (player_turn) {
                     // lands alongside the payoff (never lethal).
                     if (_citem.effect_type == "chaotic") {
                         var _ch = chaotic_brew_roll();
+                        global.ach_brew_run = true;   // ACH_BREW: drank one - now survive the run
                         array_push(combat_log, "The Chaotic Brew " + _ch.label + "!");
                         if (_ch.sting) {
                             var _bite = irandom_range(8, 15);
@@ -1156,6 +1190,13 @@ if (player_turn) {
                 ability_spend_resources(ab, player);
             }
 
+            // Rule of Three trunk counter (P2, 08-05): count SPELL casts once per
+            // cast at the spend commit; the damage site reads (count mod 3 == 0).
+            if (ability_class_is_spell(ability_attack_class(ab))) {
+                if (!variable_struct_exists(player, "trunk_spell_casts")) player.trunk_spell_casts = 0;
+                player.trunk_spell_casts += 1;
+            }
+
             // Restore the real energy_cost (Arcane Surge etc. read the ability's true cost).
             // Unconditional - synergy, Quickcast and Cracked Focus all mutate it; _qc_orig_ec
             // is the untouched original captured before any discount.
@@ -1175,6 +1216,56 @@ if (player_turn) {
                 cast_fx_timer = 26;
                 var _cfx_sch  = ability_school(ab);
                 cast_fx_color = (_cfx_sch == "") ? make_color_rgb(150, 120, 220) : school_color(_cfx_sch);
+            }
+
+            // ---- TRAP DEPLOY (08-08 rework, SYSTEMS_TRAPS.md) ----
+            // Traps are self-targeted now, so they never reach the damage/status
+            // path below - the whole payload waits until the trap SPRINGS. All that
+            // happens here is that it takes a slot.
+            if (ability_is_trap(ab.name)) {
+                if (!variable_struct_exists(player, "traps") || !is_array(player.traps)) player.traps = [];
+                var _tdf  = trap_def(ab.name);
+                var _tcap = trap_slots_max(player);
+                // Slots full: the OLDEST trap is replaced, and the log names what was
+                // lost. (Deploy is not a destructive one-click - the board is visible
+                // on the trap strip before you commit, and nothing owned is destroyed.)
+                if (array_length(player.traps) >= _tcap) {
+                    var _tlost = player.traps[0].name;
+                    array_delete(player.traps, 0, 1);
+                    array_push(combat_log, "No room - you pull up the " + _tlost + " to make space.");
+                }
+                // Talent-web riders are baked into the deployed instance at set
+                // time, so the trap on the ground is a complete description of
+                // itself and the spring path never has to re-consult the web.
+                array_push(player.traps, {
+                    name:     _tdf.name,
+                    filter:   ability_web_copy_has_rider(ab, "trap_any") ? "any" : _tdf.filter,
+                    block:    _tdf.block || ability_web_copy_has_rider(ab, "trap_block"),
+                    damage:   _tdf.damage + (ability_web_copy_has_rider(ab, "trap_dmg") ? 6 : 0),
+                    dtype:    _tdf.dtype,
+                    status:   _tdf.status,
+                    duration: _tdf.duration + (ability_web_copy_has_rider(ab, "trap_dur") ? 1 : 0),
+                    charges:  _tdf.charges + (ability_web_copy_has_rider(ab, "trap_charge") ? 1 : 0),
+                    r_vuln:   ability_web_copy_has_rider(ab, "trap_vuln"),
+                    r_stun:   ability_web_copy_has_rider(ab, "trap_stun"),
+                    r_splash: ability_web_copy_has_rider(ab, "trap_splash"),
+                    deployed_round: combat_state.round,
+                    flash:    0
+                });
+                array_push(combat_log, ab.name + " is set - it waits for the next "
+                    + trap_filter_label(_tdf.filter) + ".");
+
+                // Sprung Steel trunk node: deploying a trap returns 1 Prep. Moved here
+                // from the old targeted-resolution site, which traps no longer reach.
+                if (player.class_id == 2 && variable_struct_exists(player, "preparation")
+                    && trunk_has("prep_trap_refund")) {
+                    player.preparation = min(player.preparation_max, player.preparation + 1);
+                    array_push(combat_log, "Sprung Steel: the trap resets itself - +1 Prep.");
+                }
+                tutorial_try_show("traps_deployed");
+                // snd_equip is the closest thing to a mechanism being seated; a
+                // bespoke trap-set SFX belongs in the audio pass, not invented here.
+                audio_play_sound(snd_equip, 1, false);
             }
 
             // Smoke Bomb self-cover (D§3 rework, M-approved 07-09): the smoke hides
@@ -1330,12 +1421,19 @@ if (player_turn) {
                     // --- Hit roll ---
                     // Blind on the caster lowers accuracy (percentage points).
                     // Hunter aspect rune adds accuracy to ranged actions.
+                    // Measured Breathing trunk node (P2, 08-05): +2 accuracy per Prep held.
+                    var _trk_acc = (player.class_id == 2 && variable_struct_exists(player, "preparation")
+                                    && trunk_has("prep_acc")) ? 2 * player.preparation : 0;
                     var _cast_acc = ab.base_acc - combat_status_max(player, "blind") * 100
-                                    + rune_aspect_ranged_acc(ab);
+                                    + rune_aspect_ranged_acc(ab) + _trk_acc;
+                    // Inevitable Arcana trunk node (P2, 08-05): at 5+ Souls, spells cannot miss.
+                    var _trk_sure = (player.class_id == 0 && variable_struct_exists(player, "souls")
+                                     && player.souls >= 5 && ability_class_is_spell(ability_attack_class(ab))
+                                     && trunk_has("soul_sure"));
                     var _hit = combat_roll_hit(
                         _cast_acc + player.acc,
                         target.dodge,
-                        ab.guaranteed_hit || _react_force_hit
+                        ab.guaranteed_hit || _react_force_hit || _trk_sure
                     );
 
                     if (_hit != "hit") {
@@ -1344,6 +1442,17 @@ if (player_turn) {
                             ? (target.name + " dodged " + ab.name + "!")
                             : (ab.name + " missed" + (_is_aoe ? (" " + target.name) : "") + "!"));
                         play_sfx_var("snd_miss", -1);   // whiff (silent until imported)
+                        // Conveyance (08-04): the defender visibly SIDESTEPS on a dodge,
+                        // and the verdict floats at the foe (it was log-only before).
+                        var _ms_slot = 0;
+                        for (var _msi = 0; _msi < array_length(combat_state.combatants); _msi++) {
+                            if (combat_state.combatants[_msi] == target) break;
+                            if (!combat_state.combatants[_msi].is_player) _ms_slot++;
+                        }
+                        if (_hit == "dodge") target.dodge_anim = 14;
+                        array_push(damage_popups, { value: 0, text: (_hit == "dodge") ? "DODGED!" : "MISS!",
+                            x: 1620 + _ms_slot * (-120), y: 233 + _ms_slot * 105 - 105,
+                            timer: 40, col: make_color_rgb(200, 205, 220) });
 
                     } else {
                         // --- Crit roll (skip for abilities with no crit) ---
@@ -1369,12 +1478,33 @@ if (player_turn) {
                                 player.leg_longshot_used = true;
                                 array_push(combat_log, "Longshot's Memory: it has made this shot before - guaranteed crit!");
                             }
+                            // Patient Opener trunk node (P2, 08-05): the first ATTACK each
+                            // combat thrown from 2+ Prep auto-crits (same 999 idiom).
+                            var _po_crit = (player.class_id == 2 && ab.base_damage > 0
+                                            && variable_struct_exists(player, "preparation") && player.preparation >= 2
+                                            && !variable_struct_exists(player, "trunk_opener_done")
+                                            && !ability_class_is_spell(ability_attack_class(ab))
+                                            && trunk_has("prep_first_crit"));
+                            if (_po_crit) {
+                                player.trunk_opener_done = true;
+                                array_push(combat_log, "Patient Opener: rehearsed a hundred times - guaranteed crit!");
+                            }
+                            // Soul-Lit Focus trunk node (P2, 08-05): +2% spell crit per Soul held.
+                            var _slf_crit = (player.class_id == 0 && variable_struct_exists(player, "souls")
+                                             && ability_class_is_spell(ability_attack_class(ab))
+                                             && trunk_has("soul_crit")) ? 2 * player.souls : 0;
                             _crit_result = combat_roll_crit(
                                 player.stats,
                                 ab.base_crit + rune_aspect_spell_crit(ab) + boon_value("duelist") + _wpn_crit + _react_crit_bonus
-                                    + ((_sm_crit || _ls_crit) ? 999 : 0),
+                                    + _slf_crit
+                                    + ((_sm_crit || _ls_crit || _po_crit) ? 999 : 0),
                                 ab.crit_type
                             );
+                            // Cruor Feast trunk node (P2, 08-05): your crits also feed the engine.
+                            if (_crit_result.critted && player.class_id == 1
+                                && variable_struct_exists(player, "blood") && trunk_has("blood_on_crit")) {
+                                player.blood = min(player.blood_max, player.blood + 1);
+                            }
                             // Shadow Meld potency ranks (POTENCY V2): meld-guaranteed crits
                             // cut deeper - +10% crit damage per rank.
                             if (_sm_crit && _crit_result.critted) {
@@ -1718,6 +1848,48 @@ if (player_turn) {
                             array_push(combat_log, "Serrated Strikes: bleed applied to " + target.name + "!");
                         }
 
+                        // Forge Spark (cinder_newt signature move, 08-05 pillar D): your
+                        // first damaging ATTACK each combat (not a spell - same split as
+                        // Serrated Strikes) also sets the target Burning, at the Flaming
+                        // weapon affix's rate (3/turn, 2 turns). Once per combat.
+                        var _fs_ac = ability_attack_class(ab);
+                        if (_deals_damage && (_fs_ac == "melee_attack" || _fs_ac == "ranged_attack")
+                            && pet_active_sig_move("forge_spark")
+                            && !variable_struct_exists(player, "sig_spark_done")
+                            && !target.is_defeated && variable_struct_exists(target, "status_effects")) {
+                            player.sig_spark_done = true;
+                            array_push(target.status_effects, {
+                                name:         "Burning",
+                                effect_type:  "dot",
+                                kind:         "dot",
+                                effect_value: 3,
+                                duration:     2,
+                                element:      "burn",
+                                source:       "pet"
+                            });
+                            array_push(combat_log, "[Companion] " + pet_active().name + "'s FORGE SPARK leaps - " + target.name + " is set ablaze!");
+                        }
+
+                        // --- Class trunk spender riders (P2, 08-05): paying the class
+                        // resource stamps the target. Applied per enemy hit (an AoE
+                        // spender marks everyone it touches, same as other on-hit riders).
+                        if (player.class_id == 0 && ab.secondary_cost > 0 && trunk_has("soul_vuln")
+                            && !target.is_defeated && variable_struct_exists(target, "status_effects")) {
+                            array_push(target.status_effects, {
+                                name: "Rending Payment", effect_type: "debuff", kind: "vulnerable",
+                                effect_value: 2, duration: 1, element: "", source: "player"
+                            });
+                            array_push(combat_log, "Rending Payment: " + target.name + " is laid Vulnerable!");
+                        }
+                        if (player.class_id == 1 && ab.secondary_cost > 0 && trunk_has("blood_spend_weaken")
+                            && !target.is_defeated && variable_struct_exists(target, "status_effects")) {
+                            array_push(target.status_effects, {
+                                name: "Dread Payment", effect_type: "debuff", kind: "weaken",
+                                effect_value: 0.20, duration: 1, element: "", source: "player"
+                            });
+                            array_push(combat_log, "Dread Payment: " + target.name + " is Weakened by the omen!");
+                        }
+
                         // Aspect runes: Ember (elemental), Hemorrhage (blood),
                         // Serration (physical attacks) add an outgoing-damage %.
                         var _aspect_dmg_pct = rune_aspect_damage_pct(ab);
@@ -1728,6 +1900,36 @@ if (player_turn) {
                         var _thf = (target.max_HP > 0) ? (target.HP / target.max_HP) : 1;
                         var _boon_dm = boon_damage_mult(_thf, player);
                         if (_boon_dm != 1.0) _final_dmg = max(1, round(_final_dmg * _boon_dm));
+
+                        // --- Class trunk damage nodes (P2, 08-05) ---
+                        // Sanguine Might: +3% damage per Blood held.
+                        if (_deals_damage && player.class_id == 1 && variable_struct_exists(player, "blood")
+                            && player.blood > 0 && trunk_has("blood_dmg")) {
+                            _final_dmg = max(1, round(_final_dmg * (1 + 0.03 * player.blood)));
+                        }
+                        // Rule of Three: every 3rd spell cast this combat lands +30%
+                        // (counter incremented once per cast at the spend site).
+                        if (_deals_damage && player.class_id == 0
+                            && ability_class_is_spell(ability_attack_class(ab))
+                            && variable_struct_exists(player, "trunk_spell_casts")
+                            && player.trunk_spell_casts > 0 && (player.trunk_spell_casts mod 3) == 0
+                            && trunk_has("soul_third_spell")) {
+                            _final_dmg = max(1, round(_final_dmg * 1.30));
+                            array_push(combat_log, "Rule of Three: the third word lands harder (+30%)!");
+                        }
+                        // Finisher's Doctrine: damaging hits deal +30% below 25% HP.
+                        if (_deals_damage && player.class_id == 2 && _thf < 0.25
+                            && trunk_has("prep_finisher")) {
+                            _final_dmg = max(1, round(_final_dmg * 1.30));
+                        }
+                        // Loaded Springs: traps bite +2 per Prep held (flat, post-mult -
+                        // same layer as Compounding Dread).
+                        if (_deals_damage && player.class_id == 2
+                            && variable_struct_exists(player, "preparation") && player.preparation > 0
+                            && (ab.name == "Bear Trap" || ab.name == "Spike Trap" || ab.name == "Death Snare")
+                            && trunk_has("prep_trap_dmg")) {
+                            _final_dmg += 2 * player.preparation;
+                        }
                         // Corruption (Pets §7): pushing a corrupted active pet saps your damage.
                         var _pet_corr_dm = pet_corruption_player_dmg_mult();
                         if (_pet_corr_dm != 1.0) _final_dmg = max(1, round(_final_dmg * _pet_corr_dm));
@@ -1844,6 +2046,12 @@ if (player_turn) {
                             }
                         }
                         // ===== Detonation reaction - post-damage (P1) =====
+                        // Achievement counter (08-05 wiring): a detonation reaction
+                        // fired on this landed hit (ACH_DETONATE_25 via sync).
+                        if (_react_key != "") {
+                            ach_counters_init();
+                            global.ach_counters.detonations += 1;
+                        }
                         if (_react_key == "void" && _final_dmg > 0) {
                             var _react_ls = combat_heal_after_mortality(player, round(_final_dmg * 0.3 * _hex_mult));
                             if (_react_ls > 0) {
@@ -1931,8 +2139,27 @@ if (player_turn) {
                         }
 
                         // --- VFX: hit flash, popup, attack slide, screen shake ---
-                        target.hit_flash   = 15;
-                        screen_shake_timer = 8;
+                        // Conveyance (08-04): resolve the DELIVERY first. A projectile
+                        // defers the whole hit presentation (flash / shake / popups /
+                        // impact burst / recoil / HP-bar drain) to its arrival frame -
+                        // the mechanics all resolved above. A killing blow presents
+                        // instantly (the foe's sprite is already gone from the row).
+                        var _dlv = ability_delivery(ab);
+                        var _dlv_delay = (_dlv == "projectile")
+                            ? (15 + array_length(combat_projectiles) * 4) : 0;
+                        // Death linger (M 08-04: "they die before the spell hits"):
+                        // a foe killed by a projectile stays standing until the bolt
+                        // LANDS, then fades. The Draw loop owns the fade; here we
+                        // just size the linger to the travel time. (Non-projectile
+                        // kills get a short lazy-init fade in Draw.)
+                        if (target.is_defeated && _dlv == "projectile") {
+                            target.death_linger = _dlv_delay + 20;
+                        }
+                        if (_dlv_delay == 0) {
+                            target.hit_flash   = 15;
+                            target.hit_recoil  = 10;
+                            screen_shake_timer = 8;
+                        }
                         var _vfx_slot = 0;
                         for (var _vsi = 0; _vsi < array_length(combat_state.combatants); _vsi++) {
                             if (combat_state.combatants[_vsi] == target) break;
@@ -1947,10 +2174,10 @@ if (player_turn) {
                             // play out"). The log keeps the single combined total.
                             var _pop_base = _final_dmg;
                             for (var _rpi = 0; _rpi < array_length(_rider_pops); _rpi++) _pop_base -= _rider_pops[_rpi].amt;
-                            array_push(damage_popups, { value: _pop_base, x: _vfx_ex, y: _vfx_ey - 105, timer: 50, col: _pop_col });
+                            array_push(damage_popups, { value: _pop_base, x: _vfx_ex, y: _vfx_ey - 105, timer: 50, delay: _dlv_delay, col: _pop_col });
                             for (var _rpi = 0; _rpi < array_length(_rider_pops); _rpi++) {
                                 array_push(damage_popups, { value: _rider_pops[_rpi].amt, x: _vfx_ex + 64, y: _vfx_ey - 68 - _rpi * 34,
-                                    timer: 46, delay: 8 + _rpi * 8, col: _rider_pops[_rpi].col });
+                                    timer: 46, delay: _dlv_delay + 8 + _rpi * 8, col: _rider_pops[_rpi].col });
                             }
                         }
                         // ===== Sequenced combo presentation (07-16, COMBAT_COMBO_PLAN §A3) =====
@@ -1975,10 +2202,10 @@ if (player_turn) {
                             }
                             if (_cq_lbl != "") {
                                 array_push(damage_popups, { value: 0, text: _cq_lbl, x: _vfx_ex, y: _vfx_ey - 145,
-                                    timer: 44, delay: 10, col: _cq_col, sfx: snd_loot_reveal, pitch: 1.12 });
+                                    timer: 44, delay: _dlv_delay + 10, col: _cq_col, sfx: snd_loot_reveal, pitch: 1.12 });
                                 if (_hexed) {
                                     array_push(damage_popups, { value: 0, text: "HEXED x2!", x: _vfx_ex, y: _vfx_ey - 185,
-                                        timer: 44, delay: 22, col: make_color_rgb(200, 110, 255), sfx: snd_loot_reveal, pitch: 1.28 });
+                                        timer: 44, delay: _dlv_delay + 22, col: make_color_rgb(200, 110, 255), sfx: snd_loot_reveal, pitch: 1.28 });
                                 }
                                 screen_shake_timer = max(screen_shake_timer, _hexed ? 12 : 10);
                             }
@@ -1990,27 +2217,50 @@ if (player_turn) {
                             var _oc_pop = variable_struct_exists(player, "overcharge_hit_dmg")
                                 ? player.overcharge_hit_dmg : player.overcharge_hit_pts * 2;
                             array_push(damage_popups, { value: 0, text: "OVERCHARGE +" + string(_oc_pop) + "!",
-                                x: _vfx_ex, y: _vfx_ey - 225, timer: 44, delay: 34, col: make_color_rgb(255, 230, 120),
+                                x: _vfx_ex, y: _vfx_ey - 225, timer: 44, delay: _dlv_delay + 34, col: make_color_rgb(255, 230, 120),
                                 sfx: snd_loot_reveal, pitch: 1.4 });
                             player.overcharge_hit_pts = 0;
                         }
-                        attack_anim_timer     = 20;
-                        attack_anim_src_x     = 330;
-                        attack_anim_src_y     = 465;
-                        attack_anim_dst_x     = _vfx_ex - 90;
-                        attack_anim_dst_y     = _vfx_ey;
-                        attack_anim_is_player = true;
+                        // Conveyance (08-04): only a MELEE delivery lunges - projectile /
+                        // beam / overhead casters hold their ground (spells already flare
+                        // via cast_fx_timer at the cast gate).
+                        if (_dlv == "melee") {
+                            attack_anim_timer     = 20;
+                            attack_anim_src_x     = 330;
+                            attack_anim_src_y     = 465;
+                            attack_anim_dst_x     = _vfx_ex - 90;
+                            attack_anim_dst_y     = _vfx_ey;
+                            attack_anim_is_player = true;
+                        }
 
                         // VFX impact keyed to the ability's element SCHOOL (bespoke bursts for
                         // frost/shock/poison/blood/shadow, 07-29); physical keeps the impact
                         // burst. See ability_attack_vfx (scr_abilities).
+                        // Conveyance (08-04): a projectile CARRIES the burst to arrival; a
+                        // beam adds an instant lance under the burst; the rest stay instant.
                         var _vfxp = ability_attack_vfx(ab);
-                        vfx_spr       = _vfxp.spr;
-                        vfx_x         = _vfx_ex;
-                        vfx_y         = _vfx_ey;
-                        vfx_timer     = _vfxp.ticks;
-                        vfx_timer_max = _vfxp.ticks;
-                        vfx_school    = ability_school(ab);   // spell-tint blend key
+                        if (_dlv == "projectile") {
+                            array_push(combat_projectiles, {
+                                spr: ability_projectile_sprite(ab), school: ability_school(ab),
+                                impact_spr: _vfxp.spr, ticks: _vfxp.ticks,
+                                sx: 505, sy: 570, tx: _vfx_ex, ty: _vfx_ey,
+                                bx: _vfx_ex, by: _vfx_ey,   // burst anchor (spr_vfx_* are center-origin)
+                                t: 0, dur: 15, delay: _dlv_delay - 15, tgt: target, shake: 8
+                            });
+                            if (_deals_damage) target.hp_hold = _dlv_delay;
+                        } else {
+                            if (_dlv == "beam") {
+                                array_push(combat_beams, { sx: 505, sy: 570, tx: _vfx_ex, ty: _vfx_ey,
+                                    t: 0, dur: 12, col: school_color(ability_school(ab)),
+                                    spr: ability_beam_sprite(ab) });
+                            }
+                            vfx_spr       = _vfxp.spr;
+                            vfx_x         = _vfx_ex;
+                            vfx_y         = _vfx_ey;
+                            vfx_timer     = _vfxp.ticks;
+                            vfx_timer_max = _vfxp.ticks;
+                            vfx_school    = ability_school(ab);   // spell-tint blend key
+                        }
                         // Attack audio keyed to the ABILITY (damage type), not the class.
                         // See play_ability_cast_sfx / SYSTEMS_COMBAT_FX.md.
                         play_ability_cast_sfx(ab, player, true);
@@ -2256,6 +2506,14 @@ if (player_turn) {
                         if (target.is_defeated && ability_web_copy_has_rider(ab, "kill_ap")) {
                             player.energy += 1;
                             array_push(combat_log, "Executioner's Rhythm: the AP returns.");
+                        }
+                        // Reaper's Dividend trunk node (P2, 08-05): SPELL killing
+                        // blows refund 1 AP (class-wide sibling of the web keystone).
+                        if (target.is_defeated && player.class_id == 0
+                            && ability_class_is_spell(ability_attack_class(ab))
+                            && trunk_has("soul_kill_ap")) {
+                            player.energy += 1;
+                            array_push(combat_log, "Reaper's Dividend: the AP returns.");
                         }
 
                         // --- Talent-web transformative riders (keystone pool + bespoke,
@@ -2724,6 +2982,15 @@ if (player_turn) {
                       player.dread_bonus += variable_struct_exists(player, "dread_rate") ? player.dread_rate : 4;
                       array_push(combat_log, "The dread compounds - traps now +" + string(player.dread_bonus) + " damage this combat.");
                   }
+
+                  // Sprung Steel trunk node (P2, 08-05): casting a trap returns 1 Prep
+                  // (after resolution, once per cast - Bear/Spike run free, Snare nets 1).
+                  if (player.class_id == 2 && variable_struct_exists(player, "preparation")
+                      && (ab.name == "Bear Trap" || ab.name == "Spike Trap" || ab.name == "Death Snare")
+                      && trunk_has("prep_trap_refund")) {
+                      player.preparation = min(player.preparation_max, player.preparation + 1);
+                      array_push(combat_log, "Sprung Steel: the trap resets itself - +1 Prep.");
+                  }
                   // OVERCHARGE safety: a fully-missed cast keeps the reserve (generous).
                   player.overcharge_armed = false;
                 }       // end "targets non-empty" else
@@ -3018,10 +3285,12 @@ if (player_turn) {
                 // --- Shadow Step: chance to dodge each of the next 3 attacks (2-turn CD).
                 //     It's a dodge CHANCE (not guaranteed), so it covers more attacks. ---
                 if (ab.name == "Shadow Step") {
-                    player.shadow_step_charges = 3;
+                    // "Long Stride" bespoke node (P3, 08-05): 4 charges instead of 3.
+                    var _ss_n = ability_web_copy_has_rider(ab, "step_charges") ? 4 : 3;
+                    player.shadow_step_charges = _ss_n;
                     player.ability_cd[selected_ability] = ability_cooldown(ab);
                     array_push(combat_log, "Hero readies evasion - "
-                        + string(combat_evasion_chance(player)) + "% to dodge each of the next 3 attacks!");
+                        + string(combat_evasion_chance(player)) + "% to dodge each of the next " + string(_ss_n) + " attacks!");
                 }
 
                 // --- Counterblade: arm the riposte stance (07-29 fix - the cast never
@@ -3237,6 +3506,37 @@ if (player_turn) {
             array_push(combat_log, "[Companion] " + pet_active().name + "'s STILL BREATH settles over " + actor.name + " (-25% damage, 2 turns).");
         }
 
+        // Gaol Chains (gaolwyrm signature move, 08-05 pillar D): the first ability
+        // an elite or boss READIES against you is chained away - a 1-turn stun laid
+        // before the control capture below (so it costs this very action) and the
+        // planned move wiped from its intent (same wipe as smoke confound). Fires
+        // only for the elite/boss itself - the first enemy slot. Once per combat.
+        if (pet_active_sig_move("gaol_chains") && !variable_struct_exists(player, "sig_gaol_done")
+            && variable_global_exists("next_enemy_type")
+            && (global.next_enemy_type == "elite" || global.next_enemy_type == "boss")
+            && variable_struct_exists(actor, "intent") && actor.intent != undefined
+            && actor.intent.eab != undefined
+            && variable_struct_exists(actor, "status_effects")) {
+            var _gj_first = undefined;
+            for (var _gj_i = 0; _gj_i < array_length(combat_state.combatants); _gj_i++) {
+                if (!combat_state.combatants[_gj_i].is_player) { _gj_first = combat_state.combatants[_gj_i]; break; }
+            }
+            if (actor == _gj_first) {
+                player.sig_gaol_done = true;
+                actor.intent.eab = undefined;   // the readied move is lost in the chains
+                array_push(actor.status_effects, {
+                    name:         "Gaol Chains",
+                    effect_type:  "debuff",
+                    kind:         "stun",
+                    effect_value: 0,
+                    duration:     1,
+                    element:      "",
+                    source:       "pet"
+                });
+                array_push(combat_log, "[Companion] " + pet_active().name + "'s GAOL CHAINS drag " + actor.name + "'s readied move into the dark!");
+            }
+        }
+
         // Capture control state BEFORE the tick decrements durations, so a 1-turn
         // control still costs the enemy this turn. reach/kind decide which apply:
         // stun=all, root=melee enemies, silence=spellcasters. See SYSTEMS_ATTACK_CLASS.md.
@@ -3280,7 +3580,8 @@ if (player_turn) {
                 // Accelerating DoT (Entropy 07-16): each tick grows by `accel` (6/8/10/12).
                 if (variable_struct_exists(_se, "accel") && _se.accel > 0) _se.effect_value += _se.accel;
                 // Vampiric Edge: Bloodwarden heals 2 HP per DoT tick from player effects
-                if (_se.source == "player" && player.class_id == 1 && trait_active("Vampiric Edge")) {
+                if (variable_struct_exists(_se, "source") && _se.source == "player"
+                    && player.class_id == 1 && trait_active("Vampiric Edge")) {
                     var _vamp_heal = round(2 * trait_potency_mult("Vampiric Edge"));
                     // TRANSCEND "Exsanguinating Feast" (POTENCY V2): doubled below 40% HP.
                     if (trait_transcended("Vampiric Edge") && player.HP <= floor(player.max_HP * 0.40)) {
@@ -3472,12 +3773,180 @@ if (player_turn) {
         }
         var _in_melee_blow = _in_hostile && _in_damaging && (_in_reach == "melee");
 
+        // ---- RAGE COMBO-BREAKER (M 08-08) ----
+        // Once a boss fight is 1v1 the player could rotate heals, dodges and traps
+        // and take zero damage indefinitely. After a boss or elite has been DENIED
+        // three times in a row - trapped, blocked, dodged or negated - its next
+        // action cannot be stopped by any of those. It deals its NORMAL damage at
+        // low Awakening (this is an anti-turtle valve, not a punish spike); from A3
+        // up it also hits harder, because that is where stacked defence gets silly.
+        // Streak lives on the actor and resets the moment a blow lands.
+        // Deliberately NOT on trash: a clean defensive rotation should still feel
+        // rewarding there, and Shadowstrider's whole new kit is denial.
+        if (!variable_struct_exists(actor, "denied_streak")) actor.denied_streak = 0;
+        // Encounter kind comes from global.next_enemy_type - the same source
+        // awaken_boss_enrage_mult() uses. Enemy structs carry no is_boss/is_elite
+        // field, so testing for one would have made this silently never fire.
+        var _rage_kind = variable_global_exists("next_enemy_type") ? global.next_enemy_type : "";
+        var _rage_elig = (_rage_kind == "boss" || _rage_kind == "elite" || global.duel_active);
+        var _rage_now  = _rage_elig && _in_hostile && (actor.denied_streak >= 3);
+        if (_rage_now) {
+            actor.denied_streak = 0;
+            array_push(combat_log, actor.name + " ROARS - the pattern breaks. This blow will not be stopped!");
+            array_push(damage_popups, { value: 0, text: "RAGE!", x: 1180, y: 300, timer: 46,
+                                        col: make_color_rgb(240, 90, 70) });
+            // 08-09: rage shipped as text only. The burst goes on the RAGING foe,
+            // using the standing position Draw stamps each frame (last_ex/last_ey
+            // is the sprite's top-left, drawn at 3x), so it works wherever the
+            // boss happens to sit in the row. Falls back to the popup's anchor on
+            // the first frame of a fight, before Draw has stamped anything.
+            var _rg_x = 1180, _rg_y = 330;
+            if (variable_struct_exists(actor, "last_ex") && variable_struct_exists(actor, "last_ey")) {
+                var _rg_map = enemy_sprite_map();
+                var _rg_spr = variable_struct_exists(_rg_map, actor.name)
+                            ? variable_struct_get(_rg_map, actor.name) : -1;
+                var _rg_w = (_rg_spr >= 0) ? sprite_get_width(_rg_spr)  * 3 : 180;
+                var _rg_h = (_rg_spr >= 0) ? sprite_get_height(_rg_spr) * 3 : 180;
+                _rg_x = actor.last_ex + _rg_w * 0.5;
+                _rg_y = actor.last_ey + _rg_h * 0.5;
+            }
+            array_push(vfx_bursts, { spr: spr_vfx_rage, x: _rg_x, y: _rg_y,
+                                     timer: 26, timer_max: 26, school: "" });
+        }
+
+        // --- TRAPS: the floor answers first (08-08, SYSTEMS_TRAPS.md §2.3). ---
+        //     Checked ahead of Blink/Shadow Step because a trap is something the
+        //     player COMMITTED to in an earlier turn - it should not be wasted by a
+        //     reflex dodge that would have saved them anyway. Oldest-first, and
+        //     EXACTLY ONE trap springs per enemy action: that ceiling is what keeps
+        //     a full board from becoming a lock.
+        if (!_rage_now && variable_struct_exists(player, "traps") && is_array(player.traps)
+            && array_length(player.traps) > 0) {
+            var _in_spell = (_in_eab != undefined && _in_eab.kind == "spell");
+            var _sprung   = -1;
+            for (var _tpi = 0; _tpi < array_length(player.traps); _tpi++) {
+                if (trap_matches(player.traps[_tpi], _in_hostile, _in_damaging, _in_reach, _in_spell)) {
+                    _sprung = _tpi; break;
+                }
+            }
+            if (_sprung >= 0) {
+                var _tp = player.traps[_sprung];
+                _tp.flash = 18;                       // chip flash, drawn by the strip
+
+                // Payload is computed NOW, not at deploy - so Loaded Springs reads the
+                // Prep you are actually holding when it goes off.
+                var _tp_dmg = _tp.damage;
+                if (_tp_dmg > 0) {
+                    if (player.class_id == 2 && variable_struct_exists(player, "preparation")
+                        && trunk_has("prep_trap_dmg")) _tp_dmg += 2 * player.preparation;
+                    if (variable_struct_exists(player, "dread_bonus") && player.dread_bonus > 0)
+                        _tp_dmg += player.dread_bonus;
+                }
+
+                array_push(combat_log, actor.name + " springs the " + _tp.name + "!");
+                array_push(damage_popups, { value: 0, text: "TRAP!", x: 475, y: 455, timer: 40,
+                                            col: make_color_rgb(230, 190, 90) });
+
+                // The snap burst fires ON the trap, not on the enemy - the whole
+                // point of the 08-08 rework is that the trap is a THING standing
+                // between the two of you. Position comes from trap_field_pos(),
+                // the SAME helper ui_draw_trap_field draws with, so the burst can
+                // never drift off the prop if the field is ever re-laid out. The
+                // count is read BEFORE the spent trap is removed below, so the
+                // burst lands on the trap that actually sprang.
+                var _tf_pos = trap_field_pos(_sprung, array_length(player.traps));
+                array_push(vfx_bursts, { spr: trap_spring_vfx(_tp.name), x: _tf_pos.x, y: _tf_pos.y - 40,
+                                         timer: 16, timer_max: 16, school: "" });
+
+                if (_tp_dmg > 0) {
+                    actor.HP -= _tp_dmg;
+                    array_push(combat_log, actor.name + " takes " + string(_tp_dmg) + " damage from the trap!");
+                }
+                if (_tp.status != "" && !actor.is_defeated) {
+                    // "exposed" is a catalog word, not a status kind: the whole Exposed
+                    // family (damage-per-hit sum, detonators, payoff checks) reads kind
+                    // "vulnerable". Left unmapped, Tripline's mark drew a chip and fed
+                    // NOTHING (08-11 fix). +3/hit sits mid-family (Shriek 2, Shiv 4).
+                    var _tp_kind = (_tp.status == "exposed") ? "vulnerable" : _tp.status;
+                    var _tp_val  = (_tp.status == "bleed") ? 6 : ((_tp.status == "exposed") ? 3 : 1);
+                    array_push(actor.status_effects, {
+                        name: _tp.name, effect_type: (_tp.status == "bleed") ? "dot" : "debuff",
+                        kind: _tp_kind,
+                        effect_value: _tp_val,
+                        duration: _tp.duration,
+                        source: "player"   // the player set the trap (08-11 crash fix: the DoT tick reads source)
+                    });
+                }
+
+                // Compounding Dread now compounds on a SPRING, not a cast (08-08):
+                // it should reward reading the enemy correctly, not spamming deploys.
+                if (variable_struct_exists(player, "dread_active") && player.dread_active) {
+                    player.dread_bonus += variable_struct_exists(player, "dread_rate") ? player.dread_rate : 4;
+                    array_push(combat_log, "The dread compounds - traps now +" + string(player.dread_bonus) + " damage this combat.");
+                }
+
+                // ---- keystone riders, baked in at deploy ----
+                if (!actor.is_defeated && variable_struct_exists(_tp, "r_vuln") && _tp.r_vuln) {
+                    array_push(actor.status_effects, { name: "Hunter's Anchor", effect_type: "debuff",
+                        kind: "vulnerable", effect_value: 1, duration: 1, source: "player" });
+                    array_push(combat_log, "Hunter's Anchor: " + actor.name + " is Vulnerable!");
+                }
+                if (!actor.is_defeated && _tp.block && variable_struct_exists(_tp, "r_stun") && _tp.r_stun) {
+                    array_push(actor.status_effects, { name: "Second Chance", effect_type: "debuff",
+                        kind: "stun", effect_value: 1, duration: 1, source: "player" });
+                    array_push(combat_log, "Second Chance: " + actor.name + " is Stunned!");
+                }
+                if (_tp_dmg > 0 && variable_struct_exists(_tp, "r_splash") && _tp.r_splash) {
+                    for (var _tsi = 0; _tsi < array_length(combat_state.combatants); _tsi++) {
+                        var _tsc = combat_state.combatants[_tsi];
+                        if (_tsc.is_player || _tsc.is_defeated || _tsc == actor) continue;
+                        _tsc.HP -= _tp_dmg;
+                        array_push(combat_log, _tsc.name + " catches the spread for " + string(_tp_dmg) + "!");
+                        if (_tsc.HP <= 0) combat_on_enemy_defeated(_tsc, player, combat_log);
+                    }
+                }
+
+                // Spend a charge; Caltrops-style traps survive to spring again.
+                _tp.charges -= 1;
+                if (_tp.charges <= 0) array_delete(player.traps, _sprung, 1);
+
+                if (actor.HP <= 0) combat_on_enemy_defeated(actor, player, combat_log);
+
+                // BLOCK: the attack is cancelled and the actor's turn is spent. This is
+                // the "essentially ends their turn" behaviour M asked for - but earned
+                // by a correct prediction rather than granted on cast.
+                if (_tp.block && !actor.is_defeated) {
+                    array_push(combat_log, actor.name + "'s attack never lands!");
+                    array_push(damage_popups, { value: 0, text: "BLOCKED!", x: 475, y: 505, timer: 40,
+                                                col: make_color_rgb(200, 205, 220) });
+                }
+                if (_tp.block || actor.is_defeated) {
+                    if (_tp.block) actor.denied_streak += 1;   // rage breaker (08-08)
+                    enemy_roll_intent(actor, player, combat_state.round + 1, true);
+                    combat_next_turn(combat_state);
+                    player_turn = combat_state.active.is_player;
+                    if (player_turn) {
+                        abilities_used_this_turn = [];
+                        if (instance_exists(obj_game_controller)) instance_find(obj_game_controller, 0).items_used_this_turn = 0;
+                        need_player_status_tick = true;
+                    }
+                    enemy_turn_timer = enemy_turn_delay;
+                    exit;
+                }
+                // Non-blocking trap (Spike/Caltrops): the payload landed, the blow
+                // still comes. Fall through to the rest of the reaction stack.
+            }
+        }
+
         // --- Blink: staged guard. 1st incoming attack = guaranteed full dodge; 2nd
         //     takes 50% damage; 3rd takes 25% less; then it ends. One charge consumed
         //     per enemy turn so it spans multiple foes (the 2-4 mob case). ---
-        if (_in_hostile && player.blink_charges >= 3) {
+        if (!_rage_now && _in_hostile && player.blink_charges >= 3) {
+            actor.denied_streak += 1;   // rage breaker (08-08)
             player.blink_charges = 2;
             array_push(combat_log, actor.name + "'s attack passes through thin air!");
+            player.dodge_anim = 14;   // conveyance: visible sidestep
+            array_push(damage_popups, { value: 0, text: "DODGED!", x: 475, y: 505, timer: 40, col: make_color_rgb(200, 205, 220) });
             // "Counterphase" web keystone (task #14): the full evade arms a 1-AP
             // discount on the caster's next ability (consumed at cast commit).
             if (variable_struct_exists(player, "blink_tempo_rider") && player.blink_tempo_rider) {
@@ -3511,6 +3980,8 @@ if (player_turn) {
             if (player.untargetable_turns <= 0) player.is_untargetable = false;
             if (irandom(99) < combat_evasion_chance(player)) {
                 array_push(combat_log, actor.name + "'s attack passes through thin air!");
+                player.dodge_anim = 14;   // conveyance: visible sidestep
+                array_push(damage_popups, { value: 0, text: "DODGED!", x: 475, y: 505, timer: 40, col: make_color_rgb(200, 205, 220) });
                 enemy_roll_intent(actor, player, combat_state.round + 1, true);   // action spent on the whiff
                 combat_next_turn(combat_state);
                 player_turn      = combat_state.active.is_player;
@@ -3580,10 +4051,25 @@ if (player_turn) {
         }
 
         // --- Shadow Step: dodge CHANCE on each of the next 3 attacks (charge-based) ---
-        if (_in_hostile && player.shadow_step_charges > 0) {
+        if (!_rage_now && _in_hostile && player.shadow_step_charges > 0) {
             player.shadow_step_charges--;
             if (irandom(99) < combat_evasion_chance(player)) {
                 array_push(combat_log, actor.name + "'s attack is dodged!");
+                player.dodge_anim = 14;   // conveyance: visible sidestep
+                array_push(damage_popups, { value: 0, text: "DODGED!", x: 475, y: 505, timer: 40, col: make_color_rgb(200, 205, 220) });
+                // "Phantom Momentum" bespoke node (P3, 08-05): each successful
+                // Shadow Step dodge feeds the engine. Rider read off the SLOTTED
+                // copy (Unbroken idiom) - the cast copy is long gone by now.
+                if (variable_struct_exists(player, "preparation") && variable_struct_exists(player, "abilities")) {
+                    for (var _pmi = 0; _pmi < array_length(player.abilities); _pmi++) {
+                        var _pma = player.abilities[_pmi];
+                        if (_pma.name == "Shadow Step" && ability_web_copy_has_rider(_pma, "step_dodge_prep")) {
+                            player.preparation = min(player.preparation_max, player.preparation + 1);
+                            array_push(combat_log, "Phantom Momentum: the slip is fuel - +1 Prep.");
+                            break;
+                        }
+                    }
+                }
                 enemy_roll_intent(actor, player, combat_state.round + 1, true);   // action spent on the whiff
                 combat_next_turn(combat_state);
                 player_turn      = combat_state.active.is_player;
@@ -3597,6 +4083,8 @@ if (player_turn) {
 
         // --- Check Phantom Step (auto-miss the very first enemy attack each combat) ---
         if (_in_hostile && combat_check_phantom_step(player, combat_log)) {
+            player.dodge_anim = 14;   // conveyance: visible sidestep
+            array_push(damage_popups, { value: 0, text: "DODGED!", x: 475, y: 505, timer: 40, col: make_color_rgb(200, 205, 220) });
             enemy_roll_intent(actor, player, combat_state.round + 1, true);   // action spent on the auto-miss
             combat_next_turn(combat_state);
             player_turn      = combat_state.active.is_player;
@@ -3617,6 +4105,22 @@ if (player_turn) {
         }
         var _eab = actor.intent.eab;
         if (_eab != undefined) {
+            // Warden's Seal (vaultling signature move, 08-05 pillar D): the first
+            // enemy ABILITY that would hit you breaks against the seal - negated
+            // outright, the action spent. Heals pass (they don't strike you); a
+            // basic attack never triggers it. Once per combat via the player flag.
+            if (_eab.kind != "heal" && pet_active_sig_move("wardens_seal")
+                && !variable_struct_exists(player, "sig_seal_done")) {
+                player.sig_seal_done = true;
+                array_push(combat_log, "[Companion] " + pet_active().name + "'s WARDEN'S SEAL flares - " + actor.name + "'s " + _eab.name + " breaks against it!");
+                // Action spent: roll the next intent and advance, same as a resolved ability.
+                enemy_roll_intent(actor, player, combat_state.round + 1, true);
+                combat_next_turn(combat_state);
+                player_turn = combat_state.active.is_player;
+                if (player_turn) { abilities_used_this_turn = []; if (instance_exists(obj_game_controller)) instance_find(obj_game_controller, 0).items_used_this_turn = 0; need_player_status_tick = true; }
+                enemy_turn_timer = enemy_turn_delay;
+                exit;
+            }
             var _sa_slot = 0;
             for (var _sai = 0; _sai < array_length(combat_state.combatants); _sai++) {
                 if (combat_state.combatants[_sai] == actor) break;
@@ -3690,10 +4194,38 @@ if (player_turn) {
                 if (_sdmg > 0) combat_state.player_took_damage = true;
                 combat_apply_damage(player, _sdmg);
                 play_player_vocal("snd_player_hurt", -1);
-                player.hit_flash = 15; screen_shake_timer = 12;
-                array_push(damage_popups, { value: _sdmg, x: 475, y: 545, timer: 50, col: make_color_rgb(255, 130, 60) });
-                attack_anim_timer = 20; attack_anim_src_x = _sa_x; attack_anim_src_y = _sa_y;
-                attack_anim_dst_x = 435; attack_anim_dst_y = 465; attack_anim_is_player = false; attack_anim_enemy_idx = _sa_slot;
+                // Conveyance (08-04): a RANGED-delivered spell now FLIES to you (dtype-
+                // keyed bolt; flash/shake/popup/HP-drain defer to arrival). A melee-
+                // delivered spell keeps the lunge. The ability's own reach wins over
+                // the mob's (a melee boss can still hurl a ranged nuke).
+                var _sp_reach = (variable_struct_exists(_eab, "reach") && _eab.reach != "")
+                    ? _eab.reach
+                    : (variable_struct_exists(actor, "reach") ? actor.reach : "melee");
+                var _sp_delay = 0;
+                if (_sp_reach == "ranged") {
+                    _sp_delay = 15 + array_length(combat_projectiles) * 4;
+                    var _sp_bolt = spr_vfx_arcane; var _sp_hit = spr_vfx_arcane; var _sp_sch = "arcane";
+                    var _sp_bx = 415; var _sp_by = 560;   // burst anchor (center-origin spr_vfx_*)
+                    switch (_eab.dtype) {
+                        // spr_fx_impact is TOP-LEFT origin - anchor it like the shipped
+                        // enemy hit spark (300,450) so the burst centers on the player.
+                        case 0: _sp_bolt = -1;            _sp_hit = spr_fx_impact; _sp_sch = "";      _sp_bx = 300; _sp_by = 450; break;
+                        case 2: _sp_bolt = spr_vfx_void;  _sp_hit = spr_vfx_void;  _sp_sch = "void";  break;
+                        case 3: _sp_bolt = spr_vfx_blood; _sp_hit = spr_vfx_blood; _sp_sch = "blood"; break;
+                    }
+                    array_push(combat_projectiles, {
+                        spr: _sp_bolt, school: _sp_sch, impact_spr: _sp_hit, ticks: 20,
+                        sx: _sa_x + 90, sy: _sa_y + 90, tx: 415, ty: 560,
+                        bx: _sp_bx, by: _sp_by,
+                        t: 0, dur: 15, delay: _sp_delay - 15, tgt: player, shake: 12
+                    });
+                    player.hp_hold = _sp_delay;
+                } else {
+                    player.hit_flash = 15; player.hit_recoil = 10; screen_shake_timer = 12;
+                    attack_anim_timer = 20; attack_anim_src_x = _sa_x; attack_anim_src_y = _sa_y;
+                    attack_anim_dst_x = 435; attack_anim_dst_y = 465; attack_anim_is_player = false; attack_anim_enemy_idx = _sa_slot;
+                }
+                array_push(damage_popups, { value: _sdmg, x: 475, y: 545, timer: 50, delay: _sp_delay, col: make_color_rgb(255, 130, 60) });
                 array_push(combat_log, actor.name + " " + ((_eab.msg != "") ? _eab.msg : "casts a spell") + " for " + string(_sdmg) + " damage!");
                 // --- "Sharp Edges" (P3): a MELEE-delivered damage spell still counts
                 //     as a melee blow - the iron answers it too. ---
@@ -3814,10 +4346,38 @@ if (player_turn) {
             }
         }
 
+        // RAGE (08-08) overrides EVERY avoidance above - afterimage, the Veil, Slip
+        // Between and the plain dodge roll alike. It sits after ALL of them on
+        // purpose: a raging blow that a once-per-combat charge could still eat
+        // would not be a breaker at all.
+        if (_rage_now) _hit = "hit";
+        // Streak bookkeeping: a landed blow clears it, a denial feeds it.
+        if (_hit == "hit") actor.denied_streak = 0;
+        else               actor.denied_streak += 1;
+        // A3+ Awakening: the breaker also bites harder, because that is the tier
+        // where stacked defence gets silly. A0-A2 keep NORMAL damage so this can
+        // never read as an unfair spike on a player who was defending well.
+        if (_rage_now) {
+            var _aw_t = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
+            var _rg_m = (_aw_t >= 5) ? 1.35 : ((_aw_t >= 4) ? 1.25 : ((_aw_t >= 3) ? 1.15 : 1.0));
+            if (_rg_m > 1.0) _base_dmg = max(1, round(_base_dmg * _rg_m));
+        }
+
         if (_hit != "hit") {
             array_push(combat_log, (_hit == "dodge")
                 ? ("You dodged " + actor.name + "'s attack!")
                 : (actor.name + " attacked but missed!"));
+            // Conveyance (08-04): you visibly sidestep + the verdict floats over you.
+            if (_hit == "dodge") player.dodge_anim = 14;
+            array_push(damage_popups, { value: 0, text: (_hit == "dodge") ? "DODGED!" : "MISS!",
+                x: 475, y: 505, timer: 40, col: make_color_rgb(200, 205, 220) });
+            // Punished Whiffs trunk node (P2, 08-05): every enemy miss or dodged
+            // swing feeds the Shadowstrider engine (+1 Prep).
+            if (player.class_id == 2 && variable_struct_exists(player, "preparation")
+                && trunk_has("prep_on_miss")) {
+                player.preparation = min(player.preparation_max, player.preparation + 1);
+                array_push(combat_log, "Punished Whiffs: their miss is your moment - +1 Prep.");
+            }
             // Duelist's Rebuke (07-28 legendary): a dodge primes +50% on your next
             // damaging ability (Shadow Meld idiom - persists until consumed).
             if (_hit == "dodge" && variable_struct_exists(player, "leg_rebuke") && player.leg_rebuke) {
@@ -3982,8 +4542,6 @@ if (player_turn) {
             // Player takes a hit - gendered human "damage" grunt (snd_player_hurt[_f]).
             play_player_vocal("snd_player_hurt", -1);
             // VFX: hit flash, popup, enemy attack slide, screen shake
-            player.hit_flash   = 15;
-            screen_shake_timer = 12;
             var _ea_slot = 0;
             for (var _asi = 0; _asi < array_length(combat_state.combatants); _asi++) {
                 if (combat_state.combatants[_asi] == actor) break;
@@ -3991,22 +4549,40 @@ if (player_turn) {
             }
             var _ea_src_x = 1620 + _ea_slot * (-120);
             var _ea_src_y = 233  + _ea_slot * 105;
-            array_push(damage_popups, { value: _final_dmg, x: 475, y: 545, timer: 50, col: make_color_rgb(255, 80, 80) });
-            attack_anim_timer     = 20;
-            attack_anim_src_x     = _ea_src_x;
-            attack_anim_src_y     = _ea_src_y;
-            attack_anim_dst_x     = 435;
-            attack_anim_dst_y     = 465;
-            attack_anim_is_player = false;
-            attack_anim_enemy_idx = _ea_slot;
-            // Impact spark over the player where the blow lands (same one-shot VFX
-            // system as outgoing hits; spr_fx_impact is a 64px top-left-origin burst).
-            vfx_spr       = spr_fx_impact;
-            vfx_x         = 300;
-            vfx_y         = 450;
-            vfx_timer     = 18;
-            vfx_timer_max = 18;
-            vfx_school    = "";   // enemy hit spark - never tinted
+            // Conveyance (08-04): a RANGED foe's blow now visibly flies to you - the
+            // hit presentation (flash/shake/popup/spark/recoil/HP drain) rides the
+            // projectile. A melee foe keeps the lunge, instant as before.
+            var _ea_ranged = (variable_struct_exists(actor, "reach") && actor.reach == "ranged");
+            var _ea_delay  = _ea_ranged ? (15 + array_length(combat_projectiles) * 4) : 0;
+            if (_ea_ranged) {
+                array_push(combat_projectiles, {
+                    spr: -1, school: "", impact_spr: spr_fx_impact, ticks: 18,
+                    sx: _ea_src_x + 90, sy: _ea_src_y + 90, tx: 415, ty: 560,
+                    bx: 300, by: 450,   // spr_fx_impact is top-left origin (shipped spark anchor)
+                    t: 0, dur: 15, delay: _ea_delay - 15, tgt: player, shake: 12
+                });
+                player.hp_hold = _ea_delay;
+            } else {
+                player.hit_flash   = 15;
+                player.hit_recoil  = 10;
+                screen_shake_timer = 12;
+                attack_anim_timer     = 20;
+                attack_anim_src_x     = _ea_src_x;
+                attack_anim_src_y     = _ea_src_y;
+                attack_anim_dst_x     = 435;
+                attack_anim_dst_y     = 465;
+                attack_anim_is_player = false;
+                attack_anim_enemy_idx = _ea_slot;
+                // Impact spark over the player where the blow lands (same one-shot VFX
+                // system as outgoing hits; spr_fx_impact is a 64px top-left-origin burst).
+                vfx_spr       = spr_fx_impact;
+                vfx_x         = 300;
+                vfx_y         = 450;
+                vfx_timer     = 18;
+                vfx_timer_max = 18;
+                vfx_school    = "";   // enemy hit spark - never tinted
+            }
+            array_push(damage_popups, { value: _final_dmg, x: 475, y: 545, timer: 50, delay: _ea_delay, col: make_color_rgb(255, 80, 80) });
             array_push(combat_log,
                 actor.name + " attacked for " + string(_final_dmg) + " damage!"
                 + ((_dmg_blocked > 0) ? ("  (" + string(_dmg_blocked) + " blocked)") : ""));
@@ -4129,6 +4705,16 @@ if (player_turn) {
                 array_push(combat_log, (_hit2 == "dodge")
                     ? ("You dodged " + actor.name + "'s second strike!")
                     : (actor.name + "'s second strike missed!"));
+                // Conveyance (08-04): the second-strike verdict floats too.
+                if (_hit2 == "dodge") player.dodge_anim = 14;
+                array_push(damage_popups, { value: 0, text: (_hit2 == "dodge") ? "DODGED!" : "MISS!",
+                    x: 475, y: 505, timer: 40, col: make_color_rgb(200, 205, 220) });
+                // Punished Whiffs trunk node (P2, 08-05): the second whiff pays too.
+                if (player.class_id == 2 && variable_struct_exists(player, "preparation")
+                    && trunk_has("prep_on_miss")) {
+                    player.preparation = min(player.preparation_max, player.preparation + 1);
+                    array_push(combat_log, "Punished Whiffs: their miss is your moment - +1 Prep.");
+                }
                 // The Ashen Blade (Duelist Arts): a dodge arms -1 AP on your next ability.
                 if (_hit2 == "dodge" && player.leg_ashen && !player.ashen_tempo_ready) {
                     player.ashen_tempo_ready = true;
@@ -4182,6 +4768,7 @@ if (player_turn) {
                 combat_apply_damage(player, _final_dmg2);
                 play_player_vocal("snd_player_hurt", -1);
                 player.hit_flash   = max(player.hit_flash, 12);
+                player.hit_recoil  = 10;   // conveyance: knock on damage taken
                 screen_shake_timer = max(screen_shake_timer, 8);
                 array_push(damage_popups, { value: _final_dmg2, x: 475, y: 545, timer: 50, col: make_color_rgb(255, 80, 80) });
                 array_push(combat_log,

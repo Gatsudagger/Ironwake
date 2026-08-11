@@ -55,6 +55,17 @@ how the shrine/event overlays intercept input at the top of Step.
 | `targeting`  | first combat with >1 enemy              | tab/click to pick a foe; rune cursor shows the target |
 | `vex`        | first open Vex                          | spend gold to learn abilities/traits |
 | `shrine`     | first enter a Shrine                    | blessing altar (boons) vs cursed altar (curses) |
+| `talent_first` | first talent point earned, mid-fight  | talent webs exist; weave at the loadout; experiment (M 08-08) |
+
+The list above is the original core set; the live catalog in `tutorial_catalog()`
+(scr_stats) has since grown to ~19 tips — treat the function as the source of truth.
+
+`talent_first` (08-08) is the only tip raised from a SCRIPT rather than a screen:
+`ability_web_count_cast` fires it the moment lifetime casts cross the first
+threshold (10), so it lands in the fight that earned the point. Before it, the web
+system was invisible unless the player happened to open the loadout and notice a
+badge. It fires once ever; if another tip is already up, `tutorial_try_show`
+returns false and it retries at the next threshold crossing (30/60/100 casts).
 
 Each `tutorial_try_show(id)` call sits at the existing entry point for that surface
 (hub controller Create/room-enter, floor controller shrine entry, combat first-turn

@@ -1,5 +1,53 @@
 # SYSTEMS — Combat FX (Audio rebind + Spell VFX)
 
+> **08-04 VISUAL CONVEYANCE PASS — DESIGN-LOCKED by M ("in today's world this is a
+> minimum expectation"). BUILT 08-04 (same day, later session) — AWAITING F5.**
+>
+> **Implementation map (for the next reader):**
+> - `ability_delivery(ab)` + `ability_projectile_sprite(ab)` — scr_abilities, next to
+>   ability_attack_vfx. Override table at the top of ability_delivery (Singularity/
+>   Soul Nova/Arcane Burst = overhead; Void Drain/Mana Sever/Entropy = beam).
+> - State: obj_combat_controller Create §6 — `combat_projectiles` / `combat_beams` /
+>   `vfx_bursts` arrays; per-combatant `dodge_anim` / `hit_recoil` / `hp_hold` /
+>   `hp_vis` fields ride the combatant structs (hit_flash idiom).
+> - Step sites: player attack hit + miss, enemy basic attack (keys off `actor.reach`),
+>   enemy spell (ability reach wins over mob reach), double strike, and the four
+>   flashy evades (Blink/Vanish/Shadow Step/Phantom Step) all wired. DODGED!/MISS!
+>   now floats as a popup at the defender (was log-only).
+> - Draw_64: sidestep/recoil offsets (combat_slide_px, scr_ui), beam + projectile
+>   renderer (before the single-slot vfx block), multi-slot `vfx_bursts` after it.
+> - HP bars show EASED HP via combat_hp_vis (scr_ui, above ui_draw_hp_bar): drains
+>   over ~6 frames, held by `hp_hold` while a bolt is in flight.
+> - Deferral = popup `delay` fields + projectile-carried flash/recoil/shake/burst.
+>   A killing blow presents INSTANTLY (foe's sprite leaves the row at resolution -
+>   deferring would float a number over an empty slot).
+> - KNOWN COSMETIC SEAM: the enemy row compacts when a foe dies, so a projectile
+>   already in flight lands at the slot position captured at cast. Rare, tiny.
+>
+> **1. Dodge sidestep (transform-only):** on a dodged attack the DEFENDER slides
+> ~24px away from the attacker, fast out + ease back (~14 frames), synced to the
+> MISS/DODGE label. **Hit recoil:** ~8-10px knockback pulse on damage taken
+> (visibly smaller than dodge so the two read differently). Both player + enemies.
+>
+> **2. Delivery archetypes:** every ability (player AND enemy casts) gets a
+> `delivery` tag → visual: `melee` (existing lunge) | `projectile` (VFX sprite
+> travels caster→target ~15 frames, image_angle faces travel; impact VFX at
+> arrival) | `beam` (stretched flash line source→target, instant) | `overhead`
+> (existing at-target drop — keep for lightning STRIKE, meteor-likes) | `self`
+> (at caster, existing). Defaults by school + attack kind; explicit override
+> table for abilities where the default reads wrong (e.g. lightning BLAST =
+> projectile). Projectile sprites = shipped Gigapack VFX (0 gens).
+>
+> **3. Timing (M locked: damage lands on impact):** mechanics still RESOLVE
+> instantly at cast (damage, riders, AP refund, kill checks — no combat-logic
+> changes); what defers to projectile arrival is the PRESENTATION: damage
+> number, HP-bar drain animation, impact VFX, hit recoil. Beam/melee/overhead
+> stay instant. Multi-hit/AoE: one projectile per target, staggered ~4 frames.
+>
+> Implementation home: obj_combat_controller (projectile state array alongside
+> the existing attack_anim_* / vfx_* state), delivery resolution next to
+> ability_attack_vfx in scr_abilities.
+
 > **07-29 TRIAL EXPANSION (built, awaiting F5):** 9 new one-shot VFX from owned
 > packs (0 gens), resolved by `ability_attack_vfx` / `ability_support_vfx`
 > (scr_abilities, after ability_school_list). Attacks now key on element

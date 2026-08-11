@@ -72,3 +72,67 @@ Strict 1v1 (companion out); pars + reward tiers as specced; token ladder locked
 (Measured Riposte → Duelist's Poise → The Ashen Blade); never retires, +10% per
 encounter forever; loss = 1-HP mercy + full restore to room-entry HP, NEVER a
 death (hardcore-safe); hidden event roll, no map icon.
+
+---
+
+## ART SPEC — The Ashen Duelist (added 08-08). NOT GENERATED. Needs M's yes.
+
+**Bug found 08-08:** he had no sprite at all. He is cloned from an elite and then
+RENAMED, and `enemy_sprite_map()` is keyed by NAME — so the lookup missed and the
+duel was fought against an empty space. Patched to `spr_vault_sentinel` as a
+stopgap so he is never blank; that is placeholder, not the intent.
+
+### Concept
+A lithe fencer, not an armoured elite. Rapier or sabre, light guard, weight on the
+back foot — silhouette should read as SPEED where every other Ashen Vault enemy
+reads as MASS. That contrast is the whole point: he is the one fight that is about
+precision rather than attrition.
+
+### Progressive tiers — the ledger already exists
+`global.duelist_encounters` never resets and he gains +10% per prior duel forever.
+So he should visibly accumulate the wins. `duelist_sprite_for()` is already written
+and resolves highest-tier-first, falling back to the map entry, so **art can be
+dropped in one tier at a time with no further code changes**.
+
+| Tier | Asset | Fought | Read |
+|---|---|---|---|
+| 0 | `spr_ashen_duelist`    | first duel | Clean, unmarked. A challenger. |
+| 1 | `spr_ashen_duelist_t1` | 2–4 prior  | Scarred, cloak notched, blade nicked. |
+| 2 | `spr_ashen_duelist_t2` | 5–8 prior  | Trophies taken from you: your colours on his guard. |
+| 3 | `spr_ashen_duelist_t3` | 9+ prior   | Ash-wreathed, barely a man any more. |
+
+### Pipeline (house rules)
+- Style-verify against the SHIPPED humanoid enemies (`spr_vault_sentinel`,
+  `spr_skeleton_soldier`) for palette and scale BEFORE generating — the duel is in
+  the Ashen Vault and he must belong to that family.
+- Same canvas/pipeline as the other enemy sprites; do not invent a size.
+- Show M the base image and get approval before animating or importing.
+
+### Budget
+Tier 0 alone (the shippable minimum, kills the placeholder): **~15–25 gens**.
+All four tiers: **~60–100 gens**. Recommend tier 0 first, then judge.
+
+---
+
+## ART STATUS — 2026-08-09
+
+**Tier 0 is LIVE.** `spr_ashen_duelist`, 97×97 single frame, matching the 07-14
+boss batch exactly (same canvas, same pipeline: PixelLab
+`create_1_direction_object` styled from `spr_infernal_revenant`).
+M picked candidate [3] of 4 — a lithe hatted fencer, teal-grey coat, crimson
+sash, slim rapier extended. Imported by `tools/import_trap_icons_0809.py`.
+
+The `spr_vault_sentinel` stopgap is **retired** — `enemy_sprite_map()` now names
+the real sprite, and `obj_combat_controller/Draw_64.gml` overrides that one map
+entry once with `duelist_sprite_for(global.duelist_encounters)` right after
+`enemy_sprite_map()` is read. That single override covers all three lookup sites
+(inspect hit-box, death-linger ghost, standing draw) — they all read `_espr_map`,
+so they stay in lockstep for free instead of drifting apart.
+
+**Tiers 1–3 (`spr_ashen_duelist_t1/t2/t3`) are still unauthored.**
+`duelist_sprite_for()` already walks down from the player's tier and lands on the
+tier-0 base, so the feature is correct today and each tier can be dropped in
+later with no code change. When they are authored, each one **does** need a
+`global.__sprite_includes` entry — they resolve by `asset_get_index` string, and
+only the tier-0 base is protected from stripping by being named directly in
+`enemy_sprite_map()`.

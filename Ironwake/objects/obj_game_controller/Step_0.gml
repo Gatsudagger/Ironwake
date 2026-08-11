@@ -20,6 +20,7 @@ if (os_is_paused()) run_checkpoint_write_now();
 // (Combat manages its own popups with early exits, so it doesn't need it.)
 global.ui_overlay_latch = ui_input_blocked()
     || (variable_global_exists("item_picker") && global.item_picker.open)
+    || (variable_global_exists("reagent_picker") && global.reagent_picker != undefined)
     || comparison_open;
 
 // FORGE-RESULT REVEAL (07-31): modal close - one confirm/cancel press takes the
@@ -96,6 +97,42 @@ if (menu_open && menu_tab == 0) {
     }
 } else if (stats_tour_step >= 0 && !menu_open) {
     stats_tour_step = -1;   // menu closed mid-tour: not marked seen, re-offers next open
+}
+
+// TALENT-WEB GUIDED TOUR (M 08-04): same shape as the stats tour - arms on the
+// first web open, Enter/Space/N = next, Esc = skip; keys cleared so the web's
+// own handlers never see the press (the hub web Step also stands down while
+// talent_tour_step >= 0). Steps drawn by ui_draw_talent_tour over the web view.
+if (web_view_open) {
+    if (talent_tour_step < 0 && !tutorial_seen_has("talent_tour")
+        && (!variable_global_exists("tutorial_enabled") || global.tutorial_enabled)) {
+        talent_tour_step = 0;
+    }
+    if (talent_tour_step >= 0) {
+        var _tt_next = keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_space)
+                    || keyboard_check_pressed(ord("N"))
+                    || (gamepad_is_connected(0) && gamepad_button_check_pressed(0, gp_face1));
+        var _tt_skip = keyboard_check_pressed(vk_escape)
+                    || (gamepad_is_connected(0) && gamepad_button_check_pressed(0, gp_face2));
+        if (_tt_skip) {
+            tutorial_mark_seen("talent_tour");
+            talent_tour_step = -1;
+            audio_play_sound(snd_page, 1, false);
+        } else if (_tt_next) {
+            talent_tour_step++;
+            audio_play_sound(snd_page, 1, false);
+            if (talent_tour_step > 4) {   // past the last step = done
+                tutorial_mark_seen("talent_tour");
+                talent_tour_step = -1;
+            }
+        }
+        keyboard_clear(vk_enter);
+        keyboard_clear(vk_space);
+        keyboard_clear(vk_escape);
+        keyboard_clear(ord("N"));
+    }
+} else if (talent_tour_step >= 0) {
+    talent_tour_step = -1;   // web closed mid-tour: not marked seen, re-offers next open
 }
 
 // Global fullscreen toggle (F11) - works in every room, persists in settings.ini.
@@ -229,6 +266,19 @@ if (GM_build_type == "run" && os_type == os_windows && keyboard_check_pressed(vk
     show_debug_message("[TEST] debug_force_duel = " + string(global.debug_force_duel));
 }
 
+// =============================================================================
+// TEST LEVER (08-04, M) - F4 grants 5000 gold for testing (autosave means
+// there's no quit-without-saving cheat roll; this is the honest dev tap).
+// F1-F4 carry no gameplay bindings anywhere, so it can't double-fire.
+// COMPILED OUT OF RELEASE BUILDS: gated on GM_build_type == "run" (IDE/F5 only).
+// =============================================================================
+if (GM_build_type == "run" && keyboard_check_pressed(vk_f4)) {
+    global.gold += 5000;
+    var _dg_si = audio_play_sound(snd_ui_toggle_on, 1, false);
+    audio_sound_pitch(_dg_si, 1.4);
+    show_debug_message("[TEST] +5000 gold (F4) -> " + string(global.gold));
+}
+
 // Hub station flavor loops (SOUND_ATMOSPHERE_SPEC.md section 3): keep each open
 // NPC screen's quiet bed in lock-step with its *_open flag. Runs above every
 // modal early-exit below so a loop can never stick on while one is up.
@@ -294,12 +344,20 @@ if (tutorial_is_active()) {
 // to the screen below. Gated to the Vex purposes so that - since this controller
 // is persistent and also alive on the dungeon floor - only obj_floor_controller
 // drives the Shrine picker (no double-stepping). See SYSTEMS_ITEM_PICKER.md.
+// REAGENT STAGE (M 08-05): the cursed-rebirth multi-select modal runs modally
+// over the frozen Sable window, exactly like the picker below - and exits so
+// no later handler (gifting, hotkeys) sees its input.
+if (variable_global_exists("reagent_picker") && global.reagent_picker != undefined) {
+    reagent_picker_step();
+    exit;
+}
 if (variable_global_exists("item_picker") && global.item_picker.open
     && (global.item_picker.purpose == "vex_trait" || global.item_picker.purpose == "vex_stat"
         || global.item_picker.purpose == "vex_potency"
         || global.item_picker.purpose == "alch_rebirth" || global.item_picker.purpose == "gift"
         || global.item_picker.purpose == "chit_reforge"
         || global.item_picker.purpose == "maren_sunder" || global.item_picker.purpose == "cursed_rebirth"
+        || global.item_picker.purpose == "maren_temper" || global.item_picker.purpose == "maren_awaken"
         || global.item_picker.purpose == "statreq_rebirth")) {
     item_picker_step();
     exit;
@@ -316,7 +374,7 @@ if (variable_global_exists("item_picker") && global.item_picker.resolved_purpose
     } else if (_rp == "chit_reforge") {
         shop_notification = global.item_picker.result_msg;   // Dorn's window shows the result
         global.item_picker.resolved_purpose = "";
-    } else if (_rp == "maren_sunder") {
+    } else if (_rp == "maren_sunder" || _rp == "maren_temper" || _rp == "maren_awaken") {
         maren_notification = global.item_picker.result_msg;
         global.item_picker.resolved_purpose = "";
     }
@@ -373,6 +431,7 @@ if (variable_instance_exists(id, "kb_open") && kb_open) {
                     kb_tourney.stage += 1;
                     if (kb_tourney.stage >= 3) {
                         // Champion: the pot plus a curiosity, straight to the pouch.
+                        ach_unlock("ACH_HIGH_ROLLER");   // achievement hook (08-05 wiring)
                         global.gold += kb_tourney_pot();
                         var _ht_prize = kb_tourney_prize_roll();
                         tavern_board_note = "HIGH TABLE CHAMPION! You sweep the "
@@ -463,6 +522,7 @@ if (variable_instance_exists(id, "kb_open") && kb_open) {
         var _pm = kb_total(_g.mine), _pf = kb_total(_g.foes);
         if (_pm > _pf) {
             _g.result = "win";
+            ach_unlock("ACH_BONES");   // achievement hook (08-05 wiring): a game of knucklebones won
             global.gold += _g.stake * 2;
             affinity_add(_g.foe, 2);   // a good game warms the table
             ledger_add(_g.foe, "milestone", "Beat them at knucklebones for " + string(_g.stake) + "g. They'll want revenge.");
@@ -719,10 +779,27 @@ if (journal_open) {
         journal_badges_sweep_orphans();   // stuck badges on delisted entries can't flash the chip forever
         exit;
     }
-    // Five tabs since the 2026-07-04 consolidation: Relationships / Quests /
-    // Compendium / Item Codex / Bestiary. Q back, E forward.
-    if (input_tab_next()) { journal_tab = (journal_tab + 1) mod 5; journal_cursor = 0; }
-    if (input_tab_prev()) { journal_tab = (journal_tab + 4) mod 5; journal_cursor = 0; }
+    // Six tabs since 2026-08-06: Relationships / Quests / Compendium /
+    // Item Codex / Bestiary / Creatures. Q back, E forward.
+    if (input_tab_next()) { journal_tab = (journal_tab + 1) mod 6; journal_cursor = 0; }
+    if (input_tab_prev()) { journal_tab = (journal_tab + 5) mod 6; journal_cursor = 0; }
+    if (journal_tab == 5) {
+        // CREATURES (the compendium proper - DESIGN_WORLD_EXPANSION_0806.md §10):
+        // walks every species, discovered or not. Undiscovered rows stay as
+        // silhouettes, so the list length never leaks less than the full roster.
+        var _jk_n = array_length(compendium_catalog());
+        if (_jk_n > 0) {
+            if (nav_up())   journal_cursor = wrap_index(journal_cursor - 1, _jk_n);
+            if (nav_down()) journal_cursor = wrap_index(journal_cursor + 1, _jk_n);
+            // Wheel walks the list too - the roster is 60+ deep. No wrap on wheel.
+            var _jk_wheel = mouse_wheel_up() - mouse_wheel_down();
+            repeat (abs(_jk_wheel)) {
+                if (_jk_wheel > 0) journal_cursor = max(0, journal_cursor - 1);
+                else               journal_cursor = min(_jk_n - 1, journal_cursor + 1);
+            }
+        }
+        exit;
+    }
     if (journal_tab == 2) {
         // Compendium (moved here from the character menu): browse sections.
         var _jc_count = array_length(ui_compendium_sections());
@@ -848,6 +925,8 @@ if (!stash_mode_open && !loadout_open && !bairc_open && !text_entry_active() && 
     menu_tab  = 0;
     equip_picker_open       = false;
     consumable_submenu_open = false;
+    ability_page            = 0;
+    trunk_arm               = false;
     compendium_section      = 0;
     equip_found_focus       = false;   // Equipment tab: is the right "found items" column focused?
     equip_found_cursor      = 0;
@@ -1184,7 +1263,7 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()) {
     // The reforge confirm/anim screen (reforge_stage > 0) is MODAL - tab cycling and
     // the [R] jump are locked out until it resolves (the roll may already be paid for).
     var _rf_modal = variable_instance_exists(id, "reforge_stage") && reforge_stage > 0;
-    var _shop_ntabs = 3;
+    var _shop_ntabs = shop_tab_count(shop_open);
     if (input_tab_next() && !_rf_modal) {
         shop_tab = (shop_tab + 1) mod _shop_ntabs;
         sell_index = 0; sell_scroll = 0; buy_scroll = 0; sell_confirm_name = ""; shop_notification = "";
@@ -1223,8 +1302,8 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()) {
         if (sell_index < sell_scroll) {
             sell_scroll = sell_index;
         }
-        if (sell_index >= sell_scroll + 7) {
-            sell_scroll = sell_index - 6;
+        if (sell_index >= sell_scroll + shop_sell_visible_rows()) {
+            sell_scroll = sell_index - (shop_sell_visible_rows() - 1);
         }
 
         if (_sl_count > 0) {
@@ -1245,6 +1324,9 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()) {
                 else if (_cur_item.rarity == 3) _gv = 200;
                 else                            _gv = 400;
             }
+            // Legendaries sell for MORE (M 08-04): triple value with a 1200 floor
+            // - a legendary should never fetch mid-epic money.
+            if (variable_struct_exists(_cur_item, "rarity") && _cur_item.rarity == 4) _gv = max(_gv * 3, 1200);
             // Base sell value = 40% of gold_value. The vendor's affinity tier sweetens
             // the deal: +5% per tier (Acquaintance..Lover -> +0%..+20%). (Task: affinity sell)
             var _shop_npc   = (shop_open == 0) ? "petra" : "dorn";
@@ -1633,7 +1715,7 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()) {
         if (mouse_check_button_pressed(mb_left)) {
             var _rmx = device_mouse_x_to_gui(0);
             var _rmy = device_mouse_y_to_gui(0);
-            var _rt_w = 320, _rt_gap = 24, _rt_n = 3;
+            var _rt_w = 320, _rt_gap = 24, _rt_n = shop_tab_count(shop_open);
             var _rt_x0 = 960 - (_rt_n * _rt_w + (_rt_n - 1) * _rt_gap) / 2;
             for (var _rti = 0; _rti < _rt_n; _rti++) {
                 var _rtx = _rt_x0 + _rti * (_rt_w + _rt_gap);
@@ -1672,6 +1754,97 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()) {
                     }
                 }
             }
+        }
+        exit;
+    }
+
+    // =========================================================================
+    // TEMPER TAB (Dorn only; shop_tab == 3). Moved off Maren's forge menu on
+    // 08-08 - working rough metal toward its finish is smith work. Unlike the old
+    // flow (a bare item_picker fired from a menu row) this is a real screen: the
+    // list shows every rough piece with its quality, the step fee and whether you
+    // can afford it, and the right panel PREVIEWS the exact before/after the step
+    // will produce - so the player knows what they are buying before they buy it.
+    // Geometry MUST mirror ui_draw_dorn_temper (scr_ui): 7 visible, pitch 90, y255.
+    // =========================================================================
+    if (shop_tab == 3 && shop_open == 1) {
+        if (!variable_instance_exists(id, "temper_index")) { temper_index = 0; temper_scroll = 0; }
+        var _tp_list = item_picker_candidates_temperable();
+        var _tp_n    = array_length(_tp_list);
+        var _tp_vis  = 7;
+
+        if (_tp_n > 0) {
+            if (nav_down()) temper_index = wrap_index(temper_index + 1, _tp_n);
+            if (nav_up())   temper_index = wrap_index(temper_index - 1, _tp_n);
+        }
+        temper_index = clamp(temper_index, 0, max(0, _tp_n - 1));
+        // Edge-triggered scroll, matching the Sell/Reforge lists.
+        if (temper_index < temper_scroll)             temper_scroll = temper_index;
+        if (temper_index >= temper_scroll + _tp_vis)  temper_scroll = temper_index - (_tp_vis - 1);
+        temper_scroll = clamp(temper_scroll, 0, max(0, _tp_n - _tp_vis));
+
+        var _tp_act = false;
+
+        // Mouse/touch: tab headers, then rows (re-click on the selected row acts).
+        if (mouse_check_button_pressed(mb_left)) {
+            var _tmx = device_mouse_x_to_gui(0);
+            var _tmy = device_mouse_y_to_gui(0);
+            var _tt_w = 320, _tt_gap = 24, _tt_n = shop_tab_count(shop_open);
+            var _tt_x0 = 960 - (_tt_n * _tt_w + (_tt_n - 1) * _tt_gap) / 2;
+            for (var _tti = 0; _tti < _tt_n; _tti++) {
+                var _ttx = _tt_x0 + _tti * (_tt_w + _tt_gap);
+                if (_tmx >= _ttx && _tmx < _ttx + _tt_w && _tmy >= 96 && _tmy < 138 && shop_tab != _tti) {
+                    shop_tab = _tti; shop_notification = ""; sell_index = 0; sell_scroll = 0;
+                }
+            }
+            if (_tp_n > 0) {
+                var _twin0 = clamp(temper_scroll, 0, max(0, _tp_n - _tp_vis));
+                var _twin1 = min(_tp_n, _twin0 + _tp_vis);
+                for (var _tri = _twin0; _tri < _twin1; _tri++) {
+                    var _try = 255 + (_tri - _twin0) * 90;
+                    if (_tmx >= 60 && _tmx < 900 && _tmy >= _try && _tmy < _try + 84) {
+                        if (_tri == temper_index) _tp_act = true;
+                        else { temper_index = _tri; shop_notification = ""; }
+                    }
+                }
+                // The confirm bar under the preview panel is a tap target too.
+                if (_tmx >= 940 && _tmx < 1860 && _tmy >= 906 && _tmy < 960) _tp_act = true;
+            }
+        }
+        if (input_confirm() || input_confirm_alt()) _tp_act = true;
+
+        if (_tp_act && _tp_n > 0) {
+            var _tp_row = _tp_list[clamp(temper_index, 0, _tp_n - 1)];
+            var _tp_it  = _tp_row.item;
+            var _tp_fee = temper_fee(_tp_it);
+            if (!variable_global_exists("rune_dust")) global.rune_dust = 0;
+            if (global.gold < _tp_fee.gold || global.rune_dust < _tp_fee.dust) {
+                shop_notification = "Not enough - Dorn asks " + string(_tp_fee.gold) + "g + "
+                    + string(_tp_fee.dust) + " rune dust for that step.";
+                audio_play_sound(snd_ui_error, 1, false);
+            } else {
+                global.gold      -= _tp_fee.gold;
+                global.rune_dust -= _tp_fee.dust;
+                // Snapshot BEFORE mutating - the reveal popup runs after (M 08-08).
+                var _tp_was = item_shallow_copy(_tp_it);
+                _tp_it.quality = min(100, (variable_struct_exists(_tp_it, "quality") ? _tp_it.quality : 100) + 10);
+                // No icon_seed re-roll (M 08-11): tempering never changes a piece's look.
+                save_game();
+                shop_notification = _tp_it.name + " tempered to " + string(_tp_it.quality) + "%"
+                    + ((_tp_it.quality >= 100) ? " - FINISHED." : ".");
+                forge_result_open("TEMPERED", (_tp_it.quality >= 100)
+                        ? "The metal finally sings its whole note."
+                        : "Closer to what it was always meant to be.",
+                    _tp_it, _tp_was, [], make_color_rgb(200, 170, 110));
+                audio_play_sound(snd_forge, 1, false);
+                // A piece that just hit 100% leaves the list - keep the cursor in range.
+                temper_index = clamp(temper_index, 0, max(0, array_length(item_picker_candidates_temperable()) - 1));
+            }
+        }
+
+        if (input_cancel() || input_back() || mouse_check_button_pressed(mb_right)) {
+            shop_open = -1; shop_tab = 0; shop_index = 0;
+            shop_notification = ""; temper_index = 0; temper_scroll = 0;
         }
         exit;
     }
@@ -2078,7 +2251,7 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()) {
         var _shmx = device_mouse_x_to_gui(0);
         var _shmy = device_mouse_y_to_gui(0);
         // Tab clicks (auto-centred to match the draw side). Both shops have 3 tabs.
-        var _mt_n   = 3;
+        var _mt_n   = shop_tab_count(shop_open);
         var _mt_w   = 320;
         var _mt_gap = 24;
         var _mt_x0  = 960 - (_mt_n * _mt_w + (_mt_n - 1) * _mt_gap) / 2;
@@ -2118,7 +2291,7 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()) {
         if (shop_tab == 1) {
             var _shslcnt = array_length(global.equipment_stash) + array_length(global.consumable_stash)
                          + array_length(global.carried_items) + array_length(global.consumable_inventory);
-            var _shvend  = min(sell_scroll + 7, _shslcnt);
+            var _shvend  = min(sell_scroll + shop_sell_visible_rows(), _shslcnt);
             for (var _shri = sell_scroll; _shri < _shvend; _shri++) {
                 var _shry = 189 + (_shri - sell_scroll) * 126;
                 if (_shmx >= 150 && _shmx < 1770 && _shmy >= _shry && _shmy < _shry+117) {
@@ -2993,7 +3166,7 @@ if (variable_instance_exists(id, "maren_open") && maren_open && !menu_open && !f
         if (maren_phase == 0)      _m_rows = max(1, _m_arows0);
         else                       _m_rows = max(1, array_length(_m_asp));
     } else if (maren_tab == 2) {
-        if (maren_phase == 0)      _m_rows = 5;                                       // Combine/Split/Craft/Sunder/Runeheart menu
+        if (maren_phase == 0)      _m_rows = 6;                                       // Combine/Split/Craft/Sunder/Runeheart/Awaken (Temper moved to Dorn 08-08)
         else if (maren_phase == 1) _m_rows = max(1, array_length(_m_groups));         // Combine groups
         else if (maren_phase == 2) _m_rows = max(1, array_length(global.rune_inventory)); // Split list
         else if (maren_phase == 4) _m_rows = max(1, array_length(maren_core_candidates())); // Runeheart sacrifice list
@@ -3207,8 +3380,21 @@ if (variable_instance_exists(id, "maren_open") && maren_open && !menu_open && !f
             // -------- FORGE TAB --------
             if (maren_phase == 0) {
                 // Sub-menu: 0 Combine, 1 Split, 2 Craft Flagship, 3 Sunder
-                // Legendary, 4 Runeheart Core (LEGENDARY FORGE component)
-                if (maren_cursor == 4) {
+                // Legendary, 4 Runeheart Core, 5 Awaken Legendary.
+                // TEMPER left this menu on 08-08 - it lives on Dorn's TEMPER tab now
+                // (smith work, not rune work). Keep this order in sync with the
+                // _menu array in scr_ui's Maren forge draw.
+                if (maren_cursor == 5) {
+                    // AWAKEN (08-04 dormant legendaries): pick a dormant find.
+                    var _awk_cands = item_picker_candidates_dormant();
+                    if (array_length(_awk_cands) == 0) {
+                        maren_notification = "No dormant legendaries - the true ones never slept.";
+                        audio_play_sound(snd_ui_error, 1, false);
+                    } else {
+                        item_picker_open("maren_awaken", {}, _awk_cands);
+                        maren_notification = "";
+                    }
+                } else if (maren_cursor == 4) {
                     if (array_length(maren_core_candidates()) == 0) {
                         maren_notification = "A Runeheart Core asks a tier-III or better rune - you hold none unsocketed.";
                         audio_play_sound(snd_ui_error, 1, false);
@@ -3777,21 +3963,29 @@ if (variable_instance_exists(id, "vael_open") && vael_open && !menu_open) {
             if (input_inject_take("vael:cancel")) { vael_confirm = false; vael_notification = ""; exit; }
             if (input_confirm() || input_inject_take("vael:ok")) {
                 vael_confirm = false;
-                var _rwc_g = cha_price(100);
-                var _rwc_d = 10;
+                // Class-trunk respec (P2, 08-05): pricier ladder - 500g + 50 dust,
+                // clears ALL rows for the current class; gates re-offer one at a time.
+                var _rwc_trunk = variable_instance_exists(id, "vael_rw_is_trunk") && vael_rw_is_trunk;
+                var _rwc_g = _rwc_trunk ? cha_price(500) : cha_price(100);
+                var _rwc_d = _rwc_trunk ? 50 : 10;
                 var _rwc_dust = variable_global_exists("rune_dust") ? global.rune_dust : 0;
                 if (global.gold >= _rwc_g && _rwc_dust >= _rwc_d) {
                     global.gold      -= _rwc_g;
                     global.rune_dust -= _rwc_d;
-                    ability_web_respec(vael_rw_name);
+                    if (_rwc_trunk) {
+                        trunk_respec(variable_global_exists("chosen_class") ? global.chosen_class : 0);
+                        vael_notification = "The trunk stands bare - every class choice is open again (Abilities tab).";
+                    } else {
+                        ability_web_respec(vael_rw_name);
+                        vael_notification = vael_rw_name + " unwoven - its Talent Points returned. Reweave from the loadout ([M]).";
+                    }
                     affinity_add("vael", 2);   // function-use drip (reweave)
                     ui_checkout_vfx(spr_vfx_arcane, 900, 500);   // Gigapack unweave burst
                     save_game();
                     vael_rw_cursor    = 0;
-                    vael_notification = vael_rw_name + " unwoven - its Talent Points returned. Reweave from the loadout ([M]).";
                     audio_play_sound(snd_npc_confirm, 1, false);
                 } else {
-                    vael_notification = "Not enough - reweaving costs " + string(_rwc_g) + "g + " + string(_rwc_d) + " dust.";
+                    vael_notification = "Not enough - this costs " + string(_rwc_g) + "g + " + string(_rwc_d) + " dust.";
                     audio_play_sound(snd_ui_error, 1, false);
                 }
                 exit;
@@ -3799,7 +3993,7 @@ if (variable_instance_exists(id, "vael_open") && vael_open && !menu_open) {
             exit;   // modal - swallow everything else
         }
 
-        var _rw_list = ability_web_respec_list();
+        var _rw_list = vael_reweave_rows();   // trunk row first when picks exist (P2, 08-05)
         var _rw_n    = array_length(_rw_list);
         if (_rw_n > 0) {
             if (nav_up())   { vael_rw_cursor = wrap_index(vael_rw_cursor - 1, _rw_n); vael_notification = ""; }
@@ -3827,16 +4021,27 @@ if (variable_instance_exists(id, "vael_open") && vael_open && !menu_open) {
 
             if (_rw_act) {
                 var _rw   = _rw_list[vael_rw_cursor];
-                var _rw_g = cha_price(100);
+                var _rw_t = variable_struct_exists(_rw, "is_trunk") && _rw.is_trunk;
+                var _rw_g = _rw_t ? cha_price(500) : cha_price(100);
+                var _rw_dc = _rw_t ? 50 : 10;
                 var _dust = variable_global_exists("rune_dust") ? global.rune_dust : 0;
                 if (global.gold < _rw_g) {
-                    vael_notification = "Not enough gold - reweaving costs " + string(_rw_g) + "g + 10 dust.";
+                    vael_notification = "Not enough gold - this costs " + string(_rw_g) + "g + " + string(_rw_dc) + " dust.";
                     audio_play_sound(snd_ui_error, 1, false);
-                } else if (_dust < 10) {
-                    vael_notification = "Need 10 rune dust (you have " + string(_dust) + ") - salvage at Sable or Maren.";
+                } else if (_dust < _rw_dc) {
+                    vael_notification = "Need " + string(_rw_dc) + " rune dust (you have " + string(_dust) + ") - salvage at Sable or Maren.";
                     audio_play_sound(snd_ui_error, 1, false);
+                } else if (_rw_t) {
+                    vael_rw_name       = _rw.name;
+                    vael_rw_is_trunk   = true;
+                    vael_confirm       = true;
+                    vael_confirm_title = "UNMAKE THE CLASS TRUNK?";
+                    vael_confirm_body  = "All " + string(_rw.picks) + " sealed class choice" + (_rw.picks == 1 ? "" : "s")
+                        + " reopen for " + string(_rw_g) + "g + 50 rune dust.\nEvery row re-offers its this-or-that on the Abilities tab. Nothing else is touched.";
+                    vael_notification  = "";
                 } else {
                     vael_rw_name       = _rw.name;
+                    vael_rw_is_trunk   = false;
                     vael_confirm       = true;
                     vael_confirm_title = "REWEAVE THIS ABILITY?";
                     vael_confirm_body  = _rw.name + " unweaves for " + string(_rw_g) + "g + 10 rune dust.\nIts "
@@ -3964,6 +4169,12 @@ if (input_cancel()) {
         equip_msg         = "";
     } else if (consumable_submenu_open) {
         consumable_submenu_open = false;
+    } else if (trunk_arm) {
+        // Trunk view (P2, 08-05): an armed pick disarms first...
+        trunk_arm = false;
+    } else if (ability_page != 0) {
+        // ...then Esc steps back to the ability list, not out of the menu.
+        ability_page = 0;
     } else {
         menu_open = false;
     }
@@ -3976,11 +4187,15 @@ if (!equip_picker_open && !consumable_submenu_open) {
         if (menu_tab > 0) audio_play_sound(snd_page, 1, false);
         menu_tab          = max(0, menu_tab - 1);
         equip_picker_open = false;
+        ability_page      = 0;
+        trunk_arm         = false;
     }
     if (input_tab_next()) {
         if (menu_tab < 4) audio_play_sound(snd_page, 1, false);
         menu_tab          = min(4, menu_tab + 1);
         equip_picker_open = false;
+        ability_page      = 0;
+        trunk_arm         = false;
     }
 
     // T on the Stats tab: cycle the equipped epithet through earned titles
@@ -3996,12 +4211,60 @@ if (!equip_picker_open && !consumable_submenu_open) {
     }
 }
 
-// Abilities tab (2): W/S browse the loadout (left list -> right breakdown).
+// Abilities tab (2): three pages walked with A/D (08-08 M rework - the old [T]
+// toggle is gone; every page is reached the same way the equipment sub-lists are).
+// W/S browses whatever list the current page shows.
 if (menu_tab == 2 && variable_global_exists("chosen_class")) {
-    var _abil_count = array_length(abilities_resolve_player_loadout(global.chosen_class));
-    if (_abil_count > 0) {
-        if (nav_down()) ability_view_cursor = wrap_index(ability_view_cursor + 1, _abil_count);
-        if (nav_up())   ability_view_cursor = wrap_index(ability_view_cursor - 1, _abil_count);
+    // A/D (and d-pad left/right) walk ABILITIES <-> CLASS TRUNK <-> TALENTS.
+    // Clamped, not wrapped, so the ends feel like edges rather than a loop.
+    if (input_dir_left() && ability_page > 0) {
+        ability_page--;
+        trunk_arm = false;
+        audio_play_sound(snd_page, 1, false);
+    } else if (input_dir_right() && ability_page < ABILITY_PAGE_COUNT - 1) {
+        ability_page++;
+        trunk_arm = false;
+        audio_play_sound(snd_page, 1, false);
+    }
+
+    if (ability_page == 1) {
+        // The 10 nodes are ONE list walked with W/S in reading order, so left/right
+        // stays free for page switching. Any movement disarms a pending confirm.
+        var _tk_idx = trunk_cursor * 2 + trunk_side;
+        if (nav_down()) { _tk_idx = wrap_index(_tk_idx + 1, 10); trunk_arm = false; }
+        if (nav_up())   { _tk_idx = wrap_index(_tk_idx - 1, 10); trunk_arm = false; }
+        trunk_cursor = _tk_idx div 2;
+        trunk_side   = _tk_idx mod 2;
+        // Enter/A: arm, then commit the PERMANENT pick (exclusive - Vael-only undo).
+        if (input_confirm() || input_confirm_alt()) {
+            var _tk_cls = global.chosen_class;
+            if (!trunk_row_unlocked(trunk_cursor) || trunk_pick_get(_tk_cls, trunk_cursor) != -1) {
+                audio_play_sound(snd_ui_error, 1, false);
+                trunk_arm = false;
+            } else if (!trunk_arm) {
+                trunk_arm = true;
+                audio_play_sound(snd_page, 1, false);
+            } else {
+                trunk_pick_set(_tk_cls, trunk_cursor, trunk_side);
+                trunk_arm = false;
+                save_game();
+                audio_play_sound(snd_confirm_major, 1, false);
+            }
+        }
+    } else {
+        // Pages 0 (ABILITIES) and 2 (TALENTS) both browse the loadout list; each
+        // keeps its own cursor so switching pages doesn't move the other one.
+        var _abil_count = array_length(abilities_resolve_player_loadout(global.chosen_class));
+        if (_abil_count > 0) {
+            if (ability_page == 2) {
+                talent_cursor = clamp(talent_cursor, 0, _abil_count - 1);
+                if (nav_down()) talent_cursor = wrap_index(talent_cursor + 1, _abil_count);
+                if (nav_up())   talent_cursor = wrap_index(talent_cursor - 1, _abil_count);
+            } else {
+                if (nav_down()) ability_view_cursor = wrap_index(ability_view_cursor + 1, _abil_count);
+                if (nav_up())   ability_view_cursor = wrap_index(ability_view_cursor - 1, _abil_count);
+            }
+        }
     }
 }
 
@@ -4020,6 +4283,8 @@ if (mouse_check_button_pressed(mb_left)) {
             menu_tab                = _mt;
             equip_picker_open       = false;
             consumable_submenu_open = false;
+            ability_page            = 0;
+            trunk_arm               = false;
             break;
         }
     }
@@ -4132,15 +4397,67 @@ if (mouse_check_button_pressed(mb_left)) {
         }
     }
 
-    // --- Abilities tab (2): click a row in the left list to select it ---
+    // --- Abilities tab (2): trunk chips, trunk boxes, then the ability list ---
     if (menu_tab == 2 && variable_global_exists("chosen_class")) {
-        var _alist = abilities_resolve_player_loadout(global.chosen_class);
-        var _alcnt = array_length(_alist);
-        if (_alcnt > 0 && _mmx >= 86 && _mmx < 684) {
-            var _alrh = min(108, (830) / _alcnt);   // mirrors the draw (panel 150..1012, pad 16)
-            for (var _ali = 0; _ali < _alcnt; _ali++) {
-                var _aly = 166 + _ali * _alrh;
-                if (_mmy >= _aly && _mmy < _aly + _alrh - 6) { ability_view_cursor = _ali; break; }
+        // ABILITIES | CLASS TRUNK | TALENTS chips (geometry MUST mirror
+        // ui_draw_character_menu: 3 chips w=280 gap=10, centered, y=104..142).
+        if (_mmy >= 104 && _mmy < 142) {
+            var _apc_x0 = GUI_CX - (ABILITY_PAGE_COUNT * 290 - 10) / 2;
+            for (var _apc = 0; _apc < ABILITY_PAGE_COUNT; _apc++) {
+                var _apcx = _apc_x0 + _apc * 290;
+                if (_mmx >= _apcx && _mmx < _apcx + 280) {
+                    if (ability_page != _apc) audio_play_sound(snd_page, 1, false);
+                    ability_page = _apc;
+                    trunk_arm    = false;
+                    break;
+                }
+            }
+        }
+        if (ability_page == 1) {
+            // Node boxes (geometry mirrors the draw: rows y=252+r*142 h=126;
+            // A x=260..1000, B x=1090..1830). First tap selects+arms, second
+            // tap on the SAME box commits - arm-then-confirm for touch too.
+            for (var _tkr = 0; _tkr < 5; _tkr++) {
+                var _tky = 252 + _tkr * 142;
+                if (_mmy < _tky || _mmy >= _tky + 126) continue;
+                var _tks = -1;
+                if (_mmx >= 260 && _mmx < 1000)  _tks = 0;
+                if (_mmx >= 1090 && _mmx < 1830) _tks = 1;
+                if (_tks == -1) break;
+                if (!trunk_row_unlocked(_tkr) || trunk_pick_get(global.chosen_class, _tkr) != -1) {
+                    audio_play_sound(snd_ui_error, 1, false);
+                    trunk_arm = false;
+                } else if (trunk_arm && trunk_cursor == _tkr && trunk_side == _tks) {
+                    trunk_pick_set(global.chosen_class, _tkr, _tks);
+                    trunk_arm = false;
+                    save_game();
+                    audio_play_sound(snd_confirm_major, 1, false);
+                } else {
+                    trunk_cursor = _tkr;
+                    trunk_side   = _tks;
+                    trunk_arm    = true;
+                    audio_play_sound(snd_page, 1, false);
+                }
+                break;
+            }
+        } else {
+            var _alist = abilities_resolve_player_loadout(global.chosen_class);
+            var _alcnt = array_length(_alist);
+            if (_alcnt > 0 && _mmx >= 86 && _mmx < 684) {
+                // Mirrors the draw: panel top moved 150 -> 170 on 08-08 so the gothic
+                // frame's filigree stops clear of the ABILITIES/CLASS TRUNK/TALENTS
+                // chips, so the first row starts at 170+16. The 108 cap is what keeps
+                // this in step with the draw's own row-height maths at every real
+                // loadout size (4, or 5 with Expanded Arsenal).
+                var _alrh = min(108, (830) / _alcnt);
+                for (var _ali = 0; _ali < _alcnt; _ali++) {
+                    var _aly = 186 + _ali * _alrh;
+                    if (_mmy >= _aly && _mmy < _aly + _alrh - 6) {
+                        if (ability_page == 2) talent_cursor = _ali;
+                        else                   ability_view_cursor = _ali;
+                        break;
+                    }
+                }
             }
         }
     }
@@ -4541,6 +4858,7 @@ if (menu_tab == 3) {
                     if (_item.effect_type == "chaotic") {
                         _was_chaotic = true;
                         var _ch = chaotic_brew_roll();
+                        global.ach_brew_run = true;   // ACH_BREW: drank one - now survive the run
                         array_push(_ctrl_c.combat_log, "The Chaotic Brew " + _ch.label + "!");
                         if (_ch.sting) {
                             var _bite = irandom_range(8, 15);

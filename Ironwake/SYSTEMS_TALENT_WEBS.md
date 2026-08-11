@@ -1,6 +1,32 @@
 # SYSTEMS_TALENT_WEBS.md — Ability Talent Webs + Class Trunks
-**Status: DESIGN-LOCKED 2026-07-27 (M signed off all 8 open questions; see §8 decision
-log). Signature shortlist in §3.5 is PROPOSED — M may veto/swap names any time before P3.**
+**Status: ALL THREE PHASES BUILT. P1 core shipped earlier; P2 (class trunks) + P3
+(bespoke signature webs) BUILT 08-05, awaiting F5. M approved the §3.5 shortlist
+as-is 08-05.**
+
+**P2 build notes (08-05):** engine `trunk_*` in scr_abilities (catalog / picks /
+`trunk_has(fx)` / `ability_secondary_cost_eff` single cost source); picks saved as
+`trunk_picks` (3×5 ints, optional field, no format bump); 30 node hooks across
+scr_combat + obj_combat_controller (Create/Step); UI = ABILITIES | CLASS TRUNK chip
+pair on the char-menu Abilities tab ([T] toggles), 5-row this-or-that view with
+arm-then-confirm, pending badges on tab + chip, hub milestone toast (once per
+session per perm level); trunk respec = amber row atop Vael's Reweave tab (500g +
+50 dust, clears all rows). THREE §4.3 adaptations (dead baselines found in code,
+flag for M): Arcanist L5a "souls persist" was already baseline (resources carry
+between rooms) → **Deep Well: Soul cap 13**; Bloodwarden L5a "HP costs −25%" had
+no real target (no blood ability costs HP since the Sanguine Pact rework) →
+**Practiced Phlebotomy: Blood costs −1 (min 1)**; Shadowstrider L2b/L11a rode the
+armed-trap model (`trap_active` is vestigial — traps fire on cast) → **Always
+Ready: start with 2 Prep** / **Finisher's Doctrine: +30% below 25% HP** /
+**Sprung Steel: trap casts return 1 Prep**.
+
+**P3 build notes (08-05):** every §3.5 signature now carries a bespoke node PAIR
+(one per branch where sensible) in `ability_web_bespoke` — mostly curated pairings
+of wired rider primitives (execute/splash/hit_vuln/crit_sec/first_free/kill_ap/
+secc/dur). Two new hooks for Shadow Step (its web had zero bespoke): `step_charges`
+(Long Stride, 4 dodge charges) + `step_dodge_prep` (Phantom Momentum, +1 Prep per
+successful dodge, Unbroken read-off-slotted-copy idiom). STALE NOTE resolved: the
+Plague Touch "dead mortality" issue no longer exists — enemy mends route through
+`combat_heal_after_mortality`, so the keystone rework it proposed was unnecessary.**
 *(Drafted 2026-07-26. Replaces the ability-mastery notch system flagged "incredibly bland
 and basic" in COMBAT_IMPROVEMENT_PLAN_2026-07-17 §C. Folds class-passive expansion into
 the same system per M's 07-26 decision.)*

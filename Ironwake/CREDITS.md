@@ -17,7 +17,10 @@ disclosure (now v2). Suno noted as not-yet-shipped.
 | **Batareya — Fantasy Jewelry Pack** ("Full Accessories pack") | Ring + amulet icons (14) | Same wording as sword pack (verified on pack page) | ✅ (AI — disclose) |
 | **Medieval Weapons Pack v1.2** | Off-hand shield icons (3, sliced from shields sheet) | Bundled Read me.txt: "free to use in any personal or commercial project… no mentions required… not allowed to re-upload or sell" | ✅ (❓ author name for credits — folder/readme unsigned) |
 | **CaptainSkeleto/CaptainSkolot — Magic Tomes pack** | Caster off-hand foci icons (4: totem/orb/stone/focus slots — visually matched to the pack's sheet) | Pack page (found by M 2026-07-07): "freedom to use this asset pack in both your free and commercial projects… credit is not required, we genuinely appreciate any attribution… may not redistribute or resell the assets on their own, that includes NFT/images asset compilations." AI-assisted ("local generative tool for rough concepts, then refined by hand") | ✅ (AI — disclose; credited anyway) |
-| **unTied Games — Super Pixel Effects Gigapack (Free) v2.5.0** | 6 combat VFX sprites (impact/fire/void/arcane/heal/buff) | Commercial OK, **attribution required**, no reselling. Suggested line: "Pixel art effects - unTied Games" | ⚠️ **credit required** — covered by Credits screen |
+| **unTied Games (Will Tice) — Super Pixel Effects Gigapack** (Free v2.5.0; **full v2.8.0 + Super Pixel Projectiles Pack 1 purchased 08-11**) | Combat VFX sprites: school impacts, self-cast bursts, physical archetypes (slash/pierce/crush/snap), rage/boom, future projectile bolts + beams | Bundled license.txt: commercial OK, **attribution required**, no reselling, no bundling with engines. Suggested line: "(pack name) - Will Tice / unTied Games" | ⚠️ **credit required** — covered by Credits screen |
+| **Frostwindz — Pixel Art VFX: Necromancer (FREE Version)** | spr_vfx_shadow (claw crescent, 07-29), spr_vfx_void2 (ring) + spr_vfx_dark2 (soul wisps) (08-11) | Bundled License Agreement docx: commercial OK, modify OK, no redistribution/resale/AI training. "Attribution is appreciated but not required." | ✅ (credited anyway) |
+| **Willibab — Simple Pixel Spell Effects** ("Spell Effects" 12 sheets) | 3 VFX sprites (08-11 pass 3 trimmed 14 → 3; the rest re-sourced from the purchased unTied Gigapack for style consistency): spr_vfx_poison2 acid mound, spr_vfx_shield2 pulse, spr_vfx_wardflash lavender bloom | Pack page: "FREE FOR NON-COMMERCIAL AND COMMERCIAL USE." Credit optional, appreciated. | ✅ (credited anyway) |
+| ~~XYEzawr — Free Pixel Effects Pack #13: Fireballs~~ | *No longer used* — the 08-11 fire bolt was rebuilt same-day from the purchased unTied Projectiles Pack (style match). Row kept as history. | Free + commercial OK | ➖ unused |
 | **CraftPix — 48 Magic Potions / 48 Minerals** | Potion + consumable icons | Bundled License.txt (craftpix.net/file-licenses): commercial OK, no raw redistribution, attribute where feasible | ✅ |
 | Procedural (in-repo tools: gen_trait_icons.py frames, coin burst, etc.) | Trait icon framing, event coin VFX | Own work | ✅ |
 
@@ -68,6 +71,7 @@ Credits screen still owes the licensed-music/icon/VFX lines below.
 - "Music by Sara Garrard" + link to sonatina.itch.io on the itch game page *(required by the Battle Zone / Infinity Crystal licenses)*
 - "Music by Alex Coldfire" — in game credits AND the author/credits section of store pages *(required by CC BY-ND 4.0)*
 - "Icons by Batareya" *(required by the 250 Magical Icons license)*
-- "Pixel art effects - unTied Games" *(required by the Gigapack license)*
+- "Pixel art effects & projectiles - Will Tice / unTied Games" *(required by the Gigapack + Projectiles Pack licenses — covers Free v2.5.0, full v2.8.0, Projectiles Pack 1)*
 - Recommended courtesy: PixelLab, Chequered Ink, TomMusic, CraftPix, CaptainSkeleto (if kept),
-  Medieval Weapons Pack author (if identified), Google Fonts (EB Garamond, Cinzel Decorative — OFL).
+  Medieval Weapons Pack author (if identified), Google Fonts (EB Garamond, Cinzel Decorative — OFL),
+  Willibab (Simple Pixel Spell Effects), Frostwindz (Necromancer VFX).

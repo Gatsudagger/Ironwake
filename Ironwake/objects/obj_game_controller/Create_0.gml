@@ -46,6 +46,9 @@ global.__sprite_includes = [
     spr_icon_consumable_chaotic_brew,
     // Quintessence icon (07-28 M pick): string-ref from the Sable cauldron row.
     spr_icon_consumable_quintessence,
+    // Cursed Rebirth ceremony scene (08-04 M pick A): string-ref from the hub
+    // ritual overlay (asset_get_index with pre-import fallback).
+    spr_scene_cursed_ritual,
     // Icon-collision pass (07-29 round 3, M approved all 36): banded sets for
     // the six families that shared one sprite each + jewelry keyword splits +
     // 6th wand/sword variants. Same string-ref pattern as the batch below.
@@ -232,6 +235,69 @@ global.__sprite_includes = [
     spr_pet_ironshell_beetle_baby_s, spr_pet_ironshell_beetle_baby_e,
     spr_pet_ironshell_beetle_youngadult_s, spr_pet_ironshell_beetle_youngadult_e,
     spr_pet_ironshell_beetle_adult_s, spr_pet_ironshell_beetle_adult_e,
+    // World expansion batch (08-06/08): 20 new species x 3 stages x south/east.
+    // String-ref only (pet_sprite -> asset_get_index), so they MUST be listed here
+    // or the compiler strips all 120 as unused assets.
+    spr_pet_sluice_otter_baby_s, spr_pet_sluice_otter_baby_e,
+    spr_pet_sluice_otter_youngadult_s, spr_pet_sluice_otter_youngadult_e,
+    spr_pet_sluice_otter_adult_s, spr_pet_sluice_otter_adult_e,
+    spr_pet_ashjaw_lynx_baby_s, spr_pet_ashjaw_lynx_baby_e,
+    spr_pet_ashjaw_lynx_youngadult_s, spr_pet_ashjaw_lynx_youngadult_e,
+    spr_pet_ashjaw_lynx_adult_s, spr_pet_ashjaw_lynx_adult_e,
+    spr_pet_deepclaw_baby_s, spr_pet_deepclaw_baby_e,
+    spr_pet_deepclaw_youngadult_s, spr_pet_deepclaw_youngadult_e,
+    spr_pet_deepclaw_adult_s, spr_pet_deepclaw_adult_e,
+    spr_pet_fathom_squid_baby_s, spr_pet_fathom_squid_baby_e,
+    spr_pet_fathom_squid_youngadult_s, spr_pet_fathom_squid_youngadult_e,
+    spr_pet_fathom_squid_adult_s, spr_pet_fathom_squid_adult_e,
+    spr_pet_frostmarten_baby_s, spr_pet_frostmarten_baby_e,
+    spr_pet_frostmarten_youngadult_s, spr_pet_frostmarten_youngadult_e,
+    spr_pet_frostmarten_adult_s, spr_pet_frostmarten_adult_e,
+    spr_pet_graftling_baby_s, spr_pet_graftling_baby_e,
+    spr_pet_graftling_youngadult_s, spr_pet_graftling_youngadult_e,
+    spr_pet_graftling_adult_s, spr_pet_graftling_adult_e,
+    spr_pet_gravefox_baby_s, spr_pet_gravefox_baby_e,
+    spr_pet_gravefox_youngadult_s, spr_pet_gravefox_youngadult_e,
+    spr_pet_gravefox_adult_s, spr_pet_gravefox_adult_e,
+    spr_pet_griefwisp_baby_s, spr_pet_griefwisp_baby_e,
+    spr_pet_griefwisp_youngadult_s, spr_pet_griefwisp_youngadult_e,
+    spr_pet_griefwisp_adult_s, spr_pet_griefwisp_adult_e,
+    spr_pet_icewing_skua_baby_s, spr_pet_icewing_skua_baby_e,
+    spr_pet_icewing_skua_youngadult_s, spr_pet_icewing_skua_youngadult_e,
+    spr_pet_icewing_skua_adult_s, spr_pet_icewing_skua_adult_e,
+    spr_pet_lantern_wyrm_baby_s, spr_pet_lantern_wyrm_baby_e,
+    spr_pet_lantern_wyrm_youngadult_s, spr_pet_lantern_wyrm_youngadult_e,
+    spr_pet_lantern_wyrm_adult_s, spr_pet_lantern_wyrm_adult_e,
+    spr_pet_lockjaw_turtle_baby_s, spr_pet_lockjaw_turtle_baby_e,
+    spr_pet_lockjaw_turtle_youngadult_s, spr_pet_lockjaw_turtle_youngadult_e,
+    spr_pet_lockjaw_turtle_adult_s, spr_pet_lockjaw_turtle_adult_e,
+    spr_pet_null_hound_baby_s, spr_pet_null_hound_baby_e,
+    spr_pet_null_hound_youngadult_s, spr_pet_null_hound_youngadult_e,
+    spr_pet_null_hound_adult_s, spr_pet_null_hound_adult_e,
+    spr_pet_permafrost_toad_baby_s, spr_pet_permafrost_toad_baby_e,
+    spr_pet_permafrost_toad_youngadult_s, spr_pet_permafrost_toad_youngadult_e,
+    spr_pet_permafrost_toad_adult_s, spr_pet_permafrost_toad_adult_e,
+    spr_pet_pyre_bison_baby_s, spr_pet_pyre_bison_baby_e,
+    spr_pet_pyre_bison_youngadult_s, spr_pet_pyre_bison_youngadult_e,
+    spr_pet_pyre_bison_adult_s, spr_pet_pyre_bison_adult_e,
+    spr_pet_snowmaw_baby_s, spr_pet_snowmaw_baby_e,
+    spr_pet_snowmaw_youngadult_s, spr_pet_snowmaw_youngadult_e,
+    spr_pet_snowmaw_adult_s, spr_pet_snowmaw_adult_e,
+    spr_pet_stormkirin_baby_s, spr_pet_stormkirin_baby_e,
+    spr_pet_stormkirin_youngadult_s, spr_pet_stormkirin_youngadult_e,
+    spr_pet_stormkirin_adult_s, spr_pet_stormkirin_adult_e,
+    spr_pet_thornlet_baby_s, spr_pet_thornlet_baby_e,
+    spr_pet_thornlet_youngadult_s, spr_pet_thornlet_youngadult_e,
+    spr_pet_thornlet_adult_s, spr_pet_thornlet_adult_e,
+    spr_pet_whispervine_baby_s, spr_pet_whispervine_baby_e,
+    spr_pet_whispervine_youngadult_s, spr_pet_whispervine_youngadult_e,
+    spr_pet_whispervine_adult_s, spr_pet_whispervine_adult_e,
+    spr_pet_wispfox_baby_s, spr_pet_wispfox_baby_e,
+    spr_pet_wispfox_youngadult_s, spr_pet_wispfox_youngadult_e,
+    spr_pet_wispfox_adult_s, spr_pet_wispfox_adult_e,
+    spr_pet_witchwood_fawn_baby_s, spr_pet_witchwood_fawn_baby_e,
+    spr_pet_witchwood_fawn_youngadult_s, spr_pet_witchwood_fawn_youngadult_e,
+    spr_pet_witchwood_fawn_adult_s, spr_pet_witchwood_fawn_adult_e,
     // Keeper species brought to 3-stage animated (new directional/young-adult sprites).
     spr_pet_bonehound_youngadult_s, spr_pet_bonehound_youngadult_e,
     spr_pet_hollow_pup_baby_s,       spr_pet_hollow_pup_baby_e,
@@ -1013,6 +1079,24 @@ compendium_section   = 0;
 // Abilities tab state - index of the selected ability (left list -> right breakdown)
 ability_view_cursor  = 0;
 
+// Abilities tab sub-pages (08-08, M: "abilities - class trunk - talents that can
+// be scrolled between with A and D, just like inventory equipment"). One cursor,
+// one binding: A/D walk the three pages, no per-page hotkeys.
+//   0 = ABILITIES (loadout + breakdown)   1 = CLASS TRUNK   2 = TALENTS
+#macro ABILITY_PAGE_COUNT 3
+ability_page = 0;
+
+// Class trunk page state. The 10 nodes are walked as ONE cursor in reading order
+// (row 0 left, row 0 right, row 1 left, ...) with W/S, so left/right stays free
+// for page switching. trunk_cursor/trunk_side are derived from it for the draw.
+// arm = the two-step confirm on a permanent exclusive pick.
+trunk_cursor    = 0;
+trunk_side      = 0;
+trunk_arm       = false;
+
+// Talents page state: which ability's web summary is expanded.
+talent_cursor   = 0;
+
 // Equipment tab state
 equip_slot_selected = 0;
 equip_picker_open   = false;
@@ -1093,6 +1177,10 @@ if (!variable_global_exists("item_picker")) global.item_picker = {
     resolved_purpose: "",   // one-shot: set on commit so the owning controller does aftermath
     result_msg:       ""    // notification text produced by the resolve
 };
+
+// Cursed-rebirth reagent stage (M 08-05): multi-select "what exactly burns"
+// modal, opened by the cursed_rebirth resolve. undefined = closed.
+if (!variable_global_exists("reagent_picker")) global.reagent_picker = undefined;
 
 // Sable salvage confirm gate (keeps Sable's own dust-preview list; just arms a yes/no).
 sable_confirm = false;
@@ -1314,6 +1402,7 @@ vael_tint_cursor     = 0;   // row index into vael_tint_catalog() on the Tints t
 
 // Talent-web view (SYSTEMS_TALENT_WEBS.md; opened with M on the loadout Abilities tab)
 web_view_open    = false;
+talent_tour_step = -1;   // talent-web guided tour (08-04): -1 = off; arms on first web open
 web_view_ability = "";   // ability NAME whose web is on screen
 web_view_cursor  = 0;    // 0-5 = node order [p1,p2,pk,t1,t2,tk], 6 = SAVE & CLOSE, 7 = CLOSE
 web_view_staged  = [];   // node ids assigned this session - permanent only on SAVE & CLOSE

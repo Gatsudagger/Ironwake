@@ -1,8 +1,10 @@
 # Ironwake — Steam Achievements (DESIGN-LOCKED 2026-08-04, merged)
 
 **Merge of the 07-17 draft (32, epithet-grounded) + M's 08-04 additions (~34 after dupe
-unification). Final: 63 achievements.** M approved the merge 08-04. Steam sweet spot is
-15–40 but roguelites run 50–80 routinely; trim candidates flagged at bottom if M wants fewer.
+unification). ⚠ ACTUAL COUNT: the locked table below holds 67 achievements — the 08-04
+"63" headline under-counted its own rows (caught 08-05 by the icon batch). All 67 are
+wired + have icons; trim candidates at bottom if M wants fewer.** M approved the merge
+08-04. Steam sweet spot is 15–40 but roguelites run 50–80 routinely.
 
 Wiring: GMEXT-Steamworks (Steam builds only; all calls guarded `steam_initialised()`,
 Android/itch no-op). Thin wrapper `ach_unlock("ACH_X")` + post-run/post-load
@@ -132,26 +134,33 @@ BANSHEE/SONGS_5/SONGS_ALL, ITS_ALIVE, SPECIES_5/10 + SCION_1/2 (lifetime sets fe
 pet_hatch), SCION_ADULT, CORRUPTED, CORRUPT_ADULT, PET_CURE (also hooked at cure site),
 AWAKENER, plus the counter thresholds below once their sites are wired.
 
-**TODO — counter increment sites (fields exist, currently never increment):**
-- `global.ach_counters.crits++` at the crit application site (scr_combat damage roll)
-- `global.ach_counters.detonations++` where the detonation reaction APPLIES (caller of
-  combat_detonator_pick in scr_combat — NOT the picker itself, scr_ui mirrors it)
-- `global.ach_run_absorbed += <dmg before mitigation>` at the player damage-taken site;
-  reset to 0 at run start
-- `global.ach_counters.board_done++` at tavern-board request completion
+**DONE 08-05 — counter increment sites (all wired):**
+- crits++ inside `combat_roll_crit` (scr_combat — only player rolls reach it)
+- detonations++ at the post-damage reaction block (Step_0, `_react_key != ""` on a landed hit)
+- `ach_run_absorbed += damage` in `combat_apply_damage` player branch. v1 CAVEAT: counts
+  damage ARRIVING at the HP sink — shield-absorbed portions never reach it (undercount).
+  Reset to 0 in end_run (plus new-save default), so each dive starts clean.
+- board_done++ in `quest_turn_in` (non-gate path = the tavern-board requests)
 
-**TODO — event hooks (one ach_unlock() line each):** ACQUAINTED (first bond tier-up),
-REFORGED (chit_reforge_item success), FIRST_LEGEND (rarity-4 drop site), REMEMBERS
-(betrayal event), KEPT_WORD (keeper questline complete), HIGH_ROLLER (High Table win),
-BONES (Knucklebones win), BREW (Chaotic Brew + run survive), REBIRTH (ceremony
-complete), FORGE_LEGEND (forge success), WEB_COMPLETE (talent web full), NO_DAMAGE
-(combat win w/ zero damage flag), IRON_VOW / PACT_BOUND / CURSES_3 / MEGA_CURSE (win
-site, reading vow_mode + active curse count), FC_DEPTHS/TOMB/VAULT + CLR_* (run-record
-dungeon+class at clear — verify records carry class), COLLECTOR/CURATOR (codex
-discovery count fn), PILLAR (all keepers ≥ Friend tier).
+**DONE 08-05 — event hooks (all wired):** ACQUAINTED (pet_bond_gain tier crossing),
+REFORGED (chit_reforge_item success), FIRST_LEGEND (drop_equipment final rarity 4, past
+the awakening gate), REMEMBERS (affinity_betrayal_for), KEPT_WORD (quest_turn_in gate
+tier 4 = Lover rung), HIGH_ROLLER (High Table champion branch, gc Step), BONES
+(knucklebones win resolve, gc Step), BREW (`global.ach_brew_run` set at both
+chaotic_brew_roll drink sites; unlocked in end_run on result >= 0), REBIRTH
+(cursed_rebirth_commit), FORGE_LEGEND (forge_build_item — single caller = commit path),
+NO_DAMAGE (victory flawless branch, Step_0), IRON_VOW / PACT_BOUND / CURSES_3 /
+MEGA_CURSE (end_run result == 1; **"mega curse" interpreted as a tier-3 altar curse** —
+Doom/Damnation/Ruin/Devil's Pact — flag for M if he meant something else),
+FC_DEPTHS/TOMB/VAULT + CLR_* (end_run result == 1 reading selected_dungeon +
+chosen_class), WEB_COMPLETE / COLLECTOR / CURATOR / PILLAR (added to achievements_sync:
+any web at the 4-pick cap; codex discovered vs item_codex_master_list; all keepers at
+affinity tier >= 2).
 
-**TODO — outside code:** GMEXT-Steamworks import (GM closed), 63 dashboard definitions
-(Steamworks admin → Stats & Achievements), 63 icons (PIL composite → _for_review).
+**TODO — outside code:** GMEXT-Steamworks import (GM closed). DONE 08-05: 67 icons
+composited (color + _locked grayscale, 256×256, contact sheet) → _for_review\
+achievement_icons\, awaiting M's batch approval; paste-ready dashboard table with
+player-facing descriptions → ACHIEVEMENTS_DASHBOARD.md.
 
 ## Build notes
 - **63 total.** Trim candidates if M wants ~50: ACH_KILLS_1000, ACH_BONES, ACH_CRITS_500,

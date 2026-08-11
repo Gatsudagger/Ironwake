@@ -48,7 +48,7 @@ def gm_running():
     return any(("gamemaker" in ln and "link-proxy" not in ln) for ln in out.splitlines())
 
 
-def load_frames(folder, cap):
+def load_frames(folder, cap, size=64):
     files = sorted(f for f in os.listdir(folder) if f.endswith(".png"))
     n = len(files)
     if n > cap:  # uniform subsample - Draw maps timer progress onto frames anyway
@@ -56,14 +56,17 @@ def load_frames(folder, cap):
     out = []
     for f in files:
         im = Image.open(os.path.join(folder, f)).convert("RGBA")
-        if im.size != (64, 64):
-            im = im.resize((64, 64), Image.NEAREST)
+        if im.size != (size, size):
+            im = im.resize((size, size), Image.NEAREST)
         out.append(im)
     return out
 
 
-def build_vfx_sprite(name, frames):
-    """spr_vfx_fire-shaped .yy: 64x64, origin 4, one keyframe per frame."""
+def build_vfx_sprite(name, frames, size=64):
+    """spr_vfx_fire-shaped .yy: square, origin 4 (centre), one keyframe per frame.
+
+    size is a parameter as of 08-09: the physical-archetype batch matches the
+    96px spr_vfx_impact it replaces, not the 64px school bursts."""
     root = os.path.join(SPRITES, name)
     os.makedirs(root, exist_ok=True)
     layer_guid = str(uuid.uuid4())
@@ -88,9 +91,9 @@ def build_vfx_sprite(name, frames):
   "$GMSprite":"v2",
   "%Name":"{name}",
   "bboxMode":0,
-  "bbox_bottom":63,
+  "bbox_bottom":{size-1},
   "bbox_left":0,
-  "bbox_right":63,
+  "bbox_right":{size-1},
   "bbox_top":0,
   "collisionKind":1,
   "collisionTolerance":0,
@@ -102,7 +105,7 @@ def build_vfx_sprite(name, frames):
   ],
   "gridX":0,
   "gridY":0,
-  "height":64,
+  "height":{size},
   "HTile":false,
   "layers":[
     {{"$GMImageLayer":"","%Name":"{layer_guid}","blendMode":0,"displayName":"default","isLocked":false,"name":"{layer_guid}","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,}},
@@ -170,27 +173,32 @@ def build_vfx_sprite(name, frames):
   }},
   "type":0,
   "VTile":false,
-  "width":64,
+  "width":{size},
 }}'''
     with open(os.path.join(root, name + ".yy"), "w", newline="\n") as f:
         f.write(yy)
     return n
 
 
-if gm_running():
+def main():
+  if gm_running():
     sys.exit("ABORT: GameMaker is running - close it first (yyp write).")
 
-print("Combat VFX trial batch (9 sprites from owned packs):")
-new = []
-for name, (folder, cap) in PICKS.items():
-    if os.path.isdir(os.path.join(SPRITES, name)):
-        print(f"  {name} already exists - skipped")
-        continue
-    frames = load_frames(folder, cap)
-    n = build_vfx_sprite(name, frames)
-    print(f"  {name}: {n} frames  <-  {os.path.basename(folder)}")
-    new.append(name)
-if new:
-    register_yyp(new)
-    print(f"built + registered {len(new)} sprites (bare-identifier refs, no __sprite_includes needed)")
-print("Done.")
+  print("Combat VFX trial batch (9 sprites from owned packs):")
+  new = []
+  for name, (folder, cap) in PICKS.items():
+      if os.path.isdir(os.path.join(SPRITES, name)):
+          print(f"  {name} already exists - skipped")
+          continue
+      frames = load_frames(folder, cap)
+      n = build_vfx_sprite(name, frames)
+      print(f"  {name}: {n} frames  <-  {os.path.basename(folder)}")
+      new.append(name)
+  if new:
+      register_yyp(new)
+      print(f"built + registered {len(new)} sprites (bare-identifier refs, no __sprite_includes needed)")
+  print("Done.")
+
+
+if __name__ == "__main__":
+    main()

@@ -245,3 +245,19 @@ ini_close();
 carousel_last  = 0;     // NPC shown on stage while the gate button holds focus
 carousel_prev  = -1;    // stage anim: last NPC drawn (frame reset on change)
 carousel_frame = 0;     // stage anim: idle frame accumulator
+
+// -----------------------------------------------------------------------------
+// 10. CLASS TRUNK milestone toast (P2, 08-05). A trunk row unlocked but never
+// picked greets you back in the hub - once per session per permanent level
+// (the gc watermark), routed through the standard trait_notif toast.
+// -----------------------------------------------------------------------------
+if (instance_exists(obj_game_controller) && variable_global_exists("chosen_class")) {
+    var _tk_gc = instance_find(obj_game_controller, 0);
+    if (!variable_instance_exists(_tk_gc, "trunk_toast_level")) _tk_gc.trunk_toast_level = -1;
+    if (trunk_pending_count(global.chosen_class) > 0
+        && _tk_gc.trunk_toast_level != player_permanent_level()) {
+        _tk_gc.trunk_toast_level  = player_permanent_level();
+        _tk_gc.trait_notif_msg    = "CLASS MILESTONE - a trunk choice awaits.  Abilities [I] -> CLASS TRUNK";
+        _tk_gc.trait_notif_timer  = 240;
+    }
+}

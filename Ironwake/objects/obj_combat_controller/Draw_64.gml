@@ -70,8 +70,11 @@ for (var _i = 0; _i < _count; _i++) {
                         _mk_sc, _mk_sc, current_time * 0.05, c_white, 0.95);
     }
 
+    // Conveyance (08-04): the bar shows EASED HP - it drains toward the real
+    // value over a few frames, and a projectile in flight holds the drain
+    // (hp_hold, set at cast) so the bar moves when the bolt lands.
     ui_draw_hp_bar(_bar_x, _bar_y, _bar_width, _bar_height,
-                   _c.HP, _c.max_HP, _c.name, true);
+                   combat_hp_vis(_c), _c.max_HP, _c.name, true);
 
     // Intent chip (INTENT_SPEC.md): the foe's telegraphed next action, drawn as a
     // compact plate above the bar (clears the ornate frame at y-4). Greys out with
@@ -180,6 +183,17 @@ if (attack_anim_is_player && _anim_progress > 0) {
 // plus a constant nervous shiver while stunned/paralyzed.
 if (player.hit_flash > 0) { _px_draw += irandom_range(-8, 8); _py_draw += irandom_range(-5, 5); }
 if (combatant_has_status_kind(player, "stun")) _px_draw += irandom_range(-3, 3);
+// Conveyance (08-04): dodge SIDESTEP (away from the enemy line - fast out, ease
+// back) and the smaller hit-RECOIL knock. Countdowns live on the combatant
+// struct (hit_flash idiom, set in Step) and tick here where they're consumed.
+if (variable_struct_exists(player, "dodge_anim") && player.dodge_anim > 0) {
+    _px_draw -= combat_slide_px(player.dodge_anim, 14, 26);
+    player.dodge_anim--;
+}
+if (variable_struct_exists(player, "hit_recoil") && player.hit_recoil > 0) {
+    _px_draw -= combat_slide_px(player.hit_recoil, 10, 9);
+    player.hit_recoil--;
+}
 // Normalise display size: larger canvases (skins, female class sprites) scale down
 // to the same ~345px display height (native 1080p; was 230px at 720p).
 var _pscale = 345 / max(1, sprite_get_height(_pspr));
@@ -322,9 +336,23 @@ if (variable_struct_exists(player, "status_effects")) {
                       sprite_get_height(_pspr) * _pscale, player.status_effects);
 }
 
+// DEPLOYED TRAPS, on the ground between the player and the enemy line (08-08 v2).
+// Drawn here - after the player/pet, before the enemies - so a trap sits IN the
+// scene at the right depth instead of on top of the HUD like the first pass did.
+ui_draw_trap_field(player, combat_state);
+
 // Enemy sprites - the name->sprite map now lives in scr_enemies (enemy_sprite_map)
 // so the journal BESTIARY can draw the same creatures south-facing (#8).
 var _espr_map = enemy_sprite_map();
+// THE ASHEN DUELIST (08-09): he is the one foe whose MODEL changes with progress,
+// so his map entry is overridden once here rather than at each of the three
+// lookup sites below (inspect hit-box, death-linger ghost, standing draw) - all
+// three read _espr_map, so they stay in lockstep for free.
+if (variable_struct_exists(_espr_map, "The Ashen Duelist")) {
+    var _dl_tier_spr = duelist_sprite_for(variable_global_exists("duelist_encounters")
+                                          ? global.duelist_encounters : 0);
+    if (_dl_tier_spr >= 0) variable_struct_set(_espr_map, "The Ashen Duelist", _dl_tier_spr);
+}
 var _espr_x0  = 1665;
 var _espr_y0  = 225;
 var _espr_dx  = -174;   // strong horizontal spread so foes read as a row, not a column
@@ -335,7 +363,32 @@ var _espr_idx = 0;
 var _ecnt = array_length(combat_state.combatants);
 for (var _ei = 0; _ei < _ecnt; _ei++) {
     var _ec = combat_state.combatants[_ei];
-    if (_ec.is_player || _ec.is_defeated) continue;
+    if (_ec.is_player) continue;
+    if (_ec.is_defeated) {
+        // Death linger + fade (M 08-04): the fallen stay visible briefly - and
+        // if a projectile is still flying at them, until it LANDS. They draw at
+        // their last standing position (stamped below) WITHOUT consuming a row
+        // slot, so the living compact around them and targeting stays honest.
+        if (!variable_struct_exists(_ec, "death_linger")) _ec.death_linger = 20;   // lazy init catches every kill path
+        if (_ec.death_linger > 0 && variable_struct_exists(_ec, "last_ex")
+            && variable_struct_exists(_espr_map, _ec.name)) {
+            var _dl_spr = variable_struct_get(_espr_map, _ec.name);
+            var _dl_frm = (sprite_get_number(_dl_spr) > 1) ? 3 : 0;
+            var _dl_a   = min(1.0, _ec.death_linger / 20.0);
+            draw_set_alpha(_dl_a);
+            draw_sprite_ext(_dl_spr, _dl_frm, _ec.last_ex + screen_shake_x, _ec.last_ey + screen_shake_y, 3, 3, 0, c_white, _dl_a);
+            // Late-arriving hit flash (the killing bolt landing) reads on the ghost.
+            if (variable_struct_exists(_ec, "hit_flash") && _ec.hit_flash > 0) {
+                _ec.hit_flash--;
+                gpu_set_blendmode(bm_add);
+                draw_sprite_ext(_dl_spr, _dl_frm, _ec.last_ex, _ec.last_ey, 3, 3, 0, c_white, _dl_a * 0.8);
+                gpu_set_blendmode(bm_normal);
+            }
+            draw_set_alpha(1.0);
+            _ec.death_linger--;
+        }
+        continue;
+    }
 
     var _ex = _espr_x0 + (_espr_idx * _espr_dx);
     var _ey = _espr_y0 + (_espr_idx * _espr_dy)
@@ -373,6 +426,19 @@ for (var _ei = 0; _ei < _ecnt; _ei++) {
     // Per-sprite damage shake + stun shiver (mirrors the player sprite treatment).
     if (variable_struct_exists(_ec, "hit_flash") && _ec.hit_flash > 0) { _ex += irandom_range(-8, 8); _ey += irandom_range(-5, 5); }
     if (combatant_has_status_kind(_ec, "stun")) _ex += irandom_range(-3, 3);
+    // Conveyance (08-04): dodge sidestep + hit recoil, away from the player (+x).
+    if (variable_struct_exists(_ec, "dodge_anim") && _ec.dodge_anim > 0) {
+        _ex += combat_slide_px(_ec.dodge_anim, 14, 26);
+        _ec.dodge_anim--;
+    }
+    if (variable_struct_exists(_ec, "hit_recoil") && _ec.hit_recoil > 0) {
+        _ex += combat_slide_px(_ec.hit_recoil, 10, 9);
+        _ec.hit_recoil--;
+    }
+    // Stamp the standing position for the death-linger ghost (shake excluded -
+    // the ghost draw re-applies live shake itself).
+    _ec.last_ex = _ex - screen_shake_x;
+    _ec.last_ey = _ey - screen_shake_y;
 
     if (variable_struct_exists(_espr_map, _ec.name)) {
         var _espr = variable_struct_get(_espr_map, _ec.name);
@@ -416,6 +482,95 @@ for (var _ei = 0; _ei < _ecnt; _ei++) {
     _espr_idx++;
 }
 
+// -----------------------------------------------------------------------------
+// Conveyance (08-04): beam lances + traveling projectiles.
+// -----------------------------------------------------------------------------
+// Beams: an instant tapering lance source->target, gone in ~12 frames. The
+// impact burst + popups were queued instantly at cast (beam mechanics don't defer).
+var _kept_beams = [];
+for (var _bmi = 0; _bmi < array_length(combat_beams); _bmi++) {
+    var _bm = combat_beams[_bmi];
+    _bm.t++;
+    if (_bm.t <= _bm.dur) {
+        var _bm_a = 1.0 - (_bm.t / _bm.dur);
+        gpu_set_blendmode(bm_add);
+        draw_set_alpha(0.85 * _bm_a);
+        draw_line_width_color(_bm.sx + screen_shake_x, _bm.sy + screen_shake_y,
+                              _bm.tx + screen_shake_x, _bm.ty + screen_shake_y, 10, _bm.col, _bm.col);
+        draw_set_alpha(0.55 * _bm_a);
+        draw_line_width_color(_bm.sx + screen_shake_x, _bm.sy - 3 + screen_shake_y,
+                              _bm.tx + screen_shake_x, _bm.ty - 3 + screen_shake_y, 3, c_white, _bm.col);
+        // Laser art overlay (08-11): the unTied beam segment tiled along the
+        // lance over the additive core line. Guarded: pre-08-11 pushes and
+        // tinted schools carry spr -1 (or no field) and keep the plain line.
+        if (variable_struct_exists(_bm, "spr") && _bm.spr != -1) {
+            var _bm_dir  = point_direction(_bm.sx, _bm.sy, _bm.tx, _bm.ty);
+            var _bm_len  = point_distance(_bm.sx, _bm.sy, _bm.tx, _bm.ty);
+            var _bm_cnt  = sprite_get_number(_bm.spr);
+            var _bm_frm  = (_bm_cnt > 1) ? (_bm.t mod _bm_cnt) : 0;
+            draw_set_alpha(0.9 * _bm_a);
+            for (var _bd = 20; _bd < _bm_len - 10; _bd += 30) {
+                draw_sprite_ext(_bm.spr, _bm_frm,
+                    _bm.sx + lengthdir_x(_bd, _bm_dir) + screen_shake_x,
+                    _bm.sy + lengthdir_y(_bd, _bm_dir) + screen_shake_y,
+                    1.5, 1.5, _bm_dir, c_white, 1.0);
+            }
+        }
+        gpu_set_blendmode(bm_normal);
+        draw_set_alpha(1.0);
+        array_push(_kept_beams, _bm);
+    }
+}
+combat_beams = _kept_beams;
+
+// Projectiles: fly caster->target over ~15 frames (slight arc, rotated to face
+// travel; AoE bolts launch staggered via delay). The deferred hit presentation
+// (flash, recoil, shake, impact burst) fires HERE at arrival - the matching
+// damage popups and HP-drain hold were queued with the same delay at cast.
+var _kept_proj = [];
+for (var _pji = 0; _pji < array_length(combat_projectiles); _pji++) {
+    var _pj = combat_projectiles[_pji];
+    if (_pj.delay > 0) { _pj.delay--; array_push(_kept_proj, _pj); continue; }
+    _pj.t++;
+    var _pj_f = _pj.t / _pj.dur;
+    if (_pj_f >= 1) {
+        // Arrival: impact burst + the deferred hit feedback.
+        array_push(vfx_bursts, { spr: _pj.impact_spr, x: _pj.bx, y: _pj.by,
+            timer: _pj.ticks, timer_max: _pj.ticks, school: _pj.school });
+        if (_pj.tgt != undefined) { _pj.tgt.hit_flash = 15; _pj.tgt.hit_recoil = 10; }
+        screen_shake_timer = max(screen_shake_timer, _pj.shake);
+    } else {
+        var _pj_x   = lerp(_pj.sx, _pj.tx, _pj_f) + screen_shake_x;
+        var _pj_y   = lerp(_pj.sy, _pj.ty, _pj_f) - sin(_pj_f * pi) * 34 + screen_shake_y;
+        var _pj_dir = point_direction(_pj.sx, _pj.sy, _pj.tx, _pj.ty);
+        gpu_set_blendmode(bm_add);
+        if (_pj.spr == -1) {
+            // Physical bolt: code-drawn streak (arrow/knife read), no sprite needed.
+            var _pj_lx = lengthdir_x(38, _pj_dir);
+            var _pj_ly = lengthdir_y(38, _pj_dir);
+            draw_set_alpha(0.9);
+            draw_line_width_color(_pj_x - _pj_lx, _pj_y - _pj_ly, _pj_x, _pj_y, 5, c_gray, c_white);
+        } else {
+            var _pj_spr = school_vfx_sprite(_pj.spr, _pj.school);
+            var _pj_cnt = sprite_get_number(_pj_spr);
+            // Dedicated flight bolts (08-11) loop their WHOLE animation; burst
+            // art doubling as a bolt cycles only the EARLY (ignition/bright)
+            // frames - its late frames are dissipating smoke and read as the
+            // wrong element (M 08-04: "scorch looks like a blue ball").
+            var _pj_cyc = vfx_is_flight_bolt(_pj_spr) ? _pj_cnt : min(6, _pj_cnt);
+            var _pj_frm = (_pj_cyc > 1) ? (_pj.t mod _pj_cyc) : 0;
+            var _pj_sc  = 96 / max(1, sprite_get_width(_pj_spr));
+            draw_set_alpha(0.95);
+            draw_sprite_ext(_pj_spr, _pj_frm, _pj_x, _pj_y, _pj_sc, _pj_sc, _pj_dir,
+                school_vfx_blend(_pj.school), 1.0);
+        }
+        gpu_set_blendmode(bm_normal);
+        draw_set_alpha(1.0);
+        array_push(_kept_proj, _pj);
+    }
+}
+combat_projectiles = _kept_proj;
+
 // VFX impact sprite: plays its frames, fades out and shrinks over its lifetime with
 // additive blend. The sub-image is driven by the countdown so multi-frame Gigapack
 // effects animate; single-frame sprites (spr_fx_impact) just hold frame 0. Scale is
@@ -440,6 +595,33 @@ if (vfx_timer > 0) {
     gpu_set_blendmode(bm_normal);
     draw_set_alpha(1.0);
 }
+
+// Multi-slot impact bursts (conveyance 08-04): projectile arrivals push here so
+// staggered AoE impacts all play out instead of last-wins on the single slot
+// above. Identical treatment to the single-slot draw.
+var _kept_bursts = [];
+for (var _vbi = 0; _vbi < array_length(vfx_bursts); _vbi++) {
+    var _vb = vfx_bursts[_vbi];
+    _vb.timer--;
+    if (_vb.timer > 0) {
+        var _vb_draw  = school_vfx_sprite(_vb.spr, _vb.school);
+        var _vb_max   = (_vb.timer_max > 0) ? _vb.timer_max : 20;
+        var _vb_prog  = clamp((_vb_max - _vb.timer) / _vb_max, 0, 1);
+        var _vb_cnt   = sprite_get_number(_vb_draw);
+        var _vb_frm   = clamp(floor(_vb_prog * _vb_cnt), 0, _vb_cnt - 1);
+        var _vb_alpha = min(1.0, _vb.timer / 10.0);
+        var _vb_tgtpx = lerp(248, 173, _vb_prog);
+        var _vb_sc    = _vb_tgtpx / max(1, sprite_get_width(_vb_draw));
+        gpu_set_blendmode(bm_add);
+        draw_set_alpha(_vb_alpha);
+        draw_sprite_ext(_vb_draw, _vb_frm, _vb.x + screen_shake_x, _vb.y + screen_shake_y,
+            _vb_sc, _vb_sc, 0, school_vfx_blend(_vb.school), 1.0);
+        gpu_set_blendmode(bm_normal);
+        draw_set_alpha(1.0);
+        array_push(_kept_bursts, _vb);
+    }
+}
+vfx_bursts = _kept_bursts;
 
 // Floating damage / heal numbers
 draw_set_font(fnt_ui);
@@ -584,12 +766,38 @@ if (player_turn && !combat_over) {
             if (touch_tapped(490, 856, 730, 916)) touch_press(ord("G"));
         }
     } else {
+        // M 08-08: this was bare text over the dungeon art and went nearly
+        // invisible on busy backgrounds (Ashen Vault floor 3). Faded is fine while
+        // you still have AP, but never ILLEGIBLE - so it gets a measured backdrop,
+        // and at 0 AP the whole thing pulses so "you are done, end the turn" can't
+        // be missed against any background.
+        var _et_txt = ((input_device() == 1) ? "RT: End Turn   " : "T: End Turn   ")
+                    + string(player.energy) + " AP remaining";
+        var _et_w   = string_width(_et_txt) + 44;
+        var _et_x0  = 960 - _et_w / 2, _et_x1 = 960 + _et_w / 2;
+        var _et_out = (player.energy <= 0);
+        // 0 AP: a slow bright pulse. Above 0 it sits still and quiet.
+        var _et_pulse = _et_out ? (0.55 + 0.45 * (0.5 + 0.5 * sin(current_time / 260))) : 1.0;
+
+        draw_set_alpha(_et_out ? 0.88 : 0.62);
+        draw_set_color(make_color_rgb(10, 11, 17));
+        draw_rectangle(_et_x0, 936, _et_x1, 992, false);
+        draw_set_alpha(1.0);
+
         if (end_turn_focus) {
             draw_set_color(make_color_rgb(255, 224, 120));
             draw_rectangle(700, 936, 1220, 992, true);
+        } else if (_et_out) {
+            draw_set_alpha(_et_pulse);
+            draw_set_color(_ap_col);
+            draw_rectangle(_et_x0, 936, _et_x1, 992, true);
+            draw_set_alpha(1.0);
         }
+
+        draw_set_alpha(_et_pulse);
         draw_set_color(end_turn_focus ? make_color_rgb(255, 224, 120) : _ap_col);
-        draw_text(960, 954, ((input_device() == 1) ? "RT: End Turn   " : "T: End Turn   ") + string(player.energy) + " AP remaining");
+        draw_text(960, 954, _et_txt);
+        draw_set_alpha(1.0);
     }
     draw_set_font(-1);
     draw_set_halign(fa_left);

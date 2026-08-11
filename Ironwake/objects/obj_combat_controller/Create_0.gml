@@ -221,7 +221,9 @@ switch (_class_id) {
     case 2: // Shadowstrider - Preparation
         player.preparation     = 0;
         player.preparation_max = 10;
-        player.trap_active     = false;
+        player.trap_active     = false;   // legacy flag, kept for old save shapes
+        // Deployed traps (08-08 rework). Combat-scoped: a fresh board every fight.
+        player.traps           = [];
         break;
 }
 // Build abilities from the player's confirmed loadout, or fall back to class defaults.
@@ -254,6 +256,27 @@ if (variable_global_exists("run_blood") && player.class_id == 1) {
 }
 if (variable_global_exists("run_preparation") && player.class_id == 2) {
     player.preparation = min(global.run_preparation, player.preparation_max);
+}
+// Deployed trap board restore (08-11, task #28). global.run_traps is only ever
+// non-empty right after an IRONMAN mid-combat resume (the checkpoint's live
+// patch) - normal room entry always sees [] here, keeping the fresh-board rule.
+// Consumed once so the board can never leak into the NEXT fight.
+if (variable_global_exists("run_traps") && is_array(global.run_traps)
+    && array_length(global.run_traps) > 0) {
+    player.traps = global.run_traps;
+    global.run_traps = [];
+}
+
+// --- Class trunk resource nodes (P2, 08-05): caps first, then floors, AFTER the
+// carry restore above so a floor never clips a carried reserve and a raised cap
+// applies to everything downstream. All reads gate on class_id + trunk_has.
+if (player.class_id == 0 && trunk_has("soul_cap"))  player.souls_max       = 13;
+if (player.class_id == 1 && trunk_has("blood_cap")) player.blood_max       = 13;
+if (player.class_id == 2 && trunk_has("prep_cap"))  player.preparation_max = 12;
+if (player.class_id == 0 && trunk_has("soul_start")) player.souls = max(player.souls, 2);
+if (player.class_id == 2 && trunk_has("prep_start")) player.preparation = max(player.preparation, 2);
+if (player.class_id == 1 && trunk_has("blood_start_missing") && player.max_HP > 0) {
+    player.blood = min(player.blood_max, max(player.blood, floor((player.max_HP - player.HP) / 10)));
 }
 
 // NOTE: the equipment +HP affix bonus (_equip_bonus.bonus_max_hp) is already folded
@@ -388,6 +411,13 @@ if (player.leg_reliquary) {
 // Ashkeeper Blade: start each combat with a shield (stacks with any other shield grant)
 if (player.weapon_start_shield > 0) {
     player.shield_hp += player.weapon_start_shield;
+// Bonelattice dark gift (08-04): +N Soul Shield at combat start, summed across
+// equipped cursed gear.
+var _dg_bl = dark_gift_total("shield_start");
+if (_dg_bl > 0) {
+    player.shield_hp += _dg_bl;
+    array_push(combat_log, "Bonelattice knits a ward of " + string(_dg_bl) + ".");
+}
 }
 
 // Apply trait effects that modify combat start state.
@@ -963,6 +993,16 @@ vfx_spr       = -1;
 vfx_x         = 0;
 vfx_y         = 0;
 vfx_school    = "";   // school of the cast that spawned the VFX ("" = untinted); spell tints blend it
+
+// --- Conveyance pass (08-04, SYSTEMS_COMBAT_FX.md header): traveling
+// projectiles, beam lances, and multi-slot impact bursts. Mechanics resolve
+// instantly at cast; a projectile only carries the PRESENTATION (popup delay,
+// hit flash, recoil, screen shake, impact burst, HP-bar drain hold) to its
+// arrival frame. Dodge sidestep / hit recoil live on the combatant structs
+// (hit_flash idiom: dodge_anim / hit_recoil countdowns, ticked in Draw).
+combat_projectiles = [];   // { spr, school, impact_spr, ticks, sx, sy, tx, ty, bx, by, t, dur, delay, tgt, shake }
+combat_beams       = [];   // { sx, sy, tx, ty, t, dur, col }
+vfx_bursts         = [];   // { spr, x, y, timer, timer_max, school }
 
 // Hit flash counters on each combatant struct (counts down from 15)
 player.hit_flash = 0;

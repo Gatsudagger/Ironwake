@@ -38,6 +38,9 @@ function restock_shops() {
     var _dorn_disc    = affinity_discount_mult("dorn");           // Friend perk: 10% off (baked at restock)
     repeat (_dorn_count) {
         var _di     = drop_equipment(_dorn_weights, false);
+        // Dorn sells decent wares, not finished ones (SYSTEMS_ITEM_PROGRESSION §1,
+        // tuned 08-05): his stock re-rolls quality 70-85 over the standard 60-85.
+        item_quality_stamp(_di, 70, 85);
         // Rare/Epic+ gear is a premium buy - roughly double the markup so a strong
         // piece is a real gold sink, not a cheap upgrade. (Task: Dorn rare/epic cost)
         var _dmarkup = (_di.rarity >= 2) ? 3.2 : 1.6;
@@ -48,6 +51,7 @@ function restock_shops() {
     // 1-in-200 restock still sneaks one in - a jackpot, not an expectation.
     if (_dorn_awk < 4 && irandom(199) == 0 && array_length(global.dorn_stock) > 0) {
         var _dlj  = drop_equipment([0, 0, 0, 0, 100], false);
+        item_quality_stamp(_dlj, 70, 85);   // shop-grade roll (08-05)
         var _dljp = max(1, floor(_dlj.gold_value * 3.2 * _dorn_disc));
         global.dorn_stock[0] = { item: _dlj, price: _dljp, sold: false };
     }
@@ -60,6 +64,7 @@ function restock_shops() {
             repeat (12) {   // bounded re-rolls; weights make rare+ likely well within this
                 var _dp = drop_equipment(_dorn_weights, false);
                 if (_dp.rarity >= 2) {
+                    item_quality_stamp(_dp, 70, 85);   // shop-grade roll (08-05)
                     var _dpp = max(1, floor(_dp.gold_value * 3.2 * _dorn_disc));
                     global.dorn_stock[0] = { item: _dp, price: _dpp, sold: false };
                     break;
@@ -599,6 +604,37 @@ function end_run(result) {
     if (variable_global_exists("run_history")) {
         array_push(global.run_history, _run_record);
     }
+
+    // --- Steam achievements: run-outcome hooks (08-05 wiring). result: 1 full
+    // clear / 0 extraction / -1 death. ---
+    if (result == 1) {
+        // Gatekeepers (first full clear per dungeon) + class mastery.
+        var _ach_d = variable_global_exists("selected_dungeon") ? global.selected_dungeon : "";
+        if (_ach_d == "scorched_depths") ach_unlock("ACH_FC_DEPTHS");
+        if (_ach_d == "tundra_tomb")     ach_unlock("ACH_FC_TOMB");
+        if (_ach_d == "ashen_vault")     ach_unlock("ACH_FC_VAULT");
+        switch (variable_global_exists("chosen_class") ? global.chosen_class : -1) {
+            case 0: ach_unlock("ACH_CLR_ARCANIST"); break;
+            case 1: ach_unlock("ACH_CLR_BLOOD");    break;
+            case 2: ach_unlock("ACH_CLR_SHADOW");   break;
+        }
+        // Risk set: a WON run (full clear) carrying curses / under a Vow. "Mega
+        // curse" reads as a tier-3 altar curse (Doom/Damnation/Ruin/Devil's Pact).
+        var _ach_nc = variable_global_exists("run_curses") ? array_length(global.run_curses) : 0;
+        if (_ach_nc >= 1) ach_unlock("ACH_PACT_BOUND");
+        if (_ach_nc >= 3) ach_unlock("ACH_CURSES_3");
+        for (var _aci = 0; _aci < _ach_nc; _aci++) {
+            var _ac_def = curse_get(global.run_curses[_aci]);
+            if (_ac_def != undefined && _ac_def.tier >= 3) { ach_unlock("ACH_MEGA_CURSE"); break; }
+        }
+        if (variable_global_exists("vow_mode") && global.vow_mode > 0) ach_unlock("ACH_IRON_VOW");
+    }
+    // Cauldron Roulette: drank a Chaotic Brew this run and lived to tell it.
+    if (result >= 0 && variable_global_exists("ach_brew_run") && global.ach_brew_run) {
+        ach_unlock("ACH_BREW");
+    }
+    global.ach_brew_run     = false;   // run-scoped flags reset for the next dive
+    global.ach_run_absorbed = 0;
 
     global.current_run_gold    = 0;
     global.current_run_kills   = 0;
@@ -1629,6 +1665,24 @@ function clone_item(src) {
         socket_count:  variable_struct_exists(src, "socket_count")  ? src.socket_count  : rune_sockets_for_rarity(src.rarity),
         runes:         [],
     };
+    // Transform bookkeeping carries through a clone ONLY when present on the
+    // source (presence-conditional - an ever-present req_stat/icon_seed would
+    // change behavior for untouched items). M 08-04 bug: a paid RE-ATTUNE
+    // (req_stat/req_value) was silently WIPED by cursed rebirth because the
+    // clone dropped the override.
+    if (variable_struct_exists(src, "req_stat"))    _c.req_stat    = src.req_stat;
+    if (variable_struct_exists(src, "req_value"))   _c.req_value   = src.req_value;
+    if (variable_struct_exists(src, "icon_seed"))   _c.icon_seed   = src.icon_seed;
+    if (variable_struct_exists(src, "curse_count")) _c.curse_count = src.curse_count;
+    if (variable_struct_exists(src, "cursed"))      _c.cursed      = src.cursed;
+    if (variable_struct_exists(src, "splash_base")) _c.splash_base = src.splash_base;
+    if (variable_struct_exists(src, "dark_gifts")) {
+        _c.dark_gifts = [];
+        for (var _dg = 0; _dg < array_length(src.dark_gifts); _dg++) array_push(_c.dark_gifts, src.dark_gifts[_dg]);
+    }
+    if (variable_struct_exists(src, "quality"))      _c.quality      = src.quality;
+    if (variable_struct_exists(src, "quality_base")) _c.quality_base = src.quality_base;
+    if (variable_struct_exists(src, "dormant")) _c.dormant = src.dormant;
     if (variable_struct_exists(src, "affixes")) {
         for (var _i = 0; _i < array_length(src.affixes); _i++) {
             var _af = src.affixes[_i];
@@ -2025,6 +2079,7 @@ function forge_build_item(_slot, _fx, _name) {
         "forged at Dorn's anvil from three vendors' craft", 400);
     _it.class_req     = -1;
     _it.player_forged = true;
+    ach_unlock("ACH_FORGE_LEGEND");   // achievement hook (08-05 wiring): single caller = the commit path
     // Boosted affixes: two epic-grade rolls at x1.25 - then the PLAYER'S name is
     // restored (apply_affixes_to_item decorates the name with prefix/suffix).
     apply_affixes_to_item(_it, roll_affixes(3, 2, item_affix_exclusions(_it), _slot, _name, 0));
@@ -2044,6 +2099,386 @@ function forge_build_item(_slot, _fx, _name) {
 // feature): the sacrificed legendary returns with base stat / weapon damage /
 // affixes boosted ~x1.5 AND one CURSE - a negative affix on a channel the
 // equip math already handles, so every curse is real. Keeps its unique effect.
+// =============================================================================
+// ALCHEMICAL REASSEMBLAGE COSTS (M 08-04, SYSTEMS_ITEM_PROGRESSION.md §3).
+// The ask scales x1.5 per curse already ON the offered item, and the gear
+// reagent accepts EQUIVALENT bundles: 1 epic ~ 3 rares ~ 12 uncommons
+// (unequipped stash+pack gear only), plus potions and gold every time.
+// =============================================================================
+function cursed_rebirth_fee(it) {
+    var _n = (is_struct(it) && variable_struct_exists(it, "curse_count")) ? it.curse_count : 0;
+    var _m = power(1.5, _n);
+    return {
+        feeds:     _n,
+        gold:      cha_price(ceil(700 * _m)),
+        potions:   ceil(2 * _m),
+        epics:     ceil(1 * _m),
+        rares:     ceil(3 * _m),
+        uncommons: ceil(12 * _m)
+    };
+}
+
+// Unequipped gear of one rarity across stash + pack, excluding the offering.
+function cursed_rebirth_gear_of_rarity(rar, excl) {
+    var _out = [];
+    var _pools = [];
+    if (variable_global_exists("equipment_stash") && is_array(global.equipment_stash)) array_push(_pools, global.equipment_stash);
+    if (variable_global_exists("carried_items")   && is_array(global.carried_items))   array_push(_pools, global.carried_items);
+    for (var _p = 0; _p < array_length(_pools); _p++) {
+        var _arr = _pools[_p];
+        for (var _i = 0; _i < array_length(_arr); _i++) {
+            var _g = _arr[_i];
+            if (_g == excl) continue;
+            if (is_struct(_g) && variable_struct_exists(_g, "rarity") && _g.rarity == rar) array_push(_out, _g);
+        }
+    }
+    return _out;
+}
+
+// ESSENCE math (M 08-05): the gear reagent is measured in essence points so
+// bundles MIX freely - uncommon 1, rare 4, epic 12. The ask is fee.uncommons
+// points, which lands on the exact same totals as the old rigid
+// 1-epic / 3-rares / 12-uncommons ladder at every curse tier.
+function reagent_pts(rar) {
+    if (rar == 1) return 1;
+    if (rar == 2) return 4;
+    if (rar == 3) return 12;
+    return 0;
+}
+
+// Total essence the player COULD offer (unequipped stash + pack, minus the
+// offering itself). Affordability gate for the resolve + the fee preview.
+function cursed_rebirth_pts_avail(excl) {
+    var _pts = 0;
+    for (var _r = 1; _r <= 3; _r++)
+        _pts += array_length(cursed_rebirth_gear_of_rarity(_r, excl)) * reagent_pts(_r);
+    return _pts;
+}
+
+// Remove one gear struct (by reference) from stash or pack.
+function cursed_rebirth_burn_gear(g) {
+    if (variable_global_exists("equipment_stash")) {
+        for (var _i = 0; _i < array_length(global.equipment_stash); _i++)
+            if (global.equipment_stash[_i] == g) { array_delete(global.equipment_stash, _i, 1); return true; }
+    }
+    if (variable_global_exists("carried_items")) {
+        for (var _i = 0; _i < array_length(global.carried_items); _i++)
+            if (global.carried_items[_i] == g) { array_delete(global.carried_items, _i, 1); return true; }
+    }
+    return false;
+}
+
+// =============================================================================
+// REAGENT PICKER (M 08-05): "players must be able to select the items, or they
+// will destroy items they want to keep" - gold value knows nothing about builds
+// (a void-build's cheap void rares are exactly what junkiest-first would eat).
+// Second modal stage after the offering is chosen: every eligible reagent (gear
+// AND potions, both per M) listed with the junkiest/cheapest PRE-TICKED to meet
+// the ask; any row toggles. Nothing burns until the armed confirm. State lives
+// in global.reagent_picker (undefined = closed); stepped by reagent_picker_step()
+// from gc Step, drawn by ui_draw_reagent_picker() (hub Draw_64 - Sable is
+// hub-only).
+// =============================================================================
+function reagent_picker_open(target_cand) {
+    var _fee  = cursed_rebirth_fee(target_cand.item);
+    var _rows = [];
+    // Gear rows: rarity asc then sell value asc, so the junk sits on top and
+    // the pre-tick below marks exactly the least-precious block.
+    for (var _r = 1; _r <= 3; _r++) {
+        var _pool = cursed_rebirth_gear_of_rarity(_r, target_cand.item);
+        var _sub = [];
+        for (var _i = 0; _i < array_length(_pool); _i++) {
+            var _g = _pool[_i];
+            array_push(_sub, {
+                kind: "gear", item: _g,
+                label: variable_struct_exists(_g, "name") ? _g.name : "item",
+                rarity: _r, pts: reagent_pts(_r),
+                value: item_sell_value(_g), sel: false
+            });
+        }
+        array_sort(_sub, function(a, b) { return a.value - b.value; });
+        for (var _i = 0; _i < array_length(_sub); _i++) array_push(_rows, _sub[_i]);
+    }
+    var _gear_n = array_length(_rows);
+    // Potion rows: cheapest first (manual-select per M - total control).
+    var _psub = [];
+    if (variable_global_exists("consumable_inventory") && is_array(global.consumable_inventory)) {
+        for (var _i = 0; _i < array_length(global.consumable_inventory); _i++) {
+            var _c = global.consumable_inventory[_i];
+            if (!is_struct(_c)) continue;
+            array_push(_psub, {
+                kind: "potion", item: _c,
+                label: variable_struct_exists(_c, "name") ? _c.name : "potion",
+                rarity: -1, pts: 0,
+                value: variable_struct_exists(_c, "gold_value") ? _c.gold_value : 0, sel: false
+            });
+        }
+    }
+    array_sort(_psub, function(a, b) { return a.value - b.value; });
+    for (var _i = 0; _i < array_length(_psub); _i++) array_push(_rows, _psub[_i]);
+    // Pre-tick the junkiest block that pays the ask - the old auto-burn's exact
+    // picks, now just a suggestion the player can retick freely.
+    var _need = _fee.uncommons;
+    for (var _i = 0; _i < _gear_n && _need > 0; _i++) { _rows[_i].sel = true; _need -= _rows[_i].pts; }
+    var _pneed = _fee.potions;
+    for (var _i = _gear_n; _i < array_length(_rows) && _pneed > 0; _i++) { _rows[_i].sel = true; _pneed--; }
+    global.reagent_picker = {
+        purpose: "cursed_rebirth",
+        target: target_cand, fee: _fee, goal: _fee.uncommons,
+        rows: _rows, gear_n: _gear_n,
+        cursor: 0, scroll: 0, confirm: false
+    };
+}
+
+// MAREN AWAKEN variant (M 08-05: "all item selections are manual"): the forge's
+// 2-epic fuel gets the same hand-pick treatment - epics-only rows, each worth
+// 1 toward a goal of 2, no potion quota, dust shown alongside the gold.
+function reagent_picker_open_awaken(target_cand) {
+    var _rows = [];
+    var _pool = cursed_rebirth_gear_of_rarity(3, target_cand.item);
+    for (var _i = 0; _i < array_length(_pool); _i++) {
+        var _g = _pool[_i];
+        array_push(_rows, {
+            kind: "gear", item: _g,
+            label: variable_struct_exists(_g, "name") ? _g.name : "item",
+            rarity: 3, pts: 1,
+            value: item_sell_value(_g), sel: false
+        });
+    }
+    array_sort(_rows, function(a, b) { return a.value - b.value; });
+    for (var _i = 0; _i < min(2, array_length(_rows)); _i++) _rows[_i].sel = true;
+    global.reagent_picker = {
+        purpose: "maren_awaken",
+        target: target_cand,
+        fee: { feeds: 0, gold: 300, dust: 60, potions: 0 },
+        goal: 2,
+        rows: _rows, gear_n: array_length(_rows),
+        cursor: 0, scroll: 0, confirm: false
+    };
+}
+
+function reagent_picker_close() { global.reagent_picker = undefined; }
+
+// Running tally of what's ticked: essence points, potion count, ask met.
+function reagent_picker_tally() {
+    var _p = global.reagent_picker;
+    var _pts = 0, _pot = 0;
+    for (var _i = 0; _i < array_length(_p.rows); _i++) {
+        var _rw = _p.rows[_i];
+        if (!_rw.sel) continue;
+        if (_rw.kind == "gear") _pts += _rw.pts; else _pot++;
+    }
+    return { pts: _pts, pot: _pot, ok: (_pts >= _p.goal && _pot >= _p.fee.potions) };
+}
+
+// Input for the reagent stage. Cursor 0.._n-1 = rows (Enter/Space/click/tap
+// TOGGLES), cursor _n = the SEAL bar (Enter arms, Enter again commits).
+// Esc/right-click backs out of the arm, then cancels the whole exchange
+// (nothing is lost). Geometry MUST match ui_draw_reagent_picker() (scr_ui).
+function reagent_picker_step() {
+    var _p = global.reagent_picker;
+    if (_p == undefined) return;
+    var _n = array_length(_p.rows);
+    var _t = reagent_picker_tally();
+
+    if (input_cancel() || input_back() || mouse_check_button_pressed(mb_right)) {
+        if (_p.confirm) _p.confirm = false;
+        else            reagent_picker_close();
+        return;
+    }
+
+    if (nav_up())   { _p.cursor = wrap_index(_p.cursor - 1, _n + 1); _p.confirm = false; }
+    if (nav_down()) { _p.cursor = wrap_index(_p.cursor + 1, _n + 1); _p.confirm = false; }
+    if (mouse_wheel_up()   && _p.cursor > 0)  { _p.cursor--; _p.confirm = false; }
+    if (mouse_wheel_down() && _p.cursor < _n) { _p.cursor++; _p.confirm = false; }
+    _p.cursor = clamp(_p.cursor, 0, _n);
+    if (_p.cursor < _n) _p.scroll = loadout_list_scroll(_p.cursor, _n, 8);
+
+    var _act = (input_confirm() || input_confirm_alt());
+
+    // Mouse/touch: row click toggles; SEAL bar click arms then commits.
+    var _hit = -2;   // -2 = nothing, -1 = seal bar, else row index
+    if (mouse_check_button_pressed(mb_left)) {
+        var _mx = device_mouse_x_to_gui(0);
+        var _my = device_mouse_y_to_gui(0);
+        var _px = 330, _py = 165, _pw = 1260, _ph = 750;
+        var _lx0 = _px + 24, _lx1 = _px + 606, _ly0 = _py + 129, _rh = 57;
+        var _cby0 = _py + _ph - 114, _cby1 = _py + _ph - 60;
+        if (_my >= _cby0 && _my < _cby1 && _mx >= _px + 330 && _mx < _px + _pw - 330) _hit = -1;
+        else if (!_p.confirm) {
+            var _vis = min(8, _n);
+            for (var _r = 0; _r < _vis; _r++) {
+                var _ry = _ly0 + _r * _rh;
+                if (_mx >= _lx0 && _mx < _lx1 && _my >= _ry && _my < _ry + 51) {
+                    var _idx = _p.scroll + _r;
+                    if (_idx < _n) _hit = _idx;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (_hit >= 0) {
+        _p.rows[_hit].sel = !_p.rows[_hit].sel;
+        _p.cursor = _hit; _p.confirm = false;
+        audio_play_sound(snd_page, 1, false);
+        return;
+    }
+    if (_hit == -1) { _p.cursor = _n; _act = true; }
+
+    if (_act) {
+        if (_p.cursor < _n) {   // keyboard/pad toggle on the highlighted row
+            _p.rows[_p.cursor].sel = !_p.rows[_p.cursor].sel;
+            _p.confirm = false;
+            audio_play_sound(snd_page, 1, false);
+        } else {
+            if (!_t.ok) { audio_play_sound(snd_ui_error, 1, false); return; }
+            if (!_p.confirm)                            _p.confirm = true;
+            else if (_p.purpose == "maren_awaken")      maren_awaken_commit();
+            else                                        cursed_rebirth_commit();
+        }
+    }
+}
+
+// The exchange itself - burns EXACTLY the ticked rows + the gold + the
+// offering, then runs the rebirth + ceremony. Mirrors the retired auto-burn
+// resolve, minus the auto.
+function cursed_rebirth_commit() {
+    var _p = global.reagent_picker;
+    if (_p == undefined) return;
+    var _t = reagent_picker_tally();
+    if (!_t.ok || global.gold < _p.fee.gold) { audio_play_sound(snd_ui_error, 1, false); return; }
+    var _tgt = _p.target;
+    var _new = cursed_rebirth_make(_tgt.item);
+    cursed_rebirth_burn_gear(_tgt.item);   // the offering leaves stash or pack
+    global.gold -= _p.fee.gold;
+    var _gear_burned = 0, _pot_burned = 0;
+    for (var _i = 0; _i < array_length(_p.rows); _i++) {
+        var _rw = _p.rows[_i];
+        if (!_rw.sel) continue;
+        if (_rw.kind == "gear") { cursed_rebirth_burn_gear(_rw.item); _gear_burned++; }
+        else {
+            for (var _ci = 0; _ci < array_length(global.consumable_inventory); _ci++)
+                if (global.consumable_inventory[_ci] == _rw.item) { array_delete(global.consumable_inventory, _ci, 1); break; }
+            _pot_burned++;
+        }
+    }
+    if (_tgt.source == 0) array_push(global.equipment_stash, _new);
+    else                  array_push(global.carried_items, _new);
+    discover_item(item_base_name(_new), _new.rarity);
+    save_game();
+    // Route the result line through the picker's one-shot so the Sable window
+    // shows it exactly like the old flow did.
+    global.item_picker.resolved_purpose = "cursed_rebirth";
+    global.item_picker.result_msg = "The dark accepts... " + _new.name + " crawls back out.  (consumed: "
+        + string(_gear_burned) + " gear, " + string(_pot_burned) + " potion" + ((_pot_burned == 1) ? "" : "s")
+        + ", " + string(_p.fee.gold) + "g)";
+    var _gcr = instance_find(obj_game_controller, 0);
+    if (_gcr != noone) {
+        _gcr.cursed_ritual_t    = 0;
+        _gcr.cursed_ritual_item = _new;
+        _gcr.cursed_ritual_prev = _tgt.item;
+    } else {
+        forge_result_open("CURSED REBIRTH", "The dark accepts the offering... and gives it back changed.",
+            _new, _tgt.item, [], make_color_rgb(220, 90, 100));
+    }
+    ach_unlock("ACH_REBIRTH");   // achievement hook (08-05 wiring): a rebirth sealed
+    audio_play_sound(snd_forge, 1, false);
+    reagent_picker_close();
+}
+
+// Maren's forge lights with EXACTLY the ticked epics (M 08-05 - the old resolve
+// auto-burned the 2 junkiest). Wakes the dormant legendary, itemizes the fuel.
+function maren_awaken_commit() {
+    var _p = global.reagent_picker;
+    if (_p == undefined) return;
+    var _t = reagent_picker_tally();
+    if (!variable_global_exists("rune_dust")) global.rune_dust = 0;
+    if (!_t.ok || global.gold < _p.fee.gold || global.rune_dust < _p.fee.dust) {
+        audio_play_sound(snd_ui_error, 1, false); return;
+    }
+    var _aw_it = _p.target.item;
+    global.gold      -= _p.fee.gold;
+    global.rune_dust -= _p.fee.dust;
+    var _burned = [];
+    for (var _i = 0; _i < array_length(_p.rows); _i++) {
+        var _rw = _p.rows[_i];
+        if (!_rw.sel) continue;
+        cursed_rebirth_burn_gear(_rw.item);
+        array_push(_burned, _rw.label);
+    }
+    // Snapshot BEFORE waking it - awakening is the single biggest stat jump in
+    // the game (x0.55 -> x1.0 on every positive) and the player never got to see
+    // it happen (M 08-08 before/after order).
+    var _aw_was = item_shallow_copy(_aw_it);
+    _aw_it.dormant = false;
+    if (string_copy(_aw_it.name, 1, 8) == "Dormant ") _aw_it.name = string_delete(_aw_it.name, 1, 8);
+    _aw_it.icon_seed = irandom(999983);   // it wakes wearing a new face
+    save_game();
+    global.item_picker.resolved_purpose = "maren_awaken";
+    global.item_picker.result_msg = _aw_it.name + " AWAKENS.  (consumed: "
+        + string(array_length(_burned)) + " epics, " + string(_p.fee.gold) + "g, "
+        + string(_p.fee.dust) + " dust)";
+    var _fr_lines = [];
+    for (var _i = 0; _i < array_length(_burned); _i++) array_push(_fr_lines, "Burned:  " + _burned[_i]);
+    array_push(_fr_lines, string(_p.fee.gold) + "g + " + string(_p.fee.dust) + " rune dust");
+    forge_result_open("AWAKENING", "The legend remembers what it was.",
+        _aw_it, _aw_was, _fr_lines, make_color_rgb(255, 205, 110));
+    audio_play_sound(snd_confirm_major, 1, false);
+    reagent_picker_close();
+}
+
+// =============================================================================
+// DARK GIFTS (M 08-04): every 3rd curse, the reassemblage adds something NEW -
+// a NAMED boon rolled blind from this catalog, magnitude rolled too. Names are
+// combined-effect words in the item-name tradition (Emberwake, Bonelattice...).
+// kind "affix" gifts ride the existing _equip_apply_stat plumbing untouched;
+// kind "gift" entries live in item.dark_gifts and are read by combat hooks via
+// dark_gift_total(). Duplicates can roll and stack - that's the chaos.
+// =============================================================================
+function dark_gift_catalog() {
+    return [
+        // School hearts - flat school damage (SYSTEMS_ELEMENT_SCHOOLS §C keys).
+        { id:"emberwake",   name:"Emberwake",   kind:"affix", stat:"school_fire",   lo:4,  hi:9,  blurb:"+# Fire damage" },
+        { id:"rimeheart",   name:"Rimeheart",   kind:"affix", stat:"school_frost",  lo:4,  hi:9,  blurb:"+# Frost damage" },
+        { id:"stormlung",   name:"Stormlung",   kind:"affix", stat:"school_shock",  lo:4,  hi:9,  blurb:"+# Shock damage" },
+        { id:"hollowlight", name:"Hollowlight", kind:"affix", stat:"school_arcane", lo:4,  hi:9,  blurb:"+# Arcane damage" },
+        { id:"redthirst",   name:"Redthirst",   kind:"affix", stat:"school_blood",  lo:4,  hi:9,  blurb:"+# Blood damage" },
+        { id:"voidmaw",     name:"Voidmaw",     kind:"affix", stat:"school_void",   lo:4,  hi:9,  blurb:"+# Void damage" },
+        { id:"nightbloom",  name:"Nightbloom",  kind:"affix", stat:"school_shadow", lo:4,  hi:9,  blurb:"+# Shadow damage" },
+        { id:"gravebloom",  name:"Gravebloom",  kind:"affix", stat:"school_poison", lo:4,  hi:9,  blurb:"+# Poison damage" },
+        // Body gifts - existing affix keys.
+        { id:"gravecoin",   name:"Gravecoin",   kind:"affix", stat:"gold_find",     lo:20, hi:40, blurb:"+#% Gold find" },
+        { id:"mothstep",    name:"Mothstep",    kind:"affix", stat:"dodge_flat",    lo:4,  hi:8,  blurb:"+# Dodge" },
+        { id:"palefang",    name:"Palefang",    kind:"affix", stat:"crit_flat",     lo:5,  hi:10, blurb:"+#% Crit (all attacks)" },
+        { id:"oxblood",     name:"Oxblood",     kind:"affix", stat:"bonus_max_hp",  lo:15, hi:30, blurb:"+# Max HP" },
+        { id:"ironmarrow",  name:"Ironmarrow",  kind:"affix", stat:"armor",         lo:2,  hi:4,  blurb:"+# Armor" },
+        { id:"wardglass",   name:"Wardglass",   kind:"affix", stat:"el_resist",     lo:2,  hi:4,  blurb:"+# Elemental resist" },
+        { id:"spellfang",   name:"Spellfang",   kind:"affix", stat:"crit_spell",    lo:8,  hi:14, blurb:"+#% Spell crit" },
+        { id:"bonefang",    name:"Bonefang",    kind:"affix", stat:"crit_phys",     lo:8,  hi:14, blurb:"+#% Phys crit" },
+        // Bespoke gifts - combat hooks read these via dark_gift_total().
+        { id:"fifth_pulse", name:"Fifth Pulse", kind:"gift",  stat:"ap_pulse",      lo:1,  hi:1,  blurb:"+1 AP every 5th round" },
+        { id:"nightgorge",  name:"Nightgorge",  kind:"gift",  stat:"heal_on_kill",  lo:2,  hi:4,  blurb:"heal # on kill" },
+        { id:"bonelattice", name:"Bonelattice", kind:"gift",  stat:"shield_start",  lo:4,  hi:8,  blurb:"+# Soul Shield at combat start" },
+    ];
+}
+
+// Total of one bespoke dark-gift stat across EQUIPPED gear (combat hooks call
+// this; a hard-2H weapon locks the offhand out, same rule as equipment stats).
+function dark_gift_total(key) {
+    var _t = 0;
+    if (!variable_global_exists("inventory")) return 0;
+    var _off_locked = hard_two_handed_equipped();
+    for (var _i = 0; _i < array_length(global.inventory); _i++) {
+        if (_i == 1 && _off_locked) continue;
+        var _it = global.inventory[_i];
+        if (_it == undefined || !is_struct(_it) || !variable_struct_exists(_it, "dark_gifts")) continue;
+        for (var _g = 0; _g < array_length(_it.dark_gifts); _g++)
+            if (_it.dark_gifts[_g].stat == key) _t += _it.dark_gifts[_g].mag;
+    }
+    return _t;
+}
+
 function cursed_rebirth_make(src) {
     // 07-31 REBALANCE (M + GDD: "mega strength and mega weakness" - the old
     // x1.5 + one -12 HP affix was "pointless"): stats DOUBLE, and the curse is
@@ -2051,15 +2486,34 @@ function cursed_rebirth_make(src) {
     // stat, so the boon can't be silently washed out.
     var _it = clone_item(src);
     var _bn = item_base_name(src);
+    // Codex identity NEVER stacks (a thrice-fed crown is still one discovery) -
+    // strip any prior brand before re-applying.
+    if (string_copy(_bn, 1, 7) == "Cursed ") _bn = string_delete(_bn, 1, 7);
     _it.base_name   = "Cursed " + _bn;   // codex identity (discover_item)
+    // Escalating-reassemblage bookkeeping (M 08-04): each feed is tracked so
+    // the cost ladder can charge per curse already on the item.
+    _it.curse_count = (variable_struct_exists(src, "curse_count") ? src.curse_count : 0) + 1;
+    // Every feed also re-rolls the LOOK (M 08-04: emergent variants) - the
+    // saved icon_seed shifts the variant hash to a fresh model each rebirth.
+    _it.icon_seed = irandom(999983);
     _it.splash_base = _bn;               // reveal popup falls back to the original splash art
     _it.rarity      = 4;
     _it.cursed      = true;
-    if (variable_struct_exists(_it, "stat_value"))    _it.stat_value    = ceil(_it.stat_value * 2);
-    if (variable_struct_exists(_it, "weapon_damage") && _it.weapon_damage > 0) _it.weapon_damage = ceil(_it.weapon_damage * 2);
+    // RNG REASSEMBLAGE (M 08-04, replaces flat x2-everything - which also
+    // re-doubled OLD curses into oblivion by feed 3): every feed rolls ONE
+    // positive surge and ONE curse, both with wide ranges. God rolls exist,
+    // busts exist, and a lucky early item can still be dragged down later -
+    // the min-max prayer is the game. Old curses are NEVER re-scaled; they
+    // accumulate at whatever bite they rolled.
+    var _surge = 1.10 + random(1.30);   // x1.10 .. x2.40 on the item's positives
+    if (variable_struct_exists(_it, "stat_value"))    _it.stat_value    = ceil(_it.stat_value * _surge);
+    if (variable_struct_exists(_it, "weapon_damage") && _it.weapon_damage > 0) _it.weapon_damage = ceil(_it.weapon_damage * _surge);
     if (variable_struct_exists(_it, "affixes")) {
         for (var _i = 0; _i < array_length(_it.affixes); _i++) {
-            _it.affixes[_i].stat_value = ceil(_it.affixes[_i].stat_value * 2);
+            // Negatives (old curses) never re-scale; dark-gift affixes stay at
+            // their rolled value too (their unique_desc line names the number).
+            if (_it.affixes[_i].stat_value > 0 && !variable_struct_exists(_it.affixes[_i], "gift"))
+                _it.affixes[_i].stat_value = ceil(_it.affixes[_i].stat_value * _surge);
         }
     } else {
         _it.affixes = [];
@@ -2077,9 +2531,35 @@ function cursed_rebirth_make(src) {
     var _prim = variable_struct_exists(_it, "stat_name") ? _it.stat_name : "";
     var _c = _curses[irandom(array_length(_curses) - 1)];
     while (_c.stat_name == _prim) _c = _curses[irandom(array_length(_curses) - 1)];
-    array_push(_it.affixes, { suffix: _c.suffix, prefix: "", stat_name: _c.stat_name, stat_value: _c.stat_value });
+    // Curse magnitude rolls too: 60%..160% of the table's base bite.
+    var _cmag = 0.6 + random(1.0);
+    array_push(_it.affixes, { suffix: _c.suffix, prefix: "", stat_name: _c.stat_name,
+        stat_value: -max(1, ceil(abs(_c.stat_value) * _cmag)) });
+    // DARK GIFT (M 08-04): every 3rd curse the dark adds something NEW - a
+    // named boon rolled blind, magnitude rolled too. Affix-kind gifts join the
+    // stat plumbing directly; bespoke gifts live in dark_gifts for the combat
+    // hooks. The gift line is stamped into unique_desc so every detail pane,
+    // forge reveal and loadout tooltip shows it by name.
+    if (_it.curse_count mod 3 == 0) {
+        var _dg_cat = dark_gift_catalog();
+        var _dg  = _dg_cat[irandom(array_length(_dg_cat) - 1)];
+        var _dgm = irandom_range(_dg.lo, _dg.hi);
+        if (_dg.kind == "affix") {
+            array_push(_it.affixes, { suffix: "", prefix: "", stat_name: _dg.stat, stat_value: _dgm, gift: true });
+        } else {
+            if (!variable_struct_exists(_it, "dark_gifts")) _it.dark_gifts = [];
+            array_push(_it.dark_gifts, { id: _dg.id, stat: _dg.stat, mag: _dgm });
+        }
+        var _dg_line = "DARK GIFT - " + _dg.name + ": " + string_replace(_dg.blurb, "#", string(_dgm));
+        _it.unique_desc = (variable_struct_exists(_it, "unique_desc") && _it.unique_desc != "")
+            ? (_it.unique_desc + "\n" + _dg_line) : _dg_line;
+    }
     // The curse lives in the TITLE (M 07-31): "Cursed Crown of the Hollow King, Withered".
-    _it.name = "Cursed " + _bn + ", " + _c.epithet;
+    // And it STACKS on purpose (M 08-04: the absurd grinded title IS the flex) -
+    // re-feeding prefixes another "Cursed" onto the FULL previous name, so every
+    // epithet earned stays in the title: "Cursed Cursed Crown ..., Withered, Rotting".
+    // (The old code rebuilt from the base name and silently dropped past epithets.)
+    _it.name = "Cursed " + src.name + ", " + _c.epithet;
     _it.gold_value = 250;
     _it.lore = "A legendary fed back to the dark. What crawled out is far stronger than what went in - and it kept something of yours in exchange.";
     return _it;
@@ -2199,6 +2679,287 @@ function item_empower_context() {
     return { asc: _asc, df: _df };
 }
 
+// =============================================================================
+// TEMPERING + DORMANCY (M locked 08-04, SYSTEMS_ITEM_PROGRESSION.md §1-2).
+// Every DROP rolls a QUALITY (60-85%); Maren TEMPERS it +10%/step to 100
+// (gold + dust by rarity). Generic stat-legendaries drop DORMANT (~0.55x)
+// until Maren AWAKENS them (300g + 60 dust + 2 epics); the named uniques
+// (unique_effect) always drop TRUE. Missing fields read as quality-100 /
+// not-dormant, so every pre-08-04 item is grandfathered whole. Scaling is
+// applied at STAT-APPLICATION time (apply_equipment_stats) - the stored rolls
+// never change, and ui_item_stat_str tags the state.
+// =============================================================================
+function item_quality_stamp(it, lo, hi) {
+    if (is_struct(it)) {
+        it.quality = irandom_range(lo, hi);
+        // The rolled quality is the FINISH floor (M 08-11): the temper HP bonus
+        // counts only points the smith adds above this, so a fresh drop carries
+        // no bonus and the reveal happens at the anvil, not on the loot screen.
+        it.quality_base = it.quality;
+    }
+}
+
+// Effective multiplier on an item's POSITIVE stats: quality% x dormant 0.55.
+function item_power_mult(it) {
+    var _m = 1.0;
+    if (is_struct(it) && variable_struct_exists(it, "quality")) _m *= clamp(it.quality, 1, 100) / 100;
+    if (is_struct(it) && variable_struct_exists(it, "dormant") && it.dormant) _m *= 0.55;
+    return _m;
+}
+
+// Positive values scale (floor 1); negatives (curses) are NEVER softened.
+function item_scaled_val(v, pm) {
+    return (v > 0 && pm < 1.0) ? max(1, round(v * pm)) : v;
+}
+
+// -----------------------------------------------------------------------------
+// FINISH (M 08-08) - quality's OWN contribution, on top of the scaling above.
+//
+// Pure multiplicative quality is INVISIBLE on small items: item_scaled_val(1, 0.7)
+// is max(1, round(0.7)) = 1, and so is item_scaled_val(1, 1.0). A "+1 DEX" ring
+// therefore delivered exactly the same stats at 60% as at 100% - the player paid
+// 40g + 5 dust a step for a number that mathematically could not move (M's temper
+// report + screenshot). No multiplier can fix that: a 1-point roll has nothing to
+// scale. So quality now also GRANTS something of its own.
+//
+// Finish = flat max HP per quality point TEMPERED above the drop roll
+// (quality_base, M 08-11 - counting from the flat 60 floor let a fresh 82% drop
+// show a "tempering bonus" it never earned, spoiling the reveal). Every temper
+// step buys real points, so every purchase moves a real number on EVERY item.
+// HP is the one bonus every slot can carry (armour is weight-class gated,
+// damage is weapon-only), and it reads honestly: a finished piece holds
+// together better.
+// Dormant pieces give nothing until Maren wakes them; pre-08-04 gear has no
+// quality field at all and is grandfathered whole, so it has no finish either.
+// -----------------------------------------------------------------------------
+// Quality POINTS tempered above the drop roll. Per-POINT rather than
+// per-10%-step (M 08-08): the final step off an 85% roll is only 5 points, and
+// under the old step model those 5 points paid nothing at all.
+function item_finish_steps(it) {
+    if (!is_struct(it) || !variable_struct_exists(it, "quality")) return 0;
+    if (variable_struct_exists(it, "dormant") && it.dormant) return 0;
+    // Points TEMPERED above the drop roll, not above the 60 floor (M 08-11: a
+    // fresh 82% drop showed a "tempering bonus" it never earned). Items saved
+    // before quality_base existed can't have rolled above 85, so min(quality,85)
+    // reconstructs their roll exactly for untampered gear and only undercounts
+    // pieces already tempered past 85.
+    var _base = variable_struct_exists(it, "quality_base")
+                ? it.quality_base : min(it.quality, 85);
+    return clamp(it.quality - _base, 0, 40);
+}
+
+function item_finish_hp(it) {
+    var _pts = item_finish_steps(it);
+    if (_pts <= 0) return 0;
+    var _r   = clamp((is_struct(it) && variable_struct_exists(it, "rarity")) ? it.rarity : 0, 0, 4);
+    // Per point. Totals at a fully finished 100%: 8 / 12 / 20 / 32 / 48 HP.
+    // A piece bought up from 60% therefore gains the WHOLE track, while one that
+    // dropped at 90% only has a quarter of it left to buy - the gain scales with
+    // the gap you closed, exactly like the cost does.
+    var _per = [0.2, 0.3, 0.5, 0.8, 1.2];
+    return max(1, round(_per[_r] * _pts));
+}
+
+// -----------------------------------------------------------------------------
+// BEFORE / AFTER COMPARISON (M 08-08: "the before and after should popup as a
+// side by side to see what improvements you just made").
+//
+// Crafts that MUTATE an item in place (temper, awaken, reforge, re-attune) have
+// to snapshot it first, because the reveal popup runs after the mutation.
+// item_shallow_copy is enough: the comparison only reads scalars and an array
+// length, and a deep copy would needlessly duplicate rune/affix structs.
+// -----------------------------------------------------------------------------
+function item_shallow_copy(it) {
+    if (!is_struct(it)) return it;
+    var _c = {};
+    var _n = variable_struct_get_names(it);
+    for (var _i = 0; _i < array_length(_n); _i++)
+        variable_struct_set(_c, _n[_i], variable_struct_get(it, _n[_i]));
+    return _c;
+}
+
+function item_field_num(it, key, dflt) {
+    if (!is_struct(it) || !variable_struct_exists(it, key)) return dflt;
+    var _v = variable_struct_get(it, key);
+    return is_real(_v) ? _v : dflt;
+}
+
+function item_field_str(it, key, dflt) {
+    if (!is_struct(it) || !variable_struct_exists(it, key)) return dflt;
+    var _v = variable_struct_get(it, key);
+    return is_string(_v) ? _v : dflt;
+}
+
+// item_compare_rows(before, after) -> array of { label, a, b, better }
+// Only fields present on ONE side or the other produce a row, so the table is
+// never padded with irrelevant zeroes. Values are the EFFECTIVE (quality-scaled)
+// numbers, not the stored rolls - the stored roll is exactly what was hiding the
+// tempering problem from the player. better: 1 up, -1 down, 0 flat/incomparable.
+function item_compare_rows(_a, _b) {
+    var _rows = [];
+    if (!is_struct(_a) || !is_struct(_b)) return _rows;
+    var _pa = item_power_mult(_a), _pb = item_power_mult(_b);
+
+    // Identity, only when the craft actually renamed or re-tiered the piece.
+    var _na = item_field_str(_a, "name", ""), _nb = item_field_str(_b, "name", "");
+    if (_na != _nb) array_push(_rows, { label:"Item", a:_na, b:_nb, better:0 });
+    var _ra = item_field_num(_a, "rarity", 0), _rb = item_field_num(_b, "rarity", 0);
+    if (_ra != _rb) array_push(_rows, { label:"Rarity", a:item_rarity_name(_ra), b:item_rarity_name(_rb), better:sign(_rb - _ra) });
+
+    // Primary stat, EFFECTIVE - this is where quality scaling becomes visible.
+    var _sa = item_field_str(_a, "stat_name", ""), _sb = item_field_str(_b, "stat_name", "");
+    if (_sa != "" || _sb != "") {
+        var _va = (_sa == "") ? 0 : item_scaled_val(item_field_num(_a, "stat_value", 0), _pa);
+        var _vb = (_sb == "") ? 0 : item_scaled_val(item_field_num(_b, "stat_value", 0), _pb);
+        if (_sa == _sb) {
+            if (_va != 0 || _vb != 0)
+                array_push(_rows, { label:_sb, a:"+" + string(_va), b:"+" + string(_vb), better:sign(_vb - _va) });
+        } else {
+            array_push(_rows, { label:"Stat",
+                a:((_sa == "") ? "-" : ("+" + string(_va) + " " + _sa)),
+                b:((_sb == "") ? "-" : ("+" + string(_vb) + " " + _sb)), better:0 });
+        }
+    }
+
+    var _wa = item_scaled_val(item_field_num(_a, "weapon_damage", 0), _pa);
+    var _wb = item_scaled_val(item_field_num(_b, "weapon_damage", 0), _pb);
+    if (_wa > 0 || _wb > 0)
+        array_push(_rows, { label:"Weapon dmg", a:"+" + string(_wa), b:"+" + string(_wb), better:sign(_wb - _wa) });
+
+    var _aa = item_base_armor(_a), _ab = item_base_armor(_b);
+    if (_aa > 0 || _ab > 0)
+        array_push(_rows, { label:"Armor", a:"+" + string(_aa), b:"+" + string(_ab), better:sign(_ab - _aa) });
+    var _ea = item_base_el_resist(_a), _eb = item_base_el_resist(_b);
+    if (_ea > 0 || _eb > 0)
+        array_push(_rows, { label:"El Resist", a:"+" + string(_ea), b:"+" + string(_eb), better:sign(_eb - _ea) });
+
+    var _fa = (variable_struct_exists(_a, "affixes") && is_array(_a.affixes)) ? array_length(_a.affixes) : 0;
+    var _fb = (variable_struct_exists(_b, "affixes") && is_array(_b.affixes)) ? array_length(_b.affixes) : 0;
+    if (_fa != _fb)
+        array_push(_rows, { label:"Affixes", a:string(_fa), b:string(_fb), better:sign(_fb - _fa) });
+
+    var _da = (variable_struct_exists(_a, "dormant") && _a.dormant);
+    var _db = (variable_struct_exists(_b, "dormant") && _b.dormant);
+    if (_da != _db)
+        array_push(_rows, { label:"State", a:(_da ? "Dormant" : "Awake"), b:(_db ? "Dormant" : "Awake"), better:(_db ? -1 : 1) });
+
+    // The tempering pair, last: Quality is the number the player bought, Finish
+    // is the number it actually moved.
+    if (variable_struct_exists(_a, "quality") || variable_struct_exists(_b, "quality")) {
+        var _qa = item_field_num(_a, "quality", 100), _qb = item_field_num(_b, "quality", 100);
+        array_push(_rows, { label:"Quality", a:string(_qa) + "%", b:string(_qb) + "%", better:sign(_qb - _qa) });
+        var _ha = item_finish_hp(_a), _hb = item_finish_hp(_b);
+        if (_ha > 0 || _hb > 0)
+            array_push(_rows, { label:"Finish", a:"+" + string(_ha) + " HP", b:"+" + string(_hb) + " HP", better:sign(_hb - _ha) });
+    }
+    return _rows;
+}
+
+// -----------------------------------------------------------------------------
+// TEMPER FEE - priced on the DEFICIT, not a flat step (M 08-08).
+//
+// The old fee was one flat charge per +10% regardless of rarity-appropriate value
+// or how rough the piece was, which made tempering a common item actively
+// irrational: "spending 40 gold on a common item will always be pointless".
+//
+// Now the whole thing scales with the gap to 100%:
+//   - cost per POINT of quality, by rarity, so a common piece costs a few gold a
+//     step and a legendary still costs real money
+//   - a rough piece (60%) costs more to finish than a nearly-done one (90%)
+//     because there is more of it to buy - but each point is the same price, so
+//     nothing is ever a trap purchase
+//   - dust only enters at epic/legendary; commons and uncommons are pure gold, so
+//     early optimisation is never gated behind a scarce currency
+//
+// M's intent: less gear/power creep from churning new drops, more reason to
+// invest in the common and uncommon gear already in your bag.
+// -----------------------------------------------------------------------------
+function temper_step_size() { return 10; }
+
+// Gold per single POINT of quality, by rarity.
+function temper_gold_per_point(rarity) {
+    var _g = [0.6, 1.5, 5, 14, 34];
+    return _g[clamp(rarity, 0, 4)];
+}
+
+// Rune dust per point - epic+ only. Commons/uncommons cost gold alone.
+function temper_dust_per_point(rarity) {
+    var _d = [0, 0, 0, 1.1, 2.6];
+    return _d[clamp(rarity, 0, 4)];
+}
+
+// Fee for the NEXT step on this item. The final step can be a partial one (an
+// 85% piece steps 85 -> 95 -> 100, and that last one is 5 points, so it is
+// charged for 5), which keeps the price honest at the top of the track.
+function temper_fee(it) {
+    var _r = clamp((is_struct(it) && variable_struct_exists(it, "rarity")) ? it.rarity : 0, 0, 4);
+    var _q = clamp((is_struct(it) && variable_struct_exists(it, "quality")) ? it.quality : 100, 0, 100);
+    var _pts = min(temper_step_size(), 100 - _q);
+    if (_pts <= 0) return { gold: 0, dust: 0, points: 0 };
+    return {
+        gold:   max(1, round(temper_gold_per_point(_r) * _pts)),
+        dust:   ((temper_dust_per_point(_r) > 0) ? max(1, round(temper_dust_per_point(_r) * _pts)) : 0),
+        points: _pts
+    };
+}
+
+// Total cost to carry a piece all the way to 100% - shown on the temper screen so
+// the player can judge the whole investment, not just the next click.
+function temper_fee_to_full(it) {
+    var _r = clamp((is_struct(it) && variable_struct_exists(it, "rarity")) ? it.rarity : 0, 0, 4);
+    var _q = clamp((is_struct(it) && variable_struct_exists(it, "quality")) ? it.quality : 100, 0, 100);
+    var _pts = 100 - _q;
+    if (_pts <= 0) return { gold: 0, dust: 0, points: 0 };
+    return {
+        gold:   max(1, round(temper_gold_per_point(_r) * _pts)),
+        dust:   ((temper_dust_per_point(_r) > 0) ? max(1, round(temper_dust_per_point(_r) * _pts)) : 0),
+        points: _pts
+    };
+}
+
+// Picker candidates: gear below 100% quality (worn + stash + pack). Dormant
+// items are excluded - awaken FIRST, then temper (one pipeline order).
+function item_picker_candidates_temperable() {
+    var _out = [];
+    var _pools = [];
+    if (variable_global_exists("inventory")       && is_array(global.inventory))       array_push(_pools, { a: global.inventory,       s: 0 });
+    if (variable_global_exists("equipment_stash") && is_array(global.equipment_stash)) array_push(_pools, { a: global.equipment_stash, s: 0 });
+    if (variable_global_exists("carried_items")   && is_array(global.carried_items))   array_push(_pools, { a: global.carried_items,   s: 1 });
+    for (var _p = 0; _p < array_length(_pools); _p++) {
+        var _arr = _pools[_p].a;
+        for (var _i = 0; _i < array_length(_arr); _i++) {
+            var _g2 = _arr[_i];
+            if (!is_struct(_g2) || !variable_struct_exists(_g2, "quality") || _g2.quality >= 100) continue;
+            if (variable_struct_exists(_g2, "dormant") && _g2.dormant) continue;
+            array_push(_out, { source: _pools[_p].s, idx: _i, item: _g2,
+                label: _g2.name + "  (" + string(_g2.quality) + "%)",
+                rarity: variable_struct_exists(_g2, "rarity") ? _g2.rarity : 0,
+                value: variable_struct_exists(_g2, "gold_value") ? _g2.gold_value : 0 });
+        }
+    }
+    return _out;
+}
+
+// Picker candidates: dormant legendaries (worn + stash + pack).
+function item_picker_candidates_dormant() {
+    var _out = [];
+    var _pools = [];
+    if (variable_global_exists("inventory")       && is_array(global.inventory))       array_push(_pools, { a: global.inventory,       s: 0 });
+    if (variable_global_exists("equipment_stash") && is_array(global.equipment_stash)) array_push(_pools, { a: global.equipment_stash, s: 0 });
+    if (variable_global_exists("carried_items")   && is_array(global.carried_items))   array_push(_pools, { a: global.carried_items,   s: 1 });
+    for (var _p = 0; _p < array_length(_pools); _p++) {
+        var _arr = _pools[_p].a;
+        for (var _i = 0; _i < array_length(_arr); _i++) {
+            var _g2 = _arr[_i];
+            if (!is_struct(_g2) || !variable_struct_exists(_g2, "dormant") || !_g2.dormant) continue;
+            array_push(_out, { source: _pools[_p].s, idx: _i, item: _g2, label: _g2.name,
+                rarity: variable_struct_exists(_g2, "rarity") ? _g2.rarity : 4,
+                value: variable_struct_exists(_g2, "gold_value") ? _g2.gold_value : 0 });
+        }
+    }
+    return _out;
+}
+
 function drop_equipment(rarity_weights, do_discover = true, curse_tiers = 0) {
     if (!variable_global_exists("loot_table_common")
         || !variable_global_exists("loot_table_uncommon")
@@ -2245,6 +3006,10 @@ function drop_equipment(rarity_weights, do_discover = true, curse_tiers = 0) {
     // fence for A2+ lucky finds.
     if (_gate_asc < 2) _rarity = min(_rarity, 3);
 
+    // Achievement hook (08-05 wiring): the first legendary DROP, dormant or true
+    // (fires past the awakening gate above, so it is a real legendary roll).
+    if (_rarity == 4) ach_unlock("ACH_FIRST_LEGEND");
+
     // Legendaries - return clone with pre-set affixes and unique fields
     if (_rarity == 4 && variable_global_exists("loot_table_legendary")
         && array_length(global.loot_table_legendary) > 0) {
@@ -2260,6 +3025,15 @@ function drop_equipment(rarity_weights, do_discover = true, curse_tiers = 0) {
         var _leg_item = clone_item(_leg_pick);
         var _leg_ec = item_empower_context();
         item_empower(_leg_item, _leg_ec.asc, _leg_ec.df);   // A6+/Descent scaling
+        // Tempering + dormancy (08-04): every drop rolls quality, and generic
+        // stat-legendaries wake up DORMANT - the named uniques stay true finds.
+        item_quality_stamp(_leg_item, 60, 85);
+        if (!variable_struct_exists(_leg_item, "unique_effect") || _leg_item.unique_effect == "") {
+            _leg_item.dormant = true;
+            _leg_item.name    = "Dormant " + _leg_item.name;
+            _leg_item.lore    = "It fell asleep the day its first bearer died. Something legendary still turns over inside it - Maren would know how to wake it.";
+            tutorial_try_show("dormant_leg");   // onboarding: first dormant find (M 08-04)
+        }
         if (do_discover) discover_item(item_base_name(_leg_item), 4);
         return _leg_item;
     }
@@ -2308,6 +3082,9 @@ function drop_equipment(rarity_weights, do_discover = true, curse_tiers = 0) {
     // Awakening 5, numeric power compounds and Descent drops get depth-tagged.
     var _emp_ec = item_empower_context();
     item_empower(_item, _emp_ec.asc, _emp_ec.df);
+
+    // Tempering (08-04): drops arrive rough - Maren finishes them.
+    item_quality_stamp(_item, 60, 85);
 
     if (do_discover) discover_item(item_base_name(_item), _item.rarity);
     return _item;
@@ -2980,8 +3757,17 @@ function apply_equipment_stats(stats_struct) {
         var _it = global.inventory[_i];
         if (_it == undefined) continue;
 
+        // Tempering + dormancy (08-04): the item's POSITIVE contributions scale
+        // by quality% (x0.55 more while dormant); stored rolls stay untouched.
+        var _pm = item_power_mult(_it);
+
+        // FINISH (08-08): quality's own flat contribution, so tempering always
+        // moves a number even on a +1 item. See item_finish_hp().
+        _bonus.bonus_max_hp += item_finish_hp(_it);
+
         // Reach-gated weapon damage routes by the item's own slot, not its stat.
         var _wd = variable_struct_exists(_it, "weapon_damage") ? _it.weapon_damage : 0;
+        _wd = item_scaled_val(_wd, _pm);
         if (_wd != 0) {
             if (_it.slot == "weapon")             _bonus.melee_dmg_bonus  += _wd;
             else if (_it.slot == "ranged_weapon") {
@@ -3001,13 +3787,13 @@ function apply_equipment_stats(stats_struct) {
             else if (_it.slot == "ranged_weapon") _bonus.ranged_elem = _ea;
         }
 
-        _equip_apply_stat(stats_struct, _bonus, _it.stat_name, _it.stat_value);
+        _equip_apply_stat(stats_struct, _bonus, _it.stat_name, item_scaled_val(_it.stat_value, _pm));
 
         // Apply affixes stored on the item (from drop_equipment or legendary fixed affixes)
         if (variable_struct_exists(_it, "affixes")) {
             for (var _a = 0; _a < array_length(_it.affixes); _a++) {
                 var _af = _it.affixes[_a];
-                _equip_apply_stat(stats_struct, _bonus, _af.stat_name, _af.stat_value);
+                _equip_apply_stat(stats_struct, _bonus, _af.stat_name, item_scaled_val(_af.stat_value, _pm));
             }
         }
 
@@ -5539,6 +6325,7 @@ function affinity_betrayal_for(new_id) {
         }
         _o.gate_ready = false;
         _o.betrayed   = true;   // permanent mark - the ending's absence beat reads this
+        ach_unlock("ACH_REMEMBERS");   // achievement hook (08-05 wiring): a keeper betrayed
         quest_reset_gate("gate_" + _ids[_i] + "_companion");
         quest_reset_gate("gate_" + _ids[_i] + "_lover");
         var _lines = affinity_betrayal_lines(_ids[_i]);
@@ -5893,8 +6680,15 @@ function quest_turn_in(id) {
         affinity_gate_cross(_d.npc, _d.gate_tier);
         ledger_add(_d.npc, "quest", "You did what they asked - \"" + _d.name + "\".");
         journal_badge_quest(id);
+        // Achievement hook (08-05 wiring): the LOVER gate is the questline's
+        // final rung - crossing it is a keeper's word kept, start to finish.
+        if (variable_struct_exists(_d, "gate_tier") && _d.gate_tier >= 4) ach_unlock("ACH_KEPT_WORD");
         return "";
     }
+    // Achievement counter (08-05 wiring): an ordinary board request turned in
+    // (ACH_BOARD_25 via sync).
+    ach_counters_init();
+    global.ach_counters.board_done += 1;
     var _r = _d.reward;
     var _parts = [];
     if (_r.gold > 0) { global.gold += _r.gold; array_push(_parts, string(_r.gold) + "g"); }
@@ -8131,6 +8925,42 @@ function pet_species_innate(species_id) {
         case "sporeling":        return { name:"Spore Cloud",    fx:"spore",      val:5,  desc:"Enemies that strike you have a 5% chance to be Poisoned." };
         case "voidkit":          return { name:"Slip Between",   fx:"slip",       val:10, desc:"The first blow aimed at you each combat has a 10% chance to miss." };
         case "ironshell_beetle": return { name:"Riveted Plate",  fx:"armor",      val:2,  desc:"+2 Armor while it is your companion." };
+        // --- 08-06 expansion innates (DESIGN_WORLD_EXPANSION_0806.md §1) ----------
+        // fx ids marked NEW below need a read site; the rest reuse existing hooks.
+        case "cairn_bear":     return { name:"Standing Weight", fx:"last_stand",   val:1,  desc:"The first hit of a combat cannot drop you below 1 HP." };
+        case "ember_ram":      return { name:"Banked Heat",     fx:"first_fire",   val:3,  desc:"Your first attack each combat deals +3 bonus Fire damage." };
+        case "salt_hare":      return { name:"Bolt",            fx:"floor_ap",     val:1,  desc:"+1 starting AP in the first combat of each floor." };
+        case "mire_heron":     return { name:"Patient Strike",  fx:"patient_crit", val:4,  desc:"+4% Phys Crit if you spent no AP last turn." };
+        case "gravel_tick":    return { name:"Cling",           fx:"dot_turns",    val:1,  desc:"Your Bleed and Poison last 1 extra turn." };
+        case "ashjaw_lynx":    return { name:"Heat Sense",      fx:"vs_burning",   val:5,  desc:"+5% damage to Burning enemies." };
+        case "glass_eel":      return { name:"Slipstream",      fx:"el_resist",    val:1,  desc:"+1 El Resist while it is your companion." };
+        case "chapel_bat":     return { name:"Vespers",         fx:"room_heal",    val:2,  desc:"Heal 2 HP whenever you clear a combat room." };
+        case "barrow_mole":    return { name:"Turned Earth",    fx:"cache_find",   val:6,  desc:"+6% chance of an extra item from floor caches." };
+        case "tallow_moth":    return { name:"Guttering Light", fx:"pet_heal",     val:5,  desc:"+5% to the healing you give your companion." };
+        case "gravemask":      return { name:"Grave Goods",     fx:"cache_find",   val:8,  desc:"+8% chance of an extra item from floor caches." };
+        case "bristleback":    return { name:"Unmoved",         fx:"thorns",       val:3,  desc:"Enemies that strike you take 3 damage back." };
+        case "wispfox":        return { name:"Lure",            fx:"first_fire",   val:4,  desc:"Your first attack each combat deals +4 bonus Fire damage." };
+        case "gravefox":       return { name:"Claimed Crown",   fx:"gold",         val:6,  desc:"+6% gold find while it is your companion." };
+        // Ice biome (08-08). Existing fx ids only - these read at live sites today.
+        case "frostmarten":    return { name:"Under-Ice",       fx:"slip",         val:10, desc:"The first blow aimed at you each combat has a 10% chance to miss." };
+        case "snowmaw":        return { name:"Drift Ambush",    fx:"crit_phys",    val:4,  desc:"+4% Phys Crit while it is your companion." };
+        case "permafrost_toad":return { name:"Slow Thaw",       fx:"dot_halve",    val:1,  desc:"The first Burn or Poison applied to you each combat is halved." };
+        case "icewing_skua":   return { name:"Scavenger's Eye", fx:"gold",         val:5,  desc:"+5% gold find while it is your companion." };
+        case "pyre_bison":     return { name:"Bankfire",        fx:"fire",         val:4,  desc:"Your Fire-school abilities strike for +4 bonus Fire damage." };
+        case "crypt_gryphon":  return { name:"Old Vigil",       fx:"armor_res",    val:2,  desc:"+2 Armor and +2 El Resist while it is your companion." };
+        case "threehunger":    return { name:"Three Appetites", fx:"crit_phys",    val:4,  desc:"+4% Phys Crit while it is your companion." };
+        case "wing_hare":      return { name:"Unremarkable",    fx:"slip",         val:12, desc:"The first blow aimed at you each combat has a 12% chance to miss." };
+        case "stormkirin":     return { name:"Charged Air",     fx:"crit_spell",   val:5,  desc:"+5% Spell Crit while it is your companion." };
+        case "lockjaw_turtle": return { name:"Set Jaw",         fx:"bleed_dmg",    val:1,  desc:"Your Bleeds deal +1 damage per tick." };
+        case "drowned_lamp":   return { name:"Wet Light",       fx:"event",        val:6,  desc:"+6% success on event stat-checks." };
+        case "honeymaw":       return { name:"Sweet Tooth",     fx:"heal_recv",    val:8,  desc:"+8% to all healing you receive." };
+        case "bark_hound":     return { name:"Weathered",       fx:"dot_halve",    val:1,  desc:"The first Burn or Poison applied to you each combat is halved." };
+        case "canopy_shrew":   return { name:"Overhead",        fx:"crit_low",     val:3,  desc:"+3% Phys Crit against enemies below half HP." };
+        case "witchwood_fawn": return { name:"Green Memory",    fx:"hunger_slow",  val:20, desc:"Your companion's hunger decays 20% slower." };
+        case "pressure_snail": return { name:"Deep Shell",      fx:"armor",        val:2,  desc:"+2 Armor while it is your companion." };
+        case "flicker_finch":  return { name:"Flicker",         fx:"slip",         val:8,  desc:"The first blow aimed at you each combat has an 8% chance to miss." };
+        case "rust_vole":      return { name:"Scavenged Ore",   fx:"elite_gold",   val:10, desc:"It picks the iron clean - +10 gold whenever an ELITE dies." };
+        case "paleswimmer":    return { name:"Undertow",        fx:"undertow",     val:8,  desc:"Enemies that strike you have an 8% chance to be Weakened for 1 turn." };
     }
     return undefined;
 }
@@ -8151,13 +8981,35 @@ function pet_active_innate(fx) {
 // --- SIGNATURE MOVES (08-01, PETS_RESEARCH_0801.md pillar D, M-approved) ------
 // Each boss species carries ONE loud once-per-combat auto ability echoing its
 // boss - the real payoff of a once-per-save signature egg. Tundra trio built
-// this session; the other six land in later sessions (their species return
-// undefined until then, so nothing false shows on any sheet).
+// 08-01; the remaining six built 08-05 (all nine live).
 function pet_species_sig_move(species_id) {
     switch (species_id) {
-        case "rimefox":         return { name:"Still Breath", fx:"still_breath", desc:"Once per combat: the first enemy to act draws breath in the cold - -25% damage for 2 turns." };
-        case "crypt_bat":       return { name:"Echo Shriek",  fx:"echo_shriek",  desc:"Once per combat: the first time you fall below 40% HP, its shriek lays EVERY enemy Exposed." };
-        case "hoarfrost_drake": return { name:"Long Winter",  fx:"long_winter",  desc:"Once per combat: an elite or boss's first action freezes in its throat - delayed one turn." };
+        case "rimefox":         return { name:"Still Breath",  fx:"still_breath", desc:"Once per combat: the first enemy to act draws breath in the cold - -25% damage for 2 turns." };
+        case "crypt_bat":       return { name:"Echo Shriek",   fx:"echo_shriek",  desc:"Once per combat: the first time you fall below 40% HP, its shriek lays EVERY enemy Exposed." };
+        case "hoarfrost_drake": return { name:"Long Winter",   fx:"long_winter",  desc:"Once per combat: an elite or boss's first action freezes in its throat - delayed one turn." };
+        case "vaultling":       return { name:"Warden's Seal", fx:"wardens_seal", desc:"Once per combat: the first enemy ABILITY that would hit you breaks against the seal - negated outright." };
+        case "marrow_adder":    return { name:"Marrow Crown",  fx:"marrow_crown", desc:"Once per combat: when the first enemy falls, the weakest survivor's marrow cracks - 10% of its max HP." };
+        case "gaolwyrm":        return { name:"Gaol Chains",   fx:"gaol_chains",  desc:"Once per combat: the first ability an elite or boss readies against you is chained away - stunned 1 turn." };
+        case "cinder_newt":     return { name:"Forge Spark",   fx:"forge_spark",  desc:"Once per combat: your first attack also sets the target Burning." };
+        case "magma_leech":     return { name:"Slagpearl",     fx:"slagpearl",    desc:"Every combat victory it sweats out a cooling slagpearl - +8 gold." };
+        case "golemite":        return { name:"Stoneshadow",   fx:"stoneshadow",  desc:"Once per combat: the first blow that would drop you below half HP is halved by its stone shadow." };
+        // --- 08-06: Depth Warden scions (DESIGN_WORLD_EXPANSION_0806.md §2.1) -----
+        case "doorling":        return { name:"Held Open",     fx:"held_open",    desc:"Once per combat: it holds the way open - you take no damage from the first enemy to act." };
+        case "fathom_squid":    return { name:"Ink Fathom",    fx:"ink_fathom",   desc:"Once per combat: the first enemy to target you loses its turn to the dark." };
+        case "tallykeep":       return { name:"Reckoning",     fx:"reckoning",    desc:"Every 3rd ability you cast deals +20% damage - it is keeping count." };
+        case "lantern_wyrm":    return { name:"Borrowed Light", fx:"borrowed_light", desc:"Once per combat: the first time you fall below 50% HP, its lantern gives back 15% of your max HP." };
+        case "deepclaw":        return { name:"Deadweight",    fx:"deadweight",   desc:"Once per combat: the first enemy to act is slowed - it acts last for 2 turns." };
+        case "sum_moth":        return { name:"Carry the One", fx:"carry_one",    desc:"Once per combat: your first overkill damage carries over to another enemy." };
+        case "null_hound":      return { name:"Nothing Follows", fx:"nothing_follows", desc:"Once per combat: the first debuff applied to you is erased before it lands." };
+        case "mimicling":       return { name:"Understudy",    fx:"understudy",   desc:"It copies the innate of the last creature you had active." };
+        case "griefwisp":       return { name:"Abdication",    fx:"abdication",   desc:"Once per combat: the first elite or boss ability costs that enemy its next turn." };
+        // --- 08-06: new biome scions (§3.1 Drowned Reach, §3.2 Hollow Canopy) -----
+        case "sluice_otter":    return { name:"Ebb",           fx:"ebb",          desc:"Once per combat: the first heal you receive is doubled." };
+        case "chorister_fry":   return { name:"Descant",       fx:"descant",      desc:"Once per combat: the first summon an enemy calls arrives at 1 HP." };
+        case "leviathan_calf":  return { name:"Something Larger", fx:"something_larger", desc:"Once per combat: the first enemy to strike you takes 25% of its own max HP." };
+        case "graftling":       return { name:"Take Root",     fx:"take_root",    desc:"Once per combat: the first enemy add arrives Rooted." };
+        case "thornlet":        return { name:"Bramble Wall",  fx:"bramble_wall", desc:"Once per combat: the first enemy attack on you is stopped outright." };
+        case "whispervine":     return { name:"Held Breath",   fx:"held_breath",  desc:"Once per combat: the first ability silenced or disabled is refunded." };
     }
     return undefined;
 }
@@ -8320,6 +9172,7 @@ function pet_bond_gain(pet, amount) {
     pet.bond = pet_bond(pet) + amount;
     var _t1 = pet_bond_tier(pet);
     if (_t1 <= _t0) return "";
+    ach_unlock("ACH_ACQUAINTED");   // achievement hook (08-05 wiring): first bond tier-up
     audio_play_sound(snd_bond_up, 1, false);   // warm two-note motif on a tier crossing
     var _msg = pet.name + "'s bond deepens - " + pet_bond_tier_name(_t1) + ".";
     if (_t1 >= 1 && _t0 < 1) {
@@ -8648,6 +9501,11 @@ function dungeon_display_name(dkey) {
         case "ashen_vault":     return "Ashen Vault";
         case "scorched_depths": return "Scorched Depths";
         case "tundra_tomb":     return "Tundra Tomb";
+        // 08-06 world expansion (DESIGN_WORLD_EXPANSION_0806.md §3) + the Descent.
+        case "drowned_reach":   return "Drowned Reach";
+        case "hollow_canopy":   return "Hollow Canopy";
+        case "stormcrag":       return "Stormcrag";
+        case "descent":         return "The Descent";
     }
     return dkey;
 }
@@ -9086,6 +9944,47 @@ function pet_species_catalog() {
         { id:"sporeling",        name:"Sporeling",        blurb:"a waddling toadstool that hums in the damp" },
         { id:"voidkit",          name:"Voidkit",          blurb:"a kitten cut from the night between stars" },
         { id:"ironshell_beetle", name:"Ironshell Beetle", blurb:"a beetle born wearing riveted plate" },
+        // --- 08-06 world-expansion slate (DESIGN_WORLD_EXPANSION_0806.md §1) -------
+        // Art-gated like the 07-31 wave: these never roll until their sprites land.
+        { id:"cairn_bear",     name:"Cairn Bear",     blurb:"a cub that sleeps under stacked stones and wakes heavier" },
+        { id:"ember_ram",      name:"Ember Ram",      blurb:"horns that glow like coals banked overnight" },
+        { id:"salt_hare",      name:"Salt Hare",      blurb:"quick, twitchy, tastes of the flats it crossed" },
+        { id:"mire_heron",     name:"Mire Heron",     blurb:"stands still so long the water forgets it" },
+        { id:"gravel_tick",    name:"Gravel Tick",    blurb:"a pebble that turns out to have legs" },
+        { id:"ashjaw_lynx",    name:"Ashjaw Lynx",    blurb:"soot-furred, hunts by the heat of you" },
+        { id:"glass_eel",      name:"Glass Eel",      blurb:"transparent but for a thread of silver spine" },
+        { id:"chapel_bat",     name:"Chapel Bat",     blurb:"roosts where prayers were loudest" },
+        { id:"barrow_mole",    name:"Barrow Mole",    blurb:"digs toward things that should stay buried" },
+        { id:"tallow_moth",    name:"Tallow Moth",    blurb:"fat, slow, drawn to the last candle" },
+        // Badgers + foxes (M 08-06: roster had neither)
+        { id:"gravemask",      name:"Gravemask",      blurb:"it always comes up holding something that was buried" },
+        { id:"bristleback",    name:"Bristleback",    blurb:"small, scarred, and entirely unwilling to move" },
+        { id:"wispfox",        name:"Wispfox",        blurb:"it leads you somewhere and does not look back" },
+        { id:"gravefox",       name:"Gravefox",       blurb:"it dug up a crown and has decided the crown is its" },
+        // Ice biome (M 08-07: "we have at least a few fire types for ember vaults,
+        // generate a few ice ones") - art imported 08-08, wired 08-08.
+        { id:"frostmarten",    name:"Frostmarten",    blurb:"it hunts under the ice and comes up somewhere else" },
+        { id:"snowmaw",        name:"Snowmaw",        blurb:"a drift with an appetite, and you are standing on it" },
+        { id:"permafrost_toad",name:"Permafrost Toad",blurb:"froze solid some winter and never fully agreed to thaw" },
+        { id:"icewing_skua",   name:"Icewing Skua",   blurb:"it does not hunt, it waits for you to drop something" },
+        // Fantasy hybrids (M 08-06: "we want hybrid made-up stuff as well")
+        { id:"pyre_bison",     name:"Pyre Bison",     blurb:"snow has never once settled on its back" },
+        { id:"crypt_gryphon",  name:"Crypt Gryphon",  blurb:"it perches on stone the way a statue would" },
+        { id:"threehunger",    name:"Threehunger",    blurb:"three heads, three appetites, one body to argue in" },
+        { id:"wing_hare",      name:"Wing Hare",      blurb:"it considers the antlers entirely unremarkable" },
+        { id:"stormkirin",     name:"Stormkirin",     blurb:"the air near it is always about to happen" },
+        // Biome residents - Drowned Reach (§3.1) + Hollow Canopy (§3.2)
+        { id:"lockjaw_turtle", name:"Lockjaw Turtle", blurb:"it has decided about you already" },
+        { id:"drowned_lamp",   name:"Drowned Lamp",   blurb:"a fish carrying a light no water puts out" },
+        { id:"honeymaw",       name:"Honeymaw",       blurb:"the bees have long since stopped objecting" },
+        { id:"bark_hound",     name:"Bark Hound",     blurb:"an ordinary dog wearing an extraordinary coat" },
+        { id:"canopy_shrew",   name:"Canopy Shrew",   blurb:"small, furious, extremely high up" },
+        { id:"witchwood_fawn", name:"Witchwood Fawn", blurb:"born from a tree that remembered being a deer" },
+        // Descent generals (§2.2) - these only appear via Descent sources
+        { id:"pressure_snail", name:"Pressure Snail", blurb:"its shell is denser than it has any right to be" },
+        { id:"flicker_finch",  name:"Flicker Finch",  blurb:"it is only ever mostly here" },
+        { id:"rust_vole",      name:"Rust Vole",      blurb:"eats iron, leaves the good bits" },
+        { id:"paleswimmer",    name:"Paleswimmer",    blurb:"eyeless, and it does not react to you at all" },
     ];
 }
 
@@ -9103,6 +10002,27 @@ function pet_species_signature_catalog() {
         { id:"rimefox",         name:"Rimefox",         boss:"Glacial Warden",       dungeon:"tundra_tomb",     floor:1, blurb:"a frost-furred kit whose breath never melts" },
         { id:"crypt_bat",       name:"Crypt Bat",       boss:"Tomb Archon",          dungeon:"tundra_tomb",     floor:2, blurb:"tattered wings that never miss in the dark" },
         { id:"hoarfrost_drake", name:"Hoarfrost Drake", boss:"The Eternal Frost",    dungeon:"tundra_tomb",     floor:3, blurb:"an ice-scaled drakeling dreaming of the long winter" },
+        // --- 08-06: DEPTH WARDEN scions (DESIGN_WORLD_EXPANSION_0806.md §2.1) -----
+        // Universal rule: every boss has a scion. Wardens live in the Descent, so
+        // dungeon = "descent" and `floor` is the Warden's five-floor cadence slot.
+        // pet_boss_signature_species() matches on dungeon+floor, so these never
+        // collide with the dungeon trios above.
+        { id:"doorling",       name:"Doorkeeper's Cat", boss:"The First Door",          dungeon:"descent", floor:5,  blurb:"it never left its post, and the door never left it" },
+        { id:"fathom_squid",   name:"Fathom Squid",     boss:"Sister Fathom",           dungeon:"descent", floor:10, blurb:"it has never seen light and does not miss it" },
+        { id:"tallykeep",      name:"Tallykeep",        boss:"The Tally",               dungeon:"descent", floor:15, blurb:"it counts on toes it does not have" },
+        { id:"lantern_wyrm",   name:"Lantern Wyrm",     boss:"Hollowlight",             dungeon:"descent", floor:20, blurb:"the light on its head is not its own" },
+        { id:"deepclaw",       name:"Deepclaw",         boss:"The Weight of Ironwake",  dungeon:"descent", floor:25, blurb:"it carries a floor of the Descent on its back" },
+        { id:"sum_moth",       name:"Sum Moth",         boss:"The Long Arithmetic",     dungeon:"descent", floor:30, blurb:"its wings show a number that keeps changing" },
+        { id:"null_hound",     name:"Null Hound",       boss:"Nothing In Particular",   dungeon:"descent", floor:35, blurb:"a dog-shaped absence that heels anyway" },
+        { id:"mimicling",      name:"Mimicling",        boss:"The Understudy",          dungeon:"descent", floor:40, blurb:"it is doing an impression of your last companion" },
+        { id:"griefwisp",      name:"Griefwisp",        boss:"The Hollow Crown",        dungeon:"descent", floor:45, blurb:"it carries a crown far too big for it" },
+        // --- 08-06: new biome scions (§3.1 Drowned Reach, §3.2 Hollow Canopy) -----
+        { id:"sluice_otter",   name:"Sluice Otter",     boss:"The Tidewright",          dungeon:"drowned_reach", floor:1, blurb:"it lived in the lock-works and still wears one" },
+        { id:"chorister_fry",  name:"Chorister Fry",    boss:"Choirmother of the Deep", dungeon:"drowned_reach", floor:2, blurb:"it hums the part it was taught" },
+        { id:"leviathan_calf", name:"Leviathan Calf",   boss:"Leviathan Below",         dungeon:"drowned_reach", floor:3, blurb:"enormous, eventually" },
+        { id:"graftling",      name:"Graftling",        boss:"The Grafted Stag",        dungeon:"hollow_canopy", floor:1, blurb:"antlers already, and it is very small" },
+        { id:"thornlet",       name:"Thornlet",         boss:"Mother Bramble",          dungeon:"hollow_canopy", floor:2, blurb:"it hugs, and you bleed a little" },
+        { id:"whispervine",    name:"Whispervine",      boss:"The Green Silence",       dungeon:"hollow_canopy", floor:3, blurb:"a serpent of living vine that has never made a sound" },
     ];
 }
 
@@ -9639,8 +10559,19 @@ function tutorial_catalog() {
         { id:"gold_risk",  title:"Gold at Risk",        body:"Gold you FIND during a run is at risk - die and you lose most of it (a quarter is returned as mercy). Gold banked before the run is always safe at camp. The number in brackets on your HUD is what you're gambling: extract to keep it all." },
         { id:"escape_item", title:"A Way Out",          body:"You carry an escape item. On the floor map, press G (or tap the LAMP / WINE button) to use it: the Genie Lamp whisks you back to camp with ALL your loot, free. Devil Wine does the same - but drains 2 random stat points. WARNING: the Wine's toll is PERMANENT - those points are gone from your hero on every future run, not just this one. Cash out a greedy run before the dungeon takes it back." },
         { id:"bond_gates",  title:"Growing Closer",     body:"Someone in camp has warmed to you - their bond has reached a GATE. Crossing a gate now takes a FAVOR: talk to them and take on their gate quest (it appears on the tavern board and in your Journal). Finish it and the friendship deepens, unlocking their next perk. Mind your bonds: friendships DECAY if neglected, and only a few can hold the deepest tiers - deepening one may demote another." },
+        { id:"maren_forge", title:"Rough Steel",       body:"Every item now drops UNFINISHED - the [Quality %] tag on its stats shows how much of its true power it delivers. DORN'S TEMPER TAB works a piece +10% at a time toward 100%, for gold and rune dust, and each completed step also adds FINISH: flat max HP scaled by rarity. A raw legendary barely beats a finished epic - the smith is half of every item's story." },
+        { id:"dormant_leg", title:"A Sleeping Legend", body:"You found a DORMANT legendary. It fell asleep when its last bearer died - it carries only a shadow of its true strength for now. Take it to Maren's AWAKEN craft (Forge tab): 300g, 60 rune dust and two epics fed to the fire will wake it. Only the storied named legendaries are ever found awake." },
         { id:"dorn_reforge", title:"Reforge Ingots",   body:"You earned a REFORGE INGOT. Take unequipped gear to Dorn the Blacksmith and spend an ingot to REROLL its affixes - same item, same rarity, fresh random stats. Ingots are TIERED to rarity: a higher-tier ingot reworks any gear of its tier or below, so a Legendary ingot works on anything while a Common one only touches Common gear. Your ingot hoard shows at Dorn and in your Stash." },
         { id:"legendary_forge", title:"Dorn's Forge",   body:"Two crafts live here. REWORK GEAR: spend a Reforge Ingot of the gear's tier (or higher) to reroll an item's affixes - and FUSE 3 ingots of one tier into 1 of the next tier when the low ones pile up. THE LEGENDARY FORGE: the camp's oldest craft asks three components - Dorn strikes the MYTHRIL FRAME (gold + a Legendary Ingot), Maren seals the RUNEHEART CORE, Sable distills the QUINTESSENCE. Bring all three back to Dorn to forge - and NAME - a legendary that exists nowhere else." },
+        // First talent point earned mid-run (M 08-08). The web system was
+        // invisible until you happened to open the loadout and notice a badge -
+        // this fires once, in the fight where the first point lands, and its whole
+        // job is to tell you the mechanic exists and to invite experimenting.
+        // Traps became a board state on 08-08 - deploying one no longer does
+        // anything visible on the turn you spend, so the first deploy has to
+        // explain that the payoff is coming and what decides whether it lands.
+        { id:"traps_deployed", title:"The Floor Is Yours", body:"That trap is SET, not thrown - it sits between you and them and waits. It springs on the first enemy action that matches it: a melee swing, a ranged shot, a spell, or anything at all. A trap that BLOCKS cancels the attack outright and eats their turn. Watch the enemy intent gems and set the trap that answers what they are about to do - a correct read is worth far more than the damage. You hold two traps at once, and your Preparation only refills while the board is EMPTY." },
+        { id:"talent_first", title:"Mastery",           body:"You have cast that ability enough times to MASTER it - it just earned its first TALENT POINT. Back at camp, open the loadout screen: every ability has its own web of talents, and points are woven there to change how it works. Abilities earn points at 10, 30, 60 and 100 lifetime casts, so the ones you actually USE are the ones that deepen. Experiment - some talents are a subtle nudge, others rewrite the ability completely. Your Abilities tab tracks every ability under TALENTS." },
         { id:"corruption_101", title:"Corruption",      body:"A creature in your care is CORRUPTED. The bargain: while it pushes (3 survived runs as your active companion), YOU pay -20% max HP and -10% damage. Each pushed run adds a PERMANENT +15% to its passive gift. You may CURE it at Bairc's any time - the gains earned so far are kept, the burden lifts, but its grand power is forfeit. See it through all 3 runs and it fully corrupts: its gift is 45% stronger forever, the burden ends, and it earns a grand boon. The full table lives in the Compendium under Companions." },
     ];
 }
@@ -9907,6 +10838,7 @@ function chit_reforge_item(item) {
     // Reforge re-CREATES the affix rows, so the weapon's damage-roll bias applies
     // here too - otherwise reforging a max-roll weapon would sidestep the tradeoff.
     apply_affixes_to_item(item, roll_affixes(min(_r, 3), _count, item_affix_exclusions(item), item.slot, _bn, weapon_damage_bias_t(item)));
+    ach_unlock("ACH_REFORGED");   // achievement hook (08-05 wiring): a successful reforge
     return true;
 }
 
@@ -9987,7 +10919,9 @@ function item_picker_prompt() {
             + (variable_struct_exists(global.item_picker.context, "trait_name")
                 ? global.item_picker.context.trait_name : "the trait") + " will TRANSCEND";
         case "maren_sunder":   return "Choose a legendary to SUNDER - it becomes a Legendary Ingot + 50 dust + a tier-III rune";
-        case "cursed_rebirth": return "Feed a legendary to the dark (+" + string(cha_price(300)) + "g) - it returns STRONGER, and cursed";
+        case "maren_temper":   return "Choose gear to TEMPER - Maren works it +10% toward its true potential";
+        case "maren_awaken":   return "Choose a DORMANT legendary to AWAKEN (300g + 60 dust + 2 epics)";
+        case "cursed_rebirth": return "An Inequivalent Exchange... feed a legendary to the dark";
         case "statreq_rebirth": return "Choose an item to RE-ATTUNE - its stat requirement re-sets to a random other stat";
     }
     return "Choose an item";
@@ -10002,6 +10936,8 @@ function item_picker_verb() {
         case "courier":      return "Send home";
         case "vex_potency":  return "Offer";
         case "maren_sunder":   return "Sunder";
+        case "maren_temper":   return "Temper";
+        case "maren_awaken":   return "Awaken";
         case "cursed_rebirth": return "Sacrifice";
         case "statreq_rebirth": return "Re-attune";
     }
@@ -10164,6 +11100,9 @@ function item_picker_resolve() {
         global.gold -= _sq_fee;
         _sq_it.req_stat  = _sq_new;
         _sq_it.req_value = _sq_rq.value;
+        // 08-04 (M): remaking an item re-rolls its LOOK - the saved icon_seed
+        // shifts the variant hash (ui_icon_item_key) to a fresh model.
+        _sq_it.icon_seed = irandom(999983);
         save_game();
         _p.resolved_purpose = "statreq_rebirth";
         _p.result_msg = _sq_it.name + " re-attunes - it now asks " + _sq_new + " " + string(_sq_rq.value) + ".";
@@ -10173,6 +11112,72 @@ function item_picker_resolve() {
              "Asked before:  " + _sq_rq.stat + " " + string(_sq_rq.value)],
             make_color_rgb(160, 200, 235));
         audio_play_sound(snd_confirm_major, 1, false);
+        item_picker_close();
+        return;
+    }
+
+    // MAREN TEMPER (08-04 tempering, SYSTEMS_ITEM_PROGRESSION §1): +10% quality
+    // toward 100, gold + dust by rarity. The item is MUTATED in place (like
+    // re-attune) - nothing is removed.
+    if (_p.purpose == "maren_temper") {
+        var _tp_sel = (_p.cursor >= 0 && _p.cursor < array_length(_p.candidates))
+                      ? _p.candidates[_p.cursor] : undefined;
+        if (_tp_sel == undefined) {
+            _p.resolved_purpose = "maren_temper"; _p.result_msg = "Nothing chosen.";
+            item_picker_close(); return;
+        }
+        var _tp_it  = _tp_sel.item;
+        var _tp_fee = temper_fee(_tp_it);
+        if (!variable_global_exists("rune_dust")) global.rune_dust = 0;
+        if (global.gold < _tp_fee.gold || global.rune_dust < _tp_fee.dust) {
+            _p.resolved_purpose = "maren_temper";
+            _p.result_msg = "Tempering asks " + string(_tp_fee.gold) + "g + " + string(_tp_fee.dust) + " dust.";
+            audio_play_sound(snd_ui_error, 1, false);
+            item_picker_close(); return;
+        }
+        global.gold      -= _tp_fee.gold;
+        global.rune_dust -= _tp_fee.dust;
+        // Snapshot BEFORE the mutation - the reveal popup runs after it (M 08-08).
+        var _tp_was = item_shallow_copy(_tp_it);
+        _tp_it.quality = min(100, (variable_struct_exists(_tp_it, "quality") ? _tp_it.quality : 100) + 10);
+        // No icon_seed re-roll here (M 08-11): tempering never changes a piece's look.
+        save_game();
+        _p.resolved_purpose = "maren_temper";
+        _p.result_msg = _tp_it.name + " tempered to " + string(_tp_it.quality) + "%"
+            + ((_tp_it.quality >= 100) ? " - FINISHED." : ".");
+        forge_result_open("TEMPERED", (_tp_it.quality >= 100)
+                ? "The metal finally sings its whole note."
+                : "Closer to what it was always meant to be.",
+            _tp_it, _tp_was, [],
+            make_color_rgb(200, 170, 110));
+        audio_play_sound(snd_forge, 1, false);
+        item_picker_close();
+        return;
+    }
+
+    // MAREN AWAKEN (08-04 dormant legendaries, §2): 300g + 60 dust + 2 epics
+    // wake a dormant legendary to its true strength.
+    if (_p.purpose == "maren_awaken") {
+        var _aw_sel = (_p.cursor >= 0 && _p.cursor < array_length(_p.candidates))
+                      ? _p.candidates[_p.cursor] : undefined;
+        if (_aw_sel == undefined) {
+            _p.resolved_purpose = "maren_awaken"; _p.result_msg = "Nothing chosen.";
+            item_picker_close(); return;
+        }
+        var _aw_it  = _aw_sel.item;
+        var _aw_eps = cursed_rebirth_gear_of_rarity(3, _aw_it);
+        if (!variable_global_exists("rune_dust")) global.rune_dust = 0;
+        if (global.gold < 300 || global.rune_dust < 60 || array_length(_aw_eps) < 2) {
+            _p.resolved_purpose = "maren_awaken";
+            _p.result_msg = "Awakening asks 300g + 60 dust + 2 epics to burn in the forge.";
+            audio_play_sound(snd_ui_error, 1, false);
+            item_picker_close(); return;
+        }
+        // REAGENT STAGE (M 08-05: "all item selections are manual"): nothing
+        // burns here - the player picks exactly which epics fuel the forge on
+        // the next screen. The awakening happens in maren_awaken_commit().
+        reagent_picker_open_awaken(_aw_sel);
+        audio_play_sound(snd_page, 1, false);
         item_picker_close();
         return;
     }
@@ -10216,36 +11221,27 @@ function item_picker_resolve() {
             _p.resolved_purpose = "cursed_rebirth"; _p.result_msg = "Nothing chosen.";
             item_picker_close(); return;
         }
-        var _cr_fee = cha_price(300);
-        if (global.gold < _cr_fee) {
+        // Escalating reassemblage (M 08-04): gold + potions + gear essence, all
+        // scaling x1.5 per curse already on the offering. The detail pane
+        // previews this exact ask before the picker's confirm arms.
+        var _cr_fee = cursed_rebirth_fee(_cr_sel.item);
+        var _cr_pts = cursed_rebirth_pts_avail(_cr_sel.item);
+        var _cr_pn  = (variable_global_exists("consumable_inventory") && is_array(global.consumable_inventory))
+                      ? array_length(global.consumable_inventory) : 0;
+        if (global.gold < _cr_fee.gold || _cr_pts < _cr_fee.uncommons || _cr_pn < _cr_fee.potions) {
             _p.resolved_purpose = "cursed_rebirth";
-            _p.result_msg = "Not enough - the dark asks " + string(_cr_fee) + "g with the offering.";
+            _p.result_msg = "Not enough - the dark asks " + string(_cr_fee.gold) + "g + "
+                + string(_cr_fee.potions) + " potions + " + string(_cr_fee.epics) + " epic"
+                + ((_cr_fee.epics == 1) ? "" : "s") + " (or " + string(_cr_fee.rares) + " rares / "
+                + string(_cr_fee.uncommons) + " uncommons, mixed freely).";
             audio_play_sound(snd_ui_error, 1, false);
             item_picker_close(); return;
         }
-        var _cr_new = cursed_rebirth_make(_cr_sel.item);
-        var _cr_src = _cr_sel.source;
-        item_picker_remove_selected();
-        global.gold -= _cr_fee;
-        if (_cr_src == 0) array_push(global.equipment_stash, _cr_new);
-        else              array_push(global.carried_items, _cr_new);
-        discover_item(item_base_name(_cr_new), _cr_new.rarity);
-        save_game();
-        _p.resolved_purpose = "cursed_rebirth";
-        _p.result_msg = "The dark accepts... " + _cr_new.name + " crawls back out.";
-        // CEREMONY (07-31, M: "cursed rebirth should be a grand affair"): a dark
-        // ritual overlay plays first (gc Step times it; hub Draw renders it),
-        // THEN the forge-result reveal pops with the reborn item.
-        var _gcr = instance_find(obj_game_controller, 0);
-        if (_gcr != noone) {
-            _gcr.cursed_ritual_t    = 0;
-            _gcr.cursed_ritual_item = _cr_new;
-            _gcr.cursed_ritual_prev = _cr_sel.item;
-        } else {
-            forge_result_open("CURSED REBIRTH", "The dark accepts the offering... and gives it back changed.",
-                _cr_new, _cr_sel.item, [], make_color_rgb(220, 90, 100));
-        }
-        audio_play_sound(snd_forge, 1, false);
+        // REAGENT STAGE (M 08-05): nothing burns here - the player picks exactly
+        // which gear + potions feed the dark on the next screen. The rebirth
+        // itself happens in cursed_rebirth_commit().
+        reagent_picker_open(_cr_sel);
+        audio_play_sound(snd_page, 1, false);
         item_picker_close();
         return;
     }
@@ -12122,4 +13118,237 @@ function achievements_sync() {
     if (_c.board_done >= 25)   ach_unlock("ACH_BOARD_25");
     if (variable_global_exists("ach_run_absorbed") && global.ach_run_absorbed >= 500)
         ach_unlock("ACH_ABSORB_500");
+
+    // --- Web Complete (08-05 wiring): any ability woven to the 4-pick cap. ---
+    if (variable_global_exists("ability_web") && is_struct(global.ability_web)) {
+        var _wc_names = variable_struct_get_names(global.ability_web);
+        for (var _wci = 0; _wci < array_length(_wc_names); _wci++) {
+            var _wc_p = variable_struct_get(global.ability_web, _wc_names[_wci]);
+            if (is_array(_wc_p) && array_length(_wc_p) >= ability_web_cap()) {
+                ach_unlock("ACH_WEB_COMPLETE");
+                break;
+            }
+        }
+    }
+
+    // --- Codex Collector / Curator (08-05 wiring): discovered vs total over the
+    // cached master list (headers skipped). ---
+    var _cx = item_codex_master_list();
+    var _cx_total = 0, _cx_disc = 0;
+    for (var _cxi = 0; _cxi < array_length(_cx); _cxi++) {
+        if (codex_entry_is_header(_cx[_cxi])) continue;
+        _cx_total++;
+        if (codex_entry_discovered(_cx[_cxi])) _cx_disc++;
+    }
+    if (_cx_total > 0) {
+        if (_cx_disc * 2 >= _cx_total) ach_unlock("ACH_COLLECTOR");
+        if (_cx_disc >= _cx_total)     ach_unlock("ACH_CURATOR");
+    }
+
+    // --- Pillar of the Community (08-05 wiring): every keeper at Friend+ (tier 2). ---
+    var _pl_ids = affinity_npc_ids();
+    var _pl_all = (array_length(_pl_ids) > 0);
+    for (var _pli = 0; _pli < array_length(_pl_ids); _pli++) {
+        if (affinity_tier(_pl_ids[_pli]) < 2) { _pl_all = false; break; }
+    }
+    if (_pl_all) ach_unlock("ACH_PILLAR");
 }
+
+// =============================================================================
+// CREATURE COMPENDIUM (08-06, DESIGN_WORLD_EXPANSION_0806.md §10)
+// M's brief: a pokedex in the Journal, lore per creature, entries unlock only as
+// you find them.
+//
+// VOICE (M, explicit): NOT vague mysticism. These read as MAGICAL ECOLOGY - what
+// the creature eats, how it breeds, what it does to the place it lives in, what
+// its magic is FOR. Mysterious because the facts are strange, not because the
+// prose is evasive.
+//
+// Discovery is read from the achievement counters that already exist
+// (global.ach_counters.species_hatched, .scions_hatched) - no new save data,
+// no SAVE_FORMAT_VERSION bump.
+// =============================================================================
+
+function pet_species_lore(species_id) {
+    switch (species_id) {
+        // --- original eight ---------------------------------------------------
+        case "luna_moth":        return "Feeds on moonlight the way other insects feed on nectar, which is why the grubs are found in the deepest unlit galleries - starving, and dreaming of a sky none of them have seen. The wings come in already silvered. Nobody has satisfactorily explained how.";
+        case "bone_stag":        return "It grows antler the way coral grows reef: slowly, in layers, and never stopping. Old stags cannot lift their heads at all and stand where they died, becoming small cathedrals. Grave-moss favours their bone above all other surfaces.";
+        case "saber_hound":      return "Born with the full adult dentition already through the gum, which is agony, which is why they are born snarling. The pack raises pups communally and the snarl never entirely leaves. Bonds hard once it decides you are pack.";
+        case "gloomtoad":        return "Its stare thickens the air in front of it, and thoughts moving through that air arrive slow and heavy. Used as watch-animals by the old Vault wardens, who valued a creature that made intruders forget what they came for.";
+        case "wyrmling":         return "Hatches remembering a body it has never had - a wingspan, a hoard, a name. It will spend its whole life a little too small for the instincts it woke up with. The fire is real from the first day.";
+        case "nightowl":         return "Does not sleep so much as take turns with itself, one hemisphere at a time, for its entire life. What it watches for it has never explained. Its presence sharpens the judgement of anyone standing near it, which the guild noticed and exploited.";
+        case "bonehound":        return "The loyalty outlasts the body. A bonehound that has chosen someone will keep following after death, and the skeleton walks the same route it walked in life until the route itself wears away. Bonds faster than anything else in the dark.";
+        case "hollow_pup":       return "Something is missing from the middle of it - a warmth other animals have and this one does not. The tail still wags. Its presence makes healing take better, as though the hollow draws the good in and holds it there a moment longer.";
+        // --- 07-31 expansion --------------------------------------------------
+        case "duskraven":        return "Collects last words the way other corvids collect bright objects, and will repeat them years later in the speaker's own voice. Follows elites and gravediggers for this reason. It is not mockery. It appears to be archival.";
+        case "pale_widow":       return "Spins in total silence on a thread that does not reflect light. Its venom does not kill so much as refuse to finish, keeping a wound open long past when it should have closed. The web is the safest place in any room it occupies.";
+        case "shellback":        return "The runes on the shell are not carved. They surface from underneath as the tortoise ages, in a script nobody has matched to a known language. Older shellbacks are correspondingly harder to hurt.";
+        case "thorn_boar":       return "The brambles are alive and rooted into the animal, drawing from its blood and paying rent in armour. Piglets are born bare and are seeded within days by the sow, who chews the canes soft first.";
+        case "glimmer_slime":    return "Swallows gemstones it cannot digest and carries them for life, so an old slime is a walking assay of everywhere it has been. Prospectors follow them. The slime does not appear to mind, or to notice.";
+        case "sporeling":        return "The hum is respiration. A colony in a damp gallery will synchronise its humming over several days until the whole chamber sounds like one animal breathing, which is thought to discourage predators.";
+        case "voidkit":          return "Cut, not born - a piece of the dark between stars that has decided to be a cat. It is briefly not where it appears to be, most noticeably when something swings at it. Purrs at a frequency that makes lamps gutter.";
+        case "ironshell_beetle": return "Metabolises ore, then sweats the metal outward and lets it harden in plates along the seams of its shell. A beetle that has fed well is functionally a small locked box with legs.";
+        // --- existing scions --------------------------------------------------
+        case "rimefox":          return "Its breath leaves the body already frozen, so it hunts inside a small permanent fog of its own making. Kits are born into a snow den the vixen keeps below freezing by breathing into it nightly.";
+        case "crypt_bat":        return "Echolocates in a register that reflects off bone more cleanly than off stone, which is why it never misses in a tomb and blunders badly outdoors. The Archon's roosts were bred for this.";
+        case "hoarfrost_drake":  return "Runs cold rather than hot, and the ice it breathes is a by-product of that metabolism rather than a weapon it chose. Drakelings enter a long dreaming torpor at the first hard freeze, which is when the eggs are safest to take.";
+        case "vaultling":        return "Not built and not quite hatched - the Vault's wards accreted a shell around a stone beetle over centuries until the shell became the animal. It still hums on the Vault's frequency and always will.";
+        case "marrow_adder":     return "Feeds on marrow specifically, and the vertebrae it grows are demonstrably not its own. Each new segment is a bone it has eaten and kept. The crown is likewise borrowed and does not fit.";
+        case "gaolwyrm":         return "The chain is grown, not worn - a mineral secretion along the spine that hardens into links. The tail terminates in a key-shaped ossicle that fits no lock anyone has found, though Malgrath reportedly knew.";
+        case "cinder_newt":      return "Amphibian that breeds in cooling slag rather than water. The eggs need the heat curve of a forge going out, which is why they are only ever found where something has recently stopped burning.";
+        case "magma_leech":      return "Drinks heat directly, then sweats the spent mineral out as pearls that cool behind it in a trail. Follow the trail and you find the leech. Follow it the other way and you find whatever it drained.";
+        case "golemite":         return "A shard of the Ashen Colossus that kept moving. It is still trying to be tall - it climbs everything it can reach and stands on the highest point available, which appears to be the entirety of its ambition.";
+        // --- 08-06 expansion: general slate -----------------------------------
+        case "cairn_bear":       return "Cubs den under the stone piles left over graves, and the stones settle into the fur as they grow until one rides the shoulder permanently. The bear does not carry it deliberately. It simply never had reason to shrug it off.";
+        case "ember_ram":        return "The horn is hollow and the animal banks fire inside it, drawing the coal down for winter and letting it up in the rut. A ram in full display is genuinely dangerous to stand near. Wool never takes the flame.";
+        case "salt_hare":        return "Crosses the dry flats at a pace nothing else attempts, and the salt it sweats out crusts along the spine as a record of the distance. Old hares are almost white with mileage.";
+        case "mire_heron":       return "Holds position so long that silt settles on its back and the water genuinely stops registering it as an object. Everything it eats swims willingly into reach. The patience is metabolic - its heart nearly stops to do this.";
+        case "gravel_tick":      return "Grows a shell out of the exact stone it was hatched on, so a colony is invisible until you disturb it and a section of floor stands up. Attaches for weeks. Its bite keeps a wound from closing.";
+        case "ashjaw_lynx":      return "Hunts by heat rather than sight, which works well in the dark and makes it useless in a wildfire. The glow in the throat is a heat-organ, not swallowed coal, though the folk name has outlasted every correction.";
+        case "glass_eel":        return "Transparent because it has no pigment to spare - everything goes into the silver spine, which is where its magic lives. Hides by holding still in clear water and simply not being visible.";
+        case "chapel_bat":       return "Roosts only where a great deal of singing was done, and the wing membranes take on the patterns of whatever glass the light came through. Colonies outlast the roofs. They keep returning to the coordinates of a building that is no longer there.";
+        case "barrow_mole":      return "Digs toward grave goods specifically, apparently by smell, and has never been observed to eat any of it. The claws outgrow the animal. Old moles cannot walk on the surface at all.";
+        case "tallow_moth":      return "Feeds on rendered fat and tallow rather than nectar, so it thrives in kitchens and mortuaries and nowhere in between. Too heavy to fly well. It goes to the last candle in a room and stays there.";
+        case "gravemask":        return "Excavates old interments with great care and always surfaces holding one small thing - a ring, a coin, a locket. It does not hoard them. It carries one until it finds another it prefers, then leaves the first neatly on the ground.";
+        case "bristleback":      return "Will not retreat. Not bravery so much as a wiring fault - the flight response appears to be simply absent. Guard hairs stand and stay standing. Most scars on an old bristleback are on the front.";
+        case "frostmarten":      return "Hunts the whole winter beneath the ice sheet and surfaces through holes it did not make, sometimes a long way from where it went under. Trappers who have tried to map its routes stop trying. The pelt is dry when it emerges.";
+        case "snowmaw":          return "Lies flat and lets the drift build over it, sometimes for the better part of a season, breathing slowly enough that the crust never melts through. What it waits for is not clear, since it will eat almost anything and rarely seems hungry.";
+        case "permafrost_toad":  return "Freezes solid each winter and thaws each spring incompletely, keeping a little more ice inside it every year. Older ones are more ice than toad and move accordingly. None have been found dead, which raises the obvious question.";
+        case "icewing_skua":     return "Does not hunt. It shadows anything larger than itself across the ice and waits for that thing to falter, drop something, or die, and it is patient about all three. It has been following some parties since the first floor.";
+        case "wispfox":          return "The tailflame gives no heat and lights nothing, which rules out every obvious purpose. It burns brightest when the fox is leading something somewhere. What it is leading them toward remains an open question.";
+        case "gravefox":         return "Digs crowns and circlets out of old barrows and wears them until they fall apart. Vixens have been observed stealing them from each other. There is no evidence the fox understands what a crown is, and considerable evidence it does not care.";
+        case "pyre_bison":       return "Banks fire in the shoulder shag the way its northern cousins bank fat, and the herd's collective heat keeps a valley thawed all winter. Snow has never once settled on a living bison's back. Ash does not either.";
+        case "crypt_gryphon":    return "Nests indoors, in halls, on plinths - anywhere with a sightline down a long room. Centuries of that have dulled the plumage to the exact grey of the stone it perches on. Hunts almost nothing. It is not clear what sustains it.";
+        case "threehunger":      return "Three heads, three separate appetites, one stomach to settle the argument in. The lion wants meat, the goat wants forage, the serpent wants neither. It is perpetually half-satisfied and correspondingly bad-tempered.";
+        case "wing_hare":        return "The antlers are true bone and shed annually like any deer's, which no leporid should be able to do. The hare treats them as unremarkable, grooms around them, and has never been seen to use them for anything at all.";
+        case "stormkirin":       return "Carries a charge it never fully discharges, so the air within a few feet of it is permanently on the edge of becoming lightning. Hooves spark on stone. It will not go near standing water and appears to know exactly why.";
+        case "lockjaw_turtle":   return "Once the jaw closes it does not open again until the turtle decides, which can be years. Scars on the beak are from things that tried to make it decide sooner. Slow to judge, and utterly final about it.";
+        case "drowned_lamp":     return "The light is an organ, fed by the same oil the fish stores against cold, and water does not touch it. Shoals of them light the flooded galleries well enough to read by, which is how the Reach's last records were recovered.";
+        case "honeymaw":         return "Raids hives with an indifference to stinging that suggests the venom simply does not register. The bees follow it anyway, all season, apparently having concluded that the arrangement is now permanent.";
+        case "bark_hound":       return "An ordinary dog whose coat takes on the grain and colour of the wood it sleeps against, over years, until the shoulders are indistinguishable from bark. Everything else about it is entirely, stubbornly a dog.";
+        case "canopy_shrew":     return "Lives its whole life in the high branches and has never touched ground. Weighs almost nothing, eats nearly its own weight daily, and is furious about the arithmetic of that for the entirety of its very short life.";
+        case "witchwood_fawn":   return "Born from a witchwood that had stood long enough to remember the deer that sheltered under it. The antlers bud and blossom on a plant's schedule rather than an animal's, and the fawn browses on nothing at all.";
+        case "pressure_snail":   return "Lays down shell far denser than the depth requires, at enormous metabolic cost, for no benefit anyone has identified. Descent specimens are denser still. Whatever it is bracing against, it is not the water.";
+        case "flicker_finch":    return "Never entirely present. The edges go first and the bird follows, then returns, on a cycle of a few seconds it does not seem able to control. Nests are found with eggs in them and no evidence of a parent that stayed put.";
+        case "rust_vole":        return "Eats iron and voids the impurities, leaving small tidy heaps of nearly pure metal outside the burrow. Smiths who find a colony do not report it. The teeth regrow constantly and are harder than the ore.";
+        case "paleswimmer":      return "Eyeless, and so far down that eyes would be an expense with no return. Does not flee, does not approach, does not appear to register a lantern held directly against it. The indifference is the unsettling part.";
+        // --- 08-06 expansion: Warden scions -----------------------------------
+        case "doorling":         return "It was the doorkeeper's cat and it did not leave when the doorkeeper did. The frame it sat in has grown into its back over the years, the way a tree takes in a fence. It still sits in doorways. It still grooms itself.";
+        case "fathom_squid":     return "Has never encountered light and has no organ that could use it. The eyes are enormous and entirely decorative, a leftover from ancestors who lived shallower. The ink is not for hiding down here; nothing can see it anyway.";
+        case "tallykeep":        return "Scratches marks into its own hide, unevenly, continuously, over its whole life. The count does not correspond to days, kills, or offspring. It is counting something. It has not been established what.";
+        case "lantern_wyrm":     return "The lantern is a growth on a stalk of its own skull, but the light inside it is demonstrably not produced by the wyrm - it is the same cold yellow as Hollowlight's, and it goes out when Hollowlight is killed.";
+        case "deepclaw":         return "Carries a slab of the floor it hatched on and adds to it, so an old deepclaw is hauling a considerable piece of the Descent around. The larger claw is for the load, not for fighting. It has never needed to fight.";
+        case "sum_moth":         return "The wing patterns resolve into numerals when it is still, and they are different numerals each time. Two moths at rest beside each other have never been observed to show the same figure.";
+        case "null_hound":       return "A hound-shaped absence with a starfield where the animal should be. It heels, it sits, it comes when called. Whatever was removed to make it did not include the parts that do those things.";
+        case "mimicling":        return "Never develops features of its own. It copies whatever creature it saw most recently and holds that shape imperfectly, so a mimicling raised alongside a companion becomes a poor, earnest impression of it.";
+        case "griefwisp":        return "Forms where a grief was set down and not picked back up. The circlet is genuine and far too large, and the wisp keeps it balanced with what looks a great deal like effort.";
+        // --- 08-06 expansion: new biome scions --------------------------------
+        case "sluice_otter":     return "Lived in the lock-works, learned the flood cycle by feel, and times its dives to the ebb with better accuracy than the Tidewright's own mechanisms. The valve-wheel on its tail cannot be removed and is plainly a favourite.";
+        case "chorister_fry":    return "Hatches already knowing one part of the Choirmother's song and holds that one note its entire life. A shoal produces a chord. Removing a single fry leaves an audible gap in the water.";
+        case "leviathan_calf":   return "Already scarred, already barnacled, and already too heavy for its size. Growth does not slow. Nobody has kept one long enough to establish where it stops, and the Reach suggests it does not.";
+        case "graftling":        return "The Stag grafts antler onto its calves before they can walk, at seams that never fully close and weep sap for life. The calf carries a rack it will not grow into for years and does not appear to find this strange.";
+        case "thornlet":         return "The thorns curve inward, toward the animal, which makes them useless for defence and painful to be. It seeks contact anyway, constantly, from anything that will tolerate it. The bleeding is mutual.";
+        case "whispervine":      return "A serpent whose body is vine and whose head is a bud that has never opened. It has no mouth, no eyes and no voice, and tastes the air with a tendril. It leans toward speech. It has never once answered.";
+    }
+    return "";
+}
+
+// Dungeons a run can actually be started in. Scions keyed to anything else
+// (descent Wardens, unbuilt biomes) cannot drop yet, so the Compendium must not
+// count them - otherwise completion caps below 100% and reads as a bug. Add a
+// key here the moment that dungeon becomes selectable.
+function compendium_live_dungeons() {
+    return ["ashen_vault", "scorched_depths", "tundra_tomb"];
+}
+
+// Compendium roster: every OBTAINABLE species, generic then scion, in catalog
+// order. Gated the same way the rolls are (08-08): a species with no imported
+// art never rolls (pet_species_random), and a scion keyed to a dungeon you
+// cannot enter never drops - so neither belongs in the denominator. Designed
+// species appear here automatically once their art lands / their dungeon ships.
+function compendium_catalog() {
+    var _out = [];
+    var _g = pet_species_catalog();
+    for (var _i = 0; _i < array_length(_g); _i++) {
+        if (!pet_species_has_art(_g[_i].id)) continue;
+        array_push(_out, { id: _g[_i].id, name: _g[_i].name, blurb: _g[_i].blurb, scion: false, boss: "" });
+    }
+    var _live = compendium_live_dungeons();
+    var _s = pet_species_signature_catalog();
+    for (var _i = 0; _i < array_length(_s); _i++) {
+        if (!pet_species_has_art(_s[_i].id)) continue;
+        var _dg = variable_struct_exists(_s[_i], "dungeon") ? _s[_i].dungeon : "";
+        var _dg_ok = (_dg == "");
+        for (var _k = 0; _k < array_length(_live); _k++) if (_live[_k] == _dg) _dg_ok = true;
+        if (!_dg_ok) continue;
+        array_push(_out, { id: _s[_i].id, name: _s[_i].name, blurb: _s[_i].blurb, scion: true,
+                           boss: variable_struct_exists(_s[_i], "boss") ? _s[_i].boss : "" });
+    }
+    return _out;
+}
+
+// Discovered = you have HATCHED it. Reads the achievement counters that already
+// track lifetime species/scion sets, so there is nothing new to save.
+function compendium_discovered(species_id) {
+    if (!variable_global_exists("ach_counters")) return false;
+    var _c = global.ach_counters;
+    if (!is_struct(_c)) return false;
+    if (variable_struct_exists(_c, "species_hatched")) {
+        var _a = _c.species_hatched;
+        for (var _i = 0; _i < array_length(_a); _i++) if (_a[_i] == species_id) return true;
+    }
+    if (variable_struct_exists(_c, "scions_hatched")) {
+        var _b = _c.scions_hatched;
+        for (var _i = 0; _i < array_length(_b); _i++) if (_b[_i] == species_id) return true;
+    }
+    return false;
+}
+
+// {found, total} over the whole roster, or over scions only when _scions_only.
+function compendium_progress(_scions_only) {
+    var _c = compendium_catalog();
+    var _f = 0, _t = 0;
+    for (var _i = 0; _i < array_length(_c); _i++) {
+        if (_scions_only && !_c[_i].scion) continue;
+        if (!_scions_only && _c[_i].scion) continue;
+        _t++;
+        if (compendium_discovered(_c[_i].id)) _f++;
+    }
+    return { found: _f, total: _t };
+}
+
+// The sprite to draw for a compendium row - adult art when we have it, else the
+// baby frame, else -1 (the drawer then falls back to a plain silhouette box).
+function compendium_sprite(species_id) {
+    var _a = asset_get_index("spr_pet_" + species_id + "_adult_s");
+    if (_a >= 0) return _a;
+    _a = asset_get_index("spr_pet_" + species_id + "_adult");
+    if (_a >= 0) return _a;
+    _a = asset_get_index("spr_pet_" + species_id + "_baby_s");
+    if (_a >= 0) return _a;
+    _a = asset_get_index("spr_pet_" + species_id + "_baby");
+    if (_a >= 0) return _a;
+    _a = asset_get_index("spr_pet_" + species_id);
+    return (_a >= 0) ? _a : -1;
+}
+
+// Where a species can be found, for the entry's HABITAT line.
+function compendium_habitat(species_id) {
+    var _s = pet_species_signature_catalog();
+    for (var _i = 0; _i < array_length(_s); _i++) {
+        if (_s[_i].id != species_id) continue;
+        if (_s[_i].dungeon == "descent") return "The Descent - a rare drop from " + _s[_i].boss + ".";
+        return dungeon_display_name(_s[_i].dungeon) + " - dropped by " + _s[_i].boss + ".";
+    }
+    switch (species_id) {
+        case "pressure_snail": case "flicker_finch":
+        case "rust_vole":      case "paleswimmer":
+            return "The Descent only - found in caches and depth events.";
+    }
+    return "Found in eggs across Ironwake.";
+}
+
+// NOTE: dungeon_display_name() already exists at ~9282 and covers the three
+// original dungeons. Extended there (not redefined here - GML would not compile
+// with two definitions) to cover the 08-06 biomes + the Descent.

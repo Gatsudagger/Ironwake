@@ -51,6 +51,31 @@ Verified bands (file references are approximate anchors, not exact lines):
 | 1008–1041 | Bonds summary line (left, truncated 1120px) |
 | (overlay) | Stats guided tour: dim + highlight rect + measured card (07-31) |
 
+## Character menu ABILITIES tab (scr_ui; 3 pages walked with A/D, 08-08)
+Page chips are drawn LAST so the panel frames can't clip them. Only ONE page
+body draws at a time — the "no abilities" fallback is scoped to page 0, which is
+what made it print through the CLASS TRUNK header (M screenshot 08-08).
+
+| Band (y) | Owner |
+|---|---|
+| 104–142 | ABILITIES / CLASS TRUNK / TALENTS chips (3× w280 gap10, centered) |
+| 144–170 | **DEAD ZONE — gothic frame filigree.** `ui_draw_gothic_frame` draws its ornamental band OUTSIDE the box, `band` px above y1. All five abilities-tab panels use band 26, so a panel at y150 threw filigree up to y124, straight through the chips (M screenshot 08-08). Panel tops are **y170** so the band lands at 144, just under the chips. **Any new panel on this tab starts at 170, not 150.** |
+| 170–1012 | Page body panel (all three pages share this top) |
+| — page 1 CLASS TRUNK | |
+| 178–214 | Class + resource header (left) / "Permanent Level N" at +14 (right-aligned x1820) |
+| 216–243 | Rules line — kept ≤130 chars so it ends by x1290 |
+| 252–962 | 5 node rows (y=252+r*142, h=126; box A x260–1000, box B x1090–1830) — **ABSOLUTE, mirrored in gc Step click zones**, so they did NOT move with the panel; that is why the trunk header offsets are tighter than the other pages' |
+| 958–1000 | Footer: hints, or the armed confirm bar (replaces the hints) |
+| — page 2 TALENTS (all offsets are _y1-relative, so they moved +20 with the panel) | |
+| 186–726 | Left list: 1 row per loadout ability (≤5, h=108) + 4 progress pips at row+58 |
+| 213–270 | Right: icon + ability name + cast count |
+| 320–456 | Explainer + next-milestone line |
+| 456–534 | "points waiting" callout (only when unspent points exist) |
+| 534–914 | WOVEN header + up to 4 node cards (h=84, step 92); loop breaks before _td_y2-64 |
+| 972–1000 | Footer key hints |
+| — page 0 ABILITIES | |
+| 186+ | Left list rows start at panel top +16; **gc Step hit-test hardcodes 186** — change both together |
+
 ## Sable REBIRTH tab (scr_ui ui_draw_sable_screen)
 | Band (y) | Owner |
 |---|---|
@@ -75,6 +100,8 @@ Verified bands (file references are approximate anchors, not exact lines):
 ## Combat (obj_combat_controller/Draw_64)
 | Band (y) | Owner |
 |---|---|
+| **diagonal x636–1104, y468–700** | **Deployed trap field** (`ui_draw_trap_field` + `trap_field_pos`, Shadowstrider only). NOT a rectangular band — traps sit on a DIAGONAL line running from (700,700) up to (1040,596), bottom-centre anchored, 64px props drawn at 2x. M 08-09: *"more literally in the middle between the player and enemies… like diagonally moved between them."* Measured clearances, re-check ALL of these before moving it: combat log x30–1200/y735–945 (35px below the lowest foot), enemy HP bars x990–1885/y86–432 (36px above the highest prop top), player sprite ends ~x580, enemy sprites start x1143 at a 4-wide row. Read-only, no hit-test. Armed ring + charge pips carry the filter colour; the prop art is drawn untinted. |
+| 690–762 | *(retired 08-09)* the old horizontal trap CHIP strip lived here. Freed. |
 | 90–173 | Loot screen title + "Items collected" header |
 | 96–168 | Fortune's Favor chip (x 1560–1870) |
 | 240–~1023 | Loot rows (98px stride, 8 visible) |
@@ -82,11 +109,42 @@ Verified bands (file references are approximate anchors, not exact lines):
 | 990 | "Enter / R to continue" |
 | 987–1041 | Vex trainer: sacrifice confirm bar — key legend HIDDEN while it owns the band |
 
+## Vendor option rows (shared standard, 08-08)
+`ui_draw_option_row(x1,y1,x2,y2,opt)` is now THE row for every vendor craft/service
+menu (M: "wall of text issues, need more text color variance"). It owns its box and
+enforces the split: accent-coloured TITLE (fnt_ui) at y1+8, dim body (fnt_ui_small)
+at y1+41, cost chips right-aligned from y1+14 in 27px steps. **The text column is
+measured against the widest cost chip and truncated to clear it by 24px** — a long
+description can never run under a price. Row height must be >= 66 for both text
+lines to sit inside the plate. Callers own geometry AND hit-testing (hit-tests live
+in Draw), so caller and helper must agree on the same box.
+
+## Maren FORGE tab (scr_ui, maren_phase == 0)
+| Band (y) | Owner |
+|---|---|
+| 225 | "Maren's Forge - choose your craft:" |
+| 285–717 | 6 option rows (285 + i*72, h66, x300–1500) — was 7 before TEMPER moved to Dorn |
+
+## Dorn TEMPER tab (scr_ui ui_draw_dorn_temper, shop_tab == 3)
+Row geometry is DUPLICATED in obj_game_controller/Step (7 visible, pitch 90, top
+y255) — change both together or clicks misroute.
+| Band (y) | Owner |
+|---|---|
+| 96–138 | Shared shop tab bar (4 tabs for Dorn: BUY/SELL/REFORGE/TEMPER) |
+| 219 | List caption |
+| 255–879 | Gear rows (255 + i*90, h84, x60–900; 7 visible) |
+| 888 | "Showing N-M of T" — only when the list scrolls |
+| 255–890 | Preview panel (x940–1860): header 275, name 307, rule 355, NOW/AFTER 371, rule 403, delta rows from 417 (33px pitch), footnote clamped to <= _py2-96 |
+| 906–960 | Confirm bar (also a tap target) |
+| 1026 | Key legend |
+
 ## Shops (Dorn/Petra, scr_ui)
 | Band (y) | Owner |
 |---|---|
-| ~960–1010 | Sell confirm bar + notification ("[SPACE] Confirm …") |
-| 1026 | Sell-tab footer key legend — swaps to confirm hint when confirm pending |
+| 189–936 | SELL list rows — **6 visible** (`shop_sell_visible_rows()`), y=189+i*126, h=117. Was 7, which ended at y1062: through the legend and out into the perimeter frame (M 08-08). A row holds 3 lines (name +12, stats +45, effect +75, ending ~+102) so the height can't shrink enough to fit 7. Window size is read by the draw loop, the Step scroll clamp and the Step click hit-test — never hardcode it again. |
+| 954–1023 | Sell confirm bar (only when `sell_confirm_name != ""`) |
+| 1026 | Sell-tab footer key legend (centred 960, ends well short of x1450) — swaps to confirm hint when confirm pending |
+| 1026 | "Showing N-M of T   W/S to scroll" — RIGHT-aligned x1770, shares the legend's line |
 
 ## Global overlays (drawn topmost)
 - Touch chips / back chip / on-screen d-pad: bottom + left gutter, always last.

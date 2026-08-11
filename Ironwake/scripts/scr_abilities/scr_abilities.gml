@@ -96,9 +96,12 @@ function ability_gambit_waives_secondary(ability, caster) {
 function ability_secondary_ok(ability, caster) {
     if (ability.secondary_cost <= 0) return true;
     if (ability_gambit_waives_secondary(ability, caster)) return true;
-    if      (variable_struct_exists(caster, "souls"))       return caster.souls       >= ability.secondary_cost;
-    else if (variable_struct_exists(caster, "blood"))       return caster.blood       >= ability.secondary_cost;
-    else if (variable_struct_exists(caster, "preparation")) return caster.preparation >= ability.secondary_cost;
+    // Class-trunk discounts (P2, 08-05) route through the shared effective cost.
+    var _sc = ability_secondary_cost_eff(ability, caster);
+    if (_sc <= 0) return true;
+    if      (variable_struct_exists(caster, "souls"))       return caster.souls       >= _sc;
+    else if (variable_struct_exists(caster, "blood"))       return caster.blood       >= _sc;
+    else if (variable_struct_exists(caster, "preparation")) return caster.preparation >= _sc;
     return true;
 }
 
@@ -112,9 +115,19 @@ function ability_spend_resources(ability, caster) {
     caster.energy -= ability.energy_cost;
 
     if (ability.secondary_cost > 0 && !ability_gambit_waives_secondary(ability, caster)) {
-        if      (variable_struct_exists(caster, "souls"))       caster.souls       -= ability.secondary_cost;
-        else if (variable_struct_exists(caster, "blood"))       caster.blood       -= ability.secondary_cost;
-        else if (variable_struct_exists(caster, "preparation")) caster.preparation -= ability.secondary_cost;
+        // Class-trunk discounts (P2, 08-05): spend the SAME effective cost the
+        // gate checked, never the raw one.
+        var _sc = ability_secondary_cost_eff(ability, caster);
+        if      (variable_struct_exists(caster, "souls"))       caster.souls       -= _sc;
+        else if (variable_struct_exists(caster, "blood"))       caster.blood       -= _sc;
+        else if (variable_struct_exists(caster, "preparation")) caster.preparation -= _sc;
+        // Red Recycling trunk node: heal 1 HP per Blood actually spent.
+        if (_sc > 0 && variable_struct_exists(caster, "blood")
+            && variable_struct_exists(caster, "class_id") && caster.class_id == 1
+            && trunk_has("blood_spend_heal")
+            && variable_struct_exists(caster, "HP") && variable_struct_exists(caster, "max_HP")) {
+            caster.HP = min(caster.max_HP, caster.HP + _sc);
+        }
     }
 
     return caster;
@@ -463,13 +476,105 @@ for (var _i = 0; _i < 10; _i++) {
     global.abilities_bloodwarden[_i].desc_full  = _bw_d[_i].f;
 }
 
+// =============================================================================
+// DEPLOYED TRAPS (M-approved rework 08-08, SYSTEMS_TRAPS.md)
+//
+// Traps used to be instant guaranteed-hit attacks that resolved on cast - the
+// codebase said so itself ("trap_active is vestigial, traps fire on cast").
+// Nothing was ever placed and nothing ever waited, so Shadowstrider played as a
+// worse rogue instead of a controller.
+//
+// Now a trap is DEPLOYED into a slot and sits between the player and the enemy
+// until an enemy action matches its trigger filter. The enemy turn already
+// classifies incoming actions for Blink/Shadow Step/Counterblade
+// (_in_hostile / _in_damaging / _in_reach), so traps hook that same reaction
+// stack - no new turn phase and no enemy-AI change.
+//
+// filter: "melee" | "ranged" | "spell" | "any"   - what springs it
+// block:  true  = the incoming attack is cancelled outright (the defensive lever)
+// charges: >1 traps survive springing (Caltrops); 1 = consumed
+//
+// Deploy costs are still the ability's own energy/secondary cost. Payload is
+// resolved at SPRING time, not deploy time, so Prep-scaling nodes (Loaded
+// Springs) read the Prep you were holding when it actually went off.
+// =============================================================================
+function trap_catalog() {
+    return [
+        { name:"Bear Trap",   filter:"melee", block:true,  damage:10, dtype:0, status:"root",    duration:1, charges:1,
+          blurb:"Blocks a melee blow and Roots the attacker." },
+        { name:"Spike Trap",  filter:"any",   block:false, damage:26, dtype:0, status:"bleed",   duration:4, charges:1,
+          blurb:"Springs on anything. Heavy bleed, but does not stop the blow." },
+        { name:"Death Snare", filter:"any",   block:true,  damage:20, dtype:0, status:"stun",    duration:2, charges:1,
+          blurb:"Blocks any action and Stuns for 2 turns." },
+        { name:"Tripline",    filter:"melee", block:true,  damage:0,  dtype:0, status:"exposed", duration:2, charges:1,
+          blurb:"No damage - blocks the blow and leaves them Exposed." },
+        { name:"Warding Chime",filter:"spell",block:true,  damage:0,  dtype:0, status:"silence", duration:1, charges:1,
+          blurb:"Blocks a cast and Silences the caster." },
+        { name:"Wire Snare",  filter:"ranged",block:true,  damage:12, dtype:0, status:"root",    duration:1, charges:1,
+          blurb:"Blocks a shot and Roots the shooter." },
+        { name:"Caltrops",    filter:"any",   block:false, damage:8,  dtype:0, status:"",        duration:0, charges:3,
+          blurb:"Springs three times before it is spent. Chip damage, no block." },
+    ];
+}
+
+function trap_def(_name) {
+    var _c = trap_catalog();
+    for (var _i = 0; _i < array_length(_c); _i++) if (_c[_i].name == _name) return _c[_i];
+    return undefined;
+}
+
+function ability_is_trap(_name) {
+    return (trap_def(_name) != undefined);
+}
+
+// Plain-English label for a filter, used by the log and the trap chips.
+function trap_filter_label(_f) {
+    switch (_f) {
+        case "melee":  return "melee attack";
+        case "ranged": return "ranged attack";
+        case "spell":  return "spell";
+    }
+    return "any action";
+}
+
+// Deploy capacity. 2 by default; the trunk/web can widen it (SYSTEMS_TRAPS §6).
+function trap_slots_max(_p) {
+    var _n = 2;
+    if (trunk_has("trap_slot_plus")) _n += 1;
+    if (is_struct(_p) && variable_struct_exists(_p, "trap_slot_bonus")) _n += _p.trap_slot_bonus;
+    return max(1, _n);
+}
+
+// Spring burst keyed to the trap's PAYLOAD group (SYSTEMS_TRAPS.md anim table,
+// 08-11): snapping jaws (Bear/Wire/Tripline), flying shrapnel (Spike/Caltrops),
+// ward flash (Warding Chime/Death Snare). All 7 shared spr_vfx_snap before.
+function trap_spring_vfx(_name) {
+    switch (_name) {
+        case "Spike Trap": case "Caltrops":       return spr_vfx_spikes;
+        case "Warding Chime": case "Death Snare": return spr_vfx_wardflash;
+    }
+    return spr_vfx_snap;
+}
+
+// Does this deployed trap answer that incoming action? Mirrors the reaction
+// stack's own classification so the two can never disagree.
+function trap_matches(_trap, _hostile, _damaging, _reach, _is_spell) {
+    if (!_hostile) return false;                       // never springs on a heal
+    switch (_trap.filter) {
+        case "melee":  return _damaging && (_reach == "melee");
+        case "ranged": return _damaging && (_reach == "ranged");
+        case "spell":  return _is_spell;
+    }
+    return true;                                       // "any"
+}
+
 // -----------------------------------------------------------------------------
 // SHADOWSTRIDER (class_id 2)
-// Secondary resource: Preparation (max 10, starts 0; gains 1/turn if no trap active)
-// Playstyle: build Preparation passively, spend to set traps that trigger with
-//            guaranteed hits; high crit ceiling on precision abilities.
-// Note: trap abilities (Bear Trap, Spike Trap, Death Snare) set trap_active=true
-//       on the caster; the combat engine clears it when the trap fires.
+// Secondary resource: Preparation (max 10, starts 0; gains 1/turn while no trap
+// is deployed - an empty board refills faster, so over-committing starves you).
+// Playstyle: DEPLOY traps that wait for a matching enemy action, then spring.
+// The class commits to a PREDICTION in advance and is paid when it reads the
+// enemy's intent correctly. See SYSTEMS_TRAPS.md.
 // -----------------------------------------------------------------------------
 global.abilities_shadowstrider = [
     // 0: Snipe - high base ACC + precision crit; bonus damage when target is debuffed
@@ -485,13 +590,15 @@ global.abilities_shadowstrider = [
     // 1: Bear Trap - place trap (costs 1 Prep); triggers with guaranteed hit + root
     //    07-17: 2 AP -> 1 AP. At 2 AP it was strictly dominated by Spike Trap (~44 dmg);
     //    now the cheap opener trap (16 + root) next to Spike (damage) and Snare (stun).
+    // DEPLOYED (08-08): self-targeted so it routes AROUND the instant damage/status
+    // path entirely. Payload lives in trap_catalog() and resolves when it SPRINGS.
     ability_define("Bear Trap",
         /*energy*/1, /*secondary*/1,
-        /*damage*/16, /*dtype*/0,       // physical
-        /*acc*/-1, /*guaranteed*/true,  // guaranteed on trigger
+        /*damage*/0, /*dtype*/0,
+        /*acc*/-1, /*guaranteed*/true,
         /*crit_type*/1, /*base_crit*/8, // precision (DEX)
-        /*effect_type*/"status", /*effect_value*/1, /*duration*/1, // root 1 turn
-        /*self*/false),
+        /*effect_type*/"trap", /*effect_value*/0, /*duration*/0,
+        /*self*/true),
 
     // 2: Shadow Step - dodge CHANCE on each of the next 3 incoming attacks (2-turn CD).
     //    Cast sets player.shadow_step_charges = 3; resolved in obj_combat_controller/Step_0.
@@ -545,11 +652,11 @@ global.abilities_shadowstrider = [
     // Death Snare at the same cost; now the cheap DoT-build trap vs Snare's control).
     ability_define("Spike Trap",
         /*energy*/2, /*secondary*/1,
-        /*damage*/26, /*dtype*/0,       // physical
+        /*damage*/0, /*dtype*/0,
         /*acc*/-1, /*guaranteed*/true,
         /*crit_type*/1, /*base_crit*/10, // precision (DEX)
-        /*effect_type*/"dot", /*effect_value*/6, /*duration*/4, // bleed x2 stacks
-        /*self*/false),
+        /*effect_type*/"trap", /*effect_value*/0, /*duration*/0,
+        /*self*/true),
 
     // 7: Marked for Death - no damage; WIS crit upgrades mark quality
     //    effect_value = 8 bonus damage per hit; effect_duration = 4 turns / 3 hits max
@@ -573,19 +680,60 @@ global.abilities_shadowstrider = [
     // 9: Death Snare - apex trap; guaranteed trigger, stun 2 turns, top precision crit
     ability_define("Death Snare",
         /*energy*/3, /*secondary*/2,
-        /*damage*/32, /*dtype*/0,       // physical
+        /*damage*/0, /*dtype*/0,
         /*acc*/-1, /*guaranteed*/true,
         /*crit_type*/1, /*base_crit*/14, // precision (DEX)
-        /*effect_type*/"status", /*effect_value*/1, /*duration*/2, // stun 2 turns
-        /*self*/false),
+        /*effect_type*/"trap", /*effect_value*/0, /*duration*/0,
+        /*self*/true),
+
+    // ---- New deployed traps (08-08, SYSTEMS_TRAPS.md 4). Spread across the
+    // filters so which slot you fill is a real decision. Wire Snare and Warding
+    // Chime are FREE STARTERS (M 08-08 split): without them the class has no
+    // answer at all to archers or casters from level 1. Tripline and Caltrops
+    // are bought from Vex. All payload lives in trap_catalog().
+    // 10: Tripline - pure defensive stall, no damage.
+    ability_define("Tripline",
+        /*energy*/1, /*secondary*/1,
+        /*damage*/0, /*dtype*/0,
+        /*acc*/-1, /*guaranteed*/true,
+        /*crit_type*/-1, /*base_crit*/0,
+        /*effect_type*/"trap", /*effect_value*/0, /*duration*/0,
+        /*self*/true),
+
+    // 11: Warding Chime - the anti-caster answer the class never had.
+    ability_define("Warding Chime",
+        /*energy*/1, /*secondary*/1,
+        /*damage*/0, /*dtype*/0,
+        /*acc*/-1, /*guaranteed*/true,
+        /*crit_type*/-1, /*base_crit*/0,
+        /*effect_type*/"trap", /*effect_value*/0, /*duration*/0,
+        /*self*/true),
+
+    // 12: Wire Snare - punishes archers for kiting.
+    ability_define("Wire Snare",
+        /*energy*/1, /*secondary*/1,
+        /*damage*/0, /*dtype*/0,
+        /*acc*/-1, /*guaranteed*/true,
+        /*crit_type*/1, /*base_crit*/8,
+        /*effect_type*/"trap", /*effect_value*/0, /*duration*/0,
+        /*self*/true),
+
+    // 13: Caltrops - 3 charges, no block. Rewards a long fight.
+    ability_define("Caltrops",
+        /*energy*/1, /*secondary*/1,
+        /*damage*/0, /*dtype*/0,
+        /*acc*/-1, /*guaranteed*/true,
+        /*crit_type*/1, /*base_crit*/6,
+        /*effect_type*/"trap", /*effect_value*/0, /*duration*/0,
+        /*self*/true),
 ];
 
 // Plain-English descriptions for Shadowstrider abilities
 var _ss_d = [
     { s: "Deal 14 physical dmg. +12 if target is debuffed.",
       f: "One breath, one line, one shot that was always going to land.\n- 14 physical damage, high accuracy, strong Precision crit.\n- +12 damage against a debuffed target - mark first, then fire." },
-    { s: "Spend 1 Prep. Trap: 16 dmg + Root (melee loses a turn).",
-      f: "Set steel jaws where the next foot falls.\n- Guaranteed trap hit: 16 physical damage + Root for 1 turn.\n- A Rooted MELEE enemy can't reach you and skips its turn; ranged foes still fire - use Death Snare's Stun for those." },
+    { s: "SET a trap. Springs on the next MELEE attack: blocks it, 10 dmg + Root.",
+      f: "Set steel jaws where the next foot falls, and wait.\n- DEPLOYED: takes a trap slot and waits. It springs on the first MELEE attack.\n- Springing BLOCKS that attack outright - the blow never lands and their turn is spent - then deals 10 physical damage and Roots them.\n- Useless against a caster or an archer. Read their intent before you set it." },
     { s: "~(50% + WIS) chance to dodge the next 3 attacks. 2-turn CD.",
       f: "Walk half a step behind your own shadow and let the blows guess.\n- Each of the next 3 incoming attacks has a (50% + WIS*2)% dodge chance, capped at 85%. Stun halves the odds.\n- 1 AP on a 2-turn cooldown - strong against a pack." },
     { s: "Deal 7 Poison dmg. Poison: 5 dmg/turn for 4 turns.",
@@ -594,16 +742,24 @@ var _ss_d = [
       f: "Drop the room into a grey blindness only you can read.\n- Every enemy's accuracy drops 40% for 2 turns - and the smoke cloaks YOU: +15% dodge while it lingers.\n- The panic button: buy a safe turn to set traps or catch your breath." },
     { s: "12 Frost dmg. Weaken -25% 3t + Chill 1t (shatters).",
       f: "Put a sliver of winter where they carry their strength.\n- 12 Frost damage - scales with INT gear, cuts through armor (el_resist applies). Weakened: -25% damage for 3 turns. Chilled 1 turn: detonators SHATTER it for +30% damage.\n- Your own shatter-primer - land it, then detonate with Snipe or Assassinate." },
-    { s: "Spend 1 Prep. Trap: 26 dmg + Bleed 6/turn for 4 turns.",
-      f: "Line the floor with points that keep cutting on the way out.\n- Guaranteed trap hit: 26 physical damage + Bleed 6/turn for 4 turns.\n- The DoT-build trap - feeds bleed payoffs; take Death Snare when you need the Stun instead." },
+    { s: "SET a trap. Springs on ANY enemy action: 26 dmg + Bleed. Does NOT block.",
+      f: "Line the floor with points that keep cutting on the way out.\n- DEPLOYED: springs on the first hostile action of ANY kind, so it never whiffs.\n- 26 physical damage + Bleed 6/turn for 4 turns - but it does NOT stop the attack. This is the offensive trap: it punishes rather than prevents.\n- The bleed-build engine; take Death Snare when you need the blow stopped." },
     { s: "Mark 4t: below half HP it takes +30% from ALL sources.",
       f: "Chalk an ending on their back that everything can read.\n- Marked for 4 turns: once the target drops below 50% HP, it takes +30% damage from EVERY source - your hits, your companion, your poisons.\n- The execute window: wound them first, then collapse the mark." },
     { s: "Spend 2 Prep. Halve next hit over 10 dmg; refund 1 Prep.",
       f: "Keep your knees bent and your plans loose.\n- Costs no AP: the next hit above 10 damage is halved, and a clean absorb refunds 1 Prep.\n- Hold it for the heavy hits - it ignores weak attacks." },
-    { s: "Spend 2 Prep. Trap: 32 dmg + Stun for 2 turns.",
-      f: "Build the last mistake they will ever step into.\n- Guaranteed trap hit: 32 physical damage + Stun for 2 turns.\n- The Stun shuts down ANY enemy, melee or ranged. Save the Prep for elites and bosses." },
+    { s: "SET a trap. Springs on ANY action: BLOCKS it, 20 dmg + Stun 2 turns.",
+      f: "Build the last mistake they will ever step into.\n- DEPLOYED: springs on the first hostile action of ANY kind - it cannot be played around.\n- BLOCKS that action, deals 20 physical damage and Stuns for 2 turns.\n- The apex trap. Expensive, never wasted, and it answers melee, ranged and casters alike. Save the Prep for elites and bosses." },
+    { s: "SET a trap. Springs on the next MELEE attack: BLOCKS it, no damage.",
+      f: "A cord at ankle height and the patience to leave it there.\n- DEPLOYED: springs on the first MELEE attack and BLOCKS it outright - no damage at all.\n- Leaves the attacker EXPOSED for 2 turns, so the blow you were spared becomes the opening you strike into.\n- The pure stall: cheapest way to buy a turn, and it feeds every Exposed payoff you own." },
+    { s: "SET a trap. Springs on the next SPELL: BLOCKS the cast + Silence 1t.",
+      f: "Thin brass strung where a working would have to pass.\n- DEPLOYED: springs on the first enemy SPELL, BLOCKS the cast and Silences them for 1 turn.\n- Does nothing whatsoever against a melee or ranged attack. This is a read, not a safety net.\n- The class's only answer to a caster pack - set it when the intent gems show a cast coming." },
+    { s: "SET a trap. Springs on the next RANGED attack: BLOCKS it, 12 dmg + Root.",
+      f: "Wire at the throat of the only lane they can shoot down.\n- DEPLOYED: springs on the first RANGED attack, BLOCKS the shot, deals 12 physical damage and Roots them.\n- The punishment for kiting. Useless against a melee rusher, so read the room first." },
+    { s: "SET a trap. Springs on ANY action 3 TIMES: 8 dmg each. Does NOT block.",
+      f: "Scatter the floor and let them pay for every step.\n- DEPLOYED with THREE charges: it springs on any hostile action and stays down until all three are spent.\n- 8 physical damage a spring, and it never blocks anything.\n- The long-fight trap: worst opener in the kit, best value in a grind - but it holds a slot the whole time." },
 ];
-for (var _i = 0; _i < 10; _i++) {
+for (var _i = 0; _i < array_length(_ss_d); _i++) {
     global.abilities_shadowstrider[_i].desc_short = _ss_d[_i].s;
     global.abilities_shadowstrider[_i].desc_full  = _ss_d[_i].f;
 }
@@ -1148,6 +1304,7 @@ function ability_category(ab) {
         case "Singularity":  case "Rift":          case "Scorch":        case "Poison Dart":
         case "Frost Shot":   case "Mana Sever":  case "Vital Theft":   case "Soulbind":
         case "Bear Trap":    case "Spike Trap":    case "Death Snare":
+        case "Tripline":     case "Warding Chime": case "Wire Snare":   case "Caltrops":
         case "Blazing Palm": case "Gravewrack Grip": case "Soul Rend":   // #26 melee kit
         case "Hoarfrost Lance": case "Static Arc": case "Galvanize":     // D§4 wave
         case "Winter's Bite":   case "Devil's Flip": case "Bulwark Slam":
@@ -1413,20 +1570,90 @@ function ability_school_list() {
 // (school_vfx_sprite falls through to the authored art).
 // =============================================================================
 
-// Attack impact keyed to the ability's element SCHOOL; physical ("" school)
-// keeps the classic impact burst.
-function ability_attack_vfx(ab) {
-    switch (ability_school(ab)) {
-        case "fire":   return { spr: spr_vfx_fire,   ticks: 20 };
-        case "frost":  return { spr: spr_vfx_frost,  ticks: 20 };
-        case "shock":  return { spr: spr_vfx_shock,  ticks: 16 };
-        case "arcane": return { spr: spr_vfx_arcane, ticks: 20 };
-        case "blood":  return { spr: spr_vfx_blood,  ticks: 18 };
-        case "void":   return { spr: spr_vfx_void,   ticks: 20 };
-        case "shadow": return { spr: spr_vfx_shadow, ticks: 16 };
-        case "poison": return { spr: spr_vfx_poison, ticks: 24 };
+// ability_phys_shape(ab) - the MOTION archetype for a school-less (physical)
+// attack. Before 08-09 every physical ability shared one generic puff, which is
+// why the martial classes read flatter than the casters (SYSTEMS_ANIMATION_AUDIT
+// Gap 1). Named abilities are keyed explicitly; anything new falls through to a
+// crit_type default, so this never needs touching to stay correct:
+//   crit_type 0 = power (STR)      -> crush
+//   crit_type 1 = precision (DEX)  -> pierce
+//   otherwise                      -> slash
+// "snap" is deliberately not reachable from here: it belongs to trap springs,
+// which resolve on a later turn and never run the cast VFX path.
+function ability_phys_shape(ab) {
+    switch (ab.name) {
+        case "Cleave": case "Gore Strike": case "Throat Slit":
+        case "Flurry": case "Killing Spree": case "Strike":
+            return "slash";
+        case "Snipe": case "Assassinate":
+            return "pierce";
+        case "Bonebreaker": case "Marrow Crush": case "Bulwark Slam":
+            return "crush";
     }
-    return { spr: spr_vfx_impact, ticks: 20 };
+    var _ct = variable_struct_exists(ab, "crit_type") ? ab.crit_type : -1;
+    if (_ct == 0) return "crush";
+    if (_ct == 1) return "pierce";
+    return "slash";
+}
+
+// Burst sprite for a physical motion archetype. Frame counts differ, so each
+// carries its own tick budget: a thrust is quick, a shockwave lingers.
+function phys_shape_vfx(shape) {
+    switch (shape) {
+        case "pierce": return { spr: spr_vfx_pierce, ticks: 14 };
+        case "crush":  return { spr: spr_vfx_crush,  ticks: 22 };
+        case "snap":   return { spr: spr_vfx_snap,   ticks: 16 };
+    }
+    return { spr: spr_vfx_slash, ticks: 16 };
+}
+
+// vfx_variant_pick(name, arr) - deterministic per-ability variant (08-11 VFX
+// diversity, M-approved batch): an ability always shows the SAME burst, but two
+// abilities of a school no longer have to share one. Plain byte-sum hash - the
+// assignment only needs to be stable and spread, not fair.
+function vfx_variant_pick(_name, _arr) {
+    var _h = 0;
+    for (var _i = 1; _i <= string_length(_name); _i++) _h += string_byte_at(_name, _i);
+    return _arr[_h mod array_length(_arr)];
+}
+
+// Attack impact keyed to the ability's element SCHOOL; physical ("" school)
+// splits four ways by motion archetype (08-09). Untinted schools pick between
+// the classic Gigapack burst and an 08-11 owned-pack variant per ability; an
+// equipped Vael tint pins the classic sprite - only those have the grey twins
+// the tint blend needs (school_vfx_sprite).
+function ability_attack_vfx(ab) {
+    var _sch = ability_school(ab);
+    if (_sch == "") return phys_shape_vfx(ability_phys_shape(ab));
+    var _classic; var _ticks;
+    switch (_sch) {
+        case "fire":   _classic = spr_vfx_fire;   _ticks = 20; break;
+        case "frost":  _classic = spr_vfx_frost;  _ticks = 20; break;
+        case "shock":  _classic = spr_vfx_shock;  _ticks = 16; break;
+        case "arcane": _classic = spr_vfx_arcane; _ticks = 20; break;
+        case "blood":  _classic = spr_vfx_blood;  _ticks = 18; break;
+        case "void":   _classic = spr_vfx_void;   _ticks = 20; break;
+        case "shadow": _classic = spr_vfx_shadow; _ticks = 16; break;
+        case "poison": _classic = spr_vfx_poison; _ticks = 24; break;
+        default: return phys_shape_vfx(ability_phys_shape(ab));
+    }
+    if (school_tint_id(_sch) != "default") return { spr: _classic, ticks: _ticks };
+    // Scorch's bespoke read (M 08-04: flames AT their feet, never traveling).
+    if (ab.name == "Scorch") return { spr: spr_vfx_scorch, ticks: 22 };
+    var _set;
+    switch (_sch) {
+        case "fire":   _set = [spr_vfx_fire,   spr_vfx_fire2];   break;
+        case "frost":  _set = [spr_vfx_frost,  spr_vfx_frost2];  break;
+        case "shock":  _set = [spr_vfx_shock,  spr_vfx_shock2, spr_vfx_shockstrike]; break;
+        case "arcane": _set = [spr_vfx_arcane, spr_vfx_arcane2]; break;
+        case "blood":  _set = [spr_vfx_blood,  spr_vfx_blood2];  break;
+        case "void":   _set = [spr_vfx_void,   spr_vfx_void2];   break;
+        // Shadow variant round 2 (08-11): violet smoke burst from the purchased
+        // full Gigapack (the round-1 pick duplicated the shipped claw).
+        case "shadow": _set = [spr_vfx_shadow, spr_vfx_shadow2]; break;
+        case "poison": _set = [spr_vfx_poison, spr_vfx_poison2]; break;
+    }
+    return { spr: vfx_variant_pick(ab.name, _set), ticks: _ticks };
 }
 
 // Self-cast burst keyed to what the ability DOES:
@@ -1435,11 +1662,13 @@ function ability_attack_vfx(ab) {
 //   dark self-pacts (blood/void/shadow school statuses) -> skull smoke |
 //   everything else (offense buffs) keeps the classic sword+ burst.
 function ability_support_vfx(ab) {
+    // Each family picks per-ability between its classic burst and the 08-11
+    // owned-pack variant (vfx_variant_pick, M-approved batch).
     switch (ab.effect_type) {
-        case "heal":     return { spr: spr_vfx_heal,   ticks: 20 };
-        case "shield":   return { spr: spr_vfx_shield, ticks: 24 };
-        case "resource": return { spr: spr_vfx_gain,   ticks: 26 };
-        case "debuff":   return { spr: spr_vfx_dark,   ticks: 20 };
+        case "heal":     return { spr: vfx_variant_pick(ab.name, [spr_vfx_heal,   spr_vfx_heal2]),   ticks: 20 };
+        case "shield":   return { spr: vfx_variant_pick(ab.name, [spr_vfx_shield, spr_vfx_shield2]), ticks: 24 };
+        case "resource": return { spr: vfx_variant_pick(ab.name, [spr_vfx_gain,   spr_vfx_gain2]),   ticks: 26 };
+        case "debuff":   return { spr: vfx_variant_pick(ab.name, [spr_vfx_dark,   spr_vfx_dark2]),   ticks: 20 };
     }
     var _n = ab.name;
     if (_n == "Blink" || _n == "Evasive Roll" || _n == "Vanish" || _n == "Adrenaline Rush") {
@@ -1449,16 +1678,101 @@ function ability_support_vfx(ab) {
     // (Also the only castable route to spr_vfx_gain: no slottable ability
     // self-casts effect_type "resource" - Soul Harvest is engine-triggered.)
     if (_n == "Soul Engine" || _n == "Warpath" || _n == "Compounding Dread") {
-        return { spr: spr_vfx_gain, ticks: 26 };
+        return { spr: vfx_variant_pick(_n, [spr_vfx_gain, spr_vfx_gain2]), ticks: 26 };
     }
     // Dark self-pacts: dark-school statuses, plus the physical-typed ones whose
     // fantasy is clearly grim (cheating death, thorned blood).
     var _sch = ability_school(ab);
     if (_sch == "blood" || _sch == "void" || _sch == "shadow"
         || _n == "Undying" || _n == "Bloodthorn Aura") {
-        return { spr: spr_vfx_dark, ticks: 20 };
+        return { spr: vfx_variant_pick(_n, [spr_vfx_dark, spr_vfx_dark2]), ticks: 20 };
     }
-    return { spr: spr_vfx_buff, ticks: 20 };
+    return { spr: vfx_variant_pick(_n, [spr_vfx_buff, spr_vfx_buff2]), ticks: 20 };
+}
+
+// =============================================================================
+// DELIVERY ARCHETYPES (08-04 conveyance pass, SYSTEMS_COMBAT_FX.md header).
+// How an attack's VISUALS travel: "melee" keeps the lunge, "projectile" flies
+// caster->target and defers the hit presentation to arrival, "beam" is an
+// instant lance source->target, "overhead" drops at the target (collapse /
+// strike-from-above reads), "self" never leaves the caster. Mechanics are
+// untouched - damage/riders/AP resolved at cast; only presentation routes here.
+// =============================================================================
+function ability_delivery(ab) {
+    // Explicit overrides where the class/school default reads wrong.
+    switch (ab.name) {
+        // Collapsing / erupting AT the victim - nothing visibly travels.
+        // Scorch (M 08-04 livetest): a skirt of brief flames AT their feet,
+        // instantly beneath them - it never travels.
+        case "Singularity": case "Soul Nova": case "Arcane Burst": case "Scorch":
+            return "overhead";
+        // Drains pull a thread OUT of the victim - a lance, not a thrown bolt.
+        case "Void Drain": case "Mana Sever": case "Entropy":
+            return "beam";
+    }
+    var _ac = ability_attack_class(ab);
+    if (_ac == "none") return "self";
+    if (ability_class_is_melee(_ac)) return "melee";
+    // Everything ranged is loosed/hurled and travels (M's rule: a lightning
+    // BLAST flies to its mark; only strike-from-above effects stay overhead).
+    return "projectile";
+}
+
+// Traveling sprite for a "projectile" delivery. Every school now has a REAL
+// flight animation (Super Pixel Projectiles Pack 1, purchased 08-11, same
+// artist as the shipped bursts; sprites face RIGHT, the Draw rotates them).
+// A Vael-tinted school falls back to its rotated burst art - only the classic
+// bursts have grey twins for the tint blend. Physical returns -1: the combat
+// Draw renders a code-drawn streak (arrow/knife read).
+function ability_projectile_sprite(ab) {
+    var _sch = ability_school(ab);
+    if (_sch == "") return -1;   // physical - code-drawn streak
+    if (school_tint_id(_sch) != "default") {
+        switch (_sch) {
+            case "fire":   return spr_vfx_fire;
+            case "frost":  return spr_vfx_frost;
+            case "shock":  return spr_vfx_shock;
+            case "arcane": return spr_vfx_arcane;
+            case "blood":  return spr_vfx_blood;
+            case "void":   return spr_vfx_void;
+            case "shadow": return spr_vfx_shadow;
+            case "poison": return spr_vfx_poison;
+        }
+        return -1;
+    }
+    switch (_sch) {
+        case "fire":   return spr_vfx_bolt_fire;
+        case "frost":  return spr_vfx_bolt_frost;
+        case "shock":  return spr_vfx_bolt_shock;
+        case "arcane": return spr_vfx_bolt_arcane;
+        case "blood":  return spr_vfx_bolt_blood;
+        case "void":   return spr_vfx_bolt_void;
+        case "shadow": return spr_vfx_bolt_shadow;
+        case "poison": return spr_vfx_bolt_poison;
+    }
+    return -1;
+}
+
+// TRUE for the dedicated flight-loop bolts: the combat Draw cycles their FULL
+// frame count in flight. Burst art doubling as a bolt keeps the early-frames-
+// only guard (its late frames are dissipating smoke - M 08-04 "blue ball").
+function vfx_is_flight_bolt(_spr) {
+    switch (_spr) {
+        case spr_vfx_bolt_fire:  case spr_vfx_bolt_frost:  case spr_vfx_bolt_shock:
+        case spr_vfx_bolt_arcane: case spr_vfx_bolt_blood: case spr_vfx_bolt_void:
+        case spr_vfx_bolt_shadow: case spr_vfx_bolt_poison:
+            return true;
+    }
+    return false;
+}
+
+// Beam lance sprite for a "beam" delivery (08-11): school-colored unTied laser
+// tiled along the lance by the Draw. -1 = keep the plain code-drawn line
+// (tinted schools - the lasers are pre-colored, no grey twins).
+function ability_beam_sprite(ab) {
+    var _sch = ability_school(ab);
+    if (_sch != "" && school_tint_id(_sch) != "default") return -1;
+    return (_sch == "poison") ? spr_vfx_beam_green : spr_vfx_beam_violet;
 }
 
 
@@ -1555,6 +1869,60 @@ function ability_effect_full(ab) {
     if (ability_is_detonator(ab) && ab.name != "Rupture" && ab.name != "Bonebreaker" && ab.name != "Rift") {
         array_push(_parts, "Detonates debuffs for secondary effects.");
     }   // (Rupture/Bonebreaker/Rift already disclose it in their bespoke line above)
+
+    // DEPLOYED TRAPS (08-08) describe themselves from trap_catalog(), not from
+    // effect_value/effect_duration - those are 0 on a trap now, which is why the
+    // combat panel read "Roots the target for 0 turns" (M). Talent riders are
+    // folded in AND called out, so the line updates when you weave the web.
+    if (ability_is_trap(ab.name)) {
+        var _tdd = trap_def(ab.name);
+        if (_tdd != undefined) {
+            var _t_dmg  = _tdd.damage   + (ability_web_copy_has_rider(ab, "trap_dmg")    ? 6 : 0);
+            var _t_dur  = _tdd.duration + (ability_web_copy_has_rider(ab, "trap_dur")    ? 1 : 0);
+            var _t_chg  = _tdd.charges  + (ability_web_copy_has_rider(ab, "trap_charge") ? 1 : 0);
+            var _t_flt  = ability_web_copy_has_rider(ab, "trap_any") ? "any" : _tdd.filter;
+            var _t_blk  = _tdd.block || ability_web_copy_has_rider(ab, "trap_block");
+            var _t_line = "SET a trap. It waits, then springs on the next "
+                        + trap_filter_label(_t_flt) + ".";
+            if (_t_blk)        _t_line += " Springing BLOCKS that action outright.";
+            if (_t_dmg > 0)    _t_line += " Deals " + string(_t_dmg) + " damage.";
+            if (_tdd.status != "" && _t_dur > 0) {
+                switch (_tdd.status) {
+                    case "root":    _t_line += " Roots for " + ability_turns(_t_dur) + " (melee skips; ranged still attacks)."; break;
+                    case "stun":    _t_line += " Stuns for " + ability_turns(_t_dur) + " (any enemy can't act)."; break;
+                    case "bleed":   _t_line += " Bleeds for 6 damage/turn over " + ability_turns(_t_dur) + "."; break;
+                    case "silence": _t_line += " Silences for " + ability_turns(_t_dur) + " (can't cast)."; break;
+                    case "exposed": _t_line += " Leaves them Exposed for " + ability_turns(_t_dur) + "."; break;
+                    default:        _t_line += " Applies " + _tdd.status + " for " + ability_turns(_t_dur) + ".";
+                }
+            }
+            if (_t_chg > 1) _t_line += " Springs " + string(_t_chg) + " times before it is spent.";
+            // Name the talents that are actually changing these numbers, so the
+            // panel explains WHY it differs from the base ability.
+            var _t_tal = [];
+            if (ability_web_copy_has_rider(ab, "trap_dmg"))    array_push(_t_tal, "Weighted Jaws +6 dmg");
+            if (ability_web_copy_has_rider(ab, "trap_dur"))    array_push(_t_tal, "Barbed Edge +1 turn");
+            if (ability_web_copy_has_rider(ab, "trap_charge")) array_push(_t_tal, "Twin Jaws +1 spring");
+            if (ability_web_copy_has_rider(ab, "trap_any"))    array_push(_t_tal, "Wide Set: catches anything");
+            if (ability_web_copy_has_rider(ab, "trap_block"))  array_push(_t_tal, "Iron Plate: now blocks");
+            if (ability_web_copy_has_rider(ab, "trap_vuln"))   array_push(_t_tal, "Hunter's Anchor: +Vulnerable");
+            if (ability_web_copy_has_rider(ab, "trap_stun"))   array_push(_t_tal, "Second Chance: +Stun 1");
+            if (ability_web_copy_has_rider(ab, "trap_splash")) array_push(_t_tal, "Caltrop Spread: hits all");
+            if (array_length(_t_tal) > 0) {
+                var _t_join = "";
+                for (var _tti = 0; _tti < array_length(_t_tal); _tti++)
+                    _t_join += ((_tti > 0) ? ", " : "") + _t_tal[_tti];
+                _t_line += "  (talents: " + _t_join + ")";
+            }
+            array_push(_parts, _t_line);
+        }
+        // Same join the tail of this function uses - traps short-circuit the
+        // status switch entirely, so they assemble their own return here.
+        var _t_out = "";
+        for (var _tj = 0; _tj < array_length(_parts); _tj++)
+            _t_out += ((_tj > 0) ? " " : "") + _parts[_tj];
+        return _t_out;
+    }
 
     // Standard effect from the typed status kind / effect_type.
     var _k = ability_status_kind(ab);
@@ -2051,6 +2419,11 @@ function ability_unlock_info(ability_name) {
         case "Flurry":           return { type:"vex", cost:250, goal_type:"", goal_value:0 };
         case "Vanish":           return { type:"vex", cost:250, goal_type:"", goal_value:0 };
         case "Death Snare":      return { type:"vex", cost:400, goal_type:"", goal_value:0 };
+        // Deployed-trap kit (08-08). Wire Snare + Warding Chime are deliberately
+        // ABSENT from this table - a missing entry means "free starter", and the
+        // class needs its anti-ranged and anti-caster answers from level 1 (M).
+        case "Tripline":         return { type:"vex", cost:150, goal_type:"", goal_value:0 };
+        case "Caltrops":         return { type:"vex", cost:250, goal_type:"", goal_value:0 };
         case "Killing Spree":    return { type:"vex", cost:400, goal_type:"", goal_value:0 };
         case "Assassinate":      return { type:"vex", cost:400, goal_type:"", goal_value:0 };
         // §3 rework: Scorch / Throat Slit / Cleave are FREE primers (no entry).
@@ -2207,8 +2580,12 @@ function ability_web_count_cast(name, combat_log) {
     if (!variable_global_exists("ability_casts") || !is_struct(global.ability_casts)) global.ability_casts = {};
     var _before = ability_web_mp_earned(name);
     variable_struct_set(global.ability_casts, name, ability_casts(name) + 1);
-    if (ability_web_mp_earned(name) > _before && is_array(combat_log)) {
-        array_push(combat_log, "TALENT POINT earned: " + name + "!  (open its web at the loadout)");
+    if (ability_web_mp_earned(name) > _before) {
+        if (is_array(combat_log))
+            array_push(combat_log, "TALENT POINT earned: " + name + "!  (open its web at the loadout)");
+        // First point ever, in the fight where it lands: teach the whole mechanic
+        // once (M 08-08 - the log line alone never explained that webs exist).
+        tutorial_try_show("talent_first");
     }
 }
 
@@ -2247,7 +2624,41 @@ function ability_web_nodes(ab) {
     var _sure     = (ab.guaranteed_hit || ab.base_acc >= 100);
     var _has_cd   = (ability_cooldown(ab) > 0);
     var _has_dur  = (ab.effect_duration > 0);
-    if (ab.base_damage > 0) {
+    if (ability_is_trap(ab.name)) {
+        // DEPLOYED TRAPS (08-08). They need their own branch: post-rework a trap
+        // has base_damage 0, no duration and effect_value 0, so it fell through to
+        // the INSTANT-EFFECT template - where t1/t2 are literally "Deeper Roots II"
+        // and "Concentration II", duplicates of p1/p2, all scaling a value of 0.
+        // That is the identical-both-sides web M reported on Bear Trap.
+        //
+        // The two sides are now genuinely different questions:
+        //   POWER  - make the spring HURT more (payload)
+        //   TWIST  - change WHEN and HOW OFTEN it springs (behaviour)
+        // Payload lives in trap_catalog(), so these are riders read at deploy.
+        var _tdf2 = trap_def(ab.name);
+        var _tblk = (_tdf2 != undefined && _tdf2.block);
+        array_push(_n, ability_web_node("p1", "P", 1, "Weighted Jaws",
+            "+6 damage when it springs", [], "trap_dmg"));
+        array_push(_n, ability_web_node("p2", "P", 2, "Barbed Edge",
+            "Its effect lasts 1 turn longer", [], "trap_dur"));
+        array_push(_n, ability_web_node("pk", "P", 3, "Hunter's Anchor",
+            "Springing also leaves the target Vulnerable (1 turn)", [], "trap_vuln"));
+        array_push(_n, ability_web_node("t1", "T", 1, "Twin Jaws",
+            "Springs one extra time before it is spent", [], "trap_charge"));
+        // The tier-2 twist depends on what the trap already does, so the choice is
+        // never a dead button: a picky trap learns to catch anything, and a trap
+        // that already catches everything learns to stop the blow instead.
+        array_push(_n, (_tdf2 != undefined && _tdf2.filter != "any")
+            ? ability_web_node("t2", "T", 2, "Wide Set",
+                "Springs on ANY enemy action, not just " + trap_filter_label(_tdf2.filter), [], "trap_any")
+            : ability_web_node("t2", "T", 2, "Iron Plate",
+                "It now BLOCKS the action it springs on", [], "trap_block"));
+        array_push(_n, _tblk
+            ? ability_web_node("tk", "T", 3, "Second Chance",
+                "A blocked attacker is Stunned for 1 turn on top of everything else", [], "trap_stun")
+            : ability_web_node("tk", "T", 3, "Caltrop Spread",
+                "Springing damages EVERY living enemy, not just the one that set it off", [], "trap_splash"));
+    } else if (ab.base_damage > 0) {
         // DAMAGING - POWER = raw output, TWIST = tempo/reliability. Keystones
         // draw from a TRANSFORMATIVE POOL via a deterministic per-name hash so
         // sibling abilities diverge (M 07-27: "the talents are all too
@@ -2299,7 +2710,7 @@ function ability_web_nodes(ab) {
         array_push(_n, ability_web_node("t1", "T", 1, "Endurance", "+1 turn duration", ["dur"], ""));
         if (_has_cd)                   array_push(_n, ability_web_node("t2", "T", 2, "Swift Recovery", "Cooldown -1 turn", ["cdm"], ""));
         else if (ab.energy_cost >= 2)  array_push(_n, ability_web_node("t2", "T", 2, "Efficient Form", "Costs 1 less AP", ["apc"], ""));
-        else                           array_push(_n, ability_web_val_node(ab, "t2", "T", 2, "Deeper Roots II", "add"));
+        else                           array_push(_n, ability_web_val_node(ab, "t2", "T", 2, "Taproot", "mult50"));
         array_push(_n, (ab.energy_cost <= 0 && ab.secondary_cost > 0)
             ? ability_web_node("tk", "T", 3, "Opening Gambit", "First cast each combat costs no class resource", [], "first_free")
             : ability_web_node("tk", "T", 3, "Opening Gambit", "First cast each combat costs 1 less AP", [], "first_free"));
@@ -2310,9 +2721,11 @@ function ability_web_nodes(ab) {
         array_push(_n, ability_web_val_node(ab, "pk", "P", 3, "Overflowing Power", "mult50"));
         array_push(_n, (ab.energy_cost >= 2)
             ? ability_web_node("t1", "T", 1, "Efficient Form", "Costs 1 less AP", ["apc"], "")
-            : ability_web_val_node(ab, "t1", "T", 1, "Deeper Roots II", "add"));
+            : ability_web_val_node(ab, "t1", "T", 1, "Taproot", "add4"));
         if (_has_cd) array_push(_n, ability_web_node("t2", "T", 2, "Swift Recovery", "Cooldown -1 turn", ["cdm"], ""));
-        else         array_push(_n, ability_web_val_node(ab, "t2", "T", 2, "Concentration II", "mult20"));
+        else         array_push(_n, ability_web_val_node(ab, "t2", "T", 2,
+                         (ab.energy_cost >= 2) ? "Taproot" : "Floodgate",
+                         (ab.energy_cost >= 2) ? "add4" : "mult50"));
         array_push(_n, (ab.energy_cost <= 0 && ab.secondary_cost > 0)
             ? ability_web_node("tk", "T", 3, "Opening Gambit", "First cast each combat costs no class resource", [], "first_free")
             : ability_web_node("tk", "T", 3, "Opening Gambit", "First cast each combat costs 1 less AP", [], "first_free"));
@@ -2332,6 +2745,15 @@ function ability_web_nodes(ab) {
 // generic web-node descriptions (M 07-28: "+2 effect strength" on Blink says
 // nothing; "+2 healing (14 -> 16)" is the standard we want).
 function ability_web_val_noun(ab) {
+    // Name-keyed first. "effect potency" is meaningless next to a sibling node
+    // reading "+1 turn duration" - M 08-08 could not tell whether "+2 effect
+    // potency" on Shadow Step meant two more dodges or something else entirely.
+    // Where the stored value has a concrete in-fiction unit, SAY the unit.
+    switch (ab.name) {
+        case "Shadow Step":  return "dodge charges";
+        case "Blink":        return "guarded attacks";
+        case "Evasive Roll": return "damage threshold";
+    }
     switch (ab.effect_type) {
         case "heal":     return "healing";
         case "shield":   return "shield";
@@ -2354,7 +2776,16 @@ function ability_web_val_node(ab, _id, _br, _lv, _nm, _kind) {
     var _frac = (_v > 0 && _v < 1);
     var _noun = ability_web_val_noun(ab);
     var _desc, _rider;
-    if (_kind == "add" && !_frac) {
+    if (_kind == "add4" && !_frac) {
+        // 08-08: the template only had add / mult20 / mult50, and the POWER side
+        // used all three - so both TWIST fallbacks were forced to re-emit a node
+        // the player had already seen. The Whetstone shows two web nodes side by
+        // side and asks you to pick ONE, which turned into a non-choice: M shot
+        // "Deeper Roots" and "Deeper Roots II" both reading +2 effect strength.
+        // A fourth tier gives the twist side something of its own to say.
+        _rider = ["val", "val"];
+        _desc  = "+4 " + _noun + "  (" + string(_v) + " -> " + string(_v + 4) + ")";
+    } else if (_kind == "add" && !_frac) {
         _rider = ["val"];
         _desc  = "+2 " + _noun + "  (" + string(_v) + " -> " + string(_v + 2) + ")";
     } else if (_kind == "mult50") {
@@ -2418,16 +2849,24 @@ function ability_web_bespoke(ab) {
             var _abu = ability_web_attune_node("pk", ab);
             _abu.title = "Prismatic Burst";
             array_push(_out, _abu);
+            // P3 (08-05): the signature pairing - burst as the opener.
+            array_push(_out, ability_web_node("tk", "T", 3, "Resonant Opening", "First cast each combat costs 1 less AP", [], "first_free"));
             break;
         }
         case "Void Drain":
+            // P3 (08-05): the drain marks what it feeds on.
+            array_push(_out, ability_web_node("pk", "P", 3, "Voidbrand", "Hits inflict Vulnerable (1 turn)", [], "hit_vuln"));
             array_push(_out, ability_web_node("tk", "T", 3, "Hungering Maw", "Critical hits grant +1 class resource", [], "crit_sec:1"));
             break;
         case "Singularity":
             array_push(_out, ability_web_node("pk", "P", 3, "Event Horizon", "Its crush DETONATES statuses on enemies it hits", [], "detonate"));
+            // P3 (08-05): the well feeds itself - cheaper to open.
+            array_push(_out, ability_web_node("tk", "T", 3, "Accretion", "Costs 1 less Soul (3 -> 2)", ["secc"], ""));
             break;
         case "Entropy":
             array_push(_out, ability_web_node("pk", "P", 3, "Entropic Collapse", "Hits DETONATE the target's statuses", [], "detonate"));
+            // P3 (08-05): everything ends - Entropy just gets there first.
+            array_push(_out, ability_web_node("tk", "T", 3, "Heat Death", "+50% damage below 25% HP", [], "execute:50"));
             break;
         case "Scorch":
             array_push(_out, ability_web_node("pk", "P", 3, "Wildfire", "The flames leap - echoes 50% damage to another enemy", [], "splash:50"));
@@ -2473,6 +2912,8 @@ function ability_web_bespoke(ab) {
         // --- Bloodwarden ---
         case "Blood Leech":
             array_push(_out, ability_web_node("pk", "P", 3, "Exsanguinate", "Heals you for 50% of damage dealt", [], "lifesteal:50"));
+            // P3 (08-05): a leech that bites an artery drinks twice.
+            array_push(_out, ability_web_node("tk", "T", 3, "Glutted Vein", "Critical hits grant +1 class resource", [], "crit_sec:1"));
             break;
         case "Blood Surge":
             // 07-29 M pass: the template gave it FOUR near-identical +healing
@@ -2484,6 +2925,8 @@ function ability_web_bespoke(ab) {
             break;
         case "Gore Strike":
             array_push(_out, ability_web_node("pk", "P", 3, "Butcher's Rhythm", "+50% damage below 25% HP", [], "execute:50"));
+            // P3 (08-05): the spray was never going to stay on one target.
+            array_push(_out, ability_web_node("tk", "T", 3, "Arterial Spray", "Echoes 50% of its damage to another enemy", [], "splash:50"));
             break;
         case "Iron Skin":
             // P3 (07-29): t2 was a template clone. "Sharp Edges" rides the
@@ -2510,23 +2953,40 @@ function ability_web_bespoke(ab) {
             array_push(_out, ability_web_node("tk", "T", 3, "Crescendo", "Each trap teaches the next +6 instead of +4", [], "ramp_fast"));
             break;
         case "Undying":
+            // P3 (08-05): refusal, sustained.
+            array_push(_out, ability_web_node("t1", "T", 1, "Stubborn Heart", "+1 turn effect duration", ["dur"], ""));
             array_push(_out, ability_web_node("tk", "T", 3, "Blood Ward", "Also raises an 8-point shield on cast", [], "cast_shield:8"));
             break;
         case "Plague Touch":
             array_push(_out, ability_web_node("pk", "P", 3, "Pandemic", "Its plague spreads to a second enemy", [], "status_splash"));
+            // P3 (08-05): pure-debuff, so no on-hit riders (standing rule) - the
+            // signature deepens the rot itself. (The old "dead mortality" note is
+            // stale: enemy mends now route through combat_heal_after_mortality,
+            // so its anti-heal already bites healer packs.)
+            array_push(_out, ability_web_node("t1", "T", 1, "Festering Grip", "+1 turn effect duration", ["dur"], ""));
             break;
         // --- Shadowstrider ---
         case "Snipe":
             array_push(_out, ability_web_node("pk", "P", 3, "Deadeye", "Critical Snipes leave the target Vulnerable (2 turns)", [], "crit_vuln:2"));
+            // P3 (08-05): the sniper's creed.
+            array_push(_out, ability_web_node("tk", "T", 3, "One Shot, One Kill", "+50% damage below 25% HP", [], "execute:50"));
             break;
         case "Poison Dart":
             array_push(_out, ability_web_node("pk", "P", 3, "Virulent Spread", "Its venom jumps to a second enemy", [], "status_splash"));
+            // P3 (08-05): a needle placed where the armor isn't.
+            array_push(_out, ability_web_node("tk", "T", 3, "Nerve Puncture", "Hits inflict Vulnerable (1 turn)", [], "hit_vuln"));
             break;
-        case "Bear Trap":
-            array_push(_out, ability_web_node("tk", "T", 3, "Serrated Jaws", "+15% damage and +1 turn of root", ["dmgp", "dur"], ""));
-            break;
-        case "Death Snare":
-            array_push(_out, ability_web_node("pk", "P", 3, "Sprung Ruin", "Hits DETONATE the target's statuses", [], "detonate"));
+        // Bear Trap / Death Snare bespoke overrides REMOVED 08-08. They described
+        // the pre-rework instant-hit traps ("Its bite lays the target Vulnerable",
+        // "Hits DETONATE") and they replaced pk/tk by id, so they were overwriting
+        // the new deployed-trap nodes with copy that no longer matched the ability.
+        // The trap branch in the generic builder owns all seven traps now.
+        case "Shadow Step":
+            // P3 (08-05): the last unsigned signature - both nodes are bespoke
+            // hooks (step_charges at the cast site, step_dodge_prep at the
+            // dodge-charge resolution in Step_0).
+            array_push(_out, ability_web_node("t1", "T", 1, "Long Stride", "Grants 4 dodge charges instead of 3", [], "step_charges"));
+            array_push(_out, ability_web_node("tk", "T", 3, "Phantom Momentum", "Each successful Shadow Step dodge grants +1 Prep", [], "step_dodge_prep"));
             break;
         case "Frost Shot":
             array_push(_out, ability_web_node("pk", "P", 3, "Shattering Volley", "Echoes 50% of its damage to another enemy", [], "splash:50"));
@@ -3269,4 +3729,172 @@ function trait_maxhp_mult() {
     var _m = 1.0;
     if (trait_active("Thick Skin")) _m *= 1 + 0.10 * trait_potency_mult("Thick Skin");
     return _m;
+}
+
+// =============================================================================
+// CLASS TRUNKS (P2, SYSTEMS_TALENT_WEBS.md §4 - built 08-05).
+// Each class passive grows a trunk of 5 this-or-that rows gated by PERMANENT
+// level (L2/5/8/11/14). Pairs are PERMANENTLY EXCLUSIVE - picking one locks the
+// other; the only out is the Vex trunk respec (500g + 50 dust). There is NO
+// trunk currency: reaching the gate level IS the unlock, the exclusivity IS the
+// cost. Picks are meta-persistent (plain array-of-arrays, no save-format bump -
+// a missing field reads as "nothing picked").
+// Three table adaptations vs the §4.3 draft (dead baselines found in code,
+// flagged to M 08-05): Arcanist L5a (souls already persist between rooms ->
+// cap raise), Bloodwarden L5a (no blood ability costs HP anymore -> Blood cost
+// -1), Shadowstrider L2b + L11 (trap_active is vestigial, traps fire on cast ->
+// start-Prep / finisher / trap refund).
+// =============================================================================
+
+function trunk_gate_levels() { return [2, 5, 8, 11, 14]; }
+
+// One node: { title, label, fx }. fx is the key the combat hooks check via
+// trunk_has(fx). label is player-facing - keep it concrete (numbers included).
+function trunk_node(title, label, fx) { return { title: title, label: label, fx: fx }; }
+
+// The full trunk for a class: 5 rows, each { lvl, a, b }. Row order = gate order.
+function trunk_catalog(class_id) {
+    switch (class_id) {
+        case 0: return [ // Arcanist - Souls
+            { lvl: 2,  a: trunk_node("Soul Harvester",    "+1 extra Soul on your killing blows",                     "soul_kill_bonus"),
+                       b: trunk_node("Gravebound Reserve", "Start each combat with at least 2 Souls",                "soul_start") },
+            { lvl: 5,  a: trunk_node("Deep Well",         "Soul cap raised to 13",                                   "soul_cap"),
+                       b: trunk_node("Soul-Lit Focus",    "+2% spell crit per Soul held",                            "soul_crit") },
+            { lvl: 8,  a: trunk_node("Miser of Souls",    "Soul-spending spells cost 1 less Soul (min 1)",           "soul_discount"),
+                       b: trunk_node("Overflow",          "Overkill on your kills returns +1 extra Soul",            "soul_overkill") },
+            { lvl: 11, a: trunk_node("Rule of Three",     "Every 3rd spell you cast each combat deals +30% damage",  "soul_third_spell"),
+                       b: trunk_node("Rending Payment",   "Soul-spending spells lay the target Vulnerable (1 turn)", "soul_vuln") },
+            { lvl: 14, a: trunk_node("Inevitable Arcana", "At 5+ Souls your spells cannot miss",                     "soul_sure"),
+                       b: trunk_node("Reaper's Dividend", "Spell killing blows refund 1 AP",                         "soul_kill_ap") },
+        ];
+        case 1: return [ // Bloodwarden - Blood
+            { lvl: 2,  a: trunk_node("Cruor Feast",       "Your crits also grant +1 Blood",                          "blood_on_crit"),
+                       b: trunk_node("Thickened Vitae",   "+2 max HP per Blood held",                                "blood_hp") },
+            { lvl: 5,  a: trunk_node("Practiced Phlebotomy", "Blood-spending abilities cost 1 less Blood (min 1)",   "blood_discount"),
+                       b: trunk_node("Woken Wounds",      "Start each combat with Blood equal to missing HP / 10",   "blood_start_missing") },
+            { lvl: 8,  a: trunk_node("Panic Response",    "Hits that leave you below 30% HP grant +2 Blood",         "blood_low_gain"),
+                       b: trunk_node("Red Recycling",     "Heal 1 HP per Blood you spend",                           "blood_spend_heal") },
+            { lvl: 11, a: trunk_node("Dread Payment",     "Blood spenders Weaken the target (-20% damage, 1 turn)",  "blood_spend_weaken"),
+                       b: trunk_node("Sanguine Might",    "+3% damage per Blood held",                               "blood_dmg") },
+            { lvl: 14, a: trunk_node("Refuse the Grave",  "Once per combat: survive a killing blow at 1 HP (costs ALL Blood)", "blood_last_stand"),
+                       b: trunk_node("Deep Veins",        "Blood cap raised to 13",                                  "blood_cap") },
+        ];
+        case 2: return [ // Shadowstrider - Preparation
+            { lvl: 2,  a: trunk_node("Punished Whiffs",   "+1 Prep whenever an enemy misses you",                    "prep_on_miss"),
+                       b: trunk_node("Always Ready",      "Start each combat with at least 2 Prep",                  "prep_start") },
+            { lvl: 5,  a: trunk_node("Loaded Springs",    "Traps deal +2 damage per Prep held",                      "prep_trap_dmg"),
+                       b: trunk_node("Patient Opener",    "Your first attack each combat from 2+ Prep auto-crits",   "prep_first_crit") },
+            { lvl: 8,  a: trunk_node("Light Kit",         "Evasive tools (Evasive Roll, Smoke Bomb) cost 1 less Prep", "prep_tool_discount"),
+                       b: trunk_node("Measured Breathing", "+2 accuracy per Prep held",                              "prep_acc") },
+            { lvl: 11, a: trunk_node("Finisher's Doctrine", "Your damaging hits deal +30% to enemies below 25% HP", "prep_finisher"),
+                       b: trunk_node("Sprung Steel",      "Casting a trap returns 1 Prep",                           "prep_trap_refund") },
+            { lvl: 14, a: trunk_node("Coiled Patience",   "Starting a turn at max Prep grants +1 AP",                "prep_max_ap"),
+                       b: trunk_node("Deep Pockets",      "Preparation cap raised to 12",                            "prep_cap") },
+        ];
+    }
+    return [];
+}
+
+// Picks store: global.trunk_picks = 3 arrays (per class_id) of 5 ints:
+// -1 unpicked / 0 = side a / 1 = side b. Shape-guarded so stale saves heal.
+function trunk_picks_init() {
+    if (!variable_global_exists("trunk_picks") || !is_array(global.trunk_picks)
+        || array_length(global.trunk_picks) != 3) {
+        global.trunk_picks = [[-1,-1,-1,-1,-1], [-1,-1,-1,-1,-1], [-1,-1,-1,-1,-1]];
+        return;
+    }
+    for (var _c = 0; _c < 3; _c++) {
+        if (!is_array(global.trunk_picks[_c]) || array_length(global.trunk_picks[_c]) != 5) {
+            global.trunk_picks[_c] = [-1,-1,-1,-1,-1];
+        }
+    }
+}
+
+function trunk_pick_get(class_id, row) {
+    trunk_picks_init();
+    if (class_id < 0 || class_id > 2 || row < 0 || row > 4) return -1;
+    return global.trunk_picks[class_id][row];
+}
+
+function trunk_pick_set(class_id, row, side) {
+    trunk_picks_init();
+    if (class_id < 0 || class_id > 2 || row < 0 || row > 4) return;
+    global.trunk_picks[class_id][row] = side;
+}
+
+// A row is unlocked when the character's PERMANENT level has reached its gate.
+function trunk_row_unlocked(row) {
+    return player_permanent_level() >= trunk_gate_levels()[row];
+}
+
+// Unlocked-but-unpicked rows for a class - feeds the pending-pick badges.
+function trunk_pending_count(class_id) {
+    var _n = 0;
+    for (var _r = 0; _r < 5; _r++) {
+        if (trunk_row_unlocked(_r) && trunk_pick_get(class_id, _r) == -1) _n++;
+    }
+    return _n;
+}
+
+// True when the CURRENT class has picked a node carrying this fx key. The
+// combat hooks additionally gate on player.class_id, so a borrowed-ability
+// cross-class edge can never leak another class's trunk.
+function trunk_has(fx) {
+    var _cls = variable_global_exists("chosen_class") ? global.chosen_class : -1;
+    if (_cls < 0 || _cls > 2) return false;
+    var _cat = trunk_catalog(_cls);
+    for (var _r = 0; _r < array_length(_cat); _r++) {
+        var _p = trunk_pick_get(_cls, _r);
+        if (_p == -1) continue;
+        var _nd = (_p == 0) ? _cat[_r].a : _cat[_r].b;
+        if (_nd.fx == fx) return true;
+    }
+    return false;
+}
+
+// Clear every trunk pick for a class (the Vex/Vael trunk respec, 500g + 50
+// dust). Returns how many rows were cleared; the gates re-offer one at a time.
+function trunk_respec(class_id) {
+    trunk_picks_init();
+    var _n = 0;
+    for (var _r = 0; _r < 5; _r++) {
+        if (global.trunk_picks[class_id][_r] != -1) { global.trunk_picks[class_id][_r] = -1; _n++; }
+    }
+    return _n;
+}
+
+// The Vael Reweave list including the CLASS TRUNK row (P2, 08-05): when the
+// current class has trunk picks, row 0 offers the trunk respec (500g + 50
+// dust - deliberately pricier, exclusive class picks should feel near-
+// permanent). Ability rows follow unchanged.
+function vael_reweave_rows() {
+    var _rows = [];
+    var _cls  = variable_global_exists("chosen_class") ? global.chosen_class : 0;
+    var _tn   = 0;
+    for (var _r = 0; _r < 5; _r++) if (trunk_pick_get(_cls, _r) != -1) _tn++;
+    if (_tn > 0) array_push(_rows, { name: "CLASS TRUNK", picks: _tn, is_trunk: true });
+    var _w = ability_web_respec_list();
+    for (var _i = 0; _i < array_length(_w); _i++) {
+        _w[_i].is_trunk = false;
+        array_push(_rows, _w[_i]);
+    }
+    return _rows;
+}
+
+// Effective SECONDARY resource cost after trunk discounts. Single source -
+// ability_secondary_ok, ability_spend_resources and every cost display must
+// route through this so the gate, the spend and the UI can never disagree.
+// Arcanist "Miser of Souls" / Bloodwarden "Practiced Phlebotomy": -1, min 1.
+// Shadowstrider "Light Kit": -1 on the evasive tools only, floor 0.
+function ability_secondary_cost_eff(ability, caster) {
+    var _c = ability.secondary_cost;
+    if (_c <= 0) return _c;
+    var _cls = (caster != undefined && variable_struct_exists(caster, "class_id")) ? caster.class_id : -1;
+    if (_cls == 0 && trunk_has("soul_discount"))  _c = max(1, _c - 1);
+    if (_cls == 1 && trunk_has("blood_discount")) _c = max(1, _c - 1);
+    if (_cls == 2 && trunk_has("prep_tool_discount")
+        && (ability.name == "Evasive Roll" || ability.name == "Smoke Bomb")) {
+        _c = max(0, _c - 1);
+    }
+    return _c;
 }

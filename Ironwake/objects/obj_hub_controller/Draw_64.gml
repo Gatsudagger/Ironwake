@@ -2347,8 +2347,9 @@ if (instance_exists(obj_game_controller)) {
 
                     // --- Touch/mouse hit-testing (Draw-event rule). Buttons act
                     //     on first tap; nodes select on first tap, stage/unstage
-                    //     on a second tap of the same node. ---
-                    if (mouse_check_button_pressed(mb_left)) {
+                    //     on a second tap of the same node. Stands down while the
+                    //     talent tour runs (the tour owns all input). ---
+                    if (mouse_check_button_pressed(mb_left) && _gc_ov.talent_tour_step < 0) {
                         var _wv_mx = device_mouse_x_to_gui(0);
                         var _wv_my = device_mouse_y_to_gui(0);
                         if (_wv_my >= _bt_y0 && _wv_my <= _bt_y1 && _wv_mx >= _sv_x0 && _wv_mx <= _sv_x1) {
@@ -2379,6 +2380,10 @@ if (instance_exists(obj_game_controller)) {
                             }
                         }
                     }
+
+                    // Talent-web guided tour (M 08-04) - drawn LAST so it dims and
+                    // annotates the whole web. Advanced by gc Step; first open only.
+                    ui_draw_talent_tour();
                 }
             }
 
@@ -3028,6 +3033,7 @@ if (variable_instance_exists(id, "awaken_boost_done_timer") && awaken_boost_done
 }
 
 ui_draw_item_picker();
+ui_draw_reagent_picker();
 
 // CURSED REBIRTH ritual overlay (07-31) - the dark ceremony between commit and
 // reveal. Timed by gc Step (cursed_ritual_t); any confirm/tap hurries it.
@@ -3044,23 +3050,88 @@ if (instance_exists(obj_game_controller)) {
         draw_set_alpha(0.18 * _crf * _crp);
         draw_set_color(make_color_rgb(140, 20, 30));
         draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
-        // Ring of ember-motes closing in on the offering.
+        // Scene window (M 08-04: "a little scene, like how eggs hatch") - the
+        // approved spectral-hand-from-the-cauldron art in its own framed pane,
+        // the hand REVEALED top-down as the ritual builds (source-row crop
+        // slides up, so the cauldron sits fixed while the fingers emerge).
+        // String-resolved: falls back to the 07-31 text-only ceremony until
+        // the sprite lands in the project.
+        var _cr_scn = asset_get_index("spr_scene_cursed_ritual");
+        var _cr_has = (_cr_scn != -1 && sprite_exists(_cr_scn));
+        var _cr_ty  = 540;   // ceremony line y (drops below the window when it's up)
+        if (_cr_has) {
+            // AN EVENT, not an image download (M 08-04: the old row-crop read as
+            // dial-up loading): the scene breathes in with a settling zoom, sheds
+            // rising ectoplasm motes, pulses with the blood beat, and FLASHES on
+            // the "something gives it back" turn at t=120.
+            var _wx1 = GUI_CX - 252, _wy1 = 156, _wx2 = GUI_CX + 252, _wy2 = 156 + 504;
+            draw_set_alpha(_crf);
+            draw_set_color(make_color_rgb(10, 8, 16));
+            draw_rectangle(_wx1, _wy1, _wx2, _wy2, false);
+            // Entrance: fade + zoom settle (x3.24 -> x3.0 over ~36 frames, eased).
+            var _cr_in = min(1, _crt / 36);
+            _cr_in = _cr_in * (2 - _cr_in);                       // ease-out
+            var _cr_sc = 3 * (1.05 - 0.05 * _cr_in);   // 1.05 start = exactly flush with the 504px window
+            var _cr_w2 = 160 * _cr_sc * 0.5;
+            var _cr_cx = GUI_CX, _cr_cy = (_wy1 + _wy2) * 0.5;
+            draw_sprite_ext(_cr_scn, 0, _cr_cx - _cr_w2, _cr_cy - _cr_w2,
+                _cr_sc, _cr_sc, 0, c_white, _crf * _cr_in);
+            // Breathing ectoplasm glow, swelling as the ritual builds.
+            gpu_set_blendmode(bm_add);
+            draw_sprite_ext(_cr_scn, 0, _cr_cx - _cr_w2, _cr_cy - _cr_w2,
+                _cr_sc, _cr_sc, 0, c_white,
+                _crf * _cr_in * (0.06 + 0.14 * _crp + 0.10 * min(1, _crt / 195)));
+            // THE TURN (t=120): a hard spectral flash as the dark decides.
+            if (_crt >= 120 && _crt < 138) {
+                draw_sprite_ext(_cr_scn, 0, _cr_cx - _cr_w2, _cr_cy - _cr_w2,
+                    _cr_sc, _cr_sc, 0, make_color_rgb(170, 255, 220),
+                    0.7 * (1 - (_crt - 120) / 18));
+            }
+            // Rising ectoplasm motes (stateless from the timer, cast-fx idiom).
+            for (var _cmi = 0; _cmi < 14; _cmi++) {
+                var _cmp = (_cmi * 137.5) mod 97;                       // phase scramble
+                var _cmx = _wx1 + 30 + ((_cmp * 5.3) mod (504 - 60));
+                var _cmy = _wy2 - 24 - ((_crt * (1.1 + (_cmp mod 7) * 0.22) + _cmp * 4) mod (504 - 48));
+                var _cma = 0.5 * _crf * _cr_in * (0.4 + 0.6 * abs(sin(_cmp + _crt / 25)));
+                draw_set_alpha(_cma);
+                draw_set_color(make_color_rgb(120, 235, 190));
+                draw_rectangle(_cmx - 2, _cmy - 5, _cmx + 2, _cmy + 5, false);
+            }
+            gpu_set_blendmode(bm_normal);
+            // Frame: Sable violet over a dark inner rim.
+            draw_set_alpha(_crf);
+            draw_set_color(make_color_rgb(40, 30, 58));
+            draw_rectangle(_wx1 + 4, _wy1 + 4, _wx2 - 4, _wy2 - 4, true);
+            draw_set_color(make_color_rgb(150, 110, 220));
+            draw_rectangle(_wx1, _wy1, _wx2, _wy2, true);
+            _cr_ty = 738;
+        }
+        // Ring of ember-motes closing in on the offering (orbits the scene
+        // window's center when it's up - drifting embers in front read fine).
         var _crr = 330 - 140 * min(1, _crt / 195);
+        var _cr_my = _cr_has ? 420 : 540;
         draw_set_color(make_color_rgb(190, 60, 80));
         for (var _cri = 0; _cri < 12; _cri++) {
             var _cra2 = _crt / 40 + _cri * (pi / 6);
             draw_set_alpha(_crf * (0.35 + 0.65 * abs(sin(_cra2 * 3 + _crt / 30))));
-            draw_circle(GUI_CX + cos(_cra2) * _crr, 540 + sin(_cra2) * _crr * 0.72, 6, false);
+            draw_circle(GUI_CX + cos(_cra2) * _crr, _cr_my + sin(_cra2) * _crr * 0.72, 6, false);
         }
         draw_set_alpha(_crf);
         draw_set_halign(fa_center); draw_set_valign(fa_middle);
         draw_set_font(fnt_ui_title);
         draw_set_color(make_color_rgb(205, 90, 105));
+        // The line stays PUT; only the dots animate, appended left-anchored past
+        // the measured line end (M 08-04: centering line+dots together made the
+        // whole sentence shuffle sideways with every tick).
         var _cr_line = (_crt > 120) ? "Something gives it back" : "The dark considers the offering";
-        draw_text(GUI_CX, 540, _cr_line + string_repeat(".", 1 + (_crt div 20) mod 3));
+        draw_text(GUI_CX, _cr_ty, _cr_line);
+        draw_set_halign(fa_left);
+        draw_text(GUI_CX + string_width(_cr_line) / 2, _cr_ty,
+            string_repeat(".", 1 + (_crt div 20) mod 3));
+        draw_set_halign(fa_center);
         draw_set_font(fnt_ui_small);
         draw_set_color(make_color_rgb(150, 130, 140));
-        draw_text(GUI_CX, 640, (input_device() == 2) ? "tap to hurry it" : "Enter: hurry it");
+        draw_text(GUI_CX, _cr_ty + 78, (input_device() == 2) ? "tap to hurry it" : "Enter: hurry it");
         draw_set_halign(fa_left); draw_set_valign(fa_top);
         draw_set_alpha(1.0); draw_set_color(c_white); draw_set_font(-1);
         if (touch_tapped(GUI_XL, 0, GUI_XR, GUI_H)) touch_press(vk_enter);

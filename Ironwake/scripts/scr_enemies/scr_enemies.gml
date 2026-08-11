@@ -792,7 +792,29 @@ function enemy_sprite_map() {
         "Forge Tyrant":         spr_forge_tyrant,
         "Molten Revenant":      spr_molten_revenant,
         "The Ashen Colossus":   spr_ashen_colossus,
+        // THE ASHEN DUELIST (08-08 fix): he is cloned from an elite and then
+        // RENAMED, and this map is keyed by name - so the lookup missed and he
+        // fought as an empty space (M screenshot). Tier-0 art landed 08-09; the
+        // higher tiers resolve through duelist_sprite_for(). Spec in
+        // DESIGN_DUELIST_CHALLENGE.md.
+        "The Ashen Duelist":    spr_ashen_duelist,
     };
+}
+
+// Sprite for a duel encounter, tiered by how many duels the player has already
+// fought (global.duelist_encounters, the ledger that never resets). The Duelist
+// grows +10% per prior duel forever, so he should LOOK like he has been winning.
+// Falls back down the tiers - and finally to the base map entry - so the feature
+// works before the art for the higher tiers exists.
+function duelist_sprite_for(_wins) {
+    var _tier = (_wins >= 9) ? 3 : ((_wins >= 5) ? 2 : ((_wins >= 2) ? 1 : 0));
+    for (var _t = _tier; _t >= 1; _t--) {
+        var _a = asset_get_index("spr_ashen_duelist_t" + string(_t));
+        if (_a >= 0) return _a;
+    }
+    var _b = asset_get_index("spr_ashen_duelist");
+    if (_b >= 0) return _b;
+    return -1;   // caller falls back to enemy_sprite_map()
 }
 
 // =============================================================================
@@ -839,5 +861,73 @@ function bestiary_catalog() {
         { name:"Glacial Warden",      family:"Tundra Tomb",    kind:"Boss",     lore:"Keeper of the Tomb's sealed vaults, crowned in hoarfrost. The Warden's rounds have not varied in a thousand years; you are the first thing worth changing them for." },
         { name:"Tomb Archon",         family:"Tundra Tomb",    kind:"Boss",     lore:"The Tomb was built to honor the Archon; the cold was its idea. It presides from a throne of black ice, judging the frozen dead - and finds most of them, and all of the living, wanting." },
         { name:"The Eternal Frost",   family:"Tundra Tomb",    kind:"Boss",     lore:"Not a creature so much as the Tomb's winter given a will. Where it walks, torches gutter and time itself slows to a crawl. The dead call it mercy. The living rarely get to call it anything." },
+        // --- 08-06: THE DEPTH WARDENS (DESIGN_WORLD_EXPANSION_0806.md §4) ------
+        // Descent-only bosses on a five-floor cadence. Each attacks a HABIT
+        // rather than a stat - endless scaling eventually beats raw numbers, so
+        // the fights have to test something else.
+        { name:"The First Door",         family:"The Descent", kind:"Boss", lore:"Every descent begins by opening something that was closed. The First Door is what closing meant, before anyone thought to build a hinge for it. It opens for you. That is the whole of the threat." },
+        { name:"Sister Fathom",          family:"The Descent", kind:"Boss", lore:"She measures. Depth, pressure, the reach of a swing - all of it, constantly, and she keeps the numbers. Hit her hard enough and she simply records the figure and gives it back to herself." },
+        { name:"The Tally",              family:"The Descent", kind:"Boss", lore:"It has been counting since before the Vault was sealed and has never once lost its place. Repeat yourself in front of it and you will find the count was of you." },
+        { name:"Hollowlight",            family:"The Descent", kind:"Boss", lore:"A lantern with nothing holding it. The light it sheds is the exact colour of relief, and everything it falls on gets worse. Mercy, run backwards." },
+        { name:"The Weight of Ironwake", family:"The Descent", kind:"Boss", lore:"Everything the town has ever put down here, still being carried. It is not angry and it is not hunting. It is simply extremely heavy, and it is between you and the way down." },
+        { name:"The Long Arithmetic",    family:"The Descent", kind:"Boss", lore:"Somewhere below the last floor, the sums stop balancing. This is what does the reconciling. It will not let you deal more than you can survive, because that is not how the books work." },
+        { name:"Nothing In Particular",  family:"The Descent", kind:"Boss", lore:"There is no entry for this one. Survivors describe a fight and cannot say against what. The dogs it leaves behind are real enough, and they heel." },
+        { name:"The Understudy",         family:"The Descent", kind:"Boss", lore:"It has watched every descent ever made and has been practising. It knows your build. It is wearing your affixes. It has been waiting a long time for the part." },
+        { name:"The Hollow Crown",       family:"The Descent", kind:"Boss", lore:"A circlet the size of a gate, above a throne with nothing on it. The king it belonged to is a thousand years gone and it is still ruling, and the fight gets quieter the longer it goes on." },
+        { name:"The Bottom",             family:"The Descent", kind:"Boss", lore:"The floor under the floors. Everything that fell is here, arranged, and it has had a very long time to decide what it thinks of the falling." },
     ];
 }
+
+// =============================================================================
+// DEPTH WARDENS - data layer (08-06). DESIGN_WORLD_EXPANSION_0806.md §4.
+//
+// ⚠ NOT YET WIRED TO SPAWNING. This is the catalog + lookups only. The Descent's
+// floor-boss selection lives outside obj_floor_controller and was not traced in
+// this pass; wiring a half-understood generation path risks breaking run
+// generation, which is a far worse failure than "the Wardens aren't in yet".
+// The remaining step is: at Descent floor-boss selection, when
+// warden_for_floor(N) returns non-empty, spawn that Warden instead of the
+// theme's normal floor boss.
+// =============================================================================
+
+// Wardens replace the recycled theme boss on every 5th Descent floor. Past 50
+// they cycle, so the ladder never runs out.
+function warden_catalog() {
+    return [
+        { floor: 5,  name:"The First Door",         scion:"doorling",     hook:"Opens with a shield equal to the floors you have cleared." },
+        { floor:10,  name:"Sister Fathom",          scion:"fathom_squid", hook:"Heals for any damage you deal above 30 in one hit." },
+        { floor:15,  name:"The Tally",              scion:"tallykeep",    hook:"Gains a permanent stack each time you use the same ability twice." },
+        { floor:20,  name:"Hollowlight",            scion:"lantern_wyrm", hook:"Your healing is inverted for the first 2 turns." },
+        { floor:25,  name:"The Weight of Ironwake", scion:"deepclaw",     hook:"Three phases; drops a guaranteed Depthforged legendary." },
+        { floor:30,  name:"The Long Arithmetic",    scion:"sum_moth",     hook:"Damage you deal is capped at your current HP." },
+        { floor:35,  name:"Nothing In Particular",  scion:"null_hound",   hook:"Untargetable every other turn." },
+        { floor:40,  name:"The Understudy",         scion:"mimicling",    hook:"Copies your equipped weapon's affixes." },
+        { floor:45,  name:"The Hollow Crown",       scion:"griefwisp",    hook:"Silences one random ability each turn." },
+        { floor:50,  name:"The Bottom",             scion:"",             hook:"The intended end of the ladder; unique title + splash." },
+    ];
+}
+
+// The Warden owed by a Descent floor, or "" when this floor keeps its theme
+// boss. Past floor 50 the ladder cycles through the same ten.
+function warden_for_floor(fl) {
+    if (fl <= 0 || (fl mod 5) != 0) return "";
+    var _c = warden_catalog();
+    var _n = array_length(_c);
+    var _slot = (fl / 5);                       // 1-based: floor 5 -> 1
+    var _idx  = ((_slot - 1) mod _n);
+    return _c[_idx].name;
+}
+
+// The scion a Warden drops ("" if it has none - The Bottom is a milestone, not
+// a parent). Kept separate from pet_boss_signature_species() so the Descent
+// path never has to guess a floor key.
+function warden_scion(warden_name) {
+    var _c = warden_catalog();
+    for (var _i = 0; _i < array_length(_c); _i++)
+        if (_c[_i].name == warden_name) return _c[_i].scion;
+    return "";
+}
+
+// Flat 4% per DESIGN §2.1. Wardens recur forever on the cadence, so this is a
+// fishing expedition at whatever depth the player can actually survive.
+function warden_scion_drop_chance() { return 4; }

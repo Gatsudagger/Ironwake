@@ -76,7 +76,8 @@ function combat_init(combatant_array) {
             case 2: // Shadowstrider - Preparation
                 c.preparation     = 0;
                 c.preparation_max = 10;
-                c.trap_active     = false;
+                c.trap_active     = false;   // legacy flag, kept for old save shapes
+                c.traps            = [];     // deployed traps (08-08 rework)
                 break;
         }
     }
@@ -160,10 +161,21 @@ function combat_next_turn(combat_state) {
         actor.chill_ap_penalty = 0;
     }
 
-    // Shadowstrider gains 1 Preparation at turn start when no trap is active
+    // Shadowstrider gains 1 Preparation at turn start when NO trap is deployed.
+    // This rule was meaningless while traps fired on cast (nothing ever persisted);
+    // with deployed traps it becomes the class's core tension - an empty board
+    // refills faster, so over-committing the board starves your Prep (08-08).
     if (actor.is_player && actor.class_id == 2) {
-        if (!actor.trap_active) {
+        var _tp_deployed = variable_struct_exists(actor, "traps") && is_array(actor.traps)
+                           && array_length(actor.traps) > 0;
+        if (!_tp_deployed) {
             actor.preparation = min(actor.preparation + 1, actor.preparation_max);
+        }
+        // Coiled Patience trunk node (P2, 08-05): starting a turn at max Prep
+        // grants +1 AP. Checked AFTER the passive gain so a turn that fills the
+        // tank counts - full readiness, rewarded.
+        if (trunk_has("prep_max_ap") && actor.preparation >= actor.preparation_max) {
+            actor.energy += 1;
         }
     }
 
@@ -260,6 +272,11 @@ function combat_roll_crit(attacker_stats, ability_base_crit, crit_type) {
     }
 
     if (irandom(99) >= chance) return result; // no crit
+
+    // Achievement counter (08-05 wiring): lifetime crits. Only player ability
+    // rolls reach this function (enemies never call it), so no attacker gate.
+    ach_counters_init();
+    global.ach_counters.crits += 1;
 
     result.critted = true;
 
@@ -519,6 +536,41 @@ function combat_apply_damage(target_struct, damage) {
         && combatant_distinct_status_kinds(target_struct) >= 2) {
         damage = round(damage * 1.15);
     }
+    // Stoneshadow (golemite signature move, 08-05 pillar D): the FIRST blow that
+    // would drop the player below HALF HP each combat breaks against the stone
+    // shadow - damage halved. Hooked here because every damage path funnels
+    // through this sink; the once-flag rides the per-combat player struct.
+    if (damage > 0 && variable_struct_exists(target_struct, "is_player") && target_struct.is_player
+        && variable_struct_exists(target_struct, "max_HP") && target_struct.max_HP > 0
+        && target_struct.HP >= target_struct.max_HP * 0.50
+        && target_struct.HP - damage < target_struct.max_HP * 0.50
+        && !variable_struct_exists(target_struct, "sig_stone_done")
+        && pet_active_sig_move("stoneshadow")) {
+        target_struct.sig_stone_done = true;
+        damage = max(1, ceil(damage * 0.5));
+        if (instance_exists(obj_combat_controller)) {
+            array_push(instance_find(obj_combat_controller, 0).combat_log,
+                "[Companion] " + pet_active().name + "'s STONESHADOW takes half the blow!");
+        }
+    }
+    // Refuse the Grave trunk node (P2, 08-05): once per combat the Bloodwarden
+    // survives a killing blow at 1 HP - it costs ALL held Blood (needs at least
+    // 1). Checked AFTER Stoneshadow so a halved blow that is no longer lethal
+    // never wastes the reserve.
+    if (damage > 0 && variable_struct_exists(target_struct, "is_player") && target_struct.is_player
+        && variable_struct_exists(target_struct, "class_id") && target_struct.class_id == 1
+        && variable_struct_exists(target_struct, "blood") && target_struct.blood > 0
+        && target_struct.HP - damage <= 0
+        && !variable_struct_exists(target_struct, "trunk_grave_done")
+        && trunk_has("blood_last_stand")) {
+        target_struct.trunk_grave_done = true;
+        damage = max(0, target_struct.HP - 1);
+        target_struct.blood = 0;
+        if (instance_exists(obj_combat_controller)) {
+            array_push(instance_find(obj_combat_controller, 0).combat_log,
+                "REFUSE THE GRAVE - every drop of Blood spent, and you are still standing (1 HP).");
+        }
+    }
     var prev_hp         = target_struct.HP;
     target_struct.HP    = max(0, target_struct.HP - damage);
     var actual_dealt    = prev_hp - target_struct.HP;
@@ -529,6 +581,37 @@ function combat_apply_damage(target_struct, damage) {
         && target_struct.is_player && boon_active("bloodtithe")) {
         if (!variable_global_exists("bloodtithe_bank")) global.bloodtithe_bank = 0;
         global.bloodtithe_bank += actual_dealt;
+    }
+    // Achievement accumulator (08-05 wiring): damage the player weathered this
+    // run (ACH_ABSORB_500 via sync). Counts the damage ARRIVING at this sink -
+    // shield-absorbed portions never reach here, a known v1 undercount (noted
+    // in ACHIEVEMENTS_SPEC.md). Reset at run end.
+    if (damage > 0 && variable_struct_exists(target_struct, "is_player") && target_struct.is_player) {
+        if (!variable_global_exists("ach_run_absorbed")) global.ach_run_absorbed = 0;
+        global.ach_run_absorbed += damage;
+    }
+    // Panic Response trunk node (P2, 08-05): a hit that leaves the Bloodwarden
+    // below 30% max HP grants +2 Blood - the engine roars loudest when cornered.
+    if (actual_dealt > 0 && variable_struct_exists(target_struct, "is_player") && target_struct.is_player
+        && variable_struct_exists(target_struct, "class_id") && target_struct.class_id == 1
+        && variable_struct_exists(target_struct, "blood")
+        && variable_struct_exists(target_struct, "max_HP") && target_struct.max_HP > 0
+        && target_struct.HP < target_struct.max_HP * 0.30
+        && trunk_has("blood_low_gain")) {
+        target_struct.blood = min(target_struct.blood_max, target_struct.blood + 2);
+    }
+    // Overflow trunk node (P2, 08-05): overkill on a killed enemy returns +1
+    // extra Soul. All player damage paths (hits, DoTs, pets) funnel through this
+    // sink, so "your kills" reads as any enemy death with damage to spare.
+    if (damage > actual_dealt && target_struct.HP <= 0
+        && variable_struct_exists(target_struct, "is_player") && !target_struct.is_player
+        && prev_hp > 0
+        && trunk_has("soul_overkill")
+        && instance_exists(obj_combat_controller)) {
+        var _ov_pl = instance_find(obj_combat_controller, 0).player;
+        if (variable_struct_exists(_ov_pl, "souls")) {
+            _ov_pl.souls = min(_ov_pl.souls_max, _ov_pl.souls + 1);
+        }
     }
     // Echo Shriek (crypt_bat signature move, 08-01 pillar D): the FIRST time the
     // player falls below 40% max HP each combat, the shriek lays EVERY living
@@ -1652,10 +1735,64 @@ function combat_on_enemy_defeated(target, player, combat_log) {
     enemy_death_sound(target.name);
     array_push(combat_log, target.name + " defeated!");
 
+    // 08-09: a boss/elite/duel kill gets an actual explosion instead of just
+    // vanishing into the death-linger fade. Trash mobs deliberately do NOT -
+    // if every kill detonates, none of them land. Position reuses the standing
+    // spot Draw stamps (last_ex/last_ey, sprite top-left at 3x).
+    var _bk_kind = variable_global_exists("next_enemy_type") ? global.next_enemy_type : "";
+    if ((_bk_kind == "boss" || _bk_kind == "elite" || global.duel_active)
+        && variable_struct_exists(target, "last_ex") && variable_struct_exists(target, "last_ey")
+        && instance_exists(obj_combat_controller)) {
+        var _bk_map = enemy_sprite_map();
+        var _bk_spr = variable_struct_exists(_bk_map, target.name)
+                    ? variable_struct_get(_bk_map, target.name) : -1;
+        var _bk_w = (_bk_spr >= 0) ? sprite_get_width(_bk_spr)  * 3 : 180;
+        var _bk_h = (_bk_spr >= 0) ? sprite_get_height(_bk_spr) * 3 : 180;
+        var _bk_cc = instance_find(obj_combat_controller, 0);
+        array_push(_bk_cc.vfx_bursts, { spr: spr_vfx_boom,
+                                        x: target.last_ex + _bk_w * 0.5,
+                                        y: target.last_ey + _bk_h * 0.5,
+                                        timer: 30, timer_max: 30, school: "" });
+    }
+
+    // Nightgorge dark gift (08-04): the cursed metal drinks - heal N on kill,
+    // reduced by Mortality like every other heal.
+    var _dg_ng = dark_gift_total("heal_on_kill");
+    if (_dg_ng > 0 && player.HP > 0 && player.HP < player.max_HP) {
+        var _dg_heal = min(player.max_HP - player.HP, combat_heal_after_mortality(player, _dg_ng));
+        if (_dg_heal > 0) {
+            player.HP += _dg_heal;
+            array_push(combat_log, "Nightgorge drinks the kill - +" + string(_dg_heal) + " HP.");
+        }
+    }
+
     // Stamp the round of the latest kill ("Reaper's Tempo" web node reads it -
     // Soul Harvest pays +1 when an enemy died this same round).
     if (instance_exists(obj_combat_controller)) {
         global.last_kill_round = instance_find(obj_combat_controller, 0).combat_state.round;
+    }
+
+    // Marrow Crown (marrow_adder signature move, 08-05 pillar D): when the FIRST
+    // enemy falls each combat, the weakest living survivor's marrow cracks - it
+    // takes 10% of its own max HP. The flag is set BEFORE any damage so a crown
+    // kill recursing back through here can't re-trigger it.
+    if (pet_active_sig_move("marrow_crown") && !variable_struct_exists(player, "sig_crown_done")
+        && instance_exists(obj_combat_controller)) {
+        player.sig_crown_done = true;
+        var _mc_cc   = instance_find(obj_combat_controller, 0);
+        var _mc_weak = undefined;
+        for (var _mc_i = 0; _mc_i < array_length(_mc_cc.combat_state.combatants); _mc_i++) {
+            var _mc_c = _mc_cc.combat_state.combatants[_mc_i];
+            if (_mc_c.is_player || _mc_c.is_defeated || _mc_c == target) continue;
+            if (_mc_weak == undefined || _mc_c.HP < _mc_weak.HP) _mc_weak = _mc_c;
+        }
+        if (_mc_weak != undefined) {
+            var _mc_dmg = max(1, round(_mc_weak.max_HP * 0.10));
+            _mc_weak.HP        = max(0, _mc_weak.HP - _mc_dmg);
+            _mc_weak.hit_flash = max(_mc_weak.hit_flash, 6);
+            array_push(combat_log, "[Companion] " + pet_active().name + "'s MARROW CROWN cracks " + _mc_weak.name + "'s bones (" + string(_mc_dmg) + " damage)!");
+            if (_mc_weak.HP <= 0 && !_mc_weak.is_defeated) combat_on_enemy_defeated(_mc_weak, player, combat_log);
+        }
     }
 
     // Last Words (duskraven innate, 08-01): +15 gold when an ELITE falls. The
@@ -1839,8 +1976,10 @@ function combat_on_enemy_defeated(target, player, combat_log) {
     // that is ALSO named Soul Harvest, so kill souls looked like a mystery double-fire
     // on top of Soulfire's own +2 (M 07-09).
     if (player.class_id == 0 && variable_struct_exists(player, "souls")) {
-        player.souls = min(player.souls_max, player.souls + 2);
-        array_push(combat_log, "Arcanist passive: +2 Souls on the kill.");
+        // Soul Harvester trunk node (P2, 08-05): +1 extra Soul on killing blows.
+        var _soul_gain = 2 + (trunk_has("soul_kill_bonus") ? 1 : 0);
+        player.souls = min(player.souls_max, player.souls + _soul_gain);
+        array_push(combat_log, "Arcanist passive: +" + string(_soul_gain) + " Souls on the kill.");
     }
     if (player.class_id == 0 && variable_struct_exists(player, "souls") && trait_active("Soul Siphon")) {
         player.souls = min(player.souls_max, player.souls + 1);
