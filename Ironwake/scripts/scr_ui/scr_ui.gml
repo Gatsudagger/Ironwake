@@ -866,6 +866,21 @@ function ui_draw_stat_line_fit(x, y, txt, max_w) {
     }
 }
 
+// STAT STRINGS STACK, THEY DON'T SHRINK (M 08-11 screenshot: a long affix
+// line shrink-to-fitted into unreadably small text - "insanely small on
+// mobile... stack it vertically not just horizontally to preserve text size").
+// One line when it fits (y_one - the classic layout); otherwise a 2-line wrap
+// at (near-)full size anchored at y_two, only easing down to 80% if even two
+// wrapped lines overflow. Returns the line count so the caller can yield the
+// flavor line's room when the second line needs it.
+function ui_draw_stat_str_stack(x, y_one, y_two, txt, max_w) {
+    if (string_width(txt) <= max_w) { draw_text(x, y_one, txt); return 1; }
+    var _sc = 1.0;
+    while (_sc > 0.80 && string_height_ext(txt, 24, max_w / _sc) * _sc > 56) _sc -= 0.05;
+    draw_text_ext_transformed(x, y_two, txt, 24, max_w / _sc, _sc, _sc, 0);
+    return 2;
+}
+
 // ---------------------------------------------------------------------------
 // ui_str_hash(s) - small deterministic string hash (djb-ish, 31-mult). Used to
 // give Rare+ swords a STABLE per-item-identity icon (same base name -> same icon).
@@ -992,7 +1007,20 @@ function ui_sentence(s) {
 // >= 2) get a theme- and rarity-specific icon via ui_sword_icon_rare; Common/
 // Uncommon swords keep the single plain spr_icon_weapon_sword.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// ui_icon_proxy(item) - Pattern Book art assignment (08-11): a crafted item
+// carrying `icon_as` LOOKS like the unlocked art it was assigned. The proxy
+// struct holds name/base_name/rarity/icon_seed - everything the resolvers
+// read - so every icon draw site inherits the assigned face for free. Items
+// without icon_as pass through untouched.
+// ---------------------------------------------------------------------------
+function ui_icon_proxy(item) {
+    if (is_struct(item) && variable_struct_exists(item, "icon_as") && is_struct(item.icon_as)) return item.icon_as;
+    return item;
+}
+
 function ui_weapon_icon_sprite(item) {
+    item = ui_icon_proxy(item);
     var _n = string_lower(item.name);
     // Caster weapons (incl. staff/rod) use the wand icon. Without staff/rod here a
     // "Stormcaller Staff" fell through to the sword bucket and showed a sword icon
@@ -1140,6 +1168,7 @@ function ui_sword_icon_rare(item, _n, _rar) {
 // tome art. Falls back to the generic spr_icon_offhand for unmatched names.
 // ---------------------------------------------------------------------------
 function ui_offhand_icon_sprite(item) {
+    item = ui_icon_proxy(item);
     var _n = string_lower(item.name);
     if (string_pos("buckler",   _n) > 0)                                  return spr_icon_offhand_buckler;
     if (string_pos("bulwark",   _n) > 0 || string_pos("ironhide", _n) > 0) return spr_icon_offhand_bulwark;
@@ -1161,6 +1190,7 @@ function ui_offhand_icon_sprite(item) {
 // once the chest-icon art pass adds spr_icon_chest_{robe,plate,leather,void}.
 // ---------------------------------------------------------------------------
 function ui_chest_icon_sprite(item) {
+    item = ui_icon_proxy(item);
     var _n = string_lower(item.name);
     var _key = "";
     if      (string_pos("void", _n) > 0 || string_pos("shadowthread", _n) > 0 || string_pos("shadowcloth", _n) > 0)
@@ -1189,6 +1219,7 @@ function ui_chest_icon_sprite(item) {
 // pass adds them, variety appears automatically. Keyword order = priority.
 // ---------------------------------------------------------------------------
 function ui_helm_icon_sprite(item) {
+    item = ui_icon_proxy(item);
     var _n = string_lower(item.name);
     var _key = "";
     if      (string_pos("hood", _n) > 0 || string_pos("cowl", _n) > 0 || string_pos("hat", _n) > 0)
@@ -1204,6 +1235,7 @@ function ui_helm_icon_sprite(item) {
 }
 
 function ui_gloves_icon_sprite(item) {
+    item = ui_icon_proxy(item);
     var _n = string_lower(item.name);
     var _key = "";
     if      (string_pos("sage", _n) > 0 || string_pos("rune", _n) > 0 || string_pos("arcane", _n) > 0
@@ -1220,6 +1252,7 @@ function ui_gloves_icon_sprite(item) {
 }
 
 function ui_boots_icon_sprite(item) {
+    item = ui_icon_proxy(item);
     var _n = string_lower(item.name);
     var _key = "";
     if      (string_pos("greave", _n) > 0 || string_pos("stomper", _n) > 0 || string_pos("ironshod", _n) > 0
@@ -1244,6 +1277,7 @@ function ui_boots_icon_sprite(item) {
 // the generic ring/amulet sprite for unmatched names.
 // ---------------------------------------------------------------------------
 function ui_ring_icon_sprite(item) {
+    item = ui_icon_proxy(item);
     var _n = string_lower(item.name);
     if (string_pos("void",   _n) > 0)                                    return spr_icon_ring_void;
     // 07-29 icon-collision pass: split the pact/blood and venom/signet ties.
@@ -1268,6 +1302,7 @@ function ui_ring_icon_sprite(item) {
 }
 
 function ui_amulet_icon_sprite(item) {
+    item = ui_icon_proxy(item);
     var _n = string_lower(item.name);
     // 07-29 icon-collision pass: Emberheart Talisman gets its own art instead
     // of sharing the bone-talisman icon (string-resolved, see ring note above).
@@ -1350,6 +1385,14 @@ function ui_draw_item_icon(x, y, sz, item, framed = true) {
             case "crownfire_diadem":    _spr = spr_icon_legendary_crownfire_diadem;    break;
             case "beggars_fortune":     _spr = spr_icon_legendary_beggars_fortune;     break;
             case "kindled_reliquary":   _spr = spr_icon_legendary_kindled_reliquary;   break;
+            // 08-12 batch (M approved all): dueling relics + mutator legendaries.
+            case "duel_pin":            _spr = spr_icon_legendary_duel_pin;            break;
+            case "duel_parry":          _spr = spr_icon_legendary_duel_parry;          break;
+            case "duel_widow":          _spr = spr_icon_legendary_duel_widow;          break;
+            case "stormskip_band":      _spr = spr_icon_legendary_stormskip_band;      break;
+            case "twinned_prism":       _spr = spr_icon_legendary_twinned_prism;       break;
+            case "second_toll":         _spr = spr_icon_legendary_second_toll;         break;
+            case "smolderbrand":        _spr = spr_icon_legendary_smolderbrand;        break;
         }
     }
 
@@ -1580,6 +1623,24 @@ function ui_ability_icon_sprite(ability) {
         case "Caltrops":         return spr_ability_caltrops;       // 08-09 trap rework icons
         case "Winter's Bite":    return spr_ability_winters_bite; // D SS4 2026-07-10
         case "Counterblade":     return spr_ability_counterblade; // 07-17 combat plan v2 (new riposte verb)
+        // Mutator v2 carriers (08-11): bespoke icons are in the approved art
+        // batch - string-resolved so they light up on import; until then each
+        // REMAPS to the closest shipped identity (icon rule: prefer remap).
+        case "Ricochet Shot": {
+            var _ric = asset_get_index("spr_ability_ricochet_shot");
+            if (_ric != -1 && sprite_exists(_ric)) return _ric;
+            return spr_ability_snipe;
+        }
+        case "Bouncing Bomb": {
+            var _bbm = asset_get_index("spr_ability_bouncing_bomb");
+            if (_bbm != -1 && sprite_exists(_bbm)) return _bbm;
+            return spr_ability_smoke_bomb;
+        }
+        case "Gout of Rot": {
+            var _gor = asset_get_index("spr_ability_gout_of_rot");
+            if (_gor != -1 && sprite_exists(_gor)) return _gor;
+            return spr_ability_plague_touch;
+        }
         case "Measured Riposte": return spr_ability_counterblade; // Duelist Arts - REMAP (same riposte identity; bespoke icon = M-approved gen later)
         // --- General ---
         case "Strike":           return spr_ability_strike;
@@ -1883,6 +1944,9 @@ function text_entry_active() {
         var _fgc = instance_find(obj_game_controller, 0);
         if (variable_instance_exists(_fgc, "forge_open") && _fgc.forge_open
             && variable_instance_exists(_fgc, "forge_phase") && _fgc.forge_phase == 2) return true;
+        // PATTERN CRAFT naming phase (08-11) - typing the crafted piece's name.
+        if (variable_instance_exists(_fgc, "pb_craft_open") && _fgc.pb_craft_open
+            && variable_instance_exists(_fgc, "pb_craft_phase") && _fgc.pb_craft_phase == 5) return true;
     }
     return false;
 }
@@ -3981,7 +4045,10 @@ function ui_draw_bairc_screen() {
     // the footer - "implicitly add scrolling to menus that extend like this").
     // Capacity is MEASURED from the panel; the window follows the cursor, so
     // W/S (keyboard, pad, and the touch on-screen d-pad) reach every row.
-    var _vis = max(3, ((_lp_y1 - 14) - _list_y) div _row_h);
+    // 08-11 (M): HIS GARDEN owns a permanently reserved band at the panel foot -
+    // the roster scrolls in what's left instead of ever pushing the garden off.
+    var _gard_h = 190;
+    var _vis = max(3, ((_lp_y1 - _gard_h - 8) - _list_y) div _row_h);
     if (!variable_instance_exists(_gc, "bairc_scroll")) _gc.bairc_scroll = 0;
     _gc.bairc_scroll = clamp(_gc.bairc_scroll, 0, max(0, _n - _vis));
     if (_cur < _gc.bairc_scroll)            _gc.bairc_scroll = _cur;
@@ -4146,62 +4213,117 @@ function ui_draw_bairc_screen() {
         }
     }
 
-    // HIS GARDEN - every creature ever entrusted to Bairc wanders the plot beneath the
-    // stable (design §6/§11: donation is visible care, not deletion). Skipped when a big
-    // roster needs the room.
+    // HIS GARDEN - every creature ever entrusted to Bairc lives in the plot at
+    // the panel's foot (design §6/§11: donation is visible care, not deletion).
+    // 08-11 rework (M: "it should always show"): the band is ALWAYS drawn - the
+    // roster window above was shrunk to guarantee it the room - and the plot is
+    // a small SCENE now: a pond, a back and a front lane for depth, and
+    // creatures that idle in place then now and then stroll to a new spot.
+    // Everything is a deterministic function of index + clock - the garden
+    // lives without any stored state.
     var _dn  = array_length(bairc_donated());
     var _mn  = array_length(bairc_memorials());   // memorial stones (08-01, pillar A)
-    // Anchor beneath the VISIBLE window (08-01) - the full roster count used to
-    // push the garden (and everything after it) straight off the panel.
-    var _gy0 = _list_y + max(1, min(_n, _vis)) * _row_h + 22;
-    if ((_dn > 0 || _mn > 0) && (_lp_y1 - 14) - _gy0 >= 150) {
-        draw_set_font(fnt_ui_small);
-        draw_set_color(make_color_rgb(150, 185, 120));
-        // The garden BLESSING reads in the header - donation visibly tends back.
-        var _gbl = bairc_garden_blessing_pct();
-        draw_text(_list_x, _gy0, "HIS GARDEN  (" + string(_dn) + ")"
-            + ((_gbl > 0) ? "  +" + string(_gbl) + "% growth" : ""));
-        draw_set_color(make_color_rgb(40, 48, 38));
-        draw_line(_list_x, _gy0 + 32, _list_x + _list_w, _gy0 + 32);
-        var _gfloor = min(_lp_y1 - 20, _gy0 + 150);
-        var _gshow  = min(_dn, 7);   // cap the crowd; the count above tells the rest
+    var _gy0 = _lp_y1 - _gard_h + 6;
+    draw_set_font(fnt_ui_small);
+    draw_set_color(make_color_rgb(150, 185, 120));
+    // The garden BLESSING reads in the header - donation visibly tends back.
+    var _gbl = bairc_garden_blessing_pct();
+    draw_text(_list_x, _gy0, "HIS GARDEN  (" + string(_dn) + ")"
+        + ((_gbl > 0) ? "  +" + string(_gbl) + "% growth" : ""));
+    if (_dn > 10) {
+        draw_set_halign(fa_right);
+        draw_set_color(make_color_rgb(110, 130, 100));
+        draw_text(_list_x + _list_w, _gy0, "+" + string(_dn - 10) + " more");
+        draw_set_halign(fa_left);
+    }
+    draw_set_color(make_color_rgb(40, 48, 38));
+    draw_line(_list_x, _gy0 + 30, _list_x + _list_w, _gy0 + 30);
+
+    // Grounds: a faint earth band, and the pond off-centre left (the memorial
+    // stones own the right edge).
+    var _gfl_b = _lp_y1 - 60;   // back-lane floor (drawn first = behind)
+    var _gfl_f = _lp_y1 - 14;   // front-lane floor
+    draw_set_alpha(0.35);
+    draw_set_color(make_color_rgb(26, 34, 24));
+    draw_rectangle(_list_x, _gy0 + 31, _list_x + _list_w, _lp_y1 - 2, false);
+    draw_set_alpha(1.0);
+    // The pond only exists once the garden is LIVED IN (M 08-11 screenshot: a
+    // bare ellipse in an empty plot read as "a random oval"), and it reads as
+    // water now - layered tones + a moving glint - not a flat shape.
+    if (_dn > 0) {
+        var _pd_cx = _list_x + 140, _pd_cy = _lp_y1 - 32;
+        draw_set_color(make_color_rgb(22, 36, 48));
+        draw_ellipse(_pd_cx - 66, _pd_cy - 14, _pd_cx + 66, _pd_cy + 12, false);
+        draw_set_color(make_color_rgb(38, 62, 80));
+        draw_ellipse(_pd_cx - 54, _pd_cy - 10, _pd_cx + 54, _pd_cy + 9, false);
+        draw_set_color(make_color_rgb(80, 120, 146));
+        draw_ellipse(_pd_cx - 66, _pd_cy - 14, _pd_cx + 66, _pd_cy + 12, true);
+        var _pd_gx = _pd_cx - 20 + 14 * sin(current_time / 900);
+        draw_set_alpha(0.5);
+        draw_set_color(make_color_rgb(140, 180, 205));
+        draw_line(_pd_gx - 10, _pd_cy - 3, _pd_gx + 10, _pd_cy - 3);
+        draw_line(_pd_gx - 4, _pd_cy + 3, _pd_gx + 14, _pd_cy + 3);
+        draw_set_alpha(1.0);
+    }
+
+    if (_dn == 0 && _mn == 0) {
+        draw_set_color(make_color_rgb(110, 125, 105));
+        draw_text(_list_x, _gy0 + 44, "The plot lies quiet. Creatures you entrust to Bairc live on here.");
+    }
+
+    // MEMORIAL STONES (08-01): pets lost to the injury ladder rest at the
+    // garden's right edge - small headstones, newest nearest the creatures.
+    // Drawn before the front lane so the living walk in front of the stones.
+    if (_mn > 0) {
+        var _mshow = min(_mn, 4);
+        for (var _mi = 0; _mi < _mshow; _mi++) {
+            var _mx = _list_x + _list_w - 16 - _mi * 26;
+            draw_set_color(make_color_rgb(66, 70, 82));
+            draw_roundrect_ext(_mx - 8, _gfl_b + 20, _mx + 8, _gfl_b + 40, 7, 7, false);
+            draw_set_color(make_color_rgb(30, 33, 42));
+            draw_roundrect_ext(_mx - 8, _gfl_b + 20, _mx + 8, _gfl_b + 40, 7, 7, true);
+            draw_line(_mx - 4, _gfl_b + 28, _mx + 4, _gfl_b + 28);   // the engraving
+        }
+        if (_mn > _mshow) {
+            draw_set_color(make_color_rgb(110, 115, 130));
+            draw_text(_list_x + _list_w - 16 - _mshow * 26 - 6, _gfl_b + 18, "+" + string(_mn - _mshow));
+        }
+    }
+
+    // Creatures: alternate indices split back/front lane - the split reads as
+    // depth, not rows. Even per-lane spacing plus a stroll amplitude under half
+    // a lane keeps neighbours from ever overlapping (the collision M asked to
+    // keep). The stroll itself: a slow sine pushed through smoothstep, clamped
+    // so it DWELLS at each end - creatures stand idling most of the time and
+    // occasionally walk to their other spot.
+    var _gshow  = min(_dn, 10);
+    var _lane_bn = _gshow div 2;         // back-lane population (odd indices)
+    var _lane_fn = _gshow - _lane_bn;    // front-lane population (even indices)
+    for (var _pass = 0; _pass < 2; _pass++) {
+        var _ln = (_pass == 0) ? _lane_bn : _lane_fn;
+        if (_ln <= 0) continue;
+        var _li = 0;
         for (var _gi = 0; _gi < _gshow; _gi++) {
+            if ((_gi mod 2 == 0) == (_pass == 0)) continue;   // pass 0 = odd = back
             var _d  = bairc_donated()[_gi];
             // A stand-in struct is all pet_sprite needs (species + stage + not-an-egg).
             var _gp  = { is_egg:false, species:_d.species, stage:_d.stage };
             var _gsp = pet_sprite(_gp, "s");
+            var _slot_w = (_list_w - 80) / _ln;
+            var _lane   = _list_x + 40 + (_li + 0.5) * _slot_w;
+            _li++;
             if (_gsp < 0) continue;
-            // Deterministic wander: each creature drifts on its own slow sine track, so
-            // the garden lives without any stored state.
-            var _t    = current_time / 1000;
-            var _lane = _list_x + 44 + (_gi + 0.5) * (_list_w - 88) / _gshow;
-            var _wx   = sin(_t * (0.30 + 0.06 * _gi) + _gi * 2.13) * 30;
-            // #16: 52px of VISIBLE creature, whatever the canvas padding.
-            var _gfit = pet_sprite_fit(_gsp, _lane + _wx, _gfloor, 52);
-            draw_sprite_ext(_gsp, pet_anim_frame(_gsp), _gfit.x, _gfit.y, _gfit.scale, _gfit.scale, 0, c_white, 1);
-        }
-        if (_dn > _gshow) {
-            draw_set_halign(fa_right);
-            draw_set_color(make_color_rgb(110, 130, 100));
-            draw_text(_list_x + _list_w, _gy0, "+" + string(_dn - _gshow) + " more");
-            draw_set_halign(fa_left);
-        }
-        // MEMORIAL STONES (08-01): pets lost to the injury ladder rest at the
-        // garden's right edge - small headstones, newest nearest the creatures.
-        if (_mn > 0) {
-            var _mshow = min(_mn, 4);
-            for (var _mi = 0; _mi < _mshow; _mi++) {
-                var _mx = _list_x + _list_w - 16 - _mi * 26;
-                draw_set_color(make_color_rgb(66, 70, 82));
-                draw_roundrect_ext(_mx - 8, _gfloor - 20, _mx + 8, _gfloor, 7, 7, false);
-                draw_set_color(make_color_rgb(30, 33, 42));
-                draw_roundrect_ext(_mx - 8, _gfloor - 20, _mx + 8, _gfloor, 7, 7, true);
-                draw_line(_mx - 4, _gfloor - 12, _mx + 4, _gfloor - 12);   // the engraving
-            }
-            if (_mn > _mshow) {
-                draw_set_color(make_color_rgb(110, 115, 130));
-                draw_text(_list_x + _list_w - 16 - _mshow * 26 - 6, _gfloor - 20, "+" + string(_mn - _mshow));
-            }
+            var _t   = current_time / 1000;
+            var _sw  = sin(_t * (0.16 + 0.05 * (_gi mod 3)) + _gi * 2.13);
+            var _mv  = clamp((_sw + 0.55) / 1.10, 0, 1);
+            _mv = _mv * _mv * (3 - 2 * _mv);   // ease in/out of the stroll
+            var _amp = min(30, _slot_w * 0.35);
+            var _wx  = lerp(-_amp, _amp, _mv);
+            // #16: fit the VISIBLE creature; back lane smaller for depth.
+            var _gfit = pet_sprite_fit(_gsp, _lane + _wx,
+                (_pass == 0) ? _gfl_b : _gfl_f, (_pass == 0) ? 40 : 54);
+            draw_sprite_ext(_gsp, pet_anim_frame(_gsp), _gfit.x, _gfit.y,
+                _gfit.scale, _gfit.scale, 0, c_white, (_pass == 0) ? 0.92 : 1);
         }
     }
 
@@ -5127,12 +5249,31 @@ function dungeon_bg_sprite(surface) {
 // isn't imported yet, so callers fall back to their flat fill - a safe no-op until
 // the MidJourney backgrounds land. See [[project]] SYSTEMS / MISC_TASKS §5.
 // ---------------------------------------------------------------------------
+// FAUX-2.5D COMBAT EXPERIMENT (M 08-11, reversible lever). ON: the combat
+// backdrop is drawn to a perspective-tilted quad (top edge pinched, bottom
+// bulged - reads as a camera looking down the arena floor) and the enemy row
+// scales by depth. OFF (settings.ini [ui] combat_25d=0, or F7 in combat):
+// every code path is byte-identical to the shipped flat look.
+function combat_25d() {
+    return variable_global_exists("combat_25d") && global.combat_25d;
+}
+
 function dungeon_bg_draw(surface, scrim_alpha) {
     var _spr = dungeon_bg_sprite(surface);
     if (_spr == -1 || !sprite_exists(_spr)) return false;
     draw_set_color(c_white);
     draw_set_alpha(1.0);
-    if (GUI_GUTTER <= 0) {
+    if (surface == "combat" && combat_25d()) {
+        // Tilted quad over the full visible width. v2 (M 08-11 F5: "distortion
+        // of background" read as warp, not depth): pinch dropped 4.5% -> 2.8% -
+        // the depth read now leans on the ACTOR scaling/stagger instead.
+        var _px = (GUI_XR - GUI_XL) * 0.028;
+        draw_sprite_pos(_spr, 0,
+            GUI_XL + _px, -14,            // top-left  (far edge pinched in, lifted)
+            GUI_XR - _px, -14,            // top-right
+            GUI_XR + _px, GUI_H,          // bottom-right (near edge bulged out)
+            GUI_XL - _px, GUI_H, 1.0);    // bottom-left
+    } else if (GUI_GUTTER <= 0) {
         // 16:9 (PC/HTML5): the shipped stretch, byte-for-byte.
         draw_sprite_stretched(_spr, 0, 0, 0, GUI_W, GUI_H);
     } else {
@@ -5466,6 +5607,10 @@ function combatant_has_status_kind(c, kind) {
 function status_fx_anchor(se) {
     var _kind = combat_status_kind_of(se);
     if (_kind == "blind" || _kind == "stun") return 0;   // around the head
+    // Root binds the FEET (08-11, M: root read like blind - both hovered at
+    // the body/head). Grounding it is the tell; no root-specific art exists in
+    // any owned pack yet, so placement carries the meaning.
+    if (_kind == "root") return 2;
     var _name = string_lower(variable_struct_exists(se, "name") ? se.name : "");
     if (_kind == "dot" && (string_pos("burn", _name) || string_pos("cinder", _name) || string_pos("scorch", _name) || string_pos("flame", _name) || string_pos("ignit", _name) || string_pos("ember", _name)))
         return 2;   // flames at the feet
@@ -5590,10 +5735,12 @@ function ui_draw_status_icon_row(x, y, icon_list, max_w = -1) {
         // label text
         draw_set_color(c_white);
         draw_text(_ix + _iw * 0.5, y + _ih * 0.5, _ic.label);
-        // duration counter below badge
+        // Duration counter tucked TIGHT under the badge (08-11, M screenshot:
+        // at +11 it hung low enough to kiss the next bar row's intent chip in
+        // the stacked 2-column grid; +7 keeps ~6px clear of the chip band).
         if (_ic.duration > 0) {
             draw_set_color(make_color_rgb(220, 215, 180));
-            draw_text(_ix + _iw * 0.5, y + _ih + 11, string(_ic.duration));
+            draw_text(_ix + _iw * 0.5, y + _ih + 7, string(_ic.duration));
         }
         _ix += _iw + _gap;
     }
@@ -7093,21 +7240,33 @@ function trap_is_armed(_trap, _cs) {
 // Code-drawn for now: sprung jaws in the filter's colour with a ground shadow, so
 // it reads as resting ON the floor rather than floating on the HUD. The art that
 // replaces this glyph is specced in SYSTEMS_TRAPS.md 8 (not generated yet).
-// trap_field_pos(t, n) - where the t-th of n deployed traps physically sits.
-// M 08-09: "it needs to be more literally in the middle between the player and
-// enemies for more obvious visual play, like diagonally moved between them."
-// The line runs up-and-right from the player's feet toward the enemy row, which
-// is the one genuinely empty corridor on the combat screen. Clearances, all
-// measured - do not move these without re-checking every one:
+// trap_field_pos(slot, cap) - the STATIC station where a trap in that slot sits.
+// M 08-11: "2nd trap moves 1st trap - they should be in static assignable
+// locations." A trap is stamped with its slot at DEPLOY time and never moves;
+// stations exist for the whole fight whether occupied or not. Stations count
+// from mid-corridor TOWARD the enemy (f = (slot+1)/cap) - the player end of
+// the old diagonal (f<~0.4) sat on the pet companion's row (M's screenshot:
+// chime prop drawn over the dog), so no station is placed there.
+// The line runs up-and-right between player and enemy rows, the one genuinely
+// empty corridor on the combat screen. Clearances, all measured - do not move
+// these without re-checking every one:
 //   combat log   x30-1200,  y735-945  -> lowest trap foot is 700 (35px clear)
 //   enemy bars   x990-1885, y86-432   -> highest prop top is 468 (36px clear)
-//   player sprite  x330-~580          -> leftmost prop edge is 636
+//   pet companion  feet up to ~(720, 726) -> nearest station (cap 2, f=.5) left
+//                  prop edge is 806
 //   enemy sprites  x>=1143 at 4 wide  -> rightmost prop edge is 1104
-function trap_field_pos(_t, _n) {
-    var _ax = 700, _ay = 700;            // player end of the diagonal
+function trap_field_pos(_slot, _cap) {
+    var _ax = 700, _ay = 700;            // player end of the diagonal (unused f=0)
     var _bx = 1040, _by = 596;           // enemy end
-    var _f  = (_n <= 1) ? 0.5 : (_t / (_n - 1));
+    _cap = max(1, _cap);
+    var _f = (_slot + 1) / _cap;
     return { x: lerp(_ax, _bx, _f), y: lerp(_ay, _by, _f) };
+}
+
+// A trap's slot: stamped at deploy since 08-11; traps restored from older
+// checkpoints fall back to their array index so they still spread out.
+function trap_slot_of(_tr, _idx) {
+    return (is_struct(_tr) && variable_struct_exists(_tr, "slot")) ? _tr.slot : _idx;
 }
 
 // The deployed prop art. Sprites are 64x64 authored side-on and drawn at 2x, the
@@ -7132,20 +7291,40 @@ function ui_draw_trap_field(_p, _cs) {
     var _n = array_length(_p.traps);
     if (_n <= 0) return;
 
+    var _cap = trap_slots_max(_p);
     for (var _t = 0; _t < _n; _t++) {
         var _tr  = _p.traps[_t];
-        var _pos = trap_field_pos(_t, _n);
+        var _pos = trap_field_pos(trap_slot_of(_tr, _t), _cap);
         var _cx  = _pos.x;
         var _gy  = _pos.y;               // ground line for THIS trap (the diagonal)
         var _col   = trap_filter_color(_tr.filter);
         var _armed = trap_is_armed(_tr, _cs);
         var _flash = (variable_struct_exists(_tr, "flash") && _tr.flash > 0);
 
-        ui_draw_ground_shadow(_cx, _gy + 4, 54);
+        // Throw arc (P5, 08-11): a just-deployed trap FLIES from the player's
+        // hands to its station on a lobbed arc instead of popping into place.
+        // Draw-owned transient (the checkout-VFX idiom): advanced and cleared
+        // here, so no Step timing changes. The armed ring waits until it lands.
+        var _fly = false;
+        var _sh_y = _gy;                 // where the ground shadow falls
+        if (variable_global_exists("trap_throw") && global.trap_throw != undefined
+            && global.trap_throw.name == _tr.name
+            && global.trap_throw.slot == trap_slot_of(_tr, _t)) {
+            var _th = global.trap_throw;
+            var _ft = clamp(_th.t / _th.tmax, 0, 1);
+            _cx   = lerp(660, _pos.x, _ft);
+            _sh_y = lerp(690, _pos.y, _ft);                  // ground under the arc
+            _gy   = _sh_y - 360 * _ft * (1 - _ft);           // peak ~90px mid-arc
+            _fly = (_ft < 1);
+            _th.t += 1;
+            if (_th.t >= _th.tmax) global.trap_throw = undefined;
+        }
+
+        ui_draw_ground_shadow(_cx, _sh_y + 4, 54);
 
         // Armed: a slow breathing ring on the ground. This is the tell that an
         // enemy intends something this trap will catch.
-        if (_armed || _flash) {
+        if ((_armed || _flash) && !_fly) {
             var _pl = _flash ? 1.0 : (0.30 + 0.30 * (0.5 + 0.5 * sin(current_time / 260)));
             draw_set_alpha(_pl);
             draw_set_color(_flash ? make_color_rgb(255, 236, 160) : _col);
@@ -10417,7 +10596,7 @@ function ui_draw_character_menu() {
                 ui_draw_stat_line_fit(_eqx, _eq_ry + 12, _equipped_here.name, (_px + _pw - 200) - _eqx);   // meme-length cursed titles shrink-to-fit
                 draw_set_font(fnt_ui_small);
                 draw_set_color(make_color_rgb(120, 128, 145));
-                ui_draw_stat_line_fit(_eqx, _eq_ry + 45, ui_item_stat_str(_equipped_here), (_px + _pw - 200) - _eqx);
+                ui_draw_stat_str_stack(_eqx, _eq_ry + 45, _eq_ry + 38, ui_item_stat_str(_equipped_here), (_px + _pw - 200) - _eqx);
                 draw_set_halign(fa_right);
                 draw_set_color(make_color_rgb(120, 160, 210));
                 draw_text(_px + _pw - 21, _eq_ry + 12, "[Equipped]");
@@ -10457,15 +10636,18 @@ function ui_draw_character_menu() {
                     draw_set_font(fnt_ui);
                     draw_set_color(_rcol);
                     ui_draw_stat_line_fit(_itx, _ry + 12, _it.name, (_px + _pw - 200) - _itx);   // meme-length cursed titles shrink-to-fit
-                    // Stat string
+                    // Stat string - stacks to 2 full-size lines instead of
+                    // shrinking (08-11). When it takes both lines, the flavor
+                    // row below yields its room (stats beat flavor in a picker;
+                    // the hover tooltip still carries the flavor).
                     draw_set_font(fnt_ui_small);
                     draw_set_color(_locked ? make_color_rgb(70, 70, 80) : c_white);
-                    ui_draw_stat_line_fit(_itx, _ry + 45, ui_item_stat_str(_it), (_px + _pw - 200) - _itx);
+                    var _st_ln = ui_draw_stat_str_stack(_itx, _ry + 45, _ry + 38, ui_item_stat_str(_it), (_px + _pw - 200) - _itx);
                     // Unique or flavor
-                    if (!_locked && variable_struct_exists(_it, "unique_desc") && _it.unique_desc != "") {
+                    if (_st_ln == 1 && !_locked && variable_struct_exists(_it, "unique_desc") && _it.unique_desc != "") {
                         draw_set_color(make_color_rgb(255, 200, 50));
                         draw_text(_itx, _ry + 75, _it.unique_desc);
-                    } else if (!_locked && _it.effect_desc != "") {
+                    } else if (_st_ln == 1 && !_locked && _it.effect_desc != "") {
                         draw_set_color(make_color_rgb(95, 105, 130));
                         draw_text(_itx, _ry + 75, _it.effect_desc);
                     }
@@ -10588,7 +10770,8 @@ function ui_draw_character_menu() {
                 var _nd  = (_sd == 0) ? _row.a : _row.b;
                 var _bx1 = (_sd == 0) ? 260 : 1090;
                 var _bx2 = _bx1 + 740;
-                var _sel     = (!_rlocked && _rpick == -1 && _gc.trunk_cursor == _tr && _gc.trunk_side == _sd);
+                var _cur     = (_gc.trunk_cursor == _tr && _gc.trunk_side == _sd);
+                var _sel     = (!_rlocked && _rpick == -1 && _cur);
                 var _ischose = (_rpick == _sd);
                 var _issealed = (_rpick != -1 && _rpick != _sd);
                 // Fill
@@ -10603,7 +10786,16 @@ function ui_draw_character_menu() {
                 else if (_issealed) draw_set_color(make_color_rgb(60, 50, 50));
                 else                draw_set_color(_rlocked ? make_color_rgb(45, 48, 60) : make_color_rgb(80, 90, 120));
                 draw_rectangle(_bx1, _ry, _bx2, _ry + 126, true);
-                if (_sel) draw_rectangle(_bx1 - 2, _ry - 2, _bx2 + 2, _ry + 128, true);
+                // Cursor ring: drawn wherever the cursor IS, pickable or not.
+                // It used to piggyback on _sel, so it vanished over settled
+                // rows and the player lost track of the selector (M 08-11).
+                // The inner border still tells the state (gold=taken etc.);
+                // the double outer ring is purely "you are here".
+                if (_cur) {
+                    draw_set_color((_sel && _gc.trunk_arm) ? make_color_rgb(220, 90, 80) : make_color_rgb(110, 160, 235));
+                    draw_rectangle(_bx1 - 2, _ry - 2, _bx2 + 2, _ry + 128, true);
+                    draw_rectangle(_bx1 - 3, _ry - 3, _bx2 + 3, _ry + 129, true);
+                }
                 // Text
                 var _tcol_t = _ischose ? make_color_rgb(240, 215, 140) : (_issealed || _rlocked ? make_color_rgb(110, 112, 125) : c_white);
                 var _tcol_l = _ischose ? make_color_rgb(210, 195, 150) : (_issealed || _rlocked ? make_color_rgb(90, 92, 105) : make_color_rgb(180, 188, 205));
@@ -12433,7 +12625,8 @@ function ui_draw_dorn_temper(_gc) {
         var _fee = temper_fee(_it);
         var _can = (global.gold >= _fee.gold && global.rune_dust >= _fee.dust);
         ui_draw_option_row(60, _ry, 900, _ry + 84, {
-            title:   _it.name,
+            // Worn gear says so (M 08-11: EQUIPPED at every NPC function).
+            title:   _it.name + (item_is_equipped(_it) ? "   [EQUIPPED]" : ""),
             body:    ui_item_stat_str(_it),
             sel:     (_i == _sel),
             gold:    _fee.gold,
@@ -12552,6 +12745,23 @@ function ui_draw_dorn_reforge(_gc) {
         return;
     }
 
+    // PATTERN BOOK overlays (08-11): the craft wizard and the book browser own
+    // the tab while open (forge idiom). The smelt study popup draws ON TOP of
+    // the tab instead - see the end of this function.
+    if (variable_instance_exists(_gc, "pb_craft_open") && _gc.pb_craft_open) {
+        ui_draw_pattern_craft(_gc);
+        // The craft checkout rides the shared dorn_ck popup - keep it topmost.
+        ui_draw_checkout_vfx();
+        if (variable_instance_exists(_gc, "dorn_ck_open") && _gc.dorn_ck_open) {
+            ui_draw_checkout_confirm(_gc.dorn_ck_title, _gc.dorn_ck_body, "dorn:ok", "dorn:cancel");
+        }
+        return;
+    }
+    if (variable_instance_exists(_gc, "pb_book_open") && _gc.pb_book_open) {
+        ui_draw_pattern_book(_gc);
+        return;
+    }
+
     // Two-step rework screen (stage machine lives in the gc Step handler): while a
     // rework is being confirmed / forged / revealed, it replaces both panels.
     if (variable_instance_exists(_gc, "reforge_stage") && _gc.reforge_stage > 0
@@ -12616,11 +12826,14 @@ function ui_draw_dorn_reforge(_gc) {
     draw_text((_lx0 + _lx1) / 2, 678, "THE LEGENDARY FORGE");
     draw_set_font(fnt_ui_small);
     draw_set_color(make_color_rgb(170, 160, 190));
-    draw_text((_lx0 + _lx1) / 2, 712, "Frame " + string(global.forge_comp_frame)
-        + "   Core " + string(global.forge_comp_core)
-        + "   Quint. " + string(global.forge_comp_quint));
+    // Component readout + verb (08-11 reword, M: "what mithril frame? theres no
+    // mention of this elsewhere" - the bare "Strike Frame" button gave no hint
+    // it was a forge PART or that Dorn's part is called the Mythril Frame).
+    draw_text((_lx0 + _lx1) / 2, 712, "Parts held:  Frame x" + string(global.forge_comp_frame)
+        + "   Core x" + string(global.forge_comp_core)
+        + "   Quint. x" + string(global.forge_comp_quint));
     draw_set_halign(fa_left);
-    ui_confirm_button(_lx0 + 24, 740, _lx1 - 24, 784, "Strike Frame  [G]",
+    ui_confirm_button(_lx0 + 24, 740, _lx1 - 24, 784, "Forge part: Mythril Frame  [G]",
         make_color_rgb(210, 140, 70), _dfx, _dfy, _dfp, "dorn:frame");
     ui_confirm_button(_lx0 + 24, 792, _lx1 - 24, 836, forge_components_ready() ? "FORGE  [V]" : "Forge - needs all 3  [V]",
         forge_components_ready() ? make_color_rgb(120, 210, 130) : make_color_rgb(90, 90, 105), _dfx, _dfy, _dfp, "dorn:forge");
@@ -12650,7 +12863,7 @@ function ui_draw_dorn_reforge(_gc) {
         draw_set_halign(fa_left);
     } else {
         var _cur  = clamp(_gc.reforge_index, 0, _n - 1);
-        var _vis  = 6;
+        var _vis  = 5;   // 08-11: row 6's band now hosts the Pattern Book verbs
         // Edge-triggered window: driven by the persistent reforge_scroll the Step handler
         // advances only when the cursor hits an edge (so the selector moves, not the list).
         var _win0 = clamp(_gc.reforge_scroll, 0, max(0, _n - _vis));
@@ -12715,16 +12928,29 @@ function ui_draw_dorn_reforge(_gc) {
         }
     }
 
+    // PATTERN BOOK verb row (08-11): smelt fodder in, the book to browse, the
+    // craft wizard out. Occupies the band the 6th gear row used to hold.
+    ui_confirm_button(_rx0 + 12, 772, _rx0 + 292, 824, "SMELT  [T]",
+        make_color_rgb(190, 160, 90), _dfx, _dfy, _dfp, "dorn:smelt");
+    ui_confirm_button(_rx0 + 304, 772, _rx0 + 584, 824, "PATTERN BOOK  [B]",
+        make_color_rgb(210, 140, 70), _dfx, _dfy, _dfp, "dorn:book");
+    ui_confirm_button(_rx0 + 596, 772, _rx1 - 12, 824, "CRAFT  [N]",
+        make_color_rgb(120, 210, 130), _dfx, _dfy, _dfp, "dorn:craft");
+
     draw_set_halign(fa_center);
     draw_set_font(fnt_ui_small);
     draw_set_color(make_color_rgb(75, 85, 105));
-    ui_draw_key_legend(960, 1026, "W/S: Choose Gear   Enter: Rework   G: Frame   V: Forge   Q/E: Tab   Esc: Close");
+    ui_draw_key_legend(960, 1026, "W/S: Gear   Enter: Rework   T: Smelt   B: Book   N: Craft   G: Frame   V: Forge   Q/E: Tab   Esc: Close");
     draw_set_halign(fa_left);
 
     // Mythril Frame checkout popup + component-craft burst (drawn topmost).
     ui_draw_checkout_vfx();
     if (variable_instance_exists(_gc, "dorn_ck_open") && _gc.dorn_ck_open) {
         ui_draw_checkout_confirm(_gc.dorn_ck_title, _gc.dorn_ck_body, "dorn:ok", "dorn:cancel");
+    }
+    // Smelt study popup (08-11): modal over the tab, topmost of all.
+    if (variable_instance_exists(_gc, "pb_smelt_open") && _gc.pb_smelt_open) {
+        ui_draw_pb_smelt(_gc);
     }
 
     draw_set_valign(fa_top);
@@ -13930,23 +14156,27 @@ function ui_draw_trainer_screen() {
             draw_set_color(make_color_rgb(120, 125, 150));
             draw_text(_rx0 + 24, _ry + 45, "Raise this stat permanently by +1.");
 
+            // Scaling price (08-11): same formula the purchase gate charges -
+            // quadratic gold on stats bought + escalating trade rarity.
             draw_set_halign(fa_right);
             draw_set_font(fnt_ui);
             draw_set_color(c_yellow);
-            draw_text(_rx1 - 24, _ry + 9, string(cha_price(200)) + "g  +  1 Rare+ item");
+            draw_text(_rx1 - 24, _ry + 9, string(vex_price(cha_price(vex_stat_base_cost())))
+                + "g  +  1 " + item_rarity_name(vex_stat_rarity_req()) + "+ item");
             draw_set_halign(fa_left);
         }
 
-        // Trade-item readout
-        var _trade = trainer_find_rare_item();
+        // Trade-item readout (rarity requirement follows the price ladder)
+        var _req_rar = vex_stat_rarity_req();
+        var _trade   = trainer_find_item(_req_rar);
         draw_set_halign(fa_center);
         draw_set_font(fnt_ui_small);
         if (_trade != undefined) {
             draw_set_color(make_color_rgb(120, 200, 140));
-            draw_text(960, 840, "Trade item ready: " + _trade.item.name + "  (" + item_rarity_name(_trade.rarity) + ")  -  the lowest-value Rare+ item is used.");
+            draw_text(960, 840, "Trade item ready: " + _trade.item.name + "  (" + item_rarity_name(_trade.rarity) + ")  -  the lowest-value " + item_rarity_name(_req_rar) + "+ item is used.");
         } else {
             draw_set_color(make_color_rgb(210, 120, 70));
-            draw_text(960, 840, "No Rare or better item in your stash/pack to trade.");
+            draw_text(960, 840, "No " + item_rarity_name(_req_rar) + " or better item in your stash/pack to trade.");
         }
         draw_set_halign(fa_left);
     }
@@ -15622,17 +15852,20 @@ function ui_draw_sable_screen() {
             draw_text(_list_x + string_width(_cb_title) + 12, 225,
                 (_ck_quint ? "- pick ANY 3 potions to distill" : "- pick ANY 3 potions to melt down")
                 + "  (" + string(array_length(_ch_sel)) + " / 3 picked):");
-            var _ch_inv = variable_global_exists("consumable_inventory") ? global.consumable_inventory : [];
+            // Combined stash+pouch pool (08-11) - MUST match the Step handler's
+            // list, since the picked indices are combined-pool indices.
+            var _ch_inv = sable_potion_pool();
             var _ch_n   = array_length(_ch_inv);
             if (_ch_n == 0) {
                 draw_set_color(make_color_rgb(120, 130, 122));
-                draw_text(_list_x, 297, "Your potion pouch is empty.");
+                draw_text(_list_x, 297, "No potions in your pouch or stash.");
             } else {
                 var _ch_vis   = 9;
                 var _ch_first = ui_list_window("sable_chaos", _cursor, _ch_n, _ch_vis);
                 var _ch_last  = min(_ch_n, _ch_first + _ch_vis);
                 for (var _ci2 = _ch_first; _ci2 < _ch_last; _ci2++) {
-                    var _cp  = _ch_inv[_ci2];
+                    var _cp  = _ch_inv[_ci2].it;
+                    var _cp_stash = (_ch_inv[_ci2].src == 0);
                     var _tyc = ui_maren_row(_ci2 - _ch_first, _ci2 == _cursor);
                     var _cpicked = false;
                     for (var _cps = 0; _cps < array_length(_ch_sel); _cps++) {
@@ -15649,8 +15882,10 @@ function ui_draw_sable_screen() {
                     ui_draw_consumable_entry(_list_x, _tyc, _cp, make_color_rgb(190, 220, 195));
                     draw_set_halign(fa_right);
                     draw_set_font(fnt_ui_small);
+                    // Stash rows say where they live - the pool mixes both.
                     draw_set_color(_cpicked ? make_color_rgb(90, 200, 190) : make_color_rgb(115, 135, 122));
-                    draw_text(_list_x2 - 24, _tyc, _cpicked ? "PICKED" : "Enter: pick");
+                    draw_text(_list_x2 - 24, _tyc, (_cp_stash ? "STASH  -  " : "")
+                        + (_cpicked ? "PICKED" : "Enter: pick"));
                     draw_set_halign(fa_left);
                 }
                 ui_draw_sable_scroll_hint(_list_x2 - 24, _ch_first, _ch_last, _ch_n);
@@ -16630,6 +16865,12 @@ function ui_draw_item_picker() {
         draw_text(_lx0 + 60, _ry + 12, ui_truncate(_c.label, max(60, _pk_lw)));
         draw_set_halign(fa_right); draw_set_color(c_ltgray);
         draw_text(_lx1 - 12, _ry + 12, _pk_val);
+        // Worn gear says so in every NPC picker (M 08-11) - lower line, clear
+        // of the label/price line above.
+        if (is_struct(_c.item) && _c.source < 10 && item_is_equipped(_c.item)) {
+            draw_set_color(make_color_rgb(210, 175, 90));
+            draw_text(_lx1 - 12, _ry + 30, "EQUIPPED");
+        }
         draw_set_halign(fa_left);
     }
     // Scroll hints
@@ -16724,6 +16965,10 @@ function ui_draw_item_picker() {
         draw_set_font(fnt_ui_small);
         draw_set_color(make_color_rgb(150, 160, 185));
         draw_text(_dx + 114, _pk_hy, item_rarity_name(_rar));
+        if (item_is_equipped(_it)) {
+            draw_set_color(make_color_rgb(210, 175, 90));
+            draw_text(_dx + 114 + string_width(item_rarity_name(_rar)) + 18, _pk_hy, "EQUIPPED");
+        }
         if (variable_struct_exists(_it, "slot")) {
             draw_set_color(make_color_rgb(110, 120, 150));
             draw_text(_dx + 114, _pk_hy + 30, string_upper(_it.slot));
@@ -17517,4 +17762,385 @@ function ui_draw_stats_tour() {
     if (touch_tapped(_sx1, _bt_y1, _sx2, _bt_y2)) touch_press(vk_escape);
 
     draw_set_color(c_white); draw_set_alpha(1.0); draw_set_font(-1);
+}
+
+// =============================================================================
+// PATTERN BOOK DRAW (M design-locked 08-11, SYSTEMS_REFORGE_CRAFT.md).
+// Three overlays on Dorn's reforge tab. All rows/buttons hit-test HERE and
+// inject pbsm:/pbbk:/pb: tags for the gc Step (touch rule: hit-tests in Draw).
+// =============================================================================
+
+// Slot-dispatch icon resolve for an icon proxy / art entry / item.
+function ui_pb_slot_icon(_p) {
+    if (!is_struct(_p) || !variable_struct_exists(_p, "slot")) return -1;
+    switch (_p.slot) {
+        case "weapon": case "ranged_weapon": return ui_weapon_icon_sprite(_p);
+        case "offhand": return ui_offhand_icon_sprite(_p);
+        case "chest":   return ui_chest_icon_sprite(_p);
+        case "helm":    return ui_helm_icon_sprite(_p);
+        case "gloves":  return ui_gloves_icon_sprite(_p);
+        case "boots":   return ui_boots_icon_sprite(_p);
+        case "ring":    return ui_ring_icon_sprite(_p);
+        case "amulet":  return ui_amulet_icon_sprite(_p);
+    }
+    return -1;
+}
+
+// Shared vertical scroll bar (standing rule: overflowing lists show a VISIBLE
+// track + proportional thumb). No-op when everything fits.
+function ui_pb_scrollbar(_x, _y0, _y1, _total, _vis, _win0) {
+    if (_total <= _vis) return;
+    draw_set_color(make_color_rgb(40, 38, 48));
+    draw_rectangle(_x, _y0, _x + 8, _y1, false);
+    var _h  = _y1 - _y0;
+    var _th = max(24, _h * _vis / _total);
+    var _ty = _y0 + (_h - _th) * (_win0 / max(1, _total - _vis));
+    draw_set_color(make_color_rgb(150, 130, 100));
+    draw_rectangle(_x, _ty, _x + 8, _ty + _th, false);
+}
+
+// Three-pip blueprint tier readout (filled up to the unlocked tier).
+function ui_pb_pips(_x, _y, _tier) {
+    for (var _i = 0; _i < 3; _i++) {
+        var _on = (_tier >= _i + 1);
+        draw_set_color(_on ? make_color_rgb(230, 195, 120) : make_color_rgb(60, 58, 70));
+        draw_rectangle(_x + _i * 20, _y, _x + _i * 20 + 13, _y + 13, false);
+        draw_set_color(make_color_rgb(28, 26, 36));
+        draw_rectangle(_x + _i * 20, _y, _x + _i * 20 + 13, _y + 13, true);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ui_draw_pattern_book(_gc) - the BOOK browse overlay: every affix family with
+// its tier pips + progress, and the art page count. Read-only reference.
+// ---------------------------------------------------------------------------
+function ui_draw_pattern_book(_gc) {
+    var _copper   = make_color_rgb(210, 140, 70);
+    var _panel_bg = make_color_rgb(16, 16, 22);
+    var _x0 = 150, _x1 = 1500, _y0 = 189, _y1 = 900;
+    draw_set_color(_panel_bg); draw_rectangle(_x0, _y0, _x1, _y1, false);
+    draw_set_color(_copper);   draw_rectangle(_x0, _y0, _x1, _y1, true);
+    draw_set_halign(fa_center);
+    draw_set_font(fnt_ui);
+    draw_set_color(make_color_rgb(255, 225, 150));
+    draw_text(960, _y0 + 15, "THE PATTERN BOOK");
+    pattern_book_ensure();
+    draw_set_font(fnt_ui_small);
+    draw_set_color(make_color_rgb(170, 160, 190));
+    draw_text_ext(960, _y0 + 44, "Blueprints learned by SMELTING gear - tier I asks 3 studies, II asks 4 more from Rare+, III asks 5 more from Epic+."
+        + "  Art page: " + string(array_length(global.pattern_book.art)) + " icon" + ((array_length(global.pattern_book.art) == 1) ? "" : "s") + " unlocked.",
+        24, 1240);
+    draw_set_halign(fa_left);
+
+    var _cat  = pattern_family_catalog();
+    var _n    = array_length(_cat);
+    var _vis  = 10;   // MUST mirror the Step's pb_book handler
+    var _win0 = clamp(_gc.pb_book_scroll, 0, max(0, _n - _vis));
+    var _row_y0 = _y0 + 108, _pitch = 56;
+    var _mx = device_mouse_x_to_gui(0), _my = device_mouse_y_to_gui(0);
+    var _mp = mouse_check_button_pressed(mb_left);
+    for (var _i = _win0; _i < min(_n, _win0 + _vis); _i++) {
+        var _e  = _cat[_i];
+        var _ry = _row_y0 + (_i - _win0) * _pitch;
+        var _tier = pattern_fam_tier(_e.stat_name);
+        draw_set_color(make_color_rgb(20, 20, 26));
+        draw_rectangle(_x0 + 20, _ry, _x1 - 40, _ry + _pitch - 6, false);
+        draw_set_color(make_color_rgb(48, 44, 40));
+        draw_rectangle(_x0 + 20, _ry, _x1 - 40, _ry + _pitch - 6, true);
+        draw_set_font(fnt_ui);
+        draw_set_color((_tier > 0) ? c_white : make_color_rgb(110, 110, 125));
+        draw_text(_x0 + 44, _ry + 10, _e.label);
+        draw_set_font(fnt_ui_small);
+        draw_set_color(make_color_rgb(130, 125, 150));
+        draw_text(_x0 + 420, _ry + 14, (_e.kind == "school") ? "caster affix (amulet/ring)" : "affix");
+        ui_pb_pips(_x0 + 790, _ry + 16, _tier);
+        draw_set_halign(fa_right);
+        draw_set_color((_tier >= 3) ? make_color_rgb(230, 195, 120) : make_color_rgb(150, 150, 165));
+        draw_text(_x1 - 60, _ry + 14, pattern_fam_progress_text(_e.stat_name));
+        draw_set_halign(fa_left);
+    }
+    ui_pb_scrollbar(_x1 - 32, _row_y0, _row_y0 + _vis * _pitch - 6, _n, _vis, _win0);
+
+    // Touch scroll arrows + close (bare W/S and Esc are keyboard-only).
+    ui_confirm_button(_x1 - 130, _y0 + 10, _x1 - 50, _y0 + 46, "UP", make_color_rgb(150, 130, 100), _mx, _my, _mp, "pbbk:up");
+    ui_confirm_button(_x1 - 130, _y1 - 46, _x1 - 50, _y1 - 10, "DOWN", make_color_rgb(150, 130, 100), _mx, _my, _mp, "pbbk:dn");
+    ui_confirm_button(810, _y1 - 44, 1110, _y1 - 4, "CLOSE  [Esc]", make_color_rgb(190, 120, 110), _mx, _my, _mp, "pbbk:close");
+    draw_set_halign(fa_center);
+    draw_set_font(fnt_ui_small);
+    draw_set_color(make_color_rgb(75, 85, 105));
+    ui_draw_key_legend(960, 1026, "W/S: Scroll   Esc: Close");
+    draw_set_halign(fa_left);
+}
+
+// ---------------------------------------------------------------------------
+// ui_draw_pattern_craft(_gc) - the CRAFT wizard. Phases 0-4 are pick lists
+// (slot / rarity / base stat / affixes / art), 5 is naming, 6 the result card.
+// Geometry MUST mirror the Step handler: 9 visible rows, pitch 56, top y300.
+// ---------------------------------------------------------------------------
+function ui_draw_pattern_craft(_gc) {
+    var _copper   = make_color_rgb(210, 140, 70);
+    var _panel_bg = make_color_rgb(16, 16, 22);
+    var _x0 = 150, _x1 = 1500, _y0 = 189, _y1 = 900;
+    draw_set_color(_panel_bg); draw_rectangle(_x0, _y0, _x1, _y1, false);
+    draw_set_color(_copper);   draw_rectangle(_x0, _y0, _x1, _y1, true);
+
+    var _ph    = _gc.pb_craft_phase;
+    var _slots = forge_slot_list();
+    var _slot  = _slots[clamp(_gc.pb_slot_pick, 0, array_length(_slots) - 1)];
+    var _rar   = 1 + _gc.pb_rar_pick;
+    var _mx = device_mouse_x_to_gui(0), _my = device_mouse_y_to_gui(0);
+    var _mp = mouse_check_button_pressed(mb_left);
+
+    var _titles = ["CRAFT: CHOOSE THE SLOT", "CHOOSE THE RARITY", "CHOOSE THE BASE STAT",
+                   "CHOOSE THE AFFIXES", "CHOOSE ITS ART", "NAME IT", "YOUR CRAFT"];
+    draw_set_halign(fa_center);
+    draw_set_font(fnt_ui);
+    draw_set_color(make_color_rgb(255, 225, 150));
+    draw_text(960, _y0 + 15, _titles[clamp(_ph, 0, 6)]);
+
+    // Breadcrumb: the choices locked in so far.
+    var _crumb = "";
+    if (_ph >= 1) _crumb = item_slot_noun(_slot);
+    if (_ph >= 2) _crumb += "  >  " + item_rarity_name(_rar);
+    if (_ph >= 3) _crumb += "  >  " + _gc.pb_base_stat + " base";
+    if (_ph >= 4 && array_length(_gc.pb_affix_picks) > 0) {
+        var _cl = "";
+        for (var _ci = 0; _ci < array_length(_gc.pb_affix_picks); _ci++) {
+            var _cfe = pattern_family_entry(_gc.pb_affix_picks[_ci]);
+            if (_cfe != undefined) _cl += ((_cl == "") ? "" : ", ") + _cfe.label;
+        }
+        _crumb += "  >  " + _cl;
+    }
+    if (_crumb != "") {
+        draw_set_font(fnt_ui_small);
+        draw_set_color(make_color_rgb(170, 160, 190));
+        draw_text(960, _y0 + 52, _crumb);
+    }
+    draw_set_halign(fa_left);
+
+    // ---- NAMING (phase 5): the forge's typed-entry idiom + RANDOM button.
+    if (_ph == 5) {
+        draw_set_halign(fa_center);
+        draw_set_font(fnt_ui_small);
+        draw_set_color(make_color_rgb(170, 160, 190));
+        draw_text(960, 380, "Type its name, or let the book roll one. Enter forges it.");
+        draw_set_color(make_color_rgb(30, 28, 40));
+        draw_rectangle(560, 460, 1360, 530, false);
+        draw_set_color(_copper);
+        draw_rectangle(560, 460, 1360, 530, true);
+        draw_set_font(fnt_ui);
+        draw_set_color(c_white);
+        var _caret = (current_time mod 1000 < 500) ? "|" : " ";
+        draw_text(960, 478, keyboard_string + _caret);
+        ui_confirm_button(560, 580, 940, 636, "RANDOM NAME", make_color_rgb(150, 130, 100), _mx, _my, _mp, "pb:rand");
+        ui_confirm_button(980, 580, 1360, 636, "FORGE IT  [Enter]", make_color_rgb(120, 210, 130), _mx, _my, _mp, "pb:ok");
+        draw_set_font(fnt_ui_small);
+        draw_set_color(make_color_rgb(75, 85, 105));
+        ui_draw_key_legend(960, 1026, "Type: Name   Enter: Forge   Esc: Back");
+        draw_set_halign(fa_left);
+        return;
+    }
+
+    // ---- RESULT (phase 6): reveal card + re-roll-the-numbers verb.
+    if (_ph == 6) {
+        var _it = _gc.pb_result;
+        if (_it == undefined) return;
+        ui_reforge_card(660, 300, 1260, 640, "PATTERN-CRAFTED", make_color_rgb(120, 210, 130),
+            _it.name, _it.rarity, ui_item_stat_str(_it));
+        var _ic = ui_pb_slot_icon((variable_struct_exists(_it, "icon_as") && is_struct(_it.icon_as)) ? _it.icon_as : _it);
+        if (_ic != -1 && sprite_exists(_ic)) draw_sprite_stretched(_ic, 0, 924, 556, 72, 72);
+        ui_confirm_button(560, 700, 940, 756, "REROLL NUMBERS (" + string(pattern_reroll_fee(_it.rarity)) + "g)  [R]",
+            make_color_rgb(190, 160, 90), _mx, _my, _mp, "pb:reroll");
+        ui_confirm_button(980, 700, 1360, 756, "DONE  [Enter]", make_color_rgb(120, 210, 130), _mx, _my, _mp, "pb:done");
+        draw_set_halign(fa_center);
+        draw_set_font(fnt_ui_small);
+        draw_set_color(make_color_rgb(170, 160, 190));
+        draw_text(960, 780, "Re-rolls stay inside the bands your blueprint tiers bought.");
+        draw_set_color(make_color_rgb(75, 85, 105));
+        ui_draw_key_legend(960, 1026, "R: Reroll Numbers   Enter: Done");
+        draw_set_halign(fa_left);
+        return;
+    }
+
+    // ---- PICK LISTS (phases 0-4). Rows: 9 visible, pitch 56, top y300.
+    var _rows = [];   // { label, right, dim, icon (sprite or -1), picked }
+    if (_ph == 0) {
+        for (var _i0 = 0; _i0 < array_length(_slots); _i0++) {
+            array_push(_rows, { label: string_upper(item_slot_noun(_slots[_i0])), right: "", dim: false, icon: -1, picked: false });
+        }
+    } else if (_ph == 1) {
+        for (var _i1 = 0; _i1 < 3; _i1++) {
+            var _rr = 1 + _i1;
+            var _rf = pattern_craft_fee(_rr);
+            array_push(_rows, { label: item_rarity_name(_rr),
+                right: string(_rf.gold) + "g + " + string(_rf.dust) + " dust + 1 " + item_rarity_name(_rf.ingot_rar) + "+ ingot   ("
+                    + string(pattern_affix_budget(_rr)) + " affix" + ((pattern_affix_budget(_rr) == 1) ? "" : "es") + ")",
+                dim: false, icon: -1, picked: false });
+        }
+    } else if (_ph == 2) {
+        var _sts = ["STR", "DEX", "CON", "INT", "WIS", "CHA"];
+        for (var _i2 = 0; _i2 < array_length(_sts); _i2++) {
+            var _tb = pattern_fam_tier(_sts[_i2]);
+            array_push(_rows, { label: _sts[_i2] + " +" + string(pattern_craft_base_val(_rar)),
+                right: (_tb >= 1) ? ("blueprint tier " + string(_tb)) : "not studied - smelt gear carrying it",
+                dim: (_tb < 1), icon: -1, picked: false });
+        }
+    } else if (_ph == 3) {
+        var _cat3 = pattern_family_catalog();
+        var _caster = (_slot == "amulet" || _slot == "ring");
+        for (var _i3 = 0; _i3 < array_length(_cat3); _i3++) {
+            var _e3 = _cat3[_i3];
+            if (_e3.stat_name == _gc.pb_base_stat) continue;
+            if (_e3.kind == "school" && !_caster) continue;
+            var _t3 = pattern_fam_tier(_e3.stat_name);
+            if (_t3 < 1) continue;
+            var _pk = false;
+            for (var _j3 = 0; _j3 < array_length(_gc.pb_affix_picks); _j3++) {
+                if (_gc.pb_affix_picks[_j3] == _e3.stat_name) { _pk = true; break; }
+            }
+            array_push(_rows, { label: _e3.label,
+                right: "tier " + string(_t3) + " rolls " + pattern_band_text(_e3.stat_name, _rar, _t3),
+                dim: false, icon: -1, picked: _pk });
+        }
+    } else {   // phase 4: art page for the slot
+        array_push(_rows, { label: "Dorn's plain work", right: "the standard face for its name", dim: false, icon: -1, picked: false });
+        var _arts = pattern_art_for_slot(_slot);
+        for (var _i4 = 0; _i4 < array_length(_arts); _i4++) {
+            var _pr4 = pattern_art_proxy(_arts[_i4]);
+            array_push(_rows, { label: _arts[_i4].label, right: "[" + item_rarity_name(_arts[_i4].rarity) + "]",
+                dim: false, icon: ui_pb_slot_icon(_pr4), picked: false });
+        }
+    }
+
+    var _n    = array_length(_rows);
+    var _vis  = 9;   // MUST mirror the Step handler
+    var _cur  = clamp(_gc.pb_cursor, 0, max(0, _n - 1));
+    var _win0 = clamp(_gc.pb_scroll, 0, max(0, _n - _vis));
+    var _row_y0 = 300, _pitch = 56;
+    if (_ph == 3) {
+        draw_set_halign(fa_center);
+        draw_set_font(fnt_ui_small);
+        draw_set_color(make_color_rgb(170, 160, 190));
+        draw_text(960, 272, "Chosen " + string(array_length(_gc.pb_affix_picks)) + " / " + string(pattern_affix_budget(_rar))
+            + " - Enter toggles; the wizard moves on when the budget is full.");
+        draw_set_halign(fa_left);
+    }
+    for (var _i = _win0; _i < min(_n, _win0 + _vis); _i++) {
+        var _r  = _rows[_i];
+        var _ry = _row_y0 + (_i - _win0) * _pitch;
+        var _sel = (_i == _cur);
+        draw_set_color(_sel ? make_color_rgb(38, 32, 24) : make_color_rgb(20, 20, 26));
+        draw_rectangle(_x0 + 20, _ry, _x1 - 40, _ry + _pitch - 6, false);
+        draw_set_color(_r.picked ? make_color_rgb(120, 210, 130) : (_sel ? _copper : make_color_rgb(48, 44, 40)));
+        draw_rectangle(_x0 + 20, _ry, _x1 - 40, _ry + _pitch - 6, true);
+        var _tx = _x0 + 44;
+        if (_r.icon != -1 && sprite_exists(_r.icon)) {
+            draw_sprite_stretched(_r.icon, 0, _x0 + 32, _ry + 3, 44, 44);
+            _tx = _x0 + 92;
+        }
+        draw_set_font(fnt_ui);
+        draw_set_color(_r.dim ? make_color_rgb(110, 110, 125) : (_r.picked ? make_color_rgb(160, 230, 170) : c_white));
+        draw_text(_tx, _ry + 10, _r.label + (_r.picked ? "   [CHOSEN]" : ""));
+        if (_r.right != "") {
+            draw_set_halign(fa_right);
+            draw_set_font(fnt_ui_small);
+            draw_set_color(_r.dim ? make_color_rgb(95, 95, 108) : make_color_rgb(150, 150, 165));
+            draw_text(_x1 - 60, _ry + 14, _r.right);
+            draw_set_halign(fa_left);
+        }
+        // Touch: tap any row (selects; tap acts like Enter in the Step handler).
+        if (_mp && _mx >= _x0 + 20 && _mx < _x1 - 40 && _my >= _ry && _my < _ry + _pitch - 6) {
+            input_inject("pb:row" + string(_i));
+        }
+    }
+    ui_pb_scrollbar(_x1 - 32, _row_y0, _row_y0 + _vis * _pitch - 6, _n, _vis, _win0);
+    if (_n == 0 && _ph == 3) {
+        draw_set_halign(fa_center);
+        draw_set_font(fnt_ui);
+        draw_set_color(make_color_rgb(120, 120, 135));
+        draw_text_ext(960, 420, "No unlocked blueprints fit this piece yet.\nSmelt gear to study its affixes, then return.", 34, 900);
+        draw_set_halign(fa_left);
+    }
+
+    draw_set_halign(fa_center);
+    draw_set_font(fnt_ui_small);
+    draw_set_color(make_color_rgb(75, 85, 105));
+    ui_draw_key_legend(960, 1026, (_ph == 3) ? "W/S: Choose   Enter/Tap: Toggle   Esc: Back"
+                                             : "W/S: Choose   Enter/Tap: Pick   Esc: Back");
+    draw_set_halign(fa_left);
+}
+
+// ---------------------------------------------------------------------------
+// ui_draw_pb_smelt(_gc) - the SMELT study popup: the fodder is chosen; pick
+// which of its affix families to study (or take just the ingot). Bordered
+// modal per the checkout standing rule - commit and cancel are buttons.
+// ---------------------------------------------------------------------------
+function ui_draw_pb_smelt(_gc) {
+    var _it = _gc.pb_smelt_item;
+    if (_it == undefined) return;
+    var _fams = pattern_item_families(_it);
+    var _rows = array_length(_fams) + 1;
+    var _x0 = 510, _x1 = 1410;
+    var _y1 = 780;
+    var _list_h = _rows * 54;
+    var _y0 = _y1 - 210 - _list_h - 130;
+    draw_set_alpha(0.66);
+    draw_set_color(make_color_rgb(6, 8, 14));
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
+    draw_set_alpha(0.97);
+    draw_set_color(make_color_rgb(22, 20, 30));
+    draw_rectangle(_x0, _y0, _x1, _y1, false);
+    draw_set_alpha(1.0);
+    draw_set_color(make_color_rgb(200, 170, 110));
+    draw_rectangle(_x0, _y0, _x1, _y1, true);
+    draw_rectangle(_x0 + 6, _y0 + 6, _x1 - 6, _y1 - 6, true);
+    draw_set_halign(fa_center);
+    draw_set_font(fnt_ui);
+    draw_set_color(make_color_rgb(255, 225, 150));
+    draw_text((_x0 + _x1) / 2, _y0 + 22, "SMELT " + string_upper(_it.name) + "?");
+    draw_set_font(fnt_ui_small);
+    draw_set_color(make_color_rgb(210, 214, 228));
+    draw_text_ext((_x0 + _x1) / 2, _y0 + 62,
+        "It is DESTROYED for " + string(pattern_smelt_fee()) + "g: +1 " + item_rarity_name(clamp(_it.rarity, 0, 4))
+        + " Reforge Ingot, its icon art joins the book, and Dorn studies ONE affix family from it:",
+        26, (_x1 - _x0) - 80);
+    draw_set_halign(fa_left);
+
+    var _mx = device_mouse_x_to_gui(0), _my = device_mouse_y_to_gui(0);
+    var _mp = mouse_check_button_pressed(mb_left);
+    var _row_y0 = _y0 + 130;
+    for (var _i = 0; _i < _rows; _i++) {
+        var _ry  = _row_y0 + _i * 54;
+        var _sel = (_i == _gc.pb_smelt_pick);
+        var _lb; var _rt; var _ok = true;
+        if (_i < array_length(_fams)) {
+            var _fe = pattern_family_entry(_fams[_i]);
+            var _pv = pattern_study_preview(_fams[_i], clamp(_it.rarity, 0, 4));
+            _lb = (_fe != undefined) ? _fe.label : _fams[_i];
+            _rt = _pv.text;
+            _ok = _pv.ok;
+        } else {
+            _lb = "Just the ingot";
+            _rt = "no study";
+        }
+        draw_set_color(_sel ? make_color_rgb(38, 32, 24) : make_color_rgb(20, 20, 26));
+        draw_rectangle(_x0 + 30, _ry, _x1 - 30, _ry + 48, false);
+        draw_set_color(_sel ? make_color_rgb(210, 140, 70) : make_color_rgb(48, 44, 40));
+        draw_rectangle(_x0 + 30, _ry, _x1 - 30, _ry + 48, true);
+        draw_set_font(fnt_ui);
+        draw_set_color(_ok ? c_white : make_color_rgb(120, 120, 135));
+        draw_text(_x0 + 50, _ry + 8, _lb);
+        draw_set_halign(fa_right);
+        draw_set_font(fnt_ui_small);
+        draw_set_color(_ok ? make_color_rgb(150, 210, 160) : make_color_rgb(190, 120, 110));
+        draw_text(_x1 - 50, _ry + 12, _rt);
+        draw_set_halign(fa_left);
+        if (_mp && _mx >= _x0 + 30 && _mx < _x1 - 30 && _my >= _ry && _my < _ry + 48) {
+            input_inject("pbsm:row" + string(_i));
+        }
+    }
+    ui_confirm_button(_x0 + 50, _y1 - 90, (_x0 + _x1) / 2 - 20, _y1 - 24, "SMELT  [Enter]",
+        make_color_rgb(120, 210, 130), _mx, _my, _mp, "pbsm:ok");
+    ui_confirm_button((_x0 + _x1) / 2 + 20, _y1 - 90, _x1 - 50, _y1 - 24, "CANCEL  [Esc]",
+        make_color_rgb(190, 120, 110), _mx, _my, _mp, "pbsm:cancel");
 }

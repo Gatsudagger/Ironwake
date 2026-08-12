@@ -2,9 +2,9 @@
   "$GMSprite":"v2",
   "%Name":"spr_pet_stormkirin_youngadult_e",
   "bboxMode":0,
-  "bbox_bottom":43,
+  "bbox_bottom":123,
   "bbox_left":0,
-  "bbox_right":43,
+  "bbox_right":123,
   "bbox_top":0,
   "collisionKind":1,
   "collisionTolerance":0,
@@ -12,18 +12,26 @@
   "edgeFiltering":false,
   "For3D":false,
   "frames":[
-    {"$GMSpriteFrame":"v1","%Name":"06829fac-c70f-4f28-9ca9-7dd76fe4bdc1","name":"06829fac-c70f-4f28-9ca9-7dd76fe4bdc1","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"5ba7d21b-e0d7-44af-ad18-d34f96cb866d","name":"5ba7d21b-e0d7-44af-ad18-d34f96cb866d","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"03cffae9-d3e6-4be9-a4e5-7079ddfad560","name":"03cffae9-d3e6-4be9-a4e5-7079ddfad560","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"94b9be56-4938-4e27-a8eb-b2023fb8d7e9","name":"94b9be56-4938-4e27-a8eb-b2023fb8d7e9","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"3dfe0cf4-ae71-4d05-83a8-56abcd1bd408","name":"3dfe0cf4-ae71-4d05-83a8-56abcd1bd408","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"db27e07c-737a-4274-ab98-439e90044a69","name":"db27e07c-737a-4274-ab98-439e90044a69","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"5799a9ad-2416-4b5a-9c0a-e259c592416f","name":"5799a9ad-2416-4b5a-9c0a-e259c592416f","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"e3f3ddd3-37c1-4aeb-8a12-0d71363f188d","name":"e3f3ddd3-37c1-4aeb-8a12-0d71363f188d","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"8d2d38df-1475-4199-9eb7-0376a7eca465","name":"8d2d38df-1475-4199-9eb7-0376a7eca465","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"25a0a04f-6629-49df-860b-f23f71d9f801","name":"25a0a04f-6629-49df-860b-f23f71d9f801","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
   ],
   "gridX":0,
   "gridY":0,
-  "height":44,
+  "height":124,
   "HTile":false,
   "layers":[
-    {"$GMImageLayer":"","%Name":"7c054d1b-ce2a-4dde-a753-34d527822623","blendMode":0,"displayName":"default","isLocked":false,"name":"7c054d1b-ce2a-4dde-a753-34d527822623","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
+    {"$GMImageLayer":"","%Name":"c20875cb-9804-4d9e-b4f0-eec0cf2f30f3","blendMode":0,"displayName":"default","isLocked":false,"name":"c20875cb-9804-4d9e-b4f0-eec0cf2f30f3","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
   ],
   "name":"spr_pet_stormkirin_youngadult_e",
   "nineSlice":null,
-  "origin":0,
+  "origin":4,
   "parent":{
     "name":"Ironwake",
     "path":"Ironwake.yyp",
@@ -49,7 +57,7 @@
     },
     "eventStubScript":null,
     "eventToFunction":{},
-    "length":1.0,
+    "length":9.0,
     "lockOrigin":false,
     "moments":{
       "$KeyframeStore<MomentsEventKeyframe>":"",
@@ -59,7 +67,7 @@
     },
     "name":"spr_pet_stormkirin_youngadult_e",
     "playback":1,
-    "playbackSpeed":1.0,
+    "playbackSpeed":8.0,
     "playbackSpeedType":0,
     "resourceType":"GMSequence",
     "resourceVersion":"2.0",
@@ -69,14 +77,38 @@
     "tracks":[
       {"$GMSpriteFramesTrack":"","builtinName":0,"events":[],"inheritsTrackColour":true,"interpolation":1,"isCreationTrack":false,"keyframes":{"$KeyframeStore<SpriteFrameKeyframe>":"","Keyframes":[
             {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
-                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"06829fac-c70f-4f28-9ca9-7dd76fe4bdc1","path":"sprites/spr_pet_stormkirin_youngadult_e/spr_pet_stormkirin_youngadult_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
-              },"Disabled":false,"id":"7b896549-ae3c-4e29-8095-8751fcb701b8","IsCreationKey":false,"Key":0.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"5ba7d21b-e0d7-44af-ad18-d34f96cb866d","path":"sprites/spr_pet_stormkirin_youngadult_e/spr_pet_stormkirin_youngadult_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"ed19b6a1-2f55-4a5a-b7fa-e839497cc9dc","IsCreationKey":false,"Key":0.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+            {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"03cffae9-d3e6-4be9-a4e5-7079ddfad560","path":"sprites/spr_pet_stormkirin_youngadult_e/spr_pet_stormkirin_youngadult_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"f3ee97b6-8b65-43e8-bbed-e44476bd0ff2","IsCreationKey":false,"Key":1.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+            {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"94b9be56-4938-4e27-a8eb-b2023fb8d7e9","path":"sprites/spr_pet_stormkirin_youngadult_e/spr_pet_stormkirin_youngadult_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"d3f4baaa-ff23-4f07-aca4-fad25c8af21e","IsCreationKey":false,"Key":2.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+            {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"3dfe0cf4-ae71-4d05-83a8-56abcd1bd408","path":"sprites/spr_pet_stormkirin_youngadult_e/spr_pet_stormkirin_youngadult_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"41fa2930-47b8-43a6-8d70-a173d9c696da","IsCreationKey":false,"Key":3.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+            {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"db27e07c-737a-4274-ab98-439e90044a69","path":"sprites/spr_pet_stormkirin_youngadult_e/spr_pet_stormkirin_youngadult_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"d3764d5b-ae89-4255-889f-b0b24bd37c6f","IsCreationKey":false,"Key":4.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+            {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"5799a9ad-2416-4b5a-9c0a-e259c592416f","path":"sprites/spr_pet_stormkirin_youngadult_e/spr_pet_stormkirin_youngadult_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"4ac1c50c-1853-4e70-a43f-9356bbad2dff","IsCreationKey":false,"Key":5.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+            {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"e3f3ddd3-37c1-4aeb-8a12-0d71363f188d","path":"sprites/spr_pet_stormkirin_youngadult_e/spr_pet_stormkirin_youngadult_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"e91a59dd-62e3-4a78-a008-5bd106895f09","IsCreationKey":false,"Key":6.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+            {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"8d2d38df-1475-4199-9eb7-0376a7eca465","path":"sprites/spr_pet_stormkirin_youngadult_e/spr_pet_stormkirin_youngadult_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"499eb6f7-806a-4bb4-8c1f-64e4e647d249","IsCreationKey":false,"Key":7.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+            {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"25a0a04f-6629-49df-860b-f23f71d9f801","path":"sprites/spr_pet_stormkirin_youngadult_e/spr_pet_stormkirin_youngadult_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"95010e1f-f4ec-4c12-8fb0-386659eef1ea","IsCreationKey":false,"Key":8.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
           ],"resourceType":"KeyframeStore<SpriteFrameKeyframe>","resourceVersion":"2.0",},"modifiers":[],"name":"frames","resourceType":"GMSpriteFramesTrack","resourceVersion":"2.0","spriteId":null,"trackColour":0,"tracks":[],"traits":0,},
     ],
     "visibleRange":null,
     "volume":1.0,
-    "xorigin":0,
-    "yorigin":0,
+    "xorigin":62,
+    "yorigin":123,
   },
   "swatchColours":null,
   "swfPrecision":0.5,
@@ -86,5 +118,5 @@
   },
   "type":0,
   "VTile":false,
-  "width":44,
+  "width":124,
 }

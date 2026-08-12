@@ -48,6 +48,16 @@ CFG = [
  ("ironshell_beetle","baby",       "b62d83b9-f889-490c-82e1-d66450b3c07a","3029a32e-1337-4054-9e29-37e6d502d7e6"),
  ("ironshell_beetle","youngadult", "b7950b4e-d32e-4839-a036-5e2861bc8891","07588cfb-87b1-45b7-80d0-fb58acef0399"),
  ("ironshell_beetle","adult",      "be0de209-9344-4297-aa0f-5273e6b896ff","64eb02de-ed4f-44a5-bdf9-923328f14e8f"),
+ # Batch 3 (08-11): lockjaw_turtle RE-AUTHOR pilot (species 1/20) - replaces the
+ # 33-39px stills with proper-canvas animated sprites (85/124/124). Sprite names
+ # already in .yyp, so this is a pure frame swap; see tools/REAUTHOR_LOCKJAW_0811.md.
+ ("lockjaw_turtle","baby",       "04afe5cc-a866-4359-b1a5-10b25654b6e3","52ecfe38-b885-413e-a524-d170679be28e"),
+ ("lockjaw_turtle","youngadult", "473a4aff-1db0-45eb-a549-de7914ab1beb","1af936dc-d687-412d-9d4e-ec2627c19ba7"),
+ ("lockjaw_turtle","adult",      "ebe11ccb-f90f-401a-801f-9998689c3985","c2821797-d1e9-43a0-975c-c89913e0e345"),
+ # Batch 1 (08-12) object-pipeline stages (M's candidate picks; the other
+ # stages of these species import via tools/import_reauthor_images.py).
+ ("pyre_bison","adult",       "664e66c9-49b2-4fb7-9cf8-0ab2fd3c04f8","87d9d4c4-1d90-4f32-8e01-364878772d0a"),
+ ("null_hound","youngadult",  "65038238-ce6a-4ccf-be07-62d619d505db","350485c7-3f94-45c0-9c1e-4982f84e37b8"),
 ]
 
 def fetch_zip(cid):

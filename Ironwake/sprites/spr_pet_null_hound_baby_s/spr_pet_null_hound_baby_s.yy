@@ -2,9 +2,9 @@
   "$GMSprite":"v2",
   "%Name":"spr_pet_null_hound_baby_s",
   "bboxMode":0,
-  "bbox_bottom":55,
+  "bbox_bottom":84,
   "bbox_left":0,
-  "bbox_right":55,
+  "bbox_right":84,
   "bbox_top":0,
   "collisionKind":1,
   "collisionTolerance":0,
@@ -12,18 +12,26 @@
   "edgeFiltering":false,
   "For3D":false,
   "frames":[
-    {"$GMSpriteFrame":"v1","%Name":"3fa0a9dd-b5f2-4205-9db6-d53bec476427","name":"3fa0a9dd-b5f2-4205-9db6-d53bec476427","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"00dd2ba9-6e63-45a8-9813-7d0b451afd85","name":"00dd2ba9-6e63-45a8-9813-7d0b451afd85","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"b2ee6c77-70b6-4f4a-8e84-0c26c58ec914","name":"b2ee6c77-70b6-4f4a-8e84-0c26c58ec914","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"a0d7c728-b8d2-4659-a57e-7a29a9f45b91","name":"a0d7c728-b8d2-4659-a57e-7a29a9f45b91","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"459fd94c-7f33-4323-b2f8-7344e7239f59","name":"459fd94c-7f33-4323-b2f8-7344e7239f59","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"0a9d41c1-8f2f-4649-b3af-b11e0b73610c","name":"0a9d41c1-8f2f-4649-b3af-b11e0b73610c","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"7f7d2b06-ca97-49ab-8db2-10ff3adc6fcf","name":"7f7d2b06-ca97-49ab-8db2-10ff3adc6fcf","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"a8fe8ad7-6faa-4825-82fd-90bf56bf7fc8","name":"a8fe8ad7-6faa-4825-82fd-90bf56bf7fc8","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"a03307c1-3ed6-4ee2-bd2e-44cd2cbdc6e7","name":"a03307c1-3ed6-4ee2-bd2e-44cd2cbdc6e7","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"f32f99fd-5464-43e7-a21d-9f854e984b46","name":"f32f99fd-5464-43e7-a21d-9f854e984b46","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
   ],
   "gridX":0,
   "gridY":0,
-  "height":56,
+  "height":85,
   "HTile":false,
   "layers":[
-    {"$GMImageLayer":"","%Name":"cb666d91-b162-4e44-847c-9f6b9028f39e","blendMode":0,"displayName":"default","isLocked":false,"name":"cb666d91-b162-4e44-847c-9f6b9028f39e","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
+    {"$GMImageLayer":"","%Name":"c937fd50-1ef1-4288-9c3a-ef8f3cd56675","blendMode":0,"displayName":"default","isLocked":false,"name":"c937fd50-1ef1-4288-9c3a-ef8f3cd56675","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
   ],
   "name":"spr_pet_null_hound_baby_s",
   "nineSlice":null,
-  "origin":0,
+  "origin":4,
   "parent":{
     "name":"Ironwake",
     "path":"Ironwake.yyp",
@@ -49,7 +57,7 @@
     },
     "eventStubScript":null,
     "eventToFunction":{},
-    "length":1.0,
+    "length":9.0,
     "lockOrigin":false,
     "moments":{
       "$KeyframeStore<MomentsEventKeyframe>":"",
@@ -59,7 +67,7 @@
     },
     "name":"spr_pet_null_hound_baby_s",
     "playback":1,
-    "playbackSpeed":1.0,
+    "playbackSpeed":8.0,
     "playbackSpeedType":0,
     "resourceType":"GMSequence",
     "resourceVersion":"2.0",
@@ -69,14 +77,38 @@
     "tracks":[
       {"$GMSpriteFramesTrack":"","builtinName":0,"events":[],"inheritsTrackColour":true,"interpolation":1,"isCreationTrack":false,"keyframes":{"$KeyframeStore<SpriteFrameKeyframe>":"","Keyframes":[
             {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
-                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"3fa0a9dd-b5f2-4205-9db6-d53bec476427","path":"sprites/spr_pet_null_hound_baby_s/spr_pet_null_hound_baby_s.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
-              },"Disabled":false,"id":"299f8085-4f8e-4062-a90e-d5587b1bd34a","IsCreationKey":false,"Key":0.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"00dd2ba9-6e63-45a8-9813-7d0b451afd85","path":"sprites/spr_pet_null_hound_baby_s/spr_pet_null_hound_baby_s.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"f1f4fe97-159a-4d67-96ef-346eabcc6f0f","IsCreationKey":false,"Key":0.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+            {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"b2ee6c77-70b6-4f4a-8e84-0c26c58ec914","path":"sprites/spr_pet_null_hound_baby_s/spr_pet_null_hound_baby_s.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"194af77f-0455-4115-9f7c-d6e14e08efc4","IsCreationKey":false,"Key":1.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+            {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"a0d7c728-b8d2-4659-a57e-7a29a9f45b91","path":"sprites/spr_pet_null_hound_baby_s/spr_pet_null_hound_baby_s.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"72dab20c-38c8-48cd-bd7b-60bd3f131441","IsCreationKey":false,"Key":2.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+            {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"459fd94c-7f33-4323-b2f8-7344e7239f59","path":"sprites/spr_pet_null_hound_baby_s/spr_pet_null_hound_baby_s.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"73094836-1edc-450f-9026-ddca6d3932d4","IsCreationKey":false,"Key":3.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+            {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"0a9d41c1-8f2f-4649-b3af-b11e0b73610c","path":"sprites/spr_pet_null_hound_baby_s/spr_pet_null_hound_baby_s.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"a83b26f3-5691-4dd6-b603-2f10f2c2b790","IsCreationKey":false,"Key":4.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+            {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"7f7d2b06-ca97-49ab-8db2-10ff3adc6fcf","path":"sprites/spr_pet_null_hound_baby_s/spr_pet_null_hound_baby_s.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"63424e19-bc11-4709-a7d4-d389da3f74ec","IsCreationKey":false,"Key":5.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+            {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"a8fe8ad7-6faa-4825-82fd-90bf56bf7fc8","path":"sprites/spr_pet_null_hound_baby_s/spr_pet_null_hound_baby_s.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"8c474ea8-ce46-4f14-ab37-9c228ddde225","IsCreationKey":false,"Key":6.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+            {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"a03307c1-3ed6-4ee2-bd2e-44cd2cbdc6e7","path":"sprites/spr_pet_null_hound_baby_s/spr_pet_null_hound_baby_s.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"c80f37a4-ca65-4b57-8437-ed5f9c072083","IsCreationKey":false,"Key":7.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+            {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"f32f99fd-5464-43e7-a21d-9f854e984b46","path":"sprites/spr_pet_null_hound_baby_s/spr_pet_null_hound_baby_s.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"dbc45645-9bfc-46b6-a10e-2d149683a602","IsCreationKey":false,"Key":8.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
           ],"resourceType":"KeyframeStore<SpriteFrameKeyframe>","resourceVersion":"2.0",},"modifiers":[],"name":"frames","resourceType":"GMSpriteFramesTrack","resourceVersion":"2.0","spriteId":null,"trackColour":0,"tracks":[],"traits":0,},
     ],
     "visibleRange":null,
     "volume":1.0,
-    "xorigin":0,
-    "yorigin":0,
+    "xorigin":42,
+    "yorigin":84,
   },
   "swatchColours":null,
   "swfPrecision":0.5,
@@ -86,5 +118,5 @@
   },
   "type":0,
   "VTile":false,
-  "width":56,
+  "width":85,
 }

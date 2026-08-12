@@ -29,6 +29,109 @@ if (!combat_over && is_struct(player)) {
     }
 }
 
+// FAUX-2.5D EXPERIMENT lever (M 08-11): F7 flips the tilted-arena look live
+// and persists to settings.ini. Above the input freeze so it works even with
+// overlays up - it is a dev/trial lever, not a combat action.
+if (keyboard_check_pressed(vk_f7)) {
+    global.combat_25d = !combat_25d();
+    ini_open("settings.ini");
+    ini_write_real("ui", "combat_25d", global.combat_25d ? 1 : 0);
+    ini_close();
+    array_push(combat_log, "Arena view: " + (global.combat_25d ? "2.5D tilt ON" : "flat (classic)") + ".");
+}
+
+// ===== DELIVERY MUTATOR QUEUE (M 08-11, SYSTEMS_MUTATORS.md) =====
+// Delayed sub-hits: BOUNCE arcs to a random other enemy on a real traveling
+// bolt (v2, 08-11); ECHO repeats on its target at the player's ACTUAL next
+// turn (v2 - was a flat 80-frame delay). Ticks every frame (even during enemy
+// phases) so a hop can never be swallowed by a turn change.
+if (!combat_over && array_length(mutator_queue) > 0) {
+    for (var _mq = array_length(mutator_queue) - 1; _mq >= 0; _mq--) {
+        var _mm = mutator_queue[_mq];
+        // ECHO waits for the next player turn (an enemy phase must pass first);
+        // the countdown doubles as a fallback so a stunned-out enemy phase can
+        // never leave the toll hanging forever.
+        var _mm_ready;
+        if (variable_struct_exists(_mm, "wait_turn") && _mm.wait_turn) {
+            if (!player_turn) _mm.seen_enemy = true;
+            _mm.t--;
+            _mm_ready = (_mm.seen_enemy && player_turn) || (_mm.t <= 0);
+        } else {
+            _mm.t--;
+            _mm_ready = (_mm.t <= 0);
+        }
+        if (!_mm_ready) continue;
+        array_delete(mutator_queue, _mq, 1);
+
+        // BOUNCE ARRIVAL ("hit"): the bolt has landed - apply the locked hit.
+        if (_mm.kind == "hit") {
+            var _mhv = _mm.victim;
+            if (_mhv == undefined || _mhv.is_defeated) continue;
+            var _mhd = combat_resolve_damage(max(1, round(_mm.base * _mm.pct / 100)),
+                _mm.dtype, _mhv.armor, _mhv.el_resist);
+            if (_mhd < 1) _mhd = 1;
+            combat_apply_damage(_mhv, _mhd);
+            _mhv.hit_flash = max(_mhv.hit_flash, 10);
+            array_push(damage_popups, { value: _mhd, x: 1620 + _mm.slot * (-120), y: 233 + _mm.slot * 105 - 60,
+                                        timer: 45, col: (_mm.school != "") ? school_color(_mm.school) : c_white });
+            array_push(combat_log, _mm.name + " arcs on to " + _mhv.name + " for " + string(_mhd) + "!");
+            if (_mhv.HP <= 0 && !_mhv.is_defeated) combat_on_enemy_defeated(_mhv, player, combat_log);
+            // Multi-hop (Bouncing Bomb): the arc keeps going, its payload
+            // decaying to this hop's landed damage.
+            if (variable_struct_exists(_mm, "hops") && _mm.hops > 1 && !_mhv.is_defeated) {
+                array_push(mutator_queue, { kind: "bounce", t: 8, from: _mhv, pct: _mm.pct,
+                    base: _mhd, dtype: _mm.dtype, school: _mm.school, name: _mm.name, hops: _mm.hops - 1 });
+            }
+            continue;
+        }
+
+        // Pick the victim: bounce = random living enemy that ISN'T the source
+        // hit's target; echo = the original target, or a random living enemy
+        // if it already fell. Track the living-slot index for the popup spot.
+        var _mv = undefined, _mv_slot = 0, _mf_slot = 0;
+        var _mc_live = 0, _mc_pool = [], _mc_slots = [];
+        for (var _mi = 0; _mi < array_length(combat_state.combatants); _mi++) {
+            var _mc = combat_state.combatants[_mi];
+            if (_mc.is_player || _mc.is_defeated) continue;
+            if (_mc == _mm.from) _mf_slot = _mc_live;
+            if (_mm.kind == "echo" && _mc == _mm.from) { _mv = _mc; _mv_slot = _mc_live; }
+            if (_mm.kind == "bounce" && _mc != _mm.from) { array_push(_mc_pool, _mc); array_push(_mc_slots, _mc_live); }
+            if (_mm.kind == "echo") { array_push(_mc_pool, _mc); array_push(_mc_slots, _mc_live); }
+            _mc_live++;
+        }
+        if (_mv == undefined && array_length(_mc_pool) > 0) {
+            var _mp = irandom(array_length(_mc_pool) - 1);
+            _mv = _mc_pool[_mp]; _mv_slot = _mc_slots[_mp];
+        }
+        if (_mv == undefined) continue;   // nothing left standing to receive it
+
+        if (_mm.kind == "bounce") {
+            // v2: the arc is a REAL bolt between the hop's two enemies - damage
+            // lands when it arrives (the "hit" entry above, timed to the flight).
+            var _mb_sx = 1620 - _mf_slot * 120, _mb_sy = 233 + _mf_slot * 105 - 20;
+            var _mb_tx = 1620 - _mv_slot * 120, _mb_ty = 233 + _mv_slot * 105 - 20;
+            array_push(combat_projectiles, { spr: -1, school: _mm.school,
+                impact_spr: spr_fx_impact, ticks: 12,
+                sx: _mb_sx, sy: _mb_sy, tx: _mb_tx, ty: _mb_ty, bx: _mb_tx, by: _mb_ty,
+                t: 0, dur: 14, delay: 0, tgt: _mv, shake: 4 });
+            array_push(mutator_queue, { kind: "hit", t: 15, victim: _mv, slot: _mv_slot,
+                base: _mm.base, pct: _mm.pct, dtype: _mm.dtype, school: _mm.school, name: _mm.name,
+                hops: variable_struct_exists(_mm, "hops") ? _mm.hops : 1 });
+            continue;
+        }
+
+        var _md = combat_resolve_damage(max(1, round(_mm.base * _mm.pct / 100)),
+            _mm.dtype, _mv.armor, _mv.el_resist);
+        if (_md < 1) _md = 1;
+        combat_apply_damage(_mv, _md);
+        _mv.hit_flash = max(_mv.hit_flash, 10);
+        array_push(damage_popups, { value: _md, x: 1620 + _mv_slot * (-120), y: 233 + _mv_slot * 105 - 60,
+                                    timer: 45, col: (_mm.school != "") ? school_color(_mm.school) : c_white });
+        array_push(combat_log, _mm.name + " echoes on " + _mv.name + " for " + string(_md) + "!");
+        if (_mv.HP <= 0 && !_mv.is_defeated) combat_on_enemy_defeated(_mv, player, combat_log);
+    }
+}
+
 // Freeze all combat input when any overlay is open (menu, stash, shop,
 // level-up alloc). Level alloc input is handled in obj_game_controller Step
 // so it keeps working even while this Step is frozen.
@@ -286,6 +389,19 @@ if (_result == 1) {
     if (!combat_over && global.duel_active && !duel_rewards_granted) {
         duel_rewards_granted = true;
         global.duelist_encounters += 1;   // he remembers this one bitterly
+        // DUELING RELICS (M 08-11, #23): total-WINS ladder at 1/3/5 - any grade
+        // counts (the token ARTS ladder below stays GOLD-only).
+        if (!variable_global_exists("duelist_wins")) global.duelist_wins = 0;
+        global.duelist_wins += 1;
+        var _dr_relic = duelist_relic_for_win(global.duelist_wins);
+        if (_dr_relic != undefined) {
+            if (!variable_global_exists("equipment_stash")) global.equipment_stash = [];
+            array_push(global.equipment_stash, _dr_relic);
+            array_push(global.run_items_found, _dr_relic);
+            discover_item(item_base_name(_dr_relic), _dr_relic.rarity);
+            array_push(combat_log, "DUELING RELIC: he surrenders the " + _dr_relic.name
+                + " - sent to your stash. (" + string(global.duelist_wins) + " duels won)");
+        }
         duel_grade_round = combat_state.round;
         var _dg_par = variable_global_exists("duel_par") ? global.duel_par : duel_turn_par();
         var _dg_asc = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
@@ -969,7 +1085,7 @@ if (player_turn) {
         // End Turn button (around the "T: End Turn" prompt at y=954, x center).
         // NOT on touch - the framed END TURN button (Draw) fires a simulated T
         // there; running this inline zone too would end the turn twice.
-        if (input_device() != 2 && _cmx >= 660 && _cmx < 1260 && _cmy >= 936 && _cmy < 972) {
+        if (input_device() != 2 && _cmx >= 660 && _cmx < 1260 && _cmy >= 946 && _cmy < 982) {
             // Inline end-turn - mirrors the T-key block below
             player.poise_shield = 0;
             if (player.energy > 0) {
@@ -1234,11 +1350,22 @@ if (player_turn) {
                     array_delete(player.traps, 0, 1);
                     array_push(combat_log, "No room - you pull up the " + _tlost + " to make space.");
                 }
+                // Static stations (M 08-11): the trap claims the first FREE slot
+                // and keeps it - deploying another trap never moves this one.
+                var _tslot = 0;
+                for (var _ts = 0; _ts < _tcap; _ts++) {
+                    var _ts_used = false;
+                    for (var _te = 0; _te < array_length(player.traps); _te++) {
+                        if (trap_slot_of(player.traps[_te], _te) == _ts) { _ts_used = true; break; }
+                    }
+                    if (!_ts_used) { _tslot = _ts; break; }
+                }
                 // Talent-web riders are baked into the deployed instance at set
                 // time, so the trap on the ground is a complete description of
                 // itself and the spring path never has to re-consult the web.
                 array_push(player.traps, {
                     name:     _tdf.name,
+                    slot:     _tslot,
                     filter:   ability_web_copy_has_rider(ab, "trap_any") ? "any" : _tdf.filter,
                     block:    _tdf.block || ability_web_copy_has_rider(ab, "trap_block"),
                     damage:   _tdf.damage + (ability_web_copy_has_rider(ab, "trap_dmg") ? 6 : 0),
@@ -1249,11 +1376,20 @@ if (player_turn) {
                     r_vuln:   ability_web_copy_has_rider(ab, "trap_vuln"),
                     r_stun:   ability_web_copy_has_rider(ab, "trap_stun"),
                     r_splash: ability_web_copy_has_rider(ab, "trap_splash"),
+                    r_reset:   ability_web_copy_has_rider(ab, "trap_reset"),
+                    r_patient: ability_web_copy_has_rider(ab, "trap_patient"),
                     deployed_round: combat_state.round,
                     flash:    0
                 });
-                array_push(combat_log, ab.name + " is set - it waits for the next "
-                    + trap_filter_label(_tdf.filter) + ".");
+                // Throw arc (P5): the prop flies from the player's hands to its
+                // station - a draw-owned transient (ui_draw_trap_field advances
+                // and clears it, the checkout-VFX idiom). Purely conveyance.
+                global.trap_throw = { name: _tdf.name, slot: _tslot, t: 0, tmax: 22 };
+                // "any" filter gets its own phrasing (M 08-11: "waits for the
+                // next any action" read as jank).
+                array_push(combat_log, (_tdf.filter == "any")
+                    ? (ab.name + " is set - the next enemy action of any kind will spring it.")
+                    : (ab.name + " is set - it waits for the next " + trap_filter_label(_tdf.filter) + "."));
 
                 // Sprung Steel trunk node: deploying a trap returns 1 Prep. Moved here
                 // from the old targeted-resolution site, which traps no longer reach.
@@ -2526,6 +2662,15 @@ if (player_turn) {
                             array_push(combat_log, "Execution! +" + string(_wr_ed) + " to the wounded " + target.name + ".");
                             if (target.HP <= 0) combat_on_enemy_defeated(target, player, combat_log);
                         }
+                        // Widowmaker's Point relic (08-11, #23): the decided fight
+                        // ends - +40% to enemies below 25% HP (execute idiom above).
+                        if (legendary_worn("duel_widow") && _final_dmg > 0 && !target.is_defeated
+                            && target.HP <= target.max_HP * 0.25) {
+                            var _dw_ed = max(1, round(_final_dmg * 0.40));
+                            combat_apply_damage(target, _dw_ed);
+                            array_push(combat_log, "Widowmaker's Point: +" + string(_dw_ed) + " to the wounded " + target.name + ".");
+                            if (target.HP <= 0) combat_on_enemy_defeated(target, player, combat_log);
+                        }
                         // Lifesteal: drink a share of the damage dealt.
                         var _wr_ls = ability_web_rider_value(ab, "lifesteal", 0);
                         if (_wr_ls > 0 && _final_dmg > 0) {
@@ -2561,6 +2706,65 @@ if (player_turn) {
                                 if (_wr_t.HP <= 0) combat_on_enemy_defeated(_wr_t, player, combat_log);
                             }
                         }
+                        // ===== DELIVERY MUTATORS (M 08-11, SYSTEMS_MUTATORS.md) =====
+                        // ONE per cast (legendary > web node > innate). SPLIT forks
+                        // immediately (splash pattern); BOUNCE and ECHO queue delayed
+                        // sub-hits (processed at the top of Step); LINGER leaves a
+                        // 2-turn DoT so existing ticks + the Censer's +2 both apply.
+                        var _mut = (_deals_damage && _final_dmg > 0) ? ability_delivery_mutator(ab) : undefined;
+                        if (_mut != undefined) {
+                            var _mut_sch = ability_school(ab);
+                            if (_mut.kind == "split") {
+                                var _sp_pool = [], _sp_slots = [], _sp_live = 0;
+                                for (var _spi = 0; _spi < array_length(combat_state.combatants); _spi++) {
+                                    var _spc = combat_state.combatants[_spi];
+                                    if (_spc.is_player || _spc.is_defeated) continue;
+                                    if (_spc != target) { array_push(_sp_pool, _spc); array_push(_sp_slots, _sp_live); }
+                                    _sp_live++;
+                                }
+                                if (array_length(_sp_pool) > 0) {
+                                    var _sp_p = irandom(array_length(_sp_pool) - 1);
+                                    var _sp_t = _sp_pool[_sp_p];
+                                    var _sp_d = combat_resolve_damage(max(1, round(_final_dmg * _mut.pct / 100)),
+                                        variable_struct_exists(ab, "damage_type") ? ab.damage_type : 0, _sp_t.armor, _sp_t.el_resist);
+                                    if (_sp_d < 1) _sp_d = 1;
+                                    combat_apply_damage(_sp_t, _sp_d);
+                                    _sp_t.hit_flash = max(_sp_t.hit_flash, 10);
+                                    array_push(damage_popups, { value: _sp_d, x: 1620 + _sp_slots[_sp_p] * (-120),
+                                        y: 233 + _sp_slots[_sp_p] * 105 - 60, timer: 45,
+                                        col: (_mut_sch != "") ? school_color(_mut_sch) : c_white });
+                                    array_push(combat_log, ab.name + " SPLITS to " + _sp_t.name + " for " + string(_sp_d) + "!");
+                                    if (_sp_t.HP <= 0 && !_sp_t.is_defeated) combat_on_enemy_defeated(_sp_t, player, combat_log);
+                                }
+                            } else if (_mut.kind == "bounce" || _mut.kind == "echo") {
+                                // v2 (08-11): echo waits for the ACTUAL next player
+                                // turn (t doubles as the never-hang fallback);
+                                // bounce carries a hop count (Bouncing Bomb = 2).
+                                array_push(mutator_queue, {
+                                    kind: _mut.kind, t: (_mut.kind == "bounce") ? 22 : 600,
+                                    wait_turn: (_mut.kind == "echo"), seen_enemy: false,
+                                    from: target, pct: _mut.pct, base: _final_dmg,
+                                    dtype: variable_struct_exists(ab, "damage_type") ? ab.damage_type : 0,
+                                    school: _mut_sch, name: ab.name,
+                                    hops: variable_struct_exists(_mut, "hops") ? _mut.hops : 1
+                                });
+                            } else if (_mut.kind == "linger" && !target.is_defeated
+                                       && variable_struct_exists(target, "status_effects")) {
+                                // House DoT shape (Serrated Bleed / Burning): effect_type
+                                // "dot" + the DoT element vocabulary, so the tick engine,
+                                // its colors and the Censer's +2 all just apply.
+                                var _lg_el = (_mut_sch == "fire") ? "burn"
+                                           : ((_mut_sch == "blood") ? "bleed" : _mut_sch);
+                                array_push(target.status_effects, {
+                                    name: "Lingering " + ((_mut_sch != "") ? school_label(_mut_sch) : "Wound"),
+                                    effect_type: "dot", kind: "dot",
+                                    effect_value: max(1, round(_final_dmg * _mut.pct / 100)),
+                                    duration: 2, element: _lg_el, source: "player"
+                                });
+                                array_push(combat_log, ab.name + " lingers on " + target.name + " - it will burn for 2 turns!");
+                            }
+                        }
+
                         // Whetstone Echo (Shrine V2): the first damaging ability rings
                         // twice - 40% of the landed damage repeats on this target.
                         if (_whet_now && _final_dmg > 0 && !target.is_defeated) {
@@ -3841,6 +4045,12 @@ if (player_turn) {
                         && trunk_has("prep_trap_dmg")) _tp_dmg += 2 * player.preparation;
                     if (variable_struct_exists(player, "dread_bonus") && player.dread_bonus > 0)
                         _tp_dmg += player.dread_bonus;
+                    // "Patient Hands" (P5): a trap that waited 3+ rounds pays double.
+                    if (variable_struct_exists(_tp, "r_patient") && _tp.r_patient
+                        && combat_state.round - _tp.deployed_round >= 3) {
+                        _tp_dmg *= 2;
+                        array_push(combat_log, "Patient Hands: the long wait pays DOUBLE.");
+                    }
                 }
 
                 array_push(combat_log, actor.name + " springs the " + _tp.name + "!");
@@ -3851,12 +4061,11 @@ if (player_turn) {
                 // point of the 08-08 rework is that the trap is a THING standing
                 // between the two of you. Position comes from trap_field_pos(),
                 // the SAME helper ui_draw_trap_field draws with, so the burst can
-                // never drift off the prop if the field is ever re-laid out. The
-                // count is read BEFORE the spent trap is removed below, so the
-                // burst lands on the trap that actually sprang.
-                var _tf_pos = trap_field_pos(_sprung, array_length(player.traps));
+                // never drift off the prop if the field is ever re-laid out.
+                var _tf_pos = trap_field_pos(trap_slot_of(_tp, _sprung), trap_slots_max(player));
                 array_push(vfx_bursts, { spr: trap_spring_vfx(_tp.name), x: _tf_pos.x, y: _tf_pos.y - 40,
-                                         timer: 16, timer_max: 16, school: "" });
+                                         timer: 16, timer_max: 16, school: "",
+                                         col: trap_spring_tint(_tp.name) });
 
                 if (_tp_dmg > 0) {
                     actor.HP -= _tp_dmg;
@@ -3868,7 +4077,11 @@ if (player_turn) {
                     // "vulnerable". Left unmapped, Tripline's mark drew a chip and fed
                     // NOTHING (08-11 fix). +3/hit sits mid-family (Shriek 2, Shiv 4).
                     var _tp_kind = (_tp.status == "exposed") ? "vulnerable" : _tp.status;
-                    var _tp_val  = (_tp.status == "bleed") ? 6 : ((_tp.status == "exposed") ? 3 : 1);
+                    // blind carries an accuracy FRACTION (Wire Snare 08-11: -35%,
+                    // matching the enemy Haunting Gaze 0.20 shape).
+                    var _tp_val  = (_tp.status == "bleed") ? 6
+                                 : ((_tp.status == "exposed") ? 3
+                                 : ((_tp.status == "blind") ? 0.35 : 1));
                     array_push(actor.status_effects, {
                         name: _tp.name, effect_type: (_tp.status == "bleed") ? "dot" : "debuff",
                         kind: _tp_kind,
@@ -3907,8 +4120,16 @@ if (player_turn) {
                 }
 
                 // Spend a charge; Caltrops-style traps survive to spring again.
-                _tp.charges -= 1;
-                if (_tp.charges <= 0) array_delete(player.traps, _sprung, 1);
+                // "Resetting Coil" (P5, Bear Trap keystone): the FIRST spring
+                // each combat re-arms the trap instead of spending it.
+                if (variable_struct_exists(_tp, "r_reset") && _tp.r_reset
+                    && !(variable_struct_exists(player, "trap_reset_used") && player.trap_reset_used)) {
+                    player.trap_reset_used = true;
+                    array_push(combat_log, "Resetting Coil: the " + _tp.name + " snaps back open, unspent!");
+                } else {
+                    _tp.charges -= 1;
+                    if (_tp.charges <= 0) array_delete(player.traps, _sprung, 1);
+                }
 
                 if (actor.HP <= 0) combat_on_enemy_defeated(actor, player, combat_log);
 
@@ -4053,7 +4274,17 @@ if (player_turn) {
         // --- Shadow Step: dodge CHANCE on each of the next 3 attacks (charge-based) ---
         if (!_rage_now && _in_hostile && player.shadow_step_charges > 0) {
             player.shadow_step_charges--;
-            if (irandom(99) < combat_evasion_chance(player)) {
+            // "Sharpened Instinct" bespoke node (08-11 web rework): +10% dodge
+            // chance while charges are live. Read off the SLOTTED copy, same
+            // idiom as Phantom Momentum below.
+            var _ss_ev = 0;
+            if (variable_struct_exists(player, "abilities")) {
+                for (var _sei = 0; _sei < array_length(player.abilities); _sei++) {
+                    var _sea = player.abilities[_sei];
+                    if (_sea.name == "Shadow Step") { _ss_ev = ability_web_rider_value(_sea, "step_evade", 0); break; }
+                }
+            }
+            if (irandom(99) < combat_evasion_chance(player) + _ss_ev) {
                 array_push(combat_log, actor.name + "'s attack is dodged!");
                 player.dodge_anim = 14;   // conveyance: visible sidestep
                 array_push(damage_popups, { value: 0, text: "DODGED!", x: 475, y: 505, timer: 40, col: make_color_rgb(200, 205, 220) });
@@ -4600,6 +4831,18 @@ if (player_turn) {
                     effect_value: 0.30, duration: 2, element: "frost", source: "player"
                 });
                 array_push(combat_log, actor.name + " is Chilled by the Glacial Ward!");
+            }
+
+            // --- Ashen Parry Dagger relic (08-11, #23): every MELEE blow that
+            //     lands is answered for a flat 8 - the Duelist's own riposte
+            //     number, now in your off-hand. ---
+            if (legendary_worn("duel_parry") && _in_melee_blow && !actor.is_defeated) {
+                combat_apply_damage(actor, 8);
+                actor.hit_flash = max(actor.hit_flash, 10);
+                array_push(damage_popups, { value: 8, x: _ea_src_x, y: _ea_src_y - 105,
+                                            timer: 45, col: make_color_rgb(210, 205, 190) });
+                array_push(combat_log, "Parry Dagger: the blow is answered - " + actor.name + " takes 8!");
+                if (actor.HP <= 0 && !actor.is_defeated) combat_on_enemy_defeated(actor, player, combat_log);
             }
 
             // --- Bloodthorn Aura reflect ---

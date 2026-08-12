@@ -2,9 +2,9 @@
   "$GMSprite":"v2",
   "%Name":"spr_pet_pyre_bison_adult_s",
   "bboxMode":0,
-  "bbox_bottom":43,
+  "bbox_bottom":123,
   "bbox_left":0,
-  "bbox_right":43,
+  "bbox_right":123,
   "bbox_top":0,
   "collisionKind":1,
   "collisionTolerance":0,
@@ -12,18 +12,26 @@
   "edgeFiltering":false,
   "For3D":false,
   "frames":[
-    {"$GMSpriteFrame":"v1","%Name":"7516f437-72b3-4e13-8470-f44f221d0416","name":"7516f437-72b3-4e13-8470-f44f221d0416","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"60742d7b-bcb4-4e53-b0ed-524f82658af3","name":"60742d7b-bcb4-4e53-b0ed-524f82658af3","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"1a38cc0f-3a96-4af8-8734-1a11bd6e31e5","name":"1a38cc0f-3a96-4af8-8734-1a11bd6e31e5","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"ed95528a-cf84-4bf7-8384-18b5aec72c09","name":"ed95528a-cf84-4bf7-8384-18b5aec72c09","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"0ee7c9cb-0acf-452a-9a5d-612cfd1a0796","name":"0ee7c9cb-0acf-452a-9a5d-612cfd1a0796","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"666c7bab-3601-49cd-a049-63bef8bc25d9","name":"666c7bab-3601-49cd-a049-63bef8bc25d9","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"504002d2-afdb-4b6a-aa51-6d8233f82556","name":"504002d2-afdb-4b6a-aa51-6d8233f82556","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"57aaf2f4-bf61-4b90-aaf8-7dbcf09d9278","name":"57aaf2f4-bf61-4b90-aaf8-7dbcf09d9278","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"abaa0d0a-f9e3-4a55-a388-9caba6a18f7f","name":"abaa0d0a-f9e3-4a55-a388-9caba6a18f7f","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"ce49e23b-2746-4c2d-b6a8-08865ee09481","name":"ce49e23b-2746-4c2d-b6a8-08865ee09481","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
   ],
   "gridX":0,
   "gridY":0,
-  "height":44,
+  "height":124,
   "HTile":false,
   "layers":[
-    {"$GMImageLayer":"","%Name":"570f3ba6-bd09-477a-897e-6bd1473b354a","blendMode":0,"displayName":"default","isLocked":false,"name":"570f3ba6-bd09-477a-897e-6bd1473b354a","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
+    {"$GMImageLayer":"","%Name":"05dc3980-f7d9-41ab-b76d-817759298ed1","blendMode":0,"displayName":"default","isLocked":false,"name":"05dc3980-f7d9-41ab-b76d-817759298ed1","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
   ],
   "name":"spr_pet_pyre_bison_adult_s",
   "nineSlice":null,
-  "origin":0,
+  "origin":4,
   "parent":{
     "name":"Ironwake",
     "path":"Ironwake.yyp",
@@ -49,7 +57,7 @@
     },
     "eventStubScript":null,
     "eventToFunction":{},
-    "length":1.0,
+    "length":9.0,
     "lockOrigin":false,
     "moments":{
       "$KeyframeStore<MomentsEventKeyframe>":"",
@@ -59,7 +67,7 @@
     },
     "name":"spr_pet_pyre_bison_adult_s",
     "playback":1,
-    "playbackSpeed":1.0,
+    "playbackSpeed":8.0,
     "playbackSpeedType":0,
     "resourceType":"GMSequence",
     "resourceVersion":"2.0",
@@ -69,14 +77,38 @@
     "tracks":[
       {"$GMSpriteFramesTrack":"","builtinName":0,"events":[],"inheritsTrackColour":true,"interpolation":1,"isCreationTrack":false,"keyframes":{"$KeyframeStore<SpriteFrameKeyframe>":"","Keyframes":[
             {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
-                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"7516f437-72b3-4e13-8470-f44f221d0416","path":"sprites/spr_pet_pyre_bison_adult_s/spr_pet_pyre_bison_adult_s.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
-              },"Disabled":false,"id":"d3f9a0a1-bb7a-4f2d-b5b6-93f467cd5f47","IsCreationKey":false,"Key":0.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"60742d7b-bcb4-4e53-b0ed-524f82658af3","path":"sprites/spr_pet_pyre_bison_adult_s/spr_pet_pyre_bison_adult_s.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"4f3e1d9b-f564-4cee-8a56-07f62498e607","IsCreationKey":false,"Key":0.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+            {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"1a38cc0f-3a96-4af8-8734-1a11bd6e31e5","path":"sprites/spr_pet_pyre_bison_adult_s/spr_pet_pyre_bison_adult_s.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"e6cce5f8-e596-4129-ba5e-edc49528e0ab","IsCreationKey":false,"Key":1.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+            {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"ed95528a-cf84-4bf7-8384-18b5aec72c09","path":"sprites/spr_pet_pyre_bison_adult_s/spr_pet_pyre_bison_adult_s.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"415614ec-9602-4289-b94f-5881cbb239fa","IsCreationKey":false,"Key":2.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+            {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"0ee7c9cb-0acf-452a-9a5d-612cfd1a0796","path":"sprites/spr_pet_pyre_bison_adult_s/spr_pet_pyre_bison_adult_s.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"9bafdcb7-2482-42d0-acb9-c3d8b70ebcec","IsCreationKey":false,"Key":3.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+            {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"666c7bab-3601-49cd-a049-63bef8bc25d9","path":"sprites/spr_pet_pyre_bison_adult_s/spr_pet_pyre_bison_adult_s.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"fc1b6b91-7387-40a0-b3fe-516693ceffc0","IsCreationKey":false,"Key":4.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+            {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"504002d2-afdb-4b6a-aa51-6d8233f82556","path":"sprites/spr_pet_pyre_bison_adult_s/spr_pet_pyre_bison_adult_s.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"13300948-5eb9-4e0c-bdc3-8399378bda7e","IsCreationKey":false,"Key":5.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+            {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"57aaf2f4-bf61-4b90-aaf8-7dbcf09d9278","path":"sprites/spr_pet_pyre_bison_adult_s/spr_pet_pyre_bison_adult_s.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"841e7591-6224-4229-bcd7-e942feba6db2","IsCreationKey":false,"Key":6.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+            {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"abaa0d0a-f9e3-4a55-a388-9caba6a18f7f","path":"sprites/spr_pet_pyre_bison_adult_s/spr_pet_pyre_bison_adult_s.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"1b730f57-6b28-467f-a147-57422e6c0989","IsCreationKey":false,"Key":7.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+            {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"ce49e23b-2746-4c2d-b6a8-08865ee09481","path":"sprites/spr_pet_pyre_bison_adult_s/spr_pet_pyre_bison_adult_s.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"737fd753-b1e9-4cbd-ac58-37cfe075c01a","IsCreationKey":false,"Key":8.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
           ],"resourceType":"KeyframeStore<SpriteFrameKeyframe>","resourceVersion":"2.0",},"modifiers":[],"name":"frames","resourceType":"GMSpriteFramesTrack","resourceVersion":"2.0","spriteId":null,"trackColour":0,"tracks":[],"traits":0,},
     ],
     "visibleRange":null,
     "volume":1.0,
-    "xorigin":0,
-    "yorigin":0,
+    "xorigin":62,
+    "yorigin":123,
   },
   "swatchColours":null,
   "swfPrecision":0.5,
@@ -86,5 +118,5 @@
   },
   "type":0,
   "VTile":false,
-  "width":44,
+  "width":124,
 }

@@ -117,6 +117,7 @@ function save_game() {
         bonus_trait_slots:  variable_global_exists("bonus_trait_slots")  ? global.bonus_trait_slots  : 0,
         unlocked_abilities: variable_global_exists("unlocked_abilities") ? global.unlocked_abilities : [],
         trait_potency:      variable_global_exists("trait_potency")      ? global.trait_potency      : {},
+        vex_stat_buys:      variable_global_exists("vex_stat_buys")      ? global.vex_stat_buys      : 0,
 
         // Item codex (discovered item names + best rarity seen per base, 07-29)
         items_discovered: global.items_discovered,
@@ -176,6 +177,12 @@ function save_game() {
         run_boons:      variable_global_exists("run_boons")      ? global.run_boons      : [],
         run_curses:     variable_global_exists("run_curses")     ? global.run_curses     : [],
 
+        // RPG origin (08-11) + the Debtor's ledger + per-run grant flag
+        origin_id:          variable_global_exists("origin_id")          ? global.origin_id          : "",
+        origin_run_granted: variable_global_exists("origin_run_granted") ? global.origin_run_granted : false,
+        debt_gold:          variable_global_exists("debt_gold")          ? global.debt_gold          : 0,
+        debt_missed:        variable_global_exists("debt_missed")        ? global.debt_missed        : 0,
+
         // NPC affinity (thin track, meta-persistent per slot)
         npc_affinity:   variable_global_exists("npc_affinity")   ? global.npc_affinity   : undefined,
 
@@ -188,6 +195,8 @@ function save_game() {
         board_requests:  (variable_global_exists("board_requests")  && is_array(global.board_requests))   ? global.board_requests  : [],
         board_seq:       variable_global_exists("board_seq")     ? global.board_seq     : 0,
         reforge_ingots:  (variable_global_exists("reforge_ingots") && is_array(global.reforge_ingots)) ? global.reforge_ingots : [0, 0, 0, 0, 0],
+        // Pattern Book (08-11): blueprint studies + unlocked art page.
+        pattern_book:    (variable_global_exists("pattern_book") && is_struct(global.pattern_book)) ? global.pattern_book : undefined,
         // Board v2: special-posting cadence must survive reload (rerolls_used is
         // board-age-scoped and resets every run end - not worth persisting).
         board_special_countdown: variable_global_exists("board_special_countdown") ? global.board_special_countdown : 5,
@@ -251,6 +260,7 @@ function save_game() {
         // The Ashen Duelist (DESIGN_DUELIST_CHALLENGE.md): lifetime rival ledger.
         duelist_encounters:          variable_global_exists("duelist_encounters")          ? global.duelist_encounters          : 0,
         duelist_tokens:              variable_global_exists("duelist_tokens")              ? global.duelist_tokens              : 0,
+        duelist_wins:                variable_global_exists("duelist_wins")                ? global.duelist_wins                : 0,
         // STEAM ACHIEVEMENTS lifetime counters (08-04) - optional struct, healed
         // by ach_counters_init() on older saves. No SAVE_FORMAT_VERSION bump.
         ach_counters:                variable_global_exists("ach_counters")                ? global.ach_counters                : undefined,
@@ -370,6 +380,7 @@ function new_game_reset() {
 
     // Vex the Trainer permanent purchases
     global.bonus_trait_slots  = 0;
+    global.vex_stat_buys      = 0;
     global.unlocked_abilities = [];
     global.trait_potency      = {};
 
@@ -397,6 +408,7 @@ function new_game_reset() {
     global.board_requests = [];
     global.board_seq      = 0;
     global.reforge_ingots = [0, 0, 0, 0, 0];
+    global.pattern_book   = { fam: {}, art: [] };
     // Board v2 + dice v2 cadences: fresh clocks, no standing invitation.
     global.board_special_countdown = 5;
     global.board_rerolls_used      = 0;
@@ -462,6 +474,12 @@ function new_game_reset() {
     global.run_borrowed_ability = "";   // Borrowed Memory (run-scoped)
     global.run_borrowed_class   = "";
     run_honing_clear();                 // Whetstone honing (run-scoped, never persisted)
+
+    // RPG origin (08-11): fresh slot, no background chosen yet, clean ledger.
+    global.origin_id          = "";
+    global.origin_run_granted = false;
+    global.debt_gold          = 0;
+    global.debt_missed        = 0;
     // Shrine V2 / duel / web-P3 run-scoped state (07-29): never crosses a reset.
     global.gambler_cd = 0; global.gambler_proc = false;
     global.feast_stacks = 0; global.bloodtithe_bank = 0; global.unbroken_shield = 0;
@@ -492,6 +510,7 @@ function new_game_reset() {
     global.total_boss_kills            = 0;
     global.duelist_encounters          = 0;   // Ashen Duelist: lifetime duels fought (+10% stats each)
     global.duelist_tokens              = 0;   // Ashen Duelist: gold-tier tokens (Duelist Arts ladder)
+    global.duelist_wins                = 0;   // Ashen Duelist: total WINS (Dueling Relics ladder, 08-11)
     global.highest_run_level           = 1;
     global.perm_hp_battle_hardened     = 0;
     global.selected_ascendance         = 0;
@@ -643,6 +662,7 @@ function load_game() {
 
     // Vex the Trainer permanent purchases
     if (variable_struct_exists(_s, "bonus_trait_slots"))  global.bonus_trait_slots  = _s.bonus_trait_slots;
+    if (variable_struct_exists(_s, "vex_stat_buys"))      global.vex_stat_buys      = _s.vex_stat_buys;
     if (variable_struct_exists(_s, "unlocked_abilities") && is_array(_s.unlocked_abilities)) {
         global.unlocked_abilities = _s.unlocked_abilities;
     }
@@ -739,6 +759,9 @@ function load_game() {
     global.board_requests = (variable_struct_exists(_s, "board_requests") && is_array(_s.board_requests)) ? _s.board_requests : [];
     global.board_seq      = (variable_struct_exists(_s, "board_seq"))     ? _s.board_seq     : 0;
     global.reforge_ingots = (variable_struct_exists(_s, "reforge_ingots") && is_array(_s.reforge_ingots) && array_length(_s.reforge_ingots) == 5) ? _s.reforge_ingots : [0, 0, 0, 0, 0];
+    // Pattern Book (08-11): older saves -> empty book; pattern_book_ensure()
+    // repairs any missing sub-field on first touch.
+    global.pattern_book = (variable_struct_exists(_s, "pattern_book") && is_struct(_s.pattern_book)) ? _s.pattern_book : { fam: {}, art: [] };
     // Board v2 (older saves -> fresh 5-run cadence); the reroll ladder always loads reset.
     global.board_special_countdown = (variable_struct_exists(_s, "board_special_countdown")) ? _s.board_special_countdown : 5;
     global.board_rerolls_used      = 0;
@@ -912,6 +935,14 @@ function load_game() {
     global.run_borrowed_ability = "";   // Borrowed Memory: run-scoped, same reasoning
     global.run_borrowed_class   = "";
     run_honing_clear();                 // Whetstone honing: run-scoped, same reasoning
+
+    // RPG origin (08-11): meta-persistent per slot. Loading lands in the hub
+    // between runs, so the per-run grant flag re-arms (matches the boon reset
+    // reasoning above); the Debtor's ledger is meta and loads as saved.
+    global.origin_id          = variable_struct_exists(_s, "origin_id")   ? _s.origin_id   : "";
+    global.origin_run_granted = false;
+    global.debt_gold          = variable_struct_exists(_s, "debt_gold")   ? _s.debt_gold   : 0;
+    global.debt_missed        = variable_struct_exists(_s, "debt_missed") ? _s.debt_missed : 0;
     // Shrine V2 / duel / web-P3 run-scoped state (07-29): same reasoning.
     global.gambler_cd = 0; global.gambler_proc = false;
     global.feast_stacks = 0; global.bloodtithe_bank = 0; global.unbroken_shield = 0;
@@ -989,6 +1020,7 @@ function load_game() {
     if (variable_struct_exists(_s, "total_boss_kills"))        global.total_boss_kills        = _s.total_boss_kills;
     if (variable_struct_exists(_s, "duelist_encounters"))      global.duelist_encounters      = _s.duelist_encounters;
     if (variable_struct_exists(_s, "duelist_tokens"))          global.duelist_tokens          = _s.duelist_tokens;
+    if (variable_struct_exists(_s, "duelist_wins"))            global.duelist_wins            = _s.duelist_wins;
     if (variable_struct_exists(_s, "ach_counters") && is_struct(_s.ach_counters)) global.ach_counters = _s.ach_counters;
     ach_counters_init();   // heal missing fields on older saves (achievements, 08-04)
     if (variable_struct_exists(_s, "highest_run_level"))       global.highest_run_level       = _s.highest_run_level;
@@ -1333,6 +1365,8 @@ function run_checkpoint_apply(_c) {
     global.run_trinkets         = variable_struct_exists(_c, "run_trinkets")         ? _c.run_trinkets         : [];
     global.run_boons            = variable_struct_exists(_c, "run_boons")            ? _c.run_boons            : [];
     global.run_curses           = variable_struct_exists(_c, "run_curses")           ? _c.run_curses           : [];
+    // A resumed run already received its origin run-start grants (08-11).
+    global.origin_run_granted   = true;
     global.run_honing           = variable_struct_exists(_c, "run_honing")           ? _c.run_honing           : {};
     global.events_seen_this_run = variable_struct_exists(_c, "events_seen_this_run") ? _c.events_seen_this_run : [];
     if (variable_struct_exists(_c, "inventory"))      global.inventory      = _c.inventory;

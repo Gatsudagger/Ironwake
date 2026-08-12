@@ -389,11 +389,16 @@ un-normalised prop hovers above the floor. The importer crops each frame to its
 alpha bbox and re-pastes it bottom-aligned. That is the only reason the import
 is not a straight file copy.
 
-**2. Diagonal field.** `trap_field_pos(t, n)` puts the traps on a line running
-from **(700,700)** at the player's feet up to **(1040,596)** toward the enemy
-row — the one genuinely empty corridor on the combat screen. Both the draw
-(`ui_draw_trap_field`) and the spring burst (`obj_combat_controller/Step_0`) call
-that ONE helper, so the snap VFX can never drift off the prop.
+**2. Diagonal field — STATIC stations (08-11).** `trap_field_pos(slot, cap)`
+puts the traps on a line running from **(700,700)** at the player's feet up to
+**(1040,596)** toward the enemy row — the one genuinely empty corridor on the
+combat screen. Each trap is stamped with a `slot` at DEPLOY time (first free
+station) and never moves; stations sit at `f = (slot+1)/cap` along the line, so
+the player-end stretch (which overlapped the pet companion in M's 08-11
+screenshot) is never used. Both the draw (`ui_draw_trap_field`) and the spring
+burst (`obj_combat_controller/Step_0`) call that ONE helper via
+`trap_slot_of()` (array-index fallback for traps restored from pre-08-11
+checkpoints), so the snap VFX can never drift off the prop.
 
 Measured clearances (a script asserts these; `_for_review/trap_props_0809/LAYOUT_MOCK.png`
 shows them to scale). Re-check every one before moving the line:
@@ -405,8 +410,39 @@ shows them to scale). Re-check every one before moving the line:
 | player sprite | ends ~x580 | leftmost prop edge x636 |
 | enemy sprites | start x1143 at a 4-wide row | rightmost prop edge x1104 |
 
-**Still open in §8:** the throw arc on deploy, and per-trap spring bursts (all
-seven currently share `spr_vfx_snap`).
+**Still open in §8:** ~~the throw arc on deploy, and per-trap spring bursts~~ —
+BOTH BUILT 08-11 (P5, below).
+
+---
+
+## P5 — talent nodes, throw arc, distinct springs (BUILT 08-11, awaiting F5)
+
+**Three new web nodes** (each REPLACES a template slot — the web UI draws
+exactly six ids, a lesson learned the hard way the same night: four mutator
+nodes had shipped with an appended id "mt" and were silently dropped; fixed):
+
+| node | web | slot it replaces | effect | rider |
+|---|---|---|---|---|
+| Trapper's Bandolier | Tripline p1 | Weighted Jaws (+6 dmg — near-dead on the 0-dmg blocker) | a THIRD trap slot (passive; read off slotted copies in `trap_slots_max`) | `trap_slots` |
+| Patient Hands | Death Snare p2 | Barbed Edge (+1 turn) | payload ×2 once the trap waited 3+ rounds (`combat_state.round - deployed_round`) | `trap_patient` |
+| Resetting Coil | Bear Trap tk | Second Chance (+Stun on block) | the FIRST spring each combat re-arms instead of spending (per-combat `player.trap_reset_used`) | `trap_reset` |
+
+Riders bake into the deployed instance at set time like every trap_* key, and
+the ability-detail talent list names all three. Note: an existing save that
+had woven Tripline p1 / Death Snare p2 / Bear Trap tk sees that pick MORPH to
+the new node (ids are stable) — flagged for M.
+
+**Throw arc:** deploying lobs the prop from the player's hands (660,690) to
+its station on a ~90px quadratic arc over 22 frames — `global.trap_throw`
+transient, advanced and cleared inside `ui_draw_trap_field` (checkout-VFX
+idiom), armed-ring suppressed until it lands, shadow tracks the ground under
+the arc. Cleared in combat Create so a fled combat can't replay it.
+
+**Distinct springs:** `trap_spring_tint()` gives all 7 traps their own burst
+at 0 gens — payload-group sprite (snap/spikes/wardflash) × per-trap tint
+(Bear steel-white, Wire cold blue, Tripline brass, Spike blood, Caltrops
+rust, Chime cyan, Snare violet). The burst draw honors an optional `col`
+field on `vfx_bursts` entries.
 
 ### Prop re-pick round 2 (M, same day)
 

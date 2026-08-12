@@ -12,6 +12,24 @@ run_ckpt_cooldown = 0;
 defeat_settled    = false;
 vow_fallen        = false;   // THE IRON VOW: this defeat was the character's last
 
+// DELIVERY MUTATORS (M 08-11, SYSTEMS_MUTATORS.md): pending delayed sub-hits
+// (bounce hops, echoes). Ticked at the top of Step; dies with the encounter.
+mutator_queue = [];
+
+// Trap throw-arc transient (P5, 08-11): cleared so a mid-flight prop from a
+// fled combat can never replay in the next one.
+global.trap_throw = undefined;
+
+// FAUX-2.5D EXPERIMENT (M 08-11): read the lever once per combat from
+// settings.ini [ui] combat_25d (default ON for the trial). F7 in combat flips
+// it live and persists. Fully reversible - combat_25d()=false is the shipped
+// flat look, byte-identical.
+if (!variable_global_exists("combat_25d")) {
+    ini_open("settings.ini");
+    global.combat_25d = (ini_read_real("ui", "combat_25d", 1) > 0.5);
+    ini_close();
+}
+
 
 // -----------------------------------------------------------------------------
 // 1. BUILD PLAYER STRUCT

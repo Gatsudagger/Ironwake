@@ -2,9 +2,9 @@
   "$GMSprite":"v2",
   "%Name":"spr_pet_lockjaw_turtle_baby_s",
   "bboxMode":0,
-  "bbox_bottom":32,
+  "bbox_bottom":84,
   "bbox_left":0,
-  "bbox_right":32,
+  "bbox_right":84,
   "bbox_top":0,
   "collisionKind":1,
   "collisionTolerance":0,
@@ -12,18 +12,26 @@
   "edgeFiltering":false,
   "For3D":false,
   "frames":[
-    {"$GMSpriteFrame":"v1","%Name":"f66367b0-8b0b-40fe-b617-91eb06aee5dd","name":"f66367b0-8b0b-40fe-b617-91eb06aee5dd","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"bcf71643-36fd-41fe-bfa8-4c11a6d8bb8e","name":"bcf71643-36fd-41fe-bfa8-4c11a6d8bb8e","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"62b2feeb-3d59-4e16-bca9-67924b51f88c","name":"62b2feeb-3d59-4e16-bca9-67924b51f88c","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"0c8f1a67-a2bb-416d-af9f-586fb3342ec5","name":"0c8f1a67-a2bb-416d-af9f-586fb3342ec5","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"cbde9db1-235d-478b-904a-a83f5f0c6e04","name":"cbde9db1-235d-478b-904a-a83f5f0c6e04","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"0d9d276a-d839-4b1b-8789-0c0149a8b4d6","name":"0d9d276a-d839-4b1b-8789-0c0149a8b4d6","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"8a92500e-b0c2-43f1-8008-ae633e9b8a32","name":"8a92500e-b0c2-43f1-8008-ae633e9b8a32","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"843fc9d3-c7b7-4089-b32c-442c171c97b8","name":"843fc9d3-c7b7-4089-b32c-442c171c97b8","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"37ef0cb4-d899-43e5-835a-459b788b497a","name":"37ef0cb4-d899-43e5-835a-459b788b497a","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"d1079ce0-c476-47d0-9197-f56590f63d67","name":"d1079ce0-c476-47d0-9197-f56590f63d67","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
   ],
   "gridX":0,
   "gridY":0,
-  "height":33,
+  "height":85,
   "HTile":false,
   "layers":[
-    {"$GMImageLayer":"","%Name":"f64a9a70-f525-4d40-9fd9-ea996ac46b02","blendMode":0,"displayName":"default","isLocked":false,"name":"f64a9a70-f525-4d40-9fd9-ea996ac46b02","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
+    {"$GMImageLayer":"","%Name":"d28e7355-8fd1-463c-8f52-e16c06a46eb9","blendMode":0,"displayName":"default","isLocked":false,"name":"d28e7355-8fd1-463c-8f52-e16c06a46eb9","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
   ],
   "name":"spr_pet_lockjaw_turtle_baby_s",
   "nineSlice":null,
-  "origin":0,
+  "origin":4,
   "parent":{
     "name":"Ironwake",
     "path":"Ironwake.yyp",
@@ -49,7 +57,7 @@
     },
     "eventStubScript":null,
     "eventToFunction":{},
-    "length":1.0,
+    "length":9.0,
     "lockOrigin":false,
     "moments":{
       "$KeyframeStore<MomentsEventKeyframe>":"",
@@ -59,7 +67,7 @@
     },
     "name":"spr_pet_lockjaw_turtle_baby_s",
     "playback":1,
-    "playbackSpeed":1.0,
+    "playbackSpeed":8.0,
     "playbackSpeedType":0,
     "resourceType":"GMSequence",
     "resourceVersion":"2.0",
@@ -69,14 +77,38 @@
     "tracks":[
       {"$GMSpriteFramesTrack":"","builtinName":0,"events":[],"inheritsTrackColour":true,"interpolation":1,"isCreationTrack":false,"keyframes":{"$KeyframeStore<SpriteFrameKeyframe>":"","Keyframes":[
             {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
-                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"f66367b0-8b0b-40fe-b617-91eb06aee5dd","path":"sprites/spr_pet_lockjaw_turtle_baby_s/spr_pet_lockjaw_turtle_baby_s.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
-              },"Disabled":false,"id":"f67ecaff-5fb2-4aec-b380-23beddbaeaad","IsCreationKey":false,"Key":0.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"bcf71643-36fd-41fe-bfa8-4c11a6d8bb8e","path":"sprites/spr_pet_lockjaw_turtle_baby_s/spr_pet_lockjaw_turtle_baby_s.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"5b59f999-fd52-4c9b-95e9-3a985d637afc","IsCreationKey":false,"Key":0.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+            {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"62b2feeb-3d59-4e16-bca9-67924b51f88c","path":"sprites/spr_pet_lockjaw_turtle_baby_s/spr_pet_lockjaw_turtle_baby_s.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"3bd3830c-f918-441e-8bc6-951a5f96f794","IsCreationKey":false,"Key":1.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+            {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"0c8f1a67-a2bb-416d-af9f-586fb3342ec5","path":"sprites/spr_pet_lockjaw_turtle_baby_s/spr_pet_lockjaw_turtle_baby_s.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"e011a89a-ed06-4259-9172-486898193a85","IsCreationKey":false,"Key":2.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+            {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"cbde9db1-235d-478b-904a-a83f5f0c6e04","path":"sprites/spr_pet_lockjaw_turtle_baby_s/spr_pet_lockjaw_turtle_baby_s.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"18a5ad56-c481-4b98-99f4-86c064996aec","IsCreationKey":false,"Key":3.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+            {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"0d9d276a-d839-4b1b-8789-0c0149a8b4d6","path":"sprites/spr_pet_lockjaw_turtle_baby_s/spr_pet_lockjaw_turtle_baby_s.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"2469b4e7-cdc4-4c84-bd1d-f28c58063796","IsCreationKey":false,"Key":4.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+            {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"8a92500e-b0c2-43f1-8008-ae633e9b8a32","path":"sprites/spr_pet_lockjaw_turtle_baby_s/spr_pet_lockjaw_turtle_baby_s.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"26a6fc1d-a839-4257-aead-8b67d1dbf16f","IsCreationKey":false,"Key":5.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+            {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"843fc9d3-c7b7-4089-b32c-442c171c97b8","path":"sprites/spr_pet_lockjaw_turtle_baby_s/spr_pet_lockjaw_turtle_baby_s.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"3bd1e923-218e-46a0-aea2-0f88f7dd88aa","IsCreationKey":false,"Key":6.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+            {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"37ef0cb4-d899-43e5-835a-459b788b497a","path":"sprites/spr_pet_lockjaw_turtle_baby_s/spr_pet_lockjaw_turtle_baby_s.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"8c01469b-4504-4160-a279-ad8955f0162d","IsCreationKey":false,"Key":7.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+            {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"d1079ce0-c476-47d0-9197-f56590f63d67","path":"sprites/spr_pet_lockjaw_turtle_baby_s/spr_pet_lockjaw_turtle_baby_s.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"d45a7d1e-f3ed-4f48-908a-d72ded4f19d1","IsCreationKey":false,"Key":8.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
           ],"resourceType":"KeyframeStore<SpriteFrameKeyframe>","resourceVersion":"2.0",},"modifiers":[],"name":"frames","resourceType":"GMSpriteFramesTrack","resourceVersion":"2.0","spriteId":null,"trackColour":0,"tracks":[],"traits":0,},
     ],
     "visibleRange":null,
     "volume":1.0,
-    "xorigin":0,
-    "yorigin":0,
+    "xorigin":42,
+    "yorigin":84,
   },
   "swatchColours":null,
   "swfPrecision":0.5,
@@ -86,5 +118,5 @@
   },
   "type":0,
   "VTile":false,
-  "width":33,
+  "width":85,
 }

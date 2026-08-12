@@ -37,7 +37,7 @@ Verified bands (file references are approximate anchors, not exact lines):
 | 700–~781 | Role line (wrapped 600px, ≤3 lines measured) |
 | ~730–792 | Nav hint (measured: role bottom +15, clamped ≤792) |
 | 822–888 | Jump strip (8× 66px chips; below the swipe zone y≤810) |
-| 888–1000 | (touch) flavor line band — unchanged, sits below the strip |
+| 951–1000 | (touch) flavor line band — clamped BELOW the opaque stage panel (bottom y945; 08-11 fix — the old 888 top hid line 1 of a wrapped message behind the panel). Taller messages auto-shrink to the band. |
 
 ## Character menu STATS tab (scr_ui, content_y=135; x: left col 60, mid col 540, right col 1230)
 | Band (y) | Owner |
@@ -85,6 +85,12 @@ what made it print through the CLASS TRUNK header (M screenshot 08-08).
 | 999 | sable_notification (unchanged) |
 | 1026 | Key legend (unchanged) |
 
+## Bairc panel LEFT column (scr_ui ui_draw_bairc_screen inset panel)
+| Band (y, within the inset panel `_lp_y0.._lp_y1`) | Owner |
+|---|---|
+| `_list_y` … `_lp_y1 - 198` | STABLE roster scroll window (`_vis` MEASURED from the space left above the garden band; visible scrollbar in the right gutter when overflowing) |
+| **`_lp_y1 - 190` … `_lp_y1`** | **HIS GARDEN band — ALWAYS reserved (08-11, M: "it should always show")**. Header at band top, divider +30, earth wash below; pond ellipse left (cx `_list_x+140`), memorial headstones right edge on the back floor, creatures on two depth lanes (back floor `_lp_y1-60` @40px, front floor `_lp_y1-14` @54px, ≤10 shown, "+N more" in the header). Roster rows may NEVER draw into this band — the scroll window capacity subtracts it. |
+
 ## Shared modals (07-31, drawn over screens)
 - Forge-result reveal popup: centered, MEASURED height (item card / lines).
 - Cursed-rebirth ritual overlay: full-screen veil, text at y540/y640.
@@ -100,7 +106,7 @@ what made it print through the CLASS TRUNK header (M screenshot 08-08).
 ## Combat (obj_combat_controller/Draw_64)
 | Band (y) | Owner |
 |---|---|
-| **diagonal x636–1104, y468–700** | **Deployed trap field** (`ui_draw_trap_field` + `trap_field_pos`, Shadowstrider only). NOT a rectangular band — traps sit on a DIAGONAL line running from (700,700) up to (1040,596), bottom-centre anchored, 64px props drawn at 2x. M 08-09: *"more literally in the middle between the player and enemies… like diagonally moved between them."* Measured clearances, re-check ALL of these before moving it: combat log x30–1200/y735–945 (35px below the lowest foot), enemy HP bars x990–1885/y86–432 (36px above the highest prop top), player sprite ends ~x580, enemy sprites start x1143 at a 4-wide row. Read-only, no hit-test. Armed ring + charge pips carry the filter colour; the prop art is drawn untinted. |
+| **diagonal x742–1104, y468–672** | **Deployed trap field** (`ui_draw_trap_field` + `trap_field_pos`, Shadowstrider only). NOT a rectangular band — STATIC stations (08-11: slot stamped at deploy, traps never displaced) at `f=(slot+1)/cap` on the DIAGONAL from (700,700) up to (1040,596), bottom-centre anchored, 64px props drawn at 2x. The player-end stretch (f<0.5 at cap 2) is deliberately unused — it overlapped the pet companion row (feet up to ~(720,726)). Measured clearances, re-check ALL of these before moving it: combat log x30–1200/y735–945, enemy HP bars x990–1885/y86–432 (36px above the highest prop top), pet companion feet ≤(720,726) vs nearest station left edge 806, enemy sprites start x1143 at a 4-wide row. Read-only, no hit-test. Armed ring + charge pips carry the filter colour; the prop art is drawn untinted. |
 | 690–762 | *(retired 08-09)* the old horizontal trap CHIP strip lived here. Freed. |
 | 90–173 | Loot screen title + "Items collected" header |
 | 96–168 | Fortune's Favor chip (x 1560–1870) |
@@ -124,6 +130,30 @@ in Draw), so caller and helper must agree on the same box.
 |---|---|
 | 225 | "Maren's Forge - choose your craft:" |
 | 285–717 | 6 option rows (285 + i*72, h66, x300–1500) — was 7 before TEMPER moved to Dorn |
+
+## Dorn REFORGE tab (scr_ui ui_draw_dorn_reforge, shop_tab == 2) — 08-11 Pattern Book rework
+Row geometry is DUPLICATED in obj_game_controller/Step (**5 visible** since 08-11,
+pitch 102, top y255) — change both together or clicks misroute.
+| Band (y) | Owner |
+|---|---|
+| 189–900 | Left panel x150–600 (ingots 243+t*70, fuse 610–654, forge block 668–836, hint ≤844) |
+| 189–900 | Right panel x630–1500 |
+| 255–759 | Gear rows (255 + i*102, h96; **5 visible** — was 6) |
+| 772–824 | Pattern Book verb row: SMELT x642–922 / PATTERN BOOK x934–1214 / CRAFT x1226–1488 |
+| 870 | "N / M" position readout — only when the list scrolls |
+| 1026 | Key legend |
+
+Overlays (each owns the full 150–1500 × 189–900 panel while open):
+- CRAFT wizard (ui_draw_pattern_craft): title 204, breadcrumb 241, pick rows
+  **9 visible** (300 + i*56, h50 — mirrored in gc Step), scroll bar x1468–1476,
+  phase-3 counter line 272, legend 1026. Naming: box 560–1360 × 460–530,
+  buttons 580–636. Result: card 660–1260 × 300–640, buttons 700–756, hint 780.
+- BOOK browser (ui_draw_pattern_book): header 204, wrapped subtext 233–~281
+  (width 1240), family rows **10 visible** (297 + i*56, h50 — mirrored in gc
+  Step, end 851), scroll bar, UP/DOWN touch arrows top/bottom right,
+  CLOSE 810–1110 × 856–896, legend 1026.
+- SMELT study popup (ui_draw_pb_smelt): bottom-anchored to y780, dim + bordered
+  box x510–1410, family rows h48 pitch 54, SMELT/CANCEL buttons y690–756.
 
 ## Dorn TEMPER tab (scr_ui ui_draw_dorn_temper, shop_tab == 3)
 Row geometry is DUPLICATED in obj_game_controller/Step (7 visible, pitch 90, top

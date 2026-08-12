@@ -24,7 +24,7 @@ var _stat_names = ["STR", "DEX", "CON", "INT", "WIS", "CHA"];
 // Handled early (before naming_active branch) so clicks on panels/boxes register
 // each frame. Gated off during the Vow step so card taps can't leak through to
 // the class panels / stat boxes underneath the overlay.
-if (!naming_active && !confirmed && !vow_active && !portrait_active) {
+if (!naming_active && !confirmed && !vow_active && !portrait_active && !origin_active) {
     var _mx = device_mouse_x_to_gui(0);
     var _my = device_mouse_y_to_gui(0);
     if (mouse_check_button_pressed(mb_left)) {
@@ -122,10 +122,44 @@ if (portrait_active) {
 
     if (input_confirm() || input_confirm_alt()) {
         global.chosen_portrait = selected_portrait;
-        // THE IRON VOW step comes before the save + hub (SYSTEMS_IRON_VOW.md).
+        // ORIGIN step (08-11) comes after the portrait, before the Vow.
         portrait_active = false;
-        vow_active      = true;
-        selected_vow    = 0;
+        origin_active   = true;
+        selected_origin = 0;
+        exit;
+    }
+
+    exit;
+}
+
+
+// -----------------------------------------------------------------------------
+// RPG ORIGIN - background choice (08-11, M design-locked). 4x3 card grid;
+// A/D walks, W/S hops rows, Enter commits. Card taps are hit-tested in Draw_64
+// (touch rule) and inject origin:pickN / origin:go. Esc steps back to portraits.
+// -----------------------------------------------------------------------------
+if (origin_active) {
+    var _og_n = array_length(origin_catalog());
+
+    if (nav_left())  selected_origin = wrap_index(selected_origin - 1, _og_n);
+    if (nav_right()) selected_origin = wrap_index(selected_origin + 1, _og_n);
+    if (nav_up())    selected_origin = wrap_index(selected_origin - 4, _og_n);
+    if (nav_down())  selected_origin = wrap_index(selected_origin + 4, _og_n);
+    for (var _ogi = 0; _ogi < _og_n; _ogi++) {
+        if (input_inject_take("origin:pick" + string(_ogi))) selected_origin = _ogi;
+    }
+
+    if (input_cancel()) {   // back to portrait choice (all devices)
+        origin_active   = false;
+        portrait_active = true;
+        exit;
+    }
+
+    if (input_confirm() || input_confirm_alt() || input_inject_take("origin:go")) {
+        global.origin_id = origin_catalog()[selected_origin].id;
+        origin_active = false;
+        vow_active    = true;
+        selected_vow  = 0;
         exit;
     }
 
@@ -145,6 +179,7 @@ if (vow_active) {
             vow_confirm_open      = false;
             global.vow_mode       = selected_vow;
             global.vow_lives_left = (selected_vow == 2) ? 1 : 3;
+            origin_apply_new_game();   // one-time origin grants land in the first save (08-11)
             save_game();
             confirmed = true;
             room_goto(rm_hub);
@@ -161,9 +196,9 @@ if (vow_active) {
     if (input_inject_take("vow:pick1")) selected_vow = 1;
     if (input_inject_take("vow:pick2")) selected_vow = 2;
 
-    if (input_cancel()) {   // back to portrait choice (all devices)
-        vow_active      = false;
-        portrait_active = true;
+    if (input_cancel()) {   // back to the origin choice (08-11; was portraits)
+        vow_active    = false;
+        origin_active = true;
         exit;
     }
 
@@ -172,6 +207,7 @@ if (vow_active) {
             // Standard Ironwake - no popup, exactly the old flow.
             global.vow_mode       = 0;
             global.vow_lives_left = 0;
+            origin_apply_new_game();   // one-time origin grants land in the first save (08-11)
             save_game();
             confirmed = true;
             room_goto(rm_hub);

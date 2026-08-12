@@ -37,6 +37,12 @@ geom_last_h = window_get_height();
 // dead-code-eliminated - forces the compiler to include them in the build.
 // (If a sprite is ever renamed/removed, update this list to match.)
 global.__sprite_includes = [
+    // RPG-origin staging stills (08-11): string-ref only via origin_still()
+    // (asset_get_index("spr_origin_" + id)) - listed or the compiler strips them.
+    spr_origin_merchant,    spr_origin_forester,    spr_origin_deserter,
+    spr_origin_gravekeeper, spr_origin_survivor,    spr_origin_orphan,
+    spr_origin_scholar,     spr_origin_shrinesworn, spr_origin_campaigner,
+    spr_origin_banshee,     spr_origin_whisperer,   spr_origin_debtor,
     // Devil Wine icon: referenced only by string in ui_consumable_icon_sprite
     // (asset_get_index), so it must be listed or the compiler strips it.
     spr_icon_consumable_devil_wine,
@@ -49,6 +55,12 @@ global.__sprite_includes = [
     // Cursed Rebirth ceremony scene (08-04 M pick A): string-ref from the hub
     // ritual overlay (asset_get_index with pre-import fallback).
     spr_scene_cursed_ritual,
+    // Mutator-carrier ability icons (08-12 batch, M approved): string-ref from
+    // ability_icon_sprite (asset_get_index with bespoke fallbacks).
+    spr_ability_ricochet_shot, spr_ability_bouncing_bomb, spr_ability_gout_of_rot,
+    // Ashen Duelist progressive tiers (08-12 spectral-fencer redesign):
+    // duelist_sprite_for() resolves these by STRING - listed or stripped.
+    spr_ashen_duelist_t1, spr_ashen_duelist_t2, spr_ashen_duelist_t3,
     // Icon-collision pass (07-29 round 3, M approved all 36): banded sets for
     // the six families that shared one sprite each + jewelry keyword splits +
     // 6th wand/sword variants. Same string-ref pattern as the batch below.
@@ -920,10 +932,46 @@ _leg_reliq.unique_effect = "kindled_reliquary";
 _leg_reliq.unique_desc   = "Start every combat with +2 of your class resource";
 _leg_reliq.lore = "A reliquary ring holding an ember of something that refuses naming. Between fights it smolders; when blades come out, its warmth is already banked in your chest - a head start the dark never accounts for.";
 
+// --- Delivery-mutator wave (M design-locked 08-11, SYSTEMS_MUTATORS.md):
+// the STRONG tier of the four mutators, one chase item each. Any qualifying
+// SPELL the wearer casts carries the effect (one mutator per cast). ---
+var _leg_skip = create_item("Stormskip Band", "ring", 4, "INT", 5,
+    "lightning never could sit still", 400);
+_leg_skip.class_req     = -1;
+_leg_skip.affixes       = [];
+_leg_skip.unique_effect = "stormskip_band";
+_leg_skip.unique_desc   = "Your damaging spells BOUNCE - arcing on to one other enemy at 60% damage (shock arcs harder)";
+_leg_skip.lore = "A band hammered from a bell tower's lightning rod. Whatever the wearer hurls refuses to stop at the first thing it hits - the storm always wants one more.";
+
+var _leg_prism = create_item("Prism of the Twinned Flame", "offhand", 4, "INT", 6,
+    "one light in, two fires out", 400);
+_leg_prism.class_req     = -1;
+_leg_prism.affixes       = [];
+_leg_prism.unique_effect = "twinned_prism";
+_leg_prism.unique_desc   = "Your damaging spells SPLIT - forking to a second enemy at 70% damage (arcane forks harder)";
+_leg_prism.lore = "Ground by a glasswright who swore no flame should die single. Held to the light it shows two of everything - held to a spell, it makes the lie true.";
+
+var _leg_toll = create_item("Bell of the Second Toll", "amulet", 4, "WIS", 5,
+    "everything it rings, rings twice", 400);
+_leg_toll.class_req     = -1;
+_leg_toll.affixes       = [];
+_leg_toll.unique_effect = "second_toll";
+_leg_toll.unique_desc   = "Your damaging spells ECHO - striking their target again moments later at 50% damage (void echoes harder)";
+_leg_toll.lore = "Cut from a funeral bell that would not stop sounding. Its second toll always comes - a breath late, a little softer, and no less final.";
+
+var _leg_smolder = create_item("Smolderbrand Mantle", "chest", 4, "CON", 6,
+    "what it touches, keeps burning", 400);
+_leg_smolder.class_req     = -1;
+_leg_smolder.affixes       = [];
+_leg_smolder.unique_effect = "smolderbrand";
+_leg_smolder.unique_desc   = "Your damaging spells LINGER - leaving a 2-turn burn at 45% of the hit per turn (fire and poison linger harder)";
+_leg_smolder.lore = "A mantle pulled from a pyre that had opinions. Its wearer's magic learns the same stubbornness: no wound is finished the moment it is made.";
+
 global.loot_table_legendary = [ _leg_brand, _leg_aegis, _leg_crown, _leg_thief,
     _leg_rebuke, _leg_treads, _leg_chalice, _leg_loop, _leg_miser,
     _leg_veil, _leg_longshot, _leg_line, _leg_signet, _leg_censer,
-    _leg_shard, _leg_lantern, _leg_diadem, _leg_beggar, _leg_reliq ];
+    _leg_shard, _leg_lantern, _leg_diadem, _leg_beggar, _leg_reliq,
+    _leg_skip, _leg_prism, _leg_toll, _leg_smolder ];
 
 // --- AFFIX POOL - 10 affixes, rolled at drop time for uncommon+ items ---
 // u_val/r_val/e_val = stat bonus at uncommon / rare / epic rarity.

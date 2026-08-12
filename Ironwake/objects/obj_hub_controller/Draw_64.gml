@@ -117,11 +117,12 @@ var _flav_sep   = 26;                               // line spacing scales with 
 var _flav_h     = string_height_ext(hub_flavor, _flav_sep, _flav_w) * _flav_scale;
 var _flav_y;
 if (input_device() == 2) {
-    // Touch (M 07-17): keep the lore FULL SIZE (not shrunk) - bottom-anchor it just
-    // above the chip bar (top ~y1005) and let it grow UPWARD into the open band below
-    // the NPC list. Only a rare very-long message shrinks, and only if it would climb
-    // past y888 into the list.
-    var _flav_bot = 1000, _flav_top_min = 888;
+    // Touch (M 07-17): bottom-anchor the lore just above the chip bar (top
+    // ~y1005) and let it grow UPWARD. 08-11 (M screenshot): the old top limit
+    // of 888 predates the CAROUSEL, whose stage panel is opaque down to y945 -
+    // a wrapped 2-line message hid its first line behind the panel. The band
+    // is now clamped BELOW the panel; anything taller shrinks to fit it.
+    var _flav_bot = 1000, _flav_top_min = 951;
     if (_flav_h > _flav_bot - _flav_top_min) {
         _flav_scale *= (_flav_bot - _flav_top_min) / _flav_h;
         _flav_w      = 700 / _flav_scale;
@@ -189,6 +190,15 @@ draw_set_color(c_white);
 draw_text(_px, _py + _line_h,     "Runs:       " + string(_display_runs));
 draw_text(_px, _py + _line_h * 2, "Best Floor: " + string(_display_best_floor));
 draw_text(_px, _py + _line_h * 3, "Kills:      " + string(_display_kills));
+// The Debtor's ledger (08-11 origin): one line in the free band just below the
+// info panel (panel ends y315; the Last Run panel starts y420). Red once IN
+// COLLECTIONS - a quarter of all earned gold is garnished at the source.
+if (debt_active()) {
+    draw_set_font(fnt_ui_small);
+    draw_set_color(debt_in_collections() ? make_color_rgb(230, 90, 80) : make_color_rgb(200, 130, 90));
+    draw_text(30, 324, "DEBT OWED: " + string(global.debt_gold) + "g"
+        + (debt_in_collections() ? "   [IN COLLECTIONS - 25% garnished]" : "   (10% due after each run)"));
+}
 draw_set_font(-1);
 
 
@@ -2701,8 +2711,11 @@ if (instance_exists(obj_game_controller)) {
                     var _cp   = global.pet_roster[_ridx];
                     var _cisp = pet_sprite(_cp, "s");
                     if (_cisp >= 0) {
-                        var _cisc = min((_ibs - 10) / max(1, sprite_get_width(_cisp)), (_ibs - 8) / max(1, sprite_get_height(_cisp)));
-                        draw_sprite_ext(_cisp, pet_anim_frame(_cisp), (_ibx0 + _ibx1) / 2, _iby1 - 5, _cisc, _cisc, 0, c_white, 1);
+                        // #16 bbox fit (08-11, M screenshot: expansion species drew
+                        // outside the icon box - the raw draw assumed a bottom-centre
+                        // origin the new sprites don't have).
+                        var _cifit = pet_sprite_fit(_cisp, (_ibx0 + _ibx1) / 2, _iby1 - 5, _ibs - 10, _ibs - 8);
+                        draw_sprite_ext(_cisp, pet_anim_frame(_cisp), _cifit.x, _cifit.y, _cifit.scale, _cifit.scale, 0, c_white, 1);
                     }
                     // Line 1: name (green when equipped) + stage on the right.
                     draw_set_font(fnt_ui);
@@ -2750,20 +2763,22 @@ if (instance_exists(obj_game_controller)) {
                 draw_rectangle(_px0, _py0, _px1, _py1, true);
                 var _hsp = pet_sprite(_hp, "s");
                 if (_hsp >= 0) {
+                    // #16 bbox fit (08-11, M screenshot: the raw draw assumed a
+                    // bottom-centre origin - expansion species hung out of the box).
                     var _fw = (_px1 - _px0) - 26, _fh = (_py1 - _py0) - 22;
-                    var _hsc = min(_fw / max(1, sprite_get_width(_hsp)), _fh / max(1, sprite_get_height(_hsp)));
+                    var _hfit = pet_sprite_fit(_hsp, (_px0 + _px1) / 2, _py1 - 11, _fh, _fw);
                     // Awakened aura: pulsing archetype-tinted halo behind the portrait (Stage 4).
                     var _haura = pet_aura_color(_hp);
                     if (_haura >= 0) {
                         var _hap = 0.20 + 0.10 * sin(current_time / 340);
                         gpu_set_blendmode(bm_add);
-                        draw_sprite_ext(_hsp, pet_anim_frame(_hsp), (_px0 + _px1) / 2, _py1 - 9, _hsc * 1.08, _hsc * 1.08, 0, _haura, _hap);
+                        draw_sprite_ext(_hsp, pet_anim_frame(_hsp), _hfit.x, _hfit.y + 2, _hfit.scale * 1.08, _hfit.scale * 1.08, 0, _haura, _hap);
                         gpu_set_blendmode(bm_normal);
                     }
-                    draw_sprite_ext(_hsp, pet_anim_frame(_hsp), (_px0 + _px1) / 2, _py1 - 11, _hsc, _hsc, 0, c_white, 1);
+                    draw_sprite_ext(_hsp, pet_anim_frame(_hsp), _hfit.x, _hfit.y, _hfit.scale, _hfit.scale, 0, c_white, 1);
                     // Corruption dressing (07-09 art track): flicker / dark aura + motes.
                     ui_draw_pet_corruption_fx(_hp, _hsp, pet_anim_frame(_hsp),
-                        (_px0 + _px1) / 2, _py1 - 11, _hsc, _hsc,
+                        _hfit.x, _hfit.y, _hfit.scale, _hfit.scale,
                         (_px0 + _px1) / 2, (_py0 + _py1) / 2 + 15);
                 }
 

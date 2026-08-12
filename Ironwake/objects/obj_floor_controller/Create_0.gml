@@ -26,6 +26,11 @@ if (!variable_global_exists("run_seed")) {
     global.run_seed = irandom(99999) + 1;
 }
 
+// ORIGINS (08-11): per-run grants (Plague Survivor's Antidote, Shrine-Sworn's
+// minor boon). One-shot per run - the flag re-arms in end_run and checkpoint
+// resume restores it as already-granted, so floors and resumes never double-pay.
+origin_run_start();
+
 
 // -----------------------------------------------------------------------------
 // 2. RETURNING-FROM-COMBAT FLAG

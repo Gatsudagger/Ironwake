@@ -270,6 +270,17 @@ function combat_roll_crit(attacker_stats, ability_base_crit, crit_type) {
     } else {
         if (variable_struct_exists(attacker_stats, "crit_spell_bonus")) chance += attacker_stats.crit_spell_bonus;
     }
+    // Duelist's Iron Pin relic (08-11, #23): +15 crit while the fight is
+    // HONEST - exactly one living enemy. Only player rolls reach here.
+    if (legendary_worn("duel_pin") && instance_exists(obj_combat_controller)) {
+        var _dp_cs = instance_find(obj_combat_controller, 0).combat_state;
+        var _dp_n  = 0;
+        for (var _dp_i = 0; _dp_i < array_length(_dp_cs.combatants); _dp_i++) {
+            var _dp_e = _dp_cs.combatants[_dp_i];
+            if (!_dp_e.is_player && !_dp_e.is_defeated) _dp_n++;
+        }
+        if (_dp_n == 1) chance += 15;
+    }
 
     if (irandom(99) >= chance) return result; // no crit
 

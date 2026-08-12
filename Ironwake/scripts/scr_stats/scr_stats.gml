@@ -148,6 +148,9 @@ function add_gold(amount) {
     // item sells write global.gold directly and are intentionally unaffected).
     var _gf = cha_gold_find();
     if (_gf > 0) amount = ceil(amount * (1 + _gf));
+    // IN COLLECTIONS (Debtor origin, 08-11): the creditor garnishes a quarter
+    // of everything earned, at the source, until the debt clears.
+    amount = debt_garnish(amount);
     global.gold             += amount;
     global.current_run_gold += amount;
 }
@@ -200,7 +203,8 @@ function player_has_legendary_equipped() {
 function signet_price_mult() { return legendary_worn("hollow_kings_signet") ? 0.85 : 1.0; }
 function beggar_price_mult() { return legendary_worn("beggars_fortune")     ? 1.10 : 1.0; }
 function cha_price(base_gold) {
-    return max(1, round(base_gold * (1 - cha_discount()) * signet_price_mult() * beggar_price_mult()));
+    return max(1, round(base_gold * (1 - cha_discount()) * signet_price_mult() * beggar_price_mult()
+        * origin_price_mult()));   // Gutter Orphan origin: 5% off everywhere (08-11)
 }
 
 // Gold-find fraction - 1% more earned gold per CHA point, capped at 30%.
@@ -377,6 +381,15 @@ function end_run(result) {
         }
     }
     global.banshee_carried = 0;
+
+    // ORIGINS (08-11): per-run grants re-arm for the next run, and the
+    // Debtor's creditor collects at the camp gate (win or lose).
+    global.origin_run_granted = false;
+    var _debt_msg = debt_collect_run_end();
+    if (_debt_msg != "" && variable_global_exists("pet_find_notice")) {
+        global.pet_find_notice = (global.pet_find_notice != "")
+            ? (global.pet_find_notice + "   " + _debt_msg) : _debt_msg;
+    }
 
     if (result == 1) {
         // Victory - award hub unlock, record best floor, move carried items to safe stash
@@ -1380,6 +1393,17 @@ function create_item(name, slot, rarity, stat_name, stat_value, effect_desc, gol
 // item_rarity_name(rarity)
 // Returns the display string for a rarity integer.
 // ---------------------------------------------------------------------------
+// True when this exact item instance is currently worn (global.inventory).
+// GML struct comparison is by reference, so a stash clone with the same name
+// can never false-positive. Used by NPC lists/pickers to tag worn gear
+// (M 08-11: "equipped items should show EQUIPPED at any npc function").
+function item_is_equipped(_it) {
+    if (!is_struct(_it) || !variable_global_exists("inventory") || !is_array(global.inventory)) return false;
+    for (var _i = 0; _i < array_length(global.inventory); _i++)
+        if (global.inventory[_i] == _it) return true;
+    return false;
+}
+
 function item_rarity_name(rarity) {
     switch (rarity) {
         case 0: return "Common";
@@ -1683,6 +1707,23 @@ function clone_item(src) {
     if (variable_struct_exists(src, "quality"))      _c.quality      = src.quality;
     if (variable_struct_exists(src, "quality_base")) _c.quality_base = src.quality_base;
     if (variable_struct_exists(src, "dormant")) _c.dormant = src.dormant;
+    // Pattern Book bookkeeping (08-11): assigned art + craft-band metadata ride
+    // clones the same presence-conditional way as icon_seed above.
+    if (variable_struct_exists(src, "player_crafted")) _c.player_crafted = src.player_crafted;
+    if (variable_struct_exists(src, "icon_as") && is_struct(src.icon_as)) {
+        _c.icon_as = { name: src.icon_as.name, base_name: src.icon_as.base_name,
+                       rarity: src.icon_as.rarity, slot: src.icon_as.slot };
+        if (variable_struct_exists(src.icon_as, "icon_seed")) _c.icon_as.icon_seed = src.icon_as.icon_seed;
+    }
+    if (variable_struct_exists(src, "pb_craft") && is_struct(src.pb_craft)) {
+        var _pbf = [];
+        if (variable_struct_exists(src.pb_craft, "fams") && is_array(src.pb_craft.fams)) {
+            for (var _pbi = 0; _pbi < array_length(src.pb_craft.fams); _pbi++) {
+                array_push(_pbf, { stat_name: src.pb_craft.fams[_pbi].stat_name, tier: src.pb_craft.fams[_pbi].tier });
+            }
+        }
+        _c.pb_craft = { rar: src.pb_craft.rar, base_stat: src.pb_craft.base_stat, fams: _pbf };
+    }
     if (variable_struct_exists(src, "affixes")) {
         for (var _i = 0; _i < array_length(src.affixes); _i++) {
             var _af = src.affixes[_i];
@@ -5073,24 +5114,55 @@ function sable_chaotic_cost() {
     return { gold: floor(cha_price(12) * _m), dust: floor(5 * _m) };
 }
 
-// Fuse the 3 consumable_inventory indices. "" on success else the reason.
+// Combined potion pool - hub stash first, then the carried pouch, with source
+// tags (M 08-11: "brew should have access to stash i shouldn't have to
+// withdraw items into my inventory"). Sable is hub-only, so the stash is
+// always reachable when this runs. Every pick-3 / fusion surface lists and
+// consumes from THIS pool; combined indices are only valid against a pool
+// built in the same frame (nothing else can mutate the inventories while
+// Sable's screen is open).
+function sable_potion_pool() {
+    var _out = [];
+    if (variable_global_exists("consumable_stash")) {
+        for (var _i = 0; _i < array_length(global.consumable_stash); _i++)
+            array_push(_out, { it: global.consumable_stash[_i], src: 0, idx: _i });
+    }
+    if (variable_global_exists("consumable_inventory")) {
+        for (var _i = 0; _i < array_length(global.consumable_inventory); _i++)
+            array_push(_out, { it: global.consumable_inventory[_i], src: 1, idx: _i });
+    }
+    return _out;
+}
+
+// Remove the pool entries at the given combined indices - per source,
+// highest index first, so earlier indices stay valid.
+function sable_potion_pool_delete(combined) {
+    var _pool = sable_potion_pool();
+    var _s0 = [], _s1 = [];
+    for (var _i = 0; _i < array_length(combined); _i++) {
+        var _e = _pool[combined[_i]];
+        if (_e.src == 0) array_push(_s0, _e.idx); else array_push(_s1, _e.idx);
+    }
+    array_sort(_s0, false); array_sort(_s1, false);
+    for (var _i = 0; _i < array_length(_s0); _i++) array_delete(global.consumable_stash, _s0[_i], 1);
+    for (var _i = 0; _i < array_length(_s1); _i++) array_delete(global.consumable_inventory, _s1[_i], 1);
+}
+
+// Fuse 3 potions by their sable_potion_pool() combined indices (stash-aware
+// since 08-11). "" on success else the reason.
 function sable_chaotic_fuse(indices) {
     if (array_length(indices) != 3) return "Choose exactly 3 potions.";
-    var _inv = global.consumable_inventory;
+    var _pool = sable_potion_pool();
     for (var _i = 0; _i < 3; _i++) {
-        if (indices[_i] < 0 || indices[_i] >= array_length(_inv)) return "Choose exactly 3 potions.";
+        if (indices[_i] < 0 || indices[_i] >= array_length(_pool)) return "Choose exactly 3 potions.";
     }
     var _cost = sable_chaotic_cost();
     if (global.gold < _cost.gold) return "Need " + string(_cost.gold) + "g.";
     if (!variable_global_exists("rune_dust") || global.rune_dust < _cost.dust) return "Need " + string(_cost.dust) + " dust.";
-    var _sorted = [indices[0], indices[1], indices[2]];
-    array_sort(_sorted, false);
-    array_delete(_inv, _sorted[0], 1);
-    array_delete(_inv, _sorted[1], 1);
-    array_delete(_inv, _sorted[2], 1);
+    sable_potion_pool_delete(indices);
     global.gold      -= _cost.gold;
     global.rune_dust -= _cost.dust;
-    array_push(_inv, create_consumable("Chaotic Brew", "chaotic", 0,
+    array_push(global.consumable_inventory, create_consumable("Chaotic Brew", "chaotic", 0,
         "Sable's mismatched fusion - drink and find out. Sometimes it bites.", 35));
     save_game();
     return "";
@@ -5098,20 +5170,17 @@ function sable_chaotic_fuse(indices) {
 
 // QUINTESSENCE (LEGENDARY FORGE component, M locked 07-28): distill ANY 3
 // potions + gold into Sable's share of the forge. Mirrors the chaotic fuse's
-// consumption; yields no consumable - the component counter is the product.
+// consumption (combined pool indices); yields no consumable - the component
+// counter is the product.
 function sable_quintessence_distill(indices) {
     if (array_length(indices) != 3) return "Choose exactly 3 potions.";
-    var _inv = global.consumable_inventory;
+    var _pool = sable_potion_pool();
     for (var _i = 0; _i < 3; _i++) {
-        if (indices[_i] < 0 || indices[_i] >= array_length(_inv)) return "Choose exactly 3 potions.";
+        if (indices[_i] < 0 || indices[_i] >= array_length(_pool)) return "Choose exactly 3 potions.";
     }
     var _fee = forge_quint_cost();
     if (global.gold < _fee) return "Need " + string(_fee) + "g.";
-    var _sorted = [indices[0], indices[1], indices[2]];
-    array_sort(_sorted, false);
-    array_delete(_inv, _sorted[0], 1);
-    array_delete(_inv, _sorted[1], 1);
-    array_delete(_inv, _sorted[2], 1);
+    sable_potion_pool_delete(indices);
     global.gold -= _fee;
     forge_components_ensure();
     global.forge_comp_quint += 1;
@@ -5142,14 +5211,13 @@ function sable_upgrade_groups() {
     // ladder existed but a recipe only APPEARED once 3 copies were held, so it
     // was invisible): now EVERY recipe lists always, with the held count; rows
     // grey until fusable. Commit still requires 3 (sable_upgrade validates).
-    var _out = [];
-    var _map = sable_upgrade_map();
+    var _out  = [];
+    var _map  = sable_upgrade_map();
+    var _pool = sable_potion_pool();   // stash + pouch (08-11)
     for (var _m = 0; _m < array_length(_map); _m++) {
         var _cnt = 0;
-        if (variable_global_exists("consumable_inventory")) {
-            for (var _i = 0; _i < array_length(global.consumable_inventory); _i++)
-                if (global.consumable_inventory[_i].name == _map[_m].from) _cnt++;
-        }
+        for (var _i = 0; _i < array_length(_pool); _i++)
+            if (_pool[_i].it.name == _map[_m].from) _cnt++;
         array_push(_out, { from: _map[_m].from, to: _map[_m].to, count: _cnt });
     }
     return _out;
@@ -5178,17 +5246,16 @@ function sable_upgrade(from_name) {
     var _cost = sable_upgrade_cost();
     if (global.gold < _cost.gold) return "Need " + string(_cost.gold) + "g.";
     if (!variable_global_exists("rune_dust") || global.rune_dust < _cost.dust) return "Need " + string(_cost.dust) + " dust.";
-    // Gather 3 source indices.
+    // Gather 3 combined-pool indices (08-11: stash + pouch; the pool lists the
+    // stash first, so stash copies are spent before carried ones).
+    var _pool = sable_potion_pool();
     var _idxs = [];
-    for (var _i = 0; _i < array_length(global.consumable_inventory); _i++)
-        if (global.consumable_inventory[_i].name == from_name) array_push(_idxs, _i);
+    for (var _i = 0; _i < array_length(_pool); _i++)
+        if (_pool[_i].it.name == from_name) array_push(_idxs, _i);
     if (array_length(_idxs) < 3) return "Need 3 identical potions.";
     var _tmpl = sable_elite_template(_to);
     if (_tmpl == undefined) return "Upgrade target unavailable.";
-    // Remove 3 (highest index first) then add the elite.
-    array_delete(global.consumable_inventory, _idxs[2], 1);
-    array_delete(global.consumable_inventory, _idxs[1], 1);
-    array_delete(global.consumable_inventory, _idxs[0], 1);
+    sable_potion_pool_delete([_idxs[0], _idxs[1], _idxs[2]]);
     global.gold      -= _cost.gold;
     global.rune_dust -= _cost.dust;
     array_push(global.consumable_inventory,
@@ -7661,6 +7728,16 @@ function maren_fee_mult() {
 }
 // Vex Friend: 10% off his gold prices (applied on top of the CHA discount).
 function vex_price(g) { return floor(g * affinity_discount_mult("vex")); }
+
+// Vex permanent-stat pricing (M 08-11): the flat 200g + 1 Rare stacked too
+// easily late-game. Gold now follows a gentle quadratic on stats already
+// bought (200, 268, 344, 428, 520, 620, 728, ...) and the trade escalates:
+// Rare for the first 6 buys, Epic for the next 6, Legendary from the 13th.
+// Existing saves start the counter at 0 (perm bonuses also come from level-up
+// allocation, so the count can't be reconstructed). Numbers await M's veto.
+function vex_stat_buys()      { return variable_global_exists("vex_stat_buys") ? global.vex_stat_buys : 0; }
+function vex_stat_base_cost() { var _n = vex_stat_buys(); return 200 + 60 * _n + 8 * _n * _n; }
+function vex_stat_rarity_req(){ var _n = vex_stat_buys(); return (_n < 6) ? 2 : ((_n < 12) ? 3 : 4); }
 // Vex Companion: a potency rank sacrifices 4 stat points instead of 5.
 function vex_potency_points() { return affinity_at_least("vex", 3) ? 4 : 5; }
 
@@ -8400,7 +8477,9 @@ function pet_treat_catalog() {
 }
 function pet_treats_left() {
     if (!variable_global_exists("pet_treats_run")) global.pet_treats_run = 0;
-    return max(0, 2 - global.pet_treats_run);
+    // Beast-Whisperer origin (08-11): 3 treats per run instead of 2.
+    var _cap = origin_is("whisperer") ? 3 : 2;
+    return max(0, _cap - global.pet_treats_run);
 }
 
 // --- FEED (design §12): feed is now BOUGHT AS ITEMS from Petra (gold) into a feed pouch,
@@ -9168,6 +9247,8 @@ function pet_bond_gain(pet, amount) {
     // Grave Loyal (bonehound innate, 08-01): its bond grows 25% faster.
     var _inn_b = pet_species_innate(pet.species);
     if (_inn_b != undefined && _inn_b.fx == "bond") amount = max(1, round(amount * (1 + _inn_b.val / 100)));
+    // Beast-Whisperer origin (08-11): all bonds grow 25% faster (stacks with innates).
+    if (origin_is("whisperer")) amount = max(1, round(amount * 1.25));
     var _t0 = pet_bond_tier(pet);
     pet.bond = pet_bond(pet) + amount;
     var _t1 = pet_bond_tier(pet);
@@ -10558,10 +10639,11 @@ function tutorial_catalog() {
         { id:"shrine",     title:"Altars",              body:"A shrine is an altar. A Blessing altar sells boons for tribute - prices scale with your Awakening, and once per shrine [R] rerolls the offer for rune dust. A Cursed altar lets you take on a curse - a run-long penalty - in exchange for far better spoils. Choose how greedy you dare to be." },
         { id:"gold_risk",  title:"Gold at Risk",        body:"Gold you FIND during a run is at risk - die and you lose most of it (a quarter is returned as mercy). Gold banked before the run is always safe at camp. The number in brackets on your HUD is what you're gambling: extract to keep it all." },
         { id:"escape_item", title:"A Way Out",          body:"You carry an escape item. On the floor map, press G (or tap the LAMP / WINE button) to use it: the Genie Lamp whisks you back to camp with ALL your loot, free. Devil Wine does the same - but drains 2 random stat points. WARNING: the Wine's toll is PERMANENT - those points are gone from your hero on every future run, not just this one. Cash out a greedy run before the dungeon takes it back." },
+        { id:"origin_egg",  title:"Something Stirs",    body:"You carry an unhatched EGG. Bairc the beast-warden can identify and hatch it - find him on the camp carousel and set the egg under his care. A raised creature fights beside you, or blesses your runs." },
         { id:"bond_gates",  title:"Growing Closer",     body:"Someone in camp has warmed to you - their bond has reached a GATE. Crossing a gate now takes a FAVOR: talk to them and take on their gate quest (it appears on the tavern board and in your Journal). Finish it and the friendship deepens, unlocking their next perk. Mind your bonds: friendships DECAY if neglected, and only a few can hold the deepest tiers - deepening one may demote another." },
         { id:"maren_forge", title:"Rough Steel",       body:"Every item now drops UNFINISHED - the [Quality %] tag on its stats shows how much of its true power it delivers. DORN'S TEMPER TAB works a piece +10% at a time toward 100%, for gold and rune dust, and each completed step also adds FINISH: flat max HP scaled by rarity. A raw legendary barely beats a finished epic - the smith is half of every item's story." },
         { id:"dormant_leg", title:"A Sleeping Legend", body:"You found a DORMANT legendary. It fell asleep when its last bearer died - it carries only a shadow of its true strength for now. Take it to Maren's AWAKEN craft (Forge tab): 300g, 60 rune dust and two epics fed to the fire will wake it. Only the storied named legendaries are ever found awake." },
-        { id:"dorn_reforge", title:"Reforge Ingots",   body:"You earned a REFORGE INGOT. Take unequipped gear to Dorn the Blacksmith and spend an ingot to REROLL its affixes - same item, same rarity, fresh random stats. Ingots are TIERED to rarity: a higher-tier ingot reworks any gear of its tier or below, so a Legendary ingot works on anything while a Common one only touches Common gear. Your ingot hoard shows at Dorn and in your Stash." },
+        { id:"dorn_reforge", title:"Reforge Ingots",   body:"You earned a REFORGE INGOT. Take unequipped gear to Dorn the Blacksmith and spend an ingot to REROLL its affixes - same item, same rarity, fresh random stats. Ingots are TIERED to rarity: a higher-tier ingot reworks any gear of its tier or below, so a Legendary ingot works on anything while a Common one only touches Common gear. Your ingot hoard shows at Dorn and in your Stash - and SMELTING gear at Dorn pays one too." },
         { id:"legendary_forge", title:"Dorn's Forge",   body:"Two crafts live here. REWORK GEAR: spend a Reforge Ingot of the gear's tier (or higher) to reroll an item's affixes - and FUSE 3 ingots of one tier into 1 of the next tier when the low ones pile up. THE LEGENDARY FORGE: the camp's oldest craft asks three components - Dorn strikes the MYTHRIL FRAME (gold + a Legendary Ingot), Maren seals the RUNEHEART CORE, Sable distills the QUINTESSENCE. Bring all three back to Dorn to forge - and NAME - a legendary that exists nowhere else." },
         // First talent point earned mid-run (M 08-08). The web system was
         // invisible until you happened to open the loadout and notice a badge -
@@ -10573,6 +10655,9 @@ function tutorial_catalog() {
         { id:"traps_deployed", title:"The Floor Is Yours", body:"That trap is SET, not thrown - it sits between you and them and waits. It springs on the first enemy action that matches it: a melee swing, a ranged shot, a spell, or anything at all. A trap that BLOCKS cancels the attack outright and eats their turn. Watch the enemy intent gems and set the trap that answers what they are about to do - a correct read is worth far more than the damage. You hold two traps at once, and your Preparation only refills while the board is EMPTY." },
         { id:"talent_first", title:"Mastery",           body:"You have cast that ability enough times to MASTER it - it just earned its first TALENT POINT. Back at camp, open the loadout screen: every ability has its own web of talents, and points are woven there to change how it works. Abilities earn points at 10, 30, 60 and 100 lifetime casts, so the ones you actually USE are the ones that deepen. Experiment - some talents are a subtle nudge, others rewrite the ability completely. Your Abilities tab tracks every ability under TALENTS." },
         { id:"corruption_101", title:"Corruption",      body:"A creature in your care is CORRUPTED. The bargain: while it pushes (3 survived runs as your active companion), YOU pay -20% max HP and -10% damage. Each pushed run adds a PERMANENT +15% to its passive gift. You may CURE it at Bairc's any time - the gains earned so far are kept, the burden lifts, but its grand power is forfeit. See it through all 3 runs and it fully corrupts: its gift is 45% stronger forever, the burden ends, and it earns a grand boon. The full table lives in the Compendium under Companions." },
+        // Pattern Book (08-11): fires on the reforge tab once the Legendary
+        // Forge coach-mark has been seen (one tutorial at a time).
+        { id:"pattern_book", title:"The Pattern Book", body:"Dorn keeps a PATTERN BOOK now. SMELT unequipped gear [T]: the piece is destroyed for a Reforge Ingot of its tier, its icon art joins the book, and Dorn STUDIES one affix family from it. Studies unlock BLUEPRINTS in tiers - 3 studies open tier I, Rare+ fodder deepens to II, Epic+ to III. With blueprints learned, CRAFT [N] builds a piece of YOUR OWN DESIGN: you choose the slot, rarity, base stat, every affix, the art and the name. The numbers still roll - inside the bands your blueprint tiers bought. Browse your progress any time with [B]." },
     ];
 }
 
@@ -10661,15 +10746,19 @@ function item_picker_close() {
 // (M 07-08: the picker showed full gold_value, which matches no real number).
 function item_sell_value(item) {
     var _gv = 0;
+    var _r  = (is_struct(item) && variable_struct_exists(item, "rarity")) ? clamp(item.rarity, 0, 4) : 0;
+    var _base = [15, 32, 82, 200, 400];
     if (is_struct(item) && variable_struct_exists(item, "gold_value")) _gv = item.gold_value;
-    if (_gv == 0 && is_struct(item) && variable_struct_exists(item, "rarity")) {
-        if (item.rarity == 0)      _gv = 15;
-        else if (item.rarity == 1) _gv = 32;
-        else if (item.rarity == 2) _gv = 82;
-        else if (item.rarity == 3) _gv = 200;
-        else                       _gv = 400;
-    }
-    return max(1, floor(_gv * 0.4));
+    if (_gv == 0) _gv = _base[_r];
+    // 08-11 (M: "why do some rares sell for more than epics?"): authored
+    // per-item gold_values predate the rarity economy and could invert tiers.
+    // Sell prices now live in strict per-rarity BANDS - floor is the tier's
+    // baseline, cap is one under the next tier's floor - so ordering is
+    // guaranteed while authored variance still matters inside the band.
+    var _sell = floor(_gv * 0.4);
+    var _lo   = floor(_base[_r] * 0.4);
+    var _hi   = (_r < 4) ? floor(_base[_r + 1] * 0.4) - 1 : 100000;
+    return clamp(_sell, max(1, _lo), _hi);
 }
 
 // Every held item (stash + pack) of at least min_rarity, sorted least-valuable
@@ -10923,6 +11012,7 @@ function item_picker_prompt() {
         case "maren_awaken":   return "Choose a DORMANT legendary to AWAKEN (300g + 60 dust + 2 epics)";
         case "cursed_rebirth": return "An Inequivalent Exchange... feed a legendary to the dark";
         case "statreq_rebirth": return "Choose an item to RE-ATTUNE - its stat requirement re-sets to a random other stat";
+        case "pb_smelt": return "Choose gear to SMELT (" + string(pattern_smelt_fee()) + "g) - destroyed for an ingot, a blueprint study and its art";
     }
     return "Choose an item";
 }
@@ -10940,6 +11030,7 @@ function item_picker_verb() {
         case "maren_awaken":   return "Awaken";
         case "cursed_rebirth": return "Sacrifice";
         case "statreq_rebirth": return "Re-attune";
+        case "pb_smelt":       return "Smelt";
     }
     return "Trade away";
 }
@@ -10954,6 +11045,19 @@ function item_picker_resolve() {
     // CARTOGRAPHER'S CUT (POTENCY V2): nothing is removed - the player is
     // CHOOSING which fresh treasure find to keep. The floor controller grants
     // context.chosen when it consumes the one-shot.
+    // PATTERN BOOK SMELT (08-11): nothing is removed HERE - the picker hands the
+    // chosen item to Dorn's study popup (choose which affix family to learn from
+    // it); destruction + fees happen at that popup's commit so backing out is free.
+    if (_p.purpose == "pb_smelt") {
+        var _pb_sel = (_p.cursor >= 0 && _p.cursor < array_length(_p.candidates))
+                      ? _p.candidates[_p.cursor].item : undefined;
+        _ctx.chosen         = _pb_sel;
+        _p.resolved_purpose = "pb_smelt";
+        _p.result_msg       = "";
+        item_picker_close();
+        return;
+    }
+
     if (_p.purpose == "cartographer" || _p.purpose == "courier") {
         // Neither purpose removes anything here - the floor controller moves the
         // chosen item when it consumes the one-shot.
@@ -11003,7 +11107,7 @@ function item_picker_resolve() {
         var _rf_tier = reforge_ingot_tier_for(_rf_rar);
         if (_rf_tier < 0) {
             _p.resolved_purpose = "chit_reforge";
-            _p.result_msg = "No " + item_rarity_name(_rf_rar) + "-tier (or higher) Reforge Ingot - the tavern board pays them.";
+            _p.result_msg = "No " + item_rarity_name(_rf_rar) + "-tier (or higher) Reforge Ingot - smelting and the tavern board pay them.";
             item_picker_close(); return;
         }
         var _old_cname = _csel.label;
@@ -11268,6 +11372,7 @@ function item_picker_resolve() {
         case "vex_stat":
             global.gold -= _ctx.gold;
             variable_global_set(_ctx.stat_key, variable_global_get(_ctx.stat_key) + 1);
+            global.vex_stat_buys = vex_stat_buys() + 1;   // drives the price ladder
             affinity_add("vex", 2);   // function-use drip (stat upgrade)
             save_game();
             _msg = "+1 permanent " + _ctx.stat_name + "   (traded: " + _name + ")";
@@ -11762,6 +11867,43 @@ function duelist_make_ashen_blade() {
     _b.unique_desc   = "After you dodge or riposte, your next ability costs 1 less AP";
     _b.lore = "He carried it through every duel he never lost, and handed it over the day someone finally deserved it. The edge is patient - it learned long ago that the reply matters more than the first word.";
     return _b;
+}
+
+// DUELING RELICS ladder (M design-locked 08-11, backlog #23): unique drops at
+// total duel WINS 1 / 3 / 5 - ANY grade counts, unlike the GOLD-only token
+// ARTS ladder above. Granted at the duel-victory frame, sent to the stash.
+function duelist_relic_for_win(_w) {
+    if (_w == 1) {
+        var _r = create_item("Duelist's Iron Pin", "amulet", 3, "DEX", 4,
+            "worn where a second would stand", 200);
+        _r.class_req     = -1;
+        _r.affixes       = [];
+        _r.unique_effect = "duel_pin";
+        _r.unique_desc   = "+15% crit chance while exactly one enemy stands";
+        _r.lore = "The pin that held his cloak through a hundred single combats. It only wakes when the fight is honest: one blade, one answer.";
+        return _r;
+    }
+    if (_w == 3) {
+        var _r2 = create_item("Ashen Parry Dagger", "offhand", 3, "DEX", 5,
+            "it answers before you do", 260);
+        _r2.class_req     = -1;
+        _r2.affixes       = [{ suffix: "of Shadows", prefix: "Ghost", stat_name: "dodge_flat", stat_value: 4 }];
+        _r2.unique_effect = "duel_parry";
+        _r2.unique_desc   = "Melee blows that hit you are answered for 8 damage";
+        _r2.lore = "His off-hand tutor, retired into yours. It has heard every opening line a sword can offer and grown bored of all of them.";
+        return _r2;
+    }
+    if (_w == 5) {
+        var _r3 = create_item("Widowmaker's Point", "weapon", 4, "DEX", 6,
+            "the conversation ends here", 400);
+        _r3.class_req     = -1;
+        _r3.affixes       = [{ suffix: "of Ruin", prefix: "Runed", stat_name: "crit_flat", stat_value: 4 }];
+        _r3.unique_effect = "duel_widow";
+        _r3.unique_desc   = "+40% damage to enemies below 25% HP";
+        _r3.lore = "Five duels he lost to you, and on the fifth he brought this - and lost anyway. It knows exactly one thing: how a fight that is already decided should end.";
+        return _r3;
+    }
+    return undefined;
 }
 
 // The event catalog (13 events: 7 v1 + 6 §6 variety). Magnitudes scale by floor _fl (0..2).
@@ -13352,3 +13494,631 @@ function compendium_habitat(species_id) {
 // NOTE: dungeon_display_name() already exists at ~9282 and covers the three
 // original dungeons. Extended there (not redefined here - GML would not compile
 // with two definitions) to cover the 08-06 biomes + the Descent.
+
+// =============================================================================
+// RPG ORIGINS (M design-locked 08-11, with notes): a background chosen at
+// character creation AFTER the portrait, giving each new character a small
+// mechanical head start + flavor. Staging stills resolve by name
+// (spr_origin_<id>) and the picker degrades to framed text cards until the art
+// imports. One-time grants fire in origin_apply_new_game() (char-select vow
+// commit, right before the first save). Per-run grants fire ONCE per run via
+// origin_run_start() (floor controller Create, one-shot flag reset in
+// end_run; checkpoint resume marks the run already granted).
+// All numbers vetoable at F5.
+// =============================================================================
+
+function origin_catalog() {
+    return [
+        { id:"merchant",   name:"Merchant's Son",           blurb:"Coin opened every door of your childhood. It still does.",
+          start:"Start with +500 gold." },
+        { id:"forester",   name:"Forest Tender",            blurb:"You kept a warden's grove before the dark took it.",
+          start:"Start with an extra creature egg." },
+        { id:"deserter",   name:"Legion Deserter",          blurb:"You walked away from the Iron Legion - with your kit.",
+          start:"Start with a Rare weapon (rough quality)." },
+        { id:"gravekeeper",name:"Gravekeeper's Apprentice", blurb:"You learned what the dead leave behind, and how to use it.",
+          start:"Start with 60 rune dust and a Common Reforge Ingot." },
+        { id:"survivor",   name:"Plague Survivor",          blurb:"The fever took the village. It could not take you.",
+          start:"+1 CON permanently. Begin each run with an Antidote." },
+        { id:"orphan",     name:"Gutter Orphan",            blurb:"Nobody fed you, so you learned to feed yourself.",
+          start:"+1 DEX permanently. Shops charge you 5% less." },
+        { id:"scholar",    name:"Failed Scholar",           blurb:"The academy burned your thesis. You kept the footnotes.",
+          start:"+1 INT permanently. Start with 2 Energy Tonics." },
+        { id:"shrinesworn",name:"Shrine-Sworn",             blurb:"You tended a wayside altar. Something noticed.",
+          start:"Begin each run with a minor Boon." },
+        { id:"campaigner", name:"Old Campaigner",           blurb:"Thirty years of wars nobody names anymore.",
+          start:"+1 STR permanently. Start with an Uncommon armor piece." },
+        { id:"banshee",    name:"Banshee-Touched",          blurb:"You heard her sing once, and lived to hum it.",
+          start:"+1 WIS permanently. A bottled Banshee already waits at camp." },
+        { id:"whisperer",  name:"Beast-Whisperer",          blurb:"Animals never learned to fear you.",
+          start:"Pet bonds grow 25% faster. 3 treats per run instead of 2." },
+        { id:"debtor",     name:"The Debtor",               blurb:"The money was never yours. The blade you bought with it is.",
+          start:"Start with a random Epic item - and a 400g debt that WILL be collected." },
+    ];
+}
+
+function origin_get(id) {
+    var _c = origin_catalog();
+    for (var _i = 0; _i < array_length(_c); _i++) if (_c[_i].id == id) return _c[_i];
+    return undefined;
+}
+
+function origin_is(id) {
+    return variable_global_exists("origin_id") && global.origin_id == id;
+}
+
+// The staging still for an origin (spr_origin_<id>), or -1 until imported.
+function origin_still(id) { return asset_get_index("spr_origin_" + id); }
+
+// Gutter Orphan: 5% off everywhere - multiplies into cha_price beside the
+// signet/beggar multipliers.
+function origin_price_mult() { return origin_is("orphan") ? 0.95 : 1.0; }
+
+// Shrine-Sworn's run-start boon rolls from the MILD plain boons only (M 08-11:
+// "make sure the random minor boon is not too powerful") - economy/small-
+// sustain picks, never the damage warpers.
+function origin_minor_boons() { return ["greed", "aegis", "vampirism"]; }
+
+// Roll one rarity-forced drop of a given slot family. slot_filter: "" = any,
+// "weapon" = weapons only, "armor" = wearable non-weapon gear. Bounded retry -
+// the loot tables are big enough that 30 rolls always find the family.
+function origin_roll_item(_rarity, _slot_filter) {
+    var _w = [0, 0, 0, 0, 0];
+    _w[_rarity] = 100;
+    for (var _try = 0; _try < 30; _try++) {
+        var _it = drop_equipment(_w, false);
+        if (!is_struct(_it)) continue;
+        var _sl = variable_struct_exists(_it, "slot") ? _it.slot : "";
+        if (_slot_filter == "") return _it;
+        if (_slot_filter == "weapon" && _sl == "weapon") return _it;
+        if (_slot_filter == "armor" && (_sl == "chest" || _sl == "helm" || _sl == "gloves" || _sl == "boots")) return _it;
+    }
+    return drop_equipment(_w, false);   // family miss after 30 - take what came
+}
+
+// Push a standard-catalog consumable by name into the pouch (n copies).
+function origin_grant_consumable(_name, _n) {
+    if (!variable_global_exists("consumables_standard")) return;
+    for (var _i = 0; _i < array_length(global.consumables_standard); _i++) {
+        var _t = global.consumables_standard[_i];
+        if (_t.name != _name) continue;
+        if (!variable_global_exists("consumable_inventory")) global.consumable_inventory = [];
+        repeat (_n) array_push(global.consumable_inventory,
+            create_consumable(_t.name, _t.effect_type, _t.effect_value, _t.description, _t.gold_value));
+        return;
+    }
+}
+
+// One-time grants, called at char-select vow commit BEFORE the first
+// save_game() so everything lands in the new slot.
+function origin_apply_new_game() {
+    if (!variable_global_exists("origin_id") || global.origin_id == "") return;
+    switch (global.origin_id) {
+        case "merchant":
+            global.gold += 500;
+            break;
+        case "forester":
+            // Rides the starter-egg pipeline (random arted species, ready to
+            // identify/hatch at Bairc) - this is IN ADDITION to the normal
+            // first-Bairc-talk starter egg.
+            pet_grant_starter();
+            break;
+        case "deserter":
+            array_push(global.equipment_stash, origin_roll_item(2, "weapon"));
+            break;
+        case "gravekeeper":
+            if (!variable_global_exists("rune_dust")) global.rune_dust = 0;
+            global.rune_dust += 60;
+            reforge_ingot_add(0, 1);
+            break;
+        case "survivor":   global.perm_con_bonus += 1; break;   // + per-run Antidote
+        case "orphan":     global.perm_dex_bonus += 1; break;   // + origin_price_mult
+        case "scholar":
+            global.perm_int_bonus += 1;
+            origin_grant_consumable("Energy Tonic", 2);
+            break;
+        case "shrinesworn": break;                              // per-run boon only
+        case "campaigner":
+            global.perm_str_bonus += 1;
+            array_push(global.equipment_stash, origin_roll_item(1, "armor"));
+            break;
+        case "banshee":
+            global.perm_wis_bonus += 1;
+            if (!variable_global_exists("banshee_banked")) global.banshee_banked = 0;
+            global.banshee_banked += 1;   // release it at Maren = the song unlock flow
+            break;
+        case "whisperer":  break;                               // passive hooks
+        case "debtor":
+            array_push(global.equipment_stash, origin_roll_item(3, ""));
+            global.debt_gold   = 400;
+            global.debt_missed = 0;
+            break;
+    }
+}
+
+// Per-run grants - called from the floor controller's Create through a
+// one-shot flag so multi-floor runs and checkpoint resumes never double-grant.
+function origin_run_start() {
+    if (variable_global_exists("origin_run_granted") && global.origin_run_granted) return;
+    global.origin_run_granted = true;
+    if (origin_is("survivor")) origin_grant_consumable("Antidote", 1);
+    if (origin_is("shrinesworn")) {
+        var _pool = origin_minor_boons();
+        boon_grant(_pool[irandom(array_length(_pool) - 1)]);
+    }
+}
+
+// =============================================================================
+// THE DEBTOR ledger (M 08-11): 400g owed. Each run-end at camp the creditor
+// collects the minimum - 10% of the outstanding debt - from your gold. Miss it
+// and the debt gains 15% interest and a missed payment is marked. Three missed
+// payments and you are IN COLLECTIONS: a quarter of ALL gold you earn is
+// garnished at the source until the debt is cleared. Numbers vetoable.
+// =============================================================================
+
+function debt_active() {
+    return variable_global_exists("debt_gold") && global.debt_gold > 0;
+}
+
+function debt_in_collections() {
+    return debt_active()
+        && variable_global_exists("debt_missed") && global.debt_missed >= 3;
+}
+
+// Garnish hook - lives inside add_gold(). Garnished coin pays the debt down.
+function debt_garnish(_amount) {
+    if (!debt_in_collections() || _amount <= 0) return _amount;
+    var _cut = max(1, floor(_amount * 0.25));
+    _cut = min(_cut, global.debt_gold);
+    global.debt_gold -= _cut;
+    if (global.debt_gold <= 0) { global.debt_gold = 0; global.debt_missed = 0; }
+    return _amount - _cut;
+}
+
+// Run-end collection - called from end_run (both results; the creditor does
+// not care how the run went). Returns a one-line message for the hub, or "".
+function debt_collect_run_end() {
+    if (!debt_active()) return "";
+    var _min = max(1, ceil(global.debt_gold * 0.10));
+    if (global.gold >= _min) {
+        global.gold      -= _min;
+        global.debt_gold -= _min;
+        if (global.debt_gold <= 0) {
+            global.debt_gold = 0; global.debt_missed = 0;
+            return "The last of the debt is paid. The ledger closes.";
+        }
+        return "The creditor collects " + string(_min) + "g. " + string(global.debt_gold) + "g still owed.";
+    }
+    // Cannot cover the minimum: interest, and a mark against you.
+    global.debt_missed = (variable_global_exists("debt_missed") ? global.debt_missed : 0) + 1;
+    global.debt_gold   = ceil(global.debt_gold * 1.15);
+    if (debt_in_collections()) {
+        return "Payment missed. You are IN COLLECTIONS - a quarter of all gold you earn is garnished until the "
+            + string(global.debt_gold) + "g is cleared.";
+    }
+    return "Payment missed - interest swells the debt to " + string(global.debt_gold)
+        + "g. (" + string(global.debt_missed) + "/3 before collections.)";
+}
+
+// =============================================================================
+// DORN'S PATTERN BOOK (M design-locked 08-11, SYSTEMS_REFORGE_CRAFT.md).
+// SMELT unequipped gear -> it is destroyed for a Reforge Ingot of its tier,
+// ONE chosen affix family gains blueprint "study" progress, and the item's
+// icon art joins the book's ART PAGE. Families unlock in tiers:
+//   tier I   = 3 studies (any Uncommon+ fodder)   -> low-band rolls
+//   tier II  = 4 MORE studies from RARE+ fodder   -> mid-band rolls
+//   tier III = 5 MORE studies from EPIC+ fodder   -> full natural rolls
+// CRAFT is a CUSTOM ITEM BUILDER: pick slot + rarity + base stat + every affix
+// from unlocked blueprints (up to the rarity's natural budget) + icon art +
+// name. Identity is deterministic; the NUMBERS still roll RNG inside the band
+// the family's blueprint tier buys (M: "it's customization" - never exceeds
+// the rarity's natural values, tier I is strictly a floor roll). A paid
+// re-roll re-rolls the numbers WITHIN the same bands. All fees vetoable.
+// =============================================================================
+function pattern_book_ensure() {
+    if (!variable_global_exists("pattern_book") || !is_struct(global.pattern_book)) {
+        global.pattern_book = { fam: {}, art: [] };
+    }
+    if (!variable_struct_exists(global.pattern_book, "fam") || !is_struct(global.pattern_book.fam)) {
+        global.pattern_book.fam = {};
+    }
+    if (!variable_struct_exists(global.pattern_book, "art") || !is_array(global.pattern_book.art)) {
+        global.pattern_book.art = [];
+    }
+    return global.pattern_book;
+}
+
+// The studyable/craftable affix families: the 12 stat/utility affixes plus the
+// 8 caster school affixes. Elemental WEAPON riders (elem_affix) and legendary
+// unique effects are deliberately NOT blueprintable (spec ban). Entries:
+// { stat_name, label, kind ("stat"|"school"), prefix, suffix }.
+function pattern_family_catalog() {
+    var _out = [];
+    if (variable_global_exists("affix_pool")) {
+        for (var _i = 0; _i < array_length(global.affix_pool); _i++) {
+            var _a = global.affix_pool[_i];
+            var _lb = _a.suffix;
+            if (string_pos("of the ", _lb) == 1)  _lb = string_delete(_lb, 1, 7);
+            else if (string_pos("of ", _lb) == 1) _lb = string_delete(_lb, 1, 3);
+            array_push(_out, { stat_name: _a.stat_name, label: _lb, kind: "stat",
+                               prefix: _a.prefix, suffix: _a.suffix });
+        }
+    }
+    if (variable_global_exists("school_affix_pool")) {
+        for (var _j = 0; _j < array_length(global.school_affix_pool); _j++) {
+            var _s = global.school_affix_pool[_j];
+            var _sl = string_upper(string_char_at(_s.school, 1)) + string_delete(_s.school, 1, 1);
+            array_push(_out, { stat_name: _s.stat_name, label: _sl + " damage", kind: "school",
+                               prefix: _s.prefix, suffix: _s.suffix });
+        }
+    }
+    return _out;
+}
+
+function pattern_family_entry(_stat_name) {
+    var _cat = pattern_family_catalog();
+    for (var _i = 0; _i < array_length(_cat); _i++) {
+        if (_cat[_i].stat_name == _stat_name) return _cat[_i];
+    }
+    return undefined;
+}
+
+// Per-family study progress { p1, p2, p3 } (counts toward tier I / II / III).
+function pattern_fam_get(_stat_name) {
+    var _b = pattern_book_ensure();
+    if (!variable_struct_exists(_b.fam, _stat_name)) {
+        variable_struct_set(_b.fam, _stat_name, { p1: 0, p2: 0, p3: 0 });
+    }
+    return variable_struct_get(_b.fam, _stat_name);
+}
+
+// Unlocked blueprint tier for a family: 0 none, 1..3.
+function pattern_fam_tier(_stat_name) {
+    var _p = pattern_fam_get(_stat_name);
+    if (_p.p1 < 3) return 0;
+    if (_p.p2 < 4) return 1;
+    if (_p.p3 < 5) return 2;
+    return 3;
+}
+
+// Book-page progress text for a family ("2/3 studies", "Rare+ fodder 1/4", "MASTERED").
+function pattern_fam_progress_text(_stat_name) {
+    var _p = pattern_fam_get(_stat_name);
+    if (_p.p1 < 3) return string(_p.p1) + "/3 studies to tier I";
+    if (_p.p2 < 4) return "II: " + string(_p.p2) + "/4 Rare+ studies";
+    if (_p.p3 < 5) return "III: " + string(_p.p3) + "/5 Epic+ studies";
+    return "MASTERED (tier III)";
+}
+
+// What ONE study from fodder of the given rarity would do for this family.
+// Returns { ok, text } - ok=false means this fodder can't advance the family.
+function pattern_study_preview(_stat_name, _rarity) {
+    var _p = pattern_fam_get(_stat_name);
+    if (_p.p1 < 3) return { ok: true, text: "advances tier I (" + string(_p.p1) + "/3)" };
+    if (_p.p2 < 4) {
+        if (_rarity >= 2) return { ok: true, text: "advances tier II (" + string(_p.p2) + "/4)" };
+        return { ok: false, text: "tier II asks RARE+ fodder" };
+    }
+    if (_p.p3 < 5) {
+        if (_rarity >= 3) return { ok: true, text: "advances tier III (" + string(_p.p3) + "/5)" };
+        return { ok: false, text: "tier III asks EPIC+ fodder" };
+    }
+    return { ok: false, text: "already mastered" };
+}
+
+// Apply one study. Returns true if progress moved.
+function pattern_book_study(_stat_name, _rarity) {
+    var _pv = pattern_study_preview(_stat_name, _rarity);
+    if (!_pv.ok) return false;
+    var _p = pattern_fam_get(_stat_name);
+    if (_p.p1 < 3)      _p.p1 += 1;
+    else if (_p.p2 < 4) _p.p2 += 1;
+    else                _p.p3 += 1;
+    return true;
+}
+
+// The affix families a given item can teach: its base stat + every affix row
+// whose stat_name is a known family (school rows included; elem riders are not
+// stat_name rows so they naturally fall out).
+function pattern_item_families(_it) {
+    var _out = [];
+    if (!is_struct(_it)) return _out;
+    if (variable_struct_exists(_it, "stat_name") && pattern_family_entry(_it.stat_name) != undefined) {
+        array_push(_out, _it.stat_name);
+    }
+    if (variable_struct_exists(_it, "affixes") && is_array(_it.affixes)) {
+        for (var _i = 0; _i < array_length(_it.affixes); _i++) {
+            var _r = _it.affixes[_i];
+            if (!is_struct(_r) || !variable_struct_exists(_r, "stat_name")) continue;
+            if (pattern_family_entry(_r.stat_name) == undefined) continue;
+            var _dup = false;
+            for (var _j = 0; _j < array_length(_out); _j++) { if (_out[_j] == _r.stat_name) { _dup = true; break; } }
+            if (!_dup) array_push(_out, _r.stat_name);
+        }
+    }
+    return _out;
+}
+
+// ---- ART PAGE ---------------------------------------------------------------
+// Every smelted item's icon identity joins the book (dupes ignored). An entry
+// holds just enough to re-resolve the same sprite through the slot icon
+// resolvers: { slot, base_name, rarity, label, seed (-1 = none) }.
+function pattern_art_unlock(_it) {
+    var _b   = pattern_book_ensure();
+    var _bn  = item_base_name(_it);
+    var _rar = variable_struct_exists(_it, "rarity") ? clamp(_it.rarity, 0, 4) : 0;
+    var _sd  = variable_struct_exists(_it, "icon_seed") ? _it.icon_seed : -1;
+    var _key = _it.slot + "|" + string_lower(_bn) + "|" + string(_rar) + "|" + string(_sd);
+    for (var _i = 0; _i < array_length(_b.art); _i++) {
+        var _e = _b.art[_i];
+        if (_e.slot + "|" + string_lower(_e.base_name) + "|" + string(_e.rarity) + "|" + string(_e.seed) == _key) return false;
+    }
+    array_push(_b.art, { slot: _it.slot, base_name: _bn, rarity: _rar, label: _bn, seed: _sd });
+    return true;
+}
+
+function pattern_art_for_slot(_slot) {
+    var _b = pattern_book_ensure();
+    var _out = [];
+    for (var _i = 0; _i < array_length(_b.art); _i++) {
+        if (_b.art[_i].slot == _slot) array_push(_out, _b.art[_i]);
+    }
+    return _out;
+}
+
+// A fake-item proxy an art entry (or icon_as field) feeds to the slot icon
+// resolvers - they only read name / base_name / rarity / icon_seed.
+function pattern_art_proxy(_e) {
+    var _p = { name: _e.base_name, base_name: _e.base_name, rarity: _e.rarity, slot: _e.slot };
+    if (variable_struct_exists(_e, "seed") && _e.seed >= 0) _p.icon_seed = _e.seed;
+    if (variable_struct_exists(_e, "icon_seed")) _p.icon_seed = _e.icon_seed;
+    return _p;
+}
+
+// ---- SMELT ------------------------------------------------------------------
+function pattern_smelt_fee() { return cha_price(25); }
+
+// Picker candidates: UNEQUIPPED gear only (stash + carried - the worn array is
+// deliberately not a pool), Uncommon..Epic (legendaries have their own three
+// sinks), never dormant. Stash-aware per the 08-11 NPC rule.
+function pattern_smelt_candidates() {
+    var _out = [];
+    var _pools = [];
+    if (variable_global_exists("equipment_stash") && is_array(global.equipment_stash)) array_push(_pools, { a: global.equipment_stash, s: 0 });
+    if (variable_global_exists("carried_items")   && is_array(global.carried_items))   array_push(_pools, { a: global.carried_items,   s: 1 });
+    for (var _p = 0; _p < array_length(_pools); _p++) {
+        var _arr = _pools[_p].a;
+        for (var _i = 0; _i < array_length(_arr); _i++) {
+            var _g = _arr[_i];
+            if (!is_struct(_g) || !variable_struct_exists(_g, "slot") || !variable_struct_exists(_g, "rarity")) continue;
+            if (_g.rarity < 1 || _g.rarity > 3) continue;
+            if (variable_struct_exists(_g, "dormant") && _g.dormant) continue;
+            array_push(_out, { source: _pools[_p].s, idx: _i, item: _g, label: _g.name,
+                rarity: _g.rarity,
+                value: variable_struct_exists(_g, "gold_value") ? _g.gold_value : 0 });
+        }
+    }
+    return _out;
+}
+
+// Destroy-by-identity across the unequipped pools (the study popup holds a
+// reference, not an index - the picker is long closed by commit time).
+function pattern_smelt_remove(_it) {
+    for (var _s = 0; _s < 2; _s++) {
+        var _a = (_s == 0) ? global.equipment_stash : global.carried_items;
+        if (!is_array(_a)) continue;
+        for (var _i = 0; _i < array_length(_a); _i++) {
+            if (_a[_i] == _it) { array_delete(_a, _i, 1); return true; }
+        }
+    }
+    return false;
+}
+
+// Commit a smelt: gold fee is checked by the CALLER (so its error can use the
+// shop notification line). _stat_name == "" means "just the ingot" (no study).
+// Returns the notification text, or "" if the item vanished (nothing charged).
+function pattern_smelt_commit(_it, _stat_name) {
+    if (!pattern_smelt_remove(_it)) return "";
+    global.gold -= pattern_smelt_fee();
+    var _rar = clamp(_it.rarity, 0, 4);
+    reforge_ingot_grant(_rar, 1);
+    var _new_art = pattern_art_unlock(_it);
+    var _msg = "Smelted " + _it.name + " - +1 " + item_rarity_name(_rar) + " ingot";
+    if (_stat_name != "") {
+        var _fe = pattern_family_entry(_stat_name);
+        if (pattern_book_study(_stat_name, _rar) && _fe != undefined) {
+            _msg += ", studied " + _fe.label + " (" + pattern_fam_progress_text(_stat_name) + ")";
+        }
+    }
+    if (_new_art) _msg += ", its art joins the book";
+    _msg += ".";
+    return _msg;
+}
+
+// ---- CRAFT (the custom item builder) ---------------------------------------
+// Crafted rarities: 1 Uncommon / 2 Rare / 3 Epic. All numbers vetoable.
+function pattern_affix_budget(_rarity) {
+    if (_rarity <= 1) return 1;
+    return 2;
+}
+function pattern_craft_fee(_rarity) {
+    var _g = 150; var _d = 20;
+    if (_rarity == 2) { _g = 300; _d = 40; }
+    if (_rarity >= 3) { _g = 600; _d = 80; }
+    return { gold: cha_price(_g), dust: _d, ingot_rar: _rarity };
+}
+function pattern_reroll_fee(_rarity) { return cha_price(60 * max(1, _rarity)); }
+function pattern_craft_base_val(_rarity) {
+    if (_rarity <= 1) return 3;
+    if (_rarity == 2) return 5;
+    return 7;
+}
+function pattern_craft_gold_val(_rarity) {
+    if (_rarity <= 1) return 40;
+    if (_rarity == 2) return 90;
+    return 210;
+}
+
+// The value band a family's blueprint tier buys at a crafted rarity. Stays
+// inside the rarity's NATURAL value - tier I is a floor roll, tier III the
+// full natural roll (spec: choice is the power budget, not magnitude).
+function pattern_band_range(_stat_name, _rarity, _tier) {
+    var _fe = pattern_family_entry(_stat_name);
+    if (_fe == undefined) return { lo: 1, hi: 1 };
+    var _t = clamp(_tier, 1, 3);
+    if (_fe.kind == "school") {
+        // School affixes already roll natural ranges: u 1, r 2-4, e 5-6.
+        var _lo = 1; var _hi = 1;
+        if (_rarity == 2) { _lo = 2; _hi = 4; }
+        if (_rarity >= 3) { _lo = 5; _hi = 6; }
+        var _span  = _hi - _lo;
+        var _third = _span div 3;
+        if (_t == 1) return { lo: _lo, hi: _lo + _third };
+        if (_t == 2) { var _m = _lo + ceil(_span / 2); return { lo: min(_m, _hi), hi: min(_m, _hi) }; }
+        return { lo: _hi - _third, hi: _hi };
+    }
+    // Stat/utility affixes have one natural value per rarity (u/r/e_val).
+    var _nat = 1;
+    if (variable_global_exists("affix_pool")) {
+        for (var _i = 0; _i < array_length(global.affix_pool); _i++) {
+            var _a = global.affix_pool[_i];
+            if (_a.stat_name != _stat_name) continue;
+            if (_rarity <= 1)      _nat = _a.u_val;
+            else if (_rarity == 2) _nat = _a.r_val;
+            else                   _nat = _a.e_val;
+            break;
+        }
+    }
+    if (_t == 1) { var _l1 = max(1, ceil(_nat * 0.60)); return { lo: _l1, hi: max(_l1, floor(_nat * 0.80)) }; }
+    if (_t == 2) { var _l2 = max(1, ceil(_nat * 0.80)); return { lo: _l2, hi: max(_l2, _nat) }; }
+    var _l3 = max(1, floor(_nat * 0.90));
+    return { lo: _l3, hi: max(_l3, _nat) };
+}
+function pattern_band_roll(_stat_name, _rarity, _tier) {
+    var _b = pattern_band_range(_stat_name, _rarity, _tier);
+    return irandom_range(_b.lo, _b.hi);
+}
+function pattern_band_text(_stat_name, _rarity, _tier) {
+    var _b = pattern_band_range(_stat_name, _rarity, _tier);
+    if (_b.lo == _b.hi) return "+" + string(_b.lo);
+    return "+" + string(_b.lo) + "-" + string(_b.hi);
+}
+
+// Build the crafted item. Fees are NOT spent here - the caller spends at the
+// checkout commit so a failed build never eats materials (forge precedent).
+// _affix_names: array of family stat_names (identity chosen, numbers rolled).
+// _icon: an art-page entry, or undefined for Dorn's plain work.
+function pattern_craft_build(_slot, _rarity, _base_stat, _affix_names, _icon, _name) {
+    var _it = create_item(_name, _slot, _rarity, _base_stat, pattern_craft_base_val(_rarity),
+        "pattern-crafted at Dorn's anvil", pattern_craft_gold_val(_rarity));
+    _it.base_name = _name;
+    _it.class_req = -1;
+    var _tiers = [];
+    for (var _i = 0; _i < array_length(_affix_names); _i++) {
+        var _fn = _affix_names[_i];
+        var _fe = pattern_family_entry(_fn);
+        if (_fe == undefined) continue;
+        var _tier = pattern_fam_tier(_fn);
+        if (_tier < 1) continue;
+        array_push(_it.affixes, {
+            suffix: _fe.suffix, prefix: _fe.prefix,
+            stat_name: _fn, stat_value: pattern_band_roll(_fn, _rarity, _tier),
+        });
+        array_push(_tiers, { stat_name: _fn, tier: _tier });
+    }
+    _it.gold_value = round(_it.gold_value * power(1.2, array_length(_it.affixes)));
+    if (_slot == "weapon" || _slot == "ranged_weapon") {
+        _it.weapon_damage = weapon_base_damage(_rarity);
+        _it.two_handed    = false;
+    }
+    _it.socket_count = rune_sockets_for_rarity(_rarity);
+    item_quality_stamp(_it, 60, 85);
+    _it.player_crafted = true;
+    _it.pb_craft = { rar: _rarity, base_stat: _base_stat, fams: _tiers };
+    if (_icon != undefined) {
+        _it.icon_as = pattern_art_proxy(_icon);
+    }
+    _it.lore = "Pattern-crafted at Dorn's anvil from "
+        + (variable_global_exists("player_name") ? global.player_name : "a wanderer")
+        + "'s book - its maker chose every line of it.";
+    return _it;
+}
+
+// Paid re-roll: the identity stays, every rolled NUMBER re-rolls within the
+// same band each affix was crafted at (advancing a blueprint later doesn't
+// retro-buff old pieces - craft a new one). Weapons re-roll flat damage too.
+function pattern_craft_reroll(_it) {
+    if (!is_struct(_it) || !variable_struct_exists(_it, "pb_craft")) return false;
+    var _pc = _it.pb_craft;
+    for (var _i = 0; _i < array_length(_it.affixes); _i++) {
+        var _row = _it.affixes[_i];
+        if (!is_struct(_row) || !variable_struct_exists(_row, "stat_name")) continue;
+        for (var _j = 0; _j < array_length(_pc.fams); _j++) {
+            if (_pc.fams[_j].stat_name == _row.stat_name) {
+                _row.stat_value = pattern_band_roll(_row.stat_name, _pc.rar, _pc.fams[_j].tier);
+                break;
+            }
+        }
+    }
+    if (_it.slot == "weapon" || _it.slot == "ranged_weapon") {
+        if (!(variable_struct_exists(_it, "two_handed") && _it.two_handed)) {
+            _it.weapon_damage = weapon_base_damage(_pc.rar);
+        }
+    }
+    return true;
+}
+
+// ---- NAME GENERATOR (M: "rolls what the game would call it... plus some
+// funny flavor"). Standard rolls use the chosen affixes' own prefix/suffix
+// pools - the exact words a natural drop would wear. ~1 in 5 rolls comes from
+// the flavor page instead. Random button re-rolls; typing always wins.
+function pattern_name_noun(_slot, _icon) {
+    // The chosen art's last word is the most honest noun ("Ironhide Bulwark"
+    // -> "Bulwark"); Dorn's plain work falls back to a slot pool.
+    if (_icon != undefined) {
+        var _bn = _icon.base_name;
+        var _sp = string_last_pos(" ", _bn);
+        var _w  = (_sp > 0) ? string_delete(_bn, 1, _sp) : _bn;
+        if (string_length(_w) >= 3) return _w;
+    }
+    var _pool = ["Blade", "Edge", "Brand", "Cleaver", "Warblade"];
+    switch (_slot) {
+        case "ranged_weapon": _pool = ["Bow", "Longbow", "Recurve", "Warbow"]; break;
+        case "offhand":       _pool = ["Ward", "Bulwark", "Buckler", "Aegis"]; break;
+        case "helm":          _pool = ["Helm", "Casque", "Visage", "Crown"]; break;
+        case "chest":         _pool = ["Cuirass", "Mail", "Vestment", "Plate"]; break;
+        case "gloves":        _pool = ["Grips", "Gauntlets", "Fists", "Wraps"]; break;
+        case "boots":         _pool = ["Treads", "Greaves", "Striders", "Boots"]; break;
+        case "amulet":        _pool = ["Amulet", "Talisman", "Locket", "Charm"]; break;
+        case "ring":          _pool = ["Ring", "Band", "Signet", "Loop"]; break;
+    }
+    return _pool[irandom(array_length(_pool) - 1)];
+}
+function pattern_name_roll(_slot, _base_stat, _affix_names, _icon) {
+    var _noun = pattern_name_noun(_slot, _icon);
+    // Flavor page (M asked for "some funny flavor entries").
+    if (irandom(99) < 20) {
+        var _fl = ["Dorn's Second Draft", "The Backup Plan", "Warranty Voider",
+                   "The " + _noun + " of Theseus", "Probably Fine", "Grudge, Settled",
+                   "Family Heirloom (New)", "The Apologetic " + _noun,
+                   "Ninth Attempt", "Dorn Was Paid For This", "The Pointed Argument",
+                   "Customer's Own " + _noun];
+        return string_copy(_fl[irandom(array_length(_fl) - 1)], 1, 24);
+    }
+    var _pfx = ""; var _sfx = "";
+    var _n_af = array_length(_affix_names);
+    if (_n_af >= 1) {
+        var _f1 = pattern_family_entry(_affix_names[0]);
+        var _f2 = pattern_family_entry(_affix_names[_n_af - 1]);
+        if (_f1 != undefined) _pfx = _f1.prefix;
+        if (_f2 != undefined) _sfx = _f2.suffix;
+    }
+    var _bs = pattern_family_entry(_base_stat);
+    if (_pfx == "" && _bs != undefined) _pfx = _bs.prefix;
+    if (_sfx == "" && _bs != undefined) _sfx = _bs.suffix;
+    // 1 affix reads "Noun of X"; 2 read "Prefix Noun of Y" - the game's own rule.
+    var _nm;
+    if (_n_af >= 2)      _nm = _pfx + " " + _noun + " " + _sfx;
+    else if (irandom(1) == 0) _nm = _noun + " " + _sfx;
+    else                 _nm = _pfx + " " + _noun;
+    return string_copy(_nm, 1, 24);
+}

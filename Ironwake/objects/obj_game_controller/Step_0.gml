@@ -355,7 +355,7 @@ if (variable_global_exists("item_picker") && global.item_picker.open
     && (global.item_picker.purpose == "vex_trait" || global.item_picker.purpose == "vex_stat"
         || global.item_picker.purpose == "vex_potency"
         || global.item_picker.purpose == "alch_rebirth" || global.item_picker.purpose == "gift"
-        || global.item_picker.purpose == "chit_reforge"
+        || global.item_picker.purpose == "chit_reforge" || global.item_picker.purpose == "pb_smelt"
         || global.item_picker.purpose == "maren_sunder" || global.item_picker.purpose == "cursed_rebirth"
         || global.item_picker.purpose == "maren_temper" || global.item_picker.purpose == "maren_awaken"
         || global.item_picker.purpose == "statreq_rebirth")) {
@@ -374,6 +374,17 @@ if (variable_global_exists("item_picker") && global.item_picker.resolved_purpose
     } else if (_rp == "chit_reforge") {
         shop_notification = global.item_picker.result_msg;   // Dorn's window shows the result
         global.item_picker.resolved_purpose = "";
+    } else if (_rp == "pb_smelt") {
+        // Pattern Book: the picker chose the fodder - now Dorn asks WHAT TO STUDY
+        // from it (modal popup on the reforge tab; commit destroys + grants there).
+        var _pbc = global.item_picker.context;
+        var _pb_it = (is_struct(_pbc) && variable_struct_exists(_pbc, "chosen")) ? _pbc.chosen : undefined;
+        global.item_picker.resolved_purpose = "";
+        if (_pb_it != undefined) {
+            pb_smelt_item = _pb_it;
+            pb_smelt_open = true;
+            pb_smelt_pick = 0;
+        }
     } else if (_rp == "maren_sunder" || _rp == "maren_temper" || _rp == "maren_awaken") {
         maren_notification = global.item_picker.result_msg;
         global.item_picker.resolved_purpose = "";
@@ -1443,12 +1454,23 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()) {
             dorn_ck_kind = "frame";
             forge_open = false; forge_phase = 0; forge_cursor = 0;
             forge_slot_pick = 0; forge_fx_pick = 0; forge_result = undefined;
+            // Pattern Book state (08-11): smelt study popup / book overlay / craft wizard.
+            pb_smelt_open = false; pb_smelt_item = undefined; pb_smelt_pick = 0;
+            pb_book_open = false; pb_book_scroll = 0;
+            pb_craft_open = false; pb_craft_phase = 0;
+            pb_cursor = 0; pb_scroll = 0;
+            pb_slot_pick = 0; pb_rar_pick = 0; pb_base_stat = "";
+            pb_affix_picks = []; pb_icon_entry = undefined;
+            pb_name = ""; pb_result = undefined;
         }
 
         // First-visit coach-mark (M 07-29: "Strike a Mythril Frame" read as
         // gibberish without the Legendary Forge context). Idempotent - the
         // seen-flag guard inside makes repeat calls free.
         tutorial_try_show("legendary_forge");
+        // Pattern Book coach-mark (08-11): queues behind the forge one (the
+        // one-at-a-time guard inside makes this safe to call every frame).
+        tutorial_try_show("pattern_book");
 
         // THE LEGENDARY FORGE (M locked 07-28) - modal over the reforge tab.
         // Phases: 0 pick slot, 1 pick effect, 2 NAME IT (keyboard_string, the
@@ -1517,10 +1539,49 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()) {
 
         // Mythril Frame checkout popup (modal; Dorn's forge component).
         if (dorn_ck_open) {
-            if (input_cancel() || input_back() || input_inject_take("dorn:cancel")) { dorn_ck_open = false; exit; }
+            if (input_cancel() || input_back() || input_inject_take("dorn:cancel")) {
+                dorn_ck_open = false;
+                // Backing out of the CRAFT checkout returns to the naming phase -
+                // touch users need the virtual keyboard back to keep editing.
+                if (dorn_ck_kind == "pb_craft" && pb_craft_open && pb_craft_phase == 5
+                    && input_device() == 2) keyboard_virtual_show(kbv_type_default, kbv_returnkey_done, kbv_autocapitalize_words, false);
+                exit;
+            }
             if (input_confirm() || input_inject_take("dorn:ok")) {
                 dorn_ck_open = false;
                 reforge_ingots_ensure();
+                // PATTERN CRAFT checkout (08-11): validate all three costs, then
+                // build + stash. A failed check returns to the naming phase with
+                // nothing spent (the name survives in keyboard_string).
+                if (dorn_ck_kind == "pb_craft") {
+                    var _pcf = pattern_craft_fee(1 + pb_rar_pick);
+                    if (!variable_global_exists("rune_dust")) global.rune_dust = 0;
+                    if (global.gold < _pcf.gold) {
+                        shop_notification = "The craft asks " + string(_pcf.gold) + "g.";
+                        audio_play_sound(snd_ui_error, 1, false);
+                    } else if (global.rune_dust < _pcf.dust) {
+                        shop_notification = "The craft asks " + string(_pcf.dust) + " rune dust - Sable salvages runes into dust.";
+                        audio_play_sound(snd_ui_error, 1, false);
+                    } else if (reforge_ingot_tier_for(_pcf.ingot_rar) < 0) {
+                        shop_notification = "The craft asks a " + item_rarity_name(_pcf.ingot_rar) + "-tier (or higher) Reforge Ingot - smelting and the tavern board pay them.";
+                        audio_play_sound(snd_ui_error, 1, false);
+                    } else {
+                        global.gold      -= _pcf.gold;
+                        global.rune_dust -= _pcf.dust;
+                        reforge_ingot_spend(_pcf.ingot_rar);
+                        var _pcit = pattern_craft_build(forge_slot_list()[pb_slot_pick], 1 + pb_rar_pick,
+                            pb_base_stat, pb_affix_picks, pb_icon_entry, pb_name);
+                        array_push(global.equipment_stash, _pcit);
+                        discover_item(item_base_name(_pcit), _pcit.rarity);
+                        save_game();
+                        pb_result = _pcit;
+                        pb_craft_phase = 6;
+                        keyboard_string = "";
+                        audio_play_sound(snd_confirm_major, 1, false);
+                        ui_checkout_vfx(spr_vfx_impact, 960, 520);
+                    }
+                    exit;
+                }
                 // Ingot fuse checkout (M 07-29): 3 same-tier -> 1 next tier.
                 if (dorn_ck_kind == "combine") {
                     var _cmb2 = reforge_combine_tier();
@@ -1551,7 +1612,7 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()) {
                     forge_components_ensure();
                     global.forge_comp_frame += 1;
                     save_game();
-                    shop_notification = "MYTHRIL FRAME struck. (" + string(global.forge_comp_frame) + " held)";
+                    shop_notification = "MYTHRIL FRAME forged - Dorn's Legendary Forge part. (" + string(global.forge_comp_frame) + " held)";
                     audio_play_sound(snd_confirm_major, 1, false);
                     ui_checkout_vfx(spr_vfx_fire, 960, 540);
                 }
@@ -1559,6 +1620,223 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()) {
             }
             exit;
         }
+        // =================================================================
+        // PATTERN BOOK (M design-locked 08-11, SYSTEMS_REFORGE_CRAFT.md).
+        // Three modals over the reforge tab, forge_open idiom: the SMELT
+        // study popup (fodder already chosen in the shared picker), the BOOK
+        // browse overlay, and the CRAFT wizard. Draw side hit-tests rows and
+        // injects pbsm:/pbbk:/pb: tags per the touch rule.
+        // =================================================================
+
+        // ---- SMELT STUDY POPUP: choose which affix family the fodder teaches.
+        if (pb_smelt_open) {
+            if (pb_smelt_item == undefined) { pb_smelt_open = false; exit; }
+            var _sm_fams = pattern_item_families(pb_smelt_item);
+            var _sm_rows = array_length(_sm_fams) + 1;   // + "Just the ingot"
+            if (input_cancel() || input_back() || input_inject_take("pbsm:cancel")) {
+                pb_smelt_open = false; pb_smelt_item = undefined;
+                exit;
+            }
+            if (nav_up())   pb_smelt_pick = wrap_index(pb_smelt_pick - 1, _sm_rows);
+            if (nav_down()) pb_smelt_pick = wrap_index(pb_smelt_pick + 1, _sm_rows);
+            for (var _smi = 0; _smi < _sm_rows; _smi++) {
+                if (input_inject_take("pbsm:row" + string(_smi))) pb_smelt_pick = _smi;
+            }
+            pb_smelt_pick = clamp(pb_smelt_pick, 0, _sm_rows - 1);
+            if (input_confirm() || input_inject_take("pbsm:ok")) {
+                var _sm_fee = pattern_smelt_fee();
+                if (global.gold < _sm_fee) {
+                    shop_notification = "Smelting asks " + string(_sm_fee) + "g.";
+                    audio_play_sound(snd_ui_error, 1, false);
+                } else {
+                    var _sm_pick = (pb_smelt_pick < array_length(_sm_fams)) ? _sm_fams[pb_smelt_pick] : "";
+                    var _sm_msg  = pattern_smelt_commit(pb_smelt_item, _sm_pick);
+                    if (_sm_msg == "") {
+                        shop_notification = "It seems to have gone missing.";
+                    } else {
+                        shop_notification = _sm_msg;
+                        audio_play_sound(snd_forge, 1, false);
+                        ui_checkout_vfx(spr_vfx_fire, 960, 540);
+                        save_game();
+                    }
+                    pb_smelt_open = false; pb_smelt_item = undefined;
+                }
+            }
+            exit;
+        }
+
+        // ---- BOOK BROWSE OVERLAY: every family's pips + the art page count.
+        if (pb_book_open) {
+            var _bk_n   = array_length(pattern_family_catalog());
+            var _bk_vis = 10;   // MUST mirror ui_draw_pattern_book
+            if (input_cancel() || input_back() || input_confirm() || input_inject_take("pbbk:close")) {
+                pb_book_open = false;
+                exit;
+            }
+            if (nav_up()   || mouse_wheel_up()   || input_inject_take("pbbk:up")) pb_book_scroll -= 1;
+            if (nav_down() || mouse_wheel_down() || input_inject_take("pbbk:dn")) pb_book_scroll += 1;
+            pb_book_scroll = clamp(pb_book_scroll, 0, max(0, _bk_n - _bk_vis));
+            exit;
+        }
+
+        // ---- CRAFT WIZARD: slot -> rarity -> base stat -> affixes -> art ->
+        // name -> checkout -> result. Esc walks back one phase; the pick lists
+        // share pb_cursor/pb_scroll (reset at each phase change).
+        if (pb_craft_open) {
+            // Phase row lists are rebuilt every frame from the same sources the
+            // draw uses, so cursor/tap indices always agree with what's shown.
+            var _cw_rows = 0;
+            var _cw_slots = forge_slot_list();
+            var _cw_stats = ["STR", "DEX", "CON", "INT", "WIS", "CHA"];
+            var _cw_fams  = [];
+            if (pb_craft_phase == 0) _cw_rows = array_length(_cw_slots);
+            if (pb_craft_phase == 1) _cw_rows = 3;
+            if (pb_craft_phase == 2) _cw_rows = array_length(_cw_stats);
+            if (pb_craft_phase == 3) {
+                var _cw_cat = pattern_family_catalog();
+                var _cw_slot = _cw_slots[clamp(pb_slot_pick, 0, array_length(_cw_slots) - 1)];
+                var _cw_caster = (_cw_slot == "amulet" || _cw_slot == "ring");
+                for (var _cfi = 0; _cfi < array_length(_cw_cat); _cfi++) {
+                    var _cfe = _cw_cat[_cfi];
+                    if (_cfe.stat_name == pb_base_stat) continue;
+                    if (_cfe.kind == "school" && !_cw_caster) continue;
+                    if (pattern_fam_tier(_cfe.stat_name) < 1) continue;
+                    array_push(_cw_fams, _cfe);
+                }
+                _cw_rows = array_length(_cw_fams);
+            }
+            if (pb_craft_phase == 4) _cw_rows = 1 + array_length(pattern_art_for_slot(_cw_slots[clamp(pb_slot_pick, 0, array_length(_cw_slots) - 1)]));
+
+            // NAMING phase (5): keyboard_string capture, forge phase-2 idiom.
+            if (pb_craft_phase == 5) {
+                if (string_length(keyboard_string) > 24) keyboard_string = string_copy(keyboard_string, 1, 24);
+                if (input_inject_take("pb:rand")) {
+                    keyboard_string = pattern_name_roll(_cw_slots[pb_slot_pick], pb_base_stat, pb_affix_picks, pb_icon_entry);
+                }
+                if (input_cancel() || input_back()) {
+                    pb_craft_phase = 4; pb_cursor = 0; pb_scroll = 0; keyboard_string = "";
+                    if (input_device() == 2) keyboard_virtual_hide();
+                    exit;
+                }
+                if (keyboard_check_pressed(vk_enter) || input_inject_take("pb:ok")) {
+                    var _cw_nm = string_trim(keyboard_string);
+                    if (_cw_nm == "") exit;   // no nameless craftwork
+                    pb_name = string_copy(_cw_nm, 1, 24);
+                    var _cw_fee = pattern_craft_fee(1 + pb_rar_pick);
+                    dorn_ck_open  = true;
+                    dorn_ck_kind  = "pb_craft";
+                    dorn_ck_title = "CRAFT " + string_upper(pb_name) + "?";
+                    dorn_ck_body  = "A " + item_rarity_name(1 + pb_rar_pick) + " "
+                        + item_slot_noun(_cw_slots[pb_slot_pick]) + " of your own design."
+                        + "\nDorn asks " + string(_cw_fee.gold) + "g + " + string(_cw_fee.dust)
+                        + " rune dust + 1 " + item_rarity_name(_cw_fee.ingot_rar) + "-tier (or higher) ingot."
+                        + "\nThe numbers roll inside your blueprints' bands.";
+                    if (input_device() == 2) keyboard_virtual_hide();
+                }
+                exit;
+            }
+
+            // RESULT phase (6): reveal card - re-roll the numbers or keep them.
+            if (pb_craft_phase == 6) {
+                if (pb_result == undefined) { pb_craft_open = false; pb_craft_phase = 0; exit; }
+                if (input_hotkey("R") || input_inject_take("pb:reroll")) {
+                    var _cw_rr = pattern_reroll_fee(pb_result.rarity);
+                    if (global.gold < _cw_rr) {
+                        shop_notification = "Re-rolling the numbers asks " + string(_cw_rr) + "g.";
+                        audio_play_sound(snd_ui_error, 1, false);
+                    } else if (pattern_craft_reroll(pb_result)) {
+                        global.gold -= _cw_rr;
+                        audio_play_sound(snd_forge, 1, false);
+                        ui_checkout_vfx(spr_vfx_impact, 1185, 540);
+                        save_game();
+                    }
+                    exit;
+                }
+                if (input_confirm() || input_cancel() || input_back() || input_inject_take("pb:done")) {
+                    shop_notification = "Crafted " + pb_result.name + " - it waits in your stash.";
+                    pb_craft_open = false; pb_craft_phase = 0; pb_result = undefined;
+                }
+                exit;
+            }
+
+            // List phases (0-4): shared nav + tap + edge-triggered scroll.
+            if (input_cancel() || input_back()) {
+                if (pb_craft_phase == 0)      { pb_craft_open = false; }
+                else if (pb_craft_phase == 3) { pb_craft_phase = 2; pb_affix_picks = []; }
+                else                          { pb_craft_phase -= 1; }
+                pb_cursor = 0; pb_scroll = 0;
+                exit;
+            }
+            if (_cw_rows > 0) {
+                if (nav_up())   pb_cursor = wrap_index(pb_cursor - 1, _cw_rows);
+                if (nav_down()) pb_cursor = wrap_index(pb_cursor + 1, _cw_rows);
+                if (mouse_wheel_up())   pb_cursor = max(0, pb_cursor - 1);
+                if (mouse_wheel_down()) pb_cursor = min(_cw_rows - 1, pb_cursor + 1);
+            }
+            var _cw_tap = -1;
+            for (var _cwt = 0; _cwt < _cw_rows; _cwt++) {
+                if (input_inject_take("pb:row" + string(_cwt))) { _cw_tap = _cwt; break; }
+            }
+            if (_cw_tap >= 0) pb_cursor = _cw_tap;
+            pb_cursor = clamp(pb_cursor, 0, max(0, _cw_rows - 1));
+            var _cw_vis = 9;   // MUST mirror ui_draw_pattern_craft
+            if (pb_cursor < pb_scroll)            pb_scroll = pb_cursor;
+            if (pb_cursor >= pb_scroll + _cw_vis) pb_scroll = pb_cursor - (_cw_vis - 1);
+            pb_scroll = clamp(pb_scroll, 0, max(0, _cw_rows - _cw_vis));
+
+            if ((input_confirm() || _cw_tap >= 0) && _cw_rows > 0) {
+                if (pb_craft_phase == 0) {
+                    pb_slot_pick = pb_cursor;
+                    pb_craft_phase = 1; pb_cursor = 0; pb_scroll = 0;
+                } else if (pb_craft_phase == 1) {
+                    pb_rar_pick = pb_cursor;   // 0/1/2 -> rarity 1/2/3
+                    pb_affix_picks = [];
+                    pb_craft_phase = 2; pb_cursor = 0; pb_scroll = 0;
+                } else if (pb_craft_phase == 2) {
+                    var _cw_bs = _cw_stats[pb_cursor];
+                    if (pattern_fam_tier(_cw_bs) < 1) {
+                        shop_notification = "No " + _cw_bs + " blueprint - smelt gear carrying " + _cw_bs + " first.";
+                        audio_play_sound(snd_ui_error, 1, false);
+                    } else {
+                        pb_base_stat = _cw_bs;
+                        pb_affix_picks = [];
+                        pb_craft_phase = 3; pb_cursor = 0; pb_scroll = 0;
+                    }
+                } else if (pb_craft_phase == 3) {
+                    // Toggle the family under the cursor; the wizard advances
+                    // when the rarity's full budget is chosen (Esc re-picks).
+                    var _cw_fam = _cw_fams[pb_cursor].stat_name;
+                    var _cw_had = false;
+                    for (var _cwp = 0; _cwp < array_length(pb_affix_picks); _cwp++) {
+                        if (pb_affix_picks[_cwp] == _cw_fam) {
+                            array_delete(pb_affix_picks, _cwp, 1);
+                            _cw_had = true;
+                            break;
+                        }
+                    }
+                    var _cw_budget = pattern_affix_budget(1 + pb_rar_pick);
+                    if (!_cw_had) {
+                        if (array_length(pb_affix_picks) >= _cw_budget) {
+                            shop_notification = "A " + item_rarity_name(1 + pb_rar_pick) + " piece holds " + string(_cw_budget) + " affix" + ((_cw_budget == 1) ? "" : "es") + ".";
+                            audio_play_sound(snd_ui_error, 1, false);
+                        } else {
+                            array_push(pb_affix_picks, _cw_fam);
+                        }
+                    }
+                    if (array_length(pb_affix_picks) >= _cw_budget) {
+                        pb_craft_phase = 4; pb_cursor = 0; pb_scroll = 0;
+                    }
+                } else if (pb_craft_phase == 4) {
+                    var _cw_arts = pattern_art_for_slot(_cw_slots[pb_slot_pick]);
+                    pb_icon_entry = (pb_cursor == 0) ? undefined : _cw_arts[pb_cursor - 1];
+                    pb_craft_phase = 5; pb_cursor = 0; pb_scroll = 0;
+                    keyboard_string = pattern_name_roll(_cw_slots[pb_slot_pick], pb_base_stat, pb_affix_picks, pb_icon_entry);
+                    if (input_device() == 2) keyboard_virtual_show(kbv_type_default, kbv_returnkey_done, kbv_autocapitalize_words, false);
+                }
+            }
+            exit;
+        }
+
         if (reforge_stage > 0) {
             if (reforge_target == undefined) { reforge_stage = 0; exit; }
             if (reforge_stage == 1) {
@@ -1637,12 +1915,13 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()) {
         if (input_hotkey("G") || input_inject_take("dorn:frame")) {
             dorn_ck_open  = true;
             dorn_ck_kind  = "frame";
-            dorn_ck_title = "STRIKE A MYTHRIL FRAME?";
-            // 07-29 reword (M: the old two-liner was confusing): say what the
-            // frame IS and what comes next, not just the price.
-            dorn_ck_body  = "Pay " + string(forge_frame_cost()) + "g + 1 LEGENDARY Reforge Ingot and Dorn strikes"
-                + "\nthe MYTHRIL FRAME - his third of the LEGENDARY FORGE."
-                + "\nGather Maren's RUNEHEART CORE and Sable's QUINTESSENCE,"
+            // 08-11 reword (M: still read as gibberish) - lead with FUNCTION
+            // (buying 1 of the 3 forge parts), keep the lore name second.
+            dorn_ck_title = "BUY DORN'S FORGE PART?";
+            dorn_ck_body  = "The LEGENDARY FORGE takes 3 parts, one from each smith."
+                + "\nDorn's part is the MYTHRIL FRAME: pay " + string(forge_frame_cost())
+                + "g + 1 LEGENDARY Reforge Ingot."
+                + "\nGet Maren's RUNEHEART CORE and Sable's QUINTESSENCE,"
                 + "\nthen return here and press [V] to forge a custom legendary.";
             exit;
         }
@@ -1675,6 +1954,31 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()) {
             exit;
         }
 
+        // ---- PATTERN BOOK verbs (08-11): [T] smelt, [B] book, [N] craft.
+        if (input_hotkey("T") || input_inject_take("dorn:smelt")) {
+            var _pb_cands = pattern_smelt_candidates();
+            if (array_length(_pb_cands) == 0) {
+                shop_notification = "Nothing unequipped to smelt - Uncommon to Epic gear feeds the book.";
+                audio_play_sound(snd_ui_error, 1, false);
+            } else {
+                item_picker_open("pb_smelt", {}, _pb_cands);
+                shop_notification = "";
+            }
+            exit;
+        }
+        if (input_hotkey("B") || input_inject_take("dorn:book")) {
+            pb_book_open = true; pb_book_scroll = 0; shop_notification = "";
+            exit;
+        }
+        if (input_hotkey("N") || input_inject_take("dorn:craft")) {
+            pb_craft_open = true; pb_craft_phase = 0;
+            pb_cursor = 0; pb_scroll = 0;
+            pb_affix_picks = []; pb_icon_entry = undefined;
+            pb_result = undefined; pb_name = "";
+            shop_notification = "";
+            exit;
+        }
+
         if (_rf_n > 0) {
             if (nav_up())   { reforge_index = wrap_index(reforge_index - 1, _rf_n); shop_notification = ""; }
             if (nav_down()) { reforge_index = wrap_index(reforge_index + 1, _rf_n); shop_notification = ""; }
@@ -1690,7 +1994,7 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()) {
                 } else {
                     var _rt = reforge_ingot_tier_for(_rr);   // -1 = no ingot of that tier or higher
                     if (_rt < 0) {
-                        shop_notification = "No " + item_rarity_name(_rr) + "-tier (or higher) Reforge Ingot - the tavern board pays them.";
+                        shop_notification = "No " + item_rarity_name(_rr) + "-tier (or higher) Reforge Ingot - smelting and the tavern board pay them.";
                         audio_play_sound(snd_ui_error, 1, false);
                     } else {
                         // Open the confirmation screen - nothing is spent or rolled yet.
@@ -1705,13 +2009,14 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()) {
         // Edge-triggered scroll: the selector moves WITHIN the visible window and the
         // list only shifts once the cursor reaches the top/bottom edge (matches the Sell
         // list) - instead of pinning the cursor mid-window while rows slide under it.
-        var _rf_vis = 6;
+        // 5 visible since 08-11: the Pattern Book verb row claimed the bottom band.
+        var _rf_vis = 5;
         if (reforge_index < reforge_scroll)            reforge_scroll = reforge_index;
         if (reforge_index >= reforge_scroll + _rf_vis) reforge_scroll = reforge_index - (_rf_vis - 1);
         reforge_scroll = clamp(reforge_scroll, 0, max(0, _rf_n - _rf_vis));
 
         // Mouse: click a tab header to leave, or a gear row to select it (Enter reworks).
-        // Row window MUST mirror ui_draw_dorn_reforge (6 visible, pitch 102, top y255).
+        // Row window MUST mirror ui_draw_dorn_reforge (5 visible, pitch 102, top y255).
         if (mouse_check_button_pressed(mb_left)) {
             var _rmx = device_mouse_x_to_gui(0);
             var _rmy = device_mouse_y_to_gui(0);
@@ -1724,7 +2029,7 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()) {
                 }
             }
             if (_rf_n > 0) {
-                var _rvis  = 6;
+                var _rvis  = 5;
                 var _rwin0 = clamp(reforge_scroll, 0, max(0, _rf_n - _rvis));
                 var _rwin1 = min(_rf_n, _rwin0 + _rvis);
                 for (var _rri = _rwin0; _rri < _rwin1; _rri++) {
@@ -1740,7 +2045,7 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()) {
                                 reforge_is_recast = true;
                                 reforge_anim_t = 0; shop_notification = "";
                             } else if (reforge_ingot_tier_for(_rr2) < 0) {
-                                shop_notification = "No " + item_rarity_name(_rr2) + "-tier (or higher) Reforge Ingot - the tavern board pays them.";
+                                shop_notification = "No " + item_rarity_name(_rr2) + "-tier (or higher) Reforge Ingot - smelting and the tavern board pay them.";
                                 audio_play_sound(snd_ui_error, 1, false);
                             } else {
                                 reforge_target = _rc2.item; reforge_stage = 1;
@@ -2506,21 +2811,24 @@ if (trainer_open && !menu_open && !forge_result_up()) {   // I menu owns input w
         }
     }
 
-    // === TAB 0: PERMANENT STAT UPGRADE - 200g + one Rare+ item ===
+    // === TAB 0: PERMANENT STAT UPGRADE - scaling gold + escalating trade item
+    // (08-11: was flat 200g + 1 Rare forever, trivially stackable late-game) ===
     if (trainer_tab == 0 && _act) {
         var _stat_keys  = ["perm_str_bonus","perm_dex_bonus","perm_con_bonus","perm_int_bonus","perm_wis_bonus","perm_cha_bonus"];
         var _stat_names = ["STR","DEX","CON","INT","WIS","CHA"];
-        var _stat_cost  = vex_price(cha_price(200));   // Vex Friend perk: 10% off
+        var _stat_cost  = vex_price(cha_price(vex_stat_base_cost()));   // Vex Friend perk: 10% off
+        var _stat_rar   = vex_stat_rarity_req();
+        var _stat_rlbl  = item_rarity_name(_stat_rar);
         if (global.gold < _stat_cost) {
-            trainer_notification = "Not enough gold - a stat costs " + string(_stat_cost) + "g + a Rare item.";
+            trainer_notification = "Not enough gold - a stat costs " + string(_stat_cost) + "g + a " + _stat_rlbl + " item.";
             audio_play_sound(snd_ui_error, 1, false);
-        } else if (!trainer_has_rare_item()) {
-            trainer_notification = "You need a Rare or better item in your stash/pack to trade.";
+        } else if (!trainer_has_item(_stat_rar)) {
+            trainer_notification = "You need a " + _stat_rlbl + " or better item in your stash/pack to trade.";
         } else {
             // Open the picker so the player chooses + confirms the item to trade.
             item_picker_open("vex_stat",
                 { gold: _stat_cost, stat_key: _stat_keys[trainer_cursor], stat_name: _stat_names[trainer_cursor] },
-                item_picker_candidates_by_rarity(2));
+                item_picker_candidates_by_rarity(_stat_rar));
             trainer_notification = "";
         }
     }
@@ -3534,9 +3842,9 @@ if (variable_instance_exists(id, "sable_open") && sable_open && !menu_open && !f
         _s_rows = max(1, array_length(_s_brew));                                   // Brew list
     } else if (sable_tab == 2) {
         // Fusion groups + the always-present CHAOTIC BREW + QUINTESSENCE rows;
-        // in pick mode the rows are the whole potion pouch instead.
+        // in pick mode the rows are the combined stash+pouch pool (08-11).
         _s_rows = sable_chaos_open
-            ? max(1, variable_global_exists("consumable_inventory") ? array_length(global.consumable_inventory) : 0)
+            ? max(1, array_length(sable_potion_pool()))
             : (array_length(_s_groups) + 2);
     } else {
         _s_rows = 3;    // Rebirth: class / attunement (M 07-29) / cursed (M 07-28)
@@ -3795,8 +4103,10 @@ if (variable_instance_exists(id, "sable_open") && sable_open && !menu_open && !f
             if (sable_chaos_open) {
                 // -------- CHAOTIC BREW pick-3 (M 07-28) -------- Enter toggles a
                 // potion; the 3rd pick arms the checkout popup (commit in the
-                // modal handler above). ANY mix - that's the point.
-                var _ch_inv = variable_global_exists("consumable_inventory") ? global.consumable_inventory : [];
+                // modal handler above). ANY mix - that's the point. The list is
+                // the combined stash+pouch pool (08-11): indices are combined
+                // indices, matching what sable_chaotic_fuse expects.
+                var _ch_inv = sable_potion_pool();
                 if (array_length(_ch_inv) > 0) {
                     var _chsel = clamp(sable_cursor, 0, array_length(_ch_inv) - 1);
                     var _ch_pos = -1;
@@ -3816,7 +4126,7 @@ if (variable_instance_exists(id, "sable_open") && sable_open && !menu_open && !f
                     if (_ch_arm) {
                         var _ch_names = "";
                         for (var _chn = 0; _chn < 3; _chn++) {
-                            _ch_names += (_chn > 0 ? ", " : "") + _ch_inv[sable_chaos_sel[_chn]].name;
+                            _ch_names += (_chn > 0 ? ", " : "") + _ch_inv[sable_chaos_sel[_chn]].it.name;
                         }
                         sable_confirm = true;
                         if (sable_chaos_kind == "quint") {
@@ -3839,7 +4149,7 @@ if (variable_instance_exists(id, "sable_open") && sable_open && !menu_open && !f
             } else if (sable_cursor >= array_length(_s_groups)) {
                 // The always-present rows: CHAOTIC BREW (groups) and QUINTESSENCE
                 // (groups+1, LEGENDARY FORGE component) - both enter pick-3 mode.
-                var _ch_have = variable_global_exists("consumable_inventory") ? array_length(global.consumable_inventory) : 0;
+                var _ch_have = array_length(sable_potion_pool());   // stash + pouch (08-11)
                 var _ch_kind = (sable_cursor == array_length(_s_groups)) ? "chaotic" : "quint";
                 if (_ch_have < 3) {
                     sable_notification = "You need at least 3 potions (you hold " + string(_ch_have) + ").";

@@ -509,6 +509,86 @@ if (portrait_active) {
 
 
 // -----------------------------------------------------------------------------
+// RPG ORIGIN - background choice overlay (08-11, M design-locked). 12 cards in
+// a 4x3 grid, each with its staging still (spr_origin_<id>; framed text card
+// until the art imports), name and mechanical start. Selected card's flavor
+// line reads in the footer. Cards hit-tested HERE (touch rule): tap selects,
+// tap-again proceeds; Step consumes origin:pickN / origin:go.
+// -----------------------------------------------------------------------------
+if (origin_active) {
+    draw_set_alpha(0.90);
+    draw_set_color(make_color_rgb(8, 10, 20));
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
+    draw_set_alpha(1.0);
+    draw_set_halign(fa_center);
+    draw_set_valign(fa_top);
+    draw_set_font(fnt_ui_title);
+    draw_set_color(make_color_rgb(120, 190, 255));
+    draw_text(GUI_CX, 66, "Where Do You Come From?");
+    draw_set_font(fnt_ui_small);
+    draw_set_color(make_color_rgb(160, 168, 185));
+    draw_text(GUI_CX, 132, "Every wanderer carried something up to Ironwake. Choose what you carried.");
+
+    var _og_cat = origin_catalog();
+    var _og_n   = array_length(_og_cat);
+    var _ogx = device_mouse_x_to_gui(0);
+    var _ogy = device_mouse_y_to_gui(0);
+    var _ogp = mouse_check_button_pressed(mb_left);
+
+    // 4x3 grid, measured: cards 408x232, pitch 432/248 -> grid ends y908;
+    // a 3-line start text ends y+226, 6px inside the card.
+    for (var _o = 0; _o < _og_n; _o++) {
+        var _oc  = _og_cat[_o];
+        var _ocx = 108 + (_o mod 4) * 432;
+        var _ocy = 180 + (_o div 4) * 248;
+        var _ocw = 408, _och = 232;
+        var _osel = (_o == selected_origin);
+
+        draw_set_color(_osel ? make_color_rgb(26, 30, 44) : make_color_rgb(14, 16, 24));
+        draw_rectangle(_ocx, _ocy, _ocx + _ocw, _ocy + _och, false);
+        draw_set_color(_osel ? make_color_rgb(120, 190, 255) : make_color_rgb(50, 56, 75));
+        draw_rectangle(_ocx, _ocy, _ocx + _ocw, _ocy + _och, true);
+        if (_osel) draw_rectangle(_ocx + 3, _ocy + 3, _ocx + _ocw - 3, _ocy + _och - 3, true);
+
+        // Staging still: aspect-contained into the card's upper band. Until the
+        // art imports, a dim vignette keeps the card intentional, not broken.
+        var _osp = origin_still(_oc.id);
+        var _oix0 = _ocx + 8, _oiy0 = _ocy + 8, _oiw = _ocw - 16, _oih = 116;
+        draw_set_color(make_color_rgb(10, 11, 17));
+        draw_rectangle(_oix0, _oiy0, _oix0 + _oiw, _oiy0 + _oih, false);
+        if (_osp >= 0) {
+            var _osw = sprite_get_width(_osp), _osh = sprite_get_height(_osp);
+            var _osc = min(_oiw / _osw, _oih / _osh);
+            var _odw = _osw * _osc, _odh = _osh * _osc;
+            draw_sprite_stretched(_osp, 0, _oix0 + (_oiw - _odw) * 0.5, _oiy0 + (_oih - _odh) * 0.5, _odw, _odh);
+        } else {
+            draw_set_color(make_color_rgb(34, 38, 54));
+            draw_rectangle(_oix0 + 1, _oiy0 + 1, _oix0 + _oiw - 1, _oiy0 + _oih - 1, true);
+        }
+
+        draw_set_font(fnt_ui);
+        draw_set_color(_osel ? c_white : make_color_rgb(200, 206, 220));
+        draw_text(_ocx + _ocw / 2, _ocy + 128, _oc.name);
+        draw_set_font(fnt_ui_small);
+        draw_set_color(_osel ? make_color_rgb(210, 180, 110) : make_color_rgb(140, 148, 168));
+        draw_text_ext(_ocx + _ocw / 2, _ocy + 160, _oc.start, 22, _ocw - 24);
+
+        // Hit-test in Draw (touch rule): tap selects; tapping the selected card proceeds.
+        if (_ogp && _ogx >= _ocx && _ogx < _ocx + _ocw && _ogy >= _ocy && _ogy < _ocy + _och) {
+            input_inject(_osel ? "origin:go" : ("origin:pick" + string(_o)));
+        }
+    }
+
+    // Footer: the selected origin's flavor line + key legend.
+    draw_set_font(fnt_ui_small);
+    draw_set_color(make_color_rgb(185, 175, 150));
+    draw_text(GUI_CX, 936, "\"" + _og_cat[selected_origin].blurb + "\"");
+    draw_set_color(make_color_rgb(140, 150, 175));
+    ui_draw_key_legend(GUI_CX, 984, "A/D W/S: Select   Enter: Choose   Esc: Back");
+}
+
+
+// -----------------------------------------------------------------------------
 // THE IRON VOW - mode choice overlay (SYSTEMS_IRON_VOW.md). Drawn over the
 // whole screen after portrait confirm. Cards are hit-tested HERE (touch rule):
 // tap selects, tap-again / CHOOSE button proceeds; Step consumes the tags.

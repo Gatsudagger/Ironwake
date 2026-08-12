@@ -37,6 +37,11 @@ naming_blocked_flash = 0;
 portrait_active   = false;
 selected_portrait = 0;
 
+// RPG ORIGIN step (08-11, M design-locked) - after portrait, before the Vow.
+// 12 background cards in a 4x3 grid; each is a small mechanical start.
+origin_active   = false;
+selected_origin = 0;
+
 // THE IRON VOW step (SYSTEMS_IRON_VOW.md) - after portrait, before the hub.
 // 0 = Standard (default), 1 = THE IRON VOW (3 lives), 2 = THE UNBROKEN VOW (1).
 // Picking a Vow opens a bordered CONFIRM/CANCEL popup (checkout standing rule).

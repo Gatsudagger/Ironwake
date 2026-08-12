@@ -375,13 +375,15 @@ for (var _ei = 0; _ei < _ecnt; _ei++) {
             var _dl_spr = variable_struct_get(_espr_map, _ec.name);
             var _dl_frm = (sprite_get_number(_dl_spr) > 1) ? 3 : 0;
             var _dl_a   = min(1.0, _ec.death_linger / 20.0);
+            // Depth scale stamped at death (faux-2.5D); pre-lever kills read 3x.
+            var _dl_es  = variable_struct_exists(_ec, "last_esc") ? _ec.last_esc : 3;
             draw_set_alpha(_dl_a);
-            draw_sprite_ext(_dl_spr, _dl_frm, _ec.last_ex + screen_shake_x, _ec.last_ey + screen_shake_y, 3, 3, 0, c_white, _dl_a);
+            draw_sprite_ext(_dl_spr, _dl_frm, _ec.last_ex + screen_shake_x, _ec.last_ey + screen_shake_y, _dl_es, _dl_es, 0, c_white, _dl_a);
             // Late-arriving hit flash (the killing bolt landing) reads on the ghost.
             if (variable_struct_exists(_ec, "hit_flash") && _ec.hit_flash > 0) {
                 _ec.hit_flash--;
                 gpu_set_blendmode(bm_add);
-                draw_sprite_ext(_dl_spr, _dl_frm, _ec.last_ex, _ec.last_ey, 3, 3, 0, c_white, _dl_a * 0.8);
+                draw_sprite_ext(_dl_spr, _dl_frm, _ec.last_ex, _ec.last_ey, _dl_es, _dl_es, 0, c_white, _dl_a * 0.8);
                 gpu_set_blendmode(bm_normal);
             }
             draw_set_alpha(1.0);
@@ -394,13 +396,22 @@ for (var _ei = 0; _ei < _ecnt; _ei++) {
     var _ey = _espr_y0 + (_espr_idx * _espr_dy)
             + ((_espr_idx % 2 == 0) ? -_espr_zig : _espr_zig);
 
+    // FAUX-2.5D (M 08-11, combat_25d lever): slot 0 is the BACK of the row
+    // (highest on screen, deepest in the scene) - it draws smaller and each
+    // slot steps up to full size at the front. v2 (M F5: "almost no visual
+    // difference"): spread widened 2.55-3.0 -> 2.3-3.15 and the row gains an
+    // extra depth slope (back raised, front dropped toward the player).
+    // Flat mode: the shipped 3x and the shipped row, byte-identical.
+    var _es = combat_25d() ? (2.3 + 0.2833 * min(3, _espr_idx)) : 3;
+    if (combat_25d()) _ey += _espr_idx * 14 - 21;
+
     // Inspect hit-box from the RESTING sprite position (before lunge/shake jitter is
     // applied below) so hovering the creature itself also opens the inspect tooltip,
     // and the hot-zone doesn't jump around while it animates.
     if (variable_struct_exists(_espr_map, _ec.name)) {
         var _isp   = variable_struct_get(_espr_map, _ec.name);
-        var _isp_w = sprite_get_width(_isp)  * 3;
-        var _isp_h = sprite_get_height(_isp) * 3;
+        var _isp_w = sprite_get_width(_isp)  * _es;
+        var _isp_h = sprite_get_height(_isp) * _es;
         if (_mx_gui >= _ex && _mx_gui <= _ex + _isp_w
             && _my_gui >= _ey && _my_gui <= _ey + _isp_h) {
             _inspect_target = _ec;
@@ -436,9 +447,11 @@ for (var _ei = 0; _ei < _ecnt; _ei++) {
         _ec.hit_recoil--;
     }
     // Stamp the standing position for the death-linger ghost (shake excluded -
-    // the ghost draw re-applies live shake itself).
-    _ec.last_ex = _ex - screen_shake_x;
-    _ec.last_ey = _ey - screen_shake_y;
+    // the ghost draw re-applies live shake itself). Depth scale rides along so
+    // the ghost stays the size it died at (faux-2.5D).
+    _ec.last_ex  = _ex - screen_shake_x;
+    _ec.last_ey  = _ey - screen_shake_y;
+    _ec.last_esc = _es;
 
     if (variable_struct_exists(_espr_map, _ec.name)) {
         var _espr = variable_struct_get(_espr_map, _ec.name);
@@ -448,35 +461,35 @@ for (var _ei = 0; _ei < _ecnt; _ei++) {
         // foes read against busy backgrounds.
         // Baseline raised to ~0.94 of the sprite height so the shadow hugs the
         // enemy's feet; width scales with the model so big foes cast bigger shadows.
-        ui_draw_ground_shadow(_ex + sprite_get_width(_espr)  * 3 * 0.5,
-                              _ey + sprite_get_height(_espr) * 3 * 0.94,
-                              sprite_get_width(_espr) * 3);
+        ui_draw_ground_shadow(_ex + sprite_get_width(_espr)  * _es * 0.5,
+                              _ey + sprite_get_height(_espr) * _es * 0.94,
+                              sprite_get_width(_espr) * _es);
 
         // Selected-target reticle: a slowly-swirling arcane rune at the foe's feet,
         // drawn UNDER the sprite so it reads as a ground marker. Lets you map the
         // highlighted name/HP bar to the correct sprite while tabbing targets.
         if (_espr_idx == selected_target) {
-            var _cur_cx = _ex + sprite_get_width(_espr)  * 3 * 0.5;
-            var _cur_cy = _ey + sprite_get_height(_espr) * 3;            // at the feet
+            var _cur_cx = _ex + sprite_get_width(_espr)  * _es * 0.5;
+            var _cur_cy = _ey + sprite_get_height(_espr) * _es;          // at the feet
             // Shrunk 30% from the old *0.4 factor (0.4 -> 0.28) so the ground rune sits tighter under the foe.
-            var _cur_sc = max(0.18, (sprite_get_width(_espr) * 3) / sprite_get_width(spr_target_cursor)) * 0.28;
+            var _cur_sc = max(0.18, (sprite_get_width(_espr) * _es) / sprite_get_width(spr_target_cursor)) * 0.28;
             _cur_sc    *= 1 + 0.06 * sin(current_time / 180);            // gentle breathing pulse
             var _cur_rot = current_time * 0.05;                          // continuous swirl
             draw_sprite_ext(spr_target_cursor, 0, _cur_cx, _cur_cy,
                             _cur_sc, _cur_sc, _cur_rot, c_white, 0.9);
         }
 
-        draw_sprite_ext(_espr, _espr_frame, _ex, _ey, 3, 3, 0, c_white, 1.0);
+        draw_sprite_ext(_espr, _espr_frame, _ex, _ey, _es, _es, 0, c_white, 1.0);
         if (variable_struct_exists(_ec, "hit_flash") && _ec.hit_flash > 0) {
             _ec.hit_flash--;
             gpu_set_blendmode(bm_add);
-            draw_sprite_ext(_espr, _espr_frame, _ex, _ey, 3, 3, 0, c_white, (_ec.hit_flash / 15.0) * 0.8);
+            draw_sprite_ext(_espr, _espr_frame, _ex, _ey, _es, _es, 0, c_white, (_ec.hit_flash / 15.0) * 0.8);
             gpu_set_blendmode(bm_normal);
         }
         // Looping status VFX over this enemy.
         if (variable_struct_exists(_ec, "status_effects")) {
-            ui_draw_status_fx(_ex + sprite_get_width(_espr) * 3 * 0.5, _ey,
-                              sprite_get_height(_espr) * 3, _ec.status_effects);
+            ui_draw_status_fx(_ex + sprite_get_width(_espr) * _es * 0.5, _ey,
+                              sprite_get_height(_espr) * _es, _ec.status_effects);
         }
     }
     _espr_idx++;
@@ -615,7 +628,8 @@ for (var _vbi = 0; _vbi < array_length(vfx_bursts); _vbi++) {
         gpu_set_blendmode(bm_add);
         draw_set_alpha(_vb_alpha);
         draw_sprite_ext(_vb_draw, _vb_frm, _vb.x + screen_shake_x, _vb.y + screen_shake_y,
-            _vb_sc, _vb_sc, 0, school_vfx_blend(_vb.school), 1.0);
+            _vb_sc, _vb_sc, 0,
+            variable_struct_exists(_vb, "col") ? _vb.col : school_vfx_blend(_vb.school), 1.0);
         gpu_set_blendmode(bm_normal);
         draw_set_alpha(1.0);
         array_push(_kept_bursts, _vb);
@@ -779,24 +793,27 @@ if (player_turn && !combat_over) {
         // 0 AP: a slow bright pulse. Above 0 it sits still and quiet.
         var _et_pulse = _et_out ? (0.55 + 0.45 * (0.5 + 0.5 * sin(current_time / 260))) : 1.0;
 
+        // Band slimmed 56 -> 36 tall (M 08-11 screenshot: the old y936-992 box
+        // overlapped BOTH neighbours - the combat log ends y945 and the touch
+        // ability row starts y984). y946-982 sits exactly in the corridor.
         draw_set_alpha(_et_out ? 0.88 : 0.62);
         draw_set_color(make_color_rgb(10, 11, 17));
-        draw_rectangle(_et_x0, 936, _et_x1, 992, false);
+        draw_rectangle(_et_x0, 946, _et_x1, 982, false);
         draw_set_alpha(1.0);
 
         if (end_turn_focus) {
             draw_set_color(make_color_rgb(255, 224, 120));
-            draw_rectangle(700, 936, 1220, 992, true);
+            draw_rectangle(700, 946, 1220, 982, true);
         } else if (_et_out) {
             draw_set_alpha(_et_pulse);
             draw_set_color(_ap_col);
-            draw_rectangle(_et_x0, 936, _et_x1, 992, true);
+            draw_rectangle(_et_x0, 946, _et_x1, 982, true);
             draw_set_alpha(1.0);
         }
 
         draw_set_alpha(_et_pulse);
         draw_set_color(end_turn_focus ? make_color_rgb(255, 224, 120) : _ap_col);
-        draw_text(960, 954, _et_txt);
+        draw_text(960, 950, _et_txt);
         draw_set_alpha(1.0);
     }
     draw_set_font(-1);
