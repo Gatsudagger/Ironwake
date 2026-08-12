@@ -4149,7 +4149,15 @@ function handle_enemy_drops(enemy_type) {
         // (boss_drop_weights: F2 = uncommon+, F3 = rare+ hard floors).
         var _boss_fl = variable_global_exists("current_floor") ? global.current_floor : 1;
         var _gt = boon_gambler_tier_bonus();   // Gambler's Icon: fast fights roll +1 tier
-        var _item = drop_equipment(boss_drop_weights(_drop_asc, _boss_fl), true, curse_loot_tier_bonus_for("boss") + _gt);
+        // THE WEIGHT OF IRONWAKE (Depth Warden, 08-13): the floor-25-cadence
+        // Warden guarantees a Depthforged LEGENDARY (DESIGN §4) - the weights
+        // collapse to legendary-only and the Descent's item_empower path tags it.
+        var _boss_w = boss_drop_weights(_drop_asc, _boss_fl);
+        if (variable_global_exists("warden_leg_due") && global.warden_leg_due) {
+            global.warden_leg_due = false;
+            _boss_w = [0, 0, 0, 0, 100];
+        }
+        var _item = drop_equipment(_boss_w, true, curse_loot_tier_bonus_for("boss") + _gt);
         array_push(global.run_items_found, _item);
         array_push(global.carried_items, _item);
         discover_item(item_base_name(_item), _item.rarity);
@@ -8461,6 +8469,11 @@ function pet_hunger_run_tick() {
         var _drain = (_p == _act) ? 20 : 10;
         // Grateful Belly quirk (08-01, pillar C): hunger drains 25% slower.
         if (pet_quirk_has(_p, "grateful_belly")) _drain = round(_drain * 0.75);
+        // Green Memory (witchwood_fawn innate, 08-06): while ACTIVE its hunger
+        // decays 20% slower - the canopy remembers to feed its own.
+        if (_p == _act && pet_active_innate("hunger_slow") > 0) {
+            _drain = round(_drain * (1 - pet_active_innate("hunger_slow") / 100));
+        }
         _p.hunger = max(0, _p.hunger - _drain);
     }
 }
@@ -8815,13 +8828,16 @@ function pet_run_complete(result) {
     return undefined;
 }
 
-// 3-STAGE authored art (redesigned creature species): each species has baby, youngadult
-// and adult frames (+ egg). Adolescent reuses the baby frame slightly enlarged; awakened
-// reuses the adult frame. So growth reads across 4 stages with 3 authored frames/species.
-// pet_sprite_key(pet) -> "egg" | "baby" | "youngadult" | "adult" for the frame to draw.
+// Staged authored art (redesigned creature species): each species has baby, youngadult
+// and adult frames (+ egg). Adolescent reuses the baby frame slightly enlarged. AWAKENED
+// (08-13, DESIGN_WORLD_EXPANSION_0806.md §6) asks for its own "awakened" frame -
+// escalate ONE axis, keep the silhouette - and falls back to adult art + the aura tint
+// until that art lands, so the pass ships in waves exactly like pet_species_has_art().
+// pet_sprite_key(pet) -> "egg" | "baby" | "youngadult" | "adult" | "awakened".
 function pet_sprite_key(pet) {
     if (!is_struct(pet) || pet.is_egg) return "egg";
-    if (pet.stage >= PET_STAGE_ADULT)      return "adult";        // adult (3) + awakened (4)
+    if (pet.stage >= PET_STAGE_AWAKENED)   return "awakened";     // awakened (4) - art-gated
+    if (pet.stage >= PET_STAGE_ADULT)      return "adult";        // adult (3)
     if (pet.stage >= PET_STAGE_YOUNGADULT) return "youngadult";   // young adult (2)
     return "baby";                                                 // baby (0) + adolescent (1)
 }
@@ -8882,7 +8898,8 @@ function pet_sprite(pet, dir = "s") {
     // Requested key not authored yet -> walk down to the nearest older frame that exists
     // (adult -> youngadult -> baby), so a legacy species missing a middle frame still draws.
     var _fallbacks = [];
-    if (_key == "adult")           _fallbacks = ["youngadult", "baby"];
+    if (_key == "awakened")        _fallbacks = ["adult", "youngadult", "baby"];   // §6.2: mandatory fallback
+    else if (_key == "adult")      _fallbacks = ["youngadult", "baby"];
     else if (_key == "youngadult") _fallbacks = ["adult", "baby"];   // prefer older look, else adult
     for (var _f = 0; _f < array_length(_fallbacks); _f++) {
         var _kbase = "spr_pet_" + pet.species + "_" + _fallbacks[_f];
@@ -9015,7 +9032,7 @@ function pet_species_innate(species_id) {
         case "glass_eel":      return { name:"Slipstream",      fx:"el_resist",    val:1,  desc:"+1 El Resist while it is your companion." };
         case "chapel_bat":     return { name:"Vespers",         fx:"room_heal",    val:2,  desc:"Heal 2 HP whenever you clear a combat room." };
         case "barrow_mole":    return { name:"Turned Earth",    fx:"cache_find",   val:6,  desc:"+6% chance of an extra item from floor caches." };
-        case "tallow_moth":    return { name:"Guttering Light", fx:"pet_heal",     val:5,  desc:"+5% to the healing you give your companion." };
+        case "tallow_moth":    return { name:"Guttering Light", fx:"heal_recv",    val:20, desc:"Its glow deepens every mend - +20% to all healing you receive." };
         case "gravemask":      return { name:"Grave Goods",     fx:"cache_find",   val:8,  desc:"+8% chance of an extra item from floor caches." };
         case "bristleback":    return { name:"Unmoved",         fx:"thorns",       val:3,  desc:"Enemies that strike you take 3 damage back." };
         case "wispfox":        return { name:"Lure",            fx:"first_fire",   val:4,  desc:"Your first attack each combat deals +4 bonus Fire damage." };
@@ -9051,6 +9068,15 @@ function pet_active_innate(fx) {
     var _p = pet_active();
     if (_p == undefined || _p.is_egg) return 0;
     var _in = pet_species_innate(_p.species);
+    // Understudy (mimicling sig move, 08-06): it performs the LAST creature you
+    // had active - its effective innate is that species' innate. The previous-
+    // species ledger is stamped at combat start (obj_combat_controller Create)
+    // and persists in the save. Falls through to its own innate with no history.
+    if (_p.species == "mimicling" && pet_active_sig_move("understudy")
+        && variable_global_exists("pet_prev_species") && global.pet_prev_species != "") {
+        var _mi = pet_species_innate(global.pet_prev_species);
+        if (_mi != undefined) _in = _mi;
+    }
     if (_in == undefined) return 0;
     if (_in.fx == fx) return _in.val;
     if (_in.fx == "armor_res" && (fx == "armor" || fx == "el_resist")) return _in.val;   // Runeshell plates both
@@ -9077,7 +9103,7 @@ function pet_species_sig_move(species_id) {
         case "fathom_squid":    return { name:"Ink Fathom",    fx:"ink_fathom",   desc:"Once per combat: the first enemy to target you loses its turn to the dark." };
         case "tallykeep":       return { name:"Reckoning",     fx:"reckoning",    desc:"Every 3rd ability you cast deals +20% damage - it is keeping count." };
         case "lantern_wyrm":    return { name:"Borrowed Light", fx:"borrowed_light", desc:"Once per combat: the first time you fall below 50% HP, its lantern gives back 15% of your max HP." };
-        case "deepclaw":        return { name:"Deadweight",    fx:"deadweight",   desc:"Once per combat: the first enemy to act is slowed - it acts last for 2 turns." };
+        case "deepclaw":        return { name:"Deadweight",    fx:"deadweight",   desc:"The load settles on the swiftest foe - it acts LAST this combat." };
         case "sum_moth":        return { name:"Carry the One", fx:"carry_one",    desc:"Once per combat: your first overkill damage carries over to another enemy." };
         case "null_hound":      return { name:"Nothing Follows", fx:"nothing_follows", desc:"Once per combat: the first debuff applied to you is erased before it lands." };
         case "mimicling":       return { name:"Understudy",    fx:"understudy",   desc:"It copies the innate of the last creature you had active." };
@@ -9088,7 +9114,7 @@ function pet_species_sig_move(species_id) {
         case "leviathan_calf":  return { name:"Something Larger", fx:"something_larger", desc:"Once per combat: the first enemy to strike you takes 25% of its own max HP." };
         case "graftling":       return { name:"Take Root",     fx:"take_root",    desc:"Once per combat: the first enemy add arrives Rooted." };
         case "thornlet":        return { name:"Bramble Wall",  fx:"bramble_wall", desc:"Once per combat: the first enemy attack on you is stopped outright." };
-        case "whispervine":     return { name:"Held Breath",   fx:"held_breath",  desc:"Once per combat: the first ability silenced or disabled is refunded." };
+        case "whispervine":     return { name:"Held Breath",   fx:"held_breath",  desc:"Once per combat: the first cast that stun, root or silence would block slips through anyway." };
     }
     return undefined;
 }
@@ -13397,11 +13423,13 @@ function pet_species_lore(species_id) {
 }
 
 // Dungeons a run can actually be started in. Scions keyed to anything else
-// (descent Wardens, unbuilt biomes) cannot drop yet, so the Compendium must not
-// count them - otherwise completion caps below 100% and reads as a bug. Add a
-// key here the moment that dungeon becomes selectable.
+// (unbuilt biomes) cannot drop yet, so the Compendium must not count them -
+// otherwise completion caps below 100% and reads as a bug. Add a key here the
+// moment that dungeon becomes selectable. "descent" joined 08-13: the Depth
+// Wardens spawn and roll their scions now (combat_on_enemy_defeated), so the
+// art-gated scion loop below counts them honestly.
 function compendium_live_dungeons() {
-    return ["ashen_vault", "scorched_depths", "tundra_tomb"];
+    return ["ashen_vault", "scorched_depths", "tundra_tomb", "descent"];
 }
 
 // Compendium roster: every OBTAINABLE species, generic then scion, in catalog

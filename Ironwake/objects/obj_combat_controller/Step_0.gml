@@ -365,6 +365,18 @@ if (_result == 1) {
         add_gold(8);
         array_push(combat_log, "[Companion] " + pet_active().name + " sweats out a SLAGPEARL (+8g).");
     }
+    // Vespers (chapel_bat innate, 08-06): clearing a combat room heals N HP.
+    // Same once-per-victory flag idiom as the slagpearl above (this block
+    // re-runs during the victory pause).
+    if (pet_active_innate("room_heal") > 0 && !variable_struct_exists(player, "innate_vespers_done")) {
+        player.innate_vespers_done = true;
+        var _vp_amt = min(pet_active_innate("room_heal"), player.max_HP - player.HP);
+        if (_vp_amt > 0) {
+            player.HP += _vp_amt;
+            array_push(combat_log, "[Companion] " + pet_active().name + "'s VESPERS settle over you (+"
+                + string(_vp_amt) + " HP).");
+        }
+    }
     // Board challenge requests (BOARD_REQUESTS_SPEC.md §6) - scored once per victory.
     // Swift uses the threshold-tick trick: victory on round n ticks every T >= n so a
     // def with obj_param T completes exactly when n <= T.
@@ -1193,6 +1205,15 @@ if (player_turn) {
         // Control gate - root blocks melee abilities, silence blocks spells, stun blocks all.
         // Dormant until an enemy applies control to the player, but ready. (SYSTEMS_ATTACK_CLASS.md)
         var _ctrl_block = combat_control_block_reason(player, ability_attack_class(ab));
+        // Held Breath (whispervine signature move, 08-06): once per combat, the
+        // first cast a control would block slips through anyway - the vine exhales.
+        if (_ctrl_block != "" && pet_active_sig_move("held_breath")
+            && !variable_struct_exists(player, "sig_breath_done")) {
+            player.sig_breath_done = true;
+            array_push(combat_log, "[Companion] " + pet_active().name + " releases its HELD BREATH - "
+                + ab.name + " slips through!");
+            _ctrl_block = "";
+        }
 
         // Cooldown gate - evasion abilities (Blink / Shadow Step) can't be re-cast
         // until their per-combat cooldown counter ticks back to 0.
@@ -1218,8 +1239,26 @@ if (player_turn) {
         var _eff_cost    = ability_effective_cost(ab, player);
         var _qc_can_cast = (player.energy >= _eff_cost) && ability_secondary_ok(ab, player);
 
+        // THE HOLLOW CROWN (Depth Warden, 08-13): the ability it silenced on its
+        // last turn cannot be cast until the crown turns its attention elsewhere.
+        // A dead crown holds nothing - the gag only binds while it reigns.
+        var _crown_gag = false;
+        if (variable_struct_exists(player, "crown_silenced") && player.crown_silenced == ab.name) {
+            for (var _cg_i = 0; _cg_i < array_length(combat_state.combatants); _cg_i++) {
+                var _cg_e = combat_state.combatants[_cg_i];
+                if (!_cg_e.is_player && !_cg_e.is_defeated
+                    && variable_struct_exists(_cg_e, "warden_hook") && _cg_e.warden_hook == "crown") {
+                    _crown_gag = true;
+                    break;
+                }
+            }
+        }
+
         if (_already_used) {
             array_push(combat_log, ab.name + " already used this turn.");
+
+        } else if (_crown_gag) {
+            array_push(combat_log, "THE HOLLOW CROWN holds " + ab.name + " silent - it will not answer you.");
 
         } else if (_cd_left > 0) {
             array_push(combat_log, ab.name + " is on cooldown (" + string(_cd_left) + " turn(s)).");
@@ -1311,6 +1350,38 @@ if (player_turn) {
             if (ability_class_is_spell(ability_attack_class(ab))) {
                 if (!variable_struct_exists(player, "trunk_spell_casts")) player.trunk_spell_casts = 0;
                 player.trunk_spell_casts += 1;
+            }
+            // Reckoning counter (tallykeep signature move, 08-06): count EVERY
+            // ability cast at the spend commit; the damage site reads mod 3 == 0.
+            if (!variable_struct_exists(player, "sig_reckon_casts")) player.sig_reckon_casts = 0;
+            player.sig_reckon_casts += 1;
+
+            // Duelist T2 repetition ledger (08-13): did this cast repeat the last?
+            // Read by enemy_pick_ability - the Quickstep hunts the pattern.
+            player.duel_rep = (variable_struct_exists(player, "duel_last_cast")
+                               && player.duel_last_cast == ab.name);
+            player.duel_last_cast = ab.name;
+
+            // THE TALLY (Depth Warden, 08-13): it counts. Every time you commit
+            // an ability you have ALREADY used this combat, the Tally gains a
+            // permanent stack - +2 damage each. The per-combat use ledger rides
+            // the player struct; the stack rides the Warden.
+            if (!variable_struct_exists(player, "combat_ability_uses")) player.combat_ability_uses = {};
+            var _ty_seen = variable_struct_exists(player.combat_ability_uses, ab.name);
+            player.combat_ability_uses[$ ab.name] = true;
+            if (_ty_seen) {
+                for (var _ty_i = 0; _ty_i < array_length(combat_state.combatants); _ty_i++) {
+                    var _ty_e = combat_state.combatants[_ty_i];
+                    if (!_ty_e.is_player && !_ty_e.is_defeated
+                        && variable_struct_exists(_ty_e, "warden_hook") && _ty_e.warden_hook == "tally") {
+                        _ty_e.tally_stacks = (variable_struct_exists(_ty_e, "tally_stacks") ? _ty_e.tally_stacks : 0) + 1;
+                        _ty_e.damage += 2;
+                        _ty_e.telegraph_damage += 2;
+                        array_push(combat_log, "THE TALLY marks the repetition - " + string(_ty_e.tally_stacks)
+                            + " stack(s), its blows land +2 harder.");
+                        break;
+                    }
+                }
             }
 
             // Restore the real energy_cost (Arcane Surge etc. read the ability's true cost).
@@ -1629,10 +1700,26 @@ if (player_turn) {
                             var _slf_crit = (player.class_id == 0 && variable_struct_exists(player, "souls")
                                              && ability_class_is_spell(ability_attack_class(ab))
                                              && trunk_has("soul_crit")) ? 2 * player.souls : 0;
+                            // Patient Strike / Overhead (mire_heron / canopy_shrew innates,
+                            // 08-06): situational PHYS crit (Power/Precision rolls only).
+                            // Patient: a whole turn spent holding still; Overhead: the
+                            // target is below half HP and the drop line is open.
+                            var _inn_crit = 0;
+                            if (ab.crit_type <= 1) {
+                                if (pet_active_innate("patient_crit") > 0
+                                    && variable_struct_exists(player, "spent_no_ap_last_turn")
+                                    && player.spent_no_ap_last_turn) {
+                                    _inn_crit += pet_active_innate("patient_crit");
+                                }
+                                if (pet_active_innate("crit_low") > 0
+                                    && target.max_HP > 0 && target.HP < target.max_HP * 0.5) {
+                                    _inn_crit += pet_active_innate("crit_low");
+                                }
+                            }
                             _crit_result = combat_roll_crit(
                                 player.stats,
                                 ab.base_crit + rune_aspect_spell_crit(ab) + boon_value("duelist") + _wpn_crit + _react_crit_bonus
-                                    + _slf_crit
+                                    + _slf_crit + _inn_crit
                                     + ((_sm_crit || _ls_crit || _po_crit) ? 999 : 0),
                                 ab.crit_type
                             );
@@ -1965,6 +2052,42 @@ if (player_turn) {
                                 array_push(combat_log, "Flaying Edge: the wound tears wider (+10%)!");
                             }
                         }
+                        // Heat Sense (ashjaw_lynx innate, 08-06): +N% damage to a target
+                        // that is already Burning (any burn-element effect on it).
+                        if (pet_active_innate("vs_burning") > 0 && _deals_damage
+                            && variable_struct_exists(target, "status_effects")) {
+                            var _hs_burning = false;
+                            for (var _hs_i = 0; _hs_i < array_length(target.status_effects); _hs_i++) {
+                                var _hs_se = target.status_effects[_hs_i];
+                                if (variable_struct_exists(_hs_se, "element") && _hs_se.element == "burn") { _hs_burning = true; break; }
+                            }
+                            if (_hs_burning) {
+                                _final_dmg = max(1, floor(_final_dmg * (1 + pet_active_innate("vs_burning") / 100)));
+                                array_push(combat_log, "[Companion] Heat Sense finds the char (+"
+                                    + string(pet_active_innate("vs_burning")) + "%)!");
+                            }
+                        }
+                        // Banked Heat / Lure (ember_ram / wispfox innates, 08-06): the
+                        // FIRST damaging ATTACK each combat carries +N bonus Fire damage
+                        // (same attack-not-spell split as Forge Spark below).
+                        var _bh_ac = ability_attack_class(ab);
+                        if (pet_active_innate("first_fire") > 0 && _deals_damage
+                            && (_bh_ac == "melee_attack" || _bh_ac == "ranged_attack")
+                            && !variable_struct_exists(player, "innate_fire_done")) {
+                            player.innate_fire_done = true;
+                            _final_dmg += pet_active_innate("first_fire");
+                            array_push(combat_log, "[Companion] " + pet_active().name + "'s banked heat rides the blow (+"
+                                + string(pet_active_innate("first_fire")) + " Fire)!");
+                        }
+                        // Reckoning (tallykeep signature move, 08-06): every 3rd ability
+                        // you cast lands +20% - it is keeping count. Counter increments
+                        // at the spend commit, so this cast IS the 3rd/6th/9th.
+                        if (pet_active_sig_move("reckoning") && _deals_damage
+                            && variable_struct_exists(player, "sig_reckon_casts")
+                            && player.sig_reckon_casts > 0 && (player.sig_reckon_casts mod 3) == 0) {
+                            _final_dmg = max(1, floor(_final_dmg * 1.20));
+                            array_push(combat_log, "[Companion] " + pet_active().name + "'s RECKONING - the count comes due (+20%)!");
+                        }
                         // Serrated Strikes: physical ATTACKS apply 1 bleed stack (Shadowstrider
                         // only). Gated on _deals_damage so a pure debuff (e.g. Marked for Death,
                         // also physical-typed) doesn't proc a free bleed - it isn't an attack.
@@ -2169,6 +2292,21 @@ if (player_turn) {
                             }
                         }
 
+                        // DUELIST T2 PERFECT PARRY (08-13): an armed guard turns the
+                        // next melee blow aside outright - and the riposte answers
+                        // it DOUBLE. Spells and ranged shots go around a parry.
+                        if (_deals_damage && _final_dmg > 0
+                            && variable_struct_exists(target, "parry_armed") && target.parry_armed
+                            && ability_class_is_melee(ability_attack_class(ab))) {
+                            target.parry_armed = false;
+                            _final_dmg = 0;
+                            var _pp_rip = 2 * (variable_struct_exists(target, "riposte_dmg") ? target.riposte_dmg : 12);
+                            array_push(combat_log, "PERFECT PARRY! The blow is turned - and answered for " + string(_pp_rip) + "!");
+                            combat_apply_damage(player, _pp_rip);
+                            player.hit_flash = max(player.hit_flash, 10);
+                            array_push(damage_popups, { value: _pp_rip, x: 475, y: 545, timer: 40, delay: 10, col: make_color_rgb(230, 140, 100) });
+                            if (player.HP <= 0 && !combat_try_last_stand(player, combat_log)) player.is_defeated = true;
+                        }
                         // Pure debuffs never deal damage, even if a rider tried to add some.
                         if (_deals_damage) combat_apply_damage(target, _final_dmg);
 
@@ -2612,14 +2750,15 @@ if (player_turn) {
                         }
 
                         // ASHEN DUELIST RIPOSTE (DESIGN_DUELIST_CHALLENGE.md): every
-                        // melee blow he survives is answered at a flat 12 - the same
-                        // number as the player's own Counterblade.
+                        // melee blow he survives is answered - flat 12 at T0, then
+                        // scaled by his +10%/duel growth from T1 on (M-locked 08-13).
                         if (global.duel_active && target.HP > 0 && !target.is_defeated
                             && ability_class_is_melee(_atk_class) && _final_dmg > 0) {
-                            combat_apply_damage(player, 12);
+                            var _rip_dmg = variable_struct_exists(target, "riposte_dmg") ? target.riposte_dmg : 12;
+                            combat_apply_damage(player, _rip_dmg);
                             player.hit_flash = max(player.hit_flash, 8);
-                            array_push(damage_popups, { value: 12, x: 475, y: 545, timer: 40, delay: 10, col: make_color_rgb(230, 140, 100) });
-                            array_push(combat_log, "Riposte! The Duelist answers the blow for 12.");
+                            array_push(damage_popups, { value: _rip_dmg, x: 475, y: 545, timer: 40, delay: 10, col: make_color_rgb(230, 140, 100) });
+                            array_push(combat_log, "Riposte! The Duelist answers the blow for " + string(_rip_dmg) + ".");
                             if (player.HP <= 0 && !combat_try_last_stand(player, combat_log)) player.is_defeated = true;
                         }
 
@@ -3710,6 +3849,34 @@ if (player_turn) {
             array_push(combat_log, "[Companion] " + pet_active().name + "'s STILL BREATH settles over " + actor.name + " (-25% damage, 2 turns).");
         }
 
+        // Held Open (doorling signature move, 08-06): the first enemy to act each
+        // combat deals NO damage with that action - the way is held open. Marked
+        // here with the round stamp; the attack and spell damage paths below zero
+        // any damage from an actor whose stamp matches the current round.
+        if (pet_active_sig_move("held_open") && !variable_struct_exists(player, "sig_door_done")) {
+            player.sig_door_done = true;
+            actor.sig_door_round = combat_state.round;
+            array_push(combat_log, "[Companion] " + pet_active().name + " HOLDS THE WAY OPEN - "
+                + actor.name + "'s opening means nothing!");
+        }
+
+        // Ink Fathom (fathom_squid signature move, 08-06): the first enemy whose
+        // action would come for you loses its whole turn to the dark. A readied
+        // HEAL doesn't target you - it passes, and the ink waits.
+        if (pet_active_sig_move("ink_fathom") && !variable_struct_exists(player, "sig_ink_done")
+            && !(variable_struct_exists(actor, "intent") && actor.intent != undefined
+                 && actor.intent.eab != undefined && actor.intent.eab.kind == "heal")) {
+            player.sig_ink_done = true;
+            array_push(combat_log, "[Companion] " + pet_active().name + "'s INK FATHOM swallows "
+                + actor.name + "'s turn - the dark keeps it!");
+            enemy_roll_intent(actor, player, combat_state.round + 1, true);
+            combat_next_turn(combat_state);
+            player_turn = combat_state.active.is_player;
+            if (player_turn) { abilities_used_this_turn = []; if (instance_exists(obj_game_controller)) instance_find(obj_game_controller, 0).items_used_this_turn = 0; need_player_status_tick = true; }
+            enemy_turn_timer = enemy_turn_delay;
+            exit;
+        }
+
         // Gaol Chains (gaolwyrm signature move, 08-05 pillar D): the first ability
         // an elite or boss READIES against you is chained away - a 1-turn stun laid
         // before the control capture below (so it costs this very action) and the
@@ -3739,6 +3906,16 @@ if (player_turn) {
                 });
                 array_push(combat_log, "[Companion] " + pet_active().name + "'s GAOL CHAINS drag " + actor.name + "'s readied move into the dark!");
             }
+        }
+
+        // THE HOLLOW CROWN (Depth Warden, 08-13): each of its turns it silences
+        // one random player ability - a new pick every turn, the old one freed.
+        // The fight gets quieter the longer it goes on.
+        if (variable_struct_exists(actor, "warden_hook") && actor.warden_hook == "crown"
+            && !actor.is_defeated && array_length(player.abilities) > 0) {
+            var _hc_pick = player.abilities[irandom(array_length(player.abilities) - 1)];
+            player.crown_silenced = _hc_pick.name;
+            array_push(combat_log, "THE HOLLOW CROWN turns - " + _hc_pick.name + " falls SILENT.");
         }
 
         // Capture control state BEFORE the tick decrements durations, so a 1-turn
@@ -3780,6 +3957,13 @@ if (player_turn) {
             if (_se.effect_type == "dot") {
                 // DoT bypasses armor - poison and bleed are internal damage
                 var _dot_dmg = _se.effect_value;
+                // Set Jaw (lockjaw_turtle innate, 08-06): the player's Bleeds tick
+                // +N harder - once latched, it does not let go.
+                if (pet_active_innate("bleed_dmg") > 0
+                    && variable_struct_exists(_se, "source") && _se.source == "player"
+                    && combat_status_element(_se) == "bleed") {
+                    _dot_dmg += pet_active_innate("bleed_dmg");
+                }
                 combat_apply_damage(actor, _dot_dmg);
                 // Accelerating DoT (Entropy 07-16): each tick grows by `accel` (6/8/10/12).
                 if (variable_struct_exists(_se, "accel") && _se.accel > 0) _se.effect_value += _se.accel;
@@ -4340,7 +4524,7 @@ if (player_turn) {
             // enemy ABILITY that would hit you breaks against the seal - negated
             // outright, the action spent. Heals pass (they don't strike you); a
             // basic attack never triggers it. Once per combat via the player flag.
-            if (_eab.kind != "heal" && pet_active_sig_move("wardens_seal")
+            if (_eab.kind != "heal" && _eab.kind != "summon" && pet_active_sig_move("wardens_seal")
                 && !variable_struct_exists(player, "sig_seal_done")) {
                 player.sig_seal_done = true;
                 array_push(combat_log, "[Companion] " + pet_active().name + "'s WARDEN'S SEAL flares - " + actor.name + "'s " + _eab.name + " breaks against it!");
@@ -4351,6 +4535,28 @@ if (player_turn) {
                 if (player_turn) { abilities_used_this_turn = []; if (instance_exists(obj_game_controller)) instance_find(obj_game_controller, 0).items_used_this_turn = 0; need_player_status_tick = true; }
                 enemy_turn_timer = enemy_turn_delay;
                 exit;
+            }
+            // Abdication (griefwisp signature move, 08-06): the first ability an
+            // elite or boss spends against you costs it its NEXT turn - the crown
+            // weighs. The ability itself still resolves; the 1-turn stun is read
+            // pre-tick at its next turn start, so the throne sits empty exactly once.
+            if (pet_active_sig_move("abdication") && !variable_struct_exists(player, "sig_crownfall_done")
+                && variable_global_exists("next_enemy_type")
+                && (global.next_enemy_type == "elite" || global.next_enemy_type == "boss")
+                && _eab.kind != "heal"
+                && variable_struct_exists(actor, "status_effects")) {
+                player.sig_crownfall_done = true;
+                array_push(actor.status_effects, {
+                    name:         "Abdication",
+                    effect_type:  "debuff",
+                    kind:         "stun",
+                    effect_value: 0,
+                    duration:     1,
+                    element:      "",
+                    source:       "pet"
+                });
+                array_push(combat_log, "[Companion] " + pet_active().name + "'s ABDICATION - "
+                    + actor.name + "'s next turn is forfeit to the hollow crown!");
             }
             var _sa_slot = 0;
             for (var _sai = 0; _sai < array_length(combat_state.combatants); _sai++) {
@@ -4417,11 +4623,63 @@ if (player_turn) {
                     }
                 }
 
+            } else if (_eab.kind == "summon") {
+                // SUMMONS (08-13, M-locked): the caster calls one standard-pool mob
+                // mid-fight. Arrives winded (60% HP, Awakening-scaled) and joins the
+                // END of the turn order. enemy_pick_ability never readies this onto
+                // a full field, but re-check the 4-cap here for AoE-kill edge cases.
+                var _su_n = 0;
+                for (var _su_i = 0; _su_i < array_length(combat_state.combatants); _su_i++) {
+                    var _su_c = combat_state.combatants[_su_i];
+                    if (!_su_c.is_player && !_su_c.is_defeated) _su_n++;
+                }
+                if (_su_n < 4 && variable_instance_exists(id, "summon_pool") && array_length(summon_pool) > 0) {
+                    var _su_new = enemy_clone(summon_pool[irandom(array_length(summon_pool) - 1)]);
+                    var _su_asc = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
+                    if (_su_asc > 0) {
+                        _su_new.max_HP = round(_su_new.max_HP * awaken_hp_mult(_su_asc));
+                        _su_new.damage = round(_su_new.damage * awaken_dmg_mult(_su_asc));
+                        _su_new.telegraph_damage = round(_su_new.telegraph_damage * awaken_dmg_mult(_su_asc));
+                    }
+                    _su_new.max_HP = max(1, round(_su_new.max_HP * 0.60));
+                    _su_new.HP     = _su_new.max_HP;
+                    // Descant (chorister_fry signature move, 08-06): the first summon
+                    // an enemy calls arrives at 1 HP - sung down before it lands.
+                    if (pet_active_sig_move("descant") && !variable_struct_exists(player, "sig_descant_done")) {
+                        player.sig_descant_done = true;
+                        _su_new.HP = 1;
+                        array_push(combat_log, "[Companion] " + pet_active().name + "'s DESCANT undercuts the call - "
+                            + _su_new.name + " arrives at 1 HP!");
+                    }
+                    array_push(combat_state.combatants, _su_new);
+                    array_push(combat_log, actor.name + " " + ((_eab.msg != "") ? _eab.msg : "calls for aid")
+                        + " - " + _su_new.name + " joins the fight!");
+                    screen_shake_timer = max(screen_shake_timer, 8);
+                } else {
+                    array_push(combat_log, actor.name + " calls into the dark - nothing answers.");
+                }
+
+            } else if (_eab.kind == "stance") {
+                // DUELIST T2 PERFECT PARRY (08-13, M-locked): he settles into a
+                // guard - the next melee blow he takes is turned aside outright
+                // and his riposte answers it DOUBLE (the intercept lives at the
+                // player damage-application site).
+                actor.parry_armed = true;
+                array_push(combat_log, actor.name + " " + ((_eab.msg != "") ? _eab.msg : "takes a guarded stance")
+                    + " - the next melee blow will be TURNED.");
+
             } else if (_eab.kind == "spell") {
                 // A5 boss enrage applies to spells too (same helper as the swing path).
                 var _sdmg = combat_mitigate_player(player,
                     max(1, round(_eab.value * awaken_boss_enrage_mult(combat_state.round))), _eab.dtype, combat_log);
                 if (_incoming_mult < 1.0) _sdmg = max(1, round(_sdmg * _incoming_mult));  // Blink softening
+                // Held Open (doorling sig move): the first actor's stamped action
+                // deals nothing - the door takes the blow.
+                if (variable_struct_exists(actor, "sig_door_round") && actor.sig_door_round == combat_state.round
+                    && _sdmg > 0) {
+                    _sdmg = 0;
+                    array_push(combat_log, "[Companion] The way stands HELD OPEN - " + actor.name + "'s cast spends itself on the door.");
+                }
                 if (_sdmg > 0) combat_state.player_took_damage = true;
                 combat_apply_damage(player, _sdmg);
                 play_player_vocal("snd_player_hurt", -1);
@@ -4485,7 +4743,15 @@ if (player_turn) {
 
             } else {
                 // debuff / dot / control -> typed status on the player
-                if (variable_struct_exists(player, "iron_will_active") && player.iron_will_active) {
+                // Nothing Follows (null_hound signature move, 08-06): the first
+                // debuff aimed at you each combat is erased before it lands.
+                // Checked BEFORE Iron Will so the absence spares the absorb charge.
+                if (pet_active_sig_move("nothing_follows")
+                    && !variable_struct_exists(player, "sig_nothing_done")) {
+                    player.sig_nothing_done = true;
+                    array_push(combat_log, "[Companion] " + pet_active().name + " - NOTHING FOLLOWS. "
+                        + actor.name + "'s " + _eab.name + " simply never happened.");
+                } else if (variable_struct_exists(player, "iron_will_active") && player.iron_will_active) {
                     player.iron_will_active = false;
                     // TRANSCEND "Unshakable" (POTENCY V2): the absorbed KIND is
                     // banned for the rest of the combat (checked below).
@@ -4502,11 +4768,23 @@ if (player_turn) {
                     if (_iw_r > 0) _edur = max(1, floor(_edur * (1 - 0.10 * _iw_r)));
                     // Warding V2 (Shrine 07-29): hostile afflictions run 1 turn shorter.
                     if (boon_active("warding")) _edur = max(1, _edur - 1);
+                    // Slow Thaw / Weathered (permafrost_toad / bark_hound innates,
+                    // 08-06): the first Burn/Poison laid on the player each combat
+                    // ticks at half strength (shares its flag with the Scorching Air
+                    // site in Create, so only ONE first-DoT is softened per combat).
+                    var _eab_val = _eab.value;
+                    if (_eab.kind == "dot" && pet_active_innate("dot_halve") > 0
+                        && !variable_struct_exists(player, "innate_thaw_done")) {
+                        player.innate_thaw_done = true;
+                        _eab_val = max(1, ceil(_eab_val / 2));
+                        array_push(combat_log, "[Companion] " + pet_active().name + " weathers "
+                            + actor.name + "'s " + _eab.name + " - it bites half as deep.");
+                    }
                     array_push(player.status_effects, {
                         name:         _eab.name,
                         effect_type:  (_eab.kind == "dot") ? "dot" : "debuff",
                         kind:         _eab.status_kind,
-                        effect_value: _eab.value,
+                        effect_value: _eab_val,
                         duration:     _edur,
                         source:       "enemy"
                     });
@@ -4576,12 +4854,32 @@ if (player_turn) {
                 array_push(combat_log, "[Companion] " + pet_active().name + " flickers - " + actor.name + "'s blow slips between worlds.");
             }
         }
+        // Bramble Wall (thornlet signature move, 08-06): the FIRST enemy attack
+        // that would land on you each combat is stopped outright by the wall.
+        // Sits with the other pre-RAGE avoidance layers on purpose - a breaker
+        // blow (below) still smashes through, same as Afterimage and the Veil.
+        if (_hit == "hit" && pet_active_sig_move("bramble_wall")
+            && !variable_struct_exists(player, "sig_bramble_done")) {
+            player.sig_bramble_done = true;
+            _hit = "dodge";
+            array_push(combat_log, "[Companion] " + pet_active().name + "'s BRAMBLE WALL stops " + actor.name + "'s blow dead!");
+        }
 
         // RAGE (08-08) overrides EVERY avoidance above - afterimage, the Veil, Slip
         // Between and the plain dodge roll alike. It sits after ALL of them on
         // purpose: a raging blow that a once-per-combat charge could still eat
         // would not be a breaker at all.
         if (_rage_now) _hit = "hit";
+        // DUELIST T3 THE PERFECT THRUST (08-13, M-locked): on his telegraph turn
+        // the thrust cannot be evaded - same override seat as RAGE, for the same
+        // reason. Stun stops him acting, Weaken dulls it, a shield absorbs it;
+        // footwork does not answer a blow rehearsed nine duels deep.
+        if (_hit != "hit"
+            && variable_struct_exists(actor, "perfect_thrust") && actor.perfect_thrust
+            && actor.telegraph_turn > 0 && (combat_state.round mod actor.telegraph_turn) == 0) {
+            _hit = "hit";
+            array_push(combat_log, "THE PERFECT THRUST finds you through the sidestep - it cannot be evaded!");
+        }
         // Streak bookkeeping: a landed blow clears it, a denial feeds it.
         if (_hit == "hit") actor.denied_streak = 0;
         else               actor.denied_streak += 1;
@@ -4745,6 +5043,13 @@ if (player_turn) {
                 array_push(combat_log, "Soul Shield absorbs " + string(_sa) + " damage.");
             }
 
+            // Held Open (doorling sig move): the first actor's stamped action
+            // deals nothing - the door takes the blow.
+            if (variable_struct_exists(actor, "sig_door_round") && actor.sig_door_round == combat_state.round
+                && _final_dmg > 0) {
+                _final_dmg = 0;
+                array_push(combat_log, "[Companion] The way stands HELD OPEN - " + actor.name + "'s blow spends itself on the door.");
+            }
             // Board "flawless" requests count HP damage only - a full Soul Shield
             // absorb keeps the fight untouched (defense play stays rewarded).
             if (_final_dmg > 0) combat_state.player_took_damage = true;
@@ -4755,6 +5060,36 @@ if (player_turn) {
             if (pet_active_innate("thorns") > 0 && actor.HP > 0) {
                 combat_apply_damage(actor, pet_active_innate("thorns"));
                 array_push(combat_log, "[Companion] Brambles bite " + actor.name + " for " + string(pet_active_innate("thorns")) + "!");
+            }
+            // Undertow (paleswimmer innate, 08-06): a foe that strikes you has an
+            // N% chance to be dragged Weakened for 1 turn (same on-strike price
+            // idiom as the brambles above; no once-flag - every landed blow rolls).
+            if (pet_active_innate("undertow") > 0 && actor.HP > 0
+                && variable_struct_exists(actor, "status_effects")
+                && irandom(99) < pet_active_innate("undertow")) {
+                array_push(actor.status_effects, {
+                    name:         "Undertow",
+                    effect_type:  "debuff",
+                    kind:         "weaken",
+                    effect_value: 0.15,
+                    duration:     1,
+                    element:      "",
+                    source:       "pet"
+                });
+                array_push(combat_log, "[Companion] The UNDERTOW drags at " + actor.name + " - Weakened!");
+            }
+            // Something Larger (leviathan_calf signature move, 08-06): the first
+            // enemy to strike you learns what swims beneath - it takes 25% of its
+            // OWN max HP. Routed through the universal sink so deaths sweep clean.
+            if (pet_active_sig_move("something_larger") && actor.HP > 0
+                && !variable_struct_exists(player, "sig_larger_done")) {
+                player.sig_larger_done = true;
+                var _sl_dmg = max(1, round(actor.max_HP * 0.25));
+                combat_apply_damage(actor, _sl_dmg);
+                actor.hit_flash = max(actor.hit_flash, 12);
+                array_push(combat_log, "[Companion] SOMETHING LARGER stirs beneath " + pet_active().name
+                    + " - " + actor.name + " takes " + string(_sl_dmg) + "!");
+                if (actor.HP <= 0 && !actor.is_defeated) combat_on_enemy_defeated(actor, player, combat_log);
             }
             if (pet_active_innate("spore") > 0 && actor.HP > 0
                 && variable_struct_exists(actor, "status_effects")

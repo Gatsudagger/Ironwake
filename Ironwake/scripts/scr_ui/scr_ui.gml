@@ -3974,6 +3974,43 @@ function ui_draw_pet_corruption_fx(pet, spr, frame, x, y, xs, ys, cx, cy) {
     gpu_set_blendmode(bm_normal);
 }
 
+// AWAKENED FX v2 (08-13, M direction: "holographic pulse / puff of smoke /
+// aura glow" - the old 20%-alpha halo didn't read). One shared helper so the
+// station, hub carousel and combat companion all sell Stage 4 identically.
+// Draw AFTER the base sprite (all passes are additive). Layers:
+//   1. breathing hologram echo (two ghost passes, offset pulse phases)
+//   2. periodic PULSE RING - a holographic shockwave every ~2.2s
+//   3. rising aura motes - ember/smoke specks drifting up around the body
+// Color comes from pet_aura_color (archetype: gold/red/blue); callers skip
+// entirely when it returns -1 (not Awakened).
+function ui_draw_pet_awakened_fx(pet, spr, frame, x, y, xs, ys, cx, cy) {
+    var _au = pet_aura_color(pet);
+    if (_au < 0) return;
+    var _t = current_time / 1000;
+    gpu_set_blendmode(bm_add);
+    // 1. Breathing hologram echo.
+    draw_sprite_ext(spr, frame, x, y + 1, xs * 1.06, ys * 1.06, 0, _au, 0.30 + 0.14 * sin(_t * 3.3));
+    draw_sprite_ext(spr, frame, x, y + 2, xs * (1.15 + 0.03 * sin(_t * 2.3)), ys * (1.15 + 0.03 * sin(_t * 2.3)), 0, _au, 0.13 + 0.07 * sin(_t * 2.3 + 1.3));
+    // 2. Holographic pulse ring: expands and fades on a fixed cycle.
+    var _pp = (current_time mod 2200) / 2200;
+    if (_pp < 0.55) {
+        var _pr = _pp / 0.55;
+        draw_sprite_ext(spr, frame, x, y, xs * (1.0 + 0.34 * _pr), ys * (1.0 + 0.34 * _pr), 0, _au, 0.38 * (1 - _pr) * (1 - _pr));
+    }
+    // 3. Rising aura motes - smoke-puff specks born low, drifting up and out.
+    var _mh = max(40, sprite_get_height(spr) * ys * 0.6);
+    for (var _mi = 0; _mi < 6; _mi++) {
+        var _ph = (_t * 0.45 + _mi * 0.37) mod 1;   // 0 birth (low) -> 1 gone (high)
+        var _mx = cx + sin(_ph * 5 + _mi * 2.1) * (14 + _mi * 4);
+        var _my = cy + _mh * 0.45 - _mh * 1.1 * _ph;
+        draw_set_alpha((1 - _ph) * (0.55 + 0.25 * sin(_t * 4 + _mi)));
+        draw_set_color(_au);
+        draw_circle(_mx, _my, 1.5 + 1.2 * (1 - _ph), false);
+    }
+    draw_set_alpha(1.0);
+    gpu_set_blendmode(bm_normal);
+}
+
 function ui_draw_pet_stat_chips(_x, _y, _pet, _chip_w, _chip_h) {
     var _pri  = pet_stat_primary(_pet.archetype);
     var _keys = ["pow", "spr", "lck"];
@@ -4374,15 +4411,10 @@ function ui_draw_bairc_screen() {
             // pup drew tiny). Width-capped so wide species stay inside the panel.
             var _pfit  = pet_sprite_fit(_psp, _spx, _spb, _th, 170);
             var _psc   = _pfit.scale;
-            // Awakened aura: pulsing archetype-tinted halo behind the station sprite.
-            var _paura = pet_aura_color(_p);
-            if (_paura >= 0) {
-                var _pap = 0.20 + 0.10 * sin(current_time / 340);
-                gpu_set_blendmode(bm_add);
-                draw_sprite_ext(_psp, pet_anim_frame(_psp), _pfit.x, _pfit.y + 2, _psc * 1.08, _psc * 1.08, 0, _paura, _pap);
-                gpu_set_blendmode(bm_normal);
-            }
             draw_sprite_ext(_psp, pet_anim_frame(_psp), _pfit.x, _pfit.y, _psc, _psc, 0, c_white, 1);
+            // Awakened FX v2 (08-13): hologram echo + pulse ring + rising motes.
+            ui_draw_pet_awakened_fx(_p, _psp, pet_anim_frame(_psp),
+                _pfit.x, _pfit.y, _psc, _psc, _spx, _spb - _th * 0.5);
             // Corruption dressing (07-09 art track): flicker / dark aura + motes.
             ui_draw_pet_corruption_fx(_p, _psp, pet_anim_frame(_psp),
                 _pfit.x, _pfit.y, _psc, _psc, _spx, _spb - _th * 0.5);
@@ -17675,7 +17707,7 @@ function ui_draw_stats_tour() {
           b: "Four crit rates - every ability rolls the ONE matching its style: Power (STR), Precision (DEX), Arcane (INT) or Effect (WIS). Gear crit adds on top: \"Crit (all)\" boosts every roll; Spell Crit and Phys Crit boost only their half." },
         { r: [42, 699, 1196, 912],   cx: 600,  cy: 260,
           t: "Staying alive",
-          b: "Dodge avoids a hit outright. Phys reduction shaves a percentage, then Armor subtracts a flat amount (a landed hit always deals at least 1). Accuracy is your to-hit bonus, applied before the foe's dodge." },
+          b: "Dodge avoids a hit outright. Phys reduction shaves a percentage, then Armor subtracts a flat amount (a landed hit always deals at least 1). Accuracy is your to-hit bonus, applied before the foe's dodge. DEX also buys INITIATIVE - high DEX draws first each fight, slow foes act last." },
         { r: [522, 870, 1196, 982],  cx: 60,   cy: 690,
           t: "Fortune",
           b: "Gold Find boosts every coin you pick up; Loot Find raises the chance enemies drop equipment at all. Gear affixes, charisma, companions, potions and traits all feed these numbers." },

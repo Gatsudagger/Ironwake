@@ -523,6 +523,36 @@ if (_enemy_type == "elite") {
         enemy_ability("Disarming Feint", "debuff", 22, 4, 0.15,
             { status_kind: "weaken", turns: 2, msg: "flicks your wrist aside - your blows weaken" }),
     ];
+    // =========================================================================
+    // DUELIST TIER KITS (08-13, M design-locked): he ADDS technique as the
+    // ledger grows, at the same thresholds the tier ART changes (t1 2+ duels,
+    // t2 5+, t3 9+). The riposte scales with his +10%/duel growth from T1 on
+    // (flat 12 fades to irrelevance beside 2.4x stats by T3 - M ruled 08-13).
+    // AI sharpening lives in enemy_pick_ability (scr_enemies).
+    // =========================================================================
+    enemy1.duel_tier   = (_duel_prev >= 9) ? 3 : ((_duel_prev >= 5) ? 2 : ((_duel_prev >= 2) ? 1 : 0));
+    enemy1.riposte_dmg = (enemy1.duel_tier >= 1) ? round(12 * _duel_growth) : 12;
+    if (enemy1.duel_tier >= 1) {
+        // T1 BLEEDING LUNGE: a phys cut that leaves the wound weeping.
+        array_push(enemy1.abilities, enemy_ability("Bleeding Lunge", "dot", 25, 4, 3,
+            { status_kind: "dot", turns: 2, msg: "opens a seam along your guard - you are BLEEDING", reach: "melee" }));
+    }
+    if (enemy1.duel_tier >= 2) {
+        // T2 PERFECT PARRY: a stance - the next melee blow he takes is turned,
+        // and his riposte answers it DOUBLE (resolved at the parry intercept).
+        array_push(enemy1.abilities, enemy_ability("Perfect Parry", "stance", 20, 5, 0,
+            { msg: "settles into a perfect guard" }));
+    }
+    if (enemy1.duel_tier >= 3) {
+        // T3 THE PERFECT THRUST: his telegraph becomes the thrust he has been
+        // rehearsing since your first duel - double spike damage, and no dodge,
+        // afterimage or veil answers it. Stun him, weaken him, or wear a shield.
+        enemy1.perfect_thrust    = true;
+        enemy1.telegraph_damage  = round(enemy1.telegraph_damage * 2.0);
+        enemy1.telegraph_message = "The Duelist coils for THE PERFECT THRUST - it cannot be evaded!";
+        // T3 opens every duel with the Feint - he knows your wrist by now.
+        enemy1.duel_open_feint   = true;
+    }
     enemy2 = undefined;
     // Duel state: entry HP is the mercy-restore point; PAR grades the rewards.
     global.duel_active      = true;
@@ -623,6 +653,78 @@ if (_enemy_type == "elite") {
         }
     }
 
+    // =========================================================================
+    // DEPTH WARDENS (08-13, spawn wiring - DESIGN_WORLD_EXPANSION_0806.md §4):
+    // on every 5th Descent floor the ladder's own boss replaces the recycled
+    // theme boss picked above. Each Warden attacks a HABIT, not a stat - the
+    // hooks live at the damage sink / heal path / cast gates and key off
+    // warden_hook. Sprites are STAND-INS from the existing roster until a
+    // warden art run happens (flagged to M 08-13).
+    // =========================================================================
+    global.warden_leg_due = false;   // armed only by a live Weight fight below
+    if (variable_global_exists("descent_active") && global.descent_active
+        && variable_global_exists("descent_floor")) {
+        var _wd_name = warden_for_floor(global.descent_floor);
+        if (_wd_name != "") {
+            enemy1 = enemy_clone(_eli_pool[0]);
+            enemy1.name              = _wd_name;
+            enemy1.HP                = 175; enemy1.max_HP = 175;
+            enemy1.damage            = 20;
+            enemy1.armor             = 12;  enemy1.el_resist = 10;
+            enemy1.telegraph_turn    = 4;   enemy1.telegraph_damage = 32;
+            enemy1.telegraph_message = "The Warden gathers the deep dark!";
+            enemy1.mechanic_type     = "none"; enemy1.mechanic_value = 0; enemy1.mechanic_turns = 0;
+            enemy1.xp_value          = 40;
+            enemy1.gold_min          = 60;  enemy1.gold_max = 90;
+            switch (_wd_name) {
+                case "The First Door":
+                    enemy1.warden_hook = "door";
+                    // Opens with a shield equal to the floors you have cleared.
+                    enemy1.shield_hp = max(1, global.descent_floor);
+                    break;
+                case "Sister Fathom":
+                    enemy1.warden_hook = "fathom";     // heals damage you deal above 30 in one hit
+                    break;
+                case "The Tally":
+                    enemy1.warden_hook = "tally";      // permanent stack each repeated ability
+                    enemy1.tally_stacks = 0;
+                    break;
+                case "Hollowlight":
+                    enemy1.warden_hook = "hollowlight"; // your healing inverts, rounds 1-2
+                    break;
+                case "The Weight of Ironwake":
+                    enemy1.warden_hook = "weight";     // three phases + guaranteed Depthforged legendary
+                    enemy1.HP = 210; enemy1.max_HP = 210;
+                    enemy1.weight_phase = 1;
+                    global.warden_leg_due = true;
+                    break;
+                case "The Long Arithmetic":
+                    enemy1.warden_hook = "arithmetic"; // damage you deal capped at your current HP
+                    break;
+                case "Nothing In Particular":
+                    enemy1.warden_hook = "nothing";    // untargetable every other round
+                    break;
+                case "The Understudy":
+                    enemy1.warden_hook = "understudy"; // wears your weapon's affixes
+                    if (variable_struct_exists(player, "derived")) {
+                        var _wd_copy = max(variable_struct_exists(player.derived, "melee_dmg_bonus") ? player.derived.melee_dmg_bonus : 0,
+                                           variable_struct_exists(player.derived, "ranged_dmg_bonus") ? player.derived.ranged_dmg_bonus : 0);
+                        enemy1.damage += _wd_copy;
+                        enemy1.telegraph_damage += _wd_copy;
+                    }
+                    break;
+                case "The Hollow Crown":
+                    enemy1.warden_hook = "crown";      // silences one random ability each of its turns
+                    break;
+                case "The Bottom":
+                    enemy1.warden_hook = "bottom";     // the intended end of the ladder
+                    enemy1.HP = 240; enemy1.max_HP = 240;
+                    enemy1.damage = 24;
+                    break;
+            }
+        }
+    }
+
     // Bosses get a scaling ability set (typed nuke + sparing control slam).
     enemy1.abilities = boss_ability_set(_floor, _dung);
 
@@ -694,6 +796,10 @@ if (_enemy_type == "duel") {
         if (_fr_done <= 1) _enc_count = 3;
     }
 }
+
+// SUMMONS (08-13): keep the dungeon's standard pool reachable from Step so a
+// mid-combat summon draws the same roster this floor spawns naturally.
+summon_pool = _std_pool;
 
 var enemies = (enemy2 == undefined) ? [enemy1] : [enemy1, enemy2];
 while (array_length(enemies) < _enc_count) {
@@ -909,6 +1015,68 @@ if (trait_active("Duelist's Poise") && array_length(combat_state.combatants) - 1
     array_push(combat_log, "Duelist's Poise: single combat - +1 AP.");
 }
 
+// Bolt (salt_hare innate, 08-06): +1 starting AP in the FIRST combat of each
+// floor. The floor's token is armed by the map generator (obj_floor_controller
+// Create) and consumed by whichever combat happens first - innate or not - so
+// swapping companions mid-floor can never re-arm it.
+if (variable_global_exists("floor_first_combat_pending") && global.floor_first_combat_pending) {
+    global.floor_first_combat_pending = false;
+    if (pet_active_innate("floor_ap") > 0) {
+        player.energy += pet_active_innate("floor_ap");
+        array_push(combat_log, "[Companion] " + pet_active().name + " BOLTS ahead - +"
+            + string(pet_active_innate("floor_ap")) + " AP for the floor's first clash!");
+    }
+}
+
+// Deadweight (deepclaw sig move, 08-06): combat_init flagged the enemy it
+// re-sorted to the bottom of the order - say so now that the log exists.
+for (var _dw_i = 0; _dw_i < array_length(combat_state.combatants); _dw_i++) {
+    var _dw_c = combat_state.combatants[_dw_i];
+    if (!_dw_c.is_player && variable_struct_exists(_dw_c, "sig_deadweight_moved") && _dw_c.sig_deadweight_moved) {
+        array_push(combat_log, "[Companion] " + pet_active().name + "'s DEADWEIGHT settles on "
+            + _dw_c.name + " - it acts LAST.");
+        break;
+    }
+}
+
+// Understudy ledger (mimicling sig move, 08-06): stamp the active species at
+// combat start so the mimicling always knows "the last creature you had active".
+// Persisted in the save (scr_save) - a practiced impression survives a restart.
+if (!variable_global_exists("pet_last_species")) global.pet_last_species = "";
+if (!variable_global_exists("pet_prev_species")) global.pet_prev_species = "";
+var _ul_p = pet_active();
+if (_ul_p != undefined && !_ul_p.is_egg && global.pet_last_species != _ul_p.species) {
+    global.pet_prev_species = global.pet_last_species;
+    global.pet_last_species = _ul_p.species;
+}
+
+// Take Root (graftling signature move, 08-06): the first enemy ADD (any foe
+// beyond the primary) arrives Rooted - held for its opening turn. Root only
+// stops melee reach, per SYSTEMS_ATTACK_CLASS.md; a ranged add shrugs it.
+if (pet_active_sig_move("take_root") && array_length(combat_state.combatants) > 2) {
+    var _tr_add = undefined;
+    var _tr_seen = 0;
+    for (var _tr_i = 0; _tr_i < array_length(combat_state.combatants); _tr_i++) {
+        var _tr_c = combat_state.combatants[_tr_i];
+        if (_tr_c.is_player) continue;
+        _tr_seen++;
+        if (_tr_seen == 2) { _tr_add = _tr_c; break; }   // the first NON-primary foe
+    }
+    if (_tr_add != undefined && variable_struct_exists(_tr_add, "status_effects")) {
+        array_push(_tr_add.status_effects, {
+            name:         "Take Root",
+            effect_type:  "debuff",
+            kind:         "root",
+            effect_value: 0,
+            duration:     1,
+            element:      "",
+            source:       "pet"
+        });
+        array_push(combat_log, "[Companion] " + pet_active().name + " TAKES ROOT - vines lash "
+            + _tr_add.name + " to the floor!");
+    }
+}
+
 // Long Winter (hoarfrost_drake signature move, 08-01 pillar D): the first action
 // of an elite or boss freezes in its throat - a 1-turn stun laid at the gate,
 // before anyone moves (the control check reads stun pre-tick, so it costs the
@@ -942,16 +1110,25 @@ if (variable_global_exists("pending_fire_stacks") && global.pending_fire_stacks 
     var _heat_stacks = min(global.pending_fire_stacks, 3);
     global.pending_fire_stacks = 0;
     if (!variable_struct_exists(player, "status_effects")) player.status_effects = [];
+    var _heat_dmg = 2 * _heat_stacks;
+    // Slow Thaw / Weathered (permafrost_toad / bark_hound innates, 08-06): the
+    // first Burn or Poison applied to the player each combat is halved - the
+    // dungeon's own searing air counts as much as any enemy's.
+    if (pet_active_innate("dot_halve") > 0 && !variable_struct_exists(player, "innate_thaw_done")) {
+        player.innate_thaw_done = true;
+        _heat_dmg = max(1, ceil(_heat_dmg / 2));
+        array_push(combat_log, "[Companion] " + pet_active().name + " weathers the burn - it bites half as deep.");
+    }
     array_push(player.status_effects, {
         name:         "Scorching Air",
         effect_type:  "dot",
         kind:         "dot",
-        effect_value: 2 * _heat_stacks,
+        effect_value: _heat_dmg,
         duration:     2,
         element:      "fire",
         source:       "dungeon"
     });
-    array_push(combat_log, "The searing air clings to you - " + string(2 * _heat_stacks)
+    array_push(combat_log, "The searing air clings to you - " + string(_heat_dmg)
         + " fire damage per turn for 2 turns!");
 }
 

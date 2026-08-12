@@ -797,7 +797,10 @@ if (input_confirm() || input_confirm_alt()) {
         // POTENCY V2 ranks: +5%/rank chance the trait's bonus item rolls a rarity
         // tier higher. TRANSCEND "Cartographer's Cut": the bonus item is a
         // pick-1-of-2 (shared item picker, resolved above next frame).
-        var _t_item_rolls = (irandom(99) < 40 ? 1 : 0) + (trait_active("Treasure Hunter") ? 1 : 0);
+        // Turned Earth / Grave Goods (barrow_mole / gravemask innates, 08-06):
+        // +N% chance of one extra item from floor caches.
+        var _t_item_rolls = (irandom(99) < 40 ? 1 : 0) + (trait_active("Treasure Hunter") ? 1 : 0)
+            + ((pet_active_innate("cache_find") > 0 && irandom(99) < pet_active_innate("cache_find")) ? 1 : 0);
         if (_t_item_rolls > 0) {
             if (!variable_global_exists("run_items_found"))      global.run_items_found      = [];
             if (!variable_global_exists("consumable_inventory")) global.consumable_inventory = [];
@@ -897,6 +900,14 @@ if (input_confirm() || input_confirm_alt()) {
         var _th_c = roll_consumable(global.consumables_standard);
         array_push(global.run_items_found, _th_c);
         consumable_award(_th_c);
+        // Turned Earth / Grave Goods (08-06): the supply cache is a cache too -
+        // the digger's chance at one extra consumable.
+        if (pet_active_innate("cache_find") > 0 && irandom(99) < pet_active_innate("cache_find")) {
+            var _th_c2 = roll_consumable(global.consumables_standard);
+            array_push(global.run_items_found, _th_c2);
+            consumable_award(_th_c2);
+            treasure_item2 = _th_c2;
+        }
         treasure_gold  = _th_gold;
         treasure_item  = _th_c;
         treasure_timer = 0;

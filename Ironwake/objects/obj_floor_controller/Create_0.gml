@@ -79,6 +79,11 @@ var _need_new_map = !variable_global_exists("floor_map")
 
 if (_need_new_map) {
 
+    // Bolt (salt_hare innate, 08-06): arm the floor's first-combat token when a
+    // FRESH floor generates (returning from combat re-runs this Create but keeps
+    // the saved map, so the token survives exactly until the first fight).
+    global.floor_first_combat_pending = true;
+
     // ---- Procedurally generate a layered DAG (replaces the old 5 fixed templates).
     //      §6 variety pass: seeded by run_seed+floor so a given run is reproducible
     //      but every floor differs. Produces the same four arrays the rest of this

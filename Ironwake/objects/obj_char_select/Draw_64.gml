@@ -272,7 +272,7 @@ for (var _s = 0; _s < 6; _s++) {
 // Stat description for currently selected stat
 var _stat_descs = [
     "Physical crit +1.5% per point",
-    "+3 accuracy  +2 dodge  +2% crit per point",
+    "+3 accuracy  +2 dodge  +2% crit per point  +turn priority",
     "+3 max HP per point",
     "Elemental crit +1% per point",
     "Effect & DOT crit +1.5% per point  (min 5%)",

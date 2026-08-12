@@ -261,6 +261,9 @@ function save_game() {
         duelist_encounters:          variable_global_exists("duelist_encounters")          ? global.duelist_encounters          : 0,
         duelist_tokens:              variable_global_exists("duelist_tokens")              ? global.duelist_tokens              : 0,
         duelist_wins:                variable_global_exists("duelist_wins")                ? global.duelist_wins                : 0,
+        // Understudy ledger (mimicling sig move, 08-06): last/previous active species.
+        pet_last_species:            variable_global_exists("pet_last_species")            ? global.pet_last_species            : "",
+        pet_prev_species:            variable_global_exists("pet_prev_species")            ? global.pet_prev_species            : "",
         // STEAM ACHIEVEMENTS lifetime counters (08-04) - optional struct, healed
         // by ach_counters_init() on older saves. No SAVE_FORMAT_VERSION bump.
         ach_counters:                variable_global_exists("ach_counters")                ? global.ach_counters                : undefined,
@@ -511,6 +514,8 @@ function new_game_reset() {
     global.duelist_encounters          = 0;   // Ashen Duelist: lifetime duels fought (+10% stats each)
     global.duelist_tokens              = 0;   // Ashen Duelist: gold-tier tokens (Duelist Arts ladder)
     global.duelist_wins                = 0;   // Ashen Duelist: total WINS (Dueling Relics ladder, 08-11)
+    global.pet_last_species            = "";  // Understudy ledger: current active species (08-06 wiring)
+    global.pet_prev_species            = "";  // Understudy ledger: the one before it (what the mimicling copies)
     global.highest_run_level           = 1;
     global.perm_hp_battle_hardened     = 0;
     global.selected_ascendance         = 0;
@@ -1021,6 +1026,8 @@ function load_game() {
     if (variable_struct_exists(_s, "duelist_encounters"))      global.duelist_encounters      = _s.duelist_encounters;
     if (variable_struct_exists(_s, "duelist_tokens"))          global.duelist_tokens          = _s.duelist_tokens;
     if (variable_struct_exists(_s, "duelist_wins"))            global.duelist_wins            = _s.duelist_wins;
+    if (variable_struct_exists(_s, "pet_last_species"))        global.pet_last_species        = _s.pet_last_species;
+    if (variable_struct_exists(_s, "pet_prev_species"))        global.pet_prev_species        = _s.pet_prev_species;
     if (variable_struct_exists(_s, "ach_counters") && is_struct(_s.ach_counters)) global.ach_counters = _s.ach_counters;
     ach_counters_init();   // heal missing fields on older saves (achievements, 08-04)
     if (variable_struct_exists(_s, "highest_run_level"))       global.highest_run_level       = _s.highest_run_level;

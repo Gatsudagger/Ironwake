@@ -37,8 +37,15 @@
 function combat_init(combatant_array) {
     var count = array_length(combatant_array);
 
-    // Sort by DEX descending; break ties with WIS descending.
-    // Insertion sort is fine for the small combatant counts typical in a roguelite.
+    // INITIATIVE V1 (08-13, M-locked): player initiative = 10 + DEX/2; enemies
+    // carry a family speed (enemy_speed, scr_enemies). Sort descending; ties
+    // break DEX then WIS descending (the old pure-DEX order survives as the
+    // tiebreak). High-DEX players almost always open; slow bosses reliably
+    // close the round; a stalker can genuinely jump a lead-footed Soulrender.
+    for (var i = 0; i < count; i++) {
+        var c0 = combatant_array[i];
+        c0.initiative = c0.is_player ? (10 + c0.stats.DEX / 2) : enemy_speed(c0.name);
+    }
     var sorted = array_create(count);
     array_copy(sorted, 0, combatant_array, 0, count);
 
@@ -46,10 +53,11 @@ function combat_init(combatant_array) {
         var key = sorted[i];
         var j   = i - 1;
         while (j >= 0) {
+            var cmp_ini = sorted[j].initiative - key.initiative;
             var cmp_dex = sorted[j].stats.DEX - key.stats.DEX;
             var cmp_wis = sorted[j].stats.WIS - key.stats.WIS;
             // Advance j if the slot ahead has lower priority than key
-            if (cmp_dex < 0 || (cmp_dex == 0 && cmp_wis < 0)) {
+            if (cmp_ini < 0 || (cmp_ini == 0 && (cmp_dex < 0 || (cmp_dex == 0 && cmp_wis < 0)))) {
                 sorted[j + 1] = sorted[j];
                 j--;
             } else {
@@ -57,6 +65,23 @@ function combat_init(combatant_array) {
             }
         }
         sorted[j + 1] = key;
+    }
+
+    // Deadweight (deepclaw signature move, 08-06): the swiftest foe takes the
+    // load - it is re-sorted to the very bottom of the order for this combat.
+    // The moved enemy is flagged so Create can log the line once the combat log
+    // exists (this runs before it does).
+    if (pet_active_sig_move("deadweight")) {
+        var _dw_idx = -1;
+        for (var i = 0; i < count; i++) {
+            if (!sorted[i].is_player) { _dw_idx = i; break; }
+        }
+        if (_dw_idx >= 0 && _dw_idx < count - 1) {
+            var _dw = sorted[_dw_idx];
+            array_delete(sorted, _dw_idx, 1);
+            array_push(sorted, _dw);
+            _dw.sig_deadweight_moved = true;
+        }
     }
 
     // Initialise secondary resources based on class
@@ -122,6 +147,12 @@ function combat_next_turn(combat_state) {
         var _rl_r = trait_potency_r14("Relentless");
         var _rl_c = (_rl_r >= 4) ? 2 : ((_rl_r >= 2) ? 1 : 0);
         if (_rl_c > 0 && _out.class_id == 1) _out.relentless_carry = min(_out.energy, _rl_c);
+        // Patient Strike (mire_heron innate, 08-06): remember whether this player
+        // turn ended with its full AP untouched (compared to the recorded turn-start
+        // allotment, so bonus-AP turns still read correctly). First turn of a combat
+        // has no "last turn" - the flag starts absent and reads false at the crit roll.
+        _out.spent_no_ap_last_turn = (variable_struct_exists(_out, "turn_start_energy")
+                                      && _out.energy >= _out.turn_start_energy);
     }
 
     combat_state.turn_index++;
@@ -178,6 +209,10 @@ function combat_next_turn(combat_state) {
             actor.energy += 1;
         }
     }
+
+    // Patient Strike bookkeeping: the turn's true starting allotment, recorded
+    // AFTER every bonus/penalty above so the end-of-turn comparison is exact.
+    if (actor.is_player) actor.turn_start_energy = actor.energy;
 
     return combat_state;
 }
@@ -564,6 +599,22 @@ function combat_apply_damage(target_struct, damage) {
                 "[Companion] " + pet_active().name + "'s STONESHADOW takes half the blow!");
         }
     }
+    // Standing Weight (cairn_bear innate, 08-06): the FIRST damage that reaches
+    // the player each combat cannot drop them below 1 HP. The flag is consumed by
+    // that first arrival whether or not it was lethal - the bear takes one blow.
+    // Checked BEFORE Refuse the Grave so a saved blow never spends the Blood.
+    if (damage > 0 && variable_struct_exists(target_struct, "is_player") && target_struct.is_player
+        && !variable_struct_exists(target_struct, "innate_weight_done")
+        && pet_active_innate("last_stand") > 0) {
+        target_struct.innate_weight_done = true;
+        if (target_struct.HP - damage < 1) {
+            damage = max(0, target_struct.HP - 1);
+            if (instance_exists(obj_combat_controller)) {
+                array_push(instance_find(obj_combat_controller, 0).combat_log,
+                    "[Companion] " + pet_active().name + "'s STANDING WEIGHT holds you at 1 HP!");
+            }
+        }
+    }
     // Refuse the Grave trunk node (P2, 08-05): once per combat the Bloodwarden
     // survives a killing blow at 1 HP - it costs ALL held Blood (needs at least
     // 1). Checked AFTER Stoneshadow so a halved blow that is no longer lethal
@@ -582,9 +633,70 @@ function combat_apply_damage(target_struct, damage) {
                 "REFUSE THE GRAVE - every drop of Blood spent, and you are still standing (1 HP).");
         }
     }
+    // ------------------------------------------------------------------------
+    // DEPTH WARDEN hooks (08-13, DESIGN §4): each Warden bends this sink its
+    // own way. warden_hook is stamped at spawn (obj_combat_controller Create).
+    // ------------------------------------------------------------------------
+    if (damage > 0 && variable_struct_exists(target_struct, "is_player") && !target_struct.is_player
+        && variable_struct_exists(target_struct, "warden_hook")
+        && instance_exists(obj_combat_controller)) {
+        var _wh_cc = instance_find(obj_combat_controller, 0);
+        switch (target_struct.warden_hook) {
+            case "nothing":
+                // Nothing In Particular: untargetable every other round - blows
+                // on EVEN rounds pass through a dog-shaped absence.
+                if ((_wh_cc.combat_state.round mod 2) == 0) {
+                    array_push(_wh_cc.combat_log, "Your blow passes through NOTHING IN PARTICULAR.");
+                    damage = 0;
+                }
+                break;
+            case "arithmetic":
+                // The Long Arithmetic: damage you deal is capped at your current
+                // HP - the books must balance. All your sources count.
+                if (damage > _wh_cc.player.HP) {
+                    array_push(_wh_cc.combat_log, "THE LONG ARITHMETIC reconciles the sum - capped at "
+                        + string(_wh_cc.player.HP) + " (your HP).");
+                    damage = max(1, _wh_cc.player.HP);
+                }
+                break;
+        }
+        // The First Door: its opening shield (floors cleared) eats damage first.
+        if (variable_struct_exists(target_struct, "shield_hp") && target_struct.shield_hp > 0 && damage > 0) {
+            var _wd_ab = min(target_struct.shield_hp, damage);
+            target_struct.shield_hp -= _wd_ab;
+            damage -= _wd_ab;
+            array_push(_wh_cc.combat_log, "THE FIRST DOOR holds - " + string(_wd_ab) + " breaks against it"
+                + ((target_struct.shield_hp <= 0) ? " and the door swings WIDE." : " ("
+                    + string(target_struct.shield_hp) + " remains)."));
+        }
+    }
     var prev_hp         = target_struct.HP;
     target_struct.HP    = max(0, target_struct.HP - damage);
     var actual_dealt    = prev_hp - target_struct.HP;
+    // DEPTH WARDEN post-damage hooks: Sister Fathom records the excess and gives
+    // it back to herself; the Weight of Ironwake shifts phases as it is worn down.
+    if (actual_dealt > 0 && variable_struct_exists(target_struct, "is_player") && !target_struct.is_player
+        && variable_struct_exists(target_struct, "warden_hook") && target_struct.HP > 0
+        && instance_exists(obj_combat_controller)) {
+        var _wp_cc = instance_find(obj_combat_controller, 0);
+        if (target_struct.warden_hook == "fathom" && actual_dealt > 30) {
+            var _sf_back = actual_dealt - 30;
+            target_struct.HP = min(target_struct.max_HP, target_struct.HP + _sf_back);
+            array_push(_wp_cc.combat_log, "SISTER FATHOM records the figure - and gives "
+                + string(_sf_back) + " back to herself.");
+        }
+        if (target_struct.warden_hook == "weight" && variable_struct_exists(target_struct, "weight_phase")) {
+            var _ww_frac = target_struct.HP / target_struct.max_HP;
+            var _ww_next = (_ww_frac < 1/3) ? 3 : ((_ww_frac < 2/3) ? 2 : 1);
+            if (_ww_next > target_struct.weight_phase) {
+                target_struct.weight_phase = _ww_next;
+                target_struct.damage = round(target_struct.damage * 1.25);
+                target_struct.telegraph_damage = round(target_struct.telegraph_damage * 1.25);
+                array_push(_wp_cc.combat_log, "THE WEIGHT SHIFTS - phase " + string(_ww_next)
+                    + ". It is heavier than it was.");
+            }
+        }
+    }
     // Blood Tithe blessing (Shrine V2, 07-29): bank 1 gold per HP the PLAYER
     // loses, any source (hits, spells, DoT ticks all funnel through this sink).
     // The pouch pays out in end_run on extraction; death forfeits it.
@@ -653,6 +765,51 @@ function combat_apply_damage(target_struct, damage) {
             _es_n++;
         }
         if (_es_n > 0) array_push(_es_cc.combat_log, "[Companion] " + pet_active().name + " SHRIEKS into the dark - every foe is laid Exposed!");
+    }
+    // Borrowed Light (lantern_wyrm signature move, 08-06): the FIRST time the
+    // player falls below 50% max HP each combat, the lantern gives back 15% of
+    // max HP. Same sink hook + once-flag idiom as Echo Shriek above.
+    if (actual_dealt > 0 && variable_struct_exists(target_struct, "is_player") && target_struct.is_player
+        && variable_struct_exists(target_struct, "max_HP") && target_struct.max_HP > 0
+        && target_struct.HP > 0 && target_struct.HP < target_struct.max_HP * 0.50
+        && !variable_struct_exists(target_struct, "sig_lantern_done")
+        && pet_active_sig_move("borrowed_light")) {
+        target_struct.sig_lantern_done = true;
+        var _bl_amt = max(1, round(target_struct.max_HP * 0.15));
+        target_struct.HP = min(target_struct.max_HP, target_struct.HP + _bl_amt);
+        if (instance_exists(obj_combat_controller)) {
+            array_push(instance_find(obj_combat_controller, 0).combat_log,
+                "[Companion] " + pet_active().name + "'s BORROWED LIGHT gives back " + string(_bl_amt) + " HP!");
+        }
+    }
+    // Carry the One (sum_moth signature move, 08-06): the FIRST overkill on a
+    // killed enemy each combat carries over to the weakest living enemy. Hooked
+    // here because this sink is the only place the overkill margin is known
+    // (same reasoning as the Overflow trunk node above).
+    if (damage > actual_dealt && target_struct.HP <= 0 && prev_hp > 0
+        && variable_struct_exists(target_struct, "is_player") && !target_struct.is_player
+        && pet_active_sig_move("carry_one")
+        && instance_exists(obj_combat_controller)) {
+        var _co_cc = instance_find(obj_combat_controller, 0);
+        if (!variable_struct_exists(_co_cc.player, "sig_carry_done")) {
+            var _co_spill = damage - actual_dealt;
+            var _co_tgt = undefined;
+            for (var _co_i = 0; _co_i < array_length(_co_cc.combat_state.combatants); _co_i++) {
+                var _co_c = _co_cc.combat_state.combatants[_co_i];
+                if (_co_c.is_player || _co_c.is_defeated || _co_c == target_struct || _co_c.HP <= 0) continue;
+                if (_co_tgt == undefined || _co_c.HP < _co_tgt.HP) _co_tgt = _co_c;
+            }
+            if (_co_tgt != undefined) {
+                _co_cc.player.sig_carry_done = true;
+                array_push(_co_cc.combat_log, "[Companion] " + pet_active().name + " CARRIES THE ONE - "
+                    + string(_co_spill) + " spills onto " + _co_tgt.name + "!");
+                combat_apply_damage(_co_tgt, _co_spill);
+                _co_tgt.hit_flash = max(_co_tgt.hit_flash, 8);
+                if (_co_tgt.HP <= 0 && !_co_tgt.is_defeated) {
+                    combat_on_enemy_defeated(_co_tgt, _co_cc.player, _co_cc.combat_log);
+                }
+            }
+        }
     }
     return actual_dealt;
 }
@@ -1463,14 +1620,49 @@ function combat_cleanse(c, mode) {
 // combat_heal_after_mortality(c, amount) - scales a heal by the bearer's
 // `mortality` debuff (-% healing received). Returns the reduced amount.
 function combat_heal_after_mortality(c, amount) {
+    // Hollowlight (Depth Warden, 08-13): for the first 2 rounds of its fight the
+    // player's healing is INVERTED - the light it sheds is the exact colour of
+    // relief, and everything it falls on gets worse. The mend lands as damage
+    // and the heal itself returns 0.
+    if (amount > 0 && variable_struct_exists(c, "is_player") && c.is_player
+        && instance_exists(obj_combat_controller)) {
+        var _hl_cc = instance_find(obj_combat_controller, 0);
+        if (_hl_cc.combat_state.round <= 2) {
+            for (var _hl_i = 0; _hl_i < array_length(_hl_cc.combat_state.combatants); _hl_i++) {
+                var _hl_e = _hl_cc.combat_state.combatants[_hl_i];
+                if (!_hl_e.is_player && !_hl_e.is_defeated
+                    && variable_struct_exists(_hl_e, "warden_hook") && _hl_e.warden_hook == "hollowlight") {
+                    var _hl_amt = max(1, floor(amount));
+                    array_push(_hl_cc.combat_log, "HOLLOWLIGHT inverts the mend - " + string(_hl_amt)
+                        + " HP runs the wrong way!");
+                    combat_apply_damage(c, _hl_amt);
+                    return 0;
+                }
+            }
+        }
+    }
     // Withered curse: -50% healing received (applies to the player only; enemies
     // don't carry curses). Stacks multiplicatively with the mortality debuff.
     if (variable_struct_exists(c, "is_player") && c.is_player && curse_heal_mult() != 1.0) {
         amount = amount * curse_heal_mult();
     }
-    // Empty Comfort (hollow_pup innate, 08-01): +5% to all healing the player receives.
+    // Empty Comfort (hollow_pup innate, 08-01) / Guttering Light (tallow_moth,
+    // 08-06 remap): +N% to all healing the player receives.
     if (variable_struct_exists(c, "is_player") && c.is_player && pet_active_innate("heal_recv") > 0) {
         amount = amount * (1 + pet_active_innate("heal_recv") / 100);
+    }
+    // Ebb (sluice_otter signature move, 08-06): the FIRST heal the player receives
+    // each combat is doubled. Consumed only by a real heal (amount > 0); the
+    // once-flag rides the per-combat player struct like the other sig moves.
+    if (amount > 0 && variable_struct_exists(c, "is_player") && c.is_player
+        && !variable_struct_exists(c, "sig_ebb_done")
+        && pet_active_sig_move("ebb")) {
+        c.sig_ebb_done = true;
+        amount *= 2;
+        if (instance_exists(obj_combat_controller)) {
+            array_push(instance_find(obj_combat_controller, 0).combat_log,
+                "[Companion] " + pet_active().name + "'s EBB returns the tide - the mend is DOUBLED!");
+        }
     }
     var _m = combat_status_max(c, "mortality");
     if (_m <= 0) return max(0, floor(amount));
@@ -1745,6 +1937,34 @@ function combat_on_enemy_defeated(target, player, combat_log) {
     target.is_defeated = true;
     enemy_death_sound(target.name);
     array_push(combat_log, target.name + " defeated!");
+
+    // DEPTH WARDEN falls (08-13, DESIGN §2.1): flat 4% scion roll, once-per-save
+    // per species (the 07-31 signature rule) - Wardens recur forever on the
+    // cadence, so the chase stays open until the scion is finally caught.
+    if (variable_struct_exists(target, "warden_hook")) {
+        var _ws_id = warden_scion(target.name);
+        if (_ws_id != "" && irandom(99) < warden_scion_drop_chance()) {
+            var _ws_owned = variable_global_exists("pet_sig_history")
+                && is_struct(global.pet_sig_history)
+                && variable_struct_exists(global.pet_sig_history, _ws_id);
+            if (!_ws_owned) {
+                if (!variable_global_exists("pet_sig_history") || !is_struct(global.pet_sig_history)) {
+                    global.pet_sig_history = {};
+                }
+                global.pet_sig_history[$ _ws_id] = true;
+                var _ws_pet = pet_grant_from_source("egg_boss", _ws_id);
+                array_push(combat_log, "Something small survived the Warden - "
+                    + ((_ws_pet != undefined && !_ws_pet.is_egg) ? _ws_pet.name : "an egg")
+                    + " is yours. Visit Bairc.");
+            }
+        }
+        // The Bottom: the intended end of the ladder. The clear is banked for
+        // the title/splash treatment (art pending - flagged to M 08-13).
+        if (target.warden_hook == "bottom") {
+            global.descent_bottom_cleared = true;
+            array_push(combat_log, "THE BOTTOM YIELDS. There is nothing below you now but the way back up.");
+        }
+    }
 
     // 08-09: a boss/elite/duel kill gets an actual explosion instead of just
     // vanishing into the death-linger fade. Trash mobs deliberately do NOT -

@@ -260,18 +260,13 @@ if (_pet_co != undefined && !_pet_co.is_egg) {
         }
 
         ui_draw_ground_shadow(_petx, _pety, _pet_vis_w * 0.8);
-        // Awakened aura (Stage 4): a pulsing additive halo behind the sprite, tinted by
-        // archetype (gold Fortune / red Warrior / blue Guardian). The Stage-4 form reuses
-        // the Adult frame - the aura is what sells the ascension (design 2026-07-03).
-        var _aura = pet_aura_color(_pet_co);
-        if (_aura >= 0) {
-            var _apulse = 0.22 + 0.12 * sin(current_time / 340);
-            gpu_set_blendmode(bm_add);
-            draw_sprite_ext(_petspr, pet_anim_frame(_petspr), _pdx + _lunge_dx, _pdy + 4, _face_sign * _sx * 1.10, _petsc * 1.10, 0, _aura, _apulse);
-            draw_sprite_ext(_petspr, pet_anim_frame(_petspr), _pdx + _lunge_dx, _pdy + 2, _face_sign * _sx * 1.04, _petsc * 1.04, 0, _aura, _apulse * 0.8);
-            gpu_set_blendmode(bm_normal);
-        }
         draw_sprite_ext(_petspr, pet_anim_frame(_petspr), _pdx + _lunge_dx, _pdy, _face_sign * _sx, _petsc, 0, c_white, 1.0);
+        // Awakened FX v2 (08-13, M direction): hologram echo + periodic pulse
+        // ring + rising aura motes - the Stage-4 form is SOLD by the effect,
+        // so it has to actually read (the old 20%-alpha halo did not).
+        ui_draw_pet_awakened_fx(_pet_co, _petspr, pet_anim_frame(_petspr),
+            _pdx + _lunge_dx, _pdy, _face_sign * _sx, _petsc,
+            _petx + _lunge_dx, _pety - _peth_t * 0.5);
         // Corruption dressing (07-09 art track): pushing = violet flicker,
         // fulfilled = dark aura + orbiting motes. Same transform as the base draw.
         ui_draw_pet_corruption_fx(_pet_co, _petspr, pet_anim_frame(_petspr),

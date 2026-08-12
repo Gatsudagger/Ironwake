@@ -147,18 +147,51 @@ function enemy_pick_ability(actor, player = undefined) {
     //   A4+  DIVERSIFIED DEBUFFS: skip a debuff/DoT kind the player already carries -
     //        pack members spread afflictions instead of piling one.
     var _asc = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
+    // DUELIST T3 (08-13, M-locked): he opens EVERY duel with the Feint - he has
+    // known your wrist since the second crossing. Consumed once, then normal play.
+    if (variable_struct_exists(actor, "duel_open_feint") && actor.duel_open_feint) {
+        actor.duel_open_feint = false;
+        for (var _df_i = 0; _df_i < array_length(actor.abilities); _df_i++) {
+            if (actor.abilities[_df_i].name == "Disarming Feint") {
+                actor.ability_cd[_df_i] = actor.abilities[_df_i].cooldown;
+                return actor.abilities[_df_i];
+            }
+        }
+    }
     var _ready = [];
     for (var _i = 0; _i < array_length(actor.abilities); _i++) {
         if (actor.ability_cd[_i] > 0) continue;
         var _ab = actor.abilities[_i];
+        // SUMMONS (08-13): never ready a summon onto a full field (4 living foes)
+        // - the caller would only turn it into a wasted whiff.
+        if (_ab.kind == "summon" && instance_exists(obj_combat_controller)) {
+            var _sm_cs = instance_find(obj_combat_controller, 0).combat_state;
+            var _sm_n  = 0;
+            for (var _sm_i = 0; _sm_i < array_length(_sm_cs.combatants); _sm_i++) {
+                var _sm_c = _sm_cs.combatants[_sm_i];
+                if (!_sm_c.is_player && !_sm_c.is_defeated) _sm_n++;
+            }
+            if (_sm_n >= 4) continue;
+        }
         if (player != undefined && variable_struct_exists(_ab, "status_kind") && _ab.status_kind != "") {
             var _sk = _ab.status_kind;
             var _is_control = (_sk == "stun" || _sk == "root" || _sk == "silence");
             if (_asc >= 3 && _is_control && combat_has_status(player, _sk)) continue;
             if (_asc >= 4 && !_is_control && combat_has_status(player, _sk)) continue;
+            // DUELIST T1+ (08-13): he never wastes the Feint on a wrist he has
+            // already turned - the A4 no-restack smarts, at ANY Awakening.
+            if (variable_struct_exists(actor, "duel_tier") && actor.duel_tier >= 1
+                && !_is_control && combat_has_status(player, _sk)) continue;
         }
         var _ch = variable_struct_exists(_ab, "chance") ? _ab.chance : 100;
         if (_asc >= 2) _ch += 15;
+        // DUELIST T2+ (08-13): repetition is punished - if your last two casts
+        // were the SAME ability, the Quickstep comes for the pattern (60%).
+        if (variable_struct_exists(actor, "duel_tier") && actor.duel_tier >= 2
+            && _ab.name == "Quickstep Cut" && player != undefined
+            && variable_struct_exists(player, "duel_rep") && player.duel_rep) {
+            _ch = max(_ch, 60);
+        }
         if (irandom(99) < _ch) array_push(_ready, _i);
     }
     if (array_length(_ready) == 0) return undefined;
@@ -177,10 +210,17 @@ function boss_ability_set(floor, dungeon) {
     var _nuke_dmg  = [14, 20, 28][_fl - 1];
     var _dtype     = (dungeon == "tundra_tomb") ? 1 : ((dungeon == "scorched_depths") ? 1 : 2); // elemental / drain
     var _nuke_name = (dungeon == "tundra_tomb") ? "Frozen Lance" : ((dungeon == "scorched_depths") ? "Molten Barrage" : "Soul Rend");
-    return [
+    var _set = [
         enemy_ability(_nuke_name, "spell", 45, 2, _nuke_dmg, { dtype: _dtype, msg: "unleashes " + _nuke_name, reach: "ranged" }),
         enemy_ability("Crushing Slam", "control", 30, 4, 0, { status_kind: "stun", turns: 1, msg: "slams the ground - you are stunned" }),
     ];
+    // SUMMONS (08-13, M-locked): the Bone Sovereign holds court over everything
+    // that has ever died down here - and the court convenes on command.
+    if (dungeon == "ashen_vault" && _fl == 2) {
+        array_push(_set, enemy_ability("Raise the Court", "summon", 25, 4, 0,
+            { msg: "RAISES THE COURT - the dead answer their king" }));
+    }
+    return _set;
 }
 
 // ---------------------------------------------------------------------------
@@ -210,6 +250,42 @@ function enemy_is_spellcaster(name) {
             return true;
     }
     return false;
+}
+
+// ---------------------------------------------------------------------------
+// INITIATIVE V1 (08-13, M-locked): enemy_speed(name) - the turn-order speed of
+// an enemy by family. Player initiative is 10 + DEX/2 (combat_init), so:
+//   13  the Duelist - nothing in Ironwake draws faster
+//   12  skirmishers (stalkers, crawlers, imps, specters...) - jump a slow player
+//    8  the standard line - a DEX-4 player barely outdraws them
+//    6  armored heavies - most players act first
+//    5  bosses / Wardens - the mountain moves last
+//    4  slugs - even the mountain pities them
+// ---------------------------------------------------------------------------
+function enemy_speed(name) {
+    // Bosses + Depth Wardens first (several carry "fast" keywords in their names).
+    switch (name) {
+        case "Forge Tyrant":      case "Molten Revenant":      case "The Ashen Colossus":
+        case "Glacial Warden":    case "Tomb Archon":          case "The Eternal Frost":
+        case "Vault Sentinel":    case "Bone Sovereign":       case "Malgrath the Warden":
+        case "Bone Colossus":
+            return 5;
+        case "The Ashen Duelist":
+            return 13;
+    }
+    // Depth Wardens (scr_enemies warden_catalog names).
+    var _wc = warden_catalog();
+    for (var _wi = 0; _wi < array_length(_wc); _wi++) {
+        if (_wc[_wi].name == name) return 5;
+    }
+    var _n = string_lower(name);
+    if (string_pos("slug", _n)) return 4;
+    if (string_pos("stalker", _n) || string_pos("crawler", _n) || string_pos("lurker", _n)
+        || string_pos("imp", _n) || string_pos("specter", _n) || string_pos("spectre", _n)
+        || string_pos("shard", _n) || string_pos("archer", _n)) return 12;
+    if (string_pos("golem", _n) || string_pos("colossus", _n) || string_pos("sentinel", _n)
+        || string_pos("guardian", _n) || string_pos("thrall", _n) || string_pos("beast", _n)) return 6;
+    return 8;
 }
 
 // enemy_class_tag(c) - short "Melee/Phys" style label for an enemy's attack class
@@ -367,6 +443,12 @@ function enemy_roll_intent(actor, player, next_round, is_reroll) {
         _it.heavy = true;   // a committed enemy spell nuke is a charged action
     } else if (_eab.kind == "heal") {
         _it.kind = "heal";  _it.label = "Mend";
+    } else if (_eab.kind == "summon") {
+        // SUMMONS (08-13): rides the amber control chip with its own word.
+        _it.kind = "control";  _it.label = "Summon";
+    } else if (_eab.kind == "stance") {
+        // DUELIST T2 (08-13): the Perfect Parry telegraphs as a stance chip.
+        _it.kind = "control";  _it.label = "Stance";
     } else {
         // control / debuff / dot -> the chains chip (amber) with an effect word.
         _it.kind = "control";  _it.label = enemy_intent_status_word(_eab);
@@ -696,6 +778,8 @@ global.enemies_tundra_tomb_standard = [
             enemy_ability("Death Rune", "control", 25, 4, 0, { status_kind: "silence", turns: 2, msg: "binds your tongue - silenced" }),
             enemy_ability("Frost Bolt", "spell", 35, 2, 10, { dtype: 1, msg: "hurls a shard of ice" }),
             enemy_ability("Restorative Glyph", "heal", 35, 3, 16, { msg: "traces a restorative glyph and mends" }),
+            // SUMMONS (08-13, M-locked): the librarian requisitions a fresh entry.
+            enemy_ability("Requisition", "summon", 20, 5, 0, { msg: "files a REQUISITION - the Tomb sends another" }),
         ]
     ),
     enemy_define(
@@ -798,6 +882,19 @@ function enemy_sprite_map() {
         // higher tiers resolve through duelist_sprite_for(). Spec in
         // DESIGN_DUELIST_CHALLENGE.md.
         "The Ashen Duelist":    spr_ashen_duelist,
+        // DEPTH WARDENS (08-13): STAND-IN models from the existing roster until
+        // a warden art run happens - an unmapped name draws NOTHING in combat,
+        // and invisible bosses are worse than borrowed clothes.
+        "The First Door":         spr_vault_sentinel,
+        "Sister Fathom":          spr_snowbound_wraith,
+        "The Tally":              spr_pale_archivist,
+        "Hollowlight":            spr_ash_wraith,
+        "The Weight of Ironwake": spr_bone_colossus,
+        "The Long Arithmetic":    spr_tomb_archon,
+        "Nothing In Particular":  spr_grave_stalker,
+        "The Understudy":         spr_vault_guardian,
+        "The Hollow Crown":       spr_bone_sovereign,
+        "The Bottom":             spr_stone_golem,
     };
 }
 

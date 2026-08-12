@@ -2767,15 +2767,11 @@ if (instance_exists(obj_game_controller)) {
                     // bottom-centre origin - expansion species hung out of the box).
                     var _fw = (_px1 - _px0) - 26, _fh = (_py1 - _py0) - 22;
                     var _hfit = pet_sprite_fit(_hsp, (_px0 + _px1) / 2, _py1 - 11, _fh, _fw);
-                    // Awakened aura: pulsing archetype-tinted halo behind the portrait (Stage 4).
-                    var _haura = pet_aura_color(_hp);
-                    if (_haura >= 0) {
-                        var _hap = 0.20 + 0.10 * sin(current_time / 340);
-                        gpu_set_blendmode(bm_add);
-                        draw_sprite_ext(_hsp, pet_anim_frame(_hsp), _hfit.x, _hfit.y + 2, _hfit.scale * 1.08, _hfit.scale * 1.08, 0, _haura, _hap);
-                        gpu_set_blendmode(bm_normal);
-                    }
                     draw_sprite_ext(_hsp, pet_anim_frame(_hsp), _hfit.x, _hfit.y, _hfit.scale, _hfit.scale, 0, c_white, 1);
+                    // Awakened FX v2 (08-13): hologram echo + pulse ring + rising motes.
+                    ui_draw_pet_awakened_fx(_hp, _hsp, pet_anim_frame(_hsp),
+                        _hfit.x, _hfit.y, _hfit.scale, _hfit.scale,
+                        (_px0 + _px1) / 2, (_py0 + _py1) / 2 + 15);
                     // Corruption dressing (07-09 art track): flicker / dark aura + motes.
                     ui_draw_pet_corruption_fx(_hp, _hsp, pet_anim_frame(_hsp),
                         _hfit.x, _hfit.y, _hfit.scale, _hfit.scale,
