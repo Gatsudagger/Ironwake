@@ -792,21 +792,55 @@ if (journal_open) {
     }
     // Six tabs since 2026-08-06: Relationships / Quests / Compendium /
     // Item Codex / Bestiary / Creatures. Q back, E forward.
-    if (input_tab_next()) { journal_tab = (journal_tab + 1) mod 6; journal_cursor = 0; }
-    if (input_tab_prev()) { journal_tab = (journal_tab + 5) mod 6; journal_cursor = 0; }
+    if (input_tab_next()) { journal_tab = (journal_tab + 1) mod 7; journal_cursor = 0; }
+    if (input_tab_prev()) { journal_tab = (journal_tab + 6) mod 7; journal_cursor = 0; }
+    if (journal_tab == 6) {
+        // BLUEPRINTS (M 08-13): the Pattern Book as a read-only Journal tab -
+        // Dorn's [B] overlay stays the working shortcut, this is the reference
+        // copy you can check anywhere. journal_cursor walks the family list.
+        var _jp_n = array_length(pattern_family_catalog());
+        if (_jp_n > 0) {
+            if (nav_up())   journal_cursor = wrap_index(journal_cursor - 1, _jp_n);
+            if (nav_down()) journal_cursor = wrap_index(journal_cursor + 1, _jp_n);
+            var _jp_wheel = mouse_wheel_up() - mouse_wheel_down();
+            repeat (abs(_jp_wheel)) {
+                if (_jp_wheel > 0) journal_cursor = max(0, journal_cursor - 1);
+                else               journal_cursor = min(_jp_n - 1, journal_cursor + 1);
+            }
+        }
+        exit;
+    }
     if (journal_tab == 5) {
         // CREATURES (the compendium proper - DESIGN_WORLD_EXPANSION_0806.md §10):
         // walks every species, discovered or not. Undiscovered rows stay as
         // silhouettes, so the list length never leaks less than the full roster.
-        var _jk_n = array_length(compendium_catalog());
+        var _jk_cat = compendium_catalog();
+        var _jk_n = array_length(_jk_cat);
+        if (!variable_instance_exists(id, "journal_form")) journal_form = 3;
         if (_jk_n > 0) {
-            if (nav_up())   journal_cursor = wrap_index(journal_cursor - 1, _jk_n);
-            if (nav_down()) journal_cursor = wrap_index(journal_cursor + 1, _jk_n);
+            if (nav_up())   { journal_cursor = wrap_index(journal_cursor - 1, _jk_n); journal_form = 3; }
+            if (nav_down()) { journal_cursor = wrap_index(journal_cursor + 1, _jk_n); journal_form = 3; }
             // Wheel walks the list too - the roster is 60+ deep. No wrap on wheel.
             var _jk_wheel = mouse_wheel_up() - mouse_wheel_down();
             repeat (abs(_jk_wheel)) {
                 if (_jk_wheel > 0) journal_cursor = max(0, journal_cursor - 1);
                 else               journal_cursor = min(_jk_n - 1, journal_cursor + 1);
+                journal_form = 3;
+            }
+            // FORM SLOTS (M 08-13): A/D cycles the four forms (baby / young
+            // adult / adult / awakened), skipping ones not yet revealed. The
+            // draw side clamps DOWN to the highest revealed, so the default 3
+            // always lands on the best form you have seen.
+            if (nav_left() || nav_right()) {
+                var _jf_id     = _jk_cat[clamp(journal_cursor, 0, _jk_n - 1)].id;
+                var _jf_max    = compendium_stage_max(_jf_id);
+                var _jf_stages = [PET_STAGE_BABY, PET_STAGE_YOUNGADULT, PET_STAGE_ADULT, PET_STAGE_AWAKENED];
+                var _jf_dir    = nav_right() ? 1 : -1;
+                var _jf_try    = clamp(journal_form, 0, 3);
+                repeat (4) {
+                    _jf_try = wrap_index(_jf_try + _jf_dir, 4);
+                    if (_jf_stages[_jf_try] <= _jf_max) { journal_form = _jf_try; break; }
+                }
             }
         }
         exit;
@@ -1456,7 +1490,7 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()) {
             forge_slot_pick = 0; forge_fx_pick = 0; forge_result = undefined;
             // Pattern Book state (08-11): smelt study popup / book overlay / craft wizard.
             pb_smelt_open = false; pb_smelt_item = undefined; pb_smelt_pick = 0;
-            pb_book_open = false; pb_book_scroll = 0;
+            pb_book_open = false; pb_book_scroll = 0; pb_book_cursor = 0;
             pb_craft_open = false; pb_craft_phase = 0;
             pb_cursor = 0; pb_scroll = 0;
             pb_slot_pick = 0; pb_rar_pick = 0; pb_base_stat = "";
@@ -1673,8 +1707,15 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()) {
                 pb_book_open = false;
                 exit;
             }
-            if (nav_up()   || mouse_wheel_up()   || input_inject_take("pbbk:up")) pb_book_scroll -= 1;
-            if (nav_down() || mouse_wheel_down() || input_inject_take("pbbk:dn")) pb_book_scroll += 1;
+            // Row CURSOR, not bare window scroll (M 08-13: "no active selector in
+            // blueprint screen - there should be a blue highlighter on the current
+            // selection that scrolls down with key selects like every other menu").
+            if (!variable_instance_exists(id, "pb_book_cursor")) pb_book_cursor = 0;
+            if (nav_up()   || mouse_wheel_up()   || input_inject_take("pbbk:up")) pb_book_cursor -= 1;
+            if (nav_down() || mouse_wheel_down() || input_inject_take("pbbk:dn")) pb_book_cursor += 1;
+            pb_book_cursor = clamp(pb_book_cursor, 0, max(0, _bk_n - 1));
+            if (pb_book_cursor < pb_book_scroll)                pb_book_scroll = pb_book_cursor;
+            if (pb_book_cursor >= pb_book_scroll + _bk_vis)     pb_book_scroll = pb_book_cursor - _bk_vis + 1;
             pb_book_scroll = clamp(pb_book_scroll, 0, max(0, _bk_n - _bk_vis));
             exit;
         }
@@ -1967,7 +2008,7 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()) {
             exit;
         }
         if (input_hotkey("B") || input_inject_take("dorn:book")) {
-            pb_book_open = true; pb_book_scroll = 0; shop_notification = "";
+            pb_book_open = true; pb_book_scroll = 0; pb_book_cursor = 0; shop_notification = "";
             exit;
         }
         if (input_hotkey("N") || input_inject_take("dorn:craft")) {
@@ -2620,15 +2661,21 @@ if (trainer_open && !menu_open && !forge_result_up()) {   // I menu owns input w
     // --- Tab: examine the highlighted ability (tab 2) or trait (tab 3) before buying.
     if (vex_detail_open) {
         if (input_detail() || input_cancel()) vex_detail_open = false;
+        // Scroll audit (M 08-13): this popup showed a scrollbar but the early
+        // `exit` ate W/S and the wheel - same defect as combat's V popup.
+        var _vd_max = variable_global_exists("ui_ability_detail_max_scroll")
+                    ? global.ui_ability_detail_max_scroll : 0;
+        if (nav_down() || mouse_wheel_down()) vex_detail_scroll = clamp(vex_detail_scroll + 48, 0, _vd_max);
+        if (nav_up()   || mouse_wheel_up())   vex_detail_scroll = clamp(vex_detail_scroll - 48, 0, _vd_max);
         exit;
     }
     if (input_detail()) {
         if (trainer_tab == 2 && trainer_cursor < array_length(class_vex_purchasable(_tr_class))) {
-            vex_detail_open = true; exit;
+            vex_detail_open = true; vex_detail_scroll = 0; exit;
         } else if (trainer_tab == 3 && trainer_cursor < array_length(trait_vex_purchasable(_tr_class))) {
-            vex_detail_open = true; exit;
+            vex_detail_open = true; vex_detail_scroll = 0; exit;
         } else if (trainer_tab == 4) {
-            vex_detail_open = true; exit;   // Potency: general mechanic explanation
+            vex_detail_open = true; vex_detail_scroll = 0; exit;   // Potency: general mechanic explanation
         }
     }
 

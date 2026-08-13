@@ -261,7 +261,7 @@ if (instance_exists(obj_game_controller)) {
             var _ds_class = variable_global_exists("chosen_class") ? global.chosen_class : 0;
             var _ds_pool;
             _ds_pool = abilities_class_pool(_ds_class);   // class abilities + general pool
-            var _loadout_max = trait_active("Expanded Arsenal") ? 5 : 4;
+            var _loadout_max = trait_active("Expanded Arsenal") ? 6 : 5;   // class pass 08-13: base 5, EA 6th
             var _ds_free = abilities_get_loadout(_ds_class);   // the 4 always-unlocked starters
             _gc_dsel.loadout_selected = [];
             for (var _ldi = 0; _ldi < min(_loadout_max, array_length(_ds_free)); _ldi++) {
@@ -274,15 +274,23 @@ if (instance_exists(obj_game_controller)) {
                     if (ability_is_unlocked(_ds_pool[_ai].name)) array_push(_ds_valid, _ds_pool[_ai].name);
                 }
                 _gc_dsel.loadout_selected = [];
-                for (var _li = 0; _li < _loadout_max; _li++) {
+                // Bounded by the SAVED array's real length (class pass 08-13:
+                // the cap grew to 5/6, but pre-existing saves hold 5 slots -
+                // reading to the cap crashed with index [5] out of range [5]).
+                var _ls_n     = min(_loadout_max, array_length(global.player_loadout));
+                var _ls_saved = 0;
+                for (var _li = 0; _li < _ls_n; _li++) {
                     var _lname = global.player_loadout[_li];
+                    if (_lname != "") _ls_saved++;
                     var _ok = false;
                     for (var _vi = 0; _vi < array_length(_ds_valid); _vi++) {
                         if (_ds_valid[_vi] == _lname) { _ok = true; break; }
                     }
                     if (_ok) array_push(_gc_dsel.loadout_selected, _lname);
                 }
-                if (array_length(_gc_dsel.loadout_selected) < _loadout_max) {
+                // Fall back to the starters only when saved entries were LOST
+                // (invalid/locked), not merely because the cap outgrew the save.
+                if (_ls_saved == 0 || array_length(_gc_dsel.loadout_selected) < _ls_saved) {
                     _gc_dsel.loadout_selected = [];
                     for (var _ai = 0; _ai < min(_loadout_max, array_length(_ds_free)); _ai++) {
                         array_push(_gc_dsel.loadout_selected, _ds_free[_ai].name);
@@ -342,15 +350,23 @@ if (instance_exists(obj_game_controller)) {
         // Cap reads the LIVE trait selection (not committed traits) so picking
         // Expanded Arsenal on the Traits tab opens the 5th slot immediately,
         // without having to enter the dungeon and come back.
-        var _loadout_max = 4;
+        var _loadout_max = 5;   // class pass 08-13: base 5, EA 6th
         for (var _ea = 0; _ea < array_length(_gc_ld.traits_selected); _ea++) {
-            if (_gc_ld.traits_selected[_ea] == "Expanded Arsenal") { _loadout_max = 5; break; }
+            if (_gc_ld.traits_selected[_ea] == "Expanded Arsenal") { _loadout_max = 6; break; }
         }
-        // Trim if Expanded Arsenal was just deselected while 5 abilities were picked
+        // Trim if Expanded Arsenal was just deselected while 6 abilities were picked
         while (array_length(_gc_ld.loadout_selected) > _loadout_max) {
             array_delete(_gc_ld.loadout_selected, array_length(_gc_ld.loadout_selected) - 1, 1);
         }
         _ld_sel_cnt = array_length(_gc_ld.loadout_selected);
+
+        // REQUIRED count (class pass 08-13): the base cap grew to 5, but a
+        // fresh character owns only the 4 starters - the dungeon can never
+        // demand more slots than the abilities you actually own.
+        var _ld_owned = 0;
+        for (var _lu = 0; _lu < _ld_pool_sz; _lu++)
+            if (ability_is_unlocked(_ld_pool[_lu].name)) _ld_owned++;
+        var _loadout_req = min(_loadout_max, max(4, _ld_owned));
 
         // --- Tab ability-detail popup (P7) ---
         // While the popup is up, only Tab/Esc (close) - swallow all other loadout input.
@@ -475,7 +491,7 @@ if (instance_exists(obj_game_controller)) {
         // ABILITIES TAB
         // =====================================================================
         if (_gc_ld.loadout_tab == 0) {
-            var _ld_max_cur = _ld_pool_sz - 1 + (_ld_sel_cnt == _loadout_max ? 1 : 0);
+            var _ld_max_cur = _ld_pool_sz - 1 + (_ld_sel_cnt >= _loadout_req ? 1 : 0);
 
             if (nav_up())   _gc_ld.loadout_cursor = wrap_index(_gc_ld.loadout_cursor - 1, _ld_max_cur + 1);
             if (nav_down()) _gc_ld.loadout_cursor = wrap_index(_gc_ld.loadout_cursor + 1, _ld_max_cur + 1);
@@ -486,7 +502,7 @@ if (instance_exists(obj_game_controller)) {
 
             // Space or Enter at confirm row: commit and enter dungeon
             if ((input_confirm() || input_confirm_alt())
-                && _gc_ld.loadout_cursor == _ld_pool_sz && _ld_sel_cnt == _loadout_max) {
+                && _gc_ld.loadout_cursor == _ld_pool_sz && _ld_sel_cnt >= _loadout_req) {
                 var _tr_sel_c = _gc_ld.traits_selected;
                 // 50g per previously-filled trait slot that is being changed
                 var _respec_cost = trait_respec_cost(_tr_sel_c);
@@ -497,8 +513,11 @@ if (instance_exists(obj_game_controller)) {
                     _gc_ld.loadout_gold_timer = 150;
                 } else {
                     if (_respec_cost > 0) global.gold -= _respec_cost;
-                    for (var _li = 0; _li < _loadout_max; _li++) global.player_loadout[_li] = _gc_ld.loadout_selected[_li];
-                    if (_loadout_max < 5) global.player_loadout[4] = "";
+                    // Write what was actually selected (may be fewer than the
+                    // cap), then blank every remaining saved slot so stale
+                    // names can't ride along (GML arrays grow on write).
+                    for (var _li = 0; _li < array_length(_gc_ld.loadout_selected); _li++) global.player_loadout[_li] = _gc_ld.loadout_selected[_li];
+                    for (var _lb = array_length(_gc_ld.loadout_selected); _lb < max(6, array_length(global.player_loadout)); _lb++) global.player_loadout[_lb] = "";
                     commit_player_traits(_tr_sel_c);
                     _gc_ld.loadout_open      = false;
                     _gc_ld.loadout_confirmed = true;
@@ -523,7 +542,7 @@ if (instance_exists(obj_game_controller)) {
                     if (_ld_in_sel) {
                         array_delete(_gc_ld.loadout_selected, _ld_sel_i, 1);
                         _gc_ld.loadout_cursor = min(_gc_ld.loadout_cursor,
-                            _ld_pool_sz - 1 + (array_length(_gc_ld.loadout_selected) == _loadout_max ? 1 : 0));
+                            _ld_pool_sz - 1 + (array_length(_gc_ld.loadout_selected) >= _loadout_req ? 1 : 0));
                     } else if (!ability_is_unlocked(_ld_ab_name)) {
                         _gc_ld.loadout_locked_timer = 90;   // must buy it from Vex first
                     } else if (_ld_sel_cnt < _loadout_max) {
@@ -701,7 +720,7 @@ if (instance_exists(obj_game_controller)) {
                     }
                 }
                 // Confirm bar: x=60-1860, y=998-1043, requires 4 abilities selected
-                if (!_ld_lp && _ldmx >= 60 && _ldmx < 1860 && _ldmy >= 998 && _ldmy < 1043 && _ld_sel_cnt == _loadout_max) {
+                if (!_ld_lp && _ldmx >= 60 && _ldmx < 1860 && _ldmy >= 998 && _ldmy < 1043 && _ld_sel_cnt >= _loadout_req) {
                     var _ltr = _gc_ld.traits_selected;
                     var _mc_cost = trait_respec_cost(_ltr);
                     if (_mc_cost > 0 && global.gold < _mc_cost) {
@@ -710,8 +729,8 @@ if (instance_exists(obj_game_controller)) {
                         _gc_ld.loadout_gold_timer = 150;
                     } else {
                         if (_mc_cost > 0) global.gold -= _mc_cost;
-                        for (var _lci = 0; _lci < _loadout_max; _lci++) global.player_loadout[_lci] = _gc_ld.loadout_selected[_lci];
-                        if (_loadout_max < 5) global.player_loadout[4] = "";
+                        for (var _lci = 0; _lci < array_length(_gc_ld.loadout_selected); _lci++) global.player_loadout[_lci] = _gc_ld.loadout_selected[_lci];
+                        for (var _lcb = array_length(_gc_ld.loadout_selected); _lcb < max(6, array_length(global.player_loadout)); _lcb++) global.player_loadout[_lcb] = "";
                         commit_player_traits(_ltr);
                         _gc_ld.loadout_open      = false;
                         _gc_ld.loadout_confirmed = true;

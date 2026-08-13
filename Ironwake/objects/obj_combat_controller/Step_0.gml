@@ -29,15 +29,14 @@ if (!combat_over && is_struct(player)) {
     }
 }
 
-// FAUX-2.5D EXPERIMENT lever (M 08-11): F7 flips the tilted-arena look live
-// and persists to settings.ini. Above the input freeze so it works even with
-// overlays up - it is a dev/trial lever, not a combat action.
+// 2.5D v3 lever (M 08-13): F7 flips the two-plane stage set live and persists
+// (its own ini key so the retired v2 value can never resurrect the warp).
 if (keyboard_check_pressed(vk_f7)) {
     global.combat_25d = !combat_25d();
     ini_open("settings.ini");
-    ini_write_real("ui", "combat_25d", global.combat_25d ? 1 : 0);
+    ini_write_real("ui", "combat_25d_v3", global.combat_25d ? 1 : 0);
     ini_close();
-    array_push(combat_log, "Arena view: " + (global.combat_25d ? "2.5D tilt ON" : "flat (classic)") + ".");
+    array_push(combat_log, "Arena view: " + (global.combat_25d ? "2.5D stage (v3)" : "flat (classic)") + ".");
 }
 
 // ===== DELIVERY MUTATOR QUEUE (M 08-11, SYSTEMS_MUTATORS.md) =====
@@ -110,6 +109,12 @@ if (!combat_over && array_length(mutator_queue) > 0) {
             // lands when it arrives (the "hit" entry above, timed to the flight).
             var _mb_sx = 1620 - _mf_slot * 120, _mb_sy = 233 + _mf_slot * 105 - 20;
             var _mb_tx = 1620 - _mv_slot * 120, _mb_ty = 233 + _mv_slot * 105 - 20;
+            // 2.5D: arc between the two foes' stamped visual centres, not the
+            // flat-row grid (M 08-13 projectile-targeting pass).
+            if (combat_25d()) {
+                if (variable_struct_exists(_mm.from, "last_ecx")) { _mb_sx = _mm.from.last_ecx; _mb_sy = _mm.from.last_ecy; }
+                if (variable_struct_exists(_mv, "last_ecx"))      { _mb_tx = _mv.last_ecx;      _mb_ty = _mv.last_ecy; }
+            }
             array_push(combat_projectiles, { spr: -1, school: _mm.school,
                 impact_spr: spr_fx_impact, ticks: 12,
                 sx: _mb_sx, sy: _mb_sy, tx: _mb_tx, ty: _mb_ty, bx: _mb_tx, by: _mb_ty,
@@ -125,7 +130,9 @@ if (!combat_over && array_length(mutator_queue) > 0) {
         if (_md < 1) _md = 1;
         combat_apply_damage(_mv, _md);
         _mv.hit_flash = max(_mv.hit_flash, 10);
-        array_push(damage_popups, { value: _md, x: 1620 + _mv_slot * (-120), y: 233 + _mv_slot * 105 - 60,
+        var _md_px = 1620 + _mv_slot * (-120), _md_py = 233 + _mv_slot * 105 - 60;
+        if (combat_25d() && variable_struct_exists(_mv, "last_ecx")) { _md_px = _mv.last_ecx; _md_py = _mv.last_ecy - 90; }
+        array_push(damage_popups, { value: _md, x: _md_px, y: _md_py,
                                     timer: 45, col: (_mm.school != "") ? school_color(_mm.school) : c_white });
         array_push(combat_log, _mm.name + " echoes on " + _mv.name + " for " + string(_md) + "!");
         if (_mv.HP <= 0 && !_mv.is_defeated) combat_on_enemy_defeated(_mv, player, combat_log);
@@ -279,19 +286,8 @@ if (show_loot_screen) {
 // Evaluated at the top of every frame so a kill on the previous frame is
 // caught immediately at the start of the next, before any new input is read.
 // -----------------------------------------------------------------------------
-// Thickened Vitae trunk node (P2, 08-05): +2 max HP per Blood held. Synced as a
-// tracked delta every frame so gains arrive as the tank fills and leave as it
-// drains (current HP rises with the ceiling, and is clamped when it falls).
-if (player.class_id == 1 && variable_struct_exists(player, "blood") && trunk_has("blood_hp")) {
-    var _tv_want = 2 * player.blood;
-    var _tv_has  = variable_struct_exists(player, "trunk_vitae_hp") ? player.trunk_vitae_hp : 0;
-    if (_tv_want != _tv_has) {
-        player.max_HP += _tv_want - _tv_has;
-        if (_tv_want > _tv_has) player.HP += _tv_want - _tv_has;
-        else player.HP = min(player.HP, max(1, player.max_HP));
-        player.trunk_vitae_hp = _tv_want;
-    }
-}
+// (Thickened Vitae's per-frame max-HP sync REMOVED 08-13 - the node is now
+// Clotted Armor, read at combat_mitigate_player. fx id unchanged: "blood_hp".)
 
 var _result = combat_check_victory(combat_state);
 
@@ -584,8 +580,16 @@ if (_result == 1) {
     // Resolve any pack-full consumable pickups before combat closes (after the
     // loot review so the player has seen what dropped). The modal runs one frame
     // at a time until the overflow queue is empty.
+    // M 08-13 ("pops up first then gets overridden by item rewards"): the step
+    // used to PROCESS the modal invisibly while the level-alloc / loot screens
+    // were still up - eating their inputs and advancing the discard state under
+    // them. It now honors the SAME gate as the Draw modal: it only runs once
+    // every other post-battle screen is done (still ahead of the boss
+    // extract/descend choice, which waits on combat_over).
     if (!combat_over && consumable_overflow_pending()) {
-        consumable_overflow_step();
+        var _ovf_alloc = instance_exists(obj_game_controller)
+                      && instance_find(obj_game_controller, 0).level_alloc_open;
+        if (!_ovf_alloc && !show_loot_screen) consumable_overflow_step();
         exit;
     }
     if (!combat_over) {
@@ -691,6 +695,15 @@ if (player_turn) {
         if (variable_struct_exists(player, "ability_cd")) {
             for (var _cdi = 0; _cdi < array_length(player.ability_cd); _cdi++) {
                 if (player.ability_cd[_cdi] > 0) player.ability_cd[_cdi]--;
+            }
+        }
+        // SUMMON lifetime (class pass 08-13): the construct weathers 3 of your
+        // turns, then crumbles - detonate before the clock runs out.
+        if (variable_struct_exists(player, "summon") && is_struct(player.summon)) {
+            player.summon.turns -= 1;
+            if (player.summon.turns <= 0) {
+                array_push(combat_log, "The " + player.summon.name + " crumbles to dust - its moment has passed.");
+                player.summon = undefined;
             }
         }
         // Fifth Pulse dark gift (08-04): the cursed metal beats once every 5th
@@ -993,10 +1006,17 @@ if (player_turn) {
         if (input_hotkey("V") || input_cancel()) {
             ability_detail_open = false;
         }
+        // Scroll (M 08-13: the popup SHOWED a scrollbar but the early `exit`
+        // swallowed W/S and the wheel before any scroll code could run).
+        var _ad_max = variable_global_exists("ui_ability_detail_max_scroll")
+                    ? global.ui_ability_detail_max_scroll : 0;
+        if (nav_down() || mouse_wheel_down()) ability_detail_scroll = clamp(ability_detail_scroll + 48, 0, _ad_max);
+        if (nav_up()   || mouse_wheel_up())   ability_detail_scroll = clamp(ability_detail_scroll - 48, 0, _ad_max);
         exit;
     }
     if (input_hotkey("V") && array_length(player.abilities) > 0) {
-        ability_detail_open = true;
+        ability_detail_open   = true;
+        ability_detail_scroll = 0;
         exit;
     }
 
@@ -1202,6 +1222,89 @@ if (player_turn) {
             if (abilities_used_this_turn[_ui] == ab.name) { _already_used = true; break; }
         }
 
+        // ===== SUMMON DETONATE (class pass, M 08-13) =====
+        // Pressing the button of the summon that is STANDING detonates it.
+        // Bypasses the cooldown (which started at summon time) - the detonate
+        // is the payoff press - but still costs 1 AP and its once-per-turn use.
+        if (ab.effect_type == "summon"
+            && variable_struct_exists(player, "summon") && is_struct(player.summon)
+            && player.summon.name == ab.name) {
+            if (_already_used) {
+                array_push(combat_log, ab.name + " already acted this turn.");
+            } else if (player.energy < 1) {
+                array_push(combat_log, "Detonating the " + ab.name + " takes 1 AP.");
+            } else {
+                player.energy -= 1;
+                array_push(abilities_used_this_turn, ab.name);
+                var _sm  = player.summon;
+                var _liv = combat_living_enemies(combat_state);
+                if (_sm.kind == "golem") {
+                    // The eruption: heavy Fire to every enemy - and it is honest,
+                    // you and your companion stand in the same room.
+                    array_push(combat_log, "The MAGMA GOLEM ERUPTS!");
+                    for (var _sd_i = 0; _sd_i < array_length(_liv); _sd_i++) {
+                        var _sd_e = _liv[_sd_i];
+                        var _sd_d = max(1, (variable_struct_exists(_sm, "power") ? _sm.power : 22) - _sd_e.el_resist);
+                        _sd_e.HP -= _sd_d;
+                        _sd_e.hit_flash = 15;
+                        array_push(combat_log, _sd_e.name + " takes " + string(_sd_d) + " fire damage from the eruption!");
+                        if (variable_struct_exists(_sd_e, "last_ex")) {
+                            array_push(vfx_bursts, { spr: spr_vfx_fire, x: variable_struct_exists(_sd_e, "last_ecx") ? _sd_e.last_ecx : _sd_e.last_ex + 145, y: variable_struct_exists(_sd_e, "last_ecy") ? _sd_e.last_ecy : _sd_e.last_ey + 145,
+                                                     timer: 20 + _sd_i * 4, timer_max: 20, school: "fire", scale: 1.3 });
+                        }
+                        if (_sd_e.HP <= 0) combat_on_enemy_defeated(_sd_e, player, combat_log);
+                    }
+                    var _sd_self = 10;
+                    combat_apply_damage(player, _sd_self);
+                    array_push(combat_log, "The blast sears YOU for " + string(_sd_self) + "!");
+                    array_push(damage_popups, { value: _sd_self, x: 475, y: 545, timer: 45, col: make_color_rgb(255, 120, 60) });
+                    var _sd_pet = global.duel_active ? undefined : pet_active();
+                    if (_sd_pet != undefined && !_sd_pet.is_egg && pet_hp(_sd_pet) > 0) {
+                        var _sd_ko = pet_take_damage(_sd_pet, 6);
+                        array_push(combat_log, "[Companion] " + _sd_pet.name + " is caught in the blast for 6!"
+                            + (_sd_ko ? "  It goes DOWN." : ""));
+                    }
+                    screen_shake_timer = 18;
+                } else if (_sm.kind == "effigy") {
+                    array_push(combat_log, "The WARDING EFFIGY bursts into a shockwave - every foe stands EXPOSED!");
+                    for (var _sd_i = 0; _sd_i < array_length(_liv); _sd_i++) {
+                        var _sd_e = _liv[_sd_i];
+                        var _sd_d = 8;
+                        _sd_e.HP -= _sd_d;
+                        _sd_e.hit_flash = 12;
+                        array_push(_sd_e.status_effects, { name: "Warding Shockwave", effect_type: "debuff",
+                            kind: "vulnerable", effect_value: 2, duration: 2, source: "player" });
+                        if (variable_struct_exists(_sd_e, "last_ex")) {
+                            array_push(vfx_bursts, { spr: spr_vfx_arcane, x: variable_struct_exists(_sd_e, "last_ecx") ? _sd_e.last_ecx : _sd_e.last_ex + 145, y: variable_struct_exists(_sd_e, "last_ecy") ? _sd_e.last_ecy : _sd_e.last_ey + 145,
+                                                     timer: 18 + _sd_i * 3, timer_max: 18, school: "arcane" });
+                        }
+                        if (_sd_e.HP <= 0) combat_on_enemy_defeated(_sd_e, player, combat_log);
+                    }
+                    screen_shake_timer = 10;
+                } else {
+                    // Static Husk: the chain arc lashes the whole line.
+                    array_push(combat_log, "The STATIC HUSK discharges - lightning arcs down the enemy line!");
+                    for (var _sd_i = 0; _sd_i < array_length(_liv); _sd_i++) {
+                        var _sd_e = _liv[_sd_i];
+                        var _sd_d = max(1, 14 - _sd_e.el_resist);
+                        _sd_e.HP -= _sd_d;
+                        _sd_e.hit_flash = 12;
+                        array_push(combat_log, _sd_e.name + " takes " + string(_sd_d) + " shock damage from the arc!");
+                        if (variable_struct_exists(_sd_e, "last_ex")) {
+                            array_push(vfx_bursts, { spr: spr_vfx_shock, x: variable_struct_exists(_sd_e, "last_ecx") ? _sd_e.last_ecx : _sd_e.last_ex + 145, y: variable_struct_exists(_sd_e, "last_ecy") ? _sd_e.last_ecy : _sd_e.last_ey + 145,
+                                                     timer: 16 + _sd_i * 5, timer_max: 16, school: "shock" });
+                        }
+                        if (_sd_e.HP <= 0) combat_on_enemy_defeated(_sd_e, player, combat_log);
+                    }
+                    screen_shake_timer = 12;
+                }
+                player.summon = undefined;
+                // Victory detection: the standing end-of-frame check picks up any
+                // kills the detonation scored, same as the trap-splash path.
+            }
+            exit;
+        }
+
         // Control gate - root blocks melee abilities, silence blocks spells, stun blocks all.
         // Dormant until an enemy applies control to the player, but ready. (SYSTEMS_ATTACK_CLASS.md)
         var _ctrl_block = combat_control_block_reason(player, ability_attack_class(ab));
@@ -1362,6 +1465,21 @@ if (player_turn) {
                                && player.duel_last_cast == ab.name);
             player.duel_last_cast = ab.name;
 
+            // BLOOD PRICE (class pass, M 08-13: the Bloodwarden heals too well
+            // and never bleeds for it). Its two heaviest blows now cost ~5% max
+            // HP at the spend commit - paid in blood, never lethal (floors at
+            // 1 HP), and healing is deliberately untouched: spend, then mend.
+            if (ab.name == "Gore Strike" || ab.name == "Marrow Crush") {
+                var _bp = max(1, round(player.max_HP * 0.05));
+                if (player.HP > 1) {
+                    _bp = min(_bp, player.HP - 1);
+                    player.HP -= _bp;
+                    array_push(combat_log, ab.name + " takes its blood price - " + string(_bp) + " HP.");
+                    array_push(damage_popups, { value: _bp, x: 475, y: 545, timer: 40,
+                                                col: make_color_rgb(200, 60, 60) });
+                }
+            }
+
             // THE TALLY (Depth Warden, 08-13): it counts. Every time you commit
             // an ability you have ALREADY used this combat, the Tally gains a
             // permanent stack - +2 damage each. The per-combat use ledger rides
@@ -1473,6 +1591,44 @@ if (player_turn) {
                 // snd_equip is the closest thing to a mechanism being seated; a
                 // bespoke trap-set SFX belongs in the audio pass, not invented here.
                 audio_play_sound(snd_equip, 1, false);
+            }
+
+            // ---- SUMMON CAST (class pass, M 08-13) ----
+            // Self-targeted like traps: nothing resolves downstream - the summon
+            // takes the field and waits. One at a time: casting a DIFFERENT
+            // summon replaces the old one (it crumbles unspent, named in the
+            // log - same non-destructive-one-click reasoning as the trap slots).
+            // The detonate press for the STANDING summon is intercepted earlier.
+            if (ab.effect_type == "summon") {
+                if (variable_struct_exists(player, "summon") && is_struct(player.summon)) {
+                    array_push(combat_log, "The " + player.summon.name + " crumbles as its replacement rises.");
+                }
+                var _smk = "golem";
+                if (ab.name == "Warding Effigy") _smk = "effigy";
+                if (ab.name == "Static Husk")    _smk = "husk";
+                // Reads the RESOLVED copy so talent-web value/duration nodes feed
+                // the construct (power = detonate dmg / hits / crit by kind).
+                player.summon = {
+                    name:  ab.name,
+                    kind:  _smk,
+                    turns: max(1, ab.effect_duration),
+                    power: ab.effect_value,
+                    hits:  (_smk == "effigy") ? max(1, ab.effect_value) : 1
+                };
+                array_push(combat_log, (_smk == "golem")
+                    ? "A MAGMA GOLEM heaves itself out of the floor - it will eat one blow, or ERUPT on your command."
+                    : ((_smk == "effigy")
+                        ? "A WARDING EFFIGY takes the field - it will absorb the next 2 hits meant for you."
+                        : "A STATIC HUSK rises, humming - your Shock and Arcane casts crit harder while it stands."));
+                array_push(vfx_bursts, { spr: (_smk == "golem") ? spr_vfx_fire : ((_smk == "husk") ? spr_vfx_shock : spr_vfx_arcane),
+                                         x: 640, y: 600, timer: 20, timer_max: 20,
+                                         school: (_smk == "golem") ? "fire" : ((_smk == "husk") ? "shock" : "arcane") });
+                audio_play_sound(snd_equip, 1, false);
+                // The cooldown starts NOW - the detonate press bypasses it.
+                if (variable_struct_exists(player, "ability_cd")
+                    && selected_ability < array_length(player.ability_cd)) {
+                    player.ability_cd[selected_ability] = ability_cooldown(ab);
+                }
             }
 
             // Smoke Bomb self-cover (D§3 rework, M-approved 07-09): the smoke hides
@@ -1716,6 +1872,17 @@ if (player_turn) {
                                     _inn_crit += pet_active_innate("crit_low");
                                 }
                             }
+                            // STATIC HUSK standing charge (class pass 08-13): while it
+                            // stands, Shock and Arcane casts crit harder (base +15,
+                            // web value nodes can raise it).
+                            if (variable_struct_exists(player, "summon") && is_struct(player.summon)
+                                && player.summon.kind == "husk") {
+                                var _hk_sch = ability_school(ab);
+                                if (_hk_sch == "shock" || _hk_sch == "arcane") {
+                                    _inn_crit += variable_struct_exists(player.summon, "power")
+                                               ? player.summon.power : 15;
+                                }
+                            }
                             _crit_result = combat_roll_crit(
                                 player.stats,
                                 ab.base_crit + rune_aspect_spell_crit(ab) + boon_value("duelist") + _wpn_crit + _react_crit_bonus
@@ -1768,6 +1935,12 @@ if (player_turn) {
                                     if (variable_struct_exists(player.derived, "ranged_school")) _wpn_school = player.derived.ranged_school;
                                     if (variable_struct_exists(player.derived, "ranged_elem")) _elem_aff = player.derived.ranged_elem;
                                 }
+                                // WEAPON STRIKES (M-locked 08-13): the strike
+                                // channels the WHOLE weapon - its flat damage
+                                // joins a second time HERE, pre-crit, so crits
+                                // amplify the craft. The post-crit floor below
+                                // still applies like every other ability.
+                                if (ab.name == "Weapon Strike" || ab.name == "Weapon Shot") _dmg += _wpn_flat;
                             }
                         }
 
@@ -2242,9 +2415,16 @@ if (player_turn) {
                         // school-colored number beside the base hit.
                         var _rider_pops = [];
 
-                        // Elemental weapon affix: a small separate elemental hit on a damaging
-                        // ability of the weapon's reach class, resolved vs el_resist (not the
-                        // ability's own type). The setup status is applied later. (§C)
+                        // Elemental weapon affix (M-locked 08-13 rework: "too many
+                        // weapons add elemental damage... imbue effects on almost
+                        // every spell"): the affix no longer rides EVERY ability of
+                        // the weapon's reach - only true weapon actions (Strike /
+                        // Weapon Strike / Weapon Shot) and abilities woven with an
+                        // Edge-Carried talent carry it. Resolved vs el_resist as
+                        // before; the setup status below honors the same gate.
+                        var _elem_ok = (ab.name == "Strike" || ab.name == "Weapon Strike" || ab.name == "Weapon Shot"
+                                        || ability_web_copy_has_rider(ab, "edge_carried"));
+                        if (!_elem_ok) _elem_aff = undefined;
                         if (_deals_damage && _elem_aff != undefined && _elem_aff.dmg > 0) {
                             var _elem_hit = combat_resolve_damage(_elem_aff.dmg, 1, target.armor, target.el_resist);
                             if (_elem_hit > 0) {
@@ -2441,6 +2621,22 @@ if (player_turn) {
                         }
                         var _vfx_ex = 1620 + _vfx_slot * (-120);
                         var _vfx_ey = 233  + _vfx_slot * 105;
+                        // 2.5D (M 08-13: "projectiles go for mob nameplates
+                        // sometimes not the mobs"): the flat-row formula above
+                        // lands in the HP-bar grid. Aim everything downstream
+                        // (bolt, burst, popups, splash labels, melee lunge) at
+                        // the foe's stamped visual centre instead.
+                        if (combat_25d()) {
+                            if (variable_struct_exists(target, "last_ecx")) {
+                                _vfx_ex = target.last_ecx;
+                                _vfx_ey = target.last_ecy;
+                            } else {
+                                var _vsp25 = variable_struct_exists(target, "stage_station")
+                                           ? target.stage_station : combat_enemy_slot_pos(_vfx_slot);
+                                _vfx_ex = _vsp25.cx;
+                                _vfx_ey = _vsp25.cy;
+                            }
+                        }
                         if (_deals_damage) {
                             var _pop_col = (_crit_result.critted) ? c_yellow : make_color_rgb(255, 100, 100);
                             // Base number excludes the rider layers - they float as their
@@ -2513,18 +2709,27 @@ if (player_turn) {
                         // Conveyance (08-04): a projectile CARRIES the burst to arrival; a
                         // beam adds an instant lance under the burst; the rest stay instant.
                         var _vfxp = ability_attack_vfx(ab);
+                        // 2.5D: launch from the live player anchor (flat: shipped 505,570).
+                        var _prj_sx = 505, _prj_sy = 570;
+                        if (combat_25d()) {
+                            var _prj_pa = combat_player_vfx_anchor(player);
+                            _prj_sx = _prj_pa.x + 210;
+                            _prj_sy = _prj_pa.y + 120;
+                        }
                         if (_dlv == "projectile") {
                             array_push(combat_projectiles, {
                                 spr: ability_projectile_sprite(ab), school: ability_school(ab),
                                 impact_spr: _vfxp.spr, ticks: _vfxp.ticks,
-                                sx: 505, sy: 570, tx: _vfx_ex, ty: _vfx_ey,
+                                sx: _prj_sx, sy: _prj_sy, tx: _vfx_ex, ty: _vfx_ey,
                                 bx: _vfx_ex, by: _vfx_ey,   // burst anchor (spr_vfx_* are center-origin)
-                                t: 0, dur: 15, delay: _dlv_delay - 15, tgt: target, shake: 8
+                                t: 0, dur: 15, delay: _dlv_delay - 15, tgt: target, shake: 8,
+                                aname: ab.name,   // bespoke flight renders (Snipe's arrow)
+                                scale: variable_struct_exists(_vfxp, "scale") ? _vfxp.scale : 1   // pacing: finisher bursts bigger
                             });
                             if (_deals_damage) target.hp_hold = _dlv_delay;
                         } else {
                             if (_dlv == "beam") {
-                                array_push(combat_beams, { sx: 505, sy: 570, tx: _vfx_ex, ty: _vfx_ey,
+                                array_push(combat_beams, { sx: _prj_sx, sy: _prj_sy, tx: _vfx_ex, ty: _vfx_ey,
                                     t: 0, dur: 12, col: school_color(ability_school(ab)),
                                     spr: ability_beam_sprite(ab) });
                             }
@@ -2534,6 +2739,7 @@ if (player_turn) {
                             vfx_timer     = _vfxp.ticks;
                             vfx_timer_max = _vfxp.ticks;
                             vfx_school    = ability_school(ab);   // spell-tint blend key
+                            vfx_scale_mult = variable_struct_exists(_vfxp, "scale") ? _vfxp.scale : 1;
                         }
                         // Attack audio keyed to the ABILITY (damage type), not the class.
                         // See play_ability_cast_sfx / SYSTEMS_COMBAT_FX.md.
@@ -2869,8 +3075,10 @@ if (player_turn) {
                                     if (_sp_d < 1) _sp_d = 1;
                                     combat_apply_damage(_sp_t, _sp_d);
                                     _sp_t.hit_flash = max(_sp_t.hit_flash, 10);
-                                    array_push(damage_popups, { value: _sp_d, x: 1620 + _sp_slots[_sp_p] * (-120),
-                                        y: 233 + _sp_slots[_sp_p] * 105 - 60, timer: 45,
+                                    var _sp_px = 1620 + _sp_slots[_sp_p] * (-120);
+                                    var _sp_py = 233 + _sp_slots[_sp_p] * 105 - 60;
+                                    if (combat_25d() && variable_struct_exists(_sp_t, "last_ecx")) { _sp_px = _sp_t.last_ecx; _sp_py = _sp_t.last_ecy - 90; }
+                                    array_push(damage_popups, { value: _sp_d, x: _sp_px, y: _sp_py, timer: 45,
                                         col: (_mut_sch != "") ? school_color(_mut_sch) : c_white });
                                     array_push(combat_log, ab.name + " SPLITS to " + _sp_t.name + " for " + string(_sp_d) + "!");
                                     if (_sp_t.HP <= 0 && !_sp_t.is_defeated) combat_on_enemy_defeated(_sp_t, player, combat_log);
@@ -2900,7 +3108,8 @@ if (player_turn) {
                                     effect_value: max(1, round(_final_dmg * _mut.pct / 100)),
                                     duration: 2, element: _lg_el, source: "player"
                                 });
-                                array_push(combat_log, ab.name + " lingers on " + target.name + " - it will burn for 2 turns!");
+                                array_push(combat_log, ab.name + " lingers on " + target.name + " - it will "
+                                    + ((_lg_el == "bleed") ? "bleed" : ((_lg_el == "poison") ? "fester" : "burn")) + " for 2 turns!");
                             }
                         }
 
@@ -2915,8 +3124,10 @@ if (player_turn) {
                                 if (combat_state.combatants[_wei] == target) break;
                                 if (!combat_state.combatants[_wei].is_player) _we_slot++;
                             }
-                            array_push(damage_popups, { value: _we_dmg, x: 1620 + _we_slot * (-120) + 52,
-                                y: 233 + _we_slot * 105 - 140, timer: 45, delay: 14, col: make_color_rgb(170, 220, 255) });
+                            var _we_px = 1620 + _we_slot * (-120) + 52, _we_py = 233 + _we_slot * 105 - 140;
+                            if (combat_25d() && variable_struct_exists(target, "last_ecx")) { _we_px = target.last_ecx + 52; _we_py = target.last_ecy - 140; }
+                            array_push(damage_popups, { value: _we_dmg, x: _we_px,
+                                y: _we_py, timer: 45, delay: 14, col: make_color_rgb(170, 220, 255) });
                             array_push(combat_log, "Whetstone Echo - " + ab.name + " rings twice for " + string(_we_dmg) + "!");
                             _whet_fired = true;
                             if (target.HP <= 0 && !target.is_defeated) combat_on_enemy_defeated(target, player, combat_log);
@@ -3381,12 +3592,22 @@ if (player_turn) {
                     // (heal/shield/resource/self-debuff/evasion/dark pact/offense buff)
                     // instead of the old heal-or-sword split. See ability_support_vfx.
                     var _vfxp = ability_support_vfx(ab);
+                    var _pvfa = combat_player_vfx_anchor(player);
                     vfx_spr       = _vfxp.spr;
-                    vfx_x         = 330;
-                    vfx_y         = 360;
+                    vfx_x         = _pvfa.x;
+                    vfx_y         = _pvfa.y;
                     vfx_timer     = _vfxp.ticks;
                     vfx_timer_max = _vfxp.ticks;
                     vfx_school    = ability_school(ab);   // spell-tint blend key
+                    vfx_scale_mult = 1;
+                    // Iron Skin (M 08-13: "should be an envelopment of bone or
+                    // armor briefly, not this digital blue blurr"): the generic
+                    // shield burst is replaced by the bespoke iron-shell
+                    // overlay drawn on the player sprite itself (Draw_64).
+                    if (ab.name == "Iron Skin") {
+                        vfx_timer = 0;
+                        ironskin_fx_timer = 34;
+                    }
                 }
 
                 if (ab.effect_type == "heal") {
@@ -3395,6 +3616,13 @@ if (player_turn) {
                     if ((ab.name == "Field Dressing" || ab.name == "Second Wind")
                         && ability_stat_rider_active(ab.name)) {
                         _self_heal_base = round(_self_heal_base * 1.20);
+                    }
+                    // Emergency Triage keystone (heal split 08-13): the dressing
+                    // works DOUBLE on a failing body (below half HP).
+                    if (ability_web_copy_has_rider(ab, "triage")
+                        && player.max_HP > 0 && player.HP < player.max_HP * 0.5) {
+                        _self_heal_base *= 2;
+                        array_push(combat_log, "Emergency Triage - the mending works double on a failing body!");
                     }
                     // OVERCHARGE (07-16): a heal spender cast at a FULL reserve drains
                     // what's left for +2 healing per point (e.g. Blood Surge at 10 Blood:
@@ -3433,9 +3661,24 @@ if (player_turn) {
                         player.shield_hp += _ovh;
                         array_push(combat_log, "Crimson Overflow - " + string(_ovh) + " excess mending hardens into a shield!");
                     }
-                    // Field Dressing: 2-turn cooldown (was once-per-combat). The generic CD
-                    // gate above blocks re-casts so AP is no longer wasted on a no-op.
-                    if (ab.name == "Field Dressing") player.ability_cd[selected_ability] = ability_cooldown(ab);
+                    // Heal split (M-locked 08-13): Field Dressing is TRIAGE - it
+                    // always staunches your newest BLEED on cast (deepest-first
+                    // scan finds the most recent one).
+                    if (ab.name == "Field Dressing"
+                        && variable_struct_exists(player, "status_effects")) {
+                        for (var _fdb = array_length(player.status_effects) - 1; _fdb >= 0; _fdb--) {
+                            var _fds = player.status_effects[_fdb];
+                            if (combat_status_kind_of(_fds) == "dot" && combat_status_element(_fds) == "bleed") {
+                                array_delete(player.status_effects, _fdb, 1);
+                                array_push(combat_log, "The dressing staunches the bleeding!");
+                                break;
+                            }
+                        }
+                    }
+                    // Cooldown stamps (generic CD gate above blocks re-casts):
+                    // Field Dressing 2t; Second Wind 3t (heal split 08-13).
+                    if (ab.name == "Field Dressing" || ab.name == "Second Wind")
+                        player.ability_cd[selected_ability] = ability_cooldown(ab);
                 }
 
                 // --- Generic "resource" effect for SELF-targeted abilities (Soul Harvest).
@@ -3625,11 +3868,14 @@ if (player_turn) {
                     array_push(combat_log, "Hero blinks - the next attack is fully evaded, the two after are softened!");
                 }
 
-                // --- Shadow Step: chance to dodge each of the next 3 attacks (2-turn CD).
+                // --- Shadow Step: chance to dodge each of the next 2 attacks (2-turn CD).
                 //     It's a dodge CHANCE (not guaranteed), so it covers more attacks. ---
                 if (ab.name == "Shadow Step") {
                     // "Long Stride" bespoke node (P3, 08-05): 4 charges instead of 3.
-                    var _ss_n = ability_web_copy_has_rider(ab, "step_charges") ? 4 : 3;
+                    // CLASS IDENTITY PASS (M 08-13): traps gave the Shadowstrider an
+                    // active answer, so Shadow Step steps back - 2 charges base
+                    // (was 3), Long Stride grants 3 (was 4). CD stays 2.
+                    var _ss_n = ability_web_copy_has_rider(ab, "step_charges") ? 3 : 2;
                     player.shadow_step_charges = _ss_n;
                     player.ability_cd[selected_ability] = ability_cooldown(ab);
                     array_push(combat_log, "Hero readies evasion - "
@@ -3692,8 +3938,10 @@ if (player_turn) {
                         player.preparation = min(player.preparation_max, player.preparation + 1);
                         array_push(combat_log, "Second Wind: +1 Preparation.");
                     }
-                    // "Clean Break" web node (P3, 07-29): cleanses the TWO newest.
-                    var _sw_pops = ability_web_copy_has_rider(ab, "cleanse_two") ? 2 : 1;
+                    // Heal split (08-13): the BASE cleanse moved to the Field
+                    // Dressing line - Second Wind only cleanses with the
+                    // "Clean Break" node (two newest afflictions).
+                    var _sw_pops = ability_web_copy_has_rider(ab, "cleanse_two") ? 2 : 0;
                     repeat (_sw_pops) {
                         if (variable_struct_exists(player, "status_effects") && array_length(player.status_effects) > 0) {
                             var _sw_cl = player.status_effects[array_length(player.status_effects) - 1];
@@ -4224,22 +4472,37 @@ if (player_turn) {
                 // Payload is computed NOW, not at deploy - so Loaded Springs reads the
                 // Prep you are actually holding when it goes off.
                 var _tp_dmg = _tp.damage;
+                var _tp_bd_prep = 0, _tp_bd_dread = 0, _tp_bd_patient = false;
                 if (_tp_dmg > 0) {
                     if (player.class_id == 2 && variable_struct_exists(player, "preparation")
-                        && trunk_has("prep_trap_dmg")) _tp_dmg += 2 * player.preparation;
-                    if (variable_struct_exists(player, "dread_bonus") && player.dread_bonus > 0)
-                        _tp_dmg += player.dread_bonus;
+                        && trunk_has("prep_trap_dmg")) { _tp_bd_prep = 2 * player.preparation; _tp_dmg += _tp_bd_prep; }
+                    if (variable_struct_exists(player, "dread_bonus") && player.dread_bonus > 0) {
+                        _tp_bd_dread = player.dread_bonus;
+                        _tp_dmg += _tp_bd_dread;
+                    }
                     // "Patient Hands" (P5): a trap that waited 3+ rounds pays double.
                     if (variable_struct_exists(_tp, "r_patient") && _tp.r_patient
                         && combat_state.round - _tp.deployed_round >= 3) {
                         _tp_dmg *= 2;
+                        _tp_bd_patient = true;
                         array_push(combat_log, "Patient Hands: the long wait pays DOUBLE.");
                     }
                 }
 
                 array_push(combat_log, actor.name + " springs the " + _tp.name + "!");
-                array_push(damage_popups, { value: 0, text: "TRAP!", x: 475, y: 455, timer: 40,
-                                            col: make_color_rgb(230, 190, 90) });
+                // Spring conveyance v2 (M 08-13: the old flash sat low, near the log,
+                // and read as nothing). The banner now lands CENTER SCREEN and the
+                // trap's own flash bursts big ON the enemy that sprang it, so cause
+                // and victim both read instantly.
+                array_push(damage_popups, { value: 0, text: "TRAP SPRUNG - " + string_upper(_tp.name) + "!",
+                                            x: 960, y: 420, timer: 55, col: trap_spring_tint(_tp.name) });
+                if (variable_struct_exists(actor, "last_ex") && variable_struct_exists(actor, "last_ey")) {
+                    array_push(vfx_bursts, { spr: trap_spring_vfx(_tp.name),
+                                             x: variable_struct_exists(actor, "last_ecx") ? actor.last_ecx : actor.last_ex + 145, y: variable_struct_exists(actor, "last_ecy") ? actor.last_ecy : actor.last_ey + 145,
+                                             timer: 24, timer_max: 24, school: "",
+                                             col: trap_spring_tint(_tp.name), scale: 1.7 });
+                    actor.hit_flash = 15;
+                }
 
                 // The snap burst fires ON the trap, not on the enemy - the whole
                 // point of the 08-08 rework is that the trap is a THING standing
@@ -4254,6 +4517,22 @@ if (player_turn) {
                 if (_tp_dmg > 0) {
                     actor.HP -= _tp_dmg;
                     array_push(combat_log, actor.name + " takes " + string(_tp_dmg) + " damage from the trap!");
+                }
+                // Trap springs read as attacks in the log (M 08-13): attach the same
+                // hover breakdown a player hit gets. Rides the damage line when the
+                // trap deals damage, else the "springs the trap" line itself.
+                if (global.combat_log_breakdowns) {
+                    var _tbd_lines = [];
+                    if (_tp.damage > 0)   array_push(_tbd_lines, { label: "Trap base", val: string(_tp.damage) });
+                    if (_tp_bd_prep > 0)  array_push(_tbd_lines, { label: "Loaded Springs (Prep)", val: "+" + string(_tp_bd_prep) });
+                    if (_tp_bd_dread > 0) array_push(_tbd_lines, { label: "Compounding Dread", val: "+" + string(_tp_bd_dread) });
+                    if (_tp_bd_patient)   array_push(_tbd_lines, { label: "Patient Hands", val: "x2" });
+                    if (_tp.block)        array_push(_tbd_lines, { label: "Blocks the action", val: "yes" });
+                    if (_tp.status != "") array_push(_tbd_lines, { label: "Applies", val: _tp.status + " (" + string(_tp.duration) + " turn" + (_tp.duration == 1 ? "" : "s") + ")" });
+                    var _tbd = { title: _tp.name + " (trap)", total: _tp_dmg, crit: false, school: "", lines: _tbd_lines };
+                    while (array_length(combat_log_detail) < array_length(combat_log) - 1)
+                        array_push(combat_log_detail, undefined);
+                    array_push(combat_log_detail, _tbd);
                 }
                 if (_tp.status != "" && !actor.is_defeated) {
                     // "exposed" is a catalog word, not a status kind: the whole Exposed
@@ -4341,6 +4620,35 @@ if (player_turn) {
                 // Non-blocking trap (Spike/Caltrops): the payload landed, the blow
                 // still comes. Fall through to the rest of the reaction stack.
             }
+        }
+
+        // --- SUMMON INTERCEPT (class pass, M 08-13): the standing summon eats a
+        //     damaging blow meant for you. Checked after traps (a set trap is a
+        //     committed read that should not be wasted) and BEFORE Blink/Shadow
+        //     Step (never spend a dodge on a blow the construct exists to take).
+        //     The enemy's action is spent on the summon - blow, turn and all. ---
+        if (!_rage_now && _in_hostile && _in_damaging
+            && variable_struct_exists(player, "summon") && is_struct(player.summon)) {
+            var _smn = player.summon;
+            _smn.hits -= 1;
+            array_push(combat_log, "The " + _smn.name + " takes " + actor.name + "'s blow meant for you!");
+            array_push(vfx_bursts, { spr: spr_fx_impact, x: 590, y: 560, timer: 16, timer_max: 16, school: "" });
+            if (_smn.hits <= 0) {
+                array_push(combat_log, "The " + _smn.name + " crumbles, spent"
+                    + ((_smn.kind == "golem") ? " - its fire dies with it." : "."));
+                player.summon = undefined;
+            }
+            actor.denied_streak += 1;   // rage breaker, same as a blocking trap
+            enemy_roll_intent(actor, player, combat_state.round + 1, true);
+            combat_next_turn(combat_state);
+            player_turn = combat_state.active.is_player;
+            if (player_turn) {
+                abilities_used_this_turn = [];
+                if (instance_exists(obj_game_controller)) instance_find(obj_game_controller, 0).items_used_this_turn = 0;
+                need_player_status_tick = true;
+            }
+            enemy_turn_timer = enemy_turn_delay;
+            exit;
         }
 
         // --- Blink: staged guard. 1st incoming attack = guaranteed full dodge; 2nd
@@ -4455,7 +4763,7 @@ if (player_turn) {
             }
         }
 
-        // --- Shadow Step: dodge CHANCE on each of the next 3 attacks (charge-based) ---
+        // --- Shadow Step: dodge CHANCE on each of the next 2 attacks (charge-based) ---
         if (!_rage_now && _in_hostile && player.shadow_step_charges > 0) {
             player.shadow_step_charges--;
             // "Sharpened Instinct" bespoke node (08-11 web rework): +10% dodge
@@ -4558,13 +4866,17 @@ if (player_turn) {
                 array_push(combat_log, "[Companion] " + pet_active().name + "'s ABDICATION - "
                     + actor.name + "'s next turn is forfeit to the hollow crown!");
             }
+            // Living-slot index + the SHARED position helper (2.5D v3): casts now
+            // launch from where the caster is actually drawn, at every depth.
             var _sa_slot = 0;
             for (var _sai = 0; _sai < array_length(combat_state.combatants); _sai++) {
                 if (combat_state.combatants[_sai] == actor) break;
-                if (!combat_state.combatants[_sai].is_player) _sa_slot++;
+                if (!combat_state.combatants[_sai].is_player && !combat_state.combatants[_sai].is_defeated) _sa_slot++;
             }
-            var _sa_x = 1620 + _sa_slot * (-120);
-            var _sa_y = 233  + _sa_slot * 105;
+            var _sa_p = (combat_25d() && variable_struct_exists(actor, "stage_station"))
+                      ? actor.stage_station : combat_enemy_slot_pos(_sa_slot);
+            var _sa_x = _sa_p.x;
+            var _sa_y = _sa_p.y;
 
             // Family-themed attack/cast sound for any offensive ability (not heals).
             if (_eab.kind != "heal") enemy_attack_sound(actor.name);
@@ -4586,15 +4898,32 @@ if (player_turn) {
                 var _ht_slot = 0;
                 for (var _hsi = 0; _hsi < array_length(combat_state.combatants); _hsi++) {
                     if (combat_state.combatants[_hsi] == _htgt) break;
-                    if (!combat_state.combatants[_hsi].is_player) _ht_slot++;
+                    if (!combat_state.combatants[_hsi].is_player && !combat_state.combatants[_hsi].is_defeated) _ht_slot++;
                 }
+                // GLYPH CAST VFX (M 08-13: "when pale archivist traces a
+                // restorative glyph and heals it would be cool if an actual
+                // glyph appears and then the restorative effect takes place"):
+                // a gold rune ring traced at the target's feet (glyph_fx,
+                // drawn under the sprites), then the green mend burst blooms
+                // as the trace completes (delayed vfx_bursts entry).
+                var _ht_pv = (combat_25d() && variable_struct_exists(_htgt, "stage_station"))
+                           ? _htgt.stage_station : combat_enemy_slot_pos(_ht_slot);
+                array_push(glyph_fx, { x: _ht_pv.cx, y: _ht_pv.feet - 6, t: 0, dur: 36,
+                                       col: make_color_rgb(255, 215, 120) });
+                array_push(vfx_bursts, { spr: spr_vfx_heal, x: _ht_pv.cx, y: _ht_pv.cy,
+                    timer: 22, timer_max: 22, school: "", delay: 30 });
                 // Scale by Awakening, then reduce by the target's Mortality (anti-heal). (P6)
                 var _eheal_raw = round(_eab.value * awaken_enemy_heal_mult());
                 var _eheal_amt = combat_heal_after_mortality(_htgt, _eheal_raw);
                 var _ehl = min(_htgt.max_HP - _htgt.HP, _eheal_amt);
                 _htgt.HP += _ehl;
-                _htgt.hit_flash = max(_htgt.hit_flash, 6);
-                if (_ehl > 0) array_push(damage_popups, { value: _ehl, x: 1620 + _ht_slot * (-120), y: 233 + _ht_slot * 105 - 60, timer: 45, col: c_lime });
+                // Guarded (08-13 crash): a summoned ally may not carry the
+                // transient fields yet on older saves mid-combat.
+                _htgt.hit_flash = max(variable_struct_exists(_htgt, "hit_flash") ? _htgt.hit_flash : 0, 6);
+                if (_ehl > 0) {
+                    // Popup waits for the glyph trace to complete (delay ~30).
+                    array_push(damage_popups, { value: _ehl, x: _ht_pv.cx, y: _ht_pv.cy - 90, timer: 45, delay: 30, col: c_lime });
+                }
                 if (_ehl <= 0 && combat_has_status(_htgt, "mortality")) {
                     array_push(combat_log, actor.name + "'s mending is suppressed!");
                 } else if (_htgt != actor) {
@@ -4633,8 +4962,43 @@ if (player_turn) {
                     var _su_c = combat_state.combatants[_su_i];
                     if (!_su_c.is_player && !_su_c.is_defeated) _su_n++;
                 }
-                if (_su_n < 4 && variable_instance_exists(id, "summon_pool") && array_length(summon_pool) > 0) {
-                    var _su_new = enemy_clone(summon_pool[irandom(array_length(summon_pool) - 1)]);
+                // A5 BOSS ESCALATION (M 08-13): a summoning BOSS - Sovereign,
+                // Archivist boss, or a Depth Warden carrying the call - raises
+                // ELITE reinforcements at Awakening 5. Everyone else keeps the
+                // dungeon's standard roster.
+                var _su_src   = variable_instance_exists(id, "summon_pool") ? summon_pool : [];
+                var _su_elite = false;
+                if ((variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0) >= 5
+                    && variable_instance_exists(id, "summon_is_boss_fight") && summon_is_boss_fight
+                    && variable_instance_exists(id, "summon_pool_elite") && array_length(summon_pool_elite) > 0) {
+                    _su_src   = summon_pool_elite;
+                    _su_elite = true;
+                }
+                // Candidate filter (M 08-13 crash report: "pale archivist seems
+                // to have summoned himself"): never a copy of the CALLER, and
+                // summoners never call other summoners - calls cannot chain.
+                var _su_cands = [];
+                {
+                    for (var _sc_i = 0; _sc_i < array_length(_su_src); _sc_i++) {
+                        var _sc_t = _su_src[_sc_i];
+                        if (_sc_t.name == actor.name) continue;
+                        var _sc_summoner = false;
+                        if (variable_struct_exists(_sc_t, "abilities") && is_array(_sc_t.abilities)) {
+                            for (var _sc_a = 0; _sc_a < array_length(_sc_t.abilities); _sc_a++)
+                                if (_sc_t.abilities[_sc_a].kind == "summon") { _sc_summoner = true; break; }
+                        }
+                        if (!_sc_summoner) array_push(_su_cands, _sc_t);
+                    }
+                }
+                if (_su_n < 4 && array_length(_su_cands) > 0) {
+                    var _su_new = enemy_clone(_su_cands[irandom(array_length(_su_cands) - 1)]);
+                    // Combat-ready transients (08-13 crash fix: the raw clone
+                    // lacked hit_flash - the A3 smart-heal read it unguarded the
+                    // moment it targeted a summoned ally and crashed).
+                    _su_new.hit_flash     = 0;
+                    _su_new.hit_recoil    = 0;
+                    _su_new.dodge_anim    = 0;
+                    _su_new.denied_streak = 0;
                     var _su_asc = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
                     if (_su_asc > 0) {
                         _su_new.max_HP = round(_su_new.max_HP * awaken_hp_mult(_su_asc));
@@ -4652,9 +5016,12 @@ if (player_turn) {
                             + _su_new.name + " arrives at 1 HP!");
                     }
                     array_push(combat_state.combatants, _su_new);
+                    // The newborn telegraphs like everyone else from its first frame.
+                    enemy_roll_intent(_su_new, player, combat_state.round + 1, true);
                     array_push(combat_log, actor.name + " " + ((_eab.msg != "") ? _eab.msg : "calls for aid")
-                        + " - " + _su_new.name + " joins the fight!");
-                    screen_shake_timer = max(screen_shake_timer, 8);
+                        + " - " + (_su_elite ? ("an ELITE answers: " + _su_new.name + " joins the fight!")
+                                             : (_su_new.name + " joins the fight!")));
+                    screen_shake_timer = max(screen_shake_timer, _su_elite ? 14 : 8);
                 } else {
                     array_push(combat_log, actor.name + " calls into the dark - nothing answers.");
                 }
@@ -4699,12 +5066,29 @@ if (player_turn) {
                         // spr_fx_impact is TOP-LEFT origin - anchor it like the shipped
                         // enemy hit spark (300,450) so the burst centers on the player.
                         case 0: _sp_bolt = -1;            _sp_hit = spr_fx_impact; _sp_sch = "";      _sp_bx = 300; _sp_by = 450; break;
+                        // dtype 1 (elemental) previously fell through to the arcane
+                        // default - a Fire Drake's Cinder Breath flew as purple (M
+                        // 08-13 VFX pass). It now reads the caster's family school.
+                        case 1:
+                            _sp_sch  = enemy_attack_school(actor.name);
+                            if (_sp_sch == "") _sp_sch = "arcane";
+                            _sp_bolt = school_bolt_sprite(_sp_sch);
+                            _sp_hit  = _sp_bolt;
+                            break;
                         case 2: _sp_bolt = spr_vfx_void;  _sp_hit = spr_vfx_void;  _sp_sch = "void";  break;
                         case 3: _sp_bolt = spr_vfx_blood; _sp_hit = spr_vfx_blood; _sp_sch = "blood"; break;
                     }
+                    // 2.5D: fly to the live player anchor, not the flat-mode spot.
+                    var _sp_tx = 415, _sp_ty = 560;
+                    if (combat_25d()) {
+                        var _sp_pa = combat_player_vfx_anchor(player);
+                        _sp_tx = _sp_pa.x + 110; _sp_ty = _sp_pa.y + 110;
+                        _sp_bx = (_sp_bolt == -1) ? _sp_pa.x : _sp_tx;   // impact spark is top-left origin
+                        _sp_by = (_sp_bolt == -1) ? (_sp_pa.y + 60) : _sp_ty;
+                    }
                     array_push(combat_projectiles, {
                         spr: _sp_bolt, school: _sp_sch, impact_spr: _sp_hit, ticks: 20,
-                        sx: _sa_x + 90, sy: _sa_y + 90, tx: 415, ty: 560,
+                        sx: _sa_x + 90, sy: _sa_y + 90, tx: _sp_tx, ty: _sp_ty,
                         bx: _sp_bx, by: _sp_by,
                         t: 0, dur: 15, delay: _sp_delay - 15, tgt: player, shake: 12
                     });
@@ -4712,7 +5096,10 @@ if (player_turn) {
                 } else {
                     player.hit_flash = 15; player.hit_recoil = 10; screen_shake_timer = 12;
                     attack_anim_timer = 20; attack_anim_src_x = _sa_x; attack_anim_src_y = _sa_y;
-                    attack_anim_dst_x = 435; attack_anim_dst_y = 465; attack_anim_is_player = false; attack_anim_enemy_idx = _sa_slot;
+                    // 2.5D: horizontal lunge at own depth (see the melee branch note).
+                    attack_anim_dst_x = combat_25d() ? (combat_player_vfx_anchor(player).x + 280) : 435;
+                    attack_anim_dst_y = combat_25d() ? _sa_y : 465;
+                    attack_anim_is_player = false; attack_anim_enemy_idx = _sa_slot;
                 }
                 array_push(damage_popups, { value: _sdmg, x: 475, y: 545, timer: 50, delay: _sp_delay, col: make_color_rgb(255, 130, 60) });
                 array_push(combat_log, actor.name + " " + ((_eab.msg != "") ? _eab.msg : "casts a spell") + " for " + string(_sdmg) + " damage!");
@@ -4947,6 +5334,12 @@ if (player_turn) {
             // Boon flat armor (Shrine V2): Ironhide +2 / Feast of Crows +2 per corpse.
             var _bfa = boon_flat_armor();
             if (_bfa > 0) _final_dmg = max(1, _final_dmg - _bfa);
+            // CLOTTED ARMOR (08-13, replaced Thickened Vitae): 5+ Blood held,
+            // every hit lands 2 softer. Mirrors the combat_mitigate_player site.
+            if (variable_struct_exists(player, "blood") && player.blood >= 5
+                && player.class_id == 1 && trunk_has("blood_hp")) {
+                _final_dmg = max(1, _final_dmg - 2);
+            }
             if (variable_struct_exists(player, "derived") && player.derived.phys_dmg_reduction > 0) {
                 _final_dmg = max(1, ceil(_final_dmg * (1.0 - (player.derived.phys_dmg_reduction / 100.0))));
             }
@@ -5108,25 +5501,43 @@ if (player_turn) {
             // Player takes a hit - gendered human "damage" grunt (snd_player_hurt[_f]).
             play_player_vocal("snd_player_hurt", -1);
             // VFX: hit flash, popup, enemy attack slide, screen shake
+            // Living-slot index + the SHARED position helper (2.5D v3): the lunge
+            // and the shot now start from the drawn sprite, at every depth.
             var _ea_slot = 0;
             for (var _asi = 0; _asi < array_length(combat_state.combatants); _asi++) {
                 if (combat_state.combatants[_asi] == actor) break;
-                if (!combat_state.combatants[_asi].is_player) _ea_slot++;
+                if (!combat_state.combatants[_asi].is_player && !combat_state.combatants[_asi].is_defeated) _ea_slot++;
             }
-            var _ea_src_x = 1620 + _ea_slot * (-120);
-            var _ea_src_y = 233  + _ea_slot * 105;
+            var _ea_p = (combat_25d() && variable_struct_exists(actor, "stage_station"))
+                      ? actor.stage_station : combat_enemy_slot_pos(_ea_slot);
+            var _ea_src_x = _ea_p.x;
+            var _ea_src_y = _ea_p.y;
             // Conveyance (08-04): a RANGED foe's blow now visibly flies to you - the
             // hit presentation (flash/shake/popup/spark/recoil/HP drain) rides the
             // projectile. A melee foe keeps the lunge, instant as before.
             var _ea_ranged = (variable_struct_exists(actor, "reach") && actor.reach == "ranged");
             var _ea_delay  = _ea_ranged ? (15 + array_length(combat_projectiles) * 4) : 0;
             if (_ea_ranged) {
-                array_push(combat_projectiles, {
-                    spr: -1, school: "", impact_spr: spr_fx_impact, ticks: 18,
-                    sx: _ea_src_x + 90, sy: _ea_src_y + 90, tx: 415, ty: 560,
-                    bx: 300, by: 450,   // spr_fx_impact is top-left origin (shipped spark anchor)
-                    t: 0, dur: 15, delay: _ea_delay - 15, tgt: player, shake: 12
-                });
+                // Family VFX (M 08-13): elemental foes' basic shots now carry their
+                // school's bolt + burst instead of the generic needle. Physical
+                // families ("" school) keep the shipped needle + impact spark.
+                var _ea_sch  = enemy_attack_school(actor.name);
+                var _ea_bolt = school_bolt_sprite(_ea_sch);
+                if (_ea_sch != "" && _ea_bolt >= 0) {
+                    array_push(combat_projectiles, {
+                        spr: _ea_bolt, school: _ea_sch, impact_spr: _ea_bolt, ticks: 20,
+                        sx: _ea_src_x + 90, sy: _ea_src_y + 90, tx: 415, ty: 560,
+                        bx: 415, by: 560,   // spr_vfx_* are center-origin
+                        t: 0, dur: 15, delay: _ea_delay - 15, tgt: player, shake: 12
+                    });
+                } else {
+                    array_push(combat_projectiles, {
+                        spr: -1, school: "", impact_spr: spr_fx_impact, ticks: 18,
+                        sx: _ea_src_x + 90, sy: _ea_src_y + 90, tx: 415, ty: 560,
+                        bx: 300, by: 450,   // spr_fx_impact is top-left origin (shipped spark anchor)
+                        t: 0, dur: 15, delay: _ea_delay - 15, tgt: player, shake: 12
+                    });
+                }
                 player.hp_hold = _ea_delay;
             } else {
                 player.hit_flash   = 15;
@@ -5135,15 +5546,20 @@ if (player_turn) {
                 attack_anim_timer     = 20;
                 attack_anim_src_x     = _ea_src_x;
                 attack_anim_src_y     = _ea_src_y;
-                attack_anim_dst_x     = 435;
-                attack_anim_dst_y     = 465;
+                // 2.5D: lunge horizontally toward the player at the attacker's OWN
+                // depth row (the flat 435,465 contact point yanked deep-row foes
+                // out of their plane). Flat mode: shipped contact point.
+                attack_anim_dst_x     = combat_25d() ? (combat_player_vfx_anchor(player).x + 280) : 435;
+                attack_anim_dst_y     = combat_25d() ? _ea_src_y : 465;
                 attack_anim_is_player = false;
                 attack_anim_enemy_idx = _ea_slot;
                 // Impact spark over the player where the blow lands (same one-shot VFX
                 // system as outgoing hits; spr_fx_impact is a 64px top-left-origin burst).
+                var _pvha = combat_player_vfx_anchor(player);
                 vfx_spr       = spr_fx_impact;
-                vfx_x         = 300;
-                vfx_y         = 450;
+                vfx_x         = combat_25d() ? _pvha.x : 300;
+                vfx_y         = combat_25d() ? (_pvha.y + 60) : 450;
+                vfx_scale_mult = 1;
                 vfx_timer     = 18;
                 vfx_timer_max = 18;
                 vfx_school    = "";   // enemy hit spark - never tinted
@@ -5311,6 +5727,11 @@ if (player_turn) {
                 // Boon flat armor (Shrine V2): covers the double strike too.
                 var _bfa2 = boon_flat_armor();
                 if (_bfa2 > 0) _final_dmg2 = max(1, _final_dmg2 - _bfa2);
+                // Clotted Armor covers the double strike too (08-13).
+                if (variable_struct_exists(player, "blood") && player.blood >= 5
+                    && player.class_id == 1 && trunk_has("blood_hp")) {
+                    _final_dmg2 = max(1, _final_dmg2 - 2);
+                }
                 if (boon_active("warding")) _final_dmg2 = max(1, round(_final_dmg2 * boon_incoming_mult()));
                 if (pet_egg_ward_mult() != 1.0) _final_dmg2 = max(1, round(_final_dmg2 * pet_egg_ward_mult()));   // Warding egg
                 if (curse_incoming_mult() != 1.0) _final_dmg2 = max(1, round(_final_dmg2 * curse_incoming_mult()));

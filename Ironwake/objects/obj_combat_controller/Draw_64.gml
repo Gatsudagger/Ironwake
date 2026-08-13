@@ -15,6 +15,9 @@ if (!dungeon_bg_draw("combat", 0.30)) {
     draw_set_color(make_color_rgb(18, 18, 28));
     draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
 }
+// 2.5D volumetric props, FAR pass (round 6): wall sconces, back pillars,
+// mid-depth dressing - drawn on the planes, behind every actor.
+ui_draw_25d_props(0);
 
 // Reset the hover-status tooltip each frame; the status icon rows (enemy bars +
 // player buff row, drawn below) set it when the mouse is over a badge, and it's
@@ -42,6 +45,33 @@ var _bar_row_gap = 132;          // bar + status-icon row + intent chip per grid
 var _living_idx = 0;
 var _count = array_length(combat_state.combatants);
 
+// 2.5D round 9 (M: "enemy name plate and hp bar should correspond to its
+// position - confusing when the forward mob is the farther away nameplate"):
+// grid SLOTS are assigned by each foe's on-stage x-order (leftmost sprite ->
+// leftmost plate, reading left-to-right like the line-up) instead of turn
+// order. The bar keeps its living index (selection, taps, statuses ride along)
+// - only which grid cell it draws in changes. Flat mode: turn order, shipped.
+var _slot_of = [0, 1, 2, 3, 4, 5];
+if (combat_25d()) {
+    var _liv_sl  = combat_living_enemies(combat_state);
+    var _n_liv   = array_length(_liv_sl);
+    var _sl_cx   = array_create(_n_liv, 0);
+    for (var _si = 0; _si < _n_liv; _si++) {
+        var _slc = _liv_sl[_si];
+        _sl_cx[_si] = variable_struct_exists(_slc, "stage_station")
+                    ? _slc.stage_station.cx
+                    : combat_enemy_slot_pos(_si).cx;
+    }
+    for (var _si = 0; _si < _n_liv; _si++) {
+        var _rank = 0;
+        for (var _sj = 0; _sj < _n_liv; _sj++) {
+            if (_sl_cx[_sj] < _sl_cx[_si]
+                || (_sl_cx[_sj] == _sl_cx[_si] && _sj < _si)) _rank++;
+        }
+        if (_si < array_length(_slot_of)) _slot_of[_si] = _rank;
+    }
+}
+
 // Inspect-on-hover: the enemy under the cursor (its HP bar OR its sprite) gets an
 // inspect tooltip drawn after the HUD. Capture the cursor + target here; the bar
 // loop and the sprite loop below both test against it. (Task: enemy class clarity.)
@@ -54,8 +84,9 @@ for (var _i = 0; _i < _count; _i++) {
     if (_c.is_player)   continue;
     if (_c.is_defeated) continue;
 
-    var _bar_x = _bar_col_x[_living_idx mod 2];
-    var _bar_y = _bar_row_y0 + (_living_idx div 2) * _bar_row_gap;
+    var _bar_slot = (_living_idx < array_length(_slot_of)) ? _slot_of[_living_idx] : _living_idx;
+    var _bar_x = _bar_col_x[_bar_slot mod 2];
+    var _bar_y = _bar_row_y0 + (_bar_slot div 2) * _bar_row_gap;
 
     if (_living_idx == selected_target) {
         // Small target reticle just LEFT of the bar - the SAME marker shown under the
@@ -173,11 +204,48 @@ var _lunge_frac = _lunge_peak * 0.4;   // lunge 40% of the way toward target
 var _pspr = player_combat_sprite(clamp(player.stats.class_id, 0, 2));
 var _pfr  = player_sprite_frame(_pspr);
 
-var _px_draw = 330 + screen_shake_x;
-var _py_draw = 465 + screen_shake_y;
+// 2.5D round 5 (M shot: "player sprite still has a huge shadow and is now
+// behind the combat log"). Root cause: skin canvases are mostly empty margin,
+// so canvas-height scaling drew a SMALL visible knight with a canvas-sized
+// shadow, and his canvas feet sank under the log panel. 2.5D now scales by
+// the VISIBLE model (bbox) and pins the visible FEET just above the log
+// (y726). Flat mode: shipped anchors + canvas scaling, untouched.
+var _p25 = combat_25d();
+// Round 6: bbox scaling proved UNRELIABLE (stray canvas pixels stretched the
+// bbox - the knight shrank and floated, M shot). Back to the shipped canvas
+// convention: 385px display height, feet at the canvas 0.94 ground line the
+// whole game already anchors shadows to, pinned just above the log (y726).
+// Round 8 (M): the player's spot varies a step per stage layout, so the
+// hero pair doesn't stand identically every fight.
+var _lay25 = variable_instance_exists(id, "stage_layout") ? stage_layout : 0;
+// Round 11 (M: "the shadows are miles away from the sprites... fix these
+// immediately"): ALL 2.5D player metrics now come from sprite_true_bounds -
+// MEASURED opaque pixels, not .yy bbox metadata. The metadata lies two ways
+// (full-image bbox modes = canvas anchoring in disguise; stray faint pixels =
+// phantom feet below the model) and every anchoring bug shipped through one
+// of them. The VISIBLE model stands ~360px, feet exactly on the y726 line.
+// Round 12 (M: "the original player and pet location were better... remap the
+// player sprite to smaller so it looks good"): back to the SHIPPED size
+// convention (345px canvas height - the art was authored for it) at the
+// shipped x330. Only two 2.5D differences survive: the visible feet anchor to
+// the y726 ground line, and the shadow clips to measured pixels.
+var _ptb25 = _p25 ? sprite_true_bounds(_pspr) : undefined;
+var _pscale_25 = _p25 ? (345 / max(1, sprite_get_height(_pspr))) : 1;
+var _pbx = 330;
+var _pby = _p25 ? (726 - (_ptb25.b + 1) * _pscale_25) : 465;
+var _px_draw = _pbx + screen_shake_x;
+var _py_draw = _pby + screen_shake_y;
+// Round 12 (M: "abilities VFX are not even over them - they should be BOUND
+// to player sprite location"): stamp the player's live visual centre every
+// frame; combat_player_vfx_anchor reads THIS, so VFX can never drift from
+// the sprite again no matter how the staging moves.
+if (_p25) {
+    global.player_stage_cx = _pbx + (_ptb25.l + _ptb25.r + 1) * 0.5 * _pscale_25;
+    global.player_stage_cy = _pby + (_ptb25.t + _ptb25.h * 0.5) * _pscale_25;
+}
 if (attack_anim_is_player && _anim_progress > 0) {
-    _px_draw = lerp(330, attack_anim_dst_x, _lunge_frac) + screen_shake_x;
-    _py_draw = lerp(465, attack_anim_dst_y, _lunge_frac) + screen_shake_y;
+    _px_draw = lerp(_pbx, attack_anim_dst_x, _lunge_frac) + screen_shake_x;
+    _py_draw = lerp(_pby, attack_anim_dst_y, _lunge_frac) + screen_shake_y;
 }
 // Per-sprite damage shake: jolt the player sprite while its hit flash is active,
 // plus a constant nervous shiver while stunned/paralyzed.
@@ -196,7 +264,9 @@ if (variable_struct_exists(player, "hit_recoil") && player.hit_recoil > 0) {
 }
 // Normalise display size: larger canvases (skins, female class sprites) scale down
 // to the same ~345px display height (native 1080p; was 230px at 720p).
-var _pscale = 345 / max(1, sprite_get_height(_pspr));
+// 2.5D: scaled by the VISIBLE model instead (see round-5 note above) so every
+// skin's knight stands ~330px tall regardless of canvas padding.
+var _pscale = combat_25d() ? _pscale_25 : (345 / max(1, sprite_get_height(_pspr)));
 
 // --- Active pet companion (Pets Phase 3: combat presence) --------------------
 // Drawn BEFORE the player's shadow + sprite (M 07-27 screenshot: a giant corrupt
@@ -211,16 +281,34 @@ if (_pet_co != undefined && !_pet_co.is_egg) {
     if (_petspr >= 0) {
         var _pet_disp_h = [120, 145, 170, 200, 230];   // display height by Stage 0-4
         var _peth_t = _pet_disp_h[clamp(_pet_co.stage, 0, 4)];
+        // 2.5D round 8 (M: "player and pet are in the same line... offset them
+        // ...sizes should scale with position and be dynamic"): the pet stands
+        // a FULL depth row up the diagonal - feet 110-150px above the player's
+        // - shrunk to ~60% for the distance, both varying per stage layout so
+        // no two fights stage the pair identically. Flat mode: shipped anchor.
+        // Round 12 (M: "the original player and pet location were better" /
+        // "the pet looks SO TINY"): back to the shipped arrangement - the pet
+        // stands BESIDE the player at ~90% of its flat display size (the whole
+        // forced-perspective discount it gets). Right of the player = always
+        // clear of the POTENTIAL DAMAGE box (x30-320).
+        if (combat_25d()) _peth_t *= 0.90;
         // Player feet (origin top-left): centre-x + a step to the right, ground-line y.
-        // Anchored to the player's RESTING position (330/465 + screen shake), NOT the
+        // Anchored to the player's RESTING position (base + screen shake), NOT the
         // animated _px_draw/_py_draw - otherwise the pet visibly rides along on the
         // player's attack lunge and hit-jitter despite not acting (it has its own
         // pet_lunge_t0-driven lunge below for when it actually strikes).
-        var _petx = 330 + screen_shake_x + sprite_get_width(_pspr) * _pscale * 0.5 + 120;
+        var _petx = _pbx + screen_shake_x
+                  + (combat_25d()
+                      ? (sprite_get_width(_pspr) * _pscale * 0.5 + 130)
+                      : (sprite_get_width(_pspr) * _pscale * 0.5 + 120));
         // Ground line clamped ABOVE the combat log (log top y735, drawn after sprites):
         // at the player's true footing (y~789) the pet's lower half vanished behind the
         // log panel. Standing it slightly higher reads as a depth row behind the player.
-        var _pety = min(465 + screen_shake_y + sprite_get_height(_pspr) * _pscale * 0.94, 726);
+        // 2.5D: the diagonal's back step - feet 110-150px above the player's
+        // 726, drifting per layout for variance.
+        var _pety = combat_25d()
+            ? (706 + screen_shake_y)
+            : min(465 + screen_shake_y + sprite_get_height(_pspr) * _pscale * 0.94, 726);
         // #16: fit + anchor by the VISIBLE creature (sprite bbox), not the padded
         // canvas - bonehound/hollow pup stood at half the intended display height.
         // _petx/_pety stay the FEET point (shadow); _pdx/_pdy are the draw anchor.
@@ -259,7 +347,7 @@ if (_pet_co != undefined && !_pet_co.is_egg) {
             if (_lprog > 0.34 && _lprog < 0.60) _flash = 0.55;   // impact
         }
 
-        ui_draw_ground_shadow(_petx, _pety, _pet_vis_w * 0.8);
+        ui_draw_cast_shadow(_petx, _pety, _pet_vis_w * 0.8, -1);   // 2.5D: cast back-left
         draw_sprite_ext(_petspr, pet_anim_frame(_petspr), _pdx + _lunge_dx, _pdy, _face_sign * _sx, _petsc, 0, c_white, 1.0);
         // Awakened FX v2 (08-13, M direction): hologram echo + periodic pulse
         // ring + rising aura motes - the Stage-4 form is SOLD by the effect,
@@ -290,9 +378,17 @@ if (_pet_co != undefined && !_pet_co.is_egg) {
 // of the canvas height so it sits at the model's feet.
 var _p_vis_l = sprite_get_bbox_left(_pspr) * _pscale;
 var _p_vis_w = (sprite_get_bbox_right(_pspr) - sprite_get_bbox_left(_pspr) + 1) * _pscale;
-ui_draw_ground_shadow(_px_draw + _p_vis_l + _p_vis_w * 0.5,
-                      _py_draw + sprite_get_height(_pspr) * _pscale * 0.94,
-                      _p_vis_w * 0.9);
+if (combat_25d()) {
+    // Round 11: shadow centred on the MEASURED model at its measured feet -
+    // metadata-free, so it cannot detach from the sprite again.
+    ui_draw_cast_shadow(_px_draw + (_ptb25.l + _ptb25.r + 1) * 0.5 * _pscale,
+                        _py_draw + (_ptb25.b + 1) * _pscale,
+                        _ptb25.w * _pscale * 0.9, -1);
+} else {
+    ui_draw_cast_shadow(_px_draw + _p_vis_l + _p_vis_w * 0.5,
+                        _py_draw + sprite_get_height(_pspr) * _pscale * 0.94,
+                        _p_vis_w * 0.9, -1);
+}
 draw_sprite_ext(_pspr, _pfr, _px_draw, _py_draw, _pscale, _pscale, 0, c_white, 1.0);
 if (player.hit_flash > 0) {
     player.hit_flash--;
@@ -323,6 +419,37 @@ if (cast_fx_timer > 0) {
     gpu_set_blendmode(bm_normal);
 }
 
+// IRON SKIN cast overlay (M 08-13: "should be an envelopment of bone or armor
+// briefly, not this digital blue blurr"): the player sprite re-drawn as a cold
+// iron shell, with angular plate shards CONVERGING into the body as the armor
+// assembles. Replaces the generic shield burst for this cast (Step zeroes it).
+if (ironskin_fx_timer > 0) {
+    ironskin_fx_timer--;
+    var _ik_t  = 1 - ironskin_fx_timer / 34.0;           // 0 -> 1 over life
+    var _ik_a  = (ironskin_fx_timer > 24) ? 1.0 : (ironskin_fx_timer / 24.0);
+    var _ik_cx = _px_draw + sprite_get_width(_pspr)  * _pscale * 0.5;
+    var _ik_cy = _py_draw + sprite_get_height(_pspr) * _pscale * 0.5;
+    gpu_set_blendmode(bm_add);
+    // The shell: iron-tinted body glow, strongest at cast, then settling.
+    draw_sprite_ext(_pspr, _pfr, _px_draw, _py_draw, _pscale, _pscale, 0,
+                    make_color_rgb(196, 198, 208), 0.55 * _ik_a);
+    // Plate shards sliding in from a surrounding ring - armor being fitted.
+    for (var _iki = 0; _iki < 8; _iki++) {
+        var _ik_ang = _iki * 45 + 22;
+        var _ik_d   = lerp(190, 46, min(1, _ik_t * 1.6));
+        var _ik_x   = _ik_cx + lengthdir_x(_ik_d, _ik_ang);
+        var _ik_y   = _ik_cy + lengthdir_y(_ik_d * 0.75, _ik_ang);
+        var _ik_s   = 13;
+        draw_set_alpha(0.7 * _ik_a);
+        draw_set_color(make_color_rgb(150, 152, 165));
+        draw_rectangle(_ik_x - _ik_s, _ik_y - _ik_s * 0.55, _ik_x + _ik_s, _ik_y + _ik_s * 0.55, false);
+        draw_set_color(make_color_rgb(228, 230, 238));
+        draw_rectangle(_ik_x - _ik_s, _ik_y - _ik_s * 0.55, _ik_x + _ik_s, _ik_y + _ik_s * 0.55, true);
+    }
+    draw_set_alpha(1.0);
+    gpu_set_blendmode(bm_normal);
+}
+
 // (Pet companion block MOVED above the player draw - M 07-27 screenshot: it
 // rendered over the player. The pet is the depth row behind them.)
 // Looping status VFX (poison gas, flames, blind mist, ...) over the player sprite.
@@ -331,10 +458,68 @@ if (variable_struct_exists(player, "status_effects")) {
                       sprite_get_height(_pspr) * _pscale, player.status_effects);
 }
 
+// GLYPH FX (08-13): gold rune rings traced at a target's feet by enemy support
+// casts (Restorative Glyph). Drawn here - UNDER the enemy sprites, like the
+// target reticle - so the glyph reads as inscribed on the floor. The paired
+// mend burst arrives via a delayed vfx_bursts entry when the trace completes.
+var _kept_glyphs = [];
+for (var _gfi = 0; _gfi < array_length(glyph_fx); _gfi++) {
+    var _gf = glyph_fx[_gfi];
+    _gf.t++;
+    if (_gf.t < _gf.dur) {
+        var _gf_p  = _gf.t / _gf.dur;
+        var _gf_a  = (_gf_p < 0.75) ? min(1, _gf_p * 4) : ((1 - _gf_p) / 0.25);
+        var _gf_px = (90 + 45 * _gf_p) / max(1, sprite_get_width(spr_target_cursor));
+        gpu_set_blendmode(bm_add);
+        // Flattened onto the floor plane, swirling as it is "traced".
+        draw_sprite_ext(spr_target_cursor, 0, _gf.x + screen_shake_x, _gf.y + screen_shake_y,
+                        _gf_px * 2.1, _gf_px * 0.85, current_time * 0.08, _gf.col, 0.85 * _gf_a);
+        gpu_set_blendmode(bm_normal);
+        array_push(_kept_glyphs, _gf);
+    }
+}
+glyph_fx = _kept_glyphs;
+
 // DEPLOYED TRAPS, on the ground between the player and the enemy line (08-08 v2).
 // Drawn here - after the player/pet, before the enemies - so a trap sits IN the
 // scene at the right depth instead of on top of the HUD like the first pass did.
 ui_draw_trap_field(player, combat_state);
+
+// THE STANDING SUMMON (class pass, M 08-13): the Arcanist's construct holds the
+// lane just ahead of the player. PLACEHOLDER RENDER (procedural pedestal + a
+// breathing elemental orb in its school color) until bespoke props are
+// M-approved art - same degrade-gracefully idiom as the trap jaw glyph.
+if (variable_struct_exists(player, "summon") && is_struct(player.summon)) {
+    var _smp   = player.summon;
+    // 2.5D: mid-lane between the pet's diagonal and the trap stations.
+    // Round 9: pulled left of the near enemy stations (now x620-810).
+    var _smp_x = combat_25d() ? 560 : 630;
+    var _smp_y = combat_25d() ? 700 : 615;
+    var _smp_c = (_smp.kind == "golem") ? make_color_rgb(235, 120, 40)
+               : ((_smp.kind == "husk") ? make_color_rgb(235, 215, 80) : make_color_rgb(160, 140, 230));
+    var _smp_p = 0.5 + 0.5 * sin(current_time / 320);
+    ui_draw_cast_shadow(_smp_x, _smp_y + 6, 110, -1);
+    // Pedestal: squat stone block.
+    draw_set_color(make_color_rgb(52, 50, 60));
+    draw_rectangle(_smp_x - 26, _smp_y - 18, _smp_x + 26, _smp_y + 4, false);
+    draw_set_color(make_color_rgb(24, 24, 30));
+    draw_rectangle(_smp_x - 26, _smp_y - 18, _smp_x + 26, _smp_y + 4, true);
+    // The construct's heart: additive breathing orb, school-tinted.
+    gpu_set_blendmode(bm_add);
+    draw_set_alpha(0.30 + 0.25 * _smp_p);
+    draw_set_color(_smp_c);
+    draw_circle(_smp_x, _smp_y - 52, 34 + 5 * _smp_p, false);
+    draw_set_alpha(0.85);
+    draw_circle(_smp_x, _smp_y - 52, 16 + 3 * _smp_p, false);
+    gpu_set_blendmode(bm_normal);
+    draw_set_alpha(1.0);
+    // Hits-left pips under the pedestal (what it can still eat).
+    for (var _smp_i = 0; _smp_i < _smp.hits; _smp_i++) {
+        draw_set_color(_smp_c);
+        draw_rectangle(_smp_x - 12 + _smp_i * 16, _smp_y + 10, _smp_x - 2 + _smp_i * 16, _smp_y + 18, false);
+    }
+    draw_set_color(c_white);
+}
 
 // Enemy sprites - the name->sprite map now lives in scr_enemies (enemy_sprite_map)
 // so the journal BESTIARY can draw the same creatures south-facing (#8).
@@ -387,18 +572,65 @@ for (var _ei = 0; _ei < _ecnt; _ei++) {
         continue;
     }
 
-    var _ex = _espr_x0 + (_espr_idx * _espr_dx);
-    var _ey = _espr_y0 + (_espr_idx * _espr_dy)
-            + ((_espr_idx % 2 == 0) ? -_espr_zig : _espr_zig);
-
-    // FAUX-2.5D (M 08-11, combat_25d lever): slot 0 is the BACK of the row
-    // (highest on screen, deepest in the scene) - it draws smaller and each
-    // slot steps up to full size at the front. v2 (M F5: "almost no visual
-    // difference"): spread widened 2.55-3.0 -> 2.3-3.15 and the row gains an
-    // extra depth slope (back raised, front dropped toward the player).
-    // Flat mode: the shipped 3x and the shipped row, byte-identical.
-    var _es = combat_25d() ? (2.3 + 0.2833 * min(3, _espr_idx)) : 3;
-    if (combat_25d()) _ey += _espr_idx * 14 - 21;
+    // 2.5D round 7: stations FREEZE per enemy (M: "they trade places when you
+    // kill some") - each foe copies its station on first sight and keeps it
+    // for the whole fight, so deaths never reflow the survivors. The BOSS
+    // claims a bespoke center-stage station standing clear above the log
+    // (M: "some bosses lose their visual appeal" buried behind it).
+    if (combat_25d() && !variable_struct_exists(_ec, "stage_station")) {
+        if (variable_instance_exists(id, "summon_is_boss_fight") && summon_is_boss_fight
+            && variable_instance_exists(id, "stage_boss_placed") && !stage_boss_placed) {
+            stage_boss_placed = true;
+            // Round 13: boss 2.25 (M: still too big at 2.55).
+            _ec.stage_station = { x: 1170, y: 655 - 97 * 2.25, scale: 2.25, feet: 655,
+                                  cx: 1170 + 48.5 * 2.25, cy: 655 - 48.5 * 2.25 };
+        } else {
+            // Round 13d (M shot "cramped": mobs stacking on each other):
+            // newcomers (mid-fight summons) took an INDEX-based station that
+            // could match one already FROZEN by a living foe - two enemies on
+            // one spot. Walk to the first station nobody holds.
+            var _st_new = combat_enemy_slot_pos(_espr_idx);
+            var _st_try = 0;
+            while (_st_try < 5) {
+                var _st_clash = false;
+                for (var _oi = 0; _oi < array_length(combat_state.combatants); _oi++) {
+                    var _oc = combat_state.combatants[_oi];
+                    if (_oc == _ec || _oc.is_player || _oc.is_defeated) continue;
+                    if (variable_struct_exists(_oc, "stage_station")
+                        && abs(_oc.stage_station.x - _st_new.x) < 60
+                        && abs(_oc.stage_station.feet - _st_new.feet) < 40) { _st_clash = true; break; }
+                }
+                if (!_st_clash) break;
+                _st_try++;
+                _st_new = combat_enemy_slot_pos(_espr_idx + _st_try);
+            }
+            _ec.stage_station = _st_new;
+        }
+    }
+    var _esp = (combat_25d() && variable_struct_exists(_ec, "stage_station"))
+             ? _ec.stage_station : combat_enemy_slot_pos(_espr_idx);
+    var _ex  = _esp.x;
+    var _ey  = _esp.y;
+    var _es  = _esp.scale;
+    // Round 6 (M shot: the 192px-canvas Archivist drew ~720px tall and buried
+    // the ability tooltip): station scales assume the 97px canvas - normalize
+    // big-canvas sprites so every foe displays at the station's INTENDED
+    // height, feet still landing exactly on the station's ground line.
+    if (combat_25d() && variable_struct_exists(_espr_map, _ec.name)) {
+        var _nspr = variable_struct_get(_espr_map, _ec.name);
+        // Round 11 (M: "shadows are miles away... fix immediately"): scale AND
+        // anchor from sprite_true_bounds (measured opaque pixels), not canvas
+        // or .yy bbox - the station scale now means the same VISIBLE height
+        // for every sprite, and feet land exactly on the station ground line.
+        var _ntb = sprite_true_bounds(_nspr);
+        _es *= 97 / max(1, _ntb.h);
+        // Round 13b (M: "lowest mob can still be too large depending on the
+        // sprite"): HARD SIZE CEILING - no enemy ever draws taller than 185px
+        // visible, whatever its station scale says. Per-MOB-TYPE size intent
+        // (small-by-design species staying small) is the tweak-by-tweak pass.
+        _es = min(_es, 185 / max(1, _ntb.h));
+        _ey  = _esp.feet - (_ntb.b + 1) * _es;
+    }
 
     // Inspect hit-box from the RESTING sprite position (before lunge/shake jitter is
     // applied below) so hovering the creature itself also opens the inspect tooltip,
@@ -447,6 +679,20 @@ for (var _ei = 0; _ei < _ecnt; _ei++) {
     _ec.last_ex  = _ex - screen_shake_x;
     _ec.last_ey  = _ey - screen_shake_y;
     _ec.last_esc = _es;
+    // Visual CENTER stamp (2.5D v3): burst/impact VFX target this instead of
+    // the old hardcoded +145, so hits land on the sprite at every depth scale.
+    // Round 11: measured centre, MIRROR-AWARE - east-authored sprites draw
+    // flipped about the canvas, so their visible centre reflects too (this is
+    // exactly the case that put the Bone Colossus' shadow ~70px off).
+    _ec.last_ecx = _ec.last_ex + 48.5 * _es;
+    _ec.last_ecy = _ec.last_ey + 48.5 * _es;
+    if (combat_25d() && variable_struct_exists(_espr_map, _ec.name)) {
+        var _ctb = sprite_true_bounds(variable_struct_get(_espr_map, _ec.name));
+        var _cw25 = sprite_get_width(variable_struct_get(_espr_map, _ec.name));
+        var _ccxu = (_ctb.l + _ctb.r + 1) * 0.5;
+        _ec.last_ecx = _ec.last_ex + (enemy_sprite_faces_east(_ec.name) ? (_cw25 - _ccxu) : _ccxu) * _es;
+        _ec.last_ecy = _ec.last_ey + (_ctb.t + _ctb.h * 0.5) * _es;
+    }
 
     if (variable_struct_exists(_espr_map, _ec.name)) {
         var _espr = variable_struct_get(_espr_map, _ec.name);
@@ -456,9 +702,19 @@ for (var _ei = 0; _ei < _ecnt; _ei++) {
         // foes read against busy backgrounds.
         // Baseline raised to ~0.94 of the sprite height so the shadow hugs the
         // enemy's feet; width scales with the model so big foes cast bigger shadows.
-        ui_draw_ground_shadow(_ex + sprite_get_width(_espr)  * _es * 0.5,
-                              _ey + sprite_get_height(_espr) * _es * 0.94,
-                              sprite_get_width(_espr) * _es);
+        if (combat_25d()) {
+            // Round 11: shadow centred on the MEASURED model (mirror-aware -
+            // the Bone Colossus shadow sat ~70px off because the flip was
+            // ignored), sized by measured width, at the measured feet line.
+            var _stb  = sprite_true_bounds(_espr);
+            var _scxu = (_stb.l + _stb.r + 1) * 0.5;
+            var _scx  = _ex + (enemy_sprite_faces_east(_ec.name) ? (sprite_get_width(_espr) - _scxu) : _scxu) * _es;
+            ui_draw_cast_shadow(_scx, _ey + (_stb.b + 1) * _es, _stb.w * _es, 1);
+        } else {
+            ui_draw_cast_shadow(_ex + sprite_get_width(_espr)  * _es * 0.5,
+                                _ey + sprite_get_height(_espr) * _es * 0.94,
+                                sprite_get_width(_espr) * _es, 1);
+        }
 
         // Selected-target reticle: a slowly-swirling arcane rune at the foe's feet,
         // drawn UNDER the sprite so it reads as a ground marker. Lets you map the
@@ -466,6 +722,13 @@ for (var _ei = 0; _ei < _ecnt; _ei++) {
         if (_espr_idx == selected_target) {
             var _cur_cx = _ex + sprite_get_width(_espr)  * _es * 0.5;
             var _cur_cy = _ey + sprite_get_height(_espr) * _es;          // at the feet
+            if (combat_25d()) {
+                // Round 11: reticle under the MEASURED feet (mirror-aware).
+                var _rtb  = sprite_true_bounds(_espr);
+                var _rcxu = (_rtb.l + _rtb.r + 1) * 0.5;
+                _cur_cx = _ex + (enemy_sprite_faces_east(_ec.name) ? (sprite_get_width(_espr) - _rcxu) : _rcxu) * _es;
+                _cur_cy = _ey + (_rtb.b + 1) * _es;
+            }
             // Shrunk 30% from the old *0.4 factor (0.4 -> 0.28) so the ground rune sits tighter under the foe.
             var _cur_sc = max(0.18, (sprite_get_width(_espr) * _es) / sprite_get_width(spr_target_cursor)) * 0.28;
             _cur_sc    *= 1 + 0.06 * sin(current_time / 180);            // gentle breathing pulse
@@ -474,11 +737,20 @@ for (var _ei = 0; _ei < _ecnt; _ei++) {
                             _cur_sc, _cur_sc, _cur_rot, c_white, 0.9);
         }
 
-        draw_sprite_ext(_espr, _espr_frame, _ex, _ey, _es, _es, 0, c_white, 1.0);
+        // Round 7 (M: "some enemies are facing backwards... like ice specter"):
+        // east-authored sprites are mirrored about their own width so they face
+        // the player. Add names to enemy_sprite_faces_east as spotted.
+        var _efx = _ex;
+        var _efs = _es;
+        if (enemy_sprite_faces_east(_ec.name)) {
+            _efx = _ex + sprite_get_width(_espr) * _es;
+            _efs = -_es;
+        }
+        draw_sprite_ext(_espr, _espr_frame, _efx, _ey, _efs, _es, 0, c_white, 1.0);
         if (variable_struct_exists(_ec, "hit_flash") && _ec.hit_flash > 0) {
             _ec.hit_flash--;
             gpu_set_blendmode(bm_add);
-            draw_sprite_ext(_espr, _espr_frame, _ex, _ey, _es, _es, 0, c_white, (_ec.hit_flash / 15.0) * 0.8);
+            draw_sprite_ext(_espr, _espr_frame, _efx, _ey, _efs, _es, 0, c_white, (_ec.hit_flash / 15.0) * 0.8);
             gpu_set_blendmode(bm_normal);
         }
         // Looping status VFX over this enemy.
@@ -489,6 +761,11 @@ for (var _ei = 0; _ei < _ecnt; _ei++) {
     }
     _espr_idx++;
 }
+
+// 2.5D volumetric props, NEAR pass (round 6): the foreground corner piece,
+// drawn OVER the actors - a repoussoir frame that puts something between the
+// camera and the fight, the strongest cheap depth cue in the reference.
+ui_draw_25d_props(1);
 
 // -----------------------------------------------------------------------------
 // Conveyance (08-04): beam lances + traveling projectiles.
@@ -542,9 +819,11 @@ for (var _pji = 0; _pji < array_length(combat_projectiles); _pji++) {
     _pj.t++;
     var _pj_f = _pj.t / _pj.dur;
     if (_pj_f >= 1) {
-        // Arrival: impact burst + the deferred hit feedback.
+        // Arrival: impact burst + the deferred hit feedback. Pacing scale
+        // (08-13) rides the projectile so finisher bursts land big.
         array_push(vfx_bursts, { spr: _pj.impact_spr, x: _pj.bx, y: _pj.by,
-            timer: _pj.ticks, timer_max: _pj.ticks, school: _pj.school });
+            timer: _pj.ticks, timer_max: _pj.ticks, school: _pj.school,
+            scale: variable_struct_exists(_pj, "scale") ? _pj.scale : 1 });
         if (_pj.tgt != undefined) { _pj.tgt.hit_flash = 15; _pj.tgt.hit_recoil = 10; }
         screen_shake_timer = max(screen_shake_timer, _pj.shake);
     } else {
@@ -553,11 +832,37 @@ for (var _pji = 0; _pji < array_length(combat_projectiles); _pji++) {
         var _pj_dir = point_direction(_pj.sx, _pj.sy, _pj.tx, _pj.ty);
         gpu_set_blendmode(bm_add);
         if (_pj.spr == -1) {
-            // Physical bolt: code-drawn streak (arrow/knife read), no sprite needed.
-            var _pj_lx = lengthdir_x(38, _pj_dir);
-            var _pj_ly = lengthdir_y(38, _pj_dir);
-            draw_set_alpha(0.9);
-            draw_line_width_color(_pj_x - _pj_lx, _pj_y - _pj_ly, _pj_x, _pj_y, 5, c_gray, c_white);
+            if (variable_struct_exists(_pj, "aname") && _pj.aname == "Snipe") {
+                // SNIPE (M 08-13: "a more powerful arrow shot, not the generic
+                // dart"): a full fletched arrow - trailing speed lines, long
+                // shaft, bright broadhead, red vanes.
+                var _sn_dx = lengthdir_x(1, _pj_dir), _sn_dy = lengthdir_y(1, _pj_dir);
+                var _sn_px = -_sn_dy, _sn_py = _sn_dx;
+                draw_set_alpha(0.35);
+                draw_line_width_color(_pj_x - _sn_dx * 150, _pj_y - _sn_dy * 150 - 4,
+                                      _pj_x - _sn_dx * 58,  _pj_y - _sn_dy * 58  - 4, 2, c_gray, c_white);
+                draw_line_width_color(_pj_x - _sn_dx * 130, _pj_y - _sn_dy * 130 + 5,
+                                      _pj_x - _sn_dx * 50,  _pj_y - _sn_dy * 50  + 5, 2, c_gray, c_white);
+                draw_set_alpha(0.95);
+                draw_line_width_color(_pj_x - _sn_dx * 66, _pj_y - _sn_dy * 66, _pj_x, _pj_y, 4,
+                                      make_color_rgb(150, 120, 80), make_color_rgb(220, 205, 170));
+                draw_set_alpha(1.0);
+                draw_set_color(make_color_rgb(240, 240, 255));
+                draw_triangle(_pj_x + _sn_dx * 16, _pj_y + _sn_dy * 16,
+                              _pj_x + _sn_px * 7,  _pj_y + _sn_py * 7,
+                              _pj_x - _sn_px * 7,  _pj_y - _sn_py * 7, false);
+                draw_set_color(make_color_rgb(200, 90, 80));
+                draw_triangle(_pj_x - _sn_dx * 66 + _sn_px * 8, _pj_y - _sn_dy * 66 + _sn_py * 8,
+                              _pj_x - _sn_dx * 66 - _sn_px * 8, _pj_y - _sn_dy * 66 - _sn_py * 8,
+                              _pj_x - _sn_dx * 48, _pj_y - _sn_dy * 48, false);
+                draw_set_color(c_white);
+            } else {
+                // Physical bolt: code-drawn streak (arrow/knife read), no sprite needed.
+                var _pj_lx = lengthdir_x(38, _pj_dir);
+                var _pj_ly = lengthdir_y(38, _pj_dir);
+                draw_set_alpha(0.9);
+                draw_line_width_color(_pj_x - _pj_lx, _pj_y - _pj_ly, _pj_x, _pj_y, 5, c_gray, c_white);
+            }
         } else {
             var _pj_spr = school_vfx_sprite(_pj.spr, _pj.school);
             var _pj_cnt = sprite_get_number(_pj_spr);
@@ -595,11 +900,15 @@ if (vfx_timer > 0) {
     var _vfx_count  = sprite_get_number(_vfx_draw);
     var _vfx_frame  = clamp(floor(_vfx_prog * _vfx_count), 0, _vfx_count - 1);
     var _vfx_alpha  = min(1.0, vfx_timer / 10.0);
-    var _vfx_target = lerp(248, 173, _vfx_prog);                        // on-screen px, shrinks
+    var _vfx_target = lerp(248, 173, _vfx_prog) * vfx_scale_mult;       // on-screen px, shrinks; pacing scales finishers up
     var _vfx_scale  = _vfx_target / max(1, sprite_get_width(_vfx_draw));
     gpu_set_blendmode(bm_add);
     draw_set_alpha(_vfx_alpha);
-    draw_sprite_ext(_vfx_draw, _vfx_frame, vfx_x + screen_shake_x, vfx_y + screen_shake_y, _vfx_scale, _vfx_scale, 0, school_vfx_blend(vfx_school), 1.0);
+    // Round 14 (M: Arcane Burst played bottom-right of the mob): these
+    // sprites draw from their TOP-LEFT, but 2.5D feeds CENTER coords -
+    // offset back by half the drawn size so the burst centres on the hit.
+    var _vfx_co = combat_25d() ? _vfx_target * 0.5 : 0;
+    draw_sprite_ext(_vfx_draw, _vfx_frame, vfx_x - _vfx_co + screen_shake_x, vfx_y - _vfx_co + screen_shake_y, _vfx_scale, _vfx_scale, 0, school_vfx_blend(vfx_school), 1.0);
     gpu_set_blendmode(bm_normal);
     draw_set_alpha(1.0);
 }
@@ -610,6 +919,13 @@ if (vfx_timer > 0) {
 var _kept_bursts = [];
 for (var _vbi = 0; _vbi < array_length(vfx_bursts); _vbi++) {
     var _vb = vfx_bursts[_vbi];
+    // Delayed bursts (08-13 glyph pairing): hold until the countdown expires,
+    // then play normally - same idiom as projectile/popup delays.
+    if (variable_struct_exists(_vb, "delay") && _vb.delay > 0) {
+        _vb.delay--;
+        array_push(_kept_bursts, _vb);
+        continue;
+    }
     _vb.timer--;
     if (_vb.timer > 0) {
         var _vb_draw  = school_vfx_sprite(_vb.spr, _vb.school);
@@ -618,11 +934,13 @@ for (var _vbi = 0; _vbi < array_length(vfx_bursts); _vbi++) {
         var _vb_cnt   = sprite_get_number(_vb_draw);
         var _vb_frm   = clamp(floor(_vb_prog * _vb_cnt), 0, _vb_cnt - 1);
         var _vb_alpha = min(1.0, _vb.timer / 10.0);
-        var _vb_tgtpx = lerp(248, 173, _vb_prog);
+        var _vb_tgtpx = lerp(248, 173, _vb_prog)
+                      * (variable_struct_exists(_vb, "scale") ? _vb.scale : 1);
         var _vb_sc    = _vb_tgtpx / max(1, sprite_get_width(_vb_draw));
         gpu_set_blendmode(bm_add);
         draw_set_alpha(_vb_alpha);
-        draw_sprite_ext(_vb_draw, _vb_frm, _vb.x + screen_shake_x, _vb.y + screen_shake_y,
+        var _vb_co = combat_25d() ? _vb_tgtpx * 0.5 : 0;   // round 14: centre on the hit
+        draw_sprite_ext(_vb_draw, _vb_frm, _vb.x - _vb_co + screen_shake_x, _vb.y - _vb_co + screen_shake_y,
             _vb_sc, _vb_sc, 0,
             variable_struct_exists(_vb, "col") ? _vb.col : school_vfx_blend(_vb.school), 1.0);
         gpu_set_blendmode(bm_normal);
@@ -639,6 +957,18 @@ draw_set_valign(fa_middle);
 var _kept_popups = [];
 for (var _di = 0; _di < array_length(damage_popups); _di++) {
     var _dp = damage_popups[_di];
+    // 2.5D one-shot remap: (475,545) is the flat-mode "over the player" popup
+    // anchor every player-hit site in Step pushes - shift it to the live 2.5D
+    // torso HERE (one point) instead of touching a dozen call sites. The flag
+    // stops it re-mapping as the popup drifts upward.
+    if (combat_25d() && !variable_struct_exists(_dp, "p25_mapped")) {
+        _dp.p25_mapped = true;
+        if (_dp.x == 475 && _dp.y == 545) {
+            var _pa25 = combat_player_vfx_anchor(player);
+            _dp.x = _pa25.x + 110;
+            _dp.y = _pa25.y + 70;
+        }
+    }
     // Staggered popups (e.g. multiple poison stacks ticking the same frame) hold
     // a countdown so they appear one after another instead of overlapping exactly.
     if (variable_struct_exists(_dp, "delay") && _dp.delay > 0) {
@@ -1792,7 +2122,7 @@ if (instance_exists(obj_game_controller)) {
 // if both somehow coexist (they don't - the Esc guard closes this first).
 if (player_turn && !combat_over && ability_detail_open) {
     var _ad_idx = clamp(selected_ability, 0, array_length(player.abilities) - 1);
-    ui_draw_ability_detail(player.abilities[_ad_idx], (input_device() == 1) ? "R3" : ((input_device() == 2) ? "Back" : "V"));
+    ui_draw_ability_detail(player.abilities[_ad_idx], (input_device() == 1) ? "R3" : ((input_device() == 2) ? "Back" : "V"), ability_detail_scroll);
 }
 
 // P-key companion inspect (M 07-08) - the full pet profile as an overlay.

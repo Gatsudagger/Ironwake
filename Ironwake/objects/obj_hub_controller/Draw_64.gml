@@ -116,7 +116,12 @@ var _flav_w     = 700 / _flav_scale;                // ~700px on-screen wrap wid
 var _flav_sep   = 26;                               // line spacing scales with the text (~33px on-screen)
 var _flav_h     = string_height_ext(hub_flavor, _flav_sep, _flav_w) * _flav_scale;
 var _flav_y;
-if (input_device() == 2) {
+// M 08-13 phone shot: the lore line ran BEHIND the STASH/JOURNAL chip bar.
+// input_device() flips with the last input event, so a stray mouse/pad event
+// on a phone dropped this into the DESKTOP band (y948-1070), which overlaps
+// the chips (y1005+). Gate by the BUILD platform - on touch devices the
+// chip-aware band always applies, whatever the last input was.
+if (touch_platform() || input_device() == 2) {
     // Touch (M 07-17): bottom-anchor the lore just above the chip bar (top
     // ~y1005) and let it grow UPWARD. 08-11 (M screenshot): the old top limit
     // of 888 predates the CAROUSEL, whose stage panel is opaque down to y945 -
@@ -422,11 +427,13 @@ if (hub_use_carousel) {
     for (var _cv_qi = 0; _cv_qi < array_length(_cv_bq); _cv_qi++)
         if (quest_is_complete(_cv_bq[_cv_qi])) _cv_board_ready++;
 
-    // ---- stage panel ----
-    draw_set_alpha(0.4);
+    // ---- stage panel ---- (M 08-13: more translucent so the campfire scene
+    // reads through the box - sprites/icons keep full alpha, only the panel
+    // glass thinned: shadow 0.40->0.20, fill 0.78->0.45.)
+    draw_set_alpha(0.20);
     draw_set_color(c_black);
     draw_rectangle(_cv_x1 + 6, _cv_y1 + 6, _cv_x2 + 6, _cv_y2 + 6, false);
-    draw_set_alpha(0.78);
+    draw_set_alpha(0.45);
     draw_set_color(make_color_rgb(20, 25, 40));
     draw_rectangle(_cv_x1, _cv_y1, _cv_x2, _cv_y2, false);
     draw_set_alpha(1.0);
@@ -1761,9 +1768,19 @@ if (instance_exists(obj_game_controller)) {
         var _ov_pool_sz  = array_length(_ov_pool);
         var _ov_sel_cnt  = array_length(_gc_ov.loadout_selected);
         // Match the live-selection cap used in Step (Expanded Arsenal opens slot 5 immediately)
-        var _loadout_max = 4;
+        var _loadout_max = 5;   // class pass 08-13: base 5, EA 6th
         for (var _ea = 0; _ea < array_length(_gc_ov.traits_selected); _ea++) {
-            if (_gc_ov.traits_selected[_ea] == "Expanded Arsenal") { _loadout_max = 5; break; }
+            if (_gc_ov.traits_selected[_ea] == "Expanded Arsenal") { _loadout_max = 6; break; }
+        }
+        // REQUIRED count (class pass 08-13): mirrors the Step gate - a fresh
+        // character owns only the 4 starters, so readiness is judged against
+        // what you can actually slot, never a cap you cannot reach yet.
+        var _ov_req = _loadout_max;
+        {
+            var _ov_owned = 0;
+            for (var _lu = 0; _lu < array_length(_ov_pool); _lu++)
+                if (ability_is_unlocked(_ov_pool[_lu].name)) _ov_owned++;
+            _ov_req = min(_loadout_max, max(4, _ov_owned));
         }
 
         // Shared layout constants
@@ -2060,14 +2077,14 @@ if (instance_exists(obj_game_controller)) {
                 draw_set_font(fnt_ui_small);
                 draw_set_halign(fa_center);
                 draw_set_color(make_color_rgb(80, 195, 100));
-                draw_text(_desc_x + _desc_w / 2, 921, "All " + string(_loadout_max) + " abilities chosen - press Enter on the confirm bar below to start your run.");
+                draw_text(_desc_x + _desc_w / 2, 921, "All " + string(_ov_req) + " abilities chosen - press Enter on the confirm bar below to start your run.");
                 draw_set_halign(fa_left);
             }
 
             // --- Confirm / counter bar: y=998-1043 ---
             // Cursor==pool_sz is the active confirm position; bar highlights when reached.
             var _conf_cur = (_gc_ov.loadout_cursor == _ov_pool_sz);
-            var _conf_sel = (_conf_cur && _ov_sel_cnt == _loadout_max);
+            var _conf_sel = (_conf_cur && _ov_sel_cnt >= _ov_req);
             // #6: the gold-shortfall flash reddens the bar like the loadout-full flash.
             var _bar_red = _gc_ov.loadout_full_timer > 0
                 || (variable_instance_exists(_gc_ov, "loadout_gold_timer") && _gc_ov.loadout_gold_timer > 0);
@@ -2078,13 +2095,13 @@ if (instance_exists(obj_game_controller)) {
             draw_set_color(_bar_red                        ? make_color_rgb(40, 10, 10)
                          : (_conf_sel                      ? merge_color(make_color_rgb(16, 70, 25),  make_color_rgb(45, 160, 70),  _cf_pulse * 0.65)
                          : (_conf_cur                      ? merge_color(make_color_rgb(45, 38, 14),  make_color_rgb(110, 92, 32),  _cf_pulse * 0.65)
-                         : (_ov_sel_cnt == _loadout_max    ? make_color_rgb(14, 48, 18)
+                         : (_ov_sel_cnt >= _ov_req         ? make_color_rgb(14, 48, 18)
                                                            : make_color_rgb(14, 16, 28)))));
             draw_rectangle(_desc_x, 998, _desc_x + _desc_w, 1043, false);
             draw_set_color(_bar_red                        ? make_color_rgb(155, 40, 40)
                          : (_conf_sel                      ? make_color_rgb(50, 185, 75)
                          : (_conf_cur                      ? make_color_rgb(220, 175, 70)
-                         : (_ov_sel_cnt == _loadout_max    ? make_color_rgb(35, 95, 45)
+                         : (_ov_sel_cnt >= _ov_req         ? make_color_rgb(35, 95, 45)
                                                            : make_color_rgb(35, 40, 65)))));
             draw_rectangle(_desc_x, 998, _desc_x + _desc_w, 1043, true);
             // Focused confirm bar: thick pulsing frame + a soft glow halo that
@@ -2120,13 +2137,13 @@ if (instance_exists(obj_game_controller)) {
                 draw_text(GUI_CX, 1010, "Loadout full - remove an ability before adding another.");
             } else if (_conf_sel) {
                 draw_set_color(c_white);
-                draw_text_outline(GUI_CX, 1010, string(_ov_sel_cnt) + " / " + string(_loadout_max) + " selected   |   [ Space ]  Confirm and Enter Dungeon");
-            } else if (_ov_sel_cnt == _loadout_max) {
+                draw_text_outline(GUI_CX, 1010, string(_ov_sel_cnt) + " / " + string(_ov_req) + " selected   |   [ Space ]  Confirm and Enter Dungeon");
+            } else if (_ov_sel_cnt >= _ov_req) {
                 draw_set_color(make_color_rgb(80, 175, 100));
-                draw_text(GUI_CX, 1010, string(_ov_sel_cnt) + " / " + string(_loadout_max) + " selected   |   Scroll down to [ Enter ] to confirm");
+                draw_text(GUI_CX, 1010, string(_ov_sel_cnt) + " / " + string(_ov_req) + " selected   |   Scroll down to [ Enter ] to confirm");
             } else {
                 draw_set_color(make_color_rgb(160, 170, 200));
-                draw_text(GUI_CX, 1010, string(_ov_sel_cnt) + " / " + string(_loadout_max) + " selected");
+                draw_text(GUI_CX, 1010, string(_ov_sel_cnt) + " / " + string(_ov_req) + " selected");
             }
 
             // --- Controls hint: y=1050 ---

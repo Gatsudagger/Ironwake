@@ -20,13 +20,14 @@ mutator_queue = [];
 // fled combat can never replay in the next one.
 global.trap_throw = undefined;
 
-// FAUX-2.5D EXPERIMENT (M 08-11): read the lever once per combat from
-// settings.ini [ui] combat_25d (default ON for the trial). F7 in combat flips
-// it live and persists. Fully reversible - combat_25d()=false is the shipped
-// flat look, byte-identical.
+// 2.5D v3 - TWO-PLANE STAGE SET (M 08-13, Paper Mario reference). The failed
+// v2 whole-image warp is gone; ON now means: backdrop band + Mode-7 strip
+// floor meeting at a horizon (dungeon_bg_draw), with actors staged into the
+// lane by depth (combat_enemy_slot_pos). Default ON for M's trial; F7 flips
+// live and persists. OFF = the shipped flat look, byte-identical.
 if (!variable_global_exists("combat_25d")) {
     ini_open("settings.ini");
-    global.combat_25d = (ini_read_real("ui", "combat_25d", 1) > 0.5);
+    global.combat_25d = (ini_read_real("ui", "combat_25d_v3", 1) > 0.5);
     ini_close();
 }
 
@@ -157,6 +158,9 @@ player = {
     untargetable_turns:  0,
     blink_charges:       0,
     shadow_step_charges: 0,
+    // summon - the Arcanist's standing construct (class pass 08-13):
+    //   undefined, or { name, kind: "golem"|"effigy"|"husk", turns, hits }.
+    summon:              undefined,
 
     // Buff duration trackers (read by HUD for status icon display)
     iron_skin_duration:  0,
@@ -800,6 +804,17 @@ if (_enemy_type == "duel") {
 // SUMMONS (08-13): keep the dungeon's standard pool reachable from Step so a
 // mid-combat summon draws the same roster this floor spawns naturally.
 summon_pool = _std_pool;
+// A5 escalation (M 08-13): BOSSES with the summon ability - the Sovereign,
+// the Archivist boss template, and any Depth Warden carrying one - call
+// ELITE reinforcements instead of standards at Awakening 5. The elite pool
+// rides along; the Step summon branch picks it when caster-is-boss + A5.
+summon_pool_elite = _eli_pool;
+summon_is_boss_fight = (_enemy_type == "boss");
+
+// 2.5D round 5 (M): each combat rolls ONE of the four stage layouts, so
+// encounters stop arranging in the same pattern every fight.
+stage_layout = irandom(3);
+stage_boss_placed = false;   // round 7: first boss-fight foe claims center stage once
 
 var enemies = (enemy2 == undefined) ? [enemy1] : [enemy1, enemy2];
 while (array_length(enemies) < _enc_count) {
@@ -1179,6 +1194,10 @@ screen_shake_y     = 0;
 cast_fx_timer = 0;
 cast_fx_color = c_white;
 
+// Iron Skin cast overlay (M 08-13): bespoke iron-shell envelopment on the
+// player sprite - set at cast in Step, drawn + ticked in Draw_64.
+ironskin_fx_timer = 0;
+
 // VFX impact sprite - drawn at hit position for a few frames.
 // vfx_timer_max holds the value vfx_timer was set to, so the Draw event can map
 // the countdown onto the sprite's sub-images (multi-frame Gigapack effects).
@@ -1188,6 +1207,8 @@ vfx_spr       = -1;
 vfx_x         = 0;
 vfx_y         = 0;
 vfx_school    = "";   // school of the cast that spawned the VFX ("" = untinted); spell tints blend it
+vfx_scale_mult = 1;   // VFX pacing (08-13): 3-AP finishers draw ~a third bigger
+glyph_fx = [];        // enemy support-cast rune rings (Restorative Glyph trace, 08-13)
 
 // --- Conveyance pass (08-04, SYSTEMS_COMBAT_FX.md header): traveling
 // projectiles, beam lances, and multi-slot impact bursts. Mechanics resolve
@@ -1227,7 +1248,8 @@ consumable_confirm_idx  = -1;
 
 // Full-screen ability breakdown popup (V key) - same view as the loadout/Vex Tab
 // popup (ui_draw_ability_detail). Tab stays bound to target-cycling in combat.
-ability_detail_open = false;
+ability_detail_open   = false;
+ability_detail_scroll = 0;
 
 // Boss extract choice (shown after defeating floor boss when floor < 3)
 boss_extract_open = false;

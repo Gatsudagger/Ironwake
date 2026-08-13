@@ -2685,11 +2685,12 @@ function ui_draw_journal() {
     draw_set_color(make_color_rgb(228, 215, 180));
     draw_text(_x1 + 45, _y1 + 36, "Journal");
 
-    // Tab chips (6 since 2026-08-06 - CREATURES added).
-    var _tabs = ["RELATIONSHIPS", "QUESTS", "COMPENDIUM", "ITEM CODEX", "BESTIARY", "CREATURES"];
+    // Tab chips (7 since 08-13 - BLUEPRINTS added, the Pattern Book's
+    // read-anywhere reference copy).
+    var _tabs = ["RELATIONSHIPS", "QUESTS", "COMPENDIUM", "ITEM CODEX", "BESTIARY", "CREATURES", "BLUEPRINTS"];
     var _tx = _x1 + 340;
     draw_set_font(fnt_ui_small);
-    for (var _t = 0; _t < 6; _t++) {
+    for (var _t = 0; _t < 7; _t++) {
         var _hot = (_gc.journal_tab == _t);
         // 08-06: padding trimmed 48->36 (and the gap 24->16 below) so six chips
         // still clear _x2 at 1920x1080 with the longest labels.
@@ -3357,16 +3358,29 @@ function ui_draw_journal() {
                 draw_text(_det_x1, _kdy, "Scion"); _kdy += 40;
             }
 
-            // Portrait: real art when discovered, flat silhouette when not.
-            var _kspr = compendium_sprite(_kd.id);
+            // ---- FORM SLOTS (M 08-13): baby / young adult / adult / awakened,
+            // each revealed only once one of YOURS has reached that stage. A/D
+            // (or tapping a chip) cycles; unrevealed forms stay "? ? ?".
+            var _kmax    = _kgot2 ? compendium_stage_max(_kd.id) : -1;
+            var _kstages = [PET_STAGE_BABY, PET_STAGE_YOUNGADULT, PET_STAGE_ADULT, PET_STAGE_AWAKENED];
+            var _knames  = ["BABY", "YOUNG ADULT", "ADULT", "AWAKENED"];
+            var _kform   = variable_instance_exists(_gc, "journal_form") ? clamp(_gc.journal_form, 0, 3) : 3;
+            while (_kform > 0 && _kstages[_kform] > _kmax) _kform -= 1;   // clamp DOWN to a revealed slot
+            _gc.journal_form = _kform;
+
+            // Portrait: the chosen form's art (walking DOWN when a stage has no
+            // bespoke sprite yet - awakened shows adult art in-game too), real
+            // when discovered, flat silhouette when not. pet_sprite_fit
+            // feet-anchors + fits the visible bbox (08-08 float fix).
+            var _kspr = -1;
+            if (_kgot2) {
+                for (var _kfs = _kform; _kfs >= 0; _kfs--) {
+                    _kspr = compendium_stage_sprite(_kd.id, _kstages[_kfs]);
+                    if (_kspr >= 0) break;
+                }
+            }
+            if (_kspr < 0) _kspr = compendium_sprite(_kd.id);
             if (_kspr >= 0) {
-                // 08-08 fix: this scaled by sprite_get_height and drew at (_kdy) as
-                // if the origin were TOP-LEFT. Pet sprites use a BOTTOM-CENTRE
-                // origin, so every portrait rendered upward out of the pane - M's
-                // screenshot caught a nightowl silhouette floating in the tab bar,
-                // ~200px above where it belonged. pet_sprite_fit is the existing
-                // answer: it feet-anchors AND fits the visible bbox rather than the
-                // canvas, so wide creatures can't overflow the pane either.
                 var _kcx  = (_det_x1 + _det_x2) / 2;
                 var _kfit = pet_sprite_fit(_kspr, _kcx, _kdy + 180, 180, (_det_x2 - _det_x1) - 40);
                 if (_kgot2) {
@@ -3380,6 +3394,34 @@ function ui_draw_journal() {
                 _kdy += 202;
             }
 
+            // The 4-slot cycle bar (discovered species only).
+            if (_kgot2) {
+                var _kch_w = 150, _kch_h = 40, _kch_gap = 12;
+                var _kch_x = (_det_x1 + _det_x2) / 2 - (4 * _kch_w + 3 * _kch_gap) / 2;
+                for (var _kci = 0; _kci < 4; _kci++) {
+                    var _kcx0 = _kch_x + _kci * (_kch_w + _kch_gap);
+                    var _krev = (_kstages[_kci] <= _kmax);
+                    var _ksel = (_kci == _kform);
+                    draw_set_color(_ksel ? make_color_rgb(40, 42, 58) : make_color_rgb(18, 19, 27));
+                    draw_rectangle(_kcx0, _kdy, _kcx0 + _kch_w, _kdy + _kch_h, false);
+                    draw_set_color(_ksel ? make_color_rgb(210, 185, 120) : make_color_rgb(52, 56, 76));
+                    draw_rectangle(_kcx0, _kdy, _kcx0 + _kch_w, _kdy + _kch_h, true);
+                    draw_set_halign(fa_center);
+                    draw_set_font(fnt_ui_small);
+                    draw_set_color(_krev ? (_ksel ? c_white : make_color_rgb(170, 176, 195))
+                                         : make_color_rgb(84, 88, 106));
+                    draw_text(_kcx0 + _kch_w / 2, _kdy + 9, _krev ? _knames[_kci] : "? ? ?");
+                    draw_set_halign(fa_left);
+                    // Touch parity (HARD rule): tap a revealed chip to view it.
+                    if (_krev && mouse_check_button_pressed(mb_left)) {
+                        var _kmx2 = device_mouse_x_to_gui(0), _kmy2 = device_mouse_y_to_gui(0);
+                        if (_kmx2 >= _kcx0 && _kmx2 <= _kcx0 + _kch_w
+                            && _kmy2 >= _kdy && _kmy2 <= _kdy + _kch_h) _gc.journal_form = _kci;
+                    }
+                }
+                _kdy += _kch_h + 14;
+            }
+
             draw_set_color(make_color_rgb(170, 176, 195));
             if (_kgot2) {
                 draw_text_ext(_det_x1, _kdy, pet_species_lore(_kd.id), 28, _det_x2 - _det_x1 - 10);
@@ -3389,6 +3431,88 @@ function ui_draw_journal() {
                 draw_text_ext(_det_x1, _kdy, "You have not raised one of these. Hatch it to record what it is.",
                               28, _det_x2 - _det_x1 - 10);
             }
+        }
+    }
+
+    if (_gc.journal_tab == 6) {
+        // ============ BLUEPRINTS (M 08-13): the Pattern Book, read-only ========
+        // Dorn's [B] overlay stays the working shortcut; this is the reference
+        // copy you can check from anywhere. Same family rows, list + detail.
+        pattern_book_ensure();
+        var _pbc   = pattern_family_catalog();
+        var _pbn   = array_length(_pbc);
+        var _pbcur = clamp(_gc.journal_cursor, 0, max(0, _pbn - 1));
+        var _pbrow = 46;
+        var _pbvis = max(1, floor((_bot - _top - 10) / _pbrow));
+        var _pbfirst = clamp(_pbcur - (_pbvis - 1), 0, max(0, _pbn - _pbvis));
+        if (_pbcur < _pbfirst) _pbfirst = _pbcur;
+        var _pblast = min(_pbn, _pbfirst + _pbvis);
+
+        draw_set_font(fnt_ui_small);
+        draw_set_color(make_color_rgb(150, 156, 178));
+        draw_text(_list_x1 - 6, _top - 40, "Blueprints are learned at Dorn's by SMELTING gear."
+            + "   Art page: " + string(array_length(global.pattern_book.art)) + " icons.");
+
+        for (var _pbi = _pbfirst; _pbi < _pblast; _pbi++) {
+            var _pbe   = _pbc[_pbi];
+            var _pby   = _top + (_pbi - _pbfirst) * _pbrow;
+            var _pbhot = (_pbi == _pbcur);
+            var _pbt   = pattern_fam_tier(_pbe.stat_name);
+            draw_set_color(_pbhot ? make_color_rgb(40, 42, 58) : make_color_rgb(20, 21, 30));
+            draw_rectangle(_list_x1 - 6, _pby, _list_x2 + 6, _pby + _pbrow - 6, false);
+            draw_set_color(_pbhot ? make_color_rgb(210, 185, 120) : make_color_rgb(52, 56, 76));
+            draw_rectangle(_list_x1 - 6, _pby, _list_x2 + 6, _pby + _pbrow - 6, true);
+            draw_set_font(fnt_ui_small);
+            draw_set_color((_pbt > 0) ? (_pbhot ? c_white : make_color_rgb(190, 195, 212))
+                                      : make_color_rgb(110, 112, 130));
+            draw_text(_list_x1 + 10, _pby + 8, _pbe.label);
+            draw_set_halign(fa_right);
+            draw_set_color((_pbt >= 3) ? make_color_rgb(230, 195, 120) : make_color_rgb(140, 145, 165));
+            draw_text(_list_x2 - 6, _pby + 8, pattern_fam_progress_text(_pbe.stat_name));
+            draw_set_halign(fa_left);
+        }
+        if (_pbn > _pbvis) {
+            var _pbsb_x0 = _list_x2 + 11, _pbsb_x1 = _pbsb_x0 + 6;
+            var _pbsb_y0 = _top, _pbsb_y1 = _top + _pbvis * _pbrow - 10;
+            draw_set_color(make_color_rgb(30, 34, 48));
+            draw_rectangle(_pbsb_x0, _pbsb_y0, _pbsb_x1, _pbsb_y1, false);
+            var _pbsb_h  = max(36, (_pbsb_y1 - _pbsb_y0) * (_pbvis / _pbn));
+            var _pbsb_ty = _pbsb_y0 + ((_pbsb_y1 - _pbsb_y0) - _pbsb_h) * (_pbfirst / max(1, _pbn - _pbvis));
+            draw_set_color(make_color_rgb(90, 150, 210));
+            draw_rectangle(_pbsb_x0, _pbsb_ty, _pbsb_x1, _pbsb_ty + _pbsb_h, false);
+        }
+        // Touch parity: tap a row to select it.
+        if (mouse_check_button_pressed(mb_left)) {
+            var _pbmx = device_mouse_x_to_gui(0), _pbmy = device_mouse_y_to_gui(0);
+            if (_pbmx >= _list_x1 - 6 && _pbmx <= _list_x2 + 6) {
+                for (var _pbti = _pbfirst; _pbti < _pblast; _pbti++) {
+                    var _pbty = _top + (_pbti - _pbfirst) * _pbrow;
+                    if (_pbmy >= _pbty && _pbmy <= _pbty + _pbrow - 6) { _gc.journal_cursor = _pbti; break; }
+                }
+            }
+        }
+
+        // ---- Detail pane ----
+        if (_pbn > 0) {
+            var _pbd  = _pbc[_pbcur];
+            var _pbdt = pattern_fam_tier(_pbd.stat_name);
+            var _pbdy = _top + 6;
+            draw_set_font(fnt_ui);
+            draw_set_color(make_color_rgb(228, 215, 180));
+            draw_text(_det_x1, _pbdy, _pbd.label); _pbdy += 46;
+            draw_set_font(fnt_ui_small);
+            draw_set_color(make_color_rgb(210, 190, 130));
+            draw_text(_det_x1, _pbdy, (_pbd.kind == "school") ? "Caster Affix (amulet/ring)" : "Stat Affix"); _pbdy += 38;
+            ui_pb_pips(_det_x1, _pbdy + 4, _pbdt); _pbdy += 44;
+            draw_set_color(make_color_rgb(170, 176, 195));
+            var _pbdd = pattern_family_desc(_pbd.stat_name);
+            if (_pbdd != "") { draw_text_ext(_det_x1, _pbdy, _pbdd, 28, _det_x2 - _det_x1 - 10); _pbdy += 48; }
+            draw_set_color(make_color_rgb(150, 156, 178));
+            draw_text(_det_x1, _pbdy, "Progress: " + pattern_fam_progress_text(_pbd.stat_name)); _pbdy += 38;
+            draw_set_color(make_color_rgb(120, 124, 145));
+            draw_text_ext(_det_x1, _pbdy,
+                "Tier I unlocks after 3 studies. Rare or better fodder deepens the blueprint to Tier II, Epic or better to Tier III. Higher tiers roll better numbers at Dorn's CRAFT.",
+                28, _det_x2 - _det_x1 - 10);
         }
     }
 
@@ -4405,8 +4529,12 @@ function ui_draw_bairc_screen() {
         var _psp = pet_sprite(_p, "s");
         var _spx = _dx + _dw - 90, _spb = _pa_y1 - 12;
         if (_psp >= 0) {
-            var _st_h  = [78, 90, 100, 112, 116];   // station display height by stage 0-4
-            var _th    = _st_h[clamp(_p.stage, 0, 4)] * pet_stage_scale(_p);
+            // M 08-13 ("each model should fit the window... nightowl is perfect
+            // filling its frame but crypt bat looks tiny"): the profile portrait
+            // fills its frame at EVERY life stage - the stage-scaled height
+            // ([78..116] x stage scale) made babies rattle around in the box,
+            // and the Life Stage text row already tells the stage story.
+            var _th    = 150;
             // #16: fit by VISIBLE content, not the padded canvas (bonehound/hollow
             // pup drew tiny). Width-capped so wide species stay inside the panel.
             var _pfit  = pet_sprite_fit(_psp, _spx, _spb, _th, 170);
@@ -5290,21 +5418,352 @@ function combat_25d() {
     return variable_global_exists("combat_25d") && global.combat_25d;
 }
 
+// ---------------------------------------------------------------------------
+// ui_draw_cast_shadow(cx, feet_y, width, dir) - actor shadow for the combat
+// scene. Flat mode: the shipped contact ellipse, untouched. 2.5D v3 (M 08-13:
+// "the shadows being behind them instead of below them would help create the
+// illusion"): an oblique pool CAST BACK along the floor toward the horizon -
+// offset behind the actor (dir: +1 = behind is screen-right, enemies face
+// left; -1 = behind is screen-left, the player faces right) and stretched
+// up-screen so it reads as lying ON the receding plane.
+// ---------------------------------------------------------------------------
+function ui_draw_cast_shadow(_cx, _feet_y, _w, _dir = 1) {
+    if (!combat_25d()) { ui_draw_ground_shadow(_cx, _feet_y, _w); return; }
+    // Round 3 (M shot: "2.5d shadows are too big"): ~40% of the old footprint,
+    // lighter, hugging the feet - a grounding accent, not a puddle.
+    // Round 9 (M shots: "shadow IS NOT CLIPPED TO MODEL"): callers now pass the
+    // VISIBLE model width + true visible-feet y, so the pool sits flush at the
+    // feet (no upward drift) and is proportioned to the model it grounds.
+    var _sx = _cx + _dir * _w * 0.08;
+    var _sy = _feet_y - _w * 0.006;
+    draw_set_color(c_black);
+    draw_set_alpha(0.20);
+    draw_ellipse(_sx - _w * 0.36, _sy - _w * 0.05, _sx + _w * 0.36, _sy + _w * 0.04, false);
+    draw_set_alpha(0.09);
+    draw_ellipse(_sx - _w * 0.46, _sy - _w * 0.07, _sx + _w * 0.46, _sy + _w * 0.055, false);
+    draw_set_alpha(1.0);
+    draw_set_color(c_white);
+}
+
+// ---------------------------------------------------------------------------
+// ui_draw_25d_props(pass) - VOLUMETRIC PROPS (M 08-13, Gen1Recomp reference:
+// "objects that look 3d... magnify this"). The illusion is prop-driven -
+// each placeholder is drawn WITH a visible top face (the baked-3/4 read the
+// reference's fence posts have). Stations ride the stage layout. pass 0 =
+// behind the actors (incl. wall dressing), pass 1 = near foreground, drawn
+// after the actors. Generated prop art replaces these draws 1:1 later.
+// ---------------------------------------------------------------------------
+function ui_draw_25d_props(_pass) {
+    if (!combat_25d() || !instance_exists(obj_combat_controller)) return;
+    var _cc  = instance_find(obj_combat_controller, 0);
+    var _lay = variable_instance_exists(_cc, "stage_layout") ? _cc.stage_layout : 0;
+    // Stations: {k, x, feet, d (depth size factor), near}. Kept clear of the
+    // enemy stations, the tooltip card (x1395+ y655+), and the combat lanes.
+    static _P = [
+        [ {k:"pillar",x:900,feet:598,d:0.62,near:false},  {k:"sconce",x:520,feet:315,d:1,near:false},
+          {k:"brazier",x:1835,feet:640,d:0.62,near:false},{k:"rubble",x:150,feet:1035,d:1.30,near:true} ],
+        [ {k:"pillar",x:1800,feet:565,d:0.50,near:false}, {k:"sconce",x:1080,feet:315,d:1,near:false},
+          {k:"brazier",x:850,feet:610,d:0.55,near:false}, {k:"pillar",x:90,feet:1060,d:1.35,near:true} ],
+        [ {k:"pillar",x:660,feet:560,d:0.50,near:false},  {k:"sconce",x:1520,feet:315,d:1,near:false},
+          {k:"rubble",x:1850,feet:620,d:0.60,near:false}, {k:"brazier",x:210,feet:1010,d:1.25,near:true} ],
+        [ {k:"brazier",x:960,feet:588,d:0.55,near:false}, {k:"sconce",x:330,feet:315,d:1,near:false},
+          {k:"pillar",x:1830,feet:610,d:0.60,near:false}, {k:"rubble",x:1680,feet:1050,d:1.30,near:true} ]
+    ];
+    // Round 7 (M shot: "looks pretty random"): the sconce / brazier / rubble
+    // PLACEHOLDERS read as floating junk, not architecture - only the full
+    // pillars earned their place. Everything else waits for real art.
+    if (_pass == 1) return;
+    var _st = _P[clamp(_lay, 0, 3)];
+    for (var _i = 0; _i < array_length(_st); _i++) {
+        var _p = _st[_i];
+        if (_p.near != (_pass == 1)) continue;
+        if (_p.k != "pillar") continue;
+        var _d = _p.d;
+        if (_p.k == "pillar") {
+            var _pw = 88 * _d;
+            var _broken = (_d >= 1.0);
+            var _top = _broken ? (_p.feet - 430 * _d) : -40;   // full pillars hold the unseen ceiling
+            // Shaft with cylinder shading: dark left edge, lit right band.
+            draw_set_color(make_color_rgb(52, 49, 58));
+            draw_rectangle(_p.x - _pw / 2, _top, _p.x + _pw / 2, _p.feet, false);
+            draw_set_color(make_color_rgb(38, 36, 44));
+            draw_rectangle(_p.x - _pw / 2, _top, _p.x - _pw / 2 + _pw * 0.22, _p.feet, false);
+            draw_set_color(make_color_rgb(72, 68, 78));
+            draw_rectangle(_p.x + _pw * 0.10, _top, _p.x + _pw * 0.30, _p.feet, false);
+            // Mortar courses.
+            draw_set_color(make_color_rgb(28, 26, 33));
+            for (var _my2 = _p.feet - 34 * _d; _my2 > max(_top, 0); _my2 -= 76 * _d)
+                draw_rectangle(_p.x - _pw / 2, _my2, _p.x + _pw / 2, _my2 + 3, false);
+            if (_broken) {
+                // The TOP FACE - the volume sliver that sells the 3/4 read.
+                draw_set_color(make_color_rgb(88, 84, 96));
+                draw_ellipse(_p.x - _pw * 0.56, _top - _pw * 0.16, _p.x + _pw * 0.56, _top + _pw * 0.12, false);
+                draw_set_color(make_color_rgb(60, 57, 66));
+                draw_ellipse(_p.x - _pw * 0.42, _top - _pw * 0.10, _p.x + _pw * 0.42, _top + _pw * 0.07, false);
+            }
+            // Base plinth + contact shadow.
+            draw_set_color(make_color_rgb(46, 44, 52));
+            draw_rectangle(_p.x - _pw * 0.62, _p.feet - 16 * _d, _p.x + _pw * 0.62, _p.feet, false);
+            ui_draw_cast_shadow(_p.x, _p.feet + 6, _pw * 1.6, 1);
+        } else if (_p.k == "brazier") {
+            var _bw = 70 * _d;
+            draw_set_color(make_color_rgb(44, 42, 50));
+            draw_rectangle(_p.x - _bw * 0.18, _p.feet - 52 * _d, _p.x + _bw * 0.18, _p.feet, false);
+            // Bowl with a RIM top face.
+            draw_set_color(make_color_rgb(56, 52, 60));
+            draw_ellipse(_p.x - _bw * 0.55, _p.feet - 70 * _d, _p.x + _bw * 0.55, _p.feet - 40 * _d, false);
+            draw_set_color(make_color_rgb(30, 26, 30));
+            draw_ellipse(_p.x - _bw * 0.42, _p.feet - 66 * _d, _p.x + _bw * 0.42, _p.feet - 50 * _d, false);
+            // Fire: additive breathing glow.
+            var _fp = 0.5 + 0.5 * sin(current_time / 240 + _p.x);
+            gpu_set_blendmode(bm_add);
+            draw_set_alpha(0.30 + 0.18 * _fp);
+            draw_set_color(make_color_rgb(235, 140, 50));
+            draw_circle(_p.x, _p.feet - 78 * _d, _bw * (0.45 + 0.10 * _fp), false);
+            draw_set_alpha(0.75);
+            draw_set_color(make_color_rgb(255, 210, 120));
+            draw_circle(_p.x, _p.feet - 74 * _d, _bw * 0.16, false);
+            gpu_set_blendmode(bm_normal);
+            draw_set_alpha(1.0);
+            ui_draw_cast_shadow(_p.x, _p.feet + 4, _bw * 1.3, 1);
+        } else if (_p.k == "rubble") {
+            var _rw = 60 * _d;
+            // Tumbled blocks, each with a lit top edge (the volume read).
+            for (var _rb = 0; _rb < 4; _rb++) {
+                var _rh2 = __ui_25d_hash(_rb + 3, _lay + 11);
+                var _rx2 = _p.x + (_rb - 1.5) * _rw * 0.55 + _rh2 * 14;
+                var _rs2 = _rw * (0.38 + 0.30 * _rh2);
+                var _ry2 = _p.feet - _rs2 * 0.7 - _rh2 * 8;
+                draw_set_color(make_color_rgb(48, 45, 53));
+                draw_rectangle(_rx2 - _rs2 * 0.5, _ry2, _rx2 + _rs2 * 0.5, _p.feet, false);
+                draw_set_color(make_color_rgb(78, 74, 84));
+                draw_rectangle(_rx2 - _rs2 * 0.5, _ry2, _rx2 + _rs2 * 0.5, _ry2 + _rs2 * 0.18, false);
+            }
+            ui_draw_cast_shadow(_p.x, _p.feet + 5, _rw * 2.0, 1);
+        } else if (_p.k == "sconce") {
+            // Wall-mounted: bracket + flame, ON the back wall (above horizon).
+            draw_set_color(make_color_rgb(40, 38, 46));
+            draw_rectangle(_p.x - 7, _p.feet, _p.x + 7, _p.feet + 52, false);
+            draw_set_color(make_color_rgb(58, 54, 64));
+            draw_rectangle(_p.x - 16, _p.feet + 46, _p.x + 16, _p.feet + 56, false);
+            var _sp2 = 0.5 + 0.5 * sin(current_time / 210 + _p.x * 2);
+            gpu_set_blendmode(bm_add);
+            draw_set_alpha(0.26 + 0.16 * _sp2);
+            draw_set_color(make_color_rgb(235, 150, 60));
+            draw_circle(_p.x, _p.feet - 12, 34 + 7 * _sp2, false);
+            draw_set_alpha(0.8);
+            draw_set_color(make_color_rgb(255, 215, 130));
+            draw_circle(_p.x, _p.feet - 8, 7, false);
+            gpu_set_blendmode(bm_normal);
+            draw_set_alpha(1.0);
+        }
+    }
+    draw_set_color(c_white);
+}
+
+// ---------------------------------------------------------------------------
+// __ui_25d_plane_surfaces() - PROCEDURAL TEST PLANES for the 2.5D stage
+// (M 08-13 round 2: "we need 2 different backgrounds... just make simple
+// cheap new ones for testing"). A slab floor and a brick wall, deterministic,
+// cached on surfaces (rebuilt on device loss), tinted per dungeon at draw
+// time. These exist so the two-plane ILLUSION can be judged without touching
+// the shipped paintings; approved painted pairs replace them per scene.
+// ---------------------------------------------------------------------------
+function __ui_25d_hash(_a, _b) {
+    return ((_a * 374761 + _b * 668265) mod 1024) / 1024;
+}
+
+function __ui_25d_plane_surfaces() {
+    if (!variable_global_exists("ui_25d_floor_surf")) global.ui_25d_floor_surf = -1;
+    if (!variable_global_exists("ui_25d_wall_surf"))  global.ui_25d_wall_surf  = -1;
+
+    if (!surface_exists(global.ui_25d_floor_surf)) {
+        global.ui_25d_floor_surf = surface_create(512, 512);
+        surface_set_target(global.ui_25d_floor_surf);
+        // Round 3: floor runs LIGHTER than the wall on purpose - the value gap
+        // is what makes two planes read where pattern alone failed (M shot).
+        draw_clear(make_color_rgb(36, 32, 38));                    // mortar
+        for (var _ty = 0; _ty < 8; _ty++) {
+            for (var _tx = 0; _tx < 8; _tx++) {
+                var _h = __ui_25d_hash(_tx + 7, _ty + 13);
+                var _g = 68 + _h * 22;
+                draw_set_color(make_color_rgb(_g + 4, _g, _g + 6));
+                draw_rectangle(_tx * 64 + 3, _ty * 64 + 3, _tx * 64 + 61, _ty * 64 + 61, false);
+                // Worn top edge highlight + occasional crack, so slabs read as stone.
+                draw_set_color(make_color_rgb(_g + 22, _g + 17, _g + 20));
+                draw_rectangle(_tx * 64 + 3, _ty * 64 + 3, _tx * 64 + 61, _ty * 64 + 7, false);
+                if (_h > 0.72) {
+                    draw_set_color(make_color_rgb(18, 16, 20));
+                    draw_line(_tx * 64 + 12 + _h * 20, _ty * 64 + 10,
+                              _tx * 64 + 40, _ty * 64 + 52);
+                }
+            }
+        }
+        surface_reset_target();
+    }
+
+    if (!surface_exists(global.ui_25d_wall_surf)) {
+        global.ui_25d_wall_surf = surface_create(1024, 512);
+        surface_set_target(global.ui_25d_wall_surf);
+        draw_clear(make_color_rgb(16, 14, 19));                    // mortar
+        for (var _by = 0; _by < 8; _by++) {
+            var _bo = (_by % 2 == 0) ? 0 : 64;                     // running bond
+            for (var _bx = -1; _bx < 9; _bx++) {
+                var _h2 = __ui_25d_hash(_bx + 31, _by + 5);
+                var _g2 = 30 + _h2 * 14;
+                draw_set_color(make_color_rgb(_g2 + 2, _g2, _g2 + 5));
+                draw_rectangle(_bx * 128 + _bo + 3, _by * 64 + 3,
+                               _bx * 128 + _bo + 125, _by * 64 + 61, false);
+            }
+        }
+        // Ceiling gloom: the wall darkens toward the top, floorward rows stay lit.
+        for (var _gy = 0; _gy < 10; _gy++) {
+            draw_set_alpha(0.34 * (1 - _gy / 10));
+            draw_set_color(c_black);
+            draw_rectangle(0, _gy * 34, 1024, (_gy + 1) * 34, false);
+        }
+        draw_set_alpha(1.0);
+        surface_reset_target();
+    }
+}
+
 function dungeon_bg_draw(surface, scrim_alpha) {
     var _spr = dungeon_bg_sprite(surface);
     if (_spr == -1 || !sprite_exists(_spr)) return false;
     draw_set_color(c_white);
     draw_set_alpha(1.0);
     if (surface == "combat" && combat_25d()) {
-        // Tilted quad over the full visible width. v2 (M 08-11 F5: "distortion
-        // of background" read as warp, not depth): pinch dropped 4.5% -> 2.8% -
-        // the depth read now leans on the ACTOR scaling/stagger instead.
-        var _px = (GUI_XR - GUI_XL) * 0.028;
-        draw_sprite_pos(_spr, 0,
-            GUI_XL + _px, -14,            // top-left  (far edge pinched in, lifted)
-            GUI_XR - _px, -14,            // top-right
-            GUI_XR + _px, GUI_H,          // bottom-right (near edge bulged out)
-            GUI_XL - _px, GUI_H, 1.0);    // bottom-left
+        // ===== 2.5D v3 round 2 (M 08-13): TWO SEPARATE PLANES. =====
+        // A dedicated WALL image stands flat above the horizon; a dedicated
+        // FLOOR image lies below it, strip-projected (Mode-7 row compression)
+        // so it recedes INTO the wall at the seam. Actors then stand on the
+        // floor like paper cutouts. Planes are the procedural TEST stones for
+        // now (M: "simple cheap new ones for testing"), tinted to the dungeon;
+        // approved painted pairs slot straight into the same two draws.
+        __ui_25d_plane_surfaces();
+        var _hz = 470;                        // horizon: where floor meets wall
+        var _vw = GUI_XR - GUI_XL;
+        // Round 3 contrast: wall dims hard (cold, receding), floor stays lit -
+        // the value gap between the planes IS the seam read.
+        var _d25 = variable_global_exists("selected_dungeon") ? global.selected_dungeon : "ashen_vault";
+        var _tw = make_color_rgb(105, 108, 138);   // wall mood tint (ashen default)
+        var _tf = make_color_rgb(235, 232, 244);   // floor tint - near full value
+        if (_d25 == "scorched_depths") { _tw = make_color_rgb(135, 92, 72); _tf = make_color_rgb(255, 208, 165); }
+        else if (_d25 == "tundra_tomb") { _tw = make_color_rgb(92, 118, 158); _tf = make_color_rgb(215, 235, 255); }
+
+        // PAINTED PLANE PAIRS (round 11, M-approved: "1 for each floor and for
+        // each biome" + a Descent set): spr_wall25_<tag>_<fl> (authored ~4:1,
+        // fills the plane above the horizon) + spr_floor25_<tag>_<fl> (square
+        // tileable top-down texture for the strip projection). String lookup =
+        // compiles before the art exists; each import must also be added to
+        // global.__sprite_includes or the compiler strips it. Painted planes
+        // draw UNTINTED (the painting carries its own palette); the procedural
+        // stones + dungeon tints remain the fallback per scene.
+        var _tag25 = "ashen";
+        if      (_d25 == "scorched_depths") _tag25 = "scorched";
+        else if (_d25 == "tundra_tomb")     _tag25 = "tundra";
+        if (variable_global_exists("descent_active") && global.descent_active) _tag25 = "descent";
+        var _fl25 = clamp(variable_global_exists("current_floor") ? global.current_floor : 1, 1, 3);
+        var _wspr25 = asset_get_index("spr_wall25_"  + _tag25 + "_" + string(_fl25));
+        var _fspr25 = asset_get_index("spr_floor25_" + _tag25 + "_" + string(_fl25));
+        var _wall_painted  = (_wspr25 >= 0 && sprite_exists(_wspr25));
+        var _floor_painted = (_fspr25 >= 0 && sprite_exists(_fspr25));
+
+        // Motion parallax (round 6, Gen1Recomp homework): a slow micro-drift
+        // where the wall slides LESS than the floor - the relative motion only
+        // two genuinely separate planes can produce.
+        var _swy = 3 * sin(current_time / 2600);
+
+        // WALL: flat vertical plane, full width down to the horizon (drawn a
+        // few px oversized so the parallax drift never exposes an edge).
+        if (_wall_painted) {
+            // Painted walls are authored ~400x192 and HORIZONTALLY SEAMLESS:
+            // cover-scale to the horizon height and tile sideways (a raw
+            // stretch to full width would fatten the art ~5x).
+            var _wsc25 = _hz / max(1, sprite_get_height(_wspr25));
+            var _wtw25 = max(32, sprite_get_width(_wspr25) * _wsc25);
+            var _wx25  = GUI_XL - 5 + _swy * 0.35;
+            while (_wx25 > GUI_XL) _wx25 -= _wtw25;
+            for (; _wx25 < GUI_XR; _wx25 += _wtw25)
+                draw_sprite_ext(_wspr25, 0, _wx25, 0, _wsc25, _wsc25, 0, c_white, 1.0);
+        } else {
+            draw_surface_stretched_ext(global.ui_25d_wall_surf, GUI_XL - 5 + _swy * 0.35, 0, _vw + 10, _hz, _tw, 1.0);
+        }
+
+        // FLOOR: strip-projected slab texture. Vertical: v = 1-(1-t)^2.2 packs
+        // far rows against the seam. Horizontal (round 3 - THE missing
+        // ingredient): each strip is also magnified about screen center by a
+        // 1/z-flavored factor, so the slab grout lines CONVERGE toward the
+        // horizon instead of running parallel - without this the "floor" read
+        // as one giant wall (M screenshot 08-13). Far strips draw narrower and
+        // tile sideways to keep full coverage.
+        var _strips = 48;
+        // Painted floor: source rows come from the sprite's own dimensions.
+        var _fsw25 = _floor_painted ? sprite_get_width(_fspr25)  : 512;
+        var _fsh25 = _floor_painted ? sprite_get_height(_fspr25) : 512;
+        for (var _st = 0; _st < _strips; _st++) {
+            var _t0 = _st / _strips;
+            var _t1 = (_st + 1) / _strips;
+            // Round 7 (M: "the floor curve looks bad idk why its still
+            // there"): DEAD FLAT - perfectly linear row mapping, zero
+            // magnification bend. Depth = line convergence + actor scale only.
+            var _v0 = _t0;
+            var _v1 = _t1;
+            var _sy0 = _v0 * _fsh25;
+            var _sy1 = _v1 * _fsh25;
+            var _dy0 = _hz + _t0 * (GUI_H - _hz);
+            var _dy1 = _hz + _t1 * (GUI_H - _hz);
+            var _ysc = (_dy1 - _dy0) / max(1, _sy1 - _sy0);
+            // Convergence: LINEAR in screen height (round 8 - THE curve M kept
+            // seeing: the old hyperbolic factor bowed every vertical grout
+            // line outward as it descended. Straight world lines project to
+            // straight screen lines only when this factor is linear). 0.52 at
+            // the horizon -> 1.0 at the near edge.
+            var _cv  = lerp(0.52, 1.0, _t1);
+            var _dw  = _vw * _cv;
+            // Center-anchored sideways tiling covers the screen at every depth
+            // (one spare tile each side so the parallax drift never gaps).
+            var _fx0 = GUI_CX - _dw / 2 + _swy;
+            while (_fx0 > GUI_XL - _dw * 0.5) _fx0 -= _dw;
+            for (var _fx = _fx0; _fx < GUI_XR; _fx += _dw) {
+                if (_floor_painted) {
+                    draw_sprite_part_ext(_fspr25, 0, 0, _sy0, _fsw25, max(1, _sy1 - _sy0),
+                        _fx, _dy0, _dw / _fsw25, _ysc, c_white, 1.0);
+                } else {
+                    draw_surface_part_ext(global.ui_25d_floor_surf, 0, _sy0, 512, max(1, _sy1 - _sy0),
+                        _fx, _dy0, _dw / 512, _ysc, _tf, 1.0);
+                }
+            }
+        }
+        // Near warm light: the camp-side rows catch lamplight, pulling the
+        // floor plane apart from the cold wall in VALUE, not just pattern.
+        gpu_set_blendmode(bm_add);
+        for (var _wl = 0; _wl < 8; _wl++) {
+            draw_set_alpha(0.030 * (_wl + 1));
+            draw_set_color(make_color_rgb(120, 80, 40));
+            draw_rectangle(GUI_XL, GUI_H - (8 - _wl) * 52, GUI_XR, GUI_H - (7 - _wl) * 52, false);
+        }
+        gpu_set_blendmode(bm_normal);
+        draw_set_alpha(1.0);
+
+        // The seam: a hard baseboard line where wall meets floor, then soft
+        // distance haze rising off it - the "meet at an angle" read.
+        draw_set_color(c_black);
+        draw_set_alpha(0.55);
+        draw_rectangle(GUI_XL, _hz - 3, GUI_XR, _hz + 2, false);
+        draw_set_alpha(0.28);
+        draw_rectangle(GUI_XL, _hz + 2, GUI_XR, _hz + 26, false);
+        draw_set_alpha(0.16);
+        draw_rectangle(GUI_XL, _hz - 40, GUI_XR, _hz - 3, false);
+        // Side vignette (round 6): a soft lens edge pulls the eye into the
+        // diorama and hides the parallax drift at the borders.
+        for (var _vg = 0; _vg < 4; _vg++) {
+            draw_set_alpha(0.05);
+            draw_rectangle(GUI_XL, 0, GUI_XL + 46 + _vg * 44, GUI_H, false);
+            draw_rectangle(GUI_XR - 46 - _vg * 44, 0, GUI_XR, GUI_H, false);
+        }
+        draw_set_alpha(1.0);
+        draw_set_color(c_white);
     } else if (GUI_GUTTER <= 0) {
         // 16:9 (PC/HTML5): the shipped stretch, byte-for-byte.
         draw_sprite_stretched(_spr, 0, 0, 0, GUI_W, GUI_H);
@@ -5506,9 +5965,16 @@ function status_icon_style(se) {
     }
     switch (_kind) {
         case "dot":
+            // ELEMENT wins over name keywords (M 08-13: Blood Leech's Seeping
+            // Wound linger is element "bleed" but named "Lingering Blood" -
+            // it badged as generic DoT).
+            var _dot_el = combat_status_element(se);
+            if (_dot_el == "bleed")  return { label: "BLEED", color: make_color_rgb(175,  35,  35) };
+            if (_dot_el == "burn")   return { label: "BRN",   color: make_color_rgb(225, 130,  40) };
+            if (_dot_el == "poison") return { label: "PSN",   color: make_color_rgb( 90, 200,  90) };
             if (string_pos("bleed", _name) || string_pos("gore", _name) || string_pos("rend", _name) || string_pos("hemor", _name))
                 return { label: "BLEED", color: make_color_rgb(175,  35,  35) };
-            if (string_pos("burn", _name) || string_pos("cinder", _name) || string_pos("scorch", _name) || string_pos("flame", _name) || string_pos("ignit", _name) || string_pos("ember", _name))
+            if (string_pos("burn", _name) || string_pos("cinder", _name) || string_pos("scorch", _name) || string_pos("flame", _name) || string_pos("ignit", _name) || string_pos("ember", _name) || string_pos("sear", _name) || string_pos("brand", _name))
                 return { label: "BRN",   color: make_color_rgb(225, 130,  40) };
             if (string_pos("poison", _name) || string_pos("venom", _name) || string_pos("plague", _name) || string_pos("toxic", _name))
                 return { label: "PSN",   color: make_color_rgb( 90, 200,  90) };
@@ -5570,9 +6036,13 @@ function status_fx_sprite_for(se) {
     var _key  = "";
     switch (_kind) {
         case "dot":
-            if (string_pos("bleed", _name) || string_pos("gore", _name) || string_pos("rend", _name) || string_pos("hemor", _name))
+            // ELEMENT wins over name keywords, mirroring status_icon_style
+            // (M 08-13: "Lingering Blood" is element "bleed" but its name has
+            // no bleed keyword - it drew the POISON gas).
+            var _dot_fel = combat_status_element(se);
+            if (_dot_fel == "bleed" || string_pos("bleed", _name) || string_pos("gore", _name) || string_pos("rend", _name) || string_pos("hemor", _name) || string_pos("blood", _name))
                 _key = "spr_fx_bleed";
-            else if (string_pos("burn", _name) || string_pos("cinder", _name) || string_pos("scorch", _name) || string_pos("flame", _name) || string_pos("ignit", _name) || string_pos("ember", _name))
+            else if (_dot_fel == "burn" || string_pos("burn", _name) || string_pos("cinder", _name) || string_pos("scorch", _name) || string_pos("flame", _name) || string_pos("ignit", _name) || string_pos("ember", _name))
                 _key = "spr_fx_burn";
             else
                 _key = "spr_fx_poison";   // poison / plague / venom / generic dot
@@ -5665,6 +6135,41 @@ function ui_draw_status_fx(cx, top_y, draw_h, status_effects) {
     draw_set_alpha(0.85);
     for (var _i = 0; _i < array_length(status_effects); _i++) {
         var _se  = status_effects[_i];
+        var _kind_fx = combat_status_kind_of(_se);
+
+        // SILENCE (M 08-13: "in most rpgs theres a '...' that hovers like a
+        // text bubble - we should mimic that"): a classic speech bubble with
+        // three pulsing dots by the head, code-drawn - no more borrowing the
+        // weaken tendril cloud.
+        if (_kind_fx == "silence") {
+            var _dup_s = false;
+            for (var _d = 0; _d < array_length(_drawn); _d++) if (_drawn[_d] == "#silence") { _dup_s = true; break; }
+            if (_dup_s) continue;
+            array_push(_drawn, "#silence");
+            var _bob = 3 * sin(current_time / 260);
+            var _bw  = max(46, draw_h * 0.22);
+            var _bh  = _bw * 0.52;
+            var _bx  = cx + draw_h * 0.24;
+            var _by  = top_y - _bh * 0.30 + _bob;
+            draw_set_alpha(0.88);
+            draw_set_color(make_color_rgb(26, 26, 38));
+            draw_roundrect_ext(_bx, _by, _bx + _bw, _by + _bh, 10, 10, false);
+            // tail toward the head
+            draw_triangle(_bx + _bw * 0.20, _by + _bh - 1, _bx + _bw * 0.42, _by + _bh - 1,
+                          _bx + _bw * 0.12, _by + _bh + 9, false);
+            draw_set_color(make_color_rgb(125, 90, 205));   // SIL badge purple
+            draw_roundrect_ext(_bx, _by, _bx + _bw, _by + _bh, 10, 10, true);
+            // three dots, slow "..." typing pulse
+            var _don = 1 + ((current_time div 420) mod 3);
+            for (var _dt = 0; _dt < 3; _dt++) {
+                draw_set_alpha((_dt < _don) ? 0.95 : 0.30);
+                draw_set_color(make_color_rgb(214, 204, 240));
+                draw_circle(_bx + _bw * (0.26 + 0.24 * _dt), _by + _bh * 0.52, max(2.5, _bw * 0.055), false);
+            }
+            draw_set_alpha(0.85);   // restore the loop's baseline alpha
+            continue;
+        }
+
         var _spr = status_fx_sprite_for(_se);
         if (_spr == -1) continue;
         // Shock (no dedicated art yet) reuses the stun sprite but with its OWN
@@ -5674,7 +6179,20 @@ function ui_draw_status_fx(cx, top_y, draw_h, status_effects) {
         var _is_shock = (combat_status_element(_se) == "shock");
         // String key: sprite refs are typed handles in LTS2026 - arithmetic on
         // them (ref + real) throws "DoAdd: Malformed variable" at runtime.
-        var _dd_key   = string(_spr) + (_is_shock ? "#shock" : "");
+        // The four debuff kinds that share the weaken aura art each get their
+        // badge color as a heavy tint + their OWN dedupe key (M 08-13: "weaken
+        // should have its own... if multiple are on the same target their vfx
+        // just stack") - so WKN / VUL / MORT / ROOT read as different marks,
+        // same-kind repeats still collapse to one draw.
+        var _fx_tint = c_white;
+        var _dd_kind = "";
+        switch (_kind_fx) {
+            case "weaken":     _fx_tint = make_color_rgb(205, 140,  80); _dd_kind = "#wkn";  break;
+            case "vulnerable": _fx_tint = make_color_rgb(215,  95, 150); _dd_kind = "#vul";  break;
+            case "mortality":  _fx_tint = make_color_rgb(130, 190, 100); _dd_kind = "#mort"; break;
+            case "root":       _fx_tint = make_color_rgb( 70, 180, 170); _dd_kind = "#root"; break;
+        }
+        var _dd_key   = string(_spr) + (_is_shock ? "#shock" : _dd_kind);
         var _dup = false;
         for (var _d = 0; _d < array_length(_drawn); _d++) if (_drawn[_d] == _dd_key) { _dup = true; break; }
         if (_dup) continue;
@@ -5705,7 +6223,7 @@ function ui_draw_status_fx(cx, top_y, draw_h, status_effects) {
         draw_sprite_ext(_spr, _fr,
             cx - (sprite_get_width(_spr)  * _sc) * 0.5,
             _ay - (sprite_get_height(_spr) * _sc) * 0.5,
-            _sc, _sc, 0, c_white, _fx_alpha);
+            _sc, _sc, 0, _fx_tint, _fx_alpha);
     }
     draw_set_alpha(1.0);
 }
@@ -5764,15 +6282,18 @@ function ui_draw_status_icon_row(x, y, icon_list, max_w = -1) {
             draw_roundrect(_ix - 1, y - 1, _ix + _iw + 1, y + _ih + 1, true);
             draw_set_alpha(1.0);
         }
-        // label text
+        // Label + turns-left as ONE string INSIDE the badge (M 08-13 screenshot:
+        // even the 08-11 "tucked tight" counter still kissed the next bar row's
+        // intent chip in the stacked grid - nothing may hang below the badge).
+        // Shrinks to fit so "BLEED 4" never spills the 48px chip.
         draw_set_color(c_white);
-        draw_text(_ix + _iw * 0.5, y + _ih * 0.5, _ic.label);
-        // Duration counter tucked TIGHT under the badge (08-11, M screenshot:
-        // at +11 it hung low enough to kiss the next bar row's intent chip in
-        // the stacked 2-column grid; +7 keeps ~6px clear of the chip band).
-        if (_ic.duration > 0) {
-            draw_set_color(make_color_rgb(220, 215, 180));
-            draw_text(_ix + _iw * 0.5, y + _ih + 7, string(_ic.duration));
+        var _bd_txt = _ic.label + ((_ic.duration > 0) ? " " + string(_ic.duration) : "");
+        var _bd_tw  = string_width(_bd_txt);
+        if (_bd_tw > _iw - 6) {
+            var _bd_sc = (_iw - 6) / _bd_tw;
+            draw_text_transformed(_ix + _iw * 0.5, y + _ih * 0.5, _bd_txt, _bd_sc, _bd_sc, 0);
+        } else {
+            draw_text(_ix + _iw * 0.5, y + _ih * 0.5, _bd_txt);
         }
         _ix += _iw + _gap;
     }
@@ -5819,7 +6340,7 @@ function status_detonation_text(se) {
 
 // status_tooltip_desc(se) - one-line "what it does" explanation incl. turns left.
 function status_tooltip_desc(se) {
-    var _k    = variable_struct_exists(se, "kind") ? se.kind
+    var _k    = (variable_struct_exists(se, "kind") && se.kind != "") ? se.kind
               : (variable_struct_exists(se, "effect_type") ? se.effect_type : "");
     var _val  = variable_struct_exists(se, "effect_value") ? se.effect_value : 0;
     var _dur  = variable_struct_exists(se, "duration") ? se.duration : 0;
@@ -6812,6 +7333,9 @@ function ui_draw_log_line(x, y, str, max_w) {
     // wholesale in the pet's green, so its turn reads at a glance among enemy lines.
     if (string_pos("[Companion]", str) == 1) _COL_BASE = make_color_rgb(150, 215, 150);
 
+    var _COL_ENEMY = make_color_rgb(235, 120, 110);
+    var _COL_DMG   = make_color_rgb(240, 130,  85);
+
     var _words = string_split_words_log(str);
     var _n = array_length(_words);
     var _cx = x;
@@ -6819,9 +7343,10 @@ function ui_draw_log_line(x, y, str, max_w) {
 
     // Pre-scan: pick the color a number in this line should take, even when the
     // keyword comes AFTER the number (the log writes "... for 42 damage (CRIT!)").
-    // Priority: crit > school > gold. Gold also covers loot/economy lines.
+    // Priority: crit > school > damage > gold. Gold also covers loot/economy lines.
     var _num_col   = -1;
     var _gold_line = false;
+    var _dmg_line  = false;
     for (var _ps = 0; _ps < _n; _ps++) {
         var _pc = string_lower(string_trim_punct_log(_words[_ps]));
         if (_pc == "crit" || _pc == "critical" || _pc == "crits") { _num_col = _COL_CRIT; }
@@ -6830,8 +7355,40 @@ function ui_draw_log_line(x, y, str, max_w) {
             if (_ps_sch != "" && !log_word_enemy_masked(_words, _ps)) _num_col = school_color(_ps_sch);
         }
         if (_pc == "gold" || log_word_is_goldnum(_pc)) _gold_line = true;
+        if (_pc == "damage" || _pc == "blocked") _dmg_line = true;
     }
+    if (_num_col == -1 && _dmg_line)  _num_col = _COL_DMG;
     if (_num_col == -1 && _gold_line) _num_col = _COL_GOLD;
+
+    // Enemy names (M 08-13): tint every live combatant's name a hostile red so
+    // actors read at a glance. Matched as CONSECUTIVE word runs against the
+    // current fight's enemy list (covers summons, wardens, the duelist - any
+    // name the log can print), possessives stripped, so "frost damage" never
+    // false-hits on "Frost Shard".
+    var _emk = array_create(_n, false);
+    if (instance_exists(obj_combat_controller)) {
+        var _lcc = instance_find(obj_combat_controller, 0);
+        if (variable_instance_exists(_lcc, "combat_state") && is_struct(_lcc.combat_state)
+            && variable_struct_exists(_lcc.combat_state, "combatants")) {
+            var _lcbs = _lcc.combat_state.combatants;
+            for (var _le = 0; _le < array_length(_lcbs); _le++) {
+                if (_lcbs[_le].is_player) continue;
+                var _nmw = string_split(string_lower(_lcbs[_le].name), " ");
+                var _nw  = array_length(_nmw);
+                if (_nw == 0) continue;
+                for (var _ls = 0; _ls + _nw <= _n; _ls++) {
+                    var _hit = true;
+                    for (var _lq = 0; _lq < _nw; _lq++) {
+                        var _lw = string_lower(string_trim_punct_log(_words[_ls + _lq]));
+                        if (string_length(_lw) > 2 && string_copy(_lw, string_length(_lw) - 1, 2) == "'s")
+                            _lw = string_copy(_lw, 1, string_length(_lw) - 2);
+                        if (_lw != _nmw[_lq]) { _hit = false; break; }
+                    }
+                    if (_hit) for (var _lq = 0; _lq < _nw; _lq++) _emk[_ls + _lq] = true;
+                }
+            }
+        }
+    }
 
     for (var _i = 0; _i < _n; _i++) {
         var _w    = _words[_i];
@@ -6854,6 +7411,8 @@ function ui_draw_log_line(x, y, str, max_w) {
             _col = _COL_MISS;
         } else if (_core == "dodge" || _core == "dodged" || _core == "dodges") {
             _col = _COL_DODGE;
+        } else if (_emk[_i]) {
+            _col = _COL_ENEMY;
         } else if (log_word_school(_core) != "" && !log_word_enemy_masked(_words, _i)) {
             _col = school_color(log_word_school(_core));
         } else if (_core == "gold" || log_word_is_goldnum(_core)) {
@@ -6968,13 +7527,12 @@ function ui_draw_combat_log(x, y, width, height, log_array) {
     var line_h  = 29;
     var padding = 12;
 
-    // Background panel
+    // Background panel + the gothic frame every other combat box wears (M 08-13)
     draw_set_alpha(0.7);
     draw_set_color(make_color_rgb(15, 15, 25));
     draw_rectangle(x, y, x + width, y + height, false);
     draw_set_alpha(1.0);
-    draw_set_color(c_gray);
-    draw_rectangle(x, y, x + width, y + height, true);
+    ui_draw_gothic_frame(x, y, x + width, y + height, 22);
 
     var log_count = array_length(log_array);
     if (log_count == 0) return;
@@ -7648,160 +8206,71 @@ function ui_draw_sprite_contain(spr, subimg, x, y, w, h, alpha) {
     draw_sprite_part_ext(spr, subimg, 0, 0, _sw, _sh, _dx, _dy, _scale, _scale, c_white, alpha);
 }
 
-function ui_draw_ability_tooltip(x, anchor_bottom, ability, caster) {
-    var panel_w   = 480;
-    var padding   = 21;
-    var line_h    = 33;
-    var _ew       = panel_w - padding * 2;
+function ui_draw_ability_tooltip(x, anchor_bottom, ability, caster, panel_width = 480) {
+    // ROUND 8 REBUILD (M: "match its height to the combat text box"): FIXED
+    // BAND geometry - the card occupies exactly the log's vertical band
+    // (210px tall, bottom at anchor_bottom), and the WIDTH absorbs what the
+    // old height held: cost/class/AoE share one line, damage+hit another.
+    var panel_w = panel_width;
+    var panel_h = 198;   // matches the combat log band exactly (top y747)
+    var padding = 18;
+    var line_h  = 30;
+    var _py     = anchor_bottom - panel_h;
+    var _ew     = panel_w - padding * 2;
 
-    // Body font drives string_height_ext sizing below; the name line overrides to
-    // fnt_ui then restores. line_h (33) exceeds both fonts' line heights so the
-    // measured/ drawn heights stay consistent.
+    // DETONATOR hover-explain (M 08-13: "detonator as a key word in
+    // descriptions should be hoverable with a popup explanation"): hovering
+    // the card of any detonator ability queues the full reaction table into
+    // the shared status-tip slot (drawn topmost after the HUD).
+    if (ability_is_detonator(ability)) {
+        var _dmx = device_mouse_x_to_gui(0), _dmy = device_mouse_y_to_gui(0);
+        if (_dmx >= x && _dmx <= x + panel_w && _dmy >= _py && _dmy <= anchor_bottom) {
+            global.combat_status_tip = { x: _dmx, y: _dmy, se: {
+                name: "DETONATOR", color: make_color_rgb(255, 200, 90), duration: 0, dur_noun: "",
+                desc: "Detonators REACT with the target's strongest status on hit: Bleed bursts (+5 per remaining tick, consumed), Chill SHATTERS (+30%), Burn grants +40% crit, Stun guarantees the crit, Blind cannot miss, Poison spreads Mortality, Void heals you, Shock arcs to the others. Hexed targets take DOUBLED reactions." } };
+        }
+    }
+
     draw_set_font(fnt_ui_small);
+    draw_set_halign(fa_left);
+    draw_set_valign(fa_top);
 
-    // --- Pre-compute the variable-content lines so the panel can be sized to fit
-    //     exactly and anchored by its bottom edge (see header). Mirror these flags
-    //     in the height sum and the body draw so all three stay consistent. ---
+    // ---- Content strings, computed up front ----
     var _ac_lbl  = ability_attack_class_label(ability_attack_class(ability));
-    // Element school prefix (SYSTEMS_ELEMENT_SCHOOLS.md §E): "Fire - Ranged Spell".
     var _sch_lbl = school_label(ability_school(ability));
     var _class_line = (_sch_lbl != "" && _ac_lbl != "") ? (_sch_lbl + " - " + _ac_lbl)
                     : (_sch_lbl != "" ? _sch_lbl : _ac_lbl);
     var _is_aoe  = variable_struct_exists(ability, "is_aoe") && ability.is_aoe;
     var _has_dmg = variable_struct_exists(ability, "base_damage") && ability.base_damage > 0;
 
-    var effect_str = ability_effect_full(ability);
-    var _ac_tag = ability_attack_class_tag(ability);
-    if (_ac_tag != "") effect_str = (effect_str != "") ? (effect_str + " " + _ac_tag) : _ac_tag;
-    var _has_effect = (effect_str != "");
-    var _effect_h   = _has_effect ? (string_height_ext(effect_str, line_h, _ew) + 4) : 0;
-
-    // Sum heights in the SAME order the body draws them.
-    var panel_h = padding;                 // top pad
-    panel_h += line_h + 4;                  // name
-    panel_h += line_h;                      // AP / resource cost
-    if (_class_line != "") panel_h += line_h;  // school - attack-class label
-    if (_is_aoe)       panel_h += line_h;   // AoE indicator
-    panel_h += line_h / 2;                  // blank gap
-    if (_has_dmg)      panel_h += line_h;   // damage
-    panel_h += _effect_h;                   // effect description (wrapped)
-    panel_h += line_h;                      // accuracy / always-hits
-    panel_h += line_h;                      // [V] details hint
-    panel_h += padding;                     // bottom pad
-
-    var _py   = anchor_bottom - panel_h;    // bottom-anchored: grows upward
-    var cur_y = _py + padding;
-
-    // --- Panel background and border ---
-    draw_set_alpha(0.92);
-    draw_set_color(make_color_rgb(20, 25, 40));
-    draw_rectangle(x, _py, x + panel_w, _py + panel_h, false);
-    draw_set_alpha(1.0);
-    draw_set_color(make_color_rgb(80, 120, 160));
-    draw_rectangle(x, _py, x + panel_w, _py + panel_h, true);
-    ui_draw_gothic_frame(x, _py, x + panel_w, _py + panel_h);   // ornate gothic border
-
-    var tx = x + padding;
-
-    // --- Ability icon in the top-right corner of the panel ---
-    draw_set_alpha(1.0);
-    ui_draw_ability_icon(x + panel_w - padding - 54, _py + padding, 54, ability);
-
-    // --- Line 1: Ability name (fake bold) ---
-    draw_set_font(fnt_ui);
-    draw_set_halign(fa_left);
-    draw_set_valign(fa_top);
-    draw_set_color(make_color_rgb(40, 50, 70));
-    draw_text(tx + 2, cur_y + 2, ability.name);
-    draw_set_color(c_white);
-    draw_text(tx, cur_y, ability.name);
-    draw_set_font(fnt_ui_small);
-    cur_y += line_h + 4;
-
-    // --- Line 2: AP cost + secondary resource cost ---
     var cost_str = "AP: " + string(ability.energy_cost);
     if (variable_struct_exists(ability, "secondary_cost") && ability.secondary_cost > 0) {
         var sec_label = "Resource";
-        if (variable_struct_exists(caster, "souls")) {
-            sec_label = "Souls";
-        } else if (variable_struct_exists(caster, "blood")) {
-            sec_label = "Blood";
-        } else if (variable_struct_exists(caster, "preparation")) {
-            sec_label = "Prep";
-        }
-        // Trunk discounts (P2, 08-05): show the EFFECTIVE cost the spend will take.
+        if (variable_struct_exists(caster, "souls"))            sec_label = "Souls";
+        else if (variable_struct_exists(caster, "blood"))       sec_label = "Blood";
+        else if (variable_struct_exists(caster, "preparation")) sec_label = "Prep";
         cost_str += " | " + sec_label + ": " + string(ability_secondary_cost_eff(ability, caster));
     }
-    draw_set_color(c_yellow);
-    draw_text(tx, cur_y, cost_str);
-    cur_y += line_h;
 
-    // --- School - Attack class (melee/ranged x attack/spell) - drives root/silence ---
-    if (_class_line != "") {
-        draw_set_color(make_color_rgb(150, 175, 210));
-        draw_text(tx, cur_y, _class_line);
-        cur_y += line_h;
-    }
-
-    // --- AoE targeting indicator ---
-    if (_is_aoe) {
-        if (trait_active("Focused Power")) {
-            draw_set_color(make_color_rgb(255, 150, 60));
-            draw_text(tx, cur_y, "Targets: SELECTED (Focused Power +50%)");
-        } else {
-            draw_set_color(make_color_rgb(255, 120, 120));
-            draw_text(tx, cur_y, "Targets: ALL enemies");
-        }
-        cur_y += line_h;
-    }
-
-    // --- Line 3: Blank gap ---
-    cur_y += line_h / 2;
-
-    // --- Line 4: Damage ---
+    var _dmg_str = "";
     if (_has_dmg) {
         var dmg_type_str = "physical";
         if (variable_struct_exists(ability, "damage_type")) {
-            if (ability.damage_type == 1) {
-                dmg_type_str = "elemental";
-            } else if (ability.damage_type == 3) {
-                dmg_type_str = "blood";
-            } else if (ability.damage_type == 2) {
-                dmg_type_str = "drain";
-            }
+            if (ability.damage_type == 1)      dmg_type_str = "elemental";
+            else if (ability.damage_type == 3) dmg_type_str = "blood";
+            else if (ability.damage_type == 2) dmg_type_str = "drain";
         }
-        draw_set_color(c_white);
-        draw_text(tx, cur_y, "Damage: " + string(ability.base_damage) + " (" + dmg_type_str + ")");
-        cur_y += line_h;
+        _dmg_str = "Damage: " + string(ability.base_damage) + " (" + dmg_type_str + ")";
     }
 
-    // --- Line 5: Effect description ---
-    // Generated from the ability's live fields (ability_effect_full, computed at the
-    // top with the attack-class tag appended), so the text auto-updates with
-    // progression instead of being hand-written per ability.
-    if (_has_effect) {
-        draw_set_color(c_white);
-        draw_text_ext(tx, cur_y, effect_str, line_h, _ew);
-        cur_y += string_height_ext(effect_str, line_h, _ew) + 4;
-    }
-
-    // --- Line 6: Guaranteed hit indicator ---
-    if (variable_struct_exists(ability, "guaranteed_hit") && ability.guaranteed_hit) {
-        draw_set_color(c_lime);
-        draw_text(tx, cur_y, "Always hits");
-
-    // --- Line 7: Hit chance (only when not guaranteed) ---
-    } else {
-        // Stage 1 = accuracy to connect, EXACTLY as combat_roll_hit receives it (scr_combat):
-        // ability base accuracy + the caster's curved ACC_modifier (caster.acc), minus blind,
-        // plus ranged-rune accuracy; clamped 5..99. The OLD display used a linear DEX*3 that
-        // massively overstated it (e.g. 95% shown vs ~82% real for a low-DEX caster).
+    // Hit chance / always-hits (same math as before - stage1 accuracy, then
+    // the selected target's dodge).
+    var _hit_str = "Always hits";
+    var _hit_col = c_lime;
+    if (!(variable_struct_exists(ability, "guaranteed_hit") && ability.guaranteed_hit)) {
         var _acc_bonus = variable_struct_exists(caster, "acc") ? caster.acc : 0;
         var _blind_pen = round(combat_status_max(caster, "blind") * 100);
         var _stage1 = clamp(ability.base_acc + _acc_bonus - _blind_pen + rune_aspect_ranged_acc(ability), 5, 99);
-        // Stage 2 = the target then rolls its DODGE to evade a connecting hit, so the REAL
-        // chance to land vs the selected enemy is stage1 * (1 - dodge). Look up that enemy's
-        // dodge from the combat controller (this tooltip is combat-only).
         var _tgt_dodge = 0;
         if (instance_exists(obj_combat_controller)) {
             var _cc_tip = instance_find(obj_combat_controller, 0);
@@ -7817,19 +8286,98 @@ function ui_draw_ability_tooltip(x, anchor_bottom, ability, caster) {
             }
         }
         var _net = round(_stage1 * (1 - _tgt_dodge / 100));
-        draw_set_color(c_ltgray);
-        if (_tgt_dodge > 0) {
-            draw_text(tx, cur_y, "Hit: " + string(_net) + "%  (Acc " + string(_stage1) + "% - Dodge " + string(_tgt_dodge) + "%)");
+        _hit_str = (_tgt_dodge > 0)
+            ? ("Hit: " + string(_net) + "%  (Acc " + string(_stage1) + "% - Dodge " + string(_tgt_dodge) + "%)")
+            : ("Hit: " + string(_stage1) + "%");
+        _hit_col = c_ltgray;
+    }
+
+    var effect_str = ability_effect_full(ability);
+    var _ac_tag = ability_attack_class_tag(ability);
+    if (_ac_tag != "") effect_str = (effect_str != "") ? (effect_str + " " + _ac_tag) : _ac_tag;
+
+    // ---- Panel ----
+    draw_set_alpha(0.92);
+    draw_set_color(make_color_rgb(20, 25, 40));
+    draw_rectangle(x, _py, x + panel_w, _py + panel_h, false);
+    draw_set_alpha(1.0);
+    draw_set_color(make_color_rgb(80, 120, 160));
+    draw_rectangle(x, _py, x + panel_w, _py + panel_h, true);
+    ui_draw_gothic_frame(x, _py, x + panel_w, _py + panel_h);
+
+    var tx    = x + padding;
+    var cur_y = _py + 14;
+
+    // Icon, top-right.
+    ui_draw_ability_icon(x + panel_w - padding - 48, _py + 14, 48, ability);
+
+    // Row 1: name (fake bold).
+    draw_set_font(fnt_ui);
+    draw_set_color(make_color_rgb(40, 50, 70));
+    draw_text(tx + 2, cur_y + 2, ability.name);
+    draw_set_color(c_white);
+    draw_text(tx, cur_y, ability.name);
+    draw_set_font(fnt_ui_small);
+    cur_y += 38;
+
+    // Row 2: cost | school-class | AoE - one line, segment-colored.
+    var _r2x = tx;
+    draw_set_color(c_yellow);
+    draw_text(_r2x, cur_y, cost_str);
+    _r2x += string_width(cost_str);
+    if (_class_line != "") {
+        draw_set_color(make_color_rgb(150, 175, 210));
+        draw_text(_r2x, cur_y, "   |   " + _class_line);
+        _r2x += string_width("   |   " + _class_line);
+    }
+    if (_is_aoe) {
+        if (trait_active("Focused Power")) {
+            draw_set_color(make_color_rgb(255, 150, 60));
+            draw_text(_r2x, cur_y, "   |   Targets: SELECTED (Focused Power +50%)");
         } else {
-            draw_text(tx, cur_y, "Hit: " + string(_stage1) + "%");
+            draw_set_color(make_color_rgb(255, 120, 120));
+            draw_text(_r2x, cur_y, "   |   Targets: ALL enemies");
         }
     }
     cur_y += line_h;
 
-    // --- Footer hint: V opens the full ability breakdown (mirrors the Tab popup on
-    //     the loadout / Vex screens; Tab is the target-cycle key in combat). ---
+    // Row 3: damage | hit - one line.
+    var _r3x = tx;
+    if (_dmg_str != "") {
+        draw_set_color(c_white);
+        draw_text(_r3x, cur_y, _dmg_str);
+        _r3x += string_width(_dmg_str);
+        draw_set_color(_hit_col);
+        draw_text(_r3x, cur_y, "   |   " + _hit_str);
+    } else {
+        draw_set_color(_hit_col);
+        draw_text(_r3x, cur_y, _hit_str);
+    }
+    cur_y += line_h + 4;
+
+    // Effect text: wrapped into the remaining band, truncated with "..." if it
+    // would spill past the footer ([V] carries the full breakdown).
+    var _eff_bottom = _py + panel_h - padding - 26;
+    if (effect_str != "") {
+        var _fit_str = effect_str;
+        var _guard = 0;
+        while (string_height_ext(_fit_str, 26, _ew) > (_eff_bottom - cur_y) && _guard < 60) {
+            var _cut = string_length(_fit_str);
+            var _sp  = 0;
+            for (var _ci = _cut; _ci >= 1; _ci--) {
+                if (string_char_at(_fit_str, _ci) == " ") { _sp = _ci; break; }
+            }
+            if (_sp <= 1) break;
+            _fit_str = string_copy(_fit_str, 1, _sp - 1) + "...";
+            _guard++;
+        }
+        draw_set_color(c_white);
+        draw_text_ext(tx, cur_y, _fit_str, 26, _ew);
+    }
+
+    // Footer hint, pinned to the band's bottom.
     draw_set_color(make_color_rgb(150, 160, 190));
-    draw_text(tx, cur_y, (input_device() == 2) ? "Hold an ability to examine" : "[V] Ability details");
+    draw_text(tx, _py + panel_h - padding - 22, (input_device() == 2) ? "Hold an ability to examine" : "[V] Ability details");
 
     draw_set_font(-1);
     draw_set_halign(fa_left);
@@ -8066,11 +8614,60 @@ function ui_draw_pause_menu() {
 }
 
 // ---------------------------------------------------------------------------
+// Coach-mark body keyword palette (M 08-13: "color coding certain words makes
+// it easier to read" - the forge tips were walls of one-color text). Rules:
+// [K] key chips cyan, rarity names their loot colors, gold/dust their resource
+// colors, ALL-CAPS mechanic words (SMELT, CRAFT, TEMPER...) the title gold.
+// Returns -1 for "keep the base body color".
+// ---------------------------------------------------------------------------
+function __ui_tip_word_color(_w) {
+    var _core = string_lower(string_trim_punct_log(_w));
+    if (string_length(_w) >= 3 && string_char_at(_w, 1) == "[") return make_color_rgb(110, 200, 220);
+    if (_core == "common")    return make_color_rgb(165, 170, 180);
+    if (_core == "uncommon")  return make_color_rgb(100, 205, 100);
+    if (_core == "rare")      return make_color_rgb( 90, 155, 235);
+    if (_core == "epic" || _core == "epics") return make_color_rgb(190, 110, 235);
+    if (_core == "legendary" || _core == "legendaries") return make_color_rgb(235, 150, 60);
+    if (_core == "gold")      return make_color_rgb(240, 200, 70);
+    if (_core == "dust" || _core == "rune") return make_color_rgb(90, 195, 185);
+    var _st = string_trim_punct_log(_w);
+    if (string_length(_st) >= 2 && _st == string_upper(_st) && _st != string_lower(_st))
+        return make_color_rgb(228, 200, 130);
+    return -1;
+}
+
+// ui_tip_wrap_lines(txt, wrap_w) - word-wraps to the CURRENT font, honoring
+// explicit \n. Returns [{words:[...], w:pixel_width}] so the tip box can size
+// itself and center each line. Shared by measure + draw so they never drift.
+function ui_tip_wrap_lines(_txt, _wrap_w) {
+    var _lines = [];
+    var _sp_w  = string_width(" ");
+    var _paras = string_split(_txt, "\n");
+    for (var _p = 0; _p < array_length(_paras); _p++) {
+        var _words = string_split(_paras[_p], " ");
+        var _cur = []; var _cw = 0;
+        for (var _i = 0; _i < array_length(_words); _i++) {
+            if (_words[_i] == "") continue;
+            var _ww = string_width(_words[_i]);
+            var _add = (_cw == 0) ? _ww : _cw + _sp_w + _ww;
+            if (_cw > 0 && _add > _wrap_w) {
+                array_push(_lines, { words: _cur, w: _cw });
+                _cur = [_words[_i]]; _cw = _ww;
+            } else {
+                array_push(_cur, _words[_i]); _cw = _add;
+            }
+        }
+        array_push(_lines, { words: _cur, w: _cw });
+    }
+    return _lines;
+}
+
+// ---------------------------------------------------------------------------
 // ui_draw_tutorial_tip() - contextual onboarding coach-mark (see
 // SYSTEMS_ONBOARDING.md). Draws a dimmed backdrop + a gothic-framed tip box for
-// global.tutorial_active. Body is width-constrained (draw_text_ext) so it can't
-// overflow the box; box height adapts to the body. No-op when no tip is active.
-// Call LAST in a surface's Draw so it sits on top; input handled by tutorial_dismiss.
+// global.tutorial_active. Body wraps to the box and tints key words (see
+// __ui_tip_word_color); box height adapts to the body. No-op when no tip is
+// active. Call LAST in a surface's Draw so it sits on top.
 // ---------------------------------------------------------------------------
 function ui_draw_tutorial_tip() {
     if (!tutorial_is_active()) return;
@@ -8089,9 +8686,12 @@ function ui_draw_tutorial_tip() {
     draw_set_halign(fa_center);
     draw_set_valign(fa_top);
 
-    // Size the box to the wrapped body so long tips never overflow.
+    // Size the box to the wrapped body so long tips never overflow. The wrap
+    // math is shared with the draw loop below (ui_tip_wrap_lines).
     draw_set_font(fnt_ui);
-    var _body_h = string_height_ext(_t.body, -1, _wrap);
+    var _tls = ui_tip_wrap_lines(_t.body, _wrap);
+    var _tlh = string_height("Ay") + 4;
+    var _body_h = array_length(_tls) * _tlh;
     var _bh = 108 + _body_h + 78;    // title band + body + footer band
     var _bx = GUI_CX - _bw / 2;
     var _by = GUI_CY - _bh / 2;
@@ -8109,10 +8709,23 @@ function ui_draw_tutorial_tip() {
     draw_set_color(make_color_rgb(70, 64, 48));
     draw_line(_bx + 45, _by + 90, _bx + _bw - 45, _by + 90);
 
-    // Body - wrapped + centered inside the box
+    // Body - wrapped, centered, keyword-tinted (M 08-13 readability pass).
     draw_set_font(fnt_ui);
-    draw_set_color(make_color_rgb(205, 210, 222));
-    draw_text_ext(GUI_CX, _by + 111, _t.body, -1, _wrap);
+    draw_set_halign(fa_left);
+    var _tip_base = make_color_rgb(205, 210, 222);
+    var _tip_spw  = string_width(" ");
+    for (var _tl = 0; _tl < array_length(_tls); _tl++) {
+        var _ln = _tls[_tl];
+        var _wx = GUI_CX - _ln.w / 2;
+        var _wy = _by + 111 + _tl * _tlh;
+        for (var _twi = 0; _twi < array_length(_ln.words); _twi++) {
+            var _twc = __ui_tip_word_color(_ln.words[_twi]);
+            draw_set_color((_twc == -1) ? _tip_base : _twc);
+            draw_text(_wx, _wy, _ln.words[_twi]);
+            _wx += string_width(_ln.words[_twi]) + _tip_spw;
+        }
+    }
+    draw_set_halign(fa_center);
 
     // Footer hint
     draw_set_font(fnt_ui_small);
@@ -8530,6 +9143,16 @@ function ui_draw_settings_overlay() {
 // the HUD so the combat controller can draw it AFTER the battler sprites, keeping
 // combat text on top of the sprites/shadows (text always has visual priority).
 function ui_draw_combat_overlay(combat_state, player, ability_array, selected_ability_index, log_array) {
+    // --- Ability tooltip (lower-right), deferred here from the HUD pass
+    // (08-13, M shot): drawn AFTER the battler sprites so a near-station 2.5D
+    // enemy can never stand on top of the card. Round 7 (M): WIDER + SHORTER -
+    // it fills the gap beside the combat log (x1220-1890) and the extra width
+    // means less wrapping, so it hugs the log's vertical band instead of
+    // towering over the scene. Still bottom-anchored y945, grows upward.
+    if (selected_ability_index >= 0 && selected_ability_index < array_length(ability_array)) {
+        ui_draw_ability_tooltip(1220, 945, ability_array[selected_ability_index], player, 670);
+    }
+
     // --- Ability hit preview (flashing, in the open band above the combat log) ---
     if (instance_exists(obj_combat_controller)) {
         var _cc_pv = instance_find(obj_combat_controller, 0);
@@ -8583,7 +9206,7 @@ function ui_draw_combat_overlay(combat_state, player, ability_array, selected_ab
                         _det_h = 10 + 24 + string_height_ext(_det_txt, 22, _tw);
                     }
                     var _box_h = _pad + 24 + 48 + 26 + _det_h + _pad;
-                    var _box_y = 729 - _box_h;   // bottom ~6px above the log (y735)
+                    var _box_y = 741 - _box_h;   // bottom ~6px above the log (y747)
 
                     draw_set_alpha(0.85);
                     draw_set_color(make_color_rgb(18, 16, 22));
@@ -8641,7 +9264,10 @@ function ui_draw_combat_overlay(combat_state, player, ability_array, selected_ab
     }
 
     // --- Combat log (bottom strip) ---
-    ui_draw_combat_log(30, 735, 1170, 210, log_array);
+    // M 08-13: 210px held 6 rows + 12px of dead space (a 7th row never fit).
+    // 198 = padding + exactly 6 rows - the whole band drops 12px, and the
+    // stage above gains the room (PD box + ability card follow).
+    ui_draw_combat_log(30, 747, 1170, 198, log_array);
 
     // --- Telegraph warning - drawn AFTER the log so it always sits on top,
     // centered and parked just above the log panel (log top = y735).
@@ -8746,20 +9372,23 @@ function ui_draw_combat_hud(combat_state, player, ability_array, selected_abilit
     var _hud_pet      = pet_active();
     var _hud_pet_show = (_hud_pet != undefined && !_hud_pet.is_egg);
     if (_hud_pet_show) {
-        ui_draw_hp_bar(30, 234, 280, 26, pet_hp(_hud_pet), pet_max_hp(_hud_pet), "PET");
+        // Round 11 (M: "debuffs and buffs look like theyre below pet bar and
+        // thus affecting pets"): the PET bar moved DOWN to y290 so the buff/
+        // debuff row (y222) sits directly under the player's own block.
+        ui_draw_hp_bar(30, 290, 280, 26, pet_hp(_hud_pet), pet_max_hp(_hud_pet), "PET");
         if (_hud_pet.archetype == PET_ARCH_COMBATANT && pet_stance(_hud_pet) == "guarded") {
             draw_set_font(fnt_ui_small);
             draw_set_halign(fa_left);
             draw_set_valign(fa_middle);
             if (pet_hp(_hud_pet) <= 0) {
                 draw_set_color(make_color_rgb(230, 95, 85));
-                draw_text(322, 248, "DOWN");
+                draw_text(322, 304, "DOWN");
             } else if (pet_guard_off(_hud_pet)) {
                 draw_set_color(make_color_rgb(150, 156, 175));
-                draw_text(322, 248, "CALLED OFF  [G]");
+                draw_text(322, 304, "CALLED OFF  [G]");
             } else {
                 draw_set_color(make_color_rgb(140, 205, 150));
-                draw_text(322, 248, "GUARDING  [G]");
+                draw_text(322, 304, "GUARDING  [G]");
             }
             draw_set_valign(fa_top);
             draw_set_font(-1);
@@ -8856,6 +9485,23 @@ function ui_draw_combat_hud(combat_state, player, ability_array, selected_abilit
                   desc: "Shadow Step: a chance to dodge each of your next incoming attacks." }
         });
     }
+    // The Arcanist's standing summon (class pass 08-13): reads as a buff with
+    // its turns left; the hover explains the eat/detonate contract.
+    if (variable_struct_exists(player, "summon") && is_struct(player.summon)) {
+        var _smb = player.summon;
+        var _smb_col = (_smb.kind == "golem") ? make_color_rgb(225, 120, 45)
+                     : ((_smb.kind == "husk") ? make_color_rgb(230, 210, 70) : make_color_rgb(150, 130, 220));
+        array_push(_pbuffs, {
+            label:    (_smb.kind == "golem") ? "GLM" : ((_smb.kind == "husk") ? "HSK" : "EFG"),
+            color:    _smb_col,
+            duration: _smb.turns,
+            se: { name: _smb.name, color: _smb_col, duration: _smb.turns, dur_noun: "turn",
+                  desc: _smb.name + ": stands between you and them - eats "
+                      + string(_smb.hits) + " more hit" + ((_smb.hits == 1) ? "" : "s")
+                      + " meant for you. Press its button again to DETONATE."
+                      + ((_smb.kind == "husk") ? " While it stands: +15% crit on Shock/Arcane casts." : "") }
+        });
+    }
     // Deployed traps read as buffs, exactly like SS (M 08-08): they ARE a
     // player-side timer, and the buff row is where the player already looks for
     // "what is currently true about me". The duration slot shows CHARGES, since
@@ -8882,24 +9528,26 @@ function ui_draw_combat_hud(combat_state, player, ability_array, selected_abilit
         var _pstat = status_icons_from(player.status_effects);
         for (var _psi = 0; _psi < array_length(_pstat); _psi++) array_push(_pbuffs, _pstat[_psi]);
     }
-    // Rows below the level block slide down by the pet bar's height when it's shown
-    // (constant for a whole combat - the active pet can't change mid-fight).
-    var _hud_shift = _hud_pet_show ? 54 : 0;
+    // Round 11 layout (M: buffs under the pet bar read as PET effects): the
+    // buff/debuff row now sits at y222, DIRECTLY under the player's level
+    // block - unmistakably his. The PET bar moved below it (y290) and the
+    // trap/boon/curse stacks follow underneath.
     if (array_length(_pbuffs) > 0) {
-        ui_draw_status_icon_row(30, 222 + _hud_shift, _pbuffs);
+        ui_draw_status_icon_row(30, 222, _pbuffs);
     }
+    var _hud_shift = _hud_pet_show ? 56 : 0;
 
-    // --- Deployed-trap reminder (M 08-08: left-hand side, below the buff row) ---
+    // --- Deployed-trap reminder (M 08-08: left-hand side, below the pet bar) ---
     // Returns the height it used so boons and curses slide down by exactly that
     // much - the trap block never overlaps them and never leaves a hole when the
     // board is empty.
-    var _trap_h = ui_draw_trap_info(player, 30, 278 + _hud_shift, combat_state);
+    var _trap_h = ui_draw_trap_info(player, 30, 290 + _hud_shift, combat_state);
 
-    // --- Active run boons + curses (left column, below the per-combat buff row) ---
+    // --- Active run boons + curses (left column, below the trap block) ---
     // Boons occupy a header (24px) + 27px per entry; stack curses just beneath them.
-    ui_draw_active_boons(30, 278 + _hud_shift + _trap_h);
+    ui_draw_active_boons(30, 290 + _hud_shift + _trap_h);
     var _boon_n = variable_global_exists("run_boons") ? array_length(global.run_boons) : 0;
-    var _curse_y = 278 + _hud_shift + _trap_h + ((_boon_n > 0) ? (24 + 27 * _boon_n + 12) : 0);
+    var _curse_y = 290 + _hud_shift + _trap_h + ((_boon_n > 0) ? (24 + 27 * _boon_n + 12) : 0);
     ui_draw_active_curses(30, _curse_y);
 
     // --- Ability buttons (bottom-center) ---
@@ -8913,14 +9561,9 @@ function ui_draw_combat_hud(combat_state, player, ability_array, selected_abilit
         ui_draw_combat_overlay(combat_state, player, ability_array, selected_ability_index, log_array);
     }
 
-    // --- Ability tooltip (lower-right) ---
-    // Bottom-anchored at y945 (a 45px gap above the ability button row + C/Items
-    // button, both at y990+) and sized to its content, growing UPWARD. This keeps
-    // the wrapped effect text well clear of the Poison Dart (x1248-1488) button, no
-    // matter how long the description. Left edge x1410 (width 480 => right edge
-    // x1890), right of the combat log (x<=1200).
-    var _sel_ab = ability_array[selected_ability_index];
-    ui_draw_ability_tooltip(1410, 945, _sel_ab, player);
+    // --- Ability tooltip: MOVED to ui_draw_combat_overlay (08-13, M shot: a
+    // near-station 2.5D enemy stood on top of the card - it must draw AFTER
+    // the battler sprites, same deferral as the combat log). ---
 
     // NOTE: Target selection indicator (">") is drawn in Draw_64.gml alongside
     // the enemy HP bars - it needs selected_target from obj_combat_controller
@@ -14553,7 +15196,8 @@ function ui_draw_trainer_screen() {
     if (variable_instance_exists(_gc, "vex_detail_open") && _gc.vex_detail_open) {
         if (_gc.trainer_tab == 2) {
             var _vd_ap = class_vex_purchasable(_class_id);
-            if (_gc.trainer_cursor < array_length(_vd_ap)) ui_draw_ability_detail(_vd_ap[_gc.trainer_cursor]);
+            if (_gc.trainer_cursor < array_length(_vd_ap)) ui_draw_ability_detail(_vd_ap[_gc.trainer_cursor], "Tab",
+                variable_instance_exists(_gc, "vex_detail_scroll") ? _gc.vex_detail_scroll : 0);
         } else if (_gc.trainer_tab == 3) {
             var _vd_tp = trait_vex_purchasable(_class_id);
             if (_gc.trainer_cursor < array_length(_vd_tp)) ui_draw_trait_detail(_vd_tp[_gc.trainer_cursor]);
@@ -17711,9 +18355,11 @@ function ui_draw_stats_tour() {
         { r: [522, 870, 1196, 982],  cx: 60,   cy: 690,
           t: "Fortune",
           b: "Gold Find boosts every coin you pick up; Loot Find raises the chance enemies drop equipment at all. Gear affixes, charisma, companions, potions and traits all feed these numbers." },
+        // Copy rewritten 08-13 (M shot: "bad incoherent ai language") - plain
+        // and concrete, like the other five steps.
         { r: [1212, 120, 1818, 1010], cx: 570, cy: 400,
           t: "Your character at a glance",
-          b: "The right column is the live summary: combat readiness, then every boon, curse and effect currently shaping this character. When a fight feels off, look here first." },
+          b: "The right column shows where you stand right now: your HP, dodge, accuracy and main crit, plus every boon, curse and status currently on you. If your numbers ever look wrong mid-run, check here first." },
     ];
     var _sd = _steps[_ts];
     var _hr = _sd.r;
@@ -17857,11 +18503,12 @@ function ui_draw_pattern_book(_gc) {
     draw_set_color(make_color_rgb(255, 225, 150));
     draw_text(960, _y0 + 15, "THE PATTERN BOOK");
     pattern_book_ensure();
+    // Two authored lines (M 08-13: the old draw_text_ext wrap split "Art page:
+    // 0 icons unlocked" mid-phrase and read as rough text).
     draw_set_font(fnt_ui_small);
     draw_set_color(make_color_rgb(170, 160, 190));
-    draw_text_ext(960, _y0 + 44, "Blueprints learned by SMELTING gear - tier I asks 3 studies, II asks 4 more from Rare+, III asks 5 more from Epic+."
-        + "  Art page: " + string(array_length(global.pattern_book.art)) + " icon" + ((array_length(global.pattern_book.art) == 1) ? "" : "s") + " unlocked.",
-        24, 1240);
+    draw_text(960, _y0 + 44, "Blueprints learned by SMELTING gear - Tier I asks 3 studies, Tier II asks 4 more from Rare+, Tier III asks 5 more from Epic+.");
+    draw_text(960, _y0 + 70, "Art page: " + string(array_length(global.pattern_book.art)) + " icon" + ((array_length(global.pattern_book.art) == 1) ? "" : "s") + " unlocked.");
     draw_set_halign(fa_left);
 
     var _cat  = pattern_family_catalog();
@@ -17871,20 +18518,25 @@ function ui_draw_pattern_book(_gc) {
     var _row_y0 = _y0 + 108, _pitch = 56;
     var _mx = device_mouse_x_to_gui(0), _my = device_mouse_y_to_gui(0);
     var _mp = mouse_check_button_pressed(mb_left);
+    var _bk_cur = variable_instance_exists(_gc, "pb_book_cursor") ? _gc.pb_book_cursor : -1;
     for (var _i = _win0; _i < min(_n, _win0 + _vis); _i++) {
         var _e  = _cat[_i];
         var _ry = _row_y0 + (_i - _win0) * _pitch;
         var _tier = pattern_fam_tier(_e.stat_name);
-        draw_set_color(make_color_rgb(20, 20, 26));
+        var _is_cur = (_i == _bk_cur);
+        draw_set_color(_is_cur ? make_color_rgb(28, 36, 56) : make_color_rgb(20, 20, 26));
         draw_rectangle(_x0 + 20, _ry, _x1 - 40, _ry + _pitch - 6, false);
-        draw_set_color(make_color_rgb(48, 44, 40));
+        // Blue active-selection highlight (M 08-13), same idiom as every other
+        // key-navigated list in the game.
+        draw_set_color(_is_cur ? make_color_rgb(95, 145, 225) : make_color_rgb(48, 44, 40));
         draw_rectangle(_x0 + 20, _ry, _x1 - 40, _ry + _pitch - 6, true);
+        if (_is_cur) draw_rectangle(_x0 + 21, _ry + 1, _x1 - 41, _ry + _pitch - 7, true);
         draw_set_font(fnt_ui);
         draw_set_color((_tier > 0) ? c_white : make_color_rgb(110, 110, 125));
         draw_text(_x0 + 44, _ry + 10, _e.label);
         draw_set_font(fnt_ui_small);
         draw_set_color(make_color_rgb(130, 125, 150));
-        draw_text(_x0 + 420, _ry + 14, (_e.kind == "school") ? "caster affix (amulet/ring)" : "affix");
+        draw_text(_x0 + 420, _ry + 14, (_e.kind == "school") ? "Caster Affix (amulet/ring)" : "Stat Affix");
         ui_pb_pips(_x0 + 790, _ry + 16, _tier);
         draw_set_halign(fa_right);
         draw_set_color((_tier >= 3) ? make_color_rgb(230, 195, 120) : make_color_rgb(150, 150, 165));
@@ -18014,7 +18666,7 @@ function ui_draw_pattern_craft(_gc) {
         for (var _i2 = 0; _i2 < array_length(_sts); _i2++) {
             var _tb = pattern_fam_tier(_sts[_i2]);
             array_push(_rows, { label: _sts[_i2] + " +" + string(pattern_craft_base_val(_rar)),
-                right: (_tb >= 1) ? ("blueprint tier " + string(_tb)) : "not studied - smelt gear carrying it",
+                right: (_tb >= 1) ? ("Blueprint Tier " + string(_tb)) : "Not studied - smelt gear carrying it",
                 dim: (_tb < 1), icon: -1, picked: false });
         }
     } else if (_ph == 3) {
@@ -18153,7 +18805,7 @@ function ui_draw_pb_smelt(_gc) {
             _ok = _pv.ok;
         } else {
             _lb = "Just the ingot";
-            _rt = "no study";
+            _rt = "No study";
         }
         draw_set_color(_sel ? make_color_rgb(38, 32, 24) : make_color_rgb(20, 20, 26));
         draw_rectangle(_x0 + 30, _ry, _x1 - 30, _ry + 48, false);
@@ -18161,7 +18813,16 @@ function ui_draw_pb_smelt(_gc) {
         draw_rectangle(_x0 + 30, _ry, _x1 - 30, _ry + 48, true);
         draw_set_font(fnt_ui);
         draw_set_color(_ok ? c_white : make_color_rgb(120, 120, 135));
-        draw_text(_x0 + 50, _ry + 8, _lb);
+        draw_text(_x0 + 50, _ry + 3, _lb);
+        // What the family actually DOES (M 08-13: "youre just choosing the
+        // vernacular like 'insight' or 'ruin'") - grey subrow under the name.
+        var _fd = (_i < array_length(_fams)) ? pattern_family_desc(_fams[_i])
+                                             : "The ore alone - no blueprint study.";
+        if (_fd != "") {
+            draw_set_font(fnt_ui_small);
+            draw_set_color(make_color_rgb(128, 128, 148));
+            draw_text(_x0 + 50, _ry + 27, _fd);
+        }
         draw_set_halign(fa_right);
         draw_set_font(fnt_ui_small);
         draw_set_color(_ok ? make_color_rgb(150, 210, 160) : make_color_rgb(190, 120, 110));

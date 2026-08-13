@@ -616,10 +616,16 @@ if (showing_event) {
 // 6a2. THE WHETSTONE - run-scoped ability honing picker (combat plan v2 §C)
 // -----------------------------------------------------------------------------
 if (showing_whetstone) {
-    draw_set_alpha(0.95);
-    draw_set_color(c_black);
-    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
-    draw_set_alpha(1.0);
+    // Scene dressing (M 08-13: "the whetstone event rooms need a background
+    // scene setting"): the current dungeon's combat backdrop under a heavy
+    // scrim, so the stone sits IN the dungeon instead of floating in void.
+    // Falls back to the old near-black fill if the art isn't imported.
+    if (!dungeon_bg_draw("combat", 0.82)) {
+        draw_set_alpha(0.95);
+        draw_set_color(c_black);
+        draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
+        draw_set_alpha(1.0);
+    }
 
     var _wt_steel = make_color_rgb(150, 190, 210);
 
@@ -1347,7 +1353,10 @@ if (input_device() != 2) {
     draw_set_valign(fa_bottom);
 
     draw_set_color(c_gray);
-    draw_text(GUI_CX, 1073, "WASD / Arrow Keys: Move between rooms   Enter: Enter Room   P: Companion");
+    // M 08-13 (HTML5): the floor map never listed the menu keys - I/J were
+    // invisible controls. Only VERIFIED floor-map keys are listed (T/O are
+    // hub-only; advertising dead keys is worse than omitting them).
+    draw_text(GUI_CX, 1073, "WASD: Move   Enter: Enter Room   I: Hero   J: Journal   P: Companion");
 
     if (_boss_cleared) {
         draw_set_color(c_gray);
@@ -1497,6 +1506,43 @@ if (extract_confirm_open) {
         }
     } else {
         ui_draw_key_legend(960, 621, "Enter: Confirm      Esc / E: Cancel");
+    }
+    draw_set_halign(fa_left); draw_set_valign(fa_top);
+    draw_set_font(-1);
+}
+
+// -----------------------------------------------------------------------------
+// LEAVE-WITHOUT-CHOOSING CONFIRM (M 08-13) - same idiom as the confirms above.
+// Armed by the shrine / whetstone Esc paths; drawn last so it tops their
+// overlays. A stray Esc can no longer forfeit a one-per-run room.
+// -----------------------------------------------------------------------------
+if (leave_confirm_open) {
+    draw_set_alpha(0.65); draw_set_color(c_black);
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
+    draw_set_alpha(0.96); draw_set_color(make_color_rgb(30, 24, 16));
+    draw_rectangle(510, 380, 1410, 670, false);
+    draw_set_alpha(1.0); draw_set_color(make_color_rgb(200, 165, 90));
+    draw_rectangle(510, 380, 1410, 670, true);
+    draw_set_halign(fa_center); draw_set_valign(fa_top);
+    draw_set_font(fnt_ui);
+    draw_set_color(c_white);
+    draw_text(960, 413, "Leave without choosing?");
+    draw_set_font(fnt_ui_small);
+    draw_set_color(make_color_rgb(190, 195, 215));
+    draw_text_ext(960, 476, (leave_confirm_kind == "whetstone")
+        ? "The stone hones one edge per run - walk away now and it offers nothing.\nThis room will not open again."
+        : "The altar will not offer again this run.\nLeave now and its gifts are forfeit.", 30, 780);
+    draw_set_color(make_color_rgb(150, 160, 185));
+    if (input_device() == 2) {
+        draw_text(960, 601, "Tap here to leave - tap outside to stay");
+        if (mouse_check_button_pressed(mb_left)) {
+            var _lcmx = device_mouse_x_to_gui(0);
+            var _lcmy = device_mouse_y_to_gui(0);
+            if (_lcmx >= 510 && _lcmx <= 1410 && _lcmy >= 380 && _lcmy <= 670) input_inject("lvc:ok");
+            else                                                               input_inject("lvc:stay");
+        }
+    } else {
+        ui_draw_key_legend(960, 601, "Enter: Leave      Esc: Stay");
     }
     draw_set_halign(fa_left); draw_set_valign(fa_top);
     draw_set_font(-1);

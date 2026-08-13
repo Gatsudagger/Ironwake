@@ -540,6 +540,12 @@ shrine_celebrate_seed  = 0;    // varies the sparkle pattern per celebration
 escape_confirm_open = false;
 escape_confirm_idx  = -1;      // index into global.consumable_inventory
 
+// Leave-without-choosing confirm (M 08-13: "i accidentally left several event
+// rooms without selecting anything by bumping esc once"). Armed by the shrine
+// and whetstone Esc paths; the room only clears after an explicit second yes.
+leave_confirm_open = false;
+leave_confirm_kind = "";       // "shrine" | "whetstone" - names the popup copy
+
 // Extract confirm (#3): E on the idle floor map (boss cleared) opens a confirm
 // popup instead of extracting instantly - a stray E can't end the run anymore.
 extract_confirm_open = false;

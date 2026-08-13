@@ -1216,7 +1216,9 @@ function dungeon_bias_element() {
 // halves the elemental rider at the extreme (same rule as stat affixes).
 function roll_elemental_affix(rarity, bias_t = 0) {
     if (rarity < 1 || rarity > 3) return undefined;   // common/legendary: no rolled elem affix
-    if (irandom(99) >= 40) return undefined;          // ~40% chance
+    // M-locked 08-13 weapon rework: "too many weapons add elemental damage. it
+    // should be more rare" - 40% -> 15%, an elemental weapon is now a FIND.
+    if (irandom(99) >= 15) return undefined;
     var _elements = ["burn", "frost", "shock"];
     var _bias     = dungeon_bias_element();
     var _element;
@@ -1355,7 +1357,10 @@ function elem_affix_describe(elem, slot = "") {
         case "weaken":     _st = _pct + "% chance to Chill (foe -" + string(round(elem.status_value * 100)) + "% dmg, " + _dur + "t)"; break;
         case "vulnerable": _st = _pct + "% chance to Shock (foe +" + string(elem.status_value) + " dmg/hit, " + _dur + "t)"; break;
     }
-    return "+" + string(elem.dmg) + " " + school_label(elem_element_name(elem.element)) + " dmg on " + _reach + " hit. (" + _st + ")";
+    // M-locked 08-13 weapon rework: the affix fires on WEAPON ACTIONS (Strike /
+    // Weapon Strike / Weapon Shot) and Edge-Carried abilities - not every
+    // ability of the reach class. The text says so.
+    return "+" + string(elem.dmg) + " " + school_label(elem_element_name(elem.element)) + " dmg on " + _reach + " weapon strikes. (" + _st + ")";
 }
 
 // create_item(name, slot, rarity, stat_name, stat_value, effect_desc, gold_value)
@@ -2620,12 +2625,21 @@ function drop_weights(source, asc) {
         // pays in rarity - legendaries now exist outside bosses (2% mobs / 6% elites),
         // and an A5 standard mob is 36% rare-or-better (was 22%). A0 anchors and the
         // lerp are untouched, so every tier between scales smoothly.
+        // A0 anchors trimmed 08-13 (M: "3 rares by floor 2 on a very first A0
+        // run is way too much power creep"). Audit finding: loot weights are
+        // DUNGEON-AGNOSTIC (Scorched/Tundra = Vault at equal awakening) - the
+        // shower came from the reliquary (was 40% rare-or-better, guaranteed,
+        // 1+ per floor-2/3) and the floor-1 boss (was 25% rare+). Boss rare
+        // 21 -> 15, epic 3 -> 2, A0 legendary 1 -> 0 (floor folding still
+        // grants deep-floor bosses their epic/legendary shot); reliquary rare
+        // 32 -> 20, epic 7 -> 4, legendary 1 -> 0. A5 anchors untouched
+        // (BALANCE_NOTE C2, M-approved 07-09), so high tiers pay as before.
         case "standard":  _a0 = [90,  9,  1,  0, 0]; _a5 = [28, 36, 24, 10, 2]; break;
         case "elite":     _a0 = [72, 23,  5,  0, 0]; _a5 = [10, 30, 34, 20, 6]; break;
-        case "boss":      _a0 = [33, 42, 21,  3, 1]; _a5 = [ 0, 20, 38, 30, 12]; break;
+        case "boss":      _a0 = [40, 43, 15,  2, 0]; _a5 = [ 0, 20, 38, 30, 12]; break;
         case "chest":     _a0 = [80, 17,  3,  0, 0]; _a5 = [20, 36, 28, 13, 3]; break;
         case "vault":     _a0 = [70, 24,  5,  1, 0]; _a5 = [12, 32, 32, 18, 6]; break;
-        case "reliquary": _a0 = [ 0, 60, 32,  7, 1]; _a5 = [ 0, 25, 40, 28, 7]; break;
+        case "reliquary": _a0 = [ 0, 76, 20,  4, 0]; _a5 = [ 0, 25, 40, 28, 7]; break;
         case "dorn":      _a0 = [55, 38,  7,  0, 0]; _a5 = [10, 35, 35, 18, 2]; break;
         default:          _a0 = [90,  9,  1,  0, 0]; _a5 = [28, 36, 24, 10, 2]; break;
     }
@@ -2918,14 +2932,20 @@ function item_compare_rows(_a, _b) {
 function temper_step_size() { return 10; }
 
 // Gold per single POINT of quality, by rarity.
+// Retuned 08-13 (M: "140g to gain 5hp on an epic item when an epic item
+// outright costs about that makes no sense... rare and epic should have their
+// prices brought down much more"). Commons/uncommons kept (M: priced
+// correctly); rare 5 -> 2.5, epic 14 -> 6, legendary 34 -> 15 in proportion.
+// Per +10% step that is: 6 / 15 / 25 / 60 / 150 gold.
 function temper_gold_per_point(rarity) {
-    var _g = [0.6, 1.5, 5, 14, 34];
+    var _g = [0.6, 1.5, 2.5, 6, 15];
     return _g[clamp(rarity, 0, 4)];
 }
 
 // Rune dust per point - epic+ only. Commons/uncommons cost gold alone.
+// (Same 08-13 retune: epic 1.1 -> 0.7, legendary 2.6 -> 1.5 per point.)
 function temper_dust_per_point(rarity) {
-    var _d = [0, 0, 0, 1.1, 2.6];
+    var _d = [0, 0, 0, 0.7, 1.5];
     return _d[clamp(rarity, 0, 4)];
 }
 
@@ -8810,6 +8830,9 @@ function pet_run_complete(result) {
         }
         _p.stage += 1;
         _p.growth = 0;
+        // Journal form reveal (M 08-13): this species has now been SEEN at this
+        // stage - the Creatures tab may show the form.
+        if (variable_struct_exists(_p, "species")) compendium_stage_stamp(_p.species, _p.stage);
         if (_p.stage == PET_STAGE_ADULT) {
             // Raised pets CHOOSE their capstone at Bairc (flagged pending, no effect until
             // picked); found/wild creatures auto-roll one on the spot. See pet_capstone_*.
@@ -10234,6 +10257,8 @@ function bairc_garden_run_tick(result) {
         if (_r.gg >= _need) {
             _r.stage += 1;
             _r.gg = 0;
+            // Garden growth reveals journal forms too (M 08-13).
+            if (variable_struct_exists(_r, "species")) compendium_stage_stamp(_r.species, _r.stage);
             if (_grown == "") _grown = _r.name + " has grown into a " + pet_stage_name(_r.stage) + " in Bairc's garden.";
         }
     }
@@ -10495,7 +10520,34 @@ function pet_grant_starter() {
     for (var _i = 0; _i < array_length(_cat); _i++)
         if (pet_species_has_art(_cat[_i].id)) array_push(_arted, _cat[_i].id);
     var _species = (array_length(_arted) > 0) ? _arted[irandom(array_length(_arted) - 1)] : pet_species_random();
-    return pet_add(pet_make(_species, "egg_starter", -1, PET_STAGE_BABY, true));   // is_egg = true
+
+    // M 08-13: the extra-egg start twice produced two of the SAME species and
+    // the SAME role. Starter grants now dodge anything already in the roster -
+    // species always (bounded reroll), and role too whenever one is still free
+    // - so "start with an extra egg" is guaranteed to mean two DIFFERENT pets.
+    var _have_species = {};
+    var _have_arch    = [false, false, false];
+    if (variable_global_exists("pet_roster") && is_array(global.pet_roster)) {
+        for (var _r = 0; _r < array_length(global.pet_roster); _r++) {
+            var _rp = global.pet_roster[_r];
+            if (!is_struct(_rp)) continue;
+            if (variable_struct_exists(_rp, "species"))   variable_struct_set(_have_species, _rp.species, true);
+            if (variable_struct_exists(_rp, "archetype")) _have_arch[clamp(_rp.archetype, 0, 2)] = true;
+        }
+    }
+    var _tries = 0;
+    while (_tries < 60 && array_length(_arted) > 1
+        && variable_struct_exists(_have_species, _species)) {
+        _species = _arted[irandom(array_length(_arted) - 1)];
+        _tries++;
+    }
+    var _arch = irandom(2);
+    if (_have_arch[0] || _have_arch[1] || _have_arch[2]) {
+        var _free = [];
+        for (var _a = 0; _a < 3; _a++) if (!_have_arch[_a]) array_push(_free, _a);
+        if (array_length(_free) > 0) _arch = _free[irandom(array_length(_free) - 1)];
+    }
+    return pet_add(pet_make(_species, "egg_starter", _arch, PET_STAGE_BABY, true));   // is_egg = true
 }
 
 // --- Egg types (Pets §3): RNG egg design, each carrying a small permanent benefit that
@@ -10505,8 +10557,11 @@ function pet_egg_type_catalog() {
     return [
         { id:"gilded",  name:"Gilded Egg",   effect:"gold",   val:0.05, desc:"+5% gold while its hatchling is active." },
         { id:"fortune", name:"Fortune Egg",  effect:"loot",   val:5,    desc:"+5% loot find while its hatchling is active." },
-        { id:"savage",  name:"Savage Egg",   effect:"dmg",    val:0.05, desc:"+5% pet damage (no effect on Guardian pets)." },
-        { id:"tender",  name:"Tender Egg",   effect:"mend",   val:0.05, desc:"+5% pet heal & shield (no effect on Combatant pets)." },
+        // Descs corrected 08-13 (M screenshot: a Tender Egg on a FORTUNE pet
+        // claimed +5% heal & shield, but the bonus only reads in the Guardian
+        // branch - "no effect on Combatant" hid that Fortune got nothing too).
+        { id:"savage",  name:"Savage Egg",   effect:"dmg",    val:0.05, desc:"+5% pet damage (Warrior pets only)." },
+        { id:"tender",  name:"Tender Egg",   effect:"mend",   val:0.05, desc:"+5% pet heal & shield (Guardian pets only)." },
         // Expansion slate (§3): six more surprise egg designs, each a small permanent perk
         // carried by the hatchling while it is your active companion.
         { id:"vital",   name:"Vital Egg",    effect:"vit",    val:0.08, desc:"+8% max HP while its hatchling is active." },
@@ -10665,12 +10720,12 @@ function tutorial_catalog() {
         { id:"shrine",     title:"Altars",              body:"A shrine is an altar. A Blessing altar sells boons for tribute - prices scale with your Awakening, and once per shrine [R] rerolls the offer for rune dust. A Cursed altar lets you take on a curse - a run-long penalty - in exchange for far better spoils. Choose how greedy you dare to be." },
         { id:"gold_risk",  title:"Gold at Risk",        body:"Gold you FIND during a run is at risk - die and you lose most of it (a quarter is returned as mercy). Gold banked before the run is always safe at camp. The number in brackets on your HUD is what you're gambling: extract to keep it all." },
         { id:"escape_item", title:"A Way Out",          body:"You carry an escape item. On the floor map, press G (or tap the LAMP / WINE button) to use it: the Genie Lamp whisks you back to camp with ALL your loot, free. Devil Wine does the same - but drains 2 random stat points. WARNING: the Wine's toll is PERMANENT - those points are gone from your hero on every future run, not just this one. Cash out a greedy run before the dungeon takes it back." },
-        { id:"origin_egg",  title:"Something Stirs",    body:"You carry an unhatched EGG. Bairc the beast-warden can identify and hatch it - find him on the camp carousel and set the egg under his care. A raised creature fights beside you, or blesses your runs." },
+        { id:"origin_egg",  title:"Something Stirs",    body:"The egg you stumbled upon in your travels stirs - perhaps someone here can help with that. Bairc the beast-warden can identify and hatch it: find him on the camp carousel and set the egg under his care. A raised creature fights beside you, or blesses your runs." },
         { id:"bond_gates",  title:"Growing Closer",     body:"Someone in camp has warmed to you - their bond has reached a GATE. Crossing a gate now takes a FAVOR: talk to them and take on their gate quest (it appears on the tavern board and in your Journal). Finish it and the friendship deepens, unlocking their next perk. Mind your bonds: friendships DECAY if neglected, and only a few can hold the deepest tiers - deepening one may demote another." },
-        { id:"maren_forge", title:"Rough Steel",       body:"Every item now drops UNFINISHED - the [Quality %] tag on its stats shows how much of its true power it delivers. DORN'S TEMPER TAB works a piece +10% at a time toward 100%, for gold and rune dust, and each completed step also adds FINISH: flat max HP scaled by rarity. A raw legendary barely beats a finished epic - the smith is half of every item's story." },
+        { id:"maren_forge", title:"Rough Steel",       body:"Items drop UNFINISHED. The QUALITY tag shows how much of an item's true power it delivers right now.\nDorn's TEMPER tab raises that by +10% per step, for gold and rune dust. Each step also adds a little bonus max HP.\nA raw legendary barely beats a finished epic - always worth tempering what you love." },
         { id:"dormant_leg", title:"A Sleeping Legend", body:"You found a DORMANT legendary. It fell asleep when its last bearer died - it carries only a shadow of its true strength for now. Take it to Maren's AWAKEN craft (Forge tab): 300g, 60 rune dust and two epics fed to the fire will wake it. Only the storied named legendaries are ever found awake." },
-        { id:"dorn_reforge", title:"Reforge Ingots",   body:"You earned a REFORGE INGOT. Take unequipped gear to Dorn the Blacksmith and spend an ingot to REROLL its affixes - same item, same rarity, fresh random stats. Ingots are TIERED to rarity: a higher-tier ingot reworks any gear of its tier or below, so a Legendary ingot works on anything while a Common one only touches Common gear. Your ingot hoard shows at Dorn and in your Stash - and SMELTING gear at Dorn pays one too." },
-        { id:"legendary_forge", title:"Dorn's Forge",   body:"Two crafts live here. REWORK GEAR: spend a Reforge Ingot of the gear's tier (or higher) to reroll an item's affixes - and FUSE 3 ingots of one tier into 1 of the next tier when the low ones pile up. THE LEGENDARY FORGE: the camp's oldest craft asks three components - Dorn strikes the MYTHRIL FRAME (gold + a Legendary Ingot), Maren seals the RUNEHEART CORE, Sable distills the QUINTESSENCE. Bring all three back to Dorn to forge - and NAME - a legendary that exists nowhere else." },
+        { id:"dorn_reforge", title:"Reforge Ingots",   body:"You earned a REFORGE INGOT.\nSpend it at Dorn's to REROLL the affixes on a piece of unequipped gear - same item, fresh random stats.\nIngots are tiered by rarity. A higher-tier ingot works on anything at its tier or below.\nSMELTING gear at Dorn's pays an ingot back, so nothing is ever wasted." },
+        { id:"legendary_forge", title:"Dorn's Forge",   body:"Two crafts live at this anvil.\nREWORK: spend a REFORGE INGOT of the item's tier or higher to reroll its affixes. Three ingots of one tier FUSE into one of the next.\nTHE LEGENDARY FORGE: gather three parts - Dorn's MYTHRIL FRAME, Maren's RUNEHEART CORE, and Sable's QUINTESSENCE - then return here to forge, and NAME, a legendary that exists nowhere else." },
         // First talent point earned mid-run (M 08-08). The web system was
         // invisible until you happened to open the loadout and notice a badge -
         // this fires once, in the fight where the first point lands, and its whole
@@ -10683,7 +10738,7 @@ function tutorial_catalog() {
         { id:"corruption_101", title:"Corruption",      body:"A creature in your care is CORRUPTED. The bargain: while it pushes (3 survived runs as your active companion), YOU pay -20% max HP and -10% damage. Each pushed run adds a PERMANENT +15% to its passive gift. You may CURE it at Bairc's any time - the gains earned so far are kept, the burden lifts, but its grand power is forfeit. See it through all 3 runs and it fully corrupts: its gift is 45% stronger forever, the burden ends, and it earns a grand boon. The full table lives in the Compendium under Companions." },
         // Pattern Book (08-11): fires on the reforge tab once the Legendary
         // Forge coach-mark has been seen (one tutorial at a time).
-        { id:"pattern_book", title:"The Pattern Book", body:"Dorn keeps a PATTERN BOOK now. SMELT unequipped gear [T]: the piece is destroyed for a Reforge Ingot of its tier, its icon art joins the book, and Dorn STUDIES one affix family from it. Studies unlock BLUEPRINTS in tiers - 3 studies open tier I, Rare+ fodder deepens to II, Epic+ to III. With blueprints learned, CRAFT [N] builds a piece of YOUR OWN DESIGN: you choose the slot, rarity, base stat, every affix, the art and the name. The numbers still roll - inside the bands your blueprint tiers bought. Browse your progress any time with [B]." },
+        { id:"pattern_book", title:"The Pattern Book", body:"Dorn keeps a PATTERN BOOK.\nSMELT [T] destroys unequipped gear. You get a REFORGE INGOT of its tier, and Dorn STUDIES one affix from the piece - you pick which.\nStudies add up: 3 unlock a blueprint at TIER I. Rare or better fodder deepens it to TIER II, Epic or better to TIER III.\nCRAFT [N] then builds an item to YOUR design - slot, rarity, stats, affixes, art and name. Higher blueprint tiers roll better numbers.\nBrowse the book any time with [B]." },
     ];
 }
 
@@ -13175,6 +13230,9 @@ function ach_counters_init() {
     if (!variable_struct_exists(_c, "board_done"))      _c.board_done = 0;
     if (!variable_struct_exists(_c, "species_hatched")) _c.species_hatched = [];
     if (!variable_struct_exists(_c, "scions_hatched"))  _c.scions_hatched = [];
+    // Journal form reveals (M 08-13): max stage ever reached per species, so
+    // the Creatures tab only shows the forms you have actually raised.
+    if (!variable_struct_exists(_c, "species_stage_max") || !is_struct(_c.species_stage_max)) _c.species_stage_max = {};
     if (!variable_global_exists("ach_run_absorbed"))    global.ach_run_absorbed = 0;  // run-scoped, reset at run start
 }
 
@@ -13188,6 +13246,9 @@ function ach_record_hatch(_pet) {
     for (var _i = 0; _i < array_length(_c.species_hatched); _i++)
         if (_c.species_hatched[_i] == _sp) { _have = true; break; }
     if (!_have) array_push(_c.species_hatched, _sp);
+    // Form reveal (M 08-13): a hatch reveals whatever stage it arrives at
+    // (found wild creatures can join above baby).
+    compendium_stage_stamp(_sp, variable_struct_exists(_pet, "stage") ? _pet.stage : 0);
     var _scion = variable_struct_exists(_pet, "signature") && _pet.signature;
     if (_scion) {
         var _have_s = false;
@@ -13195,6 +13256,39 @@ function ach_record_hatch(_pet) {
             if (_c.scions_hatched[_j] == _sp) { _have_s = true; break; }
         if (!_have_s) array_push(_c.scions_hatched, _sp);
     }
+}
+
+// ---------------------------------------------------------------------------
+// STAGE REVEALS (M 08-13): the Creatures journal shows each form (baby / young
+// adult / adult / awakened) only once one of yours has reached it. Stored as
+// the max stage per species in ach_counters.species_stage_max - rides the same
+// saved struct as the hatch sets, so older saves just start empty and the
+// backfill below heals them from the stable on first query.
+// ---------------------------------------------------------------------------
+function compendium_stage_stamp(_species, _stage) {
+    if (!is_string(_species) || _species == "") return;
+    ach_counters_init();
+    var _m = global.ach_counters.species_stage_max;
+    var _prev = variable_struct_exists(_m, _species) ? variable_struct_get(_m, _species) : -1;
+    if (_stage > _prev) variable_struct_set(_m, _species, _stage);
+}
+
+function compendium_stage_max(_species) {
+    ach_counters_init();
+    var _m = global.ach_counters.species_stage_max;
+    var _best = variable_struct_exists(_m, _species) ? variable_struct_get(_m, _species) : -1;
+    // Backfill from the living stable (pre-08-13 saves have no stamps at all).
+    if (variable_global_exists("pet_roster") && is_array(global.pet_roster)) {
+        for (var _i = 0; _i < array_length(global.pet_roster); _i++) {
+            var _p = global.pet_roster[_i];
+            if (!is_struct(_p) || !variable_struct_exists(_p, "species")) continue;
+            if (_p.species != _species) continue;
+            if (variable_struct_exists(_p, "is_egg") && _p.is_egg) continue;
+            var _ps = variable_struct_exists(_p, "stage") ? _p.stage : 0;
+            if (_ps > _best) { _best = _ps; compendium_stage_stamp(_species, _ps); }
+        }
+    }
+    return _best;   // -1 = never raised (undiscovered)
 }
 
 // Walk every state-derived condition; cheap (a few short array walks), safe to
@@ -13503,6 +13597,22 @@ function compendium_sprite(species_id) {
     return (_a >= 0) ? _a : -1;
 }
 
+// Per-stage journal portrait (M 08-13 form slots). Stage keys mirror
+// pet_sprite_key's naming. Returns -1 when that stage has no bespoke art -
+// the journal walks DOWN to the closest earlier form (awakened shows adult
+// art in-game too, under the engine FX).
+function compendium_stage_sprite(species_id, _stage) {
+    var _key;
+    if (_stage <= PET_STAGE_ADOLESCENT)      _key = "baby";
+    else if (_stage == PET_STAGE_YOUNGADULT) _key = "youngadult";
+    else if (_stage == PET_STAGE_ADULT)      _key = "adult";
+    else                                     _key = "awakened";
+    var _a = asset_get_index("spr_pet_" + species_id + "_" + _key + "_s");
+    if (_a >= 0) return _a;
+    _a = asset_get_index("spr_pet_" + species_id + "_" + _key + "_e");
+    return (_a >= 0) ? _a : -1;
+}
+
 // Where a species can be found, for the entry's HABITAT line.
 function compendium_habitat(species_id) {
     var _s = pet_species_signature_catalog();
@@ -13790,6 +13900,32 @@ function pattern_family_entry(_stat_name) {
     return undefined;
 }
 
+// pattern_family_desc(stat_name) - one plain line of WHAT an affix family does
+// (M 08-13: the smelt-study list read as bare vernacular - "Insight", "Ruin" -
+// with nothing saying what you'd actually be learning).
+function pattern_family_desc(_stat_name) {
+    switch (_stat_name) {
+        case "STR": return "+Strength - harder melee blows";
+        case "DEX": return "+Dexterity - accuracy, dodge, crit and turn priority";
+        case "CON": return "+Constitution - more maximum HP";
+        case "INT": return "+Intelligence - stronger spells";
+        case "WIS": return "+Wisdom - stronger effects and healing";
+        case "CHA": return "+Charisma - better prices and gold find";
+        case "bonus_max_hp": return "+Maximum HP on the item itself";
+        case "crit_flat":    return "+Critical hit chance (all attacks)";
+        case "dodge_flat":   return "+Dodge chance";
+        case "gold_find":    return "+Gold found from kills and chests";
+        case "crit_spell":   return "+Spell critical chance (casters)";
+        case "crit_phys":    return "+Physical critical chance (weapons)";
+    }
+    if (string_pos("school_", _stat_name) == 1) {
+        var _sch = string_delete(_stat_name, 1, 7);
+        return "+" + string_upper(string_char_at(_sch, 1)) + string_delete(_sch, 1, 1)
+             + " damage on your casts (amulet/ring only)";
+    }
+    return "";
+}
+
 // Per-family study progress { p1, p2, p3 } (counts toward tier I / II / III).
 function pattern_fam_get(_stat_name) {
     var _b = pattern_book_ensure();
@@ -13811,19 +13947,19 @@ function pattern_fam_tier(_stat_name) {
 // Book-page progress text for a family ("2/3 studies", "Rare+ fodder 1/4", "MASTERED").
 function pattern_fam_progress_text(_stat_name) {
     var _p = pattern_fam_get(_stat_name);
-    if (_p.p1 < 3) return string(_p.p1) + "/3 studies to tier I";
-    if (_p.p2 < 4) return "II: " + string(_p.p2) + "/4 Rare+ studies";
-    if (_p.p3 < 5) return "III: " + string(_p.p3) + "/5 Epic+ studies";
-    return "MASTERED (tier III)";
+    if (_p.p1 < 3) return string(_p.p1) + "/3 studies to Tier I";
+    if (_p.p2 < 4) return "Tier II: " + string(_p.p2) + "/4 Rare+ studies";
+    if (_p.p3 < 5) return "Tier III: " + string(_p.p3) + "/5 Epic+ studies";
+    return "MASTERED (Tier III)";
 }
 
 // What ONE study from fodder of the given rarity would do for this family.
 // Returns { ok, text } - ok=false means this fodder can't advance the family.
 function pattern_study_preview(_stat_name, _rarity) {
     var _p = pattern_fam_get(_stat_name);
-    if (_p.p1 < 3) return { ok: true, text: "advances tier I (" + string(_p.p1) + "/3)" };
+    if (_p.p1 < 3) return { ok: true, text: "Advances Tier I (" + string(_p.p1) + "/3)" };
     if (_p.p2 < 4) {
-        if (_rarity >= 2) return { ok: true, text: "advances tier II (" + string(_p.p2) + "/4)" };
+        if (_rarity >= 2) return { ok: true, text: "Advances Tier II (" + string(_p.p2) + "/4)" };
         return { ok: false, text: "tier II asks RARE+ fodder" };
     }
     if (_p.p3 < 5) {

@@ -381,6 +381,155 @@ function combat_resolve_damage(base_damage, damage_type, target_armor, target_el
 }
 
 // ---------------------------------------------------------------------------
+// combat_enemy_slot_pos(idx) - the SINGLE source for where the idx-th living
+// enemy stands and how big it draws. Flat: the shipped row, byte-identical.
+// 2.5D v3 (M 08-13, Paper Mario staging): slot 0 is the BACK of the lane -
+// highest on the floor plane, smallest - and each slot steps nearer, lower and
+// bigger, drifting left toward the player. Draw sprites, attack-animation
+// sources, projectile spawns and VFX centers all read THIS so they can never
+// disagree about depth. y is the sprite TOP-LEFT (97px canvas), feet the
+// ground line, cx/cy the visual center.
+// ---------------------------------------------------------------------------
+function combat_enemy_slot_pos(_idx) {
+    var _s, _x, _y;
+    if (combat_25d()) {
+        // Round 5 (M: "they seem to always arrange in the same pattern... a
+        // diagonal line with no sizing difference"). Two changes:
+        //  1. FOUR layout patterns, one rolled per combat (stage_layout,
+        //     stamped in Create) - encounters stop looking identical.
+        //  2. COUNT-AWARE station picks: a 2-enemy fight takes one FAR and one
+        //     NEAR station (never two mid ones), a 3-fight spans the full
+        //     depth range - every encounter is guaranteed a big/small size
+        //     contrast. Stations are stored far->near, and picks preserve
+        //     that order, so draw order stays painter's order and near foes
+        //     still overlap far ones.
+        // Round 6: every NEAR station (feet >= 800) now sits LEFT of the
+        // ability tooltip zone (x >= ~1395, y 655+) - M's Archivist stood dead
+        // on top of the box. Mid-right stations keep their feet above it.
+        // Round 10 (M shot: "you over did where enemies and allies are, its so
+        // disorganized... way too all over the place and sloppy"). ORGANIZED
+        // FORMATIONS, classic JRPG sides:
+        //  - ALLIES hold the bottom-left wedge (player front at y726, pet
+        //    tucked BEHIND-LEFT of him - see Draw_64; it had drifted into the
+        //    middle of the field).
+        //  - ENEMIES hold a clean RIGHT-SIDE wedge: every station x >= ~1015,
+        //    every sprite bottoms out ABOVE the UI band (feet <= ~724, card
+        //    top is y735) - nothing stands behind the log or the card
+        //    anymore. Depth reads through scale (2.4 far -> 3.2 front) +
+        //    feet height + shadows, not through scatter.
+        //  - Rows still zigzag WITHIN the wedge and the 3-pick keeps the
+        //    triangle, so fights don't stage identically - but always as one
+        //    coherent opposing formation.
+        // (M mid-round: "you're not making the enemy sprites small enough -
+        // you're forcing them to be too big") - whole range shrunk: far ~1.9
+        // (185px) -> front ~2.6 (252px). The player at ~385px is the near-
+        // camera anchor; enemies read across the field, not in your face.
+        // Round 12 (M: "enemies are now too big... FORCED PERSPECTIVE, it
+        // really shouldnt be this dramatic"): subtle gradient - far ~165px to
+        // front ~204px. Small enough that the 97px art stays clean (~2x).
+        // Round 13 (M: "enemies are still too big"): another step down -
+        // far ~145px to front ~180px, barely above native art size.
+        static _t25_pat = [
+            [[1560,545,1.50],[1130,608,1.60],[1360,662,1.72],[1015,700,1.85]],
+            [[1300,540,1.50],[1620,615,1.62],[1060,648,1.68],[1360,702,1.85]],
+            [[1680,552,1.52],[1090,600,1.58],[1500,660,1.72],[1130,702,1.85]],
+            [[1420,548,1.50],[1140,618,1.60],[1660,665,1.72],[1230,700,1.82]]
+        ];
+        static _t25_pick = [ [2], [0,3], [0,1,3], [0,1,2,3] ];
+        var _lay = 0;
+        var _cnt = 4;
+        if (instance_exists(obj_combat_controller)) {
+            var _pcc = instance_find(obj_combat_controller, 0);
+            if (variable_instance_exists(_pcc, "stage_layout")) _lay = _pcc.stage_layout;
+            if (variable_instance_exists(_pcc, "combat_state") && is_struct(_pcc.combat_state))
+                _cnt = array_length(combat_living_enemies(_pcc.combat_state));
+        }
+        var _pat = _t25_pat[clamp(_lay, 0, 3)];
+        var _map = _t25_pick[clamp(_cnt, 1, 4) - 1];
+        var _st;
+        if (_idx < array_length(_map)) {
+            _st = _pat[_map[_idx]];
+            _s = _st[2]; _x = _st[0];
+            _y = _st[1] - 97 * _s;
+        } else {
+            // Overflow (5th+): fan left along the near row, clamped clear of
+            // the player's ground (x < ~470 would draw over the hero pair).
+            _st = _pat[3];
+            _s = _st[2];
+            _x = max(470, _st[0] - (_idx - 3) * 150);
+            _y = _st[1] - 97 * _s;
+        }
+        return { x: _x, y: _y, scale: _s, feet: _y + 97 * _s, cx: _x + 48.5 * _s, cy: _y + 48.5 * _s };
+    }
+    _s = 3;
+    _x = 1665 - _idx * 174;
+    _y = 225 + _idx * 36 + ((_idx % 2 == 0) ? -36 : 36);
+    return { x: _x, y: _y, scale: _s, feet: _y + 291, cx: _x + 145.5, cy: _y + 145.5 };
+}
+
+// ---------------------------------------------------------------------------
+// sprite_true_bounds(spr) - MEASURED opaque-pixel bounds of frame 0, cached.
+// (M 08-13: "the shadows are miles away from the sprites... fix immediately.")
+// Every 2.5D anchoring bug traced back to trusting .yy bbox metadata, which
+// lies for full-image bbox modes and stray semi-transparent pixels. This
+// draws the frame once to a surface, scans the pixels (alpha > 24 counts, so
+// faint strays are ignored), and caches {l,t,r,b,w,h} per sprite. One-time
+// cost per sprite (~10-60k byte reads), then free.
+// ---------------------------------------------------------------------------
+function sprite_true_bounds(_spr) {
+    if (!variable_global_exists("__true_bounds_cache")) global.__true_bounds_cache = {};
+    var _key = string(_spr);
+    if (variable_struct_exists(global.__true_bounds_cache, _key))
+        return variable_struct_get(global.__true_bounds_cache, _key);
+    var _w = sprite_get_width(_spr), _h = sprite_get_height(_spr);
+    var _res = { l: 0, t: 0, r: _w - 1, b: _h - 1, w: _w, h: _h };   // fallback: full canvas
+    var _sf = surface_create(_w, _h);
+    if (surface_exists(_sf)) {
+        surface_set_target(_sf);
+        draw_clear_alpha(c_black, 0);
+        draw_sprite_ext(_spr, 0, sprite_get_xoffset(_spr), sprite_get_yoffset(_spr), 1, 1, 0, c_white, 1);
+        surface_reset_target();
+        var _buf = buffer_create(_w * _h * 4, buffer_fixed, 1);
+        buffer_get_surface(_buf, _sf, 0);
+        surface_free(_sf);
+        var _l = _w, _t = _h, _r = -1, _b = -1;
+        for (var _y = 0; _y < _h; _y++) {
+            var _row = _y * _w;
+            for (var _x = 0; _x < _w; _x++) {
+                if (buffer_peek(_buf, (_row + _x) * 4 + 3, buffer_u8) > 24) {
+                    if (_x < _l) _l = _x;
+                    if (_x > _r) _r = _x;
+                    if (_y < _t) _t = _y;
+                    _b = _y;
+                }
+            }
+        }
+        buffer_delete(_buf);
+        if (_r >= 0) _res = { l: _l, t: _t, r: _r, b: _b, w: _r - _l + 1, h: _b - _t + 1 };
+    }
+    variable_struct_set(global.__true_bounds_cache, _key, _res);
+    return _res;
+}
+
+// ---------------------------------------------------------------------------
+// combat_player_vfx_anchor(player) - TOP-LEFT anchor for a ~220px one-shot
+// burst centred on the player's torso. Flat mode returns the shipped tuned
+// literal (330,360) so nothing moves; 2.5D derives it from the live player
+// anchor (x282+layout*14, visible feet on the y726 ground line, ~385px tall)
+// so self-cast / incoming-hit VFX land ON the hero, not on the flat-mode spot
+// (M 08-13: "VFX ... have appeared to be off target").
+// ---------------------------------------------------------------------------
+function combat_player_vfx_anchor(_player) {
+    if (!combat_25d()) return { x: 330, y: 360 };
+    // Round 12 (M: "VFX should be bound to player sprite location"): read the
+    // live centre STAMPED by the combat Draw each frame - never re-derive.
+    if (variable_global_exists("player_stage_cx")) {
+        return { x: global.player_stage_cx - 110, y: global.player_stage_cy - 110 };
+    }
+    return { x: 330, y: 400 };   // first-frame fallback before any stamp
+}
+
+// ---------------------------------------------------------------------------
 // combat_living_enemies(combat_state)
 // Returns an array of the still-standing enemy combatants in turn order. The
 // same ordering the HP-bar grid and selected_target index use.
@@ -1213,7 +1362,10 @@ function combat_try_last_stand(player, combat_log) {
 
 // kind of a single applied status struct (with backward-compatible fallback)
 function combat_status_kind_of(se) {
-    return variable_struct_exists(se, "kind") ? se.kind : se.effect_type;
+    // Enemy-applied statuses can carry kind:"" (enemy_ability's status_kind
+    // default) - treat empty the same as absent so they resolve by effect_type.
+    if (variable_struct_exists(se, "kind") && se.kind != "") return se.kind;
+    return se.effect_type;
 }
 
 // ability_status_kind(ability) - single source of truth mapping an ability to the
@@ -1682,6 +1834,12 @@ function combat_mitigate_player(player, raw, dtype, log) {
     // Boon flat armor (Shrine V2): Ironhide +2 / Feast of Crows +2 per corpse.
     var _bfa = boon_flat_armor();
     if (_bfa > 0) _d = max(1, _d - _bfa);
+    // CLOTTED ARMOR (08-13, replaced Thickened Vitae - fx id kept "blood_hp"):
+    // while the Bloodwarden holds 5+ Blood, every hit lands 2 softer.
+    if (variable_struct_exists(player, "blood") && player.blood >= 5
+        && player.class_id == 1 && trunk_has("blood_hp")) {
+        _d = max(1, _d - 2);
+    }
     if (dtype == 0 && variable_struct_exists(player, "derived") && player.derived.phys_dmg_reduction > 0) {
         _d = max(1, ceil(_d * (1.0 - (player.derived.phys_dmg_reduction / 100.0))));
     }

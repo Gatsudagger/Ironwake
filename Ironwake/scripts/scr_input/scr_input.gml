@@ -106,6 +106,12 @@ function input_confirm_alt() {
 
 function input_cancel() {
     if (keyboard_check_pressed(vk_escape)) { global.input_last_device = 0; return true; }
+    // HTML5 (M 08-13: "esc registers as a browser command"): browsers eat or
+    // repurpose Esc, so Backspace and Q also cancel in browser builds only -
+    // desktop keeps the exact shipped mapping.
+    if (os_browser != browser_not_a_browser && keyboard_check_pressed(vk_backspace)) {
+        global.input_last_device = 0; return true;
+    }
     return pad_pressed(gp_face2);                     // B
 }
 

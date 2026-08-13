@@ -76,16 +76,27 @@ if (phase == "cutscene") {
     blink     = (blink + 1) mod 60;
 
     if (can_input) {
-        if (nav_up())   selected = wrap_index(selected - 1, 3);
-        if (nav_down()) selected = wrap_index(selected + 1, 3);
+        if (nav_up())   selected = wrap_index(selected - 1, 4);
+        if (nav_down()) selected = wrap_index(selected + 1, 4);
+
+        // Esc at the title = straight into Settings (M 08-13: immediate volume
+        // control; Esc had no job on this screen).
+        if (input_cancel()) {
+            audio_settings_init();
+            global.settings_open = true;
+            exit;
+        }
 
         // Touch (8c): tap a menu row to highlight it, tap the highlighted row to
         // activate (simulated Enter -> the unchanged handler below). Rows match
         // the Draw layout: y = 585 + i*93, box 660..1260 (+/-33).
-        if (input_device() == 2 && mouse_check_button_pressed(mb_left)) {
+        // M 08-13 ("clicking doesn't seem to work on title screen"): the row
+        // hit-test was touch-gated - a MOUSE click did nothing on desktop/HTML.
+        // Now any click selects; a click on the selected row activates.
+        if (mouse_check_button_pressed(mb_left)) {
             var _tmx = device_mouse_x_to_gui(0);
             var _tmy = device_mouse_y_to_gui(0);
-            for (var _ti = 0; _ti < 3; _ti++) {
+            for (var _ti = 0; _ti < 4; _ti++) {
                 var _toy = 585 + _ti * 93;
                 if (_tmx >= 660 && _tmx <= 1260 && _tmy >= _toy - 33 && _tmy <= _toy + 33) {
                     if (selected == _ti) touch_press(vk_enter);
@@ -110,6 +121,10 @@ if (phase == "cutscene") {
                 slot_confirm  = false;
                 phase         = "slot_picker";
             } else if (selected == 2) {
+                audio_settings_init();
+                global.settings_open = true;
+                audio_play_sound(snd_page, 1, false);
+            } else if (selected == 3) {
                 phase = "credits";
                 audio_play_sound(snd_page, 1, false);
             }

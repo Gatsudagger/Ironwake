@@ -9,6 +9,28 @@ font it draws with.
 
 Verified bands (file references are approximate anchors, not exact lines):
 
+## 2.5D COMBAT STAGE BANDS (round 11, M 08-13: "hard assign some spacing rules")
+Every actor and UI panel in 2.5D combat owns a region. NOTHING may stand
+inside another owner's region. `combat_enemy_slot_pos` + the Draw anchors
+enforce these; when a station or panel moves, UPDATE THIS TABLE in the same
+change. All sprite metrics come from `sprite_true_bounds` (measured pixels) —
+never canvas size or .yy bbox metadata.
+
+| Region | Owner | Rule |
+|---|---|---|
+| x0–330, y568–741 | POTENTIAL DAMAGE box (bottom-pinned 741, rides the log top) | no actor may enter |
+| x0–330, y30–345 | Left HUD stack: HP 30 / AP 90 / resource 140 / Lv 185 / **buffs+debuffs 222–278** / **PET bar 290–316** / traps+boons+curses below | player-owned readouts; buff row is DIRECTLY under the level block (M: under pet bar read as pet effects) |
+| x20–1200, y747–945 | Combat log (198px = exactly 6 rows, zero waste — 08-13) | enemies must bottom out ABOVE y747; near feet ≤702 |
+| x1220–1890, y747–945 | Ability card (198px band, matches log) | never covered by anything |
+| y946–982 | End Turn strip | — |
+| y985–1080 | Ability buttons | — |
+| Player: x282–460, feet y726 | hero, ~360px visible | near-camera anchor |
+| Pet: center x~225, feet ≤552 | upper-left depth row, ~0.58 size | MUST clear the PD box top (y556) |
+| Summon: (560, 700) | mid-lane pedestal | between ally and enemy wedges |
+| Enemy wedge: x≥1015, ALL feet ≤724 | 4 stations/layout, far 1.9× → front 2.6×, boss 3.3× feet 655 | sprites bottom out above the log/card band; right edges <1890 |
+| Horizon y470 | wall/floor seam | far stations start feet ≥540 |
+
+
 ## Floor map (obj_floor_controller/Draw_64)
 | Band (y) | Owner |
 |---|---|

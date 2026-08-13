@@ -225,14 +225,28 @@ if (consumable_overflow_pending()) {
 if (showing_shrine) {
     var _sh_n = array_length(shrine_offers);
 
+    // Leave-confirm (M 08-13: "i accidentally left several event rooms without
+    // selecting anything by bumping esc once"). The stray Esc now only ARMS
+    // this popup - the room clears on an explicit second yes.
+    if (leave_confirm_open) {
+        if (input_confirm() || input_confirm_alt() || input_inject_take("lvc:ok")) {
+            leave_confirm_open = false;
+            showing_shrine = false;
+            current_rooms[selected_room].cleared = true;
+            global.floor_rooms_cleared[selected_room] = true;
+        } else if (input_cancel() || input_back() || input_inject_take("lvc:stay")) {
+            leave_confirm_open = false;
+        }
+        exit;
+    }
+
     // --- Pre-approach: the altar's nature is veiled. The player may walk away freely
     //     (forgoing any boon AND any curse), or APPROACH to commit. Approaching is the
     //     gamble - it reveals the kind, and a curse altar then springs its trap. ------
     if (!shrine_revealed) {
         if (input_cancel() || input_back()) {
-            showing_shrine = false;
-            current_rooms[selected_room].cleared = true;
-            global.floor_rooms_cleared[selected_room] = true;
+            leave_confirm_open = true;
+            leave_confirm_kind = "shrine";
             exit;
         }
         if (input_confirm() || input_confirm_alt()) {
@@ -255,9 +269,8 @@ if (showing_shrine) {
     //     _sh_n==0 guard keeps a degenerate empty-curse altar from soft-locking. ------
     if (input_cancel() || input_back()) {
         if (shrine_kind != "curse" || _sh_n == 0) {
-            showing_shrine = false;
-            current_rooms[selected_room].cleared = true;
-            global.floor_rooms_cleared[selected_room] = true;
+            leave_confirm_open = true;
+            leave_confirm_kind = "shrine";
             exit;
         }
         shrine_notification = "The altar's grip holds you - you must embrace a curse to leave.";
@@ -414,6 +427,19 @@ if (showing_shrine) {
 if (showing_whetstone) {
     var _wt_n = array_length(whetstone_abilities);
 
+    // Leave-confirm (M 08-13): same stray-Esc guard as the shrine block above.
+    if (leave_confirm_open) {
+        if (input_confirm() || input_confirm_alt() || input_inject_take("lvc:ok")) {
+            leave_confirm_open = false;
+            showing_whetstone = false;
+            current_rooms[selected_room].cleared = true;
+            global.floor_rooms_cleared[selected_room] = true;
+        } else if (input_cancel() || input_back() || input_inject_take("lvc:stay")) {
+            leave_confirm_open = false;
+        }
+        exit;
+    }
+
     // Degenerate empty-loadout guard: let the player leave freely.
     if (_wt_n == 0) {
         if (input_cancel() || input_back() || input_confirm() || input_confirm_alt()) {
@@ -426,10 +452,9 @@ if (showing_whetstone) {
 
     if (whetstone_phase == "ability") {
         if (input_cancel() || input_back()) {
-            // Leave without honing - the edge stays as it is (no obligation).
-            showing_whetstone = false;
-            current_rooms[selected_room].cleared = true;
-            global.floor_rooms_cleared[selected_room] = true;
+            // Leave without honing - but only through the confirm (M 08-13).
+            leave_confirm_open = true;
+            leave_confirm_kind = "whetstone";
             exit;
         }
         if (nav_up())   whetstone_ab_cursor = wrap_index(whetstone_ab_cursor - 1, _wt_n);

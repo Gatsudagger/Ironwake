@@ -209,10 +209,11 @@ if (phase == "cutscene") {
     var _num_panels = array_length(cutscene_panels);
     var _sep        = 48;   // VISUAL line separation WITHIN a panel (layout math)
     var _gap        = 33;   // extra space BETWEEN panels
-    // Crawl scaled up + faux-bold double-pass (M 2026-07-06). sep/wrap passed to
-    // draw_text_ext_transformed are in FONT space and scale with it, so divide
-    // out the scale to keep the visual 48px spacing / 1350px wrap unchanged.
-    var _isc  = 1.15;
+    // Crawl at NATIVE font scale (M 08-13: "intro text roll seems lower
+    // resolution... cloudy fuzzy" - the old 1.15x non-integer upscale plus a
+    // half-pixel bold pass smeared the glyphs; menu text after it was crisp by
+    // comparison). Faux-bold stays, but on a whole-pixel offset.
+    var _isc  = 1.0;
     var _fsep = _sep / _isc;
     var _fw   = 1350 / _isc;
 
@@ -237,7 +238,7 @@ if (phase == "cutscene") {
         draw_text_ext_transformed(962, _cy + 2, cutscene_panels[_i], _fsep, _fw, _isc, _isc, 0);
         draw_set_color(make_color_rgb(205, 208, 220));
         draw_text_ext_transformed(960, _cy, cutscene_panels[_i], _fsep, _fw, _isc, _isc, 0);
-        draw_text_ext_transformed(961.5, _cy, cutscene_panels[_i], _fsep, _fw, _isc, _isc, 0);
+        draw_text_ext_transformed(961, _cy, cutscene_panels[_i], _fsep, _fw, _isc, _isc, 0);
         _cy += _heights[_i] + _gap;
     }
 
@@ -248,7 +249,7 @@ if (phase == "cutscene") {
         draw_text_ext_transformed(962, _cy + 2, _visible, _fsep, _fw, _isc, _isc, 0);
         draw_set_color(make_color_rgb(205, 208, 220));
         draw_text_ext_transformed(960, _cy, _visible, _fsep, _fw, _isc, _isc, 0);
-        draw_text_ext_transformed(961.5, _cy, _visible, _fsep, _fw, _isc, _isc, 0);
+        draw_text_ext_transformed(961, _cy, _visible, _fsep, _fw, _isc, _isc, 0);
     }
 
     draw_set_alpha(1.0);
@@ -314,8 +315,10 @@ if (phase == "cutscene") {
                   || slot_preview_loadable(slot_previews[1])
                   || slot_preview_loadable(slot_previews[2]));
 
-    var _options = ["NEW GAME", "LOAD GAME", "CREDITS"];
-    for (var _i = 0; _i < 3; _i++) {
+    // SETTINGS promoted to a real menu row above CREDITS (M 08-13: "many people
+    // want immediate volume control") - Esc opens it too.
+    var _options = ["NEW GAME", "LOAD GAME", "SETTINGS", "CREDITS"];
+    for (var _i = 0; _i < 4; _i++) {
         var _oy     = 585 + _i * 93;
         var _is_sel = (_i == selected);
         var _avail  = (_i != 1) || _any_save;
@@ -346,14 +349,16 @@ if (phase == "cutscene") {
     if (can_input && blink < 42) {
         draw_set_font(fnt_ui_small);
         draw_set_color(make_color_rgb(100, 110, 135));
-        ui_draw_key_legend(960, 818, "W/S: Navigate   Enter / Space: Select");
+        // Below ALL four menu rows (last row y864; it used to sit at y818,
+        // wedged between SETTINGS and CREDITS - M 08-13).
+        ui_draw_key_legend(960, 945, "W/S: Navigate   Enter / Space: Select");
         draw_set_halign(fa_center);
     }
 
     // Settings hint (always shown on the title screen)
     draw_set_font(fnt_ui_small);
     draw_set_color(make_color_rgb(130, 140, 165));
-    draw_text_outline(960, 1035, "[ O ]  Settings");
+    draw_text_outline(960, 1035, "[ O ] / [ Esc ]  Settings");
 
     draw_set_alpha(1.0);
     draw_set_font(-1);

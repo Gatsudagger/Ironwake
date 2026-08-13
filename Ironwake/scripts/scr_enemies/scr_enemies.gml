@@ -288,6 +288,51 @@ function enemy_speed(name) {
     return 8;
 }
 
+// ---------------------------------------------------------------------------
+// enemy_attack_school(name) - the element SCHOOL an enemy's attacks read as,
+// keyed off its family name (M 08-13: "enemy attacks are the original little
+// needle shot for many attacks, when they should be appropriate VFX"). Drives
+// the bolt/impact art for basic ranged attacks and dtype-1 elemental casts.
+// "" = physical - those KEEP the shipped needle + impact spark on purpose.
+// ---------------------------------------------------------------------------
+function enemy_attack_school(name) {
+    var _n = string_lower(name);
+    // Exact fits first, where a keyword would misfile them.
+    if (_n == "ash wraith") return "fire";        // a wraith OF ash - reads fire, not ghost
+    // fire family (Scorched Depths + its bosses)
+    if (string_pos("cinder", _n) || string_pos("magma", _n) || string_pos("fire", _n)
+     || string_pos("lava", _n)   || string_pos("smolder", _n) || string_pos("infernal", _n)
+     || string_pos("molten", _n) || string_pos("forge", _n)   || string_pos("ember", _n)
+     || string_pos("flame", _n)  || string_pos("scorch", _n)) return "fire";
+    // frost family (Frozen Tomb + its bosses)
+    if (string_pos("frost", _n)  || string_pos("glacial", _n) || string_pos("ice ", _n)
+     || string_pos("snow", _n)   || string_pos("frozen", _n)  || string_pos("rime", _n)
+     || string_pos("winter", _n) || _n == "ice specter") return "frost";
+    // arcane scholars
+    if (string_pos("archivist", _n) || string_pos("arcane", _n) || string_pos("rune", _n)) return "arcane";
+    // ghosts and shades
+    if (string_pos("wraith", _n) || string_pos("specter", _n) || string_pos("spectre", _n)
+     || string_pos("shade", _n)  || string_pos("phantom", _n) || string_pos("gloom", _n)) return "shadow";
+    // corruption
+    if (string_pos("venom", _n) || string_pos("plague", _n) || string_pos("blight", _n)
+     || string_pos("toxic", _n) || string_pos("rot", _n)) return "poison";
+    // the deep places
+    if (string_pos("void", _n) || string_pos("hollow", _n) || string_pos("abyss", _n)) return "void";
+    return "";   // skeletons, golems, crawlers - honest physical
+}
+
+// Enemy sprites authored facing EAST (away from the player) - the combat draw
+// mirrors these so they face the fight (M 08-13: "some enemies are facing
+// backwards... like ice specter"). Extend by name as more are spotted.
+function enemy_sprite_faces_east(name) {
+    switch (name) {
+        case "Ice Specter":
+        case "Snowbound Wraith":
+            return true;
+    }
+    return false;
+}
+
 // enemy_class_tag(c) - short "Melee/Phys" style label for an enemy's attack class
 // (reach x kind), drawn under its HP bar so the player can see which control
 // effects apply: ROOT blocks Melee, SILENCE blocks Spell, STUN blocks all.
@@ -767,21 +812,9 @@ global.enemies_tundra_tomb_standard = [
         /*message*/"",
         /*mechanic*/"double_strike", /*value*/5, /*turns*/0
     ),
-    enemy_define(
-        /*name*/"Pale Archivist",
-        /*HP*/40, /*damage*/6, /*armor*/1, /*el_resist*/5, /*dodge*/2, /*acc*/70,
-        /*xp*/13, /*gold_min*/3, /*gold_max*/8,
-        /*telegraph_turn*/3, /*telegraph_damage*/16,
-        /*message*/"is inscribing a death rune!",
-        /*mechanic*/"charge", /*value*/0, /*turns*/0,
-        /*abilities*/[
-            enemy_ability("Death Rune", "control", 25, 4, 0, { status_kind: "silence", turns: 2, msg: "binds your tongue - silenced" }),
-            enemy_ability("Frost Bolt", "spell", 35, 2, 10, { dtype: 1, msg: "hurls a shard of ice" }),
-            enemy_ability("Restorative Glyph", "heal", 35, 3, 16, { msg: "traces a restorative glyph and mends" }),
-            // SUMMONS (08-13, M-locked): the librarian requisitions a fresh entry.
-            enemy_ability("Requisition", "summon", 20, 5, 0, { msg: "files a REQUISITION - the Tomb sends another" }),
-        ]
-    ),
+    // (Pale Archivist PROMOTED to the elite pool 08-13 - M: "isnt pale
+    // archivist a boss? why is he showing up in random battles". His kit -
+    // silence, heal, a SUMMON - was mini-boss weight in a standard room.)
     enemy_define(
         /*name*/"Snowbound Wraith",
         /*HP*/48, /*damage*/7, /*armor*/0, /*el_resist*/9, /*dodge*/6, /*acc*/73,
@@ -831,6 +864,24 @@ global.enemies_tundra_tomb_elite = [
         /*message*/"is preparing a devastating strike!",
         /*mechanic*/"retribution", /*value*/4, /*turns*/0
     ),
+    // Promoted from the standard pool 08-13 (M): the librarian's kit (silence
+    // + heal + Requisition summon) is mini-boss weight - he holds ELITE rooms
+    // now, at elite-grade stats, and never wanders into random encounters.
+    enemy_define(
+        /*name*/"Pale Archivist",
+        /*HP*/68, /*damage*/8, /*armor*/2, /*el_resist*/7, /*dodge*/3, /*acc*/74,
+        /*xp*/28, /*gold_min*/14, /*gold_max*/23,
+        /*telegraph_turn*/3, /*telegraph_damage*/18,
+        /*message*/"is inscribing a death rune!",
+        /*mechanic*/"charge", /*value*/0, /*turns*/0,
+        /*abilities*/[
+            enemy_ability("Death Rune", "control", 25, 4, 0, { status_kind: "silence", turns: 2, msg: "binds your tongue - silenced" }),
+            enemy_ability("Frost Bolt", "spell", 35, 2, 12, { dtype: 1, msg: "hurls a shard of ice" }),
+            enemy_ability("Restorative Glyph", "heal", 35, 3, 18, { msg: "traces a restorative glyph and mends" }),
+            // SUMMONS (08-13, M-locked): the librarian requisitions a fresh entry.
+            enemy_ability("Requisition", "summon", 20, 5, 0, { msg: "files a REQUISITION - the Tomb sends another" }),
+        ]
+    ),
 ];
 
 // =============================================================================
@@ -848,7 +899,7 @@ function enemy_sprite_map() {
         "Vault Guardian":      spr_vault_guardian,
         "Vault Wraith":        spr_vault_wraith,
         "Vault Sentinel":      spr_vault_sentinel,
-        "Bone Sovereign":      spr_bone_sovereign,
+        "Bone Sovereign":      spr_bone_sovereign_hd,   // 08-13 M-approved HD (spectral tail); original sprite kept untouched on disk
         "Malgrath the Warden": spr_malgrath_warden,
         "Grave Stalker":        spr_grave_stalker,
         "Bone Colossus":        spr_bone_colossus,

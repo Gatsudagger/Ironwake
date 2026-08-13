@@ -336,8 +336,8 @@ function new_game_reset() {
     // (same leak as load_game - see run_state_reset).
     run_state_reset();
 
-    // Economy
-    global.gold             = 0;
+    // Economy (M 08-13: every new game starts with a 100g purse)
+    global.gold             = 100;
     global.current_run_gold = 0;
     global.player_name      = "Hero";
 

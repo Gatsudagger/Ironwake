@@ -175,7 +175,8 @@ function abilities_resolve_player_loadout(class_id) {
     if (variable_global_exists("player_loadout") && is_array(global.player_loadout)
         && array_length(global.player_loadout) > 0 && global.player_loadout[0] != "") {
         var _pool = abilities_class_pool(class_id);   // class abilities + general pool
-        var _max  = trait_active("Expanded Arsenal") ? 5 : 4;
+        // Class pass (M 08-13): base arsenal 4 -> 5, Expanded Arsenal grants a 6th.
+        var _max  = trait_active("Expanded Arsenal") ? 6 : 5;
         var _out  = [];
         for (var _li = 0; _li < _max && _li < array_length(global.player_loadout); _li++) {
             var _lname = global.player_loadout[_li];
@@ -312,6 +313,41 @@ global.abilities_arcanist = [
         /*crit_type*/3, /*base_crit*/0, // effect (WIS)
         /*effect_type*/"status", /*effect_value*/0.5, /*duration*/-1, // -1 = combat-long
         /*self*/false),
+
+    // ======================= SUMMONS (class pass, M 08-13) ====================
+    // The Arcanist's obstruction identity: ONE summon stands between you and
+    // the enemy line at a time, lives 3 turns, EATS hits meant for you, and
+    // DETONATES when its button is pressed again. Resolved in
+    // obj_combat_controller Step_0 (cast branch + intercept + detonate).
+    // 10: Magma Golem - the payoff bomb: eats 1 hit; detonate = heavy AoE to
+    //     every enemy AND real damage to you + your companion.
+    ability_define("Magma Golem",
+        /*energy*/2, /*secondary*/1,
+        /*damage*/0, /*dtype*/1,
+        /*acc*/-1, /*guaranteed*/true,
+        /*crit_type*/-1, /*base_crit*/0,
+        /*effect_type*/"summon", /*effect_value*/22, /*duration*/3, // detonation damage
+        /*self*/true),
+
+    // 11: Warding Effigy - the wall: eats 2 hits; detonate = small shockwave
+    //     that lays Exposed on every enemy.
+    ability_define("Warding Effigy",
+        /*energy*/2, /*secondary*/0,
+        /*damage*/0, /*dtype*/1,
+        /*acc*/-1, /*guaranteed*/true,
+        /*crit_type*/-1, /*base_crit*/0,
+        /*effect_type*/"summon", /*effect_value*/2, /*duration*/3,  // hits absorbed
+        /*self*/true),
+
+    // 12: Static Husk - the battery: while it stands your Shock/Arcane casts
+    //     crit +15%; eats 1 hit; detonate = chain arc across the enemy line.
+    ability_define("Static Husk",
+        /*energy*/1, /*secondary*/0,
+        /*damage*/0, /*dtype*/1,
+        /*acc*/-1, /*guaranteed*/true,
+        /*crit_type*/-1, /*base_crit*/0,
+        /*effect_type*/"summon", /*effect_value*/15, /*duration*/3, // standing crit bonus
+        /*self*/true),
 ];
 
 // Plain-English descriptions for Arcanist abilities
@@ -339,8 +375,14 @@ var _arc_d = [
       f: "Tear a rift above the field and let the Arcane pour through onto everything.\n- Spend 2 Souls: 20 Arcane damage to every enemy at once - and it DETONATES each enemy's statuses individually.\n- The cascade turn: spread chills, bleeds and hexes, then pull the sky down on all of it." },
     { s: "Spend 1 Soul. Foe takes 40% of dmg YOU take; heals you.",
       f: "Stitch a Shadow thread between your fate and theirs.\n- Combat-long: the bound enemy suffers 40% of every hit you receive, and you heal the same amount.\n- Bind the biggest thing in the room and let it regret hurting you." },
+    { s: "SUMMON: eats 1 hit. Press again: AoE that hurts YOU too. 4t CD.",
+      f: "Raise a squat furnace of slag that stands where you should be standing.\n- One summon at a time; it lives 3 turns and EATS the next hit meant for you.\n- Press its button again to DETONATE: heavy Fire damage to EVERY enemy - and the blast is honest, it hurts you and your companion too.\n- The payoff engine: detonate before it is spent or wasted." },
+    { s: "SUMMON: eats 2 hits. Press again: shockwave lays Exposed. 3t CD.",
+      f: "Weave a hollow guardian of wardlight to take what was meant for you.\n- One summon at a time; it lives 3 turns and ABSORBS the next 2 hits aimed at you.\n- Press its button again to DETONATE: a shockwave that lays every enemy EXPOSED.\n- The wall: eat a heavy turn, or trade the ward for a setup." },
+    { s: "SUMMON: your Shock/Arcane +15% crit. Press again: chain arc. 3t CD.",
+      f: "Plant a dead-eyed vessel humming with stormcharge.\n- One summon at a time; while it stands your Shock and Arcane casts crit +15%. It eats 1 hit meant for you.\n- Press its button again to DETONATE: a chain arc that lashes the whole enemy line.\n- The battery: milk the crits, then spend the charge." },
 ];
-for (var _i = 0; _i < 10; _i++) {
+for (var _i = 0; _i < 13; _i++) {
     global.abilities_arcanist[_i].desc_short = _arc_d[_i].s;
     global.abilities_arcanist[_i].desc_full  = _arc_d[_i].f;
 }
@@ -454,12 +496,12 @@ var _bw_d = [
       f: "Open a vein and drink the fight back into yourself.\n- 10 Blood damage, and you heal 8 on the hit.\n- Cheap bread-and-butter sustain - use it freely." },
     { s: "Take -4 dmg from every hit for 3 turns.",
       f: "Set your feet and let your hide turn to metal.\n- Every incoming hit deals 4 less damage for 3 turns.\n- Cast it before a heavy turn or a telegraphed blow." },
-    { s: "Deal 14 physical dmg. Bleed: 3 dmg/turn for 4 turns.",
-      f: "Rip a jagged wound that keeps bleeding long after the blow lands.\n- 14 physical damage + Bleed 3/turn for 4 turns (12 total).\n- Strong opener on high-HP targets and bosses; feeds Rupture." },
+    { s: "Deal 14 physical dmg + Bleed 3/turn x4. Costs ~5% max HP.",
+      f: "Rip a jagged wound that keeps bleeding long after the blow lands.\n- 14 physical damage + Bleed 3/turn for 4 turns (12 total).\n- BLOOD PRICE: casting it costs ~5% of your max HP (never lethal). Spend, then mend.\n- Strong opener on high-HP targets and bosses; feeds Rupture." },
     { s: "Spend 2 Blood. Heal 14 HP. Free action.",
       f: "Command your own blood to close the wound.\n- Costs no AP: spend 2 Blood, heal 14 HP.\n- Mid-fight recovery whenever the reserve is stocked." },
-    { s: "Deal 24 physical dmg. Target deals -30% dmg for 3 turns.",
-      f: "Bring the full weight of the blow down where the bone is.\n- 24 physical damage. The target deals 30% less damage for 3 turns.\n- Put it on the hardest hitter and take the pressure off yourself." },
+    { s: "Deal 24 physical dmg. -30% dmg 3t. Costs ~5% max HP.",
+      f: "Bring the full weight of the blow down where the bone is.\n- 24 physical damage. The target deals 30% less damage for 3 turns.\n- BLOOD PRICE: casting it costs ~5% of your max HP (never lethal).\n- Put it on the hardest hitter and take the pressure off yourself." },
     { s: "Spend 1 Blood. 8 Blood dmg. Steal 8 max HP (heal 8).",
       f: "Steal the strength out of a foe and make it your own.\n- 8 Blood damage; the target's max HP drops 8 - and YOUR max HP rises 8 and you heal 8, all for the combat.\n- The theft is real now: gut their pool while you grow yours." },
     { s: "Attackers take 8 dmg per hit for 4 turns.",
@@ -625,8 +667,10 @@ global.abilities_shadowstrider = [
         /*effect_type*/"trap", /*effect_value*/0, /*duration*/0,
         /*self*/true),
 
-    // 2: Shadow Step - dodge CHANCE on each of the next 3 incoming attacks (2-turn CD).
-    //    Cast sets player.shadow_step_charges = 3; resolved in obj_combat_controller/Step_0.
+    // 2: Shadow Step - dodge CHANCE on each of the next 2 incoming attacks (2-turn CD).
+    //    Cast sets player.shadow_step_charges = 2 (3 with Long Stride); resolved in
+    //    obj_combat_controller/Step_0. Nerfed 3 -> 2 in the 08-13 class pass (M:
+    //    traps are the Shadowstrider's active answer now).
     ability_define("Shadow Step",
         /*energy*/1, /*secondary*/0,
         /*damage*/0, /*dtype*/0,
@@ -759,8 +803,8 @@ var _ss_d = [
       f: "One breath, one line, one shot that was always going to land.\n- 14 physical damage, high accuracy, strong Precision crit.\n- +12 damage against a debuffed target - mark first, then fire." },
     { s: "SET a trap. Springs on the next MELEE attack: blocks it, 10 dmg + Root.",
       f: "Set steel jaws where the next foot falls, and wait.\n- DEPLOYED: takes a trap slot and waits. It springs on the first MELEE attack.\n- Springing BLOCKS that attack outright - the blow never lands and their turn is spent - then deals 10 physical damage and Roots them.\n- Useless against a caster or an archer. Read their intent before you set it." },
-    { s: "~(50% + WIS) chance to dodge the next 3 attacks. 2-turn CD.",
-      f: "Walk half a step behind your own shadow and let the blows guess.\n- Each of the next 3 incoming attacks has a (50% + WIS*2)% dodge chance, capped at 85%. Stun halves the odds.\n- 1 AP on a 2-turn cooldown - strong against a pack." },
+    { s: "~(50% + WIS) chance to dodge the next 2 attacks. 2-turn CD.",
+      f: "Walk half a step behind your own shadow and let the blows guess.\n- Each of the next 2 incoming attacks has a (50% + WIS*2)% dodge chance, capped at 85%. Stun halves the odds.\n- 1 AP on a 2-turn cooldown - your traps carry the rest of the guard." },
     { s: "Deal 7 Poison dmg. Poison: 5 dmg/turn for 4 turns.",
       f: "Flick a needle of something patient into their neck.\n- 7 Poison damage + Poison 5/turn for 4 turns (20 total). Scales with INT gear; armor can't blunt it.\n- Cheap - apply it early and let it tick while you work." },
     { s: "Spend 1 Prep. Enemies -40% acc 2t; YOU +15% dodge.",
@@ -800,24 +844,41 @@ for (var _i = 0; _i < array_length(_ss_d); _i++) {
 // --- GENERAL POOL: any class can slot these (selectable in every loadout) ---
 global.abilities_general = [
     ability_define("Strike",          1,0,  10,0,  85,false, 1,8,  "damage",0,0,  false),
-    ability_define("Field Dressing",  1,0,  0,0,   -1,true,  -1,0, "heal",14,0,   true),
-    ability_define("Second Wind",     2,0,  0,0,   -1,true,  -1,0, "heal",10,0,   true),
+    // Heal ROLE SPLIT (M-locked 08-13: "second wind is just a better field
+    // dressing"): Field Dressing = cheap 1-AP triage (smaller heal, always
+    // staunches your newest Bleed, 2-turn CD); Second Wind = THE big burst
+    // heal (+1 resource) on a 3-turn CD. Its old base cleanse moved into the
+    // Field Dressing line (Mender's Rite) / Clean Break node.
+    ability_define("Field Dressing",  1,0,  0,0,   -1,true,  -1,0, "heal",10,0,   true),
+    ability_define("Second Wind",     2,0,  0,0,   -1,true,  -1,0, "heal",24,0,   true),
     ability_define("Adrenaline Rush", 0,0,  0,0,   -1,true,  -1,0, "status",1,0,  true),
     // The Ashen Duelist's 1st token (DESIGN_DUELIST_CHALLENGE.md): unlocks via
     // the duelist_tokens goal - never sold, only earned in the duel.
     ability_define("Measured Riposte", 1,0,  0,0,  -1,true,  -1,0, "status",18,1, true),
+    // WEAPON STRIKES (M-locked 08-13 weapon rework): the weapons' MAIN utility.
+    // Deliberately modest bases - each channels the equipped weapon: its flat
+    // damage joins a SECOND time pre-crit (tempering/rarity/affixes all ride
+    // and crits amplify the craft), and its elemental affix always fires here.
+    // "They may be lame and weak at first but scale up immensely once crafting
+    // is perfected" - M. Spells no longer inherit weapon elements for free.
+    ability_define("Weapon Strike", 1,0,  6,0,  88,false, 0,8,  "damage",0,0, false),
+    ability_define("Weapon Shot",   1,0,  6,0,  88,false, 1,8,  "damage",0,0, false),
 ];
 var _gen_d = [
     { s:"Deal 10 physical dmg. Refunds its AP on a kill.",
       f:"A plain, honest blow - the kind that keeps a turn moving.\n- 10 physical damage. Momentum: if it kills, the AP comes back.\n- The chaff-clearer any class can carry." },
-    { s:"Heal 14 HP. 2-turn cooldown.",
-      f:"Cinch the wound tight and keep moving.\n- 1 AP: restore 14 HP, on a 2-turn cooldown.\n- No setup, no resource - patch up between bigger plays." },
-    { s:"Heal 10 HP, +1 resource, shake off newest debuff.",
-      f:"Spit, straighten up, and shake the worst of it off.\n- Heals 10 HP, refunds 1 Soul / Blood / Prep, and cleanses your newest affliction.\n- The only self-cleanse in the game - your answer to Poison, burns, and hexes." },
+    { s:"Heal 10 HP + staunch newest Bleed. 2-turn cooldown.",
+      f:"Cinch the wound tight and keep moving.\n- 1 AP: restore 10 HP and staunch your newest Bleed, on a 2-turn cooldown.\n- Cheap triage between bigger plays - the bleeding stops here." },
+    { s:"Heal 24 HP, +1 resource. 3-turn cooldown.",
+      f:"Spit, straighten up, and come back swinging.\n- 2 AP: restore 24 HP and refund 1 Soul / Blood / Prep, on a 3-turn cooldown.\n- The big mend. When the fight needs a real turnaround, this is it." },
     { s:"Pay 5 HP: gain +1 AP. Once per turn.",
       f:"Let the fear do something useful - and keep letting it.\n- Costs no AP: pay 5 HP, gain +1 AP. Once per turn, every turn.\n- The HP-as-fuel lever; feeds lifesteal builds that pay the loan back. Ruinous when you're already bleeding out." },
     { s:"Until next turn: first melee blow is answered for 18.",
       f:"The Ashen Duelist's own opening, learned the hard way.\n- 1 AP: until your next turn, the FIRST melee blow against you is answered with 18 physical - half again Counterblade's riposte.\n- One perfect answer instead of Counterblade's standing stance. Ranged attacks slip past it." },
+    { s:"Melee: 6 dmg + your weapon counted AGAIN. Scales with craft.",
+      f:"Let the weapon do the talking.\n- 1 AP: 6 physical damage, plus your melee weapon's damage counted a SECOND time (crit-scaled) - tempering, rarity and affixes all ride along, and its elemental affix always fires here.\n- Humble with a rusty blade; monstrous with a perfected one." },
+    { s:"Ranged: 6 dmg + your weapon counted AGAIN. Scales with craft.",
+      f:"Trust the draw, and the fletcher who earned it.\n- 1 AP: 6 physical damage, plus your ranged weapon's damage counted a SECOND time (crit-scaled) - tempering, rarity and affixes all ride along, and its elemental affix always fires here.\n- Humble with a bent bow; monstrous with a perfected one." },
 ];
 for (var _i = 0; _i < array_length(global.abilities_general); _i++) {
     global.abilities_general[_i].desc_short = _gen_d[_i].s;
@@ -1239,6 +1300,7 @@ function ability_attack_class(ab) {
         case "Strike":      case "Gore Strike":   case "Marrow Crush": case "Bonebreaker":
         case "Blood Leech": case "Vital Theft":   case "Plague Touch": case "Crimson Apex":
         case "Flurry":      case "Killing Spree": case "Bulwark Slam":  // Bulwark = melee payoff
+        case "Weapon Strike":   // 08-13 weapon rework ("Weapon Shot" stays ranged by default)
         // §3 rework melee additions
         case "Cleave":      case "Rupture":       case "Throat Slit":  case "Assassinate":
         // #26 Arcanist melee kit - the melee SPELLS (dtype != 0 keeps them spells)
@@ -1291,7 +1353,14 @@ function ability_cooldown(ab) {
         case "Blink":          _cd = 2; break;
         case "Shadow Step":    _cd = 2; break;
         case "Field Dressing": _cd = 2; break;   // was once-per-combat; now a 2-turn CD like Blink
+        case "Second Wind":    _cd = 3; break;   // heal split 08-13: THE big burst heal, gated
         case "Void Drain":     _cd = 2; break;   // cheap 1-AP heal/Soul, gated by a 2-turn CD
+        // Summons (class pass 08-13): real cooldowns so the obstruction is a
+        // decision, not a rotation. The CD starts at SUMMON time; the detonate
+        // press bypasses it (handled in the combat controller).
+        case "Magma Golem":    _cd = 4; break;
+        case "Warding Effigy": _cd = 3; break;
+        case "Static Husk":    _cd = 3; break;
     }
     // Talent-web Swift Recovery node: resolved copies carry cd_mod (floors at 1).
     if (_cd > 0 && is_struct(ab) && variable_struct_exists(ab, "cd_mod")) _cd = max(1, _cd + ab.cd_mod);
@@ -1676,7 +1745,43 @@ function vfx_variant_pick(_name, _arr) {
 // the classic Gigapack burst and an 08-11 owned-pack variant per ability; an
 // equipped Vael tint pins the classic sprite - only those have the grey twins
 // the tint blend needs (school_vfx_sprite).
+// school_bolt_sprite(sch) - the classic bolt/burst sprite for a school ("" -> -1).
+// Shared by the enemy attack paths (enemy_attack_school) so a Fire Drake's bolt
+// uses the same art language as the player's fire spells.
+function school_bolt_sprite(_sch) {
+    switch (_sch) {
+        case "fire":   return spr_vfx_fire;
+        case "frost":  return spr_vfx_frost;
+        case "shock":  return spr_vfx_shock;
+        case "arcane": return spr_vfx_arcane;
+        case "blood":  return spr_vfx_blood;
+        case "void":   return spr_vfx_void;
+        case "shadow": return spr_vfx_shadow;
+        case "poison": return spr_vfx_poison;
+    }
+    return -1;
+}
+
+// ability_vfx_pacing(ab, r) - VFX PACING (M 08-13: "every move is trying to
+// occur within the same time window... certain explosions happen so fast i
+// cant even tell what the vfx is"): heavy casts EARN screen time. 2 AP bursts
+// run ~35% longer; 3+ AP finishers ~75% longer and a third bigger. Ticks
+// stretch the frame mapping (the animation actually plays out), scale feeds
+// the burst draw. 1 AP pokes keep the fast shipped snap.
+function ability_vfx_pacing(ab, _r) {
+    var _apc = variable_struct_exists(ab, "energy_cost") ? ab.energy_cost : 1;
+    var _sc  = 1.0;
+    if (_apc >= 3)      { _r.ticks = round(_r.ticks * 1.75); _sc = 1.35; }
+    else if (_apc == 2) { _r.ticks = round(_r.ticks * 1.35); _sc = 1.12; }
+    _r.scale = _sc;
+    return _r;
+}
+
 function ability_attack_vfx(ab) {
+    return ability_vfx_pacing(ab, __ability_attack_vfx_base(ab));
+}
+
+function __ability_attack_vfx_base(ab) {
     var _sch = ability_school(ab);
     if (_sch == "") return phys_shape_vfx(ability_phys_shape(ab));
     var _classic; var _ticks;
@@ -1915,7 +2020,7 @@ function ability_effect_full(ab) {
         case "Smoke Bomb":      _b = "The smoke also cloaks YOU: +15% dodge while it lingers."; break;
         case "Second Wind":     _b = "Also restore 1 secondary resource (Soul / Blood / Prep)."; break;
         case "Blink":           _b = "Fully dodge the next attack; the 2nd hit after takes 50% less and the 3rd 25% less. 2-turn cooldown."; break;
-        case "Shadow Step":     _b = "~(50% + WIS) chance to dodge each of the next 3 attacks. 2-turn cooldown."; break;
+        case "Shadow Step":     _b = "~(50% + WIS) chance to dodge each of the next 2 attacks. 2-turn cooldown."; break;
         case "Evasive Roll":    _b = "Halve the next incoming hit above 10 damage; a clean absorb refunds 1 Preparation."; break;
         case "Vanish":          _b = "~(50% + WIS) chance to dodge the next attack; your next strike deals +12 damage."; break;
         case "Bloodthorn Aura": _b = "Reflect " + string(_ev) + " damage to attackers for " + ability_turns(_ed) + "."; break;
@@ -2058,6 +2163,50 @@ function ability_describe(ab) {
     }
     var _eff = ability_effect_full(ab);
     if (_eff != "") _out += (_out != "" ? " " : "") + _eff;
+    // M 08-13 HARD RULE: the primary description is the authoritative breakdown -
+    // riders that live in combat code (blood prices, refunds) belong in THIS
+    // sentence, not only in the grey desc_full footer.
+    switch (ab.name) {
+        case "Gore Strike": case "Marrow Crush":
+            _out += " Blood price: casting costs ~5% of your max HP (never lethal).";
+            break;
+        case "Strike":
+            _out += " Momentum: if it kills, its AP is refunded.";
+            break;
+        case "Field Dressing":
+            _out += " Also staunches your newest Bleed.";
+            break;
+        case "Second Wind":
+            _out += " Refunds 1 Soul / Blood / Prep.";
+            break;
+        case "Weapon Strike":
+            _out += " Adds your melee weapon's damage a SECOND time (crit-scaled); its elemental affix always fires here.";
+            break;
+        case "Weapon Shot":
+            _out += " Adds your ranged weapon's damage a SECOND time (crit-scaled); its elemental affix always fires here.";
+            break;
+        case "Vital Theft":
+            _out += " Steals 8 max HP for the combat: theirs drops, yours rises, and you heal 8.";
+            break;
+        case "Arcane Echo":
+            _out += " +4 damage per Soul still held, and half the damage echoes to every other enemy.";
+            break;
+        case "Soul Nova":
+            _out += " +7 damage per Soul consumed (up to 4).";
+            break;
+        case "Assassinate":
+            _out += " DOUBLED against a target below 30% HP.";
+            break;
+        case "Rupture":
+            _out += " Detonates the target's strongest status: bleeds +5 per remaining tick, chills shatter, poison spreads Mortality, void heals you.";
+            break;
+    }
+    // Bespoke stance/utility abilities (Measured Riposte, Undying, ...) whose
+    // mechanics live entirely in combat code assemble to nothing here - their
+    // curated desc_short IS the mechanical breakdown, so it becomes the primary
+    // description. "A utility action." is a true last resort only. (M 08-13:
+    // "Measured Riposte just says a utility action".)
+    if (_out == "" && variable_struct_exists(ab, "desc_short") && ab.desc_short != "") _out = ab.desc_short;
     if (_out == "") _out = "A utility action.";
     return _out;
 }
@@ -2108,7 +2257,7 @@ function ability_summary(ab) {
             case "Counterblade":    _tag = "Riposte 12"; break;
             case "Sanguine Pact":   _tag = "Blood -> shield"; break;
             case "Blink":           _tag = "Dodge 1, soften 2 - 2t CD"; break;
-            case "Shadow Step":     _tag = "Dodge chance x3 - 2t CD"; break;
+            case "Shadow Step":     _tag = "Dodge chance x2 - 2t CD"; break;
             case "Evasive Roll":    _tag = "Halve next hit"; break;
             case "Vanish":          _tag = "Vanish, +12 next"; break;
             case "Bloodthorn Aura": _tag = "Thorns " + string(_ev) + "/" + string(_ed) + "t"; break;
@@ -2239,7 +2388,7 @@ global.traits_all = [
         -1, "duelist", 2, "duelist_poise"),
 
     trait_define("Expanded Arsenal",
-        "Take 5 abilities into each run instead of 4.",
+        "Take 6 abilities into each run instead of 5.",
         -1, "dungeon_clears_total", 4, "expanded_arsenal"),
 
     trait_define("Prospector",
@@ -2458,6 +2607,11 @@ function ability_unlock_info(ability_name) {
         case "Arcane Echo":      return { type:"vex", cost:250, goal_type:"", goal_value:0 };
         case "Soul Nova":        return { type:"vex", cost:250, goal_type:"", goal_value:0 };
         case "Rift":             return { type:"vex", cost:400, goal_type:"", goal_value:0 };
+        // Summons (class pass 08-13): the Arcanist's obstruction line. Husk is
+        // the entry price, the Golem is the endgame bomb.
+        case "Static Husk":      return { type:"vex", cost:100, goal_type:"", goal_value:0 };
+        case "Warding Effigy":   return { type:"vex", cost:250, goal_type:"", goal_value:0 };
+        case "Magma Golem":      return { type:"vex", cost:400, goal_type:"", goal_value:0 };
         case "Soulbind":         return { type:"vex", cost:400, goal_type:"", goal_value:0 };
         case "Singularity":      return { type:"vex", cost:400, goal_type:"", goal_value:0 };
         // #26 Arcanist melee kit - premium tier above the 100/250/400 ladder
@@ -2929,6 +3083,10 @@ function ability_web_bespoke(ab) {
             var _sf = ability_web_node("tk", "T", 3, "Cinderheart", "Soulfire burns as FIRE - fire gear now feeds it", [], "");
             _sf.school_to = "fire";
             array_push(_out, _sf);
+            // Edge-Carried (M-locked 08-13 weapon rework): weapon-spell synergy
+            // is a BUILD CHOICE now, not a free ride - this node opts the
+            // ability back into the weapon's elemental affix.
+            array_push(_out, ability_web_node("t1", "T", 1, "Edge-Carried", "Your weapon's elemental affix rides this ability", [], "edge_carried"));
             break;
         case "Arcane Burst": {
             var _abu = ability_web_attune_node("pk", ab);
@@ -3013,7 +3171,7 @@ function ability_web_bespoke(ab) {
             // P3 (08-05): a leech that bites an artery drinks twice.
             array_push(_out, ability_web_node("tk", "T", 3, "Glutted Vein", "Critical hits grant +1 class resource", [], "crit_sec:1"));
             // Delivery mutator, weak tier (08-11): the bite keeps drinking.
-            array_push(_out, ability_web_node("t2", "T", 2, "Seeping Wound", "The wound LINGERS - a 2-turn bleed at 30% of the hit (+blood bonus)", [], "mut_linger:30"));
+            array_push(_out, ability_web_node("t2", "T", 2, "Seeping Wound", "LINGERS: a 2-turn bleed at 30% of the hit", [], "mut_linger:30"));
             break;
         case "Blood Surge":
             // 07-29 M pass: the template gave it FOUR near-identical +healing
@@ -3027,6 +3185,8 @@ function ability_web_bespoke(ab) {
             array_push(_out, ability_web_node("pk", "P", 3, "Butcher's Rhythm", "+50% damage below 25% HP", [], "execute:50"));
             // P3 (08-05): the spray was never going to stay on one target.
             array_push(_out, ability_web_node("tk", "T", 3, "Arterial Spray", "Echoes 50% of its damage to another enemy", [], "splash:50"));
+            // Edge-Carried (08-13 weapon rework): opt back into the weapon affix.
+            array_push(_out, ability_web_node("t1", "T", 1, "Edge-Carried", "Your weapon's elemental affix rides this ability", [], "edge_carried"));
             break;
         case "Iron Skin":
             // P3 (07-29): t2 was a template clone. "Sharp Edges" rides the
@@ -3070,13 +3230,15 @@ function ability_web_bespoke(ab) {
             array_push(_out, ability_web_node("pk", "P", 3, "Deadeye", "Critical Snipes leave the target Vulnerable (2 turns)", [], "crit_vuln:2"));
             // P3 (08-05): the sniper's creed.
             array_push(_out, ability_web_node("tk", "T", 3, "One Shot, One Kill", "+50% damage below 25% HP", [], "execute:50"));
+            // Edge-Carried (08-13 weapon rework): opt back into the weapon affix.
+            array_push(_out, ability_web_node("t1", "T", 1, "Edge-Carried", "Your weapon's elemental affix rides this ability", [], "edge_carried"));
             break;
         case "Poison Dart":
             array_push(_out, ability_web_node("pk", "P", 3, "Virulent Spread", "Its venom jumps to a second enemy", [], "status_splash"));
             // P3 (08-05): a needle placed where the armor isn't.
             array_push(_out, ability_web_node("tk", "T", 3, "Nerve Puncture", "Hits inflict Vulnerable (1 turn)", [], "hit_vuln"));
             // Delivery mutator, weak tier (08-11): venom that pools in the wound.
-            array_push(_out, ability_web_node("t2", "T", 2, "Pooling Venom", "The venom LINGERS - a 2-turn poison at 30% of the hit (+poison bonus)", [], "mut_linger:30"));
+            array_push(_out, ability_web_node("t2", "T", 2, "Pooling Venom", "LINGERS: a 2-turn poison at 30% of the hit", [], "mut_linger:30"));
             break;
         // --- Deployed-trap P5 nodes (08-11, SYSTEMS_TRAPS.md §6). Each REPLACES
         // a template slot (the web UI draws exactly six ids). Riders bake into
@@ -3111,7 +3273,7 @@ function ability_web_bespoke(ab) {
             array_push(_out, ability_web_node("p1", "P", 1, "Sharpened Instinct", "+10% dodge chance while its charges are active", [], "step_evade:10"));
             array_push(_out, ability_web_node("p2", "P", 2, "Coiled Step", "Also grants +1 Prep on cast", [], "cast_sec:1"));
             array_push(_out, ability_web_node("pk", "P", 3, "Slipstream", "Costs 1 less AP", ["apc"], ""));
-            array_push(_out, ability_web_node("t1", "T", 1, "Long Stride", "Grants 4 dodge charges instead of 3", [], "step_charges"));
+            array_push(_out, ability_web_node("t1", "T", 1, "Long Stride", "Grants 3 dodge charges instead of 2", [], "step_charges"));
             array_push(_out, ability_web_node("tk", "T", 3, "Phantom Momentum", "Each successful Shadow Step dodge grants +1 Prep", [], "step_dodge_prep"));
             break;
         case "Frost Shot":
@@ -3123,10 +3285,13 @@ function ability_web_bespoke(ab) {
             array_push(_out, ability_web_node("pk", "P", 3, "Shadow Feint", "Also grants +1 class resource on cast", [], "cast_sec:1"));
             break;
         case "Field Dressing":
-            // 07-29 M pass: the template's t1 was a Deeper Roots clone. Power
-            // stays the raw-healing line; the Twist branch opens with utility -
-            // go bigger heals or go cleanse.
-            array_push(_out, ability_web_node("t1", "T", 1, "Mender's Rite", "Also cleanses your newest debuff", [], "self_cleanse"));
+            // Heal split (M-locked 08-13): the left-side +20%/+50% healing
+            // template nodes were "too strong and also boring/redundant" - the
+            // Power branch becomes triage UTILITY instead of raw stacking.
+            // p1 Deeper Roots (+4) survives as the one modest healing rank.
+            array_push(_out, ability_web_node("p2", "P", 2, "Bound Tight", "Healing past full hardens into a shield", [], "overheal_shield"));
+            array_push(_out, ability_web_node("pk", "P", 3, "Emergency Triage", "Heals DOUBLE when you're below half HP", [], "triage"));
+            array_push(_out, ability_web_node("t1", "T", 1, "Mender's Rite", "Also cleanses your newest debuff of any kind", [], "self_cleanse"));
             break;
     }
     return _out;
@@ -3455,7 +3620,20 @@ function ability_web_whetstone_options(ab) {
                     label: "Convert its school to " + school_label(_sc) + " for this run",
                     mods: [], rider: ""
                 });
-            } else array_push(_out, _n[_i]);
+            } else {
+                var _cand = _n[_i];
+                // M 08-13 (shot: honing Bear Trap offered "Deeper Roots" AND
+                // "Deeper Roots II", both "+2 effect strength (0 -> 2)"):
+                // value nodes computed from a ZERO effect value are no-ops
+                // (the deployed-trap kit keeps its payload elsewhere) - skip
+                // them, and skip exact duplicate title+label pairs so the
+                // stone never shows the same edge twice.
+                if (string_pos("(0 ->", _cand.label) > 0) continue;
+                var _dup2 = false;
+                for (var _j = 0; _j < array_length(_out); _j++)
+                    if (_out[_j].title == _cand.title && _out[_j].label == _cand.label) { _dup2 = true; break; }
+                if (!_dup2) array_push(_out, _cand);
+            }
         }
     }
     return _out;
@@ -3894,8 +4072,14 @@ function trunk_catalog(class_id) {
                        b: trunk_node("Reaper's Dividend", "Spell killing blows refund 1 AP",                         "soul_kill_ap") },
         ];
         case 1: return [ // Bloodwarden - Blood
+            // "Thickened Vitae" REPLACED 08-13 (M: "just a bad trait... not
+            // functional"): the HP-per-Blood slope punished spending - the
+            // class's whole loop - and yo-yoed the ceiling. Clotted Armor is a
+            // hold-threshold tank bonus instead. Keeps the fx id "blood_hp" so
+            // existing picks migrate for free; the old max-HP sync is gone and
+            // the new read lives at the player-mitigation site.
             { lvl: 2,  a: trunk_node("Cruor Feast",       "Your crits also grant +1 Blood",                          "blood_on_crit"),
-                       b: trunk_node("Thickened Vitae",   "Max HP swells +2 for each Blood you hold - and falls again as you spend it", "blood_hp") },
+                       b: trunk_node("Clotted Armor",     "While you hold 5+ Blood, every hit deals 2 less damage to you", "blood_hp") },
             { lvl: 5,  a: trunk_node("Practiced Phlebotomy", "Blood-spending abilities cost 1 less Blood (min 1)",   "blood_discount"),
                        b: trunk_node("Woken Wounds",      "Start each combat with Blood equal to missing HP / 10",   "blood_start_missing") },
             { lvl: 8,  a: trunk_node("Panic Response",    "Hits that leave you below 30% HP grant +2 Blood",         "blood_low_gain"),

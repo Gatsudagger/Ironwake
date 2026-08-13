@@ -37,6 +37,9 @@ geom_last_h = window_get_height();
 // dead-code-eliminated - forces the compiler to include them in the build.
 // (If a sprite is ever renamed/removed, update this list to match.)
 global.__sprite_includes = [
+    // 2.5D painted plane pilot (08-13): string-looked-up in dungeon_bg_draw.
+    spr_wall25_ashen_1, spr_floor25_ashen_1,
+    spr_wall25_ashen_2, spr_floor25_ashen_2, spr_wall25_ashen_3, spr_floor25_ashen_3, spr_wall25_scorched_1, spr_floor25_scorched_1, spr_wall25_scorched_2, spr_floor25_scorched_2, spr_wall25_scorched_3, spr_floor25_scorched_3, spr_wall25_tundra_1, spr_floor25_tundra_1, spr_wall25_tundra_2, spr_floor25_tundra_2, spr_wall25_tundra_3, spr_floor25_tundra_3, spr_bone_sovereign_hd,
     // RPG-origin staging stills (08-11): string-ref only via origin_still()
     // (asset_get_index("spr_origin_" + id)) - listed or the compiler strips them.
     spr_origin_merchant,    spr_origin_forester,    spr_origin_deserter,
@@ -1270,6 +1273,7 @@ ability_detail_scroll = 0;     // vertical scroll offset (px) for the Tab abilit
 global.ui_ability_detail_max_scroll = 0;  // published by ui_draw_ability_detail each frame; input clamps to it
 global.combat_log_breakdowns = true;       // hover a damage log line for a DnD-style math breakdown (Task 1; flip false to disable)
 vex_detail_open     = false;   // Tab detail popup over the Vex ability/trait list
+vex_detail_scroll   = 0;       // its W/S + wheel scroll offset (08-13 scroll audit)
 loadout_cursor     = 0;
 loadout_scroll     = 0;    // stateful list window top (edge-scrolling; self-corrects from cursor)
 loadout_selected   = [];   // up to 4 ability name strings being built this session
