@@ -973,7 +973,8 @@ function item_stat_archetype(stat_name) {
 // item_slot_noun(slot) - readable noun for a slot, used in generic descriptions.
 function item_slot_noun(slot) {
     switch (slot) {
-        case "weapon":  return "weapon";
+        case "weapon":        return "melee weapon";
+        case "ranged_weapon": return "ranged weapon";   // was missing -> "piece of equipment" (M 08-15 shot)
         case "offhand": return "offhand";
         case "helm":    return "piece of headgear";
         case "chest":   return "set of body armor";
@@ -983,6 +984,24 @@ function item_slot_noun(slot) {
         case "ring":    return "ring";
     }
     return "piece of equipment";
+}
+
+// item_slot_title(slot) - display-cased slot name for headers/breadcrumbs
+// ("Melee Weapon"), where item_slot_noun's sentence form ("piece of headgear")
+// reads as lowercase dev text (M 08-15 blueprint-wizard shot).
+function item_slot_title(slot) {
+    switch (slot) {
+        case "weapon":        return "Melee Weapon";
+        case "ranged_weapon": return "Ranged Weapon";
+        case "offhand":       return "Offhand";
+        case "helm":          return "Helm";
+        case "chest":         return "Chest Armor";
+        case "gloves":        return "Gloves";
+        case "boots":         return "Boots";
+        case "amulet":        return "Amulet";
+        case "ring":          return "Ring";
+    }
+    return "Equipment";
 }
 
 // item_generic_desc(item) - auto-generated reference description from slot + primary
@@ -1353,14 +1372,18 @@ function elem_affix_describe(elem, slot = "") {
     var _dur    = string(elem.status_dur);
     var _st = "";
     switch (elem.status_kind) {
-        case "dot":        _st = _pct + "% chance to apply Burn (" + string(elem.status_value) + " dmg/turn, " + _dur + "t)"; break;
-        case "weaken":     _st = _pct + "% chance to Chill (foe -" + string(round(elem.status_value * 100)) + "% dmg, " + _dur + "t)"; break;
-        case "vulnerable": _st = _pct + "% chance to Shock (foe +" + string(elem.status_value) + " dmg/hit, " + _dur + "t)"; break;
+        case "dot":        _st = _pct + "% chance of Burn (" + string(elem.status_value) + " dmg/turn, " + _dur + "t)"; break;
+        case "weaken":     _st = _pct + "% chance of Chill (-" + string(round(elem.status_value * 100)) + "% dmg, " + _dur + "t)"; break;
+        case "vulnerable": _st = _pct + "% chance of Shock (+" + string(elem.status_value) + " dmg/hit taken, " + _dur + "t)"; break;
     }
     // M-locked 08-13 weapon rework: the affix fires on WEAPON ACTIONS (Strike /
     // Weapon Strike / Weapon Shot) and Edge-Carried abilities - not every
-    // ability of the reach class. The text says so.
-    return "+" + string(elem.dmg) + " " + school_label(elem_element_name(elem.element)) + " dmg on " + _reach + " weapon strikes. (" + _st + ")";
+    // ability of the reach class. The text says so. Reworded 08-15 (M shot:
+    // "+4 Shock dmg on ranged weapon strikes. (15% chance to Shock (foe...))"
+    // read as a nested-paren run-on beside the weapon's own damage line) -
+    // one leading label, one level of parens.
+    return "On " + _reach + " weapon strikes: +" + string(elem.dmg) + " "
+         + school_label(elem_element_name(elem.element)) + " damage, " + _st + ".";
 }
 
 // create_item(name, slot, rarity, stat_name, stat_value, effect_desc, gold_value)
@@ -1603,16 +1626,33 @@ function consumable_use_out_of_combat(item) {
     // Sable's exotic find-buff potions apply out of combat too (drink between floors).
     if (_et == "gold_find_pot") { potion_drink_gold(item.effect_value);  return true; }
     if (_et == "loot_find_pot") { potion_drink_loot(item.effect_value);  return true; }
-    // CHAOTIC BREW (M 07-28): out of combat it settles into a heal (40-90 to the
-    // persistent run HP); the sting bites GOLD here - there is no safe HP-loss
-    // channel outside combat. Combat drinking gets the full outcome table.
+    // CHAOTIC BREW (reworked 08-15): out of combat, the stamped mix applies
+    // what it can - heals land on the persistent run HP, the find-buffs are
+    // real, battle-only parts (wards/AP/regen) fizzle. The bite downside spills
+    // gold here (no safe HP-loss channel outside combat). Legacy brews keep
+    // the old 40-90 heal roll.
     if (_et == "chaotic") {
         var _ch_max = out_of_combat_max_hp();
         if (!variable_global_exists("run_current_hp") || global.run_current_hp <= 0) {
             global.run_current_hp = _ch_max;
         }
-        global.run_current_hp = min(_ch_max, global.run_current_hp + irandom_range(40, 90));
-        if (irandom(99) < 35) global.gold = max(0, global.gold - 20);   // it curdles
+        if (variable_struct_exists(item, "mix")) {
+            for (var _cbi = 0; _cbi < array_length(item.mix); _cbi++) {
+                var _cbp = item.mix[_cbi];
+                if (_cbp.effect_type == "heal" || _cbp.effect_type == "heal_dot") {
+                    // Regen collapses to a flat 3-tick heal at camp.
+                    var _cbh = (_cbp.effect_type == "heal") ? _cbp.effect_value : _cbp.effect_value * 3;
+                    global.run_current_hp = min(_ch_max, global.run_current_hp + _cbh);
+                } else if (_cbp.effect_type == "gold_find_pot") potion_drink_gold(_cbp.effect_value);
+                else if (_cbp.effect_type == "loot_find_pot")   potion_drink_loot(_cbp.effect_value);
+            }
+            if (variable_struct_exists(item, "downside") && item.downside.kind == "bite") {
+                global.gold = max(0, global.gold - 15);
+            }
+        } else {
+            global.run_current_hp = min(_ch_max, global.run_current_hp + irandom_range(40, 90));
+            if (irandom(99) < 35) global.gold = max(0, global.gold - 20);   // it curdles
+        }
         return true;
     }
     return false;
@@ -2102,6 +2142,27 @@ function forge_effect_catalog() {
 }
 function forge_slot_list() {
     return ["weapon", "ranged_weapon", "offhand", "helm", "chest", "gloves", "boots", "amulet", "ring"];
+}
+
+// Pattern-craft CATEGORY flow (M 08-15: "weapons - armor - jewelry, then sub
+// menus" instead of one flat slot list). Slot ids reference forge_slot_list;
+// labels are AUTHORED (item_slot_noun has no name for ranged_weapon and fell
+// back to "piece of equipment" - M's shot).
+function pattern_craft_categories() {
+    return [
+        { label: "WEAPONS", desc: "Melee and ranged arms. These carry weapon damage.",
+          slots: [ { id: "weapon",        label: "MELEE" },
+                   { id: "ranged_weapon", label: "RANGED" } ] },
+        { label: "ARMOR",   desc: "Chest, helm, gloves, boots and offhand.",
+          slots: [ { id: "chest",   label: "CHEST" },
+                   { id: "helm",    label: "HELM" },
+                   { id: "gloves",  label: "GLOVES" },
+                   { id: "boots",   label: "BOOTS" },
+                   { id: "offhand", label: "OFFHAND" } ] },
+        { label: "JEWELRY", desc: "Amulets and rings. The only slots that take caster blueprints.",
+          slots: [ { id: "amulet", label: "AMULET" },
+                   { id: "ring",   label: "RING" } ] },
+    ];
 }
 
 // Runeheart Core candidates: rune_inventory INDICES of tier-III+ runes (the
@@ -4119,8 +4180,11 @@ function handle_enemy_drops(enemy_type) {
         if (!curse_blocks_consumables() && irandom(99) < _cons_chance) {   // Famine curse: no consumable drops
             var _c = roll_consumable_weighted(global.consumables_standard);
             array_push(global.run_items_found, _c);
-            var _fit = consumable_award(_c);
-            return _c.name + " [Consumable]" + (_fit ? "" : " (PACK FULL)") + _rune_suffix;
+            // No "(PACK FULL)" here (M 08-15: the suffix flashed at the victory
+            // moment and read as a popup interrupting itself) - the discard
+            // modal at the END of the victory chain is the one communication.
+            consumable_award(_c);
+            return _c.name + " [Consumable]" + _rune_suffix;
         }
         // 4% equipment drop (+ Faerie's Tear bonus) - rarity weights scale with awakening.
         if (irandom(99) < 4 + _loot_pot) {
@@ -4159,8 +4223,8 @@ function handle_enemy_drops(enemy_type) {
             var _elite_pool = (irandom(99) < _elite_std_mix) ? global.consumables_standard : global.consumables_elite;
             var _c = roll_consumable_weighted(_elite_pool);
             array_push(global.run_items_found, _c);
-            var _fit = consumable_award(_c);
-            _e_result += " + " + _c.name + (_fit ? "" : " (PACK FULL)");
+            consumable_award(_c);   // pack-full flash removed (M 08-15) - the end-of-chain modal communicates it
+            _e_result += " + " + _c.name;
         }
         return _e_result + _rune_suffix;
 
@@ -4190,8 +4254,8 @@ function handle_enemy_drops(enemy_type) {
             var _boss_pool = (irandom(99) < _boss_std_mix) ? global.consumables_standard : global.consumables_elite;
             var _c = roll_consumable_weighted(_boss_pool);
             array_push(global.run_items_found, _c);
-            var _fit = consumable_award(_c);
-            _result += " + " + _c.name + (_fit ? "" : " (PACK FULL)");
+            consumable_award(_c);   // pack-full flash removed (M 08-15) - the end-of-chain modal communicates it
+            _result += " + " + _c.name;
         }
         return _result + _rune_suffix;
     }
@@ -4367,9 +4431,22 @@ function rune_catalog() {
         { id:"warding",    name:"Warding",    domain:"gear",   stat_name:"el_resist",    vals:[5,10,18],  blurb:"+#% Elemental resist" },
         { id:"evasion",    name:"Evasion",    domain:"gear",   stat_name:"dodge_flat",   vals:[2,4,8],    blurb:"+# Dodge" },
         // ---- ASPECT RUNES (combat effects wired in Phase 2) ----
-        { id:"ember",      name:"Ember",      domain:"aspect", aspect:"dtype_dmg",   dtype:1, vals:[10,18,30], blurb:"+#% Elemental damage" },
-        { id:"serration",  name:"Serration",  domain:"aspect", aspect:"attack_dmg",           vals:[10,18,30], blurb:"+#% Physical attack damage" },
-        { id:"hemorrhage", name:"Hemorrhage", domain:"aspect", aspect:"dtype_dmg",   dtype:3, vals:[12,20,34], blurb:"+#% Blood damage" },
+        // Per-school damage runes (M-locked 08-15: "Ember should be fire, not
+        // all elemental"): one rune per element school at Hemorrhage's line,
+        // keyed off ability_school(). Saved runes read the catalog live, so
+        // pre-rework Ember instances become fire-only on load. AVATAR is the
+        // deliberately-weak omni that covers every school at roughly half a
+        // single-school rune's value.
+        { id:"ember",      name:"Ember",      domain:"aspect", aspect:"school_dmg", school:"fire",   vals:[12,20,34], blurb:"+#% Fire damage" },
+        { id:"rime",       name:"Rime",       domain:"aspect", aspect:"school_dmg", school:"frost",  vals:[12,20,34], blurb:"+#% Frost damage" },
+        { id:"tempest",    name:"Tempest",    domain:"aspect", aspect:"school_dmg", school:"shock",  vals:[12,20,34], blurb:"+#% Shock damage" },
+        { id:"aether",     name:"Aether",     domain:"aspect", aspect:"school_dmg", school:"arcane", vals:[12,20,34], blurb:"+#% Arcane damage" },
+        { id:"hemorrhage", name:"Hemorrhage", domain:"aspect", aspect:"school_dmg", school:"blood",  vals:[12,20,34], blurb:"+#% Blood damage" },
+        { id:"abyss",      name:"Abyss",      domain:"aspect", aspect:"school_dmg", school:"void",   vals:[12,20,34], blurb:"+#% Void damage" },
+        { id:"umbra",      name:"Umbra",      domain:"aspect", aspect:"school_dmg", school:"shadow", vals:[12,20,34], blurb:"+#% Shadow damage" },
+        { id:"venom",      name:"Venom",      domain:"aspect", aspect:"school_dmg", school:"poison", vals:[12,20,34], blurb:"+#% Poison damage" },
+        { id:"avatar",     name:"Avatar",     domain:"aspect", aspect:"school_dmg", school:"any",    vals:[6,10,17],  blurb:"+#% damage in EVERY element school" },
+        { id:"serration",  name:"Serration",  domain:"aspect", aspect:"attack_dmg",                  vals:[10,18,30], blurb:"+#% Physical attack damage" },
         { id:"hunter",     name:"Hunter",     domain:"aspect", aspect:"ranged_acc",           vals:[8,14,22],  blurb:"+#% Ranged accuracy" },
         { id:"bulwark",    name:"Bulwark",    domain:"aspect", aspect:"melee_shield",         vals:[2,4,7],    blurb:"Melee attack hits grant # shield" },
         { id:"leech",      name:"Leech",      domain:"aspect", aspect:"drain_heal",           vals:[20,35,60], blurb:"Drain abilities heal +#% more" },
@@ -4483,6 +4560,14 @@ function rune_glyph_color(id) {
         case "might":      case "serration":  return make_color_rgb(210,  80,  70);  // red
         case "hemorrhage": case "leech":      return make_color_rgb(180,  40,  60);  // crimson
         case "ember":                         return make_color_rgb(235, 130,  50);  // ember orange
+        // Per-school runes wear their school's canonical color (08-15 rework).
+        case "rime":                          return school_base_color("frost");
+        case "tempest":                       return school_base_color("shock");
+        case "aether":                        return school_base_color("arcane");
+        case "abyss":                         return school_base_color("void");
+        case "umbra":                         return school_base_color("shadow");
+        case "venom":                         return school_base_color("poison");
+        case "avatar":                        return make_color_rgb(232, 228, 245);  // prismatic white
         case "vitality":   case "fortitude":  case "bulwark": return make_color_rgb(220, 160, 70); // amber
         case "finesse":    case "hunter":     case "evasion": return make_color_rgb(90, 205, 110); // green
         case "keen":                          return make_color_rgb(240, 215,  90);  // gold
@@ -4513,11 +4598,20 @@ function rune_random(tier) {
         array_push(_pool, _d.id);
     }
     if (array_length(_pool) == 0) return rune_make("vitality", tier);
-    // Elemental dungeons lean toward elemental-themed runes (Ember = +elemental
-    // damage, Warding = +elemental resist). Runes aren't per-element, so this is
-    // the closest thematic bias available.
-    if (dungeon_bias_element() != "" && irandom(99) < 35) {
-        var _themed = ["ember", "warding"];
+    // Elemental dungeons lean toward their OWN school's rune (Ember in the
+    // scorched depths, Abyss in the ashen vault...) at double weight, plus
+    // Warding and the omni Avatar (per-school runes, M-locked 08-15).
+    var _bsch = dungeon_bias_school();
+    if (_bsch != "" && irandom(99) < 35) {
+        var _themed = ["warding", "avatar"];
+        for (var _j = 0; _j < array_length(_cat); _j++) {
+            var _td = _cat[_j];
+            if (variable_struct_exists(_td, "school") && _td.school == _bsch) {
+                array_push(_themed, _td.id);
+                array_push(_themed, _td.id);
+                break;
+            }
+        }
         return rune_make(_themed[irandom(array_length(_themed) - 1)], tier);
     }
     return rune_make(_pool[irandom(array_length(_pool) - 1)], tier);
@@ -4628,12 +4722,30 @@ function rune_aspect_socketed(id) {
 
 // --- Combat-facing aspect queries (combat passes the ability struct) ---------
 
+// Sum of socketed per-school rune % for one school: the exact-school runes
+// (Ember=fire, Rime=frost, ...) plus Avatar's every-school omni line.
+function rune_aspect_school_value(school) {
+    if (school == "" || !variable_global_exists("aspect_runes")) return 0;
+    var _t = 0;
+    for (var _i = 0; _i < array_length(global.aspect_runes); _i++) {
+        var _rn  = global.aspect_runes[_i];
+        var _def = rune_get(_rn.id);
+        if (_def == undefined || _def.domain != "aspect") continue;
+        if (_def.aspect != "school_dmg") continue;
+        if (_def.school != "any" && _def.school != school) continue;
+        _t += rune_value(_rn);
+    }
+    return _t;
+}
+
 // Outgoing-damage % bonus (fraction, e.g. 0.10) for an ability:
-//   Ember = elemental (dtype 1), Hemorrhage = blood (dtype 3),
+//   Per-school runes key off ability_school() (untagged dtype-1 abilities read
+//   as arcane, dtype-2 void, dtype-3 blood - see ability_school), so Ember
+//   boosts ONLY fire (M-locked 08-15); Avatar covers every school;
 //   Serration = physical attacks (dtype 0).
 function rune_aspect_damage_pct(ab) {
     var _dtype = variable_struct_exists(ab, "damage_type") ? ab.damage_type : 0;
-    var _pct   = rune_aspect_value("dtype_dmg", _dtype);   // Ember/Hemorrhage (dtype-keyed)
+    var _pct   = rune_aspect_school_value(ability_school(ab));
     if (_dtype == 0) _pct += rune_aspect_value("attack_dmg", undefined);  // Serration
     return _pct / 100;
 }
@@ -5021,6 +5133,7 @@ function sable_transmute_runes(idx_array, out) {
     var _new = rune_make(sable_transmute_roll_id(), _t + 1);
     array_push(_inv, _new);
     out.title = rune_title(_new);
+    out.rune  = _new;   // full struct for the result reveal card (M 08-15)
     save_game();
     return "";
 }
@@ -5187,13 +5300,58 @@ function sable_chaotic_fuse(indices) {
     var _cost = sable_chaotic_cost();
     if (global.gold < _cost.gold) return "Need " + string(_cost.gold) + "g.";
     if (!variable_global_exists("rune_dust") || global.rune_dust < _cost.dust) return "Need " + string(_cost.dust) + " dust.";
+    // Build the brew's REAL effects from the three bases (M-locked 08-15,
+    // Skyrim-alchemy style): every base effect carried at 60% potency (rounded
+    // up, min 1), plus ONE minor downside rolled NOW. Everything is stamped on
+    // the item and readable in its description - no mystery roll at drink time.
+    var _mix = [];
+    var _mix_txt = "";
+    for (var _mi = 0; _mi < 3; _mi++) {
+        var _src = _pool[indices[_mi]].it;
+        var _set = variable_struct_exists(_src, "effect_type") ? _src.effect_type : "";
+        // Brew-in-brew and escape charms don't survive the cauldron.
+        if (_set == "" || _set == "chaotic" || string_pos("escape", _set) == 1) continue;
+        var _sv = variable_struct_exists(_src, "effect_value") ? _src.effect_value : 0;
+        var _cv = max(1, ceil(_sv * 0.60));
+        array_push(_mix, { effect_type: _set, effect_value: _cv });
+        _mix_txt += ((_mix_txt == "") ? "" : "  /  ") + chaotic_mix_label(_set, _cv);
+    }
     sable_potion_pool_delete(indices);
     global.gold      -= _cost.gold;
     global.rune_dust -= _cost.dust;
-    array_push(global.consumable_inventory, create_consumable("Chaotic Brew", "chaotic", 0,
-        "Sable's mismatched fusion - drink and find out. Sometimes it bites.", 35));
+    var _down = chaotic_downside_roll();
+    var _desc = ((_mix_txt == "") ? "Only dregs survived the cauldron." : ("Mix: " + _mix_txt + "."))
+        + "  Dregs: " + _down.label + ".";
+    var _brew = create_consumable("Chaotic Brew", "chaotic", 0, _desc, 35);
+    _brew.mix      = _mix;
+    _brew.downside = _down;
+    array_push(global.consumable_inventory, _brew);
     save_game();
     return "";
+}
+
+// Short human label for one carried mix effect (brew descriptions + logs).
+function chaotic_mix_label(_et, _v) {
+    switch (_et) {
+        case "heal":           return "Restore " + string(_v) + " HP";
+        case "heal_dot":       return "Regen " + string(_v) + " HP/turn (3t)";
+        case "shield":         return string(_v) + "-pt ward";
+        case "energy":         return "+" + string(_v) + " AP";
+        case "resource_ap":    return "+" + string(_v) + " resource, +1 AP";
+        case "cleanse_dot":    return "Cleanse DoTs";
+        case "cleanse_debuff": return "Cleanse a debuff";
+        case "cleanse_all":    return "Cleanse everything";
+        case "gold_find_pot":  return "+" + string(_v) + "% gold find (2 bosses)";
+        case "loot_find_pot":  return "+" + string(_v) + "% loot chance (2 bosses)";
+    }
+    return "a strange residue";
+}
+
+// The brew's mandatory sting (M 08-15: "always a slight negative"), rolled at
+// BREW time so the label warns the drinker before they commit.
+function chaotic_downside_roll() {
+    if (irandom(1) == 0) return { kind: "bite",     label: "it bites going down (8-15 damage in battle, 15g of spilled coin at camp)" };
+    return                { kind: "sluggish", label: "it numbs the arm (-1 AP when drunk in battle)" };
 }
 
 // QUINTESSENCE (LEGENDARY FORGE component, M locked 07-28): distill ANY 3
@@ -5335,7 +5493,62 @@ function vael_skin_catalog() {
         { id:"dawnbreak",name:"Dawnbreaker",    sprite:asset_get_index("spr_skin_dawnbreak"), gold:1550, desc:"Radiant crusader plate that never dims.",      req:"awk4",   gender:"m" },
         { id:"doomherald",name:"Doomherald",    sprite:asset_get_index("spr_skin_doomherald"),gold:1750, desc:"The apocalyptic raiment of a warlord.",        req:"awk4",   gender:"m" },
         { id:"sovereign",name:"Eternal Sovereign",sprite:asset_get_index("spr_skin_sovereign"),gold:2000,desc:"Crown regalia worn beyond death itself.",      req:"awk4",   gender:"f" },
+        // --- Bloodwarden HD skins (08-14, M ruling: the pro-run knights ship
+        //     as Vael-only CLASS skins - `cls` gates them to Bloodwarden. One
+        //     diagonal frame serves every facing; single-frame skins are
+        //     already first-class citizens (player_sprite_frame). ---
+        { id:"bw_vanguard", name:"Crimson Vanguard", sprite:asset_get_index("spr_skin_bw_vanguard"), gold:600, desc:"The Warden's war-plate, re-struck in fine detail.", req:"", gender:"m", cls:1 },
+        { id:"bw_winghelm", name:"Winghelm Warden",  sprite:asset_get_index("spr_skin_bw_winghelm"), gold:750, desc:"A winged helm above blood-dark plate.",             req:"", gender:"m", cls:1 },
     ];
+}
+
+// The catalog as the CURRENT character may browse it: class-locked skins
+// (`cls` field) only show for that class, and class-locked entries whose art
+// is not yet imported are hidden outright (no broken preview rows). Both the
+// Vael list draw AND its Step mapping consume THIS - never index the raw
+// catalog for the list, or clicks misroute (index coupling).
+function vael_skin_catalog_visible() {
+    var _all = vael_skin_catalog();
+    var _cid = variable_global_exists("chosen_class") ? global.chosen_class : 0;
+    var _out = [];
+    for (var _i = 0; _i < array_length(_all); _i++) {
+        var _sk = _all[_i];
+        if (variable_struct_exists(_sk, "cls")) {
+            if (_sk.cls != _cid) continue;
+            if (_sk.sprite == undefined || _sk.sprite == -1 || !sprite_exists(_sk.sprite)) continue;
+        }
+        array_push(_out, _sk);
+    }
+    return _out;
+}
+
+// =============================================================================
+// PORTRAIT CREATION POOL (08-14, M-locked): character creation offers only the
+// 3 MOST-FITTING portraits per class+gender (M's confirmed picks, review round
+// _for_review/portrait_gating_0814/SHEET_PICKS_v2). The FULL 60-portrait pool
+// stays browsable/purchasable at Vael's portrait tab (100g) - that is the gate.
+// Returns FLAT indices into global.portrait_sprites so global.chosen_portrait
+// keeps its shipped meaning (saves unaffected). Falls back to the full pool if
+// a sprite ever goes missing from the flat list.
+// =============================================================================
+function portrait_creation_pool(class_id, gender) {
+    var _picks;
+    if (class_id == 0)      _picks = (gender == "f") ? [spr_portrait_arc_f5,    spr_portrait_arc_f7,    spr_portrait_arc_f8]
+                                                     : [spr_portrait_arc_m1,    spr_portrait_arc_m4,    spr_portrait_arc_m9];
+    else if (class_id == 1) _picks = (gender == "f") ? [spr_portrait_blood_f10, spr_portrait_blood_f13, spr_portrait_blood_f6]
+                                                     : [spr_portrait_blood_m3,  spr_portrait_blood_m4,  spr_portrait_blood_m8];
+    else                    _picks = (gender == "f") ? [spr_portrait_shadow_f5, spr_portrait_shadow_f6, spr_portrait_shadow_f4]
+                                                     : [spr_portrait_shadow_m1, spr_portrait_shadow_m4, spr_portrait_shadow_m8];
+    var _out = [];
+    for (var _i = 0; _i < array_length(_picks); _i++) {
+        for (var _j = 0; _j < array_length(global.portrait_sprites); _j++) {
+            if (global.portrait_sprites[_j] == _picks[_i]) { array_push(_out, _j); break; }
+        }
+    }
+    if (array_length(_out) == 0) {
+        for (var _k = 0; _k < array_length(global.portrait_sprites); _k++) array_push(_out, _k);
+    }
+    return _out;
 }
 
 // True if the skin's milestone gate is met (ungated skins are always unlocked).
@@ -5422,6 +5635,9 @@ function player_combat_sprite(class_id) {
     if (!variable_global_exists("player_skin") || global.player_skin == "default") return _default;
     var _sk = vael_skin_get(global.player_skin);
     if (_sk == undefined || _sk.sprite == undefined || _sk.sprite == -1 || !sprite_exists(_sk.sprite)) return _default;
+    // Class-locked skins (cls field, 08-14) never dress another class - a save
+    // that somehow carries one across classes falls back to the natural look.
+    if (variable_struct_exists(_sk, "cls") && _sk.cls != _ci) return _default;
     return _sk.sprite;
 }
 
@@ -5539,6 +5755,13 @@ function school_vfx_sprite(base_spr, school) {
         case spr_vfx_fire:   return spr_vfx_fire_grey;
         case spr_vfx_void:   return spr_vfx_void_grey;
         case spr_vfx_arcane: return spr_vfx_arcane_grey;
+        // 08-14 sitting: the 5 classics - Vael tints were invisible on their
+        // colored art (multiply over color) until these twins existed.
+        case spr_vfx_frost:  return spr_vfx_frost_grey;
+        case spr_vfx_shock:  return spr_vfx_shock_grey;
+        case spr_vfx_blood:  return spr_vfx_blood_grey;
+        case spr_vfx_shadow: return spr_vfx_shadow_grey;
+        case spr_vfx_poison: return spr_vfx_poison_grey;
     }
     return base_spr;
 }
@@ -5567,6 +5790,7 @@ function epithet_catalog() {
         { id:"slayer",       name:"Slayer of Hundreds",  req:"500 lifetime kills" },
         { id:"goldhand",     name:"the Goldhanded",      req:"Earn 10,000 lifetime gold in the dungeons" },
         { id:"legend",       name:"the Legend",          req:"Reach permanent level 10" },
+        { id:"bottomed",     name:"the Bottom's Witness", req:"Defeat The Bottom (Descent floor 50)" },
     ];
 }
 
@@ -5625,6 +5849,8 @@ function epithet_unlocked(id) {
         }
         case "legend":
             return player_permanent_level() >= 10;
+        case "bottomed":
+            return variable_global_exists("descent_bottom_cleared") && global.descent_bottom_cleared;
     }
     return false;
 }
@@ -10738,7 +10964,7 @@ function tutorial_catalog() {
         { id:"corruption_101", title:"Corruption",      body:"A creature in your care is CORRUPTED. The bargain: while it pushes (3 survived runs as your active companion), YOU pay -20% max HP and -10% damage. Each pushed run adds a PERMANENT +15% to its passive gift. You may CURE it at Bairc's any time - the gains earned so far are kept, the burden lifts, but its grand power is forfeit. See it through all 3 runs and it fully corrupts: its gift is 45% stronger forever, the burden ends, and it earns a grand boon. The full table lives in the Compendium under Companions." },
         // Pattern Book (08-11): fires on the reforge tab once the Legendary
         // Forge coach-mark has been seen (one tutorial at a time).
-        { id:"pattern_book", title:"The Pattern Book", body:"Dorn keeps a PATTERN BOOK.\nSMELT [T] destroys unequipped gear. You get a REFORGE INGOT of its tier, and Dorn STUDIES one affix from the piece - you pick which.\nStudies add up: 3 unlock a blueprint at TIER I. Rare or better fodder deepens it to TIER II, Epic or better to TIER III.\nCRAFT [N] then builds an item to YOUR design - slot, rarity, stats, affixes, art and name. Higher blueprint tiers roll better numbers.\nBrowse the book any time with [B]." },
+        { id:"pattern_book", title:"The Pattern Book", body:"Dorn keeps a PATTERN BOOK.\nSMELT [T] destroys unequipped gear. You get a REFORGE INGOT of its tier, and Dorn STUDIES one affix from the piece - you pick which.\nONE study lets you craft that affix at UNCOMMON. 3 studies unlock RARE work, 6 unlock EPIC - and rarer fodder teaches faster (an Epic piece counts as 3 studies fresh).\nCRAFT [N] then builds an item to YOUR design - type, slot, quality, stats, affixes, art and name. Deeper study rolls better numbers, and unused affix slots BOOST the affixes you do take.\nBrowse the book any time with [B]." },
     ];
 }
 
@@ -11822,6 +12048,13 @@ function event_apply_effects(fx) {
             if (_bd != undefined) array_push(_sum, "BOON: " + _bd.name + "!");
         }
     }
+    // Carried sickness (Wounded Wanderer, M 08-14): fx.sicken = poison dmg/turn
+    // the player carries into the NEXT fight (applied in obj_combat_controller
+    // Create via global.pending_sickness, 3 turns).
+    if (variable_struct_exists(fx, "sicken") && fx.sicken > 0) {
+        global.pending_sickness = fx.sicken;
+        array_push(_sum, "You feel feverish - you will start your next fight POISONED");
+    }
 
     var _str = "";
     for (var _i = 0; _i < array_length(_sum); _i++) _str += (_i > 0 ? "\n" : "") + _sum[_i];
@@ -12095,10 +12328,11 @@ function event_catalog() {
         ]
     });
 
-    // --- 3. Wounded Wanderer (HP cost baked into both Tend outcomes) --------
+    // --- 3. Wounded Wanderer (M 08-14 rework: the risk of tending is CATCHING
+    // their sickness - you start the next fight poisoned - not a flat HP toll) --
     var _ww_gold = [30, 50, 80];
     var _ww_dust = [3, 4, 6];
-    var _ww_cost = [10, 12, 16];
+    var _ww_sick = [3, 4, 5];   // poison dmg/turn carried into the next fight
     var _ww_rob  = [45, 70, 110];
     array_push(_cat, {
         id: "wounded_wanderer",
@@ -12106,13 +12340,15 @@ function event_catalog() {
         body: "A ragged figure slumps against the wall, clutching a wound and a heavy satchel.",
         color: make_color_rgb(90, 200, 120),
         choices: [
-            { label: "Tend their wounds", hint: "Spend some of your own vigor - they may repay you well",
+            { label: "Tend their wounds", hint: "They may repay you well - but you might catch what they have",
               cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
               outcomes: [
-                { weight: 70, text: "They recover, and press coin and dust into your hands.",
-                  effects: { hp: -_ww_cost[_fl], gold: _ww_gold[_fl], dust: _ww_dust[_fl] } },
-                { weight: 30, text: "They were no mere wanderer - a fragment of power passes to you.",
-                  effects: { hp: -_ww_cost[_fl], boon: "random" } } ] },
+                { weight: 50, text: "They recover, and press coin and dust into your hands.",
+                  effects: { gold: _ww_gold[_fl], dust: _ww_dust[_fl] } },
+                { weight: 20, text: "They were no mere wanderer - a fragment of power passes to you.",
+                  effects: { boon: "random" } },
+                { weight: 30, text: "They recover and pay you - but by nightfall their fever has found you too.",
+                  effects: { gold: _ww_gold[_fl], dust: _ww_dust[_fl], sicken: _ww_sick[_fl] } } ] },
             { label: "Rob them", hint: "Take the satchel and go",
               cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
               outcomes: [ { weight: 100, text: "You pry the satchel loose and leave them to the dark.",
@@ -12751,10 +12987,11 @@ function audio_settings_init() {
     if (!variable_global_exists("music_volume")) global.music_volume = 0.7;
     if (!variable_global_exists("sfx_volume"))   global.sfx_volume   = 0.8;
     if (!variable_global_exists("settings_open"))        global.settings_open        = false;
-    if (!variable_global_exists("settings_cursor"))      global.settings_cursor      = 0;   // 0 Music, 1 SFX, 2 Hub Track, 3 Dungeon Track, 4 Menu Tick, 5 Fullscreen, 6 Tutorial, 7 D-pad, 8 Reset
+    if (!variable_global_exists("settings_cursor"))      global.settings_cursor      = 0;   // 0 Music, 1 SFX, 2 Hub Track, 3 Dungeon Track, 4 Menu Tick, 5 Fullscreen, 6 Font Size, 7 Tutorial, 8 D-pad, 9 Pinch, 10 Reset
     if (!variable_global_exists("settings_reset_flash")) global.settings_reset_flash = 0;
     if (!variable_global_exists("tutorial_enabled"))     global.tutorial_enabled     = true;
     if (!variable_global_exists("ui_tick_enabled"))      global.ui_tick_enabled      = true;   // the menu-nav glass ping
+    if (!variable_global_exists("font_size_mode"))       global.font_size_mode       = 1;      // 0 Small, 1 Default, 2 Large (ui_font)
 
     if (!variable_global_exists("settings_loaded")) {
         global.settings_loaded = true;
@@ -12765,6 +13002,7 @@ function audio_settings_init() {
         // (where no save slot is loaded). 1 = enabled (default), 0 = disabled.
         global.tutorial_enabled = (ini_read_real("ui", "tutorial_tips", 1) >= 0.5);
         global.ui_tick_enabled  = (ini_read_real("ui", "menu_tick", 1) >= 0.5);
+        global.font_size_mode   = clamp(floor(ini_read_real("ui", "font_size", 1)), 0, 2);
         ini_close();
     }
 }
@@ -12778,6 +13016,8 @@ function audio_settings_save() {
         ((!variable_global_exists("tutorial_enabled")) || global.tutorial_enabled) ? 1 : 0);
     ini_write_real("ui", "menu_tick",
         ((!variable_global_exists("ui_tick_enabled")) || global.ui_tick_enabled) ? 1 : 0);
+    ini_write_real("ui", "font_size",
+        variable_global_exists("font_size_mode") ? global.font_size_mode : 1);
     ini_close();
 }
 
@@ -12839,20 +13079,20 @@ function audio_settings_handle_input() {
     }
 
     // Rows: 0 Music, 1 SFX, 2 Hub Music, 3 Dungeon Music, 4 Menu Tick,
-    //       5 Fullscreen, 6 Tutorial Tips, 7 On-screen D-pad, 8 Pinch Zoom,
-    //       9 Reset Tutorial.
-    // Rows 7-8 exist only on touch platforms (see touch_platform) - the cursor
+    //       5 Fullscreen, 6 Font Size, 7 Tutorial Tips, 8 On-screen D-pad,
+    //       9 Pinch Zoom, 10 Reset Tutorial.
+    // Rows 8-9 exist only on touch platforms (see touch_platform) - the cursor
     // hops over them on desktop/HTML5, where the rows aren't drawn.
     if (nav_up()) {
-        global.settings_cursor = wrap_index(global.settings_cursor - 1, 10);
-        if (!touch_platform() && (global.settings_cursor == 7 || global.settings_cursor == 8)) global.settings_cursor = 6;
+        global.settings_cursor = wrap_index(global.settings_cursor - 1, 11);
+        if (!touch_platform() && (global.settings_cursor == 8 || global.settings_cursor == 9)) global.settings_cursor = 7;
     }
     if (nav_down()) {
-        global.settings_cursor = wrap_index(global.settings_cursor + 1, 10);
-        if (!touch_platform() && (global.settings_cursor == 7 || global.settings_cursor == 8)) global.settings_cursor = 9;
+        global.settings_cursor = wrap_index(global.settings_cursor + 1, 11);
+        if (!touch_platform() && (global.settings_cursor == 8 || global.settings_cursor == 9)) global.settings_cursor = 10;
     }
-    global.settings_cursor = clamp(global.settings_cursor, 0, 9);
-    if (!touch_platform() && (global.settings_cursor == 7 || global.settings_cursor == 8)) global.settings_cursor = 9;
+    global.settings_cursor = clamp(global.settings_cursor, 0, 10);
+    if (!touch_platform() && (global.settings_cursor == 8 || global.settings_cursor == 9)) global.settings_cursor = 10;
 
     var _left    = nav_left();
     var _right   = nav_right();
@@ -12895,7 +13135,15 @@ function audio_settings_handle_input() {
                 audio_play_sound(window_get_fullscreen() ? snd_ui_toggle_on : snd_ui_toggle_off, 1, false);
             }
         break;
-        case 6: // Tutorial Tips on/off
+        case 6: // Font Size: A/D cycles Small / Default / Large (Enter steps forward)
+            if (_left || _right || _confirm) {
+                var _fs_delta = _left ? -1 : 1;
+                global.font_size_mode = wrap_index(global.font_size_mode + _fs_delta, 3);
+                audio_play_sound(snd_ui_move, 1, false);
+                audio_settings_save();
+            }
+        break;
+        case 7: // Tutorial Tips on/off
             if (_left || _right || _confirm) {
                 if (!variable_global_exists("tutorial_enabled")) global.tutorial_enabled = true;
                 global.tutorial_enabled = !global.tutorial_enabled;
@@ -12903,7 +13151,7 @@ function audio_settings_handle_input() {
                 audio_settings_save();
             }
         break;
-        case 7: // On-screen D-pad: A/D sizes it, Enter toggles it off/on entirely
+        case 8: // On-screen D-pad: A/D sizes it, Enter toggles it off/on entirely
             if (_left)  { touch_pad_scale_adjust(-TOUCH_PAD_SCALE_STEP); audio_play_sound(snd_ui_move, 1, false); }
             if (_right) { touch_pad_scale_adjust( TOUCH_PAD_SCALE_STEP); audio_play_sound(snd_ui_move, 1, false); }
             if (_confirm) {
@@ -12911,13 +13159,13 @@ function audio_settings_handle_input() {
                 audio_play_sound(global.touch_gamepad_off ? snd_ui_toggle_off : snd_ui_toggle_on, 1, false);
             }
         break;
-        case 8: // Pinch Zoom on/off (SYSTEMS_PINCH_ZOOM.md; touch platforms only)
+        case 9: // Pinch Zoom on/off (SYSTEMS_PINCH_ZOOM.md; touch platforms only)
             if (_left || _right || _confirm) {
                 pinch_zoom_toggle();
                 audio_play_sound(global.pinch_zoom_off ? snd_ui_toggle_off : snd_ui_toggle_on, 1, false);
             }
         break;
-        case 9: // Reset Tutorial - clear seen flags so every tip shows again
+        case 10: // Reset Tutorial - clear seen flags so every tip shows again
             if (_left || _right || _confirm) {
                 tutorial_reset_all();
                 global.tutorial_enabled   = true;   // resetting implies you want the tips back
@@ -13926,57 +14174,70 @@ function pattern_family_desc(_stat_name) {
     return "";
 }
 
-// Per-family study progress { p1, p2, p3 } (counts toward tier I / II / III).
+// Per-family study progress. REWORKED 08-15 (M: "i cant make anything unless
+// i smelt the same thing over and over - not a functional crafting system"):
+// a single cumulative study count .s - 1 study crafts Uncommon, 3 unlock Rare,
+// 6 unlock Epic. NO fodder-rarity gates; rarer fodder teaches FASTER instead
+// (pattern_study_weight). Legacy saves carry {p1,p2,p3} - migrated into .s
+// once here (partial old progress is kept, nothing is lost).
 function pattern_fam_get(_stat_name) {
     var _b = pattern_book_ensure();
     if (!variable_struct_exists(_b.fam, _stat_name)) {
-        variable_struct_set(_b.fam, _stat_name, { p1: 0, p2: 0, p3: 0 });
+        variable_struct_set(_b.fam, _stat_name, { p1: 0, p2: 0, p3: 0, s: 0 });
     }
-    return variable_struct_get(_b.fam, _stat_name);
+    var _p = variable_struct_get(_b.fam, _stat_name);
+    if (!variable_struct_exists(_p, "s")) _p.s = _p.p1 + _p.p2 + _p.p3;   // legacy migrate
+    return _p;
 }
 
-// Unlocked blueprint tier for a family: 0 none, 1..3.
+// Unlocked craftable QUALITY for a family: 0 none, 1 Uncommon, 2 Rare, 3 Epic.
 function pattern_fam_tier(_stat_name) {
     var _p = pattern_fam_get(_stat_name);
-    if (_p.p1 < 3) return 0;
-    if (_p.p2 < 4) return 1;
-    if (_p.p3 < 5) return 2;
-    return 3;
+    if (_p.s >= 6) return 3;
+    if (_p.s >= 3) return 2;
+    if (_p.s >= 1) return 1;
+    return 0;
 }
 
-// Book-page progress text for a family ("2/3 studies", "Rare+ fodder 1/4", "MASTERED").
+// Studies one smelt of _rarity fodder banks toward this family (M-locked
+// 08-15): Epic+ fodder = 3 toward the first rung, 2 toward the second, 1 at
+// the third; Rare = 2/1/1; Common/Uncommon = 1 everywhere.
+function pattern_study_weight(_stat_name, _rarity) {
+    var _t = pattern_fam_tier(_stat_name);
+    if (_rarity >= 3) return (_t <= 0) ? 3 : ((_t == 1) ? 2 : 1);
+    if (_rarity == 2) return (_t <= 0) ? 2 : 1;
+    return 1;
+}
+
+// Book-page progress text for a family.
 function pattern_fam_progress_text(_stat_name) {
     var _p = pattern_fam_get(_stat_name);
-    if (_p.p1 < 3) return string(_p.p1) + "/3 studies to Tier I";
-    if (_p.p2 < 4) return "Tier II: " + string(_p.p2) + "/4 Rare+ studies";
-    if (_p.p3 < 5) return "Tier III: " + string(_p.p3) + "/5 Epic+ studies";
-    return "MASTERED (Tier III)";
+    if (_p.s <= 0) return "0/1 studies - one smelt unlocks Uncommon";
+    if (_p.s < 3)  return string(_p.s) + "/3 studies to Rare crafts";
+    if (_p.s < 6)  return string(_p.s) + "/6 studies to Epic crafts";
+    return "MASTERED (Epic crafts)";
 }
 
 // What ONE study from fodder of the given rarity would do for this family.
-// Returns { ok, text } - ok=false means this fodder can't advance the family.
+// Returns { ok, text } - ok=false only once mastered (no fodder gates, 08-15).
 function pattern_study_preview(_stat_name, _rarity) {
     var _p = pattern_fam_get(_stat_name);
-    if (_p.p1 < 3) return { ok: true, text: "Advances Tier I (" + string(_p.p1) + "/3)" };
-    if (_p.p2 < 4) {
-        if (_rarity >= 2) return { ok: true, text: "Advances Tier II (" + string(_p.p2) + "/4)" };
-        return { ok: false, text: "tier II asks RARE+ fodder" };
-    }
-    if (_p.p3 < 5) {
-        if (_rarity >= 3) return { ok: true, text: "advances tier III (" + string(_p.p3) + "/5)" };
-        return { ok: false, text: "tier III asks EPIC+ fodder" };
+    if (_p.s < 6) {
+        var _w    = pattern_study_weight(_stat_name, _rarity);
+        var _next = (_p.s < 1) ? 1 : ((_p.s < 3) ? 3 : 6);
+        var _lbl  = (_p.s < 1) ? "Uncommon" : ((_p.s < 3) ? "Rare" : "Epic");
+        return { ok: true, text: "+" + string(_w) + " stud" + ((_w == 1) ? "y" : "ies")
+            + "  (" + string(min(_next, _p.s + _w)) + "/" + string(_next) + " to " + _lbl + " crafts)" };
     }
     return { ok: false, text: "already mastered" };
 }
 
-// Apply one study. Returns true if progress moved.
+// Apply one study (rarity-weighted, 08-15). Returns true if progress moved.
 function pattern_book_study(_stat_name, _rarity) {
     var _pv = pattern_study_preview(_stat_name, _rarity);
     if (!_pv.ok) return false;
     var _p = pattern_fam_get(_stat_name);
-    if (_p.p1 < 3)      _p.p1 += 1;
-    else if (_p.p2 < 4) _p.p2 += 1;
-    else                _p.p3 += 1;
+    _p.s += pattern_study_weight(_stat_name, _rarity);
     return true;
 }
 
@@ -14100,8 +14361,10 @@ function pattern_smelt_commit(_it, _stat_name) {
 
 // ---- CRAFT (the custom item builder) ---------------------------------------
 // Crafted rarities: 1 Uncommon / 2 Rare / 3 Epic. All numbers vetoable.
+// Affix SLOTS per crafted quality (08-15: Uncommon gained a 2nd slot, Epic a
+// 3rd, so the concentration rule below has room to breathe - VETOABLE numbers).
 function pattern_affix_budget(_rarity) {
-    if (_rarity <= 1) return 1;
+    if (_rarity >= 3) return 3;
     return 2;
 }
 function pattern_craft_fee(_rarity) {
@@ -14164,7 +14427,8 @@ function pattern_band_roll(_stat_name, _rarity, _tier) {
 function pattern_band_text(_stat_name, _rarity, _tier) {
     var _b = pattern_band_range(_stat_name, _rarity, _tier);
     if (_b.lo == _b.hi) return "+" + string(_b.lo);
-    return "+" + string(_b.lo) + "-" + string(_b.hi);
+    // "+3 to +4", not "+3-4" - the dash read as dev shorthand (M 08-15 shot).
+    return "+" + string(_b.lo) + " to +" + string(_b.hi);
 }
 
 // Build the crafted item. Fees are NOT spent here - the caller spends at the
@@ -14172,13 +14436,28 @@ function pattern_band_text(_stat_name, _rarity, _tier) {
 // _affix_names: array of family stat_names (identity chosen, numbers rolled).
 // _icon: an art-page entry, or undefined for Dorn's plain work.
 function pattern_craft_build(_slot, _rarity, _base_stat, _affix_names, _icon, _name) {
-    var _it = create_item(_name, _slot, _rarity, _base_stat, pattern_craft_base_val(_rarity),
+    // 08-15 v2 (M): no separate base-stat pick - the wizard hands ONE list of
+    // blueprint picks. The FIRST core stat among them becomes the item's base
+    // line at full base value; everything else rolls as an affix. _base_stat
+    // is kept in the signature for compat but "" means "derive from picks".
+    var _core = ["STR", "DEX", "CON", "INT", "WIS", "CHA"];
+    var _derived_base = _base_stat;
+    var _roll_names = [];
+    for (var _i = 0; _i < array_length(_affix_names); _i++) {
+        var _nm = _affix_names[_i];
+        var _is_core = false;
+        for (var _c = 0; _c < array_length(_core); _c++) { if (_core[_c] == _nm) { _is_core = true; break; } }
+        if (_derived_base == "" && _is_core) _derived_base = _nm;
+        else array_push(_roll_names, _nm);
+    }
+    var _bv = (_derived_base == "") ? 0 : pattern_craft_base_val(_rarity);
+    var _it = create_item(_name, _slot, _rarity, _derived_base, _bv,
         "pattern-crafted at Dorn's anvil", pattern_craft_gold_val(_rarity));
     _it.base_name = _name;
     _it.class_req = -1;
     var _tiers = [];
-    for (var _i = 0; _i < array_length(_affix_names); _i++) {
-        var _fn = _affix_names[_i];
+    for (var _i = 0; _i < array_length(_roll_names); _i++) {
+        var _fn = _roll_names[_i];
         var _fe = pattern_family_entry(_fn);
         if (_fe == undefined) continue;
         var _tier = pattern_fam_tier(_fn);
@@ -14189,6 +14468,18 @@ function pattern_craft_build(_slot, _rarity, _base_stat, _affix_names, _icon, _n
         });
         array_push(_tiers, { stat_name: _fn, tier: _tier });
     }
+    // SINGLE-AFFIX CONCENTRATION (M-locked 08-15): every unused pick slot
+    // pours half a slot's worth into the chosen affixes - a 1-affix build on a
+    // 3-slot quality rolls that affix at 2x its band, never exceeding what a
+    // full spread would total. Spare counts TOTAL picks (a base-stat pick
+    // occupies a slot even though it rolls as the base line, not an affix).
+    var _pb_spare = max(0, pattern_affix_budget(_rarity) - array_length(_affix_names));
+    var _pb_conc  = 1 + 0.5 * _pb_spare;
+    if (_pb_conc > 1) {
+        for (var _pci = 0; _pci < array_length(_it.affixes); _pci++) {
+            _it.affixes[_pci].stat_value = max(1, round(_it.affixes[_pci].stat_value * _pb_conc));
+        }
+    }
     _it.gold_value = round(_it.gold_value * power(1.2, array_length(_it.affixes)));
     if (_slot == "weapon" || _slot == "ranged_weapon") {
         _it.weapon_damage = weapon_base_damage(_rarity);
@@ -14197,7 +14488,7 @@ function pattern_craft_build(_slot, _rarity, _base_stat, _affix_names, _icon, _n
     _it.socket_count = rune_sockets_for_rarity(_rarity);
     item_quality_stamp(_it, 60, 85);
     _it.player_crafted = true;
-    _it.pb_craft = { rar: _rarity, base_stat: _base_stat, fams: _tiers };
+    _it.pb_craft = { rar: _rarity, base_stat: _base_stat, fams: _tiers, conc: _pb_conc };
     if (_icon != undefined) {
         _it.icon_as = pattern_art_proxy(_icon);
     }
@@ -14218,7 +14509,8 @@ function pattern_craft_reroll(_it) {
         if (!is_struct(_row) || !variable_struct_exists(_row, "stat_name")) continue;
         for (var _j = 0; _j < array_length(_pc.fams); _j++) {
             if (_pc.fams[_j].stat_name == _row.stat_name) {
-                _row.stat_value = pattern_band_roll(_row.stat_name, _pc.rar, _pc.fams[_j].tier);
+                var _rr_conc = variable_struct_exists(_pc, "conc") ? _pc.conc : 1;
+                _row.stat_value = max(1, round(pattern_band_roll(_row.stat_name, _pc.rar, _pc.fams[_j].tier) * _rr_conc));
                 break;
             }
         }

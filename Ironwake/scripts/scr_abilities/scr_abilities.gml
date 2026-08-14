@@ -970,8 +970,10 @@ array_push(global.abilities_arcanist,
         /*self*/false));
 global.abilities_arcanist[13].desc_short = "8 Fire dmg. Sear [Fire+]: +3 Fire/hit 2t. +1 Soul.";
 global.abilities_arcanist[13].desc_full  = "Drag a burning thumb across the target and leave the mark smoldering.\n- 8 Fire damage, +1 Soul. Sear [Fire+]: every follow-up hit deals +3 Fire for 2 turns.\n- Open with this, then detonate with Arcane Burst or Soul Nova.";
-global.abilities_arcanist[14].desc_short = "Spend up to 4 Souls. Deal 8 Arcane +7 per Soul.";
-global.abilities_arcanist[14].desc_full  = "Crack your reserve open and release everything at once.\n- 8 Arcane damage, +7 per Soul consumed (up to 4).\n- Cheaper and more flexible than Arcane Burst - rewards a turn of Soul generation.";
+global.abilities_arcanist[14].desc_short = "Spend up to 4 Souls. Deal 8 Arcane +7 per Soul. Detonates statuses.";
+// desc_full no longer repeats the numbers (M 08-14: the popup said the same
+// thing twice - MECHANICS is the authoritative breakdown, this is context).
+global.abilities_arcanist[14].desc_full  = "Crack your reserve open and release everything at once.\n- Strongest into a debuffed target: prime with Scorch or Curse, then release.\n- Cheaper and more flexible than Arcane Burst - rewards a turn of Soul generation.";
 
 // --- BLOODWARDEN: Cleave (free filler) + Rupture (Vex payoff) ---
 array_push(global.abilities_bloodwarden,
@@ -2200,6 +2202,12 @@ function ability_describe(ab) {
         case "Rupture":
             _out += " Detonates the target's strongest status: bleeds +5 per remaining tick, chills shatter, poison spreads Mortality, void heals you.";
             break;
+    }
+    // Detonators SAY so in the primary line (M 08-14: Soul Nova never stated
+    // that a debuffed target takes more - the bonus only lived in the popup's
+    // reactions table, which stays the full per-status map).
+    if (ability_is_detonator(ab)) {
+        _out += " DETONATES the target's statuses for a reaction bonus (Exposed +12 damage, stun = sure crit, chills shatter...).";
     }
     // Bespoke stance/utility abilities (Measured Riposte, Undying, ...) whose
     // mechanics live entirely in combat code assemble to nothing here - their

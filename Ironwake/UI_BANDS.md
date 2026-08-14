@@ -24,10 +24,10 @@ never canvas size or .yy bbox metadata.
 | x1220–1890, y747–945 | Ability card (198px band, matches log) | never covered by anything |
 | y946–982 | End Turn strip | — |
 | y985–1080 | Ability buttons | — |
-| Player: x282–460, feet y726 | hero, ~360px visible | near-camera anchor |
-| Pet: center x~225, feet ≤552 | upper-left depth row, ~0.58 size | MUST clear the PD box top (y556) |
+| Player: x330, feet y726 | hero, shipped 345px canvas scale (round 12) | near-camera anchor; VFX bind to the Draw-stamped player_stage_cx/cy |
+| Pet: beside player (flat formula +130), feet 706, 0.90 size | round 12: BACK beside the player | clear of PD box + log |
 | Summon: (560, 700) | mid-lane pedestal | between ally and enemy wedges |
-| Enemy wedge: x≥1015, ALL feet ≤724 | 4 stations/layout, far 1.9× → front 2.6×, boss 3.3× feet 655 | sprites bottom out above the log/card band; right edges <1890 |
+| Enemy wedge: x≥1015, ALL feet ≤702 | 4 stations/layout, far 1.50× → front 1.85×, boss 2.25× feet 655 (rounds 12–13b) | HARD 185px visible ceiling; per-species `enemy_size_mult` (scr_enemies) applies before it; stations FREEZE per enemy; mid-fight summons walk to the first unclashed spot (13d) |
 | Horizon y470 | wall/floor seam | far stations start feet ≥540 |
 
 
@@ -137,15 +137,27 @@ what made it print through the CLASS TRUNK header (M screenshot 08-08).
 | 990 | "Enter / R to continue" |
 | 987–1041 | Vex trainer: sacrifice confirm bar — key legend HIDDEN while it owns the band |
 
-## Vendor option rows (shared standard, 08-08)
+## Vendor option rows (shared standard, 08-08; font-size aware 08-14)
 `ui_draw_option_row(x1,y1,x2,y2,opt)` is now THE row for every vendor craft/service
 menu (M: "wall of text issues, need more text color variance"). It owns its box and
 enforces the split: accent-coloured TITLE (fnt_ui) at y1+8, dim body (fnt_ui_small)
-at y1+41, cost chips right-aligned from y1+14 in 27px steps. **The text column is
-measured against the widest cost chip and truncated to clear it by 24px** — a long
-description can never run under a price. Row height must be >= 66 for both text
-lines to sit inside the plate. Callers own geometry AND hit-testing (hit-tests live
-in Draw), so caller and helper must agree on the same box.
+at y1+max(41, 12+measured title height), cost chips right-aligned from y1+14 in 27px
+steps. **The text column is measured against the widest cost chip and truncated to
+clear it by 24px** — a long description can never run under a price. Row height must
+be >= 66 for both text lines to sit inside the plate. Callers own geometry AND
+hit-testing (hit-tests live in Draw), so caller and helper must agree on the same box.
+
+## Vendor list metrics (M 08-14 font-size pass — HARD RULE)
+`ui_vendor_row_pitch()` / `ui_vendor_visible_rows(n_default)` in scr_ui are the ONLY
+source of vendor list row pitch and window capacity. Default/Small return the shipped
+72px / n_default verbatim (bit-identical layouts); Large measures the fnt_ui +
+fnt_ui_small variants and grows the pitch (row box = pitch-6). Consumers (keep in
+sync — never hard-code 72/66/9/10 again): ui_maren_row + maren_visible_rows + Maren
+Forge menu + Sable salvage/rune/transmute/brew/chaos windows + transmute/chaos pick
+rings + Vael skins/tints/reweave lists (draw), and the matching mouse hit-tests in
+obj_game_controller Step (Maren rows, Sable rows, Vael skins/tints/reweave).
+`ui_draw_key_legend` also self-clamps its text bottom to the gothic-frame opening
+(y≤1046) at any font size — callers keep passing the shipped y values.
 
 ## Maren FORGE tab (scr_ui, maren_phase == 0)
 | Band (y) | Owner |

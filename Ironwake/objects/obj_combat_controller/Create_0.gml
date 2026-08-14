@@ -921,6 +921,12 @@ for (var _ii = 0; _ii < array_length(combat_state.combatants); _ii++) {
 global.run_items_found = [];
 show_loot_screen   = false;
 loot_screen_scroll = 0;
+// Pack-full discard modal sequencing (M 08-14: it flashed up during the
+// victory pause BEFORE level-alloc/loot even opened, then again after them).
+// Step's ordered victory chain (alloc -> loot -> overflow) sets this when it
+// actually REACHES the overflow stage; the Draw modal requires it, so the
+// prompt can only ever appear once, after every other post-combat screen.
+overflow_stage_reached = false;
 // Staggered loot reveal (SOUND_ATMOSPHERE_SPEC.md section 1): rows appear one
 // by one with a tick; the best item's row fires its rarity stinger.
 loot_reveal_timer  = 0;    // frames since the loot screen opened
@@ -1147,6 +1153,31 @@ if (variable_global_exists("pending_fire_stacks") && global.pending_fire_stacks 
         + " fire damage per turn for 2 turns!");
 }
 
+// Carried sickness (Wounded Wanderer, M 08-14 rework): tending the wanderer can
+// pass their fever on - the NEXT fight starts with the player Poisoned. Same
+// pending-at-combat-start idiom as Scorching Air above, same dot_halve courtesy.
+if (variable_global_exists("pending_sickness") && global.pending_sickness > 0) {
+    var _sick_dmg = global.pending_sickness;
+    global.pending_sickness = 0;
+    if (!variable_struct_exists(player, "status_effects")) player.status_effects = [];
+    if (pet_active_innate("dot_halve") > 0 && !variable_struct_exists(player, "innate_thaw_done")) {
+        player.innate_thaw_done = true;
+        _sick_dmg = max(1, ceil(_sick_dmg / 2));
+        array_push(combat_log, "[Companion] " + pet_active().name + " weathers the fever - it bites half as deep.");
+    }
+    array_push(player.status_effects, {
+        name:         "Wanderer's Fever",
+        effect_type:  "dot",
+        kind:         "dot",
+        effect_value: _sick_dmg,
+        duration:     3,
+        element:      "poison",
+        source:       "event"
+    });
+    array_push(combat_log, "The wanderer's fever takes hold - " + string(_sick_dmg)
+        + " poison damage per turn for 3 turns!");
+}
+
 // Tundra Tomb: the pending chill numbs the player's FIRST turn (-1/-2 AP, never
 // below 1). Applied via chill_ap_penalty, consumed in combat_next_turn when the
 // player's turn starts; if the player opens the fight, dock the energy directly.
@@ -1209,6 +1240,7 @@ vfx_y         = 0;
 vfx_school    = "";   // school of the cast that spawned the VFX ("" = untinted); spell tints blend it
 vfx_scale_mult = 1;   // VFX pacing (08-13): 3-AP finishers draw ~a third bigger
 glyph_fx = [];        // enemy support-cast rune rings (Restorative Glyph trace, 08-13)
+bottom_splash_timer = 0;   // "THE BOTTOM YIELDS" banner (armed on the floor-50 Warden kill)
 
 // --- Conveyance pass (08-04, SYSTEMS_COMBAT_FX.md header): traveling
 // projectiles, beam lances, and multi-slot impact bursts. Mechanics resolve

@@ -43,7 +43,7 @@ draw_set_color(make_color_rgb(120, 190, 255));
 draw_text(960, 60, "IRONWAKE");
 
 // Subtitle
-draw_set_font(fnt_ui);
+draw_set_font(ui_font(fnt_ui));
 draw_set_color(c_gray);
 draw_text(960, 123, "Choose Your Class");
 
@@ -76,7 +76,7 @@ for (var _i = 0; _i < 3; _i++) {
     // --- Class name ---
     draw_set_halign(fa_center);
     draw_set_valign(fa_top);
-    draw_set_font(fnt_ui);
+    draw_set_font(ui_font(fnt_ui));
     if (_is_sel) {
         draw_set_color(make_color_rgb(40, 90, 130));
         draw_text(_px + _panel_w / 2 + 2, _py + 24 + 2, class_names[_i]);
@@ -133,7 +133,7 @@ for (var _i = 0; _i < 3; _i++) {
             draw_set_color(make_color_rgb(40, 46, 62));
             draw_rectangle(_fx - _cellhw + 6, _gy - _cellhw + 6, _fx + _cellhw - 6, _gy + _cellhw - 6, false);
             draw_set_halign(fa_center); draw_set_valign(fa_middle);
-            draw_set_font(fnt_ui_small);
+            draw_set_font(ui_font(fnt_ui_small));
             draw_set_color(make_color_rgb(140, 150, 170));
             draw_text(_fx, _gy - 12, "Female");
             draw_set_color(make_color_rgb(90, 100, 120));
@@ -142,7 +142,7 @@ for (var _i = 0; _i < 3; _i++) {
 
         // Labels under each option
         draw_set_halign(fa_center); draw_set_valign(fa_top);
-        draw_set_font(fnt_ui_small);
+        draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(_m_on ? make_color_rgb(255, 220, 120) : make_color_rgb(120, 125, 140));
         draw_text(_mx, _gy + _cellhw + 12, "Male");
         draw_set_color(_m_on ? make_color_rgb(120, 125, 140) : make_color_rgb(255, 220, 120));
@@ -173,7 +173,7 @@ for (var _i = 0; _i < 3; _i++) {
     // --- Class description ---
     draw_set_halign(fa_left);
     draw_set_valign(fa_top);
-    draw_set_font(fnt_ui_small);
+    draw_set_font(ui_font(fnt_ui_small));
     draw_set_color(make_color_rgb(160, 165, 175));
     draw_text_ext(_px + 21, _py + 282, class_descriptions[_i], -1, _panel_w - 42);
 
@@ -186,7 +186,7 @@ for (var _i = 0; _i < 3; _i++) {
     var _stat_line_h   = 30;
 
     draw_set_halign(fa_center);
-    draw_set_font(fnt_ui_small);
+    draw_set_font(ui_font(fnt_ui_small));
     for (var _s = 0; _s < 6; _s++) {
         var _stat_val  = variable_struct_get(_display_stats, _stat_names[_s]);
         var _stat_text = _stat_names[_s] + ": " + string(_stat_val);
@@ -205,7 +205,7 @@ for (var _i = 0; _i < 3; _i++) {
 
     // --- "SELECTED" indicator at panel bottom ---
     if (_is_sel) {
-        draw_set_font(fnt_ui_small);
+        draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(make_color_rgb(80, 160, 220));
         draw_text(_cx, _py + _panel_h - 27, "[ SELECTED ]");
     }
@@ -224,7 +224,7 @@ var _alloc_y   = 810;
 var _alloc_cx  = GUI_CX;
 
 // "Free Points" label
-draw_set_font(fnt_ui);
+draw_set_font(ui_font(fnt_ui));
 var _fp_color = (free_points > 0) ? make_color_rgb(255, 220, 60) : c_green;
 draw_set_color(_fp_color);
 draw_text(_alloc_cx, _alloc_y, "Free Points: " + string(free_points));
@@ -259,12 +259,12 @@ for (var _s = 0; _s < 6; _s++) {
     draw_rectangle(_bx, _box_y, _bx + _box_w, _box_y + _box_h, true);
 
     // Stat label - top of box with padding
-    draw_set_font(fnt_ui_small);
+    draw_set_font(ui_font(fnt_ui_small));
     draw_set_color((_is_hlt) ? make_color_rgb(255, 220, 60) : make_color_rgb(160, 165, 175));
     draw_text(_bx + _box_w / 2, _box_y + 15, _stat_names[_s]);
 
     // Stat value - gap below label, centered in lower half
-    draw_set_font(fnt_ui);
+    draw_set_font(ui_font(fnt_ui));
     draw_set_color(c_white);
     draw_text(_bx + _box_w / 2, _box_y + 48, string(_stat_v));
 }
@@ -278,7 +278,7 @@ var _stat_descs = [
     "Effect & DOT crit +1.5% per point  (min 5%)",
     "Ability dmg  +gold find  cheaper NPC prices"
 ];
-draw_set_font(fnt_ui_small);
+draw_set_font(ui_font(fnt_ui_small));
 draw_set_color(make_color_rgb(200, 210, 230));
 draw_text(_alloc_cx, _box_y + _box_h + 21, _stat_descs[selected_stat]);
 
@@ -303,7 +303,7 @@ if (input_device() == 2) {
 // -----------------------------------------------------------------------------
 var _inst_y = 1020;
 
-draw_set_font(fnt_ui_small);
+draw_set_font(ui_font(fnt_ui_small));
 if (input_device() == 2) {
     if (free_points > 0) {
         draw_set_color(c_yellow);
@@ -313,7 +313,7 @@ if (input_device() == 2) {
         draw_rectangle(960 - 195, 1008, 960 + 195, 1071, false);
         draw_set_color(c_green);
         draw_rectangle(960 - 195, 1008, 960 + 195, 1071, true);
-        draw_set_font(fnt_ui);
+        draw_set_font(ui_font(fnt_ui));
         draw_set_color(c_white);
         draw_text(960, 1027, "CONFIRM");
     }
@@ -327,7 +327,7 @@ if (input_device() == 2) {
         draw_rectangle(_rmx1, _rmy1, _rmx2, _rmy2, false);
         draw_set_color(make_color_rgb(210, 120, 110));
         draw_rectangle(_rmx1, _rmy1, _rmx2, _rmy2, true);
-        draw_set_font(fnt_ui);
+        draw_set_font(ui_font(fnt_ui));
         draw_set_halign(fa_center); draw_set_valign(fa_middle);
         draw_set_color(c_white);
         draw_text((_rmx1 + _rmx2) / 2, (_rmy1 + _rmy2) / 2, "-  REMOVE");
@@ -386,7 +386,7 @@ if (naming_active) {
     // Typed text + blinking cursor
     var _cursor = ((current_time mod 1000) < 500) ? "|" : "";
     var _display_name = keyboard_string + _cursor;
-    draw_set_font(fnt_ui);
+    draw_set_font(ui_font(fnt_ui));
     draw_set_color(c_white);
     draw_set_halign(fa_left);
     draw_set_valign(fa_middle);
@@ -396,14 +396,14 @@ if (naming_active) {
     // gap between the title (ends ~y430) and the input box (top y480).
     if (naming_blocked_flash > 0) {
         draw_set_halign(fa_center);
-        draw_set_font(fnt_ui_small);
+        draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(make_color_rgb(230, 150, 130));
         draw_text_outline(960, 453 + _ny_off, "Enter a name to continue");
     }
 
     // Hints (keyboard-speak - hidden on touch, where the DONE button sits here)
     draw_set_halign(fa_center);
-    draw_set_font(fnt_ui_small);
+    draw_set_font(ui_font(fnt_ui_small));
     draw_set_color(make_color_rgb(130, 135, 145));
     if (input_device() != 2) draw_text_outline(960, 597 + _ny_off, "Enter to confirm       Escape to go back");
     // Deck/controller players have no physical keyboard - point at the Steam OSK
@@ -421,7 +421,7 @@ if (naming_active) {
         draw_rectangle(_dbx1, _dby1, _dbx2, _dby2, false);
         draw_set_color(make_color_rgb(80, 160, 220));
         draw_rectangle(_dbx1, _dby1, _dbx2, _dby2, true);
-        draw_set_font(fnt_ui);
+        draw_set_font(ui_font(fnt_ui));
         draw_set_color(c_white);
         draw_text(960, (_dby1 + _dby2) / 2, "DONE");
         if (touch_tapped(_dbx1, _dby1, _dbx2, _dby2)) touch_press(vk_enter);
@@ -434,7 +434,9 @@ if (naming_active) {
 // Shown after name entry. Large center portrait + side thumbnails.
 // -----------------------------------------------------------------------------
 if (portrait_active) {
-    var _portrait_count = array_length(global.portrait_sprites);
+    // Curated creation pool (08-14): selected_portrait indexes portrait_pool
+    // (3 per class+gender); the full 60 stay at Vael's portrait tab.
+    var _portrait_count = max(1, array_length(portrait_pool));
 
     // Dark overlay
     draw_set_alpha(0.92);
@@ -454,7 +456,7 @@ if (portrait_active) {
     var _main_h = 480;
     var _main_x = GUI_CX - _main_w / 2;
     var _main_y = 240;
-    var _cur_spr = global.portrait_sprites[selected_portrait];
+    var _cur_spr = global.portrait_sprites[portrait_pool[clamp(selected_portrait, 0, _portrait_count - 1)]];
     draw_sprite_stretched(_cur_spr, 0, _main_x, _main_y, _main_w, _main_h);
 
     // Border around center portrait
@@ -467,8 +469,8 @@ if (portrait_active) {
     var _thumb_h = 240;
     var _thumb_y = _main_y + _main_h / 2 - _thumb_h / 2;
 
-    var _prev_idx = (selected_portrait - 1 + _portrait_count) mod _portrait_count;
-    var _next_idx = (selected_portrait + 1) mod _portrait_count;
+    var _prev_idx = portrait_pool[(selected_portrait - 1 + _portrait_count) mod _portrait_count];
+    var _next_idx = portrait_pool[(selected_portrait + 1) mod _portrait_count];
 
     draw_set_alpha(0.5);
     draw_sprite_stretched(global.portrait_sprites[_prev_idx], 0, _main_x - _thumb_w - 36, _thumb_y, _thumb_w, _thumb_h);
@@ -476,15 +478,19 @@ if (portrait_active) {
     draw_set_alpha(1.0);
 
     // Counter
-    draw_set_font(fnt_ui);
+    draw_set_font(ui_font(fnt_ui));
     draw_set_color(make_color_rgb(160, 170, 190));
     draw_set_halign(fa_center);
     draw_text(960, _main_y + _main_h + 30, string(selected_portrait + 1) + " / " + string(_portrait_count));
 
     // Instructions (keyboard-speak - touch gets tap zones + a CONFIRM button)
-    draw_set_font(fnt_ui_small);
+    draw_set_font(ui_font(fnt_ui_small));
     draw_set_color(make_color_rgb(130, 135, 145));
     if (input_device() != 2) draw_text_outline(960, _main_y + _main_h + 72, "A / D: Browse       Enter / Space: Confirm");
+    // The other portraits aren't gone - Vael sells them (08-14 gating).
+    draw_set_color(make_color_rgb(150, 125, 170));
+    draw_text_outline(960, _main_y + _main_h + (input_device() == 2 ? 150 : 102),
+        "Vael the Aesthete offers many more, back at camp.");
 
     // Touch (8c, M 07-07): tap a side thumbnail to page one portrait per tap;
     // explicit CONFIRM button below the counter continues to the hub.
@@ -500,7 +506,7 @@ if (portrait_active) {
         draw_rectangle(_pbx1, _pby1, _pbx2, _pby2, false);
         draw_set_color(make_color_rgb(80, 160, 220));
         draw_rectangle(_pbx1, _pby1, _pbx2, _pby2, true);
-        draw_set_font(fnt_ui);
+        draw_set_font(ui_font(fnt_ui));
         draw_set_color(c_white);
         draw_text(960, (_pby1 + _pby2) / 2, "CONFIRM");
         if (touch_tapped(_pbx1, _pby1, _pbx2, _pby2)) touch_press(vk_enter);
@@ -525,7 +531,7 @@ if (origin_active) {
     draw_set_font(fnt_ui_title);
     draw_set_color(make_color_rgb(120, 190, 255));
     draw_text(GUI_CX, 66, "Where Do You Come From?");
-    draw_set_font(fnt_ui_small);
+    draw_set_font(ui_font(fnt_ui_small));
     draw_set_color(make_color_rgb(160, 168, 185));
     draw_text(GUI_CX, 132, "Every wanderer carried something up to Ironwake. Choose what you carried.");
 
@@ -566,10 +572,10 @@ if (origin_active) {
             draw_rectangle(_oix0 + 1, _oiy0 + 1, _oix0 + _oiw - 1, _oiy0 + _oih - 1, true);
         }
 
-        draw_set_font(fnt_ui);
+        draw_set_font(ui_font(fnt_ui));
         draw_set_color(_osel ? c_white : make_color_rgb(200, 206, 220));
         draw_text(_ocx + _ocw / 2, _ocy + 128, _oc.name);
-        draw_set_font(fnt_ui_small);
+        draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(_osel ? make_color_rgb(210, 180, 110) : make_color_rgb(140, 148, 168));
         draw_text_ext(_ocx + _ocw / 2, _ocy + 160, _oc.start, 22, _ocw - 24);
 
@@ -580,7 +586,7 @@ if (origin_active) {
     }
 
     // Footer: the selected origin's flavor line + key legend.
-    draw_set_font(fnt_ui_small);
+    draw_set_font(ui_font(fnt_ui_small));
     draw_set_color(make_color_rgb(185, 175, 150));
     draw_text(GUI_CX, 936, "\"" + _og_cat[selected_origin].blurb + "\"");
     draw_set_color(make_color_rgb(140, 150, 175));
@@ -603,7 +609,7 @@ if (vow_active) {
     draw_set_font(fnt_ui_title);
     draw_set_color(make_color_rgb(228, 205, 140));
     draw_text(GUI_CX, 96, "SWEAR A VOW?");
-    draw_set_font(fnt_ui_small);
+    draw_set_font(ui_font(fnt_ui_small));
     draw_set_color(make_color_rgb(160, 168, 185));
     draw_text(GUI_CX, 168, "How this story is allowed to end. The Vow cannot be changed later.");
 
@@ -627,12 +633,12 @@ if (vow_active) {
         draw_set_color(_vsel ? _vow_cols[_v] : make_color_rgb(50, 56, 75));
         draw_rectangle(_vx, _vy0, _vx + 516, _vy1, true);
         if (_vsel) draw_rectangle(_vx + 5, _vy0 + 5, _vx + 511, _vy1 - 5, true);
-        draw_set_font(fnt_ui);
+        draw_set_font(ui_font(fnt_ui));
         draw_set_color(_vow_cols[_v]);
         draw_text(_vx + 258, _vy0 + 42, _vow_names[_v]);
         draw_set_color(make_color_rgb(210, 214, 228));
         draw_text(_vx + 258, _vy0 + 96, _vow_sub[_v]);
-        draw_set_font(fnt_ui_small);
+        draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(make_color_rgb(165, 172, 190));
         draw_text_ext(_vx + 258, _vy0 + 168, _vow_body[_v], 34, 456);
         // Hit-test in Draw (touch rule): tap selects; tapping the selected card proceeds.
@@ -647,13 +653,13 @@ if (vow_active) {
     draw_rectangle(_vbx1, _vby1, _vbx2, _vby2, false);
     draw_set_color(make_color_rgb(80, 160, 220));
     draw_rectangle(_vbx1, _vby1, _vbx2, _vby2, true);
-    draw_set_font(fnt_ui);
+    draw_set_font(ui_font(fnt_ui));
     draw_set_color(c_white);
     draw_set_valign(fa_middle);
     draw_text(GUI_CX, (_vby1 + _vby2) / 2, "CHOOSE");
     draw_set_valign(fa_top);
     if (_mvp && _mvx >= _vbx1 && _mvx < _vbx2 && _mvy >= _vby1 && _mvy < _vby2) input_inject("vow:go");
-    draw_set_font(fnt_ui_small);
+    draw_set_font(ui_font(fnt_ui_small));
     draw_set_color(make_color_rgb(140, 150, 175));
     ui_draw_key_legend(GUI_CX, 984, "A/D: Select   Enter: Choose   Esc: Back");
 
@@ -691,7 +697,7 @@ if (touch_intro_open) {
         + "\n\nHOLD an ability or creature to examine it."
         + "\n\nPINCH with two fingers any time to zoom the screen; pinch back down to reset."
         + "\n\nThe D-pad can be RESIZED or turned OFF any time via the SETTINGS chip at camp.";
-    draw_set_font(fnt_ui);
+    draw_set_font(ui_font(fnt_ui));
     var _ti_th = string_height_ext(_ti_txt, 45, 900);
     var _ti_ph = 132 + _ti_th + 36 + 63 + 66;   // title zone + text + gap + button + bottom pad
     var _tix1 = GUI_CX - 495, _tiy1 = GUI_CY - _ti_ph / 2;
@@ -704,7 +710,7 @@ if (touch_intro_open) {
     draw_set_font(fnt_ui_title);
     draw_set_color(make_color_rgb(228, 205, 140));
     draw_text(GUI_CX, _tiy1 + 42, "Touch Controls");
-    draw_set_font(fnt_ui);
+    draw_set_font(ui_font(fnt_ui));
     draw_set_color(make_color_rgb(200, 208, 222));
     draw_text_ext(GUI_CX, _tiy1 + 132, _ti_txt, 45, 900);
     var _tib_x1 = GUI_CX - 165, _tib_y1 = _tiy2 - 129, _tib_x2 = GUI_CX + 165, _tib_y2 = _tiy2 - 66;

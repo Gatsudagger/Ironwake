@@ -2,7 +2,7 @@
   "$GMSprite":"v2",
   "%Name":"spr_pet_thornlet_baby_e",
   "bboxMode":0,
-  "bbox_bottom":28,
+  "bbox_bottom":27,
   "bbox_left":0,
   "bbox_right":28,
   "bbox_top":0,

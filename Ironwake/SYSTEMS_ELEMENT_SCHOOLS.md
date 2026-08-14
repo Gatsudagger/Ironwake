@@ -100,11 +100,15 @@ damage" gear affix buffs your fire *abilities*; it is a separate, stackable axis
 ---
 
 ## D. Relationship to existing systems
-- **Ember aspect rune** already grants *+% elemental (dtype-1) damage*
-  (`rune_aspect_damage_pct`). That stays as the **%/multiplier** axis (rune slot).
-  School-damage affixes are the **flat** axis (gear). Different acquisition,
-  different math — they coexist intentionally and stack, but only the rune is a
-  multiplier so the ceiling stays controlled.
+- **Per-school aspect runes** (08-15 rework, M-locked): one rune per school —
+  Ember=fire, Rime=frost, Tempest=shock, Aether=arcane, Hemorrhage=blood,
+  Abyss=void, Umbra=shadow, Venom=poison — each *+% that school's damage*, keyed
+  off `ability_school()` via `rune_aspect_school_value`. **Avatar** is the
+  deliberately-weak omni (+% in every school at ~half a single-school rune).
+  That family is the **%/multiplier** axis (rune slot). School-damage affixes
+  are the **flat** axis (gear). Different acquisition, different math — they
+  coexist intentionally and stack, but only the rune is a multiplier so the
+  ceiling stays controlled.
 - **Weapon elemental affixes** (Flaming/Frostbound/Storm-touched, §C of
   weapon-roles) already carry an element. With schools, a Flaming weapon's flat
   bonus is *fire-school* damage and it applies *burn*. They're consistent but

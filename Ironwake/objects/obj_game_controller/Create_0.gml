@@ -37,6 +37,16 @@ geom_last_h = window_get_height();
 // dead-code-eliminated - forces the compiler to include them in the build.
 // (If a sprite is ever renamed/removed, update this list to match.)
 global.__sprite_includes = [
+    // 08-15 rune recolors: rune_icon_sprite resolves these by STRING
+    // ("spr_icon_rune_" + id) so direct refs are required or they strip.
+    spr_icon_rune_rime, spr_icon_rune_tempest, spr_icon_rune_aether,
+    spr_icon_rune_abyss, spr_icon_rune_umbra, spr_icon_rune_venom,
+    spr_icon_rune_avatar,
+    // Font-size variants (08-14): ui_font resolves them by NAME
+    // (asset_get_index) so the .gml compiled before the import - these direct
+    // refs stop the compiler stripping them. Fonts in a sprite list is fine:
+    // this array exists only to hold references.
+    fnt_ui_lg, fnt_ui_sm, fnt_ui_small_lg, fnt_ui_small_sm,
     // 2.5D painted plane pilot (08-13): string-looked-up in dungeon_bg_draw.
     spr_wall25_ashen_1, spr_floor25_ashen_1,
     spr_wall25_ashen_2, spr_floor25_ashen_2, spr_wall25_ashen_3, spr_floor25_ashen_3, spr_wall25_scorched_1, spr_floor25_scorched_1, spr_wall25_scorched_2, spr_floor25_scorched_2, spr_wall25_scorched_3, spr_floor25_scorched_3, spr_wall25_tundra_1, spr_floor25_tundra_1, spr_wall25_tundra_2, spr_floor25_tundra_2, spr_wall25_tundra_3, spr_floor25_tundra_3, spr_bone_sovereign_hd,

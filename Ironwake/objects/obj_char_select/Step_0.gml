@@ -89,6 +89,9 @@ if (naming_active) {
         naming_active       = false;
         portrait_active     = true;
         selected_portrait   = 0;
+        // Curated creation pool (08-14): 3 picks for THIS class+gender; the
+        // rest of the 60 live at Vael. Flat indices into global.portrait_sprites.
+        portrait_pool       = portrait_creation_pool(global.chosen_class, global.player_gender);
         exit;
     }
     if (naming_blocked_flash > 0) naming_blocked_flash--;
@@ -107,7 +110,12 @@ if (naming_active) {
 // A / D cycles portraits; Enter confirms and goes to hub.
 // -----------------------------------------------------------------------------
 if (portrait_active) {
-    var _portrait_count = array_length(global.portrait_sprites);
+    // selected_portrait indexes the CURATED pool (3/class+gender, 08-14); the
+    // flat 60-list index is resolved at confirm. Guard for resumed old state.
+    if (!variable_instance_exists(id, "portrait_pool") || array_length(portrait_pool) == 0) {
+        portrait_pool = portrait_creation_pool(global.chosen_class, global.player_gender);
+    }
+    var _portrait_count = array_length(portrait_pool);
 
     if (nav_left())  selected_portrait = wrap_index(selected_portrait - 1, _portrait_count);
     if (nav_right()) selected_portrait = wrap_index(selected_portrait + 1, _portrait_count);
@@ -121,7 +129,7 @@ if (portrait_active) {
     }
 
     if (input_confirm() || input_confirm_alt()) {
-        global.chosen_portrait = selected_portrait;
+        global.chosen_portrait = portrait_pool[clamp(selected_portrait, 0, array_length(portrait_pool) - 1)];
         // ORIGIN step (08-11) comes after the portrait, before the Vow.
         portrait_active = false;
         origin_active   = true;

@@ -1493,6 +1493,7 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()) {
             pb_book_open = false; pb_book_scroll = 0; pb_book_cursor = 0;
             pb_craft_open = false; pb_craft_phase = 0;
             pb_cursor = 0; pb_scroll = 0;
+            pb_cat_pick = 0;   // category phase (08-15: weapons/armor/jewelry)
             pb_slot_pick = 0; pb_rar_pick = 0; pb_base_stat = "";
             pb_affix_picks = []; pb_icon_entry = undefined;
             pb_name = ""; pb_result = undefined;
@@ -1726,22 +1727,28 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()) {
         if (pb_craft_open) {
             // Phase row lists are rebuilt every frame from the same sources the
             // draw uses, so cursor/tap indices always agree with what's shown.
+            // PHASES (08-15 v2, M: "list all of your unlocked blueprints nothing
+            // else"): 0 category, 1 slot within it, 2 quality, 3 BLUEPRINTS
+            // (one merged list, quality-eligible only - the first core stat
+            // picked becomes the base line), 4 art, 5 name, 6 result.
             var _cw_rows = 0;
             var _cw_slots = forge_slot_list();
-            var _cw_stats = ["STR", "DEX", "CON", "INT", "WIS", "CHA"];
+            var _cw_cats  = pattern_craft_categories();
+            var _cw_cslots = _cw_cats[clamp(pb_cat_pick, 0, array_length(_cw_cats) - 1)].slots;
             var _cw_fams  = [];
-            if (pb_craft_phase == 0) _cw_rows = array_length(_cw_slots);
-            if (pb_craft_phase == 1) _cw_rows = 3;
-            if (pb_craft_phase == 2) _cw_rows = array_length(_cw_stats);
+            if (pb_craft_phase == 0) _cw_rows = array_length(_cw_cats);
+            if (pb_craft_phase == 1) _cw_rows = array_length(_cw_cslots);
+            if (pb_craft_phase == 2) _cw_rows = 3;
             if (pb_craft_phase == 3) {
+                // ONLY blueprints unlocked for the chosen quality list here
+                // (M-locked): tier >= quality; caster affixes only on jewelry.
                 var _cw_cat = pattern_family_catalog();
                 var _cw_slot = _cw_slots[clamp(pb_slot_pick, 0, array_length(_cw_slots) - 1)];
                 var _cw_caster = (_cw_slot == "amulet" || _cw_slot == "ring");
                 for (var _cfi = 0; _cfi < array_length(_cw_cat); _cfi++) {
                     var _cfe = _cw_cat[_cfi];
-                    if (_cfe.stat_name == pb_base_stat) continue;
                     if (_cfe.kind == "school" && !_cw_caster) continue;
-                    if (pattern_fam_tier(_cfe.stat_name) < 1) continue;
+                    if (pattern_fam_tier(_cfe.stat_name) < 1 + pb_rar_pick) continue;
                     array_push(_cw_fams, _cfe);
                 }
                 _cw_rows = array_length(_cw_fams);
@@ -1808,6 +1815,14 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()) {
                 pb_cursor = 0; pb_scroll = 0;
                 exit;
             }
+            // CONTINUE out of the blueprint phase with a PARTIAL pick (M-locked
+            // 08-15 concentration): >= 1 pick, Space or the on-screen button
+            // moves on; unused slots boost the chosen rolls.
+            if (pb_craft_phase == 3 && array_length(pb_affix_picks) >= 1
+                && (keyboard_check_pressed(vk_space) || input_inject_take("pb:cont"))) {
+                pb_craft_phase = 4; pb_cursor = 0; pb_scroll = 0;
+                exit;
+            }
             if (_cw_rows > 0) {
                 if (nav_up())   pb_cursor = wrap_index(pb_cursor - 1, _cw_rows);
                 if (nav_down()) pb_cursor = wrap_index(pb_cursor + 1, _cw_rows);
@@ -1820,32 +1835,32 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()) {
             }
             if (_cw_tap >= 0) pb_cursor = _cw_tap;
             pb_cursor = clamp(pb_cursor, 0, max(0, _cw_rows - 1));
-            var _cw_vis = 9;   // MUST mirror ui_draw_pattern_craft
+            var _cw_vis = (pb_craft_phase == 3) ? 6 : 9;   // MUST mirror ui_draw_pattern_craft (phase-3 rows are taller: desc subrows)
             if (pb_cursor < pb_scroll)            pb_scroll = pb_cursor;
             if (pb_cursor >= pb_scroll + _cw_vis) pb_scroll = pb_cursor - (_cw_vis - 1);
             pb_scroll = clamp(pb_scroll, 0, max(0, _cw_rows - _cw_vis));
 
             if ((input_confirm() || _cw_tap >= 0) && _cw_rows > 0) {
                 if (pb_craft_phase == 0) {
-                    pb_slot_pick = pb_cursor;
+                    // Category: weapons / armor / jewelry.
+                    pb_cat_pick = pb_cursor;
                     pb_craft_phase = 1; pb_cursor = 0; pb_scroll = 0;
                 } else if (pb_craft_phase == 1) {
-                    pb_rar_pick = pb_cursor;   // 0/1/2 -> rarity 1/2/3
-                    pb_affix_picks = [];
+                    // Slot within the category -> map back to the forge_slot_list index.
+                    var _cw_sid = _cw_cslots[clamp(pb_cursor, 0, array_length(_cw_cslots) - 1)].id;
+                    for (var _cwsi = 0; _cwsi < array_length(_cw_slots); _cwsi++) {
+                        if (_cw_slots[_cwsi] == _cw_sid) { pb_slot_pick = _cwsi; break; }
+                    }
                     pb_craft_phase = 2; pb_cursor = 0; pb_scroll = 0;
                 } else if (pb_craft_phase == 2) {
-                    var _cw_bs = _cw_stats[pb_cursor];
-                    if (pattern_fam_tier(_cw_bs) < 1) {
-                        shop_notification = "No " + _cw_bs + " blueprint - smelt gear carrying " + _cw_bs + " first.";
-                        audio_play_sound(snd_ui_error, 1, false);
-                    } else {
-                        pb_base_stat = _cw_bs;
-                        pb_affix_picks = [];
-                        pb_craft_phase = 3; pb_cursor = 0; pb_scroll = 0;
-                    }
+                    pb_rar_pick = pb_cursor;   // 0/1/2 -> rarity 1/2/3
+                    pb_affix_picks = [];
+                    pb_base_stat = "";   // derived from the picks at build (v2)
+                    pb_craft_phase = 3; pb_cursor = 0; pb_scroll = 0;
                 } else if (pb_craft_phase == 3) {
-                    // Toggle the family under the cursor; the wizard advances
-                    // when the rarity's full budget is chosen (Esc re-picks).
+                    // Toggle the blueprint under the cursor (list is pre-filtered
+                    // to quality-eligible). Full budget advances; a PARTIAL pick
+                    // continues via Space / the CONTINUE button (concentration).
                     var _cw_fam = _cw_fams[pb_cursor].stat_name;
                     var _cw_had = false;
                     for (var _cwp = 0; _cwp < array_length(pb_affix_picks); _cwp++) {
@@ -1858,7 +1873,7 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()) {
                     var _cw_budget = pattern_affix_budget(1 + pb_rar_pick);
                     if (!_cw_had) {
                         if (array_length(pb_affix_picks) >= _cw_budget) {
-                            shop_notification = "A " + item_rarity_name(1 + pb_rar_pick) + " piece holds " + string(_cw_budget) + " affix" + ((_cw_budget == 1) ? "" : "es") + ".";
+                            shop_notification = "A " + item_rarity_name(1 + pb_rar_pick) + " piece holds " + string(_cw_budget) + " pick" + ((_cw_budget == 1) ? "" : "s") + ".";
                             audio_play_sound(snd_ui_error, 1, false);
                         } else {
                             array_push(pb_affix_picks, _cw_fam);
@@ -3617,10 +3632,11 @@ if (variable_instance_exists(id, "maren_open") && maren_open && !menu_open && !f
                 _hit_tab = true; break;
             }
         }
-        // Rows: list starts at y=285, each row 72px tall, x 300..1620. The clicked
-        // screen-row maps to data index maren_scroll + row (windowed list).
+        // Rows: list starts at y=285, pitch from the shared vendor metrics
+        // (72 default, taller on Large - M 08-14 font pass), x 300..1620. The
+        // clicked screen-row maps to data index maren_scroll + row (windowed list).
         if (!_hit_tab && _mmx >= 300 && _mmx < 1620) {
-            var _row = floor((_mmy - 285) / 72);
+            var _row = floor((_mmy - 285) / ui_vendor_row_pitch());
             if (_row >= 0 && _row < _m_vis) {
                 var _click_idx = maren_scroll + _row;
                 if (_click_idx < _m_rows) { maren_cursor = _click_idx; _m_act = true; }
@@ -3874,10 +3890,23 @@ if (variable_instance_exists(id, "sable_open") && sable_open && !menu_open && !f
         sable_confirm_label = "";
         sable_confirm_title = "";
         sable_confirm_body  = "";
+        // Colored subject block on the checkout popup (M 08-14: name the thing
+        // being consumed IN ITS COLOR, effect line under it).
+        sable_confirm_subject     = "";
+        sable_confirm_subject_col = undefined;
+        sable_confirm_subject_sub = "";
+        // Result TOAST + transmute rune-reveal card (M 08-15: results were a
+        // bottom line that collided with the legend and caught no one's eye).
+        sable_toast_msg     = "";
+        sable_toast_timer   = 0;
+        sable_result_rune   = undefined;
+        sable_result_timer  = 0;
         sable_chaos_open    = false;
         sable_chaos_sel     = [];
         sable_chaos_kind    = "chaotic";   // "chaotic" | "quint" (LEGENDARY FORGE)
     }
+    if (sable_toast_timer > 0)  sable_toast_timer--;
+    if (sable_result_timer > 0) sable_result_timer--; else sable_result_rune = undefined;
 
     // Row count for the active tab + phase
     var _s_rows = 1;
@@ -3921,23 +3950,45 @@ if (variable_instance_exists(id, "sable_open") && sable_open && !menu_open && !f
         if (input_confirm() || input_inject_take("sable:ok")) {
             sable_confirm = false;
             switch (sable_confirm_kind) {
+                // SUCCESSES speak through the boxed result TOAST (top of the list
+                // area, drawn topmost) - the old bottom notification line collided
+                // with the key legend and caught no one's eye (M 08-15). Errors
+                // keep the bottom line.
                 case "gear": {
                     var _gd = sable_salvage_gear_at(sable_confirm_idx);
-                    sable_notification = (_gd >= 0) ? ("Salvaged " + sable_confirm_label + " for " + string(_gd) + " dust.") : "Could not salvage.";
-                    if (_gd >= 0) { audio_play_sound(snd_sell, 1, false); affinity_add("sable", 2); }
+                    if (_gd >= 0) {
+                        sable_toast_msg   = "Salvaged " + sable_confirm_label + ":  +" + string(_gd) + " Rune Dust!";
+                        sable_toast_timer = 210;
+                        sable_notification = "";
+                        audio_play_sound(snd_sell, 1, false); affinity_add("sable", 2);
+                    } else {
+                        sable_notification = "Could not salvage.";
+                    }
                     sable_cursor = clamp(sable_cursor, 0, max(0, array_length(sable_salvageable_gear()) - 1));
                 } break;
                 case "rune": {
                     var _rd = sable_salvage_rune_at(sable_confirm_idx);
-                    sable_notification = (_rd >= 0) ? ("Scrapped " + sable_confirm_label + " for " + string(_rd) + " dust.") : "Could not scrap.";
-                    if (_rd >= 0) { audio_play_sound(snd_sell, 1, false); affinity_add("sable", 2); }
+                    if (_rd >= 0) {
+                        sable_toast_msg   = "Scrapped " + sable_confirm_label + ":  +" + string(_rd) + " Rune Dust!";
+                        sable_toast_timer = 210;
+                        sable_notification = "";
+                        audio_play_sound(snd_sell, 1, false); affinity_add("sable", 2);
+                    } else {
+                        sable_notification = "Could not scrap.";
+                    }
                     sable_cursor = clamp(sable_cursor, 0, max(0, array_length(global.rune_inventory) - 1));
                 } break;
                 case "transmute": {
-                    var _t_out = { title: "" };
+                    var _t_out = { title: "", rune: undefined };
                     var _t_res = sable_transmute_runes(sable_trans_sel, _t_out);
                     if (_t_res == "") {
-                        sable_notification = "The cauldron yields... " + _t_out.title + "!";
+                        // Reveal CARD with the new rune's icon + effect (M 08-15:
+                        // "it plays the animation then i have no idea what i got").
+                        sable_result_rune  = _t_out.rune;
+                        sable_result_timer = 300;
+                        sable_toast_msg    = "The cauldron yields...";
+                        sable_toast_timer  = 300;
+                        sable_notification = "";
                         audio_play_sound(snd_confirm_major, 1, false);
                         ui_checkout_vfx(spr_vfx_void, 960, 540);   // Gigapack cauldron burst
                         affinity_add("sable", 2);   // function-use drip (transmute)
@@ -3951,7 +4002,9 @@ if (variable_instance_exists(id, "sable_open") && sable_open && !menu_open && !f
                 case "fusion": {
                     var _f_res = sable_upgrade(sable_confirm_label);
                     if (_f_res == "") {
-                        sable_notification = "Fused 3x " + sable_confirm_label + " into their improved form!";
+                        sable_toast_msg   = "Fused 3x " + sable_confirm_label + " into their improved form!";
+                        sable_toast_timer = 210;
+                        sable_notification = "";
                         audio_play_sound(snd_npc_confirm, 1, false);
                         affinity_add("sable", 2);   // function-use drip (upgrade)
                         sable_cursor = 0;
@@ -3963,7 +4016,9 @@ if (variable_instance_exists(id, "sable_open") && sable_open && !menu_open && !f
                 case "chaotic": {
                     var _c_res = sable_chaotic_fuse(sable_chaos_sel);
                     if (_c_res == "") {
-                        sable_notification = "The cauldron shudders... a CHAOTIC BREW settles out!";
+                        sable_toast_msg   = "The cauldron shudders... a CHAOTIC BREW settles out!";
+                        sable_toast_timer = 240;
+                        sable_notification = "";
                         audio_play_sound(snd_confirm_major, 1, false);
                         ui_checkout_vfx(spr_vfx_void, 960, 540);   // Gigapack cauldron burst
                         affinity_add("sable", 2);   // function-use drip (chaos)
@@ -3980,8 +4035,9 @@ if (variable_instance_exists(id, "sable_open") && sable_open && !menu_open && !f
                     var _q_res = sable_quintessence_distill(sable_chaos_sel);
                     if (_q_res == "") {
                         forge_components_ensure();
-                        sable_notification = "QUINTESSENCE distilled - Sable's share of the forge is ready. ("
-                            + string(global.forge_comp_quint) + " held)";
+                        sable_toast_msg   = "QUINTESSENCE distilled!  (" + string(global.forge_comp_quint) + " held - Sable's forge share is ready)";
+                        sable_toast_timer = 240;
+                        sable_notification = "";
                         audio_play_sound(snd_confirm_major, 1, false);
                         ui_checkout_vfx(spr_vfx_arcane, 960, 540);
                         affinity_add("sable", 2);   // function-use drip (forge craft)
@@ -4028,29 +4084,32 @@ if (variable_instance_exists(id, "sable_open") && sable_open && !menu_open && !f
             }
         }
         if (!_s_hit_tab && _smx >= 300 && _smx < 1620) {
-            // Fusion-tab rows start one diagram lower (y364, see the draw side);
-            // every other list starts at the standard y285.
-            var _srow_base = (sable_tab == 2 && !sable_chaos_open) ? 364 : 285;
-            var _srow = floor((_smy - _srow_base) / 72);
+            // Every Sable list starts at the standard y285 (08-15: the fusion
+            // tab's diagram panel is gone, its rows moved up to match).
+            var _srow_base = 285;
+            var _srow = floor((_smy - _srow_base) / ui_vendor_row_pitch());
             // The salvage gear/rune lists (tab 0, phase 1/2) are WINDOWED in the draw
-            // (ui_list_window_first, _svis=9) - map the clicked screen row back to the
-            // real list index via the same window offset. Other tabs aren't windowed
-            // (short lists) so _sfirst stays 0. Keep _svis in sync with scr_ui.
+            // (ui_list_window_first, _svis = ui_vendor_visible_rows(9)) - map the
+            // clicked screen row back to the real list index via the same window
+            // offset. Other tabs aren't windowed (short lists) so _sfirst stays 0.
+            // Capacity + pitch come from the shared vendor metrics (M 08-14 font
+            // pass) so Large-mode clicks land on the row they visually hit.
+            var _s_cap = ui_vendor_visible_rows(9);
             var _sfirst = 0;
             var _svis_now = _s_rows;
             if (sable_tab == 0 && sable_phase >= 1) {
                 // phase 1 gear / 2 rune / 3 transmute - separate scroll state each
                 var _sid  = (sable_phase == 1) ? "sable_gear" : ((sable_phase == 2) ? "sable_rune" : "sable_trans");
-                _sfirst   = ui_list_window(_sid, sable_cursor, _s_rows, 9);
-                _svis_now = min(_s_rows - _sfirst, 9);
+                _sfirst   = ui_list_window(_sid, sable_cursor, _s_rows, _s_cap);
+                _svis_now = min(_s_rows - _sfirst, _s_cap);
             } else if (sable_tab == 1) {
                 // Brew tab windowed since the 07-28 catalog expansion (18 recipes).
-                _sfirst   = ui_list_window("sable_brew", sable_cursor, _s_rows, 9);
-                _svis_now = min(_s_rows - _sfirst, 9);
+                _sfirst   = ui_list_window("sable_brew", sable_cursor, _s_rows, _s_cap);
+                _svis_now = min(_s_rows - _sfirst, _s_cap);
             } else if (sable_tab == 2 && sable_chaos_open) {
                 // Chaotic Brew pick-3 list windows over the whole potion pouch.
-                _sfirst   = ui_list_window("sable_chaos", sable_cursor, _s_rows, 9);
-                _svis_now = min(_s_rows - _sfirst, 9);
+                _sfirst   = ui_list_window("sable_chaos", sable_cursor, _s_rows, _s_cap);
+                _svis_now = min(_s_rows - _sfirst, _s_cap);
             }
             if (_srow >= 0 && _srow < _svis_now) {
                 var _sidx = clamp(_sfirst + _srow, 0, _s_rows - 1);
@@ -4072,13 +4131,17 @@ if (variable_instance_exists(id, "sable_open") && sable_open && !menu_open && !f
                     // handler above (M 07-27 standing rule: popup, not bottom text).
                     var _gsel = clamp(sable_cursor, 0, array_length(_s_gear) - 1);
                     var _gname = _s_gear[_gsel].item.name;
-                    var _gprev = sable_salvage_gear_dust(_s_gear[_gsel].item.rarity);
+                    var _grar  = _s_gear[_gsel].item.rarity;
+                    var _gprev = sable_salvage_gear_dust(_grar);
                     sable_confirm       = true;
                     sable_confirm_kind  = "gear";
                     sable_confirm_idx   = _gsel;
                     sable_confirm_label = _gname;
                     sable_confirm_title = "SALVAGE THIS GEAR?";
-                    sable_confirm_body  = _gname + "\nmelts down for " + string(_gprev) + " rune dust. It cannot be reclaimed.";
+                    sable_confirm_subject     = _gname;
+                    sable_confirm_subject_col = item_rarity_color(_grar);
+                    sable_confirm_subject_sub = "[" + item_rarity_name(_grar) + "]";
+                    sable_confirm_body  = "Melts down for " + string(_gprev) + " rune dust. It cannot be reclaimed.";
                     sable_notification  = "";
                 }
             } else if (sable_phase == 2) {
@@ -4091,7 +4154,12 @@ if (variable_instance_exists(id, "sable_open") && sable_open && !menu_open && !f
                     sable_confirm_idx   = _rsel;
                     sable_confirm_label = _rname;
                     sable_confirm_title = "SCRAP THIS RUNE?";
-                    sable_confirm_body  = _rname + "\nis scrapped whole for " + string(_rprev) + " rune dust. Nothing else comes back.";
+                    // Subject block: rune in its glyph color, effect line under it
+                    // (M 08-14: the old name\n-body wrap read as a broken sentence).
+                    sable_confirm_subject     = _rname;
+                    sable_confirm_subject_col = rune_glyph_color(_s_rinv[_rsel].id);
+                    sable_confirm_subject_sub = rune_effect(_s_rinv[_rsel]);
+                    sable_confirm_body  = "Scrapped whole for " + string(_rprev) + " rune dust. Nothing else comes back.";
                     sable_notification  = "";
                 }
             } else {
@@ -4131,7 +4199,10 @@ if (variable_instance_exists(id, "sable_open") && sable_open && !menu_open && !f
                         sable_confirm       = true;
                         sable_confirm_kind  = "transmute";
                         sable_confirm_title = "TRANSMUTE 3 RUNES?";
-                        sable_confirm_body  = _t_names + "\nmelt into ONE RANDOM tier-" + rune_tier_roman(_tt + 1)
+                        sable_confirm_subject     = _t_names;
+                        sable_confirm_subject_col = rune_glyph_color(_s_rinv[sable_trans_sel[0]].id);
+                        sable_confirm_subject_sub = "";
+                        sable_confirm_body  = "They melt into ONE RANDOM tier-" + rune_tier_roman(_tt + 1)
                             + " rune for " + string(sable_transmute_cost(_tt)) + "g. All three are consumed.";
                         sable_notification  = "";
                     }
@@ -4176,17 +4247,20 @@ if (variable_instance_exists(id, "sable_open") && sable_open && !menu_open && !f
                             _ch_names += (_chn > 0 ? ", " : "") + _ch_inv[sable_chaos_sel[_chn]].it.name;
                         }
                         sable_confirm = true;
+                        sable_confirm_subject     = _ch_names;
+                        sable_confirm_subject_col = make_color_rgb(150, 230, 170);   // Sable's brew green
+                        sable_confirm_subject_sub = "";
                         if (sable_chaos_kind == "quint") {
                             // LEGENDARY FORGE component (M locked 07-28).
                             sable_confirm_kind  = "quint";
                             sable_confirm_title = "DISTILL QUINTESSENCE?";
-                            sable_confirm_body  = _ch_names + "\nboil down into ONE Quintessence for "
+                            sable_confirm_body  = "They boil down into ONE Quintessence for "
                                 + string(forge_quint_cost()) + "g - Sable's share of the Legendary Forge.";
                         } else {
                             var _ch_cost = sable_chaotic_cost();
                             sable_confirm_kind  = "chaotic";
                             sable_confirm_title = "BREW SOMETHING CHAOTIC?";
-                            sable_confirm_body  = _ch_names + "\nswirl into ONE Chaotic Brew for "
+                            sable_confirm_body  = "They swirl into ONE Chaotic Brew for "
                                 + string(_ch_cost.gold) + "g + " + string(_ch_cost.dust)
                                 + " dust. What it does is decided when you drink it - and sometimes it bites.";
                         }
@@ -4221,8 +4295,11 @@ if (variable_instance_exists(id, "sable_open") && sable_open && !menu_open && !f
                     sable_confirm_kind  = "fusion";
                     sable_confirm_label = _ug.from;
                     sable_confirm_title = "FUSE THESE POTIONS?";
-                    sable_confirm_body  = "3x " + _ug.from + "  ->  1x " + _ug.to + "\nfor "
-                        + string(_uc.gold) + "g + " + string(_uc.dust) + " dust. The three are consumed.";
+                    sable_confirm_subject     = "3x " + _ug.from + "  ->  1x " + _ug.to;
+                    sable_confirm_subject_col = make_color_rgb(150, 230, 170);   // Sable's brew green
+                    sable_confirm_subject_sub = "";
+                    sable_confirm_body  = "Fused for " + string(_uc.gold) + "g + " + string(_uc.dust)
+                        + " dust. The three are consumed.";
                     sable_notification  = "";
                 }
             }
@@ -4267,7 +4344,7 @@ if (variable_instance_exists(id, "sable_open") && sable_open && !menu_open && !f
 // Layout constants here MUST match ui_draw_vael_screen() in scr_ui.
 // =============================================================================
 if (variable_instance_exists(id, "vael_open") && vael_open && !menu_open) {
-    var _v_cat  = vael_skin_catalog();
+    var _v_cat  = vael_skin_catalog_visible();   // class-gated view - MUST match the draw (08-14)
     var _v_rows = max(1, array_length(_v_cat));
 
     // REWEAVE tab state (moved from Vex trainer tab 5, M 07-28 - "the term fits
@@ -4363,9 +4440,9 @@ if (variable_instance_exists(id, "vael_open") && vael_open && !menu_open) {
             if (mouse_check_button_pressed(mb_left)) {
                 var _rwm_x = device_mouse_x_to_gui(0), _rwm_y = device_mouse_y_to_gui(0);
                 if (_rwm_x >= 300 && _rwm_x < 1500) {
-                    var _rw_vis = 10;
+                    var _rw_vis = ui_vendor_visible_rows(10);
                     var _rw_scr = ui_list_window("vael_reweave", vael_rw_cursor, _rw_n, _rw_vis);
-                    var _rw_row = floor((_rwm_y - 225) / 72);
+                    var _rw_row = floor((_rwm_y - 225) / ui_vendor_row_pitch());
                     if (_rw_row >= 0 && _rw_row < _rw_vis) {
                         var _rw_abs = _rw_scr + _rw_row;
                         if (_rw_abs < _rw_n) {
@@ -4451,9 +4528,9 @@ if (variable_instance_exists(id, "vael_open") && vael_open && !menu_open) {
             var _tmx = device_mouse_x_to_gui(0);
             var _tmy = device_mouse_y_to_gui(0);
             if (_tmx >= 300 && _tmx < 1160) {
-                var _t_vis    = 10;
+                var _t_vis    = ui_vendor_visible_rows(10);
                 var _t_scroll = ui_list_window("vael_tints", vael_tint_cursor, _t_rows, _t_vis);
-                var _t_vrow   = floor((_tmy - 225) / 72);
+                var _t_vrow   = floor((_tmy - 225) / ui_vendor_row_pitch());
                 if (_t_vrow >= 0 && _t_vrow < _t_vis) {
                     var _t_row = _t_scroll + _t_vrow;
                     if (_t_row >= 0 && _t_row < _t_rows) { vael_tint_cursor = _t_row; _t_act = true; }
@@ -4491,9 +4568,9 @@ if (variable_instance_exists(id, "vael_open") && vael_open && !menu_open) {
         var _vmy = device_mouse_y_to_gui(0);
         // Windowed list: x300..1200, start y225, row step 72 (matches ui_draw_vael_screen).
         if (_vmx >= 300 && _vmx < 1200) {
-            var _v_vis    = 10;   // match the draw-side window (clears the controls line)
+            var _v_vis    = ui_vendor_visible_rows(10);   // match the draw-side window
             var _v_scroll = ui_list_window("vael_skins", clamp(vael_cursor, 0, _v_rows - 1), _v_rows, _v_vis);
-            var _vvis_row = floor((_vmy - 225) / 72);
+            var _vvis_row = floor((_vmy - 225) / ui_vendor_row_pitch());
             if (_vvis_row >= 0 && _vvis_row < _v_vis) {
                 var _vrow = _v_scroll + _vvis_row;
                 if (_vrow >= 0 && _vrow < _v_rows) { vael_cursor = _vrow; _v_act = true; }

@@ -205,7 +205,7 @@ if (phase == "cutscene") {
     draw_set_alpha(1.0);
     draw_set_color(c_white);
 
-    draw_set_font(fnt_ui);
+    draw_set_font(ui_font(fnt_ui));
     var _num_panels = array_length(cutscene_panels);
     var _sep        = 48;   // VISUAL line separation WITHIN a panel (layout math)
     var _gap        = 33;   // extra space BETWEEN panels
@@ -258,7 +258,7 @@ if (phase == "cutscene") {
     if (skip_timer > skip_hold) {
         var _hint_a = min(0.55, (skip_timer - skip_hold) / 40.0);
         draw_set_alpha(_hint_a);
-        draw_set_font(fnt_ui_small);
+        draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(make_color_rgb(90, 95, 115));
         draw_text(960, 998, (input_device() == 2) ? "Tap to skip" : "Press any key to skip");
         draw_set_alpha(1.0);
@@ -297,7 +297,7 @@ if (phase == "cutscene") {
     draw_text_transformed(962, 300, "IRONWAKE", _tsc, _tsc, 0);
 
     // Subtitle (black outline so it stays legible over the lit vista)
-    draw_set_font(fnt_ui_small);
+    draw_set_font(ui_font(fnt_ui_small));
     draw_set_color(make_color_rgb(120, 134, 160));
     draw_text_outline(960, 402, "A  R O G U E L I T E  D U N G E O N  C R A W L E R");
 
@@ -330,24 +330,24 @@ if (phase == "cutscene") {
                 draw_rectangle(660, _oy - 33, 1260, _oy + 33, false);
                 draw_set_alpha(menu_alpha);
             }
-            draw_set_font(fnt_ui);
+            draw_set_font(ui_font(fnt_ui));
             draw_set_color(make_color_rgb(130, 195, 255));
             draw_text_outline(698, _oy, ">");
         }
 
-        draw_set_font(fnt_ui);
+        draw_set_font(ui_font(fnt_ui));
         draw_set_color(_avail ? c_white : make_color_rgb(110, 116, 134));
         draw_text_outline(960, _oy, _options[_i]);
 
         if (_i == 1 && !_any_save) {
-            draw_set_font(fnt_ui_small);
+            draw_set_font(ui_font(fnt_ui_small));
             draw_set_color(make_color_rgb(120, 125, 142));
             draw_text_outline(960, _oy + 39, "no saves found");
         }
     }
 
     if (can_input && blink < 42) {
-        draw_set_font(fnt_ui_small);
+        draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(make_color_rgb(100, 110, 135));
         // Below ALL four menu rows (last row y864; it used to sit at y818,
         // wedged between SETTINGS and CREDITS - M 08-13).
@@ -356,7 +356,7 @@ if (phase == "cutscene") {
     }
 
     // Settings hint (always shown on the title screen)
-    draw_set_font(fnt_ui_small);
+    draw_set_font(ui_font(fnt_ui_small));
     draw_set_color(make_color_rgb(130, 140, 165));
     draw_text_outline(960, 1035, "[ O ] / [ Esc ]  Settings");
 
@@ -374,7 +374,7 @@ if (phase == "cutscene") {
     draw_set_font(fnt_ui_title);
     draw_set_color(make_color_rgb(130, 195, 255));
     draw_text(960, 120, slot_mode == "new_game" ? "SELECT SAVE SLOT - NEW GAME" : "SELECT SAVE SLOT - LOAD GAME");
-    draw_set_font(fnt_ui_small);
+    draw_set_font(ui_font(fnt_ui_small));
     draw_set_color(make_color_rgb(70, 80, 105));
     ui_draw_key_legend(960, 177, slot_mode == "new_game" ? "A/D: Choose slot   Enter: Confirm   Esc: Go back" : "A/D: Choose slot   Enter: Load   Esc: Go back");
     draw_set_halign(fa_center);
@@ -419,14 +419,14 @@ if (phase == "cutscene") {
         draw_set_color(_is_sel ? make_color_rgb(35, 65, 110) : make_color_rgb(22, 28, 44));
         draw_rectangle(_cx, _card_y, _cx + _card_w, _card_y + 48, false);
         draw_set_halign(fa_center);
-        draw_set_font(fnt_ui);
+        draw_set_font(ui_font(fnt_ui));
         draw_set_color(_locked ? make_color_rgb(55, 58, 70) : c_white);
         draw_text(_cx + _card_w / 2, _card_y + 12, "SAVE SLOT " + string(_s + 1));
 
         // Slot content
         var _mid = _cx + _card_w / 2;
         if (!_occupied) {
-            draw_set_font(fnt_ui);
+            draw_set_font(ui_font(fnt_ui));
             draw_set_color(make_color_rgb(55, 65, 90));
             draw_text(_mid, _card_y + 180, "- Empty -");
         } else if (_memorial) {
@@ -434,12 +434,12 @@ if (phase == "cutscene") {
             var _mem_classes = ["Arcanist", "Bloodwarden", "Shadowstrider"];
             var _mem_cid  = clamp(variable_struct_exists(_preview, "class_id") ? _preview.class_id : 0, 0, 2);
             var _mem_ep   = variable_struct_exists(_preview, "epithet") ? _preview.epithet : "";
-            draw_set_font(fnt_ui);
+            draw_set_font(ui_font(fnt_ui));
             draw_set_color(make_color_rgb(150, 150, 160));
             draw_text(_mid, _card_y + 76, "+  HERE  LIES  +");
             draw_set_color(make_color_rgb(200, 200, 210));
             draw_text(_mid, _card_y + 116, _preview.player_name);
-            draw_set_font(fnt_ui_small);
+            draw_set_font(ui_font(fnt_ui_small));
             draw_set_color(make_color_rgb(120, 125, 140));
             draw_text(_mid, _card_y + 158, _mem_classes[_mem_cid] + ((_mem_ep != "") ? (", " + _mem_ep) : ""));
             draw_text(_mid, _card_y + 194, "Runs: " + string(variable_struct_exists(_preview, "run_count") ? _preview.run_count : 0)
@@ -458,11 +458,11 @@ if (phase == "cutscene") {
             }
         } else {
             // Character name
-            draw_set_font(fnt_ui);
+            draw_set_font(ui_font(fnt_ui));
             draw_set_color(make_color_rgb(180, 215, 255));
             draw_text(_mid, _card_y + 83, _preview.player_name);
             // Stats
-            draw_set_font(fnt_ui_small);
+            draw_set_font(ui_font(fnt_ui_small));
             draw_set_color(make_color_rgb(140, 155, 180));
             draw_text(_mid, _card_y + 135, "Runs:   " + string(_preview.run_count));
             draw_text(_mid, _card_y + 168, "Gold:   " + string(_preview.gold) + "g");
@@ -493,7 +493,7 @@ if (phase == "cutscene") {
 
         // Overwrite warning on selected occupied slot in new_game mode
         if (_is_sel && slot_mode == "new_game" && _occupied) {
-            draw_set_font(fnt_ui_small);
+            draw_set_font(ui_font(fnt_ui_small));
             var _warn_col = slot_confirm ? make_color_rgb(255, 100, 80) : make_color_rgb(220, 170, 50);
             draw_set_color(_warn_col);
             draw_text(_mid, _card_y + _card_h - 54,
@@ -502,7 +502,7 @@ if (phase == "cutscene") {
 
         // "No save" hint on empty slot in load_game mode
         if (_is_sel && slot_mode == "load_game" && !_occupied) {
-            draw_set_font(fnt_ui_small);
+            draw_set_font(ui_font(fnt_ui_small));
             draw_set_color(make_color_rgb(150, 80, 80));
             draw_text(_mid, _card_y + _card_h - 54, "No save data");
         }
@@ -538,7 +538,7 @@ if (phase == "cutscene") {
     ui_draw_credits_page();
 
     draw_set_halign(fa_center);
-    draw_set_font(fnt_ui_small);
+    draw_set_font(ui_font(fnt_ui_small));
     draw_set_color(make_color_rgb(100, 110, 135));
     ui_draw_key_legend(960, 1002, "Esc: Back");
 
@@ -572,7 +572,7 @@ if (input_device() == 2 && phase == "title"
     draw_set_alpha(1.0);
     draw_set_color(make_color_rgb(110, 100, 75));
     draw_rectangle(_tsb_x1, _tsb_y1, _tsb_x2, _tsb_y2, true);
-    draw_set_font(fnt_ui_small);
+    draw_set_font(ui_font(fnt_ui_small));
     draw_set_halign(fa_center);
     draw_set_valign(fa_middle);
     draw_set_color(make_color_rgb(215, 200, 165));

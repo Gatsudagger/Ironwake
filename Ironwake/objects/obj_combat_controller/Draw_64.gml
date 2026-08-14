@@ -23,6 +23,9 @@ ui_draw_25d_props(0);
 // player buff row, drawn below) set it when the mouse is over a badge, and it's
 // drawn after those rows so the popup lands on top. (Task: hover-explain debuffs.)
 global.combat_status_tip = undefined;
+// Same idiom for the weakness-gem hover tip (M 08-14 fix-now #8) - set by the
+// intent-chip draw when the mouse rests on the school diamond.
+global.combat_weak_tip = undefined;
 
 
 // -----------------------------------------------------------------------------
@@ -116,7 +119,7 @@ for (var _i = 0; _i < _count; _i++) {
     // see which control applies: ROOT blocks Melee, SILENCE blocks Spell, STUN all.
     // Ranged foes are tinted amber as a "root won't stop this" cue.
     var _ec_ranged = (variable_struct_exists(_c, "reach") && _c.reach == "ranged");
-    draw_set_font(fnt_ui_small);
+    draw_set_font(ui_font(fnt_ui_small));
     draw_set_halign(fa_right);
     draw_set_valign(fa_top);
     draw_set_color(_ec_ranged ? make_color_rgb(220, 170, 80) : make_color_rgb(140, 155, 185));
@@ -162,7 +165,7 @@ ui_draw_combat_hud(combat_state, player, player.abilities, selected_ability, com
 
 // Awakening tier reference - small label top-right, above the enemy HP bars.
 var _awk_asc = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
-draw_set_font(fnt_ui_small);
+draw_set_font(ui_font(fnt_ui_small));
 draw_set_halign(fa_right);
 draw_set_valign(fa_top);
 draw_set_color(_awk_asc > 0 ? make_color_rgb(225, 150, 70) : make_color_rgb(120, 130, 150));
@@ -499,20 +502,22 @@ if (variable_struct_exists(player, "summon") && is_struct(player.summon)) {
                : ((_smp.kind == "husk") ? make_color_rgb(235, 215, 80) : make_color_rgb(160, 140, 230));
     var _smp_p = 0.5 + 0.5 * sin(current_time / 320);
     ui_draw_cast_shadow(_smp_x, _smp_y + 6, 110, -1);
-    // Pedestal: squat stone block.
-    draw_set_color(make_color_rgb(52, 50, 60));
-    draw_rectangle(_smp_x - 26, _smp_y - 18, _smp_x + 26, _smp_y + 4, false);
-    draw_set_color(make_color_rgb(24, 24, 30));
-    draw_rectangle(_smp_x - 26, _smp_y - 18, _smp_x + 26, _smp_y + 4, true);
-    // The construct's heart: additive breathing orb, school-tinted.
+    // 08-14 sitting: BESPOKE ELEMENTAL MODELS (M's approved picks) replace the
+    // placeholder pedestal+orb. East-facing 120x130, bottom-anchored on the
+    // old pedestal ground line, breathing school glow kept UNDER the sprite.
+    var _smp_spr = (_smp.kind == "golem") ? spr_summon_magma
+                 : ((_smp.kind == "husk") ? spr_summon_storm : spr_summon_ward);
     gpu_set_blendmode(bm_add);
-    draw_set_alpha(0.30 + 0.25 * _smp_p);
+    draw_set_alpha(0.16 + 0.14 * _smp_p);
     draw_set_color(_smp_c);
-    draw_circle(_smp_x, _smp_y - 52, 34 + 5 * _smp_p, false);
-    draw_set_alpha(0.85);
-    draw_circle(_smp_x, _smp_y - 52, 16 + 3 * _smp_p, false);
+    draw_circle(_smp_x, _smp_y - 52, 46 + 6 * _smp_p, false);
     gpu_set_blendmode(bm_normal);
     draw_set_alpha(1.0);
+    var _smp_sc = 1.0 + 0.02 * _smp_p;   // barely-breathing idle
+    draw_sprite_ext(_smp_spr, 0,
+        _smp_x - sprite_get_width(_smp_spr) * _smp_sc * 0.5,
+        _smp_y + 4 - sprite_get_height(_smp_spr) * _smp_sc,
+        _smp_sc, _smp_sc, 0, c_white, 1.0);
     // Hits-left pips under the pedestal (what it can still eat).
     for (var _smp_i = 0; _smp_i < _smp.hits; _smp_i++) {
         draw_set_color(_smp_c);
@@ -624,10 +629,12 @@ for (var _ei = 0; _ei < _ecnt; _ei++) {
         // for every sprite, and feet land exactly on the station ground line.
         var _ntb = sprite_true_bounds(_nspr);
         _es *= 97 / max(1, _ntb.h);
+        // Per-MOB-TYPE size intent (08-14): small-by-design species stay small.
+        // Table lives in enemy_size_mult (scr_enemies) - tune per species there.
+        _es *= enemy_size_mult(_ec.name);
         // Round 13b (M: "lowest mob can still be too large depending on the
         // sprite"): HARD SIZE CEILING - no enemy ever draws taller than 185px
-        // visible, whatever its station scale says. Per-MOB-TYPE size intent
-        // (small-by-design species staying small) is the tweak-by-tweak pass.
+        // visible, whatever its station scale says.
         _es = min(_es, 185 / max(1, _ntb.h));
         _ey  = _esp.feet - (_ntb.b + 1) * _es;
     }
@@ -951,7 +958,7 @@ for (var _vbi = 0; _vbi < array_length(vfx_bursts); _vbi++) {
 vfx_bursts = _kept_bursts;
 
 // Floating damage / heal numbers
-draw_set_font(fnt_ui);
+draw_set_font(ui_font(fnt_ui));
 draw_set_halign(fa_center);
 draw_set_valign(fa_middle);
 var _kept_popups = [];
@@ -1023,6 +1030,14 @@ if (_inspect_target != undefined && global.combat_status_tip == undefined) {
     ui_draw_enemy_inspect_tooltip(_mx_gui, _my_gui, _inspect_target);
 }
 
+// Weakness-gem hover tip (M 08-14 fix-now #8) - suppressed while either other
+// hover popup is up so the three can never stack.
+if (global.combat_weak_tip != undefined && global.combat_status_tip == undefined
+    && _inspect_target == undefined) {
+    ui_draw_weakness_tooltip(global.combat_weak_tip.x, global.combat_weak_tip.y,
+                             global.combat_weak_tip.school, global.combat_weak_tip.ename);
+}
+
 // -----------------------------------------------------------------------------
 // 3a. AP SYSTEM OVERLAYS (player turn only)
 // Drawn after the HUD so they appear on top of ability buttons.
@@ -1050,7 +1065,7 @@ if (player_turn && !combat_over) {
             draw_set_color(make_color_rgb(20, 15, 25));
             draw_rectangle(_bx, _btn_y, _bx + _btn_w, _btn_y + _btn_h, false);
             draw_set_alpha(1.0);
-            draw_set_font(fnt_ui);
+            draw_set_font(ui_font(fnt_ui));
             draw_set_color(make_color_rgb(175, 85, 85));
             draw_set_halign(fa_center);
             draw_set_valign(fa_middle);
@@ -1068,7 +1083,7 @@ if (player_turn && !combat_over) {
     } else {
         _ap_col = make_color_rgb(130, 150, 115);
     }
-    draw_set_font(fnt_ui);
+    draw_set_font(ui_font(fnt_ui));
     draw_set_halign(fa_center);
     // Touch (8c): the End Turn line becomes a real button - framed so it reads
     // as tappable; a tap fires a simulated T through the unchanged handler.
@@ -1098,10 +1113,10 @@ if (player_turn && !combat_over) {
             draw_rectangle(490, 856, 730, 916, false);
             draw_set_color(_gd_off ? make_color_rgb(150, 120, 70) : make_color_rgb(120, 150, 190));
             draw_rectangle(490, 856, 730, 916, true);
-            draw_set_font(fnt_ui_small);
+            draw_set_font(ui_font(fnt_ui_small));
             draw_set_color(_gd_off ? make_color_rgb(215, 180, 120) : make_color_rgb(190, 210, 235));
             draw_text(610, 872, _gd_off ? "GUARD: OFF" : "GUARD: ON");
-            draw_set_font(fnt_ui);
+            draw_set_font(ui_font(fnt_ui));
             if (touch_tapped(490, 856, 730, 916)) touch_press(ord("G"));
         }
     } else {
@@ -1189,7 +1204,7 @@ if (player_turn && !combat_over) {
     draw_rectangle(_ibx + 2, _iby + 2, _ibx + _ibw - 2, _iby + _ibh - 2, true);
 
     // Labels - real fonts at native size (fit comfortably in the button).
-    draw_set_font(fnt_ui_small);
+    draw_set_font(ui_font(fnt_ui_small));
     draw_set_halign(fa_center);
     draw_set_valign(fa_middle);
     // Touch has no keyboard, so naming the C key there is noise (M 07-18: "it
@@ -1233,21 +1248,21 @@ if (player_turn && !combat_over) {
         draw_rectangle(_px, _py, _px + _pw, _py + _ph, true);
 
         // Header
-        draw_set_font(fnt_ui);
+        draw_set_font(ui_font(fnt_ui));
         draw_set_halign(fa_center);
         draw_set_color(c_white);
         var _qhdr = (_qcount > 0) ? "USE CONSUMABLE  (1 AP)" : "CONSUMABLES";
         if (_qcount > _q_max_vis) _qhdr += "   (" + string(consumable_quick_cursor + 1) + "/" + string(_qcount) + ")";
         draw_text(_px + _pw / 2, _py + 21, _qhdr);
         // Scroll hints
-        draw_set_font(fnt_ui_small);
+        draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(make_color_rgb(120, 210, 160));
         if (_q_first > 0)        ui_draw_scroll_more(_px + _pw / 2, _py + 54, true, "more");
         if (_q_last < _qcount)   ui_draw_scroll_more(_px + _pw / 2, _py + _ph - 66, false, "more");
 
         // Empty-state message (run buffer holds no consumables this run).
         if (_qcount == 0) {
-            draw_set_font(fnt_ui);
+            draw_set_font(ui_font(fnt_ui));
             draw_set_halign(fa_center);
             draw_set_color(make_color_rgb(150, 165, 185));
             draw_text(_px + _pw / 2, _py + _ph / 2 - 6, "No consumables held.");
@@ -1282,10 +1297,10 @@ if (player_turn && !combat_over) {
             var _qtx = _px + 30 + _qisz + 16;
 
             draw_set_halign(fa_left);
-            draw_set_font(fnt_ui);
+            draw_set_font(ui_font(fnt_ui));
             draw_set_color(_is_cur ? c_white : make_color_rgb(160, 175, 195));
             draw_text(_qtx, _qry + 12, _qlabel);
-            draw_set_font(fnt_ui_small);
+            draw_set_font(ui_font(fnt_ui_small));
             if (_is_armed) {
                 draw_set_color(make_color_rgb(245, 205, 120));
                 draw_text(_qtx, _qry + 48, "Tap again to use   -   tap elsewhere to cancel");
@@ -1334,7 +1349,7 @@ if (instance_exists(obj_game_controller)) {
         draw_set_color(c_lime);
         draw_text(960, 90, "LEVEL UP  -  Level " + string(global.run_level));
 
-        draw_set_font(fnt_ui);
+        draw_set_font(ui_font(fnt_ui));
         draw_set_color(c_yellow);
         var _pts_str;
         if (global.pending_stat_points == 1) {
@@ -1373,7 +1388,7 @@ if (instance_exists(obj_game_controller)) {
         var _hint_w  = (_bx_r - _bx_l) - _bx_padx * 2;
 
         // Hint font drives both the measured box height and the drawn hints below.
-        draw_set_font(fnt_ui_small);
+        draw_set_font(ui_font(fnt_ui_small));
         var _max_hint_h = 0;
         for (var _hi = 0; _hi < 6; _hi++) {
             _max_hint_h = max(_max_hint_h, string_height_ext(_alloc_stat_hints[_hi], _hint_lh, _hint_w));
@@ -1411,7 +1426,7 @@ if (instance_exists(obj_game_controller)) {
             if (_is_pend)      _lbl_col = make_color_rgb(235, 165, 50);
             else if (_is_sel)  _lbl_col = c_white;
             else               _lbl_col = make_color_rgb(140, 150, 170);
-            draw_set_font(fnt_ui);
+            draw_set_font(ui_font(fnt_ui));
             draw_set_color(_lbl_col);
             draw_text(_bx_l + _bx_padx, _sy + 9, _alloc_stat_descs[_si] + "  (" + _alloc_stat_names[_si] + ")");
 
@@ -1428,7 +1443,7 @@ if (instance_exists(obj_game_controller)) {
 
             // Wrapped hint on the line(s) below the label
             var _hint_col = (_is_sel || _is_pend) ? make_color_rgb(170, 188, 215) : make_color_rgb(95, 105, 128);
-            draw_set_font(fnt_ui_small);
+            draw_set_font(ui_font(fnt_ui_small));
             draw_set_color(_hint_col);
             draw_text_ext(_bx_l + _bx_padx, _sy + 42, _alloc_stat_hints[_si], _hint_lh, _hint_w);
         }
@@ -1455,7 +1470,7 @@ if (instance_exists(obj_game_controller)) {
                 draw_rectangle(_cbx1, _cby1, _cbx2, _cby2, false);
                 draw_set_color(c_lime);
                 draw_rectangle(_cbx1, _cby1, _cbx2, _cby2, true);
-                draw_set_font(fnt_ui);
+                draw_set_font(ui_font(fnt_ui));
                 draw_set_halign(fa_center); draw_set_valign(fa_middle);
                 draw_set_color(c_white);
                 draw_text(960, (_cby1 + _cby2) / 2, "CONFIRM");
@@ -1463,7 +1478,7 @@ if (instance_exists(obj_game_controller)) {
                 if (touch_tapped(_cbx1, _cby1, _cbx2, _cby2)) touch_press(vk_space);
             }
         }
-        draw_set_font(fnt_ui_small);
+        draw_set_font(ui_font(fnt_ui_small));
         draw_set_halign(fa_center);
         draw_set_color(make_color_rgb(80, 90, 110));
         if (input_device() != 2) {
@@ -1507,7 +1522,7 @@ if (show_loot_screen) {
     draw_set_color(c_yellow);
     draw_text(960, 90, "LOOT FOUND");
 
-    draw_set_font(fnt_ui);
+    draw_set_font(ui_font(fnt_ui));
     draw_set_color(make_color_rgb(160, 160, 180));
     draw_text(960, 173, "Items collected this room:");
 
@@ -1548,11 +1563,11 @@ if (show_loot_screen) {
                     _iy  + (66 - _sp_h * _sp_sc) / 2 + sprite_get_yoffset(_sp_spr) * _sp_sc,
                     _sp_sc, _sp_sc, 0, c_white, 1);
             }
-            draw_set_font(fnt_ui);
+            draw_set_font(ui_font(fnt_ui));
             draw_set_halign(fa_left);
             draw_set_color(make_color_rgb(255, 220, 130));
             draw_text(456, _iy + 8, _sp.label);
-            draw_set_font(fnt_ui_small);
+            draw_set_font(ui_font(fnt_ui_small));
             draw_set_color(make_color_rgb(205, 198, 170));
             draw_text(456, _iy + 42, _sp.sub);
             draw_set_halign(fa_right);
@@ -1574,11 +1589,11 @@ if (show_loot_screen) {
 
         if (_is_consumable) {
             ui_draw_consumable_icon(372, _iy, 66, _item);
-            draw_set_font(fnt_ui);
+            draw_set_font(ui_font(fnt_ui));
             draw_set_color(ui_consumable_name_color(_item));   // Genie Lamp reads legendary gold
             draw_set_halign(fa_left);
             draw_text(456, _iy + 8, _item.name);
-            draw_set_font(fnt_ui_small);
+            draw_set_font(ui_font(fnt_ui_small));
             draw_set_color(make_color_rgb(140, 200, 200));
             draw_text(456, _iy + 42, ui_sentence(_item.description));
             draw_set_halign(fa_right);
@@ -1587,7 +1602,7 @@ if (show_loot_screen) {
         } else {
             var _rarity_col = item_rarity_color(_item.rarity);
             ui_draw_item_icon(372, _iy, 66, _item);
-            draw_set_font(fnt_ui);
+            draw_set_font(ui_font(fnt_ui));
             draw_set_color(_rarity_col);
             draw_set_halign(fa_left);
             draw_text(456, _iy + 3, _item.name);
@@ -1600,16 +1615,16 @@ if (show_loot_screen) {
                 // Measure the name in fnt_ui (its draw font) BEFORE the switch to
                 // fnt_ui_small, or the tag lands mid-name on long items.
                 var _loot_name_w = string_width(_item.name);
-                draw_set_font(fnt_ui_small);
+                draw_set_font(ui_font(fnt_ui_small));
                 draw_set_color((_loot_cr == _loot_my_cl) ? make_color_rgb(210, 175, 90) : make_color_rgb(225, 80, 80));
                 draw_text(456 + _loot_name_w + 18, _iy + 9,
                     "[" + _loot_cr_names[clamp(_loot_cr, 0, 2)] + " only]");
-                draw_set_font(fnt_ui);
+                draw_set_font(ui_font(fnt_ui));
             }
             // Stat line (e.g. "+4 STR, +12 HP") so found gear is readable at a glance.
             // Scale it down to ONE line within the left content area so a many-affix
             // item can't overrun the right-hand rarity/slot/req column.
-            draw_set_font(fnt_ui_small);
+            draw_set_font(ui_font(fnt_ui_small));
             draw_set_color(c_white);
             draw_set_halign(fa_left);
             ui_draw_stat_line_fit(456, _iy + 33, ui_item_stat_str(_item), 1230 - 456);
@@ -1647,7 +1662,7 @@ if (show_loot_screen) {
         draw_set_color(_ffd_on ? make_color_rgb(210, 175, 90) : make_color_rgb(50, 52, 66));
         draw_rectangle(1560, 96, 1870, 168, true);
         draw_set_halign(fa_center);
-        draw_set_font(fnt_ui_small);
+        draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(_ffd_on ? make_color_rgb(235, 210, 140) : make_color_rgb(100, 104, 118));
         draw_text(1715, 104, "FORTUNE'S FAVOR" + ((input_device() == 2) ? "" : "  [V]"));
         draw_text(1715, 134, _ffd_used ? "spent this run"
@@ -1657,13 +1672,13 @@ if (show_loot_screen) {
 
     // Scroll hint (only when list overflows)
     draw_set_halign(fa_center);
-    draw_set_font(fnt_ui_small);
+    draw_set_font(ui_font(fnt_ui_small));
     if (_lt_count > 8 && input_device() != 2) {   // touch: drag-to-scroll, no keyboard hint
         draw_set_color(make_color_rgb(120, 130, 150));
         draw_text_outline(960, 953, "W/S to scroll");
     }
 
-    draw_set_font(fnt_ui);
+    draw_set_font(ui_font(fnt_ui));
     draw_set_color(c_white);
     draw_text(960, 990, (input_device() == 2) ? "Tap to continue" : "Enter / R to continue");
 
@@ -1694,6 +1709,7 @@ if (instance_exists(obj_game_controller)) {
 }
 if (!combat_over && consumable_overflow_pending()
     && !_ovf_alloc_open && !show_loot_screen
+    && overflow_stage_reached
     && array_length(combat_living_enemies(combat_state)) == 0) {
     ui_draw_consumable_overflow();
     touch_sim_pump();   // early exit skips the bottom-of-Draw pump (see alloc note)
@@ -1710,7 +1726,7 @@ if (global.duel_active && !combat_over) {
     var _dp_txt = "DUEL  -  PAR " + string(_dp_par) + " TURNS  -  ROUND " + string(_dp_rnd);
     var _dp_col = (_dp_rnd <= _dp_par) ? make_color_rgb(235, 200, 110)
                 : ((_dp_rnd <= _dp_par + 2) ? make_color_rgb(200, 205, 215) : make_color_rgb(205, 140, 100));
-    draw_set_font(fnt_ui_small);
+    draw_set_font(ui_font(fnt_ui_small));
     var _dp_w  = string_width(_dp_txt) + 44;
     var _dp_x0 = GUI_CX - _dp_w * 0.5, _dp_y0 = 8, _dp_x1 = GUI_CX + _dp_w * 0.5, _dp_y1 = 48;
     draw_set_alpha(0.85);
@@ -1784,7 +1800,7 @@ if (combat_over) {
     }
 
     // Run summary
-    draw_set_font(fnt_ui);
+    draw_set_font(ui_font(fnt_ui));
     draw_set_halign(fa_center);
     var _summary_y = _cy + 75;
 
@@ -1907,7 +1923,7 @@ if (combat_over) {
         draw_text(_cx, 396, _bx_descent
             ? ("THE DESCENT  -  FLOOR " + string(global.current_floor) + " CLEARED")
             : ("FLOOR " + string(global.current_floor) + " CLEARED"));
-        draw_set_font(fnt_ui);
+        draw_set_font(ui_font(fnt_ui));
         draw_set_color(make_color_rgb(160, 175, 210));
         draw_text(_cx, 459, _bx_descent ? "Bank your haul, or dare the deeper dark?" : "What will you do?");
 
@@ -1916,10 +1932,10 @@ if (combat_over) {
         draw_rectangle(402, 510, 930, 623, false);
         draw_set_color(make_color_rgb(50, 160, 70));
         draw_rectangle(402, 510, 930, 623, true);
-        draw_set_font(fnt_ui);
+        draw_set_font(ui_font(fnt_ui));
         draw_set_color(c_white);
         draw_text_outline(666, 533, _bx_descent ? "[ E ]  Retreat  -  Bank It All" : "[ E ]  Extract to Camp");
-        draw_set_font(fnt_ui_small);
+        draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(make_color_rgb(140, 210, 140));
         draw_text(666, 579, _bx_descent
             ? ("Everything found is kept  *  Floor " + string(global.current_floor) + " recorded")
@@ -1930,10 +1946,10 @@ if (combat_over) {
         draw_rectangle(990, 510, 1518, 623, false);
         draw_set_color(make_color_rgb(180, 130, 40));
         draw_rectangle(990, 510, 1518, 623, true);
-        draw_set_font(fnt_ui);
+        draw_set_font(ui_font(fnt_ui));
         draw_set_color(c_white);
         draw_text(1254, 533, "[ Enter ]  Descend Deeper");
-        draw_set_font(fnt_ui_small);
+        draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(make_color_rgb(220, 190, 120));
         draw_text(1254, 579, _bx_descent
             ? ("Floor " + string(global.current_floor + 1) + "  *  a random dungeon stirs  *  death drops the unbanked")
@@ -1950,7 +1966,7 @@ if (combat_over) {
             draw_rectangle(986, 506, 1522, 627, true);
         }
         if (boss_extract_arm != "") {
-            draw_set_font(fnt_ui_small);
+            draw_set_font(ui_font(fnt_ui_small));
             draw_set_color(c_white);
             draw_text_outline(_cx, 645, (boss_extract_arm == "extract")
                 ? "Extract to camp?  Press E / click again to confirm."
@@ -2132,12 +2148,37 @@ if (instance_exists(obj_game_controller)) {
         && pet_active() != undefined) {
         ui_draw_pet_detail(pet_active());
         draw_set_halign(fa_center);
-        draw_set_font(fnt_ui_small);
+        draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(make_color_rgb(140, 150, 175));
         ui_draw_key_legend(GUI_CX, 1044, "P / Esc: Close");
         draw_set_halign(fa_left);
         draw_set_font(-1);
     }
+}
+
+// THE BOTTOM YIELDS - floor-50 Descent clear splash (armed by the Warden kill
+// in combat_on_enemy_defeated; 08-14). Fades in fast, holds, fades out. Sits
+// above the combat scene but below the pause/settings modals and touch chrome.
+if (bottom_splash_timer > 0) {
+    bottom_splash_timer--;
+    var _bys_a = min(1.0, (300 - bottom_splash_timer) / 20) * min(1.0, bottom_splash_timer / 40);
+    draw_set_alpha(0.62 * _bys_a);
+    draw_set_color(c_black);
+    draw_rectangle(GUI_XL, 380, GUI_XR, 660, false);
+    draw_set_alpha(_bys_a);
+    draw_set_color(make_color_rgb(245, 205, 110));
+    draw_set_halign(fa_center);
+    draw_set_valign(fa_middle);
+    draw_set_font(fnt_ui_title);
+    draw_text(GUI_CX, 460, "THE BOTTOM YIELDS");
+    draw_set_font(ui_font(fnt_ui));
+    draw_set_color(make_color_rgb(215, 220, 235));
+    draw_text(GUI_CX, 540, "There is nothing below you now but the way back up.");
+    draw_set_font(ui_font(fnt_ui_small));
+    draw_set_color(make_color_rgb(190, 170, 120));
+    draw_text(GUI_CX, 596, "Title earned: \"the Bottom's Witness\"  -  equip it on the Stats tab.");
+    draw_set_valign(fa_top);
+    draw_set_alpha(1.0);
 }
 
 // Pause / Esc menu + its Settings sub-screen (combat doesn't otherwise host the

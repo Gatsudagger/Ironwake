@@ -55,7 +55,7 @@ draw_set_halign(fa_center);
 draw_set_valign(fa_top);
 draw_set_color(c_white);
 draw_text(GUI_CX, 30, "FLOOR " + string(global.current_floor) + " OF 3");
-draw_set_font(fnt_ui);
+draw_set_font(ui_font(fnt_ui));
 draw_set_color(make_color_rgb(160, 140, 110));
 var _dung_id = variable_global_exists("selected_dungeon") ? global.selected_dungeon : "ashen_vault";
 var _dung_display_name = "The Ashen Vault";
@@ -66,7 +66,7 @@ draw_set_halign(fa_left);
 
 // Awakening tier reference - top-right, matches the combat screen label.
 var _awk_asc = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
-draw_set_font(fnt_ui_small);
+draw_set_font(ui_font(fnt_ui_small));
 draw_set_halign(fa_right);
 draw_set_color(_awk_asc > 0 ? make_color_rgb(225, 150, 70) : make_color_rgb(120, 130, 150));
 draw_text(1890, 33, awakening_label());
@@ -140,7 +140,7 @@ var _map_mx = device_mouse_x_to_gui(0);
 var _map_my = device_mouse_y_to_gui(0);
 
 // --- Pass 2: Node boxes ---
-draw_set_font(fnt_ui_small);
+draw_set_font(ui_font(fnt_ui_small));
 for (var _i = 0; _i < _count; _i++) {
     var _room   = current_rooms[_i];
     var _is_sel = (_i == selected_room);
@@ -344,7 +344,7 @@ var _ddx = _dp_x + 27;
 var _ddy = _dp_y + 27;
 
 // Room name
-draw_set_font(fnt_ui);
+draw_set_font(ui_font(fnt_ui));
 draw_set_halign(fa_left);
 draw_set_valign(fa_top);
 draw_set_color(make_color_rgb(30, 40, 70));
@@ -367,7 +367,7 @@ switch (_sel.type) {
     case "shrine":          _det_type_str = "Shrine of Tribute"; break;
     case "whetstone":       _det_type_str = "The Whetstone";     break;
 }
-draw_set_font(fnt_ui_small);
+draw_set_font(ui_font(fnt_ui_small));
 draw_set_color(_sel_tc);
 draw_text(_ddx, _ddy + 51, _det_type_str);
 
@@ -395,12 +395,12 @@ switch (_sel.type) {
     case "whetstone":
         _det_desc = "A grindstone hums with old power.\nNo enemies present.\nHone one slotted ability for this run - free."; break;
 }
-draw_set_font(fnt_ui);
+draw_set_font(ui_font(fnt_ui));
 draw_set_color(make_color_rgb(170, 180, 200));
 draw_text_ext(_ddx, _ddy + 90, _det_desc, -1, _dp_w - 54);
 
 // Accessible / cleared status
-draw_set_font(fnt_ui_small);
+draw_set_font(ui_font(fnt_ui_small));
 var _sel_acc = _accessible[selected_room];
 if (_sel.cleared) {
     draw_set_color(c_gray);
@@ -474,7 +474,7 @@ if (showing_treasure) {
     draw_set_color(c_yellow);
     draw_text(_pop_cx, _pop_cy, "TREASURE!");
 
-    draw_set_font(fnt_ui);
+    draw_set_font(ui_font(fnt_ui));
     draw_set_color(c_white);
     var _tg_txt = "You found " + string(treasure_gold) + " gold!";
     // Coin glyph beside the amount (#19 - M-approved icon, gen_reward_icons.py).
@@ -485,20 +485,20 @@ if (showing_treasure) {
         var _tr_is_cons = variable_struct_exists(treasure_item, "item_category")
                           && treasure_item.item_category == "consumable";
         if (_tr_is_cons) {
-            draw_set_font(fnt_ui);
+            draw_set_font(ui_font(fnt_ui));
             draw_set_color(ui_consumable_name_color(treasure_item));   // Genie Lamp reads legendary gold
             draw_text(_pop_cx, _pop_cy + 138, treasure_item.name);
-            draw_set_font(fnt_ui_small);
+            draw_set_font(ui_font(fnt_ui_small));
             draw_set_color(make_color_rgb(140, 200, 200));
             draw_text(_pop_cx, _pop_cy + 180, treasure_item.description);
             draw_set_color(make_color_rgb(80, 200, 200));
             draw_text(_pop_cx, _pop_cy + 210, "[CONSUMABLE]");
         } else {
             var _tr_col = item_rarity_color(treasure_item.rarity);
-            draw_set_font(fnt_ui);
+            draw_set_font(ui_font(fnt_ui));
             draw_set_color(_tr_col);
             draw_text(_pop_cx, _pop_cy + 138, treasure_item.name);
-            draw_set_font(fnt_ui_small);
+            draw_set_font(ui_font(fnt_ui_small));
             draw_set_color(make_color_rgb(180, 180, 200));
             draw_text(_pop_cx, _pop_cy + 180, treasure_item.effect_desc);
             draw_set_color(_tr_col);
@@ -506,7 +506,7 @@ if (showing_treasure) {
                 "[" + item_rarity_name(treasure_item.rarity) + "]   Slot: " + treasure_item.slot);
         }
     } else {
-        draw_set_font(fnt_ui);
+        draw_set_font(ui_font(fnt_ui));
         draw_set_color(make_color_rgb(100, 110, 130));
         draw_text(_pop_cx, _pop_cy + 138, "No other items found.");
     }
@@ -516,7 +516,7 @@ if (showing_treasure) {
     if (treasure_item2 != undefined) {
         var _t2_is_cons = variable_struct_exists(treasure_item2, "item_category")
                           && treasure_item2.item_category == "consumable";
-        draw_set_font(fnt_ui);
+        draw_set_font(ui_font(fnt_ui));
         if (_t2_is_cons) {
             draw_set_color(ui_consumable_name_color(treasure_item2));   // Genie Lamp reads legendary gold
             draw_text(_pop_cx, _pop_cy + 252, "+ " + treasure_item2.name + "  [CONSUMABLE]");
@@ -525,7 +525,7 @@ if (showing_treasure) {
             draw_text(_pop_cx, _pop_cy + 252,
                 "+ " + treasure_item2.name + "  [" + item_rarity_name(treasure_item2.rarity) + "]");
         }
-        draw_set_font(fnt_ui_small);
+        draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(make_color_rgb(180, 160, 90));
         draw_text(_pop_cx, _pop_cy + 288, "Treasure Hunter: bonus item!");
         _enter_y = _pop_cy + 330;
@@ -535,12 +535,12 @@ if (showing_treasure) {
     // pale-cyan name line + the extraction warning (the whole tension of the find).
     if (treasure_banshee) {
         var _bb_txt = "A BANSHEE IN A BOTTLE!";
-        draw_set_font(fnt_ui);
+        draw_set_font(ui_font(fnt_ui));
         draw_set_color(make_color_rgb(150, 235, 235));
         draw_sprite_stretched(spr_icon_banshee_bottle, 0,
             _pop_cx - string_width(_bb_txt) * 0.5 - 44, _enter_y - 6, 36, 36);
         draw_text(_pop_cx, _enter_y + 12, _bb_txt);
-        draw_set_font(fnt_ui_small);
+        draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(make_color_rgb(120, 170, 175));
         draw_text(_pop_cx, _enter_y + 51, "Something wails within. Extract alive to keep it - Maren can free the spirit.");
         _enter_y += 96;
@@ -550,7 +550,7 @@ if (showing_treasure) {
         // Touch: framed CONTINUE button (M 07-08, same as rest/event popups).
         ui_draw_touch_continue(_pop_cx, _enter_y - 12);
     } else {
-        draw_set_font(fnt_ui_small);
+        draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(c_ltgray);
         draw_text(_pop_cx, _enter_y, ((input_device() == 2) ? "Tap to continue" : "Press Enter to continue"));
     }
@@ -587,7 +587,7 @@ if (showing_event) {
 
     // Body + prompt are TOP-aligned below the (middle-anchored) title so a multi-line
     // body can't ride up and collide with the title (e.g. the Rest Site screen).
-    draw_set_font(fnt_ui);
+    draw_set_font(ui_font(fnt_ui));
     draw_set_valign(fa_top);
     draw_set_color(make_color_rgb(190, 195, 215));
     draw_text_ext(_ecx, _ecy + 68, event_body, -1, 900);
@@ -597,7 +597,7 @@ if (showing_event) {
         // (M 07-08, heal/rest/trap rooms).
         ui_draw_touch_continue(_ecx, _ecy + 288);
     } else {
-        draw_set_font(fnt_ui_small);
+        draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(c_ltgray);
         draw_text(_ecx, _ecy + 300, ((input_device() == 2) ? "Tap to continue" : "Press Enter to continue"));
     }
@@ -634,14 +634,14 @@ if (showing_whetstone) {
     draw_set_font(fnt_ui_title);
     draw_set_color(_wt_steel);
     draw_text(GUI_CX, 84, "The Whetstone");
-    draw_set_font(fnt_ui_small);
+    draw_set_font(ui_font(fnt_ui_small));
     draw_set_color(make_color_rgb(170, 180, 195));
     draw_text(GUI_CX, 162, "Set one edge sharper for the rest of this run. No cost - the stone asks nothing.");
 
     var _wt_na = array_length(whetstone_abilities);
 
     if (_wt_na == 0) {
-        draw_set_font(fnt_ui);
+        draw_set_font(ui_font(fnt_ui));
         draw_set_color(make_color_rgb(150, 150, 170));
         draw_text(GUI_CX, 520, "You carry no abilities to hone. (Esc to leave.)");
     } else if (whetstone_phase == "ability") {
@@ -657,10 +657,10 @@ if (showing_whetstone) {
             draw_set_color(_wsel ? _wt_steel : make_color_rgb(56, 70, 82));
             draw_rectangle(_wt_rx0, _wry, _wt_rx1, _wry + _wt_rh, true);
 
-            draw_set_font(fnt_ui);
+            draw_set_font(ui_font(fnt_ui));
             draw_set_color(_wsel ? c_white : make_color_rgb(190, 205, 215));
             draw_text(_wt_rx0 + 26, _wry + 12, _wab.name);
-            draw_set_font(fnt_ui_small);
+            draw_set_font(ui_font(fnt_ui_small));
             draw_set_color(make_color_rgb(150, 165, 180));
             // The web nodes this ability could take (titles only - labels would
             // overflow the row with 3 options), previewed so the choice is legible.
@@ -690,7 +690,7 @@ if (showing_whetstone) {
         var _wcab  = whetstone_abilities[whetstone_ab_cursor];
         var _wcopt = ability_web_whetstone_options(_wcab);
         var _wcn   = array_length(_wcopt);
-        draw_set_font(fnt_ui);
+        draw_set_font(ui_font(fnt_ui));
         draw_set_color(make_color_rgb(210, 220, 230));
         draw_text(GUI_CX, 260, "Hone " + _wcab.name + " - borrow one unwoven strand for this run:");
 
@@ -703,7 +703,7 @@ if (showing_whetstone) {
             draw_rectangle(_wm_rx0, _mry, _wm_rx1, _mry + _wm_rh, false);
             draw_set_color(_msel ? _wt_steel : make_color_rgb(56, 70, 82));
             draw_rectangle(_wm_rx0, _mry, _wm_rx1, _mry + _wm_rh, true);
-            draw_set_font(fnt_ui);
+            draw_set_font(ui_font(fnt_ui));
             draw_set_color(_msel ? c_white : make_color_rgb(190, 205, 215));
             draw_set_valign(fa_middle);
             draw_text(_wm_rx0 + 30, _mry + _wm_rh * 0.5, _wcopt[_mi].title + "  -  " + _wcopt[_mi].label);
@@ -736,7 +736,7 @@ if (showing_whetstone) {
         draw_rectangle(GUI_CX - 180, 954, GUI_CX + 180, 1020, false);
         draw_set_color(_wt_steel);
         draw_rectangle(GUI_CX - 180, 954, GUI_CX + 180, 1020, true);
-        draw_set_font(fnt_ui);
+        draw_set_font(ui_font(fnt_ui));
         draw_set_color(c_white);
         draw_set_halign(fa_center);
         draw_set_valign(fa_middle);
@@ -780,11 +780,11 @@ if (showing_shrine) {
     draw_set_font(fnt_ui_title);
     draw_set_color(make_color_rgb(150, 140, 170));
     draw_text(GUI_CX, 84, "An Ancient Altar");
-    draw_set_font(fnt_ui);
+    draw_set_font(ui_font(fnt_ui));
     draw_set_color(make_color_rgb(180, 175, 195));
     draw_text(GUI_CX, 650, "A shrouded altar thrums with hidden power.");
     draw_text(GUI_CX, 706, "Its nature - blessing or curse - is veiled.");
-    draw_set_font(fnt_ui_small);
+    draw_set_font(ui_font(fnt_ui_small));
     draw_set_color(make_color_rgb(200, 160, 120));
     draw_text(GUI_CX, 790, "Approach and you are committed - a curse, once revealed, will not release you.");
     draw_set_color(c_ltgray);
@@ -794,7 +794,7 @@ if (showing_shrine) {
         draw_rectangle(GUI_CX - 210, 906, GUI_CX + 210, 972, false);
         draw_set_color(make_color_rgb(200, 160, 120));
         draw_rectangle(GUI_CX - 210, 906, GUI_CX + 210, 972, true);
-        draw_set_font(fnt_ui);
+        draw_set_font(ui_font(fnt_ui));
         draw_set_color(c_white);
         draw_set_halign(fa_center);
         draw_text(GUI_CX, 924, "APPROACH THE ALTAR");
@@ -827,20 +827,20 @@ if (showing_shrine) {
         draw_set_font(fnt_ui_title);
         draw_set_color(make_color_rgb(205, 70, 70));
         draw_text(GUI_CX, 84, "Cursed Altar");
-        draw_set_font(fnt_ui_small);
+        draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(make_color_rgb(195, 160, 170));
         draw_text(GUI_CX, 162, "Embrace a curse to grow richer in spoils. Its burden lasts the whole run.");
     } else {
         draw_set_font(fnt_ui_title);
         draw_set_color(make_color_rgb(220, 185, 110));
         draw_text(GUI_CX, 84, "Shrine of Tribute");
-        draw_set_font(fnt_ui_small);
+        draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(make_color_rgb(165, 168, 188));
         draw_text(GUI_CX, 162, "Offer tribute for a boon that lasts this run. Boons vanish when the run ends.");
     }
     var _sg  = global.gold;
     var _sdu = variable_global_exists("rune_dust") ? global.rune_dust : 0;
-    draw_set_font(fnt_ui_small);
+    draw_set_font(ui_font(fnt_ui_small));
     // Centered line drawn in segments: "Rune Dust:" label light purple, values
     // stay gold (M 2026-07-07, matches the NPC screens' dust readouts).
     var _sh_g = "Gold: " + string(_sg) + "      ";
@@ -873,7 +873,7 @@ if (showing_shrine) {
         draw_set_color(shrine_reroll_arm ? make_color_rgb(255, 230, 140)
             : (_rr_can ? make_color_rgb(200, 160, 120) : make_color_rgb(70, 70, 80)));
         draw_rectangle(_rr_x0, _rr_y0, _rr_x1, _rr_y1, true);
-        draw_set_font(fnt_ui_small);
+        draw_set_font(ui_font(fnt_ui_small));
         draw_set_halign(fa_center);
         if (shrine_rerolled) {
             draw_set_color(make_color_rgb(110, 110, 122));
@@ -900,7 +900,7 @@ if (showing_shrine) {
 
     var _sn = array_length(shrine_offers);
     if (_sn == 0) {
-        draw_set_font(fnt_ui);
+        draw_set_font(ui_font(fnt_ui));
         draw_set_color(make_color_rgb(150, 150, 170));
         draw_text(GUI_CX, 540, _is_curse
             ? "No curse remains to bind here. (Esc to leave.)"
@@ -919,10 +919,10 @@ if (showing_shrine) {
                 draw_set_color(_ssel ? make_color_rgb(205, 80, 80) : make_color_rgb(80, 45, 45));
                 draw_rectangle(330, _ry, 1590, _ry + 132, true);
 
-                draw_set_font(fnt_ui);
+                draw_set_font(ui_font(fnt_ui));
                 draw_set_color(make_color_rgb(235, 130, 130));
                 draw_text(360, _ry + 10, _cd.name);
-                draw_set_font(fnt_ui_small);
+                draw_set_font(ui_font(fnt_ui_small));
                 draw_set_color(make_color_rgb(210, 160, 160));
                 draw_text(360, _ry + 56, "Curse:  " + _cd.desc);
                 draw_set_color(make_color_rgb(150, 220, 150));
@@ -935,10 +935,10 @@ if (showing_shrine) {
                 draw_set_color(_ssel ? make_color_rgb(220, 185, 110) : make_color_rgb(70, 62, 45));
                 draw_rectangle(330, _ry, 1590, _ry + 132, true);
 
-                draw_set_font(fnt_ui);
+                draw_set_font(ui_font(fnt_ui));
                 draw_set_color(make_color_rgb(235, 215, 150));
                 draw_text(360, _ry + 10, _bd.name);
-                draw_set_font(fnt_ui_small);
+                draw_set_font(ui_font(fnt_ui_small));
                 draw_set_color(make_color_rgb(190, 195, 210));
                 draw_text(360, _ry + 52, _bd.desc);
 
@@ -968,7 +968,7 @@ if (showing_shrine) {
                 if (_ipick != undefined) {
                     var _shx = device_mouse_x_to_gui(0);
                     var _shy = device_mouse_y_to_gui(0);
-                    draw_set_font(fnt_ui_small);
+                    draw_set_font(ui_font(fnt_ui_small));
                     if (_shx >= 780 && _shx <= 780 + string_width(_ip_txt)
                         && _shy >= _ry + 88 && _shy <= _ry + 124) {
                         _shrine_tip_item = _ipick.item;
@@ -1009,7 +1009,7 @@ if (showing_shrine) {
     }
 
     if (shrine_notification != "") {
-        draw_set_font(fnt_ui_small);
+        draw_set_font(ui_font(fnt_ui_small));
         // #13: failures (can't afford / no valid tribute / the altar's grip) draw RED.
         draw_set_color(shrine_notification_fail ? make_color_rgb(235, 80, 70)
             : (_is_curse ? make_color_rgb(225, 150, 150) : make_color_rgb(225, 200, 150)));
@@ -1021,14 +1021,14 @@ if (showing_shrine) {
         // notification slot (the rows are too dense for a 4th text line each).
         var _flv_bd = boon_get(shrine_offers[shrine_cursor]);
         if (_flv_bd != undefined && variable_struct_exists(_flv_bd, "flavor")) {
-            draw_set_font(fnt_ui_small);
+            draw_set_font(ui_font(fnt_ui_small));
             draw_set_color(make_color_rgb(170, 150, 120));
             draw_text(GUI_CX, 940, "\"" + _flv_bd.flavor + "\"");
         }
     }
     if (input_device() == 2) {
         // Touch instruction line (the offer rows + price labels are the buttons)
-        draw_set_font(fnt_ui_small);
+        draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(c_ltgray);
         draw_text(GUI_CX, 990, _is_curse
             ? ((_sn == 0) ? "No curse remains - X to leave"
@@ -1198,7 +1198,7 @@ if (showing_event_choice && event_active != undefined) {
     draw_triangle(GUI_CX - 12, _dvy, GUI_CX, _dvy + 9, GUI_CX + 12, _dvy, false);
     draw_set_alpha(1.0);
 
-    draw_set_font(fnt_ui);
+    draw_set_font(ui_font(fnt_ui));
     draw_set_color(make_color_rgb(185, 192, 208));
     draw_text_ext(GUI_CX, 168, ui_sentence(_ev.body), -1, 1140);
 
@@ -1213,7 +1213,7 @@ if (showing_event_choice && event_active != undefined) {
         draw_rectangle(_rp_x0, _rp_y0, _rp_x1, _rp_y1, true);
         draw_rectangle(_rp_x0 + 4, _rp_y0 + 4, _rp_x1 - 4, _rp_y1 - 4, true);
 
-        draw_set_font(fnt_ui);
+        draw_set_font(ui_font(fnt_ui));
         draw_set_color(make_color_rgb(215, 220, 235));
         draw_text_ext(GUI_CX, _rp_y0 + 48, ui_sentence(event_result_text), -1, _rp_x1 - _rp_x0 - 120);
 
@@ -1228,12 +1228,12 @@ if (showing_event_choice && event_active != undefined) {
             // any tap, the button is the visible control.
             ui_draw_touch_continue(GUI_CX, 900);
         } else {
-            draw_set_font(fnt_ui_small);
+            draw_set_font(ui_font(fnt_ui_small));
             draw_set_color(c_ltgray);
             draw_text(GUI_CX, 972, ((input_device() == 2) ? "Tap to continue" : "Press Enter to continue"));
         }
     } else {
-        draw_set_font(fnt_ui_small);
+        draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(make_color_rgb(210, 200, 150));
         draw_text(GUI_CX, 252, "Gold: " + string(global.gold));
 
@@ -1257,10 +1257,10 @@ if (showing_event_choice && event_active != undefined) {
             draw_rectangle(330, _ry, 1590, _ry + 132, true);
 
             // Label + hint
-            draw_set_font(fnt_ui);
+            draw_set_font(ui_font(fnt_ui));
             draw_set_color(_unlocked ? make_color_rgb(236, 240, 250) : make_color_rgb(110, 112, 122));
             draw_text(360, _ry + 12, ui_sentence(_ch.label));
-            draw_set_font(fnt_ui_small);
+            draw_set_font(ui_font(fnt_ui_small));
             draw_set_color(_unlocked ? make_color_rgb(178, 186, 204) : make_color_rgb(92, 94, 104));
             draw_text(360, _ry + 60, ui_sentence(_ch.hint));
 
@@ -1315,7 +1315,7 @@ if (showing_event_choice && event_active != undefined) {
         }
 
         draw_set_halign(fa_center);
-        draw_set_font(fnt_ui_small);
+        draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(c_ltgray);
         if (input_device() == 2) {
             draw_text(GUI_CX, 972, "Tap a choice - tap it again to commit");
@@ -1348,7 +1348,7 @@ for (var _fi = 0; _fi < array_length(current_rooms); _fi++) {
 // outright - both drew in the same bottom strip (M 07-08: "chips clearly on
 // top of the keyboard legend").
 if (input_device() != 2) {
-    draw_set_font(fnt_ui_small);
+    draw_set_font(ui_font(fnt_ui_small));
     draw_set_halign(fa_center);
     draw_set_valign(fa_bottom);
 
@@ -1379,7 +1379,7 @@ if (input_device() != 2) {
 var _hud_max_hp = out_of_combat_max_hp();
 var _hud_hp     = (variable_global_exists("run_current_hp") && global.run_current_hp > 0)
                   ? min(global.run_current_hp, _hud_max_hp) : _hud_max_hp;
-draw_set_font(fnt_ui);
+draw_set_font(ui_font(fnt_ui));
 draw_set_halign(fa_left);
 draw_set_valign(fa_top);
 // Bright flash while the HP-hit jolt runs, then the usual muted red.
@@ -1427,7 +1427,7 @@ if (variable_global_exists("consumable_inventory")) {
 }
 if (_esc_have != undefined && !showing_event && !showing_shrine && !showing_treasure
     && !showing_event_choice && !escape_confirm_open) {
-    draw_set_font(fnt_ui_small);
+    draw_set_font(ui_font(fnt_ui_small));
     draw_set_color(make_color_rgb(170, 150, 220));
     draw_text(30, 102, "[G] Use " + _esc_have.name + "  (escape with your loot)");
     draw_set_color(c_white);
@@ -1444,10 +1444,10 @@ if (escape_confirm_open && escape_confirm_idx >= 0
     draw_set_alpha(1.0); draw_set_color(_ec_wine ? make_color_rgb(200, 80, 80) : make_color_rgb(150, 140, 220));
     draw_rectangle(510, 360, 1410, 690, true);
     draw_set_halign(fa_center); draw_set_valign(fa_top);
-    draw_set_font(fnt_ui);
+    draw_set_font(ui_font(fnt_ui));
     draw_set_color(c_white);
     draw_text(960, 393, _ec_wine ? "Drink the Devil Wine?" : "Rub the Genie Lamp?");
-    draw_set_font(fnt_ui_small);
+    draw_set_font(ui_font(fnt_ui_small));
     draw_set_color(make_color_rgb(190, 195, 215));
     draw_text_ext(960, 456, _ec_wine
         ? "You extract to camp with ALL your loot and found gold...\nbut PERMANENTLY lose 2 random stat points. The wine always collects."
@@ -1481,10 +1481,10 @@ if (extract_confirm_open) {
     draw_set_alpha(1.0); draw_set_color(make_color_rgb(70, 170, 90));
     draw_rectangle(510, 360, 1410, 690, true);
     draw_set_halign(fa_center); draw_set_valign(fa_top);
-    draw_set_font(fnt_ui);
+    draw_set_font(ui_font(fnt_ui));
     draw_set_color(c_white);
     draw_text(960, 393, "Extract to camp?");
-    draw_set_font(fnt_ui_small);
+    draw_set_font(ui_font(fnt_ui_small));
     draw_set_color(make_color_rgb(190, 195, 215));
     draw_text_ext(960, 456,
         "The run ends here. You keep all your loot and found gold -\ndeeper floors (and their richer bosses) wait for another day.", 30, 780);
@@ -1524,10 +1524,10 @@ if (leave_confirm_open) {
     draw_set_alpha(1.0); draw_set_color(make_color_rgb(200, 165, 90));
     draw_rectangle(510, 380, 1410, 670, true);
     draw_set_halign(fa_center); draw_set_valign(fa_top);
-    draw_set_font(fnt_ui);
+    draw_set_font(ui_font(fnt_ui));
     draw_set_color(c_white);
     draw_text(960, 413, "Leave without choosing?");
-    draw_set_font(fnt_ui_small);
+    draw_set_font(ui_font(fnt_ui_small));
     draw_set_color(make_color_rgb(190, 195, 215));
     draw_text_ext(960, 476, (leave_confirm_kind == "whetstone")
         ? "The stone hones one edge per run - walk away now and it offers nothing.\nThis room will not open again."
@@ -1569,10 +1569,10 @@ if (shrine_celebrate_timer > 0) {
     draw_set_color(make_color_rgb(230, 190, 90));
     draw_rectangle(_cel_cx - _cel_w / 2, _cel_cy - 78, _cel_cx + _cel_w / 2, _cel_cy + 66, true);
     draw_set_halign(fa_center); draw_set_valign(fa_top);
-    draw_set_font(fnt_ui);
+    draw_set_font(ui_font(fnt_ui));
     draw_set_color(make_color_rgb(255, 225, 140));
     draw_text(_cel_cx, _cel_cy - 57, shrine_celebrate_title);
-    draw_set_font(fnt_ui_small);
+    draw_set_font(ui_font(fnt_ui_small));
     draw_set_color(make_color_rgb(215, 220, 235));
     draw_text_ext(_cel_cx, _cel_cy - 9, shrine_celebrate_sub, 27, _cel_w - 60);
     draw_set_halign(fa_left); draw_set_valign(fa_top);
@@ -1622,7 +1622,7 @@ if (instance_exists(obj_game_controller)) {
         && pet_active() != undefined) {
         ui_draw_pet_detail(pet_active());
         draw_set_halign(fa_center);
-        draw_set_font(fnt_ui_small);
+        draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(make_color_rgb(140, 150, 175));
         ui_draw_key_legend(GUI_CX, 1044, "P / Esc: Close");
         draw_set_halign(fa_left);
@@ -1647,10 +1647,10 @@ if (showing_extract) {
     draw_rectangle(_fx0 + 6, _fy0 + 6, _fx1 - 6, _fy1 - 6, true);
     var _fx_desc = variable_global_exists("descent_active") && global.descent_active;
     draw_set_halign(fa_center);
-    draw_set_font(fnt_ui);
+    draw_set_font(ui_font(fnt_ui));
     draw_set_color(make_color_rgb(255, 225, 150));
     draw_text((_fx0 + _fx1) / 2, _fy0 + 24, _fx_desc ? "THE FLOOR LIES QUIET" : "THE FLOOR IS CLEARED");
-    draw_set_font(fnt_ui_small);
+    draw_set_font(ui_font(fnt_ui_small));
     draw_set_color(make_color_rgb(210, 214, 228));
     var _fx_body = "You return where the dive was interrupted - the boss of floor "
         + string(global.current_floor) + " is slain and the choice still stands.\n"

@@ -2,7 +2,7 @@
   "$GMSprite":"v2",
   "%Name":"spr_pet_icewing_skua_youngadult_e",
   "bboxMode":0,
-  "bbox_bottom":32,
+  "bbox_bottom":31,
   "bbox_left":0,
   "bbox_right":32,
   "bbox_top":0,

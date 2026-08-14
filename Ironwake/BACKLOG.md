@@ -2,20 +2,35 @@
 
 ## ⚠⚠ SUPER PRIORITY — FINISH THE UNBUILT SYSTEMS (M directive 08-13 night)
 Work these to DONE, in order, before anything else tomorrow:
-1. **M's F5 verdict on round 12** (subtle forced perspective, VFX binding) + fix fallout,
-   then ONE MEGA-COMMIT of everything since db577e6.
-2. **Imports (GM CLOSED, one sitting)**: 3 elemental summons (magma_IDX0 / ward_IDX3 /
-   storm_IDX2 → replace the pedestal placeholder in combat Draw "THE STANDING SUMMON")
-   + bone_sovereign_IDX3 · WALL_D+FLOOR_D plane pilot · bloodwarden_m_R2_IDX3 needs a
-   SOUTH-FACING regen first (1 pro call, ≥8px canvas margin — clip rule).
-3. **Font size selector** (design locked: Small/Default/Large all platforms,
-   overflow→scroll w/ visible bar, never shrink Large).
+1. ~~M's F5 verdict + ONE MEGA-COMMIT~~ ✅ DONE 08-13: `ada611d` (M F5 CLEAN, 124 files).
+2. ~~Imports~~ ✅ 08-14 GM-closed sitting DONE: 4 fonts + 3 elemental summons (wired,
+   pedestal placeholder gone) + 5 grey twins, all registered + anti-strip'd.
+   **Bloodwarden south face: DEAD** (M ruling after regen + rotate both missed) —
+   R2_IDX1/IDX2 imported instead as Vael-only Bloodwarden CLASS SKINS (Crimson
+   Vanguard 600g / Winghelm Warden 750g — prices vetoable). 4 horned-knight
+   candidates parked as future alt skins.
+   **+ PORTRAIT GATING SHIPPED**: char creation = 3 confirmed picks per class+gender,
+   full 60 at Vael's 100g tab; shadow_f4 is a stand-in M may replace by generating.
+3. **Font size selector** — ✅ CODED 08-13 (awaiting F5 + the font import above):
+   ui_font() resolver + 960-site sweep, Settings row 6 (all platforms, touch tap path,
+   settings.ini [ui] font_size), combat-log pitch now measured (fewer rows on Large,
+   never overlaps). Until the fonts are imported the selector shows but text stays
+   Default. Large-mode overlap audit = M play-pass, fix per report.
 4. **Vael grey twins** (5 sprites, `tools/make_vfx_grey_twins.py`, 0 gens, GM closed).
-5. **Stats tab: +1 loot-rarity-tier boon missing** from Boons & Effects list.
-6. **Enemy pure-debuff cast VFX** (last VFX-less category).
-7. **SYSTEMS docs** for initiative / summons / wardens / duelist tiers (spec lives only
-   in code comments today).
-8. **The Bottom** clear title/splash (descent floor 50 — owed since Wardens went live).
+5. ~~Stats tab loot-rarity boon~~ ✅ 08-14: curse rows now show their PAY line
+   (+N loot tier / +gold% / +dust%) beside the name.
+6. ~~Enemy pure-debuff cast VFX~~ ✅ 08-14: baleful glyph trace at the player's
+   feet (ember=DoT, violet=debuff/control) + delayed dark burst.
+7. ~~SYSTEMS docs~~ ✅ 08-14: SYSTEMS_INITIATIVE / _SUMMONS / _DEPTH_WARDENS /
+   _DUELIST.md written from code.
+8. ~~The Bottom~~ ✅ 08-14: descent_bottom_cleared PERSISTED (was write-only),
+   "the Bottom's Witness" epithet, "THE BOTTOM YIELDS" splash banner.
+MISC FIXED 08-14 (M's notes sweep): pack-full popup now waits for the WHOLE
+victory chain (overflow_stage_reached gate — it flashed during the victory
+pause, then again after loot); Sable brew/chaos desc-vs-price collision (Devil
+Wine); smelt popup 76px rows (subtext was straddling the border); per-species
+enemy_size_mult hook (5 seeded, tune freely); UI_BANDS 2.5D table refreshed;
+Second Wind stale cleanse comment synced.
 9. **28 zero-art species** are the biggest UNBUILT-system gate: 12 already-wired innates
    are dead content until they exist (recipes locked; pro-tier, style-anchored,
    native-res + clip audit before M sees anything).

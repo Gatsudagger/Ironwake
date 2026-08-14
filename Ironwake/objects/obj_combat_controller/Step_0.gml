@@ -589,7 +589,13 @@ if (_result == 1) {
     if (!combat_over && consumable_overflow_pending()) {
         var _ovf_alloc = instance_exists(obj_game_controller)
                       && instance_find(obj_game_controller, 0).level_alloc_open;
-        if (!_ovf_alloc && !show_loot_screen) consumable_overflow_step();
+        if (!_ovf_alloc && !show_loot_screen) {
+            // The ordered chain above has fully drained (alloc + loot done) -
+            // NOW the Draw modal may appear (it gates on this flag so it can't
+            // flash early during the victory pause; M 08-14).
+            overflow_stage_reached = true;
+            consumable_overflow_step();
+        }
         exit;
     }
     if (!combat_over) {
@@ -874,21 +880,82 @@ if (player_turn) {
                 } else {
                     combat_state.used_consumable = true;   // board "clean fights" requests
                     audio_play_sound(snd_potion, 1, false);
-                    // CHAOTIC BREW (M 07-28): its real payoff is rolled AT DRINK TIME.
-                    // Resolve into a FRESH local struct - never mutate _citem, stacked
-                    // brews share the group representative. Sting = an HP bite that
-                    // lands alongside the payoff (never lethal).
+                    // CHAOTIC BREW (reworked 08-15, M-locked): effects were stamped
+                    // at BREW time (60% of each base + a rolled downside, all readable
+                    // in the item desc). Apply each part through the same channels the
+                    // base potions use. Legacy pre-rework brews (no .mix) keep the old
+                    // drink-time roll. Never mutate _citem - stacked brews share the
+                    // group representative.
                     if (_citem.effect_type == "chaotic") {
-                        var _ch = chaotic_brew_roll();
                         global.ach_brew_run = true;   // ACH_BREW: drank one - now survive the run
-                        array_push(combat_log, "The Chaotic Brew " + _ch.label + "!");
-                        if (_ch.sting) {
-                            var _bite = irandom_range(8, 15);
-                            player.HP = max(1, player.HP - _bite);
-                            array_push(combat_log, "...but it curdles going down - " + string(_bite) + " damage!");
-                            array_push(damage_popups, { value: _bite, x: 475, y: 545, timer: 45, col: c_red });
+                        if (variable_struct_exists(_citem, "mix")) {
+                            array_push(combat_log, "The Chaotic Brew takes hold!");
+                            var _chmix = _citem.mix;
+                            for (var _chi = 0; _chi < array_length(_chmix); _chi++) {
+                                var _chp = _chmix[_chi];
+                                switch (_chp.effect_type) {
+                                    case "heal": {
+                                        var _chh = min(player.max_HP - player.HP, _chp.effect_value);
+                                        player.HP += _chh;
+                                        if (_chh > 0) array_push(damage_popups, { value: _chh, x: 475, y: 545, timer: 45, col: c_lime });
+                                        array_push(combat_log, "...restored " + string(_chh) + " HP.");
+                                    } break;
+                                    case "shield": {
+                                        if (!variable_struct_exists(player, "shield_hp")) player.shield_hp = 0;
+                                        player.shield_hp += _chp.effect_value;
+                                        array_push(combat_log, "...a " + string(_chp.effect_value) + "-point ward hardens.");
+                                    } break;
+                                    case "heal_dot": {
+                                        if (!variable_struct_exists(player, "status_effects")) player.status_effects = [];
+                                        array_push(player.status_effects, {
+                                            name: "Chaotic Brew", kind: "regen", effect_type: "heal_dot",
+                                            effect_value: _chp.effect_value, duration: 3, element: ""
+                                        });
+                                        array_push(combat_log, "...regenerating " + string(_chp.effect_value) + " HP/turn for 3 turns.");
+                                    } break;
+                                    case "energy": {
+                                        player.energy += _chp.effect_value;
+                                        array_push(combat_log, "...+" + string(_chp.effect_value) + " AP!");
+                                    } break;
+                                    case "resource_ap": {
+                                        var _chres = _chp.effect_value;
+                                        if (variable_struct_exists(player, "souls"))            player.souls = min(player.souls_max, player.souls + _chres);
+                                        else if (variable_struct_exists(player, "blood"))       player.blood = min(player.blood_max, player.blood + _chres);
+                                        else if (variable_struct_exists(player, "preparation")) player.preparation = min(player.preparation_max, player.preparation + _chres);
+                                        player.energy += 1;
+                                        array_push(combat_log, "...+" + string(_chres) + " resource and +1 AP!");
+                                    } break;
+                                    case "cleanse_dot":    { var _chc = combat_cleanse(player, "dot"); if (_chc > 0) array_push(combat_log, "...cleared " + string(_chc) + " DoT(s)."); } break;
+                                    case "cleanse_debuff": { var _chc2 = combat_cleanse(player, "one"); if (_chc2 > 0) array_push(combat_log, "...removed a debuff."); } break;
+                                    case "cleanse_all":    { var _chc3 = combat_cleanse(player, "all"); if (_chc3 > 0) array_push(combat_log, "...cleared " + string(_chc3) + " negative effect(s)."); } break;
+                                    case "gold_find_pot": potion_drink_gold(_chp.effect_value); array_push(combat_log, "...gold drops +" + string(_chp.effect_value) + "% until 2 bosses fall."); break;
+                                    case "loot_find_pot": potion_drink_loot(_chp.effect_value); array_push(combat_log, "...loot chance +" + string(_chp.effect_value) + "% until 2 bosses fall."); break;
+                                }
+                            }
+                            var _chd = variable_struct_exists(_citem, "downside") ? _citem.downside : undefined;
+                            if (_chd != undefined) {
+                                if (_chd.kind == "bite") {
+                                    var _bite = irandom_range(8, 15);
+                                    player.HP = max(1, player.HP - _bite);
+                                    array_push(combat_log, "...the dregs bite going down - " + string(_bite) + " damage!");
+                                    array_push(damage_popups, { value: _bite, x: 475, y: 545, timer: 45, col: c_red });
+                                } else if (_chd.kind == "sluggish") {
+                                    player.energy = max(0, player.energy - 1);
+                                    array_push(combat_log, "...the dregs numb your arm - 1 AP lost.");
+                                }
+                            }
+                            _citem = { name: "Chaotic Brew", effect_type: "chaotic_spent", effect_value: 0 };
+                        } else {
+                            var _ch = chaotic_brew_roll();
+                            array_push(combat_log, "The Chaotic Brew " + _ch.label + "!");
+                            if (_ch.sting) {
+                                var _bite = irandom_range(8, 15);
+                                player.HP = max(1, player.HP - _bite);
+                                array_push(combat_log, "...but it curdles going down - " + string(_bite) + " damage!");
+                                array_push(damage_popups, { value: _bite, x: 475, y: 545, timer: 45, col: c_red });
+                            }
+                            _citem = { name: "Chaotic Brew", effect_type: _ch.effect_type, effect_value: _ch.value };
                         }
-                        _citem = { name: "Chaotic Brew", effect_type: _ch.effect_type, effect_value: _ch.value };
                     }
                     if (_citem.effect_type == "heal") {
                         var _qheal = min(player.max_HP - player.HP, _citem.effect_value);
@@ -3924,9 +3991,9 @@ if (player_turn) {
                     array_push(combat_log, "Evasive Roll ready - the next heavy hit will be halved.");
                 }
 
-                // --- Second Wind: restore 1 secondary resource (heal handled above) +
-                // CLEANSE the newest debuff (audit §6 rework: the game's only self-cleanse,
-                // so it stops being a strictly-worse Field Dressing). ---
+                // --- Second Wind: restore 1 secondary resource (heal handled above).
+                // Heal split (08-13): the base cleanse is GONE - cleansing is the
+                // "Clean Break" web node's job (two newest afflictions, below). ---
                 if (ab.name == "Second Wind") {
                     if (variable_struct_exists(player, "souls")) {
                         player.souls = min(player.souls_max, player.souls + 1);
@@ -5130,6 +5197,18 @@ if (player_turn) {
 
             } else {
                 // debuff / dot / control -> typed status on the player
+                // PURE-DEBUFF CAST VFX (08-14, the last VFX-less action class):
+                // the caster traces a BALEFUL rune at your feet - ember for
+                // DoTs, violet for debuffs/control - and a dark burst blooms as
+                // the trace completes. Hostile mirror of the Restorative Glyph
+                // idiom above; shown even when Iron Will / Nothing Follows eats
+                // the effect (the cast still happened - the log tells the save).
+                var _db_pa  = combat_player_vfx_anchor(player);
+                var _db_dot = (_eab.kind == "dot");
+                array_push(glyph_fx, { x: _db_pa.x, y: _db_pa.y + 180, t: 0, dur: 36,
+                                       col: _db_dot ? make_color_rgb(225, 115, 55) : make_color_rgb(170, 110, 235) });
+                array_push(vfx_bursts, { spr: spr_vfx_void, x: _db_pa.x, y: _db_pa.y,
+                    timer: 22, timer_max: 22, school: _db_dot ? "fire" : "void", delay: 30 });
                 // Nothing Follows (null_hound signature move, 08-06): the first
                 // debuff aimed at you each combat is erased before it lands.
                 // Checked BEFORE Iron Will so the absence spares the absorb charge.

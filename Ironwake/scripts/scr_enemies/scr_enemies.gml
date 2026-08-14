@@ -885,6 +885,26 @@ global.enemies_tundra_tomb_elite = [
 ];
 
 // =============================================================================
+// PER-MOB-TYPE SIZE MULTIPLIER (round 13b queue, M: "small-by-design species
+// must STAY small... tweak by tweak issue for some"). Applied on top of the
+// 2.5D station scale AFTER true-bounds normalization and BEFORE the 185px hard
+// ceiling, so a 0.75 here really reads 25% smaller on stage. 1.0 = default.
+// TUNE FREELY per M's eye - add a case per species that reads wrong in-game.
+// =============================================================================
+function enemy_size_mult(name) {
+    switch (name) {
+        // Vermin / small-by-design - the fiction says small, keep them small.
+        case "Vault Crawler":  return 0.80;
+        case "Cinder Imp":     return 0.72;
+        case "Magma Slug":     return 0.78;
+        case "Frost Shard":    return 0.68;
+        case "Lava Spitter":   return 0.85;
+        // Hulks lean on the station scale + 185px ceiling; no boost needed.
+    }
+    return 1.0;
+}
+
+// =============================================================================
 // ENEMY SPRITE MAP - the single name->sprite truth, shared by the combat draw
 // (west-facing frame 3) and the journal bestiary (south-facing frame 0, #8).
 // Moved here from obj_combat_controller Draw_64 (2026-07-09).

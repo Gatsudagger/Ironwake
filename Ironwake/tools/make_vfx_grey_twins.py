@@ -26,7 +26,11 @@ from PIL import Image
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gen_trait_icons import SPRITES, register_yyp
 
-SOURCES = ["spr_vfx_impact", "spr_vfx_fire", "spr_vfx_void", "spr_vfx_arcane"]
+SOURCES = ["spr_vfx_impact", "spr_vfx_fire", "spr_vfx_void", "spr_vfx_arcane",
+           # 08-14 sitting: the 5 classics whose Vael tints were INVISIBLE
+           # (multiply over colored art) - twins make them actually read.
+           "spr_vfx_frost", "spr_vfx_shock", "spr_vfx_blood",
+           "spr_vfx_shadow", "spr_vfx_poison"]
 
 
 def grayscale_normalized(path, peak):

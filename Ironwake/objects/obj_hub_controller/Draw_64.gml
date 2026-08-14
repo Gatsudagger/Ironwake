@@ -108,7 +108,7 @@ draw_text(GUI_CX, 18, "THE IRONWAKE CAMP");
 // whole wrapped block is vertically fitted into the band [948..1070] so even the
 // longest, three-line message clears the footer. A dark 8-way outline keeps it
 // legible over the camp art.
-draw_set_font(fnt_ui);
+draw_set_font(ui_font(fnt_ui));
 draw_set_halign(fa_center);
 draw_set_valign(fa_top);
 var _flav_scale = 1.275;                            // 22px Centaur -> ~28px (25% smaller than the 1.7x pass)
@@ -187,7 +187,7 @@ var _display_kills      = variable_global_exists("total_kills")  ? global.total_
 
 draw_set_halign(fa_left);
 draw_set_valign(fa_top);
-draw_set_font(fnt_ui);
+draw_set_font(ui_font(fnt_ui));
 // Gold reads in an antique-gold tint to match the coin economy; the rest stay white.
 draw_set_color(make_color_rgb(228, 190, 90));
 draw_text(_px, _py,               "Gold:       " + string(_display_gold));
@@ -199,7 +199,7 @@ draw_text(_px, _py + _line_h * 3, "Kills:      " + string(_display_kills));
 // info panel (panel ends y315; the Last Run panel starts y420). Red once IN
 // COLLECTIONS - a quarter of all earned gold is garnished at the source.
 if (debt_active()) {
-    draw_set_font(fnt_ui_small);
+    draw_set_font(ui_font(fnt_ui_small));
     draw_set_color(debt_in_collections() ? make_color_rgb(230, 90, 80) : make_color_rgb(200, 130, 90));
     draw_text(30, 324, "DEBT OWED: " + string(global.debt_gold) + "g"
         + (debt_in_collections() ? "   [IN COLLECTIONS - 25% garnished]" : "   (10% due after each run)"));
@@ -231,7 +231,7 @@ if (show_last_run) {
     var _ly = _lr_y + 18;
 
     // Result header
-    draw_set_font(fnt_ui);
+    draw_set_font(ui_font(fnt_ui));
     if (global.last_run_result == 1) {
         draw_set_color(c_lime);
         draw_text(_lx, _ly, "LAST RUN: VICTORY");
@@ -249,7 +249,7 @@ if (show_last_run) {
     // smaller UI font so the all-caps gold line fits inside the 420px panel
     // instead of spilling past the right border.
     if (variable_global_exists("last_run_perm_points") && global.last_run_perm_points > 0) {
-        draw_set_font(fnt_ui_small);
+        draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(make_color_rgb(255, 210, 60));
         draw_text(_lx, _ly + 120, "PERMANENT POINTS EARNED: " + string(global.last_run_perm_points));
         // Dismiss hint shifts down
@@ -257,7 +257,7 @@ if (show_last_run) {
         draw_text_outline(_lx, _ly + 156, "Esc to dismiss");
     } else {
         // Dismiss hint
-        draw_set_font(fnt_ui_small);
+        draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(c_gray);
         draw_text_outline(_lx, _ly + 123, "Esc to dismiss");
     }
@@ -332,10 +332,10 @@ var _cpy = _cp_y + 18;
 // Name and class header
 draw_set_halign(fa_left);
 draw_set_valign(fa_top);
-draw_set_font(fnt_ui);
+draw_set_font(ui_font(fnt_ui));
 draw_set_color(c_white);
 draw_text(_cpx, _cpy, global.player_name);
-draw_set_font(fnt_ui_small);
+draw_set_font(ui_font(fnt_ui_small));
 draw_set_color(make_color_rgb(100, 160, 220));
 draw_text(_cpx, _cpy + 36, _cls_pre.name);
 
@@ -363,7 +363,7 @@ var _st_y  = _cp_y + 108;
 var _slh   = 33;
 var _stat_names = ["STR", "DEX", "CON", "INT", "WIS", "CHA"];
 var _stat_vals  = [_cs_STR, _cs_DEX, _cs_CON, _cs_INT, _cs_WIS, _cs_CHA];
-draw_set_font(fnt_ui);
+draw_set_font(ui_font(fnt_ui));
 for (var _si = 0; _si < 6; _si++) {
     var _sy = _st_y + _si * _slh;
     draw_set_halign(fa_left);
@@ -458,7 +458,7 @@ if (hub_use_carousel) {
             draw_set_color(make_color_rgb(30, 20, 13));
             draw_rectangle(_cv_cx - 237, 168, _cv_cx + 237, 522, true);
             draw_set_halign(fa_center); draw_set_valign(fa_middle);
-            draw_set_font(fnt_ui);
+            draw_set_font(ui_font(fnt_ui));
             draw_set_color(make_color_rgb(226, 205, 160));
             draw_text(_cv_cx, 345, "Tavern Requests");
             draw_set_valign(fa_top); draw_set_font(-1);
@@ -521,7 +521,7 @@ if (hub_use_carousel) {
     // ---- bond: tier hearts + line (NPCs 0..6 are affinity-wired; the board
     // row shows its turn-in banner instead) ----
     var _cv_line_y = 646;
-    draw_set_font(fnt_ui_small);
+    draw_set_font(ui_font(fnt_ui_small));
     if (_cv_idx < array_length(_cv_aff)) {
         var _cv_id   = _cv_aff[_cv_idx];
         var _cv_tier = affinity_tier(_cv_id);
@@ -702,7 +702,7 @@ for (var _i = 0; _i < array_length(npc_names); _i++) {
     }
     draw_set_halign(fa_left);
     draw_set_valign(fa_top);
-    draw_set_font(fnt_ui);
+    draw_set_font(ui_font(fnt_ui));
     draw_text(_nl_x + 21, _ry + 27, _name_str);
 }
 draw_set_font(-1);
@@ -740,14 +740,14 @@ var _ddy = _dp_y + 18;
 // NPC name - fake bold (shadow + main)
 draw_set_halign(fa_left);
 draw_set_valign(fa_top);
-draw_set_font(fnt_ui);
+draw_set_font(ui_font(fnt_ui));
 draw_set_color(make_color_rgb(40, 60, 90));
 draw_text(_ddx + 2, _ddy + 2, npc_names[selected_npc]);
 draw_set_color(c_white);
 draw_text(_ddx, _ddy, npc_names[selected_npc]);
 
 // Brief description
-draw_set_font(fnt_ui_small);
+draw_set_font(ui_font(fnt_ui_small));
 draw_set_color(make_color_rgb(180, 190, 210));
 draw_text_ext(_ddx, _ddy + 42, npc_descriptions[selected_npc], 27, 510);
 
@@ -813,7 +813,7 @@ if (npc_unlocked[selected_npc]) {
 // Small font + 20px sep so two wrapped lines still end above the panel bottom
 // (first line y294, panel bottom y330; measured, not eyeballed).
 if (notification != "") {
-    draw_set_font(fnt_ui_small);
+    draw_set_font(ui_font(fnt_ui_small));
     draw_set_color(c_yellow);
     var _nw = _dp_x + _dp_w - 24 - _ddx;
     var _ntext = notification;
@@ -832,7 +832,7 @@ if (notification != "") {
         _ntext = _clip + "...";
     }
     draw_text_ext(_ddx, _ddy + 169, _ntext, 20, _nw);
-    draw_set_font(fnt_ui);
+    draw_set_font(ui_font(fnt_ui));
 }
 draw_set_font(-1);
 } // end selected_npc < 6
@@ -935,10 +935,10 @@ if (selected_npc < array_length(_port_sprites)) {
     draw_set_alpha(1.0);
     draw_set_halign(fa_center);
     draw_set_valign(fa_top);
-    draw_set_font(fnt_ui);
+    draw_set_font(ui_font(fnt_ui));
     draw_set_color(c_white);
     draw_text(_pp_x + _pp_w / 2, _pp_y + _pp_h - 81, _prev_title);
-    draw_set_font(fnt_ui_small);
+    draw_set_font(ui_font(fnt_ui_small));
     draw_set_color(make_color_rgb(120, 200, 170));
     draw_text(_pp_x + _pp_w / 2, _pp_y + _pp_h - 39, (input_device() == 2) ? "Tap to choose dungeon & loadout" : "Press Enter to choose dungeon & loadout");
     draw_set_font(-1);
@@ -974,7 +974,7 @@ draw_set_color(c_white);
 draw_text(_eb_x + _eb_w / 2, _eb_y + 42, "ENTER DUNGEON");
 
 draw_set_valign(fa_top);
-draw_set_font(fnt_ui_small);
+draw_set_font(ui_font(fnt_ui_small));
 if (_eb_sel) {
     draw_set_color(c_white);
     draw_text(_eb_x + _eb_w / 2, _eb_y + 78, (input_device() == 2) ? "Tap to confirm" : "Press Enter or Space to confirm");
@@ -998,7 +998,7 @@ draw_set_font(-1);
 // -----------------------------------------------------------------------------
 draw_set_halign(fa_center);
 draw_set_valign(fa_bottom);
-draw_set_font(fnt_ui_small);
+draw_set_font(ui_font(fnt_ui_small));
 draw_set_color(c_gray);
 // Chunk 7b: on a gamepad the footer shows the pad chips instead (same layout;
 // see __input_pad_hotkey_map in scr_input for the M-approved assignments).
@@ -1152,7 +1152,7 @@ if (_gc_ds != noone && _gc_ds.dungeon_select_open) {
 
         // Name
         draw_set_halign(fa_center);
-        draw_set_font(_name_font);
+        draw_set_font(ui_font(_name_font));
         draw_set_color(_is_center ? _dcol : make_color_rgb(80, 88, 110));
         draw_text(_cx + _cw / 2, _cy + 21, _dung_names[_di]);
 
@@ -1190,7 +1190,7 @@ if (_gc_ds != noone && _gc_ds.dungeon_select_open) {
 
             // Description band (its own vertical space)
             draw_set_halign(fa_left);
-            draw_set_font(fnt_ui_small);
+            draw_set_font(ui_font(fnt_ui_small));
             draw_set_color(make_color_rgb(175, 183, 210));
             draw_text_ext(_body_x, _cy + 288, _dung_desc[_di], 30, _body_w);
 
@@ -1204,7 +1204,7 @@ if (_gc_ds != noone && _gc_ds.dungeon_select_open) {
                 _asc_col = make_color_rgb(255, 200, 50);
             }
             draw_set_halign(fa_center);
-            draw_set_font(fnt_ui);
+            draw_set_font(ui_font(fnt_ui));
             draw_set_color(_asc_col);
             draw_text(_cx + _cw / 2, _cy + 447, "Max Awakening: A" + string(_unlocked_asc));
 
@@ -1260,7 +1260,7 @@ if (_gc_ds != noone && _gc_ds.dungeon_select_open) {
                     + string(round((awaken_dmg_mult(_sel_a) - 1) * 100))
                     + "% damage. Full effects listed on the right.";
             draw_set_halign(fa_left);
-            draw_set_font(fnt_ui_small);
+            draw_set_font(ui_font(fnt_ui_small));
             draw_set_color(make_color_rgb(140, 150, 185));
             draw_text_ext(_body_x, _asc_y + 84, _sel_txt, 30, _body_w);
 
@@ -1271,7 +1271,7 @@ if (_gc_ds != noone && _gc_ds.dungeon_select_open) {
             draw_set_color(make_color_rgb(45, 140, 60));
             draw_rectangle(_cx + 21, _conf_y, _cx + _cw - 21, _conf_y + 66, true);
             draw_set_halign(fa_center);
-            draw_set_font(fnt_ui);
+            draw_set_font(ui_font(fnt_ui));
             draw_set_color(c_white);
             draw_text(_cx + _cw / 2, _conf_y + 20, (input_device() == 2)
                 ? "EMBARK  -  Choose Loadout"
@@ -1280,7 +1280,7 @@ if (_gc_ds != noone && _gc_ds.dungeon_select_open) {
         } else {
             // Side cards: text below art
             draw_set_halign(fa_center);
-            draw_set_font(fnt_ui_small);
+            draw_set_font(ui_font(fnt_ui_small));
             draw_set_color(make_color_rgb(60, 68, 92));
             draw_text(_cx + _cw / 2, _cy + 219, "A" + string(_unlocked_asc) + " max");
             draw_set_halign(fa_left);
@@ -1314,11 +1314,11 @@ if (_gc_ds != noone && _gc_ds.dungeon_select_open) {
     var _fxy = _fx_y1 + 24;
 
     draw_set_halign(fa_center);
-    draw_set_font(fnt_ui);
+    draw_set_font(ui_font(fnt_ui));
     draw_set_color(_fx_tcol);
     draw_text(_fx_x1 + (_fx_x2 - _fx_x1) / 2, _fxy, "AWAKENING EFFECTS");
     _fxy += 42;
-    draw_set_font(fnt_ui_small);
+    draw_set_font(ui_font(fnt_ui_small));
     draw_set_color(make_color_rgb(180, 188, 215));
     draw_text(_fx_x1 + (_fx_x2 - _fx_x1) / 2, _fxy, _asc_labels[_fx_a]);
     _fxy += 48;
@@ -1447,7 +1447,7 @@ if (_gc_ds != noone && _gc_ds.dungeon_select_open) {
     // Footer
     draw_set_halign(fa_center);
     draw_set_valign(fa_bottom);
-    draw_set_font(fnt_ui_small);
+    draw_set_font(ui_font(fnt_ui_small));
     draw_set_color(make_color_rgb(75, 82, 110));
     draw_set_valign(fa_bottom);
     ui_draw_key_legend(GUI_CX, 1073, "A / D: Cycle Dungeon     Q / E: Awakening     Enter: Confirm     Esc: Back");
@@ -1468,10 +1468,10 @@ if (_gc_ds != noone && _gc_ds.dungeon_select_open) {
         draw_set_color(_dsb_on ? merge_color(make_color_rgb(200, 130, 255), c_white, _dsb_p * 0.5) : make_color_rgb(70, 60, 96));
         draw_rectangle(330, 972, 1250, 1050, true);
         draw_set_halign(fa_left);
-        draw_set_font(fnt_ui);
+        draw_set_font(ui_font(fnt_ui));
         draw_set_color(_dsb_on ? make_color_rgb(230, 200, 255) : make_color_rgb(150, 140, 175));
         draw_text(354, 981, _dsb_on ? "THE DESCENT  -  ARMED" : "THE DESCENT" + ((input_device() == 2) ? "" : "   [V]"));
-        draw_set_font(fnt_ui_small);
+        draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(make_color_rgb(140, 135, 165));
         draw_text(354, 1017, _dsb_on
             ? "Enter begins the fall: endless floors, random dungeons, Depthforged spoils."
@@ -1484,7 +1484,7 @@ if (_gc_ds != noone && _gc_ds.dungeon_select_open) {
         draw_set_color(_dsb_on ? ((_dsb_hc > 0) ? make_color_rgb(220, 80, 80) : make_color_rgb(80, 84, 104)) : make_color_rgb(50, 52, 66));
         draw_rectangle(1270, 972, 1590, 1050, true);
         draw_set_halign(fa_center);
-        draw_set_font(fnt_ui_small);
+        draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(_dsb_on ? ((_dsb_hc > 0) ? make_color_rgb(255, 140, 140) : make_color_rgb(170, 175, 195)) : make_color_rgb(90, 94, 112));
         draw_text(1430, 981, _dsb_hc_names[_dsb_hc] + ((_dsb_on && input_device() != 2) ? "   [G]" : ""));
         draw_text(1430, 1017, _dsb_hc_descs[_dsb_hc]);
@@ -1519,14 +1519,14 @@ if (show_history) {
     // Equipped epithet (expression #5) under the title - the ledger knows your name.
     var _rh_ep = player_epithet_text();
     if (_rh_ep != "") {
-        draw_set_font(fnt_ui_small);
+        draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(make_color_rgb(200, 170, 230));
         draw_text(GUI_CX, 105, "\"" + _rh_ep + "\"");
     }
 
     // Column headers
     draw_set_halign(fa_left);
-    draw_set_font(fnt_ui_small);
+    draw_set_font(ui_font(fnt_ui_small));
     draw_set_color(make_color_rgb(120, 140, 160));
     draw_text( 120, 135, "RUN");
     draw_text( 240, 135, "RESULT");
@@ -1607,7 +1607,7 @@ if (show_history) {
     // Empty state
     if (_history_count == 0) {
         draw_set_halign(fa_center);
-        draw_set_font(fnt_ui);
+        draw_set_font(ui_font(fnt_ui));
         draw_set_color(c_gray);
         draw_text(GUI_CX, 450, "No runs recorded yet.");
     }
@@ -1625,7 +1625,7 @@ if (show_history) {
                      + global.perm_int_bonus + global.perm_wis_bonus + global.perm_cha_bonus;
     }
     draw_set_halign(fa_center);
-    draw_set_font(fnt_ui_small);
+    draw_set_font(ui_font(fnt_ui_small));
     draw_set_color(make_color_rgb(255, 210, 60));
     // Touch: lift clear of the persistent chip bar (top ~y1005) which draws over this
     // hub-context overlay (M 07-17: was hidden behind the menu buttons).
@@ -1671,10 +1671,10 @@ if (instance_exists(obj_game_controller) && variable_global_exists("pending_perm
 
         draw_set_halign(fa_center);
         draw_set_valign(fa_middle);
-        draw_set_font(fnt_ui);
+        draw_set_font(ui_font(fnt_ui));
         draw_set_color(make_color_rgb(255, 215, 60));
         draw_text(GUI_CX, _ban_y + 21, "! PERMANENT POINTS AVAILABLE !");
-        draw_set_font(fnt_ui_small);
+        draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(make_color_rgb(220, 190, 100));
         draw_text(GUI_CX, _ban_y + 53, string(global.pending_perm_points) + " point(s) to spend  -  press  P");
 
@@ -1694,11 +1694,11 @@ if (instance_exists(obj_game_controller) && variable_global_exists("pending_perm
         draw_set_font(fnt_ui_title);
         draw_set_color(make_color_rgb(255, 200, 50));
         draw_text(GUI_CX, 90, "PERMANENT UPGRADE");
-        draw_set_font(fnt_ui);
+        draw_set_font(ui_font(fnt_ui));
         draw_set_color(c_white);
         var _perm_pts_str = (global.pending_perm_points == 1) ? "1 point" : string(global.pending_perm_points) + " points";
         draw_text(GUI_CX, 159, "Allocate " + _perm_pts_str + " into permanent stats");
-        draw_set_font(fnt_ui_small);
+        draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(make_color_rgb(150, 160, 180));
         draw_text(GUI_CX, 195, "These bonuses carry into every future run.");
         draw_set_halign(fa_left);
@@ -1708,7 +1708,7 @@ if (instance_exists(obj_game_controller) && variable_global_exists("pending_perm
         var _perm_glob_keys  = ["perm_str_bonus", "perm_dex_bonus", "perm_con_bonus",
                                 "perm_int_bonus", "perm_wis_bonus", "perm_cha_bonus"];
 
-        draw_set_font(fnt_ui);
+        draw_set_font(ui_font(fnt_ui));
         for (var _si = 0; _si < 6; _si++) {
             var _sy     = 255 + _si * 108;
             var _is_sel = (_si == _gc_hub_d.perm_alloc_index);
@@ -1736,7 +1736,7 @@ if (instance_exists(obj_game_controller) && variable_global_exists("pending_perm
         }
 
         draw_set_halign(fa_center);
-        draw_set_font(fnt_ui_small);
+        draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(make_color_rgb(80, 90, 110));
         ui_draw_key_legend(GUI_CX, 938, (_gc_hub_d.perm_alloc_confirm != -1)
             ? "Enter: CONFIRM permanent point   Esc: Cancel"
@@ -1821,7 +1821,7 @@ if (instance_exists(obj_game_controller)) {
         var _tab_pmx   = device_mouse_x_to_gui(0);
         var _tab_pmy   = device_mouse_y_to_gui(0);
         var _tab_pdn   = _tab_touch && mouse_check_button(mb_left);
-        draw_set_font(fnt_ui);
+        draw_set_font(ui_font(fnt_ui));
         draw_set_halign(fa_center);
         for (var _tbi = 0; _tbi < 3; _tbi++) {
             var _tbx = _tab_x0 + _tbi * (_tab_w + _tab_gap);
@@ -1835,7 +1835,7 @@ if (instance_exists(obj_game_controller)) {
             draw_set_color(_ton ? c_white : make_color_rgb(75, 85, 120));
             draw_text(_tbx + _tab_w / 2, _tab_y + (_tab_touch ? 33 : 11), _tab_names[_tbi]);
         }
-        draw_set_font(fnt_ui_small);
+        draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(make_color_rgb(55, 62, 88));
         if (_tab_touch) {
             // Touch hint (M 07-08: asked for a drag hint + swipe tabs) - replaces
@@ -1853,16 +1853,16 @@ if (instance_exists(obj_game_controller)) {
         if (_gc_ov.loadout_tab == 0) {
 
             // Panel headers
-            draw_set_font(fnt_ui);
+            draw_set_font(ui_font(fnt_ui));
             draw_set_color(make_color_rgb(130, 150, 200));
             draw_text(_lx, 60, "CLASS ABILITIES");
             // Touch: the 90px tabs cover (_rx, 60) - the header moves to the free
             // strip right of the COMPANION tab (M 07-08: "all overlap with the
             // companion tab"). Same treatment on all three tabs.
             if (input_device() == 2) {
-                draw_set_font(fnt_ui_small);
+                draw_set_font(ui_font(fnt_ui_small));
                 draw_text(1460, 66, "YOUR LOADOUT");
-                draw_set_font(fnt_ui);
+                draw_set_font(ui_font(fnt_ui));
             } else {
                 draw_text(_rx, 60, "YOUR LOADOUT");
             }
@@ -1905,7 +1905,7 @@ if (instance_exists(obj_game_controller)) {
                     draw_rectangle(_lx - 1, _ry - 1, _lx + 991, _ry + _row_h + 1, true);
                     draw_rectangle(_lx - 2, _ry - 2, _lx + 992, _ry + _row_h + 2, true);
                     draw_rectangle(_lx - 3, _ry - 3, _lx + 993, _ry + _row_h + 3, true);
-                    draw_set_font(fnt_ui);
+                    draw_set_font(ui_font(fnt_ui));
                     draw_set_valign(fa_middle);
                     draw_text(_lx - 26, _ry + _row_h * 0.5, ">");
                     draw_set_valign(fa_top);
@@ -1924,7 +1924,7 @@ if (instance_exists(obj_game_controller)) {
                 var _row_textx = _lx + 9 + 60 + 12;
 
                 var _name_suffix = _in_sel ? "  [SELECTED]" : (!_ab_unlocked ? "  [LOCKED]" : "");
-                draw_set_font(fnt_ui);
+                draw_set_font(ui_font(fnt_ui));
                 draw_set_color(!_ab_unlocked ? make_color_rgb(125, 112, 78)
                             : (_in_sel  ? make_color_rgb(90, 210, 110)
                             : (_is_cur ? c_white
@@ -1932,7 +1932,7 @@ if (instance_exists(obj_game_controller)) {
                 draw_text(_row_textx, _ry + 6, _ab.name + _name_suffix);
 
                 // Energy cost tag - right-aligned inside the row
-                draw_set_font(fnt_ui_small);
+                draw_set_font(ui_font(fnt_ui_small));
                 draw_set_halign(fa_right);
                 draw_set_color(c_yellow);
                 draw_text(_lx + 972, _ry + 6, "[" + string(_ab.energy_cost) + " AP]");
@@ -1963,7 +1963,7 @@ if (instance_exists(obj_game_controller)) {
             }
 
             // Scroll indicators when the pool overflows the visible window
-            draw_set_font(fnt_ui_small);
+            draw_set_font(ui_font(fnt_ui_small));
             draw_set_halign(fa_center);
             draw_set_color(make_color_rgb(110, 120, 150));
             if (_ov_scroll > 0) {
@@ -1987,7 +1987,7 @@ if (instance_exists(obj_game_controller)) {
                 draw_set_color(_has_ab ? make_color_rgb(45, 120, 55) : make_color_rgb(35, 40, 60));
                 draw_rectangle(_rx, _sy, _rx + 735, _sy + _slot_h, true);
 
-                draw_set_font(fnt_ui);
+                draw_set_font(ui_font(fnt_ui));
                 draw_set_color(make_color_rgb(70, 80, 105));
                 draw_text(_rx + 15, _sy + 12, string(_si2 + 1) + ".");
 
@@ -2000,13 +2000,13 @@ if (instance_exists(obj_game_controller)) {
                     draw_set_alpha(1.0);
                     ui_draw_ability_icon(_rx + 45, _sy + 12, 84, _gc_ov.loadout_selected[_si2]);
                     var _slot_textx = _rx + 45 + 84 + 15;
-                    draw_set_font(fnt_ui);
+                    draw_set_font(ui_font(fnt_ui));
                     draw_set_color(make_color_rgb(110, 215, 130));
                     draw_text(_slot_textx, _sy + 12, _gc_ov.loadout_selected[_si2]);
                     for (var _ai2 = 0; _ai2 < _ov_pool_sz; _ai2++) {
                         if (_ov_pool[_ai2].name == _gc_ov.loadout_selected[_si2]) {
                             // Energy cost in the slot header
-                            draw_set_font(fnt_ui_small);
+                            draw_set_font(ui_font(fnt_ui_small));
                             draw_set_halign(fa_right);
                             draw_set_color(c_yellow);
                             draw_text(_rx + 717, _sy + 12, "[" + string(_ov_pool[_ai2].energy_cost) + " AP]");
@@ -2019,7 +2019,7 @@ if (instance_exists(obj_game_controller)) {
                         }
                     }
                 } else {
-                    draw_set_font(fnt_ui);
+                    draw_set_font(ui_font(fnt_ui));
                     draw_set_color(make_color_rgb(45, 50, 70));
                     draw_text(_rx + 48, _sy + 39, "---  empty  ---");
                 }
@@ -2028,7 +2028,7 @@ if (instance_exists(obj_game_controller)) {
             // --- "Press Tab" hint (clearly above the description box - ample room here) ---
             draw_set_halign(fa_center);
             draw_set_valign(fa_top);
-            draw_set_font(fnt_ui_small);
+            draw_set_font(ui_font(fnt_ui_small));
             draw_set_color(make_color_rgb(120, 205, 240));
             draw_text_outline(960, 843, "[ Tab ]  -  full breakdown of the highlighted ability");
             draw_set_halign(fa_left);
@@ -2049,7 +2049,7 @@ if (instance_exists(obj_game_controller)) {
             if (_gc_ov.loadout_cursor < _ov_pool_sz) {
                 var _dab = _ov_pool[_gc_ov.loadout_cursor];
                 // Line 1: name + role chip + cost (the "basic ability part" from the Tab popup).
-                draw_set_font(fnt_ui);
+                draw_set_font(ui_font(fnt_ui));
                 draw_set_color(c_white);
                 draw_text(_desc_x + 24, 885, _dab.name);
                 var _dn_w = string_width(_dab.name);
@@ -2070,11 +2070,11 @@ if (instance_exists(obj_game_controller)) {
                 draw_text(_desc_x + _desc_w - 24, 888, _d_cost);
                 draw_set_halign(fa_left);
                 // Line 2+: full mechanics breakdown.
-                draw_set_font(fnt_ui_small);
+                draw_set_font(ui_font(fnt_ui_small));
                 draw_set_color(make_color_rgb(172, 187, 217));
                 draw_text_ext(_desc_x + 24, 927, ability_describe(_dab), -1, _desc_w - 48);
             } else {
-                draw_set_font(fnt_ui_small);
+                draw_set_font(ui_font(fnt_ui_small));
                 draw_set_halign(fa_center);
                 draw_set_color(make_color_rgb(80, 195, 100));
                 draw_text(_desc_x + _desc_w / 2, 921, "All " + string(_ov_req) + " abilities chosen - press Enter on the confirm bar below to start your run.");
@@ -2121,7 +2121,7 @@ if (instance_exists(obj_game_controller)) {
                 draw_set_alpha(1.0);
             }
 
-            draw_set_font(fnt_ui_small);
+            draw_set_font(ui_font(fnt_ui_small));
             draw_set_halign(fa_center);
             var _locked_flash = (variable_instance_exists(_gc_ov, "loadout_locked_timer") && _gc_ov.loadout_locked_timer > 0);
             var _gold_flash = (variable_instance_exists(_gc_ov, "loadout_gold_timer") && _gc_ov.loadout_gold_timer > 0);
@@ -2193,7 +2193,7 @@ if (instance_exists(obj_game_controller)) {
                     // Subtitle sits BELOW the measured title height (07-29: the fixed
                     // +72 offset ran into the title font's descenders on long names).
                     var _wv_title_h = string_height("TALENT WEB - " + _wv_name);
-                    draw_set_font(fnt_ui_small);
+                    draw_set_font(ui_font(fnt_ui_small));
                     draw_set_color(make_color_rgb(170, 175, 195));
                     var _wv_hdr = string(_wv_avail) + " point" + ((_wv_avail == 1) ? "" : "s") + " to spend"
                         + ((_wv_stn > 0) ? (" (" + string(_wv_stn) + " staged)") : "") + "   -   "
@@ -2229,7 +2229,7 @@ if (instance_exists(obj_game_controller)) {
                     draw_circle(_wv_rx, _wv_ry, 30, false);
                     draw_set_color(make_color_rgb(255, 205, 90));
                     draw_circle(_wv_rx, _wv_ry, 30, true);
-                    draw_set_font(fnt_ui_small);
+                    draw_set_font(ui_font(fnt_ui_small));
                     draw_set_color(make_color_rgb(200, 205, 225));
                     draw_text(_wv_rx, _wv_ry - 62, "ROOT");
 
@@ -2269,14 +2269,14 @@ if (instance_exists(obj_game_controller)) {
                         // Selection ring
                         if (_n_sel) { draw_set_color(c_white); draw_circle(_n_x, _n_y, _n_r + 6, true); }
                         // Center glyph: woven/staged star / open plus / locked dash
-                        draw_set_font(fnt_ui);
+                        draw_set_font(ui_font(fnt_ui));
                         draw_set_color(_n_lit ? make_color_rgb(255, 225, 150) : (_n_reach ? make_color_rgb(150, 155, 180) : make_color_rgb(70, 74, 100)));
                         draw_text(_n_x, _n_y - 12, _n_lit ? "*" : (_n_reach ? "+" : "-"));
                         // Title + label, outward of each column. MEASURED against
                         // the panel edge (UI-collision rule) - a label that would
                         // overflow is omitted here; the detail strip always
                         // carries the full text for the selected node.
-                        draw_set_font(fnt_ui_small);
+                        draw_set_font(ui_font(fnt_ui_small));
                         var _n_tcol  = _n_lit ? make_color_rgb(255, 215, 120) : (_n_reach ? make_color_rgb(185, 190, 210) : make_color_rgb(95, 100, 125));
                         var _n_tx    = (_wn < 3) ? (_n_x - _n_r - 16) : (_n_x + _n_r + 16);
                         var _n_avail = (_wn < 3) ? (_n_tx - (_wx0 + 16)) : ((_wx1 - 16) - _n_tx);
@@ -2321,17 +2321,17 @@ if (instance_exists(obj_game_controller)) {
                         else if (_wv_spent + _wv_stn >= ability_web_cap()) _ds_status = "Web cap reached (" + string(ability_web_cap()) + " of 6) - its shape is set.";
                         else if (_wv_avail <= 0)                           _ds_status = (_wv_next > 0) ? ("No point to spend - next at " + string(_wv_next) + " casts.") : "No point to spend.";
                         else                                               _ds_status = "Stage for 1 Talent Point (nothing is permanent until SAVE & CLOSE).";
-                        draw_set_font(fnt_ui);
+                        draw_set_font(ui_font(fnt_ui));
                         draw_set_color(c_white);
                         draw_text(GUI_CX, _ds_y0 + 16, _ds_node.title + "  -  " + _ds_node.label);
-                        draw_set_font(fnt_ui_small);
+                        draw_set_font(ui_font(fnt_ui_small));
                         draw_set_color(make_color_rgb(170, 175, 195));
                         draw_text(GUI_CX, _ds_y0 + 54, _ds_status);
                     } else {
-                        draw_set_font(fnt_ui);
+                        draw_set_font(ui_font(fnt_ui));
                         draw_set_color(c_white);
                         draw_text(GUI_CX, _ds_y0 + 16, (_gc_ov.web_view_cursor == 6) ? "SAVE & CLOSE" : "CLOSE");
-                        draw_set_font(fnt_ui_small);
+                        draw_set_font(ui_font(fnt_ui_small));
                         draw_set_color(make_color_rgb(170, 175, 195));
                         draw_text(GUI_CX, _ds_y0 + 54, (_gc_ov.web_view_cursor == 6)
                             ? ("Make " + string(_wv_stn) + " staged node" + ((_wv_stn == 1) ? "" : "s") + " permanent and leave.")
@@ -2353,7 +2353,7 @@ if (instance_exists(obj_game_controller)) {
                     draw_set_color((_wv_stn > 0) ? make_color_rgb(255, 205, 90) : make_color_rgb(90, 95, 120));
                     draw_rectangle(_sv_x0, _bt_y0, _sv_x1, _bt_y1, true);
                     if (_sv_sel) { draw_set_color(c_white); draw_rectangle(_sv_x0 - 4, _bt_y0 - 4, _sv_x1 + 4, _bt_y1 + 4, true); }
-                    draw_set_font(fnt_ui);
+                    draw_set_font(ui_font(fnt_ui));
                     draw_set_color((_wv_stn > 0) ? make_color_rgb(255, 225, 150) : make_color_rgb(150, 155, 180));
                     draw_text((_sv_x0 + _sv_x1) * 0.5, _bt_y0 + 14, "SAVE & CLOSE" + ((_wv_stn > 0) ? (" (" + string(_wv_stn) + ")") : ""));
                     // CLOSE (discard)
@@ -2362,11 +2362,11 @@ if (instance_exists(obj_game_controller)) {
                     draw_set_color(make_color_rgb(180, 120, 90));
                     draw_rectangle(_cl_x0, _bt_y0, _cl_x1, _bt_y1, true);
                     if (_cl_sel) { draw_set_color(c_white); draw_rectangle(_cl_x0 - 4, _bt_y0 - 4, _cl_x1 + 4, _bt_y1 + 4, true); }
-                    draw_set_font(fnt_ui);
+                    draw_set_font(ui_font(fnt_ui));
                     draw_set_color(make_color_rgb(230, 200, 170));
                     draw_text((_cl_x0 + _cl_x1) * 0.5, _bt_y0 + 14, "CLOSE");
                     if (input_device() != 2) {
-                        draw_set_font(fnt_ui_small);
+                        draw_set_font(ui_font(fnt_ui_small));
                         draw_set_color(make_color_rgb(120, 125, 150));
                         ui_draw_key_legend(GUI_CX, _wy1 - 110, "W/S: Move   A/D: Branch   Enter: Stage / Button   Esc: Discard & Close");
                     }
@@ -2444,14 +2444,14 @@ if (instance_exists(obj_game_controller)) {
             var _tr_sel_cnt   = array_length(_gc_ov.traits_selected);
 
             // Panel headers
-            draw_set_font(fnt_ui);
+            draw_set_font(ui_font(fnt_ui));
             draw_set_color(make_color_rgb(150, 120, 210));
             draw_text(_lx, 60, "AVAILABLE TRAITS  (" + string(_tr_avail_cnt) + " / " + string(_tr_cnt) + ")");
             // Touch: header clears the 90px COMPANION tab (see abilities tab note).
             if (input_device() == 2) {
-                draw_set_font(fnt_ui_small);
+                draw_set_font(ui_font(fnt_ui_small));
                 draw_text(1460, 66, "SELECTED  (" + string(_tr_sel_cnt) + " / " + string(max_trait_slots()) + ")");
-                draw_set_font(fnt_ui);
+                draw_set_font(ui_font(fnt_ui));
             } else {
                 draw_text(_rx, 60, "SELECTED TRAITS  (" + string(_tr_sel_cnt) + " / " + string(max_trait_slots()) + ")");
             }
@@ -2500,7 +2500,7 @@ if (instance_exists(obj_game_controller)) {
                     draw_rectangle(_lx - 1, _ry - 1, _lx + 991, _ry + _tr_row_h + 1, true);
                     draw_rectangle(_lx - 2, _ry - 2, _lx + 992, _ry + _tr_row_h + 2, true);
                     draw_rectangle(_lx - 3, _ry - 3, _lx + 993, _ry + _tr_row_h + 3, true);
-                    draw_set_font(fnt_ui);
+                    draw_set_font(ui_font(fnt_ui));
                     draw_set_valign(fa_middle);
                     draw_text(_lx - 26, _ry + _tr_row_h * 0.5, ">");
                     draw_set_valign(fa_top);
@@ -2519,13 +2519,13 @@ if (instance_exists(obj_game_controller)) {
                 draw_set_alpha(1.0);
 
                 var _tr_name_suf = _in_sel ? "  [SELECTED]" : (!_tr_unl ? "  [LOCKED]" : "");
-                draw_set_font(fnt_ui);
+                draw_set_font(ui_font(fnt_ui));
                 draw_set_color(!_tr_unl ? make_color_rgb(125, 112, 78)
                             : (_in_sel  ? make_color_rgb(190, 130, 255)
                             : (_is_cur ? c_white
                                        : make_color_rgb(170, 175, 210))));
                 draw_text(_lx + 92, _ry + 8, _tr.name + _tr_name_suf);
-                draw_set_font(fnt_ui_small);
+                draw_set_font(ui_font(fnt_ui_small));
                 if (!_tr_unl) {
                     // Real unlock path since the Vex rework: bought from Vex for
                     // gold + a rarity-matched item (the old milestone text was stale).
@@ -2539,7 +2539,7 @@ if (instance_exists(obj_game_controller)) {
             }
 
             // Scroll indicators when the merged list overflows the window
-            draw_set_font(fnt_ui_small);
+            draw_set_font(ui_font(fnt_ui_small));
             draw_set_halign(fa_center);
             draw_set_color(make_color_rgb(110, 120, 150));
             if (_tr_scroll > 0) {
@@ -2564,7 +2564,7 @@ if (instance_exists(obj_game_controller)) {
                 draw_set_color(_has_tr ? make_color_rgb(110, 55, 170) : make_color_rgb(35, 40, 60));
                 draw_rectangle(_rx, _sy, _rx + 735, _sy + _tr_slot_h, true);
 
-                draw_set_font(fnt_ui_small);
+                draw_set_font(ui_font(fnt_ui_small));
                 draw_set_color(make_color_rgb(70, 80, 105));
                 draw_text(_rx + 14, _sy + 7, string(_si2 + 1));
 
@@ -2574,11 +2574,11 @@ if (instance_exists(obj_game_controller)) {
                     if (_tr_struct != undefined) {
                         ui_draw_trait_icon(_rx + 40, _sy + 28, 68, _tr_struct);
                     }
-                    draw_set_font(fnt_ui);
+                    draw_set_font(ui_font(fnt_ui));
                     draw_set_color(make_color_rgb(190, 130, 255));
                     draw_text(_rx + 124, _sy + 24, _tr_name);
                     if (_tr_struct != undefined) {
-                        draw_set_font(fnt_ui_small);
+                        draw_set_font(ui_font(fnt_ui_small));
                         draw_set_color(make_color_rgb(130, 95, 180));
                         draw_text_ext(_rx + 124, _sy + 62, _tr_struct.description, -1, 596);
                     }
@@ -2588,7 +2588,7 @@ if (instance_exists(obj_game_controller)) {
                     draw_rectangle(_rx + 40, _sy + 28, _rx + 108, _sy + 96, false);
                     draw_set_color(make_color_rgb(48, 40, 70));
                     draw_rectangle(_rx + 40, _sy + 28, _rx + 108, _sy + 96, true);
-                    draw_set_font(fnt_ui);
+                    draw_set_font(ui_font(fnt_ui));
                     draw_set_color(make_color_rgb(45, 50, 70));
                     draw_text(_rx + 124, _sy + 48, "---  empty slot  ---");
                 }
@@ -2609,14 +2609,14 @@ if (instance_exists(obj_game_controller)) {
                 draw_set_alpha(_dte.unlocked ? 1.0 : 0.4);
                 ui_draw_trait_icon(_desc_x + 13, 913, 64, _dtr);
                 draw_set_alpha(1.0);
-                draw_set_font(fnt_ui);
+                draw_set_font(ui_font(fnt_ui));
                 draw_set_color(_dte.unlocked ? make_color_rgb(200, 155, 255) : make_color_rgb(125, 112, 78));
                 draw_text(_desc_x + 90, 911, _dtr.name + (_dte.unlocked ? "" : "  [LOCKED - see Vex]"));
-                draw_set_font(fnt_ui_small);
+                draw_set_font(ui_font(fnt_ui_small));
                 draw_set_color(make_color_rgb(155, 130, 210));
                 draw_text_ext(_desc_x + 90, 942, _dtr.description, -1, _desc_w - 105);
             } else {
-                draw_set_font(fnt_ui_small);
+                draw_set_font(ui_font(fnt_ui_small));
                 draw_set_halign(fa_center);
                 draw_set_color(make_color_rgb(80, 70, 115));
                 draw_text(_desc_x + _desc_w / 2, 933, "No traits available yet. Complete runs to unlock more.");
@@ -2629,7 +2629,7 @@ if (instance_exists(obj_game_controller)) {
             draw_set_color(_gc_ov.loadout_full_timer > 0 ? make_color_rgb(155, 40, 40) : make_color_rgb(90, 50, 140));
             draw_rectangle(_desc_x, 998, _desc_x + _desc_w, 1043, true);
 
-            draw_set_font(fnt_ui_small);
+            draw_set_font(ui_font(fnt_ui_small));
             draw_set_halign(fa_center);
             if (_gc_ov.loadout_full_timer > 0) {
                 draw_set_color(make_color_rgb(255, 100, 100));
@@ -2667,14 +2667,14 @@ if (instance_exists(obj_game_controller)) {
             var _crows = array_length(_eqp) + 1;   // pets + a "No companion" row
             var _ccur  = clamp(_gc_ov.loadout_cursor, 0, _crows - 1);
 
-            draw_set_font(fnt_ui);
+            draw_set_font(ui_font(fnt_ui));
             draw_set_color(make_color_rgb(150, 210, 160));
             draw_text(_lx, 60, "YOUR CREATURES  (" + string(array_length(_eqp)) + ")");
             // Touch: header clears the 90px COMPANION tab (see abilities tab note).
             if (input_device() == 2) {
-                draw_set_font(fnt_ui_small);
+                draw_set_font(ui_font(fnt_ui_small));
                 draw_text(1460, 66, "ACTIVE");
-                draw_set_font(fnt_ui);
+                draw_set_font(ui_font(fnt_ui));
             } else {
                 draw_text(_rx, 60, "COMPANION");
             }
@@ -2714,12 +2714,12 @@ if (instance_exists(obj_game_controller)) {
 
                 var _ctx = _ibx1 + 14;
                 if (_is_none) {
-                    draw_set_font(fnt_ui);
+                    draw_set_font(ui_font(fnt_ui));
                     draw_set_color(make_color_rgb(170, 176, 190));
                     draw_text(_ctx, _ry + 24, "No companion");
                     if (_active) {
                         draw_set_halign(fa_right);
-                        draw_set_font(fnt_ui_small);
+                        draw_set_font(ui_font(fnt_ui_small));
                         draw_set_color(make_color_rgb(120, 230, 150));
                         draw_text(_lx + 660 - 16, _ry + 28, "ACTIVE");
                         draw_set_halign(fa_left);
@@ -2735,11 +2735,11 @@ if (instance_exists(obj_game_controller)) {
                         draw_sprite_ext(_cisp, pet_anim_frame(_cisp), _cifit.x, _cifit.y, _cifit.scale, _cifit.scale, 0, c_white, 1);
                     }
                     // Line 1: name (green when equipped) + stage on the right.
-                    draw_set_font(fnt_ui);
+                    draw_set_font(ui_font(fnt_ui));
                     draw_set_color(_active ? make_color_rgb(150, 235, 170) : make_color_rgb(220, 226, 238));
                     draw_text(_ctx, _ry + 10, _cp.name);
                     draw_set_halign(fa_right);
-                    draw_set_font(fnt_ui_small);
+                    draw_set_font(ui_font(fnt_ui_small));
                     draw_set_color(make_color_rgb(150, 200, 140));
                     draw_text(_lx + 660 - 16, _ry + 14, pet_stage_name(_cp.stage));
                     // Line 2 right edge: ACTIVE tag for the equipped companion.
@@ -2751,7 +2751,7 @@ if (instance_exists(obj_game_controller)) {
                     // Line 2: species + archetype + tags, muted. Truncated against the
                     // right-aligned ACTIVE tag - a long species + [CORRUPTING x/3] ran
                     // into it (M 07-09 screenshot).
-                    draw_set_font(fnt_ui_small);
+                    draw_set_font(ui_font(fnt_ui_small));
                     draw_set_color(make_color_rgb(150, 160, 185));
                     var _cl2 = "(" + pet_species_get(_cp.species).name + ")   " + pet_archetype_name(_cp.archetype) + pet_injury_tag(_cp) + pet_corruption_tag(_cp);
                     var _cl2_max = (_lx + 660 - 16) - _ctx - (_active ? string_width("ACTIVE") + 18 : 0);
@@ -2798,9 +2798,9 @@ if (instance_exists(obj_game_controller)) {
                 // Header band (right of portrait): name + stage/archetype + egg chip.
                 var _tx = _px1 + 28;
                 var _active_here = (global.active_pet == _eqp[_ccur]);
-                draw_set_font(fnt_ui); draw_set_color(c_white);
+                draw_set_font(ui_font(fnt_ui)); draw_set_color(c_white);
                 draw_text(_tx, _py0 + 6, _hp.name + (_active_here ? "   (active)" : ""));
-                draw_set_font(fnt_ui_small); draw_set_color(make_color_rgb(190, 160, 240));
+                draw_set_font(ui_font(fnt_ui_small)); draw_set_color(make_color_rgb(190, 160, 240));
                 draw_text(_tx, _py0 + 54, pet_stage_name(_hp.stage) + "  -  " + pet_archetype_name(_hp.archetype));
                 var _egl = pet_egg_label(_hp);
                 if (_egl != "") {
@@ -2839,7 +2839,7 @@ if (instance_exists(obj_game_controller)) {
                 // invisible here and on the detail popup once chosen (M 07-09).
                 var _cspl = pet_splash_text(_hp);
                 if (_cspl != "") _ceff += "\n" + _cspl;
-                draw_set_font(fnt_ui);
+                draw_set_font(ui_font(fnt_ui));
                 var _ew = (_gx1 - _gx0) - 28;
                 var _eh = string_height_ext(_ceff, 30, _ew);
                 var _gy1 = _gy0 + 46 + _eh + 18;
@@ -2847,9 +2847,9 @@ if (instance_exists(obj_game_controller)) {
                 draw_rectangle(_gx0, _gy0, _gx1, _gy1, false);
                 draw_set_color(make_color_rgb(64, 110, 80));
                 draw_rectangle(_gx0, _gy0, _gx1, _gy1, true);
-                draw_set_font(fnt_ui_small); draw_set_color(make_color_rgb(120, 200, 140));
+                draw_set_font(ui_font(fnt_ui_small)); draw_set_color(make_color_rgb(120, 200, 140));
                 draw_text(_gx0 + 14, _gy0 + 12, "GRANTS");
-                draw_set_font(fnt_ui); draw_set_color(make_color_rgb(210, 230, 214));
+                draw_set_font(ui_font(fnt_ui)); draw_set_color(make_color_rgb(210, 230, 214));
                 draw_text_ext(_gx0 + 14, _gy0 + 46, _ceff, 30, _ew);
 
                 // STANCE box (expression #3): Warriors/Guardians only - the behavioral
@@ -2861,9 +2861,9 @@ if (instance_exists(obj_game_controller)) {
                     // 112px cap let long stance text (guarded, 4 lines) run past the
                     // bottom border (M 07-09 screenshot). Label width measured in the
                     // font it draws in (fnt_ui).
-                    draw_set_font(fnt_ui);
+                    draw_set_font(ui_font(fnt_ui));
                     var _hst_lbl_w = string_width(pet_stance_label(_hst));
-                    draw_set_font(fnt_ui_small);
+                    draw_set_font(ui_font(fnt_ui_small));
                     var _hst_dsc_x = _gx0 + 14 + _hst_lbl_w + 24;
                     var _hst_dsc_w = (_gx1 - _gx0) - 52 - _hst_lbl_w;
                     var _hst_dsc_h = string_height_ext(pet_stance_desc(_hst), 26, _hst_dsc_w);
@@ -2872,23 +2872,23 @@ if (instance_exists(obj_game_controller)) {
                     draw_rectangle(_gx0, _sty0, _gx1, _sty1, false);
                     draw_set_color(make_color_rgb(110, 96, 150));
                     draw_rectangle(_gx0, _sty0, _gx1, _sty1, true);
-                    draw_set_font(fnt_ui_small); draw_set_color(make_color_rgb(170, 150, 220));
+                    draw_set_font(ui_font(fnt_ui_small)); draw_set_color(make_color_rgb(170, 150, 220));
                     draw_text(_gx0 + 14, _sty0 + 12, (input_device() == 1) ? "STANCE   [RT] change" : "STANCE   [B] change");
-                    draw_set_font(fnt_ui); draw_set_color(make_color_rgb(222, 214, 240));
+                    draw_set_font(ui_font(fnt_ui)); draw_set_color(make_color_rgb(222, 214, 240));
                     draw_text(_gx0 + 14, _sty0 + 46, pet_stance_label(_hst));
-                    draw_set_font(fnt_ui_small); draw_set_color(make_color_rgb(150, 150, 175));
+                    draw_set_font(ui_font(fnt_ui_small)); draw_set_color(make_color_rgb(150, 150, 175));
                     draw_text_ext(_hst_dsc_x, _sty0 + 52, pet_stance_desc(_hst), 26, _hst_dsc_w);
                 }
 
                 // Footer hint inside the card.
-                draw_set_font(fnt_ui_small); draw_set_color(make_color_rgb(150, 160, 190));
+                draw_set_font(ui_font(fnt_ui_small)); draw_set_color(make_color_rgb(150, 160, 190));
                 draw_text(_cx0 + _ipad, _cy1 - 42, (input_device() == 2) ? "Hold for full kit & details" : "[Tab] full kit & details");
             } else {
                 draw_set_color(make_color_rgb(18, 20, 30));
                 draw_rectangle(_cx0, _cy0, _cx1, _cy1, false);
                 draw_set_color(make_color_rgb(50, 58, 72));
                 draw_rectangle(_cx0, _cy0, _cx1, _cy1, true);
-                draw_set_font(fnt_ui);
+                draw_set_font(ui_font(fnt_ui));
                 draw_set_color(make_color_rgb(150, 156, 175));
                 draw_text(_cx0 + 26, _cy0 + 26, "Dive alone - no companion this run.");
             }
@@ -3005,7 +3005,7 @@ if (variable_instance_exists(id, "awaken_boost_open") && awaken_boost_open) {
     draw_set_font(fnt_ui_title);
     draw_set_color(merge_color(make_color_rgb(235, 200, 110), c_white, _abp * 0.5));
     draw_text_outline(960, 225, "THE AWAKENING SPREADS");
-    draw_set_font(fnt_ui);
+    draw_set_font(ui_font(fnt_ui));
     draw_set_color(make_color_rgb(200, 190, 170));
     draw_text(960, 305, "Your triumph echoes through the deep places. Another dungeon stirs to answer it.");
     draw_set_color(make_color_rgb(150, 150, 175));
@@ -3020,13 +3020,13 @@ if (variable_instance_exists(id, "awaken_boost_open") && awaken_boost_open) {
         draw_set_color(_sel ? merge_color(make_color_rgb(210, 175, 90), c_white, _abp * 0.6) : make_color_rgb(60, 62, 80));
         draw_rectangle(_abx, 420, _abx + 420, 700, true);
         if (_sel) draw_rectangle(_abx - 4, 416, _abx + 424, 704, true);
-        draw_set_font(fnt_ui);
+        draw_set_font(ui_font(fnt_ui));
         draw_set_color(_sel ? c_white : make_color_rgb(180, 185, 210));
         draw_text(_abx + 210, 455, _abo.name);
         draw_set_font(fnt_ui_title);
         draw_set_color(_sel ? make_color_rgb(235, 210, 140) : make_color_rgb(120, 118, 100));
         draw_text(_abx + 210, 520, "A" + string(_abo.cur) + "  ->  A" + string(_abo.cur + 1));
-        draw_set_font(fnt_ui_small);
+        draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(make_color_rgb(140, 145, 165));
         draw_text(_abx + 210, 615, "Awakening " + string(_abo.cur + 1) + " unlocks without the climb");
         if (_sel) {
@@ -3035,7 +3035,7 @@ if (variable_instance_exists(id, "awaken_boost_open") && awaken_boost_open) {
         }
     }
 
-    draw_set_font(fnt_ui_small);
+    draw_set_font(ui_font(fnt_ui_small));
     draw_set_color(make_color_rgb(120, 125, 150));
     ui_draw_key_legend(960, 760, "W/S or A/D: Choose    Enter: Bless    (or tap a card)");
     draw_set_halign(fa_left);
@@ -3052,7 +3052,7 @@ if (variable_instance_exists(id, "awaken_boost_done_timer") && awaken_boost_done
     draw_set_color(make_color_rgb(210, 175, 90));
     draw_rectangle(360, 130, 1560, 205, true);
     draw_set_halign(fa_center);
-    draw_set_font(fnt_ui);
+    draw_set_font(ui_font(fnt_ui));
     draw_set_color(make_color_rgb(240, 215, 150));
     draw_text_outline(960, 152, awaken_boost_done_name);
     draw_set_halign(fa_left);
@@ -3157,7 +3157,7 @@ if (instance_exists(obj_game_controller)) {
         draw_text(GUI_CX + string_width(_cr_line) / 2, _cr_ty,
             string_repeat(".", 1 + (_crt div 20) mod 3));
         draw_set_halign(fa_center);
-        draw_set_font(fnt_ui_small);
+        draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(make_color_rgb(150, 130, 140));
         draw_text(GUI_CX, _cr_ty + 78, (input_device() == 2) ? "tap to hurry it" : "Enter: hurry it");
         draw_set_halign(fa_left); draw_set_valign(fa_top);
@@ -3203,7 +3203,7 @@ if (ending_active) {
         draw_set_font(fnt_ui_title);
         draw_set_color(make_color_rgb(255, 226, 160));
         draw_text(960, 330, "DAWN");
-        draw_set_font(fnt_ui);
+        draw_set_font(ui_font(fnt_ui));
         draw_set_color(c_white);
         draw_text(960, 470, "For the first time in living memory,");
         draw_text(960, 514, "dawn breaks over Ironwake.");
@@ -3219,7 +3219,7 @@ if (ending_active) {
             draw_set_font(fnt_ui_title);
             draw_set_color(make_color_rgb(130, 195, 255));
             draw_text(960, 300, "THE GATE STANDS QUIET");
-            draw_set_font(fnt_ui);
+            draw_set_font(ui_font(fnt_ui));
             draw_set_color(c_white);
             draw_text(960, 450, "Three dungeons. Five Awakenings each.");
             draw_text(960, 494, "The keepers of Ironwake have gathered.");
@@ -3239,13 +3239,13 @@ if (ending_active) {
                 ui_draw_sprite_contain(_port, 0, 730, 150, 460, 460, 1.0);
                 ui_draw_gothic_frame(730, 150, 1190, 610, 15);
             }
-            draw_set_font(fnt_ui);
+            draw_set_font(ui_font(fnt_ui));
             draw_set_color(make_color_rgb(228, 190, 90));
             draw_text(960, 660, npc_display_name(_sp.id) + "  -  " + affinity_tier_name_for(_sp.tier));
             draw_set_color(c_white);
             draw_text_ext(960, 724, ending_farewell_line(_sp.id, _sp.tier), 40, 1240);
         } else if (_eabs == 1 && ending_stage == _st_abs) {
-            draw_set_font(fnt_ui);
+            draw_set_font(ui_font(fnt_ui));
             draw_set_color(make_color_rgb(170, 150, 170));
             draw_text(960, 420, "Not every face is here.");
             draw_text(960, 480, "The town remembers that, too.");
@@ -3275,7 +3275,7 @@ if (ending_active) {
             ];
             var _ey = 350;
             for (var _ri = 0; _ri < array_length(_epi_rows); _ri++) {
-                draw_set_font(fnt_ui);
+                draw_set_font(ui_font(fnt_ui));
                 draw_set_halign(fa_right);
                 draw_set_color(make_color_rgb(150, 160, 185));
                 draw_text(920, _ey, _epi_rows[_ri][0]);
@@ -3290,7 +3290,7 @@ if (ending_active) {
             draw_set_font(fnt_ui_title);
             draw_set_color(make_color_rgb(130, 195, 255));
             draw_text(960, 330, "THE AWAKENINGS CONTINUE");
-            draw_set_font(fnt_ui);
+            draw_set_font(ui_font(fnt_ui));
             draw_set_color(c_white);
             draw_text(960, 480, "Ironwake stands. The gate stays open - for you.");
         }
@@ -3299,7 +3299,7 @@ if (ending_active) {
     }
 
     draw_set_halign(fa_center);
-    draw_set_font(fnt_ui_small);
+    draw_set_font(ui_font(fnt_ui_small));
     draw_set_color(make_color_rgb(100, 110, 135));
     ui_draw_key_legend(960, 1002, "Enter: Continue");
     draw_set_halign(fa_left);
@@ -3342,15 +3342,15 @@ if (bond_dialog_open) {
     }
     draw_set_halign(fa_left);
     draw_set_valign(fa_top);
-    draw_set_font(fnt_ui);
+    draw_set_font(ui_font(fnt_ui));
     draw_set_color(make_color_rgb(255, 225, 150));
     draw_text(_bd_tx, _bdy0 + 40, bond_dialog_title);
-    draw_set_font(fnt_ui_small);
+    draw_set_font(ui_font(fnt_ui_small));
     draw_set_color(make_color_rgb(215, 220, 235));
     draw_text_ext(_bd_tx, _bdy0 + 104, bond_dialog_body, 30, _bdx1 - 48 - _bd_tx);
     draw_set_halign(fa_center);
     draw_set_color(make_color_rgb(140, 150, 175));
-    draw_set_font(fnt_ui_small);
+    draw_set_font(ui_font(fnt_ui_small));
     ui_draw_key_legend((_bdx0 + _bdx1) / 2, _bdy1 - 46,
         (input_device() == 2) ? "Tap to continue" : "Enter / Esc: Continue");
     draw_set_halign(fa_left);
@@ -3374,10 +3374,10 @@ if (variable_global_exists("resume_pending") && global.resume_pending) {
     draw_rectangle(_rz0, _rw0, _rz1, _rw1, true);
     draw_rectangle(_rz0 + 6, _rw0 + 6, _rz1 - 6, _rw1 - 6, true);
     draw_set_halign(fa_center);
-    draw_set_font(fnt_ui);
+    draw_set_font(ui_font(fnt_ui));
     draw_set_color(make_color_rgb(255, 225, 150));
     draw_text((_rz0 + _rz1) / 2, _rw0 + 24, "AN UNFINISHED DIVE");
-    draw_set_font(fnt_ui_small);
+    draw_set_font(ui_font(fnt_ui_small));
     draw_set_color(make_color_rgb(210, 214, 228));
     var _rd = global.resume_data;
     var _rd_dung = "the dungeon";
@@ -3438,7 +3438,7 @@ if (zoom_intro_open) {
     var _zi_txt = "Two-finger PINCH zooms the whole screen - handy wherever the text runs small."
         + "\n\nTwo-finger DRAG pans while zoomed. Pinch back down to snap to normal view."
         + "\n\nYour d-pad and buttons stay put while you zoom. Pinch Zoom can be turned OFF any time in SETTINGS.";
-    draw_set_font(fnt_ui);
+    draw_set_font(ui_font(fnt_ui));
     var _zi_th  = string_height_ext(_zi_txt, 45, 900);
     var _zi_ph  = 132 + _zi_th + 36 + 63 + 66;   // title zone + text + gap + button + bottom pad
     var _zix1 = GUI_CX - 495, _ziy1 = GUI_CY - _zi_ph / 2;
@@ -3451,7 +3451,7 @@ if (zoom_intro_open) {
     draw_set_font(fnt_ui_title);
     draw_set_color(make_color_rgb(228, 205, 140));
     draw_text(GUI_CX, _ziy1 + 42, "Pinch to Zoom");
-    draw_set_font(fnt_ui);
+    draw_set_font(ui_font(fnt_ui));
     draw_set_color(make_color_rgb(200, 208, 222));
     draw_text_ext(GUI_CX, _ziy1 + 132, _zi_txt, 45, 900);
     var _zib_x1 = GUI_CX - 165, _zib_y1 = _ziy2 - 129, _zib_x2 = GUI_CX + 165, _zib_y2 = _ziy2 - 66;

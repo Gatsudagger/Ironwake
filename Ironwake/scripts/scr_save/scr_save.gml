@@ -239,6 +239,9 @@ function save_game() {
         dungeon_clears_total:        variable_global_exists("dungeon_clears_total")        ? global.dungeon_clears_total        : 0,
         // Win state (WIN_STATE_SPEC.md): per-dungeon Awakening-V clears + the ending flags
         dungeon_a5_clears:           variable_global_exists("dungeon_a5_clears")           ? global.dungeon_a5_clears           : { ashen_vault: false, scorched_depths: false, tundra_tomb: false },
+        // The Bottom (Descent floor 50) cleared - drives the epithet + splash
+        // (set in combat_on_enemy_defeated; was write-only until 08-14).
+        descent_bottom_cleared:      variable_global_exists("descent_bottom_cleared")      ? global.descent_bottom_cleared      : false,
         ironwake_stands:             variable_global_exists("ironwake_stands")             ? global.ironwake_stands             : false,
         ending_pending:              variable_global_exists("ending_pending")              ? global.ending_pending              : false,
         // Awakening Boost popup (SYSTEMS_ENDLESS.md §1) - earned but unspent picks survive a quit.
@@ -498,6 +501,7 @@ function new_game_reset() {
     global.dungeon_clears              = { ashen_vault: 0, scorched_depths: 0, tundra_tomb: 0 };
     global.dungeon_clears_total        = 0;
     global.dungeon_a5_clears           = { ashen_vault: false, scorched_depths: false, tundra_tomb: false };
+    global.descent_bottom_cleared      = false;
     global.ironwake_stands             = false;
     global.ending_pending              = false;
     global.awaken_boost_pending        = false;
@@ -1004,6 +1008,7 @@ function load_game() {
         }
     }
     if (variable_struct_exists(_s, "ironwake_stands")) global.ironwake_stands = _s.ironwake_stands;
+    global.descent_bottom_cleared = variable_struct_exists(_s, "descent_bottom_cleared") ? _s.descent_bottom_cleared : false;
     if (variable_struct_exists(_s, "ending_pending"))  global.ending_pending  = _s.ending_pending;
     global.awaken_boost_pending = variable_struct_exists(_s, "awaken_boost_pending") ? _s.awaken_boost_pending : false;
     global.awaken_boost_from    = variable_struct_exists(_s, "awaken_boost_from")    ? _s.awaken_boost_from    : "";

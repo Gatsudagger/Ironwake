@@ -2116,11 +2116,16 @@ function combat_on_enemy_defeated(target, player, combat_log) {
                     + " is yours. Visit Bairc.");
             }
         }
-        // The Bottom: the intended end of the ladder. The clear is banked for
-        // the title/splash treatment (art pending - flagged to M 08-13).
+        // The Bottom: the intended end of the ladder (08-14: now the full
+        // treatment - persisted flag, "the Bottom's Witness" epithet unlocks
+        // off it, and a center-screen splash banner armed here, drawn topmost
+        // in combat Draw).
         if (target.warden_hook == "bottom") {
             global.descent_bottom_cleared = true;
             array_push(combat_log, "THE BOTTOM YIELDS. There is nothing below you now but the way back up.");
+            if (instance_exists(obj_combat_controller)) {
+                instance_find(obj_combat_controller, 0).bottom_splash_timer = 300;
+            }
         }
     }
 

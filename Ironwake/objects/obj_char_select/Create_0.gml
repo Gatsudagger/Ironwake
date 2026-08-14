@@ -36,6 +36,7 @@ naming_blocked_flash = 0;
 // Set true when the portrait-selection overlay is active (after name confirmed)
 portrait_active   = false;
 selected_portrait = 0;
+portrait_pool     = [];   // curated 3-per-class/gender creation picks (08-14); filled when the step opens
 
 // RPG ORIGIN step (08-11, M design-locked) - after portrait, before the Vow.
 // 12 background cards in a 4x3 grid; each is a small mechanical start.
