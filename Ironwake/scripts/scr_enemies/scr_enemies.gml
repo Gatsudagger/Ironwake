@@ -328,6 +328,7 @@ function enemy_sprite_faces_east(name) {
     switch (name) {
         case "Ice Specter":
         case "Snowbound Wraith":
+        case "Bone Sovereign":   // _hd sprite is east-authored (M 08-15 shot)
             return true;
     }
     return false;

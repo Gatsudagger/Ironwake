@@ -586,9 +586,12 @@ for (var _ei = 0; _ei < _ecnt; _ei++) {
         if (variable_instance_exists(id, "summon_is_boss_fight") && summon_is_boss_fight
             && variable_instance_exists(id, "stage_boss_placed") && !stage_boss_placed) {
             stage_boss_placed = true;
-            // Round 13: boss 2.25 (M: still too big at 2.55).
-            _ec.stage_station = { x: 1170, y: 655 - 97 * 2.25, scale: 2.25, feet: 655,
-                                  cx: 1170 + 48.5 * 2.25, cy: 655 - 48.5 * 2.25 };
+            // M 08-15 ("bosses should be noticeably bigger and a bit oversized"):
+            // 2.45 station + its OWN 250px ceiling below (the global 185px cap
+            // was silently shrinking every boss to mob height - round 13's
+            // "too big at 2.55" verdict predates that cap).
+            _ec.stage_station = { x: 1150, y: 655 - 97 * 2.45, scale: 2.45, feet: 655, cap: 250,
+                                  cx: 1150 + 48.5 * 2.45, cy: 655 - 48.5 * 2.45 };
         } else {
             // Round 13d (M shot "cramped": mobs stacking on each other):
             // newcomers (mid-fight summons) took an INDEX-based station that
@@ -634,8 +637,10 @@ for (var _ei = 0; _ei < _ecnt; _ei++) {
         _es *= enemy_size_mult(_ec.name);
         // Round 13b (M: "lowest mob can still be too large depending on the
         // sprite"): HARD SIZE CEILING - no enemy ever draws taller than 185px
-        // visible, whatever its station scale says.
-        _es = min(_es, 185 / max(1, _ntb.h));
+        // visible, whatever its station scale says. Boss center stations carry
+        // their own higher cap (M 08-15: bosses read small at mob height).
+        var _es_cap = variable_struct_exists(_esp, "cap") ? _esp.cap : 185;
+        _es = min(_es, _es_cap / max(1, _ntb.h));
         _ey  = _esp.feet - (_ntb.b + 1) * _es;
     }
 
@@ -839,7 +844,8 @@ for (var _pji = 0; _pji < array_length(combat_projectiles); _pji++) {
         var _pj_dir = point_direction(_pj.sx, _pj.sy, _pj.tx, _pj.ty);
         gpu_set_blendmode(bm_add);
         if (_pj.spr == -1) {
-            if (variable_struct_exists(_pj, "aname") && _pj.aname == "Snipe") {
+            if (variable_struct_exists(_pj, "aname")
+                && (_pj.aname == "Snipe" || _pj.aname == "Weapon Shot")) {
                 // SNIPE (M 08-13: "a more powerful arrow shot, not the generic
                 // dart"): a full fletched arrow - trailing speed lines, long
                 // shaft, bright broadhead, red vanes.

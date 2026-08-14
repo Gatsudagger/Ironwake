@@ -877,8 +877,8 @@ var _gen_d = [
       f:"The Ashen Duelist's own opening, learned the hard way.\n- 1 AP: until your next turn, the FIRST melee blow against you is answered with 18 physical - half again Counterblade's riposte.\n- One perfect answer instead of Counterblade's standing stance. Ranged attacks slip past it." },
     { s:"Melee: 6 dmg + your weapon counted AGAIN. Scales with craft.",
       f:"Let the weapon do the talking.\n- 1 AP: 6 physical damage, plus your melee weapon's damage counted a SECOND time (crit-scaled) - tempering, rarity and affixes all ride along, and its elemental affix always fires here.\n- Humble with a rusty blade; monstrous with a perfected one." },
-    { s:"Ranged: 6 dmg + your weapon counted AGAIN. Scales with craft.",
-      f:"Trust the draw, and the fletcher who earned it.\n- 1 AP: 6 physical damage, plus your ranged weapon's damage counted a SECOND time (crit-scaled) - tempering, rarity and affixes all ride along, and its elemental affix always fires here.\n- Humble with a bent bow; monstrous with a perfected one." },
+    { s:"Ranged: 6 dmg + your weapon counted AGAIN. Wands/staves fire their OWN element.",
+      f:"Trust the draw - or the focus, if that is what your hands hold.\n- 1 AP: 6 damage, plus your ranged weapon's damage counted a SECOND time (crit-scaled) - tempering, rarity and affixes all ride along, and its elemental affix always fires here.\n- CONDITIONAL ELEMENT: with a bow this is a physical arrow. With a wand, scepter or staff the whole shot becomes that weapon's OWN school - elemental damage, resolved against wards, flying its school's colored bolt.\n- Humble with a bent bow; monstrous with a perfected one." },
 ];
 for (var _i = 0; _i < array_length(global.abilities_general); _i++) {
     global.abilities_general[_i].desc_short = _gen_d[_i].s;
@@ -1042,7 +1042,7 @@ array_push(global.abilities_arcanist,
     //     damage, so a bladed Arcanist out-fuels the ranged spam.
     ability_define("Blazing Palm",
         /*energy*/1, /*secondary*/0,
-        /*damage*/12, /*dtype*/1,        // elemental (school tag: fire)
+        /*damage*/16, /*dtype*/1,        // elemental (school tag: fire) - 12->16 + Sear rider (M-locked 08-15)
         /*acc*/86, /*guaranteed*/false,
         /*crit_type*/2, /*base_crit*/8,  // arcane (INT)
         /*effect_type*/"resource", /*effect_value*/1, /*duration*/0, // +1 Soul on a landed hit
@@ -1067,8 +1067,8 @@ array_push(global.abilities_arcanist,
         /*crit_type*/2, /*base_crit*/10, // arcane (INT)
         /*effect_type*/"damage", /*effect_value*/0, /*duration*/0,
         /*self*/false));
-global.abilities_arcanist[15].desc_short = "Melee: 12 Fire dmg. +1 Soul on hit.";
-global.abilities_arcanist[15].desc_full  = "Drive a burning palm into them at arm's length.\n- Melee spell: 12 Fire damage, +1 Soul on a landed hit. Your melee weapon's damage rides along.\n- Cheap fuel for the reserve when the fight closes in.";
+global.abilities_arcanist[15].desc_short = "Melee: 16 Fire dmg + Sear [Fire+]. +1 Soul on hit.";
+global.abilities_arcanist[15].desc_full  = "Drive a burning palm into them at arm's length and leave the print smoldering.\n- Melee spell: 16 Fire damage, +1 Soul on a landed hit. Your melee weapon's damage rides along.\n- Sear [Fire+]: every follow-up hit on the target deals +3 Fire for 2 turns - open with the palm, then let the reserve spend itself.";
 global.abilities_arcanist[16].desc_short = "Melee: 16 Void dmg, always hits. Root 1t.";
 global.abilities_arcanist[16].desc_full  = "Close a grave-cold hand around them and let the earth remember its claim.\n- Melee spell: guaranteed 16 Void damage that ignores all armor.\n- Roots the target for 1 turn - melee enemies skip their attack, and detonators shatter the hold for bonus damage.";
 global.abilities_arcanist[17].desc_short = "Melee: 30 Arcane dmg +8 per Soul consumed (max 2).";
@@ -1335,6 +1335,9 @@ function ability_attack_class_label(_ac) {
 // "(melee/phys)", "(ranged/spell)". "phys" == attack, "spell" == spell.
 // Returns "" for self-targeted abilities (no attack class). Pass an ability.
 function ability_attack_class_tag(ab) {
+    // Weapon Shot adopts a caster ranged weapon's element at cast time
+    // (M-locked 08-15) - its tag says so instead of a fixed phys/spell.
+    if (ab.name == "Weapon Shot") return "(ranged/conditional)";
     switch (ability_attack_class(ab)) {
         case "melee_attack":  return "(melee/phys)";
         case "ranged_attack": return "(ranged/phys)";
@@ -2185,7 +2188,8 @@ function ability_describe(ab) {
             _out += " Adds your melee weapon's damage a SECOND time (crit-scaled); its elemental affix always fires here.";
             break;
         case "Weapon Shot":
-            _out += " Adds your ranged weapon's damage a SECOND time (crit-scaled); its elemental affix always fires here.";
+            _out += " Adds your ranged weapon's damage a SECOND time (crit-scaled); its elemental affix always fires here."
+                  + " CONDITIONAL: with a wand, scepter or staff the whole shot fires as that weapon's OWN element (vs wards).";
             break;
         case "Vital Theft":
             _out += " Steals 8 max HP for the combat: theirs drops, yours rises, and you heal 8.";

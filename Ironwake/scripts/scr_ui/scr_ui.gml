@@ -824,7 +824,7 @@ function ui_item_stat_str(item) {
             } else if (_asn == "armor") {
                 _s += "   " + _sv + " Armor";        // capitalized (M 07-31)
             } else if (_asn == "el_resist") {
-                _s += "   " + _sv + " El Resist";
+                _s += "   " + _sv + " Elem. Resist";
             } else if (string_copy(_asn, 1, 7) == "school_") {
                 // "+X <school> damage" gear affix (SYSTEMS_ELEMENT_SCHOOLS.md §C).
                 var _sch_name = string_copy(_asn, 8, string_length(_asn) - 7);
@@ -844,7 +844,7 @@ function ui_item_stat_str(item) {
     var _ba = item_base_armor(item);
     if (_ba > 0) _s += (_s == "" ? "" : "   ") + "+" + string(_ba) + " Armor";
     var _be = item_base_el_resist(item);
-    if (_be > 0) _s += (_s == "" ? "" : "   ") + "+" + string(_be) + " El Resist";
+    if (_be > 0) _s += (_s == "" ? "" : "   ") + "+" + string(_be) + " Elem. Resist";
     // Tempering + dormancy tags (08-04): quality below 100 and dormancy scale
     // the item's positives at APPLICATION time - the numbers above are the
     // item's full rolls, so say what the piece is delivering right now.
@@ -1184,13 +1184,13 @@ function ui_offhand_icon_sprite(item) {
     // _b = the 08-15 approved regen (M shot "messed up icon for shield");
     // the original spr_icon_offhand_buckler stays in the project untouched.
     if (string_pos("buckler",   _n) > 0)                                  return spr_icon_offhand_buckler_b;
-    if (string_pos("bulwark",   _n) > 0 || string_pos("ironhide", _n) > 0) return spr_icon_offhand_bulwark;
-    if (string_pos("shield",    _n) > 0 || string_pos("aegis",    _n) > 0) return spr_icon_offhand_shield;
+    if (string_pos("bulwark",   _n) > 0 || string_pos("ironhide", _n) > 0) return spr_icon_offhand_bulwark_b;   // 08-15 regen (M-approved), original kept
+    if (string_pos("shield",    _n) > 0 || string_pos("aegis",    _n) > 0) return spr_icon_offhand_shield_b;    // 08-15 regen (M-approved), original kept
     if (string_pos("totem",     _n) > 0 || string_pos("idol",     _n) > 0) return spr_icon_offhand_totem;
     if (string_pos("orb",       _n) > 0 || string_pos("sphere",   _n) > 0) return spr_icon_offhand_orb;
-    if (string_pos("soulstone", _n) > 0 || string_pos("fragment", _n) > 0 || string_pos("stone", _n) > 0) return spr_icon_offhand_stone;
+    if (string_pos("soulstone", _n) > 0 || string_pos("fragment", _n) > 0 || string_pos("stone", _n) > 0) return spr_icon_offhand_stone_b;     // 08-15 regen (M-approved), original kept
     if (string_pos("focus",     _n) > 0 || string_pos("runic",    _n) > 0
-        || string_pos("tome",   _n) > 0 || string_pos("book",     _n) > 0 || string_pos("grimoire", _n) > 0) return spr_icon_offhand_focus;
+        || string_pos("tome",   _n) > 0 || string_pos("book",     _n) > 0 || string_pos("grimoire", _n) > 0) return spr_icon_offhand_focus_b;     // 08-15 regen (M-approved), original kept
     return spr_icon_offhand;
 }
 
@@ -5189,7 +5189,7 @@ function ui_draw_bairc_screen() {
             undefined, false);
         // Touch (8d): tap an entry to pick it (cursor + simulated Enter); tap
         // anywhere outside the panel to back out (simulated Esc).
-        if (input_device() == 2 && mouse_check_button_pressed(mb_left)) {
+        if (mouse_check_button_pressed(mb_left)) {
             var _pmmx = device_mouse_x_to_gui(0);
             var _pmmy = device_mouse_y_to_gui(0);
             var _pm_hit = false;
@@ -6662,6 +6662,14 @@ function ui_draw_item_tooltip(ttx, tty, item, compared_item) {
         var _req_col = _req_met ? make_color_rgb(110, 170, 110) : make_color_rgb(225, 80, 80);
         array_push(_rows, { kind: "text", txt: "Requires " + string(_req.value) + " " + _req.stat, col: _req_col, tag: "", tagcol: c_white });
     }
+    // Permanent-level gate reads like a stat requirement (M 08-15: was hidden
+    // until an equip attempt bounced).
+    var _plr = item_perm_level_req(item);
+    if (_plr > 0) {
+        var _plr_met = (player_permanent_level() >= _plr);
+        array_push(_rows, { kind: "text", txt: "Requires Permanent Level " + string(_plr),
+            col: _plr_met ? make_color_rgb(110, 170, 110) : make_color_rgb(225, 80, 80), tag: "", tagcol: c_white });
+    }
     if (_has_unique) array_push(_rows, { kind: "text", txt: item.unique_desc, col: make_color_rgb(255, 200, 50), tag: "", tagcol: c_white });
     // Socketed runes - list each rune's effect so equipped/inspected gear shows what
     // its sockets are contributing (these feed apply_equipment_stats but weren't visible).
@@ -7374,6 +7382,64 @@ function ui_draw_weakness_tooltip(mx, my, school, ename) {
     draw_set_font(-1);
     draw_set_halign(fa_left); draw_set_valign(fa_top);
     draw_set_alpha(1.0);
+}
+
+// ---------------------------------------------------------------------------
+// TAB HOVER QUICK-REF (M 08-15): mousing over any titular function tab shows a
+// one-paragraph reminder of what lives there - a quick reference so nobody has
+// to reset tutorials to remember what REWORK GEAR does. Pattern: each tab draw
+// calls ui_tab_hover_stash() with its rect + copy; the screen calls
+// ui_draw_tab_tip() LAST so the popup rides above everything on that screen.
+// Touch: a finger resting on a tab sets the same hover, so the reminder shows
+// while a tab is being pressed (mobile keyword-tap idea = later experiment).
+// ---------------------------------------------------------------------------
+function ui_tab_hover_stash(x0, y0, x1, y1, title, body) {
+    var _mx = device_mouse_x_to_gui(0), _my = device_mouse_y_to_gui(0);
+    if (_mx >= x0 && _mx <= x1 && _my >= y0 && _my <= y1) {
+        global.ui_tab_tip = { x: _mx, y: _my, title: title, body: body };
+    }
+}
+function ui_draw_tab_tip() {
+    if (!variable_global_exists("ui_tab_tip") || global.ui_tab_tip == undefined) return;
+    var _t = global.ui_tab_tip;
+    global.ui_tab_tip = undefined;   // one frame's stash, consumed here
+    draw_set_halign(fa_left); draw_set_valign(fa_top);
+    draw_set_font(ui_font(fnt_ui_small));
+    var _pad = 15, _lh = 27, _w = 560, _iw = _w - _pad * 2;
+    var _h = _pad * 2 + _lh + 6 + string_height_ext(_t.body, _lh, _iw);
+    var _x = _t.x + 24, _y = _t.y + 20;
+    if (_x + _w > 1905) _x = _t.x - _w - 18;
+    if (_y + _h > 1065) _y = 1065 - _h;
+    draw_set_alpha(0.96);
+    draw_set_color(make_color_rgb(12, 14, 26));
+    draw_rectangle(_x, _y, _x + _w, _y + _h, false);
+    draw_set_alpha(1.0);
+    draw_set_color(make_color_rgb(200, 170, 110));
+    draw_rectangle(_x, _y, _x + _w, _y + _h, true);
+    draw_rectangle(_x, _y, _x + _w, _y + 4, false);
+    draw_set_color(make_color_rgb(255, 225, 150));
+    draw_text(_x + _pad, _y + _pad, _t.title);
+    draw_set_color(make_color_rgb(215, 218, 230));
+    draw_text_ext(_x + _pad, _y + _pad + _lh + 6, _t.body, _lh, _iw);
+}
+// The authored quick-ref copy, keyed "<npc>:<tab label>". "" = no tip.
+function ui_tab_hint_body(key) {
+    switch (key) {
+        case "dorn:BUY":     return "Dorn's rotating stock - weapons, armor and gear. Restocks between runs; his Awakening-scaled shelf improves as you climb.";
+        case "dorn:SELL":    return "Sell unequipped gear from your pack and stash for gold.";
+        case "dorn:REFORGE": return "Two crafts. REWORK GEAR: spend a Reforge Ingot of the item's tier or higher to reroll its affixes - same item, fresh stats. SMELT: destroy a piece for an ingot, and Dorn studies one of its affixes into the PATTERN BOOK. CRAFT builds an item to your own design from studied blueprints.";
+        case "dorn:TEMPER":  return "Work rough gear toward its true potential: each step is +10% QUALITY (gold + rune dust), plus a little bonus max HP. A raw legendary barely beats a finished epic.";
+        case "maren:Socket Gear":   return "Socket GEAR runes into equipped items with open sockets. Runes come back out freely - nothing is lost by experimenting.";
+        case "maren:Aspects":       return "Socket ASPECT runes into your character's aspect slots - per-school damage (Ember, Rime...), Serration, Surge and the flagships live here.";
+        case "maren:Runesmithing":  return "Maren's craft menu: COMBINE three identical runes into one a tier higher, SPLIT a rune back down, AWAKEN a dormant legendary, forge FLAGSHIP runes, and seal her RUNEHEART CORE share of the Legendary Forge.";
+        case "maren:Runes":         return "Your full rune pouch - every unsocketed gear and aspect rune you carry.";
+        case "maren:Spirits":       return "Bottled spirits from the dark. Maren frees them - their parting songs join your jukebox.";
+        case "sable:Brew":     return "Sable brews potions from her book - and the CHAOTIC BREW fuses potions you already know into something unstable and new.";
+        case "sable:Salvage":  return "Break unequipped gear down into RUNE DUST - rarer pieces pay more dust.";
+        case "sable:Upgrade":  return "Sable's refinements: TRANSMUTE three runes into a different rune of the same tier, and improve what she already knows how to make.";
+        case "sable:Rebirth":  return "Sable's dark exchange: CURSED REBIRTH feeds a legendary to the dark - it comes back stronger, but branded with a real curse. QUINTESSENCE distills her share of the Legendary Forge here too.";
+    }
+    return "";
 }
 
 // ---------------------------------------------------------------------------
@@ -9273,7 +9339,7 @@ function ui_draw_settings_overlay() {
     // keyboard handler reads next frame. Touch only; the keyboard/pad path is
     // untouched. Row Y's reuse the exact locals the rows above were drawn at.
     // -----------------------------------------------------------------------
-    if (input_device() == 2 && mouse_check_button_pressed(mb_left)) {
+    if (mouse_check_button_pressed(mb_left)) {
         var _stmx   = device_mouse_x_to_gui(0);
         var _stmy   = device_mouse_y_to_gui(0);
         var _st_ys  = [ _row_y, _row_y + _row_h, _row_y + 2 * _row_h, _row_y + 3 * _row_h,
@@ -9479,10 +9545,11 @@ function ui_draw_combat_hud(combat_state, player, ability_array, selected_abilit
 
     // --- Player HP bar (top-left) ---
     // Conveyance (08-04): eased HP so ranged/spell hits drain when the bolt lands.
-    ui_draw_hp_bar(30, 30, 375, 36, combat_hp_vis(player), player.max_HP, "HP");
+    // HUD reorder (M 08-15): LEVEL block now sits at the very top; HP below it.
+    ui_draw_hp_bar(30, 58, 375, 36, combat_hp_vis(player), player.max_HP, "HP");
 
     // --- Energy pips (below HP bar) ---
-    ui_draw_energy_pips(30, 84, player.energy, actor_turn_ap(player));
+    ui_draw_energy_pips(30, 102, player.energy, actor_turn_ap(player));
 
     // --- Secondary resource bar (below energy pips) ---
     // Determine which resource this class uses and pick a matching color
@@ -9509,22 +9576,23 @@ function ui_draw_combat_hud(combat_state, player, ability_array, selected_abilit
     }
 
     if (res_name != "") {
-        ui_draw_secondary_resource(30, 135, res_cur, res_max, res_name, res_color);
+        ui_draw_secondary_resource(30, 150, res_cur, res_max, res_name, res_color);
     }
 
-    // --- Run level and XP bar (below secondary resource) ---
-    // "Lv X" label at y=173; XP bar at y=210 to clear the label's descenders.
+    // --- Run level and XP bar (TOP of the column, M 08-15 reorder) ---
+    // "Lv X" label leads the whole HUD; the XP bar rides beside it on the
+    // same line so the block stays one row tall.
     if (variable_global_exists("run_level")) {
         draw_set_font(ui_font(fnt_ui));
         draw_set_color(c_white);
         draw_set_halign(fa_left);
         draw_set_valign(fa_top);
-        draw_text(30, 173, "Lv " + string(global.run_level));
+        draw_text(30, 24, "Lv " + string(global.run_level));
 
-        var _xb  = 30;
-        var _xbw = 375;
+        var _xb  = 130;
+        var _xbw = 275;
         var _xbh = 12;
-        var _xby = 210;
+        var _xby = 34;
 
         if (global.run_level < 15 && variable_global_exists("run_xp")) {
             var _xp_lo    = xp_threshold(global.run_level);
@@ -9562,23 +9630,23 @@ function ui_draw_combat_hud(combat_state, player, ability_array, selected_abilit
     var _hud_pet      = pet_active();
     var _hud_pet_show = (_hud_pet != undefined && !_hud_pet.is_egg);
     if (_hud_pet_show) {
-        // Round 11 (M: "debuffs and buffs look like theyre below pet bar and
-        // thus affecting pets"): the PET bar moved DOWN to y290 so the buff/
-        // debuff row (y222) sits directly under the player's own block.
-        ui_draw_hp_bar(30, 290, 280, 26, pet_hp(_hud_pet), pet_max_hp(_hud_pet), "PET");
+        // M 08-15 reorder: the PET bar rides DIRECTLY below the secondary
+        // resource - the buff/debuff row moved beside the AP pips, so the old
+        // "gap under Lv that looked like pet debuffs" is gone entirely.
+        ui_draw_hp_bar(30, 200, 280, 26, pet_hp(_hud_pet), pet_max_hp(_hud_pet), "PET");
         if (_hud_pet.archetype == PET_ARCH_COMBATANT && pet_stance(_hud_pet) == "guarded") {
             draw_set_font(ui_font(fnt_ui_small));
             draw_set_halign(fa_left);
             draw_set_valign(fa_middle);
             if (pet_hp(_hud_pet) <= 0) {
                 draw_set_color(make_color_rgb(230, 95, 85));
-                draw_text(322, 304, "DOWN");
+                draw_text(322, 214, "DOWN");
             } else if (pet_guard_off(_hud_pet)) {
                 draw_set_color(make_color_rgb(150, 156, 175));
-                draw_text(322, 304, "CALLED OFF  [G]");
+                draw_text(322, 214, "CALLED OFF  [G]");
             } else {
                 draw_set_color(make_color_rgb(140, 205, 150));
-                draw_text(322, 304, "GUARDING  [G]");
+                draw_text(322, 214, "GUARDING  [G]");
             }
             draw_set_valign(fa_top);
             draw_set_font(-1);
@@ -9718,12 +9786,11 @@ function ui_draw_combat_hud(combat_state, player, ability_array, selected_abilit
         var _pstat = status_icons_from(player.status_effects);
         for (var _psi = 0; _psi < array_length(_pstat); _psi++) array_push(_pbuffs, _pstat[_psi]);
     }
-    // Round 11 layout (M: buffs under the pet bar read as PET effects): the
-    // buff/debuff row now sits at y222, DIRECTLY under the player's level
-    // block - unmistakably his. The PET bar moved below it (y290) and the
-    // trap/boon/curse stacks follow underneath.
+    // M 08-15 reorder: the buff/debuff row rides to the RIGHT of the AP pips,
+    // directly below the HP bar - unmistakably the player's, and the left
+    // column packs tight (Lv / HP / AP / resource / PET with no gap).
     if (array_length(_pbuffs) > 0) {
-        ui_draw_status_icon_row(30, 222, _pbuffs);
+        ui_draw_status_icon_row(430, 96, _pbuffs);
     }
     var _hud_shift = _hud_pet_show ? 56 : 0;
 
@@ -9731,7 +9798,7 @@ function ui_draw_combat_hud(combat_state, player, ability_array, selected_abilit
     // Returns the height it used so boons and curses slide down by exactly that
     // much - the trap block never overlaps them and never leaves a hole when the
     // board is empty.
-    var _trap_h = ui_draw_trap_info(player, 30, 290 + _hud_shift, combat_state);
+    var _trap_h = ui_draw_trap_info(player, 30, _hud_pet_show ? 244 : 200, combat_state);
 
     // --- Active run boons + curses (left column, below the trap block) ---
     // Boons occupy a header (24px) + 27px per entry; stack curses just beneath them.
@@ -10331,7 +10398,7 @@ function ui_compendium_sections() {
                 { term: "Using Items",        text: "A consumable costs 1 AP on your turn. On an enemy's turn you may use 1 item free, once per enemy turn." },
                 { term: "Ending Your Turn",   text: "Any AP you don't spend becomes POISE (see below) rather than being wasted. AP refills back to 3 at the start of your next turn." },
                 { term: "Poise",              text: "Each unspent AP at the end of your turn becomes 2 shield - up to 6 (8 with Relentless). This POISE guard lasts only until your next turn (it does not stack turn to turn), so a held turn braces you for a telegraphed blow. Attacking is still usually better - the low rate is a floor, not a plan. The legendary Aegis of the Unbroken Line raises the rate to 3 per AP and doubles the cap." },
-                { term: "Armor",              text: "Flat damage reduction: every enemy hit is reduced by your total Armor AFTER percentage reductions (a landed hit always deals at least 1). Armor is inherent to what you wear - HEAVY gear (plate, mail; STR/CON pieces) carries the most, MEDIUM (leather, hide; DEX pieces) some, and CLOTH (robes, hoods) none - cloth chest and helm pieces ward with El Resist instead. Shields, of-Warding affixes and boons add more." },
+                { term: "Armor",              text: "Flat damage reduction: every enemy hit is reduced by your total Armor AFTER percentage reductions (a landed hit always deals at least 1). Armor is inherent to what you wear - HEAVY gear (plate, mail; STR/CON pieces) carries the most, MEDIUM (leather, hide; DEX pieces) some, and CLOTH (robes, hoods) none - cloth chest and helm pieces ward with Elem. Resist instead. Shields, of-Warding affixes and boons add more." },
                 { term: "Interrupt",          text: "Land a STUN or ROOT on an enemy that is winding up a charged or heavy attack and you INTERRUPT it: the telegraph is answered AND you get 1 AP back (once per turn). Read the intent, punish it, keep tempo." },
             ],
         },
@@ -10383,7 +10450,7 @@ function ui_compendium_sections() {
                 { term: "Rune Transmute & Blueprints", text: "Spare runes have two roads. Sable TRANSMUTES any 3 same-tier runes into one RANDOM rune of the next tier (a gamble, small fee). Petra brokers BLUEPRINTS: trade her 5 same-tier runes plus gold and she delivers the exact rune YOU choose at that tier after a few floor clears - her single order slot handles gear trades or blueprints, one at a time." },
                 { term: "Sable's Cauldron", text: "Sable brews the full potion shelf - baseline salves and tonics for pocket change up through her alchemy exclusives. Three IDENTICAL potions fuse into their improved form on her Fusion tab, and ANY 3 mismatched potions can become a CHAOTIC BREW: what it does is rolled the moment you drink it - a rush of healing, a ward, vigor, ley-light... and sometimes it bites on the way down." },
                 { term: "Legendary Sinks", text: "A legendary that bores you has three roads. Dorn RECASTS it for gold into a different legendary (he avoids ones you own). Maren SUNDERS it into parts - a Legendary Ingot, 50 dust and a tier-III rune. And Sable's CURSED REBIRTH feeds it to the dark: it returns with its numbers surged half again, still carrying its power - but branded with a real curse. Power with teeth." },
-                { term: "The Legendary Forge", text: "All three vendors hold one piece of Ironwake's oldest craft. Dorn strikes the MYTHRIL FRAME (gold + a Legendary Ingot), Maren seals a RUNEHEART CORE (a tier-III+ rune + dust), and Sable distills QUINTESSENCE (any three potions + gold). Bring all three to Dorn's forge [V]: choose its shape, choose its power, and NAME it - a legendary that exists nowhere else, because you made it." },
+                { term: "The Legendary Forge", text: "All three vendors hold one piece of Ironwake's oldest craft. Dorn strikes the MYTHRIL FRAME (gold + a Legendary Ingot), Maren seals a RUNEHEART CORE (a tier-III+ rune + dust), and Sable distills QUINTESSENCE (three different specialty brews + gold). Bring all three to Dorn's forge [V]: choose its shape, choose its power, and NAME it - a legendary that exists nowhere else, because you made it." },
             ],
         },
         {
@@ -10740,17 +10807,20 @@ function ui_draw_character_menu() {
             // Crit chances (right sub-column) - include the flat gear/Duelist bonus
             // AND the typed spell/phys crit gear (07-31): STR/DEX rows carry phys
             // crit, INT/WIS rows spell crit, mirroring combat_roll_crit exactly.
+            // M 08-15 stats audit: plain PHYS/SPELL labels ("Arcane (INT)" read
+            // as a mystery), and the SPELL rows now fold in the Surge rune
+            // aspect so every socketed source shows in ONE total.
             var _crit_x  = _pad + 480;
             var _crit_ph = _wpn_bonus.crit_phys;
-            var _crit_sp = _wpn_bonus.crit_spell;
+            var _crit_sp = _wpn_bonus.crit_spell + rune_aspect_value("spell_crit", undefined);
             draw_set_color(_dc);
-            draw_text(_crit_x, _content_y + 333, "Crit - Power  (STR):  " + string(round(_derived.STR_crit_chance + _crit_flat + _crit_ph)) + "%");
-            draw_text(_crit_x, _content_y + 369, "Crit - Precis (DEX):  " + string(round(_derived.DEX_crit_chance + _crit_flat + _crit_ph)) + "%");
-            draw_text(_crit_x, _content_y + 405, "Crit - Arcane (INT):  " + string(round(_derived.INT_crit_chance + _crit_flat + _crit_sp)) + "%");
-            draw_text(_crit_x, _content_y + 441, "Crit - Effect (WIS):  " + string(round(_derived.WIS_crit_chance + _crit_flat + _crit_sp)) + "%");
+            draw_text(_crit_x, _content_y + 333, "Phys Crit  (STR):  " + string(round(_derived.STR_crit_chance + _crit_flat + _crit_ph)) + "%");
+            draw_text(_crit_x, _content_y + 369, "Phys Crit  (DEX):  " + string(round(_derived.DEX_crit_chance + _crit_flat + _crit_ph)) + "%");
+            draw_text(_crit_x, _content_y + 405, "Spell Crit (INT):  " + string(round(_derived.INT_crit_chance + _crit_flat + _crit_sp)) + "%");
+            draw_text(_crit_x, _content_y + 441, "Effect Crit (WIS): " + string(round(_derived.WIS_crit_chance + _crit_flat + _crit_sp)) + "%");
             draw_set_color(make_color_rgb(95, 105, 125));
-            draw_text(_crit_x, _content_y + 480, "+ each ability's own base crit");
-            draw_text(_crit_x, _content_y + 507, "(gear, Spell/Phys Crit & Duelist included)");
+            draw_text(_crit_x, _content_y + 480, "TOTALS: gear, runes, Surge aspects & Duelist");
+            draw_text(_crit_x, _content_y + 507, "included - each ability adds its own base crit");
 
             // ---- Defense ----
             draw_set_font(ui_font(fnt_ui));
@@ -10760,6 +10830,10 @@ function ui_draw_character_menu() {
             draw_set_color(_dc);
             draw_text(_pad, _content_y + 615, "Dodge:           " + string(_derived.DODGE) + "%");
             draw_text(_pad, _content_y + 651, "Phys reduction:  " + string(_derived.phys_dmg_reduction) + "%");
+            // M 08-15: Elemental Resist had NO row here despite gear/runes
+            // granting it - Defense now states the total plainly.
+            draw_text(_crit_x, _content_y + 615, "Elem. Resist:    " + string(apply_equipment_stats({}).el_resist)
+                + "  (flat elemental reduction)");
             draw_text(_pad, _content_y + 687, "Base HP:         " + string(_derived.HP) + "  (+" + string(apply_equipment_stats({}).bonus_max_hp) + " gear)");
             // #18: flat Armor from gear, with a hover explainer (it had no row here -
             // the stat existed only on tooltips and inside the combat math).
@@ -11105,6 +11179,13 @@ function ui_draw_character_menu() {
                 draw_set_color((player_base_stat(_req.stat) >= _req.value)
                     ? make_color_rgb(110, 190, 110) : make_color_rgb(230, 90, 90));
                 draw_text(_dp_x1 + 28, _info_y, "Requires " + _req.stat + " " + string(_req.value));
+                _info_y += 34;
+            }
+            var _dp_plr = item_perm_level_req(_sel_item);
+            if (_dp_plr > 0) {
+                draw_set_color((player_permanent_level() >= _dp_plr)
+                    ? make_color_rgb(110, 190, 110) : make_color_rgb(230, 90, 90));
+                draw_text(_dp_x1 + 28, _info_y, "Requires Permanent Level " + string(_dp_plr));
                 _info_y += 34;
             }
 
@@ -12533,6 +12614,11 @@ function ui_draw_shop_screen() {
         draw_set_halign(fa_center);
         draw_set_color(_on ? _tac : make_color_rgb(70, 88, 100));
         draw_text(_tx + _tab_w / 2, _tab_y + 9, _tab_labels[_ti]);
+        // Hover quick-ref (M 08-15): what lives behind this tab, on mouse-over.
+        if (!_is_petra) {
+            var _th_body = ui_tab_hint_body("dorn:" + _tab_labels[_ti]);
+            if (_th_body != "") ui_tab_hover_stash(_tx, _tab_y, _tx + _tab_w, _tab_y + _tab_h, _tab_labels[_ti], _th_body);
+        }
     }
     draw_set_halign(fa_left);
 
@@ -13478,7 +13564,7 @@ function ui_draw_dorn_temper(_gc) {
         draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(make_color_rgb(115, 120, 140));
         draw_text(960, 520, "Every piece you carry is already at its full quality - or still DORMANT,");
-        draw_text(960, 552, "and a sleeping legendary must be woken at Maren's forge before it can be finished.");
+        draw_text(960, 552, "and a sleeping legendary must be woken at Maren's Runesmithing before it can be finished.");
         draw_set_color(make_color_rgb(80, 90, 110));
         ui_draw_key_legend(960, 1026, "Q/E: Switch Tab   Esc: Close");
         draw_set_halign(fa_left);
@@ -13493,7 +13579,7 @@ function ui_draw_dorn_temper(_gc) {
 
     draw_set_font(ui_font(fnt_ui_small));
     draw_set_color(make_color_rgb(140, 146, 168));
-    draw_text(60, 219, "Rough gear - each step works a piece +10% toward its true potential:");
+    draw_text(60, 219, "Rough gear - each step works a piece +" + string((npc_rank("dorn") >= 2) ? 12 : 10) + "% toward its true potential:");
 
     for (var _i = _win0; _i < _win1; _i++) {
         var _ry  = 255 + (_i - _win0) * 90;
@@ -13511,7 +13597,7 @@ function ui_draw_dorn_temper(_gc) {
             accent:  item_rarity_color(variable_struct_exists(_it, "rarity") ? _it.rarity : 0),
             // The stat line already ends in "[Quality N%]" - repeating it here was
             // pure noise. Show what the step BUYS instead (M 08-08).
-            tag:     string(_it.quality) + "% -> " + string(min(100, _it.quality + 10)) + "%",
+            tag:     string(_it.quality) + "% -> " + string(min(100, _it.quality + ((npc_rank("dorn") >= 2) ? 12 : 10))) + "%",
             tag_col: make_color_rgb(150, 158, 182)
         });
     }
@@ -13534,7 +13620,7 @@ function ui_draw_dorn_temper(_gc) {
     var _can2 = (global.gold >= _fee2.gold && global.rune_dust >= _fee2.dust);
     // The hypothetical next step: a copy taken +10%, never the real item.
     var _next = item_shallow_copy(_it2);
-    _next.quality = min(100, _it2.quality + 10);
+    _next.quality = min(100, _it2.quality + ((npc_rank("dorn") >= 2) ? 12 : 10));
 
     draw_set_font(ui_font(fnt_ui_small));
     draw_set_color(make_color_rgb(140, 132, 112));
@@ -15901,7 +15987,14 @@ function ui_draw_maren_screen() {
 
     // Tab bar (5 tabs) - x=368+t*240, y=105, w=225, h=60 (MUST match the mouse
     // hit-test in obj_game_controller Step's maren block)
-    var _tab_labels = ["Socket Gear", "Aspects", "Forge", "Runes", "Spirits"];
+    var _tab_labels = ["Socket Gear", "Aspects", "Runesmithing", "Runes", "Spirits"];   // Forge -> Runesmithing (M 08-15)
+    // Hover quick-refs per tab (M 08-15) - stashed here, drawn topmost by the
+    // hub controller's ui_draw_tab_tip() call.
+    for (var _th = 0; _th < 5; _th++) {
+        var _thx = 368 + _th * 240;
+        var _thb = ui_tab_hint_body("maren:" + _tab_labels[_th]);
+        if (_thb != "") ui_tab_hover_stash(_thx, 105, _thx + 225, 165, _tab_labels[_th], _thb);
+    }
     draw_set_font(ui_font(fnt_ui));
     for (var _t = 0; _t < 5; _t++) {
         var _tx  = 368 + _t * 240;
@@ -16078,7 +16171,7 @@ function ui_draw_maren_screen() {
         // -------- FORGE TAB (Combine / Split / Craft Flagship) --------
         if (_gc.maren_phase == 0) {
             draw_set_color(make_color_rgb(140, 130, 165));
-            draw_text(_list_x, 225, "Maren's Forge - choose your craft:");
+            draw_text(_list_x, 225, "Runesmithing - choose your craft:");
             // 08-08 typography pass (M: "a list of all monochrome options that feel
             // unappealing to read through"). Every row goes through the shared
             // ui_draw_option_row standard now - violet TITLE (Maren's colour) over a
@@ -16525,6 +16618,9 @@ function ui_draw_sable_screen() {
         draw_set_valign(fa_middle);
         draw_set_color(_on ? c_white : make_color_rgb(150, 160, 150));
         draw_text(_tx + 143, 135, _tab_labels[_t]);
+        // Hover quick-ref (M 08-15).
+        var _thb2 = ui_tab_hint_body("sable:" + _tab_labels[_t]);
+        if (_thb2 != "") ui_tab_hover_stash(_tx, 105, _tx + 285, 165, _tab_labels[_t], _thb2);
     }
     draw_set_halign(fa_left);
     draw_set_valign(fa_top);
@@ -16799,7 +16895,7 @@ function ui_draw_sable_screen() {
                 _ck_quint ? make_color_rgb(212, 150, 245) : make_color_rgb(130, 225, 215));
             draw_set_color(make_color_rgb(140, 160, 145));
             draw_text(_list_x + string_width(_cb_title) + 12, 225,
-                (_ck_quint ? "- pick ANY 3 potions to distill" : "- pick ANY 3 potions to melt down")
+                (_ck_quint ? "- pick 3 DIFFERENT specialty brews to distill" : "- pick ANY 3 potions to melt down")
                 + "  (" + string(array_length(_ch_sel)) + " / 3 picked):");
             // Combined stash+pouch pool (08-11) - MUST match the Step handler's
             // list, since the picked indices are combined-pool indices.
@@ -17957,6 +18053,14 @@ function ui_draw_item_picker() {
             draw_text_ext(_dx, _cy, _reqstr, -1, _dr - _dx);
             _cy += string_height_ext(_reqstr, -1, _dr - _dx) + 9;
         }
+        var _pk_plr = item_perm_level_req(_it);
+        if (_pk_plr > 0) {
+            var _pk_reqstr = "Requires Permanent Level " + string(_pk_plr);
+            draw_set_color((player_permanent_level() >= _pk_plr)
+                ? make_color_rgb(110, 170, 110) : make_color_rgb(225, 80, 80));
+            draw_text_ext(_dx, _cy, _pk_reqstr, -1, _dr - _dx);
+            _cy += string_height_ext(_pk_reqstr, -1, _dr - _dx) + 9;
+        }
 
         // Unique effect.
         if (variable_struct_exists(_it, "unique_desc") && _it.unique_desc != "") {
@@ -18100,11 +18204,11 @@ function ui_draw_reagent_picker() {
     draw_set_halign(fa_center); draw_set_valign(fa_top);
     draw_set_font(ui_font(fnt_ui));
     draw_set_color(_aw ? make_color_rgb(255, 205, 110) : make_color_rgb(215, 160, 235));
-    draw_text(_px + _pw / 2, _py + 21, _aw ? "FUEL FOR THE FORGE" : "AN INEQUIVALENT EXCHANGE...");
+    draw_text(_px + _pw / 2, _py + 21, _aw ? "FUEL FOR THE CRUCIBLE" : "AN INEQUIVALENT EXCHANGE...");
     draw_set_font(ui_font(fnt_ui_small));
     draw_set_color(c_ltgray);
     draw_text(_px + _pw / 2, _py + 63, _aw
-        ? "Tick what burns in Maren's forge - everything unticked is safe. Nothing burns until you light it."
+        ? "Tick what burns in Maren's runesmithing crucible - everything unticked is safe. Nothing burns until you light it."
         : "Tick what feeds the dark - everything unticked is safe. Nothing burns until you seal it.");
     draw_set_halign(fa_left);
 

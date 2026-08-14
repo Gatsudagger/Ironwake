@@ -136,6 +136,16 @@ if (!tutorial_seen_has("corruption_101")) {
         if (_crs == "pushing" || _crs == "fulfilled" || _crs == "cured") { tutorial_try_show("corruption_101"); break; }
     }
 }
+// The hidden surprise (M-locked 08-15): the first FULLY corrupted pet reveals
+// the betrayal chance - a tutorial that only ever fires after the fact.
+if (!tutorial_seen_has("corruption_fulfilled")) {
+    var _cf = pet_roster();
+    for (var _cfi = 0; _cfi < array_length(_cf); _cfi++) {
+        var _cfp = _cf[_cfi];
+        if (!is_struct(_cfp) || _cfp.is_egg) continue;
+        if (pet_corr_state(_cfp) == "fulfilled") { tutorial_try_show("corruption_fulfilled"); break; }
+    }
+}
 
 // Gift picker (Phase 4b): gc drives the modal; the hub freezes while ANY item picker
 // is up. The gift RESULT surfaces as the popup (ui_draw_gift_popup), so the one-shot
@@ -1061,15 +1071,68 @@ if (input_hotkey("B") && selected_npc < array_length(affinity_npc_ids()) && !sho
         bond_dialog_open = true;
         bond_dialog_npc  = _bond_id;
         if (_adv == "") {
+            // Friendly lore beat + heart burst on the crossing (M 08-15);
+            // the Lover elevation gets its own authored line.
+            var _bd_tier = affinity_tier(_bond_id);
+            var _bd_lore = affinity_deepen_line(_bond_id, _bd_tier);
+            if (_bd_lore == "") _bd_lore = "Something settles between you - warmer than words.";
             bond_dialog_title = npc_names[selected_npc] + "  -  " + affinity_tier_name(_bond_id);
-            bond_dialog_body  = "Something settles between you - warmer than words.\n\nYour bond with "
+            bond_dialog_body  = _bd_lore + "\n\nYour bond with "
                 + npc_names[selected_npc] + " deepens to " + affinity_tier_name(_bond_id) + ".";
+            // Seed the floating hearts (drawn in the bond dialog, hub Draw).
+            bond_dialog_hearts = [];
+            var _bd_n = (_bd_tier >= 4) ? 14 : 7;
+            repeat (_bd_n) {
+                array_push(bond_dialog_hearts, {
+                    x: 460 + random(1000), y: 780 + random(60),
+                    vy: 0.8 + random(1.2), sway: random(pi * 2),
+                    sc: 0.7 + random(0.8), a: 0.9
+                });
+            }
             audio_play_sound(snd_quest_ready, 1, false);
         } else {
+            bond_dialog_hearts = [];
             bond_dialog_title = npc_names[selected_npc];
             bond_dialog_body  = _adv;   // gate-quest ask / progress reminder
         }
         if (room == rm_hub || room == rm_character_select) save_game();
+    }
+}
+
+// -----------------------------------------------------------------------------
+// 2c. UPGRADE STATION (NPC PROGRESSION, M-locked 08-15): [U] on a focused NPC
+// card buys the next rank - two-press confirm since it spends gold+dust.
+// -----------------------------------------------------------------------------
+if (input_hotkey("U") && selected_npc < array_length(affinity_npc_ids()) && !show_history) {
+    var _up_ids = affinity_npc_ids();
+    var _up_id  = _up_ids[selected_npc];
+    if (npc_rank(_up_id) < 2) {
+        if (!variable_instance_exists(id, "npc_upgrade_arm")) npc_upgrade_arm = "";
+        if (npc_upgrade_arm != _up_id) {
+            npc_upgrade_arm = _up_id;
+            var _up_c = npc_rank_cost(npc_rank(_up_id) + 1);
+            bond_dialog_open  = true;
+            bond_dialog_npc   = _up_id;
+            bond_dialog_title = npc_names[selected_npc] + "  -  Upgrade Station";
+            bond_dialog_body  = "Spend " + string(_up_c.gold) + "g + " + string(_up_c.dust)
+                + " dust to unlock:\n\n" + npc_rank_perk_text(_up_id, npc_rank(_up_id) + 1)
+                + "\n\nPress [U] again to confirm.";
+            bond_dialog_hearts = [];
+        } else {
+            npc_upgrade_arm = "";
+            var _up_err = npc_rank_buy(_up_id);
+            bond_dialog_open  = true;
+            bond_dialog_npc   = _up_id;
+            if (_up_err == "") {
+                bond_dialog_title = npc_names[selected_npc] + "  -  Station Rank " + string(npc_rank(_up_id));
+                bond_dialog_body  = "The work is done by morning.\n\nUNLOCKED: "
+                    + npc_rank_perk_text(_up_id, npc_rank(_up_id));
+                audio_play_sound(snd_forge, 1, false);
+            } else {
+                bond_dialog_title = npc_names[selected_npc];
+                bond_dialog_body  = _up_err;
+            }
+        }
     }
 }
 

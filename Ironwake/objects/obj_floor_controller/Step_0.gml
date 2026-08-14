@@ -507,6 +507,55 @@ if (showing_whetstone) {
 // 2c. EVENT ROOM - interactive stat-gated choice overlay (see SYSTEMS_EVENTS.md)
 //   W/S select choice (skips locked) - Enter confirm - result phase: any key closes
 // -----------------------------------------------------------------------------
+// MERCHANT'S GHOST SHOP overlay input (M-locked 08-15). Geometry MUST mirror
+// the Draw block at the end of Draw_64: rows y270, pitch 108, hit 530-1390.
+if (variable_instance_exists(id, "ghost_shop_open") && ghost_shop_open) {
+    var _gs = global.ghost_stock;
+    var _gn = array_length(_gs);
+    if (_gn > 0) {
+        if (nav_up())   ghost_cursor = wrap_index(ghost_cursor - 1, _gn);
+        if (nav_down()) ghost_cursor = wrap_index(ghost_cursor + 1, _gn);
+    }
+    // Click selects; a click on the selected row buys (clicking works on
+    // everything - M 08-15 standing rule).
+    if (mouse_check_button_pressed(mb_left)) {
+        var _gmx = device_mouse_x_to_gui(0), _gmy = device_mouse_y_to_gui(0);
+        for (var _gi = 0; _gi < _gn; _gi++) {
+            var _gry = 270 + _gi * 108;
+            if (_gmx >= 530 && _gmx <= 1390 && _gmy >= _gry && _gmy <= _gry + 96) {
+                if (ghost_cursor == _gi) touch_press(vk_enter);
+                else ghost_cursor = _gi;
+                break;
+            }
+        }
+    }
+    if ((input_confirm() || input_confirm_alt()) && _gn > 0) {
+        var _row = _gs[clamp(ghost_cursor, 0, _gn - 1)];
+        if (!_row.sold && global.gold >= _row.price) {
+            global.gold -= _row.price;
+            _row.sold = true;
+            if (!variable_global_exists("run_items_found")) global.run_items_found = [];
+            if (_row.kind == "item") {
+                if (!variable_global_exists("carried_items")) global.carried_items = [];
+                array_push(global.carried_items, _row.item);
+                array_push(global.run_items_found, _row.item);
+            } else {
+                if (!variable_global_exists("rune_inventory")) global.rune_inventory = [];
+                array_push(global.rune_inventory, _row.rune);
+            }
+            audio_play_sound(snd_npc_confirm, 1, false);
+        } else if (!_row.sold) {
+            audio_play_sound(snd_ui_error, 1, false);
+        }
+    }
+    if (input_cancel() || input_back()) {
+        ghost_shop_open = false;
+        global.ghost_stock = [];
+        audio_play_sound(snd_page, 1, false);
+    }
+    exit;
+}
+
 if (showing_event_choice) {
     // Result phase - any key closes the overlay and marks the room cleared.
     if (event_phase == "result") {
@@ -555,6 +604,17 @@ if (showing_event_choice) {
                 };
                 event_phase  = "choices";
                 event_cursor = 0;
+                exit;
+            }
+            // MERCHANT'S GHOST (M-locked 08-15): a browse result opens the
+            // popup shop; the room settles first so leaving is always clean.
+            if (variable_global_exists("ghost_stock") && is_array(global.ghost_stock)
+                && array_length(global.ghost_stock) > 0) {
+                showing_event_choice = false;
+                current_rooms[selected_room].cleared = true;
+                global.floor_rooms_cleared[selected_room] = true;
+                ghost_shop_open = true;
+                ghost_cursor    = 0;
                 exit;
             }
             showing_event_choice = false;

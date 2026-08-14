@@ -671,7 +671,7 @@ if (showing_whetstone) {
         }
         // Touch: tap a row to select it, tap the selected row again to choose
         // its edge (simulated Enter). The LEAVE button below covers Esc.
-        if (input_device() == 2 && mouse_check_button_pressed(mb_left)) {
+        if (mouse_check_button_pressed(mb_left)) {
             var _wtx = device_mouse_x_to_gui(0);
             var _wty = device_mouse_y_to_gui(0);
             for (var _wti = 0; _wti < _wt_na; _wti++) {
@@ -711,7 +711,7 @@ if (showing_whetstone) {
         }
         // Touch: tap a mod row to select it, tap the selected row again to hone
         // (simulated Enter). The BACK button below covers Esc.
-        if (input_device() == 2 && mouse_check_button_pressed(mb_left)) {
+        if (mouse_check_button_pressed(mb_left)) {
             var _wmx = device_mouse_x_to_gui(0);
             var _wmy = device_mouse_y_to_gui(0);
             for (var _wmi = 0; _wmi < _wcn; _wmi++) {
@@ -984,7 +984,7 @@ if (showing_shrine) {
         // select it; on the SELECTED row a blessing pays via its [1]/[2]/[3]
         // price labels (simulated digit keys), a curse row is embraced by
         // tapping it again (simulated Enter). Rows: y = 490 + i*150, h 132.
-        if (input_device() == 2 && mouse_check_button_pressed(mb_left)) {
+        if (mouse_check_button_pressed(mb_left)) {
             var _tsx = device_mouse_x_to_gui(0);
             var _tsy = device_mouse_y_to_gui(0);
             for (var _tsi = 0; _tsi < _sn; _tsi++) {
@@ -1214,8 +1214,26 @@ if (showing_event_choice && event_active != undefined) {
         draw_rectangle(_rp_x0 + 4, _rp_y0 + 4, _rp_x1 - 4, _rp_y1 - 4, true);
 
         draw_set_font(ui_font(fnt_ui));
-        draw_set_color(make_color_rgb(215, 220, 235));
-        draw_text_ext(GUI_CX, _rp_y0 + 48, ui_sentence(event_result_text), -1, _rp_x1 - _rp_x0 - 120);
+        // Loot lines wear their loot's color (M 08-15: "rare gear" announced in
+        // white read confusing) - split the joined result and tint any line
+        // carrying a "[Rarity]" tag, "[Rune]" or "BOON:"; prose keeps the grey.
+        var _rl_rest = ui_sentence(event_result_text);
+        var _rl_y = _rp_y0 + 48;
+        var _rl_w = _rp_x1 - _rp_x0 - 120;
+        while (_rl_rest != "") {
+            var _rl_nl   = string_pos("\n", _rl_rest);
+            var _rl_line = (_rl_nl > 0) ? string_copy(_rl_rest, 1, _rl_nl - 1) : _rl_rest;
+            _rl_rest     = (_rl_nl > 0) ? string_delete(_rl_rest, 1, _rl_nl) : "";
+            var _rl_col = make_color_rgb(215, 220, 235);
+            for (var _rl_r = 4; _rl_r >= 0; _rl_r--) {
+                if (string_pos("[" + item_rarity_name(_rl_r) + "]", _rl_line) > 0) { _rl_col = item_rarity_color(_rl_r); break; }
+            }
+            if (string_pos("[Rune]", _rl_line) > 0) _rl_col = make_color_rgb(190, 120, 220);
+            if (string_pos("BOON:", _rl_line) > 0)  _rl_col = make_color_rgb(255, 205, 110);
+            draw_set_color(_rl_col);
+            draw_text_ext(GUI_CX, _rl_y, _rl_line, -1, _rl_w);
+            _rl_y += max(string_height_ext(_rl_line, -1, _rl_w), string_height("Ag"));
+        }
 
         // Coin burst: shared draw-side sim (ui_draw_coin_burst, #19 polish -
         // also runs on the treasure popup). Pile floor sits on the panel.
@@ -1299,7 +1317,7 @@ if (showing_event_choice && event_active != undefined) {
         // cost/rolls the check). Locked rows ignore taps. Same idiom as the
         // shrine offer rows. Rows: y = 330 + i*150, h 132, x 330..1590 (kept in
         // sync with the translucent row draw above).
-        if (input_device() == 2 && mouse_check_button_pressed(mb_left)) {
+        if (mouse_check_button_pressed(mb_left)) {
             var _tex = device_mouse_x_to_gui(0);
             var _tey = device_mouse_y_to_gui(0);
             for (var _ti = 0; _ti < _en; _ti++) {
@@ -1697,3 +1715,97 @@ ui_draw_touch_gamepad();   // on-screen d-pad in the left gutter (M 07-17)
 
 // Reset the HP-hit shake translate so objects drawing after us are unshaken.
 matrix_set(matrix_world, matrix_build_identity());
+
+
+// =============================================================================
+// MERCHANT'S GHOST SHOP overlay (M-locked 08-15) - drawn dead last, topmost.
+// A fanciful spectral stall: every row leads with its icon, names wear their
+// rarity colors, ghost exclusives carry a gold tag. Geometry mirrored by the
+// Step input block (rows y270, pitch 108).
+// =============================================================================
+if (variable_instance_exists(id, "ghost_shop_open") && ghost_shop_open) {
+    draw_set_alpha(0.78);
+    draw_set_color(make_color_rgb(6, 10, 18));
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
+    draw_set_alpha(0.97);
+    draw_set_color(make_color_rgb(16, 22, 34));
+    draw_rectangle(480, 150, 1440, 940, false);
+    draw_set_alpha(1.0);
+    draw_set_color(make_color_rgb(100, 160, 230));
+    draw_rectangle(480, 150, 1440, 940, true);
+    draw_rectangle(486, 156, 1434, 934, true);
+    draw_set_halign(fa_center); draw_set_valign(fa_top);
+    draw_set_font(fnt_ui_title);
+    draw_set_color(make_color_rgb(160, 205, 250));
+    draw_text(960, 172, "THE GHOST'S WARES");
+    draw_set_font(ui_font(fnt_ui_small));
+    draw_set_color(make_color_rgb(140, 160, 190));
+    draw_text(960, 222, "\"Everything must go. Everything already went, once.\"");
+    draw_set_halign(fa_right);
+    draw_set_color(c_yellow);
+    draw_set_font(ui_font(fnt_ui));
+    draw_text(1400, 176, "Gold: " + string(global.gold) + "g");
+    draw_set_halign(fa_left);
+    var _gsd = global.ghost_stock;
+    for (var _gd = 0; _gd < array_length(_gsd); _gd++) {
+        var _row = _gsd[_gd];
+        var _gry = 270 + _gd * 108;
+        var _sel = (_gd == ghost_cursor);
+        draw_set_color(_sel ? make_color_rgb(30, 40, 60) : make_color_rgb(20, 26, 40));
+        draw_rectangle(530, _gry, 1390, _gry + 96, false);
+        draw_set_color(_row.sold ? make_color_rgb(50, 56, 70)
+                     : (_sel ? make_color_rgb(120, 180, 245) : make_color_rgb(52, 66, 92)));
+        draw_rectangle(530, _gry, 1390, _gry + 96, true);
+        var _dimc = _row.sold ? 0.35 : 1.0;
+        draw_set_alpha(_dimc);
+        if (_row.kind == "item") {
+            ui_draw_item_icon(544, _gry + 12, 72, _row.item);
+            draw_set_font(ui_font(fnt_ui));
+            draw_set_color(item_rarity_color(_row.item.rarity));
+            var _nm = _row.item.name
+                + (variable_struct_exists(_row.item, "ghost_exclusive") ? "" : "");
+            draw_text(636, _gry + 10, _nm);
+            if (variable_struct_exists(_row.item, "ghost_exclusive")) {
+                draw_set_font(ui_font(fnt_ui_small));
+                draw_set_color(make_color_rgb(255, 210, 120));
+                draw_text(636 + string_width(_nm) + 24, _gry + 16, "GHOST EXCLUSIVE");
+                draw_set_font(ui_font(fnt_ui));
+            }
+            draw_set_font(ui_font(fnt_ui_small));
+            draw_set_color(make_color_rgb(160, 168, 188));
+            draw_text(636, _gry + 54, ui_truncate(ui_item_stat_str(_row.item), 560));
+        } else {
+            var _rspr = rune_icon_sprite(_row.rune.id);
+            if (_rspr != -1 && sprite_exists(_rspr)) {
+                draw_sprite_stretched(_rspr, 0, 544, _gry + 12, 72, 72);
+            } else {
+                var _rgc = rune_glyph_color(_row.rune.id);
+                draw_set_color(_rgc);
+                draw_triangle(556, _gry + 48, 580, _gry + 18, 604, _gry + 48, false);
+                draw_triangle(556, _gry + 48, 580, _gry + 78, 604, _gry + 48, false);
+            }
+            draw_set_font(ui_font(fnt_ui));
+            draw_set_color(make_color_rgb(200, 150, 240));
+            draw_text(636, _gry + 10, rune_title(_row.rune) + "   [Rune]");
+            draw_set_font(ui_font(fnt_ui_small));
+            draw_set_color(make_color_rgb(160, 168, 188));
+            draw_text(636, _gry + 54, ui_truncate(rune_effect(_row.rune), 560));
+        }
+        draw_set_halign(fa_right);
+        draw_set_font(ui_font(fnt_ui));
+        if (_row.sold) {
+            draw_set_color(make_color_rgb(110, 116, 130));
+            draw_text(1370, _gry + 32, "SOLD");
+        } else {
+            draw_set_color((global.gold >= _row.price) ? c_yellow : make_color_rgb(220, 100, 90));
+            draw_text(1370, _gry + 32, string(_row.price) + "g");
+        }
+        draw_set_halign(fa_left);
+        draw_set_alpha(1.0);
+    }
+    draw_set_halign(fa_center);
+    draw_set_font(ui_font(fnt_ui_small));
+    draw_set_color(make_color_rgb(120, 140, 170));
+    ui_draw_key_legend(960, 900, "W/S: Choose   Enter/Click: Buy   Esc: Leave the cart");
+    draw_set_halign(fa_left);
+}

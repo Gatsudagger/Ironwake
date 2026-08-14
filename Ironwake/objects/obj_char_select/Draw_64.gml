@@ -153,7 +153,7 @@ for (var _i = 0; _i < 3; _i++) {
         // the chosen side is a harmless no-op. This cell sits inside the selected
         // class panel, whose Step click-handler no-ops on the already-selected
         // class, so there's no double-action.
-        if (input_device() == 2 && mouse_check_button_pressed(mb_left)) {
+        if (mouse_check_button_pressed(mb_left)) {
             var _gmx = device_mouse_x_to_gui(0);
             var _gmy = device_mouse_y_to_gui(0);
             if (_gmy >= _gy - _cellhw && _gmy <= _gy + _cellhw) {

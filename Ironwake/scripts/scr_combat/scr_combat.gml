@@ -1204,6 +1204,12 @@ function combat_apply_start_traits(player) {
     player.rune_first_spell_used = false;   // Quickcast: first spell each combat costs -1 AP
     player.rune_first_aoe_used   = false;   // Echo: first AoE each combat echoes for 50%
 
+    // Fully-corrupted companion betrayal (M-locked 08-15): ONE 10% roll per
+    // combat, consumed by combat_pet_act (Warrior savages you / others refuse).
+    var _fc_pet = pet_active();
+    player.pet_betray_hit = (_fc_pet != undefined && !_fc_pet.is_egg
+        && pet_is_fulfilled(_fc_pet) && irandom(99) < 10);
+
     // Talent-web Opening Gambit keystone: per-ability first-cast flags (fresh each combat).
     player.web_first_casts = {};
 
@@ -2479,6 +2485,27 @@ function combat_pet_act(combat_state, player, combat_log, damage_popups) {
     var _cmult     = pet_corruption_mult(_p) * pet_bond_mult(_p) * pet_quirk_mult(_p);   // corruption +15%/run + Soul-bound +5% (§5 Axis 3) + quirks (08-01 pillar C)
     var _fulfilled = pet_is_fulfilled(_p);       // fully corrupted -> grand archetype ability
     var _kit = pet_kit_mods(_p);                 // named-kit modifiers (traits/abilities, Pets §5)
+
+    // FULLY CORRUPTED price (M-locked 08-15, 10%/combat): once per fight the
+    // dark can pull the leash - a corrupted Warrior turns its strike on YOU,
+    // any other archetype withholds its aid for the turn. Curing removes this
+    // forever (the strength stays); the corruption_fulfilled tutorial reveals
+    // it as the hidden surprise.
+    if (_fulfilled) {
+        if (!variable_struct_exists(player, "pet_betray_hit")) player.pet_betray_hit = false;
+        if (player.pet_betray_hit) {
+            player.pet_betray_hit = false;
+            if (_p.archetype == PET_ARCH_COMBATANT) {
+                var _bt = max(1, round((_adult ? 16 : 8) * 0.75));
+                player.HP = max(1, player.HP - _bt);
+                array_push(combat_log, "[Companion] The corruption TURNS - " + _p.name + " savages YOU for " + string(_bt) + "!");
+                array_push(damage_popups, { value: _bt, x: 505, y: 545, timer: 50, col: make_color_rgb(205, 90, 220) });
+            } else {
+                array_push(combat_log, "[Companion] " + _p.name + "'s eyes go black - it withholds its aid this turn.");
+            }
+            return true;
+        }
+    }
 
     var _stance = pet_stance(_p);   // combat stance (expression #3), set at the Gate
 

@@ -256,6 +256,8 @@ function save_game() {
         forge_comp_frame:            variable_global_exists("forge_comp_frame")            ? global.forge_comp_frame            : 0,
         forge_comp_core:             variable_global_exists("forge_comp_core")             ? global.forge_comp_core             : 0,
         forge_comp_quint:            variable_global_exists("forge_comp_quint")            ? global.forge_comp_quint            : 0,
+        // NPC PROGRESSION ranks (M-locked 08-15) - struct id -> 0..2.
+        npc_ranks:                   (variable_global_exists("npc_ranks") && is_struct(global.npc_ranks)) ? global.npc_ranks : {},
         // THE IRON VOW (SYSTEMS_IRON_VOW.md): opt-in hardcore mode + lives left.
         vow_mode:                    variable_global_exists("vow_mode")                    ? global.vow_mode                    : 0,
         vow_lives_left:              variable_global_exists("vow_lives_left")              ? global.vow_lives_left              : 0,
@@ -514,6 +516,7 @@ function new_game_reset() {
     global.forge_comp_frame            = 0;
     global.forge_comp_core             = 0;
     global.forge_comp_quint            = 0;
+    global.npc_ranks                   = {};   // NPC PROGRESSION (08-15)
     global.total_boss_kills            = 0;
     global.duelist_encounters          = 0;   // Ashen Duelist: lifetime duels fought (+10% stats each)
     global.duelist_tokens              = 0;   // Ashen Duelist: gold-tier tokens (Duelist Arts ladder)
@@ -1021,6 +1024,7 @@ function load_game() {
     global.forge_comp_frame = variable_struct_exists(_s, "forge_comp_frame") ? _s.forge_comp_frame : 0;
     global.forge_comp_core  = variable_struct_exists(_s, "forge_comp_core")  ? _s.forge_comp_core  : 0;
     global.forge_comp_quint = variable_struct_exists(_s, "forge_comp_quint") ? _s.forge_comp_quint : 0;
+    global.npc_ranks        = (variable_struct_exists(_s, "npc_ranks") && is_struct(_s.npc_ranks)) ? _s.npc_ranks : {};
     // THE IRON VOW (SYSTEMS_IRON_VOW.md) - pre-Vow saves are Standard.
     global.vow_mode       = variable_struct_exists(_s, "vow_mode")       ? _s.vow_mode       : 0;
     global.vow_lives_left = variable_struct_exists(_s, "vow_lives_left") ? _s.vow_lives_left : 0;

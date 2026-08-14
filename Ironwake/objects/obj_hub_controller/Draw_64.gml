@@ -559,6 +559,31 @@ if (hub_use_carousel) {
                 draw_rectangle(_cv_bx, _cv_by, _cv_bx + 320, _cv_by + 8, true);
             }
         }
+        // ---- STATION RANK (NPC PROGRESSION, M-locked 08-15) ----
+        // Stars + the next unlock as a one-line pitch; [U] buys (two-press
+        // confirm in Step). Fully-upgraded stations just wear their stars.
+        var _cv_rank = npc_rank(_cv_id);
+        var _cv_ry   = _cv_line_y + 48;
+        draw_set_color(make_color_rgb(230, 200, 120));
+        var _cv_stars = "";
+        for (var _cv_si = 0; _cv_si < 2; _cv_si++) _cv_stars += (_cv_si < _cv_rank) ? "*" : "-";
+        draw_text(_cv_cx, _cv_ry, "Station [" + _cv_stars + "]"
+            + ((_cv_rank >= 2) ? "  fully upgraded" : ""));
+        if (_cv_rank < 2) {
+            var _cv_nc = npc_rank_cost(_cv_rank + 1);
+            draw_set_font(ui_font(fnt_ui_small));
+            draw_set_color(make_color_rgb(150, 158, 178));
+            draw_text(_cv_cx, _cv_ry + 32, "[U] Upgrade (" + string(_cv_nc.gold) + "g + " + string(_cv_nc.dust) + " dust):");
+            draw_set_color(make_color_rgb(190, 180, 205));
+            draw_text_ext(_cv_cx, _cv_ry + 60, npc_rank_perk_text(_cv_id, _cv_rank + 1), 26, 460);
+            draw_set_font(ui_font(fnt_ui));
+        } else {
+            draw_set_font(ui_font(fnt_ui_small));
+            draw_set_color(make_color_rgb(130, 138, 158));
+            draw_text(_cv_cx, _cv_ry + 32, npc_rank_perk_text(_cv_id, 1));
+            draw_text(_cv_cx, _cv_ry + 58, npc_rank_perk_text(_cv_id, 2));
+            draw_set_font(ui_font(fnt_ui));
+        }
     } else {
         if (_cv_board_ready > 0) {
             draw_set_color(make_color_rgb(120, 220, 140));
@@ -3348,6 +3373,27 @@ if (bond_dialog_open) {
     draw_set_font(ui_font(fnt_ui_small));
     draw_set_color(make_color_rgb(215, 220, 235));
     draw_text_ext(_bd_tx, _bdy0 + 104, bond_dialog_body, 30, _bdx1 - 48 - _bd_tx);
+    // Floating hearts (M 08-15: "popup and little heart animation") - seeded
+    // in the Step when a tier crossing opens this dialog; ambient loop while
+    // it stays open. Procedural hearts: two lobes + a point, rising with sway.
+    if (variable_instance_exists(id, "bond_dialog_hearts") && array_length(bond_dialog_hearts) > 0) {
+        for (var _bh = 0; _bh < array_length(bond_dialog_hearts); _bh++) {
+            var _h = bond_dialog_hearts[_bh];
+            _h.y   -= _h.vy;
+            _h.sway += 0.06;
+            var _hx = _h.x + sin(_h.sway) * 14;
+            if (_h.y < _bdy0 + 40) { _h.y = _bdy1 + random(40); _h.x = _bdx0 + random(_bdx1 - _bdx0); }
+            var _ha = 0.85 * clamp((_h.y - (_bdy0 + 40)) / 120, 0, 1);
+            var _r  = 7 * _h.sc;
+            draw_set_alpha(_ha);
+            draw_set_color(make_color_rgb(235, 100, 140));
+            draw_circle(_hx - _r * 0.55, _h.y - _r * 0.4, _r * 0.62, false);
+            draw_circle(_hx + _r * 0.55, _h.y - _r * 0.4, _r * 0.62, false);
+            draw_triangle(_hx - _r * 1.12, _h.y - _r * 0.14, _hx + _r * 1.12, _h.y - _r * 0.14,
+                          _hx, _h.y + _r * 1.05, false);
+        }
+        draw_set_alpha(1.0);
+    }
     draw_set_halign(fa_center);
     draw_set_color(make_color_rgb(140, 150, 175));
     draw_set_font(ui_font(fnt_ui_small));
@@ -3475,3 +3521,8 @@ if (zoom_intro_open) {
     draw_set_color(c_white);
     draw_set_font(-1);
 }
+
+// Tab hover quick-ref popup (M 08-15) - drawn dead last so it rides above
+// every vendor screen; the stash is set by whichever tab bar the mouse is on
+// this frame and consumed here.
+ui_draw_tab_tip();

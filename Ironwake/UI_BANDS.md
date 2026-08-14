@@ -229,3 +229,14 @@ y255) — change both together or clicks misroute.
 
 *Started 07-29 from verified reads; extend as screens are touched. Unlisted
 screens are NOT collision-free — they're unaudited.*
+
+## COMBAT LEFT COLUMN (M 08-15 reorder — HARD MAP)
+| y | element |
+|---|---------|
+| 24 | "Lv X" label (fnt_ui) + XP bar x130-405 y34 h12 |
+| 58-94 | Player HP bar (30,58 w375 h36) |
+| 96+ | Buff/debuff status row at x430 (RIGHT of AP pips, below HP line) |
+| 102 | Energy/AP pips |
+| 150 | Secondary resource (Souls/Blood/Prep) |
+| 200-226 | PET bar (w280 h26); guard text x322 y214 |
+| 244 (200 no-pet) | Trap block, then boons/curses stack below |

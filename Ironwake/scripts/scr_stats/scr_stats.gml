@@ -18,9 +18,11 @@ function restock_shops() {
     // Petra special: 50% chance to stock one random elite consumable, qty 1-2
     global.petra_stock_special = undefined;
     global.petra_special_qty   = 0;
-    if (irandom(99) < 50) {
+    // Caravan Contacts (Petra rank 1, M 08-15): her special shelf never runs
+    // empty and carries double stock (was a 50% roll at qty 1-2).
+    if (npc_rank("petra") >= 1 || irandom(99) < 50) {
         global.petra_stock_special = roll_consumable(global.consumables_elite);
-        global.petra_special_qty   = 1 + irandom(1);
+        global.petra_special_qty   = (npc_rank("petra") >= 1) ? (2 + irandom(1)) : (1 + irandom(1));
     }
 
     // Petra's rotating PREMIUM pet feed: one of the premium pool, changes each run.
@@ -34,7 +36,8 @@ function restock_shops() {
     var _dorn_awk     = highest_awakening_unlocked();
     var _dorn_weights = drop_weights("dorn", _dorn_awk);
     var _dorn_count   = 3 + (_dorn_awk >= 2 ? 1 : 0) + (_dorn_awk >= 4 ? 1 : 0)
-                      + (affinity_at_least("dorn", 3) ? 1 : 0);   // Companion perk: +1 stock slot
+                      + (affinity_at_least("dorn", 3) ? 1 : 0)    // Companion perk: +1 stock slot
+                      + ((npc_rank("dorn") >= 1) ? 2 : 0);        // Widened Stall rank perk (08-15)
     var _dorn_disc    = affinity_discount_mult("dorn");           // Friend perk: 10% off (baked at restock)
     repeat (_dorn_count) {
         var _di     = drop_equipment(_dorn_weights, false);
@@ -2113,7 +2116,7 @@ function legendary_recast(item) {
 // forge-exclusive effects, and NAMES it. Components (saved):
 //   forge_comp_frame - Dorn,  Mythril Frame:  400g + 1 Legendary Ingot
 //   forge_comp_core  - Maren, Runeheart Core: 40 dust + a tier-III+ rune
-//   forge_comp_quint - Sable, Quintessence:   200g + any 3 potions distilled
+//   forge_comp_quint - Sable, Quintessence:   200g + 3 DIFFERENT specialty brews (08-15)
 // =============================================================================
 
 function forge_components_ensure() {
@@ -2678,7 +2681,11 @@ function cursed_rebirth_make(src) {
 // Higher awakening = better loot. Premium sources (reliquary) keep no common floor.
 // Source names: "standard", "elite", "boss", "chest", "vault", "reliquary", "dorn".
 // ---------------------------------------------------------------------------
-function drop_weights(source, asc) {
+function drop_weights(source, asc, true_asc = -1) {
+    // true_asc = the character's REAL awakening when `asc` arrives inflated
+    // (boss_drop_weights folds floors into it - the exact leak that handed M a
+    // legendary at A2). The early-tier squeeze below keys on the real tier.
+    var _ta = (true_asc < 0) ? asc : true_asc;
     asc = clamp(asc, 0, 5);
     var _a0, _a5;
     switch (source) {
@@ -2719,6 +2726,20 @@ function drop_weights(source, asc) {
     // from A2 up). Below A4 the weights hold none; restock_shops adds a
     // 1-in-200 jackpot roll instead.
     if (source == "dorn" && asc < 4 && _w[4] > 0) { _w[0] += _w[4]; _w[4] = 0; }
+    // EARLY-TIER SQUEEZE (M-locked 08-15: "slow progression down... very very
+    // low chance over a hard gate"). Below TRUE Awakening 3 the legendary
+    // weight pours into epic, then an ~1-in-8 roll hands back a single point -
+    // net ~0.125% per drop: the one lucky player still exists, barely. Below
+    // TRUE Awakening 2 epics are halved into rare so A0-A1 chases rares.
+    if (_ta < 3 && _w[4] > 0) {
+        _w[3] += _w[4];
+        _w[4]  = (irandom(7) == 0) ? 1 : 0;
+    }
+    if (_ta < 2 && _w[3] > 1) {
+        var _sq = _w[3] div 2;
+        _w[3] -= _sq;
+        _w[2] += _sq;
+    }
     // Premium sources have no common floor: route the leftover into uncommon.
     if (_a0[0] == 0 && _a5[0] == 0) {
         _w[1] += _w[0];
@@ -2736,7 +2757,7 @@ function drop_weights(source, asc) {
 // as a post-roll rarity bump inside drop_equipment. See curse_loot_tier_bonus.)
 // ---------------------------------------------------------------------------
 function boss_drop_weights(asc, fl) {
-    var _w = drop_weights("boss", asc + max(0, fl - 1));
+    var _w = drop_weights("boss", asc + max(0, fl - 1), asc);   // true tier caps the squeeze
     if (fl >= 2) { _w[1] += _w[0]; _w[0] = 0; }   // hard floor: uncommon+
     if (fl >= 3) { _w[2] += _w[1]; _w[1] = 0; }   // hard floor: rare+
     return _w;
@@ -2947,7 +2968,7 @@ function item_compare_rows(_a, _b) {
         array_push(_rows, { label:"Armor", a:"+" + string(_aa), b:"+" + string(_ab), better:sign(_ab - _aa) });
     var _ea = item_base_el_resist(_a), _eb = item_base_el_resist(_b);
     if (_ea > 0 || _eb > 0)
-        array_push(_rows, { label:"El Resist", a:"+" + string(_ea), b:"+" + string(_eb), better:sign(_eb - _ea) });
+        array_push(_rows, { label:"Elem. Resist", a:"+" + string(_ea), b:"+" + string(_eb), better:sign(_eb - _ea) });
 
     var _fa = (variable_struct_exists(_a, "affixes") && is_array(_a.affixes)) ? array_length(_a.affixes) : 0;
     var _fb = (variable_struct_exists(_b, "affixes") && is_array(_b.affixes)) ? array_length(_b.affixes) : 0;
@@ -3818,6 +3839,16 @@ function player_permanent_level() {
 // legendary. (Task 6)
 #macro LEGENDARY_EQUIP_PERM_LEVEL 4
 
+// item_perm_level_req(item) - the PERMANENT-level gate an item carries (0 =
+// none). Shown on the item card like a stat requirement (M 08-15: the gate
+// was invisible until you TRIED to equip).
+function item_perm_level_req(item) {
+    if (is_struct(item) && variable_struct_exists(item, "rarity") && item.rarity >= 4) {
+        return LEGENDARY_EQUIP_PERM_LEVEL;
+    }
+    return 0;
+}
+
 function equip_stat_block_reason(item) {
     if (is_struct(item) && variable_struct_exists(item, "rarity") && item.rarity >= 4
         && player_permanent_level() < LEGENDARY_EQUIP_PERM_LEVEL) {
@@ -4447,7 +4478,10 @@ function rune_catalog() {
         { id:"venom",      name:"Venom",      domain:"aspect", aspect:"school_dmg", school:"poison", vals:[12,20,34], blurb:"+#% Poison damage" },
         { id:"avatar",     name:"Avatar",     domain:"aspect", aspect:"school_dmg", school:"any",    vals:[6,10,17],  blurb:"+#% damage in EVERY element school" },
         { id:"serration",  name:"Serration",  domain:"aspect", aspect:"attack_dmg",                  vals:[10,18,30], blurb:"+#% Physical attack damage" },
-        { id:"hunter",     name:"Hunter",     domain:"aspect", aspect:"ranged_acc",           vals:[8,14,22],  blurb:"+#% Ranged accuracy" },
+        // Accuracy pair NERFED + SPLIT (M-locked 08-15: "nothing will ever miss
+        // again with these over stacked" - was 8/14/22 covering all ranged).
+        { id:"hunter",     name:"Hunter",     domain:"aspect", aspect:"ranged_acc",           vals:[2,3,4],    blurb:"+#% Ranged ATTACK accuracy" },
+        { id:"seer",       name:"Seer",       domain:"aspect", aspect:"spell_acc",            vals:[2,3,4],    blurb:"+#% Spell accuracy" },
         { id:"bulwark",    name:"Bulwark",    domain:"aspect", aspect:"melee_shield",         vals:[2,4,7],    blurb:"Melee attack hits grant # shield" },
         { id:"leech",      name:"Leech",      domain:"aspect", aspect:"drain_heal",           vals:[20,35,60], blurb:"Drain abilities heal +#% more" },
         { id:"surge",      name:"Surge",      domain:"aspect", aspect:"spell_crit",           vals:[4,8,14],   blurb:"+#% Spell crit chance" },
@@ -4572,7 +4606,8 @@ function rune_glyph_color(id) {
         case "finesse":    case "hunter":     case "evasion": return make_color_rgb(90, 205, 110); // green
         case "keen":                          return make_color_rgb(240, 215,  90);  // gold
         case "warding":                       return make_color_rgb(70, 200, 190);   // teal
-        case "insight":    case "surge":      case "quickcast": case "echo": return make_color_rgb(110, 170, 240); // arcane blue
+        case "insight":    case "surge":      case "quickcast": case "echo":
+        case "seer":                          return make_color_rgb(110, 170, 240); // arcane blue
         case "anchor":                        return make_color_rgb(150, 155, 175);  // steel
     }
     return make_color_rgb(160, 200, 240);
@@ -4752,8 +4787,12 @@ function rune_aspect_damage_pct(ab) {
 
 // Flat accuracy points for ranged actions (Hunter).
 function rune_aspect_ranged_acc(ab) {
+    // Split (M-locked 08-15): Hunter = ranged PHYSICAL attacks only; the new
+    // Seer aspect covers spell accuracy (any spell class). Same entry point so
+    // every accuracy consumer picks up both.
     var _ac = ability_attack_class(ab);
-    if (_ac == "ranged_attack" || _ac == "ranged_spell") return rune_aspect_value("ranged_acc", undefined);
+    if (_ac == "ranged_attack") return rune_aspect_value("ranged_acc", undefined);
+    if (ability_class_is_spell(_ac)) return rune_aspect_value("spell_acc", undefined);
     return 0;
 }
 
@@ -4875,10 +4914,16 @@ function rune_combine_groups() {
 // Combine cost {gold, dust} by source tier. Gold is CHA-discounted. Endless
 // tiers double per step from III->IV = 400g + 60 dust (M locked 07-27).
 function rune_combine_cost(tier) {
-    if (tier <= 1) return { gold: cha_price(50),  dust: 10 };
-    if (tier == 2) return { gold: cha_price(150), dust: 30 };
-    var _mult = power(2, tier - 3);
-    return { gold: cha_price(400 * _mult), dust: 60 * _mult };
+    var _c;
+    if (tier <= 1)      _c = { gold: cha_price(50),  dust: 10 };
+    else if (tier == 2) _c = { gold: cha_price(150), dust: 30 };
+    else {
+        var _mult = power(2, tier - 3);
+        _c = { gold: cha_price(400 * _mult), dust: 60 * _mult };
+    }
+    // Etching Bench (Maren rank 1, M-locked 08-15): 20% less dust.
+    if (npc_rank("maren") >= 1) _c.dust = max(1, round(_c.dust * 0.80));
+    return _c;
 }
 
 // Combine 3x (id, tier) -> 1x (id, tier+1), paying gold+dust. "" on success else reason.
@@ -5354,15 +5399,39 @@ function chaotic_downside_roll() {
     return                { kind: "sluggish", label: "it numbs the arm (-1 AP when drunk in battle)" };
 }
 
-// QUINTESSENCE (LEGENDARY FORGE component, M locked 07-28): distill ANY 3
-// potions + gold into Sable's share of the forge. Mirrors the chaotic fuse's
-// consumption (combined pool indices); yields no consumable - the component
-// counter is the product.
+// QUINTESSENCE (LEGENDARY FORGE component; RE-LOCKED 08-15): distill THREE
+// DIFFERENT SPECIALTY brews + gold into Sable's share of the forge. "Any 3
+// commons" read too cheap for a Legendary Forge part (M). Mirrors the chaotic
+// fuse's consumption; yields no consumable - the component counter is the
+// product.
+function sable_quint_specialty() {
+    return ["Aegis Draught", "Lesser Aegis Draught", "Master Healing Draught",
+            "Phoenix Tonic", "Cleansing Philter", "Ley Battery",
+            "Goldfinger Elixir", "Faerie's Tear"];
+}
+function sable_is_specialty_brew(_nm) {
+    var _sp = sable_quint_specialty();
+    for (var _i = 0; _i < array_length(_sp); _i++) if (_sp[_i] == _nm) return true;
+    return false;
+}
 function sable_quintessence_distill(indices) {
     if (array_length(indices) != 3) return "Choose exactly 3 potions.";
     var _pool = sable_potion_pool();
     for (var _i = 0; _i < 3; _i++) {
         if (indices[_i] < 0 || indices[_i] >= array_length(_pool)) return "Choose exactly 3 potions.";
+    }
+    // Specialty + distinct gates (M-locked 08-15).
+    var _names = [];
+    for (var _i = 0; _i < 3; _i++) {
+        var _qp = _pool[indices[_i]];
+        var _qn = variable_struct_exists(_qp, "name") ? _qp.name : "";
+        if (!sable_is_specialty_brew(_qn)) {
+            return "Quintessence asks Sable's OWN craft - three different specialty brews.";
+        }
+        for (var _j = 0; _j < array_length(_names); _j++) {
+            if (_names[_j] == _qn) return "Three DIFFERENT specialty brews - no repeats.";
+        }
+        array_push(_names, _qn);
     }
     var _fee = forge_quint_cost();
     if (global.gold < _fee) return "Need " + string(_fee) + "g.";
@@ -6412,6 +6481,101 @@ function affinity_tier(id) {
 }
 function affinity_at_least(id, tier) { return affinity_tier(id) >= tier; }
 function affinity_tier_name(id)      { return affinity_tier_name_for(affinity_tier(id)); }
+
+// affinity_deepen_line(id, tier) - the friendly lore beat shown in the bond
+// popup when a tier is crossed (M 08-15: "friendly lore text unless elevation
+// to lover occurs"). Tier 4 = the Lover elevation gets its own line.
+function affinity_deepen_line(id, tier) {
+    var _lover = (tier >= 4);
+    switch (id) {
+        case "dorn":  return _lover
+            ? "Dorn wipes the soot from his hands before he takes yours. \"Forge-warm,\" he mutters. \"Stay.\""
+            : "Dorn says nothing - but the next blade he sets on the counter is turned handle-first, the way smiths only do for their own.";
+        case "maren": return _lover
+            ? "Maren pulls her facewrap down, and for once the runes can wait. \"Runes hold,\" she says. \"So do I.\""
+            : "Maren traces a rune in the air between you. It hangs there a moment - a small warmth that was never for sale.";
+        case "sable": return _lover
+            ? "Sable's laugh loses its edge entirely. \"All my best poisons,\" she says, \"and you went and drank the honest one.\""
+            : "Sable slides you a vial you didn't pay for. \"Careful,\" she smiles. \"That one's sweet.\"";
+        case "vex":   return _lover
+            ? "Vex squares your shoulders with both hands and doesn't let go. \"Guard up. Not against me.\""
+            : "Vex nods once - a standing ovation, by Vex's measure. The sparring dummy stands reset for you before you ask.";
+        case "petra": return _lover
+            ? "Petra closes the ledger entirely. \"On the house,\" she says. \"All of it. Don't tell the house.\""
+            : "Petra rounds your total down and calls it arithmetic. Her ledger says otherwise.";
+        case "vael":  return _lover
+            ? "Vael tilts your chin toward the firelight. \"There. My finest work yet.\""
+            : "Vael studies you like a canvas half-finished. \"Better. The dark suits you.\"";
+        case "bairc": return _lover
+            ? "Bairc stands beside you at the garden fence a long while. \"They like you,\" he says at last. \"So do I, stranger. So do I.\""
+            : "Bairc grunts and lets you feed the hatchlings yourself. From him, that is a vow.";
+    }
+    return "";
+}
+
+// =============================================================================
+// NPC PROGRESSION (M-locked 08-15, "Both, layered"): each station carries
+// INVESTMENT RANKS 0-2 bought with gold+dust ([U] on the hub carousel);
+// a rank UNLOCKS a service, BOND tiers make that NPC cheaper on top
+// (Friend 5% / Companion 10% / Lover 15%). Ranks persist in global.npc_ranks.
+// =============================================================================
+function npc_ranks_ensure() {
+    if (!variable_global_exists("npc_ranks") || !is_struct(global.npc_ranks)) global.npc_ranks = {};
+}
+function npc_rank(id) {
+    npc_ranks_ensure();
+    return variable_struct_exists(global.npc_ranks, id) ? variable_struct_get(global.npc_ranks, id) : 0;
+}
+function npc_rank_cost(next) { return (next <= 1) ? { gold: 300, dust: 20 } : { gold: 900, dust: 60 }; }
+function npc_rank_perk_text(id, rank) {
+    switch (id + ":" + string(rank)) {
+        case "dorn:1":  return "Widened Stall - Dorn stocks 2 more pieces";
+        case "dorn:2":  return "Master Anvil - temper steps grant +12% quality";
+        case "maren:1": return "Etching Bench - combining runes costs 20% less dust";
+        case "maren:2": return "Deep Socket - once per run, +1 socket into an equipped piece ([D] at Socket Gear)";
+        case "sable:1": return "Second Cauldron - her brews cost 10% less";
+        case "sable:2": return "Sealed Reserve - Chaotic Brew downsides are HALVED";
+        case "vex:1":   return "Sparring Yard - abilities and traits cost 10% less";
+        case "vex:2":   return "Drill Regimen - your first purchase each visit is 25% off";
+        case "petra:1": return "Second Ledger Line - run TWO trade orders at once; her special shelf never runs empty";
+        case "petra:2": return "Favored Client - trades deliver 1 floor sooner at 75-95% quality; selling pays 10% more";
+        case "vael:1":  return "Atelier - tints and skins cost 20% less";
+        case "vael:2":  return "Private Gallery - one free portrait change each run";
+        case "bairc:1": return "Warm Pens - the roster's hunger drains 30% slower";
+        case "bairc:2": return "Night Garden - garden donations grow 50% faster";
+    }
+    return "";
+}
+function npc_rank_buy(id) {
+    npc_ranks_ensure();
+    var _r = npc_rank(id);
+    if (_r >= 2) return "The station is fully upgraded.";
+    var _c = npc_rank_cost(_r + 1);
+    if (!variable_global_exists("rune_dust")) global.rune_dust = 0;
+    if (global.gold < _c.gold || global.rune_dust < _c.dust) {
+        return "Needs " + string(_c.gold) + "g + " + string(_c.dust) + " dust.";
+    }
+    global.gold      -= _c.gold;
+    global.rune_dust -= _c.dust;
+    variable_struct_set(global.npc_ranks, id, _r + 1);
+    save_game();
+    return "";
+}
+// Bond-tier service discount layered on rank perks.
+function npc_bond_discount(id) {
+    var _t = affinity_tier(id);
+    return (_t >= 4) ? 0.15 : ((_t >= 3) ? 0.10 : ((_t >= 2) ? 0.05 : 0));
+}
+// Rank+bond-aware price for an NPC's SERVICES (not base goods sale prices yet -
+// per-vendor wiring lands site by site).
+function npc_service_price(id, base) {
+    var _m = 1 - npc_bond_discount(id);
+    if (id == "sable" && npc_rank("sable") >= 1) _m *= 0.90;
+    if (id == "vex"   && npc_rank("vex")   >= 1) _m *= 0.90;
+    if (id == "vael"  && npc_rank("vael")  >= 1) _m *= 0.80;
+    return max(1, floor(base * _m));
+}
+
 
 // How many NPCs currently sit at exactly the given tier (scarcity-cap checks).
 function affinity_count_at_tier(tier) {
@@ -8029,7 +8193,11 @@ function petra_order_active() {
 // Friend (>=2): -10% on Petra gold costs (trade fee + her consumable shop).
 function petra_gold_mult()          { return affinity_at_least("petra", 2) ? 0.90 : 1.0; }
 // Companion (>=3): faster delivery - shave 1 floor off the cost (min 1).
-function petra_delivery_reduction() { return affinity_at_least("petra", 3) ? 1 : 0; }
+function petra_delivery_reduction() {
+    // Companion bond shaves 1 floor; Favored Client (rank 2, M-locked 08-15)
+    // shaves another.
+    return (affinity_at_least("petra", 3) ? 1 : 0) + ((npc_rank("petra") >= 2) ? 1 : 0);
+}
 // Cancel-recovery band [min,max] by Petra tier (Stranger..Friend 0-1, Companion 1-2, Lover 2-3).
 function petra_cancel_band() {
     var _t = affinity_tier("petra");
@@ -8106,6 +8274,9 @@ function petra_make_item(rarity, dust_bias) {
         var _alt = petra_roll_one(rarity);
         if (petra_item_quality(_alt) > petra_item_quality(_best)) _best = _alt;
     }
+    // Favored Client (rank 2, M-locked 08-15): her caravan delivers FINISHED
+    // work - the traded-up piece re-stamps at quality 75-95.
+    if (npc_rank("petra") >= 2) item_quality_stamp(_best, 75, 95);
     return _best;
 }
 // A clean base item of a rarity (no affixes) - what a cancel recovers.
@@ -8712,7 +8883,10 @@ function pet_hunger_run_tick() {
         var _p = _r[_i];
         if (!is_struct(_p) || _p.is_egg) continue;
         pet_hunger(_p);   // ensure the field exists
-        var _drain = (_p == _act) ? 20 : 10;
+        // Base drain RAISED 20/10 -> 28/14 (M-locked 08-15) so Bairc's
+        // Warm Pens rank perk (30% slower, whole roster) feels real.
+        var _drain = (_p == _act) ? 28 : 14;
+        if (npc_rank("bairc") >= 1) _drain = round(_drain * 0.70);
         // Grateful Belly quirk (08-01, pillar C): hunger drains 25% slower.
         if (pet_quirk_has(_p, "grateful_belly")) _drain = round(_drain * 0.75);
         // Green Memory (witchwood_fawn innate, 08-06): while ACTIVE its hunger
@@ -8758,7 +8932,7 @@ function pet_feed_catalog() {   // the 3 always-stocked basics
 function pet_feed_premium_pool() {
     return [
         { id:"mending_mash", name:"Mending Mash",  growth:3, gold:95,  perk:"mend",  blurb:"knits a wounded creature back together (heals one injury)" },
-        { id:"purgeroot",    name:"Purgeroot Loaf", growth:3, gold:110, perk:"purge", blurb:"bitter root that quiets a corrupting hunger (cures a Pushing pet)" },
+        { id:"purgeroot",    name:"Purgeroot Loaf", growth:3, gold:110, perk:"purge", blurb:"bitter root that quiets a corrupting hunger (cures a CORRUPTED pet)" },
         { id:"hearty_roast", name:"Hearty Roast",  growth:6, gold:130, perk:"none",  blurb:"a feast - the fastest growth gold can buy" },
     ];
 }
@@ -9264,7 +9438,7 @@ function pet_species_innate(species_id) {
         case "hollow_pup":       return { name:"Empty Comfort",  fx:"heal_recv",  val:5,  desc:"+5% to all healing you receive." };
         case "duskraven":        return { name:"Last Words",     fx:"elite_gold", val:15, desc:"It collects last words - +15 gold whenever an ELITE dies." };
         case "pale_widow":       return { name:"Venom Thread",   fx:"dot_turns",  val:1,  desc:"Your Bleed and Poison last 1 extra turn." };
-        case "shellback":        return { name:"Runeshell",      fx:"armor_res",  val:1,  desc:"+1 Armor and +1 El Resist while it is your companion." };
+        case "shellback":        return { name:"Runeshell",      fx:"armor_res",  val:1,  desc:"+1 Armor and +1 Elem. Resist while it is your companion." };
         case "thorn_boar":       return { name:"Bramble Hide",   fx:"thorns",     val:2,  desc:"Enemies that strike you take 2 damage back." };
         case "glimmer_slime":    return { name:"Gemcrust",       fx:"gold",       val:4,  desc:"+4% gold find while it is your companion." };
         case "sporeling":        return { name:"Spore Cloud",    fx:"spore",      val:5,  desc:"Enemies that strike you have a 5% chance to be Poisoned." };
@@ -9278,7 +9452,7 @@ function pet_species_innate(species_id) {
         case "mire_heron":     return { name:"Patient Strike",  fx:"patient_crit", val:4,  desc:"+4% Phys Crit if you spent no AP last turn." };
         case "gravel_tick":    return { name:"Cling",           fx:"dot_turns",    val:1,  desc:"Your Bleed and Poison last 1 extra turn." };
         case "ashjaw_lynx":    return { name:"Heat Sense",      fx:"vs_burning",   val:5,  desc:"+5% damage to Burning enemies." };
-        case "glass_eel":      return { name:"Slipstream",      fx:"el_resist",    val:1,  desc:"+1 El Resist while it is your companion." };
+        case "glass_eel":      return { name:"Slipstream",      fx:"el_resist",    val:1,  desc:"+1 Elem. Resist while it is your companion." };
         case "chapel_bat":     return { name:"Vespers",         fx:"room_heal",    val:2,  desc:"Heal 2 HP whenever you clear a combat room." };
         case "barrow_mole":    return { name:"Turned Earth",    fx:"cache_find",   val:6,  desc:"+6% chance of an extra item from floor caches." };
         case "tallow_moth":    return { name:"Guttering Light", fx:"heal_recv",    val:20, desc:"Its glow deepens every mend - +20% to all healing you receive." };
@@ -9292,7 +9466,7 @@ function pet_species_innate(species_id) {
         case "permafrost_toad":return { name:"Slow Thaw",       fx:"dot_halve",    val:1,  desc:"The first Burn or Poison applied to you each combat is halved." };
         case "icewing_skua":   return { name:"Scavenger's Eye", fx:"gold",         val:5,  desc:"+5% gold find while it is your companion." };
         case "pyre_bison":     return { name:"Bankfire",        fx:"fire",         val:4,  desc:"Your Fire-school abilities strike for +4 bonus Fire damage." };
-        case "crypt_gryphon":  return { name:"Old Vigil",       fx:"armor_res",    val:2,  desc:"+2 Armor and +2 El Resist while it is your companion." };
+        case "crypt_gryphon":  return { name:"Old Vigil",       fx:"armor_res",    val:2,  desc:"+2 Armor and +2 Elem. Resist while it is your companion." };
         case "threehunger":    return { name:"Three Appetites", fx:"crit_phys",    val:4,  desc:"+4% Phys Crit while it is your companion." };
         case "wing_hare":      return { name:"Unremarkable",    fx:"slip",         val:12, desc:"The first blow aimed at you each combat has a 12% chance to miss." };
         case "stormkirin":     return { name:"Charged Air",     fx:"crit_spell",   val:5,  desc:"+5% Spell Crit while it is your companion." };
@@ -9614,6 +9788,9 @@ function pet_effect_body(pet) {
         var _pp = string_pos(_prefixes[_i], _t);
         if (_pp > 0) _t = string_delete(_t, _pp, string_length(_prefixes[_i]));
     }
+    // Sentence-case after the prefix strip (M 08-15: "strikes an enemy each
+    // turn..." rendered lowercase under GRANTS).
+    if (_t != "") _t = string_upper(string_char_at(_t, 1)) + string_delete(_t, 1, 1);
     return _t;
 }
 
@@ -10667,7 +10844,7 @@ function hatch_cutscene_step() {
             // (touch, 8d: a tap dismisses too - the reveal was Enter/Esc-only)
             if (hatch_t >= HATCH_REVEAL_MIN &&
                 (input_confirm() || input_confirm_alt() || input_cancel()
-                 || (input_device() == 2 && mouse_check_button_pressed(mb_left)))) {
+                 || (mouse_check_button_pressed(mb_left)))) {
                 if (!hatch_done) { pet_hatch(hatch_pet); hatch_done = true; }
                 bairc_notification = hatch_pet.name + " hatches - a "
                     + pet_archetype_name(hatch_pet.archetype) + " baby!";
@@ -10949,7 +11126,7 @@ function tutorial_catalog() {
         { id:"origin_egg",  title:"Something Stirs",    body:"The egg you stumbled upon in your travels stirs - perhaps someone here can help with that. Bairc the beast-warden can identify and hatch it: find him on the camp carousel and set the egg under his care. A raised creature fights beside you, or blesses your runs." },
         { id:"bond_gates",  title:"Growing Closer",     body:"Someone in camp has warmed to you - their bond has reached a GATE. Crossing a gate now takes a FAVOR: talk to them and take on their gate quest (it appears on the tavern board and in your Journal). Finish it and the friendship deepens, unlocking their next perk. Mind your bonds: friendships DECAY if neglected, and only a few can hold the deepest tiers - deepening one may demote another." },
         { id:"maren_forge", title:"Rough Steel",       body:"Items drop UNFINISHED. The QUALITY tag shows how much of an item's true power it delivers right now.\nDorn's TEMPER tab raises that by +10% per step, for gold and rune dust. Each step also adds a little bonus max HP.\nA raw legendary barely beats a finished epic - always worth tempering what you love." },
-        { id:"dormant_leg", title:"A Sleeping Legend", body:"You found a DORMANT legendary. It fell asleep when its last bearer died - it carries only a shadow of its true strength for now. Take it to Maren's AWAKEN craft (Forge tab): 300g, 60 rune dust and two epics fed to the fire will wake it. Only the storied named legendaries are ever found awake." },
+        { id:"dormant_leg", title:"A Sleeping Legend", body:"You found a DORMANT legendary. It fell asleep when its last bearer died - it carries only a shadow of its true strength for now. Take it to Maren's AWAKEN craft (Runesmithing tab): 300g, 60 rune dust and two epics fed to the fire will wake it. Only the storied named legendaries are ever found awake." },
         { id:"dorn_reforge", title:"Reforge Ingots",   body:"You earned a REFORGE INGOT.\nSpend it at Dorn's to REROLL the affixes on a piece of unequipped gear - same item, fresh random stats.\nIngots are tiered by rarity. A higher-tier ingot works on anything at its tier or below.\nSMELTING gear at Dorn's pays an ingot back, so nothing is ever wasted." },
         { id:"legendary_forge", title:"Dorn's Forge",   body:"Two crafts live at this anvil.\nREWORK: spend a REFORGE INGOT of the item's tier or higher to reroll its affixes. Three ingots of one tier FUSE into one of the next.\nTHE LEGENDARY FORGE: gather three parts - Dorn's MYTHRIL FRAME, Maren's RUNEHEART CORE, and Sable's QUINTESSENCE - then return here to forge, and NAME, a legendary that exists nowhere else." },
         // First talent point earned mid-run (M 08-08). The web system was
@@ -10962,6 +11139,10 @@ function tutorial_catalog() {
         { id:"traps_deployed", title:"The Floor Is Yours", body:"That trap is SET, not thrown - it sits between you and them and waits. It springs on the first enemy action that matches it: a melee swing, a ranged shot, a spell, or anything at all. A trap that BLOCKS cancels the attack outright and eats their turn. Watch the enemy intent gems and set the trap that answers what they are about to do - a correct read is worth far more than the damage. You hold two traps at once, and your Preparation only refills while the board is EMPTY." },
         { id:"talent_first", title:"Mastery",           body:"You have cast that ability enough times to MASTER it - it just earned its first TALENT POINT. Back at camp, open the loadout screen: every ability has its own web of talents, and points are woven there to change how it works. Abilities earn points at 10, 30, 60 and 100 lifetime casts, so the ones you actually USE are the ones that deepen. Experiment - some talents are a subtle nudge, others rewrite the ability completely. Your Abilities tab tracks every ability under TALENTS." },
         { id:"corruption_101", title:"Corruption",      body:"A creature in your care is CORRUPTED. The bargain: while it pushes (3 survived runs as your active companion), YOU pay -20% max HP and -10% damage. Each pushed run adds a PERMANENT +15% to its passive gift. You may CURE it at Bairc's any time - the gains earned so far are kept, the burden lifts, but its grand power is forfeit. See it through all 3 runs and it fully corrupts: its gift is 45% stronger forever, the burden ends, and it earns a grand boon. The full table lives in the Compendium under Companions." },
+        // The hidden price of full corruption (M-locked 08-15): deliberately
+        // NOT mentioned in corruption_101 - it fires as a surprise reveal the
+        // first time a pet fulfills.
+        { id:"corruption_fulfilled", title:"What the Dark Keeps", body:"Your companion has FULLY CORRUPTED. Its gift is 45% stronger forever, its grand power is awake - and something else came through with it.\nThe dark holds a thread of its leash now: in any fight, there is a small chance (1 in 10) the corruption TURNS - a corrupted Warrior will savage YOU instead of the enemy, and any other companion may simply refuse to help while its eyes go black.\nBairc can still CURE it - the strength stays, the grand power is lost, and the thread is severed. Or keep the power, and live with what watches through it." },
         // Pattern Book (08-11): fires on the reforge tab once the Legendary
         // Forge coach-mark has been seen (one tutorial at a time).
         { id:"pattern_book", title:"The Pattern Book", body:"Dorn keeps a PATTERN BOOK.\nSMELT [T] destroys unequipped gear. You get a REFORGE INGOT of its tier, and Dorn STUDIES one affix from the piece - you pick which.\nONE study lets you craft that affix at UNCOMMON. 3 studies unlock RARE work, 6 unlock EPIC - and rarer fodder teaches faster (an Epic piece counts as 3 studies fresh).\nCRAFT [N] then builds an item to YOUR design - type, slot, quality, stats, affixes, art and name. Deeper study rolls better numbers, and unused affix slots BOOST the affixes you do take.\nBrowse the book any time with [B]." },
@@ -12048,6 +12229,13 @@ function event_apply_effects(fx) {
             if (_bd != undefined) array_push(_sum, "BOON: " + _bd.name + "!");
         }
     }
+    // Merchant's Ghost popup shop (M-locked 08-15): builds the spectral stock;
+    // the floor controller opens the shop overlay when this result closes
+    // (borrowed-memory pattern).
+    if (variable_struct_exists(fx, "ghost_shop") && fx.ghost_shop) {
+        ghost_shop_build_stock();
+        array_push(_sum, "The cart unfolds - shelves that were not there a breath ago...");
+    }
     // Carried sickness (Wounded Wanderer, M 08-14): fx.sicken = poison dmg/turn
     // the player carries into the NEXT fight (applied in obj_combat_controller
     // Create via global.pending_sickness, 3 turns).
@@ -12059,6 +12247,90 @@ function event_apply_effects(fx) {
     var _str = "";
     for (var _i = 0; _i < array_length(_sum); _i++) _str += (_i > 0 ? "\n" : "") + _sum[_i];
     return _str;
+}
+
+// =============================================================================
+// MERCHANT'S GHOST SHOP (M-locked 08-15). Stock = rare+ loot rolled ONE tier
+// above the current awakening, a decent chance of a hand-authored GHOST
+// EXCLUSIVE (found nowhere else), and strong runes. Prices carry a haunted
+// discount vs Dorn (x2.4 vs his x3.2). global.ghost_stock rows:
+//   { kind:"item"|"rune", item|rune, price, sold }
+// =============================================================================
+function ghost_exclusive_catalog(_asc) {
+    // Awakening-banded authored pieces, stamped ghost_exclusive.
+    var _band = (_asc >= 4) ? 2 : ((_asc >= 2) ? 1 : 0);
+    var _out = [];
+    if (_band == 0) {
+        var _g1 = create_item("Lantern-Keeper's Cowl", "helm", 2, "WIS", 4,
+            "a hood that remembers every toll road it ever walked", 90);
+        array_push(_g1.affixes, { suffix: "of Greed", prefix: "Waxlit", stat_name: "gold_find", stat_value: 8 });
+        array_push(_out, _g1);
+        var _g2 = create_item("Coin-Weighted Knuckles", "gloves", 2, "STR", 4,
+            "the peddler settled more than one debt by hand", 90);
+        array_push(_g2.affixes, { suffix: "of Ruin", prefix: "Weighted", stat_name: "crit_flat", stat_value: 4 });
+        array_push(_out, _g2);
+    } else if (_band == 1) {
+        var _g3 = create_item("Ghostlight Buckler", "offhand", 2, "CON", 5,
+            "it glows faintly where the last owner's hand should be", 130);
+        array_push(_g3.affixes, { suffix: "of Slipping", prefix: "Ghostlit", stat_name: "dodge_flat", stat_value: 3 });
+        array_push(_out, _g3);
+        var _g4 = create_item("The Peddler's Last Ring", "ring", 3, "CHA", 5,
+            "sold a hundred times, returned a hundred and one", 210);
+        array_push(_g4.affixes, { suffix: "of the Hollow Sale", prefix: "Returned", stat_name: "gold_find", stat_value: 10 });
+        array_push(_out, _g4);
+    } else {
+        var _g5 = create_item("Cart-Axle Maul", "weapon", 3, "STR", 6,
+            "the axle of the cart that never stops arriving", 260);
+        _g5.weapon_damage = weapon_base_damage(3);
+        _g5.two_handed    = true;
+        array_push(_g5.affixes, { suffix: "of Ruin", prefix: "Axle-Forged", stat_name: "crit_flat", stat_value: 5 });
+        array_push(_out, _g5);
+        var _g6 = create_item("Receipt of the Unpaid Debt", "amulet", 3, "INT", 6,
+            "someone, somewhere, still owes - and the amulet remembers", 260);
+        array_push(_g6.affixes, { suffix: "of Greed", prefix: "Countersigned", stat_name: "gold_find", stat_value: 12 });
+        array_push(_out, _g6);
+    }
+    for (var _i = 0; _i < array_length(_out); _i++) {
+        var _gi = _out[_i];
+        _gi.base_name       = _gi.name;
+        _gi.class_req       = -1;
+        _gi.ghost_exclusive = true;
+        _gi.socket_count    = rune_sockets_for_rarity(_gi.rarity);
+        item_quality_stamp(_gi, 70, 90);
+    }
+    return _out;
+}
+
+function ghost_shop_build_stock() {
+    var _asc  = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
+    var _rows = [];
+    // 3 rolled pieces from ONE awakening above yours, rare floor.
+    var _gw = drop_weights("reliquary", min(5, _asc + 1), _asc);
+    var _spill = _gw[0] + _gw[1];
+    _gw[0] = 0; _gw[1] = 0; _gw[2] += _spill;    // rare+ only
+    repeat (3) {
+        var _it = drop_equipment(_gw, false);
+        item_quality_stamp(_it, 65, 88);
+        array_push(_rows, { kind: "item", item: _it,
+            price: max(1, floor(_it.gold_value * 2.4)), sold: false });
+    }
+    // Decent chance (60%) of ONE ghost-exclusive from the band catalog.
+    if (irandom(99) < 60) {
+        var _ex = ghost_exclusive_catalog(_asc);
+        if (array_length(_ex) > 0) {
+            var _pick = _ex[irandom(array_length(_ex) - 1)];
+            array_push(_rows, { kind: "item", item: _pick,
+                price: max(1, floor(_pick.gold_value * 2.4)), sold: false });
+        }
+    }
+    // 2 strong runes (tier 2; tier 3 from awakening 3 up).
+    repeat (2) {
+        var _rt = (_asc >= 3) ? 3 : 2;
+        var _rn = rune_make(rune_random(_rt).id, _rt);
+        array_push(_rows, { kind: "rune", rune: _rn,
+            price: (_rt >= 3) ? 420 : 160, sold: false });
+    }
+    global.ghost_stock = _rows;
 }
 
 // Pick one random event from the catalog (roll-on-entry; not seed-critical).
@@ -12416,26 +12688,19 @@ function event_catalog() {
         ]
     });
 
-    // --- 6. Merchant's Ghost (cha_cost choices get the CHA discount) --------
-    var _mg_cost = [35, 55, 85];
-    var _mg_dmg  = [6, 8, 10];
+    // --- 6. Merchant's Ghost (M-locked 08-15 rework: a POPUP SHOP of rare
+    // wares - loot rolled above your awakening, a chance of ghost-exclusive
+    // hand-authored pieces, and strong runes; browse and buy as you like) ----
     array_push(_cat, {
         id: "merchants_ghost",
         title: "Merchant's Ghost",
         body: "A translucent peddler tips a spectral hat, wares shimmering on a phantom cart.",
         color: make_color_rgb(100, 160, 230),
         choices: [
-            { label: "Haggle & buy", hint: "Pay for a RARE piece of gear (CHA lowers the price)",
-              cost_gold: _mg_cost[_fl], cha_cost: true, req_stat: "", req_amount: 0, resolve: "weighted",
-              outcomes: [ { weight: 100, text: "Coin changes hands. The gear is solid.",
-                            effects: { item: "vault", item_min: 2 } } ] },
-            { label: "Intimidate", hint: "STR check - take the goods for free, or be lashed",
-              cost_gold: 0, req_stat: "", req_amount: 0, resolve: "check",
-              check_stat: "STR", check_base: 40, check_per: 6, check_ref: 6,
-              success: { text: "The ghost flinches and lets you take a piece - free.",
-                         effects: { item: "vault", item_min: 2 } },
-              fail:    { text: "The ghost recoils, then lashes out with spectral cold.",
-                         effects: { hp: -_mg_dmg[_fl] } } },
+            { label: "Browse the wares", hint: "The dead keep the best stock - and haunted prices",
+              cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+              outcomes: [ { weight: 100, text: "The peddler sweeps a sheet from the cart with a flourish only bones can manage.",
+                            effects: { ghost_shop: true } } ] },
             { label: "Decline", hint: "Wave the peddler off",
               cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
               outcomes: [ { weight: 100, text: "The cart fades back into the gloom.", effects: {} } ] }

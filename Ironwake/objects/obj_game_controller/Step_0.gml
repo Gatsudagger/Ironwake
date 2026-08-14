@@ -1376,7 +1376,7 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()) {
             // the deal: +5% per tier (Acquaintance..Lover -> +0%..+20%). (Task: affinity sell)
             var _shop_npc   = (shop_open == 0) ? "petra" : "dorn";
             var _sell_tier  = affinity_tier(_shop_npc);
-            var _sell_price = max(1, floor(_gv * 0.4 * (1 + 0.05 * _sell_tier)));
+            var _sell_price = max(1, floor(_gv * 0.4 * (1 + 0.05 * _sell_tier) * ((npc_rank("petra") >= 2) ? 1.10 : 1.0)));   // Trade Ledger rank perk (08-15)
 
             // Rare-or-above items need a second confirmation step
             var _needs_confirm = variable_struct_exists(_cur_item, "rarity") && _cur_item.rarity >= 2;
@@ -2188,7 +2188,7 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()) {
                 global.rune_dust -= _tp_fee.dust;
                 // Snapshot BEFORE mutating - the reveal popup runs after (M 08-08).
                 var _tp_was = item_shallow_copy(_tp_it);
-                _tp_it.quality = min(100, (variable_struct_exists(_tp_it, "quality") ? _tp_it.quality : 100) + 10);
+                _tp_it.quality = min(100, (variable_struct_exists(_tp_it, "quality") ? _tp_it.quality : 100) + ((npc_rank("dorn") >= 2) ? 12 : 10));   // Master Anvil rank perk (08-15)
                 // No icon_seed re-roll (M 08-11): tempering never changes a piece's look.
                 save_game();
                 shop_notification = _tp_it.name + " tempered to " + string(_tp_it.quality) + "%"
@@ -3325,11 +3325,21 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open) {
         // C: cure a pushed corrupted pet (keeps the gains so far, drops the debuff,
         // forfeits the grand ability).
         if (input_hotkey("C") || input_inject_take("bairc:C")) {
-            var _cure = pet_corruption_cure(_bp);
-            if (_cure != "") {
-                bairc_notification = _cure;
-                audio_play_sound(snd_npc_confirm, 1, false);
-                if (room == rm_hub || room == rm_character_select) save_game();
+            // Two-press confirm (M 08-15: "i just automatically cured one
+            // corrupt pet" - curing forfeits the grand power, so it asks first).
+            if (!variable_instance_exists(id, "bairc_cure_arm")) bairc_cure_arm = undefined;
+            if (pet_corr_state(_bp) == "pushing" && bairc_cure_arm != _bp) {
+                bairc_cure_arm = _bp;
+                bairc_notification = "Cure " + _bp.name + "? It KEEPS its dark strength but FORFEITS the grand power. Press [C] again to confirm.";
+                audio_play_sound(snd_page, 1, false);
+            } else {
+                var _cure = pet_corruption_cure(_bp);
+                bairc_cure_arm = undefined;
+                if (_cure != "") {
+                    bairc_notification = _cure;
+                    audio_play_sound(snd_npc_confirm, 1, false);
+                    if (room == rm_hub || room == rm_character_select) save_game();
+                }
             }
         }
 

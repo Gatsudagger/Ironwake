@@ -20,7 +20,7 @@ if (phase == "cutscene") {
     // Any key after the grace period skips straight to the title screen
     // (touch, 8c: a tap counts as the any-key)
     if (skip_timer > skip_hold
-        && (input_any() || (input_device() == 2 && mouse_check_button_pressed(mb_left)))) {
+        && (input_any() || (mouse_check_button_pressed(mb_left)))) {
         phase = "title";
         exit;
     }
@@ -149,10 +149,12 @@ if (phase == "cutscene") {
     if (nav_left())  { slot_selected = wrap_index(slot_selected - 1, 3); slot_confirm = false; }
     if (nav_right()) { slot_selected = wrap_index(slot_selected + 1, 3); slot_confirm = false; }
 
-    // Touch (8c): tap a slot card to highlight, tap the highlighted card to
+    // Tap OR CLICK a slot card to highlight, tap/click the highlighted card to
     // confirm (simulated Enter keeps the overwrite two-step intact). Cards match
-    // the Draw layout: x = 150 + s*555, y 330..660, w 510.
-    if (input_device() == 2 && mouse_check_button_pressed(mb_left)) {
+    // the Draw layout: x = 150 + s*555, y 330..660, w 510. Was touch-gated
+    // (input_device()==2) - desktop clicks did NOTHING (M 08-15: "clicking must
+    // work on everything"; same class as the round-12 title-row fix).
+    if (mouse_check_button_pressed(mb_left)) {
         var _smx = device_mouse_x_to_gui(0);
         var _smy = device_mouse_y_to_gui(0);
         for (var _si = 0; _si < 3; _si++) {

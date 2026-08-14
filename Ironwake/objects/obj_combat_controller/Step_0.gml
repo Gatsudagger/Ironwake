@@ -933,15 +933,23 @@ if (player_turn) {
                                 }
                             }
                             var _chd = variable_struct_exists(_citem, "downside") ? _citem.downside : undefined;
+                            // Sealed Reserve (Sable rank 2, M-locked 08-15): downsides HALVED
+                            // - the bite bleeds half, the numbness misses half the time.
+                            var _chd_seal = (npc_rank("sable") >= 2);
                             if (_chd != undefined) {
                                 if (_chd.kind == "bite") {
                                     var _bite = irandom_range(8, 15);
+                                    if (_chd_seal) _bite = max(1, _bite div 2);
                                     player.HP = max(1, player.HP - _bite);
                                     array_push(combat_log, "...the dregs bite going down - " + string(_bite) + " damage!");
                                     array_push(damage_popups, { value: _bite, x: 475, y: 545, timer: 45, col: c_red });
                                 } else if (_chd.kind == "sluggish") {
-                                    player.energy = max(0, player.energy - 1);
-                                    array_push(combat_log, "...the dregs numb your arm - 1 AP lost.");
+                                    if (_chd_seal && irandom(1) == 0) {
+                                        array_push(combat_log, "...the sealed dregs pass clean - no numbness.");
+                                    } else {
+                                        player.energy = max(0, player.energy - 1);
+                                        array_push(combat_log, "...the dregs numb your arm - 1 AP lost.");
+                                    }
                                 }
                             }
                             _citem = { name: "Chaotic Brew", effect_type: "chaotic_spent", effect_value: 0 };
@@ -1975,6 +1983,20 @@ if (player_turn) {
                         // damage. _deals_damage gates the damage riders, popup and log below so
                         // they never "carry" a damage number (was picking up the target's own
                         // Vulnerable bonus and reporting 0-12 phantom damage).
+                        // WEAPON SHOT conditional element (M-locked 08-15): with a
+                        // CASTER ranged weapon (wand/scepter/staff = wpn_school set)
+                        // the shot fires as that school's ELEMENTAL damage - resolved
+                        // vs wards, crits as a spell, flies the school's colored bolt.
+                        // With a bow it stays the physical arrow. Per-cast clone so
+                        // the loadout's resolved copy is never mutated.
+                        if (ab.name == "Weapon Shot"
+                            && variable_struct_exists(player, "derived")
+                            && variable_struct_exists(player.derived, "ranged_school")
+                            && player.derived.ranged_school != "") {
+                            ab = variable_clone(ab, 1);
+                            ab.damage_type = 1;
+                            ab.school      = player.derived.ranged_school;
+                        }
                         var _dmg = ab.base_damage;
                         var _deals_damage = (ab.base_damage > 0);
                         var _ab_stat_dtype = variable_struct_exists(ab, "damage_type") ? ab.damage_type : 0;
@@ -2367,6 +2389,17 @@ if (player_turn) {
                                 source:       "pet"
                             });
                             array_push(combat_log, "[Companion] " + pet_active().name + "'s FORGE SPARK leaps - " + target.name + " is set ablaze!");
+                        }
+
+                        // Blazing Palm Sear rider (M-locked 08-15): the palm
+                        // print smolders - same [Fire+] mark Scorch applies.
+                        if (ab.name == "Blazing Palm" && _deals_damage
+                            && !target.is_defeated && variable_struct_exists(target, "status_effects")) {
+                            array_push(target.status_effects, {
+                                name: "Sear", effect_type: "debuff", kind: "firemark",
+                                effect_value: 3, duration: 2, element: "fire", source: "player"
+                            });
+                            array_push(combat_log, "The palm print SEARS - follow-up hits on " + target.name + " burn +3 for 2 turns!");
                         }
 
                         // --- Class trunk spender riders (P2, 08-05): paying the class
@@ -2790,7 +2823,10 @@ if (player_turn) {
                                 sx: _prj_sx, sy: _prj_sy, tx: _vfx_ex, ty: _vfx_ey,
                                 bx: _vfx_ex, by: _vfx_ey,   // burst anchor (spr_vfx_* are center-origin)
                                 t: 0, dur: 15, delay: _dlv_delay - 15, tgt: target, shake: 8,
-                                aname: ab.name,   // bespoke flight renders (Snipe's arrow)
+                                // Bespoke flight renders (Snipe's arrow; Weapon Shot's arrow
+                                // only while PHYSICAL - a caster weapon's elemental shot flies
+                                // its school bolt instead, M-locked 08-15).
+                                aname: (ab.name == "Weapon Shot" && ab.damage_type != 0) ? "" : ab.name,
                                 scale: variable_struct_exists(_vfxp, "scale") ? _vfxp.scale : 1   // pacing: finisher bursts bigger
                             });
                             if (_deals_damage) target.hp_hold = _dlv_delay;
