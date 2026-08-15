@@ -1,4 +1,28 @@
-# IRONWAKE — MASTER BACKLOG (compiled 2026-08-13, priority-stamped 08-13 night)
+# IRONWAKE — MASTER BACKLOG (compiled 2026-08-13, priority-stamped 08-13 night; STATUS refreshed 08-16)
+
+## ⚠ STATUS 08-16 — three commits since this file was compiled, ALL M F5 CLEAN
+- `4e8fd81` (08-15): font selector end-to-end (4 fonts imported), craft wizard v2 + visual
+  polish, study ladder 1/3/6, chaotic brew, elemental-rune rework (Ember=fire, 6 school runes
+  + Avatar), fix-now queue cleared, 18 icon sprites imported + wired.
+- `b6f692e` (08-15): notes list #4 (clicking works everywhere, Runesmithing rename, corruption
+  betrayal + cure confirm, Wounded Wanderer fever, Merchant's Ghost popup shop + 6 exclusives,
+  loot-curve squeeze, Weapon Shot conditional element, HUD reorder, stats-page crit split,
+  bond popup hearts, tab hover quick-refs, Bone Sovereign flip), accuracy split (Hunter/Seer),
+  Blazing Palm 16+Sear, Quintessence specialty brews, **NPC PROGRESSION ranks core** (11 perks),
+  4 offhand icon regens imported.
+- `21f3c9e` (08-16): 7 NPC first-open tours, **EVENT HORIZON** (Singularity rework), Petra two
+  orders, Maren Deep Socket, all rank perks wired + SYSTEMS_NPC_PROGRESSION.md, **BAIRC'S GARDEN
+  scene** (pan/pond/cairn/forage/petting/8 ornaments/[M] jukebox), 5 music tracks imported
+  (Stillwater/Greenhollow/Tidesong/Garden of Ages/The Black Aria), banshee rework, Bairc
+  rank-1 ledger, found-strip scroll; 08-16 fixes: carousel STATION corner chip + hover tip +
+  checkout popup, station_ranks tutorial, procedural bond hearts.
+- So: section **A below is COMMITTED**; **F "NPC progression tiers" is BUILT**; **G "Bairc's
+  walkable garden" is BUILT**; E7 icon batch + buckler icon are DONE. Remaining open threads:
+  track-name vetoes, banshee chest cap 12 (my call), pad has no hub button for [U],
+  Settings garden-music row deferred, design-lock queue in memory (Arcanist spells, accuracy
+  rune stacking audit, talent audit, pet treats, enemy immunities, pet move pools, mobile UI,
+  SFX audit, dungeon reagents, Seer rune icon).
+- **LAUNCH WED AUG 19 — stabilize over new systems.**
 
 ## ⚠⚠ SUPER PRIORITY — FINISH THE UNBUILT SYSTEMS (M directive 08-13 night)
 Work these to DONE, in order, before anything else tomorrow:
