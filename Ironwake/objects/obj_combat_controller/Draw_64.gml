@@ -557,7 +557,7 @@ for (var _ei = 0; _ei < _ecnt; _ei++) {
         if (!variable_struct_exists(_ec, "death_linger")) _ec.death_linger = 20;   // lazy init catches every kill path
         if (_ec.death_linger > 0 && variable_struct_exists(_ec, "last_ex")
             && variable_struct_exists(_espr_map, _ec.name)) {
-            var _dl_spr = variable_struct_get(_espr_map, _ec.name);
+            var _dl_spr = combat_enemy_model(_ec, _espr_map);
             var _dl_frm = (sprite_get_number(_dl_spr) > 1) ? 3 : 0;
             var _dl_a   = min(1.0, _ec.death_linger / 20.0);
             // Depth scale stamped at death (faux-2.5D); pre-lever kills read 3x.
@@ -625,7 +625,7 @@ for (var _ei = 0; _ei < _ecnt; _ei++) {
     // big-canvas sprites so every foe displays at the station's INTENDED
     // height, feet still landing exactly on the station's ground line.
     if (combat_25d() && variable_struct_exists(_espr_map, _ec.name)) {
-        var _nspr = variable_struct_get(_espr_map, _ec.name);
+        var _nspr = combat_enemy_model(_ec, _espr_map);
         // Round 11 (M: "shadows are miles away... fix immediately"): scale AND
         // anchor from sprite_true_bounds (measured opaque pixels), not canvas
         // or .yy bbox - the station scale now means the same VISIBLE height
@@ -652,7 +652,7 @@ for (var _ei = 0; _ei < _ecnt; _ei++) {
     // applied below) so hovering the creature itself also opens the inspect tooltip,
     // and the hot-zone doesn't jump around while it animates.
     if (variable_struct_exists(_espr_map, _ec.name)) {
-        var _isp   = variable_struct_get(_espr_map, _ec.name);
+        var _isp   = combat_enemy_model(_ec, _espr_map);
         var _isp_w = sprite_get_width(_isp)  * _es;
         var _isp_h = sprite_get_height(_isp) * _es;
         if (_mx_gui >= _ex && _mx_gui <= _ex + _isp_w
@@ -703,15 +703,16 @@ for (var _ei = 0; _ei < _ecnt; _ei++) {
     _ec.last_ecx = _ec.last_ex + 48.5 * _es;
     _ec.last_ecy = _ec.last_ey + 48.5 * _es;
     if (combat_25d() && variable_struct_exists(_espr_map, _ec.name)) {
-        var _ctb = sprite_true_bounds(variable_struct_get(_espr_map, _ec.name));
-        var _cw25 = sprite_get_width(variable_struct_get(_espr_map, _ec.name));
+        var _cmspr = combat_enemy_model(_ec, _espr_map);
+        var _ctb = sprite_true_bounds(_cmspr);
+        var _cw25 = sprite_get_width(_cmspr);
         var _ccxu = (_ctb.l + _ctb.r + 1) * 0.5;
         _ec.last_ecx = _ec.last_ex + (enemy_sprite_faces_east(_ec.name) ? (_cw25 - _ccxu) : _ccxu) * _es;
         _ec.last_ecy = _ec.last_ey + (_ctb.t + _ctb.h * 0.5) * _es;
     }
 
     if (variable_struct_exists(_espr_map, _ec.name)) {
-        var _espr = variable_struct_get(_espr_map, _ec.name);
+        var _espr = combat_enemy_model(_ec, _espr_map);
         var _espr_frame = (sprite_get_number(_espr) > 1) ? 3 : 0;
 
         // Ground shadow beneath the enemy (under both the reticle and the sprite) so

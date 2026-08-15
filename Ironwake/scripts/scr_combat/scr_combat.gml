@@ -473,6 +473,44 @@ function combat_enemy_slot_pos(_idx) {
 }
 
 // ---------------------------------------------------------------------------
+// combat_enemy_model(_ec, _map) - the sprite THIS combatant wears (M 08-16
+// variety: species with several models - enemy_sprite_variants - draw a
+// random one per foe, preferring a model no other LIVING same-name foe on the
+// field already has). The pick is stamped as a variant INDEX (_ec.model_var)
+// on first sight and resolved through the pool each call, so a resumed run or
+// a re-ordered asset table can never point at the wrong sprite. Falls back to
+// the map's primary; -1 when the species has no model at all.
+// ---------------------------------------------------------------------------
+function combat_enemy_model(_ec, _map) {
+    if (!variable_struct_exists(_map, _ec.name)) return -1;
+    var _pool = enemy_sprite_variants(_ec.name);
+    var _n = array_length(_pool);
+    if (_n <= 1) return variable_struct_get(_map, _ec.name);
+    if (!variable_struct_exists(_ec, "model_var") || _ec.model_var < 0 || _ec.model_var >= _n) {
+        var _used = [];
+        if (instance_exists(obj_combat_controller)) {
+            var _cc = instance_find(obj_combat_controller, 0);
+            if (variable_instance_exists(_cc, "combat_state") && is_struct(_cc.combat_state)) {
+                var _cs = _cc.combat_state.combatants;
+                for (var _i = 0; _i < array_length(_cs); _i++) {
+                    var _o = _cs[_i];
+                    if (_o == _ec || _o.is_player || _o.is_defeated) continue;
+                    if (_o.name == _ec.name && variable_struct_exists(_o, "model_var")) array_push(_used, _o.model_var);
+                }
+            }
+        }
+        var _free = [];
+        for (var _k = 0; _k < _n; _k++) {
+            var _taken = false;
+            for (var _u = 0; _u < array_length(_used); _u++) if (_used[_u] == _k) { _taken = true; break; }
+            if (!_taken) array_push(_free, _k);
+        }
+        _ec.model_var = (array_length(_free) > 0) ? _free[irandom(array_length(_free) - 1)] : irandom(_n - 1);
+    }
+    return _pool[_ec.model_var];
+}
+
+// ---------------------------------------------------------------------------
 // sprite_true_bounds(spr) - MEASURED opaque-pixel bounds of frame 0, cached.
 // (M 08-13: "the shadows are miles away from the sprites... fix immediately.")
 // Every 2.5D anchoring bug traced back to trusting .yy bbox metadata, which

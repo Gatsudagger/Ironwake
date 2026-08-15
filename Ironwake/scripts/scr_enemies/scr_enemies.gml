@@ -932,12 +932,15 @@ function enemy_kind_of(name) {
 // =============================================================================
 function enemy_sprite_map() {
     return {
-        "Ashen Skeleton":      spr_skeleton_soldier,
-        "Skeleton Archer":     spr_skeleton_archer,
-        "Vault Crawler":       spr_vault_crawler,
-        "Dungeon Wraith":      spr_dungeon_wraith,
-        "Stone Golem":         spr_stone_golem,
-        "Vault Guardian":      spr_vault_guardian,
+        // 08-16 FF-STYLE RE-AUTHORS (M-picked, tactics density ~44px, 3/4-front
+        // single frame; the smoothed 8-dir originals stay on disk untouched).
+        // Each has _ff2/_ff3 alternates - see enemy_sprite_variants().
+        "Ashen Skeleton":      spr_skeleton_soldier_ff,
+        "Skeleton Archer":     spr_skeleton_archer_ff,
+        "Vault Crawler":       spr_vault_crawler_ff,
+        "Dungeon Wraith":      spr_dungeon_wraith_ff,
+        "Stone Golem":         spr_stone_golem_ff,
+        "Vault Guardian":      spr_vault_guardian_ff,
         "Vault Wraith":        spr_vault_wraith,
         "Vault Sentinel":      spr_vault_sentinel,
         "Bone Sovereign":      spr_bone_sovereign_hd,   // 08-13 M-approved HD (spectral tail); original sprite kept untouched on disk
@@ -988,6 +991,34 @@ function enemy_sprite_map() {
         "The Hollow Crown":       spr_bone_sovereign,
         "The Bottom":             spr_stone_golem,
     };
+}
+
+// =============================================================================
+// ENEMY MODEL VARIANTS (M 08-16: "multiple sprites for the same enemy so there's
+// variety - a random model every fight, and different models when several of
+// the same mob are in one fight"). Returns the full pool for a species: the
+// map's primary sprite first, then any spr_<base>_ff2 / _ff3 alternates that
+// exist. Combat stamps one per combatant (combat_enemy_model in scr_combat);
+// the bestiary keeps showing the primary. Cached per name.
+// =============================================================================
+function enemy_sprite_variants(name) {
+    static _cache = {};
+    if (variable_struct_exists(_cache, name)) return variable_struct_get(_cache, name);
+    var _map = enemy_sprite_map();
+    var _out = [];
+    if (variable_struct_exists(_map, name)) {
+        var _base = variable_struct_get(_map, name);
+        array_push(_out, _base);
+        var _bn = sprite_get_name(_base);
+        if (string_pos("_ff", _bn) == string_length(_bn) - 2) {   // ends in "_ff"
+            for (var _v = 2; _v <= 4; _v++) {
+                var _alt = asset_get_index(_bn + string(_v));
+                if (_alt >= 0 && sprite_exists(_alt)) array_push(_out, _alt);
+            }
+        }
+    }
+    variable_struct_set(_cache, name, _out);
+    return _out;
 }
 
 // Sprite for a duel encounter, tiered by how many duels the player has already

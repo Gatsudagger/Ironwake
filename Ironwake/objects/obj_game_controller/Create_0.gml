@@ -419,6 +419,14 @@ global.__sprite_includes = [
     spr_icon_helm_hood,     spr_icon_helm_circlet, spr_icon_helm_plate,
     spr_icon_gloves_arcane, spr_icon_gloves_cloth, spr_icon_gloves_plate,
     spr_icon_boots_plate,   spr_icon_boots_cloth,  spr_icon_boots_leather,
+    // FF-style enemy model VARIANTS (08-16) - enemy_sprite_variants() resolves the
+    // _ff2/_ff3 alternates via asset_get_index strings; hard refs keep them alive.
+    spr_skeleton_archer_ff2,  spr_skeleton_archer_ff3,
+    spr_skeleton_soldier_ff2, spr_skeleton_soldier_ff3,
+    spr_vault_crawler_ff2,    spr_vault_crawler_ff3,
+    spr_dungeon_wraith_ff2,   spr_dungeon_wraith_ff3,
+    spr_stone_golem_ff2,      spr_stone_golem_ff3,
+    spr_vault_guardian_ff2,   spr_vault_guardian_ff3,
 ];
 
 // =============================================================================
