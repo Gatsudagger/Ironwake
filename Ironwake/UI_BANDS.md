@@ -27,7 +27,7 @@ never canvas size or .yy bbox metadata.
 | Player: x330, feet y726 | hero, shipped 345px canvas scale (round 12) | near-camera anchor; VFX bind to the Draw-stamped player_stage_cx/cy |
 | Pet: beside player (flat formula +130), feet 706, 0.90 size | round 12: BACK beside the player | clear of PD box + log |
 | Summon: (560, 700) | mid-lane pedestal | between ally and enemy wedges |
-| Enemy wedge: x≥1015, ALL feet ≤702 | 4 stations/layout, far 1.50× → front 1.85×, boss 2.25× feet 655 (rounds 12–13b) | HARD 185px visible ceiling; per-species `enemy_size_mult` (scr_enemies) applies before it; stations FREEZE per enemy; mid-fight summons walk to the first unclashed spot (13d) |
+| Enemy wedge: x≥1015, ALL feet ≤702 | 4 stations/layout, far 1.56× → front 1.72× (08-16 flatten; was 1.50→1.85), boss center 2.45× feet 655 cap 250 | HARD 185px visible ceiling (Boss-KIND on an ordinary station: 215); `enemy_size_mult` = species table THEN bestiary kind (Elite ×1.14, Boss ×1.30) applies before it; stations FREEZE per enemy; mid-fight summons walk to the first unclashed spot (13d); target reticle = constant 0.50 scale (~64px) |
 | Horizon y470 | wall/floor seam | far stations start feet ≥540 |
 
 

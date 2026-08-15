@@ -429,11 +429,16 @@ function combat_enemy_slot_pos(_idx) {
         // front ~204px. Small enough that the 97px art stays clean (~2x).
         // Round 13 (M: "enemies are still too big"): another step down -
         // far ~145px to front ~180px, barely above native art size.
+        // 08-16 (M: "forced perspective still a bit overtuned... doesn't make
+        // sense why that slot is the biggest"): gradient flattened once more,
+        // far ~151px to front ~167px (~10% spread). Depth now reads mostly
+        // through feet height + shadows; SIZE is driven by the species' rank
+        // (enemy_size_mult: Elite/Boss over trash), not by which slot it drew.
         static _t25_pat = [
-            [[1560,545,1.50],[1130,608,1.60],[1360,662,1.72],[1015,700,1.85]],
-            [[1300,540,1.50],[1620,615,1.62],[1060,648,1.68],[1360,702,1.85]],
-            [[1680,552,1.52],[1090,600,1.58],[1500,660,1.72],[1130,702,1.85]],
-            [[1420,548,1.50],[1140,618,1.60],[1660,665,1.72],[1230,700,1.82]]
+            [[1560,545,1.56],[1130,608,1.61],[1360,662,1.67],[1015,700,1.72]],
+            [[1300,540,1.56],[1620,615,1.62],[1060,648,1.66],[1360,702,1.72]],
+            [[1680,552,1.57],[1090,600,1.60],[1500,660,1.67],[1130,702,1.72]],
+            [[1420,548,1.56],[1140,618,1.61],[1660,665,1.67],[1230,700,1.71]]
         ];
         static _t25_pick = [ [2], [0,3], [0,1,3], [0,1,2,3] ];
         var _lay = 0;

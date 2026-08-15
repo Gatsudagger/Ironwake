@@ -639,7 +639,11 @@ for (var _ei = 0; _ei < _ecnt; _ei++) {
         // sprite"): HARD SIZE CEILING - no enemy ever draws taller than 185px
         // visible, whatever its station scale says. Boss center stations carry
         // their own higher cap (M 08-15: bosses read small at mob height).
-        var _es_cap = variable_struct_exists(_esp, "cap") ? _esp.cap : 185;
+        // 08-16: Boss-KIND foes on an ordinary station (summoned / elite-pool
+        // bosses like the Sovereign) get headroom above the mob ceiling so the
+        // rank multiplier actually shows; Elites/trash keep 185.
+        var _es_cap = variable_struct_exists(_esp, "cap") ? _esp.cap
+                    : ((enemy_kind_of(_ec.name) == "Boss") ? 215 : 185);
         _es = min(_es, _es_cap / max(1, _ntb.h));
         _ey  = _esp.feet - (_ntb.b + 1) * _es;
     }
@@ -741,8 +745,10 @@ for (var _ei = 0; _ei < _ecnt; _ei++) {
                 _cur_cx = _ex + (enemy_sprite_faces_east(_ec.name) ? (sprite_get_width(_espr) - _rcxu) : _rcxu) * _es;
                 _cur_cy = _ey + (_rtb.b + 1) * _es;
             }
-            // Shrunk 30% from the old *0.4 factor (0.4 -> 0.28) so the ground rune sits tighter under the foe.
-            var _cur_sc = max(0.18, (sprite_get_width(_espr) * _es) / sprite_get_width(spr_target_cursor)) * 0.28;
+            // 08-16 (M: "the targeting dial doesn't need to scale, it looks
+            // awkward" - it shrank to nothing under small-canvas foes): ONE
+            // constant size for every target, ~64px on the 128px cursor art.
+            var _cur_sc = 0.50;
             _cur_sc    *= 1 + 0.06 * sin(current_time / 180);            // gentle breathing pulse
             var _cur_rot = current_time * 0.05;                          // continuous swirl
             draw_sprite_ext(spr_target_cursor, 0, _cur_cx, _cur_cy,

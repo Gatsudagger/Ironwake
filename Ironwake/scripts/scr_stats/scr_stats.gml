@@ -12533,34 +12533,37 @@ function ghost_exclusive_catalog(_asc) {
     // Awakening-banded authored pieces, stamped ghost_exclusive.
     var _band = (_asc >= 4) ? 2 : ((_asc >= 2) ? 1 : 0);
     var _out = [];
+    // create_item() ships no affixes array - every ghost piece carries one
+    // authored affix, so give each its array first (08-16 crash: ".affixes not
+    // set" the first time the ghost opened his shop).
     if (_band == 0) {
         var _g1 = create_item("Lantern-Keeper's Cowl", "helm", 2, "WIS", 4,
             "a hood that remembers every toll road it ever walked", 90);
-        array_push(_g1.affixes, { suffix: "of Greed", prefix: "Waxlit", stat_name: "gold_find", stat_value: 8 });
+        _g1.affixes = [{ suffix: "of Greed", prefix: "Waxlit", stat_name: "gold_find", stat_value: 8 }];
         array_push(_out, _g1);
         var _g2 = create_item("Coin-Weighted Knuckles", "gloves", 2, "STR", 4,
             "the peddler settled more than one debt by hand", 90);
-        array_push(_g2.affixes, { suffix: "of Ruin", prefix: "Weighted", stat_name: "crit_flat", stat_value: 4 });
+        _g2.affixes = [{ suffix: "of Ruin", prefix: "Weighted", stat_name: "crit_flat", stat_value: 4 }];
         array_push(_out, _g2);
     } else if (_band == 1) {
         var _g3 = create_item("Ghostlight Buckler", "offhand", 2, "CON", 5,
             "it glows faintly where the last owner's hand should be", 130);
-        array_push(_g3.affixes, { suffix: "of Slipping", prefix: "Ghostlit", stat_name: "dodge_flat", stat_value: 3 });
+        _g3.affixes = [{ suffix: "of Slipping", prefix: "Ghostlit", stat_name: "dodge_flat", stat_value: 3 }];
         array_push(_out, _g3);
         var _g4 = create_item("The Peddler's Last Ring", "ring", 3, "CHA", 5,
             "sold a hundred times, returned a hundred and one", 210);
-        array_push(_g4.affixes, { suffix: "of the Hollow Sale", prefix: "Returned", stat_name: "gold_find", stat_value: 10 });
+        _g4.affixes = [{ suffix: "of the Hollow Sale", prefix: "Returned", stat_name: "gold_find", stat_value: 10 }];
         array_push(_out, _g4);
     } else {
         var _g5 = create_item("Cart-Axle Maul", "weapon", 3, "STR", 6,
             "the axle of the cart that never stops arriving", 260);
         _g5.weapon_damage = weapon_base_damage(3);
         _g5.two_handed    = true;
-        array_push(_g5.affixes, { suffix: "of Ruin", prefix: "Axle-Forged", stat_name: "crit_flat", stat_value: 5 });
+        _g5.affixes = [{ suffix: "of Ruin", prefix: "Axle-Forged", stat_name: "crit_flat", stat_value: 5 }];
         array_push(_out, _g5);
         var _g6 = create_item("Receipt of the Unpaid Debt", "amulet", 3, "INT", 6,
             "someone, somewhere, still owes - and the amulet remembers", 260);
-        array_push(_g6.affixes, { suffix: "of Greed", prefix: "Countersigned", stat_name: "gold_find", stat_value: 12 });
+        _g6.affixes = [{ suffix: "of Greed", prefix: "Countersigned", stat_name: "gold_find", stat_value: 12 }];
         array_push(_out, _g6);
     }
     for (var _i = 0; _i < array_length(_out); _i++) {

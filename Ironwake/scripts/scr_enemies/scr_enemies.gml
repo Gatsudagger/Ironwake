@@ -900,9 +900,29 @@ function enemy_size_mult(name) {
         case "Magma Slug":     return 0.78;
         case "Frost Shard":    return 0.68;
         case "Lava Spitter":   return 0.85;
-        // Hulks lean on the station scale + 185px ceiling; no boost needed.
     }
+    // Rank intent (M 08-16 shot: a Bone Sovereign on the FAR station read
+    // smaller than a trash skeleton on the NEAR one): the bestiary KIND now
+    // outranks the perspective slot - Elites read a step over trash, Bosses
+    // (incl. bosses met as summons/elite spawns, outside their center station)
+    // clearly over that. Station gradient stays a nudge underneath.
+    var _kind = enemy_kind_of(name);
+    if (_kind == "Boss")  return 1.30;
+    if (_kind == "Elite") return 1.14;
     return 1.0;
+}
+// Bestiary KIND for a species name ("Standard"/"Elite"/"Boss"; "" if unmapped).
+// Cached - the catalog is a big literal and this is asked every draw frame.
+function enemy_kind_of(name) {
+    static _cache = {};
+    if (variable_struct_exists(_cache, name)) return variable_struct_get(_cache, name);
+    var _k = "";
+    var _cat = bestiary_catalog();
+    for (var _i = 0; _i < array_length(_cat); _i++) {
+        if (_cat[_i].name == name) { _k = _cat[_i].kind; break; }
+    }
+    variable_struct_set(_cache, name, _k);
+    return _k;
 }
 
 // =============================================================================
