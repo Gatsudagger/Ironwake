@@ -412,6 +412,7 @@ if (hub_use_carousel) {
     var _cv_hit = !ui_input_blocked() && !global.ui_overlay_latch
         && !bond_dialog_open && !ending_active && !zoom_intro_open
         && !show_history
+        && !(variable_instance_exists(id, "npc_upgrade_arm") && npc_upgrade_arm != "")
         && !(variable_instance_exists(id, "awaken_boost_open") && awaken_boost_open)
         && !(variable_global_exists("resume_pending") && global.resume_pending)
         && !(variable_global_exists("settings_open")  && global.settings_open)
@@ -526,17 +527,18 @@ if (hub_use_carousel) {
         var _cv_id   = _cv_aff[_cv_idx];
         var _cv_tier = affinity_tier(_cv_id);
         var _cv_rdy  = affinity_gate_ready(_cv_id);
-        // 4 heart slots, filled = tier (red row at Lover, blue below; empty dark)
-        var _cv_hs = asset_get_index("spr_heart_fx");
-        if (_cv_hs >= 0 && sprite_exists(_cv_hs)) {
-            var _cv_hcol = (_cv_tier >= 4) ? make_color_rgb(235, 70, 95)
-                                           : make_color_rgb(95, 155, 240);
-            for (var _cv_h = 0; _cv_h < 4; _cv_h++) {
-                var _cv_hx = _cv_cx - 72 + _cv_h * 38;
-                if (_cv_h < _cv_tier)
-                    draw_sprite_stretched_ext(_cv_hs, 0, _cv_hx, 604, 30, 30, _cv_hcol, 1.0);
-                else
-                    draw_sprite_stretched_ext(_cv_hs, 0, _cv_hx, 604, 30, 30, make_color_rgb(70, 76, 92), 0.35);
+        // 4 heart slots on their own row between the name and the Bond line,
+        // centred over it: filled = tier (red row at Lover, blue below; empty =
+        // dark). Drawn procedurally - the heart sprite is unreadable this small.
+        var _cv_hcol = (_cv_tier >= 4) ? make_color_rgb(235, 70, 95)
+                                       : make_color_rgb(95, 155, 240);
+        for (var _cv_h = 0; _cv_h < 4; _cv_h++) {
+            var _cv_hx = _cv_cx - 57 + _cv_h * 38;
+            if (_cv_h < _cv_tier) {
+                ui_draw_heart(_cv_hx + 1, 622 + 1, 10, make_color_rgb(10, 12, 20), 0.6);   // drop shadow
+                ui_draw_heart(_cv_hx, 622, 10, _cv_hcol, 1.0);
+            } else {
+                ui_draw_heart(_cv_hx, 622, 10, make_color_rgb(70, 76, 92), 0.55);
             }
         }
         if (_cv_rdy) {
@@ -559,30 +561,47 @@ if (hub_use_carousel) {
                 draw_rectangle(_cv_bx, _cv_by, _cv_bx + 320, _cv_by + 8, true);
             }
         }
-        // ---- STATION RANK (NPC PROGRESSION, M-locked 08-15) ----
-        // Stars + the next unlock as a one-line pitch; [U] buys (two-press
-        // confirm in Step). Fully-upgraded stations just wear their stars.
+        // ---- STATION RANK chip (NPC PROGRESSION, M 08-15) ----
+        // Pinned in the card's TOP-RIGHT corner (M: "in the corner where there
+        // is available space") - above the arrows, clear of the actor art and
+        // every text band at any font size. Rank details are HOVER-ONLY (M: the
+        // extra text was meant as a mouse-over); the tip rides above the card
+        // via ui_draw_tab_tip(). [U] or a tap opens the checkout popup.
+        if (!_cv_lock) {
         var _cv_rank = npc_rank(_cv_id);
-        var _cv_ry   = _cv_line_y + 48;
+        var _cv_sl   = "STATION";
+        var _cv_slw  = string_width(_cv_sl);
+        var _cv_sx1  = _cv_x2 - 22, _cv_sy0 = _cv_y1 + 22;
+        var _cv_sx0  = _cv_sx1 - (_cv_slw + 24 + 2 * 20), _cv_sy1 = _cv_sy0 + 36;
+        var _cv_smx  = device_mouse_x_to_gui(0), _cv_smy = device_mouse_y_to_gui(0);
+        var _cv_shov = (_cv_smx >= _cv_sx0 && _cv_smx <= _cv_sx1 && _cv_smy >= _cv_sy0 && _cv_smy <= _cv_sy1);
+        draw_set_alpha(_cv_shov ? 0.85 : 0.60);
+        draw_set_color(make_color_rgb(14, 18, 32));
+        draw_rectangle(_cv_sx0, _cv_sy0, _cv_sx1, _cv_sy1, false);
+        draw_set_alpha(1.0);
+        draw_set_color(_cv_shov ? make_color_rgb(230, 200, 120) : make_color_rgb(110, 96, 62));
+        draw_rectangle(_cv_sx0, _cv_sy0, _cv_sx1, _cv_sy1, true);
+        draw_set_halign(fa_left);
+        draw_set_valign(fa_middle);
         draw_set_color(make_color_rgb(230, 200, 120));
-        var _cv_stars = "";
-        for (var _cv_si = 0; _cv_si < 2; _cv_si++) _cv_stars += (_cv_si < _cv_rank) ? "*" : "-";
-        draw_text(_cv_cx, _cv_ry, "Station [" + _cv_stars + "]"
-            + ((_cv_rank >= 2) ? "  fully upgraded" : ""));
-        if (_cv_rank < 2) {
-            var _cv_nc = npc_rank_cost(_cv_rank + 1);
-            draw_set_font(ui_font(fnt_ui_small));
-            draw_set_color(make_color_rgb(150, 158, 178));
-            draw_text(_cv_cx, _cv_ry + 32, "[U] Upgrade (" + string(_cv_nc.gold) + "g + " + string(_cv_nc.dust) + " dust):");
-            draw_set_color(make_color_rgb(190, 180, 205));
-            draw_text_ext(_cv_cx, _cv_ry + 60, npc_rank_perk_text(_cv_id, _cv_rank + 1), 26, 460);
-            draw_set_font(ui_font(fnt_ui));
-        } else {
-            draw_set_font(ui_font(fnt_ui_small));
-            draw_set_color(make_color_rgb(130, 138, 158));
-            draw_text(_cv_cx, _cv_ry + 32, npc_rank_perk_text(_cv_id, 1));
-            draw_text(_cv_cx, _cv_ry + 58, npc_rank_perk_text(_cv_id, 2));
-            draw_set_font(ui_font(fnt_ui));
+        draw_text(_cv_sx0 + 12, (_cv_sy0 + _cv_sy1) / 2, _cv_sl);
+        // 2 rank pips: filled gold diamond = owned, dark = still to buy.
+        for (var _cv_si = 0; _cv_si < 2; _cv_si++) {
+            var _cv_px = _cv_sx0 + 12 + _cv_slw + 12 + _cv_si * 20 + 8;
+            var _cv_py = (_cv_sy0 + _cv_sy1) / 2;
+            draw_set_color((_cv_si < _cv_rank) ? make_color_rgb(230, 200, 120) : make_color_rgb(70, 76, 92));
+            draw_triangle(_cv_px, _cv_py - 8, _cv_px + 8, _cv_py, _cv_px, _cv_py + 8, false);
+            draw_triangle(_cv_px, _cv_py - 8, _cv_px - 8, _cv_py, _cv_px, _cv_py + 8, false);
+        }
+        draw_set_valign(fa_top);
+        draw_set_halign(fa_center);
+        if (_cv_hit) {
+            ui_tab_hover_stash(_cv_sx0, _cv_sy0, _cv_sx1, _cv_sy1,
+                "STATION RANK " + string(_cv_rank) + " / 2", npc_rank_card_tip(_cv_id));
+            // Tap = the [U] verb (touch + mouse path); the Step opens the checkout.
+            if (_cv_rank < 2 && touch_tapped(_cv_sx0, _cv_sy0, _cv_sx1, _cv_sy1))
+                input_inject("npcup:open");
+        }
         }
     } else {
         if (_cv_board_ready > 0) {
@@ -2946,6 +2965,7 @@ ui_draw_bairc_screen();
 ui_draw_bairc_intro();      // first-talk dialogue popup (before the station opens)
 ui_draw_bairc_lore();       // queued one-time lore fragment, over the garden (design Â§10)
 ui_draw_bairc_capstone();   // raised-Adult capstone pick modal, over the Bairc screen
+ui_draw_garden_scene();     // BAIRC'S GARDEN full-screen grounds (M-locked 08-15) - covers the station
 hatch_cutscene_draw();   // full-screen egg-hatch sequence, over the Bairc screen
 ui_draw_journal();       // J-key Journal overlay (Phase 4a) - over hub content, under pause
 ui_draw_tavern_board();  // Tavern Requests board (Phase 4b) - the quest action surface
@@ -3403,6 +3423,17 @@ if (bond_dialog_open) {
     draw_set_font(-1);
 }
 
+// STATION UPGRADE checkout (NPC PROGRESSION 08-15): the standard bordered
+// CONFIRM/CANCEL popup - buttons hit-test here and inject npcup:ok / npcup:cancel
+// for the Step's modal block (0a3). Never up at the same time as the bond dialog
+// (arming clears on commit before the result dialog opens).
+if (variable_instance_exists(id, "npc_upgrade_arm") && npc_upgrade_arm != "" && !bond_dialog_open) {
+    ui_draw_checkout_confirm(npc_upgrade_title, npc_upgrade_body, "npcup:ok", "npcup:cancel");
+    draw_set_halign(fa_left);
+    draw_set_valign(fa_top);
+    draw_set_font(-1);
+}
+
 // IRONMAN RUN-RESUME popup (SYSTEMS_RUN_RESUME.md) - modal over the whole hub
 // (the Step gate exits before any hub handler while this is pending). Single
 // RESUME button by design: an interrupted run can only be played out. Button
@@ -3526,3 +3557,7 @@ if (zoom_intro_open) {
 // every vendor screen; the stash is set by whichever tab bar the mouse is on
 // this frame and consumed here.
 ui_draw_tab_tip();
+
+// NPC STATION GUIDED TOUR (M-locked 08-15) - the true last call: the spotlight
+// dim + explainer card must ride above the station screens AND the tab tips.
+ui_draw_npc_tour();

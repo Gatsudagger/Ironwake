@@ -209,8 +209,19 @@ function save_game() {
         npc_tastes_known: (variable_global_exists("npc_tastes_known") && is_struct(global.npc_tastes_known)) ? global.npc_tastes_known : undefined,
         gift_given:       (variable_global_exists("gift_given"))                                             ? global.gift_given       : false,
 
-        // Petra Treasure Trader order (cross-run persistent; undefined = none)
+        // Petra Treasure Trader orders (cross-run persistent). Two-order refactor
+        // 08-15: the ARRAY is authoritative; the legacy single-slot key is still
+        // written (usually undefined post-migration) so old builds don't choke.
         petra_order:    variable_global_exists("petra_order")    ? global.petra_order    : undefined,
+        petra_orders:   (variable_global_exists("petra_orders") && is_array(global.petra_orders)) ? global.petra_orders : [],
+
+        // Bairc's Garden scene (M-locked 08-15): placed ornaments, the zen
+        // cairn (run-scoped but saved so a hub quit-out keeps the stack), and
+        // the forage day-ledger.
+        garden_decor:        (variable_global_exists("garden_decor") && is_struct(global.garden_decor)) ? global.garden_decor : {},
+        garden_cairn:        variable_global_exists("garden_cairn")        ? global.garden_cairn        : 0,
+        garden_forage_seed:  variable_global_exists("garden_forage_seed")  ? global.garden_forage_seed  : -1,
+        garden_forage_taken: (variable_global_exists("garden_forage_taken") && is_array(global.garden_forage_taken)) ? global.garden_forage_taken : [],
 
         // Pets (cross-run persistent roster + active companion + uid counter)
         pet_roster:     variable_global_exists("pet_roster")     ? global.pet_roster     : [],
@@ -285,6 +296,7 @@ function save_game() {
         banshee_boss_drops: (variable_global_exists("banshee_boss_drops") && is_struct(global.banshee_boss_drops)) ? global.banshee_boss_drops : {},
         music_unlocked:     (variable_global_exists("music_unlocked")     && is_array(global.music_unlocked))      ? global.music_unlocked     : [],
         music_sel_hub:      variable_global_exists("music_sel_hub")      ? global.music_sel_hub      : "",
+        music_sel_garden:   variable_global_exists("music_sel_garden")   ? global.music_sel_garden   : "",
         music_sel_dungeon:  variable_global_exists("music_sel_dungeon")  ? global.music_sel_dungeon  : "",
     };
 
@@ -428,8 +440,15 @@ function new_game_reset() {
     global.npc_tastes_known = {};
     global.gift_given       = false;
 
-    // Petra Treasure Trader - no open order on a new character.
-    global.petra_order = undefined;
+    // Petra Treasure Trader - no open orders on a new character.
+    global.petra_order  = undefined;
+    global.petra_orders = [];
+
+    // Bairc's Garden scene - bare grounds for a new character.
+    global.garden_decor        = {};
+    global.garden_cairn        = 0;
+    global.garden_forage_seed  = -1;
+    global.garden_forage_taken = [];
 
     // Pets - a new character owns none yet (gets a starter on first hub visit).
     global.pet_roster  = [];
@@ -540,6 +559,7 @@ function new_game_reset() {
     global.music_unlocked     = [];
     global.music_sel_hub      = "";
     global.music_sel_dungeon  = "";
+    global.music_sel_garden   = "";
 }
 
 
@@ -789,6 +809,16 @@ function load_game() {
     // Petra Treasure Trader order (cross-run persistent). Absent/!struct -> no order.
     global.petra_order = (variable_struct_exists(_s, "petra_order") && is_struct(_s.petra_order))
         ? _s.petra_order : undefined;
+    // Two-order refactor (08-15): read the array; petra_orders_ensure() absorbs
+    // any legacy single-slot struct above on first access.
+    global.petra_orders = (variable_struct_exists(_s, "petra_orders") && is_array(_s.petra_orders))
+        ? _s.petra_orders : [];
+
+    // Bairc's Garden scene (08-15): pre-garden saves get bare grounds.
+    global.garden_decor        = (variable_struct_exists(_s, "garden_decor") && is_struct(_s.garden_decor)) ? _s.garden_decor : {};
+    global.garden_cairn        = variable_struct_exists(_s, "garden_cairn")       ? _s.garden_cairn       : 0;
+    global.garden_forage_seed  = variable_struct_exists(_s, "garden_forage_seed") ? _s.garden_forage_seed : -1;
+    global.garden_forage_taken = (variable_struct_exists(_s, "garden_forage_taken") && is_array(_s.garden_forage_taken)) ? _s.garden_forage_taken : [];
 
     // Pets (cross-run persistent). Older saves lack these keys -> empty roster.
     global.pet_roster  = (variable_struct_exists(_s, "pet_roster")  && is_array(_s.pet_roster))  ? _s.pet_roster  : [];
@@ -873,6 +903,7 @@ function load_game() {
     global.music_unlocked     = (variable_struct_exists(_s, "music_unlocked") && is_array(_s.music_unlocked)) ? _s.music_unlocked : [];
     global.music_sel_hub      = (variable_struct_exists(_s, "music_sel_hub"))     ? _s.music_sel_hub     : "";
     global.music_sel_dungeon  = (variable_struct_exists(_s, "music_sel_dungeon")) ? _s.music_sel_dungeon : "";
+    global.music_sel_garden   = (variable_struct_exists(_s, "music_sel_garden"))  ? _s.music_sel_garden  : "";
 
     // Rune system (Maren)
     if (variable_struct_exists(_s, "rune_inventory") && is_array(_s.rune_inventory)) {
@@ -936,6 +967,28 @@ function load_game() {
         && variable_struct_exists(global.ability_web, "Crippling Shot")) {
         variable_struct_set(global.ability_web, "Frost Shot", variable_struct_get(global.ability_web, "Crippling Shot"));
         variable_struct_remove(global.ability_web, "Crippling Shot");
+    }
+    // 08-15: "Singularity" was reworked and renamed "Event Horizon" (M-locked).
+    // Same idempotent name-keyed sweep as the Frost Shot rename above.
+    if (variable_global_exists("player_loadout") && is_array(global.player_loadout)) {
+        for (var _ehi = 0; _ehi < array_length(global.player_loadout); _ehi++) {
+            if (global.player_loadout[_ehi] == "Singularity") global.player_loadout[_ehi] = "Event Horizon";
+        }
+    }
+    if (variable_global_exists("unlocked_abilities") && is_array(global.unlocked_abilities)) {
+        for (var _ehj = 0; _ehj < array_length(global.unlocked_abilities); _ehj++) {
+            if (global.unlocked_abilities[_ehj] == "Singularity") global.unlocked_abilities[_ehj] = "Event Horizon";
+        }
+    }
+    if (variable_global_exists("ability_casts") && is_struct(global.ability_casts)
+        && variable_struct_exists(global.ability_casts, "Singularity")) {
+        variable_struct_set(global.ability_casts, "Event Horizon", variable_struct_get(global.ability_casts, "Singularity"));
+        variable_struct_remove(global.ability_casts, "Singularity");
+    }
+    if (variable_global_exists("ability_web") && is_struct(global.ability_web)
+        && variable_struct_exists(global.ability_web, "Singularity")) {
+        variable_struct_set(global.ability_web, "Event Horizon", variable_struct_get(global.ability_web, "Singularity"));
+        variable_struct_remove(global.ability_web, "Singularity");
     }
     // Boons and curses are run-scoped (cleared in end_run). A save can only hold
     // non-empty values if it was written mid-run (boon_grant/curse_grant save on

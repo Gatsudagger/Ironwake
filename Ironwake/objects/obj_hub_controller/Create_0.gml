@@ -134,6 +134,12 @@ bond_dialog_npc   = "";   // affinity id ("petra"...) for the portrait
 bond_dialog_title = "";
 bond_dialog_body  = "";
 
+// STATION UPGRADE checkout (NPC PROGRESSION 08-15): npc id while the popup is
+// armed ("" = closed); Step 0a3 is modal while set.
+npc_upgrade_arm   = "";
+npc_upgrade_title = "";
+npc_upgrade_body  = "";
+
 
 // -----------------------------------------------------------------------------
 // 5. ITEM GALLERY STATE - moved to obj_game_controller (codex_* vars) 07-28 so

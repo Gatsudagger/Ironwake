@@ -1829,13 +1829,20 @@ if (player_turn) {
                     // 07-16 combo batch: the list lives in ability_is_detonator (adds Rupture,
                     // Bonebreaker, and Rift - Rift being AoE makes this per-target pick THE
                     // cascade: every enemy's own status detonates individually).
-                    var _detonator = (ab.base_damage > 0 && ability_is_detonator(ab));
+                    // EVENT HORIZON (M-locked 08-15): the ultimate skips the single
+                    // pick - it gathers EVERY distinct reaction key on this target
+                    // (_eh_keys) and fires them ALL through the same sites below,
+                    // then strips the target of every status after the hit.
+                    var _is_eh   = (ab.name == "Event Horizon");
+                    var _eh_keys = _is_eh ? combat_detonator_keys_all(target) : [];
+                    var _detonator = (ab.base_damage > 0 && ability_is_detonator(ab) && !_is_eh);
                     var _react           = _detonator ? combat_detonator_pick(target) : { key: "", idx: -1 };
                     var _react_key       = _react.key;
                     // Hexed (Curse rework, audit §6): a detonation on a hexed target has its
                     // numeric bonus DOUBLED, and (post-damage) spreads +2 dmg-taken to every
                     // other living enemy. The hex itself is a 3-turn window, not consumed.
-                    var _hexed    = (_react_key != "" && combat_status_total(target, "hexed") > 0);
+                    var _hexed    = ((_react_key != "" || array_length(_eh_keys) > 0)
+                                     && combat_status_total(target, "hexed") > 0);
                     var _hex_mult = _hexed ? 2 : 1;
                     if (_hexed) array_push(combat_log, "Hexed! The reaction is doubled!");
                     var _react_crit_bonus = 0;      // fed into the crit roll
@@ -1845,9 +1852,15 @@ if (player_turn) {
                         case "stun":  _react_crit_bonus = 999; break;   // guaranteed crit
                         case "blind": _react_force_hit  = true; break;
                     }
+                    // Event Horizon cascade - roll-time reactions, all at once.
+                    if (array_length(_eh_keys) > 0) {
+                        if (combat_keys_has(_eh_keys, "burn")) _react_crit_bonus += 40 * _hex_mult;
+                        if (combat_keys_has(_eh_keys, "stun")) _react_crit_bonus = 999;
+                        if (combat_keys_has(_eh_keys, "blind")) _react_force_hit = true;
+                    }
                     // Shock reaction (§C): arcs to other enemies post-damage; against a LONE
                     // foe (no other living enemy) it instead empowers this hit with +25% crit.
-                    if (_react_key == "shock") {
+                    if (_react_key == "shock" || combat_keys_has(_eh_keys, "shock")) {
                         var _shock_has_others = false;
                         for (var _shi = 0; _shi < array_length(combat_state.combatants); _shi++) {
                             var _shc = combat_state.combatants[_shi];
@@ -2089,6 +2102,30 @@ if (player_turn) {
                             if (_react_bt > 0) {
                                 _dmg += _react_bt * 5 * _hex_mult;
                                 array_push(combat_log, ab.name + " detonates bleed (+" + string(_react_bt * 5 * _hex_mult) + ")!");
+                            }
+                        }
+                        // Event Horizon cascade - pre-crit damage reactions, all at
+                        // once (same values as the single-pick chain above).
+                        if (array_length(_eh_keys) > 0) {
+                            if (combat_keys_has(_eh_keys, "root") || combat_keys_has(_eh_keys, "frost")) {
+                                _dmg = round(_dmg * (1 + 0.30 * _hex_mult));
+                                array_push(combat_log, ab.name + " shatters a held foe (+" + string(30 * _hex_mult) + "% damage)!");
+                            }
+                            if (combat_keys_has(_eh_keys, "weaken")) _dmg = round(_dmg * (1 + 0.15 * _hex_mult));
+                            if (combat_keys_has(_eh_keys, "vulnerable")) _dmg += 12 * _hex_mult;
+                            if (combat_keys_has(_eh_keys, "bleed")) {
+                                var _eh_bt = 0;
+                                for (var _ehb = 0; _ehb < array_length(target.status_effects); _ehb++) {
+                                    var _ehbs = target.status_effects[_ehb];
+                                    if (variable_struct_exists(_ehbs, "kind") && _ehbs.kind == "dot"
+                                        && combat_status_element(_ehbs) == "bleed") {
+                                        _eh_bt += variable_struct_exists(_ehbs, "duration") ? _ehbs.duration : 0;
+                                    }
+                                }
+                                if (_eh_bt > 0) {
+                                    _dmg += _eh_bt * 5 * _hex_mult;
+                                    array_push(combat_log, ab.name + " detonates bleed (+" + string(_eh_bt * 5 * _hex_mult) + ")!");
+                                }
                             }
                         }
 
@@ -2602,11 +2639,11 @@ if (player_turn) {
                         // ===== Detonation reaction - post-damage (P1) =====
                         // Achievement counter (08-05 wiring): a detonation reaction
                         // fired on this landed hit (ACH_DETONATE_25 via sync).
-                        if (_react_key != "") {
+                        if (_react_key != "" || array_length(_eh_keys) > 0) {
                             ach_counters_init();
                             global.ach_counters.detonations += 1;
                         }
-                        if (_react_key == "void" && _final_dmg > 0) {
+                        if ((_react_key == "void" || combat_keys_has(_eh_keys, "void")) && _final_dmg > 0) {
                             var _react_ls = combat_heal_after_mortality(player, round(_final_dmg * 0.3 * _hex_mult));
                             if (_react_ls > 0) {
                                 player.HP = min(player.max_HP, player.HP + _react_ls);
@@ -2614,7 +2651,8 @@ if (player_turn) {
                                 array_push(combat_log, ab.name + " siphons " + string(_react_ls) + " HP from the void!");
                             }
                         }
-                        if (_react_key == "poison" && !target.is_defeated && variable_struct_exists(target, "status_effects")) {
+                        if ((_react_key == "poison" || combat_keys_has(_eh_keys, "poison"))
+                            && !target.is_defeated && variable_struct_exists(target, "status_effects")) {
                             array_push(target.status_effects, {
                                 name: "Mortality", effect_type: "debuff", kind: "mortality",
                                 effect_value: min(0.8, 0.4 * _hex_mult), duration: 4, element: "", source: "player"
@@ -2623,7 +2661,7 @@ if (player_turn) {
                         }
                         // Shock arc (§C): chain ~33% of the hit to every OTHER living enemy.
                         // (If the target was alone, the +25% crit applied above instead.)
-                        if (_react_key == "shock" && _final_dmg > 0) {
+                        if ((_react_key == "shock" || combat_keys_has(_eh_keys, "shock")) && _final_dmg > 0) {
                             var _arc_dmg = max(1, round(_final_dmg * 0.33 * _hex_mult));
                             for (var _ari = 0; _ari < array_length(combat_state.combatants); _ari++) {
                                 var _arc_c = combat_state.combatants[_ari];
@@ -2657,6 +2695,26 @@ if (player_turn) {
                                 if (!_rdrop) array_push(_rk_kept, _rcs);
                             }
                             target.status_effects = _rk_kept;
+                        }
+                        // EVENT HORIZON: after every reaction has fired, the horizon
+                        // keeps it ALL - the target comes out carrying nothing
+                        // (stun/vulnerable/weaken/blind included, unlike the
+                        // single-pick consume above). The Mortality the poison
+                        // reaction JUST applied is the one thing spared - the wipe
+                        // must not eat its own reaction's output. M-locked 08-15.
+                        if (_is_eh && array_length(_eh_keys) > 0
+                            && variable_struct_exists(target, "status_effects")
+                            && array_length(target.status_effects) > 0) {
+                            var _eh_kept = [];
+                            for (var _ehk = 0; _ehk < array_length(target.status_effects); _ehk++) {
+                                var _ehs = target.status_effects[_ehk];
+                                if (variable_struct_exists(_ehs, "kind") && _ehs.kind == "mortality") {
+                                    array_push(_eh_kept, _ehs);
+                                }
+                            }
+                            array_push(combat_log, "The horizon takes everything - "
+                                + target.name + "'s statuses are stripped away.");
+                            target.status_effects = _eh_kept;
                         }
 
                         // Hexed spread: each detonation during the hex window marks every OTHER

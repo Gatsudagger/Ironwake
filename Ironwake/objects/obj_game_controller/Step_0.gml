@@ -135,6 +135,260 @@ if (web_view_open) {
     talent_tour_step = -1;   // web closed mid-tour: not marked seen, re-offers next open
 }
 
+// NPC STATION GUIDED TOURS (M-locked 08-15: framework + all seven keepers).
+// Same shape as the stats/talent tours - arms once per NPC on the FIRST open of
+// that keeper's screen (tutorial_seen "tour_<npc>"), Enter/Space/N = next,
+// Esc = skip, keys cleared. The NPC input blocks below all stand down while
+// npc_tour_step >= 0, so nothing can be bought or toggled under the dim.
+// Hub-only (the mid-run ghost/floor shops never tour); a coach-mark tip
+// outranks arming (one teacher at a time). Steps drawn by ui_draw_npc_tour
+// at the very end of the hub's Draw_64.
+var _nt_id = "";
+if (instance_exists(obj_hub_controller) && !menu_open) {
+    if (shop_open == 1)      _nt_id = "dorn";
+    else if (shop_open == 0) _nt_id = "petra";
+    else if (variable_instance_exists(id, "trainer_open") && trainer_open) _nt_id = "vex";
+    else if (variable_instance_exists(id, "maren_open")   && maren_open)   _nt_id = "maren";
+    else if (variable_instance_exists(id, "sable_open")   && sable_open)   _nt_id = "sable";
+    else if (variable_instance_exists(id, "vael_open")    && vael_open)    _nt_id = "vael";
+    else if (variable_instance_exists(id, "bairc_open")   && bairc_open
+        && !bairc_intro_open
+        && !(variable_instance_exists(id, "garden_open") && garden_open)) _nt_id = "bairc";
+}
+if (_nt_id != "") {
+    if (npc_tour_step < 0 && !tutorial_seen_has("tour_" + _nt_id)
+        && !tutorial_is_active()
+        && (!variable_global_exists("tutorial_enabled") || global.tutorial_enabled)) {
+        npc_tour_step = 0;
+        npc_tour_npc  = _nt_id;
+    }
+    if (npc_tour_step >= 0 && npc_tour_npc == _nt_id) {
+        var _nt_total = array_length(npc_tour_steps(npc_tour_npc));
+        var _nt_next = keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_space)
+                    || keyboard_check_pressed(ord("N"))
+                    || (gamepad_is_connected(0) && gamepad_button_check_pressed(0, gp_face1));
+        var _nt_skip = keyboard_check_pressed(vk_escape)
+                    || (gamepad_is_connected(0) && gamepad_button_check_pressed(0, gp_face2));
+        if (_nt_skip) {
+            tutorial_mark_seen("tour_" + npc_tour_npc);
+            npc_tour_step = -1;
+            audio_play_sound(snd_page, 1, false);
+        } else if (_nt_next) {
+            npc_tour_step++;
+            audio_play_sound(snd_page, 1, false);
+            if (npc_tour_step >= _nt_total) {   // past the last step = done
+                tutorial_mark_seen("tour_" + npc_tour_npc);
+                npc_tour_step = -1;
+            }
+        }
+        keyboard_clear(vk_enter);
+        keyboard_clear(vk_space);
+        keyboard_clear(vk_escape);
+        keyboard_clear(ord("N"));
+    }
+} else if (npc_tour_step >= 0) {
+    npc_tour_step = -1;   // screen closed mid-tour: not marked seen, re-offers next open
+}
+
+// =============================================================================
+// BAIRC'S GARDEN (M design-locked 08-15): full-screen wandering-camera scene.
+// bairc_open STAYS TRUE underneath (so every existing modal gate holds); the
+// bairc station block below stands down on garden_open. Verbs: A/D or arrows
+// or drag = pan; [1] pond crumb, [2] cairn stone, [3] forage, [E] pet,
+// [B] ornament shop, Esc leaves (or backs out of shop/placement). Every verb
+// also has a tap path via chips drawn in ui_draw_garden_scene (touch rule).
+// =============================================================================
+if (!variable_instance_exists(id, "garden_open")) garden_open = false;
+if (garden_open && bairc_open) {
+    garden_ensure();
+    if (garden_fade > 0) garden_fade--;
+    if (garden_notice_t > 0) { garden_notice_t--; if (garden_notice_t == 0) garden_notice = ""; }
+    // Expire old reaction FX (4s life).
+    for (var _gfi = array_length(garden_fx) - 1; _gfi >= 0; _gfi--) {
+        if (current_time - garden_fx[_gfi].t0 > 4000) array_delete(garden_fx, _gfi, 1);
+    }
+
+    // ---- ORNAMENT SHOP overlay (modal within the garden) ----
+    if (garden_shop_open) {
+        var _gs_cat = garden_decor_catalog();
+        var _gs_n   = array_length(_gs_cat);
+        for (var _gsi = 0; _gsi < _gs_n; _gsi++) {
+            if (input_inject_take("garden:shoprow" + string(_gsi))) {
+                if (garden_shop_cur == _gsi) input_inject("garden:shopgo");   // 2nd tap = pick
+                else garden_shop_cur = _gsi;
+            }
+        }
+        if (nav_up())   garden_shop_cur = wrap_index(garden_shop_cur - 1, _gs_n);
+        if (nav_down()) garden_shop_cur = wrap_index(garden_shop_cur + 1, _gs_n);
+        if (input_confirm() || input_inject_take("garden:shopgo")) {
+            var _gs_d = _gs_cat[garden_shop_cur];
+            if (garden_decor_placed(_gs_d.id)) {
+                garden_notice = "The " + _gs_d.name + " already stands in the garden.";
+                garden_notice_t = 150;
+            } else if (global.gold < _gs_d.gold
+                || (variable_global_exists("rune_dust") ? global.rune_dust : 0) < _gs_d.dust) {
+                garden_notice = _gs_d.name + " needs " + string(_gs_d.gold) + "g + " + string(_gs_d.dust) + " dust.";
+                garden_notice_t = 150;
+                audio_play_sound(snd_ui_error, 1, false);
+            } else {
+                garden_place_pick = _gs_d.id;   // charged at placement
+                garden_shop_open  = false;
+                garden_notice = "Choose a plot for the " + _gs_d.name + " - tap a glowing ring, or press its number.";
+                garden_notice_t = 300;
+                audio_play_sound(snd_page, 1, false);
+            }
+        }
+        if (input_cancel() || input_back()) {
+            garden_shop_open = false;
+            audio_play_sound(snd_page, 1, false);
+        }
+    } else {
+        // ---- PLACEMENT mode: pick a plot for garden_place_pick ----
+        if (garden_place_pick != "") {
+            var _gp_anchors = garden_decor_anchors();
+            for (var _gpi = 0; _gpi < array_length(_gp_anchors); _gpi++) {
+                if (keyboard_check_pressed(ord(string(_gpi + 1)))
+                    || input_inject_take("garden:plot" + string(_gpi))) {
+                    var _gp_res = garden_decor_place(_gpi, garden_place_pick);
+                    if (_gp_res == "") {
+                        var _gp_d = garden_decor_get(garden_place_pick);
+                        garden_notice = "The " + _gp_d.name + " settles into the earth.";
+                        garden_notice_t = 200;
+                        garden_place_pick = "";
+                        audio_play_sound(snd_confirm_major, 1, false);
+                    } else {
+                        garden_notice = _gp_res; garden_notice_t = 150;
+                        audio_play_sound(snd_ui_error, 1, false);
+                    }
+                    break;
+                }
+            }
+            if (input_cancel() || input_back()) {
+                garden_place_pick = "";
+                garden_notice = "Placement set aside.";
+                garden_notice_t = 100;
+            }
+        } else if (input_cancel() || input_back() || input_inject_take("garden:leave")) {
+            // ---- Leave the garden -> back to Bairc's station ----
+            garden_open = false;
+            music_garden_stop();
+            audio_play_sound(music_hub_snd(), 1, true);
+            audio_apply_volumes();
+            audio_play_sound(snd_page, 1, false);
+        }
+
+        // ---- Activities (hotkeys; the draw chips inject these same tags) ----
+        if (garden_place_pick == "") {
+            if (keyboard_check_pressed(ord("1")) || input_inject_take("garden:crumb")) {
+                garden_crumb_t = current_time;
+                garden_crumb_x = 1250 + irandom_range(-60, 60);
+                array_push(garden_fx, { kind: "ripple", x: garden_crumb_x, y: 900, t0: current_time });
+                garden_notice = "The water dimples. Shapes rise to meet it.";
+                garden_notice_t = 120;
+            }
+            if (keyboard_check_pressed(ord("2")) || input_inject_take("garden:stone")) {
+                var _gc_msg = garden_cairn_place();
+                if (_gc_msg != "") {
+                    garden_notice = _gc_msg; garden_notice_t = 200;
+                    array_push(garden_fx, { kind: "stone", x: 2650, y: 870, t0: current_time });
+                    audio_play_sound(snd_page, 1, false);
+                }
+            }
+            if (keyboard_check_pressed(ord("3")) || input_inject_take("garden:forage")) {
+                // Nearest untaken sparkle to the screen centre.
+                var _gf_spots = garden_forage_spots();
+                var _gf_best = -1, _gf_bd = 999999;
+                for (var _gfj = 0; _gfj < array_length(_gf_spots); _gfj++) {
+                    var _gfs = _gf_spots[_gfj];
+                    if (_gfs.taken) continue;
+                    var _gfd = abs(_gfs.x - (garden_cam_x + 960));
+                    if (_gfd < _gf_bd) { _gf_bd = _gfd; _gf_best = _gfs.idx; }
+                }
+                if (_gf_best >= 0 && _gf_bd < 1100) {
+                    garden_notice = garden_forage_take(_gf_best);
+                    garden_notice_t = 220;
+                    audio_play_sound(snd_confirm_major, 1, false);
+                } else if (_gf_best >= 0) {
+                    garden_notice = "Nothing glitters here - wander further.";
+                    garden_notice_t = 120;
+                } else {
+                    garden_notice = "The grounds are picked clean today. A run will turn up more.";
+                    garden_notice_t = 180;
+                }
+            }
+            // Tap on a specific sparkle (draw injects the exact index).
+            for (var _gfk = 0; _gfk < 3; _gfk++) {
+                if (input_inject_take("garden:forage" + string(_gfk))) {
+                    var _gfm = garden_forage_take(_gfk);
+                    if (_gfm != "") {
+                        garden_notice = _gfm; garden_notice_t = 220;
+                        audio_play_sound(snd_confirm_major, 1, false);
+                    }
+                }
+            }
+            // Petting: [E] pets the resident nearest the screen centre; a tap
+            // on a resident injects its exact index.
+            var _gpe_pick = -1;
+            if (keyboard_check_pressed(ord("E"))) _gpe_pick = -2;   // nearest
+            var _gpe_dn = array_length(bairc_donated());
+            for (var _gpl = 0; _gpl < min(_gpe_dn, 16); _gpl++) {
+                if (input_inject_take("garden:pet" + string(_gpl))) _gpe_pick = _gpl;
+            }
+            if (_gpe_pick != -1 && _gpe_dn > 0) {
+                var _gpe_i = _gpe_pick;
+                if (_gpe_i == -2) {
+                    // Nearest by the same deterministic home-x the draw uses.
+                    var _gpe_bd = 999999; _gpe_i = 0;
+                    for (var _gpn = 0; _gpn < min(_gpe_dn, 16); _gpn++) {
+                        var _gph = frac(sin((_gpn + 1) * 91.17) * 47453.25);
+                        var _gpx = 260 + _gph * (garden_world_w() - 620);
+                        var _gpd = abs(_gpx - (garden_cam_x + 960));
+                        if (_gpd < _gpe_bd) { _gpe_bd = _gpd; _gpe_i = _gpn; }
+                    }
+                }
+                var _gpe_d = bairc_donated()[_gpe_i];
+                var _gpe_h = frac(sin((_gpe_i + 1) * 91.17) * 47453.25);
+                array_push(garden_fx, { kind: "hearts",
+                    x: 260 + _gpe_h * (garden_world_w() - 620),
+                    y: (_gpe_i mod 2 == 0) ? 952 : 800, t0: current_time });
+                garden_notice = garden_pet_line(_gpe_d.name);
+                garden_notice_t = 200;
+                audio_play_sound(snd_page, 1, false);
+            }
+            // Shop open.
+            if (input_hotkey("B") || input_inject_take("garden:shop")) {
+                garden_shop_open = true;
+                garden_shop_cur  = 0;
+                audio_play_sound(snd_page, 1, false);
+            }
+            // [M] / the music chip: cycle Default + the garden's track pool
+            // (per-save selection, banshee-selector idiom - live-swaps here).
+            if (input_hotkey("M") || input_inject_take("garden:music")) {
+                if (music_selection_cycle("garden", 1)) {
+                    var _gm_t = music_selected_track("garden");
+                    garden_notice = "Now playing: " + ((_gm_t == undefined) ? "Stillwater" : _gm_t.name);
+                    garden_notice_t = 150;
+                    if (variable_global_exists("save_slot") && global.save_slot >= 0) save_game();
+                }
+            }
+        }
+
+        // ---- Camera pan: held keys + drag (mouse/touch) ----
+        var _gcam_v = 0;
+        if (keyboard_check(ord("D")) || keyboard_check(vk_right)) _gcam_v += 16;
+        if (keyboard_check(ord("A")) || keyboard_check(vk_left))  _gcam_v -= 16;
+        garden_cam_x += _gcam_v;
+        if (mouse_check_button(mb_left)) {
+            var _gdm = device_mouse_x_to_gui(0);
+            if (garden_drag_mx >= 0) garden_cam_x -= (_gdm - garden_drag_mx);
+            garden_drag_mx = _gdm;
+        } else {
+            garden_drag_mx = -1;
+        }
+        garden_cam_x = clamp(garden_cam_x, 0, garden_world_w() - 1920);
+    }
+}
+
 // Global fullscreen toggle (F11) - works in every room, persists in settings.ini.
 if (keyboard_check_pressed(vk_f11)) {
     video_toggle_fullscreen();
@@ -1302,7 +1556,8 @@ if (input_hotkey("F") && room == rm_hub && !text_entry_active() && !menu_open
 // the shop but arrows/enter kept driving the shop underneath) - the menu block
 // owns input until it closes, then control falls back to the shop.
 // =============================================================================
-if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()) {
+if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()
+    && npc_tour_step < 0) {   // guided tour owns input while it runs
 
     // Q/E: cycle tabs. Petra (shop_open == 0) has BUY/SELL/TRADE; Dorn has BUY/SELL/REFORGE.
     // The reforge confirm/anim screen (reforge_stage > 0) is MODAL - tab cycling and
@@ -2238,47 +2493,67 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()) {
         }
 
         // Esc/Backspace: cancel a pending confirm first, then step back a rune
-        // phase (result-pick -> rune-pick), else close the shop.
+        // phase (result-pick -> rune-pick), then back out of place-another mode
+        // to the ledger view, else close the shop.
+        if (!variable_instance_exists(id, "petra_place_more")) petra_place_more = false;
         if (input_cancel() || input_back()) {
             if (petra_trade_confirm) {
                 petra_trade_confirm      = false;
                 petra_trade_notification = "";
             } else if (petra_trade_mode == 1 && petra_rune_phase == 1) {
                 petra_rune_phase = 0; petra_trade_notification = "";
+            } else if (petra_place_more && petra_order_active()) {
+                petra_place_more = false; petra_trade_notification = "";
             } else {
                 shop_open = -1; shop_tab = 0; shop_index = 0;
                 sell_index = 0; sell_scroll = 0; sell_confirm_name = "";
                 shop_notification = ""; petra_trade_notification = "";
                 petra_trade_mode = 0; petra_rune_phase = 0; petra_rune_sel = [];
+                petra_place_more = false;
             }
             exit;
         }
 
-        // --- An order exists: collect (ready) or cancel (in progress) ---
-        if (petra_order_active()) {
-            if (global.petra_order.status == "ready") {
-                if (input_confirm() || input_confirm_alt() || input_inject_take("petra:collect")) {
-                    petra_trade_notification = petra_collect();
-                    petra_trade_confirm = false;
-                    // The reveal moment (matching Dorn's forge reveal): burst + the
-                    // examine popup (petra_collect stocked global.petra_reveal).
-                    audio_play_sound(snd_confirm_major, 1, false);
-                    ui_checkout_vfx(spr_vfx_arcane, 960, 460);   // Gigapack collect burst
-                    petra_collect_time = current_time;
-                    if (variable_global_exists("petra_reveal") && global.petra_reveal != undefined) {
-                        petra_reveal_open = true;
-                    }
+        // --- THE LEDGER VIEW (two-order refactor 08-15): orders exist and we're
+        // not placing another. Enter collects the first READY order; Space (or
+        // the button) opens the trade UI while a second line is free at rank 1;
+        // C cancels the NEWEST order (two-step confirm).
+        if (petra_order_active() && !petra_place_more) {
+            var _po_ready = false;
+            for (var _poi = 0; _poi < array_length(global.petra_orders); _poi++) {
+                if (global.petra_orders[_poi].status == "ready") { _po_ready = true; break; }
+            }
+            if (_po_ready && (input_confirm() || input_inject_take("petra:collect"))) {
+                petra_trade_notification = petra_collect();
+                petra_trade_confirm = false;
+                // The reveal moment (matching Dorn's forge reveal): burst + the
+                // examine popup (petra_collect stocked global.petra_reveal).
+                audio_play_sound(snd_confirm_major, 1, false);
+                ui_checkout_vfx(spr_vfx_arcane, 960, 460);   // Gigapack collect burst
+                petra_collect_time = current_time;
+                if (variable_global_exists("petra_reveal") && global.petra_reveal != undefined) {
+                    petra_reveal_open = true;
                 }
-            } else {
-                // In progress: C cancels (two-step confirm).
-                if (input_hotkey("C")) {
-                    if (!petra_trade_confirm) {
-                        petra_trade_confirm = true;
-                        petra_trade_notification = "Cancel the order? You may recover only some inputs - gold is NOT refunded.  C: confirm   Esc: keep";
-                    } else {
-                        petra_trade_confirm = false;
-                        petra_trade_notification = petra_cancel_order();
-                    }
+            }
+            if (petra_order_can_place()
+                && (input_confirm_alt() || input_inject_take("petra:more"))) {
+                petra_place_more = true;
+                petra_trade_confirm = false; petra_trade_notification = "";
+                audio_play_sound(snd_page, 1, false);
+            }
+            // C cancels the newest order (two-step confirm).
+            if (input_hotkey("C")) {
+                var _po_last = global.petra_orders[array_length(global.petra_orders) - 1];
+                if (_po_last.status == "ready") {
+                    petra_trade_notification = "That order is READY - collect it instead.";
+                } else if (!petra_trade_confirm) {
+                    petra_trade_confirm = true;
+                    petra_trade_notification = "Cancel the "
+                        + ((array_length(global.petra_orders) > 1) ? "NEWEST order" : "order")
+                        + "? You may recover only some inputs - gold is NOT refunded.  C: confirm   Esc: keep";
+                } else {
+                    petra_trade_confirm = false;
+                    petra_trade_notification = petra_cancel_order();
                 }
             }
             exit;
@@ -2364,6 +2639,7 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()) {
                             petra_trade_notification = "Blueprint order placed! Earn it by clearing floors.";
                             audio_play_sound(snd_npc_confirm, 1, false);
                             petra_rune_sel = []; petra_rune_phase = 0;
+                            petra_place_more = false;   // back to the ledger view
                         } else {
                             petra_trade_notification = _bp_res;
                             audio_play_sound(snd_ui_error, 1, false);
@@ -2411,6 +2687,7 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()) {
                     petra_trade_notification = "Order placed! Earn it by clearing floors.";
                     petra_trade_selected = [];
                     audio_play_sound(snd_npc_confirm, 1, false);
+                    petra_place_more = false;   // back to the ledger view
                 }
                 else            { petra_trade_notification = _res; }
                 petra_trade_confirm = false;
@@ -2670,7 +2947,8 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()) {
 //   tab 0 Stats   tab 1 Trait Slots   tab 2 Abilities   tab 3 Traits
 //   tab 4 Potency   tab 5 Reweave (talent-web respec)
 // =============================================================================
-if (trainer_open && !menu_open && !forge_result_up()) {   // I menu owns input while open (see shop block)
+if (trainer_open && !menu_open && !forge_result_up()
+    && npc_tour_step < 0) {   // I menu owns input while open (see shop block); tour too
     var _tr_class = variable_global_exists("chosen_class") ? global.chosen_class : 0;
 
     // --- Tab: examine the highlighted ability (tab 2) or trait (tab 3) before buying.
@@ -2907,6 +3185,7 @@ if (trainer_open && !menu_open && !forge_result_up()) {   // I menu owns input w
                 audio_play_sound(snd_ui_error, 1, false);
             } else {
                 global.gold -= _slot_cost;
+                vex_first_buy_consume();   // Drill Regimen: first buy each visit
                 global.bonus_trait_slots = _bts + 1;
                 affinity_add("vex", 2);   // function-use drip (trait slot)
                 save_game();
@@ -2934,6 +3213,7 @@ if (trainer_open && !menu_open && !forge_result_up()) {   // I menu owns input w
             } else {
                 trainer_confirm = false;
                 global.gold -= _cost;
+                vex_first_buy_consume();   // Drill Regimen: first buy each visit
                 if (!variable_global_exists("unlocked_abilities")) global.unlocked_abilities = [];
                 array_push(global.unlocked_abilities, _ab.name);
                 affinity_add("vex", 2);   // function-use drip (ability unlock)
@@ -2986,6 +3266,7 @@ if (trainer_open && !menu_open && !forge_result_up()) {   // I menu owns input w
                         if (global.gold >= _pg && _pdust_have >= _pd) {
                             global.gold      -= _pg;
                             global.rune_dust -= _pd;
+                            vex_first_buy_consume();   // Drill Regimen: first buy each visit
                             if (!variable_global_exists("trait_potency")) global.trait_potency = {};
                             variable_struct_set(global.trait_potency, _up.name, _tier + 1);
                             affinity_add("vex", 2);   // function-use drip (potency)
@@ -3079,9 +3360,29 @@ if (variable_instance_exists(id, "bairc_lore_open") && bairc_lore_open) {
 // roster; Enter hatches an egg, else sets the highlighted pet as active companion;
 // Esc closes. Layout constants MUST match ui_draw_bairc_screen() in scr_ui.
 // =============================================================================
-if (variable_instance_exists(id, "bairc_open") && bairc_open) {
+if (variable_instance_exists(id, "bairc_open") && bairc_open && npc_tour_step < 0
+    && !garden_open) {   // the garden scene owns input while it is up
     var _bp_n = pet_count();
     if (_bp_n > 0) bairc_cursor = clamp(bairc_cursor, 0, _bp_n - 1); else bairc_cursor = 0;
+
+    // VISIT THE GARDEN (M design-locked 08-15): [V] / the header chip fades
+    // into the full-screen grounds. Only from the base station view - the
+    // sub-modals below own their input.
+    if (!bairc_pad_menu_open && !bairc_detail_open && !bairc_naming
+        && !bairc_release_confirm && !bairc_capstone_open && !hatch_active
+        && (input_hotkey("V") || input_inject_take("bairc:garden"))) {
+        garden_open   = true;
+        garden_fade   = 24;
+        garden_cam_x  = 0;
+        garden_notice = ""; garden_notice_t = 0;
+        garden_shop_open = false; garden_place_pick = ""; garden_fx = [];
+        // The garden's own music pool (selection via the [M] chip in-scene).
+        music_hub_stop();
+        audio_play_sound(music_garden_snd(), 1, true);
+        audio_apply_volumes();
+        audio_play_sound(snd_page, 1, false);
+        exit;
+    }
 
     // A queued lore fragment takes the floor before anything else (one per visit-moment;
     // the next queued line shows after this one is dismissed).
@@ -3392,7 +3693,8 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open) {
 // Socket tab is a 3-phase flow: 0 pick item -> 1 pick socket -> 2 pick rune.
 // Layout constants here MUST match ui_draw_maren_screen() in scr_ui.
 // =============================================================================
-if (variable_instance_exists(id, "maren_open") && maren_open && !menu_open && !forge_result_up()) {
+if (variable_instance_exists(id, "maren_open") && maren_open && !menu_open && !forge_result_up()
+    && npc_tour_step < 0) {
     // --- Banshee release ceremony popup: owns ALL input while open. Any key
     //     first skips to the reveal, then closes. (Drawn by ui_draw_maren.) ---
     if (banshee_release_open) {
@@ -3507,6 +3809,23 @@ if (variable_instance_exists(id, "maren_open") && maren_open && !menu_open && !f
                     maren_notification = "Could not remove that rune.";
                 }
 
+            } else if (_cf.action == "deep_socket") {
+                // DEEP SOCKET (Maren rank 2, M-locked 08-15): +1 socket into an
+                // equipped piece - 400g + 80 dust, once per run, once ever per item.
+                if (global.gold < 400 || global.rune_dust < 80) {
+                    maren_notification = "Deep Socket costs 400g + 80 dust.";
+                    audio_play_sound(snd_ui_error, 1, false); exit;
+                }
+                var _dsi = _cf.item;
+                item_ensure_sockets(_dsi);
+                _dsi.socket_count += 1;
+                _dsi.deep_socketed = true;
+                global.deep_socket_used = true;
+                global.gold -= 400; global.rune_dust -= 80;
+                affinity_add("maren", 2); save_game();
+                maren_notification = "Maren drills a DEEP SOCKET into " + _dsi.name + "!  (-400g, -80 dust)";
+                audio_play_sound(snd_forge, 1, false);
+
             } else if (_cf.action == "banshee_release") {
                 // Free the spirit: consume a banked bottle, roll the reward, and start
                 // the release ceremony popup (bottle opens, banshee rises, scream).
@@ -3525,6 +3844,46 @@ if (variable_instance_exists(id, "maren_open") && maren_open && !menu_open && !f
             exit;
         }
         exit;   // swallow all other input while the confirm prompt is open
+    }
+
+    // DEEP SOCKET (Maren rank 2, M-locked 08-15): [D] on the Socket Gear tab
+    // drills +1 socket into the targeted equipped piece. Phase 0 targets the
+    // highlighted row; phases 1/2 target the item already being worked on.
+    // The draw side offers a tappable chip that presses D (touch parity).
+    if (maren_tab == 0 && input_hotkey("D")) {
+        var _ds_item = _m_item;
+        if (_ds_item == undefined && maren_phase == 0) {
+            var _ds_slots = maren_socketable_slots();
+            if (array_length(_ds_slots) > 0) {
+                _ds_item = global.inventory[_ds_slots[clamp(maren_cursor, 0, array_length(_ds_slots) - 1)]];
+            }
+        }
+        if (npc_rank("maren") < 2) {
+            maren_notification = "Deep Socket needs Maren's station at rank 2  ([U] or the STATION chip on the camp carousel).";
+            audio_play_sound(snd_ui_error, 1, false);
+        } else if (variable_global_exists("deep_socket_used") && global.deep_socket_used) {
+            maren_notification = "The deep bit is spent - Maren can drill again after your next run.";
+            audio_play_sound(snd_ui_error, 1, false);
+        } else if (_ds_item == undefined) {
+            maren_notification = "Select an equipped piece to deep-socket first.";
+            audio_play_sound(snd_ui_error, 1, false);
+        } else if (variable_struct_exists(_ds_item, "deep_socketed") && _ds_item.deep_socketed) {
+            maren_notification = _ds_item.name + " already carries a deep socket - one per item, ever.";
+            audio_play_sound(snd_ui_error, 1, false);
+        } else if (global.gold < 400 || (variable_global_exists("rune_dust") ? global.rune_dust : 0) < 80) {
+            maren_notification = "Deep Socket costs 400g + 80 dust.";
+            audio_play_sound(snd_ui_error, 1, false);
+        } else {
+            item_ensure_sockets(_ds_item);
+            maren_confirm = {
+                action: "deep_socket", cost: 400, item: _ds_item,
+                name: _ds_item.name, tier: 0,
+                message: "Drill a DEEP SOCKET into " + _ds_item.name + " for 400g + 80 dust?  ("
+                    + string(array_length(_ds_item.runes)) + "/" + string(_ds_item.socket_count) + " -> "
+                    + string(array_length(_ds_item.runes)) + "/" + string(_ds_item.socket_count + 1) + " sockets)",
+                warn: "Once per run - and an item can only ever be deepened once."
+            };
+        }
     }
 
     // Aspect-tab state
@@ -3883,7 +4242,7 @@ if (variable_instance_exists(id, "maren_open") && maren_open && !menu_open && !f
 // Layout constants here MUST match ui_draw_sable_screen() in scr_ui.
 // =============================================================================
 if (variable_instance_exists(id, "sable_open") && sable_open && !menu_open && !forge_result_up()
-    && cursed_ritual_t < 0) {
+    && cursed_ritual_t < 0 && npc_tour_step < 0) {
     rune_inventory_sort();   // keep the rune/aspect pool alphabetical (display + index ops read this)
     var _s_gear   = sable_salvageable_gear();
     var _s_rinv   = variable_global_exists("rune_inventory") ? global.rune_inventory : [];
@@ -4353,7 +4712,7 @@ if (variable_instance_exists(id, "sable_open") && sable_open && !menu_open && !f
 // Single list: Enter buys an unowned skin or equips an owned one.
 // Layout constants here MUST match ui_draw_vael_screen() in scr_ui.
 // =============================================================================
-if (variable_instance_exists(id, "vael_open") && vael_open && !menu_open) {
+if (variable_instance_exists(id, "vael_open") && vael_open && !menu_open && npc_tour_step < 0) {
     var _v_cat  = vael_skin_catalog_visible();   // class-gated view - MUST match the draw (08-14)
     var _v_rows = max(1, array_length(_v_cat));
 
@@ -4507,13 +4866,21 @@ if (variable_instance_exists(id, "vael_open") && vael_open && !menu_open) {
 
         if (input_confirm()) {
             // Vael Companion perk: portrait changes are free ("for you? always").
-            var _pcost = affinity_at_least("vael", 3) ? 0 : 100;
+            // Private Gallery (rank 2, M-locked 08-15): one free change per run.
+            var _pg_free = variable_global_exists("vael_portrait_free") && global.vael_portrait_free
+                        && npc_rank("vael") >= 2;
+            var _pcost = (affinity_at_least("vael", 3) || _pg_free) ? 0 : 100;
             if (vael_portrait_cursor == global.chosen_portrait) {
                 vael_notification = "That's already your portrait.";
             } else if (global.gold >= _pcost) {
                 global.gold -= _pcost;
                 global.chosen_portrait = vael_portrait_cursor;
-                vael_notification = (_pcost > 0) ? "Portrait changed!  (-100g)" : "Portrait changed!  (her gift)";
+                if (_pcost == 0 && _pg_free && !affinity_at_least("vael", 3)) {
+                    global.vael_portrait_free = false;   // the gallery sitting is spent
+                    vael_notification = "Portrait changed!  (Private Gallery - on the house this run)";
+                } else {
+                    vael_notification = (_pcost > 0) ? "Portrait changed!  (-100g)" : "Portrait changed!  (her gift)";
+                }
                 affinity_add("vael", 2);   // function-use drip (portrait change)
             } else {
                 vael_notification = "Not enough gold - you need 100g.";

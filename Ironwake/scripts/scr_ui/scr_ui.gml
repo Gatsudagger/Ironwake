@@ -1706,7 +1706,7 @@ function ui_ability_icon_sprite(ability) {
         case "Adrenaline Rush":  return spr_ability_adrenaline_rush;
         case "Mana Sever":       return spr_ability_mana_sever;
         case "Arcane Echo":      return spr_ability_arcane_echo_rings; // 07-17: new 3-ring echo art; spr_ability_arcane_echo (old art) now belongs to Entropy
-        case "Singularity":      return spr_ability_singularity;
+        case "Event Horizon":    return spr_ability_singularity;   // 08-15 rename kept the art
         case "Sanguine Pact":    return spr_ability_sanguine_pact;
         case "Bonebreaker":      return spr_ability_bonebreaker;
         case "Crimson Apex":     return spr_ability_crimson_apex;
@@ -4088,14 +4088,41 @@ function ui_draw_pet_stat_tooltip(mx, my, pet, which) {
     }
     var _arch_of = (which == "pow") ? "Warrior" : ((which == "spr") ? "Guardian" : "Fortune");
     var _gift    = (which == "pow") ? "strike damage" : ((which == "spr") ? "heals & shields" : "boon (gold & loot)");
+    // BAIRC'S LEDGER (Station rank 1, M 08-15): once his pens are upgraded,
+    // every stat hover carries the FULL accounting - the source breakdown for
+    // ALL stats (was governing-only) plus exact per-point impact lines.
+    var _ledger = (npc_rank("bairc") >= 1);
     if (_gov) {
         array_push(_lines, { txt: "Governing stat: its " + _gift + " scales +" + string(round(_val * PET_STAT_COEFF * 100))
                                 + "%  (each point = +" + string(round(PET_STAT_COEFF * 100)) + "%).", col: make_color_rgb(150, 210, 160) });
+    }
+    if (_gov || _ledger) {
         var _bd  = pet_stat_breakdown(pet, which);
         var _src = "Base " + string(_bd.base) + "   Stage +" + string(_bd.stage) + "   Talent +" + string(_bd.talent);
         if (_bd.bond > 0)      _src += "   Bond +" + string(_bd.bond);
         if (_bd.signature > 0) _src += "   Scion +" + string(_bd.signature);
         array_push(_lines, { txt: _src, col: make_color_rgb(170, 178, 198) });
+    }
+    if (_ledger) {
+        switch (which) {
+            case "pow":
+                array_push(_lines, { txt: "Each point: -0.5% damage taken (caps at 8%).", col: make_color_rgb(150, 210, 160) });
+                break;
+            case "spr":
+                array_push(_lines, { txt: "Each point: +5% injury shrug (caps at 50%).", col: make_color_rgb(150, 210, 160) });
+                break;
+            default:
+                array_push(_lines, { txt: "Each point: +0.5% gold find, +0.3 loot find.", col: make_color_rgb(150, 210, 160) });
+                // Loot-find points also feed the Banshee bottle chest roll
+                // (+1% per 3 points, banshee_chest_try - keep in sync).
+                array_push(_lines, { txt: "Songs: +" + string(floor(_val * 0.3 / 3))
+                                        + "% Banshee bottle chance from chests (as companion, fed).", col: make_color_rgb(150, 210, 160) });
+                break;
+        }
+        if (!_gov) {
+            array_push(_lines, { txt: "If it governed: " + _gift + " would scale +" + string(round(_val * PET_STAT_COEFF * 100)) + "%.", col: make_color_rgb(140, 150, 175) });
+        }
+        array_push(_lines, { txt: "Bairc's ledger - full accounting (Station rank 1).", col: make_color_rgb(110, 160, 120) });
     }
     array_push(_lines, { txt: "Grows fastest on " + _arch_of + " creatures.", col: make_color_rgb(140, 145, 165) });
     draw_set_font(ui_font(fnt_ui_small));
@@ -4252,6 +4279,9 @@ function ui_draw_bairc_screen() {
     draw_set_font(ui_font(fnt_ui_small));
     draw_set_color(make_color_rgb(150, 160, 185));
     draw_text(_x1 + _pad, _y1 + _pad + 66, "He tends the creatures you carry up from below.");
+    // VISIT THE GARDEN (M design-locked 08-15): walk the full grounds - the
+    // chip taps through to the same [V] the keyboard uses.
+    ui_garden_chip(1330, _y1 + _pad + 4, "VISIT THE GARDEN  [V]", "bairc:garden");
 
     var _roster = pet_roster();
     var _n      = array_length(_roster);
@@ -7393,6 +7423,18 @@ function ui_draw_weakness_tooltip(mx, my, school, ename) {
 // Touch: a finger resting on a tab sets the same hover, so the reminder shows
 // while a tab is being pressed (mobile keyword-tap idea = later experiment).
 // ---------------------------------------------------------------------------
+// Procedural heart (two lobes + a point), centre (x,y), radius r. Used for the
+// hub carousel bond row - spr_heart_fx is a 48px canvas with an ~8px heart in
+// it, unreadable at chip size (M 08-15: "fix the bond hearts").
+function ui_draw_heart(_x, _y, _r, _col, _a = 1.0) {
+    draw_set_alpha(_a);
+    draw_set_color(_col);
+    draw_circle(_x - _r * 0.55, _y - _r * 0.4, _r * 0.62, false);
+    draw_circle(_x + _r * 0.55, _y - _r * 0.4, _r * 0.62, false);
+    draw_triangle(_x - _r * 1.12, _y - _r * 0.14, _x + _r * 1.12, _y - _r * 0.14, _x, _y + _r * 1.05, false);
+    draw_set_alpha(1.0);
+}
+
 function ui_tab_hover_stash(x0, y0, x1, y1, title, body) {
     var _mx = device_mouse_x_to_gui(0), _my = device_mouse_y_to_gui(0);
     if (_mx >= x0 && _mx <= x1 && _my >= y0 && _my <= y1) {
@@ -7425,11 +7467,11 @@ function ui_draw_tab_tip() {
 // The authored quick-ref copy, keyed "<npc>:<tab label>". "" = no tip.
 function ui_tab_hint_body(key) {
     switch (key) {
-        case "dorn:BUY":     return "Dorn's rotating stock - weapons, armor and gear. Restocks between runs; his Awakening-scaled shelf improves as you climb.";
+        case "dorn:BUY":     return "Dorn's rotating stock - weapons, armor and gear. Restocks between runs; his Awakening-scaled shelf improves as you climb. Station rank 1 widens the stall by 2 pieces.";
         case "dorn:SELL":    return "Sell unequipped gear from your pack and stash for gold.";
         case "dorn:REFORGE": return "Two crafts. REWORK GEAR: spend a Reforge Ingot of the item's tier or higher to reroll its affixes - same item, fresh stats. SMELT: destroy a piece for an ingot, and Dorn studies one of its affixes into the PATTERN BOOK. CRAFT builds an item to your own design from studied blueprints.";
-        case "dorn:TEMPER":  return "Work rough gear toward its true potential: each step is +10% QUALITY (gold + rune dust), plus a little bonus max HP. A raw legendary barely beats a finished epic.";
-        case "maren:Socket Gear":   return "Socket GEAR runes into equipped items with open sockets. Runes come back out freely - nothing is lost by experimenting.";
+        case "dorn:TEMPER":  return "Work rough gear toward its true potential: each step is +10% QUALITY (gold + rune dust), plus a little bonus max HP. A raw legendary barely beats a finished epic. Station rank 2 makes each step +12%.";
+        case "maren:Socket Gear":   return "Socket GEAR runes into equipped items with open sockets. Runes come back out freely - nothing is lost by experimenting. Station rank 2 unlocks DEEP SOCKET [D]: +1 socket, once per run.";
         case "maren:Aspects":       return "Socket ASPECT runes into your character's aspect slots - per-school damage (Ember, Rime...), Serration, Surge and the flagships live here.";
         case "maren:Runesmithing":  return "Maren's craft menu: COMBINE three identical runes into one a tier higher, SPLIT a rune back down, AWAKEN a dormant legendary, forge FLAGSHIP runes, and seal her RUNEHEART CORE share of the Legendary Forge.";
         case "maren:Runes":         return "Your full rune pouch - every unsocketed gear and aspect rune you carry.";
@@ -7438,6 +7480,9 @@ function ui_tab_hint_body(key) {
         case "sable:Salvage":  return "Break unequipped gear down into RUNE DUST - rarer pieces pay more dust.";
         case "sable:Upgrade":  return "Sable's refinements: TRANSMUTE three runes into a different rune of the same tier, and improve what she already knows how to make.";
         case "sable:Rebirth":  return "Sable's dark exchange: CURSED REBIRTH feeds a legendary to the dark - it comes back stronger, but branded with a real curse. QUINTESSENCE distills her share of the Legendary Forge here too.";
+        case "petra:BUY":      return "Supplies for the road - potions, creature feed and consumables. Restocks between runs; her SPECIAL shelf sometimes carries something rarer.";
+        case "petra:SELL":     return "Sell unequipped gear from your pack and stash for gold.";
+        case "petra:TRADE":    return "The treasure ladder: 3 same-tier items trade up to the next tier, delivered after floor clears. [R] flips to RUNE mode - 5 same-tier runes buy a BLUEPRINT rune of your choosing. Traded goods are destroyed. Station rank 1 opens a SECOND ledger line.";
     }
     return "";
 }
@@ -10406,7 +10451,7 @@ function ui_compendium_sections() {
             title: "Class Resources",
             entries: [
                 { term: "What they are", text: "Each class banks a SECONDARY resource (cap 10) alongside AP. Generator abilities build it, payoff abilities spend it. Your bank carries between fights on the same floor - AP resets, the resource doesn't." },
-                { term: "Souls (Arcanist)", text: "Built two ways: soul-generating spells (each states its gain - Soulfire +2, Void Drain +1, Scorch and Blazing Palm +1), and the Arcanist CLASS PASSIVE - +2 Souls every time one of your hits kills an enemy. Both can land in the same cast: a killing Soulfire logs +2 for the spell AND +2 for the kill. Spent by Arcane Burst, Soul Nova, Arcane Echo, Singularity and Soul Rend." },
+                { term: "Souls (Arcanist)", text: "Built two ways: soul-generating spells (each states its gain - Soulfire +2, Void Drain +1, Scorch and Blazing Palm +1), and the Arcanist CLASS PASSIVE - +2 Souls every time one of your hits kills an enemy. Both can land in the same cast: a killing Soulfire logs +2 for the spell AND +2 for the kill. Spent by Arcane Burst, Soul Nova, Arcane Echo, Event Horizon and Soul Rend." },
                 { term: "Blood (Bloodwarden)", text: "Built through bloodshed: +1 Blood each time YOU take a hit (class passive), plus blood-feeding abilities like Blood Leech. Spent by your crimson payoffs - many also cost HP, so the reserve is life you've set aside." },
                 { term: "Preparation (Shadowstrider)", text: "+1 Preparation at the start of each of your turns while no trap of yours is armed (class passive), plus refunds from clean plays like Evasive Roll. Spent to power traps and executes." },
                 { term: "OVERCHARGE", text: "Cast a resource-spending ability while your reserve is FULL (10) and it drains the WHOLE reserve: every point beyond what the ability itself uses adds +2 damage (or +2 healing / shield on self-spenders like Blood Surge and Sanguine Pact). The resource bar glows gold when full, and eligible abilities pulse gold on the combat bar. Abilities that scale with the reserve HELD (Soul Shield, Arcane Echo) don't Overcharge - they're already the hoard's payoff. Hoard, then cash out." },
@@ -11333,12 +11378,25 @@ function ui_draw_character_menu() {
         draw_set_valign(fa_top);
         draw_set_halign(fa_left);
 
-        // Creatures/eggs found THIS RUN go straight to Bairc, so a display-only strip
-        // pinned to the column bottom keeps that loot observable in-run like any drop.
-        var _rfp      = variable_global_exists("run_found_pets") ? global.run_found_pets : [];
-        var _rfp_n    = array_length(_rfp);
+        // Creatures/eggs found THIS RUN go straight to Bairc - and carried
+        // Banshee bottles ride along too (M 08-15: both belong in this strip).
+        // Display-only, pinned to the column bottom; SCROLLABLE past 3 rows
+        // (wheel over the strip, or the tap arrows) with a visible bar -
+        // the old "+N more" dead line was a defect by the standing rule.
+        var _rfp    = variable_global_exists("run_found_pets") ? global.run_found_pets : [];
+        var _fs_rows = [];
+        for (var _rfi = 0; _rfi < array_length(_rfp); _rfi++) {
+            array_push(_fs_rows, { kind: "egg", label: _rfp[_rfi], right: "-> Bairc" });
+        }
+        var _fs_bb = variable_global_exists("banshee_carried") ? global.banshee_carried : 0;
+        if (_fs_bb > 0) {
+            array_push(_fs_rows, { kind: "bottle",
+                label: "Banshee in a Bottle" + ((_fs_bb > 1) ? ("  x" + string(_fs_bb)) : ""),
+                right: "-> Maren" });
+        }
+        var _rfp_n    = array_length(_fs_rows);
         var _rfp_show = min(_rfp_n, 3);
-        var _rfp_h    = (_rfp_n > 0) ? (52 + _rfp_show * 30 + ((_rfp_n > _rfp_show) ? 26 : 0)) : 0;
+        var _rfp_h    = (_rfp_n > 0) ? (52 + _rfp_show * 30) : 0;
         var _fc_ly2   = _fc_y2 - _rfp_h;   // pack list's usable bottom
 
         if (_found_n == 0) {
@@ -11384,37 +11442,78 @@ function ui_draw_character_menu() {
             }
         }
 
-        // Found eggs/creatures rendered as ITEM-STYLE rows (display-only - they live
-        // at Bairc's). Mysterious eggs show a code-drawn egg icon; details stay "??"
-        // until Bairc identifies them (design 2026-07-04, replaces the label strip).
+        // Found eggs/creatures + carried bottles as ITEM-STYLE rows (display-only:
+        // creatures live at Bairc's, bottles at Maren's). Mysterious eggs show a
+        // code-drawn egg icon, bottles a code-drawn corked bottle. Overflow
+        // scrolls (wheel / tap arrows) with a visible bar - never a dead "+N".
         if (_rfp_n > 0) {
+            if (!variable_instance_exists(_gc, "equip_found_strip_scroll")) _gc.equip_found_strip_scroll = 0;
+            var _fs_over = (_rfp_n > _rfp_show);
+            _gc.equip_found_strip_scroll = clamp(_gc.equip_found_strip_scroll, 0, max(0, _rfp_n - _rfp_show));
+            // Wheel over the strip band scrolls it (bairc-roster idiom: read in Draw).
+            var _fs_mx = device_mouse_x_to_gui(0), _fs_my = device_mouse_y_to_gui(0);
+            if (_fs_over && _fs_mx >= _fc_x1 && _fs_mx <= _fc_x2 && _fs_my >= _fc_ly2 && _fs_my <= _fc_y2) {
+                if (mouse_wheel_down()) _gc.equip_found_strip_scroll = min(_rfp_n - _rfp_show, _gc.equip_found_strip_scroll + 1);
+                if (mouse_wheel_up())   _gc.equip_found_strip_scroll = max(0, _gc.equip_found_strip_scroll - 1);
+            }
+            var _fs_scr = _gc.equip_found_strip_scroll;
             draw_set_color(make_color_rgb(60, 66, 90));
             draw_line(_fc_x1 + 16, _fc_ly2, _fc_x2 - 16, _fc_ly2);
-            for (var _ri = 0; _ri < _rfp_show; _ri++) {
-                var _egy = _fc_ly2 + 8 + _ri * 30;
+            // Right inset for scrollbar + arrows when overflowing.
+            var _fs_rx = _fs_over ? (_fc_x2 - 58) : (_fc_x2 - 24);
+            for (var _ri = _fs_scr; _ri < min(_rfp_n, _fs_scr + _rfp_show); _ri++) {
+                var _fsr = _fs_rows[_ri];
+                var _egy = _fc_ly2 + 8 + (_ri - _fs_scr) * 30;
                 // Row plate (matches the pack item rows above, slimmer)
                 draw_set_color(make_color_rgb(20, 18, 32));
                 draw_rectangle(_fc_x1 + 16, _egy, _fc_x2 - 16, _egy + 27, false);
-                // Code-drawn egg icon: shell + highlight (no sprite dependency)
                 var _egcx = _fc_x1 + 32, _egcy = _egy + 14;
-                draw_set_color(make_color_rgb(214, 202, 176));
-                draw_ellipse(_egcx - 7, _egcy - 10, _egcx + 7, _egcy + 10, false);
-                draw_set_color(make_color_rgb(245, 240, 226));
-                draw_ellipse(_egcx - 3, _egcy - 7, _egcx + 1, _egcy - 2, false);
-                draw_set_color(make_color_rgb(90, 80, 66));
-                draw_ellipse(_egcx - 7, _egcy - 10, _egcx + 7, _egcy + 10, true);
+                if (_fsr.kind == "bottle") {
+                    // Code-drawn corked bottle, faintly wailing (spectral violet).
+                    draw_set_color(make_color_rgb(120, 90, 170));
+                    draw_roundrect_ext(_egcx - 6, _egcy - 4, _egcx + 6, _egcy + 10, 4, 4, false);
+                    draw_set_color(make_color_rgb(170, 140, 220));
+                    draw_rectangle(_egcx - 2, _egcy - 9, _egcx + 2, _egcy - 4, false);
+                    draw_set_color(make_color_rgb(150, 120, 90));
+                    draw_rectangle(_egcx - 3, _egcy - 12, _egcx + 3, _egcy - 9, false);
+                    draw_set_alpha(0.5 + 0.3 * sin(current_time / 300));
+                    draw_set_color(make_color_rgb(210, 190, 250));
+                    draw_circle(_egcx, _egcy + 2, 2, false);
+                    draw_set_alpha(1.0);
+                } else {
+                    // Code-drawn egg icon: shell + highlight (no sprite dependency)
+                    draw_set_color(make_color_rgb(214, 202, 176));
+                    draw_ellipse(_egcx - 7, _egcy - 10, _egcx + 7, _egcy + 10, false);
+                    draw_set_color(make_color_rgb(245, 240, 226));
+                    draw_ellipse(_egcx - 3, _egcy - 7, _egcx + 1, _egcy - 2, false);
+                    draw_set_color(make_color_rgb(90, 80, 66));
+                    draw_ellipse(_egcx - 7, _egcy - 10, _egcx + 7, _egcy + 10, true);
+                }
                 draw_set_font(ui_font(fnt_ui_small));
-                draw_set_color(make_color_rgb(200, 175, 245));
-                draw_text(_fc_x1 + 52, _egy + 3, ui_truncate(_rfp[_ri], _fc_x2 - _fc_x1 - 200));
+                draw_set_color((_fsr.kind == "bottle") ? make_color_rgb(190, 165, 240) : make_color_rgb(200, 175, 245));
+                draw_text(_fc_x1 + 52, _egy + 3, ui_truncate(_fsr.label, _fs_rx - (_fc_x1 + 52) - 90));
                 draw_set_halign(fa_right);
                 draw_set_color(make_color_rgb(120, 124, 138));
-                draw_text(_fc_x2 - 24, _egy + 3, "-> Bairc");
+                draw_text(_fs_rx, _egy + 3, _fsr.right);
                 draw_set_halign(fa_left);
             }
-            if (_rfp_n > _rfp_show) {
+            if (_fs_over) {
+                // Visible scrollbar (standing rule) + tappable arrows (touch path).
+                ui_pb_scrollbar(_fc_x2 - 30, _fc_ly2 + 8, _fc_ly2 + 8 + _rfp_show * 30, _rfp_n, _rfp_show, _fs_scr);
+                var _fs_ax = _fc_x2 - 52;
                 draw_set_font(ui_font(fnt_ui_small));
-                draw_set_color(make_color_rgb(120, 124, 138));
-                draw_text(_fc_x1 + 36, _fc_ly2 + 10 + _rfp_show * 30, "+" + string(_rfp_n - _rfp_show) + " more");
+                draw_set_color(make_color_rgb(28, 34, 52));
+                draw_rectangle(_fs_ax, _fc_ly2 + 6,  _fs_ax + 18, _fc_ly2 + 24, false);
+                draw_rectangle(_fs_ax, _fc_y2 - 26,  _fs_ax + 18, _fc_y2 - 8,  false);
+                draw_set_color(make_color_rgb(150, 160, 190));
+                draw_set_halign(fa_center);
+                draw_text(_fs_ax + 9, _fc_ly2 + 4,  "^");
+                draw_text(_fs_ax + 9, _fc_y2 - 28,  "v");
+                draw_set_halign(fa_left);
+                if (touch_tapped(_fs_ax - 6, _fc_ly2, _fs_ax + 24, _fc_ly2 + 30))
+                    _gc.equip_found_strip_scroll = max(0, _fs_scr - 1);
+                if (touch_tapped(_fs_ax - 6, _fc_y2 - 32, _fs_ax + 24, _fc_y2 - 2))
+                    _gc.equip_found_strip_scroll = min(_rfp_n - _rfp_show, _fs_scr + 1);
             }
         }
 
@@ -12615,10 +12714,9 @@ function ui_draw_shop_screen() {
         draw_set_color(_on ? _tac : make_color_rgb(70, 88, 100));
         draw_text(_tx + _tab_w / 2, _tab_y + 9, _tab_labels[_ti]);
         // Hover quick-ref (M 08-15): what lives behind this tab, on mouse-over.
-        if (!_is_petra) {
-            var _th_body = ui_tab_hint_body("dorn:" + _tab_labels[_ti]);
-            if (_th_body != "") ui_tab_hover_stash(_tx, _tab_y, _tx + _tab_w, _tab_y + _tab_h, _tab_labels[_ti], _th_body);
-        }
+        // Petra joined 08-15 (tour pass - her tabs were the only bare ones left).
+        var _th_body = ui_tab_hint_body((_is_petra ? "petra:" : "dorn:") + _tab_labels[_ti]);
+        if (_th_body != "") ui_tab_hover_stash(_tx, _tab_y, _tx + _tab_w, _tab_y + _tab_h, _tab_labels[_ti], _th_body);
     }
     draw_set_halign(fa_left);
 
@@ -12845,63 +12943,93 @@ function ui_draw_shop_screen() {
     if (_gc.shop_tab == 2) {
         var _tt_accent = make_color_rgb(190, 120, 210);
 
-        if (petra_order_active()) {
-            // --- Active order: status card ---
-            var _o     = global.petra_order;
-            var _ready = (_o.status == "ready");
-            draw_set_color(make_color_rgb(16, 14, 24));
-            draw_rectangle(360, 300, 1560, 620, false);
-            draw_set_color(_ready ? make_color_rgb(120, 220, 140) : _tt_accent);
-            draw_rectangle(360, 300, 1560, 620, true);
+        petra_orders_ensure();
+        var _po_more = variable_instance_exists(_gc, "petra_place_more") && _gc.petra_place_more;
+        if (petra_order_active() && !_po_more) {
+            // --- THE LEDGER (two-order refactor 08-15): one status card per
+            // order, stacked. COLLECT rides the FIRST ready card; a second
+            // ledger line (station rank 1) offers PLACE ANOTHER ORDER below.
+            var _po_n       = array_length(global.petra_orders);
+            var _card_h     = (_po_n > 1) ? 300 : 320;
+            var _card_y0    = (_po_n > 1) ? 200 : 300;
+            var _card_gap   = 44;
+            var _po_any_ready   = false;
+            var _po_collect_drawn = false;
+            var _pomx = device_mouse_x_to_gui(0), _pomy = device_mouse_y_to_gui(0);
+            var _pop  = mouse_check_button_pressed(mb_left);
+            for (var _poi = 0; _poi < _po_n; _poi++) {
+                var _o     = global.petra_orders[_poi];
+                var _cy0   = _card_y0 + _poi * (_card_h + _card_gap);
+                var _cy1   = _cy0 + _card_h;
+                var _ready = (_o.status == "ready");
+                if (_ready) _po_any_ready = true;
+                draw_set_color(make_color_rgb(16, 14, 24));
+                draw_rectangle(360, _cy0, 1560, _cy1, false);
+                draw_set_color(_ready ? make_color_rgb(120, 220, 140) : _tt_accent);
+                draw_rectangle(360, _cy0, 1560, _cy1, true);
 
-            draw_set_halign(fa_center);
-            draw_set_font(fnt_ui_title);
-            draw_set_color(_ready ? make_color_rgb(120, 220, 140) : _tt_accent);
-            draw_text(960, 330, _ready ? "ORDER READY" : "ORDER IN PROGRESS");
+                draw_set_halign(fa_center);
+                draw_set_font((_po_n > 1) ? ui_font(fnt_ui) : fnt_ui_title);
+                draw_set_color(_ready ? make_color_rgb(120, 220, 140) : _tt_accent);
+                draw_text(960, _cy0 + 24, (_ready ? "ORDER READY" : "ORDER IN PROGRESS")
+                    + ((_po_n > 1) ? ("   -   ledger line " + string(_poi + 1)) : ""));
 
-            draw_set_font(ui_font(fnt_ui));
-            draw_set_color(c_white);
-            if (petra_order_is_rune()) {
-                var _bpd = rune_get(_o.rune_id);
-                draw_text(960, 410, "Blueprint:  " + ((_bpd != undefined) ? _bpd.name : _o.rune_id)
-                    + " " + rune_tier_roman(_o.rune_tier));
-            } else {
-                draw_text(960, 410, item_rarity_name(_o.input_tier) + "   ->   " + item_rarity_name(_o.output_tier));
-            }
-
-            if (!_ready) {
-                var _frac = clamp(_o.progress_floors / max(1, _o.cost_floors), 0, 1);
-                draw_set_color(make_color_rgb(40, 36, 52));
-                draw_rectangle(520, 480, 1400, 510, false);
-                draw_set_color(_tt_accent);
-                draw_rectangle(520, 480, 520 + (1400 - 520) * _frac, 510, false);
-                draw_set_color(make_color_rgb(120, 100, 140));
-                draw_rectangle(520, 480, 1400, 510, true);
                 draw_set_font(ui_font(fnt_ui));
                 draw_set_color(c_white);
-                draw_text(960, 528, string(_o.progress_floors) + " / " + string(_o.cost_floors) + " floors cleared"
-                    + (_o.req_awakening > 0 ? ("    (A" + string(_o.req_awakening) + "+ only)") : "")
-                    + (_o.dust_bias ? "    - roll-biased" : ""));
-            } else {
-                draw_set_font(ui_font(fnt_ui));
-                draw_set_color(make_color_rgb(140, 220, 150));
-                draw_text(960, 460, "Petra has something for you.");
-                // Pulsing ready ring + a tappable COLLECT (the reveal moment - M
-                // 07-27 visual pass; Step consumes petra:collect + rings the bell).
-                var _rd_p = frac(current_time / 900);
-                draw_set_alpha(0.5 * (1 - _rd_p));
-                draw_set_color(make_color_rgb(120, 220, 140));
-                draw_circle(960, 472, 26 + _rd_p * 70, true);
-                draw_set_alpha(1.0);
-                ui_confirm_button(790, 524, 1130, 590, "COLLECT  [Enter]", make_color_rgb(120, 210, 130),
-                    device_mouse_x_to_gui(0), device_mouse_y_to_gui(0), mouse_check_button_pressed(mb_left), "petra:collect");
+                if (petra_order_is_rune(_o)) {
+                    var _bpd = rune_get(_o.rune_id);
+                    draw_text(960, _cy0 + 96, "Blueprint:  " + ((_bpd != undefined) ? _bpd.name : _o.rune_id)
+                        + " " + rune_tier_roman(_o.rune_tier));
+                } else {
+                    draw_text(960, _cy0 + 96, item_rarity_name(_o.input_tier) + "   ->   " + item_rarity_name(_o.output_tier));
+                }
+
+                if (!_ready) {
+                    var _frac = clamp(_o.progress_floors / max(1, _o.cost_floors), 0, 1);
+                    draw_set_color(make_color_rgb(40, 36, 52));
+                    draw_rectangle(520, _cy0 + 156, 1400, _cy0 + 186, false);
+                    draw_set_color(_tt_accent);
+                    draw_rectangle(520, _cy0 + 156, 520 + (1400 - 520) * _frac, _cy0 + 186, false);
+                    draw_set_color(make_color_rgb(120, 100, 140));
+                    draw_rectangle(520, _cy0 + 156, 1400, _cy0 + 186, true);
+                    draw_set_font(ui_font(fnt_ui));
+                    draw_set_color(c_white);
+                    draw_text(960, _cy0 + 202, string(_o.progress_floors) + " / " + string(_o.cost_floors) + " floors cleared"
+                        + (_o.req_awakening > 0 ? ("    (A" + string(_o.req_awakening) + "+ only)") : "")
+                        + (_o.dust_bias ? "    - roll-biased" : ""));
+                } else {
+                    draw_set_font(ui_font(fnt_ui));
+                    draw_set_color(make_color_rgb(140, 220, 150));
+                    draw_text(960, _cy0 + 148, "Petra has something for you.");
+                    // Pulsing ready ring + a tappable COLLECT (the reveal moment -
+                    // M 07-27 visual pass; Step consumes petra:collect). Only the
+                    // FIRST ready card carries the button - Enter collects that one.
+                    if (!_po_collect_drawn) {
+                        _po_collect_drawn = true;
+                        var _rd_p = frac(current_time / 900);
+                        draw_set_alpha(0.5 * (1 - _rd_p));
+                        draw_set_color(make_color_rgb(120, 220, 140));
+                        draw_circle(960, _cy0 + 160, 26 + _rd_p * 70, true);
+                        draw_set_alpha(1.0);
+                        ui_confirm_button(790, _cy1 - 76, 1130, _cy1 - 16, "COLLECT  [Enter]", make_color_rgb(120, 210, 130),
+                            _pomx, _pomy, _pop, "petra:collect");
+                    }
+                }
+            }
+            // Second ledger line open (station rank 1): the place-another button.
+            if (petra_order_can_place()) {
+                ui_confirm_button(740, 906, 1180, 958, "PLACE ANOTHER ORDER  [Space]", _tt_accent,
+                    _pomx, _pomy, _pop, "petra:more");
             }
 
+            draw_set_halign(fa_center);
             draw_set_font(ui_font(fnt_ui_small));
             draw_set_color(make_color_rgb(160, 140, 180));
-            ui_draw_key_legend(960, 1026, _ready
-                ? "Enter: Collect    Q/E: Switch Tab    Esc: Close"
-                : "C: Cancel order    Q/E: Switch Tab    Esc: Close");
+            var _po_leg = "";
+            if (_po_any_ready)            _po_leg += "Enter: Collect    ";
+            if (petra_order_can_place())  _po_leg += "Space: New Order    ";
+            _po_leg += "C: Cancel newest    Q/E: Switch Tab    Esc: Close";
+            ui_draw_key_legend(960, 1026, _po_leg);
             draw_set_halign(fa_left);
 
         } else {
@@ -12920,7 +13048,9 @@ function ui_draw_shop_screen() {
             var _pt_mode = variable_instance_exists(_gc, "petra_trade_mode") ? _gc.petra_trade_mode : 0;
             var _pmx3 = device_mouse_x_to_gui(0), _pmy3 = device_mouse_y_to_gui(0);
             var _ppress3 = mouse_check_button_pressed(mb_left);
-            ui_confirm_button(150, 176, 400, 220, (_pt_mode == 0) ? "RUNES  [R]" : "GEAR  [R]",
+            // "-> X" reads as "switch to X" (bare "RUNES" looked like the CURRENT
+            // mode - trade-tab cleanup, tour pass 08-15).
+            ui_confirm_button(150, 176, 400, 220, (_pt_mode == 0) ? "-> RUNES  [R]" : "-> GEAR  [R]",
                 make_color_rgb(190, 120, 210), _pmx3, _pmy3, _ppress3, "petra:mode");
 
             if (_pt_mode == 1) {
@@ -12937,15 +13067,32 @@ function ui_draw_shop_screen() {
                     draw_set_color(make_color_rgb(150, 130, 170));
                     draw_text(960, 162, "Trade 5 runes of the SAME tier for a BLUEPRINT - a rune YOU choose, delivered after floor clears.");
                 }
-                draw_set_halign(fa_center);
-                draw_set_font(ui_font(fnt_ui));
+                // Pick-slot diamond pips, matching the gear-mode readout
+                // (trade-tab cleanup, tour pass 08-15).
+                draw_set_font(ui_font(fnt_ui_small));
                 var _pr_tier = (_pr_n_s > 0 && _pr_sel[0] < array_length(_pr_inv)) ? _pr_inv[_pr_sel[0]].tier : -1;
-                draw_set_color((_pr_n_s == 0) ? make_color_rgb(120, 120, 145) : _tt_accent);
-                draw_text(960, 190, "Chosen " + string(_pr_n_s) + "/5"
-                    + ((_pr_tier > 0) ? ("  -  tier " + rune_tier_roman(_pr_tier) + "   ("
+                var _pr_cap = (_pr_n_s == 0) ? "Pick 5 runes of one tier"
+                    : ((_pr_tier > 0) ? ("Tier " + rune_tier_roman(_pr_tier) + "   ("
                         + string(petra_rune_order_gold(_pr_tier)) + "g, "
-                        + string(petra_rune_order_floors()) + " floors)") : ""));
+                        + string(petra_rune_order_floors()) + " floors)") : "");
+                var _pr_pip = 16, _pr_pgap = 14;
+                var _pr_pips_w = 5 * _pr_pip + 4 * _pr_pgap;
+                var _pr_w  = _pr_pips_w + 20 + string_width(_pr_cap);
+                var _pr_x  = 960 - _pr_w / 2;
+                var _pr_cy = 203;
+                for (var _pr_i = 0; _pr_i < 5; _pr_i++) {
+                    var _pr_xc = _pr_x + _pr_i * (_pr_pip + _pr_pgap) + _pr_pip / 2;
+                    draw_set_color(make_color_rgb(110, 80, 120));
+                    draw_triangle(_pr_xc - _pr_pip / 2 - 3, _pr_cy, _pr_xc, _pr_cy - _pr_pip / 2 - 3, _pr_xc + _pr_pip / 2 + 3, _pr_cy, false);
+                    draw_triangle(_pr_xc - _pr_pip / 2 - 3, _pr_cy, _pr_xc, _pr_cy + _pr_pip / 2 + 3, _pr_xc + _pr_pip / 2 + 3, _pr_cy, false);
+                    draw_set_color((_pr_i < _pr_n_s) ? _tt_accent : make_color_rgb(24, 20, 28));
+                    draw_triangle(_pr_xc - _pr_pip / 2, _pr_cy, _pr_xc, _pr_cy - _pr_pip / 2, _pr_xc + _pr_pip / 2, _pr_cy, false);
+                    draw_triangle(_pr_xc - _pr_pip / 2, _pr_cy, _pr_xc, _pr_cy + _pr_pip / 2, _pr_xc + _pr_pip / 2, _pr_cy, false);
+                }
                 draw_set_halign(fa_left);
+                draw_set_color((_pr_n_s == 0) ? make_color_rgb(150, 140, 165) : _tt_accent);
+                draw_text(_pr_x + _pr_pips_w + 20, _pr_cy - string_height("Ag") / 2, _pr_cap);
+                draw_set_font(ui_font(fnt_ui));
 
                 var _pr_n = array_length(_pr_inv);
                 if (_pr_n == 0) {
@@ -12992,6 +13139,8 @@ function ui_draw_shop_screen() {
                         draw_set_color(make_color_rgb(110, 100, 130));
                         draw_text(960, _ty0 + 8 * (_trh + _trg) + 2, "(" + string(_pr_scr + 1) + "-" + string(_pr_end) + " of " + string(_pr_n) + ")");
                         draw_set_halign(fa_left);
+                        // Visible scroll bar (standing rule) - trade-tab cleanup 08-15.
+                        ui_pb_scrollbar(1508, _ty0, _ty0 + 8 * (_trh + _trg) - _trg, _pr_n, 8, _pr_scr);
                     }
                 }
                 if (_pr_n_s == 5) {
@@ -13046,6 +13195,8 @@ function ui_draw_shop_screen() {
                     draw_set_color(make_color_rgb(110, 100, 130));
                     draw_text(960, _ty0 + 8 * (_trh + _trg) + 2, "(" + string(_bp_scr + 1) + "-" + string(_bp_end) + " of " + string(_bp_n) + ")");
                     draw_set_halign(fa_left);
+                    // Visible scroll bar (standing rule) - trade-tab cleanup 08-15.
+                    ui_pb_scrollbar(1508, _ty0, _ty0 + 8 * (_trh + _trg) - _trg, _bp_n, 8, _bp_scr);
                 }
                 draw_set_halign(fa_center);
                 draw_set_font(ui_font(fnt_ui_small));
@@ -13080,11 +13231,14 @@ function ui_draw_shop_screen() {
                 draw_set_halign(fa_center);
             }
 
-            // Chosen summary + output preview
-            draw_set_font(ui_font(fnt_ui));
+            // Chosen summary + output preview - drawn pick-slot diamond pips
+            // (craft-wizard idiom; "Chosen: 0 / 3" keyboard-symbol strings read
+            // as unfinished dev work - trade-tab cleanup, tour pass 08-15).
+            draw_set_font(ui_font(fnt_ui_small));
+            var _pt_cap;
             if (_sel_n == 0) {
-                draw_set_color(make_color_rgb(120, 120, 145));
-                draw_text(960, 190, "Chosen: 0 / 3");
+                draw_set_color(make_color_rgb(150, 130, 170));
+                _pt_cap = "Pick 3 items of one tier";
             } else {
                 var _srung = petra_ladder_for(_sel_rar);
                 var _outtxt = (_srung != undefined)
@@ -13094,9 +13248,26 @@ function ui_draw_shop_screen() {
                         + (_srung.req_awk > 0 ? (" (A" + string(_srung.req_awk) + "+)") : ""))
                     : "  (this tier can't be traded up)";
                 draw_set_color(_tt_accent);
-                draw_text(960, 190, "Chosen " + string(_sel_n) + "/3 - " + item_rarity_name(_sel_rar) + _outtxt);
+                _pt_cap = item_rarity_name(_sel_rar) + _outtxt;
+            }
+            var _pt_pip = 16, _pt_pgap = 14;
+            var _pt_pips_w = 3 * _pt_pip + 2 * _pt_pgap;
+            var _pt_w  = _pt_pips_w + 20 + string_width(_pt_cap);
+            var _pt_x  = 960 - _pt_w / 2;
+            var _pt_cy = 203;
+            for (var _pt_i = 0; _pt_i < 3; _pt_i++) {
+                var _pt_xc = _pt_x + _pt_i * (_pt_pip + _pt_pgap) + _pt_pip / 2;
+                draw_set_color(make_color_rgb(110, 80, 120));
+                draw_triangle(_pt_xc - _pt_pip / 2 - 3, _pt_cy, _pt_xc, _pt_cy - _pt_pip / 2 - 3, _pt_xc + _pt_pip / 2 + 3, _pt_cy, false);
+                draw_triangle(_pt_xc - _pt_pip / 2 - 3, _pt_cy, _pt_xc, _pt_cy + _pt_pip / 2 + 3, _pt_xc + _pt_pip / 2 + 3, _pt_cy, false);
+                draw_set_color((_pt_i < _sel_n) ? _tt_accent : make_color_rgb(24, 20, 28));
+                draw_triangle(_pt_xc - _pt_pip / 2, _pt_cy, _pt_xc, _pt_cy - _pt_pip / 2, _pt_xc + _pt_pip / 2, _pt_cy, false);
+                draw_triangle(_pt_xc - _pt_pip / 2, _pt_cy, _pt_xc, _pt_cy + _pt_pip / 2, _pt_xc + _pt_pip / 2, _pt_cy, false);
             }
             draw_set_halign(fa_left);
+            draw_set_color((_sel_n == 0) ? make_color_rgb(150, 140, 165) : _tt_accent);
+            draw_text(_pt_x + _pt_pips_w + 20, _pt_cy - string_height("Ag") / 2, _pt_cap);
+            draw_set_font(ui_font(fnt_ui));
 
             // Stash list (windowed to 8 rows)
             var _stash_n = array_length(global.equipment_stash);
@@ -13160,6 +13331,8 @@ function ui_draw_shop_screen() {
                     draw_set_color(make_color_rgb(110, 100, 130));
                     draw_text(960, _ty0 + 8 * (_trh + _trg) + 2, "(" + string(_scroll + 1) + "-" + string(_vis_end) + " of " + string(_stash_n) + ")");
                     draw_set_halign(fa_left);
+                    // Visible scroll bar (standing rule) - trade-tab cleanup 08-15.
+                    ui_pb_scrollbar(1508, _ty0, _ty0 + 8 * (_trh + _trg) - _trg, _stash_n, 8, _scroll);
                 }
             }
 
@@ -16030,6 +16203,27 @@ function ui_draw_maren_screen() {
             // Breadcrumb
             draw_set_color(make_color_rgb(140, 130, 165));
             draw_text(_list_x, 225, "Choose a piece of gear to socket:");
+            // DEEP SOCKET chip (rank 2, M-locked 08-15): tappable [D] hint,
+            // right-aligned on the breadcrumb band. Grey once spent this run.
+            if (npc_rank("maren") >= 2) {
+                var _ds_spent = variable_global_exists("deep_socket_used") && global.deep_socket_used;
+                draw_set_font(ui_font(fnt_ui_small));
+                var _ds_txt = _ds_spent ? "[D] Deep Socket - spent this run"
+                                        : "[D] DEEP SOCKET: +1 socket  (400g + 80 dust, once per run)";
+                var _ds_w  = string_width(_ds_txt) + 28;
+                var _ds_x1 = 1500, _ds_x0 = _ds_x1 - _ds_w, _ds_y0 = 216, _ds_y1 = 254;
+                draw_set_color(_ds_spent ? make_color_rgb(20, 20, 26) : make_color_rgb(35, 28, 52));
+                draw_rectangle(_ds_x0, _ds_y0, _ds_x1, _ds_y1, false);
+                draw_set_color(_ds_spent ? make_color_rgb(55, 52, 66) : make_color_rgb(150, 110, 220));
+                draw_rectangle(_ds_x0, _ds_y0, _ds_x1, _ds_y1, true);
+                draw_set_halign(fa_center);
+                draw_set_color(_ds_spent ? make_color_rgb(110, 108, 125) : make_color_rgb(210, 185, 255));
+                draw_text((_ds_x0 + _ds_x1) / 2, _ds_y0 + 8, _ds_txt);
+                draw_set_halign(fa_left);
+                if (touch_tapped(_ds_x0, _ds_y0, _ds_x1, _ds_y1)) touch_press(ord("D"));
+                draw_set_font(ui_font(fnt_ui));
+                draw_set_color(make_color_rgb(140, 130, 165));
+            }
 
             if (array_length(_slots) == 0) {
                 draw_set_color(make_color_rgb(120, 115, 140));
@@ -17376,7 +17570,7 @@ function ui_draw_vael_screen() {
         } else if (!_unlocked) {
             draw_set_color(make_color_rgb(150, 110, 120)); draw_text(1145, _ty, "LOCKED");
         } else {
-            var _vdisc = floor(_sk.gold * affinity_discount_mult("vael"));   // Friend perk: 15% off
+            var _vdisc = vael_cosmetic_price(_sk.gold);   // Friend perk + Atelier rank
             draw_set_color((global.gold >= _vdisc) ? make_color_rgb(230, 210, 150) : make_color_rgb(170, 120, 120));
             draw_text(1145, _ty, string(_vdisc) + "g");
         }
@@ -17630,7 +17824,7 @@ function ui_draw_vael_tints_tab(_gc) {
         } else if (_owned) {
             draw_set_color(make_color_rgb(160, 200, 240)); draw_text(1145, _ty, "OWNED");
         } else {
-            var _tdisc = floor(_tn.gold * affinity_discount_mult("vael"));   // Friend perk: 15% off
+            var _tdisc = vael_cosmetic_price(_tn.gold);   // Friend perk + Atelier rank
             draw_set_color((global.gold >= _tdisc) ? make_color_rgb(230, 210, 150) : make_color_rgb(170, 120, 120));
             draw_text(1145, _ty, string(_tdisc) + "g");
         }
@@ -17698,7 +17892,7 @@ function ui_draw_vael_tints_tab(_gc) {
     } else if (vael_tint_owned(_sel.id)) {
         draw_set_color(make_color_rgb(160, 200, 240)); draw_text(1350, 882, "Owned - Enter to equip");
     } else {
-        var _sdisc = floor(_sel.gold * affinity_discount_mult("vael"));
+        var _sdisc = vael_cosmetic_price(_sel.gold);
         draw_set_color((global.gold >= _sdisc) ? make_color_rgb(230, 210, 150) : make_color_rgb(190, 130, 130));
         draw_text(1350, 882, string(_sdisc) + "g - Enter to buy");
     }
@@ -18828,6 +19022,789 @@ function ui_draw_stats_tour() {
     if (touch_tapped(_sx1, _bt_y1, _sx2, _bt_y2)) touch_press(vk_escape);
 
     draw_set_color(c_white); draw_set_alpha(1.0); draw_set_font(-1);
+}
+
+// =============================================================================
+// NPC STATION GUIDED TOURS (M-locked 08-15: framework + all SEVEN keepers in
+// one pass). The stats-tour spotlight applied to every camp station: the first
+// time each NPC's screen opens (once ever - tutorial_seen "tour_<npc>"), the
+// screen dims except one highlighted region per step, with a measured explainer
+// card pinned nearby. State lives on gc (npc_tour_step / npc_tour_npc, advanced
+// in gc Step - every NPC input block stands down while a tour runs). Drawn as
+// the LAST call in obj_hub_controller Draw_64, above the screens and tab tips.
+// Rects are measured against each screen's real drawn geometry (tab bars, row
+// regions, panels) so every edge lands on a drawn box edge, not mid-text.
+// =============================================================================
+function npc_tour_steps(_npc) {
+    switch (_npc) {
+        case "dorn": return [
+            // Tab bar: 4 tabs, y96..138, x284 + t*344, 320 wide.
+            { r: [278, 90, 1622, 144],  cx: 680, cy: 320,
+              t: "Dorn's four counters",
+              b: "Everything at the forge lives behind these tabs: BUY from his stock, SELL what you've outgrown, REFORGE to reroll and craft, TEMPER to finish rough steel. Q/E or a click switches counters - and resting the mouse on a tab reminds you what lives there." },
+            // Buy rows region (x150..1500, y189+, 117px rows; 3 rows high so the
+            // card always fits beneath it).
+            { r: [144, 183, 1506, 562], cx: 960, cy: 600,
+              t: "The stock rotates",
+              b: "Dorn restocks between runs, and his shelf improves as your Awakening climbs. Names are tinted by rarity - and a price you can't pay yet is a reason to descend, not to despair." },
+            { r: [946, 90, 1278, 144],  cx: 500, cy: 320,
+              t: "Reforge, smelt, craft",
+              b: "Three crafts share this counter. REWORK rerolls an unequipped item's affixes with a Reforge Ingot. SMELT destroys a piece for an ingot - and Dorn STUDIES one of its affixes into his PATTERN BOOK. CRAFT then builds an item to YOUR design from everything he has studied." },
+            { r: [1290, 90, 1622, 144], cx: 500, cy: 320,
+              t: "Finish rough steel",
+              b: "Loot drops UNFINISHED - the QUALITY tag says how much of its true power it delivers. Each temper step buys +10% quality for gold and rune dust, plus a little bonus max HP. A raw legendary barely beats a finished epic - temper what you love." },
+            // Bond readout, title row far left.
+            { r: [78, 30, 470, 86],     cx: 550, cy: 320,
+              t: "Trade builds trust",
+              b: "Every purchase and service warms Dorn to you, and friendship gates unlock his perks. His STATION can grow too: back on the camp carousel, [U] or the STATION chip buys station ranks - a deeper shelf first, a hotter temper after." },
+        ];
+        case "petra": return [
+            // Tab bar: 3 tabs, y96..138, x456 + t*344, 320 wide.
+            { r: [450, 90, 1470, 144],  cx: 640, cy: 320,
+              t: "Petra's three counters",
+              b: "BUY supplies for the road, SELL spare loot for gold, and TRADE - her treasure ladder, where lesser goods become better ones. Q/E or a click switches counters." },
+            { r: [144, 183, 1506, 562], cx: 960, cy: 600,
+              t: "Stock the road ahead",
+              b: "Potions, creature feed and supplies for your next descent, restocked between runs. Watch her SPECIAL shelf - now and then it carries something the road rarely offers." },
+            { r: [1138, 90, 1470, 144], cx: 500, cy: 320,
+              t: "The treasure ladder",
+              b: "Hand Petra 3 items of the SAME tier and she trades them up to the next one - delivered after you clear floors, not on the spot. [R] flips to RUNE mode: 5 same-tier runes buy a BLUEPRINT, a rune YOU choose. What you trade in is destroyed, so feed the ladder what you don't love." },
+            { r: [78, 30, 470, 86],     cx: 550, cy: 320,
+              t: "A merchant remembers",
+              b: "Purchases and trades deepen Petra's bond, and gates cross with a favor. Her STATION ranks ([U] or the STATION chip on the camp carousel) keep her special shelf stocked every visit - and make you a FAVORED CLIENT: faster deliveries, finer goods." },
+        ];
+        case "vex": return [
+            // Tab bar: 5 tabs, y96..144, x60 + t*360, 345 wide.
+            { r: [54, 90, 1851, 150],   cx: 680, cy: 330,
+              t: "The trainer's ledger",
+              b: "Vex sells permanence: STATS raise a core stat forever, TRAIT SLOTS widen what you can carry, ABILITIES and TRAITS teach new tools, POTENCY sharpens traits you own. Everything bought here survives every death." },
+            { r: [54, 90, 411, 150],    cx: 620, cy: 330,
+              t: "Permanent stats",
+              b: "Each +1 is yours on every future run. The price climbs as you buy - gold plus a trade item whose rarity escalates. Your BASE stats also gate what gear you can equip, so these purchases open doors gear alone can't." },
+            { r: [414, 90, 771, 150],   cx: 900, cy: 330,
+              t: "Room to carry more",
+              b: "You bring a limited set of traits into the dungeon. Each expansion here adds one more slot, permanently - up to four in all. Expensive, and worth every coin to a build that wants one more piece." },
+            { r: [774, 90, 1491, 150],  cx: 300, cy: 330,
+              t: "New tools",
+              b: "Abilities and traits learned here join your collection forever - then you choose which to bring on the LOADOUT screen before each run. Learning is permanent; only the loadout is per-run." },
+            { r: [1494, 90, 1851, 150], cx: 700, cy: 330,
+              t: "Trait potency",
+              b: "Sharpen a trait you already own. Potency tiers cost gold, rune dust - and 5 points carved from any stat you choose. A good trait at high potency is a build-defining one." },
+        ];
+        case "maren": return [
+            // Tab bar: 5 tabs, y105..165, x368 + t*240, 225 wide.
+            { r: [362, 99, 1559, 171],  cx: 680, cy: 340,
+              t: "The runeworks",
+              b: "Five benches. SOCKET GEAR seats runes in your equipment; ASPECTS seats them in YOU; RUNESMITHING is Maren's craft menu; RUNES is your pouch; SPIRITS frees the bottled songs you find below." },
+            { r: [362, 99, 599, 171],   cx: 680, cy: 340,
+              t: "Sockets are free to try",
+              b: "Uncommon and better gear carries sockets. Seat a GEAR rune for flat stats, and pull it back out whenever you like - nothing is ever lost by experimenting. Rarer gear carries more sockets." },
+            { r: [602, 99, 839, 171],   cx: 900, cy: 340,
+              t: "Aspect runes",
+              b: "ASPECT runes socket into your character, not your gear: per-school damage like Ember and Rime, Surge, Serration and the flagships. They follow you into every run no matter what you wear." },
+            { r: [842, 99, 1079, 171],  cx: 300, cy: 340,
+              t: "Runesmithing",
+              b: "Maren's craft bench: COMBINE three identical runes into one a tier higher, SPLIT one back down, AWAKEN a dormant legendary, and seal her RUNEHEART CORE share of the Legendary Forge." },
+            // Dust + gold readout, top right.
+            { r: [1500, 38, 1890, 116], cx: 900, cy: 340,
+              t: "Dust is the coin here",
+              b: "Nearly everything Maren does runs on RUNE DUST - Sable melts unwanted gear into it, so when dust runs short, visit the apothecary first. Maren's STATION rank ([U] or the STATION chip on the camp carousel) cuts the dust her combines ask." },
+        ];
+        case "sable": return [
+            // Tab bar: 4 tabs, y105..165, x368 + t*300, 285 wide.
+            { r: [362, 99, 1559, 171],  cx: 680, cy: 340,
+              t: "The apothecary",
+              b: "Four stations. SALVAGE melts gear into rune dust; BREW turns her book into potions; UPGRADE refines runes and recipes; REBIRTH is her dark exchange. Q/E or a click moves between them." },
+            { r: [362, 99, 659, 171],   cx: 700, cy: 340,
+              t: "Everything melts down",
+              b: "Unequipped gear breaks down into RUNE DUST - the fuel for Maren's runework and Sable's own brewing. Rarer pieces pay more. Salvage is the graceful end for gear you've outgrown." },
+            { r: [662, 99, 959, 171],   cx: 900, cy: 340,
+              t: "Potions and worse",
+              b: "Sable brews what her book knows - and her CHAOTIC BREW fuses potions you already know into one unstable draught: every part applies when you drink it, plus a downside. Three of anything is a recipe." },
+            { r: [962, 99, 1259, 171],  cx: 340, cy: 340,
+              t: "Refinements",
+              b: "TRANSMUTE three runes into a different rune of the same tier - shaping, not gambling - and improve what Sable already knows how to make." },
+            { r: [1262, 99, 1559, 171], cx: 340, cy: 340,
+              t: "The dark exchange",
+              b: "CURSED REBIRTH feeds a legendary to the dark: it returns stronger, but branded with a real curse. Her QUINTESSENCE share of the Legendary Forge distills here too, from three different specialty brews. This bench does not refund - read twice before you commit." },
+        ];
+        case "vael": return [
+            // Tab bar: 4 tabs, y96..144, centred on 960, 216 wide, 240 pitch.
+            { r: [486, 90, 1434, 150],  cx: 640, cy: 330,
+              t: "The atelier",
+              b: "Vael deals in appearances - and one second chance. SKINS re-dress your combat look, PORTRAIT repaints your face, TINTS re-color what you wear... and REWEAVE, the odd one out, unpicks a woven talent web." },
+            // Skins list column.
+            { r: [294, 219, 1166, 1000], cx: 1220, cy: 260,
+              t: "Skins",
+              b: "Your combat look, cataloged. Owned skins switch freely; locked rows name the milestone that earns them. Pick a row to preview it on the right - purely cosmetic, your numbers never change." },
+            { r: [726, 90, 954, 150],   cx: 400, cy: 330,
+              t: "A new face",
+              b: "For 100 gold Vael repaints your portrait - the face your menus and dialogues show. Nothing is lost in the sitting; change it as often as your purse allows." },
+            { r: [1206, 90, 1434, 150], cx: 640, cy: 330,
+              t: "The reweave",
+              b: "Regret a finished talent web? REWEAVE unpicks every woven node and returns every talent point to spend again. The casts that earned those points are never lost - only their arrangement." },
+        ];
+        case "bairc": return [
+            // Stable roster panel (left column, above the garden band).
+            { r: [143, 240, 747, 708],  cx: 800, cy: 300,
+              t: "The stable",
+              b: "Every creature and egg in your care lives here. The colored edge is its calling - gold BOON blesses your runs, red COMBATANT fights beside you, green GUARDIAN shields you - and the bright green frame marks your ACTIVE companion." },
+            // Detail + actions panel (right).
+            { r: [750, 210, 1642, 966], cx: 160, cy: 300,
+              t: "Tend what you keep",
+              b: "Select a creature to see its whole life: hunger, health, bond, growth and gifts. FEED it from your pouch - Petra sells feed - and set it ACTIVE to bring it below. Growth fills at camp; a RUN is what evolves a creature that's ready." },
+            // Garden band at the stable panel's foot.
+            { r: [143, 710, 747, 906],  cx: 800, cy: 560,
+              t: "His garden",
+              b: "Creatures you ENTRUST to Bairc are not gone - they live on in his plot, and every resident quickens growth for the whole stable. The stones at the garden's edge remember the ones the dungeon took." },
+            // Stable header / capacity counter.
+            { r: [143, 240, 747, 302],  cx: 800, cy: 380,
+              t: "Mind the crowding",
+              b: "The stable holds only so many. Past capacity, every creature's growth slows - entrust spares to the garden instead of hoarding. Bairc's STATION rank ([U] or the STATION chip on the camp carousel) also slows hunger for the whole roster." },
+        ];
+    }
+    return [];
+}
+
+function ui_draw_npc_tour() {
+    // Tour state lives on gc (stats-tour rule: never read the step bare - this
+    // draws from the hub controller, which has no such variable).
+    if (!instance_exists(obj_game_controller)) return;
+    if (!variable_instance_exists(obj_game_controller.id, "npc_tour_step")) return;
+    if (obj_game_controller.npc_tour_step < 0) return;
+    var _steps = npc_tour_steps(obj_game_controller.npc_tour_npc);
+    var _tot   = array_length(_steps);
+    if (_tot == 0) return;
+    var _ts = clamp(obj_game_controller.npc_tour_step, 0, _tot - 1);
+    var _sd = _steps[_ts];
+    var _hr = _sd.r;
+
+    // Dim everything EXCEPT the highlight rect (four surrounding panels).
+    draw_set_alpha(0.68);
+    draw_set_color(c_black);
+    draw_rectangle(GUI_XL, 0, GUI_XR, _hr[1], false);                 // above
+    draw_rectangle(GUI_XL, _hr[3], GUI_XR, GUI_H, false);             // below
+    draw_rectangle(GUI_XL, _hr[1], _hr[0], _hr[3], false);            // left
+    draw_rectangle(_hr[2], _hr[1], GUI_XR, _hr[3], false);            // right
+    draw_set_alpha(1.0);
+    // Highlight border (pulsing gold).
+    draw_set_color(make_color_rgb(245, 195, 80));
+    draw_set_alpha(0.65 + 0.35 * sin(current_time / 250));
+    draw_rectangle(_hr[0], _hr[1], _hr[2], _hr[3], true);
+    draw_rectangle(_hr[0] - 1, _hr[1] - 1, _hr[2] + 1, _hr[3] + 1, true);
+    draw_set_alpha(1.0);
+
+    // Explainer card (measured; slides off its own rect - stats-tour rule).
+    var _cw = 560;
+    draw_set_font(ui_font(fnt_ui_small));
+    var _bh = string_height_ext(_sd.b, 30, _cw - 60);
+    var _ch = 63 + _bh + 24 + 54 + 9 + 24 + 12;
+    var _cx1 = _sd.cx, _cy1 = _sd.cy;
+    if (_cx1 + _cw > 1860) _cx1 = 1860 - _cw;
+    if (_cy1 + _ch > 1040) _cy1 = 1040 - _ch;
+    if (_cx1 < _hr[2] && _cx1 + _cw > _hr[0] && _cy1 < _hr[3] && _cy1 + _ch > _hr[1]) {
+        if (_hr[1] - 12 - _ch >= 30)        _cy1 = _hr[1] - 12 - _ch;
+        else if (_hr[3] + 12 + _ch <= 1040) _cy1 = _hr[3] + 12;
+    }
+    var _cx2 = _cx1 + _cw, _cy2 = _cy1 + _ch;
+    draw_set_alpha(0.97);
+    draw_set_color(make_color_rgb(16, 18, 30));
+    draw_rectangle(_cx1, _cy1, _cx2, _cy2, false);
+    draw_set_alpha(1.0);
+    draw_set_color(make_color_rgb(245, 195, 80));
+    draw_rectangle(_cx1, _cy1, _cx2, _cy2, true);
+    draw_set_halign(fa_left); draw_set_valign(fa_top);
+    draw_set_font(ui_font(fnt_ui));
+    draw_set_color(make_color_rgb(245, 210, 140));
+    draw_text(_cx1 + 30, _cy1 + 18, _sd.t + "   (" + string(_ts + 1) + "/" + string(_tot) + ")");
+    draw_set_font(ui_font(fnt_ui_small));
+    draw_set_color(make_color_rgb(210, 214, 228));
+    draw_text_ext(_cx1 + 30, _cy1 + 63, _sd.b, 30, _cw - 60);
+
+    // Buttons: NEXT (Enter) / SKIP (Esc) - tappable, with kb/pad hints.
+    var _bt_y1 = _cy1 + 63 + _bh + 24, _bt_y2 = _bt_y1 + 54;
+    var _nx1 = _cx1 + 30,  _nx2 = _nx1 + 216;
+    var _sx1 = _nx2 + 24,  _sx2 = _sx1 + 168;
+    draw_set_color(make_color_rgb(28, 44, 66));
+    draw_rectangle(_nx1, _bt_y1, _nx2, _bt_y2, false);
+    draw_set_color(make_color_rgb(80, 160, 220));
+    draw_rectangle(_nx1, _bt_y1, _nx2, _bt_y2, true);
+    draw_set_color(make_color_rgb(34, 30, 40));
+    draw_rectangle(_sx1, _bt_y1, _sx2, _bt_y2, false);
+    draw_set_color(make_color_rgb(120, 110, 130));
+    draw_rectangle(_sx1, _bt_y1, _sx2, _bt_y2, true);
+    draw_set_halign(fa_center); draw_set_valign(fa_middle);
+    draw_set_color(c_white);
+    draw_text((_nx1 + _nx2) / 2, (_bt_y1 + _bt_y2) / 2, (_ts == _tot - 1) ? "FINISH" : "NEXT");
+    draw_set_color(make_color_rgb(180, 175, 190));
+    draw_text((_sx1 + _sx2) / 2, (_bt_y1 + _bt_y2) / 2, "SKIP");
+    draw_set_valign(fa_top);
+    draw_set_font(ui_font(fnt_ui_small));
+    draw_set_color(make_color_rgb(120, 130, 155));
+    var _hint = "Enter: Next    Esc: Skip";
+    if (input_device() == 1) _hint = "A: Next    B: Skip";
+    if (input_device() == 2) _hint = "";
+    if (_hint != "") draw_text((_cx1 + _cx2) / 2, _bt_y2 + 9, _hint);
+    draw_set_halign(fa_left);
+    if (touch_tapped(_nx1, _bt_y1, _nx2, _bt_y2)) touch_press(vk_enter);
+    if (touch_tapped(_sx1, _bt_y1, _sx2, _bt_y2)) touch_press(vk_escape);
+
+    draw_set_color(c_white); draw_set_alpha(1.0); draw_set_font(-1);
+}
+
+// =============================================================================
+// BAIRC'S GARDEN SCENE (M design-locked 08-15 late): the full-screen grounds.
+// 4800px night garden under a wandering camera; everything here is code-drawn
+// set dressing (band-garden idiom, scaled up) except the pets themselves.
+// Verb chips double as tap targets injecting the tags gc Step consumes; the
+// keyboard hotkeys act on the nearest visible instance (input-parity rule).
+// =============================================================================
+function ui_draw_garden_scene() {
+    if (!instance_exists(obj_game_controller)) return;
+    var _gc = instance_find(obj_game_controller, 0);
+    if (!variable_instance_exists(_gc, "garden_open") || !_gc.garden_open) return;
+    garden_ensure();
+    var _cam = _gc.garden_cam_x;
+    var _W   = garden_world_w();
+    var _t   = current_time / 1000;
+    var _mx  = device_mouse_x_to_gui(0), _my = device_mouse_y_to_gui(0);
+
+    // ---- SKY: layered night gradient + moon + hashed stars ----
+    draw_set_alpha(1.0);
+    draw_set_color(make_color_rgb(7, 9, 18));    draw_rectangle(GUI_XL, 0,   GUI_XR, 300,  false);
+    draw_set_color(make_color_rgb(10, 13, 24));  draw_rectangle(GUI_XL, 300, GUI_XR, 480,  false);
+    draw_set_color(make_color_rgb(14, 18, 30));  draw_rectangle(GUI_XL, 480, GUI_XR, 640,  false);
+    for (var _si = 0; _si < 60; _si++) {
+        var _sh  = frac(sin(_si * 71.3) * 34781.7);
+        var _sh2 = frac(sin(_si * 13.9) * 91733.1);
+        var _sx  = frac(_sh - _cam * 0.18 / _W) * 1920;
+        var _sy  = _sh2 * 560;
+        draw_set_alpha(0.25 + 0.45 * abs(sin(_t * (0.6 + _sh) + _si)));
+        draw_set_color(make_color_rgb(200, 210, 235));
+        draw_rectangle(_sx, _sy, _sx + 2, _sy + 2, false);
+    }
+    draw_set_alpha(1.0);
+    var _moon_x = 760 - _cam * 0.30;
+    draw_set_color(make_color_rgb(222, 224, 210));
+    draw_circle(_moon_x, 190, 58, false);
+    draw_set_color(make_color_rgb(14, 16, 28));
+    draw_circle(_moon_x - 22, 176, 50, false);   // waning crescent bite
+
+    // ---- Distant treeline (parallax 0.55) ----
+    draw_set_color(make_color_rgb(11, 16, 20));
+    for (var _tr = 0; _tr < 40; _tr++) {
+        var _th  = frac(sin(_tr * 37.7) * 15731.3);
+        var _tx  = _tr * 130 - frac(_cam * 0.55 / 5200) * 5200;
+        if (_tx < -160 || _tx > 2080) continue;
+        var _tth = 90 + _th * 130;
+        draw_triangle(_tx - 70, 660, _tx + 70, 660, _tx, 660 - _tth, false);
+    }
+
+    // ---- Ground: earth bands + lanes + hashed grass tufts ----
+    draw_set_color(make_color_rgb(18, 24, 20));  draw_rectangle(GUI_XL, 640, GUI_XR, 820,  false);   // back lane
+    draw_set_color(make_color_rgb(22, 29, 23));  draw_rectangle(GUI_XL, 820, GUI_XR, 1000, false);   // front lane
+    draw_set_color(make_color_rgb(16, 20, 17));  draw_rectangle(GUI_XL, 1000, GUI_XR, GUI_H, false); // foreground earth
+    draw_set_color(make_color_rgb(30, 38, 30));
+    draw_line(GUI_XL, 820, GUI_XR, 820);
+    for (var _gt = 0; _gt < 200; _gt++) {
+        var _gh  = frac(sin(_gt * 57.1) * 24631.9);
+        var _gwx = _gh * _W;
+        var _gsx = _gwx - _cam;
+        if (_gsx < -20 || _gsx > 1940) continue;
+        var _gy  = 660 + frac(sin(_gt * 11.7) * 7351.3) * 380;
+        draw_set_color(make_color_rgb(28, 40, 28));
+        draw_line(_gsx, _gy, _gsx - 3, _gy - 9);
+        draw_line(_gsx, _gy, _gsx + 3, _gy - 10);
+    }
+
+    // ---- Entrance gate (world x 140) ----
+    var _eg = 140 - _cam;
+    if (_eg > -220 && _eg < 2140) {
+        draw_set_color(make_color_rgb(38, 32, 30));
+        draw_rectangle(_eg - 90, 560, _eg - 66, 900, false);
+        draw_rectangle(_eg + 66, 560, _eg + 90, 900, false);
+        draw_rectangle(_eg - 110, 530, _eg + 110, 566, false);
+        draw_set_color(make_color_rgb(240, 190, 110));
+        draw_set_alpha(0.5 + 0.2 * sin(_t * 2.1));
+        draw_circle(_eg - 78, 600, 10, false);
+        draw_circle(_eg + 78, 600, 10, false);
+        draw_set_alpha(1.0);
+    }
+
+    // ---- Memorial grove (world x 4150+): every stone remembered ----
+    var _mems = bairc_memorials();
+    var _mgn  = min(array_length(_mems), 8);
+    for (var _mg = 0; _mg < _mgn; _mg++) {
+        var _mgx = 4180 + (_mg mod 4) * 110 + ((_mg div 4) * 55) - _cam;
+        var _mgy = 780 + (_mg div 4) * 120;
+        if (_mgx < -40 || _mgx > 1960) continue;
+        draw_set_color(make_color_rgb(66, 70, 82));
+        draw_roundrect_ext(_mgx - 16, _mgy - 44, _mgx + 16, _mgy, 10, 10, false);
+        draw_set_color(make_color_rgb(30, 33, 42));
+        draw_roundrect_ext(_mgx - 16, _mgy - 44, _mgx + 16, _mgy, 10, 10, true);
+        draw_line(_mgx - 8, _mgy - 28, _mgx + 8, _mgy - 28);
+    }
+    if (array_length(_mems) > 0 && 4390 - _cam > -200 && 4390 - _cam < 2100) {
+        draw_set_halign(fa_center);
+        draw_set_font(ui_font(fnt_ui_small));
+        draw_set_color(make_color_rgb(110, 118, 132));
+        draw_text(4390 - _cam, 660, "the quiet corner");
+        draw_set_halign(fa_left);
+    }
+
+    // ---- Ornaments in their plots (+ glowing rings in placement mode) ----
+    var _anch = garden_decor_anchors();
+    var _has_jar = false, _has_wheel = false;
+    for (var _ai = 0; _ai < array_length(_anch); _ai++) {
+        var _aid = garden_decor_at(_ai);
+        var _ax  = _anch[_ai].x - _cam;
+        var _ay  = _anch[_ai].y;
+        if (_aid == "jar")   _has_jar = true;
+        if (_aid == "wheel") _has_wheel = true;
+        if (_ax < -160 || _ax > 2080) continue;
+        if (_aid == "") {
+            // Empty plot: visible ONLY while choosing a spot - glowing ring + number.
+            if (_gc.garden_place_pick != "") {
+                draw_set_alpha(0.55 + 0.30 * sin(_t * 3 + _ai));
+                draw_set_color(make_color_rgb(150, 220, 160));
+                draw_ellipse(_ax - 52, _ay - 18, _ax + 52, _ay + 14, true);
+                draw_ellipse(_ax - 46, _ay - 15, _ax + 46, _ay + 11, true);
+                draw_set_alpha(1.0);
+                draw_set_halign(fa_center);
+                draw_set_font(ui_font(fnt_ui));
+                draw_text(_ax, _ay - 62, "[" + string(_ai + 1) + "]");
+                draw_set_halign(fa_left);
+                if (touch_tapped(_ax - 60, _ay - 70, _ax + 60, _ay + 20)) input_inject("garden:plot" + string(_ai));
+            }
+            continue;
+        }
+        // Each ornament: a small code-drawn vignette.
+        switch (_aid) {
+            case "lantern":
+                draw_set_color(make_color_rgb(70, 72, 80));
+                draw_rectangle(_ax - 10, _ay - 76, _ax + 10, _ay, false);
+                draw_rectangle(_ax - 22, _ay - 96, _ax + 22, _ay - 72, false);
+                draw_set_color(make_color_rgb(26, 27, 34));
+                draw_rectangle(_ax - 22, _ay - 96, _ax + 22, _ay - 72, true);
+                draw_set_color(make_color_rgb(250, 200, 120));
+                draw_set_alpha(0.55 + 0.25 * sin(_t * 2.4 + _ai));
+                draw_rectangle(_ax - 12, _ay - 92, _ax + 12, _ay - 76, false);
+                draw_set_alpha(0.10 + 0.05 * sin(_t * 2.4 + _ai));
+                draw_circle(_ax, _ay - 84, 90, false);
+                draw_set_alpha(1.0);
+                break;
+            case "gate":
+                draw_set_color(make_color_rgb(52, 38, 40));
+                draw_rectangle(_ax - 64, _ay - 130, _ax - 48, _ay, false);
+                draw_rectangle(_ax + 48, _ay - 130, _ax + 64, _ay, false);
+                draw_rectangle(_ax - 80, _ay - 150, _ax + 80, _ay - 126, false);
+                draw_rectangle(_ax - 70, _ay - 120, _ax + 70, _ay - 106, false);
+                draw_set_alpha(0.20 + 0.10 * sin(_t * 1.4));
+                draw_set_color(make_color_rgb(170, 120, 220));
+                draw_rectangle(_ax - 46, _ay - 104, _ax + 46, _ay - 4, false);
+                draw_set_alpha(1.0);
+                break;
+            case "basin":
+                draw_set_color(make_color_rgb(72, 74, 84));
+                draw_rectangle(_ax - 8, _ay - 40, _ax + 8, _ay, false);
+                draw_ellipse(_ax - 42, _ay - 58, _ax + 42, _ay - 34, false);
+                draw_set_color(make_color_rgb(30, 44, 60));
+                draw_ellipse(_ax - 34, _ay - 54, _ax + 34, _ay - 38, false);
+                draw_set_color(make_color_rgb(222, 224, 210));
+                draw_set_alpha(0.7);
+                draw_circle(_ax + 8 * sin(_t * 0.7), _ay - 46, 6, false);
+                draw_set_alpha(1.0);
+                break;
+            case "bloom":
+                for (var _bf = 0; _bf < 7; _bf++) {
+                    var _bfx = _ax - 42 + _bf * 14;
+                    var _bfy = _ay - 6 - frac(sin(_bf * 91.7 + _ai) * 351.3) * 16;
+                    draw_set_color(make_color_rgb(30, 44, 32));
+                    draw_line(_bfx, _ay, _bfx, _bfy);
+                    draw_set_alpha(0.65 + 0.30 * sin(_t * 1.8 + _bf));
+                    draw_set_color((_bf mod 2 == 0) ? make_color_rgb(150, 110, 220) : make_color_rgb(110, 180, 235));
+                    draw_circle(_bfx, _bfy, 5, false);
+                    draw_set_alpha(1.0);
+                }
+                break;
+            case "ward":
+                draw_set_color(make_color_rgb(60, 70, 58));
+                draw_roundrect_ext(_ax - 20, _ay - 66, _ax + 20, _ay, 12, 12, false);
+                draw_circle(_ax, _ay - 74, 16, false);
+                draw_set_color(make_color_rgb(40, 52, 40));
+                draw_roundrect_ext(_ax - 20, _ay - 66, _ax + 20, _ay, 12, 12, true);
+                // Eyes blink every few seconds.
+                if (frac(_t * 0.21 + _ai * 0.37) > 0.06) {
+                    draw_set_color(make_color_rgb(160, 230, 170));
+                    draw_circle(_ax - 6, _ay - 76, 2, false);
+                    draw_circle(_ax + 6, _ay - 76, 2, false);
+                }
+                break;
+            case "chimes":
+                draw_set_color(make_color_rgb(48, 40, 36));
+                draw_rectangle(_ax - 3, _ay - 120, _ax + 3, _ay, false);
+                draw_rectangle(_ax - 40, _ay - 124, _ax + 40, _ay - 116, false);
+                for (var _ch = 0; _ch < 4; _ch++) {
+                    var _chx = _ax - 28 + _ch * 19;
+                    var _chs = 5 * sin(_t * 1.1 + _ch * 1.7);
+                    draw_set_color(make_color_rgb(210, 205, 190));
+                    draw_line(_chx, _ay - 116, _chx + _chs, _ay - 76 + _ch * 4);
+                    draw_rectangle(_chx + _chs - 2, _ay - 76 + _ch * 4, _chx + _chs + 2, _ay - 56 + _ch * 4, false);
+                }
+                break;
+            case "wheel":
+                draw_set_color(make_color_rgb(52, 44, 38));
+                draw_circle(_ax, _ay - 40, 34, true);
+                for (var _ws = 0; _ws < 4; _ws++) {
+                    var _wa = _t * 0.8 + _ws * pi / 2;
+                    draw_line(_ax - cos(_wa) * 32, _ay - 40 - sin(_wa) * 32,
+                              _ax + cos(_wa) * 32, _ay - 40 + sin(_wa) * 32);
+                }
+                draw_set_color(make_color_rgb(70, 60, 50));
+                draw_rectangle(_ax - 6, _ay - 40, _ax + 6, _ay, false);
+                break;
+            case "jar":
+                draw_set_color(make_color_rgb(120, 140, 150));
+                draw_roundrect_ext(_ax - 14, _ay - 40, _ax + 14, _ay, 8, 8, true);
+                draw_set_color(make_color_rgb(90, 96, 104));
+                draw_rectangle(_ax - 10, _ay - 46, _ax + 10, _ay - 40, false);
+                for (var _fj = 0; _fj < 3; _fj++) {
+                    draw_set_alpha(0.5 + 0.5 * sin(_t * 3 + _fj * 2.1));
+                    draw_set_color(make_color_rgb(220, 235, 140));
+                    draw_circle(_ax - 8 + _fj * 8, _ay - 12 - 8 * frac(sin(_fj * 7.3) * 133.7) - 4 * sin(_t + _fj), 2, false);
+                    draw_set_alpha(1.0);
+                }
+                break;
+        }
+    }
+
+    // ---- THE POND (world x 1250, front lane) ----
+    var _pd = 1250 - _cam;
+    if (_pd > -420 && _pd < 2340) {
+        draw_set_color(make_color_rgb(20, 32, 44));
+        draw_ellipse(_pd - 340, 830, _pd + 340, 972, false);
+        draw_set_color(make_color_rgb(34, 56, 74));
+        draw_ellipse(_pd - 310, 842, _pd + 310, 960, false);
+        draw_set_color(make_color_rgb(80, 120, 146));
+        draw_ellipse(_pd - 340, 830, _pd + 340, 972, true);
+        // Moon glint drifting on the surface.
+        draw_set_alpha(0.45);
+        draw_set_color(make_color_rgb(150, 190, 215));
+        var _gl = _pd - 60 + 40 * sin(_t * 0.5);
+        draw_line(_gl - 26, 890, _gl + 26, 890);
+        draw_line(_gl - 12, 898, _gl + 30, 898);
+        draw_set_alpha(1.0);
+        // Koi shadows: three slow orbiters; a fresh crumb pulls them in.
+        var _crumb_live = (current_time - _gc.garden_crumb_t < 4500);
+        for (var _ko = 0; _ko < 3 + (_has_wheel ? 2 : 0); _ko++) {
+            var _ka  = _t * (0.35 + 0.1 * _ko) + _ko * 2.2;
+            var _kx  = _pd + cos(_ka) * (170 - _ko * 30);
+            var _ky  = 901 + sin(_ka) * (38 - _ko * 6);
+            if (_crumb_live) {
+                var _kt = clamp((current_time - _gc.garden_crumb_t) / 900, 0, 1);
+                _kx = lerp(_kx, _gc.garden_crumb_x - _cam + cos(_ka * 3) * 26, _kt);
+                _ky = lerp(_ky, 900 + sin(_ka * 3) * 12, _kt);
+            }
+            draw_set_alpha(0.55);
+            draw_set_color(make_color_rgb(16, 24, 34));
+            draw_ellipse(_kx - 20, _ky - 6, _kx + 20, _ky + 6, false);
+            draw_set_alpha(0.8);
+            draw_set_color((_ko mod 2 == 0) ? make_color_rgb(200, 120, 90) : make_color_rgb(200, 190, 175));
+            draw_ellipse(_kx - 14, _ky - 4, _kx + 6, _ky + 4, false);
+            draw_set_alpha(1.0);
+        }
+        // Tap the water itself = toss a crumb.
+        if (touch_tapped(_pd - 340, 830, _pd + 340, 972)) input_inject("garden:crumb");
+    }
+
+    // ---- THE CAIRN (world x 2650) ----
+    var _cn = 2650 - _cam;
+    var _stacked = variable_global_exists("garden_cairn") ? global.garden_cairn : 0;
+    if (_cn > -200 && _cn < 2120) {
+        // Flat base stone.
+        draw_set_color(make_color_rgb(58, 62, 70));
+        draw_ellipse(_cn - 56, 866, _cn + 56, 890, false);
+        // The stack: stones shrink as they rise; the newest wobbles as it lands.
+        var _sy0 = 866;
+        for (var _st = 0; _st < _stacked; _st++) {
+            var _sw2 = 44 - _st * 7;
+            var _sh3 = 22 - _st * 2;
+            var _wob = 0;
+            for (var _gfw = 0; _gfw < array_length(_gc.garden_fx); _gfw++) {
+                var _gfs2 = _gc.garden_fx[_gfw];
+                if (_gfs2.kind == "stone" && _st == _stacked - 1 && current_time - _gfs2.t0 < 700) {
+                    _wob = 4 * sin((current_time - _gfs2.t0) / 60) * (1 - (current_time - _gfs2.t0) / 700);
+                }
+            }
+            draw_set_color(make_color_rgb(74 + _st * 6, 78 + _st * 6, 88 + _st * 6));
+            draw_ellipse(_cn - _sw2 + _wob, _sy0 - _sh3, _cn + _sw2 + _wob, _sy0, false);
+            draw_set_color(make_color_rgb(34, 36, 44));
+            draw_ellipse(_cn - _sw2 + _wob, _sy0 - _sh3, _cn + _sw2 + _wob, _sy0, true);
+            _sy0 -= _sh3 - 4;
+        }
+        // Loose stones waiting at the base.
+        for (var _ls = 0; _ls < 5 - _stacked; _ls++) {
+            var _lsx = _cn - 120 - _ls * 44;
+            draw_set_color(make_color_rgb(64, 66, 76));
+            draw_ellipse(_lsx - 18, 886, _lsx + 18, 902, false);
+            draw_set_color(make_color_rgb(34, 36, 44));
+            draw_ellipse(_lsx - 18, 886, _lsx + 18, 902, true);
+        }
+        // Completed cairn: a soft standing shimmer.
+        if (_stacked >= 5) {
+            draw_set_alpha(0.18 + 0.08 * sin(_t * 1.6));
+            draw_set_color(make_color_rgb(160, 230, 170));
+            draw_circle(_cn, 800, 70, false);
+            draw_set_alpha(1.0);
+        }
+        if (touch_tapped(_cn - 170, 760, _cn + 90, 910)) input_inject("garden:stone");
+    }
+
+    // ---- Forage sparkles (3/day, seeded) ----
+    var _spots = garden_forage_spots();
+    for (var _fs = 0; _fs < array_length(_spots); _fs++) {
+        var _fsp = _spots[_fs];
+        if (_fsp.taken) continue;
+        var _fx = _fsp.x - _cam;
+        if (_fx < -40 || _fx > 1960) continue;
+        var _tw = 0.5 + 0.5 * sin(_t * 4 + _fs * 2.3);
+        draw_set_alpha(0.55 + 0.45 * _tw);
+        draw_set_color(make_color_rgb(240, 230, 150));
+        draw_line(_fx - 8 - 4 * _tw, _fsp.y, _fx + 8 + 4 * _tw, _fsp.y);
+        draw_line(_fx, _fsp.y - 8 - 4 * _tw, _fx, _fsp.y + 8 + 4 * _tw);
+        draw_circle(_fx, _fsp.y, 3, false);
+        draw_set_alpha(1.0);
+        if (touch_tapped(_fx - 34, _fsp.y - 34, _fx + 34, _fsp.y + 34)) input_inject("garden:forage" + string(_fsp.idx));
+    }
+
+    // ---- RESIDENTS: the entrusted creatures, two lanes, dwell-and-stroll ----
+    var _dn  = array_length(bairc_donated());
+    var _dsh = min(_dn, 16);
+    var _crumb_on = (current_time - _gc.garden_crumb_t < 4500);
+    var _hover_name = "";
+    for (var _pass = 0; _pass < 2; _pass++) {          // 0 = back lane, 1 = front
+        for (var _ri = 0; _ri < _dsh; _ri++) {
+            var _back = (_ri mod 2 == 1);
+            if (_back != (_pass == 0)) continue;
+            var _rd  = bairc_donated()[_ri];
+            var _rp  = { is_egg: false, species: _rd.species, stage: _rd.stage };
+            var _rsp = pet_sprite(_rp, "s");
+            if (_rsp < 0) continue;
+            // Home x matches the Step's petting math EXACTLY.
+            var _rh  = frac(sin((_ri + 1) * 91.17) * 47453.25);
+            var _rx  = 260 + _rh * (_W - 620);
+            // Dwell-and-stroll (band idiom): eased sine, clamped to linger.
+            var _rsw = sin(_t * (0.14 + 0.04 * (_ri mod 3)) + _ri * 2.13);
+            var _rmv = clamp((_rsw + 0.55) / 1.10, 0, 1);
+            _rmv = _rmv * _rmv * (3 - 2 * _rmv);
+            _rx += lerp(-130, 130, _rmv);
+            // A fresh crumb draws anyone near the pond to the bank.
+            if (_crumb_on && abs(_rx - 1250) < 760) {
+                var _rct = clamp((current_time - _gc.garden_crumb_t) / 1200, 0, 1);
+                _rx = lerp(_rx, 1250 + ((_rx < 1250) ? -380 : 380), _rct * 0.8);
+            }
+            var _ry  = _back ? 800 : 952;
+            var _rsx = _rx - _cam;
+            if (_rsx < -100 || _rsx > 2020) continue;
+            // Idle bob + drink-dip at the pond.
+            var _rbob = 2 * sin(_t * 2 + _ri);
+            var _rfit = pet_sprite_fit(_rsp, _rsx, _ry + _rbob, _back ? 74 : 104);
+            draw_sprite_ext(_rsp, pet_anim_frame(_rsp), _rfit.x, _rfit.y,
+                _rfit.scale, _rfit.scale, 0, c_white, _back ? 0.92 : 1);
+            // Hover: name label; tap: a pet on the head.
+            var _hw = _back ? 50 : 68;
+            if (_mx >= _rsx - _hw && _mx <= _rsx + _hw && _my >= _ry - 130 && _my <= _ry + 10) {
+                _hover_name = _rd.name + "  (" + pet_stage_name(_rd.stage) + ")";
+                if (touch_tapped(_rsx - _hw, _ry - 130, _rsx + _hw, _ry + 10)) input_inject("garden:pet" + string(_ri));
+            }
+        }
+    }
+    if (_dn > _dsh && 60 - 0 < 2000) {
+        draw_set_font(ui_font(fnt_ui_small));
+        draw_set_color(make_color_rgb(120, 130, 120));
+        draw_text(30, 1002, "+" + string(_dn - _dsh) + " more live deeper in the grounds");
+    }
+
+    // ---- Ambient fireflies (more near a placed jar) ----
+    var _ffn = 20 + (_has_jar ? 16 : 0);
+    for (var _ff = 0; _ff < _ffn; _ff++) {
+        var _fh  = frac(sin(_ff * 43.7) * 82631.1);
+        var _ffx = frac(_fh + _t * 0.008 * (1 + _fh)) * _W - _cam;
+        if (_ffx < -10 || _ffx > 1930) continue;
+        var _ffy = 620 + frac(sin(_ff * 17.3) * 5417.9) * 400 + 14 * sin(_t * 1.1 + _ff);
+        draw_set_alpha(0.35 + 0.55 * abs(sin(_t * 1.9 + _ff * 1.3)));
+        draw_set_color(make_color_rgb(215, 235, 140));
+        draw_circle(_ffx, _ffy, 2, false);
+        draw_set_alpha(1.0);
+    }
+
+    // ---- Reaction FX: rising hearts + pond ripples ----
+    for (var _xf = 0; _xf < array_length(_gc.garden_fx); _xf++) {
+        var _fx2 = _gc.garden_fx[_xf];
+        var _age = (current_time - _fx2.t0) / 1000;
+        var _fxx = _fx2.x - _cam;
+        if (_fxx < -100 || _fxx > 2020) continue;
+        if (_fx2.kind == "hearts" && _age < 2.2) {
+            for (var _hh = 0; _hh < 3; _hh++) {
+                var _ht = _age - _hh * 0.25;
+                if (_ht < 0 || _ht > 1.6) continue;
+                var _hx = _fxx + 12 * sin(_ht * 5 + _hh * 2) + (_hh - 1) * 16;
+                var _hy = _fx2.y - 90 - _ht * 70;
+                draw_set_alpha(clamp(1.4 - _ht, 0, 1) * 0.9);
+                draw_set_color(make_color_rgb(235, 110, 140));
+                draw_circle(_hx - 4, _hy, 5, false);
+                draw_circle(_hx + 4, _hy, 5, false);
+                draw_triangle(_hx - 8, _hy + 2, _hx + 8, _hy + 2, _hx, _hy + 13, false);
+            }
+            draw_set_alpha(1.0);
+        } else if (_fx2.kind == "ripple" && _age < 1.8) {
+            draw_set_alpha(clamp(1 - _age / 1.8, 0, 1) * 0.6);
+            draw_set_color(make_color_rgb(150, 190, 215));
+            draw_ellipse(_fxx - 20 - _age * 90, _fx2.y - 6 - _age * 26,
+                         _fxx + 20 + _age * 90, _fx2.y + 6 + _age * 26, true);
+            draw_set_alpha(1.0);
+        }
+    }
+
+    // ---- Verb chips above the features currently on screen ----
+    draw_set_font(ui_font(fnt_ui_small));
+    if (_pd > -240 && _pd < 2160) ui_garden_chip(_pd, 792, "[1] TOSS A CRUMB", "garden:crumb");
+    if (_cn > -240 && _cn < 2160) {
+        ui_garden_chip(_cn, 726, (_stacked >= 5) ? "the cairn holds" : "[2] PLACE A STONE  (" + string(_stacked) + "/5)",
+            (_stacked >= 5) ? "" : "garden:stone");
+    }
+    for (var _fs2 = 0; _fs2 < array_length(_spots); _fs2++) {
+        var _fc2 = _spots[_fs2];
+        if (_fc2.taken) continue;
+        var _fx3 = _fc2.x - _cam;
+        if (_fx3 > -120 && _fx3 < 2040) ui_garden_chip(_fx3, _fc2.y - 66, "[3] FORAGE", "garden:forage" + string(_fc2.idx));
+    }
+    if (_hover_name != "") {
+        draw_set_halign(fa_center);
+        draw_set_color(make_color_rgb(210, 220, 210));
+        draw_text(_mx, _my - 42, _hover_name);
+        draw_set_color(make_color_rgb(150, 165, 150));
+        draw_text(_mx, _my - 18, "[E] or tap to pet");
+        draw_set_halign(fa_left);
+    }
+
+    // ---- HUD frame: title, leave/shop chips, position strip, hints, gold ----
+    draw_set_alpha(0.55);
+    draw_set_color(c_black);
+    draw_rectangle(GUI_XL, 0, GUI_XR, 66, false);
+    draw_rectangle(GUI_XL, 1032, GUI_XR, GUI_H, false);
+    draw_set_alpha(1.0);
+    draw_set_halign(fa_center);
+    draw_set_font(ui_font(fnt_ui));
+    draw_set_color(make_color_rgb(170, 210, 170));
+    draw_text(960, 16, "B A I R C ' S   G A R D E N");
+    draw_set_halign(fa_left);
+    ui_garden_chip(140, 16, "[Esc] LEAVE", "garden:leave");
+    ui_garden_chip(1700, 16, "[B] ORNAMENTS", "garden:shop");
+    draw_set_font(ui_font(fnt_ui_small));
+    draw_set_halign(fa_right);
+    draw_set_color(c_yellow);
+    draw_text(1560, 22, "Gold: " + string(global.gold) + "   Dust: " + string(variable_global_exists("rune_dust") ? global.rune_dust : 0));
+    draw_set_halign(fa_center);
+    draw_set_color(make_color_rgb(130, 145, 132));
+    draw_text(960, 1042, "A/D or drag: wander        [E] pet        [1] pond    [2] cairn    [3] forage        "
+        + string(_dn) + " resident" + ((_dn == 1) ? "" : "s"));
+    draw_set_halign(fa_left);
+    // Position strip: where the camera window sits over the grounds.
+    draw_set_color(make_color_rgb(30, 38, 32));
+    draw_rectangle(660, 1064, 1260, 1072, false);
+    draw_set_color(make_color_rgb(150, 200, 150));
+    var _ps0 = 660 + 600 * (_cam / _W);
+    draw_rectangle(_ps0, 1064, _ps0 + 600 * (1920 / _W), 1072, false);
+    // Music selector chip (bottom-right): cycles the garden's track pool.
+    ui_garden_chip(1700, 1038, "[M] MUSIC", "garden:music");
+
+    // ---- Notice toast (standard boxed toast, topmost of the scene HUD) ----
+    if (_gc.garden_notice != "" && _gc.garden_notice_t > 0) {
+        ui_draw_toast(_gc.garden_notice, 960, 120, min(1, _gc.garden_notice_t / 30));
+    }
+
+    // ---- ORNAMENT SHOP overlay ----
+    if (_gc.garden_shop_open) {
+        draw_set_alpha(0.62); draw_set_color(c_black);
+        draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
+        draw_set_alpha(1.0);
+        var _sx0 = 520, _sy0 = 150, _sx1 = 1400, _sy1 = 936;
+        draw_set_color(make_color_rgb(14, 18, 15));
+        draw_rectangle(_sx0, _sy0, _sx1, _sy1, false);
+        draw_set_color(make_color_rgb(110, 170, 120));
+        draw_rectangle(_sx0, _sy0, _sx1, _sy1, true);
+        draw_set_halign(fa_center);
+        draw_set_font(ui_font(fnt_ui));
+        draw_set_color(make_color_rgb(190, 230, 190));
+        draw_text((_sx0 + _sx1) / 2, _sy0 + 16, "ORNAMENTS FOR THE GARDEN");
+        draw_set_font(ui_font(fnt_ui_small));
+        draw_set_color(make_color_rgb(120, 140, 125));
+        draw_text((_sx0 + _sx1) / 2, _sy0 + 52, "\"It could use a little something. They notice, you know.\"");
+        draw_set_halign(fa_left);
+        var _sc_cat = garden_decor_catalog();
+        var _srow_y = _sy0 + 96, _srow_h = 82;
+        for (var _sr = 0; _sr < array_length(_sc_cat); _sr++) {
+            var _sd = _sc_cat[_sr];
+            var _sry = _srow_y + _sr * _srow_h;
+            var _son = (_sr == _gc.garden_shop_cur);
+            var _splaced = garden_decor_placed(_sd.id);
+            if (touch_tapped(_sx0 + 16, _sry, _sx1 - 16, _sry + _srow_h - 8)) input_inject("garden:shoprow" + string(_sr));
+            draw_set_color(_son ? make_color_rgb(26, 38, 28) : make_color_rgb(18, 22, 19));
+            draw_rectangle(_sx0 + 16, _sry, _sx1 - 16, _sry + _srow_h - 8, false);
+            draw_set_color(_splaced ? make_color_rgb(70, 110, 80) : (_son ? make_color_rgb(150, 210, 160) : make_color_rgb(48, 62, 50)));
+            draw_rectangle(_sx0 + 16, _sry, _sx1 - 16, _sry + _srow_h - 8, true);
+            draw_set_font(ui_font(fnt_ui));
+            draw_set_color(_splaced ? make_color_rgb(120, 140, 125) : c_white);
+            draw_text(_sx0 + 36, _sry + 8, _sd.name);
+            draw_set_font(ui_font(fnt_ui_small));
+            draw_set_color(make_color_rgb(130, 145, 132));
+            draw_text(_sx0 + 36, _sry + 44, _sd.blurb);
+            draw_set_halign(fa_right);
+            if (_splaced) {
+                draw_set_color(make_color_rgb(120, 200, 140));
+                draw_text(_sx1 - 36, _sry + 12, "PLACED");
+            } else {
+                draw_set_color(c_yellow);
+                draw_text(_sx1 - 36, _sry + 12, string(_sd.gold) + "g + " + string(_sd.dust) + " dust");
+            }
+            draw_set_halign(fa_left);
+        }
+        draw_set_halign(fa_center);
+        draw_set_font(ui_font(fnt_ui_small));
+        draw_set_color(make_color_rgb(130, 150, 135));
+        ui_draw_key_legend((_sx0 + _sx1) / 2, _sy1 - 30, "W/S: Browse    Enter: Choose    Esc: Close");
+        draw_set_halign(fa_left);
+    }
+
+    // ---- Fade-in from black ----
+    if (_gc.garden_fade > 0) {
+        draw_set_alpha(_gc.garden_fade / 24);
+        draw_set_color(c_black);
+        draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
+        draw_set_alpha(1.0);
+    }
+
+    draw_set_color(c_white); draw_set_alpha(1.0); draw_set_font(-1);
+    draw_set_halign(fa_left); draw_set_valign(fa_top);
+}
+
+// Small tappable verb chip, centred on x. Empty tag = label only (no action).
+function ui_garden_chip(_cx, _cy, _label, _tag) {
+    draw_set_font(ui_font(fnt_ui_small));
+    var _w  = string_width(_label) + 26;
+    var _x0 = _cx - _w / 2, _x1 = _cx + _w / 2, _y1 = _cy + 34;
+    draw_set_alpha(0.85);
+    draw_set_color(make_color_rgb(12, 18, 14));
+    draw_rectangle(_x0, _cy, _x1, _y1, false);
+    draw_set_alpha(1.0);
+    draw_set_color((_tag == "") ? make_color_rgb(60, 72, 62) : make_color_rgb(110, 170, 120));
+    draw_rectangle(_x0, _cy, _x1, _y1, true);
+    draw_set_halign(fa_center);
+    draw_set_color((_tag == "") ? make_color_rgb(120, 135, 122) : make_color_rgb(190, 230, 190));
+    draw_text(_cx, _cy + 7, _label);
+    draw_set_halign(fa_left);
+    if (_tag != "" && touch_tapped(_x0, _cy, _x1, _y1)) input_inject(_tag);
 }
 
 // =============================================================================

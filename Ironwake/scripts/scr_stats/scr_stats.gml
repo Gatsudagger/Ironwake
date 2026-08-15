@@ -289,6 +289,13 @@ function end_run(result) {
         _end_level = global.run_level;
     }
     global.run_found_pets = [];   // run-scoped "creatures found" strip (equipment Found column)
+    // Per-run station-rank charges re-arm here (M-locked 08-15): Maren's Deep
+    // Socket and Vael's free portrait change are once PER RUN. The garden's
+    // completed cairn spends its blessing here too - the stones topple while
+    // you're below, ready to be stacked again.
+    global.deep_socket_used   = false;
+    global.vael_portrait_free = (npc_rank("vael") >= 2);
+    global.garden_cairn       = 0;
     global.run_count++;
     global.last_run_result = result;
     global.last_run_gold   = global.current_run_gold;
@@ -370,14 +377,16 @@ function end_run(result) {
     if (variable_global_exists("last_stand_used")) global.last_stand_used = false;
 
     // Banshee in a Bottle: carried bottles bank on any SURVIVED run (clear or
-    // extract - "clear counts as the perfect extraction"); death shatters them
-    // with the rest of the unsecured haul. (BANSHEE_BOTTLE_SPEC.md)
+    // extract - "clear counts as the perfect extraction"). M 08-15: bottles
+    // now SURVIVE DEATH too - they're rare enough that shattering them with
+    // the haul felt punitive; a found song always makes it home.
     banshee_init();
-    if (result >= 0 && global.banshee_carried > 0) {
+    if (global.banshee_carried > 0) {
         global.banshee_banked += global.banshee_carried;
         var _bb_msg = (global.banshee_carried == 1)
             ? "The Banshee in a Bottle made it out with you - Maren can release its spirit."
             : string(global.banshee_carried) + " Banshees in Bottles made it out with you - Maren can release their spirits.";
+        if (result < 0) _bb_msg = "Even in defeat, the corked bottle stayed whole - Maren can release its spirit.";
         if (variable_global_exists("pet_find_notice")) {
             global.pet_find_notice = (global.pet_find_notice != "")
                 ? (global.pet_find_notice + "   " + _bb_msg) : _bb_msg;
@@ -1650,7 +1659,9 @@ function consumable_use_out_of_combat(item) {
                 else if (_cbp.effect_type == "loot_find_pot")   potion_drink_loot(_cbp.effect_value);
             }
             if (variable_struct_exists(item, "downside") && item.downside.kind == "bite") {
-                global.gold = max(0, global.gold - 15);
+                // Sealed Reserve (Sable rank 2, M-locked 08-15): the camp spill
+                // is halved too, matching the combat-site halving.
+                global.gold = max(0, global.gold - ((npc_rank("sable") >= 2) ? 8 : 15));
             }
         } else {
             global.run_current_hp = min(_ch_max, global.run_current_hp + irandom_range(40, 90));
@@ -1755,6 +1766,9 @@ function clone_item(src) {
     if (variable_struct_exists(src, "quality"))      _c.quality      = src.quality;
     if (variable_struct_exists(src, "quality_base")) _c.quality_base = src.quality_base;
     if (variable_struct_exists(src, "dormant")) _c.dormant = src.dormant;
+    // Deep Socket (Maren rank 2, 08-15): the once-ever flag rides clones
+    // presence-conditionally (socket_count above already carries the +1).
+    if (variable_struct_exists(src, "deep_socketed")) _c.deep_socketed = src.deep_socketed;
     // Pattern Book bookkeeping (08-11): assigned art + craft-band metadata ride
     // clones the same presence-conditional way as icon_seed above.
     if (variable_struct_exists(src, "player_crafted")) _c.player_crafted = src.player_crafted;
@@ -5234,7 +5248,9 @@ function sable_brew_catalog() {
 // Catalog with the Companion-perk discount applied (single source for display + charge).
 function sable_brew_catalog_priced() {
     var _c = sable_brew_catalog();
-    var _m = sable_cost_mult();
+    // Second Cauldron (rank 1, M-locked 08-15): brews 10% cheaper, on top of
+    // the Companion bond discount. Brews only - upgrades keep sable_cost_mult.
+    var _m = sable_cost_mult() * ((npc_rank("sable") >= 1) ? 0.90 : 1.0);
     if (_m < 1.0) {
         for (var _i = 0; _i < array_length(_c); _i++) {
             _c[_i].gold = floor(_c[_i].gold * _m);
@@ -5662,12 +5678,19 @@ function vael_skin_owned(id) {
 }
 
 // Buy a skin with gold (auto-equips on purchase). "" on success else reason.
+// THE Vael cosmetic price: bond Friend discount + Atelier (rank 1, M-locked
+// 08-15) 20% off tints and skins. Every display/charge site routes here.
+function vael_cosmetic_price(g) {
+    var _m = affinity_discount_mult("vael");
+    if (npc_rank("vael") >= 1) _m *= 0.80;
+    return floor(g * _m);
+}
 function vael_buy_skin(id) {
     var _sk = vael_skin_get(id);
     if (_sk == undefined) return "Unknown skin.";
     if (vael_skin_owned(id)) return "Already owned.";
     if (!vael_skin_unlocked(_sk)) return "Locked - " + vael_skin_req_text(_sk);
-    var _vprice = floor(_sk.gold * affinity_discount_mult("vael"));   // Friend perk: 15% off
+    var _vprice = vael_cosmetic_price(_sk.gold);   // Friend perk + Atelier rank
     if (global.gold < _vprice) return "Need " + string(_vprice) + "g.";
     global.gold -= _vprice;
     if (!variable_global_exists("unlocked_skins")) global.unlocked_skins = [];
@@ -5774,7 +5797,7 @@ function vael_buy_tint(id) {
     var _t = vael_tint_get(id);
     if (_t == undefined) return "Unknown tint.";
     if (vael_tint_owned(id)) return "Already owned.";
-    var _price = floor(_t.gold * affinity_discount_mult("vael"));   // Friend perk: 15% off
+    var _price = vael_cosmetic_price(_t.gold);   // Friend perk + Atelier rank
     if (global.gold < _price) return "Need " + string(_price) + "g.";
     global.gold -= _price;
     if (!variable_global_exists("unlocked_tints")) global.unlocked_tints = [];
@@ -6541,10 +6564,30 @@ function npc_rank_perk_text(id, rank) {
         case "petra:2": return "Favored Client - trades deliver 1 floor sooner at 75-95% quality; selling pays 10% more";
         case "vael:1":  return "Atelier - tints and skins cost 20% less";
         case "vael:2":  return "Private Gallery - one free portrait change each run";
-        case "bairc:1": return "Warm Pens - the roster's hunger drains 30% slower";
+        case "bairc:1": return "Warm Pens - hunger drains 30% slower, and his ledger opens: full stat breakdowns on hover";
         case "bairc:2": return "Night Garden - garden donations grow 50% faster";
     }
     return "";
+}
+// Hover quick-ref body for the carousel STATION chip (M 08-15: rank details are
+// mouse-over only - the card itself stays as it was).
+function npc_rank_card_tip(id) {
+    var _r = npc_rank(id);
+    var _s = "";
+    for (var _i = 1; _i <= 2; _i++) {
+        var _own = (_r >= _i);
+        _s += (_own ? "Rank " + string(_i) + " (owned): " : "Rank " + string(_i) + ": ") + npc_rank_perk_text(id, _i);
+        if (_i < 2) _s += "\n";
+    }
+    if (_r < 2) {
+        var _c = npc_rank_cost(_r + 1);
+        var _verb = (input_device() == 2) ? "Tap this chip" : "Press [U]";
+        _s += "\n\n" + _verb + " to upgrade the station: " + string(_c.gold) + "g + " + string(_c.dust) + " dust.";
+    } else {
+        _s += "\n\nFully upgraded.";
+    }
+    _s += "\nBond tiers layer a discount on top: Friend 5% / Companion 10% / Lover 15%.";
+    return _s;
 }
 function npc_rank_buy(id) {
     npc_ranks_ensure();
@@ -8145,7 +8188,19 @@ function maren_fee_mult() {
     return 1.0;
 }
 // Vex Friend: 10% off his gold prices (applied on top of the CHA discount).
-function vex_price(g) { return floor(g * affinity_discount_mult("vex")); }
+// kind "learn" = ability/trait unlocks (Sparring Yard rank-1 perk applies).
+// Drill Regimen (rank 2): the FIRST purchase each visit is 25% off - the
+// discount shows on every price tag until a buy consumes vex_visit_first
+// (armed on trainer open in the hub Step, spent via vex_first_buy_consume).
+function vex_price(g, kind = "") {
+    var _m = affinity_discount_mult("vex");
+    if (kind == "learn" && npc_rank("vex") >= 1) _m *= 0.90;
+    if (npc_rank("vex") >= 2 && variable_global_exists("vex_visit_first") && global.vex_visit_first) _m *= 0.75;
+    return floor(g * _m);
+}
+function vex_first_buy_consume() {
+    if (variable_global_exists("vex_visit_first") && global.vex_visit_first) global.vex_visit_first = false;
+}
 
 // Vex permanent-stat pricing (M 08-11): the flat 200g + 1 Rare stacked too
 // easily late-game. Gold now follows a gentle quadratic on stats already
@@ -8185,8 +8240,27 @@ function petra_ladder_for(in_rarity) {
     return undefined;
 }
 
+// SECOND LEDGER LINE (M-locked 08-15, Petra station rank 1): orders live in the
+// global.petra_orders ARRAY now - capacity 1, or 2 at rank 1+. Legacy saves
+// carry a single global.petra_order struct; petra_orders_ensure() absorbs it,
+// idempotently, before any reader touches the array.
+function petra_orders_ensure() {
+    if (!variable_global_exists("petra_orders") || !is_array(global.petra_orders)) {
+        global.petra_orders = [];
+    }
+    if (variable_global_exists("petra_order") && is_struct(global.petra_order)) {
+        array_push(global.petra_orders, global.petra_order);
+        global.petra_order = undefined;
+    }
+}
+function petra_order_capacity() { return (npc_rank("petra") >= 1) ? 2 : 1; }
+function petra_order_can_place() {
+    petra_orders_ensure();
+    return array_length(global.petra_orders) < petra_order_capacity();
+}
 function petra_order_active() {
-    return variable_global_exists("petra_order") && is_struct(global.petra_order);
+    petra_orders_ensure();
+    return array_length(global.petra_orders) > 0;
 }
 
 // --- Affinity-derived perks (read the thin-affinity API) -------------------
@@ -8298,7 +8372,10 @@ function petra_base_item(rarity) {
 // Place an order from 3 PLAYER-CHOSEN stash items (array of stash indices). Validates
 // exactly-3 + all same tier. Returns "" on success else a reason string.
 function petra_place_order(indices, dust_bias) {
-    if (petra_order_active())        return "Collect your current order first.";
+    if (!petra_order_can_place())
+        return (petra_order_capacity() > 1)
+            ? "Both ledger lines are full - collect or cancel an order first."
+            : "Collect your current order first.";
     if (array_length(indices) != 3)  return "Choose exactly 3 items.";
 
     var _rar = -1;
@@ -8325,7 +8402,7 @@ function petra_place_order(indices, dust_bias) {
     global.gold -= _gold_cost;
     if (dust_bias) global.rune_dust -= _dust_cost;
 
-    global.petra_order = {
+    array_push(global.petra_orders, {
         input_tier:      _rar,
         output_tier:     _rung.out_rarity,
         req_awakening:   _rung.req_awk,
@@ -8333,7 +8410,7 @@ function petra_place_order(indices, dust_bias) {
         progress_floors: 0,
         dust_bias:       dust_bias,
         status:          "in_progress",
-    };
+    });
     affinity_add("petra", 4);   // placing an order is the deepest Petra interaction
     if (room == rm_hub || room == rm_character_select) save_game();
     return "";
@@ -8347,14 +8424,17 @@ function petra_place_order(indices, dust_bias) {
 function petra_rune_order_gold(tier) { return floor(80 * max(1, tier) * petra_gold_mult()); }
 function petra_rune_order_floors()   { return max(1, 3 - petra_delivery_reduction()); }
 
-function petra_order_is_rune() {
-    return petra_order_active()
-        && variable_struct_exists(global.petra_order, "kind")
-        && global.petra_order.kind == "rune";
+// Takes the ORDER STRUCT now (two-order refactor 08-15) - callers pass the
+// entry they are rendering/resolving, not a global.
+function petra_order_is_rune(_o) {
+    return is_struct(_o) && variable_struct_exists(_o, "kind") && _o.kind == "rune";
 }
 
 function petra_start_rune_order(indices, result_id) {
-    if (petra_order_active())       return "Collect your current order first.";
+    if (!petra_order_can_place())
+        return (petra_order_capacity() > 1)
+            ? "Both ledger lines are full - collect or cancel an order first."
+            : "Collect your current order first.";
     if (array_length(indices) != 5) return "Choose exactly 5 runes.";
     var _inv = global.rune_inventory;
     var _t = -1;
@@ -8373,7 +8453,7 @@ function petra_start_rune_order(indices, result_id) {
     array_sort(_sorted, false);
     for (var _i = 0; _i < 5; _i++) array_delete(_inv, _sorted[_i], 1);
     global.gold -= _fee;
-    global.petra_order = {
+    array_push(global.petra_orders, {
         kind:            "rune",
         rune_id:         result_id,
         rune_tier:       _t,
@@ -8384,67 +8464,76 @@ function petra_start_rune_order(indices, result_id) {
         progress_floors: 0,
         dust_bias:       false,
         status:          "in_progress",
-    };
+    });
     affinity_add("petra", 4);   // placing an order is the deepest Petra interaction
     if (room == rm_hub || room == rm_character_select) save_game();
     return "";
 }
 
-function petra_cancel_order() {
+// Cancel by index; -1 (default) = the NEWEST order. (Two-order refactor 08-15.)
+function petra_cancel_order(_idx = -1) {
     if (!petra_order_active()) return "No order to cancel.";
+    if (_idx < 0) _idx = array_length(global.petra_orders) - 1;
+    if (_idx >= array_length(global.petra_orders)) return "No such order.";
+    var _o = global.petra_orders[_idx];
     var _band    = petra_cancel_band();
     var _recover = min(3, irandom_range(_band[0], _band[1]));
-    if (petra_order_is_rune()) {
+    if (petra_order_is_rune(_o)) {
         // Rune blueprint: the 5 inputs were mixed and are gone - recover random
         // runes of the same tier instead (same band as gear).
-        var _rt = global.petra_order.rune_tier;
+        var _rt = _o.rune_tier;
         for (var _i = 0; _i < _recover; _i++)
             array_push(global.rune_inventory, rune_make(sable_transmute_roll_id(), _rt));
-        global.petra_order = undefined;
+        array_delete(global.petra_orders, _idx, 1);
         if (room == rm_hub || room == rm_character_select) save_game();
         return "Order cancelled. Recovered " + string(_recover) + " rune" + (_recover == 1 ? "" : "s")
             + ". (Gold not refunded.)";
     }
-    var _in = global.petra_order.input_tier;
+    var _in = _o.input_tier;
     for (var _i = 0; _i < _recover; _i++) array_push(global.equipment_stash, petra_base_item(_in));
-    global.petra_order = undefined;
+    array_delete(global.petra_orders, _idx, 1);
     if (room == rm_hub || room == rm_character_select) save_game();
     return "Order cancelled. Recovered " + string(_recover) + " item" + (_recover == 1 ? "" : "s")
         + ". (Gold not refunded.)";
 }
 
+// Collects the FIRST READY order. (Two-order refactor 08-15.)
 function petra_collect() {
-    if (!petra_order_active())              return "Nothing to collect.";
-    if (global.petra_order.status != "ready") return "Your order isn't ready yet.";
-    if (petra_order_is_rune()) {
-        var _rn = rune_make(global.petra_order.rune_id, global.petra_order.rune_tier);
+    if (!petra_order_active()) return "Nothing to collect.";
+    var _idx = -1;
+    for (var _i = 0; _i < array_length(global.petra_orders); _i++) {
+        if (global.petra_orders[_i].status == "ready") { _idx = _i; break; }
+    }
+    if (_idx < 0) return "Your order isn't ready yet.";
+    var _o = global.petra_orders[_idx];
+    if (petra_order_is_rune(_o)) {
+        var _rn = rune_make(_o.rune_id, _o.rune_tier);
         array_push(global.rune_inventory, _rn);
         // ORDER REVEAL (M 07-28): the collect opens an examine popup instead of
         // the yield vanishing into a stack - captured before the order clears.
         global.petra_reveal = { is_rune: true, rune: _rn, item: undefined,
-            input_tier: global.petra_order.rune_tier, input_count: 5, dust_bias: false };
-        global.petra_order = undefined;
+            input_tier: _o.rune_tier, input_count: 5, dust_bias: false };
+        array_delete(global.petra_orders, _idx, 1);
         if (room == rm_hub || room == rm_character_select) save_game();
         return "Collected the blueprint rune: " + rune_title(_rn) + "!";
     }
-    var _out  = global.petra_order.output_tier;
-    var _bias = global.petra_order.dust_bias;
+    var _out  = _o.output_tier;
+    var _bias = _o.dust_bias;
     var _item = petra_make_item(_out, _bias);
     array_push(global.equipment_stash, _item);
     discover_item(item_base_name(_item), _item.rarity);
     // ORDER REVEAL (M 07-28): see the rune branch above.
     global.petra_reveal = { is_rune: false, rune: undefined, item: _item,
-        input_tier: global.petra_order.input_tier, input_count: 3, dust_bias: _bias };
-    global.petra_order = undefined;
+        input_tier: _o.input_tier, input_count: 3, dust_bias: _bias };
+    array_delete(global.petra_orders, _idx, 1);
     if (room == rm_hub || room == rm_character_select) save_game();
     return "Collected a " + item_rarity_name(_out) + " item: " + _item.name + "!";
 }
 
-// One-line order status for the UI.
-function petra_order_status_text() {
-    if (!petra_order_active()) return "No active order.";
-    var _o = global.petra_order;
-    if (petra_order_is_rune()) {
+// One-line status for ONE order struct (drawn per ledger card / joined below).
+function petra_order_line(_o) {
+    if (!is_struct(_o)) return "";
+    if (petra_order_is_rune(_o)) {
         var _bp = rune_get(_o.rune_id);
         var _bpn = ((_bp != undefined) ? _bp.name : _o.rune_id) + " " + rune_tier_roman(_o.rune_tier);
         if (_o.status == "ready") return "READY - the " + _bpn + " blueprint rune awaits collection.";
@@ -8456,16 +8545,29 @@ function petra_order_status_text() {
         + "    " + string(_o.progress_floors) + " / " + string(_o.cost_floors) + " floors" + _awk
         + (_o.dust_bias ? "    [roll-biased]" : "");
 }
+// One-line order status for the UI (all lines joined).
+function petra_order_status_text() {
+    if (!petra_order_active()) return "No active order.";
+    var _t = "";
+    for (var _i = 0; _i < array_length(global.petra_orders); _i++) {
+        _t += ((_i > 0) ? "    |    " : "") + petra_order_line(global.petra_orders[_i]);
+    }
+    return _t;
+}
 
 // SHARED PRIMITIVE: credit one cleared floor toward time-gated systems. Called once
 // per boss-clear (from obj_combat_controller) with the run's Awakening. Banks
 // immediately so extract AND death keep already-cleared floors. Phase 2 pets hook here too.
 function floor_clear_credit(awk) {
-    if (petra_order_active() && global.petra_order.status == "in_progress") {
-        if (awk >= global.petra_order.req_awakening) {
-            global.petra_order.progress_floors += 1;
-            if (global.petra_order.progress_floors >= global.petra_order.cost_floors) {
-                global.petra_order.status = "ready";
+    // Two-order refactor (08-15): EVERY in-progress order banks the clear
+    // independently (each carries its own Awakening gate).
+    if (petra_order_active()) {
+        for (var _poi = 0; _poi < array_length(global.petra_orders); _poi++) {
+            var _po = global.petra_orders[_poi];
+            if (_po.status != "in_progress") continue;
+            if (awk >= _po.req_awakening) {
+                _po.progress_floors += 1;
+                if (_po.progress_floors >= _po.cost_floors) _po.status = "ready";
             }
         }
     }
@@ -10669,8 +10771,174 @@ function bairc_garden_run_tick(result) {
 }
 
 // The garden tends back: +1% feed growth value per 2 residents, cap +10%.
+// Night Garden (Bairc rank 2, M-locked 08-15): the residents' blessing works
+// 50% harder - same donations, 1.5x the growth bonus (cap rises to +15%).
+// A COMPLETED CAIRN (garden scene, 5 stones) adds a flat +3% until the next
+// run (garden_cairn resets in end_run).
 function bairc_garden_blessing_pct() {
-    return min(10, array_length(bairc_donated()) div 2);
+    var _p = min(10, array_length(bairc_donated()) div 2);
+    if (npc_rank("bairc") >= 2) _p = _p * 1.5;
+    if (variable_global_exists("garden_cairn") && global.garden_cairn >= 5) _p += 3;
+    return _p;
+}
+
+// =============================================================================
+// BAIRC'S GARDEN - the explorable grounds (M design-locked 08-15 late session).
+// A full-screen overlay SCENE entered from Bairc's station ([V] / GARDEN chip):
+// a 4800px-wide night garden the camera wanders across (A/D, arrows, or drag).
+// The entrusted creatures live here visibly; four small activities (daily
+// forage sparkles, the zen cairn, petting, the koi pond) and 8 purchasable
+// ornament plots (Mewgenics-style decoration, chao-garden warmth) give it life.
+// Pure code-drawn set dressing - no sprite assets needed beyond the pets that
+// already exist. Scene draw: ui_draw_garden_scene (scr_ui); input: gc Step
+// garden block; state persists in the save (garden_decor / garden_cairn /
+// forage day-ledger).
+// =============================================================================
+
+function garden_world_w() { return 4800; }
+
+function garden_ensure() {
+    if (!variable_global_exists("garden_decor") || !is_struct(global.garden_decor))  global.garden_decor = {};
+    if (!variable_global_exists("garden_cairn"))                                     global.garden_cairn = 0;
+    if (!variable_global_exists("garden_forage_seed"))                               global.garden_forage_seed = -1;
+    if (!variable_global_exists("garden_forage_taken") || !is_array(global.garden_forage_taken)) global.garden_forage_taken = [];
+    // The forage "day" is the run counter: a new run reseeds three fresh spots.
+    var _rc = variable_global_exists("run_count") ? global.run_count : 0;
+    if (global.garden_forage_seed != _rc) {
+        global.garden_forage_seed  = _rc;
+        global.garden_forage_taken = [];
+    }
+}
+
+// The 8 fixed ornament plots (world coords; y is the standing baseline).
+function garden_decor_anchors() {
+    return [
+        { x: 560,  y: 930 }, { x: 860,  y: 778 }, { x: 1650, y: 782 }, { x: 2050, y: 940 },
+        { x: 2350, y: 778 }, { x: 3050, y: 928 }, { x: 3450, y: 782 }, { x: 3850, y: 932 },
+    ];
+}
+
+// Ornament catalog - dark-fantasy zen set dressing, one of each may be placed.
+function garden_decor_catalog() {
+    return [
+        { id:"lantern", name:"Stone Lantern",    gold:120, dust:10, blurb:"A warm ember behind carved slate." },
+        { id:"gate",    name:"Spirit Gate",      gold:200, dust:20, blurb:"A weathered arch the dead pass under kindly." },
+        { id:"basin",   name:"Moon Basin",       gold:100, dust:10, blurb:"Still water that holds the moon in place." },
+        { id:"bloom",   name:"Nightbloom Patch", gold:80,  dust:5,  blurb:"Flowers that only open for the dark." },
+        { id:"ward",    name:"Moss Ward",        gold:150, dust:15, blurb:"A small stone spirit, green with years." },
+        { id:"chimes",  name:"Bone Chimes",      gold:120, dust:10, blurb:"They only sound when nothing is wrong." },
+        { id:"wheel",   name:"Pond Wheel",       gold:180, dust:15, blurb:"A slow feeder wheel - the koi grow bold." },
+        { id:"jar",     name:"Firefly Jar",      gold:60,  dust:5,  blurb:"Someone always leaves the lid loose." },
+    ];
+}
+function garden_decor_get(id) {
+    var _c = garden_decor_catalog();
+    for (var _i = 0; _i < array_length(_c); _i++) if (_c[_i].id == id) return _c[_i];
+    return undefined;
+}
+// Ornament placed at anchor i ("" = empty plot).
+function garden_decor_at(i) {
+    garden_ensure();
+    var _k = "a" + string(i);
+    return variable_struct_exists(global.garden_decor, _k) ? variable_struct_get(global.garden_decor, _k) : "";
+}
+// Is this ornament already placed anywhere? (One of each.)
+function garden_decor_placed(id) {
+    for (var _i = 0; _i < array_length(garden_decor_anchors()); _i++) {
+        if (garden_decor_at(_i) == id) return true;
+    }
+    return false;
+}
+// Buy + set the ornament into an EMPTY plot. "" on success else the reason.
+function garden_decor_place(anchor_idx, id) {
+    garden_ensure();
+    var _d = garden_decor_get(id);
+    if (_d == undefined) return "Unknown ornament.";
+    if (garden_decor_placed(id)) return "That ornament already stands in the garden.";
+    if (anchor_idx < 0 || anchor_idx >= array_length(garden_decor_anchors())) return "No such plot.";
+    if (garden_decor_at(anchor_idx) != "") return "That plot is taken.";
+    if (!variable_global_exists("rune_dust")) global.rune_dust = 0;
+    if (global.gold < _d.gold || global.rune_dust < _d.dust) {
+        return "Needs " + string(_d.gold) + "g + " + string(_d.dust) + " dust.";
+    }
+    global.gold      -= _d.gold;
+    global.rune_dust -= _d.dust;
+    variable_struct_set(global.garden_decor, "a" + string(anchor_idx), id);
+    affinity_add("bairc", 2);   // tending his garden warms him (function-use drip)
+    if (room == rm_hub || room == rm_character_select) save_game();
+    return "";
+}
+
+// Today's 3 forage spots (seeded by run_count; taken flags from the ledger).
+function garden_forage_spots() {
+    garden_ensure();
+    var _out = [];
+    for (var _i = 0; _i < 3; _i++) {
+        var _h  = frac(sin((global.garden_forage_seed * 7  + _i) * 127.1) * 43758.5453);
+        var _h2 = frac(sin((global.garden_forage_seed * 13 + _i) * 311.7) * 12543.853);
+        var _taken = false;
+        for (var _j = 0; _j < array_length(global.garden_forage_taken); _j++) {
+            if (global.garden_forage_taken[_j] == _i) { _taken = true; break; }
+        }
+        array_push(_out, { idx: _i, x: 380 + _h * (garden_world_w() - 760),
+                           y: (_h2 < 0.5) ? 800 : 952, taken: _taken });
+    }
+    return _out;
+}
+// Claim a spot: small dust / gold / a creature treat. Returns the notice line.
+function garden_forage_take(i) {
+    garden_ensure();
+    for (var _j = 0; _j < array_length(global.garden_forage_taken); _j++) {
+        if (global.garden_forage_taken[_j] == i) return "";
+    }
+    array_push(global.garden_forage_taken, i);
+    var _msg;
+    var _roll = irandom(99);
+    if (_roll < 40) {
+        var _fd = 6 + irandom(8);
+        if (!variable_global_exists("rune_dust")) global.rune_dust = 0;
+        global.rune_dust += _fd;
+        _msg = "Something glitters in the moss - +" + string(_fd) + " rune dust.";
+    } else if (_roll < 80) {
+        var _fg = 20 + irandom(25);
+        global.gold += _fg;
+        _msg = "A dropped purse, half-buried - +" + string(_fg) + "g.";
+    } else {
+        var _fc = pet_feed_catalog();
+        var _ff = _fc[irandom(array_length(_fc) - 1)];
+        pet_feed_pouch_add(_ff.id, 1);
+        _msg = "Wild pickings - +1 " + _ff.name + " for the pouch.";
+    }
+    if (room == rm_hub || room == rm_character_select) save_game();
+    return _msg;
+}
+
+// Place the next cairn stone. Returns the notice line ("" = nothing happened).
+function garden_cairn_place() {
+    garden_ensure();
+    if (global.garden_cairn >= 5) return "The cairn holds. Let it stand.";
+    global.garden_cairn += 1;
+    if (global.garden_cairn >= 5) {
+        if (room == rm_hub || room == rm_character_select) save_game();
+        return "The fifth stone settles. The garden breathes easier (+3% growth until your next run).";
+    }
+    if (room == rm_hub || room == rm_character_select) save_game();
+    return "Stone " + string(global.garden_cairn) + " of 5 balances...";
+}
+
+// A petted resident's reaction line (authored, hashed stable per name).
+function garden_pet_line(_name) {
+    var _lines = [
+        " leans into your hand.",
+        " makes a sound like a rusted hinge, happily.",
+        " goes very still, then very wiggly.",
+        " remembers you. It absolutely remembers you.",
+        " accepts this tribute as its due.",
+        " blinks slowly. High praise, here.",
+    ];
+    var _h = 0;
+    for (var _i = 1; _i <= string_length(_name); _i++) _h += string_ord_at(_name, _i);
+    return _name + _lines[_h mod array_length(_lines)];
 }
 
 // DONATE the pet at roster index _idx to Bairc (design §6: donation, not release - the
@@ -11145,6 +11413,9 @@ function tutorial_catalog() {
         { id:"corruption_fulfilled", title:"What the Dark Keeps", body:"Your companion has FULLY CORRUPTED. Its gift is 45% stronger forever, its grand power is awake - and something else came through with it.\nThe dark holds a thread of its leash now: in any fight, there is a small chance (1 in 10) the corruption TURNS - a corrupted Warrior will savage YOU instead of the enemy, and any other companion may simply refuse to help while its eyes go black.\nBairc can still CURE it - the strength stays, the grand power is lost, and the thread is severed. Or keep the power, and live with what watches through it." },
         // Pattern Book (08-11): fires on the reforge tab once the Legendary
         // Forge coach-mark has been seen (one tutorial at a time).
+        // NPC PROGRESSION (M 08-15): fires on the first camp arrival AFTER a run,
+        // once the hub tip has had its turn - the STATION chip is on every card.
+        { id:"station_ranks", title:"Station Ranks", body:"Every camp station can be INVESTED in - separately from friendship. On the carousel, each NPC's card wears a small STATION chip in its top-right corner: two pips, two ranks.\nRank 1 costs 300g + 20 rune dust, rank 2 costs 900g + 60 dust, and each rank unlocks a permanent service or bonus - Dorn stocks more and tempers hotter, Maren's combines ask less dust and she learns the DEEP SOCKET, Sable's brews come cheaper, Petra runs TWO trade orders at once, Bairc's pens slow hunger, and so on.\nHover the chip to read the exact perks, then press [U] or tap the chip to buy. Bond tiers stack their own discount on top: Friend 5%, Companion 10%, Lover 15%." },
         { id:"pattern_book", title:"The Pattern Book", body:"Dorn keeps a PATTERN BOOK.\nSMELT [T] destroys unequipped gear. You get a REFORGE INGOT of its tier, and Dorn STUDIES one affix from the piece - you pick which.\nONE study lets you craft that affix at UNCOMMON. 3 studies unlock RARE work, 6 unlock EPIC - and rarer fodder teaches faster (an Epic piece counts as 3 studies fresh).\nCRAFT [N] then builds an item to YOUR design - type, slot, quality, stats, affixes, art and name. Deeper study rolls better numbers, and unused affix slots BOOST the affixes you do take.\nBrowse the book any time with [B]." },
     ];
 }
@@ -11842,6 +12113,7 @@ function item_picker_resolve() {
     switch (_p.purpose) {
         case "vex_trait":
             global.gold -= _ctx.gold;
+            vex_first_buy_consume();   // Drill Regimen: first buy each visit
             if (!variable_global_exists("traits_unlocked")) global.traits_unlocked = {};
             variable_struct_set(global.traits_unlocked, _ctx.effect_id, true);
             affinity_add("vex", 2);   // function-use drip (trait unlock)
@@ -11859,6 +12131,7 @@ function item_picker_resolve() {
             break;
         case "vex_stat":
             global.gold -= _ctx.gold;
+            vex_first_buy_consume();   // Drill Regimen: first buy each visit
             variable_global_set(_ctx.stat_key, variable_global_get(_ctx.stat_key) + 1);
             global.vex_stat_buys = vex_stat_buys() + 1;   // drives the price ladder
             affinity_add("vex", 2);   // function-use drip (stat upgrade)
@@ -12937,6 +13210,13 @@ function audio_music_assets() {
         snd_music_dungeon_2, snd_music_dungeon_3,
         snd_music_dungeon_4,   // Nocturne (gothic piano, M-approved 07-17)
         snd_music_hub_6,       // Tempest Road (07-17, dual-pool)
+        mus_garden_zen,        // "Stillwater" - Bairc's Garden default loop (M-approved 08-15)
+        // Garden pool banshee unlocks + the gothic-opera dungeon piece (all
+        // M-approved 08-15 from auditioned samples).
+        mus_garden_shire,      // "Greenhollow"
+        mus_garden_hook,       // "Tidesong"
+        mus_garden_retro,      // "Garden of Ages"
+        mus_dungeon_opera,     // "The Black Aria" (dungeon pool)
     ];
 }
 
@@ -12972,6 +13252,16 @@ function music_track_catalog() {
         // selectable as hub AND dungeon music. (Its sibling Drums of the Deep
         // was cut entirely - "boring and monotonous".)
         { id: "hub_tempestroad", name: "Tempest Road",    pool: "both",    snd: snd_music_hub_6 },
+        // GARDEN pool (08-15, M: "all songs are banshee bottles"): unlocked by
+        // released spirits like every other track, selected via the garden's
+        // [M] chip. The garden's DEFAULT ("Stillwater", mus_garden_zen) lives
+        // outside the catalog, like Rainy_Memories does for the hub.
+        { id: "gar_greenhollow",  name: "Greenhollow",    pool: "garden",  snd: mus_garden_shire },
+        { id: "gar_tidesong",     name: "Tidesong",       pool: "garden",  snd: mus_garden_hook },
+        { id: "gar_gardenofages", name: "Garden of Ages", pool: "garden",  snd: mus_garden_retro },
+        // The gothic-opera battle piece (M-approved 08-15) joins the DUNGEON
+        // pool as an unlockable.
+        { id: "dun_blackaria",    name: "The Black Aria", pool: "dungeon", snd: mus_dungeon_opera },
     ];
 }
 
@@ -12984,6 +13274,7 @@ function banshee_init() {
     if (!variable_global_exists("music_unlocked"))     global.music_unlocked     = [];  // array of catalog ids
     if (!variable_global_exists("music_sel_hub"))      global.music_sel_hub      = "";  // "" = default track
     if (!variable_global_exists("music_sel_dungeon"))  global.music_sel_dungeon  = "";
+    if (!variable_global_exists("music_sel_garden"))   global.music_sel_garden   = "";  // garden scene (08-15)
 }
 
 function music_track_by_id(track_id) {
@@ -12998,6 +13289,9 @@ function music_track_owned(track_id) {
     banshee_init();
     // TEST LEVER (F8, gc Step): every track reads owned while the toggle is on.
     if (variable_global_exists("debug_unlock_all") && global.debug_unlock_all) return true;
+    // (M 08-15 second ruling: garden tracks are banshee unlocks like every
+    // other song - the earlier always-owned exception is gone. The garden's
+    // DEFAULT, Stillwater, lives outside the catalog like Rainy_Memories.)
     for (var _i = 0; _i < array_length(global.music_unlocked); _i++) {
         if (global.music_unlocked[_i] == track_id) return true;
     }
@@ -13005,9 +13299,10 @@ function music_track_owned(track_id) {
 }
 
 // True when a track belongs to the given pool. pool "both" tracks (M 07-17,
-// Tempest Road) count for hub AND dungeon - one unlock covers both selectors.
+// Tempest Road) count for hub AND dungeon - one unlock covers both selectors
+// (but never the garden pool, which is its own commissioned set).
 function music_pool_match(track_pool, pool) {
-    return (track_pool == pool) || (track_pool == "both");
+    return (track_pool == pool) || (track_pool == "both" && pool != "garden");
 }
 
 // Unlocked catalog entries for one pool, catalog order (drives the selector rows).
@@ -13025,14 +13320,31 @@ function music_pool_unlocked(pool) {
 // Validates ownership so a stale/foreign selection can never silence the game.
 function music_selected_track(pool) {
     banshee_init();
-    var _sel = (pool == "hub") ? global.music_sel_hub : global.music_sel_dungeon;
+    var _sel = (pool == "hub") ? global.music_sel_hub
+             : ((pool == "garden") ? global.music_sel_garden : global.music_sel_dungeon);
     if (_sel == "") return undefined;
     var _t = music_track_by_id(_sel);
     if (_t == undefined || !music_pool_match(_t.pool, pool) || !music_track_owned(_sel)) {
-        if (pool == "hub") global.music_sel_hub = ""; else global.music_sel_dungeon = "";
+        if (pool == "hub")         global.music_sel_hub     = "";
+        else if (pool == "garden") global.music_sel_garden  = "";
+        else                       global.music_sel_dungeon = "";
         return undefined;
     }
     return _t;
+}
+
+// The sound asset the GARDEN scene should loop (selection or Stillwater).
+function music_garden_snd() {
+    var _t = music_selected_track("garden");
+    return (_t == undefined) ? mus_garden_zen : _t.snd;
+}
+// Stop every garden-pool track (default included - it IS in the pool).
+function music_garden_stop() {
+    audio_stop_sound(mus_garden_zen);
+    var _c = music_track_catalog();
+    for (var _i = 0; _i < array_length(_c); _i++) {
+        if (music_pool_match(_c[_i].pool, "garden")) audio_stop_sound(_c[_i].snd);
+    }
 }
 
 // The sound asset the hub should loop (selection or the Rainy_Memories default).
@@ -13065,6 +13377,18 @@ function music_dungeon_stop() {
 // if it is playing RIGHT NOW (hub room / dungeon floor). Elsewhere the change
 // simply takes effect on the next room entry.
 function music_selection_apply(pool) {
+    if (pool == "garden") {
+        // Live-swap only while actually standing in the garden scene.
+        if (instance_exists(obj_game_controller)) {
+            var _ga_gc = instance_find(obj_game_controller, 0);
+            if (variable_instance_exists(_ga_gc, "garden_open") && _ga_gc.garden_open) {
+                music_garden_stop();
+                audio_play_sound(music_garden_snd(), 1, true);
+                audio_apply_volumes();
+            }
+        }
+        return;
+    }
     if (pool == "hub" && room == rm_hub) {
         music_hub_stop();
         audio_play_sound(music_hub_snd(), 1, true);
@@ -13096,17 +13420,22 @@ function music_selection_cycle(pool, dir) {
     }
     _idx = wrap_index(_idx + dir, _n + 1);
     var _new_id = (_idx == 0) ? "" : _pool[_idx - 1].id;
-    if (pool == "hub") global.music_sel_hub = _new_id; else global.music_sel_dungeon = _new_id;
+    if (pool == "hub")         global.music_sel_hub     = _new_id;
+    else if (pool == "garden") global.music_sel_garden  = _new_id;
+    else                       global.music_sel_dungeon = _new_id;
     music_selection_apply(pool);
     return true;
 }
 
 // Chest-site roll (treasure/vault/reliquary): ~4%, nudged by the active pet's
 // LCK loot bonus, capped well under "expected". Increments the carried count -
-// the bottle rides the run from here (end_run banks or loses it).
+// the bottle rides the run from here (end_run ALWAYS banks it - M 08-15:
+// bottles survive death; they're too rare to shatter with the haul).
 function banshee_chest_try() {
     banshee_init();
-    var _chance = min(8, 4 + floor(pet_active_lck_loot_pts() / 5));
+    // M 08-15: 4% -> 6% base, LCK feeds it +1% per 3 points (was per 5).
+    // Cap raised 8 -> 12 to keep the same luck headroom over the new base.
+    var _chance = min(12, 6 + floor(pet_active_lck_loot_pts() / 3));
     if (irandom(99) >= _chance) return false;
     global.banshee_carried++;
     return true;

@@ -1698,6 +1698,47 @@ function combat_detonator_pick(target) {
     return _none;
 }
 
+// combat_detonator_keys_all(target) - EVERY distinct reaction key the target is
+// carrying, in the same priority order combat_detonator_pick uses. Feeds the
+// EVENT HORIZON cascade (M-locked 08-15): the ultimate fires one reaction per
+// distinct status kind present, then strips the target bare.
+function combat_detonator_keys_all(target) {
+    var _out = [];
+    if (!is_struct(target) || !variable_struct_exists(target, "status_effects")) return _out;
+    var _se = target.status_effects;
+    var _order = ["stun", "frost", "root", "burn", "shock", "vulnerable", "bleed", "poison", "void", "weaken", "blind"];
+    for (var _o = 0; _o < array_length(_order); _o++) {
+        var _want = _order[_o];
+        for (var _i = 0; _i < array_length(_se); _i++) {
+            var _s  = _se[_i];
+            var _k  = variable_struct_exists(_s, "kind") ? _s.kind : "";
+            var _el = combat_status_element(_s);
+            var _match = false;
+            switch (_want) {
+                case "stun":       _match = (_k == "stun"); break;
+                case "frost":      _match = (_el == "frost"); break;
+                case "root":       _match = (_k == "root"); break;
+                case "burn":       _match = (_el == "burn"); break;
+                case "shock":      _match = (_el == "shock"); break;
+                case "vulnerable": _match = (_k == "vulnerable" || _k == "firemark"); break;
+                case "bleed":      _match = (_k == "dot" && _el == "bleed"); break;
+                case "poison":     _match = (_k == "dot" && _el == "poison"); break;
+                case "void":       _match = (_k == "dot" && _el == "void"); break;
+                case "weaken":     _match = (_k == "weaken"); break;
+                case "blind":      _match = (_k == "blind"); break;
+            }
+            if (_match) { array_push(_out, _want); break; }
+        }
+    }
+    return _out;
+}
+
+// Tiny membership helper for the cascade's key list.
+function combat_keys_has(arr, k) {
+    for (var _i = 0; _i < array_length(arr); _i++) if (arr[_i] == k) return true;
+    return false;
+}
+
 // combat_tick_statuses(c, log) - generic per-turn tick: apply DoT damage and
 // decrement every status' duration, dropping expired ones. Used for the PLAYER
 // at turn start (enemies use the richer inline tick in Step_0 for kill/VFX).
@@ -2011,7 +2052,7 @@ function ability_sfx_school(ab) {
         case "Soul Rend":       return "arcane";
         case "Arcane Echo":     return "arcane";
         case "Mana Sever":      return "arcane";
-        case "Singularity":     return "arcane";
+        case "Event Horizon":   return "void";   // 08-15 rework: was arcane Singularity
     }
     return "";
 }

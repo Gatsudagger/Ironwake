@@ -889,14 +889,18 @@ for (var _i = 0; _i < array_length(global.abilities_general); _i++) {
 array_push(global.abilities_arcanist,
     ability_define("Mana Sever",  2,0,  10,2,  80,false, 2,6,  "debuff",4,3,  false),
     ability_define("Arcane Echo", 3,1,  14,1,  85,false, 2,10, "damage",0,0,  false),
-    ability_define("Singularity", 3,3,  32,1,  88,false, 2,10, "damage",0,0,  false));
+    // EVENT HORIZON (M-locked 08-15, was "Singularity"): 20 VOID to ALL enemies,
+    // then CONSUMES every status on every enemy - each fires its detonation
+    // reaction on the way out (cascade lives in combat Step, _eh_keys). Saves
+    // migrate the old name on load (scr_save).
+    ability_define("Event Horizon", 3,3,  20,2,  88,false, 2,10, "damage",0,0,  false));
 var _arc_x = [
     { s:"Deal 10 Void dmg. Silence target 3 turns (can't cast).",
       f:"Cut the thread between a caster and their power.\n- 10 Void damage. Silenced: no spell actions for 3 turns.\n- Shuts down casters cold; wasted on pure melee bruisers." },
     { s:"Spend 1 Soul. 14 Arcane +4/Soul held; 50% echoes to ALL.",
       f:"Ring one note of Arcane thunder and let the walls answer.\n- Spend 1 Soul: 14 Arcane damage, +4 per Soul still held.\n- Half the damage echoes to every other enemy - cast it into a crowd with a full reserve." },
-    { s:"Spend 3 Souls. Deal 32 Arcane dmg. Ultimate.",
-      f:"Fold your hoarded Souls into a point of light that refuses to stay small.\n- Spend 3 Souls: 32 Arcane damage in one detonation.\n- Your highest-damage finisher - bank Souls, then end something with them." },
+    { s:"Spend 3 Souls. 20 Void dmg to ALL enemies - then CONSUMES their every status, detonating each.",
+      f:"Somewhere past this line, nothing keeps its shape.\n- Spend 3 Souls: 20 Void damage to EVERY enemy.\n- Then the horizon takes its due: every status on every enemy is CONSUMED, and each fires its detonation reaction as it goes - chills SHATTER, bleeds BURST, stuns turn the crush into a sure crit, shocks ARC onward.\n- The board comes out stripped bare. Stack your afflictions deep, then collapse them all at once." },
 ];
 for (var _i = 0; _i < 3; _i++) {
     global.abilities_arcanist[10 + _i].desc_short = _arc_x[_i].s;
@@ -1081,7 +1085,7 @@ global.abilities_arcanist[17].desc_full  = "Take hold of whatever keeps them sta
 // damage to all); combat reads `ab.is_aoe` and `ab.aoe_falloff`.
 // =============================================================================
 global.abilities_arcanist[8].is_aoe       = true;   // Rift        - elemental nuke, all enemies
-global.abilities_arcanist[12].is_aoe      = true;   // Singularity - ultimate, all enemies
+global.abilities_arcanist[12].is_aoe      = true;   // Event Horizon - ultimate, all enemies
 global.abilities_shadowstrider[4].is_aoe  = true;   // Smoke Bomb  - blind, all enemies (no damage)
 global.abilities_bloodwarden[13].is_aoe   = true;   // Cleave      - 1-AP sweep, all enemies (vs single-target Strike)
 
@@ -1404,8 +1408,11 @@ function ability_is_detonator(ab) {
     // a resolved copy carrying the "detonate" rider joins the reaction table.
     if (is_struct(ab) && ability_web_copy_has_rider(ab, "detonate")) return true;
     var _n = is_struct(ab) ? ab.name : ab;
+    // Event Horizon is flagged for the UI diamond/preview, but the combat Step
+    // routes it through its own consume-EVERYTHING cascade (_eh_keys), not the
+    // single-pick machinery.
     return (_n == "Snipe" || _n == "Assassinate" || _n == "Arcane Burst" || _n == "Soul Nova"
-         || _n == "Rupture" || _n == "Bonebreaker" || _n == "Rift");
+         || _n == "Rupture" || _n == "Bonebreaker" || _n == "Rift" || _n == "Event Horizon");
 }
 
 
@@ -1428,7 +1435,7 @@ function ability_category(ab) {
         case "Killing Spree": case "Throat Slit":  case "Assassinate":   case "Gore Strike":
         case "Marrow Crush": case "Bonebreaker":   case "Crimson Apex":  case "Rupture":
         case "Soulfire":     case "Arcane Burst":  case "Soul Nova":     case "Arcane Echo":
-        case "Singularity":  case "Rift":          case "Scorch":        case "Poison Dart":
+        case "Event Horizon": case "Rift":         case "Scorch":        case "Poison Dart":
         case "Frost Shot":   case "Mana Sever":  case "Vital Theft":   case "Soulbind":
         case "Bear Trap":    case "Spike Trap":    case "Death Snare":
         case "Tripline":     case "Warding Chime": case "Wire Snare":   case "Caltrops":
@@ -1877,7 +1884,7 @@ function ability_delivery(ab) {
         // Collapsing / erupting AT the victim - nothing visibly travels.
         // Scorch (M 08-04 livetest): a skirt of brief flames AT their feet,
         // instantly beneath them - it never travels.
-        case "Singularity": case "Soul Nova": case "Arcane Burst": case "Scorch":
+        case "Event Horizon": case "Soul Nova": case "Arcane Burst": case "Scorch":
             return "overhead";
         // Drains pull a thread OUT of the victim - a lance, not a thrown bolt.
         case "Void Drain": case "Mana Sever": case "Entropy":
@@ -2039,9 +2046,10 @@ function ability_effect_full(ab) {
     // Detonators surface their reaction behavior. Kept to one plain-English line here;
     // the full reaction table lives in the Tab/V ability-detail popup and the
     // Compendium > Status Reactions page. See SYSTEMS_VIABILITY_PASS.md.
-    if (ability_is_detonator(ab) && ab.name != "Rupture" && ab.name != "Bonebreaker" && ab.name != "Rift") {
+    if (ability_is_detonator(ab) && ab.name != "Rupture" && ab.name != "Bonebreaker" && ab.name != "Rift"
+        && ab.name != "Event Horizon") {
         array_push(_parts, "Detonates debuffs for secondary effects.");
-    }   // (Rupture/Bonebreaker/Rift already disclose it in their bespoke line above)
+    }   // (Rupture/Bonebreaker/Rift/Event Horizon already disclose it in their bespoke line)
 
     // DEPLOYED TRAPS (08-08) describe themselves from trap_catalog(), not from
     // effect_value/effect_duration - those are 0 on a trap now, which is why the
@@ -2210,7 +2218,9 @@ function ability_describe(ab) {
     // Detonators SAY so in the primary line (M 08-14: Soul Nova never stated
     // that a debuffed target takes more - the bonus only lived in the popup's
     // reactions table, which stays the full per-status map).
-    if (ability_is_detonator(ab)) {
+    if (ab.name == "Event Horizon") {
+        _out += " CONSUMES every status on every enemy - each fires its detonation reaction, then is stripped away.";
+    } else if (ability_is_detonator(ab)) {
         _out += " DETONATES the target's statuses for a reaction bonus (Exposed +12 damage, stun = sure crit, chills shatter...).";
     }
     // Bespoke stance/utility abilities (Measured Riposte, Undying, ...) whose
@@ -2625,7 +2635,7 @@ function ability_unlock_info(ability_name) {
         case "Warding Effigy":   return { type:"vex", cost:250, goal_type:"", goal_value:0 };
         case "Magma Golem":      return { type:"vex", cost:400, goal_type:"", goal_value:0 };
         case "Soulbind":         return { type:"vex", cost:400, goal_type:"", goal_value:0 };
-        case "Singularity":      return { type:"vex", cost:400, goal_type:"", goal_value:0 };
+        case "Event Horizon":    return { type:"vex", cost:400, goal_type:"", goal_value:0 };
         // #26 Arcanist melee kit - premium tier above the 100/250/400 ladder
         case "Blazing Palm":     return { type:"vex", cost:500,  goal_type:"", goal_value:0 };
         case "Gravewrack Grip":  return { type:"vex", cost:800,  goal_type:"", goal_value:0 };
@@ -2684,7 +2694,7 @@ function ability_unlock_info(ability_name) {
 function ability_unlock_cost(ability_name) {
     var _info = ability_unlock_info(ability_name);
     if (_info == undefined) return 0;
-    return vex_price(cha_price(_info.cost));   // CHA vendor discount + Vex Friend perk
+    return vex_price(cha_price(_info.cost), "learn");   // CHA discount + Vex Friend + Sparring Yard
 }
 
 // ---------------------------------------------------------------------------
@@ -3113,8 +3123,11 @@ function ability_web_bespoke(ab) {
             array_push(_out, ability_web_node("pk", "P", 3, "Voidbrand", "Hits inflict Vulnerable (1 turn)", [], "hit_vuln"));
             array_push(_out, ability_web_node("tk", "T", 3, "Hungering Maw", "Critical hits grant +1 class resource", [], "crit_sec:1"));
             break;
-        case "Singularity":
-            array_push(_out, ability_web_node("pk", "P", 3, "Event Horizon", "Its crush DETONATES statuses on enemies it hits", [], "detonate"));
+        case "Event Horizon":
+            // 08-15 rework: the old "Event Horizon" detonate keystone IS the
+            // baseline now (the whole ability consumes + detonates), so the pk
+            // slot gets a new identity - the pull only grows near the end.
+            array_push(_out, ability_web_node("pk", "P", 3, "Terminal Gravity", "+50% damage to enemies below 25% HP", [], "execute:50"));
             // P3 (08-05): the well feeds itself - cheaper to open.
             array_push(_out, ability_web_node("tk", "T", 3, "Accretion", "Costs 1 less Soul (3 -> 2)", ["secc"], ""));
             break;
@@ -3808,13 +3821,14 @@ function trait_unlock_tier(trait_name) {
 function trait_unlock_cost(trait_name) {
     // Mandate from Heaven (P4): the premium purchase - 2000g + a Legendary.
     if (trait_name == "Mandate from Heaven")
-        return { gold:vex_price(cha_price(2000)), min_rarity:4, item_label:"Legendary" };
-    // Gold is CHA-discounted + Vex Friend perk (the item requirement is unaffected).
+        return { gold:vex_price(cha_price(2000), "learn"), min_rarity:4, item_label:"Legendary" };
+    // Gold is CHA-discounted + Vex Friend perk + Sparring Yard (the item
+    // requirement is unaffected).
     switch (trait_unlock_tier(trait_name)) {
-        case 1: return { gold:vex_price(cha_price(200)), min_rarity:1, item_label:"Uncommon" };
-        case 3: return { gold:vex_price(cha_price(500)), min_rarity:4, item_label:"Legendary" };
+        case 1: return { gold:vex_price(cha_price(200), "learn"), min_rarity:1, item_label:"Uncommon" };
+        case 3: return { gold:vex_price(cha_price(500), "learn"), min_rarity:4, item_label:"Legendary" };
     }
-    return { gold:vex_price(cha_price(350)), min_rarity:2, item_label:"Rare" };
+    return { gold:vex_price(cha_price(350), "learn"), min_rarity:2, item_label:"Rare" };
 }
 
 // trait_vex_purchasable(class_id) - traits Vex offers for the current class: not a

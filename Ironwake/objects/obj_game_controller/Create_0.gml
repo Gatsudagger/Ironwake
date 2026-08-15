@@ -513,7 +513,29 @@ if (!variable_global_exists("npc_affinity")) global.npc_affinity = affinity_fres
 
 // Petra Treasure Trader order (Phase 1). Cross-run persistent; undefined = no order.
 // Saved per slot; NOT reset in end_run (it earns out by clearing floors). See scr_stats.
-if (!variable_global_exists("petra_order")) global.petra_order = undefined;
+if (!variable_global_exists("petra_order"))  global.petra_order  = undefined;
+if (!variable_global_exists("petra_orders")) global.petra_orders = [];
+// Per-run station-rank charges (M-locked 08-15, reset in end_run).
+if (!variable_global_exists("deep_socket_used"))   global.deep_socket_used   = false;
+if (!variable_global_exists("vael_portrait_free")) global.vael_portrait_free = false;
+// Vex "Drill Regimen" (rank 2): first purchase each VISIT is 25% off.
+if (!variable_global_exists("vex_visit_first"))    global.vex_visit_first    = false;
+
+// BAIRC'S GARDEN scene state (M design-locked 08-15): a full-screen wandering-
+// camera overlay entered from Bairc's station. Session state lives here;
+// garden_decor/garden_cairn/forage ledger persist via scr_save.
+garden_open       = false;
+garden_cam_x      = 0;      // camera left edge, 0..garden_world_w()-1920
+garden_fade       = 0;      // fade-in frames remaining
+garden_notice     = "";     // toast line (drawn via ui_draw_toast)
+garden_notice_t   = 0;      // toast frames remaining
+garden_shop_open  = false;  // ornament shop overlay
+garden_shop_cur   = 0;
+garden_place_pick = "";     // ornament id awaiting a plot choice
+garden_fx         = [];     // transient reactions: { kind, x, y, t0 }
+garden_crumb_t    = -10000; // last pond crumb (koi converge window)
+garden_crumb_x    = 0;
+garden_drag_mx    = -1;     // last mouse x while drag-panning (-1 = not dragging)
 
 // Pets (Phase 2). Cross-run persistent roster + active companion index + uid counter.
 // Saved per slot; NOT reset in end_run (pets are raised ACROSS runs). See scr_stats /
@@ -1583,6 +1605,13 @@ if (!variable_global_exists("forge_result")) global.forge_result = undefined;
 // the Stats tab; persistence rides tutorial_seen ("stats_tour"), so Settings'
 // "Reset tutorial" re-arms it.
 stats_tour_step = -1;
+
+// NPC STATION GUIDED TOURS (M-locked 08-15): the stats-tour treatment for every
+// camp keeper's screen. -1 = inactive; 0..N-1 = current step of npc_tour_npc's
+// list (npc_tour_steps in scr_ui). Armed once per NPC on first open;
+// persistence rides tutorial_seen ("tour_<npc>"), so "Reset tutorial" re-arms.
+npc_tour_step = -1;
+npc_tour_npc  = "";
 
 // STEAM ACHIEVEMENTS (08-04): lifetime counter struct + periodic sync clock.
 // No-ops entirely until GMEXT-Steamworks is installed (see scr_stats).

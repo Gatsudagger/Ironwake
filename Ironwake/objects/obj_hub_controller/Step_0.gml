@@ -146,6 +146,13 @@ if (!tutorial_seen_has("corruption_fulfilled")) {
         if (pet_corr_state(_cfp) == "fulfilled") { tutorial_try_show("corruption_fulfilled"); break; }
     }
 }
+// NPC PROGRESSION (M 08-15): explain STATION RANKS once - on the first camp
+// arrival after a run (the hub tip has had its turn), while the carousel with
+// its STATION chips is what's on screen.
+if (!tutorial_seen_has("station_ranks") && tutorial_seen_has("hub")
+    && global.run_count >= 1 && !ui_input_blocked()) {
+    tutorial_try_show("station_ranks");
+}
 
 // Gift picker (Phase 4b): gc drives the modal; the hub freezes while ANY item picker
 // is up. The gift RESULT surfaces as the popup (ui_draw_gift_popup), so the one-shot
@@ -180,6 +187,38 @@ if (bond_dialog_open) {
     if (input_confirm() || input_confirm_alt() || input_cancel()
         || mouse_check_button_pressed(mb_left)) {
         bond_dialog_open = false;
+    }
+    exit;
+}
+
+// -----------------------------------------------------------------------------
+// 0a3. UPGRADE STATION checkout (NPC PROGRESSION, M 08-15): armed by [U] / the
+// STATION chip tap in 2c below; the popup (ui_draw_checkout_confirm in Draw) is
+// MODAL per the standing checkout rule - CONFIRM spends, CANCEL/Esc backs out,
+// nothing else reaches the hub while it's up. Result lands in the bond dialog.
+// -----------------------------------------------------------------------------
+if (!variable_instance_exists(id, "npc_upgrade_arm")) npc_upgrade_arm = "";
+if (npc_upgrade_arm != "") {
+    if (input_cancel() || input_inject_take("npcup:cancel")) { npc_upgrade_arm = ""; exit; }
+    if (input_confirm() || input_inject_take("npcup:ok")) {
+        var _up_id = npc_upgrade_arm;
+        npc_upgrade_arm = "";
+        var _up_ids = affinity_npc_ids();
+        var _up_ix  = selected_npc;
+        for (var _up_i = 0; _up_i < array_length(_up_ids); _up_i++) if (_up_ids[_up_i] == _up_id) _up_ix = _up_i;
+        var _up_err = npc_rank_buy(_up_id);
+        bond_dialog_open   = true;
+        bond_dialog_npc    = _up_id;
+        bond_dialog_hearts = [];
+        if (_up_err == "") {
+            bond_dialog_title = npc_names[_up_ix] + "  -  Station Rank " + string(npc_rank(_up_id));
+            bond_dialog_body  = "The work is done by morning.\n\nUNLOCKED: "
+                + npc_rank_perk_text(_up_id, npc_rank(_up_id));
+            audio_play_sound(snd_forge, 1, false);
+        } else {
+            bond_dialog_title = npc_names[_up_ix];
+            bond_dialog_body  = _up_err;
+        }
     }
     exit;
 }
@@ -996,6 +1035,9 @@ if (input_confirm() || input_confirm_alt()) {
                 _gc_interact.trainer_confirm      = false;
                 _gc_interact.trainer_notification = "";
                 _gc_interact.trainer_statpick_open = false;
+                // Drill Regimen (Vex rank 2, M-locked 08-15): the first purchase
+                // each VISIT is 25% off - armed on every open.
+                global.vex_visit_first = (npc_rank("vex") >= 2);
                 // Onboarding: first time Vex the Trainer opens.
                 tutorial_try_show("vex");
             } else if (selected_npc == 2) {
@@ -1101,38 +1143,23 @@ if (input_hotkey("B") && selected_npc < array_length(affinity_npc_ids()) && !sho
 
 // -----------------------------------------------------------------------------
 // 2c. UPGRADE STATION (NPC PROGRESSION, M-locked 08-15): [U] on a focused NPC
-// card buys the next rank - two-press confirm since it spends gold+dust.
+// card - or a tap on the card's STATION chip (Draw injects npcup:open) - arms
+// the checkout popup; the spend itself commits in 0a3 on CONFIRM.
 // -----------------------------------------------------------------------------
-if (input_hotkey("U") && selected_npc < array_length(affinity_npc_ids()) && !show_history) {
+if ((input_hotkey("U") || input_inject_take("npcup:open"))
+    && selected_npc < array_length(affinity_npc_ids()) && !show_history) {
     var _up_ids = affinity_npc_ids();
     var _up_id  = _up_ids[selected_npc];
-    if (npc_rank(_up_id) < 2) {
-        if (!variable_instance_exists(id, "npc_upgrade_arm")) npc_upgrade_arm = "";
-        if (npc_upgrade_arm != _up_id) {
-            npc_upgrade_arm = _up_id;
-            var _up_c = npc_rank_cost(npc_rank(_up_id) + 1);
-            bond_dialog_open  = true;
-            bond_dialog_npc   = _up_id;
-            bond_dialog_title = npc_names[selected_npc] + "  -  Upgrade Station";
-            bond_dialog_body  = "Spend " + string(_up_c.gold) + "g + " + string(_up_c.dust)
-                + " dust to unlock:\n\n" + npc_rank_perk_text(_up_id, npc_rank(_up_id) + 1)
-                + "\n\nPress [U] again to confirm.";
-            bond_dialog_hearts = [];
-        } else {
-            npc_upgrade_arm = "";
-            var _up_err = npc_rank_buy(_up_id);
-            bond_dialog_open  = true;
-            bond_dialog_npc   = _up_id;
-            if (_up_err == "") {
-                bond_dialog_title = npc_names[selected_npc] + "  -  Station Rank " + string(npc_rank(_up_id));
-                bond_dialog_body  = "The work is done by morning.\n\nUNLOCKED: "
-                    + npc_rank_perk_text(_up_id, npc_rank(_up_id));
-                audio_play_sound(snd_forge, 1, false);
-            } else {
-                bond_dialog_title = npc_names[selected_npc];
-                bond_dialog_body  = _up_err;
-            }
-        }
+    if (npc_rank(_up_id) < 2 && npc_unlocked[selected_npc]) {
+        var _up_next = npc_rank(_up_id) + 1;
+        var _up_c    = npc_rank_cost(_up_next);
+        var _up_dust = variable_global_exists("rune_dust") ? global.rune_dust : 0;
+        npc_upgrade_arm   = _up_id;
+        npc_upgrade_title = string_upper(npc_names[selected_npc]) + "  -  STATION RANK " + string(_up_next);
+        npc_upgrade_body  = npc_rank_perk_text(_up_id, _up_next)
+            + "\n\nCost: " + string(_up_c.gold) + "g + " + string(_up_c.dust) + " dust"
+            + "   (you have " + string(global.gold) + "g, " + string(_up_dust) + " dust)";
+        audio_play_sound(snd_page, 1, false);
     }
 }
 

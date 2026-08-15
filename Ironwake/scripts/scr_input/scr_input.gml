@@ -680,10 +680,12 @@ function touch_action_menu_items() {
         array_push(_items, { lbl: "Give a Gift", key: ord("F") });
         // Dorn (shop_open 1) honors Reforge Chits on R.
         if (_gc.shop_open == 1) array_push(_items, { lbl: "Reforge (Ingot)", key: ord("R") });
-        // Petra's Treasure Trader (tab 2) with an in-progress order: C cancels.
+        // Petra's Treasure Trader (tab 2) with an in-progress order: C cancels
+        // (the NEWEST, two-order refactor 08-15).
         if (_gc.shop_open == 0 && variable_instance_exists(_gc, "shop_tab") && _gc.shop_tab == 2
-            && petra_order_active() && global.petra_order.status != "ready") {
-            array_push(_items, { lbl: "Cancel Order", key: ord("C") });
+            && petra_order_active()) {
+            var _po_last = global.petra_orders[array_length(global.petra_orders) - 1];
+            if (_po_last.status != "ready") array_push(_items, { lbl: "Cancel Order", key: ord("C") });
         }
     } else if (_ctx == "bairc") {
         // Bairc sub-modals (naming/capstone/release/detail/hatch) own input already;
