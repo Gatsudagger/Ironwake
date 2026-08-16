@@ -19,6 +19,9 @@
   },
   "name":"Ironwake",
   "resources":[
+    {"id":{"name":"spr_icon_offhand_orb_b","path":"sprites/spr_icon_offhand_orb_b/spr_icon_offhand_orb_b.yy",},},
+    {"id":{"name":"spr_icon_offhand_totem_b","path":"sprites/spr_icon_offhand_totem_b/spr_icon_offhand_totem_b.yy",},},
+    {"id":{"name":"spr_icon_offhand_focus_c","path":"sprites/spr_icon_offhand_focus_c/spr_icon_offhand_focus_c.yy",},},
     {"id":{"name":"spr_vault_wraith_ff","path":"sprites/spr_vault_wraith_ff/spr_vault_wraith_ff.yy",},},
     {"id":{"name":"spr_vault_wraith_ff2","path":"sprites/spr_vault_wraith_ff2/spr_vault_wraith_ff2.yy",},},
     {"id":{"name":"spr_vault_wraith_ff3","path":"sprites/spr_vault_wraith_ff3/spr_vault_wraith_ff3.yy",},},

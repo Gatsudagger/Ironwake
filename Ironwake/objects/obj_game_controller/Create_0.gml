@@ -437,6 +437,9 @@ global.__sprite_includes = [
     spr_snowbound_wraith_ff2, spr_snowbound_wraith_ff3,
     spr_frost_shard_ff2,      spr_frost_shard_ff3,
     spr_magma_slug_ff2,       spr_magma_slug_ff3,
+    // Offhand icons derived from codex art (08-16) - ui_offhand_icon_sprite
+    // resolves them by string; hard refs keep them from being stripped.
+    spr_icon_offhand_orb_b, spr_icon_offhand_totem_b, spr_icon_offhand_focus_c,
 ];
 
 // =============================================================================
