@@ -333,6 +333,21 @@ function enemy_sprite_faces_east(name) {
     }
     return false;
 }
+// Per-MODEL facing (08-16, M: "a few sprites are still facing east"): the FF
+// re-authors are 3/4-front but some models angle to the viewer's RIGHT, and a
+// species' variants can differ - so this is keyed by SPRITE, not species. Add
+// any model that reads as facing away from the player; combat mirrors it.
+function enemy_model_faces_east(spr) {
+    static _east = {
+        spr_skeleton_archer_ff: 1,  spr_skeleton_archer_ff2: 1, spr_skeleton_archer_ff3: 1,
+        spr_magma_slug_ff: 1,       spr_magma_slug_ff2: 1,      spr_magma_slug_ff3: 1,
+        spr_cinder_imp_ff2: 1,      spr_cinder_imp_ff3: 1,
+        spr_vault_wraith_ff2: 1,    spr_dungeon_wraith_ff2: 1,
+        spr_skeleton_soldier_ff2: 1, spr_stone_golem_ff2: 1,    spr_vault_guardian_ff2: 1,
+    };
+    if (spr < 0 || !sprite_exists(spr)) return false;
+    return variable_struct_exists(_east, sprite_get_name(spr));
+}
 
 // enemy_class_tag(c) - short "Melee/Phys" style label for an enemy's attack class
 // (reach x kind), drawn under its HP bar so the player can see which control

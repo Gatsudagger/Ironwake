@@ -620,6 +620,11 @@ for (var _ei = 0; _ei < _ecnt; _ei++) {
     var _ex  = _esp.x;
     var _ey  = _esp.y;
     var _es  = _esp.scale;
+    // Facing (08-16): species flag OR per-MODEL flag (FF variants can differ) -
+    // one answer per foe, used by every mirror-aware site below.
+    var _cm_east = enemy_sprite_faces_east(_ec.name);
+    if (variable_struct_exists(_espr_map, _ec.name))
+        _cm_east = _cm_east || enemy_model_faces_east(combat_enemy_model(_ec, _espr_map));
     // Round 6 (M shot: the 192px-canvas Archivist drew ~720px tall and buried
     // the ability tooltip): station scales assume the 97px canvas - normalize
     // big-canvas sprites so every foe displays at the station's INTENDED
@@ -707,7 +712,7 @@ for (var _ei = 0; _ei < _ecnt; _ei++) {
         var _ctb = sprite_true_bounds(_cmspr);
         var _cw25 = sprite_get_width(_cmspr);
         var _ccxu = (_ctb.l + _ctb.r + 1) * 0.5;
-        _ec.last_ecx = _ec.last_ex + (enemy_sprite_faces_east(_ec.name) ? (_cw25 - _ccxu) : _ccxu) * _es;
+        _ec.last_ecx = _ec.last_ex + (_cm_east ? (_cw25 - _ccxu) : _ccxu) * _es;
         _ec.last_ecy = _ec.last_ey + (_ctb.t + _ctb.h * 0.5) * _es;
     }
 
@@ -725,7 +730,7 @@ for (var _ei = 0; _ei < _ecnt; _ei++) {
             // ignored), sized by measured width, at the measured feet line.
             var _stb  = sprite_true_bounds(_espr);
             var _scxu = (_stb.l + _stb.r + 1) * 0.5;
-            var _scx  = _ex + (enemy_sprite_faces_east(_ec.name) ? (sprite_get_width(_espr) - _scxu) : _scxu) * _es;
+            var _scx  = _ex + (_cm_east ? (sprite_get_width(_espr) - _scxu) : _scxu) * _es;
             ui_draw_cast_shadow(_scx, _ey + (_stb.b + 1) * _es, _stb.w * _es, 1);
         } else {
             ui_draw_cast_shadow(_ex + sprite_get_width(_espr)  * _es * 0.5,
@@ -743,7 +748,7 @@ for (var _ei = 0; _ei < _ecnt; _ei++) {
                 // Round 11: reticle under the MEASURED feet (mirror-aware).
                 var _rtb  = sprite_true_bounds(_espr);
                 var _rcxu = (_rtb.l + _rtb.r + 1) * 0.5;
-                _cur_cx = _ex + (enemy_sprite_faces_east(_ec.name) ? (sprite_get_width(_espr) - _rcxu) : _rcxu) * _es;
+                _cur_cx = _ex + (_cm_east ? (sprite_get_width(_espr) - _rcxu) : _rcxu) * _es;
                 _cur_cy = _ey + (_rtb.b + 1) * _es;
             }
             // 08-16 (M: "the targeting dial doesn't need to scale, it looks
@@ -758,10 +763,10 @@ for (var _ei = 0; _ei < _ecnt; _ei++) {
 
         // Round 7 (M: "some enemies are facing backwards... like ice specter"):
         // east-authored sprites are mirrored about their own width so they face
-        // the player. Add names to enemy_sprite_faces_east as spotted.
+        // the player. Species: enemy_sprite_faces_east; per-model: enemy_model_faces_east.
         var _efx = _ex;
         var _efs = _es;
-        if (enemy_sprite_faces_east(_ec.name)) {
+        if (_cm_east) {
             _efx = _ex + sprite_get_width(_espr) * _es;
             _efs = -_es;
         }
