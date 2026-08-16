@@ -12568,7 +12568,7 @@ function ghost_exclusive_catalog(_asc) {
         array_push(_out, _g1);
         var _g2 = create_item("Coin-Weighted Knuckles", "gloves", 2, "STR", 4,
             "the peddler settled more than one debt by hand", 90);
-        _g2.affixes = [{ suffix: "of Ruin", prefix: "Weighted", stat_name: "crit_flat", stat_value: 4 }];
+        _g2.affixes = [{ suffix: "of Ruin", prefix: "Weighted", stat_name: "crit_flat", stat_value: 2 }];
         array_push(_out, _g2);
     } else if (_band == 1) {
         var _g3 = create_item("Ghostlight Buckler", "offhand", 2, "CON", 5,
@@ -12584,7 +12584,7 @@ function ghost_exclusive_catalog(_asc) {
             "the axle of the cart that never stops arriving", 260);
         _g5.weapon_damage = weapon_base_damage(3);
         _g5.two_handed    = true;
-        _g5.affixes = [{ suffix: "of Ruin", prefix: "Axle-Forged", stat_name: "crit_flat", stat_value: 5 }];
+        _g5.affixes = [{ suffix: "of Ruin", prefix: "Axle-Forged", stat_name: "crit_flat", stat_value: 3 }];
         array_push(_out, _g5);
         var _g6 = create_item("Receipt of the Unpaid Debt", "amulet", 3, "INT", 6,
             "someone, somewhere, still owes - and the amulet remembers", 260);
@@ -12749,7 +12749,7 @@ function duelist_make_ashen_blade() {
     var _b = create_item("The Ashen Blade", "weapon", 4, "DEX", 5,
         "his own sword, worn to a whisper of grey", 400);
     _b.class_req     = -1;
-    _b.affixes       = [{ suffix: "of the Answer", prefix: "Ashen", stat_name: "crit_flat", stat_value: 3 }];
+    _b.affixes       = [{ suffix: "of the Answer", prefix: "Ashen", stat_name: "crit_flat", stat_value: 2 }];
     _b.unique_effect = "ashen_blade";
     _b.unique_desc   = "After you dodge or riposte, your next ability costs 1 less AP";
     _b.lore = "He carried it through every duel he never lost, and handed it over the day someone finally deserved it. The edge is patient - it learned long ago that the reply matters more than the first word.";
@@ -12784,7 +12784,7 @@ function duelist_relic_for_win(_w) {
         var _r3 = create_item("Widowmaker's Point", "weapon", 4, "DEX", 6,
             "the conversation ends here", 400);
         _r3.class_req     = -1;
-        _r3.affixes       = [{ suffix: "of Ruin", prefix: "Runed", stat_name: "crit_flat", stat_value: 4 }];
+        _r3.affixes       = [{ suffix: "of Ruin", prefix: "Runed", stat_name: "crit_flat", stat_value: 2 }];
         _r3.unique_effect = "duel_widow";
         _r3.unique_desc   = "+40% damage to enemies below 25% HP";
         _r3.lore = "Five duels he lost to you, and on the fifth he brought this - and lost anyway. It knows exactly one thing: how a fight that is already decided should end.";
@@ -14776,10 +14776,10 @@ function pattern_family_entry(_stat_name) {
 function pattern_family_desc(_stat_name) {
     switch (_stat_name) {
         case "STR": return "+Strength - harder melee blows";
-        case "DEX": return "+Dexterity - accuracy, dodge, crit and turn priority";
-        case "CON": return "+Constitution - more maximum HP";
+        case "DEX": return "+Dexterity - accuracy, dodge, crit, turn priority; shrugs Root";
+        case "CON": return "+Constitution - more maximum HP; softens poison, shrugs Stun";
         case "INT": return "+Intelligence - stronger spells";
-        case "WIS": return "+Wisdom - stronger effects and healing";
+        case "WIS": return "+Wisdom - stronger effects and healing; shrugs Silence";
         case "CHA": return "+Charisma - better prices and gold find";
         case "bonus_max_hp": return "+Maximum HP on the item itself";
         case "crit_flat":    return "+Critical hit chance (all attacks)";

@@ -1040,14 +1040,18 @@ global.affix_pool = [
     { suffix: "of Insight",  prefix: "Arcane",  stat_name: "INT",          u_val: 1, r_val: 2, e_val: 3 },
     { suffix: "of Clarity",  prefix: "Lucid",   stat_name: "WIS",          u_val: 1, r_val: 2, e_val: 3 },
     { suffix: "of Charm",    prefix: "Gilded",  stat_name: "CHA",          u_val: 1, r_val: 2, e_val: 3 },
-    { suffix: "of Vitality", prefix: "Vital",   stat_name: "bonus_max_hp", u_val: 5, r_val: 10, e_val: 15 },
-    { suffix: "of Ruin",     prefix: "Runed",   stat_name: "crit_flat",    u_val: 3, r_val: 5,  e_val: 8  },
-    { suffix: "of Shadows",  prefix: "Ghost",   stat_name: "dodge_flat",   u_val: 3, r_val: 5,  e_val: 8  },
+    // 08-16 (M: "all +crit% is way overtuned, rares adding 7% crit is insane...
+    // makes runes redundant"): % affixes cut roughly in half - crit is now the
+    // rune's job (Keen 3/6/12), gear gives a nudge. HP trimmed with it.
+    // Old: HP 5/10/15, crit 3/5/8, dodge 3/5/8, typed crit 4/7/11.
+    { suffix: "of Vitality", prefix: "Vital",   stat_name: "bonus_max_hp", u_val: 4, r_val: 7,  e_val: 11 },
+    { suffix: "of Ruin",     prefix: "Runed",   stat_name: "crit_flat",    u_val: 1, r_val: 2,  e_val: 3  },
+    { suffix: "of Shadows",  prefix: "Ghost",   stat_name: "dodge_flat",   u_val: 2, r_val: 3,  e_val: 5  },
     { suffix: "of Greed",    prefix: "Lucky",   stat_name: "gold_find",    u_val: 3, r_val: 5,  e_val: 8  },
     // Typed crit (07-31, M): narrower than "of Ruin" so they roll higher.
     // Spell crit feeds INT/WIS (Arcane/Effect) rolls only; phys crit STR/DEX.
-    { suffix: "of Hexruin",  prefix: "Hexed",   stat_name: "crit_spell",   u_val: 4, r_val: 7,  e_val: 11 },
-    { suffix: "of Bloodshed", prefix: "Honed",  stat_name: "crit_phys",    u_val: 4, r_val: 7,  e_val: 11 },
+    { suffix: "of Hexruin",  prefix: "Hexed",   stat_name: "crit_spell",   u_val: 2, r_val: 3,  e_val: 5  },
+    { suffix: "of Bloodshed", prefix: "Honed",  stat_name: "crit_phys",    u_val: 2, r_val: 3,  e_val: 5  },
 ];
 
 // School-damage affix pool (SYSTEMS_ELEMENT_SCHOOLS.md §F1, Phase 2).

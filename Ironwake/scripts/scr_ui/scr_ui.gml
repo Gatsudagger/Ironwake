@@ -10462,7 +10462,8 @@ function ui_compendium_sections() {
                 { term: "Elemental",    text: "Reduced by the target's Elemental Resistance (wards) instead of Armor. Covers the Fire, Frost, Shock and Arcane schools." },
                 { term: "Void",         text: "Its own type (the Void school). Bypasses ALL mitigation - neither Armor nor wards reduce it. Void/drain hits often siphon life or resources from the target." },
                 { term: "Blood",        text: "Its own type (the Blood school). Bypasses Armor (and isn't stopped by wards either). Many blood abilities are self-fuelled - they cost some of your own HP or Blood to cast." },
-                { term: "Poison & DoTs", text: "Poison and other damage-over-time ticks land UNMITIGATED regardless of the type that applied them - Armor and wards don't reduce DoT ticks." },
+                { term: "Poison & DoTs", text: "Poison and other damage-over-time ticks land UNMITIGATED regardless of the type that applied them - Armor and wards don't reduce DoT ticks. Only your CONSTITUTION softens them: -0.5% per point, up to 15%." },
+                { term: "Stat resists",  text: "Minor, always-on: each point of CONSTITUTION gives 0.5% to shrug off a Stun (and softens DoTs, above), WISDOM 0.5% to shrug Silence or Weaken, DEXTERITY 0.5% to shrug Root - each capped at 15%." },
             ],
         },
         {

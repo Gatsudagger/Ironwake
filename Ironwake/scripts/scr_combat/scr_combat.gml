@@ -473,6 +473,28 @@ function combat_enemy_slot_pos(_idx) {
 }
 
 // ---------------------------------------------------------------------------
+// STAT RESISTS (M 08-16: "constitution should affect certain resists like
+// poison and stun (very minor)... pepper this in for other stats like wisdom").
+// Per stat POINT 0.5%, capped 15% - a nudge, not a wall:
+//   CON -> Poison/Burn DoT damage taken (-%), and a chance to SHRUG a Stun
+//   WIS -> chance to shrug Silence / Weaken
+//   DEX -> chance to shrug Root
+// combat_stat_resist_pct(c, key) returns the % (0..15) the combatant has for
+// "dot" / "stun" / "silence" / "weaken" / "root"; anything else = 0.
+// ---------------------------------------------------------------------------
+function combat_stat_resist_pct(_c, _key) {
+    if (!is_struct(_c) || !variable_struct_exists(_c, "stats")) return 0;
+    var _s = _c.stats, _pts = 0;
+    switch (_key) {
+        case "dot": case "stun":       _pts = variable_struct_exists(_s, "CON") ? _s.CON : 0; break;
+        case "silence": case "weaken": _pts = variable_struct_exists(_s, "WIS") ? _s.WIS : 0; break;
+        case "root":                   _pts = variable_struct_exists(_s, "DEX") ? _s.DEX : 0; break;
+        default: return 0;
+    }
+    return clamp(_pts * 0.5, 0, 15);
+}
+
+// ---------------------------------------------------------------------------
 // combat_enemy_model(_ec, _map) - the sprite THIS combatant wears (M 08-16
 // variety: species with several models - enemy_sprite_variants - draw a
 // random one per foe, preferring a model no other LIVING same-name foe on the

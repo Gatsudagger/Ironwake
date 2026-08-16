@@ -5320,6 +5320,13 @@ if (player_turn) {
                 } else if (variable_struct_exists(player, "iron_will_banned")
                     && player.iron_will_banned != "" && player.iron_will_banned == _eab.status_kind) {
                     array_push(combat_log, "Unshakable: " + _eab.name + " cannot take hold of you again!");
+                } else if (_eab.kind != "dot" && irandom(99) < combat_stat_resist_pct(player, _eab.status_kind)) {
+                    // STAT RESIST (08-16): CON shrugs Stun, WIS shrugs Silence/Weaken,
+                    // DEX shrugs Root - 0.5% per point, capped 15%. DoTs are not
+                    // shrugged; CON softens their bite below instead.
+                    var _sr_stat = (_eab.status_kind == "stun") ? "Constitution"
+                                 : ((_eab.status_kind == "root") ? "Dexterity" : "Wisdom");
+                    array_push(combat_log, "Your " + _sr_stat + " shrugs off " + actor.name + "'s " + _eab.name + "!");
                 } else {
                     var _edur = (_eab.kind == "dot") ? _eab.turns : (_eab.turns + 1);
                     // Iron Will potency ranks (POTENCY V2): later statuses run
@@ -5333,6 +5340,11 @@ if (player_turn) {
                     // ticks at half strength (shares its flag with the Scorching Air
                     // site in Create, so only ONE first-DoT is softened per combat).
                     var _eab_val = _eab.value;
+                    // CON softens DoT ticks (08-16 stat resists): -0.5%/pt, cap 15%.
+                    if (_eab.kind == "dot") {
+                        var _sr_dot = combat_stat_resist_pct(player, "dot");
+                        if (_sr_dot > 0) _eab_val = max(1, round(_eab_val * (1 - _sr_dot / 100)));
+                    }
                     if (_eab.kind == "dot" && pet_active_innate("dot_halve") > 0
                         && !variable_struct_exists(player, "innate_thaw_done")) {
                         player.innate_thaw_done = true;
