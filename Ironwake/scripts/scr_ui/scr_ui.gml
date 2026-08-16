@@ -4505,6 +4505,10 @@ function ui_draw_bairc_screen() {
         else {
             var _regl = pet_egg_label(_pet);
             if (_regl != "") _l2 += "  -  " + _regl;
+            // FOUND creatures (08-16 M: "a pet hatched itself... a Stormkirin was
+            // just there") arrive alive from ~15% of egg sources - say so here,
+            // where the player actually looks, not only in the hub notice.
+            if (variable_struct_exists(_pet, "raised") && !_pet.raised) _l2 += "  -  found alive, never an egg";
             _l2 += pet_injury_tag(_pet) + pet_corruption_tag(_pet);
         }
         // Truncate against the stage pill / ACTIVE tag on the right - a long tag
@@ -5122,7 +5126,7 @@ function ui_draw_bairc_screen() {
                 else if (variable_struct_exists(_fp, "splash_pending") && _fp.splash_pending)  _bfoot += "  [G] Splash";
             }
         }
-        _bfoot += "  [F] Gift Bairc  [N] Name  [C] Cure  [R] Donate  [Tab] Details  [Enter] Hatch/Active  [Esc] Leave";
+        _bfoot += "  [V] Garden  [F] Gift Bairc  [N] Name  [C] Cure  [R] Donate  [Tab] Details  [Enter] Hatch/Active  [Esc] Leave";   // [V] added 08-16 (M: "I didn't even see it")
     }
     ui_draw_key_legend((_x1 + 1500) / 2, _y2 - 42, _bfoot, undefined, false, (1500 - _x1) - 40);   // wraps to 2 rows inside the panel (M 08-16 shot)
     draw_set_halign(fa_left); draw_set_valign(fa_top);
@@ -14163,6 +14167,13 @@ function ui_draw_dorn_reforge(_gc) {
     // Smelt study popup (08-11): modal over the tab, topmost of all.
     if (variable_instance_exists(_gc, "pb_smelt_open") && _gc.pb_smelt_open) {
         ui_draw_pb_smelt(_gc);
+    }
+    // TIER UNLOCK toast (M 08-16) - boxed, topmost, per the toast standard;
+    // set by pattern_smelt_commit when a study crosses 1 / 3 / 6.
+    if (variable_global_exists("dorn_toast_timer") && global.dorn_toast_timer > 0
+        && variable_global_exists("dorn_toast_msg") && global.dorn_toast_msg != "") {
+        ui_draw_toast(global.dorn_toast_msg, 960, 176, min(1, global.dorn_toast_timer / 40));
+        global.dorn_toast_timer--;
     }
 
     draw_set_valign(fa_top);

@@ -2917,11 +2917,13 @@ function item_finish_hp(it) {
     var _pts = item_finish_steps(it);
     if (_pts <= 0) return 0;
     var _r   = clamp((is_struct(it) && variable_struct_exists(it, "rarity")) ? it.rarity : 0, 0, 4);
-    // Per point. Totals at a fully finished 100%: 8 / 12 / 20 / 32 / 48 HP.
+    // Per point. Totals at a fully finished 100%: 4 / 6 / 8 / 12 / 16 HP
+    // (08-16 M: "an epic gave me 16 HP from 8 in ONE temper... becoming a tank
+    // on my mage" - was 8/12/20/32/48, an epic step paid +8; now +3).
     // A piece bought up from 60% therefore gains the WHOLE track, while one that
     // dropped at 90% only has a quarter of it left to buy - the gain scales with
     // the gap you closed, exactly like the cost does.
-    var _per = [0.2, 0.3, 0.5, 0.8, 1.2];
+    var _per = [0.1, 0.15, 0.2, 0.3, 0.4];
     return max(1, round(_per[_r] * _pts));
 }
 
@@ -10326,25 +10328,25 @@ function pet_kit_catalog() {
         { arch:PET_ARCH_BOON, id:"prospector", name:"Prospector",     kind:"Trait",   stage:1, effect:"gold", val:0.04, desc:"Sniffs out coin - +4% gold while it is your companion." },
         { arch:PET_ARCH_BOON, id:"lucky",      name:"Lucky Streak",   kind:"Trait",   stage:2, effect:"loot", val:2,    desc:"Fortune leans your way - +2% loot find while active." },
         { arch:PET_ARCH_BOON, id:"charmed",    name:"Charmed",        kind:"Trait",   stage:2, effect:"crit", val:3,    desc:"Luck rides your blade - +3% to ALL your critical rolls while it is active (grows with its LCK)." },
-        { arch:PET_ARCH_BOON, id:"windfall",   name:"Windfall",       kind:"Ability", stage:3, effect:"gold", val:0.08, desc:"Capstone: a surge of fortune - a further +8% gold." },
-        { arch:PET_ARCH_BOON, id:"treasure_sense", name:"Treasure Sense", kind:"Ability", stage:3, effect:"loot", val:4, desc:"Capstone: an unerring nose for loot - a further +4% loot find." },
-        { arch:PET_ARCH_BOON, id:"fate_coin",  name:"Fate's Coin",    kind:"Ability", stage:3, effect:"fatecoin", val:0, desc:"Capstone: once per combat, a blow that would kill you leaves you at 1 HP instead." },
-        { arch:PET_ARCH_BOON, id:"sharp_eye",  name:"Sharp Eye",      kind:"Ability", stage:3, effect:"sharpeye", val:10, desc:"Capstone: it sees the angles - event stat-checks +10% success, shrine boons cost 15% less." },
+        { arch:PET_ARCH_BOON, id:"windfall",   name:"Windfall",       kind:"Ability", stage:3, effect:"gold", val:0.08, desc:"A surge of fortune - a further +8% gold." },
+        { arch:PET_ARCH_BOON, id:"treasure_sense", name:"Treasure Sense", kind:"Ability", stage:3, effect:"loot", val:4, desc:"An unerring nose for loot - a further +4% loot find." },
+        { arch:PET_ARCH_BOON, id:"fate_coin",  name:"Fate's Coin",    kind:"Ability", stage:3, effect:"fatecoin", val:0, desc:"Once per combat, a blow that would kill you leaves you at 1 HP instead." },
+        { arch:PET_ARCH_BOON, id:"sharp_eye",  name:"Sharp Eye",      kind:"Ability", stage:3, effect:"sharpeye", val:10, desc:"It sees the angles - event stat-checks +10% success, shrine boons cost 15% less." },
         // COMBATANT (C5: +2 capstone options; C4: Executioner reworked - was a
         // strictly-worse Rend at +40% conditional vs +50% flat)
         { arch:PET_ARCH_COMBATANT, id:"vicious", name:"Vicious",      kind:"Trait",   stage:1, effect:"dmg", val:0.15, desc:"Goes for the throat - +15% to its attacks." },
         { arch:PET_ARCH_COMBATANT, id:"savage",  name:"Savage",       kind:"Trait",   stage:2, effect:"dmg", val:0.20, desc:"Tastes blood - a further +20% to its attacks." },
-        { arch:PET_ARCH_COMBATANT, id:"rend",    name:"Rend",         kind:"Ability", stage:3, effect:"dmg", val:0.50, desc:"Capstone: brutal, tearing strikes - +50% attack damage." },
-        { arch:PET_ARCH_COMBATANT, id:"executioner", name:"Executioner", kind:"Ability", stage:3, effect:"execute", val:1.00, desc:"Capstone: +100% damage to enemies below 30% HP - and its strike SLAYS outright a lesser foe below 15% (not elites or bosses)." },
-        { arch:PET_ARCH_COMBATANT, id:"opportunist", name:"Opportunist", kind:"Ability", stage:3, effect:"opportunist", val:0.35, desc:"Capstone: its strike DETONATES a status the target carries (consumed) for +35% damage - a second detonator on your side." },
-        { arch:PET_ARCH_COMBATANT, id:"bloodscent",  name:"Bloodscent",  kind:"Ability", stage:3, effect:"bloodscent", val:0.50, desc:"Capstone: the smell of blood drives it - against a BLEEDING target it strikes twice (second hit at half power)." },
+        { arch:PET_ARCH_COMBATANT, id:"rend",    name:"Rend",         kind:"Ability", stage:3, effect:"dmg", val:0.50, desc:"Brutal, tearing strikes - +50% attack damage." },
+        { arch:PET_ARCH_COMBATANT, id:"executioner", name:"Executioner", kind:"Ability", stage:3, effect:"execute", val:1.00, desc:"+100% damage to enemies below 30% HP - and its strike SLAYS outright a lesser foe below 15% (not elites or bosses)." },
+        { arch:PET_ARCH_COMBATANT, id:"opportunist", name:"Opportunist", kind:"Ability", stage:3, effect:"opportunist", val:0.35, desc:"Its strike DETONATES a status the target carries (consumed) for +35% damage - a second detonator on your side." },
+        { arch:PET_ARCH_COMBATANT, id:"bloodscent",  name:"Bloodscent",  kind:"Ability", stage:3, effect:"bloodscent", val:0.50, desc:"The smell of blood drives it - against a BLEEDING target it strikes twice (second hit at half power)." },
         // GUARDIAN (C5: +2 capstone options)
         { arch:PET_ARCH_GUARDIAN, id:"devoted", name:"Devoted",       kind:"Trait",   stage:1, effect:"heal", val:0.25, desc:"Never leaves your side - +25% to its healing." },
         { arch:PET_ARCH_GUARDIAN, id:"warding", name:"Warding",       kind:"Trait",   stage:2, effect:"shield", val:0.25, desc:"Raises stronger wards - +25% to its shields." },
-        { arch:PET_ARCH_GUARDIAN, id:"guardian_angel", name:"Guardian Angel", kind:"Ability", stage:3, effect:"both", val:0, desc:"Capstone: each turn it heals AND shields you, never just one." },
-        { arch:PET_ARCH_GUARDIAN, id:"bulwark", name:"Bulwark",       kind:"Ability", stage:3, effect:"shield", val:0.50, desc:"Capstone: an immovable ward - +50% to its shields." },
-        { arch:PET_ARCH_GUARDIAN, id:"bodyguard",  name:"Bodyguard",  kind:"Ability", stage:3, effect:"bodyguard", val:0, desc:"Capstone: it throws itself between you and harm - 40% chance to intercept part of any blow, in any stance (it shrugs off a tenth of what it catches)." },
-        { arch:PET_ARCH_GUARDIAN, id:"lifespring", name:"Lifespring", kind:"Ability", stage:3, effect:"lifespring", val:0, desc:"Capstone: once per combat, its heal also washes away your newest affliction." },
+        { arch:PET_ARCH_GUARDIAN, id:"guardian_angel", name:"Guardian Angel", kind:"Ability", stage:3, effect:"both", val:0, desc:"Each turn it heals AND shields you, never just one." },
+        { arch:PET_ARCH_GUARDIAN, id:"bulwark", name:"Bulwark",       kind:"Ability", stage:3, effect:"shield", val:0.50, desc:"An immovable ward - +50% to its shields." },
+        { arch:PET_ARCH_GUARDIAN, id:"bodyguard",  name:"Bodyguard",  kind:"Ability", stage:3, effect:"bodyguard", val:0, desc:"It throws itself between you and harm - 40% chance to intercept part of any blow, in any stance (it shrugs off a tenth of what it catches)." },
+        { arch:PET_ARCH_GUARDIAN, id:"lifespring", name:"Lifespring", kind:"Ability", stage:3, effect:"lifespring", val:0, desc:"Once per combat, its heal also washes away your newest affliction." },
         // AWAKENED SPLASH (stage 4, design 2026-07-03): the crossover layer. One signature
         // splash per archetype; an Awakened pet takes exactly ONE, and only from a
         // DIFFERENT archetype (pet_splash_pool) - a Warrior tastes Fortune, never more Warrior.
@@ -14970,8 +14972,19 @@ function pattern_smelt_commit(_it, _stat_name) {
     var _msg = "Smelted " + _it.name + " - +1 " + item_rarity_name(_rar) + " ingot";
     if (_stat_name != "") {
         var _fe = pattern_family_entry(_stat_name);
+        var _tier_was = pattern_fam_tier(_stat_name);
         if (pattern_book_study(_stat_name, _rar) && _fe != undefined) {
             _msg += ", studied " + _fe.label + " (" + pattern_fam_progress_text(_stat_name) + ")";
+            // TIER UNLOCK toast (M 08-16: "something should pop up to say
+            // you've unlocked tier 1"): drawn topmost on Dorn's screen.
+            var _tier_now = pattern_fam_tier(_stat_name);
+            if (_tier_now > _tier_was) {
+                var _tq = (_tier_now >= 3) ? "EPIC" : ((_tier_now == 2) ? "RARE" : "UNCOMMON");
+                global.dorn_toast_msg   = "TIER " + string(_tier_now) + " UNLOCKED  -  " + _fe.label
+                    + " blueprints now craft at " + _tq + "!";
+                global.dorn_toast_timer = 300;
+                audio_play_sound(snd_confirm_major, 1, false);
+            }
         }
     }
     if (_new_art) _msg += ", its art joins the book";
