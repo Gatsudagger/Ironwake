@@ -14219,15 +14219,38 @@ function ui_reforge_card(_x0, _y0, _x1, _y1, _tag, _tagcol, _label, _rar, _stat)
     draw_set_color(_tagcol);
     draw_text((_x0 + _x1) / 2, _y0 + 14, _tag);
     if (_label != "") {
+        // MEASURED stack (M 08-16: "reforge rework has text coverings and runs
+        // out of text boxes"): a long affixed name used to overrun the fixed
+        // [Rarity] line at +148, and a long stat list ran past the card bottom
+        // into the buttons. Name -> rarity -> stats now flow from measured
+        // heights; the stat block steps down to the small font (then a tighter
+        // line pitch) until it fits the card, and finally trims lines with "..".
+        var _cw = (_x1 - _x0) - 60;
+        var _cx = (_x0 + _x1) / 2;
         draw_set_font(ui_font(fnt_ui));
         draw_set_color(item_rarity_color(_rar));
-        draw_text_ext((_x0 + _x1) / 2, _y0 + 64, _label, 34, (_x1 - _x0) - 60);
+        var _nh = string_height_ext(_label, 34, _cw);
+        draw_text_ext(_cx, _y0 + 64, _label, 34, _cw);
+        var _ry = _y0 + 64 + _nh + 12;
         draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(make_color_rgb(140, 145, 160));
-        draw_text((_x0 + _x1) / 2, _y0 + 148, "[" + item_rarity_name(_rar) + "]");
-        draw_set_font(ui_font(fnt_ui));
+        draw_text(_cx, _ry, "[" + item_rarity_name(_rar) + "]");
+        var _sy    = _ry + 46;
+        var _avail = (_y1 - 16) - _sy;
+        var _sf = ui_font(fnt_ui), _slh = 36;
+        draw_set_font(_sf);
+        if (string_height_ext(_stat, _slh, _cw) > _avail) { _sf = ui_font(fnt_ui_small); _slh = 30; draw_set_font(_sf); }
+        if (string_height_ext(_stat, _slh, _cw) > _avail) { _slh = 26; }
+        var _st = _stat, _guard = 0, _trimmed = false;
+        while (string_height_ext(_st + (_trimmed ? "\n.." : ""), _slh, _cw) > _avail && string_length(_st) > 8 && _guard++ < 60) {
+            var _nl = 0;
+            for (var _ci = string_length(_st); _ci >= 1; _ci--) if (string_char_at(_st, _ci) == "\n") { _nl = _ci; break; }
+            _st = (_nl > 1) ? string_copy(_st, 1, _nl - 1) : string_copy(_st, 1, string_length(_st) - 12);
+            _trimmed = true;
+        }
+        if (_trimmed) _st += "\n..";
         draw_set_color(make_color_rgb(205, 210, 225));
-        draw_text_ext((_x0 + _x1) / 2, _y0 + 204, _stat, 36, (_x1 - _x0) - 60);
+        draw_text_ext(_cx, _sy, _st, _slh, _cw);
     }
     draw_set_halign(fa_left);
 }
@@ -14301,7 +14324,9 @@ function ui_draw_reforge_confirm(_gc) {
             draw_sprite_stretched(reforge_ingot_sprite(_cost_tier), 0, _pcx - 30, 540, 60, 60);
             draw_set_font(ui_font(fnt_ui_small));
             draw_set_color(item_rarity_color(_cost_tier));
-            draw_text(_pcx, 612, ((_stage >= 2) ? "spent 1 " : "costs 1 ") + item_rarity_name(_cost_tier) + " ingot");
+            // Wrapped inside the 170px gutter between the cards - "costs 1
+            // Legendary ingot" on one line ran over both card borders (M 08-16).
+            draw_text_ext(_pcx, 612, ((_stage >= 2) ? "spent 1 " : "costs 1 ") + item_rarity_name(_cost_tier) + " ingot", 26, 160);
         }
     }
 

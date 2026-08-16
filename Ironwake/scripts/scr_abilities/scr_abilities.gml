@@ -2414,7 +2414,7 @@ global.traits_all = [
         -1, "dungeon_clears_total", 4, "expanded_arsenal"),
 
     trait_define("Prospector",
-        "Combat loot rolls one quality tier better.",
+        "Combat loot rolls one quality tier better (never into Legendary).",
         -1, "dungeon_clears_total", 2, "prospector"),
 
     trait_define("Pack Rat",

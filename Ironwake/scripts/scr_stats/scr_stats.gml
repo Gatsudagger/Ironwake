@@ -1877,6 +1877,15 @@ function item_affix_exclusions(item) {
 // always summed every row - this is display + affix-slot hygiene.
 // ---------------------------------------------------------------------------
 function item_merge_dup_affixes(item) {
+    // LEGACY ITEM MIGRATIONS ride here too - this is the one sweep every loaded
+    // item passes through (inventory / stash / carried / secured, scr_save).
+    // 08-16: Vaultstone Wand 12% -> 5% (M: an uncommon +12% outperformed epics);
+    // saved wands still carry the old id + text.
+    if (is_struct(item) && variable_struct_exists(item, "unique_effect") && item.unique_effect == "class_spell_dmg"
+        && variable_struct_exists(item, "base_name") && item.base_name == "Vaultstone Wand") {
+        item.unique_effect = "class_spell_dmg_lesser";
+        item.unique_desc   = "Spells deal +5% damage";
+    }
     if (!is_struct(item) || !variable_struct_exists(item, "affixes") || !is_array(item.affixes)) return;
     var _out = [];
     for (var _mi = 0; _mi < array_length(item.affixes); _mi++) {
@@ -2725,7 +2734,12 @@ function drop_weights(source, asc, true_asc = -1) {
         case "dorn":      _a0 = [55, 38,  7,  0, 0]; _a5 = [10, 35, 35, 18, 2]; break;
         default:          _a0 = [90,  9,  1,  0, 0]; _a5 = [28, 36, 24, 10, 2]; break;
     }
-    var _t = asc / 5;
+    // LATE RAMP (M 08-16: "items scale up too fast, rares and epics too
+    // quickly"): the A0->A5 lerp now runs on t^1.5, so the anchors stay
+    // (M-approved) but the middle tiers sit closer to A0 - A1 reads at ~9%
+    // of the way (was 20%), A2 ~25% (was 40%), A3 ~46% (was 60%), A4 ~72%
+    // (was 80%), A5 unchanged.
+    var _t = power(asc / 5, 1.5);
     var _w = array_create(5, 0);
     var _sum = 0;
     // Lerp the upper four tiers; common (index 0) absorbs the remainder so the
@@ -3133,14 +3147,21 @@ function drop_equipment(rarity_weights, do_discover = true, curse_tiers = 0) {
         if (_roll < _cum) { _rarity = _r; break; }
     }
 
-    // Prospector trait: loot rolls one quality tier better (capped at Legendary).
+    // LEGENDARY IS NEVER A BUMP (M 08-16: "legendaries still drop too fast
+    // because of loot tier + augments... too easy to FORCE them"): every
+    // post-roll bump below - Prospector, curse loot tiers, Gambler's Icon -
+    // caps at EPIC. A legendary comes ONLY from the native weight roll (or the
+    // authored boss/forge paths). Remember whether the roll itself was
+    // legendary so the bumps can't lower it either.
+    var _native_leg = (_rarity >= 4);
+    // Prospector trait: loot rolls one quality tier better (capped at Epic).
     // POTENCY V2: +5%/rank chance the bump is TWO tiers; TRANSCEND "Motherlode":
     // combat loot can never roll common.
     // (legendary_owned lives just below drop_equipment's caller chain - see the
     // dupe-protection reroll in the legendary branch.)
-    if (trait_active("Prospector") && _rarity < 4) {
+    if (trait_active("Prospector") && _rarity < 3) {
         _rarity++;
-        if (_rarity < 4 && irandom(99) < 5 * trait_potency_r14("Prospector")) _rarity++;
+        if (_rarity < 3 && irandom(99) < 5 * trait_potency_r14("Prospector")) _rarity++;
     }
     if (trait_transcended("Prospector") && _rarity == 0) _rarity = 1;
 
@@ -3151,7 +3172,9 @@ function drop_equipment(rarity_weights, do_discover = true, curse_tiers = 0) {
     // clamp(asc,0,5) in drop_weights ate the bonus entirely - Doom and Withered
     // became pure-downside curses with literally no reward at the tier they're
     // gated to. Post-roll bump is worth the same at every awakening. (07-20)
-    if (curse_tiers > 0 && _rarity < 4) _rarity = min(4, _rarity + curse_tiers);
+    // 08-16: capped at Epic - see _native_leg above.
+    if (curse_tiers > 0 && _rarity < 3) _rarity = min(3, _rarity + curse_tiers);
+    if (_native_leg) _rarity = 4;
 
     var _gate_asc = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
 
@@ -6032,7 +6055,7 @@ function boon_catalog() {
           flavor:"Let every corpse be a lantern." },
         { id:"secondskin",  kind:"creative", name:"Second Skin",    desc:"The first hit you take each combat is halved",                            cost:110, value:0,
           flavor:"The altar keeps the first blow for itself." },
-        { id:"gambler",     kind:"creative", name:"Gambler's Icon", desc:"Win a combat within 3 turns: its loot rolls 1 rarity higher (icon then rests 2 fights)", cost:140, value:0,
+        { id:"gambler",     kind:"creative", name:"Gambler's Icon", desc:"Win a combat within 3 turns: its loot rolls 1 rarity higher, up to Epic (icon then rests 2 fights)", cost:140, value:0,
           flavor:"Fortune loves the quick and forgets the careful." },
         { id:"whetecho",    kind:"creative", name:"Whetstone Echo", desc:"Your first ability each combat echoes at 40% power",                      cost:150, value:0,
           flavor:"Strike once. The stone remembers twice." },
@@ -11388,7 +11411,7 @@ function tutorial_catalog() {
         { id:"inspect",    title:"Inspect Your Foes",   body:"Mouse over an enemy (or its health bar) to inspect it. You'll see whether it fights at Melee or Ranged and with Phys or Spell - and which controls stop it: Root halts melee, Silence stops spells, Stun stops anything. Ranged foes ignore Root, so a trap won't keep them off you." },
         { id:"weakness",   title:"Exposed Weaknesses",  body:"The small colored GEM beside an enemy's intent chip is the school it is WEAK to - Fire, Frost, Shock or Arcane. Hit it with a matching-school ability for +30% damage, and the FIRST weakness strike on each enemy refunds 1 AP. Carrying one off-school ability can pay for itself every fight." },
         { id:"vex",        title:"Vex the Trainer",     body:"Vex teaches new abilities and traits for gold (and the occasional item). Learn abilities here, then slot them on the loadout screen before a run." },
-        { id:"shrine",     title:"Altars",              body:"A shrine is an altar. A Blessing altar sells boons for tribute - prices scale with your Awakening, and once per shrine [R] rerolls the offer for rune dust. A Cursed altar lets you take on a curse - a run-long penalty - in exchange for far better spoils. Choose how greedy you dare to be." },
+        { id:"shrine",     title:"Altars",              body:"A shrine is an altar. A Blessing altar sells boons for tribute - prices scale with your Awakening, and once per shrine [R] rerolls the offer for rune dust. A Cursed altar lets you take on a curse - a run-long penalty - in exchange for far better spoils. Loot-tier rewards lift drops as far as EPIC; a Legendary is never forced, only found. Choose how greedy you dare to be." },
         { id:"gold_risk",  title:"Gold at Risk",        body:"Gold you FIND during a run is at risk - die and you lose most of it (a quarter is returned as mercy). Gold banked before the run is always safe at camp. The number in brackets on your HUD is what you're gambling: extract to keep it all." },
         { id:"escape_item", title:"A Way Out",          body:"You carry an escape item. On the floor map, press G (or tap the LAMP / WINE button) to use it: the Genie Lamp whisks you back to camp with ALL your loot, free. Devil Wine does the same - but drains 2 random stat points. WARNING: the Wine's toll is PERMANENT - those points are gone from your hero on every future run, not just this one. Cash out a greedy run before the dungeon takes it back." },
         { id:"origin_egg",  title:"Something Stirs",    body:"The egg you stumbled upon in your travels stirs - perhaps someone here can help with that. Bairc the beast-warden can identify and hatch it: find him on the camp carousel and set the egg under his care. A raised creature fights beside you, or blesses your runs." },

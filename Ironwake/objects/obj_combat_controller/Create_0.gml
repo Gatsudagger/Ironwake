@@ -409,7 +409,8 @@ for (var _li = 0; _li < array_length(global.inventory); _li++) {
     // legendary_worn() in scr_stats reads the worn slots directly.)
     // Class-weapon affixes
     if (_lit.unique_effect == "class_first_spell_ap") player.cf_first_spell_ap   = true;
-    if (_lit.unique_effect == "class_spell_dmg")      player.spell_dmg_bonus     = 0.12;
+    if (_lit.unique_effect == "class_spell_dmg")      player.spell_dmg_bonus     = 0.12;   // forge exclusive (Archon's Breath)
+    if (_lit.unique_effect == "class_spell_dmg_lesser") player.spell_dmg_bonus   = 0.05;   // Vaultstone Wand (uncommon), M 08-16 nerf 12 -> 5
     if (_lit.unique_effect == "class_spell_crit_ap")  player.spell_crit_ap       = true;
     if (_lit.unique_effect == "class_lifesteal")      player.weapon_lifesteal    = 0.10;
     if (_lit.unique_effect == "class_start_shield")   player.weapon_start_shield = 12;

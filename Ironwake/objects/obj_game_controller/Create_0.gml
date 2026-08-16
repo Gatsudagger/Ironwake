@@ -609,7 +609,7 @@ var _uw_wand    = create_item("Vaultstone Wand",   "ranged_weapon", 1, "INT", 4,
 var _uw_sickle  = create_item("Shadow Sickle",     "weapon", 1, "DEX", 4, "curved blade of the striders",  36);
 _uw_gravel.class_req = 1;  _uw_wand.class_req = 0;  _uw_sickle.class_req = 2;
 _uw_gravel.unique_effect = "class_lifesteal";    _uw_gravel.unique_desc = "Heal 10% of the melee damage you deal";
-_uw_wand.unique_effect   = "class_spell_dmg";    _uw_wand.unique_desc   = "Spells deal +12% damage";
+_uw_wand.unique_effect   = "class_spell_dmg_lesser"; _uw_wand.unique_desc = "Spells deal +5% damage";   // 12 -> 5 (M 08-16: an uncommon +12% outperformed epics)
 _uw_sickle.unique_effect = "class_crit";         _uw_sickle.unique_desc = "+8% critical hit chance";
 
 // --- RARE WEAPONS ---
