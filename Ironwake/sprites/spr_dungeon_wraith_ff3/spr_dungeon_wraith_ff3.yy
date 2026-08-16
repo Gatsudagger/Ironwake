@@ -12,14 +12,14 @@
   "edgeFiltering":false,
   "For3D":false,
   "frames":[
-    {"$GMSpriteFrame":"v1","%Name":"f22c4101-cb81-45d8-b9f5-951bad9aa3fd","name":"f22c4101-cb81-45d8-b9f5-951bad9aa3fd","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"e13ca70c-5f58-4165-801a-400740bc2ba2","name":"e13ca70c-5f58-4165-801a-400740bc2ba2","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
   ],
   "gridX":0,
   "gridY":0,
   "height":64,
   "HTile":false,
   "layers":[
-    {"$GMImageLayer":"","%Name":"58476ec2-7c24-4af5-a44e-7a1543e50fc7","blendMode":0,"displayName":"default","isLocked":false,"name":"58476ec2-7c24-4af5-a44e-7a1543e50fc7","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
+    {"$GMImageLayer":"","%Name":"4a8e09f1-0f59-4f07-a2b3-a368a496573a","blendMode":0,"displayName":"default","isLocked":false,"name":"4a8e09f1-0f59-4f07-a2b3-a368a496573a","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
   ],
   "name":"spr_dungeon_wraith_ff3",
   "nineSlice":null,
@@ -69,8 +69,8 @@
     "tracks":[
       {"$GMSpriteFramesTrack":"","builtinName":0,"events":[],"inheritsTrackColour":true,"interpolation":1,"isCreationTrack":false,"keyframes":{"$KeyframeStore<SpriteFrameKeyframe>":"","Keyframes":[
             {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
-                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"f22c4101-cb81-45d8-b9f5-951bad9aa3fd","path":"sprites/spr_dungeon_wraith_ff3/spr_dungeon_wraith_ff3.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
-              },"Disabled":false,"id":"79543fc0-83d4-4545-9746-b38a732ebb8e","IsCreationKey":false,"Key":0.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"e13ca70c-5f58-4165-801a-400740bc2ba2","path":"sprites/spr_dungeon_wraith_ff3/spr_dungeon_wraith_ff3.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"21f2e591-897c-4415-b9c2-2c8c2e32d84d","IsCreationKey":false,"Key":0.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
           ],"resourceType":"KeyframeStore<SpriteFrameKeyframe>","resourceVersion":"2.0",},"modifiers":[],"name":"frames","resourceType":"GMSpriteFramesTrack","resourceVersion":"2.0","spriteId":null,"trackColour":0,"tracks":[],"traits":0,},
     ],
     "visibleRange":null,

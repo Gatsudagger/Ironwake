@@ -427,6 +427,16 @@ global.__sprite_includes = [
     spr_dungeon_wraith_ff2,   spr_dungeon_wraith_ff3,
     spr_stone_golem_ff2,      spr_stone_golem_ff3,
     spr_vault_guardian_ff2,   spr_vault_guardian_ff3,
+    spr_vault_wraith_ff2,     spr_vault_wraith_ff3,
+    spr_vault_sentinel_ff2,   spr_vault_sentinel_ff3,
+    spr_malgrath_warden_ff2,  spr_malgrath_warden_ff3,
+    spr_bone_colossus_ff2,    spr_bone_colossus_ff3,
+    spr_cinder_imp_ff2,       spr_cinder_imp_ff3,
+    spr_lava_spitter_ff2,     spr_lava_spitter_ff3,
+    spr_glacial_lurker_ff2,   spr_glacial_lurker_ff3,
+    spr_snowbound_wraith_ff2, spr_snowbound_wraith_ff3,
+    spr_frost_shard_ff2,      spr_frost_shard_ff3,
+    spr_magma_slug_ff2,       spr_magma_slug_ff3,
 ];
 
 // =============================================================================

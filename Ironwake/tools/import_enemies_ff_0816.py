@@ -21,13 +21,27 @@ REVIEW   = os.path.join(ROOT, "_for_review", "enemies_hd_0816")
 TEMPLATE = os.path.join(SPRITES, "spr_bone_sovereign_hd", "spr_bone_sovereign_hd.yy")
 
 # enemy -> (raw folder, filename pattern, [primary, alt2, alt3] indexes)
+# Idempotent: build_sprite overwrites, register skips names already in the .yyp -
+# so re-running after adding rows only imports the new ones.
 PICKS = {
+    # round 2 (imported 08-16 pm)
     "skeleton_archer":  ("pilot_ff_raw", "archer_ff_{}.png",          [2, 3, 7]),
     "skeleton_soldier": ("ff_raw",       "skeleton_soldier_ff_{}.png", [3, 10, 1]),
     "vault_crawler":    ("ff_raw",       "vault_crawler_ff_{}.png",    [0, 9, 12]),
     "dungeon_wraith":   ("ff_raw",       "dungeon_wraith_ff_{}.png",   [6, 1, 15]),
     "stone_golem":      ("ff_raw",       "stone_golem_ff_{}.png",      [1, 3, 8]),
     "vault_guardian":   ("ff_raw",       "vault_guardian_ff_{}.png",   [3, 7, 9]),
+    # round 3 (M-picked 08-16 eve): Ashen four + six Scorched/Tundra
+    "vault_wraith":     ("ff3_raw",      "vault_wraith_ff_{}.png",     [3, 2, 1]),
+    "vault_sentinel":   ("ff3_raw",      "vault_sentinel_ff_{}.png",   [0, 3, 7]),
+    "malgrath_warden":  ("ff3_raw",      "malgrath_warden_ff_{}.png",  [0, 10, 12]),
+    "bone_colossus":    ("ff3_raw",      "bone_colossus_ff_{}.png",    [0, 9, 12]),
+    "cinder_imp":       ("ff3_raw",      "cinder_imp_ff_{}.png",       [0, 7, 10]),
+    "lava_spitter":     ("ff3_raw",      "lava_spitter_ff_{}.png",     [0, 8, 14]),
+    "glacial_lurker":   ("ff3_raw",      "glacial_lurker_ff_{}.png",   [13, 9, 10]),
+    "snowbound_wraith": ("ff3_raw",      "snowbound_wraith_ff_{}.png", [0, 9, 1]),
+    "frost_shard":      ("ff3_raw",      "frost_shard_ff_{}.png",      [1, 0, 13]),
+    "magma_slug":       ("ff3_raw",      "magma_slug_ff_{}.png",       [0, 4, 13]),
 }
 
 def build_sprite(name, src):
@@ -76,7 +90,10 @@ if __name__ == "__main__":
     for enemy, (folder, pat, idxs) in PICKS.items():
         for k, i in enumerate(idxs):
             sname = "spr_%s_ff%s" % (enemy, "" if k == 0 else str(k + 1))
-            build_sprite(sname, os.path.join(REVIEW, folder, pat.format(i)))
+            if os.path.exists(os.path.join(SPRITES, sname, sname + ".yy")):
+                print("exists, skipping:", sname)   # never re-uuid a built sprite (orphan PNGs)
+            else:
+                build_sprite(sname, os.path.join(REVIEW, folder, pat.format(i)))
             names.append(sname)
     register([(n, "sprites/%s/%s.yy" % (n, n)) for n in names])
     print("\n".join(names))

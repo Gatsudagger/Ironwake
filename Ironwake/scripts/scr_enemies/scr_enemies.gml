@@ -327,7 +327,7 @@ function enemy_attack_school(name) {
 function enemy_sprite_faces_east(name) {
     switch (name) {
         case "Ice Specter":
-        case "Snowbound Wraith":
+        // "Snowbound Wraith" dropped 08-16: its _ff re-author is 3/4-front.
         case "Bone Sovereign":   // _hd sprite is east-authored (M 08-15 shot)
             return true;
     }
@@ -941,25 +941,26 @@ function enemy_sprite_map() {
         "Dungeon Wraith":      spr_dungeon_wraith_ff,
         "Stone Golem":         spr_stone_golem_ff,
         "Vault Guardian":      spr_vault_guardian_ff,
-        "Vault Wraith":        spr_vault_wraith,
-        "Vault Sentinel":      spr_vault_sentinel,
+        // 08-16 round 3 (M-picked): Ashen four + six Scorched/Tundra, same recipe.
+        "Vault Wraith":        spr_vault_wraith_ff,
+        "Vault Sentinel":      spr_vault_sentinel_ff,
         "Bone Sovereign":      spr_bone_sovereign_hd,   // 08-13 M-approved HD (spectral tail); original sprite kept untouched on disk
-        "Malgrath the Warden": spr_malgrath_warden,
+        "Malgrath the Warden": spr_malgrath_warden_ff,
         "Grave Stalker":        spr_grave_stalker,
-        "Bone Colossus":        spr_bone_colossus,
-        "Cinder Imp":           spr_cinder_imp,
-        "Magma Slug":           spr_magma_slug,
+        "Bone Colossus":        spr_bone_colossus_ff,
+        "Cinder Imp":           spr_cinder_imp_ff,
+        "Magma Slug":           spr_magma_slug_ff,
         "Ash Wraith":           spr_ash_wraith,
         "Fire Drake":           spr_fire_drake,
-        "Lava Spitter":         spr_lava_spitter,
+        "Lava Spitter":         spr_lava_spitter_ff,
         "Smoldering Revenant":  spr_smoldering_revenant,
         "Cinder Golem":         spr_cinder_golem,
         "Infernal Revenant":    spr_infernal_revenant,
         "Ice Specter":          spr_ice_specter,
-        "Frost Shard":          spr_frost_shard,
-        "Glacial Lurker":       spr_glacial_lurker,
+        "Frost Shard":          spr_frost_shard_ff,
+        "Glacial Lurker":       spr_glacial_lurker_ff,
         "Pale Archivist":       spr_pale_archivist,
-        "Snowbound Wraith":     spr_snowbound_wraith,
+        "Snowbound Wraith":     spr_snowbound_wraith_ff,
         "Frozen Thrall":        spr_frozen_thrall,
         "Glacial Beast":        spr_glacial_beast,
         "Frozen Sentinel":      spr_frozen_sentinel,
@@ -980,16 +981,16 @@ function enemy_sprite_map() {
         // DEPTH WARDENS (08-13): STAND-IN models from the existing roster until
         // a warden art run happens - an unmapped name draws NOTHING in combat,
         // and invisible bosses are worse than borrowed clothes.
-        "The First Door":         spr_vault_sentinel,
-        "Sister Fathom":          spr_snowbound_wraith,
+        "The First Door":         spr_vault_sentinel_ff,
+        "Sister Fathom":          spr_snowbound_wraith_ff,
         "The Tally":              spr_pale_archivist,
         "Hollowlight":            spr_ash_wraith,
-        "The Weight of Ironwake": spr_bone_colossus,
+        "The Weight of Ironwake": spr_bone_colossus_ff,
         "The Long Arithmetic":    spr_tomb_archon,
         "Nothing In Particular":  spr_grave_stalker,
-        "The Understudy":         spr_vault_guardian,
+        "The Understudy":         spr_vault_guardian_ff,
         "The Hollow Crown":       spr_bone_sovereign,
-        "The Bottom":             spr_stone_golem,
+        "The Bottom":             spr_stone_golem_ff,
     };
 }
 
