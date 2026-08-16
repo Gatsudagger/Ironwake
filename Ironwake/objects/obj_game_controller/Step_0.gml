@@ -1863,6 +1863,7 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()
                             pb_base_stat, pb_affix_picks, pb_icon_entry, pb_name);
                         array_push(global.equipment_stash, _pcit);
                         discover_item(item_base_name(_pcit), _pcit.rarity);
+                        affinity_add("dorn", 2);   // function-use drip (craft) - M 08-16
                         save_game();
                         pb_result = _pcit;
                         pb_craft_phase = 6;
@@ -1947,6 +1948,7 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()
                         shop_notification = _sm_msg;
                         audio_play_sound(snd_forge, 1, false);
                         ui_checkout_vfx(spr_vfx_fire, 960, 540);
+                        affinity_add("dorn", 2);   // function-use drip (smelt) - M 08-16
                         save_game();
                     }
                     pb_smelt_open = false; pb_smelt_item = undefined;
@@ -2173,6 +2175,7 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()
                             global.gold -= _rc_g;
                             reforge_spent_tier = -1;   // no ingot spent
                             audio_play_sound(snd_forge, 1, false);
+                            affinity_add("dorn", 2);   // function-use drip (recast) - M 08-16
                             reforge_stage = 2; reforge_anim_t = 0;
                             if (room == rm_hub || room == rm_character_select) save_game();
                         } else {
@@ -2183,6 +2186,7 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()
                     } else if (chit_reforge_item(_rb)) {
                         reforge_spent_tier = reforge_ingot_spend(reforge_before.rar);
                         audio_play_sound(snd_forge, 1, false);
+                        affinity_add("dorn", 2);   // function-use drip (rework) - M 08-16
                         reforge_stage = 2; reforge_anim_t = 0;
                         if (room == rm_hub || room == rm_character_select) save_game();
                     } else {
@@ -2445,6 +2449,7 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()
                 var _tp_was = item_shallow_copy(_tp_it);
                 _tp_it.quality = min(100, (variable_struct_exists(_tp_it, "quality") ? _tp_it.quality : 100) + ((npc_rank("dorn") >= 2) ? 12 : 10));   // Master Anvil rank perk (08-15)
                 // No icon_seed re-roll (M 08-11): tempering never changes a piece's look.
+                affinity_add("dorn", 2);   // function-use drip (temper step) - M 08-16
                 save_game();
                 shop_notification = _tp_it.name + " tempered to " + string(_tp_it.quality) + "%"
                     + ((_tp_it.quality >= 100) ? " - FINISHED." : ".");

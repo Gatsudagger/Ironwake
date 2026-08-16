@@ -149,9 +149,10 @@ hit-testing (hit-tests live in Draw), so caller and helper must agree on the sam
 
 ## Vendor list metrics (M 08-14 font-size pass — HARD RULE)
 `ui_vendor_row_pitch()` / `ui_vendor_visible_rows(n_default)` in scr_ui are the ONLY
-source of vendor list row pitch and window capacity. Default/Small return the shipped
-72px / n_default verbatim (bit-identical layouts); Large measures the fnt_ui +
-fnt_ui_small variants and grows the pitch (row box = pitch-6). Consumers (keep in
+source of vendor list row pitch and window capacity. Pitch is MEASURED in every font
+mode as title + TWO body lines (08-16: long descs WRAP to a 2nd line via
+ui_draw_consumable_entry instead of shrinking; ~93px on Default, row box = pitch-6,
+visible rows = (n_default*72) div pitch → ~6 of the old 9). Consumers (keep in
 sync — never hard-code 72/66/9/10 again): ui_maren_row + maren_visible_rows + Maren
 Forge menu + Sable salvage/rune/transmute/brew/chaos windows + transmute/chaos pick
 rings + Vael skins/tints/reweave lists (draw), and the matching mouse hit-tests in

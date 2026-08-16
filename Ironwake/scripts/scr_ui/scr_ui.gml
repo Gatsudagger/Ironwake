@@ -1592,21 +1592,26 @@ function ui_draw_consumable_entry(_x, _ty, item, _name_col = make_color_rgb(150,
     draw_text(_tx, _ry + 4, _nm);
     draw_set_font(ui_font(fnt_ui_small));
     draw_set_color(make_color_rgb(170, 185, 180));
-    // Long descs (Devil Wine) ran under right-column price text (M 08-13 shot):
-    // callers pass the measured clear width; shrink-to-fit down to 0.72, then
-    // truncate with ".." if a desc is still too long at the floor scale.
+    // Long descs (Devil Wine, chaotic brews) used to SHRINK to 0.72 and then
+    // truncate - unreadable (M 08-16). Now they WRAP onto a second line inside
+    // the caller's measured clear width; the vendor row pitch reserves two
+    // body lines. Past two lines the tail is trimmed at a word with "..".
     var _cbd = ui_vendor_body_dy();   // measured (M 08-15: hard +38 rode borders)
     if (_desc_max_w > 0) {
-        var _dw = string_width(_ds);
-        if (_dw > _desc_max_w) {
-            var _dsc = max(0.72, _desc_max_w / _dw);
-            while (string_width(_ds) * _dsc > _desc_max_w && string_length(_ds) > 4) {
-                _ds = string_copy(_ds, 1, string_length(_ds) - 4) + "..";
+        var _lh = ui_vendor_body_lh();
+        if (string_height_ext(_ds, _lh, _desc_max_w) > _lh * 2 + 2) {
+            var _guard = 0;
+            while (string_height_ext(_ds + "..", _lh, _desc_max_w) > _lh * 2 + 2 && _guard++ < 80) {
+                var _sp = 0;
+                for (var _ci = string_length(_ds); _ci >= 1; _ci--) {
+                    if (string_char_at(_ds, _ci) == " ") { _sp = _ci; break; }
+                }
+                if (_sp <= 1) { _ds = string_copy(_ds, 1, max(1, string_length(_ds) - 6)); }
+                else          { _ds = string_copy(_ds, 1, _sp - 1); }
             }
-            draw_text_transformed(_tx, _ry + _cbd + (1 - _dsc) * 6, _ds, _dsc, _dsc, 0);
-        } else {
-            draw_text(_tx, _ry + _cbd, _ds);
+            _ds += "..";
         }
+        draw_text_ext(_tx, _ry + _cbd, _ds, _lh, _desc_max_w);
     } else {
         draw_text(_tx, _ry + _cbd, _ds);
     }
@@ -15828,8 +15833,19 @@ function ui_vendor_row_pitch() {
     draw_set_font(ui_font(fnt_ui));       var _th = string_height("Ag");
     draw_set_font(ui_font(fnt_ui_small)); var _bh = string_height("Ag");
     draw_set_font(_pf);
-    // title line (4px inset) + gap + effect line + breathing room + 6px row gap
-    return max(72, 4 + _th + 3 + _bh + 8 + 6);
+    // title line (4px inset) + gap + TWO effect lines + breathing room + 6px row
+    // gap. (08-16, M: "item text should wrap into another row instead of
+    // shrinking and becoming unreadable" - long descs like Devil Wine / chaotic
+    // brews now wrap to a 2nd line, so every vendor row reserves it; lists
+    // scroll, so fewer visible rows is the accepted trade.)
+    return max(72, 4 + _th + 3 + 2 * _bh + 4 + 6);
+}
+// Body-line pitch for wrapped 2nd lines (measured small font).
+function ui_vendor_body_lh() {
+    var _pf = draw_get_font();
+    draw_set_font(ui_font(fnt_ui_small)); var _bh = string_height("Ag");
+    draw_set_font(_pf);
+    return _bh;
 }
 
 // y-offset of the body/effect line under a row's title line, measured so the
@@ -15872,7 +15888,7 @@ function ui_maren_scroll_hint(_scroll, _vis, _count) {
 // _x1 lets a screen narrow the row (e.g. the Socket-gear list, so the item detail
 // panel can sit clear to its right instead of overlapping the rows).
 function ui_maren_row(_i, _selected, _base_y = 285, _x1 = 1500) {
-    var _mp = ui_vendor_row_pitch();   // 72 on Default/Small; measured on Large
+    var _mp = ui_vendor_row_pitch();   // measured: title + 2 body lines (08-16)
     var _ry = _base_y + _i * _mp;
     draw_set_color(_selected ? make_color_rgb(45, 38, 66) : make_color_rgb(20, 18, 30));
     draw_rectangle(300, _ry, _x1, _ry + (_mp - 6), false);
