@@ -1186,11 +1186,26 @@ function ui_offhand_icon_sprite(item) {
     if (string_pos("buckler",   _n) > 0)                                  return spr_icon_offhand_buckler_b;
     if (string_pos("bulwark",   _n) > 0 || string_pos("ironhide", _n) > 0) return spr_icon_offhand_bulwark_b;   // 08-15 regen (M-approved), original kept
     if (string_pos("shield",    _n) > 0 || string_pos("aegis",    _n) > 0) return spr_icon_offhand_shield_b;    // 08-15 regen (M-approved), original kept
-    if (string_pos("totem",     _n) > 0 || string_pos("idol",     _n) > 0) return spr_icon_offhand_totem;
-    if (string_pos("orb",       _n) > 0 || string_pos("sphere",   _n) > 0) return spr_icon_offhand_orb;
+    // 08-16 (M: "my offhand is Runed Soulbound Orb which shows a book"): the
+    // shipped offhand icons were MISLABELED - spr_icon_offhand_orb / _totem /
+    // _stone are all books. Orb / totem / focus now resolve to icons derived
+    // 2:1 from the codex splash art (tools/import_offhand_icons_from_art_0816.py,
+    // string-resolved so this compiles before the import lands; falls back to
+    // the old sprite until then). Books stay for tome / grimoire only.
+    if (string_pos("totem",     _n) > 0 || string_pos("idol",     _n) > 0) {
+        var _tb = asset_get_index("spr_icon_offhand_totem_b");
+        return (_tb >= 0 && sprite_exists(_tb)) ? _tb : spr_icon_offhand_totem;
+    }
+    if (string_pos("orb",       _n) > 0 || string_pos("sphere",   _n) > 0) {
+        var _ob = asset_get_index("spr_icon_offhand_orb_b");
+        return (_ob >= 0 && sprite_exists(_ob)) ? _ob : spr_icon_offhand_orb;
+    }
     if (string_pos("soulstone", _n) > 0 || string_pos("fragment", _n) > 0 || string_pos("stone", _n) > 0) return spr_icon_offhand_stone_b;     // 08-15 regen (M-approved), original kept
-    if (string_pos("focus",     _n) > 0 || string_pos("runic",    _n) > 0
-        || string_pos("tome",   _n) > 0 || string_pos("book",     _n) > 0 || string_pos("grimoire", _n) > 0) return spr_icon_offhand_focus_b;     // 08-15 regen (M-approved), original kept
+    if (string_pos("tome",      _n) > 0 || string_pos("book",     _n) > 0 || string_pos("grimoire", _n) > 0) return spr_icon_offhand_focus;   // the purple book - the one true book icon
+    if (string_pos("focus",     _n) > 0 || string_pos("runic",    _n) > 0) {
+        var _fc = asset_get_index("spr_icon_offhand_focus_c");   // pedestal focus from the codex art
+        return (_fc >= 0 && sprite_exists(_fc)) ? _fc : spr_icon_offhand_focus_b;
+    }
     return spr_icon_offhand;
 }
 
@@ -18654,7 +18669,10 @@ function ui_draw_forge_result() {
         // Rule now mirrors ui_draw_item_icon's pinned-art rule: only un-cursed
         // unique_effect legendaries show the big splash; everything else (and
         // cursed rebirths, whose look the dark re-rolled) shows its OWN icon.
-        if (variable_struct_exists(_fr.item, "unique_effect")
+        // (08-16: clone_item stamps unique_effect = "" on EVERY item, so the bare
+        // exists-check let generic gear through - the card showed the codex
+        // splash while the inventory showed the seeded icon. Now "" != legendary.)
+        if (variable_struct_exists(_fr.item, "unique_effect") && _fr.item.unique_effect != ""
             && !(variable_struct_exists(_fr.item, "cursed") && _fr.item.cursed)) {
             _art = item_splash_sprite(item_base_name(_fr.item));
             if (_art < 0 && variable_struct_exists(_fr.item, "splash_base"))
