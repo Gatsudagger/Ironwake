@@ -166,7 +166,11 @@ function draw_text_outline(x, y, str, outline_col = c_black, fill_col = undefine
 // first ":" (parenthesised asides stay all-dim). Sets fnt_ui_small and leaves
 // halign fa_left. Honors the caller's valign.
 // ---------------------------------------------------------------------------
-function ui_draw_key_legend(cx, y, txt, label_col = undefined, translate = true) {
+function ui_draw_key_legend(cx, y, txt, label_col = undefined, translate = true, max_w = 0) {
+    // max_w (08-16, M: Bairc's legend "runs out of the border popup box"): when
+    // the row is wider than this, the gap tightens first, then the segments
+    // split into TWO rows stacked upward so the bottom row stays on the
+    // caller's y and nothing runs past the panel. 0 = no limit (old behaviour).
     // Touch (M 07-17): key legends are keyboard-speak ("[G] Gender", "W/S...") -
     // useless on a phone and just wasted footer space. On-screen actions live in the
     // tappable chip bar / buttons instead, so draw nothing here on touch. (Gamepad
@@ -234,19 +238,45 @@ function ui_draw_key_legend(cx, y, txt, label_col = undefined, translate = true)
         array_push(_parts, { key: _key, lab: _lab });
         _total += string_width(_key) + string_width(_lab);
     }
-    _total += _gap * max(0, array_length(_parts) - 1);
-
-    var _x = cx - _total / 2;
-    for (var _p = 0; _p < array_length(_parts); _p++) {
-        var _pt = _parts[_p];
-        if (_pt.key != "") {
-            draw_set_color(_key_col);
-            draw_text_outline(_x, y, _pt.key);
-            _x += string_width(_pt.key);
+    var _np = array_length(_parts);
+    var _row_total = _total + _gap * max(0, _np - 1);
+    if (max_w > 0 && _row_total > max_w) {
+        _gap = 18;   // tighten first
+        _row_total = _total + _gap * max(0, _np - 1);
+    }
+    var _rows = [];   // each = { first, last } part index range
+    if (max_w > 0 && _row_total > max_w && _np > 1) {
+        // Split at the part where the running width crosses half - two rows.
+        var _half = _total / 2, _run = 0, _split = 1;
+        for (var _q = 0; _q < _np; _q++) {
+            _run += string_width(_parts[_q].key) + string_width(_parts[_q].lab);
+            if (_run >= _half) { _split = clamp(_q + 1, 1, _np - 1); break; }
         }
-        draw_set_color(label_col);
-        draw_text(_x, y, _pt.lab);
-        _x += string_width(_pt.lab) + _gap;
+        array_push(_rows, { first: 0, last: _split });
+        array_push(_rows, { first: _split, last: _np });
+    } else {
+        array_push(_rows, { first: 0, last: _np });
+    }
+    // Rows stack UPWARD from the caller's y (bottom row = y).
+    var _lh_row = string_height("Ag") + 4;
+    for (var _ri = 0; _ri < array_length(_rows); _ri++) {
+        var _rw = _rows[_ri];
+        var _ry = y - (array_length(_rows) - 1 - _ri) * _lh_row;
+        var _rt = 0;
+        for (var _p = _rw.first; _p < _rw.last; _p++) _rt += string_width(_parts[_p].key) + string_width(_parts[_p].lab);
+        _rt += _gap * max(0, (_rw.last - _rw.first) - 1);
+        var _x = cx - _rt / 2;
+        for (var _p = _rw.first; _p < _rw.last; _p++) {
+            var _pt = _parts[_p];
+            if (_pt.key != "") {
+                draw_set_color(_key_col);
+                draw_text_outline(_x, _ry, _pt.key);
+                _x += string_width(_pt.key);
+            }
+            draw_set_color(label_col);
+            draw_text(_x, _ry, _pt.lab);
+            _x += string_width(_pt.lab) + _gap;
+        }
     }
 }
 
@@ -2341,7 +2371,11 @@ function ui_draw_bairc_capstone() {
     draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
     draw_set_alpha(1.0);
 
-    var _px1 = 460, _py1 = 250, _px2 = 1460, _py2 = 830;
+    // 08-16 (M shot "pet capstone overruns its boxes"): panel widened 1000 ->
+    // 1280 so four cards get ~270px of wrap width, and the card height is
+    // MEASURED from the longest description below (was a fixed 300px box the
+    // Executioner text ran straight through, into the footer).
+    var _px1 = 320, _py1 = 230, _px2 = 1600, _py2 = 850;
     draw_set_color(make_color_rgb(16, 18, 22));
     draw_rectangle(_px1, _py1, _px2, _py2, false);
     ui_draw_gothic_frame(_px1, _py1, _px2, _py2, 36);
@@ -2358,9 +2392,19 @@ function ui_draw_bairc_capstone() {
         ? ("The crossing: one permanent touch of ANOTHER archetype - choose well.")
         : ("A permanent " + pet_archetype_name(_pet.archetype) + " capstone - choose well."));
 
-    // Cards.
-    var _cy1 = _py1 + 150, _cy2 = _py2 - 130;
+    // Cards - height measured from the tallest desc, capped above the footer;
+    // if even the cap can't hold it the desc line pitch tightens (never overruns).
+    var _cy1 = _py1 + 150;
     var _gap = 40, _cw = ((_px2 - _px1 - 90) - _gap * (_np - 1)) / _np;
+    var _dlh = 30, _dmax = 0;
+    draw_set_font(ui_font(fnt_ui_small));
+    for (var _mi = 0; _mi < _np; _mi++) _dmax = max(_dmax, string_height_ext(_pool[_mi].desc, _dlh, _cw - 44));
+    var _cy2_cap = _py2 - 76;
+    if (_cy1 + 104 + _dmax + 20 > _cy2_cap) {
+        _dlh = 26; _dmax = 0;
+        for (var _mi = 0; _mi < _np; _mi++) _dmax = max(_dmax, string_height_ext(_pool[_mi].desc, _dlh, _cw - 44));
+    }
+    var _cy2 = min(_cy2_cap, max(_cy1 + 220, _cy1 + 104 + _dmax + 20));
     for (var _i = 0; _i < _np; _i++) {
         var _e   = _pool[_i];
         var _cx1 = _px1 + 45 + _i * (_cw + _gap);
@@ -2382,7 +2426,15 @@ function ui_draw_bairc_capstone() {
         draw_set_color(make_color_rgb(150, 200, 140));
         draw_text(_mid, _cy1 + 64, _e.kind);
         draw_set_color(make_color_rgb(185, 190, 205));
-        draw_text_ext(_mid, _cy1 + 104, _e.desc, 30, _cw - 44);
+        draw_text_ext(_mid, _cy1 + 104, _e.desc, _dlh, _cw - 44);
+        // Touch / mouse (08-16, touch rule - the modal had no tap path): tap a
+        // card to highlight it; tap the highlighted card to open the confirm;
+        // tap it again to lock. Step consumes capstone:pick<i> / capstone:lock.
+        if (touch_tapped(_cx1, _cy1, _cx2, _cy2)) {
+            if (_gc.bairc_capstone_confirm && _hot)      input_inject("capstone:lock");
+            else if (_hot)                               input_inject("capstone:confirm");
+            else                                         input_inject("capstone:pick" + string(_i));
+        }
     }
 
     // Footer hint or confirm bar.
@@ -2390,11 +2442,14 @@ function ui_draw_bairc_capstone() {
     draw_set_font(ui_font(fnt_ui_small));
     if (_gc.bairc_capstone_confirm) {
         draw_set_color(make_color_rgb(235, 205, 120));
-        draw_text((_px1 + _px2) / 2, _py2 - 34,
-            "Lock in " + _pool[_sel].name + "?   Enter = Yes    Esc = No");
+        draw_text((_px1 + _px2) / 2, _py2 - 34, (input_device() == 2)
+            ? ("Lock in " + _pool[_sel].name + "?   Tap it again = Yes    Back = No")
+            : ("Lock in " + _pool[_sel].name + "?   Enter = Yes    Esc = No"));
     } else {
         draw_set_color(make_color_rgb(155, 160, 180));
-        draw_text((_px1 + _px2) / 2, _py2 - 34, "A / D  select      Enter  choose      Esc  cancel");
+        draw_text((_px1 + _px2) / 2, _py2 - 34, (input_device() == 2)
+            ? "Tap a gift to highlight it  -  tap it again to choose"
+            : "A / D  select      Enter  choose      Esc  cancel");
     }
 
     draw_set_halign(fa_left); draw_set_valign(fa_top);
@@ -4436,7 +4491,7 @@ function ui_draw_bairc_screen() {
             draw_set_halign(fa_right);
             draw_set_font(ui_font(fnt_ui_small));
             draw_set_color(make_color_rgb(120, 230, 150));
-            draw_text(_list_x + _list_w - 12, _ry + 46, "ACTIVE");
+            draw_text(_list_x + _list_w - 12, _ry + 40, "ACTIVE");   // same baseline as line 2 (was +46: read as a third, staggered line)
             draw_set_halign(fa_left);
         }
 
@@ -5043,7 +5098,9 @@ function ui_draw_bairc_screen() {
     if (variable_instance_exists(_gc, "bairc_notification") && _gc.bairc_notification != "") {
         draw_set_font(ui_font(fnt_ui));
         draw_set_color(c_yellow);
-        draw_text(_x1 + _pad, _y2 - 96, _gc.bairc_notification);
+        // Sits above the (now 2-row) key legend: legend rows are y2-42 and
+        // ~y2-70, so the notification bottom must clear y2-74 (measured).
+        draw_text(_x1 + _pad, _y2 - 78 - string_height("Ag"), _gc.bairc_notification);
     }
     draw_set_halign(fa_center);
     draw_set_font(ui_font(fnt_ui_small));
@@ -5067,7 +5124,7 @@ function ui_draw_bairc_screen() {
         }
         _bfoot += "  [F] Gift Bairc  [N] Name  [C] Cure  [R] Donate  [Tab] Details  [Enter] Hatch/Active  [Esc] Leave";
     }
-    ui_draw_key_legend((_x1 + 1500) / 2, _y2 - 42, _bfoot, undefined, false);
+    ui_draw_key_legend((_x1 + 1500) / 2, _y2 - 42, _bfoot, undefined, false, (1500 - _x1) - 40);   // wraps to 2 rows inside the panel (M 08-16 shot)
     draw_set_halign(fa_left); draw_set_valign(fa_top);
     draw_set_color(c_white);
     draw_set_font(-1);

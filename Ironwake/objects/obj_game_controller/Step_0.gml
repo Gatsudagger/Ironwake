@@ -3440,14 +3440,17 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open && npc_tour_step < 
         if (!bairc_capstone_confirm) {
             if (nav_left())  bairc_capstone_sel = wrap_index(bairc_capstone_sel - 1, _cp_n);
             if (nav_right()) bairc_capstone_sel = wrap_index(bairc_capstone_sel + 1, _cp_n);
+            // Card taps (Draw injects; touch rule 08-16).
+            for (var _cp_t = 0; _cp_t < _cp_n; _cp_t++)
+                if (input_inject_take("capstone:pick" + string(_cp_t))) bairc_capstone_sel = _cp_t;
             bairc_capstone_sel = clamp(bairc_capstone_sel, 0, _cp_n - 1);
-            if (input_confirm() || input_confirm_alt()) {
+            if (input_confirm() || input_confirm_alt() || input_inject_take("capstone:confirm")) {
                 bairc_capstone_confirm = true;
             }
             if (input_cancel()) bairc_capstone_open = false;
         } else {
             // Yes/No confirm - permanent choice.
-            if (input_confirm()) {
+            if (input_confirm() || input_inject_take("capstone:lock")) {
                 var _pick   = _cp_pool[clamp(bairc_capstone_sel, 0, _cp_n - 1)];
                 var _locked = _cp_splash ? pet_splash_choose(_cp_pet, _pick.id) : pet_capstone_choose(_cp_pet, _pick.id);
                 if (_locked) {
