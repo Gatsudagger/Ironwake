@@ -19929,8 +19929,12 @@ function ui_draw_garden_scene() {
     draw_set_font(ui_font_dense(fnt_ui_small));
     draw_set_halign(fa_center); draw_set_valign(fa_top);
     draw_set_color(make_color_rgb(130, 145, 132));
-    draw_text(960, 1035, "A/D or drag: wander        [E] pet        [1] pond    [2] cairn    [3] forage        "
-        + string(_dn) + " resident" + ((_dn == 1) ? "" : "s"));
+    // Device-aware hint (08-18 mobile pass): on touch the letter keys mean nothing -
+    // the verbs are the tappable chips over the pond / cairn / forage spots.
+    var _gh_hint = (input_device() == 2)
+        ? "Drag to wander        Tap a creature to pet        Tap a chip to act        "
+        : "A/D or drag: wander        [E] pet        [1] pond    [2] cairn    [3] forage        ";
+    draw_text(960, 1035, _gh_hint + string(_dn) + " resident" + ((_dn == 1) ? "" : "s"));
     draw_set_halign(fa_left);
     // Position strip: where the camera window sits over the grounds (below the hint row).
     draw_set_color(make_color_rgb(30, 38, 32));

@@ -680,6 +680,10 @@ function touch_action_menu_items() {
         // is a no-op - a dead row).
         if (_npc != "" && affinity_gate_ready(_npc)) array_push(_items, { lbl: "Deepen Bond", key: ord("B") });
         array_push(_items, { lbl: "Give a Gift", key: ord("F") });
+        // 08-18 mobile pass: STATION RANK from inside the NPC screen ([U] / pad L3, gc
+        // Step) had no touch path. Offered only while a rank-up is actually available
+        // (unlocked + below top rank) so the row is never dead.
+        if (_npc != "" && npc_rank(_npc) < 2) array_push(_items, { lbl: "Station Rank", key: ord("U") });
         // Dorn (shop_open 1) honors Reforge Chits on R.
         if (_gc.shop_open == 1) array_push(_items, { lbl: "Reforge (Ingot)", key: ord("R") });
         // Petra's Treasure Trader (tab 2) with an in-progress order: C cancels
@@ -699,6 +703,7 @@ function touch_action_menu_items() {
          || (variable_instance_exists(_gc, "hatch_active")         && _gc.hatch_active)) return _items;
         if (affinity_gate_ready("bairc")) array_push(_items, { lbl: "Deepen Bond", key: ord("B") });
         array_push(_items, { lbl: "Give a Gift", key: ord("F") });
+        if (npc_rank("bairc") < 2) array_push(_items, { lbl: "Station Rank", key: ord("U") });
     }
     return _items;
 }

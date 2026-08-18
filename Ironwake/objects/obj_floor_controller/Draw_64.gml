@@ -1708,17 +1708,11 @@ if (instance_exists(obj_game_controller)) {
     }
 }
 
-// Touch (8d): action-chip bar, then the Back/menu chip + key pump - always LAST (topmost).
-ui_draw_touch_chips();
-ui_draw_touch_back();
-ui_draw_touch_gamepad();   // on-screen d-pad in the left gutter (M 07-17)
-
-// Reset the HP-hit shake translate so objects drawing after us are unshaken.
-matrix_set(matrix_world, matrix_build_identity());
-
-
 // =============================================================================
-// MERCHANT'S GHOST SHOP overlay (M-locked 08-15) - drawn dead last, topmost.
+// MERCHANT'S GHOST SHOP overlay (M-locked 08-15) - drawn dead last, topmost
+// (08-18 mobile pass: the touch chip bar / Back chip / d-pad now draw AFTER it -
+// see the tail of this event - so the phone's X-to-leave isn't buried under the
+// blackout and shows the X glyph, not the menu bars).
 // A fanciful spectral stall: every row leads with its icon, names wear their
 // rarity colors, ghost exclusives carry a gold tag. Geometry mirrored by the
 // Step input block (rows y262, pitch 102, height 92 - six rows end at y864,
@@ -1813,3 +1807,14 @@ if (variable_instance_exists(id, "ghost_shop_open") && ghost_shop_open) {
     ui_draw_key_legend(960, 900, "W/S: Choose   Enter/Click: Buy   Esc: Leave the cart");
     draw_set_halign(fa_left);
 }
+
+// Touch (8d): action-chip bar, then the Back/menu chip + key pump - always LAST (topmost).
+// The chip bar hides while the Ghost's cart is up (its Step block owns input, so the
+// JOURNAL/HERO chips would be dead buttons); the Back chip forces the X glyph there.
+var _ghost_up = variable_instance_exists(id, "ghost_shop_open") && ghost_shop_open;
+if (!_ghost_up) ui_draw_touch_chips();
+ui_draw_touch_back(108, _ghost_up);
+ui_draw_touch_gamepad();   // on-screen d-pad in the left gutter (M 07-17)
+
+// Reset the HP-hit shake translate so objects drawing after us are unshaken.
+matrix_set(matrix_world, matrix_build_identity());
