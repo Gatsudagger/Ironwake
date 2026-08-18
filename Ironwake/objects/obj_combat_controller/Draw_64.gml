@@ -544,6 +544,10 @@ var _espr_dx  = -174;   // strong horizontal spread so foes read as a row, not a
 var _espr_dy  = 36;     // gentle slope (was 70 - enemies marched too far down the screen)
 var _espr_zig = 36;     // alternating up/down nudge so the cluster isn't a straight diagonal line
 var _espr_idx = 0;
+// 08-18 (M: "enemy selector gets hidden behind mobs"): the reticle used to draw
+// under its own sprite, so a foe on a NEARER station painted over it. Its spot is
+// remembered here and drawn once AFTER the loop, on top of every enemy.
+var _sel_reticle = undefined;
 
 var _ecnt = array_length(combat_state.combatants);
 for (var _ei = 0; _ei < _ecnt; _ei++) {
@@ -771,11 +775,7 @@ for (var _ei = 0; _ei < _ecnt; _ei++) {
             // 08-16 (M: "the targeting dial doesn't need to scale, it looks
             // awkward" - it shrank to nothing under small-canvas foes): ONE
             // constant size for every target, ~64px on the 128px cursor art.
-            var _cur_sc = 0.50;
-            _cur_sc    *= 1 + 0.06 * sin(current_time / 180);            // gentle breathing pulse
-            var _cur_rot = current_time * 0.05;                          // continuous swirl
-            draw_sprite_ext(spr_target_cursor, 0, _cur_cx, _cur_cy,
-                            _cur_sc, _cur_sc, _cur_rot, c_white, 0.9);
+            _sel_reticle = { x: _cur_cx, y: _cur_cy };   // drawn after the loop (topmost)
         }
 
         // Round 7 (M: "some enemies are facing backwards... like ice specter"):
@@ -801,6 +801,14 @@ for (var _ei = 0; _ei < _ecnt; _ei++) {
         }
     }
     _espr_idx++;
+}
+// Selected-target reticle, OVER every mob (see _sel_reticle above). Same constant
+// size (08-16), breathing pulse + swirl; a touch more transparent now that it can
+// sit on a creature's feet.
+if (is_struct(_sel_reticle)) {
+    var _cur_sc = 0.50 * (1 + 0.06 * sin(current_time / 180));
+    draw_sprite_ext(spr_target_cursor, 0, _sel_reticle.x, _sel_reticle.y,
+                    _cur_sc, _cur_sc, current_time * 0.05, c_white, 0.85);
 }
 
 // 2.5D volumetric props, NEAR pass (round 6): the foreground corner piece,
@@ -2234,6 +2242,7 @@ if (instance_exists(obj_game_controller)) {
                       min(1.0, _gc_tn.trait_notif_timer / 30.0), c_white);
     }
 }
+ui_draw_find_banner();   // FIND banner (pets / eggs / banshee) - topmost, M 08-18
 
 // Touch (8c): universal Back chip + simulated-key pump - always LAST (topmost).
 // Combat keeps the top corner (y24): the enemy-bar grid starts at y96, so the

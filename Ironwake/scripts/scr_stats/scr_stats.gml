@@ -11355,6 +11355,19 @@ function pet_grant_from_source(source, species_override = "") {
     } else {
         array_push(global.run_found_pets, _pet.name);
     }
+    // FIND BANNER (M 08-18): every pet/egg grant announces itself, whatever the source
+    // (boss egg, Warden survivor, shrine/curse altar, event) - the log line alone was
+    // missed ("I have no idea when I got this young adult").
+    if (_pet.is_egg) {
+        var _fb_lbl = pet_egg_label(_pet);
+        find_banner_push("egg", "Mysterious " + ((_fb_lbl != "") ? _fb_lbl : "Egg"),
+            "Something alive waits inside - Bairc can identify and raise it.", pet_sprite(_pet));
+    } else {
+        find_banner_push(_pet.corrupted ? "corrupted" : "pet",
+            _pet.name + "  (" + pet_stage_name(_pet.stage) + ")",
+            (_pet.corrupted ? "It carries a CORRUPTION - Bairc can cure it. " : "It follows you home, already loyal - ")
+            + "Waiting in Bairc's stable.", pet_sprite(_pet));
+    }
     return pet_add(_pet);
 }
 
@@ -11552,6 +11565,13 @@ function pet_grant_altar_egg(source) {
     var _pe = pet_grant_from_source(source);
     if (source == "egg_curse" && !_pe.corrupted && irandom(99) < 40) {
         _pe.corrupted = true; _pe.corruption_state = "pushing";
+        // The FIND banner was queued inside pet_grant_from_source before this flip -
+        // retag the newest queued entry so it announces the corruption.
+        if (variable_global_exists("find_queue") && array_length(global.find_queue) > 0 && !_pe.is_egg) {
+            var _fq = global.find_queue[array_length(global.find_queue) - 1];
+            _fq.kind = "corrupted";
+            _fq.sub  = "It carries a CORRUPTION - Bairc can cure it. Waiting in Bairc's stable.";
+        }
     }
     var _msg;
     if (source == "egg_curse") {
@@ -12704,10 +12724,18 @@ function event_apply_effects(fx) {
     // "egg_curse"). Lands in Bairc's stable; ~15% arrive as a found creature instead.
     if (variable_struct_exists(fx, "pet_egg") && fx.pet_egg != "") {
         var _pe = pet_grant_from_source(fx.pet_egg);
-        array_push(_sum, _pe.is_egg ? (_pe.name + " egg") : ("a living " + _pe.name));
-        global.pet_find_notice = _pe.is_egg
+        // [COMPANION] tag (08-18): the result panel tints + enlarges tagged lines so a
+        // pet find can't hide in the prose (M: "no idea when I got this young adult").
+        array_push(_sum, "[COMPANION] " + (_pe.is_egg
+            ? ("A mysterious egg - " + _pe.name + " - waits at Bairc's")
+            : ("A living " + _pe.name + " (" + pet_stage_name(_pe.stage) + ")"
+               + (_pe.corrupted ? ", CORRUPTED," : "") + " follows you to Bairc's")));
+        var _pe_msg = _pe.is_egg
             ? ("You recovered a " + _pe.name + " egg - visit Bairc.")
             : ("A " + _pe.name + " follows you home - visit Bairc.");
+        // APPEND (08-18): a second find in the same run used to overwrite the first.
+        global.pet_find_notice = (variable_global_exists("pet_find_notice") && global.pet_find_notice != "")
+            ? (global.pet_find_notice + "   " + _pe_msg) : _pe_msg;
         // M 07-28 spectacle: the floor controller fires the sparkle celebration
         // + sting off this one-shot so the find can't slip by unnoticed.
         global.event_pet_found = _pe;
@@ -13695,6 +13723,8 @@ function banshee_chest_try() {
     var _chance = min(12, 6 + floor(pet_active_lck_loot_pts() / 3));
     if (irandom(99) >= _chance) return false;
     global.banshee_carried++;
+    find_banner_push("banshee", "Banshee in a Bottle",
+        "A corked bottle, faintly wailing - Maren can free the song at camp.", asset_get_index("spr_icon_banshee_bottle"));
     return true;
 }
 

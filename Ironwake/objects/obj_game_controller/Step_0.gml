@@ -5,6 +5,7 @@ touch_pinch_update();
 // Touch gesture classifier (8d): updated once per frame, before anything reads
 // taps/drags/long-presses. No-op on non-touch devices.
 touch_gesture_update();
+find_banner_tick();   // FIND banner queue (pets / eggs / banshee bottles) - runs in every room
 
 // IRONMAN resume (SYSTEMS_RUN_RESUME.md): Android is about to suspend the game
 // (phone call, home button - the OS may kill us without another frame) - flush

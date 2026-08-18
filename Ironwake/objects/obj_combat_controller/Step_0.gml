@@ -512,11 +512,13 @@ if (_result == 1) {
         if (_bsr_egg != undefined) {
             var _bsr_lbl = _bsr_egg.is_egg
                 ? ("Mysterious " + (pet_egg_label(_bsr_egg) != "" ? pet_egg_label(_bsr_egg) : "Egg"))
-                : ("A living " + _bsr_egg.name);
+                : ("A living " + _bsr_egg.name + " (" + pet_stage_name(_bsr_egg.stage) + ")" + (_bsr_egg.corrupted ? " - CORRUPTED" : ""));
             array_push(combat_log, "Among the remains: " + _bsr_lbl + "! Bairc can raise it.");
-            global.pet_find_notice = _bsr_egg.is_egg
+            var _bsr_msg = _bsr_egg.is_egg
                 ? ("You recovered a " + (pet_egg_label(_bsr_egg) != "" ? pet_egg_label(_bsr_egg) : "mysterious egg") + " - visit Bairc.")
                 : ("A " + _bsr_egg.name + " follows you home - visit Bairc.");
+            global.pet_find_notice = (variable_global_exists("pet_find_notice") && global.pet_find_notice != "")
+                ? (global.pet_find_notice + "   " + _bsr_msg) : _bsr_msg;   // append, don't overwrite (08-18)
             array_push(loot_special_rows, { kind: "pet", pet: _bsr_egg, label: _bsr_lbl,
                 sub: _bsr_egg.is_egg ? "Something alive waits inside - Bairc can raise it."
                                      : "It pads after you, already loyal - Bairc will see to it.",
@@ -540,6 +542,8 @@ if (_result == 1) {
                 variable_struct_set(global.banshee_boss_drops, _bsr_dung, true);
                 global.banshee_carried++;
                 array_push(combat_log, "Among the remains: a corked bottle, faintly wailing. A Banshee in a Bottle!");
+                find_banner_push("banshee", "Banshee in a Bottle",
+                    "A corked bottle, faintly wailing - Maren can free the song at camp.", asset_get_index("spr_icon_banshee_bottle"));
                 array_push(loot_special_rows, { kind: "banshee", label: "Banshee in a Bottle",
                     sub: "A corked bottle, faintly wailing - Maren can free the song at camp.", tag: "[SONG]" });
             }

@@ -1230,10 +1230,20 @@ if (showing_event_choice && event_active != undefined) {
             }
             if (string_pos("[Rune]", _rl_line) > 0) _rl_col = make_color_rgb(190, 120, 220);
             if (string_pos("BOON:", _rl_line) > 0)  _rl_col = make_color_rgb(255, 205, 110);
+            // 08-18 (M: "text paragraphs have no color coded language ... spam-clickers
+            // must still see something important transpired"): pet and song finds carry
+            // tags and their own colors, and EVERY tagged loot/find line draws in the
+            // larger font; plain prose keeps the grey body font.
+            if (string_pos("[COMPANION]", _rl_line) > 0) _rl_col = (string_pos("CORRUPTED", _rl_line) > 0) ? make_color_rgb(205, 145, 245) : make_color_rgb(150, 230, 170);
+            if (string_pos("[SONG]", _rl_line) > 0)      _rl_col = make_color_rgb(140, 220, 235);
+            var _rl_special = (_rl_col != make_color_rgb(215, 220, 235));
+            var _rl_big = asset_get_index("fnt_ui_lg");
+            draw_set_font((_rl_special && _rl_big >= 0) ? _rl_big : ui_font(fnt_ui));
             draw_set_color(_rl_col);
             draw_text_ext(GUI_CX, _rl_y, _rl_line, -1, _rl_w);
-            _rl_y += max(string_height_ext(_rl_line, -1, _rl_w), string_height("Ag"));
+            _rl_y += max(string_height_ext(_rl_line, -1, _rl_w), string_height("Ag")) + (_rl_special ? 4 : 0);
         }
+        draw_set_font(ui_font(fnt_ui));
 
         // Coin burst: shared draw-side sim (ui_draw_coin_burst, #19 polish -
         // also runs on the treasure popup). Pile floor sits on the panel.
@@ -1707,6 +1717,7 @@ if (instance_exists(obj_game_controller)) {
                       min(1.0, _gc_tn.trait_notif_timer / 30.0), c_white);
     }
 }
+ui_draw_find_banner();   // FIND banner (pets / eggs / banshee) - topmost, M 08-18
 
 // =============================================================================
 // MERCHANT'S GHOST SHOP overlay (M-locked 08-15) - drawn dead last, topmost

@@ -10732,6 +10732,85 @@ function ui_draw_toast(_msg, _cx, _ytop, _alpha = 1.0, _txt_col = undefined) {
     draw_set_alpha(1.0);
 }
 
+// =============================================================================
+// FIND BANNER (M 08-18: "I have no idea when I got this pet ... whenever a pet,
+// banshee bottle, or egg is found there should always be a popup"). A queued,
+// topmost, boxed announcement - big colored name + icon - that every grant path
+// pushes (pet_grant_from_source, banshee grants), ticked in gc Step (runs in every
+// room), drawn LAST by each room controller's Draw GUI right after the trait toast.
+// Non-blocking by design (no input stall risk before launch): 6.5s each, queued.
+// =============================================================================
+function find_banner_push(_kind, _name, _sub, _spr = -1) {
+    if (!variable_global_exists("find_queue")) global.find_queue = [];
+    array_push(global.find_queue, { kind: _kind, name: _name, sub: _sub, spr: _spr, t: -1 });
+}
+function find_banner_tick() {
+    if (!variable_global_exists("find_queue") || array_length(global.find_queue) == 0) return;
+    var _b = global.find_queue[0];
+    if (_b.t < 0) {
+        _b.t = 390;
+        var _sting = (_b.kind == "banshee") ? snd_loot_unique : ((_b.kind == "egg") ? snd_egg_stir : snd_loot_legendary);
+        if (audio_exists(_sting)) audio_play_sound(_sting, 1, false);
+    }
+    _b.t--;
+    if (_b.t <= 0) array_delete(global.find_queue, 0, 1);
+}
+function find_banner_up() {
+    return variable_global_exists("find_queue") && array_length(global.find_queue) > 0 && global.find_queue[0].t >= 0;
+}
+function ui_draw_find_banner() {
+    if (!find_banner_up()) return;
+    var _b  = global.find_queue[0];
+    var _a  = min(1, _b.t / 30, (390 - _b.t + 1) / 8);   // fade in fast, out over the last 0.5s
+    var _kc = make_color_rgb(150, 230, 170);               // pet found alive
+    if (_b.kind == "egg")       _kc = make_color_rgb(255, 215, 120);
+    if (_b.kind == "banshee")   _kc = make_color_rgb(140, 220, 235);
+    if (_b.kind == "corrupted") _kc = make_color_rgb(205, 145, 245);
+    draw_set_font(fnt_ui_title);
+    var _nw = string_width(_b.name);
+    draw_set_font(ui_font(fnt_ui_small));
+    var _sw = string_width(_b.sub);
+    var _icon = 96, _padx = 28;
+    var _w  = max(_nw, _sw, 300) + _icon + _padx * 3;
+    var _h  = 156;
+    var _x0 = GUI_CX - _w / 2, _y0 = 200;
+    var _pulse = 0.5 + 0.5 * sin(current_time / 160);
+    draw_set_alpha(0.94 * _a);
+    draw_set_color(make_color_rgb(14, 14, 24));
+    draw_rectangle(_x0, _y0, _x0 + _w, _y0 + _h, false);
+    draw_set_alpha(_a);
+    draw_set_color(merge_color(make_color_rgb(200, 165, 80), c_white, 0.25 * _pulse));
+    draw_rectangle(_x0, _y0, _x0 + _w, _y0 + _h, true);
+    draw_rectangle(_x0 + 4, _y0 + 4, _x0 + _w - 4, _y0 + _h - 4, true);
+    // Icon box (origin-aware centering; pet art is often feet-anchored).
+    var _ix = _x0 + _padx, _iy = _y0 + (_h - _icon) / 2;
+    draw_set_alpha(0.6 * _a); draw_set_color(make_color_rgb(30, 28, 44));
+    draw_rectangle(_ix, _iy, _ix + _icon, _iy + _icon, false);
+    draw_set_alpha(_a);
+    if (_b.spr >= 0 && sprite_exists(_b.spr)) {
+        var _sw2 = sprite_get_width(_b.spr), _sh2 = sprite_get_height(_b.spr);
+        var _sc  = (_icon - 8) / max(1, max(_sw2, _sh2));
+        var _fr  = (sprite_get_number(_b.spr) > 1) ? ((current_time div 120) mod sprite_get_number(_b.spr)) : 0;
+        draw_sprite_ext(_b.spr, _fr,
+            _ix + (_icon - _sw2 * _sc) / 2 + sprite_get_xoffset(_b.spr) * _sc,
+            _iy + (_icon - _sh2 * _sc) / 2 + sprite_get_yoffset(_b.spr) * _sc,
+            _sc, _sc, 0, c_white, _a);
+    }
+    var _tx = _ix + _icon + _padx;
+    draw_set_halign(fa_left); draw_set_valign(fa_top);
+    draw_set_font(ui_font(fnt_ui_small));
+    draw_set_color(make_color_rgb(235, 200, 120));
+    draw_text(_tx, _y0 + 18, (_b.kind == "banshee") ? "Y O U ' V E   F O U N D   A   S O N G" : "Y O U ' V E   F O U N D");
+    draw_set_font(fnt_ui_title);
+    draw_set_color(_kc);
+    draw_text(_tx, _y0 + 46, _b.name);
+    draw_set_font(ui_font(fnt_ui_small));
+    draw_set_color(make_color_rgb(200, 205, 215));
+    draw_text(_tx, _y0 + 112, _b.sub);
+    draw_set_halign(fa_left); draw_set_valign(fa_top);
+    draw_set_color(c_white); draw_set_alpha(1.0);
+}
+
 function ui_draw_character_menu() {
     if (!instance_exists(obj_game_controller)) return;
     var _gc = instance_find(obj_game_controller, 0);
@@ -11043,8 +11122,11 @@ function ui_draw_character_menu() {
             draw_text(_pad, _content_y + 651, "Phys reduction:  " + string(_derived.phys_dmg_reduction) + "%");
             // M 08-15: Elemental Resist had NO row here despite gear/runes
             // granting it - Defense now states the total plainly.
+            // 08-18 (M shot "text collision on status page"): the row sat on the crit
+            // column at +615 - the same y as Accuracy. It lives in the Defense column
+            // now, under Armor (+759 - the last free row above the Gold band).
             var _elr_tot = 1 + apply_equipment_stats({}).el_resist;
-            draw_text(_crit_x, _content_y + 615, "Elem. Resist:    " + string(_elr_tot)
+            draw_text(_pad, _content_y + 759, "Elem. Resist:    " + string(_elr_tot)
                 + "  (" + string(round(100 * min(0.60, _elr_tot / (_elr_tot + 15)))) + "% off elemental hits)");
             draw_text(_pad, _content_y + 687, "Base HP:         " + string(_derived.HP) + "  (+" + string(apply_equipment_stats({}).bonus_max_hp) + " gear)");
             // #18: flat Armor from gear, with a hover explainer (it had no row here -

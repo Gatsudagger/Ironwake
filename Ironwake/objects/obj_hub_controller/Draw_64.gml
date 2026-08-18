@@ -2989,6 +2989,7 @@ if (instance_exists(obj_game_controller)) {
                       min(1.0, _gc_toast.trait_notif_timer / 30.0), c_white);
     }
 }
+ui_draw_find_banner();   // FIND banner (pets / eggs / banshee) - topmost, M 08-18
 
 // Tier-up heart VFX (blue Acquaintance..Companion, red Lover) for hub-list deepens.
 // Only when no NPC screen is open - an open screen draws its own hearts via the actor
