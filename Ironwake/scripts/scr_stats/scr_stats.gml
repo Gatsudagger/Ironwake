@@ -1887,6 +1887,18 @@ function item_merge_dup_affixes(item) {
         item.unique_effect = "class_spell_dmg_lesser";
         item.unique_desc   = "Spells deal +5% damage";
     }
+    // 08-18: Shadow Sickle +8% -> +2% crit, Gravelstone Sword 10% -> 5% lifesteal (uncommon
+    // class items); saved copies still carry the forge-strength ids + text.
+    if (is_struct(item) && variable_struct_exists(item, "unique_effect") && variable_struct_exists(item, "base_name")) {
+        if (item.unique_effect == "class_crit" && item.base_name == "Shadow Sickle") {
+            item.unique_effect = "class_crit_lesser";
+            item.unique_desc   = "+2% critical hit chance";
+        }
+        if (item.unique_effect == "class_lifesteal" && item.base_name == "Gravelstone Sword") {
+            item.unique_effect = "class_lifesteal_lesser";
+            item.unique_desc   = "Heal 5% of the melee damage you deal";
+        }
+    }
     if (!is_struct(item) || !variable_struct_exists(item, "affixes") || !is_array(item.affixes)) return;
     var _out = [];
     for (var _mi = 0; _mi < array_length(item.affixes); _mi++) {

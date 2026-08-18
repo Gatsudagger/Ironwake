@@ -637,9 +637,12 @@ var _uw_gravel  = create_item("Gravelstone Sword", "weapon", 1, "STR", 4, "dense
 var _uw_wand    = create_item("Vaultstone Wand",   "ranged_weapon", 1, "INT", 4, "inscribed with vault runes", 38);
 var _uw_sickle  = create_item("Shadow Sickle",     "weapon", 1, "DEX", 4, "curved blade of the striders",  36);
 _uw_gravel.class_req = 1;  _uw_wand.class_req = 0;  _uw_sickle.class_req = 2;
-_uw_gravel.unique_effect = "class_lifesteal";    _uw_gravel.unique_desc = "Heal 10% of the melee damage you deal";
+// 08-18 (M: "class items for other classes need nerfs ... +8% crit is way overpowered,
+// 2% for an uncommon"): the UNCOMMON class weapons ride "_lesser" channels; the forge
+// exclusives (Thirsting Edge 10% / Killer's Eye +8) keep the full versions.
+_uw_gravel.unique_effect = "class_lifesteal_lesser"; _uw_gravel.unique_desc = "Heal 5% of the melee damage you deal";   // 10 -> 5
 _uw_wand.unique_effect   = "class_spell_dmg_lesser"; _uw_wand.unique_desc = "Spells deal +5% damage";   // 12 -> 5 (M 08-16: an uncommon +12% outperformed epics)
-_uw_sickle.unique_effect = "class_crit";         _uw_sickle.unique_desc = "+8% critical hit chance";
+_uw_sickle.unique_effect = "class_crit_lesser";      _uw_sickle.unique_desc = "+2% critical hit chance";   // 8 -> 2 (M 08-18)
 
 // --- RARE WEAPONS ---
 var _rw_ash    = create_item("Ashkeeper Blade",  "weapon", 2, "STR", 6, "forged in ashwalker tradition",  80);

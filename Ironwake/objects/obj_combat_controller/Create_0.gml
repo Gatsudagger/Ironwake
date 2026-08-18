@@ -413,8 +413,10 @@ for (var _li = 0; _li < array_length(global.inventory); _li++) {
     if (_lit.unique_effect == "class_spell_dmg_lesser") player.spell_dmg_bonus   = 0.05;   // Vaultstone Wand (uncommon), M 08-16 nerf 12 -> 5
     if (_lit.unique_effect == "class_spell_crit_ap")  player.spell_crit_ap       = true;
     if (_lit.unique_effect == "class_lifesteal")      player.weapon_lifesteal    = 0.10;
+    if (_lit.unique_effect == "class_lifesteal_lesser") player.weapon_lifesteal  = 0.05;   // Gravelstone Sword (uncommon), 08-18
     if (_lit.unique_effect == "class_start_shield")   player.weapon_start_shield = 12;
     if (_lit.unique_effect == "class_crit")           player.weapon_crit_bonus   = 8;
+    if (_lit.unique_effect == "class_crit_lesser")    player.weapon_crit_bonus   = 2;      // Shadow Sickle (uncommon), M 08-18: 8 -> 2
     if (_lit.unique_effect == "class_kill_ap")        player.kill_ap_refund      = true;
 }
 

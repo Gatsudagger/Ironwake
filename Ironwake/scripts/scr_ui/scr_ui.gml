@@ -6384,6 +6384,38 @@ function ui_draw_status_fx(cx, top_y, draw_h, status_effects) {
             continue;
         }
 
+        // ROOT (M 08-18: "the ice cube only makes sense for an ice root - a Bear Trap
+        // should be the trap closed around the base of the model"): a root set by a
+        // TRAP draws that trap's own prop, clamped shut at the feet (name == the trap,
+        // as the trigger block stamps it); frost roots keep the ice-lock; every other
+        // root (Gravewrack Grip, the void roll, enemy holds) wears the lock tinted
+        // stone-grey so it never reads as ice.
+        var _root_trap = -1, _root_tint = c_white;
+        if (_kind_fx == "root") {
+            var _rt_nm = string_lower(variable_struct_exists(_se, "name") ? _se.name : "");
+            var _rt_el = combat_status_element(_se);
+            if (string_pos("trap", _rt_nm) > 0 || string_pos("snare", _rt_nm) > 0 || string_pos("tripline", _rt_nm) > 0 || string_pos("caltrop", _rt_nm) > 0) {
+                _root_trap = trap_prop_sprite(variable_struct_exists(_se, "name") ? _se.name : "");
+                if (_root_trap < 0) _root_trap = asset_get_index("spr_trap_prop_bear");
+            } else if (!(_rt_el == "frost" || string_pos("frost", _rt_nm) > 0 || string_pos("ice", _rt_nm) > 0 || string_pos("rime", _rt_nm) > 0
+                         || string_pos("hoar", _rt_nm) > 0 || string_pos("glacial", _rt_nm) > 0 || string_pos("freez", _rt_nm) > 0 || string_pos("chill", _rt_nm) > 0)) {
+                _root_tint = make_color_rgb(150, 150, 140);   // stone grip, not ice
+            }
+        }
+        if (_root_trap >= 0) {
+            var _dup_t = false;
+            for (var _d = 0; _d < array_length(_drawn); _d++) if (_drawn[_d] == "#roottrap") { _dup_t = true; break; }
+            if (_dup_t) continue;
+            array_push(_drawn, "#roottrap");
+            // Prop art is 64px side-on; clamp it across the feet at ~half the body width,
+            // a tiny bite-pulse so it reads as SHUT on the leg, not lying on the floor.
+            var _tp_sc = max(1.0, (draw_h * 0.42) / 64) * (1 + 0.03 * sin(current_time / 140));
+            var _tp_w  = sprite_get_width(_root_trap) * _tp_sc, _tp_h = sprite_get_height(_root_trap) * _tp_sc;
+            // Squashed a little (0.72) so the jaws read as CLAMPED round the leg rather than lying open.
+            draw_sprite_ext(_root_trap, 0, cx - _tp_w * 0.5, top_y + draw_h - _tp_h * 0.72 * 0.95, _tp_sc, _tp_sc * 0.72, 0, c_white, 0.95);
+            continue;
+        }
+
         var _spr = status_fx_sprite_for(_se);
         if (_spr == -1) continue;
         // Shock (no dedicated art yet) reuses the stun sprite but with its OWN
@@ -6398,7 +6430,7 @@ function ui_draw_status_fx(cx, top_y, draw_h, status_effects) {
         // should have its own... if multiple are on the same target their vfx
         // just stack") - so WKN / VUL / MORT / ROOT read as different marks,
         // same-kind repeats still collapse to one draw.
-        var _fx_tint = c_white;   // 08-18: the new debuff loops are pre-coloured (no heavy tint)
+        var _fx_tint = _root_tint;   // 08-18: the new debuff loops are pre-coloured (no heavy tint); non-ice roots tint the lock grey
         var _dd_kind = "";
         switch (_kind_fx) {
             case "weaken":     _dd_kind = "#wkn";  break;
