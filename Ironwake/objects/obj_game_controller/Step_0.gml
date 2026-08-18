@@ -1095,8 +1095,8 @@ if (journal_open) {
     }
     // Six tabs since 2026-08-06: Relationships / Quests / Compendium /
     // Item Codex / Bestiary / Creatures. Q back, E forward.
-    if (input_tab_next()) { journal_tab = (journal_tab + 1) mod 7; journal_cursor = 0; }
-    if (input_tab_prev()) { journal_tab = (journal_tab + 6) mod 7; journal_cursor = 0; }
+    if (input_tab_next() || touch_dpad_tab_next()) { journal_tab = (journal_tab + 1) mod 7; journal_cursor = 0; }
+    if (input_tab_prev() || touch_dpad_tab_prev()) { journal_tab = (journal_tab + 6) mod 7; journal_cursor = 0; }
     if (journal_tab == 6) {
         // BLUEPRINTS (M 08-13): the Pattern Book as a read-only Journal tab -
         // Dorn's [B] overlay stays the working shortcut, this is the reference
@@ -1134,7 +1134,8 @@ if (journal_open) {
             // adult / adult / awakened), skipping ones not yet revealed. The
             // draw side clamps DOWN to the highest revealed, so the default 3
             // always lands on the best form you have seen.
-            if (nav_left() || nav_right()) {
+            // (touch: LEFT/RIGHT switch journal tabs instead - the form chips are tap targets)
+            if ((nav_left() || nav_right()) && input_device() != 2) {
                 var _jf_id     = _jk_cat[clamp(journal_cursor, 0, _jk_n - 1)].id;
                 var _jf_max    = compendium_stage_max(_jf_id);
                 var _jf_stages = [PET_STAGE_BABY, PET_STAGE_YOUNGADULT, PET_STAGE_ADULT, PET_STAGE_AWAKENED];
@@ -1613,13 +1614,13 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()
     // the [R] jump are locked out until it resolves (the roll may already be paid for).
     var _rf_modal = variable_instance_exists(id, "reforge_stage") && reforge_stage > 0;
     var _shop_ntabs = shop_tab_count(shop_open);
-    if (input_tab_next() && !_rf_modal) {
+    if ((input_tab_next() || touch_dpad_tab_next()) && !_rf_modal) {
         shop_tab = (shop_tab + 1) mod _shop_ntabs;
         sell_index = 0; sell_scroll = 0; buy_scroll = 0; sell_confirm_name = ""; shop_notification = "";
         reforge_index = 0; reforge_scroll = 0;
         petra_trade_confirm = false; petra_trade_selected = []; petra_trade_notification = "";
     }
-    if (input_tab_prev() && !_rf_modal) {
+    if ((input_tab_prev() || touch_dpad_tab_prev()) && !_rf_modal) {
         shop_tab = (shop_tab + _shop_ntabs - 1) mod _shop_ntabs;
         sell_index = 0; sell_scroll = 0; buy_scroll = 0; sell_confirm_name = ""; shop_notification = "";
         reforge_index = 0; reforge_scroll = 0;
@@ -3140,11 +3141,11 @@ if (trainer_open && !menu_open && !forge_result_up()
 
     // Q/E - switch section tabs (5 tabs: Stats | Trait Slots | Abilities | Traits |
     // Potency). REWEAVE moved to Vael the Aesthete (M 07-28 - the term fits her).
-    if (input_tab_prev()) {
+    if (input_tab_prev() || touch_dpad_tab_prev()) {
         trainer_tab = (trainer_tab - 1 + 5) mod 5;
         trainer_cursor = 0; trainer_confirm = false; trainer_notification = "";
     }
-    if (input_tab_next()) {
+    if (input_tab_next() || touch_dpad_tab_next()) {
         trainer_tab = (trainer_tab + 1) mod 5;
         trainer_cursor = 0; trainer_confirm = false; trainer_notification = "";
     }

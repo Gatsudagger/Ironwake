@@ -127,6 +127,13 @@ function input_tab_next() {
     return pad_pressed(gp_shoulderr);                 // RB
 }
 
+// TOUCH D-PAD <-> TABS (M 08-18: "the d-pad should freely scroll across tabs"): the
+// on-screen pad only has four arrows + OK, so on a TOUCH device LEFT/RIGHT double as
+// Q/E on tabbed screens whose rows don't use lateral movement (Petra/Dorn, Vex, the
+// Journal). Keyboard/pad behaviour is untouched (they have real Q/E and shoulders).
+function touch_dpad_tab_next() { return input_device() == 2 && keyboard_check_pressed(vk_right); }
+function touch_dpad_tab_prev() { return input_device() == 2 && keyboard_check_pressed(vk_left); }
+
 function input_tab_prev() {
     if (keyboard_check_pressed(ord("Q"))) { global.input_last_device = 0; return true; }
     return pad_pressed(gp_shoulderl);                 // LB
@@ -480,7 +487,7 @@ function touch_gesture_update() {
     if (!variable_global_exists("tg")) {
         global.tg = { held: false, ox: 0, oy: 0, px: 0, py: 0, dx: 0, dy: 0,
                       drag: false, t0: 0, tap: false, tapx: 0, tapy: 0,
-                      lp: false, lp_done: false, axis: "", sw_done: false };
+                      lp: false, lp_done: false, axis: "", sw_done: false, on_pad: false };
     }
     var _g = global.tg;
     _g.tap = false;
@@ -503,11 +510,17 @@ function touch_gesture_update() {
         _g.ox = _mx;  _g.oy = _my;  _g.px = _mx;  _g.py = _my;
         _g.t0 = current_time;
         global.touch_drag_acc = 0;
+        // 08-18 (M: "the d-pad registers as me clicking outside the popup"): a press that
+        // STARTS on the on-screen pad belongs to the pad. It never becomes a tap /
+        // long-press / drag for anyone else, so pad presses can't dismiss menus, retarget,
+        // or scroll lists behind them.
+        _g.on_pad = touch_over_pad(_mx, _my);
+        if (_g.on_pad) _g.lp_done = true;   // no long-press from the pad
     } else if (_g.held && mouse_check_button(mb_left)) {
         _g.dx = _mx - _g.px;
         _g.dy = _my - _g.py;
         _g.px = _mx;  _g.py = _my;
-        if (!_g.drag && point_distance(_g.ox, _g.oy, _mx, _my) > 27) {
+        if (!_g.drag && !_g.on_pad && point_distance(_g.ox, _g.oy, _mx, _my) > 27) {
             _g.drag = true;
             // Dominant axis at classification time: a horizontal drag is a tab
             // swipe candidate and must NOT feed vertical row-scroll (and vice
@@ -520,7 +533,7 @@ function touch_gesture_update() {
         }
     } else if (_g.held) {   // released this frame
         _g.held = false;
-        if (!_g.drag && !_g.lp_done && current_time - _g.t0 < 450) {
+        if (!_g.drag && !_g.lp_done && !_g.on_pad && current_time - _g.t0 < 450) {
             _g.tap  = true;
             _g.tapx = _mx;
             _g.tapy = _my;
