@@ -4916,7 +4916,7 @@ function ui_draw_bairc_screen() {
             draw_set_color(make_color_rgb(205, 120, 225));
             draw_text(_dx, _by + 2, "Corrupting " + string(pet_corr_runs(_p)) + "/3  -  costs you -20% max HP, -10% dmg.");
             draw_set_color(make_color_rgb(150, 210, 150));
-            draw_text(_dx, _by + 32, "[C] Cure now (keep +" + string(pet_corr_runs(_p) * 15) + "%, forfeit grand power)");
+            draw_text(_dx, _by + 32, ui_hint("[C] Cure now", "Tap it, then Cure Corruption") + " (keep +" + string(pet_corr_runs(_p) * 15) + "%, forfeit grand power)");
             _by += 66;
         } else if (_cst == "fulfilled") {
             draw_set_color(make_color_rgb(210, 120, 230));
@@ -4956,7 +4956,7 @@ function ui_draw_bairc_screen() {
         if (_p.is_egg) {
             draw_set_font(ui_font_dense(fnt_ui_small));
             draw_set_color(make_color_rgb(120, 210, 150));
-            draw_text(_dx, _after, "[Enter] Hatch this egg");
+            draw_text(_dx, _after, ui_hint("[Enter] Hatch this egg", "Tap the egg to hatch it"));
             _after += 36;
         }
 
@@ -4965,12 +4965,12 @@ function ui_draw_bairc_screen() {
         if (pet_capstone_can_pick(_p)) {
             draw_set_font(ui_font_dense(fnt_ui));
             draw_set_color(make_color_rgb(235, 205, 120));
-            draw_text(_dx, _after, "[G] Choose its Capstone  -  a permanent gift awaits");
+            draw_text(_dx, _after, ui_hint("[G] Choose its Capstone", "Tap it, then Choose Its Gift") + "  -  a permanent gift awaits");
             _after += 44;
         } else if (pet_splash_can_pick(_p)) {
             draw_set_font(ui_font_dense(fnt_ui));
             draw_set_color(make_color_rgb(235, 205, 120));
-            draw_text(_dx, _after, "[G] Choose its Splash  -  the Awakened crossing awaits");
+            draw_text(_dx, _after, ui_hint("[G] Choose its Splash", "Tap it, then Choose Its Gift") + "  -  the Awakened crossing awaits");
             _after += 44;
         }
 
@@ -5095,7 +5095,7 @@ function ui_draw_bairc_screen() {
                 draw_set_font(ui_font_dense(fnt_ui_small));
                 draw_set_color(make_color_rgb(150, 160, 140));
                 var _fp_after = array_length(_owned) - (_fp_off + _fmax);
-                draw_text(_dx, _rows_y + _fmax * 54 + 4, "[A]/[D] page " + string(_fpage + 1) + "/" + string(_fp_total)
+                draw_text(_dx, _rows_y + _fmax * 54 + 4, ui_hint("[A]/[D] page ", "Page ") + string(_fpage + 1) + "/" + string(_fp_total)
                     + (_fp_after > 0 ? ("  -  " + string(_fp_after) + " more in the pouch") : ""));
                 // Vertical scroll bar (M 07-27 standing rule: overflowing lists get a
                 // visible scroll indicator, not just a "+N more" line). Track spans the
@@ -5203,7 +5203,7 @@ function ui_draw_bairc_screen() {
             : "It stays in his garden for good - cared for, visible, but no longer yours to raise.",
             34, (_rmx2 - _rmx1) - 120);
         draw_set_font(ui_font_dense(fnt_ui_small)); draw_set_color(make_color_rgb(150, 160, 190));
-        draw_text(GUI_CX, _rmy2 - 48, "[Enter] Donate     [Esc] Keep");
+        draw_text(GUI_CX, _rmy2 - 48, ui_hint("[Enter] Donate     [Esc] Keep", "OK: Donate     X: Keep"));
         draw_set_halign(fa_left); draw_set_valign(fa_top); draw_set_color(c_white); draw_set_font(-1);
     }
 
@@ -9179,6 +9179,23 @@ function ui_draw_tutorial_tip() {
 // box: 30px rows, bars, chips). The LARGE accessibility size cannot fit those
 // pitches (M 08-18 shot: rows and bars overlapping), so dense panels keep the
 // base size in Large mode; the small mode still applies (it only tightens).
+// ui_hint(kb, touch) - device-aware hint text (M 08-18: "did we remove all the keyboard
+// commands on mobile? they waste space and are confusing"). Keyboard/pad callers keep the
+// bracketed key; touch gets the tap wording ("" = draw nothing).
+function ui_hint(_kb, _touch) { return (input_device() == 2) ? _touch : _kb; }
+// ui_strip_keys(s) - drop "[X]" key tokens (and the doubled spaces they leave) for touch labels.
+function ui_strip_keys(_s) {
+    while (true) {
+        var _a = string_pos("[", _s); if (_a <= 0) break;
+        var _b = string_pos("]", _s); if (_b < _a) break;
+        _s = string_delete(_s, _a, _b - _a + 1);
+    }
+    while (string_pos("  ", _s) > 0) _s = string_replace(_s, "  ", " ");
+    while (string_length(_s) > 0 && string_char_at(_s, 1) == " ") _s = string_delete(_s, 1, 1);
+    while (string_length(_s) > 0 && string_char_at(_s, string_length(_s)) == " ") _s = string_delete(_s, string_length(_s), 1);
+    return _s;
+}
+
 function ui_font_dense(_f) {
     var _m = variable_global_exists("font_size_mode") ? global.font_size_mode : 1;
     if (_m == 2) return _f;
@@ -16532,6 +16549,7 @@ function ui_draw_maren_screen() {
                 draw_set_font(ui_font(fnt_ui_small));
                 var _ds_txt = _ds_spent ? "[D] Deep Socket - spent this run"
                                         : "[D] DEEP SOCKET: +1 socket  (400g + 80 dust, once per run)";
+                if (input_device() == 2) _ds_txt = ui_strip_keys(_ds_txt);   // it's a tap button on touch
                 var _ds_w  = string_width(_ds_txt) + 28;
                 var _ds_x1 = 1500, _ds_x0 = _ds_x1 - _ds_w, _ds_y0 = 216, _ds_y1 = 254;
                 draw_set_color(_ds_spent ? make_color_rgb(20, 20, 26) : make_color_rgb(35, 28, 52));
@@ -16882,7 +16900,7 @@ function ui_draw_maren_screen() {
             : "A very rare dungeon find. Survive the trip out and bring one here.");
         draw_set_halign(fa_right);
         draw_set_color(make_color_rgb(150, 200, 255));
-        draw_text(_list_x2 - 24, _sp_ty - 11, "[Enter] Release");
+        draw_text(_list_x2 - 24, _sp_ty - 11, ui_hint("[Enter] Release", "Tap: Release"));
         draw_set_halign(fa_left);
 
         // Song ledger below the action row. M 07-16: list ONLY songs already freed -
@@ -20015,7 +20033,7 @@ function ui_draw_garden_scene() {
         draw_set_color(make_color_rgb(210, 220, 210));
         draw_text(_mx, _my - 42, _hover_name);
         draw_set_color(make_color_rgb(150, 165, 150));
-        draw_text(_mx, _my - 18, "[E] or tap to pet");
+        draw_text(_mx, _my - 18, ui_hint("[E] or click to pet", "Tap to pet"));
         draw_set_halign(fa_left);
     }
 
@@ -20153,6 +20171,8 @@ function ui_draw_garden_scene() {
 // Small tappable verb chip, centred on x. Empty tag = label only (no action).
 function ui_garden_chip(_cx, _cy, _label, _tag, _dense = false) {
     // _dense: bottom-band chips use the base-size font so the fixed 48px band fits Large mode.
+    // Touch: the chip IS the button - drop the "[1]" / "[Esc]" key tokens from the label.
+    if (input_device() == 2) _label = ui_strip_keys(_label);
     draw_set_font(_dense ? ui_font_dense(fnt_ui_small) : ui_font(fnt_ui_small));
     var _w  = string_width(_label) + 26;
     var _th = string_height(_label);

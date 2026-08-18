@@ -879,7 +879,7 @@ if (showing_shrine) {
             draw_set_color(make_color_rgb(110, 110, 122));
             draw_text((_rr_x0 + _rr_x1) * 0.5, _rr_y0 + 14, "REROLLED");
         } else {
-            var _rr_txt = (shrine_reroll_arm ? "CONFIRM " : "[R] REROLL ") + string(_rr_cost);
+            var _rr_txt = (shrine_reroll_arm ? "CONFIRM " : ((input_device() == 2) ? "REROLL " : "[R] REROLL ")) + string(_rr_cost);
             var _rr_tw  = string_width(_rr_txt) + 26;
             var _rr_tx  = (_rr_x0 + _rr_x1) * 0.5 - _rr_tw * 0.5;
             draw_set_halign(fa_left);
@@ -950,17 +950,18 @@ if (showing_shrine) {
                 var _dust_ok = _sdu >= _dc;
                 var _ipick   = boon_item_tribute_pick(_bcost);
                 draw_set_color(_gold_ok ? make_color_rgb(150, 220, 150) : make_color_rgb(150, 110, 110));
-                var _p1_txt = "[1] " + string(_bcost) + "g";
+                var _kp = (input_device() == 2);   // touch: the three options are tap targets - no key tokens
+                var _p1_txt = (_kp ? "" : "[1] ") + string(_bcost) + "g";
                 draw_text(360, _ry + 94, _p1_txt);
                 draw_sprite_stretched(spr_icon_gold, 0, 360 + string_width(_p1_txt) + 8, _ry + 93, 24, 24);
                 draw_set_color(_dust_ok ? make_color_rgb(150, 220, 150) : make_color_rgb(150, 110, 110));
-                var _p2_txt = "[2] " + string(_dc) + " dust";
+                var _p2_txt = (_kp ? "" : "[2] ") + string(_dc) + " dust";
                 draw_text(540, _ry + 94, _p2_txt);
                 draw_sprite_stretched(spr_icon_dust, 0, 540 + string_width(_p2_txt) + 8, _ry + 93, 24, 24);
                 draw_set_color((_ipick != undefined) ? make_color_rgb(150, 220, 150) : make_color_rgb(150, 110, 110));
                 var _ip_txt = (_ipick != undefined)
-                    ? ("[3] Sacrifice " + _ipick.item.name + " (" + item_rarity_name(_ipick.item.rarity) + ")")
-                    : "[3] No item valuable enough";
+                    ? ((_kp ? "" : "[3] ") + "Sacrifice " + _ipick.item.name + " (" + item_rarity_name(_ipick.item.rarity) + ")")
+                    : ((_kp ? "" : "[3] ") + "No item valuable enough");
                 draw_text(780, _ry + 94, _ip_txt);
                 // Hover-inspect the suggested sacrifice: the full item tooltip so the
                 // player knows EXACTLY what they'd be giving up (picker still lets them
@@ -1454,7 +1455,7 @@ if (variable_global_exists("consumable_inventory")) {
     }
 }
 if (_esc_have != undefined && !showing_event && !showing_shrine && !showing_treasure
-    && !showing_event_choice && !escape_confirm_open) {
+    && !showing_event_choice && !escape_confirm_open && input_device() != 2) {   // touch: the LAMP/WINE chip is the button (08-18)
     draw_set_font(ui_font(fnt_ui_small));
     draw_set_color(make_color_rgb(170, 150, 220));
     draw_text(30, 102, "[G] Use " + _esc_have.name + "  (escape with your loot)");
