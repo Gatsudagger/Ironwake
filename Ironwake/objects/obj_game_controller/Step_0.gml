@@ -212,11 +212,16 @@ if (garden_open && bairc_open) {
     // First visit: the garden coach-mark (pan/drag/verbs) - M 08-18. The tip is modal
     // (any confirm dismisses it), so the scene's verbs stand down while it is up.
     tutorial_try_show("garden_scene");
-    if (tutorial_is_active()) {
+    // NOTE (08-18 SOFTLOCK fix, M: "press any key... nothing happens"): this block runs
+    // BEFORE the shared coach-mark dismiss handler further down, so an `exit` here while
+    // the tip is up meant the dismiss code never ran. The garden's own verbs stand down
+    // via the garden_tut_up flag below; the shared handler dismisses and exits.
+    var garden_tut_up = tutorial_is_active();
+    if (garden_tut_up) {
         if (garden_notice_t > 0) { garden_notice_t--; if (garden_notice_t == 0) garden_notice = ""; }
         if (variable_instance_exists(id, "garden_wip_t") && garden_wip_t > 0) garden_wip_t--;
-        exit;
     }
+    if (!garden_tut_up) {
     if (garden_notice_t > 0) { garden_notice_t--; if (garden_notice_t == 0) garden_notice = ""; }
     if (variable_instance_exists(id, "garden_wip_t") && garden_wip_t > 0) garden_wip_t--;
     // Expire old reaction FX (4s life).
@@ -410,6 +415,7 @@ if (garden_open && bairc_open) {
         }
         garden_cam_x = clamp(garden_cam_x, 0, garden_world_w() - 1920);
     }
+    }   // !garden_tut_up (08-18 softlock fix)
 }
 
 // Global fullscreen toggle (F11) - works in every room, persists in settings.ini.
