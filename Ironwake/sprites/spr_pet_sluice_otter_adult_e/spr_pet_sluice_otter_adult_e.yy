@@ -2,9 +2,9 @@
   "$GMSprite":"v2",
   "%Name":"spr_pet_sluice_otter_adult_e",
   "bboxMode":0,
-  "bbox_bottom":95,
-  "bbox_left":22,
-  "bbox_right":73,
+  "bbox_bottom":59,
+  "bbox_left":16,
+  "bbox_right":47,
   "bbox_top":0,
   "collisionKind":1,
   "collisionTolerance":0,
@@ -12,18 +12,25 @@
   "edgeFiltering":false,
   "For3D":false,
   "frames":[
-    {"$GMSpriteFrame":"v1","%Name":"b7f68c11-db72-4703-b037-cd6ff4d33e84","name":"b7f68c11-db72-4703-b037-cd6ff4d33e84","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"1e2abdde-b3c7-4d00-aaa6-02ac9fd1ee96","name":"1e2abdde-b3c7-4d00-aaa6-02ac9fd1ee96","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"74efc371-3211-4ab5-bb2e-32b107872825","name":"74efc371-3211-4ab5-bb2e-32b107872825","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"f5d92fb5-3521-4652-9781-e1023af793dd","name":"f5d92fb5-3521-4652-9781-e1023af793dd","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"2275f5a2-5acb-468b-a915-44c70d56cf00","name":"2275f5a2-5acb-468b-a915-44c70d56cf00","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"4a09e14d-0075-4fdf-a341-6e72cee212e3","name":"4a09e14d-0075-4fdf-a341-6e72cee212e3","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"ac2163b9-b780-4a99-98c7-27286e5502a1","name":"ac2163b9-b780-4a99-98c7-27286e5502a1","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"dcf14a4a-9f41-4ef2-b893-0e6077f90101","name":"dcf14a4a-9f41-4ef2-b893-0e6077f90101","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"e9bd013f-5841-4b6c-8c36-4592c96a9b5d","name":"e9bd013f-5841-4b6c-8c36-4592c96a9b5d","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
   ],
   "gridX":0,
   "gridY":0,
-  "height":96,
+  "height":64,
   "HTile":false,
   "layers":[
-    {"$GMImageLayer":"","%Name":"d39a893a-7418-42f7-aeff-e2ffced923b8","blendMode":0,"displayName":"default","isLocked":false,"name":"d39a893a-7418-42f7-aeff-e2ffced923b8","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
+    {"$GMImageLayer":"","%Name":"ac09a10f-f3c9-4fdb-8ace-3089417c0ff6","blendMode":0,"displayName":"default","isLocked":false,"name":"ac09a10f-f3c9-4fdb-8ace-3089417c0ff6","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
   ],
   "name":"spr_pet_sluice_otter_adult_e",
   "nineSlice":null,
-  "origin":0,
+  "origin":4,
   "parent":{
     "name":"Ironwake",
     "path":"Ironwake.yyp",
@@ -49,7 +56,7 @@
     },
     "eventStubScript":null,
     "eventToFunction":{},
-    "length":1.0,
+    "length":8.0,
     "lockOrigin":false,
     "moments":{
       "$KeyframeStore<MomentsEventKeyframe>":"",
@@ -59,7 +66,7 @@
     },
     "name":"spr_pet_sluice_otter_adult_e",
     "playback":1,
-    "playbackSpeed":1.0,
+    "playbackSpeed":8.0,
     "playbackSpeedType":0,
     "resourceType":"GMSequence",
     "resourceVersion":"2.0",
@@ -69,14 +76,35 @@
     "tracks":[
       {"$GMSpriteFramesTrack":"","builtinName":0,"events":[],"inheritsTrackColour":true,"interpolation":1,"isCreationTrack":false,"keyframes":{"$KeyframeStore<SpriteFrameKeyframe>":"","Keyframes":[
             {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
-                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"b7f68c11-db72-4703-b037-cd6ff4d33e84","path":"sprites/spr_pet_sluice_otter_adult_e/spr_pet_sluice_otter_adult_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
-              },"Disabled":false,"id":"320bd149-e2cb-402c-806d-ded7e36fadef","IsCreationKey":false,"Key":0.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"1e2abdde-b3c7-4d00-aaa6-02ac9fd1ee96","path":"sprites/spr_pet_sluice_otter_adult_e/spr_pet_sluice_otter_adult_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"c771a443-04d6-4bde-be1c-3d6aaf18d39a","IsCreationKey":false,"Key":0.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+            {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"74efc371-3211-4ab5-bb2e-32b107872825","path":"sprites/spr_pet_sluice_otter_adult_e/spr_pet_sluice_otter_adult_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"4af7e1d8-4121-4556-a934-06fdf96b897b","IsCreationKey":false,"Key":1.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+            {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"f5d92fb5-3521-4652-9781-e1023af793dd","path":"sprites/spr_pet_sluice_otter_adult_e/spr_pet_sluice_otter_adult_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"c7edc044-a413-4452-b3c9-7957a28ea559","IsCreationKey":false,"Key":2.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+            {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"2275f5a2-5acb-468b-a915-44c70d56cf00","path":"sprites/spr_pet_sluice_otter_adult_e/spr_pet_sluice_otter_adult_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"4c721464-479a-4609-b12f-3227a1558357","IsCreationKey":false,"Key":3.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+            {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"4a09e14d-0075-4fdf-a341-6e72cee212e3","path":"sprites/spr_pet_sluice_otter_adult_e/spr_pet_sluice_otter_adult_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"672daee4-d756-4294-919c-4380b0ee0b0f","IsCreationKey":false,"Key":4.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+            {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"ac2163b9-b780-4a99-98c7-27286e5502a1","path":"sprites/spr_pet_sluice_otter_adult_e/spr_pet_sluice_otter_adult_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"32e5f74d-b026-47cb-808d-14dfa8022d45","IsCreationKey":false,"Key":5.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+            {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"dcf14a4a-9f41-4ef2-b893-0e6077f90101","path":"sprites/spr_pet_sluice_otter_adult_e/spr_pet_sluice_otter_adult_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"1c0bdd21-3c6a-4a8a-a9e1-abab6f588e16","IsCreationKey":false,"Key":6.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+            {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"e9bd013f-5841-4b6c-8c36-4592c96a9b5d","path":"sprites/spr_pet_sluice_otter_adult_e/spr_pet_sluice_otter_adult_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"9d163b9e-1b0f-4adb-8e14-fa5af6e2e08b","IsCreationKey":false,"Key":7.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
           ],"resourceType":"KeyframeStore<SpriteFrameKeyframe>","resourceVersion":"2.0",},"modifiers":[],"name":"frames","resourceType":"GMSpriteFramesTrack","resourceVersion":"2.0","spriteId":null,"trackColour":0,"tracks":[],"traits":0,},
     ],
     "visibleRange":null,
     "volume":1.0,
-    "xorigin":0,
-    "yorigin":0,
+    "xorigin":32,
+    "yorigin":63,
   },
   "swatchColours":null,
   "swfPrecision":0.5,
@@ -86,5 +114,5 @@
   },
   "type":0,
   "VTile":false,
-  "width":96,
+  "width":64,
 }
