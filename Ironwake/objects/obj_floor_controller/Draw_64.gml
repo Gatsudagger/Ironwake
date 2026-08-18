@@ -1490,7 +1490,7 @@ if (escape_confirm_open && escape_confirm_idx >= 0
             var _ecmx = device_mouse_x_to_gui(0);
             var _ecmy = device_mouse_y_to_gui(0);
             if (_ecmx >= 510 && _ecmx <= 1410 && _ecmy >= 360 && _ecmy <= 690) touch_press(vk_enter);
-            else                                                               touch_press(vk_escape);
+            else if (!touch_over_pad(_ecmx, _ecmy))                            touch_press(vk_escape);   // pad OK/d-pad aren't "outside" (08-18)
         }
     } else {
         ui_draw_key_legend(960, 621, "Enter: Confirm      Esc / G: Cancel");
@@ -1531,7 +1531,7 @@ if (extract_confirm_open) {
             var _xcmx = device_mouse_x_to_gui(0);
             var _xcmy = device_mouse_y_to_gui(0);
             if (_xcmx >= 510 && _xcmx <= 1410 && _xcmy >= 360 && _xcmy <= 690) touch_press(vk_enter);
-            else                                                               touch_press(vk_escape);
+            else if (!touch_over_pad(_xcmx, _xcmy))                            touch_press(vk_escape);   // pad OK/d-pad aren't "outside" (08-18)
         }
     } else {
         ui_draw_key_legend(960, 621, "Enter: Confirm      Esc / E: Cancel");

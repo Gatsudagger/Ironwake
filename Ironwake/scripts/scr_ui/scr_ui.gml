@@ -5337,7 +5337,11 @@ function ui_draw_bairc_screen() {
                     break;
                 }
             }
-            if (!_pm_hit && (_pmmx < _pmx || _pmmx > _pmx + _pmw || _pmmy < _pmy || _pmmy > _pmy + _pmh)) {
+            // 08-18 (M on phone: "the OK button just exits the hatch popup"): the on-screen
+            // pad's OK / d-pad sit OUTSIDE the panel, so their press was also read as a
+            // tap-outside -> Esc, and the Esc beat the Enter. Pad footprint is exempt.
+            if (!_pm_hit && !touch_over_pad(_pmmx, _pmmy)
+                && (_pmmx < _pmx || _pmmx > _pmx + _pmw || _pmmy < _pmy || _pmmy > _pmy + _pmh)) {
                 touch_press(vk_escape);
             }
         }
