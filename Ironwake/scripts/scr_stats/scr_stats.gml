@@ -9561,12 +9561,21 @@ function pet_stage_scale(pet) {
 // visible width so wide quadrupeds can't bleed out of list boxes. Returns
 // { scale, x, y } for draw_sprite_ext (x/y already account for the origin).
 // Requires the true content bboxes written by tools/fix_pet_sprite_bboxes.py.
+// PET_FIT_MAX_UP (M 08-18: "the image seems scaled up / zoomed in"): fitting every
+// creature to the SAME height meant a 37px-tall still (the 64px FF-density species)
+// drew at 4-5x while a 106px animated adult drew at 1.4x - same layout, wildly
+// different pixel size. Upscale is now capped at bonehound-baby density (46px -> 150
+// = 3.25x, M's reference), so low-res art draws SMALLER in the frame instead of chunky.
+// Downscales are never touched; small boxes (stable rows, garden strolls) sit under
+// the cap anyway.
+#macro PET_FIT_MAX_UP 3.25
 function pet_sprite_fit(spr, cx, feet_y, target_h, max_w = -1) {
     var _bl = sprite_get_bbox_left(spr),  _bt = sprite_get_bbox_top(spr);
     var _br = sprite_get_bbox_right(spr), _bb = sprite_get_bbox_bottom(spr);
     var _vw = max(1, _br - _bl + 1), _vh = max(1, _bb - _bt + 1);
     var _s  = target_h / _vh;
     if (max_w > 0) _s = min(_s, max_w / _vw);
+    _s = min(_s, PET_FIT_MAX_UP);
     var _ox = sprite_get_xoffset(spr), _oy = sprite_get_yoffset(spr);
     return {
         scale: _s,
