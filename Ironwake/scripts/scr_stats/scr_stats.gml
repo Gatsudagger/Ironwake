@@ -11385,6 +11385,9 @@ function pet_grant_from_source(source, species_override = "") {
         find_banner_push("egg", "Mysterious " + ((_fb_lbl != "") ? _fb_lbl : "Egg"),
             "Something alive waits inside - Bairc can identify and raise it.", pet_sprite(_pet));
     } else {
+        // 08-18 (M: "not a single pet showed in the creatures codex"): found-ALIVE creatures
+        // never pass through pet_hatch, so the codex/achievement ledger never saw them.
+        ach_record_hatch(_pet);
         find_banner_push(_pet.corrupted ? "corrupted" : "pet",
             _pet.name + "  (" + pet_stage_name(_pet.stage) + ")",
             (_pet.corrupted ? "It carries a CORRUPTION - Bairc can cure it. " : "It follows you home, already loyal - ")
@@ -14744,16 +14747,37 @@ function compendium_catalog() {
 // Discovered = you have HATCHED it. Reads the achievement counters that already
 // track lifetime species/scion sets, so there is nothing new to save.
 function compendium_discovered(species_id) {
-    if (!variable_global_exists("ach_counters")) return false;
-    var _c = global.ach_counters;
-    if (!is_struct(_c)) return false;
-    if (variable_struct_exists(_c, "species_hatched")) {
-        var _a = _c.species_hatched;
-        for (var _i = 0; _i < array_length(_a); _i++) if (_a[_i] == species_id) return true;
+    if (variable_global_exists("ach_counters") && is_struct(global.ach_counters)) {
+        var _c = global.ach_counters;
+        if (variable_struct_exists(_c, "species_hatched")) {
+            var _a = _c.species_hatched;
+            for (var _i = 0; _i < array_length(_a); _i++) if (_a[_i] == species_id) return true;
+        }
+        if (variable_struct_exists(_c, "scions_hatched")) {
+            var _b = _c.scions_hatched;
+            for (var _i = 0; _i < array_length(_b); _i++) if (_b[_i] == species_id) return true;
+        }
     }
-    if (variable_struct_exists(_c, "scions_hatched")) {
-        var _b = _c.scions_hatched;
-        for (var _i = 0; _i < array_length(_b); _i++) if (_b[_i] == species_id) return true;
+    // BACKFILL (M 08-18: an older save full of pets showed NOTHING in the codex): the
+    // hatch ledger only exists since 08-04 and only pet_hatch wrote it. Anything living
+    // in the stable (not an unhatched egg) or resting in Bairc's garden counts as known -
+    // and gets stamped into the ledger so achievements/stage reveals catch up too.
+    if (variable_global_exists("pet_roster") && is_array(global.pet_roster)) {
+        for (var _r = 0; _r < array_length(global.pet_roster); _r++) {
+            var _p = global.pet_roster[_r];
+            if (!is_struct(_p) || !variable_struct_exists(_p, "species") || _p.species != species_id) continue;
+            if (variable_struct_exists(_p, "is_egg") && _p.is_egg) continue;
+            ach_record_hatch(_p);
+            return true;
+        }
+    }
+    var _dn = bairc_donated();
+    for (var _d = 0; _d < array_length(_dn); _d++) {
+        var _dp = _dn[_d];
+        if (is_struct(_dp) && variable_struct_exists(_dp, "species") && _dp.species == species_id) {
+            ach_record_hatch({ species: species_id, stage: variable_struct_exists(_dp, "stage") ? _dp.stage : 0 });
+            return true;
+        }
     }
     return false;
 }
