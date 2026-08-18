@@ -398,8 +398,13 @@ function enemy_model_faces_east(spr) {
         spr_malgrath_warden_ff2: 1,   // 08-18 (M): the one-key Warden angles right
         // 08-18 full facing AUDIT (M: "some enemies spawn facing right"): every model in
         // enemy_sprite_map + variants reviewed as drawn - these five still angled right.
-        spr_vault_wraith_ff3: 1, spr_cinder_imp_ff: 1,
-        spr_infernal_revenant: 1, spr_frozen_sentinel: 1,
+        spr_vault_wraith_ff3: 1,
+        spr_frozen_sentinel: 1,
+        // 08-18 later (M: "Scorched Depths mobs facing the wrong way - Forge Tyrant, Cinder
+        // Imp"): re-read at 4x. cinder_imp_ff and infernal_revenant face LEFT/frontal (they
+        // were wrongly mirrored); forge_tyrant (head + hammer to the right) and
+        // lava_spitter_ff3 (head angled right) are the east-authored ones.
+        spr_forge_tyrant: 1, spr_lava_spitter_ff3: 1,
         // 08-18 later (M: "snowbound wraith facing right"): re-read the sheet - _ff2 is
         // frontal (tail trails right = drifting LEFT, so mirroring it was the bug) and
         // _ff3 is the one angled right (face + raised arm on the viewer's right).
