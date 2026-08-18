@@ -1758,6 +1758,10 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()
     // in place. Same effect as the old [R] picker (chit_reforge_item + spend).
     // =========================================================================
     if (shop_tab == 2 && shop_open == 1) {
+        // First look at the REFORGE tab explains it (M 08-18 on phone: "went to reforge for
+        // the first time, no tutorial") - the same tip also fires on the first ingot earned;
+        // whichever comes first shows it once.
+        if (npc_tour_step < 0 && !tutorial_is_active()) tutorial_try_show("dorn_reforge");
         var _rf_list = item_picker_candidates_affixed();
         var _rf_n    = array_length(_rf_list);
         reforge_index = clamp(reforge_index, 0, max(0, _rf_n - 1));

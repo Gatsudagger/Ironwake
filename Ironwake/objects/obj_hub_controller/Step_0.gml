@@ -1048,6 +1048,9 @@ if (input_confirm() || input_confirm_alt()) {
                 _gc_interact.maren_item_sel     = -1;
                 _gc_interact.maren_cursor       = 0;
                 _gc_interact.maren_notification = "";
+                // Onboarding (08-18 fix): the tempering tip only fired on the legacy list-click
+                // path - keyboard [E] and the Android CAROUSEL come through here and never saw it.
+                tutorial_try_show("maren_forge");
             } else if (selected_npc == 1) {
                 // Sable the Alchemist
                 _gc_interact.sable_open         = true;
