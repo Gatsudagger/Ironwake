@@ -14225,7 +14225,13 @@ function video_settings_init() {
     if (!variable_global_exists("video_loaded")) {
         global.video_loaded = true;
         ini_open("settings.ini");
-        global.fullscreen = (ini_read_real("video", "fullscreen", 0) >= 0.5);
+        // Desktop defaults to FULLSCREEN on first launch (M 08-18: "auto launch in
+        // full screen so players don't have to press F11"); the player's F11 / Settings
+        // choice persists in settings.ini and wins from then on. Browser stays windowed
+        // (fullscreen there needs a user gesture); mobile ignores this entirely.
+        var _fs_default = (os_browser == browser_not_a_browser
+                           && (os_type == os_windows || os_type == os_macosx || os_type == os_linux)) ? 1 : 0;
+        global.fullscreen = (ini_read_real("video", "fullscreen", _fs_default) >= 0.5);
         ini_close();
     }
 }
