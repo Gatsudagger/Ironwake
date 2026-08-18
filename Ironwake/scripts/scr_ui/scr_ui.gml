@@ -3546,7 +3546,12 @@ function ui_draw_journal() {
 
             // The 4-slot cycle bar (discovered species only).
             if (_kgot2) {
+                // Chip width MEASURED off the longest label (M 08-18 shot: "YOUNG ADULT" spilled
+                // out of the fixed 150px box in Large font); the four still fit the column.
+                draw_set_font(ui_font(fnt_ui_small));
                 var _kch_w = 150, _kch_h = 40, _kch_gap = 12;
+                for (var _kwi = 0; _kwi < 4; _kwi++) _kch_w = max(_kch_w, string_width(_knames[_kwi]) + 28);
+                _kch_w = min(_kch_w, floor(((_det_x2 - _det_x1) - 3 * _kch_gap) / 4));
                 var _kch_x = (_det_x1 + _det_x2) / 2 - (4 * _kch_w + 3 * _kch_gap) / 2;
                 for (var _kci = 0; _kci < 4; _kci++) {
                     var _kcx0 = _kch_x + _kci * (_kch_w + _kch_gap);
@@ -14408,8 +14413,19 @@ function ui_confirm_button(_x0, _y0, _x1, _y1, _txt, _col, _mx, _my, _press, _ta
     draw_set_color(_col);
     draw_rectangle(_x0, _y0, _x1, _y1, true);
     draw_set_halign(fa_center);
+    // 08-18 (M shot: Pattern Book UP/DOWN/CLOSE spilled below their boxes): the label was
+    // pinned at +12 in the full font whatever the box height. Now vertically CENTRED, and
+    // steps down to the base-size (dense) font, then fnt_ui_small, when the box is short -
+    // so Large-font mode never overflows a 36px button.
+    var _bh = (_y1 - _y0);
     draw_set_font(ui_font(fnt_ui));
-    draw_text((_x0 + _x1) / 2, _y0 + 12, _txt);
+    if (string_height("Ag") > _bh - 6) draw_set_font(ui_font_dense(fnt_ui));
+    if (string_height("Ag") > _bh - 6) draw_set_font(ui_font_dense(fnt_ui_small));
+    // Width guard too: a long label in a narrow box drops to the small font.
+    if (string_width(_txt) > (_x1 - _x0) - 12) draw_set_font(ui_font_dense(fnt_ui_small));
+    draw_set_valign(fa_middle);
+    draw_text((_x0 + _x1) / 2, (_y0 + _y1) / 2 + 1, _txt);
+    draw_set_valign(fa_top);
     draw_set_halign(fa_left);
     if (_hov && _press) input_inject(_tag);
 }

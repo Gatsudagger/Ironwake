@@ -554,6 +554,11 @@ function new_game_reset() {
     global.chosen_class    = 0;
     global.chosen_stats    = undefined;
 
+    // Achievement / codex ledger (08-18, M: a NEW file showed a species from the previously
+    // loaded save): ach_counters is saved PER SLOT but was never cleared here, so the last
+    // loaded slot's species_hatched / stage stamps leaked into a fresh character.
+    global.ach_counters = {};
+    ach_counters_init();
     // Banshee in a Bottle + music jukebox - a new character owns nothing yet.
     global.banshee_carried    = 0;
     global.banshee_banked     = 0;
