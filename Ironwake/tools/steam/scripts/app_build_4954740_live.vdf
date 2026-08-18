@@ -1,0 +1,22 @@
+﻿"AppBuild"
+{
+	"AppID" "4954740"
+	// Bump this line every upload - it's the label you'll see in the Builds dashboard.
+	"Desc" "Ironwake 1.0.5 launch build (icon + fullscreen) 2026-08-18 - set live"
+
+	// Relative to THIS file: extract the GameMaker Windows zip into tools\steam\content\
+	// so content\Ironwake.exe sits at the top level.
+	"ContentRoot" "..\content\"
+	"BuildOutput" "..\output\"
+
+	// "1" = upload but DON'T set live anywhere (safe default; flip builds live in the
+	// dashboard). Change to "beta" later to auto-push playtest builds to that branch.
+	"SetLive" "default"
+	"Preview" "0"
+
+	"Depots"
+	{
+		"4954741" "depot_build_4954741.vdf"
+	}
+}
+

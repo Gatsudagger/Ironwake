@@ -14104,8 +14104,30 @@ function pause_menu_open() {
 // hub: saves are hub-gated (never mid-run), and M 07-27 asked for an explicit
 // save so a hub chore session can end without running a dungeon to bank it.
 function pause_menu_options() {
-    if (room == rm_hub) return ["Resume", "Save Game", "Settings", "Quit to Title"];
-    return ["Resume", "Settings", "Quit to Title"];
+    var _o = (room == rm_hub) ? ["Resume", "Save Game", "Settings", "Quit to Title"]
+                              : ["Resume", "Settings", "Quit to Title"];
+    // QUIT GAME (M 08-18: "we have no quit game command - exit fullscreen and click the X
+    // is unpolished"): DESKTOP builds only - browser can't self-close and the mobile stores
+    // frown on apps exiting themselves (Back/Home is the platform way).
+    if (game_can_quit()) array_push(_o, "Quit Game");
+    return _o;
+}
+// True where the game may close itself: native desktop, not a browser build.
+function game_can_quit() {
+    return os_browser == browser_not_a_browser
+        && (os_type == os_windows || os_type == os_macosx || os_type == os_linux);
+}
+// Quit Game label with its press-again arm state (shared by Step + draw).
+function pause_quit_label() {
+    var _armed = variable_global_exists("pause_quit_arm_t") && current_time < global.pause_quit_arm_t;
+    return _armed ? "Quit Game  -  press again" : "Quit Game";
+}
+// Save/checkpoint exactly like Quit to Title, then close the game.
+function pause_quit_game() {
+    if (room == rm_hub && variable_global_exists("save_slot") && global.save_slot >= 0) save_game();
+    run_checkpoint_write_now();   // IRONMAN save & quit - a run in progress resumes on load
+    audio_stop_all();
+    game_end();
 }
 
 // Returns true while the pause menu (or its Settings sub-screen) is capturing
@@ -14167,6 +14189,16 @@ function pause_menu_step() {
             case "Quit to Title":
                 global.pause_open = false;
                 pause_quit_to_title();
+                break;
+            case "Quit Game":
+                // Two presses within 3s (M rule: no destructive one-clicks) - the row
+                // itself re-labels "press again" while armed (pause_quit_label).
+                if (variable_global_exists("pause_quit_arm_t") && current_time < global.pause_quit_arm_t) {
+                    pause_quit_game();
+                } else {
+                    global.pause_quit_arm_t = current_time + 3000;
+                    audio_play_sound(snd_ui_toggle_off, 1, false);
+                }
                 break;
         }
     }

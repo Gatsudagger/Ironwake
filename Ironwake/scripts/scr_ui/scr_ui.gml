@@ -9014,7 +9014,7 @@ function ui_draw_pause_menu() {
         draw_set_color(_on ? make_color_rgb(120, 160, 230) : make_color_rgb(60, 66, 90));
         draw_rectangle(_bx0, _ry, _bx1, _ry + 66, true);
         draw_set_color(_on ? c_white : make_color_rgb(180, 188, 205));
-        draw_text(GUI_CX, _ry + 18, _labels[_r]);
+        draw_text(GUI_CX, _ry + 18, ((_labels[_r] == "Quit Game") ? pause_quit_label() : _labels[_r]));
     }
 
     // "Game saved." flash for ~2s after the hub Save Game row is used.

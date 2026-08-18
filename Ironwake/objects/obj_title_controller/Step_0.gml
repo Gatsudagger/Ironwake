@@ -7,6 +7,14 @@ if (variable_global_exists("settings_open") && global.settings_open) {
     audio_settings_handle_input();
     exit;
 }
+// QUIT (M 08-18): [Q] / the bottom-right button on the desktop title screen. No confirm
+// needed here - nothing is in progress at the title.
+if (phase == "title" && game_can_quit()
+    && !(variable_global_exists("settings_open") && global.settings_open) && input_hotkey("Q")) {
+    audio_stop_all();
+    game_end();
+    exit;
+}
 // Open settings with O once past the intro cutscene.
 if (phase != "cutscene" && input_hotkey("O")) {
     audio_settings_init();
