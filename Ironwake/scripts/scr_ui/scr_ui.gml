@@ -19356,7 +19356,7 @@ function npc_tour_steps(_npc) {
               b: "Your combat look, cataloged. Owned skins switch freely; locked rows name the milestone that earns them. Pick a row to preview it on the right - purely cosmetic, your numbers never change." },
             { r: [726, 90, 954, 150],   cx: 400, cy: 330,
               t: "A new face",
-              b: "For 100 gold Vael repaints your portrait - the face your menus and dialogues show. Nothing is lost in the sitting; change it as often as your purse allows." },
+              b: "For 100 gold Vael repaints your portrait - the face your menus and dialogues show. It changes nothing but your looks, and you can come back and change it again whenever you like." },
             { r: [1206, 90, 1434, 150], cx: 640, cy: 330,
               t: "The reweave",
               b: "Regret a finished talent web? REWEAVE unpicks every woven node and returns every talent point to spend again. The casts that earned those points are never lost - only their arrangement." },
@@ -19922,19 +19922,24 @@ function ui_draw_garden_scene() {
     draw_set_halign(fa_right);
     draw_set_color(c_yellow);
     draw_text(1560, 22, "Gold: " + string(global.gold) + "   Dust: " + string(variable_global_exists("rune_dust") ? global.rune_dust : 0));
-    draw_set_halign(fa_center);
+    // 08-18 (M screenshot "text collisions all over baircs garden"): the 48px bottom band
+    // (1032-1080) is fixed-height, so it draws in the DENSE font (base size even in Large
+    // mode), the hint row sits at the top of the band with the position strip UNDER it,
+    // and the chips are measured (ui_garden_chip) so they never spill past GUI_H.
+    draw_set_font(ui_font_dense(fnt_ui_small));
+    draw_set_halign(fa_center); draw_set_valign(fa_top);
     draw_set_color(make_color_rgb(130, 145, 132));
-    draw_text(960, 1042, "A/D or drag: wander        [E] pet        [1] pond    [2] cairn    [3] forage        "
+    draw_text(960, 1035, "A/D or drag: wander        [E] pet        [1] pond    [2] cairn    [3] forage        "
         + string(_dn) + " resident" + ((_dn == 1) ? "" : "s"));
     draw_set_halign(fa_left);
-    // Position strip: where the camera window sits over the grounds.
+    // Position strip: where the camera window sits over the grounds (below the hint row).
     draw_set_color(make_color_rgb(30, 38, 32));
-    draw_rectangle(660, 1064, 1260, 1072, false);
+    draw_rectangle(660, 1066, 1260, 1073, false);
     draw_set_color(make_color_rgb(150, 200, 150));
     var _ps0 = 660 + 600 * (_cam / _W);
-    draw_rectangle(_ps0, 1064, _ps0 + 600 * (1920 / _W), 1072, false);
+    draw_rectangle(_ps0, 1066, _ps0 + 600 * (1920 / _W), 1073, false);
     // Music selector chip (bottom-right): cycles the garden's track pool.
-    ui_garden_chip(1700, 1038, "[M] MUSIC", "garden:music");
+    ui_garden_chip(1700, 1036, "[M] MUSIC", "garden:music", true);
 
     // ---- Notice toast (standard boxed toast, topmost of the scene HUD) ----
     if (_gc.garden_notice != "" && _gc.garden_notice_t > 0) {
@@ -20028,10 +20033,12 @@ function ui_draw_garden_scene() {
 }
 
 // Small tappable verb chip, centred on x. Empty tag = label only (no action).
-function ui_garden_chip(_cx, _cy, _label, _tag) {
-    draw_set_font(ui_font(fnt_ui_small));
+function ui_garden_chip(_cx, _cy, _label, _tag, _dense = false) {
+    // _dense: bottom-band chips use the base-size font so the fixed 48px band fits Large mode.
+    draw_set_font(_dense ? ui_font_dense(fnt_ui_small) : ui_font(fnt_ui_small));
     var _w  = string_width(_label) + 26;
-    var _x0 = _cx - _w / 2, _x1 = _cx + _w / 2, _y1 = _cy + 34;
+    var _th = string_height(_label);
+    var _x0 = _cx - _w / 2, _x1 = _cx + _w / 2, _y1 = _cy + max(34, _th + 14);
     draw_set_alpha(0.85);
     draw_set_color(make_color_rgb(12, 18, 14));
     draw_rectangle(_x0, _cy, _x1, _y1, false);
@@ -20040,7 +20047,8 @@ function ui_garden_chip(_cx, _cy, _label, _tag) {
     draw_rectangle(_x0, _cy, _x1, _y1, true);
     draw_set_halign(fa_center);
     draw_set_color((_tag == "") ? make_color_rgb(120, 135, 122) : make_color_rgb(190, 230, 190));
-    draw_text(_cx, _cy + 7, _label);
+    draw_set_valign(fa_top);
+    draw_text(_cx, _cy + ((_y1 - _cy) - _th) / 2, _label);
     draw_set_halign(fa_left);
     if (_tag != "" && touch_tapped(_x0, _cy, _x1, _y1)) input_inject(_tag);
 }
