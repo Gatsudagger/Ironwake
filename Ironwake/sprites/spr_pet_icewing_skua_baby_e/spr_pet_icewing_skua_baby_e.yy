@@ -2,9 +2,9 @@
   "$GMSprite":"v2",
   "%Name":"spr_pet_icewing_skua_baby_e",
   "bboxMode":0,
-  "bbox_bottom":41,
-  "bbox_left":7,
-  "bbox_right":34,
+  "bbox_bottom":36,
+  "bbox_left":4,
+  "bbox_right":32,
   "bbox_top":0,
   "collisionKind":1,
   "collisionTolerance":0,
@@ -12,14 +12,14 @@
   "edgeFiltering":false,
   "For3D":false,
   "frames":[
-    {"$GMSpriteFrame":"v1","%Name":"26aa8414-a469-44d2-8b96-1fd494fc133a","name":"26aa8414-a469-44d2-8b96-1fd494fc133a","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"820a703e-efa0-4555-b0d7-d7c73d8b63b5","name":"820a703e-efa0-4555-b0d7-d7c73d8b63b5","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
   ],
   "gridX":0,
   "gridY":0,
-  "height":42,
+  "height":37,
   "HTile":false,
   "layers":[
-    {"$GMImageLayer":"","%Name":"d7ebfee1-b7bd-45ca-a36e-3f5554f89017","blendMode":0,"displayName":"default","isLocked":false,"name":"d7ebfee1-b7bd-45ca-a36e-3f5554f89017","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
+    {"$GMImageLayer":"","%Name":"fa9b273e-ad3c-42ab-bcc5-5a4e5869ec85","blendMode":0,"displayName":"default","isLocked":false,"name":"fa9b273e-ad3c-42ab-bcc5-5a4e5869ec85","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
   ],
   "name":"spr_pet_icewing_skua_baby_e",
   "nineSlice":null,
@@ -69,8 +69,8 @@
     "tracks":[
       {"$GMSpriteFramesTrack":"","builtinName":0,"events":[],"inheritsTrackColour":true,"interpolation":1,"isCreationTrack":false,"keyframes":{"$KeyframeStore<SpriteFrameKeyframe>":"","Keyframes":[
             {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
-                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"26aa8414-a469-44d2-8b96-1fd494fc133a","path":"sprites/spr_pet_icewing_skua_baby_e/spr_pet_icewing_skua_baby_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
-              },"Disabled":false,"id":"8488d8ef-7328-45d1-a3b3-56317c438d26","IsCreationKey":false,"Key":0.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"820a703e-efa0-4555-b0d7-d7c73d8b63b5","path":"sprites/spr_pet_icewing_skua_baby_e/spr_pet_icewing_skua_baby_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"b866e2e6-0030-4510-a789-a0a64962a840","IsCreationKey":false,"Key":0.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
           ],"resourceType":"KeyframeStore<SpriteFrameKeyframe>","resourceVersion":"2.0",},"modifiers":[],"name":"frames","resourceType":"GMSpriteFramesTrack","resourceVersion":"2.0","spriteId":null,"trackColour":0,"tracks":[],"traits":0,},
     ],
     "visibleRange":null,
@@ -86,5 +86,5 @@
   },
   "type":0,
   "VTile":false,
-  "width":42,
+  "width":37,
 }

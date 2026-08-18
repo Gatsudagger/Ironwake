@@ -42,8 +42,8 @@ function restock_shops() {
     repeat (_dorn_count) {
         var _di     = drop_equipment(_dorn_weights, false);
         // Dorn sells decent wares, not finished ones (SYSTEMS_ITEM_PROGRESSION §1,
-        // tuned 08-05): his stock re-rolls quality 70-85 over the standard 60-85.
-        item_quality_stamp(_di, 70, 85);
+        // tuned 08-05; 08-18 nerf): his stock re-rolls quality 56-72 over the standard 45-70.
+        item_quality_stamp(_di, 56, 72);   // 08-18 quality nerf (Dorn shop)
         // Rare/Epic+ gear is a premium buy - roughly double the markup so a strong
         // piece is a real gold sink, not a cheap upgrade. (Task: Dorn rare/epic cost)
         var _dmarkup = (_di.rarity >= 2) ? 3.2 : 1.6;
@@ -54,7 +54,7 @@ function restock_shops() {
     // 1-in-200 restock still sneaks one in - a jackpot, not an expectation.
     if (_dorn_awk < 4 && irandom(199) == 0 && array_length(global.dorn_stock) > 0) {
         var _dlj  = drop_equipment([0, 0, 0, 0, 100], false);
-        item_quality_stamp(_dlj, 70, 85);   // shop-grade roll (08-05)
+        item_quality_stamp(_dlj, 56, 72);   // shop-grade roll (08-05; 08-18 quality nerf)
         var _dljp = max(1, floor(_dlj.gold_value * 3.2 * _dorn_disc));
         global.dorn_stock[0] = { item: _dlj, price: _dljp, sold: false };
     }
@@ -67,7 +67,7 @@ function restock_shops() {
             repeat (12) {   // bounded re-rolls; weights make rare+ likely well within this
                 var _dp = drop_equipment(_dorn_weights, false);
                 if (_dp.rarity >= 2) {
-                    item_quality_stamp(_dp, 70, 85);   // shop-grade roll (08-05)
+                    item_quality_stamp(_dp, 56, 72);   // shop-grade roll (08-05; 08-18 quality nerf)
                     var _dpp = max(1, floor(_dp.gold_value * 3.2 * _dorn_disc));
                     global.dorn_stock[0] = { item: _dp, price: _dpp, sold: false };
                     break;
@@ -1627,6 +1627,7 @@ function out_of_combat_dmg_derived() {
 // ---------------------------------------------------------------------------
 function consumable_use_out_of_combat(item) {
     var _et = variable_struct_exists(item, "effect_type") ? item.effect_type : "";
+    if (_et == "valuable") return false;   // sell-only (08-17) - never consumed
     if (_et == "heal") {
         var _max = out_of_combat_max_hp();
         if (!variable_global_exists("run_current_hp") || global.run_current_hp <= 0) {
@@ -2727,11 +2728,11 @@ function drop_weights(source, asc, true_asc = -1) {
         // (BALANCE_NOTE C2, M-approved 07-09), so high tiers pay as before.
         case "standard":  _a0 = [90,  9,  1,  0, 0]; _a5 = [28, 36, 24, 10, 2]; break;
         case "elite":     _a0 = [72, 23,  5,  0, 0]; _a5 = [10, 30, 34, 20, 6]; break;
-        case "boss":      _a0 = [40, 43, 15,  2, 0]; _a5 = [ 0, 20, 38, 30, 12]; break;
-        case "chest":     _a0 = [80, 17,  3,  0, 0]; _a5 = [20, 36, 28, 13, 3]; break;
-        case "vault":     _a0 = [70, 24,  5,  1, 0]; _a5 = [12, 32, 32, 18, 6]; break;
-        case "reliquary": _a0 = [ 0, 76, 20,  4, 0]; _a5 = [ 0, 25, 40, 28, 7]; break;
-        case "dorn":      _a0 = [55, 38,  7,  0, 0]; _a5 = [10, 35, 35, 18, 2]; break;
+        case "boss":      _a0 = [58, 33,  8,  1, 0]; _a5 = [ 0, 20, 38, 30, 12]; break;   // 08-18 A0 leans common (M)
+        case "chest":     _a0 = [86, 12,  2,  0, 0]; _a5 = [20, 36, 28, 13, 3]; break;
+        case "vault":     _a0 = [78, 18,  3,  1, 0]; _a5 = [12, 32, 32, 18, 6]; break;
+        case "reliquary": _a0 = [25, 58, 15,  2, 0]; _a5 = [ 0, 25, 40, 28, 7]; break;
+        case "dorn":      _a0 = [65, 30,  5,  0, 0]; _a5 = [10, 35, 35, 18, 2]; break;
         default:          _a0 = [90,  9,  1,  0, 0]; _a5 = [28, 36, 24, 10, 2]; break;
     }
     // LATE RAMP (M 08-16: "items scale up too fast, rares and epics too
@@ -2846,7 +2847,7 @@ function item_empower_context() {
 
 // =============================================================================
 // TEMPERING + DORMANCY (M locked 08-04, SYSTEMS_ITEM_PROGRESSION.md §1-2).
-// Every DROP rolls a QUALITY (60-85%); Maren TEMPERS it +10%/step to 100
+// Every DROP rolls a QUALITY (45-70%, 08-18 nerf; was 60-85); Dorn TEMPERS it +10%/step to 100
 // (gold + dust by rarity). Generic stat-legendaries drop DORMANT (~0.55x)
 // until Maren AWAKENS them (300g + 60 dust + 2 epics); the named uniques
 // (unique_effect) always drop TRUE. Missing fields read as quality-100 /
@@ -3209,7 +3210,7 @@ function drop_equipment(rarity_weights, do_discover = true, curse_tiers = 0) {
         item_empower(_leg_item, _leg_ec.asc, _leg_ec.df);   // A6+/Descent scaling
         // Tempering + dormancy (08-04): every drop rolls quality, and generic
         // stat-legendaries wake up DORMANT - the named uniques stay true finds.
-        item_quality_stamp(_leg_item, 60, 85);
+        item_quality_stamp(_leg_item, 50, 72);   // 08-18 quality nerf
         if (!variable_struct_exists(_leg_item, "unique_effect") || _leg_item.unique_effect == "") {
             _leg_item.dormant = true;
             _leg_item.name    = "Dormant " + _leg_item.name;
@@ -3266,7 +3267,7 @@ function drop_equipment(rarity_weights, do_discover = true, curse_tiers = 0) {
     item_empower(_item, _emp_ec.asc, _emp_ec.df);
 
     // Tempering (08-04): drops arrive rough - Maren finishes them.
-    item_quality_stamp(_item, 60, 85);
+    item_quality_stamp(_item, 45, 70);   // 08-18 (M): drops land ~30% weaker; Dorn's temper still climbs to 100
 
     if (do_discover) discover_item(item_base_name(_item), _item.rarity);
     return _item;
@@ -4240,11 +4241,29 @@ function handle_enemy_drops(enemy_type) {
     var _rune_suffix = "";
     if (_rune_drop != "") _rune_suffix += "  +  " + _rune_drop;
     if (_dust_gain > 0)   _rune_suffix += "  +  " + string(_dust_gain) + " Dust";
+    // Dungeon crafting REAGENTS (M-locked 08-17): the current dungeon's reagent -
+    // elites 40% x1, bosses always x2. Fuel for Dorn's craft wizard.
+    var _rg_n = 0;
+    if (enemy_type == "elite" && irandom(99) < 40) _rg_n = 1;
+    else if (enemy_type == "boss") _rg_n = 2;
+    if (_rg_n > 0) {
+        var _rg = reagent_for_current_dungeon();
+        reagent_add(_rg.id, _rg_n);
+        _rune_suffix += "  +  " + _rg.name + ((_rg_n > 1) ? (" x" + string(_rg_n)) : "") + " [Reagent]";
+    }
+    // VALUABLES (M 08-17): sell-only trinkets. Standard 3% / elite 8% / boss 15%.
+    var _vl_ch = (enemy_type == "boss") ? 15 : ((enemy_type == "elite") ? 8 : 3);
+    if (irandom(99) < _vl_ch) {
+        var _vl = valuable_roll(enemy_type);
+        array_push(global.run_items_found, _vl);
+        consumable_award(_vl);
+        _rune_suffix += "  +  " + _vl.name + " [Valuable]";
+    }
 
     if (enemy_type == "standard") {
         // Consumable drop chance tapers off with awakening (10% - 1%/tier, min 5%)
         // so higher tiers lean on boons/shops instead of drowning in heals.
-        var _cons_chance = max(5, 10 - _drop_asc);
+        var _cons_chance = max(4, 7 - _drop_asc);   // 08-18 (M): fewer potions (was 10, min 5)
         // (Lucky Find reworked, audit §6: now a 20% chance consumables aren't consumed
         //  on use - the old +5% drop bonus here is gone.)
         if (!curse_blocks_consumables() && irandom(99) < _cons_chance) {   // Famine curse: no consumable drops
@@ -4257,7 +4276,7 @@ function handle_enemy_drops(enemy_type) {
             return _c.name + " [Consumable]" + _rune_suffix;
         }
         // 4% equipment drop (+ Faerie's Tear bonus) - rarity weights scale with awakening.
-        if (irandom(99) < 4 + _loot_pot) {
+        if (irandom(99) < 2 + _loot_pot) {   // 08-18 (M): standard mobs 4% -> 2% - elites/bosses are the reliable source
             var _gt = boon_gambler_tier_bonus();   // Gambler's Icon: fast fights roll +1 tier
             var _item = drop_equipment(drop_weights("standard", _drop_asc), true, curse_loot_tier_bonus_for("standard") + _gt);
             array_push(global.run_items_found, _item);
@@ -4287,7 +4306,7 @@ function handle_enemy_drops(enemy_type) {
         // Bonus consumable rider (60% - 4%/tier, min 40%; Famine curse blocks).
         // Pool mix as before: at low tiers most rolls downgrade to the standard
         // pool (A0: 60% -> A5: 0%) so elite-tier potions are grown into.
-        var _elite_cons_chance = max(40, 60 - _drop_asc * 4);
+        var _elite_cons_chance = max(30, 45 - _drop_asc * 3);   // 08-18: 45%->30% (was 60->40)
         if (!curse_blocks_consumables() && irandom(99) < _elite_cons_chance) {
             var _elite_std_mix = max(0, 60 - _drop_asc * 12);
             var _elite_pool = (irandom(99) < _elite_std_mix) ? global.consumables_standard : global.consumables_elite;
@@ -4404,7 +4423,7 @@ function stats_derive(stat_struct) {
         spell_slots:     max(1, INT),
 
         phys_dmg_bonus:     floor(STR * 0.5),
-        elem_dmg_bonus:     floor(INT * 0.4),
+        elem_dmg_bonus:     floor(INT * 0.3),   // 08-18 M: 0.4 -> 0.3 (A0 Arcanist over-tuned)
         dot_dmg_bonus:      floor(WIS * 0.3),
         cha_dmg_bonus:      floor(CHA * 0.3),
         phys_dmg_reduction: STR * 0.25,
@@ -4492,38 +4511,43 @@ function rune_catalog() {
         // Fortitude's CON also counts for armor/shield stat-gates and event checks.
         // (History: 15/35/70 -> stopgap 8/18/35 -> 6/12/24.)
         // Socketed runes read the catalog live, so existing saves adjust on load.
-        { id:"vitality",   name:"Vitality",   domain:"gear",   stat_name:"bonus_max_hp", vals:[6,12,24],  blurb:"+# Max HP" },
+        { id:"vitality",   name:"Vitality",   domain:"gear",   stat_name:"bonus_max_hp", vals:[4,6,10],  blurb:"+# Max HP" },
         { id:"might",      name:"Might",      domain:"gear",   stat_name:"STR",          vals:[1,2,4],    blurb:"+# STR" },
         { id:"finesse",    name:"Finesse",    domain:"gear",   stat_name:"DEX",          vals:[1,2,4],    blurb:"+# DEX" },
         { id:"fortitude",  name:"Fortitude",  domain:"gear",   stat_name:"CON",          vals:[1,2,4],    blurb:"+# CON" },
         { id:"insight",    name:"Insight",    domain:"gear",   stat_name:"INT",          vals:[1,2,4],    blurb:"+# INT" },
-        { id:"keen",       name:"Keen",       domain:"gear",   stat_name:"crit_flat",    vals:[3,6,12],   blurb:"+#% Crit chance (all attacks)" },
+        { id:"keen",       name:"Keen",       domain:"gear",   stat_name:"crit_phys",    vals:[1,2,4],    blurb:"+#% Physical crit chance" },   // 08-18 (M): phys-only, was all-crit 3/6/12
         { id:"warding",    name:"Warding",    domain:"gear",   stat_name:"el_resist",    vals:[5,10,18],  blurb:"+#% Elemental resist" },
-        { id:"evasion",    name:"Evasion",    domain:"gear",   stat_name:"dodge_flat",   vals:[2,4,8],    blurb:"+# Dodge" },
+        { id:"evasion",    name:"Evasion",    domain:"gear",   stat_name:"dodge_flat",   vals:[2,3,5],    blurb:"+# Dodge" },
         // ---- ASPECT RUNES (combat effects wired in Phase 2) ----
         // Per-school damage runes (M-locked 08-15: "Ember should be fire, not
         // all elemental"): one rune per element school at Hemorrhage's line,
         // keyed off ability_school(). Saved runes read the catalog live, so
         // pre-rework Ember instances become fire-only on load. AVATAR is the
         // deliberately-weak omni that covers every school at roughly half a
-        // single-school rune's value.
-        { id:"ember",      name:"Ember",      domain:"aspect", aspect:"school_dmg", school:"fire",   vals:[12,20,34], blurb:"+#% Fire damage" },
-        { id:"rime",       name:"Rime",       domain:"aspect", aspect:"school_dmg", school:"frost",  vals:[12,20,34], blurb:"+#% Frost damage" },
-        { id:"tempest",    name:"Tempest",    domain:"aspect", aspect:"school_dmg", school:"shock",  vals:[12,20,34], blurb:"+#% Shock damage" },
-        { id:"aether",     name:"Aether",     domain:"aspect", aspect:"school_dmg", school:"arcane", vals:[12,20,34], blurb:"+#% Arcane damage" },
-        { id:"hemorrhage", name:"Hemorrhage", domain:"aspect", aspect:"school_dmg", school:"blood",  vals:[12,20,34], blurb:"+#% Blood damage" },
-        { id:"abyss",      name:"Abyss",      domain:"aspect", aspect:"school_dmg", school:"void",   vals:[12,20,34], blurb:"+#% Void damage" },
-        { id:"umbra",      name:"Umbra",      domain:"aspect", aspect:"school_dmg", school:"shadow", vals:[12,20,34], blurb:"+#% Shadow damage" },
-        { id:"venom",      name:"Venom",      domain:"aspect", aspect:"school_dmg", school:"poison", vals:[12,20,34], blurb:"+#% Poison damage" },
-        { id:"avatar",     name:"Avatar",     domain:"aspect", aspect:"school_dmg", school:"any",    vals:[6,10,17],  blurb:"+#% damage in EVERY element school" },
-        { id:"serration",  name:"Serration",  domain:"aspect", aspect:"attack_dmg",                  vals:[10,18,30], blurb:"+#% Physical attack damage" },
+        // single-school rune's value. RUNE NERF (M 08-18: "instantly borderline
+        // game breaking"): school 12/20/34 -> 3/6/9, Avatar 6/10/17 -> 2/4/6,
+        // Serration 10/18/30 -> 4/6/10, Bulwark 2/4/7 -> 1/2/4, Leech 20/35/60
+        // -> 10/20/30, Surge 4/8/14 -> 1/2/4, Keen 3/6/12 all-crit -> 1/2/4 PHYS
+        // crit, Evasion 2/4/8 -> 2/3/5, Vitality 6/12/24 -> 4/6/10, Bastion 8 -> 15.
+        // Saved runes read the catalog live, so every socketed rune retunes on load.
+        { id:"ember",      name:"Ember",      domain:"aspect", aspect:"school_dmg", school:"fire",   vals:[3,6,9], blurb:"+#% Fire damage" },
+        { id:"rime",       name:"Rime",       domain:"aspect", aspect:"school_dmg", school:"frost",  vals:[3,6,9], blurb:"+#% Frost damage" },
+        { id:"tempest",    name:"Tempest",    domain:"aspect", aspect:"school_dmg", school:"shock",  vals:[3,6,9], blurb:"+#% Shock damage" },
+        { id:"aether",     name:"Aether",     domain:"aspect", aspect:"school_dmg", school:"arcane", vals:[3,6,9], blurb:"+#% Arcane damage" },
+        { id:"hemorrhage", name:"Hemorrhage", domain:"aspect", aspect:"school_dmg", school:"blood",  vals:[3,6,9], blurb:"+#% Blood damage" },
+        { id:"abyss",      name:"Abyss",      domain:"aspect", aspect:"school_dmg", school:"void",   vals:[3,6,9], blurb:"+#% Void damage" },
+        { id:"umbra",      name:"Umbra",      domain:"aspect", aspect:"school_dmg", school:"shadow", vals:[3,6,9], blurb:"+#% Shadow damage" },
+        { id:"venom",      name:"Venom",      domain:"aspect", aspect:"school_dmg", school:"poison", vals:[3,6,9], blurb:"+#% Poison damage" },
+        { id:"avatar",     name:"Avatar",     domain:"aspect", aspect:"school_dmg", school:"any",    vals:[2,4,6],  blurb:"+#% damage in EVERY element school" },
+        { id:"serration",  name:"Serration",  domain:"aspect", aspect:"attack_dmg",                  vals:[4,6,10], blurb:"+#% Physical attack damage" },
         // Accuracy pair NERFED + SPLIT (M-locked 08-15: "nothing will ever miss
         // again with these over stacked" - was 8/14/22 covering all ranged).
-        { id:"hunter",     name:"Hunter",     domain:"aspect", aspect:"ranged_acc",           vals:[2,3,4],    blurb:"+#% Ranged ATTACK accuracy" },
-        { id:"seer",       name:"Seer",       domain:"aspect", aspect:"spell_acc",            vals:[2,3,4],    blurb:"+#% Spell accuracy" },
-        { id:"bulwark",    name:"Bulwark",    domain:"aspect", aspect:"melee_shield",         vals:[2,4,7],    blurb:"Melee attack hits grant # shield" },
-        { id:"leech",      name:"Leech",      domain:"aspect", aspect:"drain_heal",           vals:[20,35,60], blurb:"Drain abilities heal +#% more" },
-        { id:"surge",      name:"Surge",      domain:"aspect", aspect:"spell_crit",           vals:[4,8,14],   blurb:"+#% Spell crit chance" },
+        { id:"hunter",     name:"Hunter",     domain:"aspect", aspect:"ranged_acc",           vals:[2,3,4],    blurb:"+#% Ranged ATTACK accuracy (rune total caps at +12%)" },
+        { id:"seer",       name:"Seer",       domain:"aspect", aspect:"spell_acc",            vals:[2,3,4],    blurb:"+#% Spell accuracy (rune total caps at +12%)" },
+        { id:"bulwark",    name:"Bulwark",    domain:"aspect", aspect:"melee_shield",         vals:[1,2,4],    blurb:"Each melee attack HIT grants # shield (multi-hit strikes grant it per hit)" },
+        { id:"leech",      name:"Leech",      domain:"aspect", aspect:"drain_heal",           vals:[10,20,30], blurb:"Drain abilities heal +#% more" },
+        { id:"surge",      name:"Surge",      domain:"aspect", aspect:"spell_crit",           vals:[1,2,4],   blurb:"+#% Spell crit chance" },
         { id:"anchor",     name:"Anchor",     domain:"aspect", aspect:"melee_weaken",         vals:[1,1,2],    blurb:"Melee attacks Weaken (# turns)" },
         { id:"quickcast",  name:"Quickcast",  domain:"aspect", aspect:"first_spell_ap", tier3_only:true, vals:[0,0,1], blurb:"First spell each combat costs -1 AP" },
         // Echo blurb fixed 07-09 (C6): the MECHANIC was already the 50% damage echo -
@@ -4532,7 +4556,7 @@ function rune_catalog() {
         // NEW tier-3 flagships (C6, M-approved 07-09) - progression-gated chase
         // recipes at Maren (flagship_unlock_text).
         { id:"cascade",    name:"Cascade",    domain:"aspect", aspect:"kill_refund",  tier3_only:true, vals:[0,0,1], blurb:"Your killing blows refund 1 Soul / Blood / Prep" },
-        { id:"bastion",    name:"Bastion",    domain:"aspect", aspect:"start_shield", tier3_only:true, vals:[0,0,8], blurb:"Start each combat with 8 shield" },
+        { id:"bastion",    name:"Bastion",    domain:"aspect", aspect:"start_shield", tier3_only:true, vals:[0,0,15], blurb:"Start each combat with # shield" },   // 08-18 (M): 8 read thin for a Tier III
     ];
 }
 
@@ -4825,14 +4849,22 @@ function rune_aspect_damage_pct(ab) {
 }
 
 // Flat accuracy points for ranged actions (Hunter).
+#macro RUNE_ACC_CAP 12   // 08-17 (M-locked): Hunter / Seer rune accuracy each caps at +12% total
 function rune_aspect_ranged_acc(ab) {
     // Split (M-locked 08-15): Hunter = ranged PHYSICAL attacks only; the new
     // Seer aspect covers spell accuracy (any spell class). Same entry point so
-    // every accuracy consumer picks up both.
+    // every accuracy consumer picks up both. Stacking audit (08-17): the runes
+    // SUM (three rank-I Hunters = +6, three rank-III = +12) and the sum is
+    // capped at RUNE_ACC_CAP per class - the cap is shown on the rune blurb,
+    // the stats-page Accuracy hover and Maren's Runesmithing tip.
     var _ac = ability_attack_class(ab);
-    if (_ac == "ranged_attack") return rune_aspect_value("ranged_acc", undefined);
-    if (ability_class_is_spell(_ac)) return rune_aspect_value("spell_acc", undefined);
+    if (_ac == "ranged_attack") return min(RUNE_ACC_CAP, rune_aspect_value("ranged_acc", undefined));
+    if (ability_class_is_spell(_ac)) return min(RUNE_ACC_CAP, rune_aspect_value("spell_acc", undefined));
     return 0;
+}
+// Capped rune accuracy by class key ("ranged_acc" | "spell_acc") for UI readouts.
+function rune_acc_total(aspect_key) {
+    return min(RUNE_ACC_CAP, rune_aspect_value(aspect_key, undefined));
 }
 
 // Flat crit % for spell actions (Surge).
@@ -6454,6 +6486,40 @@ function curse_has_bonus_drops()      { return curse_active("devilspact"); }    
 // =============================================================================
 
 // Stable NPC ids (index-independent so roster growth - e.g. Bairc - can't shift keys).
+// STATION-RANK checkout arming (08-17): shared by the hub carousel [U]/chip AND the
+// in-screen [U] / pad L3 (M 08-17: the pad had no free hub button, so every NPC
+// screen can arm the same checkout popup from inside). Returns "" or a refusal.
+function npc_station_arm(npc_id) {
+    if (!instance_exists(obj_hub_controller)) return "not at camp";
+    var _hub = instance_find(obj_hub_controller, 0);
+    var _ids = affinity_npc_ids();
+    var _ix = -1;
+    for (var _i = 0; _i < array_length(_ids); _i++) if (_ids[_i] == npc_id) _ix = _i;
+    if (_ix < 0) return "unknown station";
+    if (!_hub.npc_unlocked[_ix]) return "not unlocked";
+    if (npc_rank(npc_id) >= 2)  return "already at the top rank";
+    var _next = npc_rank(npc_id) + 1;
+    var _c    = npc_rank_cost(_next);
+    var _dust = variable_global_exists("rune_dust") ? global.rune_dust : 0;
+    _hub.npc_upgrade_arm   = npc_id;
+    _hub.npc_upgrade_title = string_upper(_hub.npc_names[_ix]) + "  -  STATION RANK " + string(_next);
+    _hub.npc_upgrade_body  = npc_rank_perk_text(npc_id, _next)
+        + "\n\nCost: " + string(_c.gold) + "g + " + string(_c.dust) + " dust"
+        + "   (you have " + string(global.gold) + "g, " + string(_dust) + " dust)";
+    audio_play_sound(snd_page, 1, false);
+    return "";
+}
+// True while the station-rank checkout popup - OR its result / refusal bond
+// dialog - is up (NPC screens stand down: both are hub-owned modals that can now
+// sit over an open NPC screen, and the key/tap that dismisses them must not also
+// reach the screen underneath).
+function hub_checkout_up() {
+    if (!instance_exists(obj_hub_controller)) return false;
+    var _hub = instance_find(obj_hub_controller, 0);
+    if (variable_instance_exists(_hub, "npc_upgrade_arm") && _hub.npc_upgrade_arm != "") return true;
+    return variable_instance_exists(_hub, "bond_dialog_open") && _hub.bond_dialog_open;
+}
+
 function affinity_npc_ids() {
     return ["dorn", "sable", "maren", "vex", "petra", "vael", "bairc"];   // bairc wired Phase 4a
 }
@@ -8375,7 +8441,7 @@ function petra_make_item(rarity, dust_bias) {
     }
     // Favored Client (rank 2, M-locked 08-15): her caravan delivers FINISHED
     // work - the traded-up piece re-stamps at quality 75-95.
-    if (npc_rank("petra") >= 2) item_quality_stamp(_best, 75, 95);
+    if (npc_rank("petra") >= 2) item_quality_stamp(_best, 64, 84);   // 08-18 quality nerf
     return _best;
 }
 // A clean base item of a rarity (no affixes) - what a cancel recovers.
@@ -9029,11 +9095,55 @@ function pet_hunger_run_tick() {
 // run (global.pet_treats_run, reset in end_run) so affection is earned at the
 // margin, never bulk-bought. Ride the feed pouch/shop plumbing (bond field > 0
 // marks a treat; pet_feed_apply branches on it).
+// FAVORED treats (M-locked 08-17): six delicacies each favored by a handful of
+// species. A favored treat gives +2 bond instead of +1 (pet_treat_bond_for). Petra
+// stocks the two generic treats always, plus every favored treat one of your LIVING
+// pets loves (pet_feed_shop_list). The Bairc feed rows tag them with a heart.
 function pet_treat_catalog() {
     return [
-        { id:"treat_honey",  name:"Honeycomb Treat", growth:0, bond:1, gold:45, perk:"none", blurb:"sticky, sweet, utterly beloved (+1 bond, 2 treats per run)" },
-        { id:"treat_marrow", name:"Candied Marrow",  growth:0, bond:1, gold:45, perk:"none", blurb:"a butcher's secret delicacy (+1 bond, 2 treats per run)" },
+        { id:"treat_honey",  name:"Honeycomb Treat", growth:0, bond:1, gold:45, perk:"none", favored:[], blurb:"sticky, sweet, utterly beloved (+1 bond, 2 treats per run)" },
+        { id:"treat_marrow", name:"Candied Marrow",  growth:0, bond:1, gold:45, perk:"none", favored:[], blurb:"a butcher's secret delicacy (+1 bond, 2 treats per run)" },
+        { id:"treat_ember_nut",   name:"Ember Chestnut",   growth:0, bond:1, gold:60, perk:"none",
+          favored:["ember_ram", "pyre_bison", "cinder_newt", "magma_leech", "wyrmling", "stormkirin"],
+          blurb:"roasted in a forge coal until it cracks - the fire-blooded go wild for it (+2 bond if favored)" },
+        { id:"treat_grave_lily",  name:"Grave-Lily Sugar", growth:0, bond:1, gold:60, perk:"none",
+          favored:["bone_stag", "bonehound", "gravefox", "cairn_bear", "gravemask", "barrow_mole", "vaultling", "crypt_bat"],
+          blurb:"pale petals candied in tomb-honey - the grave-born lick the paper clean (+2 bond if favored)" },
+        { id:"treat_moon_moth",   name:"Moonpetal Wafer",  growth:0, bond:1, gold:60, perk:"none",
+          favored:["luna_moth", "nightowl", "wispfox", "tallow_moth", "sum_moth", "flicker_finch"],
+          blurb:"a wafer that only shows its shimmer by moonlight - night-fliers adore it (+2 bond if favored)" },
+        { id:"treat_brine_jerky", name:"Brine Jerky",      growth:0, bond:1, gold:60, perk:"none",
+          favored:["gloomtoad", "sluice_otter", "glass_eel", "drowned_lamp", "paleswimmer", "leviathan_calf", "chorister_fry", "mire_heron"],
+          blurb:"salt-cured eel from the flooded galleries - the wet-born gulp it whole (+2 bond if favored)" },
+        { id:"treat_frost_root",  name:"Frost-Root Chew",  growth:0, bond:1, gold:60, perk:"none",
+          favored:["saber_hound", "hollow_pup", "frostmarten", "snowmaw", "permafrost_toad", "icewing_skua", "salt_hare", "wing_hare"],
+          blurb:"a hard tundra root that numbs the gums - the cold-country beasts chew for hours (+2 bond if favored)" },
+        { id:"treat_iron_grub",   name:"Iron Grub",        growth:0, bond:1, gold:60, perk:"none",
+          favored:["rust_vole", "gravel_tick", "pressure_snail", "bristleback", "honeymaw", "bark_hound", "canopy_shrew", "tallykeep"],
+          blurb:"a fat grub that lives in old ore - crunchy, metallic, irresistible to the diggers and gnawers (+2 bond if favored)" },
     ];
+}
+// True if this treat is one of the pet's FAVORED delicacies.
+function pet_treat_is_favored(treat, pet) {
+    if (!is_struct(treat) || !is_struct(pet) || !variable_struct_exists(treat, "favored")) return false;
+    for (var _i = 0; _i < array_length(treat.favored); _i++) if (treat.favored[_i] == pet.species) return true;
+    return false;
+}
+// Bond a treat grants THIS pet (+2 favored, else the treat's base +1).
+function pet_treat_bond_for(treat, pet) {
+    if (!is_struct(treat) || !variable_struct_exists(treat, "bond")) return 0;
+    return pet_treat_is_favored(treat, pet) ? (treat.bond + 1) : treat.bond;
+}
+// Names of the favored treats for a species (heart tag on the species line / codex).
+function pet_treat_favorites_text(species_id) {
+    var _t = pet_treat_catalog(), _out = "";
+    for (var _i = 0; _i < array_length(_t); _i++) {
+        if (!variable_struct_exists(_t[_i], "favored")) continue;
+        for (var _j = 0; _j < array_length(_t[_i].favored); _j++) {
+            if (_t[_i].favored[_j] == species_id) { _out += ((_out != "") ? ", " : "") + _t[_i].name; break; }
+        }
+    }
+    return _out;
 }
 function pet_treats_left() {
     if (!variable_global_exists("pet_treats_run")) global.pet_treats_run = 0;
@@ -9116,7 +9226,11 @@ function pet_feed_current_premium() {
 }
 // Icon sprite for a feed id (spr_pet_feed_<id>), or -1 if not imported yet.
 function pet_feed_icon(id) {
-    return asset_get_index("spr_pet_feed_" + id);
+    var _i = asset_get_index("spr_pet_feed_" + id);
+    // 08-17 favored treats ship without bespoke icons yet (icon batch pending M's
+    // approval) - borrow the honeycomb treat art rather than draw an empty row.
+    if (_i < 0 && string_pos("treat_", id) == 1) _i = asset_get_index("spr_pet_feed_treat_honey");
+    return _i;
 }
 
 // Resolve any feed def by id (basics + full premium pool + species-preferred + treats).
@@ -9137,9 +9251,21 @@ function pet_feed_get(id) {
 function pet_feed_shop_list() {
     var _list = pet_feed_catalog();
     array_push(_list, pet_feed_current_premium());
-    // Treats (07-08): always stocked, bond-only, 2 usable per run.
+    // Treats (07-08): the two generic ones always stocked, bond-only, 2 usable per
+    // run. FAVORED treats (08-17) are stocked only while a LIVING pet of a species
+    // that loves them is in the roster - Petra shelves what your creatures want.
     var _tcat = pet_treat_catalog();
-    for (var _tc = 0; _tc < array_length(_tcat); _tc++) array_push(_list, _tcat[_tc]);
+    var _tr_roster = pet_roster();
+    for (var _tc = 0; _tc < array_length(_tcat); _tc++) {
+        var _tdef = _tcat[_tc];
+        if (!variable_struct_exists(_tdef, "favored") || array_length(_tdef.favored) == 0) { array_push(_list, _tdef); continue; }
+        var _t_own = false;
+        for (var _tj = 0; _tj < array_length(_tr_roster) && !_t_own; _tj++) {
+            var _tp = _tr_roster[_tj];
+            if (is_struct(_tp) && !_tp.is_egg && pet_treat_is_favored(_tdef, _tp)) _t_own = true;
+        }
+        if (_t_own) array_push(_list, _tdef);
+    }
     var _pc = pet_feed_preferred_catalog();
     for (var _i = 0; _i < array_length(_pc); _i++) {
         if (!pet_pref_is_discovered(_pc[_i].species)) continue;
@@ -9176,6 +9302,8 @@ function pet_feed_owned_list() {
     var _pool = pet_feed_premium_pool();
     var _pref = pet_feed_preferred_catalog();
     for (var _pi = 0; _pi < array_length(_pref); _pi++) array_push(_pool, _pref[_pi]);
+    var _trs = pet_treat_catalog();   // a favored treat bought before its pet left the roster
+    for (var _ti = 0; _ti < array_length(_trs); _ti++) array_push(_pool, _trs[_ti]);
     for (var _i = 0; _i < array_length(_pool); _i++) {
         var _found = false;
         for (var _j = 0; _j < array_length(_all); _j++) if (_all[_j].id == _pool[_i].id) { _found = true; break; }
@@ -9235,7 +9363,8 @@ function pet_feed_apply(pet, feed_id) {
         if (pet_treats_left() <= 0) return "No more treats this run - " + pet.name + " has been spoiled enough.";
         variable_struct_set(pet_feed_pouch(), feed_id, pet_feed_pouch_count(feed_id) - 1);
         global.pet_treats_run = (variable_global_exists("pet_treats_run") ? global.pet_treats_run : 0) + 1;
-        var _tmsg = pet_bond_gain(pet, _f.bond);
+        var _tmsg = pet_bond_gain(pet, pet_treat_bond_for(_f, pet));   // favored = +2 (08-17)
+        if (pet_treat_is_favored(_f, pet)) _tmsg = pet.name + " ADORES the " + _f.name + "!" + ((_tmsg != "") ? ("  " + _tmsg) : "");
         if (_tmsg != "" && variable_global_exists("pet_find_notice")) {
             global.pet_find_notice = (global.pet_find_notice != "")
                 ? (global.pet_find_notice + "   " + _tmsg) : _tmsg;
@@ -9484,7 +9613,15 @@ function pet_anim_frame(spr) {
     if (spr < 0) return 0;
     var _n = sprite_get_number(spr);
     if (_n <= 1) return 0;
-    return (current_time div 120) mod _n;
+    // Default 120 ms/frame (~8 fps). A sprite authored with an explicit faster playback
+    // speed (fps > 8, e.g. the cairn bear adult breath loop at 20 fps) is honoured so
+    // hand-built fluid loops don't get slowed to the shared cadence.
+    var _ms = 120;
+    if (sprite_get_speed_type(spr) == spritespeed_framespersecond) {
+        var _fps = sprite_get_speed(spr);
+        if (_fps > 8) _ms = 1000 / _fps;
+    }
+    return (current_time div _ms) mod _n;
 }
 
 // --- Boon archetype passives (Pets Phase 3) ----------------------------------
@@ -10221,7 +10358,7 @@ function pet_quirk_add(pet, id, dungeon, story) {
     if (pet_quirk_has(pet, id)) return "";
     if (dungeon != "" && pet_quirk_has_dungeon(pet, dungeon)) return "";
     array_push(pet_quirks(pet), { id: id, dungeon: dungeon, story: story });
-    return pet.name + " develops a QUIRK - " + pet_quirk_label(id, dungeon) + " (" + story + ").";
+    return pet.name + " develops a QUIRK - " + pet_quirk_label(id, dungeon) + ((story != "") ? (" (" + story + ").") : ".");
 }
 
 // The sheet list: [{name, desc}] with the story line attached.
@@ -10231,8 +10368,12 @@ function pet_quirk_list(pet) {
     var _q = pet_quirks(pet);
     for (var _i = 0; _i < array_length(_q); _i++) {
         var _e = _q[_i];
+        // Boss-Blooded ships with NO story line (M 08-18: "stood with you at a boss's
+        // first fall" read as an origin claim on a starter-egg pet); older saves that
+        // stored it drop it too.
+        var _story = (_e.id == "boss_blooded") ? "" : _e.story;
         array_push(_out, { name: pet_quirk_label(_e.id, _e.dungeon) + "  (quirk)",
-                           desc: pet_quirk_desc(_e.id) + "  It " + _e.story + "." });
+                           desc: pet_quirk_desc(_e.id) + ((_story != "") ? ("  It " + _story + ".") : "") });
     }
     return _out;
 }
@@ -11198,11 +11339,18 @@ function pet_grant_from_source(source, species_override = "") {
     return pet_add(_pet);
 }
 
-// True if a species has imported base art (so the starter never rolls an artless one).
+// True if a species has COMPLETE art, so rolls / starter / boss eggs / compendium never
+// expose one with missing art. Bar (M 08-17): all THREE visual stages exist - baby,
+// youngadult, adult - as south sprites (east falls back to south in pet_sprite, so a
+// single facing is fine). Static stills COUNT (idle animation can land later); a species
+// missing any stage does not. Pets already in a save keep drawing: pet_sprite() is unchanged.
 function pet_species_has_art(species_id) {
-    return asset_get_index("spr_pet_" + species_id + "_baby_s") >= 0
-        || asset_get_index("spr_pet_" + species_id + "_baby") >= 0
-        || asset_get_index("spr_pet_" + species_id) >= 0;
+    var _stages = ["baby", "youngadult", "adult"];
+    for (var _i = 0; _i < array_length(_stages); _i++) {
+        var _k = "spr_pet_" + species_id + "_" + _stages[_i];
+        if (asset_get_index(_k + "_s") < 0 && asset_get_index(_k) < 0) return false;
+    }
+    return true;
 }
 
 // The one-time STARTER egg, granted on the first Bairc talk. Random species (preferring
@@ -11256,8 +11404,8 @@ function pet_egg_type_catalog() {
         // Descs corrected 08-13 (M screenshot: a Tender Egg on a FORTUNE pet
         // claimed +5% heal & shield, but the bonus only reads in the Guardian
         // branch - "no effect on Combatant" hid that Fortune got nothing too).
-        { id:"savage",  name:"Savage Egg",   effect:"dmg",    val:0.05, desc:"+5% pet damage (Warrior pets only)." },
-        { id:"tender",  name:"Tender Egg",   effect:"mend",   val:0.05, desc:"+5% pet heal & shield (Guardian pets only)." },
+        { id:"savage",  name:"Savage Egg",   effect:"dmg",    val:0.05, desc:"+5% pet damage (Warrior; Guardians get +5% heal & shield, Fortune pets +5% gold)." },
+        { id:"tender",  name:"Tender Egg",   effect:"mend",   val:0.05, desc:"+5% pet heal & shield (Guardian; Warriors get +5% damage, Fortune pets +5% gold)." },
         // Expansion slate (§3): six more surprise egg designs, each a small permanent perk
         // carried by the hatchling while it is your active companion.
         { id:"vital",   name:"Vital Egg",    effect:"vit",    val:0.08, desc:"+8% max HP while its hatchling is active." },
@@ -11294,15 +11442,32 @@ function pet_egg_random() {
 
 // The active pet's egg benefit for a given kind ("gold"/"loot"/"dmg"/"mend"), honoring the
 // archetype exclusions (damage egg skips Guardians; mend egg skips Combatants). 0 if none.
+// ROLE-AWARE egg gifts (M-locked 08-17): a Savage/Tender egg whose bonus can't
+// apply to the hatchling's role CONVERTS instead of doing nothing - a Fortune/Boon
+// pet turns either into +5% gold find, a Warrior turns Tender into +5% damage, a
+// Guardian turns Savage into +5% heal & shield. Returns { effect, val, desc, note }.
+function pet_egg_effect_for(pet) {
+    if (!is_struct(pet) || !variable_struct_exists(pet, "egg_type") || pet.egg_type == "") return undefined;
+    var _et = pet_egg_type_get(pet.egg_type);
+    if (_et == undefined) return undefined;
+    var _eff = _et.effect, _val = _et.val, _desc = _et.desc, _note = "";
+    if (_eff == "dmg" || _eff == "mend") {
+        if (pet.archetype == PET_ARCH_BOON) {
+            _eff = "gold"; _val = 0.05; _desc = "+5% gold while its hatchling is active."; _note = "converted for a Fortune-role pet";
+        } else if (_eff == "dmg" && pet.archetype == PET_ARCH_GUARDIAN) {
+            _eff = "mend"; _val = 0.05; _desc = "+5% pet heal & shield."; _note = "converted for a Guardian";
+        } else if (_eff == "mend" && pet.archetype == PET_ARCH_COMBATANT) {
+            _eff = "dmg"; _val = 0.05; _desc = "+5% pet damage."; _note = "converted for a Warrior";
+        }
+    }
+    return { effect: _eff, val: _val, desc: _desc, note: _note };
+}
 function pet_active_egg_bonus(kind) {
     var _p = pet_active();
     if (_p == undefined || _p.is_egg) return 0;
-    if (!variable_struct_exists(_p, "egg_type") || _p.egg_type == "") return 0;
-    var _et = pet_egg_type_get(_p.egg_type);
-    if (_et == undefined || _et.effect != kind) return 0;
-    if (kind == "dmg"  && _p.archetype == PET_ARCH_GUARDIAN)  return 0;
-    if (kind == "mend" && _p.archetype == PET_ARCH_COMBATANT) return 0;
-    return _et.val;
+    var _ee = pet_egg_effect_for(_p);
+    if (_ee == undefined || _ee.effect != kind) return 0;
+    return _ee.val;
 }
 
 // Warding-egg incoming-damage multiplier for the active pet (1.0 if none). Mirrors the
@@ -11329,6 +11494,10 @@ function pet_try_boss_egg(awk) {
     var _dung  = variable_global_exists("selected_dungeon") ? global.selected_dungeon : "ashen_vault";
     var _floor = variable_global_exists("current_floor")    ? global.current_floor    : 1;
     var _sig   = pet_boss_signature_species(_dung, _floor);
+    // 08-17: a signature whose art is not finished (pet_species_has_art) counts as unmapped -
+    // the boss still drops an egg (generic, art-gated roll) but the scion is NOT marked found,
+    // so it stays catchable once its art lands.
+    if (_sig != "" && !pet_species_has_art(_sig)) _sig = "";
     // ONCE PER SAVE (M 07-31: repeat drops made signatures "feel common and
     // meaningless"): each boss's signature kin can be found exactly once per
     // save file. First-kill chance raised so it stays chaseable; after that,
@@ -11410,15 +11579,17 @@ function tutorial_catalog() {
         { id:"combat_ap",  title:"Action Points (AP)",  body:"Each turn you have 3 AP (4 with the Bloodwarden Relentless trait). Abilities cost AP to use; a basic attack is free. Spend your AP wisely, then end your turn to let the enemy act." },
         { id:"targeting",  title:"Choosing a Target",   body:"When several foes are present, Tab or click to pick who you hit. The glowing rune beneath an enemy marks your current target." },
         { id:"intent",     title:"Enemy Intent",        body:"Every enemy telegraphs its next move on the chip above its health bar: red for an attack (with the rough damage you'd take), purple for a spell, green for a heal, amber for a status effect. Intents are honest - and if you Stun, Root or Silence a foe, its chip greys out: that move is cancelled." },
-        { id:"inspect",    title:"Inspect Your Foes",   body:"Mouse over an enemy (or its health bar) to inspect it. You'll see whether it fights at Melee or Ranged and with Phys or Spell - and which controls stop it: Root halts melee, Silence stops spells, Stun stops anything. Ranged foes ignore Root, so a trap won't keep them off you." },
+        { id:"inspect",    title:"Inspect Your Foes",   body:"Mouse over an enemy (or its health bar) to inspect it. You'll see whether it fights at Melee or Ranged and with Phys or Spell - and which controls stop it: Root halts melee, Silence stops spells, Stun stops anything. Ranged foes ignore Root, so a trap won't keep them off you. Some families are IMMUNE to a status outright (undead shrug Poison, golems Bleed and Stun, spirits Root and Bleed, fire-kin Burn, frost-kin Chill) - the inspect box and the Bestiary list it." },
         { id:"weakness",   title:"Exposed Weaknesses",  body:"The small colored GEM beside an enemy's intent chip is the school it is WEAK to - Fire, Frost, Shock or Arcane. Hit it with a matching-school ability for +30% damage, and the FIRST weakness strike on each enemy refunds 1 AP. Carrying one off-school ability can pay for itself every fight." },
         { id:"vex",        title:"Vex the Trainer",     body:"Vex teaches new abilities and traits for gold (and the occasional item). Learn abilities here, then slot them on the loadout screen before a run." },
         { id:"shrine",     title:"Altars",              body:"A shrine is an altar. A Blessing altar sells boons for tribute - prices scale with your Awakening, and once per shrine [R] rerolls the offer for rune dust. A Cursed altar lets you take on a curse - a run-long penalty - in exchange for far better spoils. Loot-tier rewards lift drops as far as EPIC; a Legendary is never forced, only found. Choose how greedy you dare to be." },
         { id:"gold_risk",  title:"Gold at Risk",        body:"Gold you FIND during a run is at risk - die and you lose most of it (a quarter is returned as mercy). Gold banked before the run is always safe at camp. The number in brackets on your HUD is what you're gambling: extract to keep it all." },
         { id:"escape_item", title:"A Way Out",          body:"You carry an escape item. On the floor map, press G (or tap the LAMP / WINE button) to use it: the Genie Lamp whisks you back to camp with ALL your loot, free. Devil Wine does the same - but drains 2 random stat points. WARNING: the Wine's toll is PERMANENT - those points are gone from your hero on every future run, not just this one. Cash out a greedy run before the dungeon takes it back." },
+        { id:"garden_scene", title:"Bairc's Garden",   body:"This is where your creatures live between runs. Look around: hold A / D or the arrow keys, DRAG with the mouse, swipe on touch, or push the left stick on a pad. Tap a creature (or press [E]) to pet it, [1]-[3] to toss crumbs, set a stone or forage, and [B] opens the ornament shop. The garden is early - big things are coming for decorating it." },
         { id:"origin_egg",  title:"Something Stirs",    body:"The egg you stumbled upon in your travels stirs - perhaps someone here can help with that. Bairc the beast-warden can identify and hatch it: find him on the camp carousel and set the egg under his care. A raised creature fights beside you, or blesses your runs." },
         { id:"bond_gates",  title:"Growing Closer",     body:"Someone in camp has warmed to you - their bond has reached a GATE. Crossing a gate now takes a FAVOR: talk to them and take on their gate quest (it appears on the tavern board and in your Journal). Finish it and the friendship deepens, unlocking their next perk. Mind your bonds: friendships DECAY if neglected, and only a few can hold the deepest tiers - deepening one may demote another." },
         { id:"maren_forge", title:"Rough Steel",       body:"Items drop UNFINISHED. The QUALITY tag shows how much of an item's true power it delivers right now.\nDorn's TEMPER tab raises that by +10% per step, for gold and rune dust. Each step also adds a little bonus max HP.\nA raw legendary barely beats a finished epic - always worth tempering what you love." },
+        { id:"rune_caps",  title:"Aspect Runes Stack - to a Point", body:"Aspect runes socketed here ADD UP: three Hunter runes give three times the ranged accuracy. But each accuracy family is CAPPED - Hunter (ranged attacks) and Seer (spells) each stop at +12% total, so past that a fourth rune is wasted. The cap is printed on the rune and on the Accuracy line of your STATS page." },
         { id:"dormant_leg", title:"A Sleeping Legend", body:"You found a DORMANT legendary. It fell asleep when its last bearer died - it carries only a shadow of its true strength for now. Take it to Maren's AWAKEN craft (Runesmithing tab): 300g, 60 rune dust and two epics fed to the fire will wake it. Only the storied named legendaries are ever found awake." },
         { id:"dorn_reforge", title:"Reforge Ingots",   body:"You earned a REFORGE INGOT.\nSpend it at Dorn's to REROLL the affixes on a piece of unequipped gear - same item, fresh random stats.\nIngots are tiered by rarity. A higher-tier ingot works on anything at its tier or below.\nSMELTING gear at Dorn's pays an ingot back, so nothing is ever wasted." },
         { id:"legendary_forge", title:"Dorn's Forge",   body:"Two crafts live at this anvil.\nREWORK: spend a REFORGE INGOT of the item's tier or higher to reroll its affixes. Three ingots of one tier FUSE into one of the next.\nTHE LEGENDARY FORGE: gather three parts - Dorn's MYTHRIL FRAME, Maren's RUNEHEART CORE, and Sable's QUINTESSENCE - then return here to forge, and NAME, a legendary that exists nowhere else." },
@@ -11523,6 +11694,33 @@ function item_picker_close() {
     _p.candidates = [];
 }
 
+// shop_sell_price(item, npc_id) - the SELL-tab payout, ONE formula for the Step
+// (what is paid) and the list draw (what is shown): 40% of gold_value (rarity
+// fallback), legendaries x3 with a 1200 floor (M 08-04), +5%/affinity tier,
+// Petra Trade Ledger rank 2 +10%. VALUABLES (08-17) have no buy price - their
+// authored gold_value IS the payout, then the same affinity/rank sweeteners.
+function shop_sell_price(item, npc_id) {
+    var _gv = 0;
+    if (is_struct(item) && variable_struct_exists(item, "gold_value")) _gv = item.gold_value;
+    var _valuable = is_struct(item) && variable_struct_exists(item, "effect_type") && item.effect_type == "valuable" && _gv > 0;
+    if (_gv == 0 && is_struct(item) && variable_struct_exists(item, "rarity")) {
+        if (item.rarity == 0)      _gv = 15;
+        else if (item.rarity == 1) _gv = 32;
+        else if (item.rarity == 2) _gv = 82;
+        else if (item.rarity == 3) _gv = 200;
+        else                       _gv = 400;
+    }
+    var _base;
+    if (_valuable) {
+        _base = _gv;
+    } else {
+        if (is_struct(item) && variable_struct_exists(item, "rarity") && item.rarity == 4) _gv = max(_gv * 3, 1200);
+        _base = _gv * 0.4;
+    }
+    var _tier = affinity_tier(npc_id);
+    return max(1, floor(_base * (1 + 0.05 * _tier) * ((npc_rank("petra") >= 2) ? 1.10 : 1.0)));
+}
+
 // item_sell_value(item) - what a vendor pays for this item BEFORE affinity
 // sweeteners: 40% of gold_value, with the shop's same rarity fallback ladder.
 // Sacrifice pickers show THIS as the item's gold figure, so "what am I giving
@@ -11533,6 +11731,11 @@ function item_sell_value(item) {
     var _r  = (is_struct(item) && variable_struct_exists(item, "rarity")) ? clamp(item.rarity, 0, 4) : 0;
     var _base = [15, 32, 82, 200, 400];
     if (is_struct(item) && variable_struct_exists(item, "gold_value")) _gv = item.gold_value;
+    // VALUABLES (08-17): sell-only trinkets with no buy price - the authored gold_value
+    // IS the payout (40 / 120 / 320 / 750 / 1600). The 40% resale cut + rarity bands
+    // below are for gear/consumables that were bought or found; applied here they
+    // squashed a "steep gold" locket to 11g.
+    if (is_struct(item) && variable_struct_exists(item, "effect_type") && item.effect_type == "valuable" && _gv > 0) return _gv;
     if (_gv == 0) _gv = _base[_r];
     // 08-11 (M: "why do some rares sell for more than epics?"): authored
     // per-item gold_values predate the rarity economy and could invert tiers.
@@ -12597,7 +12800,7 @@ function ghost_exclusive_catalog(_asc) {
         _gi.class_req       = -1;
         _gi.ghost_exclusive = true;
         _gi.socket_count    = rune_sockets_for_rarity(_gi.rarity);
-        item_quality_stamp(_gi, 70, 90);
+        item_quality_stamp(_gi, 58, 78);   // 08-18 quality nerf (ghost exclusives)
     }
     return _out;
 }
@@ -12605,31 +12808,37 @@ function ghost_exclusive_catalog(_asc) {
 function ghost_shop_build_stock() {
     var _asc  = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
     var _rows = [];
-    // 3 rolled pieces from ONE awakening above yours, rare floor.
-    var _gw = drop_weights("reliquary", min(5, _asc + 1), _asc);
-    var _spill = _gw[0] + _gw[1];
-    _gw[0] = 0; _gw[1] = 0; _gw[2] += _spill;    // rare+ only
-    repeat (3) {
+    // 3 rolled pieces, rare floor (M 08-18 retune: the stall used to roll ALL
+    // three from one awakening above with the full legendary weight - at A4/A5
+    // that read as a legendary vending machine). Now: two at your CURRENT
+    // awakening + ONE from the tier above, and legendaries stay a rare surprise
+    // (weight capped at 2%, the rest folds into epic).
+    for (var _gr = 0; _gr < 3; _gr++) {
+        var _gw = drop_weights("reliquary", (_gr == 2) ? min(5, _asc + 1) : _asc, _asc);
+        var _spill = _gw[0] + _gw[1];
+        _gw[0] = 0; _gw[1] = 0; _gw[2] += _spill;    // rare+ only
+        var _leg = min(_gw[4], 2);
+        _gw[3] += _gw[4] - _leg; _gw[4] = _leg;      // legendary <= 2%
         var _it = drop_equipment(_gw, false);
-        item_quality_stamp(_it, 65, 88);
+        item_quality_stamp(_it, 52, 74);   // 08-18 quality nerf (ghost)
         array_push(_rows, { kind: "item", item: _it,
             price: max(1, floor(_it.gold_value * 2.4)), sold: false });
     }
-    // Decent chance (60%) of ONE ghost-exclusive from the band catalog.
-    if (irandom(99) < 60) {
-        var _ex = ghost_exclusive_catalog(_asc);
-        if (array_length(_ex) > 0) {
-            var _pick = _ex[irandom(array_length(_ex) - 1)];
-            array_push(_rows, { kind: "item", item: _pick,
-                price: max(1, floor(_pick.gold_value * 2.4)), sold: false });
-        }
+    // ALWAYS one hand-authored ghost-exclusive from the awakening band (M 08-18:
+    // "more hand authored epics and rares as at least 1 item").
+    var _ex = ghost_exclusive_catalog(_asc);
+    if (array_length(_ex) > 0) {
+        var _pick = _ex[irandom(array_length(_ex) - 1)];
+        array_push(_rows, { kind: "item", item: _pick,
+            price: max(1, floor(_pick.gold_value * 2.4)), sold: false });
     }
-    // 2 strong runes (tier 2; tier 3 from awakening 3 up).
-    repeat (2) {
-        var _rt = (_asc >= 3) ? 3 : 2;
+    // 2 runes: Tier II (160g). Tier III is otherwise craft-only at Maren, so the
+    // ghost only carries ONE - from awakening 5 - at 1000g (M 08-18).
+    for (var _gk = 0; _gk < 2; _gk++) {
+        var _rt = (_asc >= 5 && _gk == 0) ? 3 : 2;
         var _rn = rune_make(rune_random(_rt).id, _rt);
         array_push(_rows, { kind: "rune", rune: _rn,
-            price: (_rt >= 3) ? 420 : 160, sold: false });
+            price: (_rt >= 3) ? 1000 : 160, sold: false });
     }
     global.ghost_stock = _rows;
 }
@@ -12989,8 +13198,9 @@ function event_catalog() {
         ]
     });
 
-    // --- 6. Merchant's Ghost (M-locked 08-15 rework: a POPUP SHOP of rare
-    // wares - loot rolled above your awakening, a chance of ghost-exclusive
+    // --- 6. Merchant's Ghost (M-locked 08-15 rework, retuned 08-18: a POPUP SHOP
+    // of rare wares - two rolls at your awakening + one above, legendaries capped
+    // at 2%, ALWAYS one ghost-exclusive, Tier II runes (one Tier III from A5) -
     // hand-authored pieces, and strong runes; browse and buy as you like) ----
     array_push(_cat, {
         id: "merchants_ghost",
@@ -15000,6 +15210,114 @@ function pattern_affix_budget(_rarity) {
     if (_rarity >= 3) return 3;
     return 2;
 }
+// =============================================================================
+// DUNGEON CRAFTING REAGENTS (M-locked 08-17: "reagents needed for crafting items
+// at Dorn"). One reagent per dungeon, dropped by that dungeon's elites (40%) and
+// bosses (x2, always). Dorn's CRAFT wizard asks 1 / 2 / 3 reagents of ANY kind
+// for an Uncommon / Rare / Epic craft on top of gold + dust + ingot. Persisted in
+// global.reagents (save/load/new_game in scr_save). Shown on the wizard's
+// quality rows and the craft checkout.
+// =============================================================================
+function reagent_catalog() {
+    return [
+        { id:"vault_ash",     name:"Vault Ash",     dungeon:"ashen_vault",     blurb:"grey ash that never cooled - the Vault's dead still smoulder in it" },
+        { id:"cinder_marrow", name:"Cinder Marrow", dungeon:"scorched_depths", blurb:"marrow that burns without a flame, cut from things that live in the vents" },
+        { id:"rime_salt",     name:"Rime Salt",     dungeon:"tundra_tomb",     blurb:"salt that freezes whatever it touches; the Tomb keeps its dead in it" },
+        { id:"void_silt",     name:"Void Silt",     dungeon:"descent",         blurb:"silt from below the bottom - it weighs more than it should" },
+    ];
+}
+function reagents_ensure() {
+    if (!variable_global_exists("reagents") || !is_struct(global.reagents)) global.reagents = {};
+    var _c = reagent_catalog();
+    for (var _i = 0; _i < array_length(_c); _i++) {
+        if (!variable_struct_exists(global.reagents, _c[_i].id)) variable_struct_set(global.reagents, _c[_i].id, 0);
+    }
+}
+function reagent_get(id) {
+    var _c = reagent_catalog();
+    for (var _i = 0; _i < array_length(_c); _i++) if (_c[_i].id == id) return _c[_i];
+    return undefined;
+}
+function reagent_count(id) {
+    reagents_ensure();
+    return variable_struct_exists(global.reagents, id) ? variable_struct_get(global.reagents, id) : 0;
+}
+function reagent_add(id, n) {
+    reagents_ensure();
+    variable_struct_set(global.reagents, id, reagent_count(id) + n);
+}
+function reagent_total() {
+    reagents_ensure();
+    var _c = reagent_catalog(), _t = 0;
+    for (var _i = 0; _i < array_length(_c); _i++) _t += reagent_count(_c[_i].id);
+    return _t;
+}
+// "Vault Ash x2, Rime Salt x1" (or "none") for UI lines.
+function reagent_summary_text() {
+    reagents_ensure();
+    var _c = reagent_catalog(), _t = "";
+    for (var _i = 0; _i < array_length(_c); _i++) {
+        var _n = reagent_count(_c[_i].id);
+        if (_n > 0) _t += ((_t != "") ? ", " : "") + _c[_i].name + " x" + string(_n);
+    }
+    return (_t == "") ? "none" : _t;
+}
+// Spend n reagents of ANY kind, largest stacks first. Returns the names spent.
+function reagent_spend_any(n) {
+    reagents_ensure();
+    var _spent = "";
+    while (n > 0) {
+        var _c = reagent_catalog(), _best = undefined, _bn = 0;
+        for (var _i = 0; _i < array_length(_c); _i++) {
+            var _k = reagent_count(_c[_i].id);
+            if (_k > _bn) { _bn = _k; _best = _c[_i]; }
+        }
+        if (_best == undefined) break;
+        variable_struct_set(global.reagents, _best.id, _bn - 1);
+        _spent += ((_spent != "") ? ", " : "") + _best.name;
+        n--;
+    }
+    return _spent;
+}
+// The reagent the CURRENT run's dungeon drops.
+function reagent_for_current_dungeon() {
+    var _d = variable_global_exists("selected_dungeon") ? global.selected_dungeon : "ashen_vault";
+    var _c = reagent_catalog();
+    for (var _i = 0; _i < array_length(_c); _i++) if (_c[_i].dungeon == _d) return _c[_i];
+    return _c[0];
+}
+// Reagents a craft of this rarity asks (1 / 2 / 3).
+function pattern_craft_reagents(_rarity) {
+    return clamp(_rarity, 1, 3);
+}
+
+// =============================================================================
+// VALUABLES (M 08-17): five items that exist ONLY to be sold - common -> legendary,
+// steep gold. They ride the consumable inventory (item_category "consumable",
+// effect_type "valuable") so they show in the pack / Petra's SELL tab with no new
+// UI; every use path refuses them ("sell it at camp") and never consumes them.
+// =============================================================================
+function valuable_catalog() {
+    var _v = [
+        { c: create_consumable("Tarnished Locket",     "valuable", 0, "A keepsake with the portrait scratched out. Worth something to someone - sell it at camp.",         40),  r: 0 },
+        { c: create_consumable("Silver Reliquary",     "valuable", 0, "A finger-bone in a silver box. The bone is worthless; the box is not - sell it at camp.",             120), r: 1 },
+        { c: create_consumable("Sovereign's Signet",   "valuable", 0, "A heavy signet from a kingdom no map remembers. Petra knows a buyer - sell it at camp.",             320), r: 2 },
+        { c: create_consumable("Star-Iron Idol",       "valuable", 0, "A squat idol of iron that fell from the sky. Collectors pay dearly - sell it at camp.",              750), r: 3 },
+        { c: create_consumable("Crown Shard of Ironwake", "valuable", 0, "A shard of the crown the town was named for. Priceless, which is a price - sell it at camp.",     1600), r: 4 },
+    ];
+    for (var _i = 0; _i < array_length(_v); _i++) _v[_i].c.rarity = _v[_i].r;
+    return _v;
+}
+// Roll a valuable from a source ("standard" / "elite" / "boss"): common-heavy weights.
+function valuable_roll(source) {
+    var _v = valuable_catalog();
+    var _w = (source == "boss") ? [30, 30, 24, 12, 4] : ((source == "elite") ? [45, 30, 17, 7, 1] : [60, 28, 10, 2, 0]);
+    var _t = 0; for (var _i = 0; _i < array_length(_w); _i++) _t += _w[_i];
+    var _r = irandom(_t - 1);
+    for (var _j = 0; _j < array_length(_w); _j++) { _r -= _w[_j]; if (_r < 0) return _v[_j].c; }
+    return _v[0].c;
+}
+
 function pattern_craft_fee(_rarity) {
     var _g = 150; var _d = 20;
     if (_rarity == 2) { _g = 300; _d = 40; }
@@ -15119,7 +15437,7 @@ function pattern_craft_build(_slot, _rarity, _base_stat, _affix_names, _icon, _n
         _it.two_handed    = false;
     }
     _it.socket_count = rune_sockets_for_rarity(_rarity);
-    item_quality_stamp(_it, 60, 85);
+    item_quality_stamp(_it, 60, 85);   // player-crafted keeps its band (the craft is the investment)
     _it.player_crafted = true;
     _it.pb_craft = { rar: _rarity, base_stat: _base_stat, fams: _tiers, conc: _pb_conc };
     if (_icon != undefined) {

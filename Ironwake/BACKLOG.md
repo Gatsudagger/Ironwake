@@ -22,6 +22,17 @@
   Settings garden-music row deferred, design-lock queue in memory (Arcanist spells, accuracy
   rune stacking audit, talent audit, pet treats, enemy immunities, pet move pools, mobile UI,
   SFX audit, dungeon reagents, Seer rune icon).
+- **08-17 "DO IT ALL" SESSION (uncommitted, awaits M's F5 - see SYSTEMS_BATCH_0817.md):**
+  accuracy-rune cap 12 (+tip/hover), talent audit (Keen Edge / Blink bespoke / numbered durations),
+  Arcanist PARALYTIC PULSE + CALL OF THE VOID (icons pending pick), enemy family IMMUNITIES
+  (sweep + bestiary/inspect), pet MOVE POOLS + priority AI + log/VFX, 6 FAVORED TREATS,
+  dungeon REAGENTS at Dorn's craft + 5 sell-only VALUABLES, station rank [U]/L3 inside NPC
+  screens, role-aware egg gifts, Seer rune icon, SFX_VFX_AUDIT_0817.md (itch.io list),
+  species art: canopy_shrew (PRO-character route, tools/progen.py) + cairn_bear (still+idle
+  route, tools/ffgen.py) IMPORTED fully animated; 26 species queued per the M-locked route split
+  (memory project_notes_batch_0817); PixelLab 2,390 gens left.
+  Post-08-16 commits d1c8268..16f9dc2 (facing flag, Dorn bond drip, loot tier caps, offhand
+  icons, Bairc legend, capstone descs, %-affix halving + STAT RESISTS) all M F5 CLEAN.
 - **LAUNCH WED AUG 19 — stabilize over new systems.**
 
 ## ⚠⚠ SUPER PRIORITY — FINISH THE UNBUILT SYSTEMS (M directive 08-13 night)

@@ -2,8 +2,8 @@
   "$GMSprite":"v2",
   "%Name":"spr_pet_witchwood_fawn_baby_e",
   "bboxMode":0,
-  "bbox_bottom":34,
-  "bbox_left":2,
+  "bbox_bottom":40,
+  "bbox_left":8,
   "bbox_right":32,
   "bbox_top":0,
   "collisionKind":1,
@@ -12,14 +12,14 @@
   "edgeFiltering":false,
   "For3D":false,
   "frames":[
-    {"$GMSpriteFrame":"v1","%Name":"c7df02da-030e-45a8-892d-f57a28c638e0","name":"c7df02da-030e-45a8-892d-f57a28c638e0","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"f3955079-7461-4634-864b-80b911289b1e","name":"f3955079-7461-4634-864b-80b911289b1e","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
   ],
   "gridX":0,
   "gridY":0,
-  "height":35,
+  "height":41,
   "HTile":false,
   "layers":[
-    {"$GMImageLayer":"","%Name":"58d22b4f-f035-4773-9e81-9cb0c66d0e0e","blendMode":0,"displayName":"default","isLocked":false,"name":"58d22b4f-f035-4773-9e81-9cb0c66d0e0e","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
+    {"$GMImageLayer":"","%Name":"ca6ee4bc-cce3-4f7d-8445-42719929d82e","blendMode":0,"displayName":"default","isLocked":false,"name":"ca6ee4bc-cce3-4f7d-8445-42719929d82e","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
   ],
   "name":"spr_pet_witchwood_fawn_baby_e",
   "nineSlice":null,
@@ -69,8 +69,8 @@
     "tracks":[
       {"$GMSpriteFramesTrack":"","builtinName":0,"events":[],"inheritsTrackColour":true,"interpolation":1,"isCreationTrack":false,"keyframes":{"$KeyframeStore<SpriteFrameKeyframe>":"","Keyframes":[
             {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
-                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"c7df02da-030e-45a8-892d-f57a28c638e0","path":"sprites/spr_pet_witchwood_fawn_baby_e/spr_pet_witchwood_fawn_baby_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
-              },"Disabled":false,"id":"ff856217-f5dd-4224-a3fc-4259d51d18ff","IsCreationKey":false,"Key":0.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"f3955079-7461-4634-864b-80b911289b1e","path":"sprites/spr_pet_witchwood_fawn_baby_e/spr_pet_witchwood_fawn_baby_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"853948c0-ec48-44a9-9a74-8adbc1a2a4b3","IsCreationKey":false,"Key":0.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
           ],"resourceType":"KeyframeStore<SpriteFrameKeyframe>","resourceVersion":"2.0",},"modifiers":[],"name":"frames","resourceType":"GMSpriteFramesTrack","resourceVersion":"2.0","spriteId":null,"trackColour":0,"tracks":[],"traits":0,},
     ],
     "visibleRange":null,
@@ -86,5 +86,5 @@
   },
   "type":0,
   "VTile":false,
-  "width":35,
+  "width":41,
 }

@@ -2,24 +2,24 @@
   "$GMSprite":"v2",
   "%Name":"spr_pet_thornlet_adult_e",
   "bboxMode":0,
-  "bbox_bottom":35,
+  "bbox_bottom":40,
   "bbox_left":0,
-  "bbox_right":38,
-  "bbox_top":3,
+  "bbox_right":42,
+  "bbox_top":2,
   "collisionKind":1,
   "collisionTolerance":0,
   "DynamicTexturePage":false,
   "edgeFiltering":false,
   "For3D":false,
   "frames":[
-    {"$GMSpriteFrame":"v1","%Name":"7e437fb4-3025-4652-bad1-cb197887a821","name":"7e437fb4-3025-4652-bad1-cb197887a821","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"850893dd-85d4-46af-ab51-edadbac880e9","name":"850893dd-85d4-46af-ab51-edadbac880e9","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
   ],
   "gridX":0,
   "gridY":0,
-  "height":39,
+  "height":43,
   "HTile":false,
   "layers":[
-    {"$GMImageLayer":"","%Name":"14b76415-4be2-4cd8-8bec-07f9cf165baf","blendMode":0,"displayName":"default","isLocked":false,"name":"14b76415-4be2-4cd8-8bec-07f9cf165baf","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
+    {"$GMImageLayer":"","%Name":"cba89ea6-caec-4d8e-8e0f-fbdbd234d892","blendMode":0,"displayName":"default","isLocked":false,"name":"cba89ea6-caec-4d8e-8e0f-fbdbd234d892","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
   ],
   "name":"spr_pet_thornlet_adult_e",
   "nineSlice":null,
@@ -69,8 +69,8 @@
     "tracks":[
       {"$GMSpriteFramesTrack":"","builtinName":0,"events":[],"inheritsTrackColour":true,"interpolation":1,"isCreationTrack":false,"keyframes":{"$KeyframeStore<SpriteFrameKeyframe>":"","Keyframes":[
             {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
-                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"7e437fb4-3025-4652-bad1-cb197887a821","path":"sprites/spr_pet_thornlet_adult_e/spr_pet_thornlet_adult_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
-              },"Disabled":false,"id":"513393cf-59f9-4393-94e4-08fe3f17523b","IsCreationKey":false,"Key":0.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"850893dd-85d4-46af-ab51-edadbac880e9","path":"sprites/spr_pet_thornlet_adult_e/spr_pet_thornlet_adult_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"f7a83daa-d226-469e-b1cd-fe579b0bf610","IsCreationKey":false,"Key":0.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
           ],"resourceType":"KeyframeStore<SpriteFrameKeyframe>","resourceVersion":"2.0",},"modifiers":[],"name":"frames","resourceType":"GMSpriteFramesTrack","resourceVersion":"2.0","spriteId":null,"trackColour":0,"tracks":[],"traits":0,},
     ],
     "visibleRange":null,
@@ -86,5 +86,5 @@
   },
   "type":0,
   "VTile":false,
-  "width":39,
+  "width":43,
 }

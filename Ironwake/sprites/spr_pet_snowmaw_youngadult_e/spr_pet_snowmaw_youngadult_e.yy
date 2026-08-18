@@ -2,24 +2,24 @@
   "$GMSprite":"v2",
   "%Name":"spr_pet_snowmaw_youngadult_e",
   "bboxMode":0,
-  "bbox_bottom":32,
-  "bbox_left":0,
+  "bbox_bottom":39,
+  "bbox_left":3,
   "bbox_right":35,
-  "bbox_top":3,
+  "bbox_top":0,
   "collisionKind":1,
   "collisionTolerance":0,
   "DynamicTexturePage":false,
   "edgeFiltering":false,
   "For3D":false,
   "frames":[
-    {"$GMSpriteFrame":"v1","%Name":"6039ede6-f989-4353-b2bf-a0a634ecb754","name":"6039ede6-f989-4353-b2bf-a0a634ecb754","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"b0dd1712-83a7-469d-9090-00eb5e916192","name":"b0dd1712-83a7-469d-9090-00eb5e916192","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
   ],
   "gridX":0,
   "gridY":0,
-  "height":36,
+  "height":40,
   "HTile":false,
   "layers":[
-    {"$GMImageLayer":"","%Name":"439ef2d6-be58-4ad9-9d91-cd857907d0bc","blendMode":0,"displayName":"default","isLocked":false,"name":"439ef2d6-be58-4ad9-9d91-cd857907d0bc","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
+    {"$GMImageLayer":"","%Name":"f06b5915-ef6f-4ed8-bea9-fe51d36bd200","blendMode":0,"displayName":"default","isLocked":false,"name":"f06b5915-ef6f-4ed8-bea9-fe51d36bd200","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
   ],
   "name":"spr_pet_snowmaw_youngadult_e",
   "nineSlice":null,
@@ -69,8 +69,8 @@
     "tracks":[
       {"$GMSpriteFramesTrack":"","builtinName":0,"events":[],"inheritsTrackColour":true,"interpolation":1,"isCreationTrack":false,"keyframes":{"$KeyframeStore<SpriteFrameKeyframe>":"","Keyframes":[
             {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
-                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"6039ede6-f989-4353-b2bf-a0a634ecb754","path":"sprites/spr_pet_snowmaw_youngadult_e/spr_pet_snowmaw_youngadult_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
-              },"Disabled":false,"id":"a2124931-87b5-42b3-bcfa-9a8d546628f2","IsCreationKey":false,"Key":0.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"b0dd1712-83a7-469d-9090-00eb5e916192","path":"sprites/spr_pet_snowmaw_youngadult_e/spr_pet_snowmaw_youngadult_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"9a801824-7ae2-45f4-ae98-befa19690685","IsCreationKey":false,"Key":0.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
           ],"resourceType":"KeyframeStore<SpriteFrameKeyframe>","resourceVersion":"2.0",},"modifiers":[],"name":"frames","resourceType":"GMSpriteFramesTrack","resourceVersion":"2.0","spriteId":null,"trackColour":0,"tracks":[],"traits":0,},
     ],
     "visibleRange":null,
@@ -86,5 +86,5 @@
   },
   "type":0,
   "VTile":false,
-  "width":36,
+  "width":40,
 }

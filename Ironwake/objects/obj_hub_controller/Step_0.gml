@@ -1149,18 +1149,7 @@ if (input_hotkey("B") && selected_npc < array_length(affinity_npc_ids()) && !sho
 if ((input_hotkey("U") || input_inject_take("npcup:open"))
     && selected_npc < array_length(affinity_npc_ids()) && !show_history) {
     var _up_ids = affinity_npc_ids();
-    var _up_id  = _up_ids[selected_npc];
-    if (npc_rank(_up_id) < 2 && npc_unlocked[selected_npc]) {
-        var _up_next = npc_rank(_up_id) + 1;
-        var _up_c    = npc_rank_cost(_up_next);
-        var _up_dust = variable_global_exists("rune_dust") ? global.rune_dust : 0;
-        npc_upgrade_arm   = _up_id;
-        npc_upgrade_title = string_upper(npc_names[selected_npc]) + "  -  STATION RANK " + string(_up_next);
-        npc_upgrade_body  = npc_rank_perk_text(_up_id, _up_next)
-            + "\n\nCost: " + string(_up_c.gold) + "g + " + string(_up_c.dust) + " dust"
-            + "   (you have " + string(global.gold) + "g, " + string(_up_dust) + " dust)";
-        audio_play_sound(snd_page, 1, false);
-    }
+    npc_station_arm(_up_ids[selected_npc]);   // shared with the in-screen [U] / pad L3 path (08-17)
 }
 
 // (Gifting moved INSIDE each NPC's engagement window - press F there. Quests are

@@ -2,9 +2,9 @@
   "$GMSprite":"v2",
   "%Name":"spr_pet_frostmarten_adult_e",
   "bboxMode":0,
-  "bbox_bottom":41,
-  "bbox_left":0,
-  "bbox_right":40,
+  "bbox_bottom":38,
+  "bbox_left":4,
+  "bbox_right":33,
   "bbox_top":0,
   "collisionKind":1,
   "collisionTolerance":0,
@@ -12,14 +12,14 @@
   "edgeFiltering":false,
   "For3D":false,
   "frames":[
-    {"$GMSpriteFrame":"v1","%Name":"1976801a-2e2b-4f14-aec8-8794b85e73ab","name":"1976801a-2e2b-4f14-aec8-8794b85e73ab","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"347749f5-a47a-4f91-9fa3-98c8d9a4d215","name":"347749f5-a47a-4f91-9fa3-98c8d9a4d215","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
   ],
   "gridX":0,
   "gridY":0,
-  "height":42,
+  "height":39,
   "HTile":false,
   "layers":[
-    {"$GMImageLayer":"","%Name":"c117ebfa-7652-439c-93e2-22a91985ae58","blendMode":0,"displayName":"default","isLocked":false,"name":"c117ebfa-7652-439c-93e2-22a91985ae58","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
+    {"$GMImageLayer":"","%Name":"81239122-17a6-47f3-a212-66ae3af63d97","blendMode":0,"displayName":"default","isLocked":false,"name":"81239122-17a6-47f3-a212-66ae3af63d97","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
   ],
   "name":"spr_pet_frostmarten_adult_e",
   "nineSlice":null,
@@ -69,8 +69,8 @@
     "tracks":[
       {"$GMSpriteFramesTrack":"","builtinName":0,"events":[],"inheritsTrackColour":true,"interpolation":1,"isCreationTrack":false,"keyframes":{"$KeyframeStore<SpriteFrameKeyframe>":"","Keyframes":[
             {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
-                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"1976801a-2e2b-4f14-aec8-8794b85e73ab","path":"sprites/spr_pet_frostmarten_adult_e/spr_pet_frostmarten_adult_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
-              },"Disabled":false,"id":"93b1d992-0e16-4ad9-9c28-aaa485fe3bf3","IsCreationKey":false,"Key":0.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"347749f5-a47a-4f91-9fa3-98c8d9a4d215","path":"sprites/spr_pet_frostmarten_adult_e/spr_pet_frostmarten_adult_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"88a066bc-9161-47ed-9c1b-c94db65b8ec4","IsCreationKey":false,"Key":0.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
           ],"resourceType":"KeyframeStore<SpriteFrameKeyframe>","resourceVersion":"2.0",},"modifiers":[],"name":"frames","resourceType":"GMSpriteFramesTrack","resourceVersion":"2.0","spriteId":null,"trackColour":0,"tracks":[],"traits":0,},
     ],
     "visibleRange":null,
@@ -86,5 +86,5 @@
   },
   "type":0,
   "VTile":false,
-  "width":42,
+  "width":39,
 }

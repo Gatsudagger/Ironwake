@@ -434,11 +434,15 @@ function combat_enemy_slot_pos(_idx) {
         // far ~151px to front ~167px (~10% spread). Depth now reads mostly
         // through feet height + shadows; SIZE is driven by the species' rank
         // (enemy_size_mult: Elite/Boss over trash), not by which slot it drew.
+        // 08-18 (M shot "mobs overlapping on each other"): with the flat size gradient
+        // the old near/far pairs 40-115px apart in x just read as clutter - every
+        // layout now keeps >= 200px between ANY two station x's (sprites run ~110-150px
+        // wide), still zigzagging feet 540-705 inside the right-side wedge (x >= 1000).
         static _t25_pat = [
-            [[1560,545,1.56],[1130,608,1.61],[1360,662,1.67],[1015,700,1.72]],
-            [[1300,540,1.56],[1620,615,1.62],[1060,648,1.66],[1360,702,1.72]],
-            [[1680,552,1.57],[1090,600,1.60],[1500,660,1.67],[1130,702,1.72]],
-            [[1420,548,1.56],[1140,618,1.61],[1660,665,1.67],[1230,700,1.71]]
+            [[1660,545,1.56],[1200,608,1.61],[1430,662,1.67],[1000,700,1.72]],
+            [[1300,540,1.56],[1700,615,1.62],[1050,648,1.66],[1500,702,1.72]],
+            [[1700,552,1.57],[1080,600,1.60],[1480,660,1.67],[1280,702,1.72]],
+            [[1500,548,1.56],[1080,618,1.61],[1700,665,1.67],[1290,700,1.71]]
         ];
         static _t25_pick = [ [2], [0,3], [0,1,3], [0,1,2,3] ];
         var _lay = 0;
@@ -509,6 +513,10 @@ function combat_enemy_model(_ec, _map) {
     var _n = array_length(_pool);
     if (_n <= 1) return variable_struct_get(_map, _ec.name);
     if (!variable_struct_exists(_ec, "model_var") || _ec.model_var < 0 || _ec.model_var >= _n) {
+        // Awakening-tiered species (bosses like Malgrath) take a fixed model per tier.
+        var _awk_m = enemy_model_for_awakening(_ec.name,
+            variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0);
+        if (_awk_m >= 0 && _awk_m < _n) { _ec.model_var = _awk_m; return _pool[_awk_m]; }
         var _used = [];
         if (instance_exists(obj_combat_controller)) {
             var _cc = instance_find(obj_combat_controller, 0);
@@ -1475,6 +1483,10 @@ function ability_status_kind(ability) {
             return "root";   // #26 melee kit - the guaranteed drain also holds them in place
         case "Mana Sever":
             return "silence";   // "sever mana" - target can't take spell actions
+        case "Paralytic Pulse":
+            return "stun";      // 08-17: per-enemy 40% roll happens in the cast block
+        case "Call of the Void":
+            return "void_random";   // 08-17: resolved to a random kind at apply time (cast block)
     }
     if (ability.effect_type == "dot")    return "dot";
     if (ability.effect_type == "debuff") return "vulnerable";
@@ -1854,6 +1866,43 @@ function combat_tick_statuses(c, log) {
 // combat_status_is_debuff(se) - true for HARMFUL statuses (everything except the
 // beneficial ones like regen). Used by the cleanse consumables so they never strip
 // a player's own buff (e.g. a Warden's Tonic heal-over-time).
+// combat_immune_sweep(combat_state, log, popups) - runs every combat Step frame:
+// strips any status an enemy is family-immune to (enemy_immunities) the frame it
+// lands, with an IMMUNE popup + log line. One central hook instead of guarding
+// ~40 status push sites; nothing ticks between frames so it is effectively
+// instant. Mortality is left alone (never on the immunity lists anyway).
+function combat_immune_sweep(combat_state, log, popups) {
+    if (!is_struct(combat_state) || !variable_struct_exists(combat_state, "combatants")) return;
+    var _slot = 0;
+    for (var _i = 0; _i < array_length(combat_state.combatants); _i++) {
+        var _c = combat_state.combatants[_i];
+        if (_c.is_player) continue;
+        var _my_slot = _slot; _slot++;
+        if (_c.is_defeated || array_length(_c.status_effects) == 0) continue;
+        var _im = enemy_immunities(_c.name);
+        if (array_length(_im) == 0) continue;
+        for (var _s = array_length(_c.status_effects) - 1; _s >= 0; _s--) {
+            var _se = _c.status_effects[_s];
+            var _kind = combat_status_kind_of(_se);
+            var _el   = combat_status_element(_se);
+            // Fire DoTs are tagged "burn" (weapon-affix Burning, Forge Spark, dtype-1
+            // ability DoTs) OR "fire" (Scorch / Sear) - one immunity covers both.
+            if (_el == "burn") _el = "fire";
+            for (var _k = 0; _k < array_length(_im); _k++) {
+                if (_im[_k].kind != _kind) continue;
+                if (_im[_k].element != "" && _im[_k].element != _el) continue;
+                array_delete(_c.status_effects, _s, 1);
+                var _nm = variable_struct_exists(_se, "name") ? string(_se.name) : _im[_k].label;
+                array_push(log, _c.name + " is IMMUNE to " + _im[_k].label + " - " + _nm + " has no hold on it!");
+                var _im_a = combat_enemy_anchor(_c, _my_slot);
+                array_push(popups, { value: 0, text: "IMMUNE", x: _im_a.x, y: _im_a.y - 105,
+                    timer: 45, col: make_color_rgb(190, 190, 205) });
+                break;
+            }
+        }
+    }
+}
+
 function combat_status_is_debuff(se) {
     switch (combat_status_kind_of(se)) {
         case "regen": return false;   // beneficial heal-over-time
@@ -1938,20 +1987,54 @@ function combat_heal_after_mortality(c, amount) {
 // flat reduction (Iron Skin) -> equip armor -> % physical reduction (physical only)
 // -> Soul Shield absorption (mutates shield_hp, logs). Returns the final damage.
 // Mirrors the inline basic-attack chain so enemy spells can't diverge from it.
-function combat_mitigate_player(player, raw, dtype, log) {
-    var _d = combat_resolve_damage(raw, dtype, player.armor, player.el_resist);
-    _d += combat_status_total(player, "vulnerable");
-    _d = max(0, _d - player.damage_reduction);
-    _d = max(1, _d - player.equip_armor);
-    // Boon flat armor (Shrine V2): Ironhide +2 / Feast of Crows +2 per corpse.
-    var _bfa = boon_flat_armor();
-    if (_bfa > 0) _d = max(1, _d - _bfa);
-    // CLOTTED ARMOR (08-13, replaced Thickened Vitae - fx id kept "blood_hp"):
-    // while the Bloodwarden holds 5+ Blood, every hit lands 2 softer.
+// ---------------------------------------------------------------------------
+// PLAYER ARMOR (M-locked 08-18: "we need to change how armor works"). The old
+// chain SUBTRACTED base armor, then Iron Skin, then gear armor, then boon armor,
+// then Clotted Armor - flat stacks that zeroed 5-8 damage mobs to the 1-dmg floor
+// by Lv5. Now every armor source is ONE pool and reduces the hit by a
+// PERCENTAGE with diminishing returns:
+//     reduction = armor / (armor + 15), capped at 60%
+//     armor 5 -> 25%   10 -> 40%   15 -> 50%   25 -> 62% -> 60%
+// Iron Skin (damage_reduction) stays a FLAT cut - it is an ability, not armor.
+// combat_player_armor_total / _pct are the single source; the stats page,
+// glossary and inspect copy read them.
+// ---------------------------------------------------------------------------
+#macro PLAYER_ARMOR_K   15
+#macro PLAYER_ARMOR_CAP 0.60
+function combat_player_armor_total(player) {
+    var _a = 0;
+    if (variable_struct_exists(player, "armor"))       _a += player.armor;
+    if (variable_struct_exists(player, "equip_armor")) _a += player.equip_armor;
+    _a += boon_flat_armor();   // Ironhide / Feast of Crows
+    // Clotted Armor (Bloodwarden trunk): +2 armor while holding 5+ Blood.
     if (variable_struct_exists(player, "blood") && player.blood >= 5
-        && player.class_id == 1 && trunk_has("blood_hp")) {
-        _d = max(1, _d - 2);
+        && variable_struct_exists(player, "class_id") && player.class_id == 1 && trunk_has("blood_hp")) _a += 2;
+    return max(0, _a);
+}
+function combat_player_armor_pct(player) {
+    var _a = combat_player_armor_total(player);
+    if (_a <= 0) return 0;
+    return min(PLAYER_ARMOR_CAP, _a / (_a + PLAYER_ARMOR_K));
+}
+// Physical/elemental hit on the player through the armor pool: raw -> flat Iron
+// Skin -> % armor (elemental hits use el_resist as the pool instead). Floor 1.
+function combat_player_apply_armor(player, dmg, dtype) {
+    var _d = dmg;
+    if (variable_struct_exists(player, "damage_reduction")) _d = max(0, _d - player.damage_reduction);
+    if (dtype == 1) {
+        // Elemental: el_resist pool, same curve.
+        var _er = (variable_struct_exists(player, "el_resist") ? player.el_resist : 0)
+                + (variable_struct_exists(player, "equip_el_resist") ? player.equip_el_resist : 0);
+        var _ep = (_er > 0) ? min(PLAYER_ARMOR_CAP, _er / (_er + PLAYER_ARMOR_K)) : 0;
+        return max(1, round(_d * (1 - _ep)));
     }
+    if (dtype == 2 || dtype == 3) return max(1, _d);   // drain / blood: unmitigated
+    return max(1, round(_d * (1 - combat_player_armor_pct(player))));
+}
+
+function combat_mitigate_player(player, raw, dtype, log) {
+    var _d = raw + combat_status_total(player, "vulnerable");
+    _d = combat_player_apply_armor(player, _d, dtype);   // Iron Skin flat -> % armor pool (08-18)
     if (dtype == 0 && variable_struct_exists(player, "derived") && player.derived.phys_dmg_reduction > 0) {
         _d = max(1, ceil(_d * (1.0 - (player.derived.phys_dmg_reduction / 100.0))));
     }
@@ -2118,6 +2201,8 @@ function ability_sfx_school(ab) {
         case "Arcane Echo":     return "arcane";
         case "Mana Sever":      return "arcane";
         case "Event Horizon":   return "void";   // 08-15 rework: was arcane Singularity
+        case "Paralytic Pulse": return "arcane"; // 08-17 control pair
+        case "Call of the Void": return "void";
     }
     return "";
 }
@@ -2214,15 +2299,21 @@ function combat_on_enemy_defeated(target, player, combat_log) {
     if (variable_struct_exists(target, "warden_hook")) {
         var _ws_id = warden_scion(target.name);
         if (_ws_id != "" && irandom(99) < warden_scion_drop_chance()) {
-            var _ws_owned = variable_global_exists("pet_sig_history")
+            // 08-17: art-gated like boss eggs - a scion whose art is not finished falls back
+            // to a generic egg and is NOT marked found (stays catchable once its art lands).
+            var _ws_live  = pet_species_has_art(_ws_id);
+            var _ws_owned = _ws_live
+                && variable_global_exists("pet_sig_history")
                 && is_struct(global.pet_sig_history)
                 && variable_struct_exists(global.pet_sig_history, _ws_id);
             if (!_ws_owned) {
-                if (!variable_global_exists("pet_sig_history") || !is_struct(global.pet_sig_history)) {
-                    global.pet_sig_history = {};
+                if (_ws_live) {
+                    if (!variable_global_exists("pet_sig_history") || !is_struct(global.pet_sig_history)) {
+                        global.pet_sig_history = {};
+                    }
+                    global.pet_sig_history[$ _ws_id] = true;
                 }
-                global.pet_sig_history[$ _ws_id] = true;
-                var _ws_pet = pet_grant_from_source("egg_boss", _ws_id);
+                var _ws_pet = pet_grant_from_source("egg_boss", _ws_live ? _ws_id : "");
                 array_push(combat_log, "Something small survived the Warden - "
                     + ((_ws_pet != undefined && !_ws_pet.is_egg) ? _ws_pet.name : "an egg")
                     + " is yours. Visit Bairc.");
@@ -2578,6 +2669,43 @@ function combat_check_victory(combat_state) {
 // are passed by reference so the pet can announce itself. Returns true if it acted (the
 // caller then adds a brief pause before enemies). Numbers are conservative + TBD-balance.
 // ---------------------------------------------------------------------------
+// PET MOVE POOLS (M-locked 08-17): each fighting archetype draws from a small pool
+// and a priority AI picks the move - every pick is NAMED in the combat log and
+// gets its own VFX so the player can tell them apart.
+//   COMBATANT: Strike (default) / Rend (no bleed on target: 75% dmg + bleed 2t)
+//              / Pounce (target under 35% HP: +50% dmg)
+//   GUARDIAN:  Mend (you under 40% HP) / Cleanse (a harmful status on you)
+//              / Snarl (an undebuffed foe: Weakened -15% 2t) / Ward (shield)
+//              - Mender / Warder / Cleanser stances still bias the pick.
+// Boon pets never fight (unchanged).
+function pet_move_pool_text(pet) {
+    if (!is_struct(pet)) return "";
+    switch (pet.archetype) {
+        case PET_ARCH_COMBATANT: return "Strike / Rend / Pounce";
+        case PET_ARCH_GUARDIAN:  return "Mend / Cleanse / Snarl / Ward";
+    }
+    return "";
+}
+// Push a one-shot VFX burst at a stage point (pet moves), tolerant of no controller.
+function combat_pet_vfx(_x, _y, _spr, _school, _scale = 1.0) {
+    if (!instance_exists(obj_combat_controller)) return;
+    var _cc = instance_find(obj_combat_controller, 0);
+    if (!variable_instance_exists(_cc, "vfx_bursts")) return;
+    array_push(_cc.vfx_bursts, { spr: _spr, x: _x, y: _y, timer: 22, timer_max: 22, school: _school, scale: _scale });
+}
+function combat_enemy_vfx_point(_c) {
+    if (variable_struct_exists(_c, "last_ecx")) return { x: _c.last_ecx, y: _c.last_ecy };
+    if (variable_struct_exists(_c, "last_ex"))  return { x: _c.last_ex + 145, y: _c.last_ey + 145 };
+    return { x: 1500, y: 300 };
+}
+// Enemy popup/VFX ANCHOR in the main-hit convention (popups go at y - 105): the
+// foe's stamped visual centre in 2.5D (default), else the flat-row slot formula.
+// One helper so status/pet/DoT popups land on the creature, not the HP-bar grid.
+function combat_enemy_anchor(_c, _slot) {
+    if (combat_25d() && is_struct(_c) && variable_struct_exists(_c, "last_ecx")) return { x: _c.last_ecx, y: _c.last_ecy };
+    return { x: 1620 + _slot * (-120), y: 233 + _slot * 105 };
+}
+
 function combat_pet_act(combat_state, player, combat_log, damage_popups) {
     // Ashen Duelist (M-locked): the duel is STRICTLY 1v1 - the companion sits out.
     if (variable_global_exists("duel_active") && global.duel_active) return false;
@@ -2643,7 +2771,8 @@ function combat_pet_act(combat_state, player, combat_log, damage_popups) {
                     combat_apply_damage(_c, _c.HP);
                     array_push(combat_log, "[Companion] Executioner - " + _c.name + " is slain outright!");
                 }
-                array_push(damage_popups, { value: _cd, x: 1620 + _slot * (-120), y: 233 + _slot * 105 - 105, timer: 50, col: make_color_rgb(190, 120, 220) });
+                var _cd_a = combat_enemy_anchor(_c, _slot);
+                array_push(damage_popups, { value: _cd, x: _cd_a.x, y: _cd_a.y - 105, timer: 50, col: make_color_rgb(190, 120, 220) });
                 if (_c.HP <= 0) combat_on_enemy_defeated(_c, player, combat_log);
                 _slot++; _any = true;
             }
@@ -2689,9 +2818,38 @@ function combat_pet_act(combat_state, player, combat_log, damage_popups) {
                 array_push(combat_log, "[Companion] Opportunist - it detonates the affliction!");
             }
         }
-        var _dmg = combat_resolve_damage(round(_base * _emul * _opp), 0, _best.armor, _best.el_resist);
+        // --- MOVE PICK (08-17 pools): Pounce on a fading foe, Rend an unbled one, else Strike ---
+        var _mv = "Strike";
+        if (_best.max_HP > 0 && _best.HP < _best.max_HP * 0.35) _mv = "Pounce";
+        else {
+            var _mv_bled = false;
+            for (var _mvi = 0; _mvi < array_length(_best.status_effects); _mvi++) {
+                var _mvse = _best.status_effects[_mvi];
+                if (combat_status_kind_of(_mvse) == "dot" && combat_status_element(_mvse) == "bleed") { _mv_bled = true; break; }
+            }
+            // Bleed-immune families (constructs/spirits) never get a wasted Rend.
+            var _mv_imm = enemy_immunities(_best.name);
+            for (var _mvk = 0; _mvk < array_length(_mv_imm); _mvk++) if (_mv_imm[_mvk].label == "Bleed") _mv_bled = true;
+            if (!_mv_bled) _mv = "Rend";
+        }
+        var _mv_mul = (_mv == "Pounce") ? 1.5 : ((_mv == "Rend") ? 0.75 : 1.0);
+        var _dmg = combat_resolve_damage(round(_base * _emul * _opp * _mv_mul), 0, _best.armor, _best.el_resist);
         if (_dmg < 1) _dmg = 1;
         combat_apply_damage(_best, _dmg);
+        var _mv_pt = combat_enemy_vfx_point(_best);
+        if (_mv == "Rend") {
+            var _rend_tick = max(1, round((_adult ? 3 : 2) * _cmult));
+            array_push(_best.status_effects, { name: "Rend", effect_type: "dot", kind: "dot",
+                effect_value: _rend_tick, duration: 2, element: "bleed", source: "pet" });
+            array_push(combat_log, "[Companion] " + _p.name + " uses REND - tears " + _best.name + " for " + string(_dmg)
+                + " and leaves it bleeding (" + string(_rend_tick) + "/turn, 2 turns)!");
+            combat_pet_vfx(_mv_pt.x, _mv_pt.y, spr_vfx_blood, "blood", 1.2);
+        } else if (_mv == "Pounce") {
+            array_push(combat_log, "[Companion] " + _p.name + " uses POUNCE - falls on the fading " + _best.name + " for " + string(_dmg) + " (+50%)!");
+            combat_pet_vfx(_mv_pt.x, _mv_pt.y, spr_vfx_slash, "", 1.4);
+        } else {
+            combat_pet_vfx(_mv_pt.x, _mv_pt.y, spr_vfx_impact, "", 1.0);
+        }
         if (_stance == "assist" && _best.HP > 0) {
             // Pack Tactics rider: leave the shared target Exposed (+2 dmg/hit, 2 turns).
             // Refresh an existing mark instead of stacking a second copy.
@@ -2715,10 +2873,11 @@ function combat_pet_act(combat_state, player, combat_log, damage_popups) {
                 });
             }
             array_push(combat_log, "[Companion] " + _p.name + " harries " + _best.name + " with you for " + string(_dmg) + " - Pack Tactics (+2 dmg taken/hit)!");
-        } else {
-            array_push(combat_log, "[Companion] " + _p.name + " strikes " + _best.name + " for " + string(_dmg) + "!");
+        } else if (_mv == "Strike") {
+            array_push(combat_log, "[Companion] " + _p.name + " uses STRIKE on " + _best.name + " for " + string(_dmg) + "!");
         }
-        array_push(damage_popups, { value: _dmg, x: 1620 + _bslot * (-120), y: 233 + _bslot * 105 - 105, timer: 50, col: make_color_rgb(150, 215, 150) });
+        var _bp_a = combat_enemy_anchor(_best, _bslot);
+        array_push(damage_popups, { value: _dmg, x: _bp_a.x, y: _bp_a.y - 105, timer: 50, col: make_color_rgb(150, 215, 150) });
         // Executioner slay (C4): finish a still-standing target under 15%.
         if (_slay_ok && _best.HP > 0 && _best.max_HP > 0 && _best.HP < _best.max_HP * 0.15) {
             combat_apply_damage(_best, _best.HP);
@@ -2739,7 +2898,8 @@ function combat_pet_act(combat_state, player, combat_log, damage_popups) {
                 if (_bs_dmg < 1) _bs_dmg = 1;
                 combat_apply_damage(_best, _bs_dmg);
                 array_push(combat_log, "[Companion] Bloodscent - it tears at the bleeding " + _best.name + " again for " + string(_bs_dmg) + "!");
-                array_push(damage_popups, { value: _bs_dmg, x: 1620 + _bslot * (-120), y: 233 + _bslot * 105 - 135, timer: 50, col: make_color_rgb(220, 120, 120) });
+                var _bs_a = combat_enemy_anchor(_best, _bslot);
+                array_push(damage_popups, { value: _bs_dmg, x: _bs_a.x, y: _bs_a.y - 135, timer: 50, col: make_color_rgb(220, 120, 120) });
                 if (_best.HP <= 0) combat_on_enemy_defeated(_best, player, combat_log);
             }
         }
@@ -2765,6 +2925,61 @@ function combat_pet_act(combat_state, player, combat_log, damage_popups) {
             }
         }
 
+        // --- PRIORITY AI (M-locked 08-17), unless a do-both capstone/fulfilled path owns
+        //     the turn: MEND if you are under 40% -> CLEANSE a harmful status -> SNARL an
+        //     undebuffed foe (Weakened -15%, 2 turns) -> fall through to Ward/Mend heuristic.
+        //     Mender / Warder stances skip Snarl (they asked for pure support).
+        if (!_fulfilled && !_kit.both) {
+            if (player.HP < player.max_HP * 0.40) {
+                var _mb = player.HP;
+                player.HP = min(player.max_HP, player.HP + _heal_amt);
+                var _mg = player.HP - _mb;
+                if (_mg > 0) {
+                    array_push(combat_log, "[Companion] " + _p.name + " uses MEND - closes your wounds (+" + string(_mg) + " HP).");
+                    array_push(damage_popups, { value: _mg, x: 475, y: 545, timer: 50, col: make_color_rgb(120, 220, 140) });
+                    var _mpa = combat_player_vfx_anchor(player);
+                    combat_pet_vfx(_mpa.x + 110, _mpa.y + 110, spr_vfx_heal, "", 1.2);
+                    return true;
+                }
+            }
+            if (_stance != "mender" && _stance != "warder") {
+                var _has_harm = false;
+                for (var _hhi = 0; _hhi < array_length(player.status_effects); _hhi++) {
+                    if (combat_status_is_debuff(player.status_effects[_hhi])) { _has_harm = true; break; }
+                }
+                if (_has_harm) {
+                    var _cl2 = combat_cleanse(player, "one");
+                    if (_cl2 > 0) {
+                        array_push(combat_log, "[Companion] " + _p.name + " uses CLEANSE - draws the affliction out of you.");
+                        var _cpa = combat_player_vfx_anchor(player);
+                        combat_pet_vfx(_cpa.x + 110, _cpa.y + 110, spr_vfx_buff, "", 1.1);
+                        return true;
+                    }
+                }
+                // Snarl: the first living foe carrying NO debuff.
+                var _sn = undefined, _sn_slot = 0, _sn_li = 0;
+                for (var _sni = 0; _sni < array_length(combat_state.combatants); _sni++) {
+                    var _snc = combat_state.combatants[_sni];
+                    if (_snc.is_player || _snc.is_defeated) continue;
+                    var _snc_deb = false;
+                    for (var _snj = 0; _snj < array_length(_snc.status_effects); _snj++) {
+                        if (combat_status_is_debuff(_snc.status_effects[_snj])) { _snc_deb = true; break; }
+                    }
+                    if (!_snc_deb) { _sn = _snc; _sn_slot = _sn_li; break; }
+                    _sn_li++;
+                }
+                if (_sn != undefined && player.HP >= player.max_HP * 0.70) {
+                    array_push(_sn.status_effects, { name: "Snarl", effect_type: "debuff", kind: "weaken",
+                        effect_value: 0.15, duration: 2, element: "", source: "pet" });
+                    array_push(combat_log, "[Companion] " + _p.name + " uses SNARL - " + _sn.name + " is Weakened (-15% dmg, 2 turns)!");
+                    var _sn_pt = combat_enemy_vfx_point(_sn);
+                    combat_pet_vfx(_sn_pt.x, _sn_pt.y, spr_fx_debuff_violet, "", 1.2);
+                    var _sn_a = combat_enemy_anchor(_sn, _sn_slot);
+                    array_push(damage_popups, { value: 0, text: "WEAKENED", x: _sn_a.x, y: _sn_a.y - 105, timer: 40, col: make_color_rgb(200, 160, 230) });
+                    return true;
+                }
+            }
+        }
         // Guardian Angel capstone (_kit.both) also makes it heal AND shield, like fulfilled.
         var _do_heal   = _fulfilled || _kit.both || (player.HP < player.max_HP * 0.70);
         var _do_shield = _fulfilled || _kit.both || (player.HP >= player.max_HP * 0.70);
@@ -2784,7 +2999,9 @@ function combat_pet_act(combat_state, player, combat_log, damage_popups) {
             player.HP = min(player.max_HP, player.HP + _heal_amt);
             var _gain = player.HP - _before;
             if (_gain > 0) {
-                array_push(combat_log, "[Companion] " + _p.name + " tends your wounds (+" + string(_gain) + " HP).");
+                array_push(combat_log, "[Companion] " + _p.name + " uses MEND - tends your wounds (+" + string(_gain) + " HP).");
+                var _mpa2 = combat_player_vfx_anchor(player);
+                combat_pet_vfx(_mpa2.x + 110, _mpa2.y + 110, spr_vfx_heal, "", 1.2);
                 array_push(damage_popups, { value: _gain, x: 475, y: 545, timer: 50, col: make_color_rgb(120, 220, 140) });
                 _did = true;
             }
@@ -2847,7 +3064,8 @@ function combat_pet_echo_open(combat_state, player, combat_log, damage_popups) {
     if (_dmg < 1) _dmg = 1;
     combat_apply_damage(_t, _dmg);
     array_push(combat_log, "[Companion] " + _p.name + "'s Feral Echo lashes " + _t.name + " for " + string(_dmg) + " as battle begins!");
-    array_push(damage_popups, { value: _dmg, x: 1620 + _slots[_pick] * (-120), y: 233 + _slots[_pick] * 105 - 105, timer: 50, col: make_color_rgb(255, 150, 110) });
+    var _fe_a = combat_enemy_anchor(_t, _slots[_pick]);
+    array_push(damage_popups, { value: _dmg, x: _fe_a.x, y: _fe_a.y - 105, timer: 50, col: make_color_rgb(255, 150, 110) });
     if (_t.HP <= 0) combat_on_enemy_defeated(_t, player, combat_log);
     global.pet_lunge_t0 = current_time;   // reuse the procedural lunge (combat draw)
     return true;

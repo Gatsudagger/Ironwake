@@ -2,9 +2,9 @@
   "$GMSprite":"v2",
   "%Name":"spr_pet_graftling_baby_e",
   "bboxMode":0,
-  "bbox_bottom":41,
+  "bbox_bottom":39,
   "bbox_left":5,
-  "bbox_right":35,
+  "bbox_right":33,
   "bbox_top":0,
   "collisionKind":1,
   "collisionTolerance":0,
@@ -12,14 +12,14 @@
   "edgeFiltering":false,
   "For3D":false,
   "frames":[
-    {"$GMSpriteFrame":"v1","%Name":"43284665-ee3e-441b-851f-c731ba05e5ce","name":"43284665-ee3e-441b-851f-c731ba05e5ce","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"3431755f-4e2c-4669-888d-30c9f5cc8754","name":"3431755f-4e2c-4669-888d-30c9f5cc8754","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
   ],
   "gridX":0,
   "gridY":0,
-  "height":42,
+  "height":40,
   "HTile":false,
   "layers":[
-    {"$GMImageLayer":"","%Name":"15a7d21e-e861-437e-9d6b-0e170c70b49f","blendMode":0,"displayName":"default","isLocked":false,"name":"15a7d21e-e861-437e-9d6b-0e170c70b49f","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
+    {"$GMImageLayer":"","%Name":"3e13ddaa-8de5-4550-bcce-950af7199f10","blendMode":0,"displayName":"default","isLocked":false,"name":"3e13ddaa-8de5-4550-bcce-950af7199f10","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
   ],
   "name":"spr_pet_graftling_baby_e",
   "nineSlice":null,
@@ -69,8 +69,8 @@
     "tracks":[
       {"$GMSpriteFramesTrack":"","builtinName":0,"events":[],"inheritsTrackColour":true,"interpolation":1,"isCreationTrack":false,"keyframes":{"$KeyframeStore<SpriteFrameKeyframe>":"","Keyframes":[
             {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
-                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"43284665-ee3e-441b-851f-c731ba05e5ce","path":"sprites/spr_pet_graftling_baby_e/spr_pet_graftling_baby_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
-              },"Disabled":false,"id":"2227f181-4f70-466b-b660-e3dc89253516","IsCreationKey":false,"Key":0.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"3431755f-4e2c-4669-888d-30c9f5cc8754","path":"sprites/spr_pet_graftling_baby_e/spr_pet_graftling_baby_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"3957c2bf-bd55-4f72-9bc0-5bd39e0bc8fa","IsCreationKey":false,"Key":0.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
           ],"resourceType":"KeyframeStore<SpriteFrameKeyframe>","resourceVersion":"2.0",},"modifiers":[],"name":"frames","resourceType":"GMSpriteFramesTrack","resourceVersion":"2.0","spriteId":null,"trackColour":0,"tracks":[],"traits":0,},
     ],
     "visibleRange":null,
@@ -86,5 +86,5 @@
   },
   "type":0,
   "VTile":false,
-  "width":42,
+  "width":40,
 }

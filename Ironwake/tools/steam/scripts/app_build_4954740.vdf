@@ -2,7 +2,7 @@
 {
 	"AppID" "4954740"
 	// Bump this line every upload - it's the label you'll see in the Builds dashboard.
-	"Desc" "Ironwake 1.0.3 hotfix 2026-08-04 (stats-tour crash)"
+	"Desc" "Ironwake 1.0.4 launch build 2026-08-18"
 
 	// Relative to THIS file: extract the GameMaker Windows zip into tools\steam\content\
 	// so content\Ironwake.exe sits at the top level.

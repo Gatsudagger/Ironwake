@@ -2,9 +2,9 @@
   "$GMSprite":"v2",
   "%Name":"spr_pet_ashjaw_lynx_youngadult_e",
   "bboxMode":0,
-  "bbox_bottom":36,
-  "bbox_left":3,
-  "bbox_right":33,
+  "bbox_bottom":41,
+  "bbox_left":9,
+  "bbox_right":31,
   "bbox_top":0,
   "collisionKind":1,
   "collisionTolerance":0,
@@ -12,14 +12,14 @@
   "edgeFiltering":false,
   "For3D":false,
   "frames":[
-    {"$GMSpriteFrame":"v1","%Name":"1af88644-836f-4ec0-ae4d-3cf982eabed5","name":"1af88644-836f-4ec0-ae4d-3cf982eabed5","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"8cf9301f-c25b-4869-a6b1-e58e21defc00","name":"8cf9301f-c25b-4869-a6b1-e58e21defc00","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
   ],
   "gridX":0,
   "gridY":0,
-  "height":37,
+  "height":42,
   "HTile":false,
   "layers":[
-    {"$GMImageLayer":"","%Name":"7c6904f0-923c-435c-885d-c4f096884d55","blendMode":0,"displayName":"default","isLocked":false,"name":"7c6904f0-923c-435c-885d-c4f096884d55","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
+    {"$GMImageLayer":"","%Name":"7ec19e4d-1e0d-4aac-8a61-03cbbd7ef17b","blendMode":0,"displayName":"default","isLocked":false,"name":"7ec19e4d-1e0d-4aac-8a61-03cbbd7ef17b","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
   ],
   "name":"spr_pet_ashjaw_lynx_youngadult_e",
   "nineSlice":null,
@@ -69,8 +69,8 @@
     "tracks":[
       {"$GMSpriteFramesTrack":"","builtinName":0,"events":[],"inheritsTrackColour":true,"interpolation":1,"isCreationTrack":false,"keyframes":{"$KeyframeStore<SpriteFrameKeyframe>":"","Keyframes":[
             {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
-                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"1af88644-836f-4ec0-ae4d-3cf982eabed5","path":"sprites/spr_pet_ashjaw_lynx_youngadult_e/spr_pet_ashjaw_lynx_youngadult_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
-              },"Disabled":false,"id":"4d7d75c5-3722-476f-a867-dc8506ecd652","IsCreationKey":false,"Key":0.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"8cf9301f-c25b-4869-a6b1-e58e21defc00","path":"sprites/spr_pet_ashjaw_lynx_youngadult_e/spr_pet_ashjaw_lynx_youngadult_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"c2b920e4-4ba2-4b5d-a5a8-f73fbb47d73e","IsCreationKey":false,"Key":0.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
           ],"resourceType":"KeyframeStore<SpriteFrameKeyframe>","resourceVersion":"2.0",},"modifiers":[],"name":"frames","resourceType":"GMSpriteFramesTrack","resourceVersion":"2.0","spriteId":null,"trackColour":0,"tracks":[],"traits":0,},
     ],
     "visibleRange":null,
@@ -86,5 +86,5 @@
   },
   "type":0,
   "VTile":false,
-  "width":37,
+  "width":42,
 }

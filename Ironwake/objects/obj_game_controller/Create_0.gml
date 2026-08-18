@@ -41,7 +41,9 @@ global.__sprite_includes = [
     // ("spr_icon_rune_" + id) so direct refs are required or they strip.
     spr_icon_rune_rime, spr_icon_rune_tempest, spr_icon_rune_aether,
     spr_icon_rune_abyss, spr_icon_rune_umbra, spr_icon_rune_venom,
-    spr_icon_rune_avatar,
+    spr_icon_rune_avatar, spr_icon_rune_seer,   // seer = 08-17 arcane-blue recolor
+    // 08-17 Arcanist control pair icons (string-resolved in ui_ability_icon_sprite)
+    spr_ability_paralytic_pulse, spr_ability_call_of_the_void,
     // Font-size variants (08-14): ui_font resolves them by NAME
     // (asset_get_index) so the .gml compiled before the import - these direct
     // refs stop the compiler stripping them. Fonts in a sprite list is fine:
@@ -195,6 +197,9 @@ global.__sprite_includes = [
     spr_pet_feed_mending_mash, spr_pet_feed_purgeroot, spr_pet_feed_hearty_roast,
     // Treats (bond-only, M approved 07-09).
     spr_pet_feed_treat_honey, spr_pet_feed_treat_marrow,
+    // 08-18 favored treats (pet_feed_icon string-resolves spr_pet_feed_<id>)
+    spr_pet_feed_treat_ember_nut, spr_pet_feed_treat_grave_lily, spr_pet_feed_treat_moon_moth,
+    spr_pet_feed_treat_brine_jerky, spr_pet_feed_treat_frost_root, spr_pet_feed_treat_iron_grub,
     // Species-preferred feed icons (ids pref_<species>, all 17 species).
     spr_pet_feed_pref_luna_moth,   spr_pet_feed_pref_bone_stag,    spr_pet_feed_pref_saber_hound,
     spr_pet_feed_pref_gloomtoad,   spr_pet_feed_pref_wyrmling,     spr_pet_feed_pref_nightowl,
@@ -440,6 +445,26 @@ global.__sprite_includes = [
     // Offhand icons derived from codex art (08-16) - ui_offhand_icon_sprite
     // resolves them by string; hard refs keep them from being stripped.
     spr_icon_offhand_orb_b, spr_icon_offhand_totem_b, spr_icon_offhand_focus_c,
+    // 08-17 FF-style species (tools/import_species_ff_0817.py) - string-resolved by pet_sprite.
+    spr_pet_canopy_shrew_baby_s,
+    spr_pet_canopy_shrew_baby_e,
+    spr_pet_canopy_shrew_youngadult_s,
+    spr_pet_canopy_shrew_youngadult_e,
+    spr_pet_canopy_shrew_adult_s,
+    spr_pet_canopy_shrew_adult_e,
+    spr_pet_cairn_bear_baby_s,
+    spr_pet_cairn_bear_baby_e,
+    spr_pet_cairn_bear_youngadult_s,
+    spr_pet_cairn_bear_youngadult_e,
+    spr_pet_cairn_bear_adult_s,
+    spr_pet_cairn_bear_adult_e,
+    // 08-18 status VFX loops (Gigapack; string-resolved in status_fx_sprite_for)
+    spr_fx_debuff_violet, spr_fx_debuff_red, spr_fx_debuff_green, spr_fx_blind_dark, spr_fx_root_ice,
+    // 08-18 VALUABLE icons (sell-only trinkets) - string-resolved in ui_consumable_icon_sprite.
+    spr_icon_valuable_tarnished_locket, spr_icon_valuable_silver_reliquary,
+    spr_icon_valuable_sovereigns_signet, spr_icon_valuable_star_iron_idol,
+    spr_icon_valuable_crown_shard,
+
 ];
 
 // =============================================================================
@@ -550,6 +575,7 @@ garden_cam_x      = 0;      // camera left edge, 0..garden_world_w()-1920
 garden_fade       = 0;      // fade-in frames remaining
 garden_notice     = "";     // toast line (drawn via ui_draw_toast)
 garden_notice_t   = 0;      // toast frames remaining
+garden_wip_t      = 0;      // WORK-IN-PROGRESS banner frames (08-18, M: shown on every garden entry)
 garden_shop_open  = false;  // ornament shop overlay
 garden_shop_cur   = 0;
 garden_place_pick = "";     // ornament id awaiting a plot choice

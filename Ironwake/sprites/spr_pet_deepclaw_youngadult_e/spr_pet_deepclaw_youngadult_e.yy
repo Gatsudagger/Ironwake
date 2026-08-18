@@ -2,24 +2,24 @@
   "$GMSprite":"v2",
   "%Name":"spr_pet_deepclaw_youngadult_e",
   "bboxMode":0,
-  "bbox_bottom":30,
+  "bbox_bottom":34,
   "bbox_left":0,
-  "bbox_right":34,
-  "bbox_top":3,
+  "bbox_right":40,
+  "bbox_top":5,
   "collisionKind":1,
   "collisionTolerance":0,
   "DynamicTexturePage":false,
   "edgeFiltering":false,
   "For3D":false,
   "frames":[
-    {"$GMSpriteFrame":"v1","%Name":"657c84d9-bb28-47d6-8bde-af6b9cb02558","name":"657c84d9-bb28-47d6-8bde-af6b9cb02558","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"59383886-2af0-4d9e-92c1-15d802eda695","name":"59383886-2af0-4d9e-92c1-15d802eda695","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
   ],
   "gridX":0,
   "gridY":0,
-  "height":35,
+  "height":41,
   "HTile":false,
   "layers":[
-    {"$GMImageLayer":"","%Name":"64fbe408-98b7-47f4-952b-44a2106623e1","blendMode":0,"displayName":"default","isLocked":false,"name":"64fbe408-98b7-47f4-952b-44a2106623e1","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
+    {"$GMImageLayer":"","%Name":"6ed95d3f-a432-4aae-b3cb-ad320559222a","blendMode":0,"displayName":"default","isLocked":false,"name":"6ed95d3f-a432-4aae-b3cb-ad320559222a","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
   ],
   "name":"spr_pet_deepclaw_youngadult_e",
   "nineSlice":null,
@@ -69,8 +69,8 @@
     "tracks":[
       {"$GMSpriteFramesTrack":"","builtinName":0,"events":[],"inheritsTrackColour":true,"interpolation":1,"isCreationTrack":false,"keyframes":{"$KeyframeStore<SpriteFrameKeyframe>":"","Keyframes":[
             {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
-                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"657c84d9-bb28-47d6-8bde-af6b9cb02558","path":"sprites/spr_pet_deepclaw_youngadult_e/spr_pet_deepclaw_youngadult_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
-              },"Disabled":false,"id":"0624f7a6-265c-49fa-b5f2-545254cac769","IsCreationKey":false,"Key":0.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"59383886-2af0-4d9e-92c1-15d802eda695","path":"sprites/spr_pet_deepclaw_youngadult_e/spr_pet_deepclaw_youngadult_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"790045ad-9e13-4bbe-afe7-b9e0eb2792d9","IsCreationKey":false,"Key":0.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
           ],"resourceType":"KeyframeStore<SpriteFrameKeyframe>","resourceVersion":"2.0",},"modifiers":[],"name":"frames","resourceType":"GMSpriteFramesTrack","resourceVersion":"2.0","spriteId":null,"trackColour":0,"tracks":[],"traits":0,},
     ],
     "visibleRange":null,
@@ -86,5 +86,5 @@
   },
   "type":0,
   "VTile":false,
-  "width":35,
+  "width":41,
 }

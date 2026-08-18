@@ -2,9 +2,9 @@
   "$GMSprite":"v2",
   "%Name":"spr_pet_sluice_otter_baby_e",
   "bboxMode":0,
-  "bbox_bottom":59,
-  "bbox_left":6,
-  "bbox_right":53,
+  "bbox_bottom":58,
+  "bbox_left":12,
+  "bbox_right":46,
   "bbox_top":0,
   "collisionKind":1,
   "collisionTolerance":0,
@@ -12,14 +12,14 @@
   "edgeFiltering":false,
   "For3D":false,
   "frames":[
-    {"$GMSpriteFrame":"v1","%Name":"e206b815-c8f7-457f-9ac2-0ce500f802a0","name":"e206b815-c8f7-457f-9ac2-0ce500f802a0","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"ba5eccd5-843f-4f78-b066-d66f2a1b9642","name":"ba5eccd5-843f-4f78-b066-d66f2a1b9642","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
   ],
   "gridX":0,
   "gridY":0,
-  "height":60,
+  "height":59,
   "HTile":false,
   "layers":[
-    {"$GMImageLayer":"","%Name":"8fdb9305-37c1-415e-b7f5-de50564a1819","blendMode":0,"displayName":"default","isLocked":false,"name":"8fdb9305-37c1-415e-b7f5-de50564a1819","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
+    {"$GMImageLayer":"","%Name":"2a851380-ef4e-4b1c-ba25-28d4cddc529d","blendMode":0,"displayName":"default","isLocked":false,"name":"2a851380-ef4e-4b1c-ba25-28d4cddc529d","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
   ],
   "name":"spr_pet_sluice_otter_baby_e",
   "nineSlice":null,
@@ -69,8 +69,8 @@
     "tracks":[
       {"$GMSpriteFramesTrack":"","builtinName":0,"events":[],"inheritsTrackColour":true,"interpolation":1,"isCreationTrack":false,"keyframes":{"$KeyframeStore<SpriteFrameKeyframe>":"","Keyframes":[
             {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
-                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"e206b815-c8f7-457f-9ac2-0ce500f802a0","path":"sprites/spr_pet_sluice_otter_baby_e/spr_pet_sluice_otter_baby_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
-              },"Disabled":false,"id":"a3bf8d82-1dec-4ed5-8299-d5869a38c183","IsCreationKey":false,"Key":0.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"ba5eccd5-843f-4f78-b066-d66f2a1b9642","path":"sprites/spr_pet_sluice_otter_baby_e/spr_pet_sluice_otter_baby_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"06bedd0c-1b8e-4f34-86cf-97b7e829339b","IsCreationKey":false,"Key":0.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
           ],"resourceType":"KeyframeStore<SpriteFrameKeyframe>","resourceVersion":"2.0",},"modifiers":[],"name":"frames","resourceType":"GMSpriteFramesTrack","resourceVersion":"2.0","spriteId":null,"trackColour":0,"tracks":[],"traits":0,},
     ],
     "visibleRange":null,
@@ -86,5 +86,5 @@
   },
   "type":0,
   "VTile":false,
-  "width":60,
+  "width":59,
 }

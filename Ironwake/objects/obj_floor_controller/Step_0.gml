@@ -508,7 +508,7 @@ if (showing_whetstone) {
 //   W/S select choice (skips locked) - Enter confirm - result phase: any key closes
 // -----------------------------------------------------------------------------
 // MERCHANT'S GHOST SHOP overlay input (M-locked 08-15). Geometry MUST mirror
-// the Draw block at the end of Draw_64: rows y270, pitch 108, hit 530-1390.
+// the Draw block at the end of Draw_64: rows y262, pitch 102, height 92, hit 530-1390.
 if (variable_instance_exists(id, "ghost_shop_open") && ghost_shop_open) {
     var _gs = global.ghost_stock;
     var _gn = array_length(_gs);
@@ -521,8 +521,8 @@ if (variable_instance_exists(id, "ghost_shop_open") && ghost_shop_open) {
     if (mouse_check_button_pressed(mb_left)) {
         var _gmx = device_mouse_x_to_gui(0), _gmy = device_mouse_y_to_gui(0);
         for (var _gi = 0; _gi < _gn; _gi++) {
-            var _gry = 270 + _gi * 108;
-            if (_gmx >= 530 && _gmx <= 1390 && _gmy >= _gry && _gmy <= _gry + 96) {
+            var _gry = 262 + _gi * 102;
+            if (_gmx >= 530 && _gmx <= 1390 && _gmy >= _gry && _gmy <= _gry + 92) {
                 if (ghost_cursor == _gi) touch_press(vk_enter);
                 else ghost_cursor = _gi;
                 break;
@@ -907,7 +907,13 @@ if (input_confirm() || input_confirm_alt()) {
                     continue;
                 }
                 var _t_found = undefined;
-                if (irandom(99) < 70) {
+                // LOOT ABUNDANCE (M 08-18: "drowning in loot... elites and bosses should
+                // be the reliable way"): a chest is now 55% consumable / 20% gear / 25%
+                // gold-only (was 70/30 with something every time).
+                var _t_roll = irandom(99);
+                if (_t_roll < 25) {
+                    // gold-only chest - _t_found stays undefined (the haul screen shows the coin)
+                } else if (_t_roll < 80) {
                     var _tc = roll_consumable_weighted(global.consumables_standard);
                     array_push(global.run_items_found, _tc);
                     consumable_award(_tc);
@@ -1012,10 +1018,17 @@ if (input_confirm() || input_confirm_alt()) {
         if (!variable_global_exists("carried_items"))   global.carried_items   = [];
         // Curse loot-tiers are a post-roll rarity bump now, not an awakening offset.
         var _tv_asc = (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0);
-        var _tv_e = drop_equipment(drop_weights("vault", _tv_asc), true, curse_loot_tier_bonus_for("vault"));
-        array_push(global.run_items_found, _tv_e);
-        array_push(global.carried_items, _tv_e);
-        discover_item(item_base_name(_tv_e), _tv_e.rarity);
+        // LOOT ABUNDANCE (M 08-18): the armory pays gear 70% of the time; the other 30%
+        // it pays DOUBLE gold instead (was a guaranteed piece every time).
+        var _tv_e = undefined;
+        if (irandom(99) < 70) {
+            _tv_e = drop_equipment(drop_weights("vault", _tv_asc), true, curse_loot_tier_bonus_for("vault"));
+            array_push(global.run_items_found, _tv_e);
+            array_push(global.carried_items, _tv_e);
+        } else {
+            _tv_gold *= 2;
+        }
+        if (_tv_e != undefined) discover_item(item_base_name(_tv_e), _tv_e.rarity);
         treasure_gold  = _tv_gold;
         treasure_item  = _tv_e;
         treasure_timer = 0;
@@ -1024,7 +1037,7 @@ if (input_confirm() || input_confirm_alt()) {
         audio_play_sound(snd_chest, 1, false);
         if (treasure_gold > 0) audio_play_sound(snd_gold, 1, false);
         if (treasure_banshee) audio_play_sound(snd_sting_mystery, 1, false);   // something wails inside the chest...
-        loot_item_sting(_tv_e);   // armory find sings its rarity
+        if (_tv_e != undefined) loot_item_sting(_tv_e);   // armory find sings its rarity
         show_debug_message("[FLOOR DEBUG] room=" + string(selected_room) + " type=treasure_vault gold=" + string(_tv_gold));
 
     } else if (_room.type == "treasure_rare") {

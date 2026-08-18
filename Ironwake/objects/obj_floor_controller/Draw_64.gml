@@ -1721,7 +1721,8 @@ matrix_set(matrix_world, matrix_build_identity());
 // MERCHANT'S GHOST SHOP overlay (M-locked 08-15) - drawn dead last, topmost.
 // A fanciful spectral stall: every row leads with its icon, names wear their
 // rarity colors, ghost exclusives carry a gold tag. Geometry mirrored by the
-// Step input block (rows y270, pitch 108).
+// Step input block (rows y262, pitch 102, height 92 - six rows end at y864,
+// clear of the key legend at y900; the old 108 pitch ran row 6 into it).
 // =============================================================================
 if (variable_instance_exists(id, "ghost_shop_open") && ghost_shop_open) {
     draw_set_alpha(0.78);
@@ -1749,26 +1750,29 @@ if (variable_instance_exists(id, "ghost_shop_open") && ghost_shop_open) {
     var _gsd = global.ghost_stock;
     for (var _gd = 0; _gd < array_length(_gsd); _gd++) {
         var _row = _gsd[_gd];
-        var _gry = 270 + _gd * 108;
-        var _sel = (_gd == ghost_cursor);
-        draw_set_color(_sel ? make_color_rgb(30, 40, 60) : make_color_rgb(20, 26, 40));
-        draw_rectangle(530, _gry, 1390, _gry + 96, false);
+        var _gry = 262 + _gd * 102;
+        var _gsel = (_gd == ghost_cursor);
+        draw_set_color(_gsel ? make_color_rgb(30, 40, 60) : make_color_rgb(20, 26, 40));
+        draw_rectangle(530, _gry, 1390, _gry + 92, false);
         draw_set_color(_row.sold ? make_color_rgb(50, 56, 70)
-                     : (_sel ? make_color_rgb(120, 180, 245) : make_color_rgb(52, 66, 92)));
-        draw_rectangle(530, _gry, 1390, _gry + 96, true);
+                     : (_gsel ? make_color_rgb(120, 180, 245) : make_color_rgb(52, 66, 92)));
+        draw_rectangle(530, _gry, 1390, _gry + 92, true);
         var _dimc = _row.sold ? 0.35 : 1.0;
         draw_set_alpha(_dimc);
         if (_row.kind == "item") {
             ui_draw_item_icon(544, _gry + 12, 72, _row.item);
             draw_set_font(ui_font(fnt_ui));
             draw_set_color(item_rarity_color(_row.item.rarity));
-            var _nm = _row.item.name
-                + (variable_struct_exists(_row.item, "ghost_exclusive") ? "" : "");
+            var _nm = _row.item.name;
             draw_text(636, _gry + 10, _nm);
+            // Measure the name in the font it was DRAWN in (fnt_ui) before switching to
+            // the small tag font - measuring after the switch under-sized the gap and
+            // ran the tag into the name (M 08-18 shot).
+            var _nm_w = string_width(_nm);
             if (variable_struct_exists(_row.item, "ghost_exclusive")) {
                 draw_set_font(ui_font(fnt_ui_small));
                 draw_set_color(make_color_rgb(255, 210, 120));
-                draw_text(636 + string_width(_nm) + 24, _gry + 16, "GHOST EXCLUSIVE");
+                draw_text(636 + _nm_w + 24, _gry + 16, "GHOST EXCLUSIVE");
                 draw_set_font(ui_font(fnt_ui));
             }
             draw_set_font(ui_font(fnt_ui_small));

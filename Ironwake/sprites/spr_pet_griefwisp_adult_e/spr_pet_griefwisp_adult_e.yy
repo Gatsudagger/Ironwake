@@ -2,9 +2,9 @@
   "$GMSprite":"v2",
   "%Name":"spr_pet_griefwisp_adult_e",
   "bboxMode":0,
-  "bbox_bottom":36,
+  "bbox_bottom":41,
   "bbox_left":7,
-  "bbox_right":29,
+  "bbox_right":33,
   "bbox_top":0,
   "collisionKind":1,
   "collisionTolerance":0,
@@ -12,14 +12,14 @@
   "edgeFiltering":false,
   "For3D":false,
   "frames":[
-    {"$GMSpriteFrame":"v1","%Name":"d6d0d6ad-7e57-489c-9a7f-5f0175ef05d3","name":"d6d0d6ad-7e57-489c-9a7f-5f0175ef05d3","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"fc7c5090-eb12-4389-b4ea-321e17de4949","name":"fc7c5090-eb12-4389-b4ea-321e17de4949","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
   ],
   "gridX":0,
   "gridY":0,
-  "height":37,
+  "height":42,
   "HTile":false,
   "layers":[
-    {"$GMImageLayer":"","%Name":"fd9b5f9a-f74d-46f3-9984-f1a7bc6ef9bf","blendMode":0,"displayName":"default","isLocked":false,"name":"fd9b5f9a-f74d-46f3-9984-f1a7bc6ef9bf","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
+    {"$GMImageLayer":"","%Name":"9387f408-ea51-4ab9-8efe-14dff671e3ae","blendMode":0,"displayName":"default","isLocked":false,"name":"9387f408-ea51-4ab9-8efe-14dff671e3ae","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
   ],
   "name":"spr_pet_griefwisp_adult_e",
   "nineSlice":null,
@@ -69,8 +69,8 @@
     "tracks":[
       {"$GMSpriteFramesTrack":"","builtinName":0,"events":[],"inheritsTrackColour":true,"interpolation":1,"isCreationTrack":false,"keyframes":{"$KeyframeStore<SpriteFrameKeyframe>":"","Keyframes":[
             {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
-                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"d6d0d6ad-7e57-489c-9a7f-5f0175ef05d3","path":"sprites/spr_pet_griefwisp_adult_e/spr_pet_griefwisp_adult_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
-              },"Disabled":false,"id":"4d932ddd-2a35-4759-8897-caa4a6e6fb28","IsCreationKey":false,"Key":0.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"fc7c5090-eb12-4389-b4ea-321e17de4949","path":"sprites/spr_pet_griefwisp_adult_e/spr_pet_griefwisp_adult_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"581ab2e2-5887-458d-ba99-5146dec4e91e","IsCreationKey":false,"Key":0.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
           ],"resourceType":"KeyframeStore<SpriteFrameKeyframe>","resourceVersion":"2.0",},"modifiers":[],"name":"frames","resourceType":"GMSpriteFramesTrack","resourceVersion":"2.0","spriteId":null,"trackColour":0,"tracks":[],"traits":0,},
     ],
     "visibleRange":null,
@@ -86,5 +86,5 @@
   },
   "type":0,
   "VTile":false,
-  "width":37,
+  "width":42,
 }

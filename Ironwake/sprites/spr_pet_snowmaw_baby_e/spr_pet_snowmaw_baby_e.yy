@@ -2,9 +2,9 @@
   "$GMSprite":"v2",
   "%Name":"spr_pet_snowmaw_baby_e",
   "bboxMode":0,
-  "bbox_bottom":41,
-  "bbox_left":4,
-  "bbox_right":36,
+  "bbox_bottom":36,
+  "bbox_left":2,
+  "bbox_right":34,
   "bbox_top":0,
   "collisionKind":1,
   "collisionTolerance":0,
@@ -12,14 +12,14 @@
   "edgeFiltering":false,
   "For3D":false,
   "frames":[
-    {"$GMSpriteFrame":"v1","%Name":"b749001a-0ae7-42f6-8702-a16f78bf0ff1","name":"b749001a-0ae7-42f6-8702-a16f78bf0ff1","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"9122c2c1-bb42-4cc2-9f3b-174e92286fa9","name":"9122c2c1-bb42-4cc2-9f3b-174e92286fa9","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
   ],
   "gridX":0,
   "gridY":0,
-  "height":42,
+  "height":37,
   "HTile":false,
   "layers":[
-    {"$GMImageLayer":"","%Name":"777838db-93df-46d0-b2b6-696f8d3ca256","blendMode":0,"displayName":"default","isLocked":false,"name":"777838db-93df-46d0-b2b6-696f8d3ca256","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
+    {"$GMImageLayer":"","%Name":"428d8460-5238-4fd2-86a6-137e05093626","blendMode":0,"displayName":"default","isLocked":false,"name":"428d8460-5238-4fd2-86a6-137e05093626","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
   ],
   "name":"spr_pet_snowmaw_baby_e",
   "nineSlice":null,
@@ -69,8 +69,8 @@
     "tracks":[
       {"$GMSpriteFramesTrack":"","builtinName":0,"events":[],"inheritsTrackColour":true,"interpolation":1,"isCreationTrack":false,"keyframes":{"$KeyframeStore<SpriteFrameKeyframe>":"","Keyframes":[
             {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
-                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"b749001a-0ae7-42f6-8702-a16f78bf0ff1","path":"sprites/spr_pet_snowmaw_baby_e/spr_pet_snowmaw_baby_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
-              },"Disabled":false,"id":"b0388027-58a3-45d6-bcc7-8a2f399ffc3a","IsCreationKey":false,"Key":0.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"9122c2c1-bb42-4cc2-9f3b-174e92286fa9","path":"sprites/spr_pet_snowmaw_baby_e/spr_pet_snowmaw_baby_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"e29d4130-fcb5-491c-9dff-b021d60be713","IsCreationKey":false,"Key":0.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
           ],"resourceType":"KeyframeStore<SpriteFrameKeyframe>","resourceVersion":"2.0",},"modifiers":[],"name":"frames","resourceType":"GMSpriteFramesTrack","resourceVersion":"2.0","spriteId":null,"trackColour":0,"tracks":[],"traits":0,},
     ],
     "visibleRange":null,
@@ -86,5 +86,5 @@
   },
   "type":0,
   "VTile":false,
-  "width":42,
+  "width":37,
 }

@@ -2,9 +2,9 @@
   "$GMSprite":"v2",
   "%Name":"spr_pet_graftling_youngadult_e",
   "bboxMode":0,
-  "bbox_bottom":39,
-  "bbox_left":4,
-  "bbox_right":34,
+  "bbox_bottom":42,
+  "bbox_left":6,
+  "bbox_right":36,
   "bbox_top":0,
   "collisionKind":1,
   "collisionTolerance":0,
@@ -12,14 +12,14 @@
   "edgeFiltering":false,
   "For3D":false,
   "frames":[
-    {"$GMSpriteFrame":"v1","%Name":"247fbb0a-8075-4c98-96f4-38bf145271a1","name":"247fbb0a-8075-4c98-96f4-38bf145271a1","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"a55dae9d-47c0-4477-9962-cce4170769c0","name":"a55dae9d-47c0-4477-9962-cce4170769c0","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
   ],
   "gridX":0,
   "gridY":0,
-  "height":40,
+  "height":43,
   "HTile":false,
   "layers":[
-    {"$GMImageLayer":"","%Name":"b05257c4-a651-42d5-b48c-495c59609737","blendMode":0,"displayName":"default","isLocked":false,"name":"b05257c4-a651-42d5-b48c-495c59609737","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
+    {"$GMImageLayer":"","%Name":"4eaf6771-3594-40dc-aea0-4b23bfd003e7","blendMode":0,"displayName":"default","isLocked":false,"name":"4eaf6771-3594-40dc-aea0-4b23bfd003e7","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
   ],
   "name":"spr_pet_graftling_youngadult_e",
   "nineSlice":null,
@@ -69,8 +69,8 @@
     "tracks":[
       {"$GMSpriteFramesTrack":"","builtinName":0,"events":[],"inheritsTrackColour":true,"interpolation":1,"isCreationTrack":false,"keyframes":{"$KeyframeStore<SpriteFrameKeyframe>":"","Keyframes":[
             {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
-                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"247fbb0a-8075-4c98-96f4-38bf145271a1","path":"sprites/spr_pet_graftling_youngadult_e/spr_pet_graftling_youngadult_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
-              },"Disabled":false,"id":"6ad20619-ef9c-42b6-a20b-2b0ea05a9c98","IsCreationKey":false,"Key":0.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"a55dae9d-47c0-4477-9962-cce4170769c0","path":"sprites/spr_pet_graftling_youngadult_e/spr_pet_graftling_youngadult_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"02ac6cd4-21cf-4a56-8716-679379cffec6","IsCreationKey":false,"Key":0.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
           ],"resourceType":"KeyframeStore<SpriteFrameKeyframe>","resourceVersion":"2.0",},"modifiers":[],"name":"frames","resourceType":"GMSpriteFramesTrack","resourceVersion":"2.0","spriteId":null,"trackColour":0,"tracks":[],"traits":0,},
     ],
     "visibleRange":null,
@@ -86,5 +86,5 @@
   },
   "type":0,
   "VTile":false,
-  "width":40,
+  "width":43,
 }

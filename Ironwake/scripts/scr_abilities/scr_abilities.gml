@@ -218,7 +218,7 @@ global.abilities_arcanist = [
     //    Niche: spam for damage and soul generation; pairs with Arcane Burst.
     ability_define("Soulfire",
         /*energy*/1, /*secondary*/0,
-        /*damage*/15, /*dtype*/1,       // elemental
+        /*damage*/11, /*dtype*/1,       // elemental (08-18 M: 15 -> 11, A0 Arcanist over-tuned out the gate)
         /*acc*/85, /*guaranteed*/false,
         /*crit_type*/2, /*base_crit*/8, // arcane (INT)
         /*effect_type*/"resource", /*effect_value*/2, /*duration*/0, // +2 Souls on cast
@@ -232,7 +232,7 @@ global.abilities_arcanist = [
         /*damage*/8, /*dtype*/2,        // drain - bypasses all mitigation
         /*acc*/-1, /*guaranteed*/true,
         /*crit_type*/-1, /*base_crit*/0,
-        /*effect_type*/"heal", /*effect_value*/8, /*duration*/0,
+        /*effect_type*/"heal", /*effect_value*/6, /*duration*/0,   // 08-18 M: heal 8 -> 6
         /*self*/false),
 
     // 2: Arcane Burst - big nuke; costs a Soul, high arcane crit ceiling.
@@ -241,7 +241,7 @@ global.abilities_arcanist = [
     //    3-AP cast finally beats a turn of three cheap 1-AP spells.
     ability_define("Arcane Burst",
         /*energy*/3, /*secondary*/1,
-        /*damage*/38, /*dtype*/1,       // elemental
+        /*damage*/32, /*dtype*/1,       // elemental (08-18 M: 38 -> 32)
         /*acc*/80, /*guaranteed*/false,
         /*crit_type*/2, /*base_crit*/12, // arcane (INT) + 2 el stacks on crit
         /*effect_type*/"damage", /*effect_value*/0, /*duration*/0,
@@ -355,12 +355,12 @@ global.abilities_arcanist = [
 // breakdown lines. School words Capitalized; dtype-1 descs name the resolved
 // school (Fire/Arcane), not "elemental".
 var _arc_d = [
-    { s: "Deal 15 Fire dmg. Gain +2 Souls.",
-      f: "Hurl a gout of soulfire that feeds on what it burns.\n- 15 Fire damage. Banks +2 Souls on cast.\n- Cheap to cast - spam it to fuel bigger spells next turn." },
-    { s: "1 AP: 8 Void dmg, heal 8, +1 Soul. 2-turn CD.",
-      f: "Pull the life out of a foe in one cold breath.\n- Guaranteed 8 Void damage that ignores all armor. Heals you 8 and banks 1 Soul.\n- 1 AP on a 2-turn cooldown - steady sustain, not spam." },
-    { s: "Spend 1 Soul. Deal 38 Arcane dmg.",
-      f: "Collapse a stored Soul into one roaring detonation of Arcane force.\n- Spend 1 Soul: 38 Arcane damage with a high crit ceiling.\n- Save it for elites and high-HP enemies." },
+    { s: "Deal 11 Fire dmg. Gain +2 Souls.",
+      f: "Hurl a gout of soulfire that feeds on what it burns.\n- 11 Fire damage. Banks +2 Souls on cast.\n- Cheap to cast - spam it to fuel bigger spells next turn." },
+    { s: "1 AP: 8 Void dmg, heal 6, +1 Soul. 2-turn CD.",
+      f: "Pull the life out of a foe in one cold breath.\n- Guaranteed 8 Void damage that ignores all armor. Heals you 6 and banks 1 Soul.\n- 1 AP on a 2-turn cooldown - steady sustain, not spam." },
+    { s: "Spend 1 Soul. Deal 32 Arcane dmg.",
+      f: "Collapse a stored Soul into one roaring detonation of Arcane force.\n- Spend 1 Soul: 32 Arcane damage with a high crit ceiling.\n- Save it for elites and high-HP enemies." },
     { s: "0 AP cost. Gain +2 Souls instantly.",
       f: "Reach out and gather the loose souls the fight has shaken free.\n- Costs no AP: +2 Souls on the spot, once per turn.\n- Top off the reserve before an Arcane Burst or Soul Nova." },
     { s: "Fully dodge the next attack; soften the 2 after. 2-turn CD.",
@@ -1193,6 +1193,24 @@ global.abilities_arcanist[_dw_a0 + 2].desc_full  = "Snap a living arc between ev
 global.abilities_arcanist[_dw_a0 + 3].desc_short = "Once per combat: spells +3 dmg per turn elapsed.";
 global.abilities_arcanist[_dw_a0 + 3].desc_full  = "Set a soul turning inside a cage of glass and let it gather speed.\n- Once per combat, combat-long: your spells deal +3 more for every full turn that has passed since you lit it.\n- Dead weight in short fights, monstrous in long ones - the boss-fight engine.";
 
+// --- 08-17 Arcanist control pair (M-locked): Paralytic Pulse + Call of the Void ---
+var _pp_a0 = array_length(global.abilities_arcanist);
+array_push(global.abilities_arcanist,
+    // Paralytic Pulse - 2 AP, NO damage. EVERY enemy rolls 40% (independent) to be
+    //    Stunned 1 turn. Pure-debuff = no attack-on-hit riders. dtype 1 keeps it a
+    //    SPELL (silence stops it, Seer runes/spell crit apply); base_damage 0.
+    ability_define("Paralytic Pulse",  2,0, 0,1,  -1,true,  3,0, "debuff",1,1,  false),
+    // Call of the Void - 2 AP + 1 Soul, 10 Void, then ONE random debuff for 2 turns
+    //    (Weaken -20% / Silence / Root / Vulnerable +3 / Blind -30%). Web paths:
+    //    Chorus (2 debuffs, 1 target) vs Spreading Dark (2-3 targets, independent).
+    ability_define("Call of the Void", 2,1, 10,2, 88,false, 2,8, "debuff",0,2,  false));
+global.abilities_arcanist[_pp_a0    ].is_aoe = true;   // every enemy rolls
+global.abilities_arcanist[_pp_a0    ].school = "arcane";
+global.abilities_arcanist[_pp_a0    ].desc_short = "No dmg. Every enemy: 40% to be Stunned 1 turn.";
+global.abilities_arcanist[_pp_a0    ].desc_full  = "A soundless pulse rolls out of you and every nerve in the room misfires at once.\n- No damage. EVERY enemy rolls its own 40% chance to be STUNNED for 1 turn (a stunned enemy loses its next action).\n- Pure control - it triggers no on-hit riders. The gamble opener: sometimes the whole pack freezes, sometimes nobody does.";
+global.abilities_arcanist[_pp_a0 + 1].desc_short = "10 Void dmg + ONE random debuff (2 turns).";
+global.abilities_arcanist[_pp_a0 + 1].desc_full  = "You ask the dark for something and it answers - you never get to choose what.\n- 10 Void damage, then ONE random debuff for 2 turns: Weakened (-20% dmg), Silenced, Rooted, Vulnerable (+3 dmg taken) or Blinded (-30% acc).\n- Web paths: CHORUS lays two debuffs on one foe; SPREADING DARK calls it on 2-3 foes, each rolling its own.";
+
 var _dw_b0 = array_length(global.abilities_bloodwarden);
 array_push(global.abilities_bloodwarden,
     // Galvanize - 16 Shock melee; a killing blow grants +1 AP next turn
@@ -1465,6 +1483,7 @@ function ability_category(ab) {
         // debuff - judgment call, tunable).
         case "Curse":        case "Smoke Bomb":    case "Marked for Death": case "Entropy":
         case "Plague Touch":
+        case "Paralytic Pulse": case "Call of the Void":   // 08-17 control pair
             return "control";
     }
 
@@ -2024,6 +2043,14 @@ function ability_effect_full(ab) {
         case "Glacial Ward":    _b = "Melee enemies that strike you this turn are Chilled."; break;
         case "Static Arc":      _b = "Chains 50% to one other enemy - to ALL others if the target was already Shocked."; break;
         case "Soul Engine":     _b = "Once per combat, combat-long: spells deal +3 per full turn elapsed."; break;
+        case "Paralytic Pulse":
+            _b = "No damage. EVERY enemy rolls its own " + string(40 + (ability_web_copy_has_rider(ab, "pulse10") ? 10 : 0))
+               + "% chance" + (ability_web_copy_has_rider(ab, "pulse_debuffed") ? " (+20% if it already carries a debuff)" : "")
+               + " to be STUNNED for " + ability_turns(_ed) + ". Pure control - no on-hit riders."; break;
+        case "Call of the Void":
+            _b = "Then " + (ability_web_copy_has_rider(ab, "void_chorus") ? "TWO random debuffs" : "ONE random debuff")
+               + " for " + ability_turns(_ed) + " - Weakened (-20% dmg), Silenced, Rooted, Vulnerable (+3 dmg taken) or Blinded (-30% acc)"
+               + (ability_web_copy_has_rider(ab, "void_spread") ? " - on 2-3 enemies, each rolling its own." : "."); break;
         case "Galvanize":       _b = "A killing blow grants +1 AP next turn."; break;
         case "Winter's Bite":   _b = "Against a Chilled target: +9 damage and the Prep refunds."; break;
         case "Devil's Flip":    _b = "A coin flip: 50% the target takes 26 (+8 per consecutive win this combat) - 50% YOU take 8 and the streak resets."; break;
@@ -2119,8 +2146,10 @@ function ability_effect_full(ab) {
         return _t_out;
     }
 
-    // Standard effect from the typed status kind / effect_type.
-    var _k = ability_status_kind(ab);
+    // Standard effect from the typed status kind / effect_type. (The 08-17 control
+    // pair describe their chance/random rolls bespoke above - a flat "Stuns the
+    // target" line would over-promise.)
+    var _k = (ab.name == "Paralytic Pulse" || ab.name == "Call of the Void") ? "" : ability_status_kind(ab);
     var _s = "";
     switch (_k) {
         case "dot":
@@ -2636,6 +2665,9 @@ function ability_unlock_info(ability_name) {
         case "Magma Golem":      return { type:"vex", cost:400, goal_type:"", goal_value:0 };
         case "Soulbind":         return { type:"vex", cost:400, goal_type:"", goal_value:0 };
         case "Event Horizon":    return { type:"vex", cost:400, goal_type:"", goal_value:0 };
+        // 08-17 control pair (M-locked: "mid cost")
+        case "Paralytic Pulse":  return { type:"vex", cost:250, goal_type:"", goal_value:0 };
+        case "Call of the Void": return { type:"vex", cost:400, goal_type:"", goal_value:0 };
         // #26 Arcanist melee kit - premium tier above the 100/250/400 ladder
         case "Blazing Palm":     return { type:"vex", cost:500,  goal_type:"", goal_value:0 };
         case "Gravewrack Grip":  return { type:"vex", cost:800,  goal_type:"", goal_value:0 };
@@ -2922,7 +2954,10 @@ function ability_web_nodes(ab) {
         // identical"); bespoke signature overrides below replace these wholesale.
         var _h = 0;
         for (var _hc = 1; _hc <= string_length(ab.name); _hc++) _h += ord(string_char_at(ab.name, _hc));
-        array_push(_n, ability_web_node("p1", "P", 1, "Keen Edge", "+3 base damage", ["dmg"], ""));
+        // Talent audit (M 08-17): +3 flat read strictly worse than Heavy Hand's +15% on any
+        // 20+ dmg ability - Keen Edge now +4 flat AND +2% crit so it wins on cheap hits and
+        // stays relevant on big ones.
+        array_push(_n, ability_web_node("p1", "P", 1, "Keen Edge", "+4 base damage, +2% crit chance", ["dmg4", "crit2"], ""));
         array_push(_n, _sure
             ? ability_web_node("p2", "P", 2, "Deadly Precision", "+4% crit chance", ["crit"], "")
             : ability_web_node("p2", "P", 2, "True Aim", "+5 accuracy", ["acc"], ""));
@@ -2942,12 +2977,13 @@ function ability_web_nodes(ab) {
             }
         }
         array_push(_n, _pk);
+        var _hh_txt = "+20% base damage, min +3  (" + string(ab.base_damage) + " -> " + string(ability_web_hybrid_dmgp(ab.base_damage)) + ")";
         array_push(_n, _sure
-            ? ability_web_node("t1", "T", 1, "Heavy Hand", "+15% base damage", ["dmgp"], "")
+            ? ability_web_node("t1", "T", 1, "Heavy Hand", _hh_txt, ["dmgp"], "")
             : ability_web_node("t1", "T", 1, "Killer Instinct", "+4% crit chance", ["crit"], ""));
         if (_has_cd)       array_push(_n, ability_web_node("t2", "T", 2, "Swift Recovery", "Cooldown -1 turn", ["cdm"], ""));
-        else if (_has_dur) array_push(_n, ability_web_node("t2", "T", 2, "Lasting Mark", "+1 turn effect duration", ["dur"], ""));
-        else               array_push(_n, ability_web_node("t2", "T", 2, "Brutal Momentum", "+15% base damage", ["dmgp"], ""));
+        else if (_has_dur) array_push(_n, ability_web_node("t2", "T", 2, "Lasting Mark", ability_web_dur_noun(ab) + " lasts +1 turn  (" + string(ab.effect_duration) + " -> " + string(ab.effect_duration + 1) + ")", ["dur"], ""));
+        else               array_push(_n, ability_web_node("t2", "T", 2, "Brutal Momentum", "+20% base damage, min +3  (" + string(ab.base_damage) + " -> " + string(ability_web_hybrid_dmgp(ab.base_damage)) + ")", ["dmgp"], ""));
         var _tk;
         switch ((_h div 7) mod 3) {
             case 0:  _tk = ability_web_node("tk", "T", 3, "Opening Gambit", "First cast each combat costs 1 less AP", [], "first_free"); break;
@@ -2961,10 +2997,23 @@ function ability_web_nodes(ab) {
         // TIMED EFFECT, no damage (pure debuffs/buffs - no on-hit riders).
         // Value nodes name the CONCRETE unit + numbers via ability_web_val_node
         // (M 07-28: "+2 effect strength" on Blink says nothing).
-        array_push(_n, ability_web_val_node(ab, "p1", "P", 1, "Deeper Roots", "add"));
-        array_push(_n, ability_web_val_node(ab, "p2", "P", 2, "Concentration", "mult20"));
-        array_push(_n, ability_web_node("pk", "P", 3, "Lingering Grip", "+2 turns duration", ["dur2"], ""));
-        array_push(_n, ability_web_node("t1", "T", 1, "Endurance", "+1 turn duration", ["dur"], ""));
+        if (ab.name == "Blink") {
+            // Talent audit (M 08-17): Blink's stored effect_value/duration are NOT read by
+            // its staged-guard resolver (blink_charges is hard-set to 3), so the generic
+            // "+2 guarded attacks" / "+20%" / "+2 turns" nodes were lies. Bespoke POWER
+            // side that changes what the guard actually does:
+            array_push(_n, ability_web_node("p1", "P", 1, "Steady Fade", "The 3rd attack is softened as much as the 2nd (25% -> 50%)", [], "blink_even"));
+            array_push(_n, ability_web_node("p2", "P", 2, "Soul Flicker", "Casting Blink also grants +1 Soul", [], "blink_soul"));
+            array_push(_n, ability_web_node("pk", "P", 3, "Phase Cascade", "Blink guards FOUR attacks - the 2nd is a full dodge too", [], "blink_double"));
+        } else {
+            array_push(_n, ability_web_val_node(ab, "p1", "P", 1, "Deeper Roots", "add"));
+            array_push(_n, ability_web_val_node(ab, "p2", "P", 2, "Concentration", "mult20"));
+            // Duration nodes SAY the numbers (M 08-17: "+2 turns duration" left him
+            // guessing what lasted longer and for how long).
+            var _wd_noun = ability_web_dur_noun(ab);
+            array_push(_n, ability_web_node("pk", "P", 3, "Lingering Grip", _wd_noun + " lasts +2 turns  (" + string(ab.effect_duration) + " -> " + string(ab.effect_duration + 2) + ")", ["dur2"], ""));
+        }
+        array_push(_n, ability_web_node("t1", "T", 1, "Endurance", ((ab.name == "Blink") ? "Duration" : ability_web_dur_noun(ab)) + " lasts +1 turn  (" + string(ab.effect_duration) + " -> " + string(ab.effect_duration + 1) + ")", ["dur"], ""));
         if (_has_cd)                   array_push(_n, ability_web_node("t2", "T", 2, "Swift Recovery", "Cooldown -1 turn", ["cdm"], ""));
         else if (ab.energy_cost >= 2)  array_push(_n, ability_web_node("t2", "T", 2, "Efficient Form", "Costs 1 less AP", ["apc"], ""));
         else                           array_push(_n, ability_web_val_node(ab, "t2", "T", 2, "Taproot", "mult50"));
@@ -3026,6 +3075,22 @@ function ability_web_val_noun(ab) {
     return "effect strength";
 }
 
+// What a duration node lengthens, in the ability's own words ("Vulnerable", "the
+// shield", "the burn"...). Uses the effect kind when no status name is stored.
+function ability_web_dur_noun(ab) {
+    switch (ab.effect_type) {
+        case "trap":   return "The trap";
+        case "summon": return "The summon";
+        case "dot":    return "The damage-over-time";
+        case "debuff": return "The debuff";
+        case "shield": return "The shield";
+        case "buff":   return "The buff";
+        case "heal":   return "The healing";
+        case "status": return "The effect";
+    }
+    return "The effect";
+}
+
 // Build a generic value node with a CONCRETE description (unit + base -> new
 // numbers). kind: "add" (+2 flat), "mult20" (x1.2), "mult50" (x1.5).
 // FRACTION-VALUED abilities (a -30% debuff stores 0.3) always get the
@@ -3050,15 +3115,20 @@ function ability_web_val_node(ab, _id, _br, _lv, _nm, _kind) {
         _rider = ["val"];
         _desc  = "+2 " + _noun + "  (" + string(_v) + " -> " + string(_v + 2) + ")";
     } else if (_kind == "mult50") {
+        // Hybrid (08-18 audit): x1.5 with a flat floor (+5, or +15 pts on a fraction).
         _rider = ["valh"];
+        var _nh = ability_web_hybrid_valh(_v);
         _desc  = _frac
-            ? ("+50% " + _noun + "  (" + string(round(_v * 100)) + "% -> " + string(round(min(0.95, _v * 1.5) * 100)) + "%)")
-            : ("+50% " + _noun + "  (" + string(_v) + " -> " + string(ceil(_v * 1.5)) + ")");
+            ? ("+50% " + _noun + " (min +15 pts)  (" + string(round(_v * 100)) + "% -> " + string(round(_nh * 100)) + "%)")
+            : ("+50% " + _noun + " (min +5)  (" + string(_v) + " -> " + string(_nh) + ")");
     } else {
+        // Hybrid (08-18 audit): x1.2 with a flat floor (+3, or +10 pts on a fraction) -
+        // so Concentration is never worse than the +2 Deeper Roots below it.
         _rider = ["valp"];
+        var _np = ability_web_hybrid_valp(_v);
         _desc  = _frac
-            ? ("+20% " + _noun + "  (" + string(round(_v * 100)) + "% -> " + string(round(min(0.95, _v * 1.2) * 100)) + "%)")
-            : ("+20% " + _noun + "  (" + string(_v) + " -> " + string(ceil(_v * 1.2)) + ")");
+            ? ("+20% " + _noun + " (min +10 pts)  (" + string(round(_v * 100)) + "% -> " + string(round(_np * 100)) + "%)")
+            : ("+20% " + _noun + " (min +3)  (" + string(_v) + " -> " + string(_np) + ")");
     }
     return ability_web_node(_id, _br, _lv, _nm, _desc, _rider, "");
 }
@@ -3102,13 +3172,17 @@ function ability_web_bespoke(ab) {
         // --- Arcanist ---
         case "Soulfire":
             array_push(_out, ability_web_node("pk", "P", 3, "Pyre Unending", "Killing blows refund 1 AP", [], "kill_ap"));
-            var _sf = ability_web_node("tk", "T", 3, "Cinderheart", "Soulfire burns as FIRE - fire gear now feeds it", [], "");
-            _sf.school_to = "fire";
-            array_push(_out, _sf);
+            // 08-18 (M: "the tree says weapon changes Soulfire's element, then says it burns
+            // as FIRE and fire gear feeds it - clarify"): Soulfire IS fire already (its
+            // school is fire, so +Fire gear always fed it) - the old "burns as FIRE" keystone
+            // was a no-op. Cinderheart now does something: the bolt leaves the target
+            // BURNING (3 fire/turn for 2 turns).
+            array_push(_out, ability_web_node("tk", "T", 3, "Cinderheart", "Soulfire leaves the target BURNING - 3 fire damage a turn for 2 turns", [], "soulfire_burn"));
             // Edge-Carried (M-locked 08-13 weapon rework): weapon-spell synergy
             // is a BUILD CHOICE now, not a free ride - this node opts the
-            // ability back into the weapon's elemental affix.
-            array_push(_out, ability_web_node("t1", "T", 1, "Edge-Carried", "Your weapon's elemental affix rides this ability", [], "edge_carried"));
+            // ability back into the weapon's elemental affix. Copy says exactly what
+            // it does: the affix STATUS procs; the spell's own school never changes.
+            array_push(_out, ability_web_node("t1", "T", 1, "Edge-Carried", "Your weapon's elemental affix STATUS (Burning / Frostbite / Shock) also procs on Soulfire's hits - the spell stays Fire", [], "edge_carried"));
             break;
         case "Arcane Burst": {
             var _abu = ability_web_attune_node("pk", ab);
@@ -3121,7 +3195,9 @@ function ability_web_bespoke(ab) {
         case "Void Drain":
             // P3 (08-05): the drain marks what it feeds on.
             array_push(_out, ability_web_node("pk", "P", 3, "Voidbrand", "Hits inflict Vulnerable (1 turn)", [], "hit_vuln"));
-            array_push(_out, ability_web_node("tk", "T", 3, "Hungering Maw", "Critical hits grant +1 class resource", [], "crit_sec:1"));
+            // 08-18 audit: Void Drain never crits (crit_type -1) - the old "crit grants +1 Soul"
+            // keystone was a dead node. Now it feeds the drain itself.
+            array_push(_out, ability_web_node("tk", "T", 3, "Hungering Maw", "Heals +4 more per cast  (" + string(ab.effect_value) + " -> " + string(ab.effect_value + 4) + ")", ["val", "val"], ""));
             break;
         case "Event Horizon":
             // 08-15 rework: the old "Event Horizon" detonate keystone IS the
@@ -3170,6 +3246,19 @@ function ability_web_bespoke(ab) {
             // bounce in the game (40 + 15 = 55%).
             array_push(_out, ability_web_node("t2", "T", 2, "Live Current", "The shock ARCS ON - a bolt leaps to a second enemy (40% + shock bonus)", [], "mut_bounce:40"));
             break;
+        case "Paralytic Pulse":
+            // Timed-effect template would offer Deeper Roots/Concentration on an
+            // effect_value nothing reads. POWER side = the roll itself.
+            array_push(_out, ability_web_node("p1", "P", 1, "Wider Pulse", "+10% stun chance on every enemy (40% -> 50%)", [], "pulse10"));
+            array_push(_out, ability_web_node("p2", "P", 2, "Resonant Pulse", "Enemies already carrying a debuff roll at +20%", [], "pulse_debuffed"));
+            array_push(_out, ability_web_node("pk", "P", 3, "Lingering Paralysis", "The stun lasts +1 turn  (1 -> 2)", ["dur"], ""));
+            break;
+        case "Call of the Void":
+            // M-locked paths: Chorus (multi-debuff, one target) vs Spreading Dark
+            // (2-3 targets, INDEPENDENT rolls). Both keystones, one per branch.
+            array_push(_out, ability_web_node("pk", "P", 3, "Chorus", "The void answers TWICE - two different random debuffs on the target", [], "void_chorus"));
+            array_push(_out, ability_web_node("tk", "T", 3, "Spreading Dark", "Calls on 2-3 enemies at once - damage and a debuff roll for EACH", [], "void_spread"));
+            break;
         case "Blink":
             array_push(_out, ability_web_node("t1", "T", 1, "Afterimage Veil", "The 2nd/3rd attacks are softened 60%/35% (up from 50%/25%)", [], "blink_soft"));
             array_push(_out, ability_web_node("tk", "T", 3, "Counterphase", "When Blink fully evades an attack, your next ability costs 1 less AP", [], "blink_tempo"));
@@ -3211,7 +3300,7 @@ function ability_web_bespoke(ab) {
             // P3 (08-05): the spray was never going to stay on one target.
             array_push(_out, ability_web_node("tk", "T", 3, "Arterial Spray", "Echoes 50% of its damage to another enemy", [], "splash:50"));
             // Edge-Carried (08-13 weapon rework): opt back into the weapon affix.
-            array_push(_out, ability_web_node("t1", "T", 1, "Edge-Carried", "Your weapon's elemental affix rides this ability", [], "edge_carried"));
+            array_push(_out, ability_web_node("t1", "T", 1, "Edge-Carried", "Your weapon's elemental affix STATUS (Burning / Frostbite / Shock) also procs on this ability's hits", [], "edge_carried"));
             break;
         case "Iron Skin":
             // P3 (07-29): t2 was a template clone. "Sharp Edges" rides the
@@ -3239,7 +3328,7 @@ function ability_web_bespoke(ab) {
             break;
         case "Undying":
             // P3 (08-05): refusal, sustained.
-            array_push(_out, ability_web_node("t1", "T", 1, "Stubborn Heart", "+1 turn effect duration", ["dur"], ""));
+            array_push(_out, ability_web_node("t1", "T", 1, "Stubborn Heart", "Undying holds +2 turns  (" + string(ab.effect_duration) + " -> " + string(ab.effect_duration + 2) + ")", ["dur2"], ""));   // 08-18 audit: +1 was lazy
             array_push(_out, ability_web_node("tk", "T", 3, "Blood Ward", "Also raises an 8-point shield on cast", [], "cast_shield:8"));
             break;
         case "Plague Touch":
@@ -3248,7 +3337,7 @@ function ability_web_bespoke(ab) {
             // signature deepens the rot itself. (The old "dead mortality" note is
             // stale: enemy mends now route through combat_heal_after_mortality,
             // so its anti-heal already bites healer packs.)
-            array_push(_out, ability_web_node("t1", "T", 1, "Festering Grip", "+1 turn effect duration", ["dur"], ""));
+            array_push(_out, ability_web_node("t1", "T", 1, "Festering Grip", "The plague ticks +2 harder AND lasts +1 turn  (" + string(ab.effect_value) + "/t x" + string(ab.effect_duration) + " -> " + string(ab.effect_value + 2) + "/t x" + string(ab.effect_duration + 1) + ")", ["val", "dur"], ""));   // 08-18 audit
             break;
         // --- Shadowstrider ---
         case "Snipe":
@@ -3256,7 +3345,7 @@ function ability_web_bespoke(ab) {
             // P3 (08-05): the sniper's creed.
             array_push(_out, ability_web_node("tk", "T", 3, "One Shot, One Kill", "+50% damage below 25% HP", [], "execute:50"));
             // Edge-Carried (08-13 weapon rework): opt back into the weapon affix.
-            array_push(_out, ability_web_node("t1", "T", 1, "Edge-Carried", "Your weapon's elemental affix rides this ability", [], "edge_carried"));
+            array_push(_out, ability_web_node("t1", "T", 1, "Edge-Carried", "Your weapon's elemental affix STATUS (Burning / Frostbite / Shock) also procs on this ability's hits", [], "edge_carried"));
             break;
         case "Poison Dart":
             array_push(_out, ability_web_node("pk", "P", 3, "Virulent Spread", "Its venom jumps to a second enemy", [], "status_splash"));
@@ -3391,11 +3480,25 @@ function ability_web_buy(name, id) {
 // Apply ONE field-mod id in place to a mutable ability copy. Shared by the
 // permanent web picks and the run-scoped Whetstone honing so both use the
 // exact same numbers.
+// Hybrid value curves (08-18 talent audit). Flat floors: dmg +3, effect +3 (x1.2) /
+// +5 (x1.5); fraction floors +0.10 / +0.15 (percentage points), capped at 0.95.
+function ability_web_hybrid_dmgp(_b) { return max(ceil(_b * 1.2), _b + 3); }
+function ability_web_hybrid_valp(_v) {
+    if (_v > 0 && _v < 1) return min(0.95, max(_v * 1.2, _v + 0.10));
+    return max(ceil(_v * 1.2), _v + 3);
+}
+function ability_web_hybrid_valh(_v) {
+    if (_v > 0 && _v < 1) return min(0.95, max(_v * 1.5, _v + 0.15));
+    return max(ceil(_v * 1.5), _v + 5);
+}
+
 function ability_web_apply_mod(_c, mod_id) {
     switch (mod_id) {
         case "dmg":  _c.base_damage     += 3; break;
+        case "dmg4": _c.base_damage     += 4; break;   // Keen Edge (M 08-17 audit: +3 read worse than the % siblings)
         case "acc":  _c.base_acc        += 5; break;
         case "crit": _c.base_crit       += 4; break;
+        case "crit2": _c.base_crit      += 2; break;   // Keen Edge's second half
         // FRACTION GUARD (M 07-28): some pure-effect abilities store a percent
         // FRACTION in effect_value (a -30% debuff is 0.3). A flat +2 or a ceil()
         // there turned "-30%" into "-230%"/"-100%". Fractions bump by +10
@@ -3404,11 +3507,14 @@ function ability_web_apply_mod(_c, mod_id) {
         case "val":  _c.effect_value    += (_c.effect_value > 0 && _c.effect_value < 1) ? 0.1 : 2; break;
         case "dur":  _c.effect_duration += 1; break;
         case "dur2": _c.effect_duration += 2; break;
-        case "valp": _c.effect_value     = (_c.effect_value > 0 && _c.effect_value < 1)
-            ? min(0.95, _c.effect_value * 1.2) : ceil(_c.effect_value * 1.2); break;
-        case "valh": _c.effect_value     = (_c.effect_value > 0 && _c.effect_value < 1)
-            ? min(0.95, _c.effect_value * 1.5) : ceil(_c.effect_value * 1.5); break;
-        case "dmgp": _c.base_damage      = ceil(_c.base_damage * 1.15); break;
+        // TALENT AUDIT (M 08-18: "+4 flat on an 8-dmg spell is VASTLY better than +15%"):
+        // every percentage node is a HYBRID with a flat floor, so it can never lose to
+        // the flat node one tier below it. Fractions (a -30% debuff = 0.3) get a
+        // percentage-POINT floor instead. Numbers shown on the node come from
+        // ability_web_hybrid_* so the copy and the math can't drift.
+        case "valp": _c.effect_value     = ability_web_hybrid_valp(_c.effect_value); break;
+        case "valh": _c.effect_value     = ability_web_hybrid_valh(_c.effect_value); break;
+        case "dmgp": _c.base_damage      = ability_web_hybrid_dmgp(_c.base_damage); break;
         case "apc":  _c.energy_cost      = max(1, _c.energy_cost - 1); break;
         case "secc": _c.secondary_cost   = max(1, _c.secondary_cost - 1); break;   // Thick Blood etc. (floors at 1)
         case "cdm":  _c.cd_mod           = (variable_struct_exists(_c, "cd_mod") ? _c.cd_mod : 0) - 1; break;
@@ -3691,6 +3797,12 @@ function borrowed_memory_roll(class_id) {
             if (_ab.effect_type == "resource") continue;
             // Off-class dead buttons: the SS trap ramp does nothing without traps.
             if (_ab.name == "Compounding Dread") continue;
+            // 08-18 (M): abilities that LEAN on the class resource without a hard
+            // secondary_cost - "spend up to 4 Souls", "+8 per Soul consumed", "the
+            // Prep refunds", "+1 Soul on hit", "+3 Blood" - are dead or misleading
+            // off-class too. Screen the short desc for resource talk ("Blood dmg" is
+            // a damage TYPE and stays borrowable).
+            if (borrowed_memory_leans_on_resource(_ab)) continue;
             array_push(_cands, _ab);
             array_push(_srcs, _names[_c]);
         }
@@ -3698,6 +3810,26 @@ function borrowed_memory_roll(class_id) {
     if (array_length(_cands) == 0) return undefined;
     var _k = irandom(array_length(_cands) - 1);
     return { ability: _cands[_k], from_class: _srcs[_k] };
+}
+
+// True when an ability's short desc talks about a class resource (Souls / Prep /
+// Blood-as-resource) - such abilities are skipped by borrowed_memory_roll.
+function borrowed_memory_leans_on_resource(_ab) {
+    var _d = variable_struct_exists(_ab, "desc_short") ? string(_ab.desc_short) : "";
+    if (_d == "") return false;
+    if (string_pos("Soul", _d) > 0) return true;
+    if (string_pos("Prep", _d) > 0) return true;
+    if (string_pos("Spend", _d) > 0) return true;
+    // "Blood" as a RESOURCE: "+N Blood", "N Blood." / "Blood," (not "Blood dmg" / "Blood damage").
+    var _bp = string_pos("Blood", _d);
+    while (_bp > 0) {
+        var _after = string_copy(_d, _bp + 5, 5);
+        if (string_pos(" dmg", _after) != 1 && string_pos(" dam", _after) != 1) return true;
+        var _rest = string_copy(_d, _bp + 5, string_length(_d));
+        var _np = string_pos("Blood", _rest);
+        _bp = (_np > 0) ? (_bp + 4 + _np) : 0;
+    }
+    return false;
 }
 
 // borrowed_memory_offer(n) - roll n DISTINCT borrowed-memory candidates for the

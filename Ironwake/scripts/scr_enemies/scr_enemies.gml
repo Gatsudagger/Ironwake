@@ -295,6 +295,57 @@ function enemy_speed(name) {
 // the bolt/impact art for basic ranged attacks and dtype-1 elemental casts.
 // "" = physical - those KEEP the shipped needle + impact spark on purpose.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// ENEMY IMMUNITIES (M-locked 08-17): family-based, keyed off the name like the
+// attack-school map. Returns an array of {kind, element, label} the enemy SHRUGS
+// entirely - combat_immune_sweep strips a matching status the frame it lands
+// (IMMUNE popup + log); the bestiary + inspect tooltip list them.
+//   UNDEAD    (skeleton/thrall/revenant/sovereign/bone/stalker) - Poison
+//             (M 08-17: NOT bleed - "bleed will be too nerfed")
+//   CONSTRUCT (golem/sentinel/colossus/archon)                  - Bleed + Stun
+//   SPIRIT    (wraith/specter/shade/phantom/hollowlight)        - Root + Bleed
+//   FIRE KIN  (Scorched Depths natives)                         - Burn (fire DoT + Sear)
+//   FROST KIN (Tundra Tomb natives)                             - Chill (frost weaken)
+// ---------------------------------------------------------------------------
+function enemy_immunities(name) {
+    var _n = string_lower(name);
+    var _out = [];
+    var _spirit = string_pos("wraith", _n) || string_pos("specter", _n) || string_pos("spectre", _n)
+               || string_pos("shade", _n)  || string_pos("phantom", _n) || string_pos("hollowlight", _n);
+    var _construct = string_pos("golem", _n) || string_pos("sentinel", _n) || string_pos("colossus", _n)
+                  || string_pos("archon", _n);
+    var _undead = string_pos("skeleton", _n) || string_pos("thrall", _n) || string_pos("revenant", _n)
+               || string_pos("sovereign", _n) || string_pos("bone ", _n) || string_pos("stalker", _n);
+    var _firekin = string_pos("cinder", _n) || string_pos("magma", _n) || string_pos("fire", _n)
+                || string_pos("lava", _n)   || string_pos("smolder", _n) || string_pos("infernal", _n)
+                || string_pos("molten", _n) || string_pos("forge", _n)   || string_pos("ashen colossus", _n);
+    var _frostkin = string_pos("frost", _n) || string_pos("glacial", _n) || string_pos("ice ", _n)
+                 || string_pos("snow", _n)  || string_pos("frozen", _n)  || string_pos("tomb archon", _n)
+                 || string_pos("pale archivist", _n);
+    if (_spirit) {
+        array_push(_out, { kind:"root", element:"",      label:"Root" });
+        array_push(_out, { kind:"dot",  element:"bleed", label:"Bleed" });
+    } else if (_construct) {
+        array_push(_out, { kind:"dot",  element:"bleed", label:"Bleed" });
+        array_push(_out, { kind:"stun", element:"",      label:"Stun" });
+    } else if (_undead) {
+        array_push(_out, { kind:"dot",  element:"poison", label:"Poison" });
+    }
+    if (_firekin) {
+        array_push(_out, { kind:"dot",      element:"fire", label:"Burn" });
+        array_push(_out, { kind:"firemark", element:"",     label:"Sear" });
+    }
+    if (_frostkin) array_push(_out, { kind:"weaken", element:"frost", label:"Chill" });
+    return _out;
+}
+// "Poison, Stun" style label list ("" when the enemy has no immunities).
+function enemy_immunity_text(name) {
+    var _im = enemy_immunities(name);
+    var _t = "";
+    for (var _i = 0; _i < array_length(_im); _i++) _t += ((_i > 0) ? ", " : "") + _im[_i].label;
+    return _t;
+}
+
 function enemy_attack_school(name) {
     var _n = string_lower(name);
     // Exact fits first, where a keyword would misfile them.
@@ -344,6 +395,11 @@ function enemy_model_faces_east(spr) {
         spr_cinder_imp_ff2: 1,      spr_cinder_imp_ff3: 1,
         spr_vault_wraith_ff2: 1,    spr_dungeon_wraith_ff2: 1,
         spr_skeleton_soldier_ff2: 1, spr_stone_golem_ff2: 1,    spr_vault_guardian_ff2: 1,
+        spr_malgrath_warden_ff2: 1,   // 08-18 (M): the one-key Warden angles right
+        // 08-18 full facing AUDIT (M: "some enemies spawn facing right"): every model in
+        // enemy_sprite_map + variants reviewed as drawn - these five still angled right.
+        spr_vault_wraith_ff3: 1, spr_cinder_imp_ff: 1, spr_snowbound_wraith_ff2: 1,
+        spr_infernal_revenant: 1, spr_frozen_sentinel: 1,
     };
     if (spr < 0 || !sprite_exists(spr)) return false;
     return variable_struct_exists(_east, sprite_get_name(spr));
@@ -922,7 +978,7 @@ function enemy_size_mult(name) {
     // (incl. bosses met as summons/elite spawns, outside their center station)
     // clearly over that. Station gradient stays a nudge underneath.
     var _kind = enemy_kind_of(name);
-    if (_kind == "Boss")  return 1.30;
+    if (_kind == "Boss")  return 1.45;   // 08-18 M: the Sovereign on a mob station still read "overly tiny" (was 1.30)
     if (_kind == "Elite") return 1.14;
     return 1.0;
 }
@@ -1037,6 +1093,20 @@ function enemy_sprite_variants(name) {
     return _out;
 }
 
+// AWAKENING-TIERED model pick (M 08-18: "have the variants assigned to awakening -
+// the more keys / more elaborate variants should be higher awakenings"). Returns
+// the index into enemy_sprite_variants(name) for the current awakening, or -1 to
+// keep the random per-fight roll. Pool order is [primary _ff, _ff2, _ff3, ...].
+function enemy_model_for_awakening(name, awk) {
+    switch (name) {
+        case "Malgrath the Warden":
+            // ff2 = one key ring (A0-1), ff = two rings + the mace (A2-3),
+            // ff3 = the full jailer's belt of keys (A4+).
+            return (awk >= 4) ? 2 : ((awk >= 2) ? 0 : 1);
+    }
+    return -1;
+}
+
 // Sprite for a duel encounter, tiered by how many duels the player has already
 // fought (global.duelist_encounters, the ledger that never resets). The Duelist
 // grows +10% per prior duel forever, so he should LOOK like he has been winning.
@@ -1044,10 +1114,17 @@ function enemy_sprite_variants(name) {
 // works before the art for the higher tiers exists.
 function duelist_sprite_for(_wins) {
     var _tier = (_wins >= 9) ? 3 : ((_wins >= 5) ? 2 : ((_wins >= 2) ? 1 : 0));
+    // 08-18 (M: "ashen duelist looked very low resolution"): FF-density re-authors
+    // spr_ashen_duelist_ff / _t1_ff / _t2_ff / _t3_ff win when imported; the 122px
+    // originals stay on disk untouched and remain the fallback per tier.
     for (var _t = _tier; _t >= 1; _t--) {
+        var _af = asset_get_index("spr_ashen_duelist_t" + string(_t) + "_ff");
+        if (_af >= 0) return _af;
         var _a = asset_get_index("spr_ashen_duelist_t" + string(_t));
         if (_a >= 0) return _a;
     }
+    var _bf = asset_get_index("spr_ashen_duelist_ff");
+    if (_bf >= 0) return _bf;
     var _b = asset_get_index("spr_ashen_duelist");
     if (_b >= 0) return _b;
     return -1;   // caller falls back to enemy_sprite_map()

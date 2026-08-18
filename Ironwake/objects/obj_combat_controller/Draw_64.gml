@@ -583,8 +583,14 @@ for (var _ei = 0; _ei < _ecnt; _ei++) {
     // claims a bespoke center-stage station standing clear above the log
     // (M: "some bosses lose their visual appeal" buried behind it).
     if (combat_25d() && !variable_struct_exists(_ec, "stage_station")) {
+        // Center stage goes to the HEADLINER only (is_headliner, stamped in Create):
+        // 08-18 M shot - initiative sorting put a Skeleton Archer ahead of the boss and
+        // it claimed the 2.45 boss station ("randomly super big in the center slot").
+        var _is_head = variable_struct_exists(_ec, "is_headliner") && _ec.is_headliner;
+        var _is_duel = variable_global_exists("duel_active") && global.duel_active
+                    && _ec.name == "The Ashen Duelist";
         if (variable_instance_exists(id, "summon_is_boss_fight") && summon_is_boss_fight
-            && variable_instance_exists(id, "stage_boss_placed") && !stage_boss_placed) {
+            && variable_instance_exists(id, "stage_boss_placed") && !stage_boss_placed && _is_head) {
             stage_boss_placed = true;
             // M 08-15 ("bosses should be noticeably bigger and a bit oversized"):
             // 2.45 station + its OWN 250px ceiling below (the global 185px cap
@@ -592,6 +598,13 @@ for (var _ei = 0; _ei < _ecnt; _ei++) {
             // "too big at 2.55" verdict predates that cap).
             _ec.stage_station = { x: 1150, y: 655 - 97 * 2.45, scale: 2.45, feet: 655, cap: 250,
                                   cx: 1150 + 48.5 * 2.45, cy: 655 - 48.5 * 2.45 };
+        } else if (_is_duel) {
+            // THE ASHEN DUELIST (08-18 M shot: he drew tiny on the far-right mob station,
+            // "seems to think being to the right is smaller"): a duel is a boss-grade
+            // 1v1 - his own center-right stage, boss scale + ceiling, a step nearer than
+            // the boss station so the rival squares up to you.
+            _ec.stage_station = { x: 1210, y: 690 - 97 * 2.45, scale: 2.45, feet: 690, cap: 250,
+                                  cx: 1210 + 48.5 * 2.45, cy: 690 - 48.5 * 2.45 };
         } else {
             // Round 13d (M shot "cramped": mobs stacking on each other):
             // newcomers (mid-fight summons) took an INDEX-based station that
@@ -648,7 +661,7 @@ for (var _ei = 0; _ei < _ecnt; _ei++) {
         // bosses like the Sovereign) get headroom above the mob ceiling so the
         // rank multiplier actually shows; Elites/trash keep 185.
         var _es_cap = variable_struct_exists(_esp, "cap") ? _esp.cap
-                    : ((enemy_kind_of(_ec.name) == "Boss") ? 215 : 185);
+                    : ((enemy_kind_of(_ec.name) == "Boss") ? 240 : 185);   // 08-18: boss headroom 215 -> 240
         _es = min(_es, _es_cap / max(1, _ntb.h));
         _ey  = _esp.feet - (_ntb.b + 1) * _es;
     }
@@ -719,6 +732,10 @@ for (var _ei = 0; _ei < _ecnt; _ei++) {
     if (variable_struct_exists(_espr_map, _ec.name)) {
         var _espr = combat_enemy_model(_ec, _espr_map);
         var _espr_frame = (sprite_get_number(_espr) > 1) ? 3 : 0;
+        // THE ASHEN DUELIST (08-18): his tier sprites are 5-frame IDLE LOOPS (08-11
+        // redesign), not 8-dir sheets - play the loop instead of freezing on frame 3.
+        if (_ec.name == "The Ashen Duelist" && sprite_get_number(_espr) > 1)
+            _espr_frame = (current_time div 150) mod sprite_get_number(_espr);
 
         // Ground shadow beneath the enemy (under both the reticle and the sprite) so
         // foes read against busy backgrounds.

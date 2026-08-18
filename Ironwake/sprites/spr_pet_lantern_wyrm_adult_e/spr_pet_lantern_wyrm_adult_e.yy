@@ -2,9 +2,9 @@
   "$GMSprite":"v2",
   "%Name":"spr_pet_lantern_wyrm_adult_e",
   "bboxMode":0,
-  "bbox_bottom":40,
+  "bbox_bottom":43,
   "bbox_left":2,
-  "bbox_right":38,
+  "bbox_right":40,
   "bbox_top":0,
   "collisionKind":1,
   "collisionTolerance":0,
@@ -12,14 +12,14 @@
   "edgeFiltering":false,
   "For3D":false,
   "frames":[
-    {"$GMSpriteFrame":"v1","%Name":"5c1b3bd7-3323-48b6-b09e-47083c3d1e2e","name":"5c1b3bd7-3323-48b6-b09e-47083c3d1e2e","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"c734b7c7-c503-4a08-847e-bbaa4a8caeb8","name":"c734b7c7-c503-4a08-847e-bbaa4a8caeb8","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
   ],
   "gridX":0,
   "gridY":0,
-  "height":41,
+  "height":44,
   "HTile":false,
   "layers":[
-    {"$GMImageLayer":"","%Name":"a298dcb5-22c1-4541-9f11-1f5a2b9d8e14","blendMode":0,"displayName":"default","isLocked":false,"name":"a298dcb5-22c1-4541-9f11-1f5a2b9d8e14","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
+    {"$GMImageLayer":"","%Name":"d7663a1c-b8a2-4955-b0ca-bf3025eb060c","blendMode":0,"displayName":"default","isLocked":false,"name":"d7663a1c-b8a2-4955-b0ca-bf3025eb060c","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
   ],
   "name":"spr_pet_lantern_wyrm_adult_e",
   "nineSlice":null,
@@ -69,8 +69,8 @@
     "tracks":[
       {"$GMSpriteFramesTrack":"","builtinName":0,"events":[],"inheritsTrackColour":true,"interpolation":1,"isCreationTrack":false,"keyframes":{"$KeyframeStore<SpriteFrameKeyframe>":"","Keyframes":[
             {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
-                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"5c1b3bd7-3323-48b6-b09e-47083c3d1e2e","path":"sprites/spr_pet_lantern_wyrm_adult_e/spr_pet_lantern_wyrm_adult_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
-              },"Disabled":false,"id":"9044322a-dc34-4a82-84c7-0b3fe6521eea","IsCreationKey":false,"Key":0.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"c734b7c7-c503-4a08-847e-bbaa4a8caeb8","path":"sprites/spr_pet_lantern_wyrm_adult_e/spr_pet_lantern_wyrm_adult_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"a0c3f2f0-d8c2-44b8-a3b5-09d02b609a8e","IsCreationKey":false,"Key":0.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
           ],"resourceType":"KeyframeStore<SpriteFrameKeyframe>","resourceVersion":"2.0",},"modifiers":[],"name":"frames","resourceType":"GMSpriteFramesTrack","resourceVersion":"2.0","spriteId":null,"trackColour":0,"tracks":[],"traits":0,},
     ],
     "visibleRange":null,
@@ -86,5 +86,5 @@
   },
   "type":0,
   "VTile":false,
-  "width":41,
+  "width":44,
 }

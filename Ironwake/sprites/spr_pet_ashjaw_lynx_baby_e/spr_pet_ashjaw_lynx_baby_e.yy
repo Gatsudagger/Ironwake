@@ -2,9 +2,9 @@
   "$GMSprite":"v2",
   "%Name":"spr_pet_ashjaw_lynx_baby_e",
   "bboxMode":0,
-  "bbox_bottom":42,
-  "bbox_left":8,
-  "bbox_right":33,
+  "bbox_bottom":40,
+  "bbox_left":7,
+  "bbox_right":32,
   "bbox_top":0,
   "collisionKind":1,
   "collisionTolerance":0,
@@ -12,14 +12,14 @@
   "edgeFiltering":false,
   "For3D":false,
   "frames":[
-    {"$GMSpriteFrame":"v1","%Name":"934a8622-0b2e-491e-88dc-04ce385aa8f7","name":"934a8622-0b2e-491e-88dc-04ce385aa8f7","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"0702b363-61b1-4fbf-bef8-67ea4ae8616e","name":"0702b363-61b1-4fbf-bef8-67ea4ae8616e","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
   ],
   "gridX":0,
   "gridY":0,
-  "height":43,
+  "height":41,
   "HTile":false,
   "layers":[
-    {"$GMImageLayer":"","%Name":"02615e17-6be0-4ed4-8c32-baaea00cca70","blendMode":0,"displayName":"default","isLocked":false,"name":"02615e17-6be0-4ed4-8c32-baaea00cca70","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
+    {"$GMImageLayer":"","%Name":"0d9ead33-64a1-4f11-adf7-85ef380d035c","blendMode":0,"displayName":"default","isLocked":false,"name":"0d9ead33-64a1-4f11-adf7-85ef380d035c","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
   ],
   "name":"spr_pet_ashjaw_lynx_baby_e",
   "nineSlice":null,
@@ -69,8 +69,8 @@
     "tracks":[
       {"$GMSpriteFramesTrack":"","builtinName":0,"events":[],"inheritsTrackColour":true,"interpolation":1,"isCreationTrack":false,"keyframes":{"$KeyframeStore<SpriteFrameKeyframe>":"","Keyframes":[
             {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
-                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"934a8622-0b2e-491e-88dc-04ce385aa8f7","path":"sprites/spr_pet_ashjaw_lynx_baby_e/spr_pet_ashjaw_lynx_baby_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
-              },"Disabled":false,"id":"c08f07a8-41dd-4503-a5f5-69f25c9730ca","IsCreationKey":false,"Key":0.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"0702b363-61b1-4fbf-bef8-67ea4ae8616e","path":"sprites/spr_pet_ashjaw_lynx_baby_e/spr_pet_ashjaw_lynx_baby_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"e768647e-cf76-4c84-9ee6-a7ddcbacea9e","IsCreationKey":false,"Key":0.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
           ],"resourceType":"KeyframeStore<SpriteFrameKeyframe>","resourceVersion":"2.0",},"modifiers":[],"name":"frames","resourceType":"GMSpriteFramesTrack","resourceVersion":"2.0","spriteId":null,"trackColour":0,"tracks":[],"traits":0,},
     ],
     "visibleRange":null,
@@ -86,5 +86,5 @@
   },
   "type":0,
   "VTile":false,
-  "width":43,
+  "width":41,
 }

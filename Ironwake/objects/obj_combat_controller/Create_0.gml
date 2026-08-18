@@ -896,7 +896,14 @@ for (var _ei = 0; _ei < array_length(enemies); _ei++) {
 // combat_init sorts the array by DEX (WIS tiebreak) and returns a combat_state
 // struct that tracks the initiative queue and the active combatant.
 var _combatants = [player];
-for (var _ei = 0; _ei < array_length(enemies); _ei++) array_push(_combatants, enemies[_ei]);
+for (var _ei = 0; _ei < array_length(enemies); _ei++) {
+    // Stamp the HEADLINER (the boss / elite / duel rival = enemies[0]) so the 2.5D
+    // Draw can hand the center stage station to HIM specifically. combat_init sorts
+    // by initiative, so "first enemy in the list" was often a fast add (08-18 M shot:
+    // a Skeleton Archer drawn at boss size dead center of a boss fight).
+    enemies[_ei].is_headliner = (_ei == 0);
+    array_push(_combatants, enemies[_ei]);
+}
 combat_state = combat_init(_combatants);
 
 // Enemy INTENT opening roll (INTENT_SPEC.md): every foe telegraphs its first

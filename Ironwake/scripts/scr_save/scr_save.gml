@@ -153,6 +153,7 @@ function save_game() {
         // Rune system (Maren) - socketed gear runes ride on the item structs above
         rune_inventory: variable_global_exists("rune_inventory") ? global.rune_inventory : [],
         rune_dust:      variable_global_exists("rune_dust")      ? global.rune_dust      : 0,
+        reagents:       (variable_global_exists("reagents") && is_struct(global.reagents)) ? global.reagents : {},   // dungeon crafting reagents (08-17)
         aspect_slots:   variable_global_exists("aspect_slots")   ? global.aspect_slots   : 2,
         aspect_runes:   variable_global_exists("aspect_runes")   ? global.aspect_runes   : [],
 
@@ -473,6 +474,7 @@ function new_game_reset() {
     // Rune system (Maren)
     global.rune_inventory = [];
     global.rune_dust      = 0;
+    global.reagents       = {};   // dungeon crafting reagents (08-17)
     global.aspect_slots   = 2;
     global.aspect_runes   = [];
 
@@ -910,6 +912,7 @@ function load_game() {
         global.rune_inventory = _s.rune_inventory;
     }
     if (variable_struct_exists(_s, "rune_dust"))    global.rune_dust    = _s.rune_dust;
+    if (variable_struct_exists(_s, "reagents") && is_struct(_s.reagents)) global.reagents = _s.reagents;   // 08-17
     if (variable_struct_exists(_s, "aspect_slots")) global.aspect_slots = _s.aspect_slots;
     if (variable_struct_exists(_s, "aspect_runes") && is_array(_s.aspect_runes)) {
         global.aspect_runes = _s.aspect_runes;
@@ -1297,6 +1300,7 @@ function run_checkpoint_write(_live) {
         // rune/tick/discovery from the run's earlier rooms.
         rune_inventory:   variable_global_exists("rune_inventory")   ? global.rune_inventory   : [],
         rune_dust:        variable_global_exists("rune_dust")        ? global.rune_dust        : 0,
+        reagents:         (variable_global_exists("reagents") && is_struct(global.reagents)) ? global.reagents : {},   // 08-17
         quests:           (variable_global_exists("quests") && is_array(global.quests)) ? global.quests : [],
         total_kills:      variable_global_exists("total_kills")      ? global.total_kills      : 0,
         items_discovered: variable_global_exists("items_discovered") ? global.items_discovered : [],
@@ -1461,6 +1465,7 @@ function run_checkpoint_apply(_c) {
     // Persistent-scope state that mutated mid-run (see the write side).
     if (variable_struct_exists(_c, "rune_inventory"))   global.rune_inventory   = _c.rune_inventory;
     if (variable_struct_exists(_c, "rune_dust"))        global.rune_dust        = _c.rune_dust;
+    if (variable_struct_exists(_c, "reagents") && is_struct(_c.reagents)) global.reagents = _c.reagents;   // 08-17
     if (variable_struct_exists(_c, "quests") && is_array(_c.quests)) global.quests = _c.quests;
     if (variable_struct_exists(_c, "total_kills"))      global.total_kills      = _c.total_kills;
     if (variable_struct_exists(_c, "items_discovered")) global.items_discovered = _c.items_discovered;

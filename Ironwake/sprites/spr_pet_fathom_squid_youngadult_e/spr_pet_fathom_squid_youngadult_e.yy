@@ -2,9 +2,9 @@
   "$GMSprite":"v2",
   "%Name":"spr_pet_fathom_squid_youngadult_e",
   "bboxMode":0,
-  "bbox_bottom":35,
-  "bbox_left":4,
-  "bbox_right":30,
+  "bbox_bottom":41,
+  "bbox_left":5,
+  "bbox_right":35,
   "bbox_top":0,
   "collisionKind":1,
   "collisionTolerance":0,
@@ -12,14 +12,14 @@
   "edgeFiltering":false,
   "For3D":false,
   "frames":[
-    {"$GMSpriteFrame":"v1","%Name":"c6644676-fae2-4af7-950b-9b618329e9b9","name":"c6644676-fae2-4af7-950b-9b618329e9b9","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"ed68744d-a54e-4104-af71-0946824c57c7","name":"ed68744d-a54e-4104-af71-0946824c57c7","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
   ],
   "gridX":0,
   "gridY":0,
-  "height":36,
+  "height":42,
   "HTile":false,
   "layers":[
-    {"$GMImageLayer":"","%Name":"f5a1275b-1d74-4e23-bbc5-ee6414e7850f","blendMode":0,"displayName":"default","isLocked":false,"name":"f5a1275b-1d74-4e23-bbc5-ee6414e7850f","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
+    {"$GMImageLayer":"","%Name":"472039a5-ca26-42d1-8324-4f19d6dc9a20","blendMode":0,"displayName":"default","isLocked":false,"name":"472039a5-ca26-42d1-8324-4f19d6dc9a20","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
   ],
   "name":"spr_pet_fathom_squid_youngadult_e",
   "nineSlice":null,
@@ -69,8 +69,8 @@
     "tracks":[
       {"$GMSpriteFramesTrack":"","builtinName":0,"events":[],"inheritsTrackColour":true,"interpolation":1,"isCreationTrack":false,"keyframes":{"$KeyframeStore<SpriteFrameKeyframe>":"","Keyframes":[
             {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
-                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"c6644676-fae2-4af7-950b-9b618329e9b9","path":"sprites/spr_pet_fathom_squid_youngadult_e/spr_pet_fathom_squid_youngadult_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
-              },"Disabled":false,"id":"5518dc50-c203-452a-a42e-54429b21cadc","IsCreationKey":false,"Key":0.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"ed68744d-a54e-4104-af71-0946824c57c7","path":"sprites/spr_pet_fathom_squid_youngadult_e/spr_pet_fathom_squid_youngadult_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"7e66029b-1843-4978-878c-946abed32b19","IsCreationKey":false,"Key":0.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
           ],"resourceType":"KeyframeStore<SpriteFrameKeyframe>","resourceVersion":"2.0",},"modifiers":[],"name":"frames","resourceType":"GMSpriteFramesTrack","resourceVersion":"2.0","spriteId":null,"trackColour":0,"tracks":[],"traits":0,},
     ],
     "visibleRange":null,
@@ -86,5 +86,5 @@
   },
   "type":0,
   "VTile":false,
-  "width":36,
+  "width":42,
 }

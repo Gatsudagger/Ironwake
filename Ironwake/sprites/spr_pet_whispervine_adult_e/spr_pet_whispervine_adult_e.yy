@@ -2,9 +2,9 @@
   "$GMSprite":"v2",
   "%Name":"spr_pet_whispervine_adult_e",
   "bboxMode":0,
-  "bbox_bottom":41,
+  "bbox_bottom":42,
   "bbox_left":1,
-  "bbox_right":40,
+  "bbox_right":41,
   "bbox_top":0,
   "collisionKind":1,
   "collisionTolerance":0,
@@ -12,14 +12,14 @@
   "edgeFiltering":false,
   "For3D":false,
   "frames":[
-    {"$GMSpriteFrame":"v1","%Name":"8b6291f5-d096-4956-ae71-17b3e68f9cd3","name":"8b6291f5-d096-4956-ae71-17b3e68f9cd3","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"2640ba46-201e-4efd-b380-5fe4726130b3","name":"2640ba46-201e-4efd-b380-5fe4726130b3","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
   ],
   "gridX":0,
   "gridY":0,
-  "height":42,
+  "height":43,
   "HTile":false,
   "layers":[
-    {"$GMImageLayer":"","%Name":"ac0173fd-40ce-48eb-9401-54b159126236","blendMode":0,"displayName":"default","isLocked":false,"name":"ac0173fd-40ce-48eb-9401-54b159126236","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
+    {"$GMImageLayer":"","%Name":"479cfb67-4ca7-40e6-a378-e7792da512eb","blendMode":0,"displayName":"default","isLocked":false,"name":"479cfb67-4ca7-40e6-a378-e7792da512eb","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
   ],
   "name":"spr_pet_whispervine_adult_e",
   "nineSlice":null,
@@ -69,8 +69,8 @@
     "tracks":[
       {"$GMSpriteFramesTrack":"","builtinName":0,"events":[],"inheritsTrackColour":true,"interpolation":1,"isCreationTrack":false,"keyframes":{"$KeyframeStore<SpriteFrameKeyframe>":"","Keyframes":[
             {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
-                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"8b6291f5-d096-4956-ae71-17b3e68f9cd3","path":"sprites/spr_pet_whispervine_adult_e/spr_pet_whispervine_adult_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
-              },"Disabled":false,"id":"a596fd5c-3a18-4ff1-90da-30b5914e29d7","IsCreationKey":false,"Key":0.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"2640ba46-201e-4efd-b380-5fe4726130b3","path":"sprites/spr_pet_whispervine_adult_e/spr_pet_whispervine_adult_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"390eb68c-6bf7-4f41-8a1a-e9a4ea0f2da5","IsCreationKey":false,"Key":0.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
           ],"resourceType":"KeyframeStore<SpriteFrameKeyframe>","resourceVersion":"2.0",},"modifiers":[],"name":"frames","resourceType":"GMSpriteFramesTrack","resourceVersion":"2.0","spriteId":null,"trackColour":0,"tracks":[],"traits":0,},
     ],
     "visibleRange":null,
@@ -86,5 +86,5 @@
   },
   "type":0,
   "VTile":false,
-  "width":42,
+  "width":43,
 }

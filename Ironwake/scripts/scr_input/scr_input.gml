@@ -290,8 +290,10 @@ function __input_pad_hotkey_map() {
         _s = {}; _s[$ "O"] = gp_select;                              _m[$ "settings"] = _s;
         _s = {}; _s[$ "J"] = gp_shoulderlb;                          _m[$ "journal"]  = _s;
         _s = {}; _s[$ "F"] = gp_shoulderrb; _s[$ "R"] = gp_shoulderlb;
-                 _s[$ "C"] = gp_shoulderlb; _s[$ "B"] = gp_stickr;   _m[$ "shop"]     = _s;
-        _s = {}; _s[$ "F"] = gp_shoulderrb; _s[$ "B"] = gp_stickr;   _m[$ "bairc"]    = _s;
+                 _s[$ "C"] = gp_shoulderlb; _s[$ "B"] = gp_stickr;
+                 _s[$ "U"] = gp_stickl;                              _m[$ "shop"]     = _s;   // U = station rank (08-17)
+        _s = {}; _s[$ "F"] = gp_shoulderrb; _s[$ "B"] = gp_stickr;
+                 _s[$ "U"] = gp_stickl;                              _m[$ "bairc"]    = _s;   // U = station rank (08-17)
         // 07-24 audit: gender toggle had no pad path (cells are tap/keyboard only).
         _s = {}; _s[$ "X"] = gp_shoulderlb; _s[$ "G"] = gp_shoulderrb; _m[$ "charsel"]  = _s;
         _s = {}; _s[$ "O"] = gp_select;                              _m[$ "title"]    = _s;

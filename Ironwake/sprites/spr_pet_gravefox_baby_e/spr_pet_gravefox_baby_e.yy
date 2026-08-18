@@ -2,8 +2,8 @@
   "$GMSprite":"v2",
   "%Name":"spr_pet_gravefox_baby_e",
   "bboxMode":0,
-  "bbox_bottom":41,
-  "bbox_left":6,
+  "bbox_bottom":39,
+  "bbox_left":4,
   "bbox_right":35,
   "bbox_top":0,
   "collisionKind":1,
@@ -12,14 +12,14 @@
   "edgeFiltering":false,
   "For3D":false,
   "frames":[
-    {"$GMSpriteFrame":"v1","%Name":"45b29fb3-2666-41fa-a952-310201b24e92","name":"45b29fb3-2666-41fa-a952-310201b24e92","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"51d08ef7-2f28-48e5-80cb-a1c0668ba9d5","name":"51d08ef7-2f28-48e5-80cb-a1c0668ba9d5","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
   ],
   "gridX":0,
   "gridY":0,
-  "height":42,
+  "height":40,
   "HTile":false,
   "layers":[
-    {"$GMImageLayer":"","%Name":"093cfdb1-4ab3-4c4e-ab2c-45dbcb4ef15e","blendMode":0,"displayName":"default","isLocked":false,"name":"093cfdb1-4ab3-4c4e-ab2c-45dbcb4ef15e","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
+    {"$GMImageLayer":"","%Name":"88a3eed7-7463-43cc-9bd6-25501f773515","blendMode":0,"displayName":"default","isLocked":false,"name":"88a3eed7-7463-43cc-9bd6-25501f773515","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
   ],
   "name":"spr_pet_gravefox_baby_e",
   "nineSlice":null,
@@ -69,8 +69,8 @@
     "tracks":[
       {"$GMSpriteFramesTrack":"","builtinName":0,"events":[],"inheritsTrackColour":true,"interpolation":1,"isCreationTrack":false,"keyframes":{"$KeyframeStore<SpriteFrameKeyframe>":"","Keyframes":[
             {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
-                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"45b29fb3-2666-41fa-a952-310201b24e92","path":"sprites/spr_pet_gravefox_baby_e/spr_pet_gravefox_baby_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
-              },"Disabled":false,"id":"4f628b72-295c-4de6-9569-ed781dfd2fac","IsCreationKey":false,"Key":0.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"51d08ef7-2f28-48e5-80cb-a1c0668ba9d5","path":"sprites/spr_pet_gravefox_baby_e/spr_pet_gravefox_baby_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"e4c4a577-e34c-4f26-a5de-68315989b937","IsCreationKey":false,"Key":0.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
           ],"resourceType":"KeyframeStore<SpriteFrameKeyframe>","resourceVersion":"2.0",},"modifiers":[],"name":"frames","resourceType":"GMSpriteFramesTrack","resourceVersion":"2.0","spriteId":null,"trackColour":0,"tracks":[],"traits":0,},
     ],
     "visibleRange":null,
@@ -86,5 +86,5 @@
   },
   "type":0,
   "VTile":false,
-  "width":42,
+  "width":40,
 }

@@ -7,6 +7,10 @@
 
 // Stash is hub-only - no stash access during combat.
 
+// Family immunities (M-locked 08-17): strip any status an enemy is immune to the
+// frame it lands - IMMUNE popup + log. One central hook (see combat_immune_sweep).
+if (!combat_over && is_struct(combat_state)) combat_immune_sweep(combat_state, combat_log, damage_popups);
+
 // IRONMAN resume anti-cheese watcher (SYSTEMS_RUN_RESUME.md): mirror the LIVE
 // player HP/resources into the checkpoint whenever they change (1s throttle),
 // so killing the app mid-fight resumes the re-fight at the HP you actually had
@@ -71,7 +75,8 @@ if (!combat_over && array_length(mutator_queue) > 0) {
             if (_mhd < 1) _mhd = 1;
             combat_apply_damage(_mhv, _mhd);
             _mhv.hit_flash = max(_mhv.hit_flash, 10);
-            array_push(damage_popups, { value: _mhd, x: 1620 + _mm.slot * (-120), y: 233 + _mm.slot * 105 - 60,
+            var _mh_a = combat_enemy_anchor(_mhv, _mm.slot);   // 2.5D: over the creature, not the flat grid
+            array_push(damage_popups, { value: _mhd, x: _mh_a.x, y: _mh_a.y - 60,
                                         timer: 45, col: (_mm.school != "") ? school_color(_mm.school) : c_white });
             array_push(combat_log, _mm.name + " arcs on to " + _mhv.name + " for " + string(_mhd) + "!");
             if (_mhv.HP <= 0 && !_mhv.is_defeated) combat_on_enemy_defeated(_mhv, player, combat_log);
@@ -403,12 +408,13 @@ if (_result == 1) {
         global.duelist_wins += 1;
         var _dr_relic = duelist_relic_for_win(global.duelist_wins);
         if (_dr_relic != undefined) {
-            if (!variable_global_exists("equipment_stash")) global.equipment_stash = [];
-            array_push(global.equipment_stash, _dr_relic);
+            // 08-18 (M: "the item I got from the duelist was not showing in my inventory
+            // until I was back in the hub"): relics land in the PACK like every other prize.
+            array_push(global.carried_items, _dr_relic);
             array_push(global.run_items_found, _dr_relic);
             discover_item(item_base_name(_dr_relic), _dr_relic.rarity);
             array_push(combat_log, "DUELING RELIC: he surrenders the " + _dr_relic.name
-                + " - sent to your stash. (" + string(global.duelist_wins) + " duels won)");
+                + " - it is in your pack. (" + string(global.duelist_wins) + " duels won)");
         }
         duel_grade_round = combat_state.round;
         var _dg_par = variable_global_exists("duel_par") ? global.duel_par : duel_turn_par();
@@ -430,11 +436,10 @@ if (_result == 1) {
                 }
                 if (global.duelist_tokens == 3) {
                     var _dg_blade = duelist_make_ashen_blade();
-                    if (!variable_global_exists("equipment_stash")) global.equipment_stash = [];
-                    array_push(global.equipment_stash, _dg_blade);
+                    array_push(global.carried_items, _dg_blade);   // 08-18: pack, not stash (M)
                     array_push(global.run_items_found, _dg_blade);
                     discover_item(item_base_name(_dg_blade), _dg_blade.rarity);
-                    array_push(combat_log, "DUELIST ARTS: he unbuckles THE ASHEN BLADE itself and hands it over (sent to your stash for safekeeping).");
+                    array_push(combat_log, "DUELIST ARTS: he unbuckles THE ASHEN BLADE itself and hands it over - it is in your pack.");
                 }
             } else {
                 global.rune_dust += 25;
@@ -495,7 +500,7 @@ if (_result == 1) {
             if (_bb_sig != "" && (!variable_global_exists("pet_sig_history")
                 || !is_struct(global.pet_sig_history)
                 || !variable_struct_exists(global.pet_sig_history, _bb_sig))) {
-                var _bb_msg = pet_quirk_add(_bb_pet, "boss_blooded", "", "stood with you at a boss's first fall");
+                var _bb_msg = pet_quirk_add(_bb_pet, "boss_blooded", "", "");   // no story line (M 08-18)
                 if (_bb_msg != "") array_push(combat_log, "[Companion] " + _bb_msg);
             }
         }
@@ -875,6 +880,8 @@ if (player_turn) {
                     // Escape items resolve on the FLOOR MAP (G key) - never mid-fight, and
                     // they must not fall through the chain and get consumed for nothing.
                     array_push(combat_log, _citem.name + " cannot be used mid-fight - use it from the floor map [G].");
+                } else if (_citem.effect_type == "valuable") {
+                    array_push(combat_log, _citem.name + " has no use in a fight - sell it at camp (Petra).");   // 08-17 valuables
                 } else if (player.energy < 1 && !_q_is_ap) {
                     array_push(combat_log, "Need 1 AP to use a consumable.");
                 } else {
@@ -1744,7 +1751,10 @@ if (player_turn) {
                 // --- Build the target list ---
                 // AoE abilities resolve against every living enemy; Focused Power
                 // converts an AoE into a single hard-hitting strike on the selection.
-                var _is_aoe = variable_struct_exists(ab, "is_aoe") && ab.is_aoe
+                // Call of the Void "Spreading Dark" keystone (08-17): the single-target
+                // call becomes a 2-3 target call, each rolling its own debuff.
+                var _cv_spread = (ab.name == "Call of the Void") && ability_web_copy_has_rider(ab, "void_spread");
+                var _is_aoe = ((variable_struct_exists(ab, "is_aoe") && ab.is_aoe) || _cv_spread)
                               && !trait_active("Focused Power");
                 var _focused_burst = variable_struct_exists(ab, "is_aoe") && ab.is_aoe
                                      && trait_active("Focused Power");
@@ -1755,6 +1765,25 @@ if (player_turn) {
                     for (var _ti = 0; _ti < array_length(combat_state.combatants); _ti++) {
                         var _tc = combat_state.combatants[_ti];
                         if (!_tc.is_player && !_tc.is_defeated) array_push(_targets, _tc);
+                    }
+                    if (_cv_spread && array_length(_targets) > 2) {
+                        // 2-3 of the living enemies, shuffled - the selected target always
+                        // stays in the call so the player's aim still matters.
+                        var _cv_keep = min(array_length(_targets), choose(2, 3));
+                        _targets = array_shuffle(_targets);
+                        var _cv_sel = undefined, _cv_li = 0;
+                        for (var _cvi = 0; _cvi < array_length(combat_state.combatants); _cvi++) {
+                            var _cvc = combat_state.combatants[_cvi];
+                            if (_cvc.is_player || _cvc.is_defeated) continue;
+                            if (_cv_li == selected_target) { _cv_sel = _cvc; break; }
+                            _cv_li++;
+                        }
+                        var _cv_out = [];
+                        if (_cv_sel != undefined) array_push(_cv_out, _cv_sel);
+                        for (var _cvj = 0; _cvj < array_length(_targets) && array_length(_cv_out) < _cv_keep; _cvj++) {
+                            if (_targets[_cvj] != _cv_sel) array_push(_cv_out, _targets[_cvj]);
+                        }
+                        _targets = _cv_out;
                     }
                 } else {
                     // Single target: the selected-th living enemy (with safety fallback)
@@ -1901,8 +1930,9 @@ if (player_turn) {
                             if (!combat_state.combatants[_msi].is_player) _ms_slot++;
                         }
                         if (_hit == "dodge") target.dodge_anim = 14;
+                        var _ms_a = combat_enemy_anchor(target, _ms_slot);   // 2.5D: over the creature
                         array_push(damage_popups, { value: 0, text: (_hit == "dodge") ? "DODGED!" : "MISS!",
-                            x: 1620 + _ms_slot * (-120), y: 233 + _ms_slot * 105 - 105,
+                            x: _ms_a.x, y: _ms_a.y - 105,
                             timer: 40, col: make_color_rgb(200, 205, 220) });
 
                     } else {
@@ -2410,6 +2440,13 @@ if (player_turn) {
                         // first damaging ATTACK each combat (not a spell - same split as
                         // Serrated Strikes) also sets the target Burning, at the Flaming
                         // weapon affix's rate (3/turn, 2 turns). Once per combat.
+                        // Cinderheart (Soulfire keystone, 08-18): the bolt leaves the target Burning.
+                        if (ab.name == "Soulfire" && _deals_damage && ability_web_copy_has_rider(ab, "soulfire_burn")
+                            && !target.is_defeated && variable_struct_exists(target, "status_effects")) {
+                            array_push(target.status_effects, { name: "Burning", effect_type: "dot", kind: "dot",
+                                effect_value: 3, duration: 2, element: "burn", source: "player" });
+                            array_push(combat_log, "Cinderheart: " + target.name + " is set BURNING (3/turn, 2 turns).");
+                        }
                         var _fs_ac = ability_attack_class(ab);
                         if (_deals_damage && (_fs_ac == "melee_attack" || _fs_ac == "ranged_attack")
                             && pet_active_sig_move("forge_spark")
@@ -3044,11 +3081,13 @@ if (player_turn) {
                         }
 
                         // --- Aspect runes: Bulwark (melee-attack shield) + Anchor (melee Weaken) ---
-                        var _bul = rune_aspect_melee_shield(ab);
+                        // Bulwark is PER HIT (M 08-18: "should scale with multi-hit melee") -
+                        // Flurry's three strikes each grant it.
+                        var _bul = rune_aspect_melee_shield(ab) * ((ab.name == "Flurry") ? 3 : 1);
                         if (_bul > 0) {
                             if (!variable_struct_exists(player, "shield_hp")) player.shield_hp = 0;
                             player.shield_hp += _bul;
-                            array_push(combat_log, "Bulwark rune: +" + string(_bul) + " shield.");
+                            array_push(combat_log, "Bulwark rune: +" + string(_bul) + " shield" + ((ab.name == "Flurry") ? " (3 hits)." : "."));
                         }
                         var _anc = rune_aspect_melee_weaken_turns(ab);
                         if (_anc > 0 && !target.is_defeated && variable_struct_exists(target, "status_effects")) {
@@ -3207,7 +3246,8 @@ if (player_turn) {
                                 if (_wr_sd < 1) _wr_sd = 1;
                                 combat_apply_damage(_wr_t, _wr_sd);
                                 _wr_t.hit_flash = max(_wr_t.hit_flash, 10);
-                                array_push(damage_popups, { value: _wr_sd, x: 1620 + _wr_slots[_wr_pick] * (-120), y: 233 + _wr_slots[_wr_pick] * 105 - 60, timer: 45, col: make_color_rgb(200, 170, 255) });
+                                var _wr_a = combat_enemy_anchor(_wr_t, _wr_slots[_wr_pick]);   // 2.5D: over the creature
+                                array_push(damage_popups, { value: _wr_sd, x: _wr_a.x, y: _wr_a.y - 60, timer: 45, col: make_color_rgb(200, 170, 255) });
                                 array_push(combat_log, ab.name + " forks to " + _wr_t.name + " for " + string(_wr_sd) + "!");
                                 if (_wr_t.HP <= 0) combat_on_enemy_defeated(_wr_t, player, combat_log);
                             }
@@ -3422,7 +3462,8 @@ if (player_turn) {
                                     if (_sa_dmg < 1) _sa_dmg = 1;
                                     combat_apply_damage(_sa_t, _sa_dmg);
                                     _sa_t.hit_flash = max(_sa_t.hit_flash, 10);
-                                    array_push(damage_popups, { value: _sa_dmg, x: 1620 + _sa_slots[_sa_idx] * (-120), y: 233 + _sa_slots[_sa_idx] * 105 - 60, timer: 45, col: make_color_rgb(150, 200, 245) });
+                                    var _sa_a = combat_enemy_anchor(_sa_t, _sa_slots[_sa_idx]);   // 2.5D: over the creature
+                                    array_push(damage_popups, { value: _sa_dmg, x: _sa_a.x, y: _sa_a.y - 60, timer: 45, col: make_color_rgb(150, 200, 245) });
                                     array_push(combat_log, "Static Arc chains to " + _sa_t.name + " for " + string(_sa_dmg) + "!");
                                     if (_sa_t.HP <= 0) combat_on_enemy_defeated(_sa_t, player, combat_log);
                                 }
@@ -3516,6 +3557,60 @@ if (player_turn) {
                         // --- Apply status effect to target (typed status layer) ---
                         // Only applied on a living target so DoTs don't stack on corpses.
                         if (!target.is_defeated) {
+                            // --- 08-17 Arcanist control pair (M-locked) - bespoke rolls ---
+                            if (ab.name == "Paralytic Pulse") {
+                                // Every enemy rolls its OWN chance (independent): 40%, +10 Wider
+                                // Pulse, +20 Resonant Pulse if it already carries a debuff.
+                                var _pp_ch = 40 + (ability_web_copy_has_rider(ab, "pulse10") ? 10 : 0);
+                                if (ability_web_copy_has_rider(ab, "pulse_debuffed")) {
+                                    for (var _ppi = 0; _ppi < array_length(target.status_effects); _ppi++) {
+                                        if (combat_status_is_debuff(target.status_effects[_ppi])) { _pp_ch += 20; break; }
+                                    }
+                                }
+                                if (irandom(99) < _pp_ch) {
+                                    if (combat_control_resist_try(target, "stun")) {
+                                        array_push(combat_log, target.name + " fights through the Paralytic Pulse - the stun fails to take hold!");
+                                    } else {
+                                        var _pp_dur = ab.effect_duration + ((_crit_result.effect_quality == 1) ? 1 : 0);
+                                        array_push(target.status_effects, { name: ab.name, effect_type: "debuff", kind: "stun",
+                                            effect_value: 1, duration: _pp_dur, element: "", source: "player" });
+                                        array_push(combat_log, "Paralytic Pulse -> " + target.name + ": Stunned (" + ability_turns(_pp_dur) + ").");
+                                        var _pp_slot = 0;
+                                        for (var _ppsi = 0; _ppsi < array_length(combat_state.combatants); _ppsi++) {
+                                            if (combat_state.combatants[_ppsi] == target) break;
+                                            if (!combat_state.combatants[_ppsi].is_player) _pp_slot++;
+                                        }
+                                        var _pp_a = combat_enemy_anchor(target, _pp_slot);
+                                        array_push(damage_popups, { value: 0, text: "STUNNED!", x: _pp_a.x, y: _pp_a.y - 105, timer: 40, col: c_yellow });
+                                    }
+                                } else {
+                                    array_push(combat_log, target.name + " shrugs off the Paralytic Pulse (" + string(_pp_ch) + "% roll).");
+                                }
+                            } else if (ab.name == "Call of the Void") {
+                                // ONE random debuff (TWO different ones with Chorus), 2 turns.
+                                var _cv_pool = ["weaken", "silence", "root", "vulnerable", "blind"];
+                                var _cv_n = ability_web_copy_has_rider(ab, "void_chorus") ? 2 : 1;
+                                _cv_pool = array_shuffle(_cv_pool);
+                                var _cv_dur = ab.effect_duration + ((_crit_result.effect_quality == 1) ? 1 : 0);
+                                for (var _cvk = 0; _cvk < _cv_n; _cvk++) {
+                                    var _cv_kind = _cv_pool[_cvk];
+                                    if (combat_control_resist_try(target, _cv_kind)) {
+                                        array_push(combat_log, target.name + " fights through the void's " + _cv_kind + " - it fails to take hold!");
+                                        continue;
+                                    }
+                                    var _cv_val = 1, _cv_ph = "";
+                                    switch (_cv_kind) {
+                                        case "weaken":     _cv_val = 0.20; _cv_ph = "Weakened (-20% dmg)"; break;
+                                        case "silence":    _cv_val = 1;    _cv_ph = "Silenced"; break;
+                                        case "root":       _cv_val = 1;    _cv_ph = "Rooted"; break;
+                                        case "vulnerable": _cv_val = 3;    _cv_ph = "Exposed (+3 dmg taken/hit)"; break;
+                                        case "blind":      _cv_val = 0.30; _cv_ph = "Blinded (-30% acc)"; break;
+                                    }
+                                    array_push(target.status_effects, { name: ab.name, effect_type: "debuff", kind: _cv_kind,
+                                        effect_value: _cv_val, duration: _cv_dur, element: "void", source: "player" });
+                                    array_push(combat_log, "Call of the Void -> " + target.name + ": " + _cv_ph + " (" + ability_turns(_cv_dur) + ").");
+                                }
+                            } else
                             // DoTs, debuffs, and the control traps (Bear Trap root /
                             // Death Snare stun) all land as typed statuses.
                             if (ab.effect_type == "dot" || ab.effect_type == "debuff"
@@ -3989,7 +4084,8 @@ if (player_turn) {
                             if (_df_dmg < 1) _df_dmg = 1;
                             combat_apply_damage(_df_t, _df_dmg);
                             _df_t.hit_flash = max(_df_t.hit_flash, 12);
-                            array_push(damage_popups, { value: _df_dmg, x: 1620 + _df_slot * (-120), y: 233 + _df_slot * 105 - 60, timer: 50, col: make_color_rgb(235, 190, 90) });
+                            var _df_a = combat_enemy_anchor(_df_t, _df_slot);   // 2.5D: over the creature
+                            array_push(damage_popups, { value: _df_dmg, x: _df_a.x, y: _df_a.y - 60, timer: 50, col: make_color_rgb(235, 190, 90) });
                             player.flip_streak += 1;
                             array_push(combat_log, "DEVIL'S FLIP - heads! " + _df_t.name + " takes " + string(_df_dmg)
                                 + ((player.flip_streak >= 2) ? (" (streak " + string(player.flip_streak) + " - next flip +" + string(player.flip_streak * _df_rate) + ")") : "") + "!");
@@ -4022,6 +4118,16 @@ if (player_turn) {
                     player.blink_charges = 3;
                     // "Afterimage Veil" web node (P3, 07-29): softening 50/25 -> 60/35.
                     player.blink_soft_rider = ability_web_copy_has_rider(ab, "blink_soft");
+                    // Talent audit (M 08-17) bespoke POWER side: Steady Fade (3rd hit
+                    // softened like the 2nd), Soul Flicker (+1 Soul on cast), Phase
+                    // Cascade (4 charges - the 2nd attack is a full dodge too).
+                    player.blink_even_rider   = ability_web_copy_has_rider(ab, "blink_even");
+                    player.blink_double_rider = ability_web_copy_has_rider(ab, "blink_double");
+                    if (player.blink_double_rider) player.blink_charges = 4;
+                    if (ability_web_copy_has_rider(ab, "blink_soul") && variable_struct_exists(player, "souls")) {
+                        player.souls = min(player.souls_max, player.souls + 1);
+                        array_push(combat_log, "Soul Flicker: the blink leaves a Soul behind (+1).");
+                    }
                     player.ability_cd[selected_ability] = ability_cooldown(ab);
                     // "Counterphase" web keystone (task #14): remember the rider so the
                     // full-dodge consume (enemy-turn block) can arm the AP discount.
@@ -4395,8 +4501,9 @@ if (player_turn) {
                     if (combat_state.combatants[_dsi] == actor) break;
                     if (!combat_state.combatants[_dsi].is_player) _dot_slot++;
                 }
-                var _dot_ex = 1620 + _dot_slot * (-120);
-                var _dot_ey = 233  + _dot_slot * 105;
+                var _dot_a  = combat_enemy_anchor(actor, _dot_slot);   // 2.5D: over the creature, not the HP-bar grid
+                var _dot_ex = _dot_a.x;
+                var _dot_ey = _dot_a.y;
                 // Stagger stacked DoT numbers: each successive popup this tick starts
                 // ~14 frames later and shifts right, so two poison stacks read "6" then "6".
                 array_push(damage_popups, {
@@ -4817,7 +4924,8 @@ if (player_turn) {
         //     per enemy turn so it spans multiple foes (the 2-4 mob case). ---
         if (!_rage_now && _in_hostile && player.blink_charges >= 3) {
             actor.denied_streak += 1;   // rage breaker (08-08)
-            player.blink_charges = 2;
+            // Phase Cascade (4 charges): 4 -> 3 keeps a SECOND full dodge queued.
+            player.blink_charges = (player.blink_charges >= 4) ? 3 : 2;
             array_push(combat_log, actor.name + "'s attack passes through thin air!");
             player.dodge_anim = 14;   // conveyance: visible sidestep
             array_push(damage_popups, { value: 0, text: "DODGED!", x: 475, y: 505, timer: 40, col: make_color_rgb(200, 205, 220) });
@@ -4842,6 +4950,8 @@ if (player_turn) {
         } else if (_in_damaging && player.blink_charges == 1) {
             // "Afterimage Veil" web node (P3): 25% -> 35% softening.
             var _bl_soft3 = (variable_struct_exists(player, "blink_soft_rider") && player.blink_soft_rider) ? 0.65 : 0.75;
+            // Steady Fade (P1, 08-17): the 3rd hit is softened as much as the 2nd.
+            if (variable_struct_exists(player, "blink_even_rider") && player.blink_even_rider) _bl_soft3 -= 0.25;
             _incoming_mult *= _bl_soft3;   // 3rd attack softened if it lands
             player.blink_charges = 0;
             array_push(combat_log, "Blink's last shimmer dampens the hit (" + string(round((1 - _bl_soft3) * 100)) + "% reduced)!");
@@ -5505,26 +5615,9 @@ if (player_turn) {
             // defensive layers (armor / Iron Skin / equip armor / phys reduction /
             // Warding). Captured here so we can report how much was mitigated in the log.
             var _gross_incoming = _base_dmg + combat_status_total(player, "vulnerable");
-            var _final_dmg = combat_resolve_damage(
-                _base_dmg,
-                0,              // enemies deal physical damage by default
-                player.armor,
-                player.el_resist
-            );
-            // Vulnerable on the player adds flat damage taken (summed).
-            _final_dmg += combat_status_total(player, "vulnerable");
-            // Subtract flat damage reduction (Iron Skin), then equipment armor
-            _final_dmg = max(0, _final_dmg - player.damage_reduction);
-            _final_dmg = max(1, _final_dmg - player.equip_armor);
-            // Boon flat armor (Shrine V2): Ironhide +2 / Feast of Crows +2 per corpse.
-            var _bfa = boon_flat_armor();
-            if (_bfa > 0) _final_dmg = max(1, _final_dmg - _bfa);
-            // CLOTTED ARMOR (08-13, replaced Thickened Vitae): 5+ Blood held,
-            // every hit lands 2 softer. Mirrors the combat_mitigate_player site.
-            if (variable_struct_exists(player, "blood") && player.blood >= 5
-                && player.class_id == 1 && trunk_has("blood_hp")) {
-                _final_dmg = max(1, _final_dmg - 2);
-            }
+            // ARMOR REWORK (M-locked 08-18): one % pool (base + gear + boon + Clotted),
+            // Iron Skin flat first - combat_player_apply_armor is the single source.
+            var _final_dmg = combat_player_apply_armor(player, _gross_incoming, 0);
             if (variable_struct_exists(player, "derived") && player.derived.phys_dmg_reduction > 0) {
                 _final_dmg = max(1, ceil(_final_dmg * (1.0 - (player.derived.phys_dmg_reduction / 100.0))));
             }
@@ -5901,22 +5994,8 @@ if (player_turn) {
                 }
             } else {
                 var _gross_incoming2 = actor.mechanic_value + combat_status_total(player, "vulnerable");
-                var _final_dmg2 = combat_resolve_damage(
-                    actor.mechanic_value,
-                    0,
-                    player.armor,
-                    player.el_resist
-                );
-                _final_dmg2 += combat_status_total(player, "vulnerable");
-                _final_dmg2 = max(1, _final_dmg2 - player.equip_armor);
-                // Boon flat armor (Shrine V2): covers the double strike too.
-                var _bfa2 = boon_flat_armor();
-                if (_bfa2 > 0) _final_dmg2 = max(1, _final_dmg2 - _bfa2);
-                // Clotted Armor covers the double strike too (08-13).
-                if (variable_struct_exists(player, "blood") && player.blood >= 5
-                    && player.class_id == 1 && trunk_has("blood_hp")) {
-                    _final_dmg2 = max(1, _final_dmg2 - 2);
-                }
+                // ARMOR REWORK (08-18): same % pool as the main strike.
+                var _final_dmg2 = combat_player_apply_armor(player, _gross_incoming2, 0);
                 if (boon_active("warding")) _final_dmg2 = max(1, round(_final_dmg2 * boon_incoming_mult()));
                 if (pet_egg_ward_mult() != 1.0) _final_dmg2 = max(1, round(_final_dmg2 * pet_egg_ward_mult()));   // Warding egg
                 if (curse_incoming_mult() != 1.0) _final_dmg2 = max(1, round(_final_dmg2 * curse_incoming_mult()));
@@ -5963,9 +6042,18 @@ if (player_turn) {
                 if (player.bloodthorn_active) {
                     combat_apply_damage(actor, player.bloodthorn_value);
                     actor.hit_flash = max(actor.hit_flash, 8);
+                    // Own source position: the first-strike branch's _ea_src_x/_y is only
+                    // set when strike 1 landed, and strike 2 can land after a strike-1 miss.
+                    var _ds_slot = 0;
+                    for (var _dsri = 0; _dsri < array_length(combat_state.combatants); _dsri++) {
+                        if (combat_state.combatants[_dsri] == actor) break;
+                        if (!combat_state.combatants[_dsri].is_player && !combat_state.combatants[_dsri].is_defeated) _ds_slot++;
+                    }
+                    var _ds_p = (combat_25d() && variable_struct_exists(actor, "stage_station"))
+                              ? actor.stage_station : combat_enemy_slot_pos(_ds_slot);
                     array_push(damage_popups, {
                         value: player.bloodthorn_value,
-                        x: _ea_src_x, y: _ea_src_y - 75,
+                        x: _ds_p.x, y: _ds_p.y - 75,
                         timer: 45, col: make_color_rgb(200, 80, 50)
                     });
                     array_push(combat_log,

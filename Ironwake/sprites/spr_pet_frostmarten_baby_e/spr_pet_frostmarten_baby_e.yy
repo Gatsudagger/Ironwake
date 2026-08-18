@@ -2,9 +2,9 @@
   "$GMSprite":"v2",
   "%Name":"spr_pet_frostmarten_baby_e",
   "bboxMode":0,
-  "bbox_bottom":41,
+  "bbox_bottom":36,
   "bbox_left":5,
-  "bbox_right":36,
+  "bbox_right":31,
   "bbox_top":0,
   "collisionKind":1,
   "collisionTolerance":0,
@@ -12,14 +12,14 @@
   "edgeFiltering":false,
   "For3D":false,
   "frames":[
-    {"$GMSpriteFrame":"v1","%Name":"40e75ab9-c75a-47b8-9c33-0ac0ffa0afc3","name":"40e75ab9-c75a-47b8-9c33-0ac0ffa0afc3","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"0c1b2e81-6051-4ac5-88f1-7a04130b0826","name":"0c1b2e81-6051-4ac5-88f1-7a04130b0826","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
   ],
   "gridX":0,
   "gridY":0,
-  "height":42,
+  "height":37,
   "HTile":false,
   "layers":[
-    {"$GMImageLayer":"","%Name":"c642c4fe-cfe3-4baf-8d49-46cae3e33100","blendMode":0,"displayName":"default","isLocked":false,"name":"c642c4fe-cfe3-4baf-8d49-46cae3e33100","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
+    {"$GMImageLayer":"","%Name":"d3ac672a-b7aa-4259-97da-5d118b31a9af","blendMode":0,"displayName":"default","isLocked":false,"name":"d3ac672a-b7aa-4259-97da-5d118b31a9af","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
   ],
   "name":"spr_pet_frostmarten_baby_e",
   "nineSlice":null,
@@ -69,8 +69,8 @@
     "tracks":[
       {"$GMSpriteFramesTrack":"","builtinName":0,"events":[],"inheritsTrackColour":true,"interpolation":1,"isCreationTrack":false,"keyframes":{"$KeyframeStore<SpriteFrameKeyframe>":"","Keyframes":[
             {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
-                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"40e75ab9-c75a-47b8-9c33-0ac0ffa0afc3","path":"sprites/spr_pet_frostmarten_baby_e/spr_pet_frostmarten_baby_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
-              },"Disabled":false,"id":"fe386ee1-56d9-47cc-93fa-98a15db8c9d0","IsCreationKey":false,"Key":0.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"0c1b2e81-6051-4ac5-88f1-7a04130b0826","path":"sprites/spr_pet_frostmarten_baby_e/spr_pet_frostmarten_baby_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"5e23366d-cc5d-4f82-8cd8-370f2d81a2e6","IsCreationKey":false,"Key":0.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
           ],"resourceType":"KeyframeStore<SpriteFrameKeyframe>","resourceVersion":"2.0",},"modifiers":[],"name":"frames","resourceType":"GMSpriteFramesTrack","resourceVersion":"2.0","spriteId":null,"trackColour":0,"tracks":[],"traits":0,},
     ],
     "visibleRange":null,
@@ -86,5 +86,5 @@
   },
   "type":0,
   "VTile":false,
-  "width":42,
+  "width":37,
 }

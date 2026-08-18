@@ -3,8 +3,8 @@
   "%Name":"spr_pet_fathom_squid_adult_e",
   "bboxMode":0,
   "bbox_bottom":43,
-  "bbox_left":2,
-  "bbox_right":41,
+  "bbox_left":4,
+  "bbox_right":38,
   "bbox_top":0,
   "collisionKind":1,
   "collisionTolerance":0,
@@ -12,14 +12,14 @@
   "edgeFiltering":false,
   "For3D":false,
   "frames":[
-    {"$GMSpriteFrame":"v1","%Name":"348bf58f-4f47-49e0-b772-092a3d339683","name":"348bf58f-4f47-49e0-b772-092a3d339683","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
+    {"$GMSpriteFrame":"v1","%Name":"910004a8-ba24-4ea5-ab3d-a81290e3be0c","name":"910004a8-ba24-4ea5-ab3d-a81290e3be0c","resourceType":"GMSpriteFrame","resourceVersion":"2.0",},
   ],
   "gridX":0,
   "gridY":0,
   "height":44,
   "HTile":false,
   "layers":[
-    {"$GMImageLayer":"","%Name":"a6d42b23-cca3-4704-914f-f80843e040ea","blendMode":0,"displayName":"default","isLocked":false,"name":"a6d42b23-cca3-4704-914f-f80843e040ea","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
+    {"$GMImageLayer":"","%Name":"36470b09-4998-4abe-83ee-3b673e5aee2e","blendMode":0,"displayName":"default","isLocked":false,"name":"36470b09-4998-4abe-83ee-3b673e5aee2e","opacity":100.0,"resourceType":"GMImageLayer","resourceVersion":"2.0","visible":true,},
   ],
   "name":"spr_pet_fathom_squid_adult_e",
   "nineSlice":null,
@@ -69,8 +69,8 @@
     "tracks":[
       {"$GMSpriteFramesTrack":"","builtinName":0,"events":[],"inheritsTrackColour":true,"interpolation":1,"isCreationTrack":false,"keyframes":{"$KeyframeStore<SpriteFrameKeyframe>":"","Keyframes":[
             {"$Keyframe<SpriteFrameKeyframe>":"","Channels":{
-                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"348bf58f-4f47-49e0-b772-092a3d339683","path":"sprites/spr_pet_fathom_squid_adult_e/spr_pet_fathom_squid_adult_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
-              },"Disabled":false,"id":"574d9b39-8f85-4887-b4f7-efd79df56d9f","IsCreationKey":false,"Key":0.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
+                "0":{"$SpriteFrameKeyframe":"","Id":{"name":"910004a8-ba24-4ea5-ab3d-a81290e3be0c","path":"sprites/spr_pet_fathom_squid_adult_e/spr_pet_fathom_squid_adult_e.yy",},"resourceType":"SpriteFrameKeyframe","resourceVersion":"2.0",},
+              },"Disabled":false,"id":"5e5cf9c4-c68f-4719-bbb5-28104a1492c8","IsCreationKey":false,"Key":0.0,"Length":1.0,"resourceType":"Keyframe<SpriteFrameKeyframe>","resourceVersion":"2.0","Stretch":false,},
           ],"resourceType":"KeyframeStore<SpriteFrameKeyframe>","resourceVersion":"2.0",},"modifiers":[],"name":"frames","resourceType":"GMSpriteFramesTrack","resourceVersion":"2.0","spriteId":null,"trackColour":0,"tracks":[],"traits":0,},
     ],
     "visibleRange":null,

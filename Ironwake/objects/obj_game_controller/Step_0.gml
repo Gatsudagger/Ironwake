@@ -163,7 +163,13 @@ if (_nt_id != "") {
         npc_tour_npc  = _nt_id;
     }
     if (npc_tour_step >= 0 && npc_tour_npc == _nt_id) {
-        var _nt_total = array_length(npc_tour_steps(npc_tour_npc));
+        var _nt_steps = npc_tour_steps(npc_tour_npc);
+        var _nt_total = array_length(_nt_steps);
+        // Steps that name a `tab` switch the screen to it while they show (Maren's
+        // SPIRITS step) - so the tour points at what is actually on screen.
+        if (npc_tour_step < _nt_total && variable_struct_exists(_nt_steps[npc_tour_step], "tab")) {
+            if (npc_tour_npc == "maren" && variable_instance_exists(id, "maren_tab")) maren_tab = _nt_steps[npc_tour_step].tab;
+        }
         var _nt_next = keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_space)
                     || keyboard_check_pressed(ord("N"))
                     || (gamepad_is_connected(0) && gamepad_button_check_pressed(0, gp_face1));
@@ -202,7 +208,16 @@ if (!variable_instance_exists(id, "garden_open")) garden_open = false;
 if (garden_open && bairc_open) {
     garden_ensure();
     if (garden_fade > 0) garden_fade--;
+    // First visit: the garden coach-mark (pan/drag/verbs) - M 08-18. The tip is modal
+    // (any confirm dismisses it), so the scene's verbs stand down while it is up.
+    tutorial_try_show("garden_scene");
+    if (tutorial_is_active()) {
+        if (garden_notice_t > 0) { garden_notice_t--; if (garden_notice_t == 0) garden_notice = ""; }
+        if (variable_instance_exists(id, "garden_wip_t") && garden_wip_t > 0) garden_wip_t--;
+        exit;
+    }
     if (garden_notice_t > 0) { garden_notice_t--; if (garden_notice_t == 0) garden_notice = ""; }
+    if (variable_instance_exists(id, "garden_wip_t") && garden_wip_t > 0) garden_wip_t--;
     // Expire old reaction FX (4s life).
     for (var _gfi = array_length(garden_fx) - 1; _gfi >= 0; _gfi--) {
         if (current_time - garden_fx[_gfi].t0 > 4000) array_delete(garden_fx, _gfi, 1);
@@ -377,6 +392,13 @@ if (garden_open && bairc_open) {
         var _gcam_v = 0;
         if (keyboard_check(ord("D")) || keyboard_check(vk_right)) _gcam_v += 16;
         if (keyboard_check(ord("A")) || keyboard_check(vk_left))  _gcam_v -= 16;
+        // Gamepad: left stick / d-pad pans too (input parity, 08-18).
+        if (gamepad_is_connected(0)) {
+            var _gax = gamepad_axis_value(0, gp_axislh);
+            if (abs(_gax) > 0.25) _gcam_v += 16 * _gax;
+            if (gamepad_button_check(0, gp_padr)) _gcam_v += 16;
+            if (gamepad_button_check(0, gp_padl)) _gcam_v -= 16;
+        }
         garden_cam_x += _gcam_v;
         if (mouse_check_button(mb_left)) {
             var _gdm = device_mouse_x_to_gui(0);
@@ -564,6 +586,26 @@ if (os_browser != browser_not_a_browser) {
     var _bh = browser_height;
     if (_bw > 0 && _bh > 0 && (window_get_width() != _bw || window_get_height() != _bh)) {
         window_set_size(_bw, _bh);
+    }
+}
+
+// STATION RANK from INSIDE the NPC screen (M 08-17: pad has no free hub button):
+// [U] / pad L3 arms the same checkout popup the carousel uses; the hub Step's
+// modal block (0a3) resolves it, so every NPC block below stands down meanwhile.
+// Sits AFTER the always-run preamble (F11 / aspect refit / ambience / OSK) so the
+// popup's early-exit can't stall those, and never fires while a name is being typed.
+if (_nt_id != "" && npc_tour_step < 0 && !tutorial_is_active() && !text_entry_active()) {
+    if (hub_checkout_up()) exit;   // popup owns input until CONFIRM / CANCEL
+    if (input_hotkey("U")) {
+        var _st_err = npc_station_arm(_nt_id);
+        if (_st_err != "" && instance_exists(obj_hub_controller)) {
+            var _st_hub = instance_find(obj_hub_controller, 0);
+            _st_hub.bond_dialog_open  = true;  _st_hub.bond_dialog_npc = _nt_id;
+            _st_hub.bond_dialog_hearts = [];
+            _st_hub.bond_dialog_title = "Station rank";
+            _st_hub.bond_dialog_body  = "No rank to buy here right now - " + _st_err + ".";
+        }
+        exit;
     }
 }
 
@@ -1611,27 +1653,11 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()
             var _cur_src   = _sl_src[sell_index];
             var _src_idx   = _sl_idx[sell_index];
 
-            // Compute sell price: 40% of gold_value, min 1.
-            // Fallback from rarity if gold_value absent (should not occur with current data).
-            var _gv = 0;
-            if (variable_struct_exists(_cur_item, "gold_value")) {
-                _gv = _cur_item.gold_value;
-            }
-            if (_gv == 0 && variable_struct_exists(_cur_item, "rarity")) {
-                if (_cur_item.rarity == 0)      _gv = 15;
-                else if (_cur_item.rarity == 1) _gv = 32;
-                else if (_cur_item.rarity == 2) _gv = 82;
-                else if (_cur_item.rarity == 3) _gv = 200;
-                else                            _gv = 400;
-            }
-            // Legendaries sell for MORE (M 08-04): triple value with a 1200 floor
-            // - a legendary should never fetch mid-epic money.
-            if (variable_struct_exists(_cur_item, "rarity") && _cur_item.rarity == 4) _gv = max(_gv * 3, 1200);
-            // Base sell value = 40% of gold_value. The vendor's affinity tier sweetens
-            // the deal: +5% per tier (Acquaintance..Lover -> +0%..+20%). (Task: affinity sell)
+            // Sell price: shop_sell_price() - ONE formula shared with the SELL-tab list
+            // draw (40% of value, legendary x3 / 1200 floor, +5%/affinity tier, Petra
+            // rank 2 +10%; valuables pay their authored value).
             var _shop_npc   = (shop_open == 0) ? "petra" : "dorn";
-            var _sell_tier  = affinity_tier(_shop_npc);
-            var _sell_price = max(1, floor(_gv * 0.4 * (1 + 0.05 * _sell_tier) * ((npc_rank("petra") >= 2) ? 1.10 : 1.0)));   // Trade Ledger rank perk (08-15)
+            var _sell_price = shop_sell_price(_cur_item, _shop_npc);
 
             // Rare-or-above items need a second confirmation step
             var _needs_confirm = variable_struct_exists(_cur_item, "rarity") && _cur_item.rarity >= 2;
@@ -1855,10 +1881,17 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()
                     } else if (reforge_ingot_tier_for(_pcf.ingot_rar) < 0) {
                         shop_notification = "The craft asks a " + item_rarity_name(_pcf.ingot_rar) + "-tier (or higher) Reforge Ingot - smelting and the tavern board pay them.";
                         audio_play_sound(snd_ui_error, 1, false);
+                    } else if (reagent_total() < pattern_craft_reagents(1 + pb_rar_pick)) {
+                        // Dungeon reagents (M-locked 08-17): 1/2/3 of any kind.
+                        shop_notification = "The craft asks " + string(pattern_craft_reagents(1 + pb_rar_pick)) + " dungeon reagent"
+                            + ((pattern_craft_reagents(1 + pb_rar_pick) == 1) ? "" : "s") + " (you have " + string(reagent_total())
+                            + ") - elites and bosses drop their dungeon's reagent.";
+                        audio_play_sound(snd_ui_error, 1, false);
                     } else {
                         global.gold      -= _pcf.gold;
                         global.rune_dust -= _pcf.dust;
                         reforge_ingot_spend(_pcf.ingot_rar);
+                        reagent_spend_any(pattern_craft_reagents(1 + pb_rar_pick));
                         var _pcit = pattern_craft_build(forge_slot_list()[pb_slot_pick], 1 + pb_rar_pick,
                             pb_base_stat, pb_affix_picks, pb_icon_entry, pb_name);
                         array_push(global.equipment_stash, _pcit);
@@ -2034,7 +2067,9 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()
                     dorn_ck_body  = "A " + item_rarity_name(1 + pb_rar_pick) + " "
                         + item_slot_noun(_cw_slots[pb_slot_pick]) + " of your own design."
                         + "\nDorn asks " + string(_cw_fee.gold) + "g + " + string(_cw_fee.dust)
-                        + " rune dust + 1 " + item_rarity_name(_cw_fee.ingot_rar) + "-tier (or higher) ingot."
+                        + " rune dust + 1 " + item_rarity_name(_cw_fee.ingot_rar) + "-tier (or higher) ingot"
+                        + " + " + string(pattern_craft_reagents(1 + pb_rar_pick)) + " dungeon reagent"
+                        + ((pattern_craft_reagents(1 + pb_rar_pick) == 1) ? "" : "s") + " (you hold: " + reagent_summary_text() + ")."
                         + "\nThe numbers roll inside your blueprints' bands.";
                     if (input_device() == 2) keyboard_virtual_hide();
                 }
@@ -3380,6 +3415,7 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open && npc_tour_step < 
         garden_fade   = 24;
         garden_cam_x  = 0;
         garden_notice = ""; garden_notice_t = 0;
+        garden_wip_t  = 480;   // 8s WORK-IN-PROGRESS banner on every entry (M 08-18)
         garden_shop_open = false; garden_place_pick = ""; garden_fx = [];
         // The garden's own music pool (selection via the [M] chip in-scene).
         music_hub_stop();
@@ -3703,6 +3739,8 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open && npc_tour_step < 
 // =============================================================================
 if (variable_instance_exists(id, "maren_open") && maren_open && !menu_open && !forge_result_up()
     && npc_tour_step < 0) {
+    // Aspects tab first view: explain that accuracy runes stack to a CAP (M 08-17).
+    if (maren_tab == 1 && !banshee_release_open) tutorial_try_show("rune_caps");
     // --- Banshee release ceremony popup: owns ALL input while open. Any key
     //     first skips to the reveal, then closes. (Drawn by ui_draw_maren.) ---
     if (banshee_release_open) {

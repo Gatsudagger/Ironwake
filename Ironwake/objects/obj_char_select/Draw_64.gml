@@ -373,15 +373,15 @@ if (naming_active) {
     draw_text(960, 405 + _ny_off, "Name Your Hero");
 
     // Input box
-    var _box_x = 585;
-    var _box_y = 480 + _ny_off;
-    var _box_w = 750;
-    var _box_h = 78;
+    var _nb_x = 585;
+    var _nb_y = 480 + _ny_off;
+    var _nb_w = 750;
+    var _nb_h = 78;
 
     draw_set_color(make_color_rgb(22, 28, 48));
-    draw_rectangle(_box_x, _box_y, _box_x + _box_w, _box_y + _box_h, false);
+    draw_rectangle(_nb_x, _nb_y, _nb_x + _nb_w, _nb_y + _nb_h, false);
     draw_set_color(make_color_rgb(80, 150, 220));
-    draw_rectangle(_box_x, _box_y, _box_x + _box_w, _box_y + _box_h, true);
+    draw_rectangle(_nb_x, _nb_y, _nb_x + _nb_w, _nb_y + _nb_h, true);
 
     // Typed text + blinking cursor
     var _cursor = ((current_time mod 1000) < 500) ? "|" : "";
@@ -390,7 +390,7 @@ if (naming_active) {
     draw_set_color(c_white);
     draw_set_halign(fa_left);
     draw_set_valign(fa_middle);
-    draw_text(_box_x + 21, _box_y + _box_h / 2, _display_name);
+    draw_text(_nb_x + 21, _nb_y + _nb_h / 2, _display_name);
 
     // Empty-name warning (Step blocks confirm and arms this flash). Sits in the
     // gap between the title (ends ~y430) and the input box (top y480).
@@ -415,7 +415,7 @@ if (naming_active) {
     }
     // Touch: explicit DONE button (fires the same Enter path).
     if (input_device() == 2) {
-        var _dbx1 = 960 - 165, _dby1 = _box_y + _box_h + 27;
+        var _dbx1 = 960 - 165, _dby1 = _nb_y + _nb_h + 27;
         var _dbx2 = 960 + 165, _dby2 = _dby1 + 63;
         draw_set_color(make_color_rgb(20, 34, 58));
         draw_rectangle(_dbx1, _dby1, _dbx2, _dby2, false);
