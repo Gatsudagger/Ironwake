@@ -11339,9 +11339,10 @@ function pet_grant_from_source(source, species_override = "") {
     } else {
         _pet = pet_make(_species, source, -1, PET_STAGE_BABY, true);     // egg
     }
-    // ~12% of finds arrive CORRUPTED (§7): they start PUSHING (carried debuff, but gains a
-    // permanent +15% each completed run, fully corrupting after 3). You can cure anytime.
-    if (irandom(99) < 12) { _pet.corrupted = true; _pet.corruption_state = "pushing"; }
+    // ~8% of finds arrive CORRUPTED (§7; 12 -> 8, M 08-18): they start PUSHING (carried
+    // debuff, but gains a permanent +15% each completed run, fully corrupting after 3).
+    // You can cure anytime.
+    if (irandom(99) < 8) { _pet.corrupted = true; _pet.corruption_state = "pushing"; }
     // Dungeon-found EGGS arrive unidentified - everything but the shell is "??"
     // until Bairc is paid to identify (design 2026-07-04). Found LIVE creatures
     // are self-evidently what they are.
