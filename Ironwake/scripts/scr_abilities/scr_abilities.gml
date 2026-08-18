@@ -359,12 +359,12 @@ var _arc_d = [
       f: "Hurl a gout of soulfire that feeds on what it burns.\n- 11 Fire damage. Banks +2 Souls on cast.\n- Cheap to cast - spam it to fuel bigger spells next turn." },
     { s: "1 AP: 8 Void dmg, heal 6, +1 Soul. 2-turn CD.",
       f: "Pull the life out of a foe in one cold breath.\n- Guaranteed 8 Void damage that ignores all armor. Heals you 6 and banks 1 Soul.\n- 1 AP on a 2-turn cooldown - steady sustain, not spam." },
-    { s: "Spend 1 Soul. Deal 32 Arcane dmg.",
-      f: "Collapse a stored Soul into one roaring detonation of Arcane force.\n- Spend 1 Soul: 32 Arcane damage with a high crit ceiling.\n- Save it for elites and high-HP enemies." },
+    { s: "Spend 1 Soul. Deal 32 Arcane dmg. FADES to 50% if cast 2 turns running.",
+      f: "Collapse a stored Soul into one roaring detonation of Arcane force.\n- Spend 1 Soul: 32 Arcane damage with a high crit ceiling.\n- FADES: cast on two consecutive turns and the second lands at 50% damage - rest a turn between bursts.\n- Save it for elites and high-HP enemies." },
     { s: "0 AP cost. Gain +2 Souls instantly.",
       f: "Reach out and gather the loose souls the fight has shaken free.\n- Costs no AP: +2 Souls on the spot, once per turn.\n- Top off the reserve before an Arcane Burst or Soul Nova." },
-    { s: "Fully dodge the next attack; soften the 2 after. 2-turn CD.",
-      f: "Step sideways out of the world and let the blow pass through where you stood.\n- Next incoming attack: fully dodged. The two after: 50% then 25% less damage.\n- One charge is spent per attacking enemy, so it spans a swarm. 2-turn cooldown." },
+    { s: "Fully dodge the next attack; soften the 2 after. 3-turn CD.",
+      f: "Step sideways out of the world and let the blow pass through where you stood.\n- Next incoming attack: fully dodged. The two after: 50% then 25% less damage.\n- One charge is spent per attacking enemy, so it spans a swarm. 3-turn cooldown." },
     { s: "Hex: target takes +4 dmg for 3 turns; detonations x2.",
       f: "Whisper a Shadow hex that opens every seam in their defenses.\n- Hexed: +4 damage taken from all hits for 3 turns.\n- Detonations against the hexed target hit twice as hard and spread +2 damage-taken to every other enemy." },
     { s: "Spend 1 Soul. Absorb 10 dmg, +3 per Soul HELD.",
@@ -1377,7 +1377,7 @@ function ability_attack_class_tag(ab) {
 function ability_cooldown(ab) {
     var _cd = 0;
     switch (ab.name) {
-        case "Blink":          _cd = 2; break;
+        case "Blink":          _cd = 3; break;   // 08-18 (M): 2 -> 3, "still too strong"
         case "Shadow Step":    _cd = 2; break;
         case "Field Dressing": _cd = 2; break;   // was once-per-combat; now a 2-turn CD like Blink
         case "Second Wind":    _cd = 3; break;   // heal split 08-13: THE big burst heal, gated
@@ -2058,7 +2058,7 @@ function ability_effect_full(ab) {
         case "Marked for Death": _b = "Marked: below half HP the target takes +30% from ALL damage sources."; break;
         case "Smoke Bomb":      _b = "The smoke also cloaks YOU: +15% dodge while it lingers."; break;
         case "Second Wind":     _b = "Also restore 1 secondary resource (Soul / Blood / Prep)."; break;
-        case "Blink":           _b = "Fully dodge the next attack; the 2nd hit after takes 50% less and the 3rd 25% less. 2-turn cooldown."; break;
+        case "Blink":           _b = "Fully dodge the next attack; the 2nd hit after takes 50% less and the 3rd 25% less. 3-turn cooldown."; break;
         case "Shadow Step":     _b = "~(50% + WIS) chance to dodge each of the next 2 attacks. 2-turn cooldown."; break;
         case "Evasive Roll":    _b = "Halve the next incoming hit above 10 damage; a clean absorb refunds 1 Preparation."; break;
         case "Vanish":          _b = "~(50% + WIS) chance to dodge the next attack; your next strike deals +12 damage."; break;
@@ -2297,7 +2297,7 @@ function ability_summary(ab) {
             case "Soul Nova":       _tag = "+7 per Soul (max 4)"; break;
             case "Blazing Palm":    _tag = "+1 Soul on hit"; break;
             case "Soul Rend":       _tag = "+8 per Soul (max 2)"; break;
-            case "Arcane Burst":    _tag = "+40% vs Exposed"; break;
+            case "Arcane Burst":    _tag = "+40% vs Exposed - fades if spammed"; break;
             case "Flurry":          _tag = "+3 per debuff"; break;
             case "Rupture":         _tag = "Detonate bleeds"; break;
             case "Assassinate":     _tag = "x2 if <30% HP"; break;
@@ -2307,7 +2307,7 @@ function ability_summary(ab) {
             case "Bulwark Slam":    _tag = "Shield -> +dmg"; break;
             case "Counterblade":    _tag = "Riposte 12"; break;
             case "Sanguine Pact":   _tag = "Blood -> shield"; break;
-            case "Blink":           _tag = "Dodge 1, soften 2 - 2t CD"; break;
+            case "Blink":           _tag = "Dodge 1, soften 2 - 3t CD"; break;
             case "Shadow Step":     _tag = "Dodge chance x2 - 2t CD"; break;
             case "Evasive Roll":    _tag = "Halve next hit"; break;
             case "Vanish":          _tag = "Vanish, +12 next"; break;
@@ -2981,7 +2981,7 @@ function ability_web_nodes(ab) {
         array_push(_n, _sure
             ? ability_web_node("t1", "T", 1, "Heavy Hand", _hh_txt, ["dmgp"], "")
             : ability_web_node("t1", "T", 1, "Killer Instinct", "+4% crit chance", ["crit"], ""));
-        if (_has_cd)       array_push(_n, ability_web_node("t2", "T", 2, "Swift Recovery", "Cooldown -1 turn", ["cdm"], ""));
+        if (_has_cd)       array_push(_n, ability_web_node("t2", "T", 2, "Swift Recovery", "Cooldown -1 turn  (" + string(ability_cooldown(ab)) + " -> " + string(max(1, ability_cooldown(ab) - 1)) + ")", ["cdm"], ""));
         else if (_has_dur) array_push(_n, ability_web_node("t2", "T", 2, "Lasting Mark", ability_web_dur_noun(ab) + " lasts +1 turn  (" + string(ab.effect_duration) + " -> " + string(ab.effect_duration + 1) + ")", ["dur"], ""));
         else               array_push(_n, ability_web_node("t2", "T", 2, "Brutal Momentum", "+20% base damage, min +3  (" + string(ab.base_damage) + " -> " + string(ability_web_hybrid_dmgp(ab.base_damage)) + ")", ["dmgp"], ""));
         var _tk;
@@ -3014,7 +3014,7 @@ function ability_web_nodes(ab) {
             array_push(_n, ability_web_node("pk", "P", 3, "Lingering Grip", _wd_noun + " lasts +2 turns  (" + string(ab.effect_duration) + " -> " + string(ab.effect_duration + 2) + ")", ["dur2"], ""));
         }
         array_push(_n, ability_web_node("t1", "T", 1, "Endurance", ((ab.name == "Blink") ? "Duration" : ability_web_dur_noun(ab)) + " lasts +1 turn  (" + string(ab.effect_duration) + " -> " + string(ab.effect_duration + 1) + ")", ["dur"], ""));
-        if (_has_cd)                   array_push(_n, ability_web_node("t2", "T", 2, "Swift Recovery", "Cooldown -1 turn", ["cdm"], ""));
+        if (_has_cd)                   array_push(_n, ability_web_node("t2", "T", 2, "Swift Recovery", "Cooldown -1 turn  (" + string(ability_cooldown(ab)) + " -> " + string(max(1, ability_cooldown(ab) - 1)) + ")", ["cdm"], ""));
         else if (ab.energy_cost >= 2)  array_push(_n, ability_web_node("t2", "T", 2, "Efficient Form", "Costs 1 less AP", ["apc"], ""));
         else                           array_push(_n, ability_web_val_node(ab, "t2", "T", 2, "Taproot", "mult50"));
         array_push(_n, (ab.energy_cost <= 0 && ab.secondary_cost > 0)
@@ -3028,7 +3028,7 @@ function ability_web_nodes(ab) {
         array_push(_n, (ab.energy_cost >= 2)
             ? ability_web_node("t1", "T", 1, "Efficient Form", "Costs 1 less AP", ["apc"], "")
             : ability_web_val_node(ab, "t1", "T", 1, "Taproot", "add4"));
-        if (_has_cd) array_push(_n, ability_web_node("t2", "T", 2, "Swift Recovery", "Cooldown -1 turn", ["cdm"], ""));
+        if (_has_cd) array_push(_n, ability_web_node("t2", "T", 2, "Swift Recovery", "Cooldown -1 turn  (" + string(ability_cooldown(ab)) + " -> " + string(max(1, ability_cooldown(ab) - 1)) + ")", ["cdm"], ""));
         else         array_push(_n, ability_web_val_node(ab, "t2", "T", 2,
                          (ab.energy_cost >= 2) ? "Taproot" : "Floodgate",
                          (ab.energy_cost >= 2) ? "add4" : "mult50"));

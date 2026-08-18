@@ -114,7 +114,7 @@
     },
     "name":"spr_pet_cairn_bear_adult_e",
     "playback":1,
-    "playbackSpeed":20,
+    "playbackSpeed":20.0,
     "playbackSpeedType":0,
     "resourceType":"GMSequence",
     "resourceVersion":"2.0",

@@ -9230,6 +9230,25 @@ function pet_feed_icon(id) {
     // 08-17 favored treats ship without bespoke icons yet (icon batch pending M's
     // approval) - borrow the honeycomb treat art rather than draw an empty row.
     if (_i < 0 && string_pos("treat_", id) == 1) _i = asset_get_index("spr_pet_feed_treat_honey");
+    // 08-18 icon audit: eight species-preferred foods still have no bespoke icon and
+    // drew an EMPTY slot. Borrow the closest shipped food art by what the food IS
+    // (seeds -> forage, fly -> mirefly clutch, ore -> slagheart, fish -> brine eel...)
+    // until their own icons are generated + approved.
+    if (_i < 0 && string_pos("pref_", id) == 1) {
+        var _fb = "";
+        switch (id) {
+            case "pref_duskraven":        _fb = "spr_pet_feed_forage";            break;   // Gallowseed Handful
+            case "pref_pale_widow":       _fb = "spr_pet_feed_pref_gloomtoad";    break;   // Silk-Wrapped Fly
+            case "pref_shellback":        _fb = "spr_pet_feed_pref_bone_stag";    break;   // Cave-Moss Wedge
+            case "pref_thorn_boar":       _fb = "spr_pet_feed_treat_ember_nut";   break;   // Bramble Truffle
+            case "pref_glimmer_slime":    _fb = "spr_pet_feed_pref_magma_leech";  break;   // Cracked Geode
+            case "pref_sporeling":        _fb = "spr_pet_feed_pref_golemite";     break;   // Rotwood Chips
+            case "pref_voidkit":          _fb = "spr_pet_feed_treat_brine_jerky"; break;   // Starlit Minnow
+            case "pref_ironshell_beetle": _fb = "spr_pet_feed_pref_gaolwyrm";     break;   // Rust Flakes
+            default:                      _fb = "spr_pet_feed_prime";             break;
+        }
+        _i = asset_get_index(_fb);
+    }
     return _i;
 }
 

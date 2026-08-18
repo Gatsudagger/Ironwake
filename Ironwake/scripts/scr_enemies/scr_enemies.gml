@@ -398,8 +398,12 @@ function enemy_model_faces_east(spr) {
         spr_malgrath_warden_ff2: 1,   // 08-18 (M): the one-key Warden angles right
         // 08-18 full facing AUDIT (M: "some enemies spawn facing right"): every model in
         // enemy_sprite_map + variants reviewed as drawn - these five still angled right.
-        spr_vault_wraith_ff3: 1, spr_cinder_imp_ff: 1, spr_snowbound_wraith_ff2: 1,
+        spr_vault_wraith_ff3: 1, spr_cinder_imp_ff: 1,
         spr_infernal_revenant: 1, spr_frozen_sentinel: 1,
+        // 08-18 later (M: "snowbound wraith facing right"): re-read the sheet - _ff2 is
+        // frontal (tail trails right = drifting LEFT, so mirroring it was the bug) and
+        // _ff3 is the one angled right (face + raised arm on the viewer's right).
+        spr_snowbound_wraith_ff3: 1,
     };
     if (spr < 0 || !sprite_exists(spr)) return false;
     return variable_struct_exists(_east, sprite_get_name(spr));

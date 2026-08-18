@@ -702,6 +702,10 @@ if (player_turn) {
             player.shield_hp = max(0, player.shield_hp - player.poise_shield);
             player.poise_shield = 0;
         }
+        // Arcane Burst FADING (M 08-18): remember whether it was cast LAST turn so a
+        // back-to-back cast lands at half power. Rolls at every player-turn start.
+        player.burst_cast_prev = variable_struct_exists(player, "burst_cast_this") ? player.burst_cast_this : false;
+        player.burst_cast_this = false;
         // Tick down per-ability cooldowns at the start of the player's turn.
         if (variable_struct_exists(player, "ability_cd")) {
             for (var _cdi = 0; _cdi < array_length(player.ability_cd); _cdi++) {
@@ -1546,6 +1550,9 @@ if (player_turn) {
             player.duel_rep = (variable_struct_exists(player, "duel_last_cast")
                                && player.duel_last_cast == ab.name);
             player.duel_last_cast = ab.name;
+            // Arcane Burst FADING ledger (M 08-18): mark the cast at the spend commit (a
+            // miss still counts as "used this turn"); the damage site reads burst_cast_prev.
+            if (ab.name == "Arcane Burst") player.burst_cast_this = true;
 
             // BLOOD PRICE (class pass, M 08-13: the Bloodwarden heals too well
             // and never bleeds for it). Its two heaviest blows now cost ~5% max
@@ -2416,6 +2423,24 @@ if (player_turn) {
                             && player.sig_reckon_casts > 0 && (player.sig_reckon_casts mod 3) == 0) {
                             _final_dmg = max(1, floor(_final_dmg * 1.20));
                             array_push(combat_log, "[Companion] " + pet_active().name + "'s RECKONING - the count comes due (+20%)!");
+                        }
+                        // Arcane Burst FADING (M 08-18: "should weaken if used 2 turns in a row"):
+                        // cast on consecutive player turns -> this one deals 50% damage. The
+                        // flag rolls at player-turn start (burst_cast_prev / burst_cast_this),
+                        // so a turn's rest between casts restores full power.
+                        if (ab.name == "Arcane Burst" && _deals_damage) {
+                            if (variable_struct_exists(player, "burst_cast_prev") && player.burst_cast_prev) {
+                                _final_dmg = max(1, floor(_final_dmg * 0.5));
+                                array_push(combat_log, "Arcane Burst FADES - cast two turns running, it lands at half power.");
+                                var _fb_slot = 0;
+                                for (var _fbi = 0; _fbi < array_length(combat_state.combatants); _fbi++) {
+                                    if (combat_state.combatants[_fbi] == target) break;
+                                    if (!combat_state.combatants[_fbi].is_player) _fb_slot++;
+                                }
+                                var _fb_a = combat_enemy_anchor(target, _fb_slot);
+                                array_push(damage_popups, { value: 0, text: "FADED", x: _fb_a.x, y: _fb_a.y - 130,
+                                    timer: 40, col: make_color_rgb(170, 150, 220) });
+                            }
                         }
                         // Serrated Strikes: physical ATTACKS apply 1 bleed stack (Shadowstrider
                         // only). Gated on _deals_damage so a pure debuff (e.g. Marked for Death,
@@ -4111,7 +4136,7 @@ if (player_turn) {
                     }
                 }
 
-                // --- Blink: staged guard over the next 3 attacks (2-turn CD). Only the
+                // --- Blink: staged guard over the next 3 attacks (3-turn CD, M 08-18). Only the
                 //     FIRST is a guaranteed full dodge; the 2nd takes 50% dmg and the 3rd
                 //     25% less if they land. Resolved in the incoming-attack block below. ---
                 if (ab.name == "Blink") {
