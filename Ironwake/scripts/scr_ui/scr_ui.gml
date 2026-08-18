@@ -422,7 +422,8 @@ function ui_draw_touch_chips() {
             // the SAME conditions the Step handler checks - no dead chips.
             var _ld_gc = instance_exists(obj_game_controller) ? instance_find(obj_game_controller, 0) : noone;
             if (_ld_gc != noone && _ld_gc.loadout_tab == 0) {
-                array_push(_chips, { lbl: "DETAILS", key: vk_tab, hot: false });
+                // (DETAILS chip dropped 08-18: hold-a-row IS details on touch, and the chip
+                //  bar landed on top of the confirm bar - M's phone screenshot.)
                 // WEB opens the talent web for any pool row (it's a real screen
                 // now, not just a spend prompt); lit hot when a point waits.
                 var _ld_pool = abilities_class_pool(
@@ -485,6 +486,9 @@ function ui_draw_touch_chips() {
     }
     var _cx = GUI_CX - _tot / 2;
     var _cy = GUI_H - _ch_h - 9;
+    // LOADOUT (08-18): the bottom band is the confirm bar + swipe hint - park the
+    // (situational) WEB / STANCE chips top-right under the X chip instead.
+    if (_ctx == "loadout") { _cx = GUI_XR - 24 - _tot; _cy = 200; }
     draw_set_halign(fa_center); draw_set_valign(fa_middle);
     var _pmx = device_mouse_x_to_gui(0), _pmy = device_mouse_y_to_gui(0);
     var _pdn = mouse_check_button(mb_left);

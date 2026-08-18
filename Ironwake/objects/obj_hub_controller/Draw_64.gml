@@ -201,7 +201,8 @@ draw_text(_px, _py + _line_h * 3, "Kills:      " + string(_display_kills));
 if (debt_active()) {
     draw_set_font(ui_font(fnt_ui_small));
     draw_set_color(debt_in_collections() ? make_color_rgb(230, 90, 80) : make_color_rgb(200, 130, 90));
-    draw_text(30, 324, "DEBT OWED: " + string(global.debt_gold) + "g"
+    // (touch: the hero card sits at y322 there - the debt line drops under it, clear of the pad)
+    draw_text((input_device() == 2) ? 120 : 30, (input_device() == 2) ? 694 : 324, "DEBT OWED: " + string(global.debt_gold) + "g"
         + (debt_in_collections() ? "   [IN COLLECTIONS - 25% garnished]" : "   (10% due after each run)"));
 }
 draw_set_font(-1);
@@ -276,6 +277,10 @@ var _cp_x = 30;
 var _cp_y = 660;
 var _cp_w = 510;
 var _cp_h = 366;
+// TOUCH (M 08-18 phone shot "mobile layout needs resizing"): the on-screen d-pad lives
+// bottom-left and sat ON the card. The left column has a dead band between the stats
+// box (ends y315) and the card, so on touch the card moves up into it and a little right.
+if (input_device() == 2) { _cp_x = 120; _cp_y = 322; }
 
 draw_set_alpha(0.4);
 draw_set_color(c_black);
@@ -2074,7 +2079,7 @@ if (instance_exists(obj_game_controller)) {
             draw_set_valign(fa_top);
             draw_set_font(ui_font(fnt_ui_small));
             draw_set_color(make_color_rgb(120, 205, 240));
-            draw_text_outline(960, 843, "[ Tab ]  -  full breakdown of the highlighted ability");
+            draw_text_outline(960, 843, ui_hint("[ Tab ]  -  full breakdown of the highlighted ability", "Hold a row for its full breakdown"));
             draw_set_halign(fa_left);
 
             // --- Description box: y=870-990, ornate double border + top accent strip ---
@@ -2121,7 +2126,7 @@ if (instance_exists(obj_game_controller)) {
                 draw_set_font(ui_font(fnt_ui_small));
                 draw_set_halign(fa_center);
                 draw_set_color(make_color_rgb(80, 195, 100));
-                draw_text(_desc_x + _desc_w / 2, 921, "All " + string(_ov_req) + " abilities chosen - press Enter on the confirm bar below to start your run.");
+                draw_text(_desc_x + _desc_w / 2, 921, "All " + string(_ov_req) + " abilities chosen - " + ui_hint("press Enter on", "tap") + " the confirm bar below to start your run.");
                 draw_set_halign(fa_left);
             }
 
@@ -2181,10 +2186,10 @@ if (instance_exists(obj_game_controller)) {
                 draw_text(GUI_CX, 1010, "Loadout full - remove an ability before adding another.");
             } else if (_conf_sel) {
                 draw_set_color(c_white);
-                draw_text_outline(GUI_CX, 1010, string(_ov_sel_cnt) + " / " + string(_ov_req) + " selected   |   [ Space ]  Confirm and Enter Dungeon");
+                draw_text_outline(GUI_CX, 1010, string(_ov_sel_cnt) + " / " + string(_ov_req) + " selected   |   " + ui_hint("[ Space ]  Confirm and Enter Dungeon", "Tap again to Enter the Dungeon"));
             } else if (_ov_sel_cnt >= _ov_req) {
                 draw_set_color(make_color_rgb(80, 175, 100));
-                draw_text(GUI_CX, 1010, string(_ov_sel_cnt) + " / " + string(_ov_req) + " selected   |   Scroll down to [ Enter ] to confirm");
+                draw_text(GUI_CX, 1010, string(_ov_sel_cnt) + " / " + string(_ov_req) + " selected   |   " + ui_hint("Scroll down to [ Enter ] to confirm", "Tap this bar to confirm"));
             } else {
                 draw_set_color(make_color_rgb(160, 170, 200));
                 draw_text(GUI_CX, 1010, string(_ov_sel_cnt) + " / " + string(_ov_req) + " selected");

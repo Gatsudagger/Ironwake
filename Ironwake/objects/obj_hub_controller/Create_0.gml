@@ -56,16 +56,17 @@ npc_names = [
     "Tavern Requests"
 ];
 
-// One-line summaries shown in the NPC list rows
+// One-line summaries shown in the NPC list rows / carousel card. (08-18: the "Press Space
+// to ..." tails removed - keyboard-speak on phones; the panel already says Tap/Press to interact.)
 npc_descriptions = [
-    "Weapons, armor, and gear - browse Dorn's rotating stock. Press Space to enter the forge.",
-    "Salvages loot into rune dust; brews and upgrades potions. Press Space to open the apothecary.",
-    "Sockets gear runes for stats and aspect runes for combat buffs. Press Space to open the runeworks.",
+    "Weapons, armor, and gear - browse Dorn's rotating stock.",
+    "Salvages loot into rune dust; brews and upgrades potions.",
+    "Sockets gear runes for stats and aspect runes for combat buffs.",
     "Permanent stat upgrades, ability unlocks, and trait slot expansion.",
-    "Consumables and supplies for your next run. Press Space to browse Petra's wares.",
-    "Cosmetic transmog - buy and wear character skins. Press Space to visit the atelier.",
-    "Tends and raises the creatures you find below. Press Space to visit his garden.",
-    "Postings from the townsfolk - jobs, hunts and favors. Press Space to read the board."
+    "Consumables and supplies for your next run.",
+    "Cosmetic transmog - buy and wear character skins.",
+    "Tends and raises the creatures you find below.",
+    "Postings from the townsfolk - jobs, hunts and favors."
 ];
 
 // All seven hub NPCs are permanently present from the start (design decision -
