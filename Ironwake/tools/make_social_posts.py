@@ -123,17 +123,19 @@ os.makedirs(OUT)
 IMG = os.path.join(OUT, "images"); os.makedirs(IMG)
 
 # ---- images ----------------------------------------------------------------
-pets_a = [("Saber Hound", "saber_hound"), ("Luna Moth", "luna_moth"), ("Bonehound", "bonehound"), ("Wispfox", "wispfox"),
-          ("Frostmarten", "frostmarten"), ("Pyre Bison", "pyre_bison"), ("Lockjaw Turtle", "lockjaw_turtle"), ("Stormkirin", "stormkirin"),
-          ("Gravefox", "gravefox"), ("Glimmer Slime", "glimmer_slime"), ("Cairn Bear", "cairn_bear"), ("Witchwood Fawn", "witchwood_fawn")]
+# ONE art generation only (M 08-19: mixing the 64px stills / old pair with the 124px batch
+# showed how mismatched they are) - these are all from the same 124px 9-frame batch.
+pets_a = [("Pyre Bison", "pyre_bison"), ("Lockjaw Turtle", "lockjaw_turtle"), ("Stormkirin", "stormkirin"), ("Glimmer Slime", "glimmer_slime"),
+          ("Canopy Shrew", "canopy_shrew"), ("Duskraven", "duskraven"), ("Pale Widow", "pale_widow"), ("Thorn Boar", "thorn_boar"),
+          ("Shellback", "shellback"), ("Bone Stag", "bone_stag"), ("Sporeling", "sporeling"), ("Voidkit", "voidkit")]
 lineup(os.path.join(IMG, "pets_lineup_adults.png"), "Some of the creatures you can raise", "47 species live in Ironwake's dungeons. Every one can be found, hatched and raised.",
        [(n, spr_png("spr_pet_%s_adult_s" % s)) for n, s in pets_a], cell_h=250, cols=6)
 lineup(os.path.join(IMG, "pets_lineup_babies.png"), "...and this is how they start", "Babies. Most arrive as eggs; a few are found alive in the dungeon.",
        [(n, spr_png("spr_pet_%s_baby_s" % s)) for n, s in pets_a], cell_h=220, cols=6)
-stage_strip(os.path.join(IMG, "stages_saber_hound.png"), "saber_hound", "The Saber Hound")
+stage_strip(os.path.join(IMG, "stages_saber_hound.png"), "bone_stag", "The Bone Stag")
 stage_strip(os.path.join(IMG, "stages_luna_moth.png"), "luna_moth", "The Luna Moth")
 stage_strip(os.path.join(IMG, "stages_pyre_bison.png"), "pyre_bison", "The Pyre Bison")
-stage_strip(os.path.join(IMG, "stages_frostmarten.png"), "frostmarten", "The Frostmarten")
+stage_strip(os.path.join(IMG, "stages_frostmarten.png"), "stormkirin", "The Stormkirin")
 scions = [("Vaultling", "vaultling"), ("Marrow Adder", "marrow_adder"), ("Gaolwyrm", "gaolwyrm"), ("Cinder Newt", "cinder_newt"), ("Magma Leech", "magma_leech"),
           ("Golemite", "golemite"), ("Rimefox", "rimefox"), ("Crypt Bat", "crypt_bat"), ("Hoarfrost Drake", "hoarfrost_drake")]
 lineup(os.path.join(IMG, "scions_lineup.png"), "Scions - the bosses' own kin", "Nine creatures only a boss can drop. Each one has a signature move nobody else has.",
@@ -220,7 +222,7 @@ write(D(2), 2, "Three stages",
 
 Raise one far enough and it can cross into a fourth - Awakened - with a permanent gift of your choosing.
 
-This is the Saber Hound.""", I("stages_saber_hound.png"))
+This is the Bone Stag.""", I("stages_saber_hound.png"))
 write(D(2), 3, "Found alive",
 """Not every creature comes from an egg.
 
@@ -258,7 +260,7 @@ Walk the grounds, feed them, toss a crumb in the pond, stack a stone on the cair
 write(D(4), 2, "Feeding + favored treats",
 """Feeding is simple: basic feed grows them, good food grows them faster, treats build the bond.
 
-Every species has a favored treat. Get it right and the bond jumps. A Frostmarten will chew a Frost-Root for hours.""", I("stages_frostmarten.png"))
+Every species has a favored treat. Get it right and the bond jumps. A Stormkirin will wait out a storm for the right one.""", I("stages_frostmarten.png"))
 write(D(4), 3, "Bond",
 """Bond matters.
 
