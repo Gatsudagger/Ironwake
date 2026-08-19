@@ -2794,9 +2794,8 @@ function ui_draw_item_codex() {
         : "W/S: Navigate   Enter: Inspect   G / Esc: Close Gallery");
     draw_set_halign(fa_left);
 
-    // Touch CLOSE button, top-right (rows and the detail X are tap-native already;
-    // this covers closing when no back chip is visible under the overlay).
-    if (input_device() == 2) {
+    // CLOSE button, top-right - every device (08-19 mouse pass: desktop had Esc only).
+    {
         var _cx1 = 1758, _cy1 = 27, _cx2 = 1890, _cy2 = 79;
         var _c_on = mouse_check_button(mb_left)
             && point_in_rectangle(device_mouse_x_to_gui(0), device_mouse_y_to_gui(0), _cx1, _cy1, _cx2, _cy2);
@@ -3234,7 +3233,7 @@ function ui_draw_journal() {
             draw_text(_list_x2 - 6, _cy2 + 8, string_upper(item_slot_title(_ce2.slot)));
             draw_set_halign(fa_left);
             // Touch (same-task parity): tap a row to select it.
-            if (input_device() == 2 && touch_tapped(_list_x1 - 6, _cy2, _list_x2 + 6, _cy2 + _crow - 6)) {
+            if (touch_tapped(_list_x1 - 6, _cy2, _list_x2 + 6, _cy2 + _crow - 6)) {   // click too (08-19 mouse pass)
                 _gc.journal_cursor = _ci2;
             }
         }
@@ -3844,7 +3843,7 @@ function ui_draw_tavern_board() {
         draw_rectangle(_lx - 12, _qy, _rx + 12, _qy + 96, true);
         // Touch (8d, punch item 4): tap a note to highlight it, tap the
         // highlighted note again to take / turn in (simulated Enter).
-        if (input_device() == 2 && touch_tapped(_lx - 12, _qy, _rx + 12, _qy + 96)) {
+        if (touch_tapped(_lx - 12, _qy, _rx + 12, _qy + 96)) {   // click too (08-19 mouse pass): click selects, click again takes
             if (_i == _cur) touch_press(vk_enter);
             else { _gc.tavern_board_cursor = _i; _cur = _i; }
         }
@@ -5250,8 +5249,8 @@ function ui_draw_bairc_screen() {
             draw_set_color(make_color_rgb(100, 110, 130));
             draw_text(GUI_CX, _ny1 + 248, "No keyboard? Steam + X opens the on-screen keyboard.");
         }
-        // Touch (8c): explicit DONE button (fires the same Enter path).
-        if (input_device() == 2) {
+        // DONE button (fires the same Enter path) - every device (08-19 mouse pass).
+        {
             var _bdx1 = GUI_CX - 150, _bdy1 = _ny1 + 238;
             var _bdx2 = GUI_CX + 150, _bdy2 = _bdy1 + 57;
             draw_set_color(make_color_rgb(20, 34, 58));
@@ -10358,7 +10357,7 @@ function ui_draw_ability_detail(ab, close_key_label = "Tab", scroll_y = 0) {
     // ========================= FOOTER =========================
     draw_set_halign(fa_center);
     draw_set_font(ui_font(fnt_ui_small));
-    if (input_device() == 2) {
+    {   // every device (08-19 mouse pass: desktop footer named keys only - no click-out)
         // TOUCH (M 07-18: inspecting an ability in combat "touching does nothing
         // to exit the inspection" - the only way out was the top-right chip).
         // The keyboard footer names keys a phone doesn't have, so replace it with
@@ -10397,11 +10396,6 @@ function ui_draw_ability_detail(ab, close_key_label = "Tab", scroll_y = 0) {
                                         _x1, _y1, _x2, _y2)) {
             touch_press(vk_escape);
         }
-    } else {
-        draw_set_color(make_color_rgb(150, 160, 190));
-        var _footer = "[" + close_key_label + "] or [Esc] - Close";
-        if (global.ui_ability_detail_max_scroll > 0) _footer += "      [W/S] Scroll";
-        draw_text_outline((_x1 + _x2) / 2, _y2 - 39, _footer);
     }
     draw_set_halign(fa_left); draw_set_valign(fa_top);
     draw_set_color(c_white);

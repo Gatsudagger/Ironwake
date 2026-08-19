@@ -27,7 +27,13 @@ var _stat_names = ["STR", "DEX", "CON", "INT", "WIS", "CHA"];
 if (!naming_active && !confirmed && !vow_active && !portrait_active && !origin_active) {
     var _mx = device_mouse_x_to_gui(0);
     var _my = device_mouse_y_to_gui(0);
-    if (mouse_check_button_pressed(mb_left)) {
+    // Right-click a stat box: take ONE point back (the X key) - 08-19 mouse pass (the touch
+// REMOVE button has no desktop twin; the legend names it).
+if (mouse_check_button_pressed(mb_right) && free_points < 4) {
+    var _rmx = device_mouse_x_to_gui(0), _rmy = device_mouse_y_to_gui(0);
+    if (_rmx >= 0 && _rmx <= GUI_W && _rmy >= 150 && _rmy <= 900) touch_press(ord("X"));
+}
+if (mouse_check_button_pressed(mb_left)) {
         // Class panels: x0=150, stride=552, w=516, y=174-789 (lockstep with native draw layout)
         for (var _ci = 0; _ci < 3; _ci++) {
             var _cpx = 150 + _ci * 552;

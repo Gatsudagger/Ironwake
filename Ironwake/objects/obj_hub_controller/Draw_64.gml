@@ -1294,12 +1294,17 @@ if (_gc_ds != noone && _gc_ds.dungeon_select_open) {
                 draw_set_color(make_color_rgb(120, 130, 160));
                 draw_rectangle(474, GUI_CY - 66, 582, GUI_CY + 90, true);
                 draw_rectangle(1338, GUI_CY - 66, 1446, GUI_CY + 90, true);
-                if      (touch_tapped(444, GUI_CY - 90, 600, GUI_CY + 114))   touch_press(ord("A"));
-                else if (touch_tapped(1300, GUI_CY - 90, 1482, GUI_CY + 114)) touch_press(ord("D"));
-                else if (touch_tapped(_cx + 21, _asc_y, _cx + 105, _asc_y + 66))            touch_press(ord("Q"));
-                else if (touch_tapped(_cx + _cw - 105, _asc_y, _cx + _cw - 21, _asc_y + 66)) touch_press(ord("E"));
-                else if (touch_tapped(_cx + 21, _cy + _ch - 87, _cx + _cw - 21, _cy + _ch - 21)) touch_press(vk_enter);
             }
+            // CLICK paths on EVERY device (M 08-19: "I cannot click Enter/confirm, the
+            // cycling arrows or the awakening Q/E - the entire game must be mouse-
+            // clickable"): these were gated to touch. touch_tapped reads the mouse, so
+            // the same zones serve desktop clicks - arrows / side cards cycle, the
+            // Q / E boxes step awakening, the green bar confirms.
+            if      (touch_tapped(444, GUI_CY - 90, 600, GUI_CY + 114))   touch_press(ord("A"));
+            else if (touch_tapped(1300, GUI_CY - 90, 1482, GUI_CY + 114)) touch_press(ord("D"));
+            else if (touch_tapped(_cx + 21, _asc_y, _cx + 105, _asc_y + 66))            touch_press(ord("Q"));
+            else if (touch_tapped(_cx + _cw - 105, _asc_y, _cx + _cw - 21, _asc_y + 66)) touch_press(ord("E"));
+            else if (touch_tapped(_cx + 21, _cy + _ch - 87, _cx + _cw - 21, _cy + _ch - 21)) touch_press(vk_enter);
 
             // Tier description - below the selector box (computed, matches combat)
             var _sel_a   = _gc_ds.dungeon_select_asc;
@@ -1335,6 +1340,8 @@ if (_gc_ds != noone && _gc_ds.dungeon_select_open) {
             draw_set_halign(fa_left);
             draw_set_color(make_color_rgb(55, 60, 82));
             draw_text_ext(_cx + 18, _cy + 252, _dung_desc[_di], 27, _cw - 36);
+            // Click/tap a SIDE card to cycle to it (08-19 mouse pass).
+            if (touch_tapped(_cx, _cy, _cx + _cw, _cy + _ch)) touch_press(_is_left ? ord("A") : ord("D"));
         }
 
         draw_set_alpha(1.0);

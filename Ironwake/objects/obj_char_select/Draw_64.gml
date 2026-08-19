@@ -337,7 +337,7 @@ if (input_device() == 2) {
 } else {
     // Navigation hint
     draw_set_color(make_color_rgb(130, 135, 145));
-    draw_text_outline(960, _inst_y, "Q / E: Class    A / D: Stat    W / S: + / - Point    G: Gender    Enter / Space: Confirm");
+    draw_text_outline(960, _inst_y, "Q / E: Class    A / D: Stat    W / S: + / - Point    Right-click: - Point    G: Gender    Enter / Space: Confirm");
 
     // Readiness prompt
     if (free_points > 0) {
@@ -405,7 +405,7 @@ if (naming_active) {
     draw_set_halign(fa_center);
     draw_set_font(ui_font(fnt_ui_small));
     draw_set_color(make_color_rgb(130, 135, 145));
-    if (input_device() != 2) draw_text_outline(960, 597 + _ny_off, "Enter to confirm       Escape to go back");
+    // (08-19: the DONE button now sits here on every device; the key hint would overlap it)
     // Deck/controller players have no physical keyboard - point at the Steam OSK
     // (STEAM_DECK_NOTES.md: the manual Steam+X path is the EA answer; the automatic
     // floating-keyboard call is a post-EA Steamworks-extension chunk).
@@ -413,8 +413,8 @@ if (naming_active) {
         draw_set_color(make_color_rgb(100, 110, 130));
         draw_text_outline(960, 636, "No keyboard? Steam + X opens the on-screen keyboard.");
     }
-    // Touch: explicit DONE button (fires the same Enter path).
-    if (input_device() == 2) {
+    // DONE button (fires the same Enter path) - every device (08-19 mouse pass).
+    {
         var _dbx1 = 960 - 165, _dby1 = _nb_y + _nb_h + 27;
         var _dbx2 = 960 + 165, _dby2 = _dby1 + 63;
         draw_set_color(make_color_rgb(20, 34, 58));
@@ -486,15 +486,15 @@ if (portrait_active) {
     // Instructions (keyboard-speak - touch gets tap zones + a CONFIRM button)
     draw_set_font(ui_font(fnt_ui_small));
     draw_set_color(make_color_rgb(130, 135, 145));
-    if (input_device() != 2) draw_text_outline(960, _main_y + _main_h + 72, "A / D: Browse       Enter / Space: Confirm");
     // The other portraits aren't gone - Vael sells them (08-14 gating).
     draw_set_color(make_color_rgb(150, 125, 170));
-    draw_text_outline(960, _main_y + _main_h + (input_device() == 2 ? 150 : 102),
+    draw_text_outline(960, _main_y + _main_h + 150,
         "Vael the Aesthete offers many more, back at camp.");
 
-    // Touch (8c, M 07-07): tap a side thumbnail to page one portrait per tap;
-    // explicit CONFIRM button below the counter continues to the hub.
-    if (input_device() == 2) {
+    // Click/tap a side thumbnail to page one portrait; explicit CONFIRM button below
+    // the counter continues to the hub - every device (08-19 mouse pass; keyboard A/D +
+    // Enter still work, the hint line they replaced would have sat on the button).
+    {
         if (touch_tapped(_main_x - _thumb_w - 60, _thumb_y - 24, _main_x - 12, _thumb_y + _thumb_h + 24)) {
             touch_press(ord("A"));
         } else if (touch_tapped(_main_x + _main_w + 12, _thumb_y - 24, _main_x + _main_w + _thumb_w + 60, _thumb_y + _thumb_h + 24)) {

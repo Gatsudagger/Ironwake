@@ -889,7 +889,7 @@ if (showing_shrine) {
             draw_set_halign(fa_center);
         }
         // Touch: the chip is the button (arm on first tap, commit on second).
-        if (input_device() == 2 && touch_tapped(_rr_x0, _rr_y0, _rr_x1, _rr_y1)) touch_press(ord("R"));
+        if (touch_tapped(_rr_x0, _rr_y0, _rr_x1, _rr_y1)) touch_press(ord("R"));   // click too (08-19 mouse pass)
     }
 
     // Hover-inspect capture for the suggested "[3] Sacrifice ..." item; drawn last
