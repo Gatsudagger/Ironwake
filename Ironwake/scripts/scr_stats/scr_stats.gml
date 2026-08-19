@@ -9581,6 +9581,18 @@ function pet_stage_scale(pet) {
 // Downscales are never touched; small boxes (stable rows, garden strolls) sit under
 // the cap anyway.
 #macro PET_FIT_MAX_UP 3.25
+// pet_stage_size_mult(stage) - how big a life stage draws relative to an adult in the
+// portrait-style views (Bairc profile, compendium forms, garden strolls). M 08-19: babies
+// filled the same box as adults and "lose their cuteness"; combat already scales by stage
+// (120/145/170/200/230), this brings the other views in line. Tune here, one place.
+function pet_stage_size_mult(_stage) {
+    switch (_stage) {
+        case PET_STAGE_BABY:       return 0.62;
+        case PET_STAGE_ADOLESCENT: return 0.72;
+        case PET_STAGE_YOUNGADULT: return 0.85;
+    }
+    return 1.0;   // adult / awakened
+}
 function pet_sprite_fit(spr, cx, feet_y, target_h, max_w = -1) {
     var _bl = sprite_get_bbox_left(spr),  _bt = sprite_get_bbox_top(spr);
     var _br = sprite_get_bbox_right(spr), _bb = sprite_get_bbox_bottom(spr);

@@ -3535,7 +3535,9 @@ function ui_draw_journal() {
             if (_kspr < 0) _kspr = compendium_sprite(_kd.id);
             if (_kspr >= 0) {
                 var _kcx  = (_det_x1 + _det_x2) / 2;
-                var _kfit = pet_sprite_fit(_kspr, _kcx, _kdy + 180, 180, (_det_x2 - _det_x1) - 40);
+                // Stage-scaled (08-19): the form being shown sets the size (baby small, adult full).
+                var _kmul = _kgot2 ? pet_stage_size_mult(_kstages[_kform]) : 1.0;
+                var _kfit = pet_sprite_fit(_kspr, _kcx, _kdy + 180, 180 * _kmul, ((_det_x2 - _det_x1) - 40) * _kmul);
                 if (_kgot2) {
                     ui_draw_ground_shadow(_kcx, _kdy + 180, sprite_get_width(_kspr) * _kfit.scale);
                     draw_sprite_ext(_kspr, 0, _kfit.x, _kfit.y, _kfit.scale, _kfit.scale, 0, c_white, 1);
@@ -4681,7 +4683,7 @@ function ui_draw_bairc_screen() {
             var _wx  = lerp(-_amp, _amp, _mv);
             // #16: fit the VISIBLE creature; back lane smaller for depth.
             var _gfit = pet_sprite_fit(_gsp, _lane + _wx,
-                (_pass == 0) ? _gfl_b : _gfl_f, (_pass == 0) ? 40 : 54);
+                (_pass == 0) ? _gfl_b : _gfl_f, ((_pass == 0) ? 40 : 54) * pet_stage_size_mult(_d.stage));
             draw_sprite_ext(_gsp, pet_anim_frame(_gsp), _gfit.x, _gfit.y,
                 _gfit.scale, _gfit.scale, 0, c_white, (_pass == 0) ? 0.92 : 1);
         }
@@ -4733,10 +4735,12 @@ function ui_draw_bairc_screen() {
             // fills its frame at EVERY life stage - the stage-scaled height
             // ([78..116] x stage scale) made babies rattle around in the box,
             // and the Life Stage text row already tells the stage story.
-            var _th    = 150;
+            // 08-19 (M): stage-scaled again - babies at ~62% so they read as babies
+            // (pet_stage_size_mult); adults still fill the frame.
+            var _th    = 150 * pet_stage_size_mult(_p.stage);
             // #16: fit by VISIBLE content, not the padded canvas (bonehound/hollow
             // pup drew tiny). Width-capped so wide species stay inside the panel.
-            var _pfit  = pet_sprite_fit(_psp, _spx, _spb, _th, 170);
+            var _pfit  = pet_sprite_fit(_psp, _spx, _spb, _th, 170 * pet_stage_size_mult(_p.stage));
             var _psc   = _pfit.scale;
             draw_sprite_ext(_psp, pet_anim_frame(_psp), _pfit.x, _pfit.y, _psc, _psc, 0, c_white, 1);
             // Awakened FX v2 (08-13): hologram echo + pulse ring + rising motes.
@@ -5395,7 +5399,7 @@ function ui_draw_pet_detail(pet, inline = false) {
     var _spr = pet_sprite(pet, "s");
     if (_spr >= 0) {
         // #16: fit the VISIBLE creature (bbox) into the portrait box, not the canvas.
-        var _hfit = pet_sprite_fit(_spr, (_hbx0 + _hbx1) / 2, _hby1 - 9, (_hby1 - _hby0) - 18, (_hbx1 - _hbx0) - 22);
+        var _hfit = pet_sprite_fit(_spr, (_hbx0 + _hbx1) / 2, _hby1 - 9, ((_hby1 - _hby0) - 18) * pet_stage_size_mult(pet.stage), ((_hbx1 - _hbx0) - 22) * pet_stage_size_mult(pet.stage));   // stage-scaled (08-19)
         draw_sprite_ext(_spr, pet_anim_frame(_spr), _hfit.x, _hfit.y, _hfit.scale, _hfit.scale, 0, c_white, 1);
     }
     var _htx = _hbx1 + 26;
@@ -19975,7 +19979,7 @@ function ui_draw_garden_scene() {
             if (_rsx < -100 || _rsx > 2020) continue;
             // Idle bob + drink-dip at the pond.
             var _rbob = 2 * sin(_t * 2 + _ri);
-            var _rfit = pet_sprite_fit(_rsp, _rsx, _ry + _rbob, _back ? 74 : 104);
+            var _rfit = pet_sprite_fit(_rsp, _rsx, _ry + _rbob, (_back ? 74 : 104) * pet_stage_size_mult(_rd.stage));   // stage-scaled (08-19)
             draw_sprite_ext(_rsp, pet_anim_frame(_rsp), _rfit.x, _rfit.y,
                 _rfit.scale, _rfit.scale, 0, c_white, _back ? 0.92 : 1);
             // Hover: name label; tap: a pet on the head.
