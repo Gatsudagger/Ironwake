@@ -405,6 +405,7 @@ function enemy_model_faces_east(spr) {
         // were wrongly mirrored); forge_tyrant (head + hammer to the right) and
         // lava_spitter_ff3 (head angled right) are the east-authored ones.
         spr_forge_tyrant: 1, spr_lava_spitter_ff3: 1,
+        spr_vault_sentinel_ff3: 1,   // 08-19 (M): head + eyes turned right at 4x
         // 08-18 later (M: "snowbound wraith facing right"): re-read the sheet - _ff2 is
         // frontal (tail trails right = drifting LEFT, so mirroring it was the bug) and
         // _ff3 is the one angled right (face + raised arm on the viewer's right).
