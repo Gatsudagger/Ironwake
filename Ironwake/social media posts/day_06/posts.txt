@@ -1,0 +1,28 @@
+DAY 6
+========================================
+
+--- Post 1: Action points ---
+Combat: you get action points each turn. Abilities cost points. A basic attack is free.
+
+Spend, then end your turn. Enemies act. Repeat.
+
+Simple rules, a lot of room inside them.
+[image: post_1.png  (in this folder)]
+[note: A combat clip beats the lineup if you have one.]
+
+--- Post 2: Intents ---
+Enemies tell you what they're about to do.
+
+The chip above each health bar shows it: red for an attack (with rough damage), purple for a spell, green for a heal, amber for a status.
+
+Stun, root or silence them and the chip greys out. That move is cancelled.
+[image: post_2.png  (in this folder)]
+
+--- Post 3: Detonations ---
+Set up, then detonate.
+
+Put a burn, a bleed, a chill on something - then hit it with a detonator like Snipe or Arcane Burst and the status goes off.
+
+Rift detonates every enemy it touches. That's the cascade turn.
+[image: post_3.png  (in this folder)]
+

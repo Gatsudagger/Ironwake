@@ -1,0 +1,18 @@
+DAY 12
+========================================
+
+--- Post 1: Also on Android ---
+Ironwake is on Android too - the full game, not a cut-down one.
+
+Built for touch from the start: tap to target, an on-screen d-pad, pinch to zoom the UI.
+
+https://play.google.com/store/apps/details?id=com.seahorsegames.ironwake
+[image: post_1.png  (in this folder)]
+[note: A phone screenshot beats this if you have one.]
+
+--- Post 2: Same save, any way you play ---
+Keyboard, mouse, controller or touch - every screen works with all of them.
+
+Play how you like. We tested it on a phone with fat thumbs.
+[image: post_2.png  (in this folder)]
+

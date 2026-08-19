@@ -1,0 +1,24 @@
+DAY 9
+========================================
+
+--- Post 1: Pattern Book ---
+Crafting in Ironwake starts with breaking things.
+
+Smelt gear at Dorn's and you learn its pattern. Study enough patterns and you can craft that affix yourself - uncommon, then rare, then epic.
+
+The Pattern Book keeps track.
+[image: post_1.png  (in this folder)]
+[note: A Pattern Book screenshot beats this if you have one.]
+
+--- Post 2: Runes ---
+Maren sockets runes.
+
+Gear runes add stats. Aspect runes change how you fight - more crit, more dodge, fire on every spell. Three tiers, and the top tier can only be crafted.
+[image: post_2.png  (in this folder)]
+
+--- Post 3: Temper + reforge ---
+Don't like a roll? Dorn rerolls it.
+
+Reforge reworks an item's affixes for an ingot. Tempering raises its quality step by step. Your favorite sword can stay your favorite sword.
+[image: post_3.png  (in this folder)]
+

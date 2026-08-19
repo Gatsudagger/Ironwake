@@ -1,0 +1,369 @@
+DAY 1
+========================================
+
+--- Post 1: Launch announcement ---
+Ironwake is out now on Steam and Android.
+
+A dark-fantasy roguelite where you dive into three dungeons, fight turn-based battles, and raise the creatures you find down there.
+
+25% off this week.
+
+https://store.steampowered.com/app/4954740/Ironwake/
+
+#indiegame #roguelite #pixelart #gamedev #IndieGameDev
+[image: post_1.png  (in this folder)]
+[note: Pin this one. Add the Play Store link in a reply once the listing is live.]
+
+--- Post 2: What the game is, in one breath ---
+What is Ironwake?
+
+- Turn-based combat with action points
+- Three dungeons, five difficulty tiers each
+- A camp full of people who remember you
+- 47 creatures you can hatch, raise and fight beside
+
+Out now: https://store.steampowered.com/app/4954740/Ironwake/
+[image: post_2.png  (in this folder)]
+
+--- Post 3: First-day thank you + ask ---
+Day one. Thank you to everyone who picked it up.
+
+If you run into anything weird, tell us here or on the Steam forum - we're reading everything and patching fast.
+
+If you're enjoying it, a Steam review helps a small team more than you'd think.
+[image: post_3.png  (in this folder)]
+
+
+DAY 2
+========================================
+
+--- Post 1: Pets: the idea ---
+Let's talk about the creatures.
+
+Deep in the dungeon you find eggs. Bring one back to camp and Bairc, the creature keeper, raises it for you.
+
+It grows, it learns to fight beside you, and eventually it becomes something the dungeon has never seen.
+[image: post_1.png  (in this folder)]
+
+--- Post 2: Three stages ---
+Every creature grows through three stages: baby, young adult, adult.
+
+Raise one far enough and it can cross into a fourth - Awakened - with a permanent gift of your choosing.
+
+This is the Saber Hound.
+[image: post_2.png  (in this folder)]
+
+--- Post 3: Found alive ---
+Not every creature comes from an egg.
+
+Some are found alive in the dungeon - already grown - and just... follow you home.
+
+A few of those arrive corrupted. You can cure that. Or not.
+[image: post_3.png  (in this folder)]
+
+
+DAY 3
+========================================
+
+--- Post 1: Scions ---
+Every boss in Ironwake has kin.
+
+Beat the boss and there's a chance a Scion drops - a creature only that boss can give you. Nine of them exist.
+
+Each Scion has a signature move no other creature has.
+[image: post_1.png  (in this folder)]
+
+--- Post 2: Signature move spotlight: Vaultling ---
+Signature move spotlight: the Vaultling.
+
+Warden's Seal - once per fight, the first enemy ability that would hit you breaks against the seal. Negated. Gone.
+
+Its parent is the Vault Sentinel.
+[image: post_2.png  (in this folder)]
+[note: A short clip of the seal going off beats the card if you have one.]
+
+--- Post 3: Signature move spotlight: Crypt Bat ---
+Signature move spotlight: the Crypt Bat.
+
+Echo Shriek - the first time you drop below 40% health in a fight, it shrieks and EVERY enemy on the field is left Exposed.
+
+That's the moment you hit them with everything.
+[image: post_3.png  (in this folder)]
+
+
+DAY 4
+========================================
+
+--- Post 1: Bairc's garden ---
+Your creatures don't live in a menu. They live in Bairc's garden.
+
+Walk the grounds, feed them, toss a crumb in the pond, stack a stone on the cairn. Creatures you donate stay there for good.
+
+(It's getting a big customization update after launch.)
+[image: post_1.png  (in this folder)]
+[note: A garden screenshot/clip beats the lineup if you have one.]
+
+--- Post 2: Feeding + favored treats ---
+Feeding is simple: basic feed grows them, good food grows them faster, treats build the bond.
+
+Every species has a favored treat. Get it right and the bond jumps. A Frostmarten will chew a Frost-Root for hours.
+[image: post_2.png  (in this folder)]
+
+--- Post 3: Bond ---
+Bond matters.
+
+A creature that trusts you fights harder for you. Bond unlocks its deeper abilities and, at the top, its Awakened form.
+
+It's not a grind. It's feeding the thing that saved your life on floor 3.
+[image: post_3.png  (in this folder)]
+
+
+DAY 5
+========================================
+
+--- Post 1: Three classes ---
+Three classes.
+
+Arcanist - spells, souls, big bursts.
+Bloodwarden - heavy hits, blood magic, heals by hurting.
+Shadowstrider - dodges, traps, crits.
+
+Every ability has its own talent web, so two Arcanists rarely play the same.
+[image: post_1.png  (in this folder)]
+
+--- Post 2: Arcanist ---
+The Arcanist runs on Souls.
+
+Cheap spells feed the reserve, big spells spend it. Soulfire, Void Drain, Arcane Burst - chain them right and the last one hits like a truck.
+
+Spam it and it fades. Play the rhythm.
+[image: post_2.png  (in this folder)]
+
+--- Post 3: Shadowstrider ---
+The Shadowstrider sets the table before the fight starts.
+
+Bear traps, snares, triplines. Blink out of a hit. Then Snipe whatever's left standing in the wreckage.
+
+Rooted enemies can't reach you. Ranged ones can. Plan for both.
+[image: post_3.png  (in this folder)]
+
+
+DAY 6
+========================================
+
+--- Post 1: Action points ---
+Combat: you get action points each turn. Abilities cost points. A basic attack is free.
+
+Spend, then end your turn. Enemies act. Repeat.
+
+Simple rules, a lot of room inside them.
+[image: post_1.png  (in this folder)]
+[note: A combat clip beats the lineup if you have one.]
+
+--- Post 2: Intents ---
+Enemies tell you what they're about to do.
+
+The chip above each health bar shows it: red for an attack (with rough damage), purple for a spell, green for a heal, amber for a status.
+
+Stun, root or silence them and the chip greys out. That move is cancelled.
+[image: post_2.png  (in this folder)]
+
+--- Post 3: Detonations ---
+Set up, then detonate.
+
+Put a burn, a bleed, a chill on something - then hit it with a detonator like Snipe or Arcane Burst and the status goes off.
+
+Rift detonates every enemy it touches. That's the cascade turn.
+[image: post_3.png  (in this folder)]
+
+
+DAY 7
+========================================
+
+--- Post 1: Three dungeons ---
+Three dungeons.
+
+The Ashen Vault - the dead who were left behind.
+The Scorched Depths - a forge that never cooled.
+The Tundra Tomb - pilgrims who were never let in.
+
+Each has its own monsters, bosses, music and secrets.
+[image: post_1.png  (in this folder)]
+
+--- Post 2: Bosses ---
+At the bottom of each dungeon: something that should have stayed asleep.
+
+Beat it and its kin might follow you home.
+[image: post_2.png  (in this folder)]
+
+--- Post 3: Awakening tiers ---
+Every dungeon has five Awakening tiers.
+
+Higher tiers: tougher enemies, bigger packs, bosses that enrage - and better, rarer loot.
+
+Start at A0. Work up. Post-game there's an endless Descent for the people who clear all of it.
+[image: post_3.png  (in this folder)]
+
+
+DAY 8
+========================================
+
+--- Post 1: The camp ---
+Between runs you're at camp.
+
+Petra sells supplies. Dorn forges. Vex trains you. Maren works runes. Sable brews. Vael changes how you look. Bairc keeps your creatures.
+
+Every one of them remembers what you've done for them.
+[image: post_1.png  (in this folder)]
+
+--- Post 2: Bonds with the camp ---
+Help the camp and the camp helps back.
+
+Gifts and favors deepen your bond with each person. Rank up their stations and they open new services - better stock, cheaper training, new crafts.
+[image: post_2.png  (in this folder)]
+
+--- Post 3: The tavern board ---
+The tavern board is where the townsfolk ask for things.
+
+Hunts, errands, favors. Pick up a posting before a run and there's a little extra waiting when you get back.
+[image: post_3.png  (in this folder)]
+[note: A board screenshot beats the NPC card if you have one.]
+
+
+DAY 9
+========================================
+
+--- Post 1: Pattern Book ---
+Crafting in Ironwake starts with breaking things.
+
+Smelt gear at Dorn's and you learn its pattern. Study enough patterns and you can craft that affix yourself - uncommon, then rare, then epic.
+
+The Pattern Book keeps track.
+[image: post_1.png  (in this folder)]
+[note: A Pattern Book screenshot beats this if you have one.]
+
+--- Post 2: Runes ---
+Maren sockets runes.
+
+Gear runes add stats. Aspect runes change how you fight - more crit, more dodge, fire on every spell. Three tiers, and the top tier can only be crafted.
+[image: post_2.png  (in this folder)]
+
+--- Post 3: Temper + reforge ---
+Don't like a roll? Dorn rerolls it.
+
+Reforge reworks an item's affixes for an ingot. Tempering raises its quality step by step. Your favorite sword can stay your favorite sword.
+[image: post_3.png  (in this folder)]
+
+
+DAY 10
+========================================
+
+--- Post 1: The Ashen Duelist ---
+Not everything down there wants to kill you.
+
+The Ashen Duelist wants a fair fight. Beat him and he comes back stronger next time, with new tricks and scars to match. Keep winning and he starts parting with relics.
+[image: post_1.png  (in this folder)]
+
+--- Post 2: Merchant's Ghost ---
+Sometimes a ghost sets up shop between rooms.
+
+He sells things nobody else has. He does not haggle. He has been dead a while and is in no hurry.
+[image: post_2.png  (in this folder)]
+
+--- Post 3: Banshee in a Bottle ---
+Every dungeon's final boss guards a Banshee in a Bottle.
+
+Carry it home, let Maren release it, and the spirit leaves a song behind - a new track for your camp or dungeon music.
+
+There are more songs than you think.
+[image: post_3.png  (in this folder)]
+
+
+DAY 11
+========================================
+
+--- Post 1: Corruption ---
+Some creatures come back corrupted.
+
+It pushes at them - and at you, while it's carried. Each run it gets worse. Cure it at Bairc's, or let it run its course and see what it becomes.
+
+Your call. It's always your call.
+[image: post_1.png  (in this folder)]
+
+--- Post 2: Capstones ---
+Raise a creature to adulthood and it chooses a capstone - a permanent gift.
+
+Cheaper boons. Harder hits. A shield when you need it most. Found creatures roll theirs on the spot; raised ones let you pick.
+[image: post_2.png  (in this folder)]
+
+--- Post 3: Awakened ---
+The fourth stage: Awakened.
+
+It takes a deep bond and a long road. The creature crosses over, keeps everything it was, and gains an aura that changes the fight around it.
+
+Worth the road.
+[image: post_3.png  (in this folder)]
+
+
+DAY 12
+========================================
+
+--- Post 1: Also on Android ---
+Ironwake is on Android too - the full game, not a cut-down one.
+
+Built for touch from the start: tap to target, an on-screen d-pad, pinch to zoom the UI.
+
+https://play.google.com/store/apps/details?id=com.seahorsegames.ironwake
+[image: post_1.png  (in this folder)]
+[note: A phone screenshot beats this if you have one.]
+
+--- Post 2: Same save, any way you play ---
+Keyboard, mouse, controller or touch - every screen works with all of them.
+
+Play how you like. We tested it on a phone with fat thumbs.
+[image: post_2.png  (in this folder)]
+
+
+DAY 13
+========================================
+
+--- Post 1: Iron Vow ---
+For the people who want it to hurt:
+
+Iron Vow - one life. Ironman saves - quitting is a checkpoint, not an escape. And the Descent: an endless fall past the last Awakening tier.
+[image: post_1.png  (in this folder)]
+
+--- Post 2: Achievements ---
+67 Steam achievements, and none of them are "press start".
+
+Hatch every scion. Win a duel at every tier. Free every banshee. See what the dungeon does when you stop being afraid of it.
+[image: post_2.png  (in this folder)]
+
+
+DAY 14
+========================================
+
+--- Post 1: Show us your creatures ---
+Show us your creatures.
+
+Screenshot your favorite - name, stage, what it does for you - and reply here. We'll share the best ones.
+
+(We have opinions about the Pyre Bison.)
+[image: post_1.png  (in this folder)]
+
+--- Post 2: Patch cadence ---
+Week one is done. Here's how updates work:
+
+Small fixes ship as we find them. Bigger things - the garden overhaul, more creatures, new songs - come in named updates with notes.
+
+Tell us what you want first.
+[image: post_2.png  (in this folder)]
+
+--- Post 3: Thanks ---
+One week since launch.
+
+Thank you. Every review, every bug report, every screenshot of a Bonehound wearing a name it didn't ask for - it all helps.
+
+https://store.steampowered.com/app/4954740/Ironwake/
+[image: post_3.png  (in this folder)]
+

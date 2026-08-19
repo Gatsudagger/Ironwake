@@ -92,15 +92,30 @@ def stage_strip(path, species, nice):
         items.append((lbl, g))
     return lineup(path, nice + " grows up with you", "Every creature has three life stages - and a fourth, Awakened, for the ones you raise to the end", items, cell_h=300, cols=3, raw=True)
 
+def spotlight(path, species, nice, move, line, stage="adult"):
+    """One big creature + its signature move, for the spotlight posts."""
+    w, h = 1200, 560
+    im, d = card(w, h, nice, "Signature move: " + move)
+    sp = spr_png("spr_pet_%s_%s_s" % (species, stage))
+    g = crisp(sp, 400)
+    if g.width > 520: g = fit(g, int(g.height * 520 / g.width))
+    im.paste(g, (60 + (520 - g.width) // 2, 120 + (400 - g.height) // 2), g)
+    # wrapped line on the right
+    f = font(30); words = line.split(); rows = []; cur = ""
+    for wd in words:
+        t = (cur + " " + wd).strip()
+        if d.textlength(t, font=f) > 560: rows.append(cur); cur = wd
+        else: cur = t
+    if cur: rows.append(cur)
+    y = 170
+    for r in rows: d.text((620, y), r, font=f, fill=FG); y += 42
+    d.text((w - 230, h - 40), "IRONWAKE", font=font(22), fill=DIM)
+    im.save(path); return path
+
+POSTS = []   # (day, idx, title, body, image, note) - written out as plain text + CSV at the end
 def write(day_dir, idx, title, body, image=None, note=None):
-    os.makedirs(day_dir, exist_ok=True)
-    p = os.path.join(day_dir, "post_%d.md" % idx)
-    with open(p, "w", encoding="utf-8") as f:
-        f.write("# %s\n\n" % title)
-        f.write("**Post text (copy/paste):**\n\n")
-        f.write(body.strip() + "\n\n")
-        if image: f.write("**Attach:** `%s`\n\n" % image)
-        if note: f.write("**Note:** %s\n" % note)
+    day = int(os.path.basename(day_dir).split("_")[1])
+    POSTS.append((day, idx, title, body.strip(), image or "", note or ""))
 
 # ---------------------------------------------------------------------------
 if os.path.isdir(OUT): shutil.rmtree(OUT)
@@ -149,6 +164,17 @@ lineup(os.path.join(IMG, "enemies_sample.png"), "Some of what's waiting", "Each 
        [("Skeleton Soldier", spr_png("spr_skeleton_soldier_ff")), ("Vault Crawler", spr_png("spr_vault_crawler_ff")), ("Cinder Imp", spr_png("spr_cinder_imp_ff")),
         ("Magma Slug", spr_png("spr_magma_slug_ff2")), ("Glacial Lurker", spr_png("spr_glacial_lurker_ff")), ("Snowbound Wraith", spr_png("spr_snowbound_wraith_ff"))], cell_h=240, cols=6)
 
+spotlight(os.path.join(IMG, "spot_vaultling.png"), "vaultling", "The Vaultling", "Warden's Seal",
+          "Once per fight, the first enemy ability that would hit you breaks against the seal. Negated. Its parent is the Vault Sentinel.")
+spotlight(os.path.join(IMG, "spot_crypt_bat.png"), "crypt_bat", "The Crypt Bat", "Echo Shriek",
+          "The first time you drop below 40% health in a fight, it shrieks - and every enemy on the field is left Exposed.")
+spotlight(os.path.join(IMG, "spot_lantern_wyrm.png"), "lantern_wyrm", "The Lantern Wyrm", "Borrowed Light",
+          "The first time you fall below half health, its lantern gives back 15% of your max HP.")
+spotlight(os.path.join(IMG, "spot_golemite.png"), "golemite", "The Golemite", "Stoneshadow",
+          "The first blow that would drop you below half health is halved by its stone shadow.")
+spotlight(os.path.join(IMG, "spot_hoarfrost_drake.png"), "hoarfrost_drake", "The Hoarfrost Drake", "Long Winter",
+          "An elite or boss's first action freezes in its throat - delayed a whole turn.")
+
 # ---- posts -------------------------------------------------------------------
 D = lambda n: os.path.join(OUT, "day_%02d" % n)
 I = lambda f: "images/" + f
@@ -178,7 +204,7 @@ write(D(1), 3, "First-day thank you + ask",
 
 If you run into anything weird, tell us here or on the Steam forum - we're reading everything and patching fast.
 
-If you're enjoying it, a Steam review helps a small team more than you'd think.""", None)
+If you're enjoying it, a Steam review helps a small team more than you'd think.""", I("pets_lineup_babies.png"))
 
 # DAY 2 - pets intro
 write(D(2), 1, "Pets: the idea",
@@ -212,13 +238,13 @@ write(D(3), 2, "Signature move spotlight: Vaultling",
 
 Warden's Seal - once per fight, the first enemy ability that would hit you breaks against the seal. Negated. Gone.
 
-Its parent is the Vault Sentinel.""", None, "Attach a short clip of the seal going off if you have one.")
+Its parent is the Vault Sentinel.""", I("spot_vaultling.png"), "A short clip of the seal going off beats the card if you have one.")
 write(D(3), 3, "Signature move spotlight: Crypt Bat",
 """Signature move spotlight: the Crypt Bat.
 
 Echo Shriek - the first time you drop below 40% health in a fight, it shrieks and EVERY enemy on the field is left Exposed.
 
-That's the moment you hit them with everything.""", None)
+That's the moment you hit them with everything.""", I("spot_crypt_bat.png"))
 
 # DAY 4 - garden, feeding, bond
 write(D(4), 1, "Bairc's garden",
@@ -226,7 +252,7 @@ write(D(4), 1, "Bairc's garden",
 
 Walk the grounds, feed them, toss a crumb in the pond, stack a stone on the cairn. Creatures you donate stay there for good.
 
-(It's getting a big customization update after launch.)""", None, "Attach a garden screenshot/clip.")
+(It's getting a big customization update after launch.)""", I("pets_lineup_adults.png"), "A garden screenshot/clip beats the lineup if you have one.")
 write(D(4), 2, "Feeding + favored treats",
 """Feeding is simple: basic feed grows them, good food grows them faster, treats build the bond.
 
@@ -236,7 +262,7 @@ write(D(4), 3, "Bond",
 
 A creature that trusts you fights harder for you. Bond unlocks its deeper abilities and, at the top, its Awakened form.
 
-It's not a grind. It's feeding the thing that saved your life on floor 3.""", None)
+It's not a grind. It's feeding the thing that saved your life on floor 3.""", I("stages_luna_moth.png"))
 
 # DAY 5 - classes
 write(D(5), 1, "Three classes",
@@ -258,7 +284,7 @@ write(D(5), 3, "Shadowstrider",
 
 Bear traps, snares, triplines. Blink out of a hit. Then Snipe whatever's left standing in the wreckage.
 
-Rooted enemies can't reach you. Ranged ones can. Plan for both.""", None)
+Rooted enemies can't reach you. Ranged ones can. Plan for both.""", I("abilities_sample.png"))
 
 # DAY 6 - combat
 write(D(6), 1, "Action points",
@@ -266,7 +292,7 @@ write(D(6), 1, "Action points",
 
 Spend, then end your turn. Enemies act. Repeat.
 
-Simple rules, a lot of room inside them.""", None, "Attach a combat clip.")
+Simple rules, a lot of room inside them.""", I("enemies_sample.png"), "A combat clip beats the lineup if you have one.")
 write(D(6), 2, "Intents",
 """Enemies tell you what they're about to do.
 
@@ -278,7 +304,7 @@ write(D(6), 3, "Detonations",
 
 Put a burn, a bleed, a chill on something - then hit it with a detonator like Snipe or Arcane Burst and the status goes off.
 
-Rift detonates every enemy it touches. That's the cascade turn.""", None)
+Rift detonates every enemy it touches. That's the cascade turn.""", I("abilities_sample.png"))
 
 # DAY 7 - dungeons
 write(D(7), 1, "Three dungeons",
@@ -298,7 +324,7 @@ write(D(7), 3, "Awakening tiers",
 
 Higher tiers: tougher enemies, bigger packs, bosses that enrage - and better, rarer loot.
 
-Start at A0. Work up. Post-game there's an endless Descent for the people who clear all of it.""", None)
+Start at A0. Work up. Post-game there's an endless Descent for the people who clear all of it.""", I("bosses.png"))
 
 # DAY 8 - camp
 write(D(8), 1, "The camp",
@@ -310,11 +336,11 @@ Every one of them remembers what you've done for them.""", I("npcs_camp.png"))
 write(D(8), 2, "Bonds with the camp",
 """Help the camp and the camp helps back.
 
-Gifts and favors deepen your bond with each person. Rank up their stations and they open new services - better stock, cheaper training, new crafts.""", None)
+Gifts and favors deepen your bond with each person. Rank up their stations and they open new services - better stock, cheaper training, new crafts.""", I("npcs_camp.png"))
 write(D(8), 3, "The tavern board",
 """The tavern board is where the townsfolk ask for things.
 
-Hunts, errands, favors. Pick up a posting before a run and there's a little extra waiting when you get back.""", None, "Attach a board screenshot.")
+Hunts, errands, favors. Pick up a posting before a run and there's a little extra waiting when you get back.""", I("npcs_camp.png"), "A board screenshot beats the NPC card if you have one.")
 
 # DAY 9 - crafting
 write(D(9), 1, "Pattern Book",
@@ -322,15 +348,15 @@ write(D(9), 1, "Pattern Book",
 
 Smelt gear at Dorn's and you learn its pattern. Study enough patterns and you can craft that affix yourself - uncommon, then rare, then epic.
 
-The Pattern Book keeps track.""", None, "Attach a Pattern Book screenshot.")
+The Pattern Book keeps track.""", I("abilities_sample.png"), "A Pattern Book screenshot beats this if you have one.")
 write(D(9), 2, "Runes",
 """Maren sockets runes.
 
-Gear runes add stats. Aspect runes change how you fight - more crit, more dodge, fire on every spell. Three tiers, and the top tier can only be crafted.""", None)
+Gear runes add stats. Aspect runes change how you fight - more crit, more dodge, fire on every spell. Three tiers, and the top tier can only be crafted.""", I("npcs_camp.png"))
 write(D(9), 3, "Temper + reforge",
 """Don't like a roll? Dorn rerolls it.
 
-Reforge reworks an item's affixes for an ingot. Tempering raises its quality step by step. Your favorite sword can stay your favorite sword.""", None)
+Reforge reworks an item's affixes for an ingot. Tempering raises its quality step by step. Your favorite sword can stay your favorite sword.""", I("classes.png"))
 
 # DAY 10 - odd encounters
 write(D(10), 1, "The Ashen Duelist",
@@ -340,13 +366,13 @@ The Ashen Duelist wants a fair fight. Beat him and he comes back stronger next t
 write(D(10), 2, "Merchant's Ghost",
 """Sometimes a ghost sets up shop between rooms.
 
-He sells things nobody else has. He does not haggle. He has been dead a while and is in no hurry.""", None)
+He sells things nobody else has. He does not haggle. He has been dead a while and is in no hurry.""", I("duelist_and_ghost.png"))
 write(D(10), 3, "Banshee in a Bottle",
 """Every dungeon's final boss guards a Banshee in a Bottle.
 
 Carry it home, let Maren release it, and the spirit leaves a song behind - a new track for your camp or dungeon music.
 
-There are more songs than you think.""", None)
+There are more songs than you think.""", I("duelist_and_ghost.png"))
 
 # DAY 11 - corruption, capstones, awakened
 write(D(11), 1, "Corruption",
@@ -354,7 +380,7 @@ write(D(11), 1, "Corruption",
 
 It pushes at them - and at you, while it's carried. Each run it gets worse. Cure it at Bairc's, or let it run its course and see what it becomes.
 
-Your call. It's always your call.""", None)
+Your call. It's always your call.""", I("spot_golemite.png"))
 write(D(11), 2, "Capstones",
 """Raise a creature to adulthood and it chooses a capstone - a permanent gift.
 
@@ -372,21 +398,21 @@ f"""Ironwake is on Android too - the full game, not a cut-down one.
 
 Built for touch from the start: tap to target, an on-screen d-pad, pinch to zoom the UI.
 
-{PLAY}""", None, "Attach a phone screenshot.")
+{PLAY}""", I("pets_lineup_adults.png"), "A phone screenshot beats this if you have one.")
 write(D(12), 2, "Same save, any way you play",
 """Keyboard, mouse, controller or touch - every screen works with all of them.
 
-Play how you like. We tested it on a phone with fat thumbs.""", None)
+Play how you like. We tested it on a phone with fat thumbs.""", I("dungeons.png"))
 
 # DAY 13 - challenge + achievements
 write(D(13), 1, "Iron Vow",
 """For the people who want it to hurt:
 
-Iron Vow - one life. Ironman saves - quitting is a checkpoint, not an escape. And the Descent: an endless fall past the last Awakening tier.""", None)
+Iron Vow - one life. Ironman saves - quitting is a checkpoint, not an escape. And the Descent: an endless fall past the last Awakening tier.""", I("bosses.png"))
 write(D(13), 2, "Achievements",
 """67 Steam achievements, and none of them are "press start".
 
-Hatch every scion. Win a duel at every tier. Free every banshee. See what the dungeon does when you stop being afraid of it.""", None)
+Hatch every scion. Win a duel at every tier. Free every banshee. See what the dungeon does when you stop being afraid of it.""", I("scions_lineup.png"))
 
 # DAY 14 - community
 write(D(14), 1, "Show us your creatures",
@@ -400,57 +426,85 @@ write(D(14), 2, "Patch cadence",
 
 Small fixes ship as we find them. Bigger things - the garden overhaul, more creatures, new songs - come in named updates with notes.
 
-Tell us what you want first.""", None)
+Tell us what you want first.""", I("spot_hoarfrost_drake.png"))
 write(D(14), 3, "Thanks",
 f"""One week since launch.
 
 Thank you. Every review, every bug report, every screenshot of a Bonehound wearing a name it didn't ask for - it all helps.
 
-{STORE}""", None)
+{STORE}""", I("spot_lantern_wyrm.png"))
 
-# ---- README ---------------------------------------------------------------
-readme = f"""# Ironwake - social media posts (X / Twitter)
+# ---- OUTPUT: one folder per day: posts.txt + the images right next to it (post_N.png) ----
+import csv
+days = sorted(set(p[0] for p in POSTS))
+master = []
+for d in days:
+    dd = os.path.join(OUT, "day_%02d" % d); os.makedirs(dd, exist_ok=True)
+    lines = ["DAY %d" % d, "=" * 40, ""]
+    for (day, idx, title, body, image, note) in [p for p in POSTS if p[0] == d]:
+        lines.append("--- Post %d: %s ---" % (idx, title))
+        lines.append(body)
+        if image:
+            src = os.path.join(OUT, image.replace("/", os.sep))
+            dst = os.path.join(dd, "post_%d.png" % idx)
+            shutil.copyfile(src, dst)
+            lines.append("[image: post_%d.png  (in this folder)]" % idx)
+        if note: lines.append("[note: %s]" % note)
+        lines.append("")
+    txt = "\n".join(lines)
+    open(os.path.join(dd, "posts.txt"), "w", encoding="utf-8").write(txt + "\n")
+    master.append(txt)
+open(os.path.join(OUT, "ALL_POSTS.txt"), "w", encoding="utf-8").write("\n\n".join(master) + "\n")
+with open(os.path.join(OUT, "schedule.csv"), "w", encoding="utf-8", newline="") as f:
+    w = csv.writer(f)
+    w.writerow(["day", "post", "title", "text", "image_file", "note"])
+    for (day, idx, title, body, image, note) in POSTS:
+        w.writerow([day, idx, title, body, os.path.join(OUT, "day_%02d" % day, "post_%d.png" % idx) if image else "", note])
 
-Two to three posts a day for the first two weeks. Each day has its own folder; each post is a
-`.md` with the text to copy-paste and the image to attach (in `images/`). All images were
-composed from the game's own sprites so they match what players actually see.
+readme = f"""IRONWAKE - SOCIAL MEDIA POSTS (X / Twitter), 2 weeks, 2-3 posts a day
+=====================================================================
 
-## Rules of thumb
-- Plain language. Short sentences. One idea per post.
-- Lead with the picture. The text should still make sense without it.
-- Link to the store on launch-type posts only ({STORE}). Don't link every post.
-- Tags on the first post of the day only: {TAGS}
-- Reply to your own post with extra detail instead of writing a wall.
-- When someone answers, answer back - that's what the algorithm and the players both want.
+FILES
+  day_01/ ... day_14/   one folder per day: posts.txt (the text, in order) + post_1.png,
+                        post_2.png ... = the image for that post, right there. Open the
+                        folder, copy the text, drag the picture. Done.
+  ALL_POSTS.txt         every day in one file
+  schedule.csv          same posts as a spreadsheet (day, post, title, text, image path, note)
+                        - import into Buffer / Hootsuite / X scheduler
+  images/               the source PNGs (built from the game's own sprites)
 
-## Schedule
-| Day | Theme | Posts |
-|---|---|---|
-| 1 | Launch | announcement, what it is, thank-you + ask for reviews |
-| 2 | Creatures: the idea | eggs, three stages, found-alive |
-| 3 | Scions + signature moves | lineup, Vaultling, Crypt Bat |
-| 4 | Bairc's garden | the garden, feeding/treats, bond |
-| 5 | Classes | three classes, Arcanist, Shadowstrider |
-| 6 | Combat | action points, intents, detonations |
-| 7 | Dungeons | three dungeons, bosses, Awakening tiers |
-| 8 | The camp | NPCs, camp bonds, tavern board |
-| 9 | Crafting | Pattern Book, runes, temper/reforge |
-| 10 | Odd encounters | Ashen Duelist, Merchant's Ghost, Banshee in a Bottle |
-| 11 | Corruption / capstones / Awakened | |
-| 12 | Android | touch, input parity |
-| 13 | Challenge | Iron Vow / Descent, achievements |
-| 14 | Community | show us your creatures, patch cadence, thanks |
+RULES OF THUMB
+  - Plain language. Short sentences. One idea per post.
+  - Lead with the picture; the text should still make sense without it.
+  - Store link on launch-type posts only: {STORE}
+  - Tags on the first post of the day only: {TAGS}
+  - Reply to your own post with extra detail instead of writing a wall.
+  - When someone answers, answer back.
 
-## Images (images/)
-{chr(10).join('- ' + f for f in sorted(os.listdir(IMG)))}
+SCHEDULE
+  Day 1   Launch: announcement, what it is, thank-you + ask for reviews
+  Day 2   Creatures: eggs, three stages, found-alive
+  Day 3   Scions + signature moves: lineup, Vaultling, Crypt Bat
+  Day 4   Bairc's garden: the garden, feeding/treats, bond
+  Day 5   Classes: three classes, Arcanist, Shadowstrider
+  Day 6   Combat: action points, intents, detonations
+  Day 7   Dungeons: three dungeons, bosses, Awakening tiers
+  Day 8   The camp: NPCs, camp bonds, tavern board
+  Day 9   Crafting: Pattern Book, runes, temper/reforge
+  Day 10  Odd encounters: Ashen Duelist, Merchant's Ghost, Banshee in a Bottle
+  Day 11  Corruption / capstones / Awakened
+  Day 12  Android: touch, input parity
+  Day 13  Challenge: Iron Vow / Descent, achievements
+  Day 14  Community: show us your creatures, patch cadence, thanks
 
-Posts marked **Attach: (clip/screenshot)** need a capture from the game - those are the ones
-where real footage beats a sprite sheet (combat, garden, Pattern Book, phone).
+IMAGES
+{chr(10).join('  ' + f for f in sorted(os.listdir(IMG)))}
 
-Regenerate everything with `python tools/make_social_posts.py` (it overwrites this folder).
+Posts marked [note: attach a clip/screenshot] want real footage - combat, garden, Pattern Book,
+phone - where a sprite sheet can't do the job.
+
+Regenerate with:  python tools/make_social_posts.py   (overwrites this folder)
 """
-open(os.path.join(OUT, "README.md"), "w", encoding="utf-8").write(readme)
+open(os.path.join(OUT, "README.txt"), "w", encoding="utf-8").write(readme)
 print("done:", OUT)
-for d in sorted(os.listdir(OUT)):
-    p = os.path.join(OUT, d)
-    if os.path.isdir(p): print(" ", d, len(os.listdir(p)), "files")
+for f in sorted(os.listdir(OUT)): print(" ", f)
