@@ -148,9 +148,11 @@ lineup(os.path.join(IMG, "npcs_camp.png"), "The camp at Ironwake", "Seven people
 lineup(os.path.join(IMG, "bosses.png"), "Three dungeons, three final bosses", "The Ashen Vault, the Scorched Depths, the Tundra Tomb - and what waits at the bottom of each.",
        [("Malgrath the Warden", spr_png("spr_malgrath_warden_ff")), ("Forge Tyrant", spr_png("spr_forge_tyrant")), ("The Eternal Frost", spr_png("spr_eternal_frost")),
         ("Bone Sovereign", spr_png("spr_bone_sovereign_hd")), ("Molten Revenant", spr_png("spr_molten_revenant")), ("Glacial Warden", spr_png("spr_glacial_warden"))], cell_h=300, cols=3)
-lineup(os.path.join(IMG, "dungeons.png"), "Where you'll be going", "Ashen Vault - Scorched Depths - Tundra Tomb. Five Awakening tiers each, then the endless Descent.",
+# Launch post = the Steam key art, untouched (no caption bar on a hero image).
+shutil.copyfile(os.path.join(ROOT, "tools", "steam", "art", "key_art_master.png"), os.path.join(IMG, "key_art.png"))
+lineup(os.path.join(IMG, "dungeons.png"), "Three dungeons", "Ashen Vault - Scorched Depths - Tundra Tomb. Five Awakening tiers each, then the endless Descent.",
        [("Ashen Vault", spr_png("spr_dungeon_ashen_vault")), ("Scorched Depths", spr_png("spr_dungeon_scorched_depths")), ("Tundra Tomb", spr_png("spr_dungeon_tundra_tomb"))],
-       cell_h=360, cols=3, crisp_px=False)
+       cell_h=300, cols=3, crisp_px=False)
 lineup(os.path.join(IMG, "classes.png"), "Three classes", "Arcanist - Bloodwarden - Shadowstrider. Pick one, build it your way.",
        [("Arcanist", spr_png("spr_portrait_arc_m1")), ("Bloodwarden", spr_png("spr_portrait_blood_m2")), ("Shadowstrider", spr_png("spr_portrait_shadow_m1"))],
        cell_h=420, cols=3, crisp_px=False)
@@ -189,7 +191,7 @@ A dark-fantasy roguelite where you dive into three dungeons, fight turn-based ba
 
 {STORE}
 
-{TAGS}""", I("dungeons.png"), "Pin this one. Add the Play Store link in a reply once the listing is live.")
+{TAGS}""", I("key_art.png"), "Pin this one. Add the Play Store link in a reply once the listing is live.")
 write(D(1), 2, "What the game is, in one breath",
 f"""What is Ironwake?
 

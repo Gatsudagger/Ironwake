@@ -42,6 +42,7 @@ IMAGES
   dungeons.png
   eggs_lineup.png
   enemies_sample.png
+  key_art.png
   npcs_camp.png
   pets_lineup_adults.png
   pets_lineup_babies.png
