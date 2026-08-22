@@ -136,6 +136,31 @@ NPCS = [
 for cfg in NPCS:
     make_npc(cfg)
 
+# --- combat basics (companion thumb to the combat Short) ----------------------
+canvas = backdrop("spr_combatbg_ashen_2", is_sprite=True, blur=6)
+arc = scale_px(frame0("spr_arcanist_f"), 560)
+skel = scale_px(frame0("spr_skeleton_soldier"), 560)
+glow(canvas, 320, 1130, 300, 320, (150, 90, 255), alpha=160)     # caster: arcane violet
+glow(canvas, 790, 1130, 300, 320, (170, 210, 160), alpha=130)    # undead: bone pale
+canvas.alpha_composite(arc, (320 - arc.width // 2, 1130 - arc.height // 2))
+canvas.alpha_composite(skel, (790 - skel.width // 2, 1130 - skel.height // 2))
+row = ["spr_ability_soulfire", "spr_ability_void_drain", "spr_ability_arcane_burst", "spr_ability_blink"]
+glow(canvas, 540, 1560, 420, 150, (255, 150, 60), alpha=120)
+xs = 190
+for name in row:
+    try:
+        ic = scale_px(frame0(name), 190)
+        canvas.alpha_composite(ic, (xs - ic.width // 2, 1560 - ic.height // 2))
+    except SystemExit:
+        pass
+    xs += 235
+stroked(canvas, (W // 2, 90), "COMBAT", ImageFont.truetype(cinzel, 200), GOLD_BRIGHT, 12)
+stroked(canvas, (W // 2, 330), "BASICS", ImageFont.truetype(cinzel, 120), GOLD, 10)
+stroked(canvas, (W // 2, 1770), "PREPARE  •  READ  •  STRIKE", ImageFont.truetype(gara, 64), GOLD, 6)
+out = os.path.join(OUTDIR, "thumb_combat.png")
+canvas.convert("RGB").save(out, "PNG")
+print("saved", out)
+
 # --- dungeon / abilities ------------------------------------------------------
 canvas = backdrop("spr_combatbg_ashen_1", is_sprite=True, blur=6)
 boss = frame0("spr_bone_sovereign_hd")

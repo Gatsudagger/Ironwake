@@ -61,6 +61,7 @@ element cluster. Pick colors from the NPC's palette (table below).
 | `thumb_vex.png` | Vex — The Trainer | `Trainer_2__Sullen_` | `spr_npc_vex_idle` | ability icons: arcane burst, assassinate, blazing palm | blood red | LEARN • TRAIN • MASTER |
 | `thumb_vael.png` | Vael — The Aesthete | `Aesthete_2__Gothic_` | `spr_npc_vael_idle` | `spr_event_splash_whispering_mirror` | violet | SKINS • PORTRAITS • FLAIR |
 | `thumb_dungeon.png` | Dungeon / abilities | — (`spr_combatbg_ashen_1` bg) | `spr_bone_sovereign_hd` (LANCZOS, it's painted-grade) | ability icon row of 4 | violet + ember | FIGHT • CAST • DESCEND |
+| `thumb_combat.png` | Combat basics (Short) | — (`spr_combatbg_ashen_2` bg) | `spr_arcanist_f` vs `spr_skeleton_soldier` face-off | the Short's loadout: soulfire, void drain, arcane burst, blink | arcane violet vs bone pale | PREPARE • READ • STRIKE |
 
 Carousel portrait order in code (obj_hub_controller Draw_64, `_port_sprites`):
 Blacksmith=Dorn, Alchemist=Sable, Runesmith=Maren, Trainer=Vex, Merchant=Petra,
