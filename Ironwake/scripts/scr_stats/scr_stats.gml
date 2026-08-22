@@ -9641,16 +9641,11 @@ function pet_sprite(pet, dir = "s") {
         }
     }
     if (pet.is_egg) {
-        // Prefer the typed egg art over the shared egg; borrow a close typed egg for any
-        // expansion type whose own art hasn't been imported yet (never spoil the species).
+        // Typed egg art (every type has its own); shared egg as a last resort - never the
+        // hatchling species sprite, which would spoil the surprise.
         if (variable_struct_exists(pet, "egg_type") && pet.egg_type != "") {
             var _te = asset_get_index("spr_pet_egg_" + pet.egg_type);
             if (_te >= 0) return _te;
-            var _fb = pet_egg_art_fallback(pet.egg_type);
-            if (_fb != "") {
-                var _fbi = asset_get_index("spr_pet_egg_" + _fb);
-                if (_fbi >= 0) return _fbi;
-            }
         }
         var _eg = asset_get_index("spr_pet_egg");
         if (_eg >= 0) return _eg;
@@ -11275,11 +11270,6 @@ function hatch_crack_sprite(pet) {
     if (is_struct(pet) && variable_struct_exists(pet, "egg_type") && pet.egg_type != "") {
         var _h = asset_get_index("spr_pet_egg_" + pet.egg_type + "_hatch");
         if (_h >= 0) return _h;
-        var _fb = pet_egg_art_fallback(pet.egg_type);   // borrow a close type's crack anim
-        if (_fb != "") {
-            var _fbh = asset_get_index("spr_pet_egg_" + _fb + "_hatch");
-            if (_fbh >= 0) return _fbh;
-        }
     }
     return pet_sprite(pet, "s");
 }
@@ -11465,7 +11455,8 @@ function pet_grant_starter() {
 
 // --- Egg types (Pets §3): RNG egg design, each carrying a small permanent benefit that
 // the HATCHLING keeps while it is your active companion. Egg type is independent of the
-// creature inside (a surprise). 4 types for now (expandable). ----------------------------
+// creature inside (a surprise). 10 types, each with its own spr_pet_egg_<id> + _hatch art
+// (re-authored 08-21: plain eggs, procedural per-egg hatch strips). --------------------------
 function pet_egg_type_catalog() {
     return [
         { id:"gilded",  name:"Gilded Egg",   effect:"gold",   val:0.05, desc:"+5% gold while its hatchling is active." },
@@ -11484,20 +11475,6 @@ function pet_egg_type_catalog() {
         { id:"warding", name:"Warding Egg",  effect:"ward",   val:0.06, desc:"-6% damage taken while its hatchling is active." },
         { id:"keen",    name:"Keen Egg",     effect:"crit",   val:5,    desc:"+5% crit chance while its hatchling is active." },
     ];
-}
-// Art fallback: until a new egg type's own sprite is imported, borrow a thematically
-// close existing egg sprite so it still renders (never falls through to the hatchling
-// species sprite, which would spoil the surprise). Maps id -> existing typed egg id.
-function pet_egg_art_fallback(egg_type) {
-    switch (egg_type) {
-        case "vital":   return "tender";    // soft, nurturing
-        case "ley":     return "gilded";    // arcane sheen
-        case "scholar": return "fortune";   // ornate, studious
-        case "dust":    return "gilded";    // mineral glint
-        case "warding": return "savage";    // bony, armored
-        case "keen":    return "savage";    // sharp, aggressive
-    }
-    return "";
 }
 function pet_egg_type_get(id) {
     var _c = pet_egg_type_catalog();

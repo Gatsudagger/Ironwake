@@ -432,28 +432,66 @@ if (window_get_width() != geom_last_w || window_get_height() != geom_last_h) {
 }
 
 // =============================================================================
-// TEST LEVER (08-01, M) - F12 in the HUB grants one IDENTIFIED egg of every
-// 07-31 expansion species (8 new + the 2 signature backlog) so a fresh save
-// can test hatching, the garden and bond flow without grinding drops. Species
-// whose art hasn't been imported yet hatch INVISIBLE until their sprites land -
-// the egg/hatch/roster flow itself still works. Does NOT touch the boss-egg
-// once-per-save ledger, so signature drops remain testable at bosses.
+// TEST LEVER (08-21, M) - F12 in the HUB grants one IDENTIFIED egg of EVERY EGG
+// TYPE (the 10 in pet_egg_type_catalog, catalog order) so the re-authored egg
+// art + each type's bespoke hatch animation can be viewed on one save. Species
+// inside are spread over shipped expansion creatures so the hatchlings differ.
+// Replaces the 08-01 expansion-species lever. Does NOT touch the boss-egg
+// once-per-save ledger. ADDITIVE ONLY - never clears the roster.
 // COMPILED OUT OF RELEASE BUILDS: gated on GM_build_type == "run" (IDE/F5 only).
 // =============================================================================
 if (GM_build_type == "run" && room == rm_hub && keyboard_check_pressed(vk_f12)) {
     var _dev_species = ["duskraven", "pale_widow", "shellback", "thorn_boar",
                         "glimmer_slime", "sporeling", "voidkit", "ironshell_beetle",
-                        "crypt_bat", "hoarfrost_drake"];
-    for (var _dvi = 0; _dvi < array_length(_dev_species); _dvi++) {
-        var _dp = pet_make(_dev_species[_dvi], "egg_event", -1, PET_STAGE_BABY, true);
-        _dp.identified = true;   // skip Bairc's identify fee - straight to hatchable
-        if (_dev_species[_dvi] == "crypt_bat" || _dev_species[_dvi] == "hoarfrost_drake") {
-            _dp.signature = true;   // boss-kin flag so their UI treatment shows
-        }
+                        "lockjaw_turtle", "rimefox"];
+    var _dev_eggs = pet_egg_type_catalog();
+    for (var _dvi = 0; _dvi < array_length(_dev_eggs); _dvi++) {
+        var _dp = pet_make(_dev_species[_dvi mod array_length(_dev_species)], "egg_event", -1, PET_STAGE_BABY, true);
+        _dp.egg_type   = _dev_eggs[_dvi].id;   // one of each egg design, catalog order
+        _dp.identified = true;                 // skip Bairc's identify fee - straight to hatchable
         pet_add(_dp);
     }
     if (instance_exists(obj_hub_controller)) {
-        instance_find(obj_hub_controller, 0).notification = "DEV: 10 expansion eggs delivered to Bairc.";
+        instance_find(obj_hub_controller, 0).notification = "DEV: one egg of each of the 10 egg types delivered to Bairc.";
+    }
+    audio_play_sound(snd_confirm_major, 1, false);
+}
+
+// =============================================================================
+// TEST LEVER (08-21, M) - F3 in the HUB grants the PROMO SHOWCASE roster for
+// the pets video: two full growth lines (Wyrmling + Voidkit - identified egg,
+// young adult, adult with capstone, Awakened with capstone + splash so no
+// PENDING badges dirty the shot), a young-adult Hoarfrost Drake scion (egg_boss
+// source -> signature kin-of card + Long Winter move), and a corrupted
+// young-adult Pale Widow (pushing state -> violet flicker FX + CORRUPTING tag).
+// ADDITIVE ONLY - never clears the roster, so a real save stays safe; record on
+// a fresh slot for a clean lineup.
+// COMPILED OUT OF RELEASE BUILDS: gated on GM_build_type == "run" (IDE/F5 only).
+// =============================================================================
+if (GM_build_type == "run" && room == rm_hub && keyboard_check_pressed(vk_f3)) {
+    var _show_lines = ["wyrmling", "voidkit"];
+    for (var _sli = 0; _sli < array_length(_show_lines); _sli++) {
+        var _ssp = _show_lines[_sli];
+        var _se = pet_make(_ssp, "egg_event", -1, PET_STAGE_BABY, true);
+        _se.identified = true;   // skip Bairc's identify fee - straight to hatchable
+        pet_add(_se);
+        pet_add(pet_make(_ssp, "found", -1, PET_STAGE_YOUNGADULT, false));
+        var _sa = pet_make(_ssp, "found", -1, PET_STAGE_ADULT, false);
+        pet_assign_capstone(_sa);
+        pet_add(_sa);
+        var _sw = pet_make(_ssp, "found", -1, PET_STAGE_AWAKENED, false);
+        pet_assign_capstone(_sw);
+        pet_assign_splash(_sw);
+        pet_add(_sw);
+    }
+    pet_add(pet_make("hoarfrost_drake", "egg_boss", -1, PET_STAGE_YOUNGADULT, false));
+    var _scor = pet_make("pale_widow", "found", -1, PET_STAGE_YOUNGADULT, false);
+    _scor.corrupted        = true;
+    _scor.corruption_state = "pushing";
+    _scor.corruption_runs  = 1;   // detail card reads "Corrupting 1/3"
+    pet_add(_scor);
+    if (instance_exists(obj_hub_controller)) {
+        instance_find(obj_hub_controller, 0).notification = "DEV: promo showcase roster (10 pets) delivered to Bairc.";
     }
     audio_play_sound(snd_confirm_major, 1, false);
 }

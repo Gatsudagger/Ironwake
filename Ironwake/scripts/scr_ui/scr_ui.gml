@@ -2223,6 +2223,20 @@ function hatch_cutscene_draw() {
             var _dy = _base_y + _jy + (sprite_get_yoffset(_spr) - _vcy) * _sc;
             draw_sprite_ext(_spr, _fr, _dx, _dy, _sc, _sc, 0, c_white, 1);
         }
+        // LIGHT WASH (M 08-21): from crack frame 5 a warm-white flood ramps over the
+        // egg and drowns the shell-burst frames; the reveal's white flash then takes
+        // over at full white, so the hatchling emerges out of the light. Drawn under
+        // the caption so "It's hatching!" stays readable.
+        if (_phase == 1 && _spr >= 0) {
+            var _nf   = max(1, sprite_get_number(_spr) - 1);
+            var _wash = clamp((_fr - 4) / max(1, _nf - 4), 0, 1);   // f4 -> 0, last frame -> 1
+            if (_wash > 0) {
+                draw_set_alpha(0.95 * _wash);
+                draw_set_color(make_color_rgb(255, 246, 222));
+                draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
+                draw_set_alpha(1.0);
+            }
+        }
         draw_set_font(fnt_ui_title);
         draw_set_color(make_color_rgb(210, 200, 225));
         draw_text(_cx, GUI_CY - 300, (_phase == 0) ? "The shell trembles..." : "It's hatching!");
