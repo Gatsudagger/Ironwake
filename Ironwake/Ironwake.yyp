@@ -1368,6 +1368,7 @@
     {"id":{"name":"spr_vfx_heal2","path":"sprites/spr_vfx_heal2/spr_vfx_heal2.yy",},},
     {"id":{"name":"spr_vfx_impact_grey","path":"sprites/spr_vfx_impact_grey/spr_vfx_impact_grey.yy",},},
     {"id":{"name":"spr_vfx_impact","path":"sprites/spr_vfx_impact/spr_vfx_impact.yy",},},
+    {"id":{"name":"spr_vfx_ironskin","path":"sprites/spr_vfx_ironskin/spr_vfx_ironskin.yy",},},
     {"id":{"name":"spr_vfx_pierce","path":"sprites/spr_vfx_pierce/spr_vfx_pierce.yy",},},
     {"id":{"name":"spr_vfx_poison_grey","path":"sprites/spr_vfx_poison_grey/spr_vfx_poison_grey.yy",},},
     {"id":{"name":"spr_vfx_poison","path":"sprites/spr_vfx_poison/spr_vfx_poison.yy",},},

@@ -9628,7 +9628,15 @@ function ui_draw_settings_overlay() {
     // keyboard handler reads next frame. Touch only; the keyboard/pad path is
     // untouched. Row Y's reuse the exact locals the rows above were drawn at.
     // -----------------------------------------------------------------------
-    if (mouse_check_button_pressed(mb_left)) {
+    // First-frame guard (M 08-26 Steam bug): the press that OPENED the panel is
+    // still down on the panel's first drawn frame - the pause menu's "Settings"
+    // row sits right on the Fullscreen band, so the opening click toggled
+    // fullscreen through the overlay. Swallow any press on the first draw;
+    // audio_settings_handle_input re-arms the guard when the panel closes.
+    if (!variable_global_exists("settings_click_armed")) global.settings_click_armed = false;
+    var _st_first_draw = !global.settings_click_armed;
+    global.settings_click_armed = true;
+    if (mouse_check_button_pressed(mb_left) && !_st_first_draw) {
         var _stmx   = device_mouse_x_to_gui(0);
         var _stmy   = device_mouse_y_to_gui(0);
         var _st_ys  = [ _row_y, _row_y + _row_h, _row_y + 2 * _row_h, _row_y + 3 * _row_h,
@@ -9639,7 +9647,15 @@ function ui_draw_settings_overlay() {
             if ((_sri == 8 || _sri == 9) && !_has_dpad) continue;
             var _sry = _st_ys[_sri];
             if (_stmx < _px + 30 || _stmx > _px + _pw - 30 || _stmy < _sry - 21 || _stmy > _sry + 45) continue;
-            global.settings_cursor = _sri;
+            // Click-to-HIGHLIGHT, click-again-to-ACT (M 08-26: "1 click to
+            // highlight, second click to select/confirm" - the title-menu
+            // idiom): a press on an unselected row only moves the cursor; the
+            // row's action fires on a second press on the already-selected row.
+            if (global.settings_cursor != _sri) {
+                global.settings_cursor = _sri;
+                nav_tick();
+                break;
+            }
             if (_sri <= 1) {
                 // Volume: tap on the track sets the level (delta via adjust reuses apply+save).
                 if (_stmx >= _bar_x && _stmx <= _bar_x + _bar_w) {
@@ -9673,7 +9689,7 @@ function ui_draw_settings_overlay() {
     draw_set_font(ui_font(fnt_ui_small));
     draw_set_color(make_color_rgb(150, 160, 185));
     if (input_device() == 2) {
-        draw_text(GUI_CX, _py + _ph - 42, "Tap a bar to set volume - tap a row to change it - Back to close");
+        draw_text(GUI_CX, _py + _ph - 42, "Tap a row to select it - tap it again to change it - Back to close");
     } else {
         ui_draw_key_legend(GUI_CX, _py + _ph - 42, "W/S: Select    A/D or <-/->: Adjust / Toggle / Enter    Esc/O: Close");
     }
@@ -14447,6 +14463,25 @@ function ui_confirm_button(_x0, _y0, _x1, _y1, _txt, _col, _mx, _my, _press, _ta
     draw_text((_x0 + _x1) / 2, (_y0 + _y1) / 2 + 1, _txt);
     draw_set_valign(fa_top);
     draw_set_halign(fa_left);
+    if (_hov && _press) input_inject(_tag);
+}
+
+// ui_arrow_button(x0,y0,x1,y1, dir, col, mx,my,press, tag) - scroll button with
+// a DRAWN triangle glyph instead of a text label (M 08-26: the Pattern Book's
+// UP/DOWN labels never sat cleanly in their boxes across font sizes - a glyph
+// can't crop or fall to a mismatched fallback font). dir: -1 = up, +1 = down.
+// Hover + inject idiom identical to ui_confirm_button.
+function ui_arrow_button(_x0, _y0, _x1, _y1, _dir, _col, _mx, _my, _press, _tag) {
+    var _hov = (_mx >= _x0 && _mx < _x1 && _my >= _y0 && _my < _y1);
+    draw_set_color(_hov ? make_color_rgb(40, 42, 36) : make_color_rgb(24, 26, 32));
+    draw_rectangle(_x0, _y0, _x1, _y1, false);
+    draw_set_color(_col);
+    draw_rectangle(_x0, _y0, _x1, _y1, true);
+    var _acx = (_x0 + _x1) / 2, _acy = (_y0 + _y1) / 2;
+    var _ahw = min(_x1 - _x0, _y1 - _y0) * 0.28;   // triangle half-width
+    draw_set_color(_hov ? c_white : _col);
+    if (_dir < 0) draw_triangle(_acx - _ahw, _acy + _ahw * 0.7, _acx + _ahw, _acy + _ahw * 0.7, _acx, _acy - _ahw * 0.8, false);
+    else          draw_triangle(_acx - _ahw, _acy - _ahw * 0.7, _acx + _ahw, _acy - _ahw * 0.7, _acx, _acy + _ahw * 0.8, false);
     if (_hov && _press) input_inject(_tag);
 }
 
@@ -20297,7 +20332,9 @@ function ui_draw_pattern_book(_gc) {
     draw_set_color(make_color_rgb(170, 160, 190));
     var _hdr1 = "Blueprints from SMELTING gear - 1 study unlocks Uncommon crafts, 3 unlock Rare, 6 unlock Epic. Rarer fodder teaches faster.";
     var _hdr2 = "Art page: " + string(array_length(global.pattern_book.art)) + " icon" + ((array_length(global.pattern_book.art) == 1) ? "" : "s") + " unlocked.";
-    if (string_width(_hdr1) <= (_x1 - _x0) - 60) {
+    // One-line gate is 1130, not panel-width: the centred line must also stay
+    // clear of the UP arrow button at x >= _x1-96 (2*(1404-825) - margin).
+    if (string_width(_hdr1) <= 1130) {
         draw_text(_pbcx, _y0 + 44, _hdr1);
         draw_text(_pbcx, _y0 + 70, _hdr2);
     } else {
@@ -20349,8 +20386,10 @@ function ui_draw_pattern_book(_gc) {
     ui_pb_scrollbar(_x1 - 32, _row_y0, _row_y0 + _vis * _pitch - 6, _n, _vis, _win0);
 
     // Touch scroll arrows + close (bare W/S and Esc are keyboard-only).
-    ui_confirm_button(_x1 - 130, _y0 + 10, _x1 - 50, _y0 + 46, "UP", make_color_rgb(150, 130, 100), _mx, _my, _mp, "pbbk:up");
-    ui_confirm_button(_x1 - 130, _y1 - 46, _x1 - 50, _y1 - 10, "DOWN", make_color_rgb(150, 130, 100), _mx, _my, _mp, "pbbk:dn");
+    // Triangle-glyph buttons (M 08-26: the UP/DOWN text labels were cropped
+    // poorly in their boxes) - a drawn glyph fits every font-size mode.
+    ui_arrow_button(_x1 - 96, _y0 + 10, _x1 - 48, _y0 + 46, -1, make_color_rgb(150, 130, 100), _mx, _my, _mp, "pbbk:up");
+    ui_arrow_button(_x1 - 96, _y1 - 46, _x1 - 48, _y1 - 10,  1, make_color_rgb(150, 130, 100), _mx, _my, _mp, "pbbk:dn");
     ui_confirm_button(_pbcx - 150, _y1 - 44, _pbcx + 150, _y1 - 4, "CLOSE  [Esc]", make_color_rgb(190, 120, 110), _mx, _my, _mp, "pbbk:close");
     draw_set_halign(fa_center);
     draw_set_font(ui_font(fnt_ui_small));

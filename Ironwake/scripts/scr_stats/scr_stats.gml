@@ -14073,6 +14073,9 @@ function audio_settings_handle_input() {
     // Esc / O always closes (Enter is reserved for the toggle/action rows above).
     if (input_cancel() || input_hotkey("O")) {
         global.settings_open = false;
+        // Re-arm the overlay's first-draw click guard (ui_draw_settings_overlay)
+        // so the next open swallows the click that opened it.
+        global.settings_click_armed = false;
         audio_play_sound(snd_ui_cancel, 1, false);
         audio_settings_save();
     }

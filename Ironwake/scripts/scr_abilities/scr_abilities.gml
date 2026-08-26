@@ -1841,7 +1841,10 @@ function __ability_attack_vfx_base(ab) {
         // Shadow variant round 2 (08-11): violet smoke burst from the purchased
         // full Gigapack (the round-1 pick duplicated the shipped claw).
         case "shadow": _set = [spr_vfx_shadow, spr_vfx_shadow2]; break;
-        case "poison": _set = [spr_vfx_poison, spr_vfx_poison2]; break;
+        // Poison keeps ONLY the classic bubbling cloud (M 08-26: the owned-pack
+        // variant's angular green shards read as a "blocky cyber effect", not
+        // poison - Poison Dart's name hashed onto it).
+        case "poison": _set = [spr_vfx_poison]; break;
     }
     return { spr: vfx_variant_pick(ab.name, _set), ticks: _ticks };
 }

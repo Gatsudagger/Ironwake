@@ -1650,7 +1650,17 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()
     // Q/E: cycle tabs. Petra (shop_open == 0) has BUY/SELL/TRADE; Dorn has BUY/SELL/REFORGE.
     // The reforge confirm/anim screen (reforge_stage > 0) is MODAL - tab cycling and
     // the [R] jump are locked out until it resolves (the roll may already be paid for).
-    var _rf_modal = variable_instance_exists(id, "reforge_stage") && reforge_stage > 0;
+    // M 08-26 (Steam bug): so are the Legendary Forge, the Pattern Book modals, and
+    // the Dorn checkout popup - this block runs BEFORE those modal blocks, so typing
+    // Q/E into a forge/craft NAME was also rotating the shop tabs underneath.
+    // text_entry_active() belts-and-suspenders the naming phases specifically.
+    var _rf_modal = (variable_instance_exists(id, "reforge_stage") && reforge_stage > 0)
+        || (variable_instance_exists(id, "forge_open")    && forge_open)
+        || (variable_instance_exists(id, "pb_craft_open") && pb_craft_open)
+        || (variable_instance_exists(id, "pb_smelt_open") && pb_smelt_open)
+        || (variable_instance_exists(id, "pb_book_open")  && pb_book_open)
+        || (variable_instance_exists(id, "dorn_ck_open")  && dorn_ck_open)
+        || text_entry_active();
     var _shop_ntabs = shop_tab_count(shop_open);
     if ((input_tab_next() || touch_dpad_tab_next()) && !_rf_modal) {
         shop_tab = (shop_tab + 1) mod _shop_ntabs;
@@ -1846,7 +1856,12 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()
         if (forge_open) {
             if (forge_phase == 2) {
                 if (string_length(keyboard_string) > 20) keyboard_string = string_copy(keyboard_string, 1, 20);
-                if (input_cancel() || input_back()) {
+                // Keyboard is LOCKED to the name field while typing (M 08-26):
+                // Backspace ONLY edits text - never backs out. (An empty-field
+                // backout was tried and misfired: GM trims keyboard_string
+                // BEFORE Step, so deleting the last letter read as empty and
+                // kicked the player back a screen.) Esc / pad B back out.
+                if (keyboard_check_pressed(vk_escape) || pad_pressed(gp_face2)) {
                     forge_phase = 1; forge_cursor = forge_fx_pick; keyboard_string = "";
                     if (input_device() == 2) keyboard_virtual_hide();
                     exit;
@@ -2101,7 +2116,11 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()
                 if (input_inject_take("pb:rand")) {
                     keyboard_string = pattern_name_roll(_cw_slots[pb_slot_pick], pb_base_stat, pb_affix_picks, pb_icon_entry);
                 }
-                if (input_cancel() || input_back()) {
+                // Keyboard locked to the name field while typing (M 08-26, forge
+                // phase-2 idiom): Backspace ONLY edits text - never backs out
+                // (GM trims keyboard_string before Step, so an empty-field
+                // backout misfires on the last letter). Esc / pad B back out.
+                if (keyboard_check_pressed(vk_escape) || pad_pressed(gp_face2)) {
                     pb_craft_phase = 4; pb_cursor = 0; pb_scroll = 0; keyboard_string = "";
                     if (input_device() == 2) keyboard_virtual_hide();
                     exit;

@@ -3885,13 +3885,19 @@ if (player_turn) {
                     vfx_timer_max = _vfxp.ticks;
                     vfx_school    = ability_school(ab);   // spell-tint blend key
                     vfx_scale_mult = 1;
-                    // Iron Skin (M 08-13: "should be an envelopment of bone or
-                    // armor briefly, not this digital blue blurr"): the generic
-                    // shield burst is replaced by the bespoke iron-shell
-                    // overlay drawn on the player sprite itself (Draw_64).
+                    // Iron Skin (M 08-26 pick): the owned Gigapack armor-assemble
+                    // anim, BLUE STEEL as authored - plate slivers converge into
+                    // a full shield. Plays as the standard self-cast burst,
+                    // with the "Blue steel!" popup gag over the player (M's
+                    // Zoolander reference). Replaces both the generic shield
+                    // burst AND the 08-13 procedural plate-shard overlay.
                     if (ab.name == "Iron Skin") {
-                        vfx_timer = 0;
-                        ironskin_fx_timer = 34;
+                        vfx_spr       = spr_vfx_ironskin;
+                        vfx_timer     = 40;   // 18 frames get room to play
+                        vfx_timer_max = 40;
+                        array_push(damage_popups, { value: 0, text: "Blue steel!",
+                            x: _pvfa.x, y: _pvfa.y - 135,
+                            timer: 50, col: make_color_rgb(140, 205, 245) });
                     }
                 }
 

@@ -1019,7 +1019,14 @@ player_turn = combat_state.active.is_player;
 // Frames remaining before the enemy takes its action.
 // The delay gives the player time to read the log and any telegraph warning
 // before the enemy resolves its attack.
-enemy_turn_timer = 0;
+// If a FOE won the opening initiative, hold its first action for an intro beat
+// ON TOP of the standard read delay (M 08-26: the enemy acted while the room
+// was still fading in - "i started the fight bleeding confused"). ~2s total:
+// the scene settles, the STRIKES FIRST toast + intent chips read, then it acts.
+enemy_turn_timer = player_turn ? 0 : 120;
+
+// "X STRIKES FIRST!" toast shown during that intro hold (Draw_64, ui_draw_toast).
+foe_opens_toast_timer = player_turn ? 0 : 150;
 
 // 180 frames at 60 fps (GameMaker default room speed) ≈ 3 seconds.
 enemy_turn_delay = 60;
@@ -1234,10 +1241,6 @@ screen_shake_y     = 0;
 // in the spell's school color and sheds rising motes while the timer runs down.
 cast_fx_timer = 0;
 cast_fx_color = c_white;
-
-// Iron Skin cast overlay (M 08-13): bespoke iron-shell envelopment on the
-// player sprite - set at cast in Step, drawn + ticked in Draw_64.
-ironskin_fx_timer = 0;
 
 // VFX impact sprite - drawn at hit position for a few frames.
 // vfx_timer_max holds the value vfx_timer was set to, so the Draw event can map

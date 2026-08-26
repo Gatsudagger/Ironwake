@@ -422,36 +422,9 @@ if (cast_fx_timer > 0) {
     gpu_set_blendmode(bm_normal);
 }
 
-// IRON SKIN cast overlay (M 08-13: "should be an envelopment of bone or armor
-// briefly, not this digital blue blurr"): the player sprite re-drawn as a cold
-// iron shell, with angular plate shards CONVERGING into the body as the armor
-// assembles. Replaces the generic shield burst for this cast (Step zeroes it).
-if (ironskin_fx_timer > 0) {
-    ironskin_fx_timer--;
-    var _ik_t  = 1 - ironskin_fx_timer / 34.0;           // 0 -> 1 over life
-    var _ik_a  = (ironskin_fx_timer > 24) ? 1.0 : (ironskin_fx_timer / 24.0);
-    var _ik_cx = _px_draw + sprite_get_width(_pspr)  * _pscale * 0.5;
-    var _ik_cy = _py_draw + sprite_get_height(_pspr) * _pscale * 0.5;
-    gpu_set_blendmode(bm_add);
-    // The shell: iron-tinted body glow, strongest at cast, then settling.
-    draw_sprite_ext(_pspr, _pfr, _px_draw, _py_draw, _pscale, _pscale, 0,
-                    make_color_rgb(196, 198, 208), 0.55 * _ik_a);
-    // Plate shards sliding in from a surrounding ring - armor being fitted.
-    for (var _iki = 0; _iki < 8; _iki++) {
-        var _ik_ang = _iki * 45 + 22;
-        var _ik_d   = lerp(190, 46, min(1, _ik_t * 1.6));
-        var _ik_x   = _ik_cx + lengthdir_x(_ik_d, _ik_ang);
-        var _ik_y   = _ik_cy + lengthdir_y(_ik_d * 0.75, _ik_ang);
-        var _ik_s   = 13;
-        draw_set_alpha(0.7 * _ik_a);
-        draw_set_color(make_color_rgb(150, 152, 165));
-        draw_rectangle(_ik_x - _ik_s, _ik_y - _ik_s * 0.55, _ik_x + _ik_s, _ik_y + _ik_s * 0.55, false);
-        draw_set_color(make_color_rgb(228, 230, 238));
-        draw_rectangle(_ik_x - _ik_s, _ik_y - _ik_s * 0.55, _ik_x + _ik_s, _ik_y + _ik_s * 0.55, true);
-    }
-    draw_set_alpha(1.0);
-    gpu_set_blendmode(bm_normal);
-}
+// (IRON SKIN procedural plate-shard overlay retired 08-26: the cast now plays
+// spr_vfx_ironskin - the owned Gigapack armor-assemble burst - through the
+// standard self-cast VFX slot, set in Step's cast block.)
 
 // (Pet companion block MOVED above the player draw - M 07-27 screenshot: it
 // rendered over the player. The pet is the depth row behind them.)
@@ -2240,6 +2213,18 @@ if (instance_exists(obj_game_controller)) {
     if (_gc_tn.trait_notif_timer > 0 && _gc_tn.trait_notif_msg != "") {
         ui_draw_toast(_gc_tn.trait_notif_msg, GUI_CX, 21,
                       min(1.0, _gc_tn.trait_notif_timer / 30.0), c_white);
+    }
+}
+
+// Enemy-initiative opener (M 08-26): while the combat-start intro hold runs,
+// say WHO is acting before the player. Same y21-90 band as the trait toast
+// (which can't fire this early - it needs a kill), fading out with the hold.
+if (foe_opens_toast_timer > 0) {
+    foe_opens_toast_timer--;
+    if (!combat_over) {
+        ui_draw_toast(string_upper(combat_state.combatants[0].name) + " STRIKES FIRST!",
+                      GUI_CX, 21, min(1.0, foe_opens_toast_timer / 30.0),
+                      make_color_rgb(240, 140, 120));
     }
 }
 ui_draw_find_banner();   // FIND banner (pets / eggs / banshee) - topmost, M 08-18
