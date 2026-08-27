@@ -5639,6 +5639,16 @@ if (player_turn) {
                         _su_new.max_HP = round(_su_new.max_HP * awaken_hp_mult(_su_asc));
                         _su_new.damage = round(_su_new.damage * awaken_dmg_mult(_su_asc));
                         _su_new.telegraph_damage = round(_su_new.telegraph_damage * awaken_dmg_mult(_su_asc));
+                        // spell_scale (batch F, 08-27): the summon's casts keep
+                        // pace with the same awakening mult its swings just got
+                        // (this path never applied difficulty/curse to damage
+                        // either - mirrored, not extended). mechanic_value is
+                        // clone-local, scaled the same way as at combat spawn.
+                        _su_new.spell_scale = awaken_dmg_mult(_su_asc);
+                        if (_su_new.mechanic_type == "double_strike" || _su_new.mechanic_type == "death_burst"
+                            || _su_new.mechanic_type == "regen") {
+                            _su_new.mechanic_value = max(1, round(_su_new.mechanic_value * _su_new.spell_scale));
+                        }
                     }
                     _su_new.max_HP = max(1, round(_su_new.max_HP * 0.60));
                     _su_new.HP     = _su_new.max_HP;
@@ -5672,8 +5682,10 @@ if (player_turn) {
 
             } else if (_eab.kind == "spell") {
                 // A5 boss enrage applies to spells too (same helper as the swing path).
+                // spell_scale (batch F, 08-27): the spawn passes' damage multiplier,
+                // applied at use time because ability structs are template-shared.
                 var _sdmg = combat_mitigate_player(player,
-                    max(1, round(_eab.value * awaken_boss_enrage_mult(combat_state.round))), _eab.dtype, combat_log);
+                    max(1, round(_eab.value * enemy_spell_scale(actor) * awaken_boss_enrage_mult(combat_state.round))), _eab.dtype, combat_log);
                 if (_incoming_mult < 1.0) _sdmg = max(1, round(_sdmg * _incoming_mult));  // Blink softening
                 // TIMED COMBAT T1: the window's grade bends the cast too -
                 // PERFECT negates, GOOD halves (batch B 08-26).
@@ -5818,6 +5830,9 @@ if (player_turn) {
                     // ticks at half strength (shares its flag with the Scorching Air
                     // site in Create, so only ONE first-DoT is softened per combat).
                     var _eab_val = _eab.value;
+                    // spell_scale (batch F, 08-27): DoT ticks keep pace with the
+                    // spawn pressure passes. Fraction-valued debuffs never scale.
+                    if (_eab.kind == "dot") _eab_val = max(1, round(_eab_val * enemy_spell_scale(actor)));
                     // CON softens DoT ticks (08-16 stat resists): -0.5%/pt, cap 15%.
                     if (_eab.kind == "dot") {
                         var _sr_dot = combat_stat_resist_pct(player, "dot");

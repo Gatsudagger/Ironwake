@@ -512,6 +512,18 @@ function enemy_should_telegraph(enemy, turn_number) {
 // }
 // =============================================================================
 
+// ENEMY SPELL SCALING (batch F, 08-27): enemy ability structs are SHARED with
+// the templates (enemy_clone copies the abilities array by reference), so their
+// value fields can never be scaled by mutation. Every damage pass at combat
+// spawn (awakening / difficulty / timed pressure / curses) folds its multiplier
+// into a per-enemy spell_scale stamp instead; casts and intent estimates apply
+// it at USE time through this helper. Unstamped enemies (mid-fight summons,
+// older paths) read 1.0 - exactly the old behaviour.
+function enemy_spell_scale(actor) {
+    return (is_struct(actor) && variable_struct_exists(actor, "spell_scale") && actor.spell_scale > 0)
+        ? actor.spell_scale : 1.0;
+}
+
 // Deterministic estimate of what one enemy swing/cast would deal to the player
 // AFTER the standard mitigation chain (mirrors the engine's damage path minus
 // Soul Shield / Blink / Evasive Roll, which are reactive and roll-dependent).
@@ -565,7 +577,10 @@ function enemy_roll_intent(actor, player, next_round, is_reroll) {
         _it.heavy = _spike;
     } else if (_eab.kind == "spell") {
         _it.kind = "spell";
-        var _est = enemy_intent_estimate(actor, _eab.value, _eab.dtype, player);
+        // spell_scale mirrored here so the chip and the danger-tiered guard
+        // bands read the same number the cast will actually deal (batch F).
+        var _est = enemy_intent_estimate(actor,
+            max(1, round(_eab.value * enemy_spell_scale(actor))), _eab.dtype, player);
         _it.lo = _est; _it.hi = _est;
         _it.heavy = true;   // a committed enemy spell nuke is a charged action
     } else if (_eab.kind == "heal") {

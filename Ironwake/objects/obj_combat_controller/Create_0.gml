@@ -826,6 +826,14 @@ while (array_length(enemies) < _enc_count) {
     array_push(enemies, _ex_mob);
 }
 
+// ENEMY SPELL SCALING (batch F, 08-27): the passes below scale only damage +
+// telegraph_damage - ability value fields live on structs SHARED with the
+// templates and can never be mutated. Each pass folds its damage multiplier
+// into this per-enemy spell_scale stamp instead; spells / DoT ticks / intent
+// estimates apply it at use time (enemy_spell_scale). Closes the audit gap
+// where caster enemies fell behind swings at high tiers.
+for (var _ei = 0; _ei < array_length(enemies); _ei++) enemies[_ei].spell_scale = 1.0;
+
 // Apply ascendance stat multipliers (index 0 = the boss/elite/main; gets _boss_extra)
 var _asc = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
 if (_asc > 0) {
@@ -841,6 +849,7 @@ if (_asc > 0) {
         _e.HP               = _e.max_HP;
         _e.damage           = round(_e.damage * _dmg_mult * _be);
         _e.telegraph_damage = round(_e.telegraph_damage * _dmg_mult * _be);
+        _e.spell_scale     *= _dmg_mult * _be;
     }
 }
 
@@ -860,6 +869,7 @@ for (var _ei = 0; _ei < array_length(enemies); _ei++) {
     _e.HP               = _e.max_HP;
     _e.damage           = round(_e.damage * _diff_mult);
     _e.telegraph_damage = round(_e.telegraph_damage * _diff_mult);
+    _e.spell_scale     *= _diff_mult;
 }
 
 // -----------------------------------------------------------------------------
@@ -876,6 +886,7 @@ if (_tp_mult != 1.0) {
         var _e = enemies[_ei];
         _e.damage           = round(_e.damage * _tp_mult);
         _e.telegraph_damage = round(_e.telegraph_damage * _tp_mult);
+        _e.spell_scale     *= _tp_mult;
     }
 }
 
@@ -893,6 +904,20 @@ if (_curse_ehp != 1.0 || _curse_edm != 1.0) {
         _e.HP               = _e.max_HP;
         _e.damage           = round(_e.damage * _curse_edm);
         _e.telegraph_damage = round(_e.telegraph_damage * _curse_edm);
+        _e.spell_scale     *= _curse_edm;
+    }
+}
+
+// mechanic_value IS clone-local (a scalar the clone owns), so it scales once
+// here at spawn: the double_strike per-hit value, the death_burst eruption and
+// the regen tick all keep pace with the pressure passes above. Fraction-valued
+// mechanics (fortify) and turn counts (phase_shift) are deliberately excluded.
+for (var _ei = 0; _ei < array_length(enemies); _ei++) {
+    var _e = enemies[_ei];
+    if (_e.spell_scale != 1.0
+        && (_e.mechanic_type == "double_strike" || _e.mechanic_type == "death_burst"
+            || _e.mechanic_type == "regen")) {
+        _e.mechanic_value = max(1, round(_e.mechanic_value * _e.spell_scale));
     }
 }
 
