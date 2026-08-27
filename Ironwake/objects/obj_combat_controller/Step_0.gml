@@ -1485,6 +1485,19 @@ if (player_turn) {
             }
         }
 
+        // PHASE SHIFT gate (dormant-mechanics batch, 08-27): a phased enemy is
+        // untargetable - refuse the aimed cast BEFORE anything is spent (kinder
+        // than a wasted whiff; the damage sink still zeroes anything that
+        // arrives another way). Self-casts pass untouched.
+        var _ph_block = false;
+        if (!ab.self_targeted) {
+            var _ph_liv = combat_living_enemies(combat_state);
+            if (selected_target >= 0 && selected_target < array_length(_ph_liv)) {
+                var _ph_t = _ph_liv[selected_target];
+                _ph_block = variable_struct_exists(_ph_t, "phased_turns") && _ph_t.phased_turns > 0;
+            }
+        }
+
         if (_already_used) {
             array_push(combat_log, ab.name + " already used this turn.");
 
@@ -1496,6 +1509,9 @@ if (player_turn) {
 
         } else if (_ctrl_block != "") {
             array_push(combat_log, "You are " + _ctrl_block + " - can't use " + ab.name + ".");
+
+        } else if (_ph_block) {
+            array_push(combat_log, "It is PHASED - nothing will touch it until it returns. Pick another target or another play.");
 
         // Resource gate - must have enough energy and secondary resource. Name the
         // missing resource explicitly ("Not enough resources." told M nothing when
@@ -2780,6 +2796,48 @@ if (player_turn) {
                         }
                         // Pure debuffs never deal damage, even if a rider tried to add some.
                         if (_deals_damage) combat_apply_damage(target, _final_dmg);
+
+                        // RETRIBUTION WIRED (dormant-mechanics batch, 08-27):
+                        // authored on Grave Stalker / Vault Guardian / Lava
+                        // Spitter / Frozen Sentinel but never read. Two
+                        // consecutive damaging hits of the SAME type (ability
+                        // school; schoolless = physical) raise its plates:
+                        // +mechanic_value armor across your next two turns
+                        // (counter 3 decays at ITS turn start, which covers two
+                        // full player turns whichever side wins initiative).
+                        // Repeat offenses REFRESH the window, never stack it.
+                        if (_deals_damage && _final_dmg > 0 && target.HP > 0 && !target.is_defeated
+                            && variable_struct_exists(target, "mechanic_type")
+                            && target.mechanic_type == "retribution") {
+                            var _rt_type = ability_school(ab);
+                            if (_rt_type == "") _rt_type = "physical";
+                            if (target.last_damage_type == _rt_type) {
+                                var _rt_on = variable_struct_exists(target, "retrib_turns") && target.retrib_turns > 0;
+                                if (!_rt_on) {
+                                    target.armor += target.mechanic_value;
+                                    target.retrib_armor = target.mechanic_value;
+                                    array_push(target.status_effects, {
+                                        name: "Retribution", effect_type: "buff", kind: "retribution",
+                                        effect_value: target.mechanic_value, duration: 3, element: "", source: "enemy"
+                                    });
+                                    array_push(combat_log, "RETRIBUTION - " + target.name
+                                        + " hardens against the repeated "
+                                        + ((_rt_type == "physical") ? "blows" : school_label(_rt_type))
+                                        + " (+" + string(target.mechanic_value) + " armor, 2 turns)!");
+                                } else {
+                                    for (var _rt_i = 0; _rt_i < array_length(target.status_effects); _rt_i++) {
+                                        var _rt_se = target.status_effects[_rt_i];
+                                        if (variable_struct_exists(_rt_se, "kind") && _rt_se.kind == "retribution") {
+                                            _rt_se.duration = 3;
+                                            break;
+                                        }
+                                    }
+                                    array_push(combat_log, target.name + "'s RETRIBUTION holds - vary your damage types!");
+                                }
+                                target.retrib_turns = 3;
+                            }
+                            target.last_damage_type = _rt_type;
+                        }
 
                         // Gravelstone Sword (class weapon): leech a share of melee damage dealt.
                         if (variable_struct_exists(player, "weapon_lifesteal") && player.weapon_lifesteal > 0
@@ -4549,6 +4607,83 @@ if (player_turn) {
                     source:       "pet"
                 });
                 array_push(combat_log, "[Companion] " + pet_active().name + "'s GAOL CHAINS drag " + actor.name + "'s readied move into the dark!");
+            }
+        }
+
+        // =====================================================================
+        // DORMANT MECHANICS WIRED (08-27, M-greenlit): fortify / regen /
+        // phase_shift were authored on ~15 species (scr_enemies mechanic_type)
+        // but the engine only ever ran double_strike and telegraphs. This
+        // upkeep at the actor's turn start decays last cycle's state, then
+        // arms the mechanic on its authored cadence (round mod mechanic_turns).
+        // Once per round per actor - the T1 guard window below holds the
+        // action and re-enters this whole block every frame, so the round
+        // stamp gates re-fire (same reason the sig blocks above are
+        // once-flagged). Retribution arms at the player-hit site and only
+        // DECAYS here. Buff chips are pushed with +1 duration because the
+        // status tick later this same turn immediately decrements them.
+        // =====================================================================
+        if (!variable_struct_exists(actor, "mech_round") || actor.mech_round != combat_state.round) {
+            actor.mech_round = combat_state.round;
+            // -- decay first --
+            if (variable_struct_exists(actor, "phased_turns") && actor.phased_turns > 0) {
+                actor.phased_turns--;
+                if (actor.phased_turns <= 0) {
+                    array_push(combat_log, actor.name + " drifts back into the world - it can be struck again.");
+                }
+            }
+            if (variable_struct_exists(actor, "fortify_active") && actor.fortify_active) {
+                actor.fortify_active = false;
+            }
+            if (variable_struct_exists(actor, "retrib_turns") && actor.retrib_turns > 0) {
+                actor.retrib_turns--;
+                if (actor.retrib_turns <= 0
+                    && variable_struct_exists(actor, "retrib_armor") && actor.retrib_armor > 0) {
+                    actor.armor -= actor.retrib_armor;
+                    actor.retrib_armor = 0;
+                    array_push(combat_log, actor.name + "'s raised plates fall away.");
+                }
+            }
+            // -- arm on cadence --
+            if (actor.mechanic_turns > 0 && (combat_state.round mod actor.mechanic_turns) == 0) {
+                switch (actor.mechanic_type) {
+                    case "fortify":
+                        actor.fortify_active = true;
+                        array_push(actor.status_effects, {
+                            name: "Fortified", effect_type: "buff", kind: "fortify",
+                            effect_value: actor.mechanic_value, duration: 2, element: "", source: "enemy"
+                        });
+                        array_push(combat_log, actor.name + " FORTIFIES - incoming damage cut to "
+                            + string(round(actor.mechanic_value * 100)) + "% until its next turn!");
+                        break;
+                    case "regen":
+                        if (actor.HP > 0 && actor.HP < actor.max_HP) {
+                            var _rg = min(actor.mechanic_value, actor.max_HP - actor.HP);
+                            actor.HP += _rg;
+                            array_push(combat_log, actor.name + " knits itself together - recovers "
+                                + string(_rg) + " HP.");
+                            var _rg_slot = 0;
+                            for (var _rgi = 0; _rgi < array_length(combat_state.combatants); _rgi++) {
+                                if (combat_state.combatants[_rgi] == actor) break;
+                                if (!combat_state.combatants[_rgi].is_player) _rg_slot++;
+                            }
+                            var _rg_a = combat_enemy_anchor(actor, _rg_slot);
+                            array_push(damage_popups, { value: 0, text: "+" + string(_rg),
+                                x: _rg_a.x, y: _rg_a.y - 105, timer: 45,
+                                col: make_color_rgb(90, 200, 120) });
+                        }
+                        break;
+                    case "phase_shift":
+                        actor.phased_turns = max(
+                            variable_struct_exists(actor, "phased_turns") ? actor.phased_turns : 0,
+                            actor.mechanic_value);
+                        array_push(actor.status_effects, {
+                            name: "Phased", effect_type: "buff", kind: "phased",
+                            effect_value: 0, duration: actor.mechanic_value + 1, element: "", source: "enemy"
+                        });
+                        array_push(combat_log, actor.name + " fades from the world - blows will pass through it!");
+                        break;
+                }
             }
         }
 

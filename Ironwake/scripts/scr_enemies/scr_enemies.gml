@@ -1274,11 +1274,11 @@ function warden_scion_drop_chance() { return 4; }
 function boss_phase_shift(name) {
     switch (name) {
         // --- Ashen Vault ------------------------------------------------------
-        // NOTE (review 08-26): only double_strike + the telegraph cycle are LIVE
-        // enemy mechanics - fortify/retribution/regen/phase_shift/death_burst are
-        // dormant data (mechanic_value is read nowhere but the double-strike
-        // branch). Every shift below uses machinery that actually runs: damage/
-        // armor/heal edits, added ABILITIES, telegraph cadence, double_strike.
+        // NOTE (08-27): ALL authored mechanics are LIVE now - the dormant set
+        // (fortify/retribution/regen/phase_shift/death_burst) was wired in the
+        // dormant-mechanics batch (upkeep in obj_combat_controller Step, sink
+        // hooks in combat_apply_damage / combat_on_enemy_defeated). A phase's
+        // mech {t,v,n} swap therefore swaps LIVE behaviour for any of them.
         case "Vault Sentinel": return {
             toast: "THE ALARM SOUNDS!",
             log:   "VAULT SENTINEL - the watchfire LIGHTS: its charged blows now come every other turn!",

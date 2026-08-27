@@ -6229,6 +6229,10 @@ function status_icon_style(se) {
         case "silence":    return { label: "SIL",  color: make_color_rgb(125,  90, 205) };
         case "regen":      return { label: "HEAL", color: make_color_rgb( 90, 200, 120) };
         case "soulbind":   return { label: "BOND", color: make_color_rgb(170, 110, 215) };
+        // Enemy self-buff chips (dormant-mechanics batch, 08-27).
+        case "fortify":     return { label: "FORT",  color: make_color_rgb(150, 155, 175) };
+        case "phased":      return { label: "PHASE", color: make_color_rgb(140, 150, 220) };
+        case "retribution": return { label: "RET+",  color: make_color_rgb(190, 140,  70) };
     }
     return {
         label: status_icon_label(se.name, se.effect_type),
@@ -6337,6 +6341,9 @@ function status_effect_plain_text(se) {
         case "silence":    return "cannot cast";
         case "regen":      return "+" + string(_val) + " HP/turn";
         case "soulbind":   return "shares " + string(round(_val * 100)) + "% of your pain";
+        case "fortify":     return "takes only " + string(round(_val * 100)) + "% damage";
+        case "phased":      return "untargetable - blows pass through";
+        case "retribution": return "+" + string(_val) + " armor (repeated damage type)";
     }
     return (se.effect_type == "dot") ? (string(_val) + " dmg/turn") : "debuff";
 }

@@ -780,6 +780,15 @@ function combat_estimate_hit(ability, caster, target) {
         }
     }
 
+    // FORTIFY (dormant-mechanics batch, 08-27): a fortified target's incoming
+    // damage is cut in the sink - mirror it here so the hit-preview chip stays
+    // honest on a fortified turn instead of overstating the blow.
+    if (_live_tgt && variable_struct_exists(target, "fortify_active") && target.fortify_active
+        && variable_struct_exists(target, "mechanic_value")
+        && target.mechanic_value > 0 && target.mechanic_value < 1) {
+        _final = max(1, round(_final * target.mechanic_value));
+    }
+
     return max(1, round(_final));
 }
 
@@ -812,6 +821,35 @@ function combat_apply_damage(target_struct, damage) {
     if (damage > 0 && variable_struct_exists(target_struct, "is_player") && !target_struct.is_player
         && combatant_distinct_status_kinds(target_struct) >= 2) {
         damage = round(damage * 1.15);
+    }
+    // ------------------------------------------------------------------------
+    // DORMANT MECHANICS WIRED (08-27, M-greenlit): phase_shift and fortify were
+    // authored per-species data (scr_enemies mechanic_type) the engine never
+    // read. Enforced in this sink because every damage path funnels through it,
+    // same reasoning as Marked / OVERWHELM. The cadence flags (phased_turns /
+    // fortify_active) are armed at the enemy's turn start (obj_combat_controller
+    // Step, mechanic upkeep block).
+    // ------------------------------------------------------------------------
+    // PHASE SHIFT: a phased enemy is untargetable. Aimed casts are refused at
+    // the cast gate before any AP is spent; anything that still arrives - DoT
+    // ticks, pet strikes, splash, ripostes - passes through for nothing.
+    if (damage > 0 && variable_struct_exists(target_struct, "is_player") && !target_struct.is_player
+        && variable_struct_exists(target_struct, "phased_turns") && target_struct.phased_turns > 0) {
+        if (instance_exists(obj_combat_controller)) {
+            array_push(instance_find(obj_combat_controller, 0).combat_log,
+                "The blow passes through " + target_struct.name + " - it is PHASED.");
+        }
+        damage = 0;
+    }
+    // FORTIFY: on its cycle the enemy hardens - incoming damage is multiplied
+    // by mechanic_value (0.4-0.5 authored) until its next turn. The <1 guard
+    // also protects against a boss phase that has since REPLACED mechanic_value
+    // with a flat number (e.g. a derived double-strike per-hit value).
+    if (damage > 0 && variable_struct_exists(target_struct, "is_player") && !target_struct.is_player
+        && variable_struct_exists(target_struct, "fortify_active") && target_struct.fortify_active
+        && variable_struct_exists(target_struct, "mechanic_value")
+        && target_struct.mechanic_value > 0 && target_struct.mechanic_value < 1) {
+        damage = max(1, round(damage * target_struct.mechanic_value));
     }
     // Stoneshadow (golemite signature move, 08-05 pillar D): the FIRST blow that
     // would drop the player below HALF HP each combat breaks against the stone
@@ -1860,6 +1898,11 @@ function combatant_distinct_status_kinds(c) {
     var _n = 0;
     for (var _i = 0; _i < array_length(c.status_effects); _i++) {
         var _s = c.status_effects[_i];
+        // BUFFS never count toward OVERWHELM (08-27): the dormant-mechanics
+        // batch gave enemies visible buff chips (Fortified / Phased /
+        // Retribution) - an enemy protecting itself must not read as "covered
+        // in afflictions" and eat +15% for it.
+        if (is_struct(_s) && variable_struct_exists(_s, "effect_type") && _s.effect_type == "buff") continue;
         var _k = combat_status_kind_of(_s);
         if (_k == "dot") _k = "dot:" + combat_status_element(_s);
         if (!variable_struct_exists(_seen, _k)) {
@@ -2471,6 +2514,32 @@ function combat_on_enemy_defeated(target, player, combat_log) {
     target.is_defeated = true;
     enemy_death_sound(target.name);
     array_push(combat_log, target.name + " defeated!");
+
+    // DEATH BURST WIRED (08-27, M-greenlit): authored per-species data the
+    // engine never read - the revenant ERUPTS as it falls, mechanic_value
+    // damage to the player. Fires on ANY killing source (hits, DoT ticks,
+    // ripostes, pet strikes alike) - the punishment for dropping it is the
+    // point, so there is no timing window to dodge it.
+    if (variable_struct_exists(target, "mechanic_type") && target.mechanic_type == "death_burst"
+        && variable_struct_exists(target, "mechanic_value") && target.mechanic_value > 0
+        && player.HP > 0) {
+        var _db = round(target.mechanic_value);
+        combat_apply_damage(player, _db);
+        array_push(combat_log, target.name + " ERUPTS as it falls - " + string(_db) + " damage!");
+        if (instance_exists(obj_combat_controller)) {
+            var _db_cc = instance_find(obj_combat_controller, 0);
+            var _db_px = 475, _db_py = 545;
+            if (combat_25d()) {
+                var _db_pa = combat_player_vfx_anchor(player);
+                _db_px = _db_pa.x + 110; _db_py = _db_pa.y + 30;
+            }
+            array_push(_db_cc.damage_popups, { value: _db, x: _db_px, y: _db_py,
+                timer: 45, col: make_color_rgb(255, 120, 40) });
+            player.hit_flash = max(player.hit_flash, 10);
+            _db_cc.screen_shake_timer = max(_db_cc.screen_shake_timer, 8);
+        }
+        if (player.HP <= 0 && !combat_try_last_stand(player, combat_log)) player.is_defeated = true;
+    }
 
     // DEPTH WARDEN falls (08-13, DESIGN §2.1): flat 4% scion roll, once-per-save
     // per species (the 07-31 signature rule) - Wardens recur forever on the
