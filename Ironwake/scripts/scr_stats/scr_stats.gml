@@ -29,6 +29,18 @@ function restock_shops() {
     var _feed_pool = pet_feed_premium_pool();
     global.petra_feed_premium = _feed_pool[irandom(array_length(_feed_pool) - 1)].id;
 
+    // Petra REAGENT lots (M-locked 08-26): ONE random dungeon reagent type per
+    // run at qty 1-2; Caravan Contacts (rank 1+) rolls a SECOND, different type.
+    // Limited stock - the craft economy stays dungeon-fed, the shop just tops up.
+    var _rg_cat = reagent_catalog();
+    global.petra_reagent_stock = [];
+    var _rg_first = irandom(array_length(_rg_cat) - 1);
+    array_push(global.petra_reagent_stock, { id: _rg_cat[_rg_first].id, qty: 1 + irandom(1) });
+    if (npc_rank("petra") >= 1) {
+        var _rg_second = (_rg_first + 1 + irandom(array_length(_rg_cat) - 2)) mod array_length(_rg_cat);
+        array_push(global.petra_reagent_stock, { id: _rg_cat[_rg_second].id, qty: 1 + irandom(1) });
+    }
+
     // Dorn: stock scales with the HIGHEST awakening unlocked (permanent meta growth).
     // Items are fully rolled (affixes), so his gear stays relevant past floor 1.
     // do_discover=false - shop items are only codex-revealed when actually bought.
@@ -9460,6 +9472,16 @@ function petra_buy_list() {
         var _s = global.petra_stock_special;
         array_push(_list, { kind:"consum", it:_s, price:cha_price(floor(_s.gold_value * 2)), special:true });
     }
+    // REAGENT lots (M-locked 08-26): limited RNG stock, restocked each run.
+    if (variable_global_exists("petra_reagent_stock") && is_array(global.petra_reagent_stock)) {
+        for (var _rg = 0; _rg < array_length(global.petra_reagent_stock); _rg++) {
+            var _rl = global.petra_reagent_stock[_rg];
+            if (_rl.qty <= 0) continue;
+            var _rge = reagent_get(_rl.id);
+            if (_rge == undefined) continue;
+            array_push(_list, { kind:"reagent", it:_rge, price:cha_price(120), special:true, qty:_rl.qty, stock_idx:_rg });
+        }
+    }
     var _feeds = pet_feed_shop_list();
     for (var _f = 0; _f < array_length(_feeds); _f++) {
         var _fd = _feeds[_f];
@@ -11665,7 +11687,7 @@ function tutorial_catalog() {
         // NPC PROGRESSION (M 08-15): fires on the first camp arrival AFTER a run,
         // once the hub tip has had its turn - the STATION chip is on every card.
         { id:"station_ranks", title:"Station Ranks", body:"Every camp station can be INVESTED in - separately from friendship. On the carousel, each NPC's card wears a small STATION chip in its top-right corner: two pips, two ranks.\nRank 1 costs 300g + 20 rune dust, rank 2 costs 900g + 60 dust, and each rank unlocks a permanent service or bonus - Dorn stocks more and tempers hotter, Maren's combines ask less dust and she learns the DEEP SOCKET, Sable's brews come cheaper, Petra runs TWO trade orders at once, Bairc's pens slow hunger, and so on.\nHover the chip to read the exact perks, then press [U] or tap the chip to buy. Bond tiers stack their own discount on top: Friend 5%, Companion 10%, Lover 15%." },
-        { id:"pattern_book", title:"The Pattern Book", body:"Dorn keeps a PATTERN BOOK.\nSMELT [T] destroys unequipped gear. You get a REFORGE INGOT of its tier, and Dorn STUDIES one affix from the piece - you pick which.\nONE study lets you craft that affix at UNCOMMON. 3 studies unlock RARE work, 6 unlock EPIC - and rarer fodder teaches faster (an Epic piece counts as 3 studies fresh).\nCRAFT [N] then builds an item to YOUR design - type, slot, quality, stats, affixes, art and name. Deeper study rolls better numbers, and unused affix slots BOOST the affixes you do take.\nBrowse the book any time with [B]." },
+        { id:"pattern_book", title:"The Pattern Book", body:"Dorn keeps a PATTERN BOOK.\nSMELT [T] destroys unequipped gear. You get a REFORGE INGOT of its tier, Dorn STUDIES one affix from the piece - you pick which - and the piece's ICON joins the book's ART PAGE forever.\nONE study lets you craft that affix at UNCOMMON. 3 studies unlock RARE work, 6 unlock EPIC - and rarer fodder teaches faster (an Epic piece counts as 3 studies fresh).\nCRAFT [N] then builds an item to YOUR design - type, slot, quality, stats, affixes, art and name. Your FIRST core-stat pick becomes the item's BASE LINE - its strongest single stat. For its LOOK, choose any icon your smelting has collected that fits the slot family (every weapon icon works for any weapon; amulets and rings share). Deeper study rolls better numbers - a MASTERED blueprint rolls past what drops can carry - and unused pick slots CONCENTRATE the affixes you do take. Afterward, HONE buys +1 on a chosen line for gold, up to that mastery ceiling.\nBrowse the book any time with [B]." },
     ];
 }
 
@@ -15238,11 +15260,21 @@ function pattern_art_unlock(_it) {
     return true;
 }
 
+// Icon-compat groups (M 08-26: "ANY item you have smelted" should be usable as
+// craft art when the slot family fits - weapon crafts were down to a handful
+// because melee and ranged icons were siloed). Weapons pool together, jewelry
+// pools together; armor silhouettes stay slot-exact.
+function pattern_art_slot_group(_slot) {
+    if (_slot == "weapon" || _slot == "ranged_weapon") return "weapons";
+    if (_slot == "amulet" || _slot == "ring")          return "jewelry";
+    return _slot;
+}
 function pattern_art_for_slot(_slot) {
     var _b = pattern_book_ensure();
+    var _g = pattern_art_slot_group(_slot);
     var _out = [];
     for (var _i = 0; _i < array_length(_b.art); _i++) {
-        if (_b.art[_i].slot == _slot) array_push(_out, _b.art[_i]);
+        if (pattern_art_slot_group(_b.art[_i].slot) == _g) array_push(_out, _b.art[_i]);
     }
     return _out;
 }
@@ -15416,6 +15448,94 @@ function pattern_craft_reagents(_rarity) {
     return clamp(_rarity, 1, 3);
 }
 
+// Per-reagent icon: spr_icon_reagent_<id>, falling back to the combined pile
+// glyph until the individual art is imported. String-resolved - the sprites
+// MUST join global.__sprite_includes when they land.
+function reagent_icon_sprite(id) {
+    var _s = asset_get_index("spr_icon_reagent_" + id);
+    return (_s >= 0) ? _s : asset_get_index("spr_icon_reagent");
+}
+
+// Petra reagent-swap terms (M-locked 08-26): give 2 of one type for 1 of
+// another; her station rank 2+ sweetens it to 3-for-2.
+function petra_reagent_trade_terms() {
+    return (npc_rank("petra") >= 2) ? { give: 3, get: 2 } : { give: 2, get: 1 };
+}
+
+// =============================================================================
+// STASH MISC TAB rows (M 08-26): one read-only list of everything the player
+// holds that lives OUTSIDE the equipment/consumable arrays - dungeon reagents,
+// rune dust, reforge ingots, Legendary Forge parts, banked banshees, freed
+// songs, and unhatched eggs. Row = { spr, name, count, sub, col }; spr -1 draws
+// a placeholder diamond; count -1 hides the xN (one-of rows like eggs/songs).
+// Consumed by ui_draw_stash_screen (draw) + the stash Step block (cursor math).
+// =============================================================================
+function stash_misc_rows() {
+    var _rows = [];
+    // Dungeon reagents - always all four, so the player learns what exists.
+    reagents_ensure();
+    var _rc = reagent_catalog();
+    for (var _i = 0; _i < array_length(_rc); _i++) {
+        array_push(_rows, {
+            spr: reagent_icon_sprite(_rc[_i].id),
+            name: _rc[_i].name, count: reagent_count(_rc[_i].id),
+            sub: _rc[_i].blurb + " - elites and bosses drop it; spent on Dorn's CRAFT.",
+            col: make_color_rgb(150, 205, 160)
+        });
+    }
+    // Rune dust.
+    if (!variable_global_exists("rune_dust")) global.rune_dust = 0;
+    array_push(_rows, { spr: spr_icon_dust, name: "Rune Dust", count: global.rune_dust,
+        sub: "Shared crafting grit - Maren combines with it, Sable salvages runes into it.",
+        col: make_color_rgb(195, 155, 255) });
+    // Reforge ingots, all five tiers.
+    reforge_ingots_ensure();
+    for (var _t = 0; _t < 5; _t++) {
+        array_push(_rows, { spr: reforge_ingot_sprite(_t),
+            name: item_rarity_name(_t) + " Reforge Ingot", count: global.reforge_ingots[_t],
+            sub: "Reworks an item's affixes at Dorn - covers its own tier or below.",
+            col: item_rarity_color(_t) });
+    }
+    // Legendary Forge parts (frame / core / quintessence).
+    forge_components_ensure();
+    array_push(_rows, { spr: -1, name: "Mythril Frame", count: global.forge_comp_frame,
+        sub: "Dorn strikes it (gold + a Legendary ingot) - 1 of 3 Legendary Forge parts.",
+        col: make_color_rgb(210, 140, 70) });
+    array_push(_rows, { spr: -1, name: "Runeheart Core", count: global.forge_comp_core,
+        sub: "Maren seals it (a tier-III+ rune + dust) - 1 of 3 Legendary Forge parts.",
+        col: make_color_rgb(180, 150, 230) });
+    array_push(_rows, { spr: asset_get_index("spr_icon_consumable_quintessence"),
+        name: "Quintessence", count: global.forge_comp_quint,
+        sub: "Sable distills it (three specialty brews + gold) - 1 of 3 Legendary Forge parts.",
+        col: make_color_rgb(150, 210, 170) });
+    // Banked banshees + every freed song.
+    banshee_init();
+    array_push(_rows, { spr: asset_get_index("spr_icon_banshee_bottle"),
+        name: "Banshee in a Bottle", count: global.banshee_banked,
+        sub: "A caught spirit - Maren releases it to free a new song.",
+        col: make_color_rgb(150, 235, 235) });
+    for (var _mi = 0; _mi < array_length(global.music_unlocked); _mi++) {
+        var _mt = music_track_by_id(global.music_unlocked[_mi]);
+        if (_mt == undefined) continue;
+        array_push(_rows, { spr: asset_get_index("spr_icon_banshee_bottle"),
+            name: _mt.name, count: -1,
+            sub: "Freed song (" + _mt.pool + ") - pick it in the Settings music selectors.",
+            col: make_color_rgb(150, 235, 235) });
+    }
+    // Unhatched eggs (they live at Bairc's station; this is the ledger view).
+    var _pr = pet_roster();
+    for (var _pi = 0; _pi < array_length(_pr); _pi++) {
+        if (!_pr[_pi].is_egg) continue;
+        var _lab = pet_egg_label(_pr[_pi]);
+        array_push(_rows, { spr: pet_sprite(_pr[_pi], "s"),
+            name: (pet_egg_identified(_pr[_pi]) && _lab != "") ? _lab : "Unidentified Egg",
+            count: -1,
+            sub: "Stirring in Bairc's hatchery - hatch it at his station.",
+            col: make_color_rgb(226, 214, 178) });
+    }
+    return _rows;
+}
+
 // =============================================================================
 // VALUABLES (M 08-17): five items that exist ONLY to be sold - common -> legendary,
 // steep gold. They ride the consumable inventory (item_category "consumable",
@@ -15461,27 +15581,23 @@ function pattern_craft_gold_val(_rarity) {
     return 210;
 }
 
-// The value band a family's blueprint tier buys at a crafted rarity. Stays
-// inside the rarity's NATURAL value - tier I is a floor roll, tier III the
-// full natural roll (spec: choice is the power budget, not magnitude).
+// The value band a family's blueprint tier buys at a crafted rarity.
+// REBANDS (M design-locked 08-26, craft audit): T1 = 70-100% of the natural
+// value, T2 = the natural value EXACTLY, T3 = natural +1 (+2 when natural >= 7)
+// - mastery is the one road PAST what drops can roll. The old 60/80/90% bands
+// collapsed to zero width on small affixes (epic crit was locked at +2) and
+// T3's floor could roll BELOW T2 (ceil/floor asymmetry).
 function pattern_band_range(_stat_name, _rarity, _tier) {
     var _fe = pattern_family_entry(_stat_name);
     if (_fe == undefined) return { lo: 1, hi: 1 };
     var _t = clamp(_tier, 1, 3);
-    if (_fe.kind == "school") {
-        // School affixes already roll natural ranges: u 1, r 2-4, e 5-6.
-        var _lo = 1; var _hi = 1;
-        if (_rarity == 2) { _lo = 2; _hi = 4; }
-        if (_rarity >= 3) { _lo = 5; _hi = 6; }
-        var _span  = _hi - _lo;
-        var _third = _span div 3;
-        if (_t == 1) return { lo: _lo, hi: _lo + _third };
-        if (_t == 2) { var _m = _lo + ceil(_span / 2); return { lo: min(_m, _hi), hi: min(_m, _hi) }; }
-        return { lo: _hi - _third, hi: _hi };
-    }
-    // Stat/utility affixes have one natural value per rarity (u/r/e_val).
     var _nat = 1;
-    if (variable_global_exists("affix_pool")) {
+    if (_fe.kind == "school") {
+        // School affixes' natural DROP ranges top out at u 1 / r 4 / e 6 -
+        // band from the range TOP so a crafted caster line competes with a
+        // good drop, not an average one.
+        if (_rarity == 2) _nat = 4; else if (_rarity >= 3) _nat = 6;
+    } else if (variable_global_exists("affix_pool")) {
         for (var _i = 0; _i < array_length(global.affix_pool); _i++) {
             var _a = global.affix_pool[_i];
             if (_a.stat_name != _stat_name) continue;
@@ -15491,10 +15607,10 @@ function pattern_band_range(_stat_name, _rarity, _tier) {
             break;
         }
     }
-    if (_t == 1) { var _l1 = max(1, ceil(_nat * 0.60)); return { lo: _l1, hi: max(_l1, floor(_nat * 0.80)) }; }
-    if (_t == 2) { var _l2 = max(1, ceil(_nat * 0.80)); return { lo: _l2, hi: max(_l2, _nat) }; }
-    var _l3 = max(1, floor(_nat * 0.90));
-    return { lo: _l3, hi: max(_l3, _nat) };
+    if (_t == 1) { var _l1 = max(1, ceil(_nat * 0.70)); return { lo: _l1, hi: max(_l1, _nat) }; }
+    if (_t == 2) return { lo: _nat, hi: _nat };
+    var _m3 = _nat + ((_nat >= 7) ? 2 : 1);   // the mastery ceiling - also HONE's cap
+    return { lo: _m3, hi: _m3 };
 }
 function pattern_band_roll(_stat_name, _rarity, _tier) {
     var _b = pattern_band_range(_stat_name, _rarity, _tier);
@@ -15511,7 +15627,10 @@ function pattern_band_text(_stat_name, _rarity, _tier) {
 // checkout commit so a failed build never eats materials (forge precedent).
 // _affix_names: array of family stat_names (identity chosen, numbers rolled).
 // _icon: an art-page entry, or undefined for Dorn's plain work.
-function pattern_craft_build(_slot, _rarity, _base_stat, _affix_names, _icon, _name) {
+// _opt_twoh / _opt_school (M design-locked 08-26 weapon parity): the naming
+// screen's option chips - 2H trades the offhand for the natural ~+80% damage,
+// _opt_school types a ranged craft's base damage ("" = physical, bow-like).
+function pattern_craft_build(_slot, _rarity, _base_stat, _affix_names, _icon, _name, _opt_twoh = false, _opt_school = "") {
     // 08-15 v2 (M): no separate base-stat pick - the wizard hands ONE list of
     // blueprint picks. The FIRST core stat among them becomes the item's base
     // line at full base value; everything else rolls as an affix. _base_stat
@@ -15531,6 +15650,10 @@ function pattern_craft_build(_slot, _rarity, _base_stat, _affix_names, _icon, _n
         "pattern-crafted at Dorn's anvil", pattern_craft_gold_val(_rarity));
     _it.base_name = _name;
     _it.class_req = -1;
+    // create_item ships NO affixes array (drops get theirs from the affix
+    // roller) - init it or the pushes below crash the first time a craft
+    // carries a non-core blueprint pick (M 08-26 crash report).
+    _it.affixes = [];
     var _tiers = [];
     for (var _i = 0; _i < array_length(_roll_names); _i++) {
         var _fn = _roll_names[_i];
@@ -15560,11 +15683,25 @@ function pattern_craft_build(_slot, _rarity, _base_stat, _affix_names, _icon, _n
     if (_slot == "weapon" || _slot == "ranged_weapon") {
         _it.weapon_damage = weapon_base_damage(_rarity);
         _it.two_handed    = false;
+        if (_opt_twoh) {
+            // Natural 2H bases run ~+80% over the 1H roll (loot-table comment).
+            _it.two_handed    = true;
+            _it.weapon_damage = round(_it.weapon_damage * 1.8);
+        }
+        if (_slot == "ranged_weapon") {
+            // Chosen school overrides the name-based caster guess ("" = phys).
+            _it.wpn_school = _opt_school;
+            // Chosen-school 2H = a staff: non-shield offhand allowed (Task 10 rule).
+            if (_opt_school != "" && _opt_twoh) _it.caster_2h = true;
+        }
     }
     _it.socket_count = rune_sockets_for_rarity(_rarity);
-    item_quality_stamp(_it, 60, 85);   // player-crafted keeps its band (the craft is the investment)
+    // 85-100 (M design-locked 08-26, was 60-85): the materials ARE the finish -
+    // Dorn does not hand rough work off his own anvil, and the wizard's shown
+    // bands now match what the piece actually delivers. Temper still tops off.
+    item_quality_stamp(_it, 85, 100);
     _it.player_crafted = true;
-    _it.pb_craft = { rar: _rarity, base_stat: _base_stat, fams: _tiers, conc: _pb_conc };
+    _it.pb_craft = { rar: _rarity, base_stat: _base_stat, fams: _tiers, conc: _pb_conc, honed: 0 };
     if (_icon != undefined) {
         _it.icon_as = pattern_art_proxy(_icon);
     }
@@ -15577,26 +15714,54 @@ function pattern_craft_build(_slot, _rarity, _base_stat, _affix_names, _icon, _n
 // Paid re-roll: the identity stays, every rolled NUMBER re-rolls within the
 // same band each affix was crafted at (advancing a blueprint later doesn't
 // retro-buff old pieces - craft a new one). Weapons re-roll flat damage too.
-function pattern_craft_reroll(_it) {
-    if (!is_struct(_it) || !variable_struct_exists(_it, "pb_craft")) return false;
+// HONE (M design-locked 08-26, REPLACES the numbers-reroll - which spent gold
+// re-rolling bands that were often zero-width, provably changing nothing):
+// buy +1 on ONE crafted affix, up to the MASTERY CEILING (what a tier-III
+// blueprint rolls: natural +1, or +2 when natural >= 7). Study saves gold;
+// gold finishes a journeyman craft. Fee escalates with every point already
+// honed into the piece: 100g x (honed + 1), CHA-discounted.
+function pattern_hone_cap(_stat_name, _rarity) {
+    return pattern_band_range(_stat_name, _rarity, 3).hi;
+}
+function pattern_hone_fee(_it) {
+    var _h = (is_struct(_it) && variable_struct_exists(_it, "pb_craft")
+              && variable_struct_exists(_it.pb_craft, "honed")) ? _it.pb_craft.honed : 0;
+    return cha_price(100 * (_h + 1));
+}
+// The honeable lines on a crafted piece: { stat_name, label, value, cap }.
+// Concentrated single-affix builds can sit ABOVE the ceiling already - those
+// rows come back with value >= cap and the UI shows them as finished.
+function pattern_hone_rows(_it) {
+    var _out = [];
+    if (!is_struct(_it) || !variable_struct_exists(_it, "pb_craft")) return _out;
     var _pc = _it.pb_craft;
     for (var _i = 0; _i < array_length(_it.affixes); _i++) {
         var _row = _it.affixes[_i];
         if (!is_struct(_row) || !variable_struct_exists(_row, "stat_name")) continue;
-        for (var _j = 0; _j < array_length(_pc.fams); _j++) {
-            if (_pc.fams[_j].stat_name == _row.stat_name) {
-                var _rr_conc = variable_struct_exists(_pc, "conc") ? _pc.conc : 1;
-                _row.stat_value = max(1, round(pattern_band_roll(_row.stat_name, _pc.rar, _pc.fams[_j].tier) * _rr_conc));
-                break;
-            }
-        }
+        var _fe = pattern_family_entry(_row.stat_name);
+        array_push(_out, { stat_name: _row.stat_name,
+            label: (_fe != undefined) ? _fe.label : _row.stat_name,
+            value: _row.stat_value,
+            cap: pattern_hone_cap(_row.stat_name, _pc.rar) });
     }
-    if (_it.slot == "weapon" || _it.slot == "ranged_weapon") {
-        if (!(variable_struct_exists(_it, "two_handed") && _it.two_handed)) {
-            _it.weapon_damage = weapon_base_damage(_pc.rar);
-        }
+    return _out;
+}
+// Apply one hone point. Returns "" on success, else the refusal message.
+// Fee is NOT spent here - the caller spends on "" (forge precedent).
+function pattern_craft_hone(_it, _stat_name) {
+    if (!is_struct(_it) || !variable_struct_exists(_it, "pb_craft")) return "This piece was not pattern-crafted.";
+    var _pc = _it.pb_craft;
+    for (var _i = 0; _i < array_length(_it.affixes); _i++) {
+        var _row = _it.affixes[_i];
+        if (!is_struct(_row) || _row.stat_name != _stat_name) continue;
+        var _cap = pattern_hone_cap(_stat_name, _pc.rar);
+        if (_row.stat_value >= _cap) return "That line is already at its mastery ceiling (+" + string(_cap) + ").";
+        _row.stat_value += 1;
+        if (!variable_struct_exists(_pc, "honed")) _pc.honed = 0;
+        _pc.honed += 1;
+        return "";
     }
-    return true;
+    return "No such line on this piece.";
 }
 
 // ---- NAME GENERATOR (M: "rolls what the game would call it... plus some

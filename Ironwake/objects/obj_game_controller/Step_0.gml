@@ -593,6 +593,28 @@ if (GM_build_type == "run" && os_type == os_windows && keyboard_check_pressed(vk
 // F1-F4 carry no gameplay bindings anywhere, so it can't double-fire.
 // COMPILED OUT OF RELEASE BUILDS: gated on GM_build_type == "run" (IDE/F5 only).
 // =============================================================================
+// =============================================================================
+// TEST LEVER (08-26, M) - F2 grants a CRAFTING DEMO KIT for the crafting video:
+// +5 of each dungeon reagent, +250 rune dust and +2 Reforge Ingots per tier, so
+// Dorn's smelt/craft/rework loop can be demoed without farming. ADDITIVE ONLY.
+// COMPILED OUT OF RELEASE BUILDS: gated on GM_build_type == "run" (IDE/F5 only).
+// =============================================================================
+if (GM_build_type == "run" && keyboard_check_pressed(vk_f2)) {
+    reagents_ensure();
+    var _dk_cat = reagent_catalog();
+    for (var _dki = 0; _dki < array_length(_dk_cat); _dki++) reagent_add(_dk_cat[_dki].id, 5);
+    if (!variable_global_exists("rune_dust")) global.rune_dust = 0;
+    global.rune_dust += 250;
+    reforge_ingots_ensure();
+    for (var _dkt = 0; _dkt < 5; _dkt++) global.reforge_ingots[_dkt] += 2;
+    var _dk_si = audio_play_sound(snd_ui_toggle_on, 1, false);
+    audio_sound_pitch(_dk_si, 1.4);
+    show_debug_message("[TEST] crafting demo kit (F2): +5 each reagent, +250 dust, +2 each ingot tier");
+    if (instance_exists(obj_hub_controller)) {
+        instance_find(obj_hub_controller, 0).notification = "DEV: crafting kit - +5 each reagent, +250 dust, +2 each ingot tier.";
+    }
+}
+
 if (GM_build_type == "run" && keyboard_check_pressed(vk_f4)) {
     global.gold += 5000;
     var _dg_si = audio_play_sound(snd_ui_toggle_on, 1, false);
@@ -1338,22 +1360,32 @@ if (stash_mode_open) {
 
     // Rewired to scr_input (INPUT_ABSTRACTION_SPEC.md chunk 1 template) - keyboard
     // behavior is identical; gamepad/touch backends land later behind the same calls.
-    if (input_tab_prev() || input_tab_next()) {
-        stash_mode_tab   = 1 - stash_mode_tab;
+    // Tab 2 = MISC (M 08-26): the read-only holdings ledger - reagents, ingots,
+    // dust, forge parts, banshees/songs, eggs (stash_misc_rows, scr_stats).
+    if (input_tab_next()) {
+        stash_mode_tab   = (stash_mode_tab + 1) mod 3;
         stash_mode_index = 0;   // side is kept: tab-flipping in the stash column stays there
         stash_scroll     = 0;
         audio_play_sound(snd_page, 1, false);
     }
-    // Touch (M 07-08): sideways swipe across the item columns flips the
-    // EQUIPMENT/CONSUMABLES tab - simulated Q/E into the handler above.
+    if (input_tab_prev()) {
+        stash_mode_tab   = (stash_mode_tab + 2) mod 3;
+        stash_mode_index = 0;
+        stash_scroll     = 0;
+        audio_play_sound(snd_page, 1, false);
+    }
+    // Touch (M 07-08): sideways swipe across the item columns flips the tab -
+    // simulated Q/E into the handler above.
     if (input_device() == 2) touch_swipe_tab(45, 249, 1875, 960);
+    // MISC is a single read-only list: no sides, and its row count drives the cursor.
+    if (stash_mode_tab == 2) _cur_count = array_length(stash_misc_rows());
     // nav_left/right = arrows AND A/D, like every other two-column screen.
-    if (nav_left()) {
+    if (stash_mode_tab != 2 && nav_left()) {
         stash_mode_side  = 0;
         stash_mode_index = 0;
         stash_scroll     = 0;
     }
-    if (nav_right()) {
+    if (stash_mode_tab != 2 && nav_right()) {
         stash_mode_side  = 1;
         stash_mode_index = 0;
         stash_scroll     = 0;
@@ -1370,7 +1402,7 @@ if (stash_mode_open) {
     if (stash_mode_index >= stash_scroll + _stash_vis) stash_scroll = stash_mode_index - (_stash_vis - 1);
     stash_scroll = clamp(stash_scroll, 0, max(0, _cur_count - _stash_vis));
 
-    if (input_confirm()) {
+    if (input_confirm() && stash_mode_tab != 2) {   // MISC is read-only - nothing to move
         // The tab picks the array pair, the side picks the direction.
         if (stash_mode_side == 0) {
             if (stash_mode_tab == 0 && stash_mode_index < array_length(global.carried_items)) {
@@ -1431,16 +1463,27 @@ if (stash_mode_open) {
         var _row_h       = 75;
         var _max_bot     = 1020;
         var _rows_vis    = max(1, floor((_max_bot - _list_top) / _row_h));
-        // Category tabs
+        // Category tabs (3-up since MISC, M 08-26: x = 503 + t*315, 285 wide -
+        // MUST mirror ui_draw_stash_screen's tab bar)
         if (_smy >= 138 && _smy < 190) {
-            if (_smx >= 660 && _smx < 945 && stash_mode_tab != 0) {
-                stash_mode_tab = 0; stash_mode_index = 0; stash_scroll = 0;
-                audio_play_sound(snd_page, 1, false);
-            } else if (_smx >= 975 && _smx < 1260 && stash_mode_tab != 1) {
-                stash_mode_tab = 1; stash_mode_index = 0; stash_scroll = 0;
-                audio_play_sound(snd_page, 1, false);
+            for (var _stt = 0; _stt < 3; _stt++) {
+                var _sttx = 503 + _stt * 315;
+                if (_smx >= _sttx && _smx < _sttx + 285 && stash_mode_tab != _stt) {
+                    stash_mode_tab = _stt; stash_mode_index = 0; stash_scroll = 0;
+                    audio_play_sound(snd_page, 1, false);
+                    break;
+                }
             }
         }
+        // MISC tab: single list panel (x360-1560) - a click selects its row.
+        if (stash_mode_tab == 2) {
+            if (_smx >= 360 && _smx < 1560 && _smy >= _list_top && _smy < _max_bot) {
+                var _mcnt = array_length(stash_misc_rows());
+                var _mscr = clamp(stash_scroll, 0, max(0, _mcnt - _rows_vis));
+                var _mrow = _mscr + floor((_smy - _list_top) / _row_h);
+                if (_mrow >= 0 && _mrow < _mcnt) stash_mode_index = _mrow;
+            }
+        } else {
         // Switch to left side
         if (_smx >= 45 && _smx < 900 && _smy >= 204 && _smy < _max_bot) {
             if (stash_mode_side != 0) { stash_mode_side = 0; stash_mode_index = 0; stash_scroll = 0; }
@@ -1463,6 +1506,7 @@ if (stash_mode_open) {
                 if (_rrow >= 0 && _rrow < _rcnt) stash_mode_index = _rrow;
             }
         }
+        }   // end tab-0/1 column handling (MISC handled above)
     }
 
     exit;
@@ -1838,6 +1882,7 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()
             pb_slot_pick = 0; pb_rar_pick = 0; pb_base_stat = "";
             pb_affix_picks = []; pb_icon_entry = undefined;
             pb_name = ""; pb_result = undefined;
+            pb_opt_twoh = false; pb_opt_school = ""; pb_hone_pick = -1;   // 08-26 chips + hone
         }
 
         // First-visit coach-mark (M 07-29: "Strike a Mythril Frame" read as
@@ -1855,7 +1900,9 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()
         // forge:row<i>; DONE injects forge:done).
         if (forge_open) {
             if (forge_phase == 2) {
-                if (string_length(keyboard_string) > 20) keyboard_string = string_copy(keyboard_string, 1, 20);
+                // Cap 20 -> 60 (M 08-26: "at least 3x"); the entry box + every
+                // name display shrink-to-fit, so long names render safely.
+                if (string_length(keyboard_string) > 60) keyboard_string = string_copy(keyboard_string, 1, 60);
                 // Keyboard is LOCKED to the name field while typing (M 08-26):
                 // Backspace ONLY edits text - never backs out. (An empty-field
                 // backout was tried and misfired: GM trims keyboard_string
@@ -1958,7 +2005,8 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()
                         reforge_ingot_spend(_pcf.ingot_rar);
                         reagent_spend_any(pattern_craft_reagents(1 + pb_rar_pick));
                         var _pcit = pattern_craft_build(forge_slot_list()[pb_slot_pick], 1 + pb_rar_pick,
-                            pb_base_stat, pb_affix_picks, pb_icon_entry, pb_name);
+                            pb_base_stat, pb_affix_picks, pb_icon_entry, pb_name,
+                            pb_opt_twoh, pb_opt_school);   // naming-screen chips (08-26)
                         array_push(global.equipment_stash, _pcit);
                         discover_item(item_base_name(_pcit), _pcit.rarity);
                         affinity_add("dorn", 2);   // function-use drip (craft) - M 08-16
@@ -2112,9 +2160,37 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()
 
             // NAMING phase (5): keyboard_string capture, forge phase-2 idiom.
             if (pb_craft_phase == 5) {
-                if (string_length(keyboard_string) > 24) keyboard_string = string_copy(keyboard_string, 1, 24);
+                // Cap 24 -> 72 (M 08-26: "at least 3x" - see forge phase 2 note).
+                if (string_length(keyboard_string) > 72) keyboard_string = string_copy(keyboard_string, 1, 72);
                 if (input_inject_take("pb:rand")) {
                     keyboard_string = pattern_name_roll(_cw_slots[pb_slot_pick], pb_base_stat, pb_affix_picks, pb_icon_entry);
+                }
+                // WEAPON OPTION CHIPS (M design-locked 08-26 parity): typing owns
+                // the letters, so chips ride NON-CHARACTER keys - Tab toggles
+                // TWO-HANDED (~+80% damage, locks the offhand; a chosen-school 2H
+                // is a staff and keeps focus/tome offhands), Left/Right cycle a
+                // ranged craft's damage school (Physical + the 8 schools). The
+                // draw mirrors them as tap chips (pb:twoh / pb:school).
+                var _cw_wslot  = _cw_slots[clamp(pb_slot_pick, 0, array_length(_cw_slots) - 1)];
+                var _cw_is_wpn = (_cw_wslot == "weapon" || _cw_wslot == "ranged_weapon");
+                if (_cw_is_wpn && (keyboard_check_pressed(vk_tab) || input_inject_take("pb:twoh"))) {
+                    pb_opt_twoh = !pb_opt_twoh;
+                    audio_play_sound(pb_opt_twoh ? snd_ui_toggle_on : snd_ui_toggle_off, 1, false);
+                }
+                if (_cw_wslot == "ranged_weapon") {
+                    var _cw_schools = ability_school_list();          // 8 schools
+                    var _cw_sv = 0;                                   // 0 = Physical, 1..8 = school index+1
+                    for (var _cwsi = 0; _cwsi < array_length(_cw_schools); _cwsi++) {
+                        if (_cw_schools[_cwsi] == pb_opt_school) { _cw_sv = _cwsi + 1; break; }
+                    }
+                    var _cw_dir = 0;
+                    if (keyboard_check_pressed(vk_right) || input_inject_take("pb:school")) _cw_dir = 1;
+                    else if (keyboard_check_pressed(vk_left)) _cw_dir = -1;
+                    if (_cw_dir != 0) {
+                        _cw_sv = (_cw_sv + _cw_dir + array_length(_cw_schools) + 1) mod (array_length(_cw_schools) + 1);
+                        pb_opt_school = (_cw_sv == 0) ? "" : _cw_schools[_cw_sv - 1];
+                        audio_play_sound(snd_ui_move, 1, false);
+                    }
                 }
                 // Keyboard locked to the name field while typing (M 08-26, forge
                 // phase-2 idiom): Backspace ONLY edits text - never backs out
@@ -2128,7 +2204,7 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()
                 if (keyboard_check_pressed(vk_enter) || input_inject_take("pb:ok")) {
                     var _cw_nm = string_trim(keyboard_string);
                     if (_cw_nm == "") exit;   // no nameless craftwork
-                    pb_name = string_copy(_cw_nm, 1, 24);
+                    pb_name = string_copy(_cw_nm, 1, 72);
                     var _cw_fee = pattern_craft_fee(1 + pb_rar_pick);
                     dorn_ck_open  = true;
                     dorn_ck_kind  = "pb_craft";
@@ -2145,19 +2221,48 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()
                 exit;
             }
 
-            // RESULT phase (6): reveal card - re-roll the numbers or keep them.
+            // RESULT phase (6): reveal card - HONE the numbers or keep them
+            // (M design-locked 08-26: HONE replaced the numbers-reroll, which
+            // charged gold on bands that were often zero-width).
             if (pb_craft_phase == 6) {
                 if (pb_result == undefined) { pb_craft_open = false; pb_craft_phase = 0; exit; }
-                if (input_hotkey("R") || input_inject_take("pb:reroll")) {
-                    var _cw_rr = pattern_reroll_fee(pb_result.rarity);
-                    if (global.gold < _cw_rr) {
-                        shop_notification = "Re-rolling the numbers asks " + string(_cw_rr) + "g.";
+                if (!variable_instance_exists(id, "pb_hone_pick")) pb_hone_pick = -1;
+                // HONE list open: W/S pick a line, Enter buys +1, Esc closes.
+                if (pb_hone_pick >= 0) {
+                    var _hn_rows = pattern_hone_rows(pb_result);
+                    var _hn_n    = array_length(_hn_rows);
+                    if (_hn_n == 0) { pb_hone_pick = -1; exit; }
+                    if (input_cancel() || input_back() || input_inject_take("pbhn:close")) { pb_hone_pick = -1; exit; }
+                    if (nav_up())   pb_hone_pick = wrap_index(pb_hone_pick - 1, _hn_n);
+                    if (nav_down()) pb_hone_pick = wrap_index(pb_hone_pick + 1, _hn_n);
+                    for (var _hni = 0; _hni < _hn_n; _hni++) {
+                        if (input_inject_take("pbhn:row" + string(_hni))) pb_hone_pick = _hni;
+                    }
+                    pb_hone_pick = clamp(pb_hone_pick, 0, _hn_n - 1);
+                    if (input_confirm() || input_inject_take("pbhn:buy")) {
+                        var _hn_fee = pattern_hone_fee(pb_result);
+                        var _hn_row = _hn_rows[pb_hone_pick];
+                        if (_hn_row.value >= _hn_row.cap) {
+                            shop_notification = _hn_row.label + " is already at its mastery ceiling (+" + string(_hn_row.cap) + ").";
+                            audio_play_sound(snd_ui_error, 1, false);
+                        } else if (global.gold < _hn_fee) {
+                            shop_notification = "Honing asks " + string(_hn_fee) + "g.";
+                            audio_play_sound(snd_ui_error, 1, false);
+                        } else if (pattern_craft_hone(pb_result, _hn_row.stat_name) == "") {
+                            global.gold -= _hn_fee;
+                            shop_notification = "";
+                            audio_play_sound(snd_forge, 1, false);
+                            ui_checkout_vfx(spr_vfx_impact, 960, 540);
+                            save_game();
+                        }
+                    }
+                    exit;
+                }
+                if (input_hotkey("R") || input_inject_take("pb:hone")) {
+                    if (array_length(pattern_hone_rows(pb_result)) > 0) { pb_hone_pick = 0; shop_notification = ""; }
+                    else {
+                        shop_notification = "Nothing to hone - this piece carries no crafted affix lines.";
                         audio_play_sound(snd_ui_error, 1, false);
-                    } else if (pattern_craft_reroll(pb_result)) {
-                        global.gold -= _cw_rr;
-                        audio_play_sound(snd_forge, 1, false);
-                        ui_checkout_vfx(spr_vfx_impact, 1185, 540);
-                        save_game();
                     }
                     exit;
                 }
@@ -2394,6 +2499,7 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()
             pb_cursor = 0; pb_scroll = 0;
             pb_affix_picks = []; pb_icon_entry = undefined;
             pb_result = undefined; pb_name = "";
+            pb_opt_twoh = false; pb_opt_school = ""; pb_hone_pick = -1;   // 08-26 chips + hone
             shop_notification = "";
             exit;
         }
@@ -2590,6 +2696,10 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()
             petra_rune_result_cursor = 0; petra_rune_result_scroll = 0;
             petra_reveal_open = false;
         }
+        // Reagent-swap mode state (M-locked 08-26): give/get picks + checkout arm.
+        if (!variable_instance_exists(id, "petra_rg_phase")) {
+            petra_rg_phase = 0; petra_rg_give = 0; petra_rg_get = 1; petra_rg_ck = false;
+        }
 
         // --- ORDER REVEAL popup (M 07-28: the yield vanished into a stash stack -
         // now it's EXAMINED before it goes). Modal: Enter/Esc/DONE closes.
@@ -2609,6 +2719,10 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()
             if (petra_trade_confirm) {
                 petra_trade_confirm      = false;
                 petra_trade_notification = "";
+            } else if (petra_trade_mode == 2 && petra_rg_ck) {
+                petra_rg_ck = false; petra_trade_notification = "";
+            } else if (petra_trade_mode == 2 && petra_rg_phase == 1) {
+                petra_rg_phase = 0; petra_trade_notification = "";
             } else if (petra_trade_mode == 1 && petra_rune_phase == 1) {
                 petra_rune_phase = 0; petra_trade_notification = "";
             } else if (petra_place_more && petra_order_active()) {
@@ -2668,12 +2782,82 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()
             exit;
         }
 
-        // --- No order: [R] / mode chip flips GEAR TRADE <-> RUNE BLUEPRINTS ---
+        // --- No order: [R] / mode chip cycles GEAR -> RUNES -> REAGENTS (08-26) ---
         if (input_hotkey("R") || input_inject_take("petra:mode")) {
-            petra_trade_mode = 1 - petra_trade_mode;
+            petra_trade_mode = (petra_trade_mode + 1) mod 3;
             petra_rune_phase = 0; petra_rune_sel = [];
             petra_rune_cursor = 0; petra_rune_scroll = 0;
+            petra_rg_phase = 0; petra_rg_ck = false;
             petra_trade_confirm = false; petra_trade_notification = "";
+            exit;
+        }
+
+        // --- REAGENT SWAP MODE (M-locked 08-26): give N of one type for M of
+        // another (petra_reagent_trade_terms: 2->1, Petra rank 2+ 3->2). Column
+        // 0 = GIVE, column 1 = RECEIVE (petra_rg_phase); the standard checkout
+        // popup confirms the spend (07-27 rule). Draw injects petra:rg* tags.
+        if (petra_trade_mode == 2) {
+            var _rgc = reagent_catalog();
+            var _rgn = array_length(_rgc);
+            var _rgt = petra_reagent_trade_terms();
+            // Checkout popup owns input while armed (Esc handled in the shared
+            // cancel block above; buttons inject rgok/rgcancel).
+            if (petra_rg_ck) {
+                if (input_inject_take("petra:rgcancel")) { petra_rg_ck = false; exit; }
+                if (input_confirm() || input_inject_take("petra:rgok")) {
+                    petra_rg_ck = false;
+                    var _gv = _rgc[clamp(petra_rg_give, 0, _rgn - 1)];
+                    var _gt = _rgc[clamp(petra_rg_get,  0, _rgn - 1)];
+                    if (reagent_count(_gv.id) < _rgt.give || _gv.id == _gt.id) {
+                        petra_trade_notification = "Need " + string(_rgt.give) + " " + _gv.name + " - you hold " + string(reagent_count(_gv.id)) + ".";
+                        audio_play_sound(snd_ui_error, 1, false);
+                    } else {
+                        reagent_add(_gv.id, -_rgt.give);
+                        reagent_add(_gt.id,  _rgt.get);
+                        affinity_add("petra", 2);   // function-use drip (reagent swap)
+                        petra_trade_notification = "Traded " + string(_rgt.give) + " " + _gv.name
+                            + " for " + string(_rgt.get) + " " + _gt.name + " - you hold " + string(reagent_count(_gt.id)) + ".";
+                        audio_play_sound(snd_buy, 1, false);
+                        ui_checkout_vfx(spr_vfx_gain, 960, 500);
+                        petra_rg_phase = 0;
+                        if (room == rm_hub || room == rm_character_select) save_game();
+                    }
+                }
+                exit;
+            }
+            // Row taps set the pick AND focus that column (draw injects them).
+            for (var _rgi = 0; _rgi < _rgn; _rgi++) {
+                if (input_inject_take("petra:rggive" + string(_rgi))) { petra_rg_give = _rgi; petra_rg_phase = 0; }
+                if (input_inject_take("petra:rgget"  + string(_rgi))) { petra_rg_get  = _rgi; petra_rg_phase = 1; }
+            }
+            // A/D switch column, W/S move within it (two-column idiom).
+            if (nav_left())  petra_rg_phase = 0;
+            if (nav_right()) petra_rg_phase = 1;
+            if (petra_rg_phase == 0) {
+                if (nav_up())   petra_rg_give = wrap_index(petra_rg_give - 1, _rgn);
+                if (nav_down()) petra_rg_give = wrap_index(petra_rg_give + 1, _rgn);
+            } else {
+                if (nav_up())   petra_rg_get = wrap_index(petra_rg_get - 1, _rgn);
+                if (nav_down()) petra_rg_get = wrap_index(petra_rg_get + 1, _rgn);
+            }
+            // Enter / TRADE button: advance GIVE -> RECEIVE, then arm the checkout.
+            if (input_confirm() || input_inject_take("petra:rgtrade")) {
+                var _gvp = _rgc[clamp(petra_rg_give, 0, _rgn - 1)];
+                if (reagent_count(_gvp.id) < _rgt.give) {
+                    petra_trade_notification = "Need " + string(_rgt.give) + " " + _gvp.name
+                        + " to trade - you hold " + string(reagent_count(_gvp.id)) + ".";
+                    audio_play_sound(snd_ui_error, 1, false);
+                } else if (petra_rg_phase == 0) {
+                    petra_rg_phase = 1;
+                    if (petra_rg_get == petra_rg_give) petra_rg_get = (petra_rg_give + 1) mod _rgn;
+                    petra_trade_notification = "";
+                } else if (petra_rg_get == petra_rg_give) {
+                    petra_trade_notification = "Pick a DIFFERENT reagent to receive.";
+                    audio_play_sound(snd_ui_error, 1, false);
+                } else {
+                    petra_rg_ck = true;   // checkout popup (drawn topmost in scr_ui)
+                }
+            }
             exit;
         }
 
@@ -2911,6 +3095,17 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()
                 affinity_add("petra", 2);
                 audio_play_sound(snd_buy, 1, false);
                 shop_notification = _entry.it.name + " added to your feed pouch (Bairc feeds it).";
+                if (room == rm_hub || room == rm_character_select) save_game();
+            } else if (_entry.kind == "reagent") {
+                // Limited RNG reagent lot (M-locked 08-26): one per press.
+                global.gold -= _sprice;
+                reagent_add(_entry.it.id, 1);
+                global.petra_reagent_stock[_entry.stock_idx].qty -= 1;
+                affinity_add("petra", 2);
+                audio_play_sound(snd_buy, 1, false);
+                shop_notification = _entry.it.name + " purchased - you hold " + string(reagent_count(_entry.it.id)) + ".";
+                // A sold-out lot drops from the list - keep the cursor in range.
+                shop_index = min(shop_index, max(0, array_length(petra_buy_list()) - 1));
                 if (room == rm_hub || room == rm_character_select) save_game();
             } else {
                 // Consumable (standard or limited special).

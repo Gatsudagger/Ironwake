@@ -37,6 +37,11 @@ geom_last_h = window_get_height();
 // dead-code-eliminated - forces the compiler to include them in the build.
 // (If a sprite is ever renamed/removed, update this list to match.)
 global.__sprite_includes = [
+    // 08-26 reagent glyphs: ui_draw_reagent_readout / reagent_icon_sprite
+    // resolve them by STRING (asset_get_index) so these direct refs keep them.
+    spr_icon_reagent,
+    spr_icon_reagent_vault_ash, spr_icon_reagent_cinder_marrow,
+    spr_icon_reagent_rime_salt, spr_icon_reagent_void_silt,
     // 08-15 rune recolors: rune_icon_sprite resolves these by STRING
     // ("spr_icon_rune_" + id) so direct refs are required or they strip.
     spr_icon_rune_rime, spr_icon_rune_tempest, spr_icon_rune_aether,
@@ -1291,6 +1296,7 @@ perm_alloc_index = 0;
 // -----------------------------------------------------------------------------
 global.petra_stock_special = undefined;   // elite consumable on special offer, or undefined
 global.petra_special_qty   = 0;
+if (!variable_global_exists("petra_reagent_stock")) global.petra_reagent_stock = [];   // limited RNG reagent lots (08-26); restock_shops rolls it
 global.dorn_stock          = [];          // array of { item, price, sold }
 
 // Vex the Trainer overlay state (full-screen, opened from the hub NPC list)

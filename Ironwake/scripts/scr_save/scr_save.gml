@@ -149,6 +149,7 @@ function save_game() {
         dorn_stock:          variable_global_exists("dorn_stock")          ? global.dorn_stock          : [],
         petra_stock_special: variable_global_exists("petra_stock_special") ? global.petra_stock_special : undefined,
         petra_special_qty:   variable_global_exists("petra_special_qty")   ? global.petra_special_qty   : 0,
+        petra_reagent_stock: variable_global_exists("petra_reagent_stock") ? global.petra_reagent_stock : [],   // limited RNG reagent lots (08-26)
 
         // Rune system (Maren) - socketed gear runes ride on the item structs above
         rune_inventory: variable_global_exists("rune_inventory") ? global.rune_inventory : [],
@@ -470,6 +471,7 @@ function new_game_reset() {
     global.dorn_stock          = [];
     global.petra_stock_special = undefined;
     global.petra_special_qty   = 0;
+    global.petra_reagent_stock = [];   // limited RNG reagent lots (08-26)
 
     // Rune system (Maren)
     global.rune_inventory = [];
@@ -899,6 +901,11 @@ function load_game() {
         global.petra_stock_special = undefined;
     }
     if (variable_struct_exists(_s, "petra_special_qty")) global.petra_special_qty = _s.petra_special_qty;
+    // Reagent lots (08-26): pre-existing saves lack the key - KEEP the roll the
+    // startup restock_shops() made rather than clearing the shelf.
+    if (variable_struct_exists(_s, "petra_reagent_stock") && is_array(_s.petra_reagent_stock)) {
+        global.petra_reagent_stock = _s.petra_reagent_stock;
+    }
 
     // Banshee in a Bottle + music jukebox (v3). Pre-v3 saves lack every key ->
     // fresh defaults (nothing owned, default music). Selections re-validate

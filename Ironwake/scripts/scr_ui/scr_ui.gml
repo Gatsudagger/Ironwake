@@ -7686,7 +7686,7 @@ function ui_tab_hint_body(key) {
     switch (key) {
         case "dorn:BUY":     return "Dorn's rotating stock - weapons, armor and gear. Restocks between runs; his Awakening-scaled shelf improves as you climb. Station rank 1 widens the stall by 2 pieces.";
         case "dorn:SELL":    return "Sell unequipped gear from your pack and stash for gold.";
-        case "dorn:REFORGE": return "Two crafts. REWORK GEAR: spend a Reforge Ingot of the item's tier or higher to reroll its affixes - same item, fresh stats. SMELT: destroy a piece for an ingot, and Dorn studies one of its affixes into the PATTERN BOOK. CRAFT builds an item to your own design from studied blueprints.";
+        case "dorn:REFORGE": return "Two crafts. REWORK GEAR: spend a Reforge Ingot of the item's tier or higher to reroll its affixes - same item, fresh stats. SMELT: destroy a piece for an ingot - Dorn studies one of its affixes into the PATTERN BOOK and keeps its ICON for the art page. CRAFT builds an item to your own design from studied blueprints (mastered blueprints roll PAST natural drops), wearing any smelted icon that fits the slot - then HONE buys +1s for gold.";
         case "dorn:TEMPER":  return "Work rough gear toward its true potential: each step is +10% QUALITY (gold + rune dust), plus a little bonus max HP. A raw legendary barely beats a finished epic. Station rank 2 makes each step +12%.";
         case "maren:Socket Gear":   return "Socket GEAR runes into equipped items with open sockets. Runes come back out freely - nothing is lost by experimenting. Station rank 2 unlocks DEEP SOCKET [D]: +1 socket, once per run.";
         case "maren:Aspects":       return "Socket ASPECT runes into your character's aspect slots - per-school damage (Ember, Rime...), Serration, Surge and the flagships live here.";
@@ -7697,9 +7697,9 @@ function ui_tab_hint_body(key) {
         case "sable:Salvage":  return "Break unequipped gear down into RUNE DUST - rarer pieces pay more dust.";
         case "sable:Upgrade":  return "Sable's refinements: TRANSMUTE three runes into a different rune of the same tier, and improve what she already knows how to make.";
         case "sable:Rebirth":  return "Sable's dark exchange: CURSED REBIRTH feeds a legendary to the dark - it comes back stronger, but branded with a real curse. QUINTESSENCE distills her share of the Legendary Forge here too.";
-        case "petra:BUY":      return "Supplies for the road - potions, creature feed and consumables. Restocks between runs; her SPECIAL shelf sometimes carries something rarer.";
+        case "petra:BUY":      return "Supplies for the road - potions, creature feed and consumables. Restocks between runs; her SPECIAL shelf sometimes carries something rarer, and a LIMITED lot of one dungeon reagent rotates each run.";
         case "petra:SELL":     return "Sell unequipped gear from your pack and stash for gold.";
-        case "petra:TRADE":    return "The treasure ladder: 3 same-tier items trade up to the next tier, delivered after floor clears. [R] flips to RUNE mode - 5 same-tier runes buy a BLUEPRINT rune of your choosing. Traded goods are destroyed. Station rank 1 opens a SECOND ledger line.";
+        case "petra:TRADE":    return "The treasure ladder: 3 same-tier items trade up to the next tier, delivered after floor clears. [R] cycles RUNE mode (5 same-tier runes buy a BLUEPRINT rune of your choosing) and REAGENT mode (swap 2 of one dungeon reagent for 1 of another). Traded goods are destroyed. Station rank 1 opens a SECOND ledger line.";
     }
     return "";
 }
@@ -13029,6 +13029,8 @@ function ui_draw_shop_screen() {
     draw_set_font(ui_font(fnt_ui));
     draw_set_color(c_yellow);
     draw_text(1875, 36, "Gold: " + string(global.gold) + "g");
+    // Reagent readout under the gold (M 08-26) - x stays right of every tab bar.
+    ui_draw_reagent_readout(1875, 78);
 
     // --- Tab bar (auto-centred in the row; Petra has a 3rd Trade tab) ---
     // Tabs always centre on x960 regardless of count, so 2 or 3 tabs stay symmetric.
@@ -13386,11 +13388,94 @@ function ui_draw_shop_screen() {
             var _pmx3 = device_mouse_x_to_gui(0), _pmy3 = device_mouse_y_to_gui(0);
             var _ppress3 = mouse_check_button_pressed(mb_left);
             // "-> X" reads as "switch to X" (bare "RUNES" looked like the CURRENT
-            // mode - trade-tab cleanup, tour pass 08-15).
-            ui_confirm_button(150, 176, 400, 220, (_pt_mode == 0) ? "-> RUNES  [R]" : "-> GEAR  [R]",
+            // mode - trade-tab cleanup, tour pass 08-15). Cycles three modes
+            // since 08-26: GEAR -> RUNES -> REAGENTS.
+            ui_confirm_button(150, 176, 400, 220,
+                (_pt_mode == 0) ? "-> RUNES  [R]" : ((_pt_mode == 1) ? "-> REAGENTS  [R]" : "-> GEAR  [R]"),
                 make_color_rgb(190, 120, 210), _pmx3, _pmy3, _ppress3, "petra:mode");
 
-            if (_pt_mode == 1) {
+            if (_pt_mode == 2) {
+            // ================= REAGENT SWAP MODE (M-locked 08-26) =================
+            var _rg_cat = reagent_catalog();
+            var _rg_n   = array_length(_rg_cat);
+            var _rg_t   = petra_reagent_trade_terms();
+            var _rg_ph  = variable_instance_exists(_gc, "petra_rg_phase") ? _gc.petra_rg_phase : 0;
+            var _rg_gv  = variable_instance_exists(_gc, "petra_rg_give")  ? _gc.petra_rg_give  : 0;
+            var _rg_gt  = variable_instance_exists(_gc, "petra_rg_get")   ? _gc.petra_rg_get   : 1;
+
+            if (_gc.shop_notification == "" && _gc.petra_trade_notification == "") {
+                draw_set_halign(fa_center);
+                draw_set_font(ui_font(fnt_ui_small));
+                draw_set_color(make_color_rgb(150, 130, 170));
+                draw_text(960, 162, "Trade " + string(_rg_t.give) + " of one reagent for " + string(_rg_t.get)
+                    + " of another - Petra keeps the difference."
+                    + ((npc_rank("petra") >= 2) ? "  (Rank perk: 3-for-2.)" : ""));
+                draw_set_halign(fa_left);
+            }
+
+            // Two columns: GIVE (left) and RECEIVE (right); the focused column
+            // carries the accent border, matching the stash two-column idiom.
+            var _rg_cols = [
+                { x0: 190, x1: 790,  lab: "YOU GIVE " + string(_rg_t.give),    cur: _rg_gv, focus: (_rg_ph == 0), tag: "petra:rggive" },
+                { x0: 860, x1: 1460, lab: "YOU RECEIVE " + string(_rg_t.get),  cur: _rg_gt, focus: (_rg_ph == 1), tag: "petra:rgget" }
+            ];
+            for (var _rc_i = 0; _rc_i < 2; _rc_i++) {
+                var _rc = _rg_cols[_rc_i];
+                draw_set_color(_rc.focus ? make_color_rgb(190, 120, 210) : make_color_rgb(60, 50, 70));
+                draw_rectangle(_rc.x0, 236, _rc.x1, 780, true);
+                draw_set_font(ui_font(fnt_ui));
+                draw_set_color(_rc.focus ? c_white : make_color_rgb(150, 140, 165));
+                draw_text(_rc.x0 + 18, 246, _rc.lab);
+                for (var _rr_i = 0; _rr_i < _rg_n; _rr_i++) {
+                    var _rr  = _rg_cat[_rr_i];
+                    var _rry = 300 + _rr_i * 118;
+                    var _rr_sel = (_rc.cur == _rr_i);
+                    // Greyed in the RECEIVE column when it matches the GIVE pick.
+                    var _rr_dis = (_rc_i == 1 && _rr_i == _rg_gv);
+                    if (_ppress3 && _pmx3 >= _rc.x0 && _pmx3 < _rc.x1 && _pmy3 >= _rry && _pmy3 < _rry + 108
+                        && !_rr_dis
+                        && !(variable_instance_exists(_gc, "petra_rg_ck") && _gc.petra_rg_ck)) {
+                        input_inject(_rc.tag + string(_rr_i));
+                    }
+                    draw_set_alpha(_rr_dis ? 0.25 : (_rr_sel ? 0.95 : 0.5));
+                    draw_set_color(_rr_sel && _rc.focus ? make_color_rgb(40, 28, 48) : make_color_rgb(18, 16, 26));
+                    draw_rectangle(_rc.x0 + 10, _rry, _rc.x1 - 10, _rry + 108, false);
+                    draw_set_alpha(_rr_dis ? 0.35 : 1.0);
+                    draw_set_color(_rr_sel ? make_color_rgb(190, 120, 210) : make_color_rgb(55, 48, 66));
+                    draw_rectangle(_rc.x0 + 10, _rry, _rc.x1 - 10, _rry + 108, true);
+                    var _rr_spr = reagent_icon_sprite(_rr.id);
+                    if (_rr_spr >= 0) draw_sprite_stretched(_rr_spr, 0, _rc.x0 + 24, _rry + 22, 64, 64);
+                    draw_set_font(ui_font(fnt_ui));
+                    draw_set_color(make_color_rgb(150, 205, 160));
+                    draw_text(_rc.x0 + 104, _rry + 16, _rr.name);
+                    draw_set_font(ui_font(fnt_ui_small));
+                    draw_set_color(make_color_rgb(140, 150, 170));
+                    draw_text(_rc.x0 + 104, _rry + 58, "Held: " + string(reagent_count(_rr.id)));
+                    draw_set_alpha(1.0);
+                }
+            }
+            // TRADE button below the columns (hidden while the checkout popup is
+            // up so its hover-inject can't queue a stale re-arm).
+            if (!(variable_instance_exists(_gc, "petra_rg_ck") && _gc.petra_rg_ck)) {
+                ui_confirm_button(660, 816, 990, 882, "TRADE  [Enter]", make_color_rgb(120, 210, 130),
+                    _pmx3, _pmy3, _ppress3, "petra:rgtrade");
+            }
+            draw_set_halign(fa_center);
+            draw_set_font(ui_font(fnt_ui_small));
+            draw_set_color(make_color_rgb(160, 140, 180));
+            ui_draw_key_legend(960, 1032, "A/D: Column    W/S: Pick    Enter: Trade    R: Mode    Esc: Back");
+            draw_set_halign(fa_left);
+
+            // Checkout popup (M 07-27 standing rule) - armed by the Step.
+            if (variable_instance_exists(_gc, "petra_rg_ck") && _gc.petra_rg_ck) {
+                var _rg_gvd = _rg_cat[clamp(_rg_gv, 0, _rg_n - 1)];
+                var _rg_gtd = _rg_cat[clamp(_rg_gt, 0, _rg_n - 1)];
+                ui_draw_checkout_confirm("TRADE REAGENTS",
+                    string(_rg_t.give) + "x " + _rg_gvd.name + "  ->  " + string(_rg_t.get) + "x " + _rg_gtd.name
+                    + "\nPetra keeps the difference. This cannot be undone.",
+                    "petra:rgok", "petra:rgcancel");
+            }
+            } else if (_pt_mode == 1) {
             // ================= RUNE BLUEPRINT MODE =================
             var _pr_inv  = variable_global_exists("rune_inventory") ? global.rune_inventory : [];
             var _pr_sel  = variable_instance_exists(_gc, "petra_rune_sel") ? _gc.petra_rune_sel : [];
@@ -13840,6 +13925,7 @@ function ui_draw_shop_screen() {
             var _it      = _entry.it;
             var _price   = _entry.price;
             var _is_feed = (_entry.kind == "feed");
+            var _is_reag = (_entry.kind == "reagent");   // limited RNG lots (08-26)
             var _ry      = _ry0 + (_ri - _win0) * (_prh + _prgap);
             var _is_sel  = (_ri == _gc.shop_index);
 
@@ -13847,13 +13933,17 @@ function ui_draw_shop_screen() {
             draw_set_color(_is_sel ? make_color_rgb(16, 42, 50) : make_color_rgb(14, 18, 28));
             draw_rectangle(_rx0, _ry, _rx0 + _rw, _ry + _prh, false);
             draw_set_alpha(1.0);
-            // Feed rows take a warm accent to read as a different category from consumables.
-            var _acc_on  = _is_feed ? make_color_rgb(150, 200, 110) : make_color_rgb(55, 170, 170);
-            var _acc_off = _is_feed ? make_color_rgb(70, 96, 50)     : make_color_rgb(38, 75, 85);
+            // Feed rows take a warm accent to read as a different category from
+            // consumables; reagent lots go dungeon-green.
+            var _acc_on  = _is_reag ? make_color_rgb(150, 205, 160) : (_is_feed ? make_color_rgb(150, 200, 110) : make_color_rgb(55, 170, 170));
+            var _acc_off = _is_reag ? make_color_rgb(60, 95, 70)    : (_is_feed ? make_color_rgb(70, 96, 50)     : make_color_rgb(38, 75, 85));
             draw_set_color(_is_sel ? _acc_on : _acc_off);
             draw_rectangle(_rx0, _ry, _rx0 + _rw, _ry + _prh, true);
 
-            if (_is_feed) {
+            if (_is_reag) {
+                var _rgi = reagent_icon_sprite(_it.id);
+                if (_rgi >= 0) draw_sprite_stretched(_rgi, 0, _rx0 + 15, _ry + 14, 58, 58);
+            } else if (_is_feed) {
                 // Feed icon (falls back to a +N growth badge if the sprite isn't imported).
                 var _fic = pet_feed_icon(_it.id);
                 if (_fic >= 0) {
@@ -13878,16 +13968,25 @@ function ui_draw_shop_screen() {
 
             // Name
             draw_set_font(ui_font(fnt_ui));
-            draw_set_color(_is_feed ? make_color_rgb(180, 220, 130) : ui_consumable_name_color(_it));   // Genie Lamp golds
+            draw_set_color(_is_reag ? make_color_rgb(150, 205, 160)
+                         : (_is_feed ? make_color_rgb(180, 220, 130) : ui_consumable_name_color(_it)));   // Genie Lamp golds
             draw_text(_rx0 + 90, _ry + 9, _it.name);
 
             // Description / blurb
             draw_set_font(ui_font(fnt_ui_small));
             draw_set_color(make_color_rgb(130, 160, 170));
-            draw_text(_rx0 + 90, _ry + 49, ui_sentence(_is_feed ? _it.blurb : _it.description));
+            draw_text(_rx0 + 90, _ry + 49, ui_sentence((_is_feed || _is_reag) ? _it.blurb : _it.description));
 
             draw_set_halign(fa_right);
-            if (_is_feed) {
+            if (_is_reag) {
+                // Limited-lot badge + held count (top-right, reagent-green).
+                draw_set_font(ui_font(fnt_ui));
+                draw_set_color(make_color_rgb(255, 155, 30));
+                draw_text(_rx0 + _rw - 225, _ry + 9, "[LIMITED - " + string(_entry.qty) + " left]");
+                draw_set_font(ui_font(fnt_ui_small));
+                draw_set_color(make_color_rgb(150, 205, 160));
+                draw_text(_rx0 + _rw - 24, _ry + 9, "Held: " + string(reagent_count(_it.id)));
+            } else if (_is_feed) {
                 // Owned-in-pouch count (top-right).
                 draw_set_font(ui_font(fnt_ui_small));
                 draw_set_color(make_color_rgb(150, 200, 140));
@@ -14466,6 +14565,37 @@ function ui_confirm_button(_x0, _y0, _x1, _y1, _txt, _col, _mx, _my, _press, _ta
     if (_hov && _press) input_inject(_tag);
 }
 
+// ui_draw_reagent_readout(right_x, y) - right-aligned "Reagents: N" chip with
+// the reagent glyph, for NPC screen/shop headers next to gold + dust (M 08-26:
+// reagents need their own icon readout on every trade screen). Label green like
+// the dungeon growth they come from; value stays gold like the other readouts.
+// The glyph resolves by STRING so this ships ahead of the sprite import - add
+// spr_icon_reagent to global.__sprite_includes when the art lands.
+function ui_draw_reagent_readout(_rx, _ry) {
+    reagents_ensure();
+    var _rr_num = " " + string(reagent_total());
+    draw_set_halign(fa_right);
+    draw_set_valign(fa_top);
+    draw_set_font(ui_font(fnt_ui_small));
+    draw_set_color(make_color_rgb(200, 180, 130));
+    draw_text(_rx, _ry, _rr_num);
+    draw_set_color(make_color_rgb(150, 205, 160));
+    draw_text(_rx - string_width(_rr_num), _ry, "Reagents:");
+    var _rr_spr = asset_get_index("spr_icon_reagent");
+    if (_rr_spr >= 0) {
+        draw_sprite_stretched(_rr_spr, 0,
+            _rx - string_width(_rr_num) - string_width("Reagents:") - 30, _ry - 2, 24, 24);
+    }
+    draw_set_halign(fa_left);
+}
+
+// ui_draw_text_fit(x, y, txt, maxw) - one-line left-aligned shrink-to-fit text:
+// scales down instead of overflowing (08-26: crafted names may run 60-72 chars).
+function ui_draw_text_fit(_x, _y, _txt, _maxw) {
+    var _sc = min(1.0, _maxw / max(1, string_width(_txt)));
+    draw_text_transformed(_x, _y + (1 - _sc) * string_height("Ag") * 0.35, _txt, _sc, _sc, 0);
+}
+
 // ui_arrow_button(x0,y0,x1,y1, dir, col, mx,my,press, tag) - scroll button with
 // a DRAWN triangle glyph instead of a text label (M 08-26: the Pattern Book's
 // UP/DOWN labels never sat cleanly in their boxes across font sizes - a glyph
@@ -14528,7 +14658,22 @@ function ui_draw_checkout_confirm(_title, _body, _ok_tag, _cancel_tag, _subject 
     draw_set_alpha(0.66);
     draw_set_color(make_color_rgb(6, 8, 14));
     draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
-    var _x0 = 560, _y0 = 372, _x1 = 1360, _y1 = 708;
+    var _x0 = 560, _y0 = 372, _x1 = 1360;
+    var _cbw = (_x1 - _x0) - 90;
+    // MEASURE pass (M 08-26 shot: a long craft body ran UNDER the buttons):
+    // replicate the font stack below, find where the body ends, and grow the
+    // panel past its shipped 708 floor when the content asks for more room.
+    draw_set_font(ui_font(fnt_ui_small));
+    var _clh   = max(30, string_height("Ag") + 2);   // wrap line pitch, font-measured
+    var _m_cby = _y0 + 84;
+    if (_subject != "") {
+        draw_set_font(ui_font(fnt_ui));
+        if (string_width(_subject) > _cbw) draw_set_font(ui_font(fnt_ui_small));
+        _m_cby = _y0 + 72 + string_height("Ag") + 6;
+        draw_set_font(ui_font(fnt_ui_small));
+        _m_cby += (_subject_sub != "") ? (string_height("Ag") + 12) : 8;
+    }
+    var _y1 = clamp(max(708, _m_cby + string_height_ext(_body, _clh, _cbw) + 114), 708, 1044);
     draw_set_alpha(0.97);
     draw_set_color(make_color_rgb(22, 20, 30));
     draw_rectangle(_x0, _y0, _x1, _y1, false);
@@ -14539,10 +14684,10 @@ function ui_draw_checkout_confirm(_title, _body, _ok_tag, _cancel_tag, _subject 
     draw_set_halign(fa_center);
     draw_set_font(ui_font(fnt_ui));
     draw_set_color(make_color_rgb(255, 225, 150));
-    draw_text((_x0 + _x1) / 2, _y0 + 24, _title);
+    // Shrink-to-fit title: a 72-char crafted name rides in here (08-26 cap x3).
+    var _t_sc = min(1.0, ((_x1 - _x0) - 48) / max(1, string_width(_title)));
+    draw_text_transformed((_x0 + _x1) / 2, _y0 + 24, _title, _t_sc, _t_sc, 0);
     draw_set_font(ui_font(fnt_ui_small));
-    var _cbw = (_x1 - _x0) - 90;
-    var _clh = max(30, string_height("Ag") + 2);   // wrap line pitch, font-measured
     var _cby = _y0 + 84;
     if (_subject != "") {
         // Colored SUBJECT block (M 08-14: "runes/items should be color coded in
@@ -14672,7 +14817,10 @@ function ui_draw_reforge_confirm(_gc) {
         _b_rar  = variable_struct_exists(_item, "rarity") ? clamp(_item.rarity, 0, 4) : 0;
         _b_stat = ui_item_stat_str(_item);
     }
-    var _lc0 = 190, _lc1 = 740, _cy0 = 290, _cy1 = 790;
+    // Cards trimmed 40px each on the gutter side (M 08-26: "the two boxes cover
+    // the ingot in the middle") - the center gutter grew 170 -> 250px so the
+    // ingot + its cost line never sit on the card borders at any font size.
+    var _lc0 = 190, _lc1 = 700, _cy0 = 290, _cy1 = 790;
     ui_reforge_card(_lc0, _cy0, _lc1, _cy1, (_stage >= 2) ? "BEFORE" : "YOUR GEAR",
         make_color_rgb(120, 118, 130), _b_lab, _b_rar, _b_stat);
 
@@ -14690,17 +14838,16 @@ function ui_draw_reforge_confirm(_gc) {
     } else {
         var _cost_tier = (_stage >= 2) ? _gc.reforge_spent_tier : reforge_ingot_tier_for(_b_rar);
         if (_cost_tier >= 0) {
-            draw_sprite_stretched(reforge_ingot_sprite(_cost_tier), 0, _pcx - 30, 540, 60, 60);
+            draw_sprite_stretched(reforge_ingot_sprite(_cost_tier), 0, _pcx - 36, 534, 72, 72);
             draw_set_font(ui_font(fnt_ui_small));
             draw_set_color(item_rarity_color(_cost_tier));
-            // Wrapped inside the 170px gutter between the cards - "costs 1
-            // Legendary ingot" on one line ran over both card borders (M 08-16).
-            draw_text_ext(_pcx, 612, ((_stage >= 2) ? "spent 1 " : "costs 1 ") + item_rarity_name(_cost_tier) + " ingot", 26, 160);
+            // Wrapped inside the widened 250px gutter between the cards.
+            draw_text_ext(_pcx, 618, ((_stage >= 2) ? "spent 1 " : "costs 1 ") + item_rarity_name(_cost_tier) + " ingot", 26, 230);
         }
     }
 
     // AFTER card (right): "?" until the reveal, then the reworked item in green.
-    var _rc0 = 910, _rc1 = 1460;
+    var _rc0 = 950, _rc1 = 1460;
     var _rcx = (_rc0 + _rc1) / 2, _rcy = (_cy0 + _cy1) / 2;
     if (_stage == 3) {
         ui_reforge_card(_rc0, _cy0, _rc1, _cy1, "NEW", make_color_rgb(120, 210, 130),
@@ -14839,10 +14986,14 @@ function ui_draw_legendary_forge(_gc) {
         draw_set_font(fnt_ui_title);
         draw_set_color(item_rarity_color(4));
         var _caret = ((current_time div 400) mod 2 == 0) ? "|" : " ";
-        draw_text(_pcx, 490, keyboard_string + _caret);
+        // Shrink-to-fit: the cap grew 20 -> 60 (M 08-26), so long names scale
+        // down inside the 720px entry box instead of running out of it.
+        var _fn_txt = keyboard_string + _caret;
+        var _fn_sc  = min(1.0, 680 / max(1, string_width(_fn_txt)));
+        draw_text_transformed(_pcx, 490 + (1 - _fn_sc) * 18, _fn_txt, _fn_sc, _fn_sc, 0);
         draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(make_color_rgb(140, 130, 115));
-        draw_text(_pcx, 590, "Type its name (max 20).   Enter: FORGE IT    Esc: back");
+        draw_text(_pcx, 590, "Type its name (max 60).   Enter: FORGE IT    Esc: back");
         draw_set_halign(fa_left);
     } else {
         // Result: the born legendary, examined like every other reveal.
@@ -15069,14 +15220,14 @@ function ui_draw_stash_screen() {
     draw_text(960, 102, "Equipped gear is always safe.   Carried items are lost on death (1 random salvage).");
     draw_set_halign(fa_left);
 
-    // Category tab bar (Q/E) - equipment and consumables get separate adjacent
-    // tabs instead of interleaving in one long list. Geometry is mirrored by
-    // the mouse handling in obj_game_controller Step (tabs x660/x975 y138..190).
+    // Category tab bar (Q/E) - equipment, consumables, and the MISC holdings
+    // ledger (M 08-26). Geometry is mirrored by the mouse handling in
+    // obj_game_controller Step (tabs x = 503 + t*315, 285 wide, y138..190).
     var _tab = _gc.stash_mode_tab;
-    var _tab_labels = ["EQUIPMENT", "CONSUMABLES"];
+    var _tab_labels = ["EQUIPMENT", "CONSUMABLES", "MISC"];
     draw_set_font(ui_font(fnt_ui));
-    for (var _t = 0; _t < 2; _t++) {
-        var _tx = 660 + _t * 315;   // 285 wide + 30 gap, pair centered on x960
+    for (var _t = 0; _t < 3; _t++) {
+        var _tx = 503 + _t * 315;   // 285 wide + 30 gap, trio centered on x960
         var _on = (_tab == _t);
         draw_set_color(_on ? make_color_rgb(30, 50, 80) : make_color_rgb(18, 22, 38));
         draw_rectangle(_tx, 138, _tx + 285, 190, false);
@@ -15096,6 +15247,64 @@ function ui_draw_stash_screen() {
     var _max_bot = 1020;
     var _list_top = _ly + 45;
     var _rows_visible = max(1, floor((_max_bot - _list_top) / _row_h));
+
+    // ---- MISC TAB (M 08-26): one read-only holdings list - reagents, dust,
+    // ingots, forge parts, banshees, freed songs, unhatched eggs. Single
+    // centered panel (x360-1560), cursor + VISIBLE scrollbar, no move verbs.
+    // Row source = stash_misc_rows() (scr_stats); Step mirrors this geometry.
+    if (_tab == 2) {
+        var _mx0 = 360, _mx1 = 1560;
+        draw_set_color(make_color_rgb(80, 160, 220));
+        draw_rectangle(_mx0, _ly, _mx1, _max_bot, true);
+        draw_set_font(ui_font(fnt_ui));
+        draw_set_color(make_color_rgb(150, 205, 160));
+        draw_text(_mx0 + 15, _ly + 9, "HOLDINGS  (safe - reagents, parts, songs, eggs)");
+        var _mrows = stash_misc_rows();
+        var _mn    = array_length(_mrows);
+        var _mscr  = clamp(_gc.stash_scroll, 0, max(0, _mn - _rows_visible));
+        var _my_   = _list_top;
+        for (var _mi = _mscr; _mi < _mn; _mi++) {
+            if (_my_ + _row_h > _max_bot) break;
+            var _mr    = _mrows[_mi];
+            var _m_sel = (_gc.stash_mode_index == _mi);
+            draw_set_alpha(_m_sel ? 0.9 : 0.5);
+            draw_set_color(_m_sel ? make_color_rgb(30, 50, 80) : make_color_rgb(18, 22, 38));
+            draw_rectangle(_mx0 + 6, _my_, _mx1 - 40, _my_ + _row_h - 3, false);
+            draw_set_alpha(1.0);
+            // 44px icon; spr -1 (art not yet imported) = diamond placeholder.
+            if (_mr.spr >= 0) {
+                draw_sprite_stretched(_mr.spr, 0, _mx0 + 16, _my_ + 12, 44, 44);
+            } else {
+                draw_set_color(_mr.col);
+                draw_rectangle(_mx0 + 26, _my_ + 22, _mx0 + 50, _my_ + 46, true);
+                draw_line(_mx0 + 26, _my_ + 34, _mx0 + 38, _my_ + 22);
+                draw_line(_mx0 + 38, _my_ + 22, _mx0 + 50, _my_ + 34);
+            }
+            var _mtx = _mx0 + 76;
+            draw_set_font(ui_font(fnt_ui));
+            draw_set_color(_mr.col);
+            ui_draw_text_fit(_mtx, _my_ + 8, _mr.name + ((_mr.count >= 0) ? ("  x" + string(_mr.count)) : ""), (_mx1 - 52) - _mtx);
+            draw_set_font(ui_font(fnt_ui_small));
+            draw_set_color(make_color_rgb(140, 150, 170));
+            ui_draw_stat_line_fit(_mtx, _my_ + 39, _mr.sub, (_mx1 - 52) - _mtx);
+            _my_ += _row_h;
+        }
+        // VISIBLE scrollbar (M's standing scroll rule) + position readout.
+        ui_pb_scrollbar(_mx1 - 28, _list_top, _max_bot - 3, _mn, _rows_visible, _mscr);
+        if (_mn > _rows_visible) {
+            draw_set_font(ui_font(fnt_ui_small));
+            draw_set_halign(fa_center);
+            draw_set_color(make_color_rgb(150, 170, 200));
+            draw_text((_mx0 + _mx1) / 2, _max_bot + 2, string(_gc.stash_mode_index + 1) + " / " + string(_mn));
+            draw_set_halign(fa_left);
+        }
+        draw_set_halign(fa_center);
+        draw_set_font(ui_font(fnt_ui_small));
+        draw_set_color(c_gray);
+        ui_draw_key_legend(960, 1026, "Q/E: Category   W/S: Navigate   Esc: Close");
+        draw_set_halign(fa_left);
+        return;
+    }
 
     // Both columns show only the active tab's category. Consumables collapse
     // into name-groups with an xN count (one row per kind, not per copy).
@@ -15145,7 +15354,7 @@ function ui_draw_stash_screen() {
         var _stl_tx = _lx + 51;
         draw_set_font(ui_font(fnt_ui));
         draw_set_color(_col);
-        draw_text(_stl_tx, _item_y + 8, _it.name + ((_cnt > 1) ? ("  x" + string(_cnt)) : ""));
+        ui_draw_text_fit(_stl_tx, _item_y + 8, _it.name + ((_cnt > 1) ? ("  x" + string(_cnt)) : ""), (_lx + _col_w - 12) - _stl_tx);
         draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(make_color_rgb(140, 150, 170));
         // Shrink-to-fit so a busy many-affix item can't run off the column edge
@@ -15210,7 +15419,7 @@ function ui_draw_stash_screen() {
         var _str_tx = _rx + 51;
         draw_set_font(ui_font(fnt_ui));
         draw_set_color(_col);
-        draw_text(_str_tx, _item_y + 8, _it.name + ((_cnt > 1) ? ("  x" + string(_cnt)) : ""));
+        ui_draw_text_fit(_str_tx, _item_y + 8, _it.name + ((_cnt > 1) ? ("  x" + string(_cnt)) : ""), (_rx + _col_w - 12) - _str_tx);
         draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(make_color_rgb(140, 150, 170));
         // Shrink-to-fit so a busy many-affix item can't run off the column edge (M 07-17).
@@ -15627,6 +15836,7 @@ function ui_draw_trainer_screen() {
     draw_set_font(ui_font(fnt_ui));
     draw_set_color(c_yellow);
     draw_text(1875, 36, "Gold: " + string(global.gold) + "g");        // pulled in to clear the right band
+    ui_draw_reagent_readout(1875, 72);   // reagent readout under the gold (M 08-26)
 
     // Bond readout - watch services raise the relationship live.
     ui_draw_npc_bond("vex", 90, 45);
@@ -16562,6 +16772,7 @@ function ui_draw_maren_screen() {
     var _mg_txt = "Gold: " + string(global.gold) + "g";
     draw_text(1860, 84, _mg_txt);
     draw_sprite_stretched(spr_icon_gold, 0, 1860 - string_width(_mg_txt) - 30, 82, 24, 24);
+    ui_draw_reagent_readout(1860, 120);   // reagents under gold (M 08-26); x clears the y105 tab bar
     draw_set_halign(fa_left);
 
     // Bond readout - watch socketing raise the relationship live.
@@ -17203,6 +17414,7 @@ function ui_draw_sable_screen() {
     draw_sprite_stretched(spr_icon_dust, 0,
         _sd_x - string_width(_sd_dnum) - string_width("Rune Dust:") - 30, 46, 24, 24);
     draw_sprite_stretched(spr_icon_gold, 0, _sd_x + 8, 46, 24, 24);
+    ui_draw_reagent_readout(1860, 78);   // reagents under the dust/gold line (M 08-26)
     draw_set_halign(fa_left);
 
     // Bond readout - watch salvage/brew raise the relationship live.
@@ -17874,6 +18086,7 @@ function ui_draw_vael_screen() {
     draw_set_font(ui_font(fnt_ui_small));
     draw_set_color(make_color_rgb(230, 210, 150));
     draw_text(1860, 48, "Gold: " + string(global.gold));
+    ui_draw_reagent_readout(1860, 78);   // reagents under the gold (M 08-26); clears the y96 tabs
     draw_set_halign(fa_left);
 
     // Bond readout - watch transmog purchases raise the relationship live.
@@ -19463,7 +19676,7 @@ function npc_tour_steps(_npc) {
               b: "Dorn restocks between runs, and his shelf improves as your Awakening climbs. Names are tinted by rarity - and a price you can't pay yet is a reason to descend, not to despair." },
             { r: [946, 90, 1278, 144],  cx: 500, cy: 320,
               t: "Reforge, smelt, craft",
-              b: "Three crafts share this counter. REWORK rerolls an unequipped item's affixes with a Reforge Ingot. SMELT destroys a piece for an ingot - and Dorn STUDIES one of its affixes into his PATTERN BOOK. CRAFT then builds an item to YOUR design from everything he has studied." },
+              b: "Three crafts share this counter. REWORK rerolls an unequipped item's affixes with a Reforge Ingot. SMELT destroys a piece for an ingot - Dorn STUDIES one of its affixes into his PATTERN BOOK and keeps its ICON for the art page. CRAFT then builds an item to YOUR design from everything he has studied - wearing any smelted icon that fits its slot." },
             { r: [1290, 90, 1622, 144], cx: 500, cy: 320,
               t: "Finish rough steel",
               b: "Loot drops UNFINISHED - the QUALITY tag says how much of its true power it delivers. Each temper step buys +10% quality for gold and rune dust, plus a little bonus max HP. A raw legendary barely beats a finished epic - temper what you love." },
@@ -20488,17 +20701,46 @@ function ui_draw_pattern_craft(_gc) {
         draw_set_font(ui_font(fnt_ui));
         draw_set_color(c_white);
         var _caret = (current_time mod 1000 < 500) ? "|" : " ";
-        draw_text(960, 478, keyboard_string + _caret);
+        // Shrink-to-fit: cap grew 24 -> 72 (M 08-26) - scale inside the 800px box.
+        var _cw_ntxt = keyboard_string + _caret;
+        var _cw_nsc  = min(1.0, 760 / max(1, string_width(_cw_ntxt)));
+        draw_text_transformed(960, 478 + (1 - _cw_nsc) * 12, _cw_ntxt, _cw_nsc, _cw_nsc, 0);
         ui_confirm_button(560, 580, 940, 636, "RANDOM NAME", make_color_rgb(150, 130, 100), _mx, _my, _mp, "pb:rand");
         ui_confirm_button(980, 580, 1360, 636, "FORGE IT  [Enter]", make_color_rgb(120, 210, 130), _mx, _my, _mp, "pb:ok");
+        // WEAPON OPTION CHIPS (M design-locked 08-26 parity). Typing owns the
+        // letters, so the chips ride Tab / arrows; taps inject pb:twoh/pb:school.
+        var _pb5_legend = "Type: Name   Enter: Forge   Esc: Back";
+        if (_slot == "weapon" || _slot == "ranged_weapon") {
+            var _pb5_2h = variable_instance_exists(_gc, "pb_opt_twoh") && _gc.pb_opt_twoh;
+            ui_confirm_button(560, 664, 940, 716,
+                "TWO-HANDED: " + (_pb5_2h ? "ON" : "OFF") + "  [Tab]",
+                _pb5_2h ? make_color_rgb(120, 210, 130) : make_color_rgb(120, 110, 95),
+                _mx, _my, _mp, "pb:twoh");
+            if (_slot == "ranged_weapon") {
+                var _pb5_sch = variable_instance_exists(_gc, "pb_opt_school") ? _gc.pb_opt_school : "";
+                ui_confirm_button(980, 664, 1360, 716,
+                    "DAMAGE: " + ((_pb5_sch == "") ? "Physical" : school_label(_pb5_sch)) + "  [< >]",
+                    (_pb5_sch == "") ? make_color_rgb(150, 140, 120) : school_color(_pb5_sch),
+                    _mx, _my, _mp, "pb:school");
+            }
+            draw_set_halign(fa_center);
+            draw_set_font(ui_font(fnt_ui_small));
+            draw_set_color(make_color_rgb(150, 140, 165));
+            draw_text(960, 740, (_slot == "ranged_weapon")
+                ? "Two-handed trades your offhand for ~+80% damage (a schooled 2H is a STAFF - keeps focus/tome offhands)."
+                : "Two-handed trades your offhand for ~+80% damage.");
+            _pb5_legend = "Type: Name   Tab: 2H   " + ((_slot == "ranged_weapon") ? "</>: School   " : "") + "Enter: Forge   Esc: Back";
+        }
         draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(make_color_rgb(75, 85, 105));
-        ui_draw_key_legend(960, 1026, "Type: Name   Enter: Forge   Esc: Back");
+        ui_draw_key_legend(960, 1026, _pb5_legend);
         draw_set_halign(fa_left);
         return;
     }
 
-    // ---- RESULT (phase 6): reveal card + re-roll-the-numbers verb.
+    // ---- RESULT (phase 6): reveal card + HONE (M design-locked 08-26 - the
+    // numbers-reroll charged gold on often-zero-width bands; HONE buys +1 on a
+    // chosen line up to the mastery ceiling, fee 100g x (points honed + 1)).
     if (_ph == 6) {
         var _it = _gc.pb_result;
         if (_it == undefined) return;
@@ -20506,16 +20748,59 @@ function ui_draw_pattern_craft(_gc) {
             _it.name, _it.rarity, ui_item_stat_str(_it));
         var _ic = ui_pb_slot_icon((variable_struct_exists(_it, "icon_as") && is_struct(_it.icon_as)) ? _it.icon_as : _it);
         if (_ic != -1 && sprite_exists(_ic)) draw_sprite_stretched(_ic, 0, 924, 556, 72, 72);
-        ui_confirm_button(560, 700, 940, 756, "REROLL NUMBERS (" + string(pattern_reroll_fee(_it.rarity)) + "g)  [R]",
-            make_color_rgb(190, 160, 90), _mx, _my, _mp, "pb:reroll");
-        ui_confirm_button(980, 700, 1360, 756, "DONE  [Enter]", make_color_rgb(120, 210, 130), _mx, _my, _mp, "pb:done");
-        draw_set_halign(fa_center);
-        draw_set_font(ui_font(fnt_ui_small));
-        draw_set_color(make_color_rgb(170, 160, 190));
-        draw_text(960, 780, "Re-rolls stay inside the bands your blueprint tiers bought.");
-        draw_set_color(make_color_rgb(75, 85, 105));
-        ui_draw_key_legend(960, 1026, "R: Reroll Numbers   Enter: Done");
-        draw_set_halign(fa_left);
+        var _hn_open = variable_instance_exists(_gc, "pb_hone_pick") && _gc.pb_hone_pick >= 0;
+        var _hn_fee  = pattern_hone_fee(_it);
+        if (_hn_open) {
+            // HONE panel: one row per crafted line, current value -> ceiling.
+            var _hn_rows = pattern_hone_rows(_it);
+            var _hn_y0   = 664;
+            draw_set_color(make_color_rgb(16, 16, 22));
+            draw_rectangle(560, _hn_y0, 1360, _hn_y0 + array_length(_hn_rows) * 60 + 84, false);
+            draw_set_color(make_color_rgb(190, 160, 90));
+            draw_rectangle(560, _hn_y0, 1360, _hn_y0 + array_length(_hn_rows) * 60 + 84, true);
+            for (var _hi = 0; _hi < array_length(_hn_rows); _hi++) {
+                var _hr  = _hn_rows[_hi];
+                var _hry = _hn_y0 + 12 + _hi * 60;
+                var _hsel = (_gc.pb_hone_pick == _hi);
+                if (_mp && _mx >= 570 && _mx < 1350 && _my >= _hry && _my < _hry + 54) input_inject("pbhn:row" + string(_hi));
+                draw_set_alpha(_hsel ? 0.95 : 0.55);
+                draw_set_color(_hsel ? make_color_rgb(40, 34, 18) : make_color_rgb(20, 20, 27));
+                draw_rectangle(570, _hry, 1350, _hry + 54, false);
+                draw_set_alpha(1.0);
+                draw_set_color(_hsel ? make_color_rgb(190, 160, 90) : make_color_rgb(60, 55, 45));
+                draw_rectangle(570, _hry, 1350, _hry + 54, true);
+                draw_set_font(ui_font(fnt_ui));
+                draw_set_color(c_white);
+                draw_text(590, _hry + 12, _hr.label);
+                draw_set_halign(fa_right);
+                var _hdone = (_hr.value >= _hr.cap);
+                draw_set_color(_hdone ? make_color_rgb(120, 210, 130) : make_color_rgb(230, 195, 120));
+                draw_text(1330, _hry + 12, _hdone ? ("+" + string(_hr.value) + "  (finished)")
+                                                  : ("+" + string(_hr.value) + "  ->  cap +" + string(_hr.cap)));
+                draw_set_halign(fa_left);
+            }
+            var _hn_by = _hn_y0 + array_length(_hn_rows) * 60 + 20;
+            ui_confirm_button(580, _hn_by, 950, _hn_by + 52, "HONE +1  (" + string(_hn_fee) + "g)  [Enter]",
+                make_color_rgb(120, 210, 130), _mx, _my, _mp, "pbhn:buy");
+            ui_confirm_button(990, _hn_by, 1340, _hn_by + 52, "BACK  [Esc]",
+                make_color_rgb(190, 120, 110), _mx, _my, _mp, "pbhn:close");
+            draw_set_halign(fa_center);
+            draw_set_font(ui_font(fnt_ui_small));
+            draw_set_color(make_color_rgb(75, 85, 105));
+            ui_draw_key_legend(960, 1026, "W/S: Line   Enter: Hone +1   Esc: Back");
+            draw_set_halign(fa_left);
+        } else {
+            ui_confirm_button(560, 700, 940, 756, "HONE +1 (" + string(_hn_fee) + "g)  [R]",
+                make_color_rgb(190, 160, 90), _mx, _my, _mp, "pb:hone");
+            ui_confirm_button(980, 700, 1360, 756, "DONE  [Enter]", make_color_rgb(120, 210, 130), _mx, _my, _mp, "pb:done");
+            draw_set_halign(fa_center);
+            draw_set_font(ui_font(fnt_ui_small));
+            draw_set_color(make_color_rgb(170, 160, 190));
+            draw_text(960, 780, "HONE buys +1 on a line of your choosing, up to its mastery ceiling - the fee grows with every point.");
+            draw_set_color(make_color_rgb(75, 85, 105));
+            ui_draw_key_legend(960, 1026, "R: Hone   Enter: Done");
+            draw_set_halign(fa_left);
+        }
         return;
     }
 
@@ -20523,6 +20808,33 @@ function ui_draw_pattern_craft(_gc) {
     // y300. Order: type > slot > quality > blueprints > art. The blueprint
     // list shows ONLY what the player has unlocked for the chosen quality
     // (M: "list all of your unlocked blueprints nothing else").
+
+    // RULE HINTS (M design-locked 08-26 transparency): the wizard teaches its
+    // own rules where they apply. DENSE font in the fixed band under the
+    // breadcrumb so Large mode cannot spill into the rows.
+    if (_ph == 2 || _ph == 3) {
+        draw_set_halign(fa_center);
+        draw_set_font(ui_font_dense(fnt_ui_small));
+        draw_set_color(make_color_rgb(150, 140, 165));
+        if (_ph == 2) {
+            draw_text(_pccx, 272, "Your FIRST core-stat pick (Might, Grace, ...) becomes the item's BASE LINE: +3 / +5 / +7 by quality.");
+        } else {
+            var _hint_bud   = pattern_affix_budget(_rar);
+            var _hint_picks = array_length(_gc.pb_affix_picks);
+            var _hint_spare = max(0, _hint_bud - _hint_picks);
+            if (_hint_spare > 0 && _hint_picks > 0) {
+                draw_set_color(make_color_rgb(230, 195, 120));
+                draw_text(_pccx, 292, string(_hint_picks) + " of " + string(_hint_bud)
+                    + " picks - each unused slot CONCENTRATES your picks: they roll x"
+                    + string(1 + 0.5 * _hint_spare) + ".");
+            } else {
+                draw_text(_pccx, 292, (_hint_picks == 0)
+                    ? ("Up to " + string(_hint_bud) + " picks. Fewer picks CONCENTRATE: each unused slot multiplies the rest x1.5.")
+                    : "All pick slots used - full spread, no concentration.");
+            }
+        }
+        draw_set_halign(fa_left);
+    }
     var _rows = [];   // { label, right, desc, rar (-1 or rarity tint), dim, icon (sprite or -1), picked }
     if (_ph == 0) {
         // Category: weapons / armor / jewelry (M: "read organically").
@@ -20570,7 +20882,7 @@ function ui_draw_pattern_craft(_gc) {
                 desc: pattern_family_desc(_e3.stat_name), rar: -1,
                 dim: false, icon: -1, picked: _pk });
         }
-    } else {   // phase 4: art page for the slot
+    } else {   // phase 4: art page for the slot family (weapons pool, jewelry pools)
         array_push(_rows, { label: "Dorn's plain work", right: "The standard face for its name", desc: "", rar: -1, dim: false, icon: -1, picked: false });
         var _arts = pattern_art_for_slot(_slot);
         for (var _i4 = 0; _i4 < array_length(_arts); _i4++) {
@@ -20578,6 +20890,14 @@ function ui_draw_pattern_craft(_gc) {
             array_push(_rows, { label: _arts[_i4].label, right: item_rarity_name(_arts[_i4].rarity),
                 desc: "", rar: _arts[_i4].rarity, dim: false, icon: ui_pb_slot_icon(_pr4), picked: false });
         }
+        // Where icons COME FROM (M 08-26: the pool read as arbitrary) - one
+        // hint line between the breadcrumb (y241-265) and the rows (y300).
+        // DENSE font: the band is fixed-height, so Large mode must not spill.
+        draw_set_halign(fa_center);
+        draw_set_font(ui_font_dense(fnt_ui_small));
+        draw_set_color((array_length(_arts) == 0) ? make_color_rgb(230, 195, 120) : make_color_rgb(150, 140, 165));
+        draw_text(_pccx, 272, "Every item you SMELT leaves its icon here - any collected icon that fits this slot family can be its look.");
+        draw_set_halign(fa_left);
     }
 
     var _n    = array_length(_rows);
