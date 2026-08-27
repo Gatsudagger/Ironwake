@@ -275,8 +275,11 @@ function combat_roll_hit(attacker_acc, defender_dodge, guaranteed) {
 // Crit types:
 //   0 - Power     (STR): chance = base + STR*1.5,  multiplier 1.6x
 //   1 - Precision (DEX): chance = base + DEX*2,    multiplier 1.35x
-//   2 - Arcane    (INT): chance = base + INT*1,    multiplier 1.25x + 2 elemental stacks
-//   3 - Effect    (WIS): chance = 5 + WIS*1.5,     improves status quality (no damage mult)
+//   2 - Arcane    (INT): chance = base + INT*1,    multiplier 1.35x + 2 elemental stacks
+//   3 - Effect    (WIS): chance = 5 + WIS*1.5,     improves status quality + 1.1x damage
+// (Crit polish, batch A 08-26 M-locked: Arcane 1.25 -> 1.35 so INT casters get real
+// value from crit gear; Effect crits now also carry a +10% damage tick so WIS crit
+// affixes are never dead weight on damaging casts.)
 //
 // Returns a struct:
 //   { critted: bool, multiplier: real, bonus_el_stacks: int, effect_quality: int }
@@ -333,12 +336,12 @@ function combat_roll_crit(attacker_stats, ability_base_crit, crit_type) {
         case 1: // Precision - moderate multiplier
             result.multiplier = 1.35;
             break;
-        case 2: // Arcane - smaller multiplier but adds elemental stacks
-            result.multiplier      = 1.25;
+        case 2: // Arcane - matches Precision's multiplier AND adds elemental stacks
+            result.multiplier      = 1.35;   // batch A 08-26: was 1.25
             result.bonus_el_stacks = 2;
             break;
-        case 3: // Effect - no damage bonus; improves applied status quality
-            result.multiplier     = 1.0;
+        case 3: // Effect - improves applied status quality + a modest damage tick
+            result.multiplier     = 1.10;    // batch A 08-26: was 1.0 (pure utility)
             result.effect_quality = 1; // caller interprets: 1 = upgraded status
             break;
     }
@@ -637,12 +640,15 @@ function combat_estimate_hit(ability, caster, target) {
     // carrying the fields, so the tooltip caller ({derived:..}, {}) skips them all.
     var _live_tgt = is_struct(target) && variable_struct_exists(target, "HP");
 
+    // Flat riders scale by printed AP cost (x1/x1.5/x2 at 1/2/3 AP, batch A
+    // 08-26) - mirrored from the live cast block so the preview matches the hit.
+    var _est_frm = ability_flat_rider_mult(ability);
     if (variable_struct_exists(caster, "derived")) {
         var _d = caster.derived;
-        if (_dtype == 0)      _dmg += _d.phys_dmg_bonus + _d.cha_dmg_bonus;
-        else if (_dtype == 1) _dmg += _d.elem_dmg_bonus + _d.cha_dmg_bonus;
-        else if (_dtype == 2) _dmg += _d.cha_dmg_bonus;
-        else if (_dtype == 3) _dmg += _d.elem_dmg_bonus + _d.cha_dmg_bonus;
+        if (_dtype == 0)      _dmg += round((_d.phys_dmg_bonus + _d.cha_dmg_bonus) * _est_frm);
+        else if (_dtype == 1) _dmg += round((_d.elem_dmg_bonus + _d.cha_dmg_bonus) * _est_frm);
+        else if (_dtype == 2) _dmg += round(_d.cha_dmg_bonus * _est_frm);
+        else if (_dtype == 3) _dmg += round((_d.elem_dmg_bonus + _d.cha_dmg_bonus) * _est_frm);
     }
 
     // --- Deterministic pre-crit riders (mirror obj_combat_controller cast order) ---
@@ -760,13 +766,16 @@ function combat_estimate_hit(ability, caster, target) {
                 && caster.derived.ranged_elem.dmg > 0)
                 _final += combat_resolve_damage(caster.derived.ranged_elem.dmg, 1, _armor, _resist);
         }
-        if (_est_wf > 0) _final += _live_tgt ? combat_resolve_damage(_est_wf, 0, _armor, _resist) : _est_wf;
+        if (_est_wf > 0) {
+            _est_wf = round(_est_wf * _est_frm);   // AP-scaled flat rider (batch A)
+            _final += _live_tgt ? combat_resolve_damage(_est_wf, 0, _armor, _resist) : _est_wf;
+        }
         // School-damage gear affix for this ability's school.
         if (_live_tgt && variable_struct_exists(caster.derived, "school_dmg")) {
             var _est_sch = ability_school(ability);
             if (_est_sch != "" && variable_struct_exists(caster.derived.school_dmg, _est_sch)) {
                 var _est_sb = variable_struct_get(caster.derived.school_dmg, _est_sch);
-                if (_est_sb > 0) _final += combat_resolve_damage(_est_sb, _dtype, _armor, _resist);
+                if (_est_sb > 0) _final += combat_resolve_damage(round(_est_sb * _est_frm), _dtype, _armor, _resist);
             }
         }
     }

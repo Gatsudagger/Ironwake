@@ -2054,15 +2054,19 @@ if (player_turn) {
                         var _dmg = ab.base_damage;
                         var _deals_damage = (ab.base_damage > 0);
                         var _ab_stat_dtype = variable_struct_exists(ab, "damage_type") ? ab.damage_type : 0;
+                        // Flat riders scale by printed AP cost (x1/x1.5/x2 at 1/2/3 AP,
+                        // batch A 08-26) - stat bonuses here, weapon flat + school-affix
+                        // flats below all use the same multiplier.
+                        var _frm = ability_flat_rider_mult(ab);
                         if (ab.base_damage > 0 && variable_struct_exists(player, "derived")) {
                             if (_ab_stat_dtype == 0) {
-                                _dmg += player.derived.phys_dmg_bonus + player.derived.cha_dmg_bonus;
+                                _dmg += round((player.derived.phys_dmg_bonus + player.derived.cha_dmg_bonus) * _frm);
                             } else if (_ab_stat_dtype == 1) {
-                                _dmg += player.derived.elem_dmg_bonus + player.derived.cha_dmg_bonus;
+                                _dmg += round((player.derived.elem_dmg_bonus + player.derived.cha_dmg_bonus) * _frm);
                             } else if (_ab_stat_dtype == 2) {
-                                _dmg += player.derived.cha_dmg_bonus;
+                                _dmg += round(player.derived.cha_dmg_bonus * _frm);
                             } else if (_ab_stat_dtype == 3) {
-                                _dmg += player.derived.elem_dmg_bonus + player.derived.cha_dmg_bonus;
+                                _dmg += round((player.derived.elem_dmg_bonus + player.derived.cha_dmg_bonus) * _frm);
                             }
                             // Reach-gated weapon contributions: the melee weapon feeds melee
                             // abilities, the ranged weapon feeds ranged abilities (attacks AND
@@ -2083,7 +2087,7 @@ if (player_turn) {
                                 // joins a second time HERE, pre-crit, so crits
                                 // amplify the craft. The post-crit floor below
                                 // still applies like every other ability.
-                                if (ab.name == "Weapon Strike" || ab.name == "Weapon Shot") _dmg += _wpn_flat;
+                                if (ab.name == "Weapon Strike" || ab.name == "Weapon Shot") _dmg += round(_wpn_flat * _frm);
                             }
                         }
 
@@ -2601,9 +2605,9 @@ if (player_turn) {
                         if (_deals_damage && _wpn_flat > 0) {
                             // Caster ranged weapons (wands) deal this as their rolled
                             // SCHOOL, resolved as elemental (vs el_resist); martial
-                            // weapons keep it physical (vs armor).
+                            // weapons keep it physical (vs armor). AP-scaled (_frm).
                             var _wpn_is_school = (_wpn_school != "");
-                            var _wpn_hit = combat_resolve_damage(_wpn_flat, _wpn_is_school ? 1 : 0, target.armor, target.el_resist);
+                            var _wpn_hit = combat_resolve_damage(round(_wpn_flat * _frm), _wpn_is_school ? 1 : 0, target.armor, target.el_resist);
                             if (_wpn_hit > 0) {
                                 _final_dmg += _wpn_hit;
                                 if (_wpn_is_school) {
@@ -2646,7 +2650,8 @@ if (player_turn) {
                             if (_sch != "" && variable_struct_exists(player.derived.school_dmg, _sch)) {
                                 var _sch_bonus = variable_struct_get(player.derived.school_dmg, _sch);
                                 if (_sch_bonus > 0) {
-                                    var _sch_hit = combat_resolve_damage(_sch_bonus, ab.damage_type, target.armor, target.el_resist);
+                                    // AP-scaled like every flat rider (batch A 08-26).
+                                    var _sch_hit = combat_resolve_damage(round(_sch_bonus * _frm), ab.damage_type, target.armor, target.el_resist);
                                     if (_sch_hit > 0) {
                                         _final_dmg += _sch_hit;
                                         array_push(_rider_pops, { amt: _sch_hit, col: school_color(_sch) });
@@ -4055,8 +4060,10 @@ if (player_turn) {
                         array_push(combat_log, "The Soul Engine already turns.");
                     } else {
                         player.soul_engine_active = true;
-                        player.soul_engine_round  = combat_state.round;
-                        array_push(combat_log, "SOUL ENGINE lit - your spells grow +3 for every turn that passes.");
+                        // Batch A 08-26 (M-locked ramp rescue): every ramp starts one
+                        // tick deep the turn it's lit, so even a 3-round fight pays.
+                        player.soul_engine_round  = combat_state.round - 1;
+                        array_push(combat_log, "SOUL ENGINE lit - already humming (+3), and your spells grow +3 more each turn.");
                     }
                 }
 
@@ -4067,12 +4074,14 @@ if (player_turn) {
                         array_push(combat_log, "The march is already on.");
                     } else {
                         player.warpath_active = true;
-                        // "First Blood" (P3): the march starts a turn pre-lit.
+                        // Batch A 08-26 ramp rescue: the march starts ONE turn deep by
+                        // default; "First Blood" (P3 web) stacks a second on top.
                         // "Crescendo" (P3): the ramp climbs +3/turn instead of +2.
-                        player.warpath_round  = combat_state.round - (ability_web_copy_has_rider(ab, "ramp_prelit") ? 1 : 0);
+                        player.warpath_round  = combat_state.round - 1 - (ability_web_copy_has_rider(ab, "ramp_prelit") ? 1 : 0);
                         player.warpath_rate   = ability_web_copy_has_rider(ab, "ramp_fast") ? 3 : 2;
-                        array_push(combat_log, "WARPATH - every turn from here hits +" + string(player.warpath_rate) + " harder"
-                            + ((player.warpath_round < combat_state.round) ? " (already marching)" : "") + ".");
+                        array_push(combat_log, "WARPATH - already marching (+"
+                            + string(player.warpath_rate * (combat_state.round - player.warpath_round)) + "), and every turn hits +"
+                            + string(player.warpath_rate) + " harder.");
                     }
                 }
 
@@ -4087,7 +4096,9 @@ if (player_turn) {
                         // "Crescendo" (P3): +6 per trap; "Old Fear" (P3): starts pre-lit
                         // so the FIRST trap after lighting already carries the bonus.
                         player.dread_rate = ability_web_copy_has_rider(ab, "ramp_fast") ? 6 : 4;
-                        if (ability_web_copy_has_rider(ab, "ramp_prelit")) player.dread_bonus += player.dread_rate;
+                        // Batch A 08-26 ramp rescue: lighting the dread ALWAYS banks one
+                        // step so the first trap already bites; "Old Fear" adds a second.
+                        player.dread_bonus += player.dread_rate * (ability_web_copy_has_rider(ab, "ramp_prelit") ? 2 : 1);
                         array_push(combat_log, "COMPOUNDING DREAD - every trap from here teaches the next to cut deeper (+"
                             + string(player.dread_rate) + " each" + ((player.dread_bonus > 0) ? (", +" + string(player.dread_bonus) + " already gathered") : "") + ").");
                     }

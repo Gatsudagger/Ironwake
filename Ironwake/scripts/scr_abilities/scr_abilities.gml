@@ -1190,8 +1190,8 @@ global.abilities_arcanist[_dw_a0 + 1].desc_short = "8 shield. Melee attackers ge
 global.abilities_arcanist[_dw_a0 + 1].desc_full  = "Raise a pane of ice between you and their teeth.\n- 8 shield now; any melee enemy that strikes you this turn is Chilled.\n- Defense that feeds the shatter loop - punish the ones who come close.";
 global.abilities_arcanist[_dw_a0 + 2].desc_short = "9 Shock dmg, chains 50% to another foe.";
 global.abilities_arcanist[_dw_a0 + 2].desc_full  = "Snap a living arc between everything that conducts.\n- 9 Shock damage, chaining 50% to one other enemy.\n- Against a target ALREADY Shocked, the chain leaps to EVERY other enemy instead.";
-global.abilities_arcanist[_dw_a0 + 3].desc_short = "Once per combat: spells +3 dmg per turn elapsed.";
-global.abilities_arcanist[_dw_a0 + 3].desc_full  = "Set a soul turning inside a cage of glass and let it gather speed.\n- Once per combat, combat-long: your spells deal +3 more for every full turn that has passed since you lit it.\n- Dead weight in short fights, monstrous in long ones - the boss-fight engine.";
+global.abilities_arcanist[_dw_a0 + 3].desc_short = "Once per combat: spells +3 now, +3 more each turn.";
+global.abilities_arcanist[_dw_a0 + 3].desc_full  = "Set a soul turning inside a cage of glass and let it gather speed.\n- Once per combat, combat-long: it lights ALREADY HUMMING at +3 spell damage, and gains +3 more for every full turn that passes.\n- Pays a little in any fight, monstrous in long ones - the boss-fight engine.";
 
 // --- 08-17 Arcanist control pair (M-locked): Paralytic Pulse + Call of the Void ---
 var _pp_a0 = array_length(global.abilities_arcanist);
@@ -1240,14 +1240,14 @@ global.abilities_shadowstrider[_dw_s0].desc_full  = "A knife kept in the coldest
 var _cb_b0 = array_length(global.abilities_bloodwarden);
 array_push(global.abilities_bloodwarden,
     ability_define("Warpath", 2,0, 0,0, -1,true, -1,0, "status",0,0, true));
-global.abilities_bloodwarden[_cb_b0].desc_short = "Once per combat: phys/Blood hits +2 per turn elapsed.";
-global.abilities_bloodwarden[_cb_b0].desc_full  = "Let the rhythm of the fight wind you tighter with every breath.\n- Once per combat, combat-long: your physical and Blood abilities deal +2 more for every full turn since you started the march.\n- Dead weight in short fights, monstrous in long ones - the boss-fight engine.";
+global.abilities_bloodwarden[_cb_b0].desc_short = "Once per combat: phys/Blood +2 now, +2 more each turn.";
+global.abilities_bloodwarden[_cb_b0].desc_full  = "Let the rhythm of the fight wind you tighter with every breath.\n- Once per combat, combat-long: the march starts ALREADY MOVING at +2 physical/Blood damage, and gains +2 more every full turn.\n- Pays a little in any fight, monstrous in long ones - the boss-fight engine.";
 
 var _cb_s0 = array_length(global.abilities_shadowstrider);
 array_push(global.abilities_shadowstrider,
     ability_define("Compounding Dread", 2,0, 0,0, -1,true, -1,0, "status",0,0, true));
-global.abilities_shadowstrider[_cb_s0].desc_short = "Once per combat: each trap cast adds +4 to trap dmg.";
-global.abilities_shadowstrider[_cb_s0].desc_full  = "Teach the floor itself to hate them a little more each time.\n- Once per combat, combat-long: every trap you spring afterwards permanently adds +4 to your trap damage this combat.\n- The trap-build ramp - light it early and let the snares compound.";
+global.abilities_shadowstrider[_cb_s0].desc_short = "Once per combat: traps +4 now, +4 more per trap cast.";
+global.abilities_shadowstrider[_cb_s0].desc_full  = "Teach the floor itself to hate them a little more each time.\n- Once per combat, combat-long: lighting it banks +4 trap damage on the spot, and every trap you cast afterwards permanently adds +4 more this combat.\n- The trap-build ramp - light it early and let the snares compound.";
 
 var _dw_g0 = array_length(global.abilities_general);
 array_push(global.abilities_general,
@@ -1628,6 +1628,22 @@ function ability_effective_cost(ab, caster) {
     }
 
     return _cost;
+}
+
+// ability_flat_rider_mult(ab) - COMBAT OVERHAUL batch A (M-locked 08-26): flat
+// damage riders (stat damage bonuses, weapon flat damage, "+X school damage"
+// affixes) scale with the ability's PRINTED AP cost - x1.0 / x1.5 / x2.0 at
+// 1 / 2 / 3 AP. Fixes the 1-AP-spam bias: three cheap casts used to collect a
+// crafted weapon's flat damage three times while one committed 3-AP cast got it
+// once. Keyed to the RAW energy_cost (never the synergy-discounted effective
+// cost) so a discount never changes damage. Single source of truth - the live
+// cast block (obj_combat_controller Step_0) AND combat_estimate_hit both read
+// this, so the preview always matches the hit.
+function ability_flat_rider_mult(ab) {
+    var _apc = (is_struct(ab) && variable_struct_exists(ab, "energy_cost")) ? ab.energy_cost : 1;
+    if (_apc >= 3) return 2.0;
+    if (_apc == 2) return 1.5;
+    return 1.0;
 }
 
 // Display name + current amount of the caster's SECONDARY resource (mirrors the
@@ -3322,11 +3338,11 @@ function ability_web_bespoke(ab) {
             array_push(_out, ability_web_node("tk", "T", 3, "Blood Debt", "The pact ward SHATTERING deals its full value to the one who broke it", [], "blood_debt"));
             break;
         case "Warpath":
-            array_push(_out, ability_web_node("t1", "T", 1, "First Blood", "The march starts a turn pre-lit (+2 on the first swing)", [], "ramp_prelit"));
+            array_push(_out, ability_web_node("t1", "T", 1, "First Blood", "The march starts an EXTRA turn deep (+2 more on the first swing)", [], "ramp_prelit"));
             array_push(_out, ability_web_node("tk", "T", 3, "Crescendo", "The ramp climbs harder: +3 per turn instead of +2", [], "ramp_fast"));
             break;
         case "Compounding Dread":
-            array_push(_out, ability_web_node("t1", "T", 1, "Old Fear", "The dread starts pre-lit - your first trap already carries the bonus", [], "ramp_prelit"));
+            array_push(_out, ability_web_node("t1", "T", 1, "Old Fear", "The dread banks an EXTRA step at lighting - the first trap bites twice as deep", [], "ramp_prelit"));
             array_push(_out, ability_web_node("tk", "T", 3, "Crescendo", "Each trap teaches the next +6 instead of +4", [], "ramp_fast"));
             break;
         case "Undying":
