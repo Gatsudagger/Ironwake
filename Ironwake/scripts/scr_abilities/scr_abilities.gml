@@ -232,7 +232,7 @@ global.abilities_arcanist = [
         /*damage*/8, /*dtype*/2,        // drain - bypasses all mitigation
         /*acc*/-1, /*guaranteed*/true,
         /*crit_type*/-1, /*base_crit*/0,
-        /*effect_type*/"heal", /*effect_value*/6, /*duration*/0,   // 08-18 M: heal 8 -> 6
+        /*effect_type*/"heal", /*effect_value*/5, /*duration*/0,   // 08-18 M: 8 -> 6; 08-27 heal trim: 6 -> 5
         /*self*/false),
 
     // 2: Arcane Burst - big nuke; costs a Soul, high arcane crit ceiling.
@@ -357,7 +357,7 @@ global.abilities_arcanist = [
 var _arc_d = [
     { s: "Deal 11 Fire dmg. Gain +2 Souls.",
       f: "Hurl a gout of soulfire that feeds on what it burns.\n- 11 Fire damage. Banks +2 Souls on cast.\n- Cheap to cast - spam it to fuel bigger spells next turn." },
-    { s: "1 AP: 8 Void dmg, heal 6, +1 Soul. 2-turn CD.",
+    { s: "1 AP: 8 Void dmg, heal 5, +1 Soul. 2-turn CD.",
       f: "Pull the life out of a foe in one cold breath.\n- Guaranteed 8 Void damage that ignores all armor. Heals you 6 and banks 1 Soul.\n- 1 AP on a 2-turn cooldown - steady sustain, not spam." },
     { s: "Spend 1 Soul. Deal 32 Arcane dmg. FADES to 50% if cast 2 turns running.",
       f: "Collapse a stored Soul into one roaring detonation of Arcane force.\n- Spend 1 Soul: 32 Arcane damage with a high crit ceiling.\n- FADES: cast on two consecutive turns and the second lands at 50% damage - rest a turn between bursts.\n- Save it for elites and high-HP enemies." },
@@ -400,7 +400,7 @@ global.abilities_bloodwarden = [
         /*damage*/10, /*dtype*/3,       // blood
         /*acc*/80, /*guaranteed*/false,
         /*crit_type*/2, /*base_crit*/6, // arcane (INT)
-        /*effect_type*/"heal", /*effect_value*/8, /*duration*/0,
+        /*effect_type*/"heal", /*effect_value*/6, /*duration*/0,   // 08-27 heal trim: 8 -> 6
         /*self*/false),
 
     // 1: Iron Skin - flat damage reduction for 3 turns
@@ -427,7 +427,7 @@ global.abilities_bloodwarden = [
         /*damage*/0, /*dtype*/0,
         /*acc*/-1, /*guaranteed*/true,
         /*crit_type*/-1, /*base_crit*/0,
-        /*effect_type*/"heal", /*effect_value*/14, /*duration*/0,
+        /*effect_type*/"heal", /*effect_value*/11, /*duration*/0,   // 08-27 heal trim: 14 -> 11
         /*self*/true),
 
     // 4: Marrow Crush - heavy physical hit + 30% damage debuff on target.
@@ -492,14 +492,14 @@ global.abilities_bloodwarden = [
 
 // Plain-English descriptions for Bloodwarden abilities
 var _bw_d = [
-    { s: "Deal 10 Blood dmg. Heal 8 HP.",
-      f: "Open a vein and drink the fight back into yourself.\n- 10 Blood damage, and you heal 8 on the hit.\n- Cheap bread-and-butter sustain - use it freely." },
+    { s: "Deal 10 Blood dmg. Heal 6 HP.",
+      f: "Open a vein and drink the fight back into yourself.\n- 10 Blood damage, and you heal 6 on the hit.\n- Cheap bread-and-butter sustain - use it freely." },
     { s: "Take -4 dmg from every hit for 3 turns.",
       f: "Set your feet and let your hide turn to metal.\n- Every incoming hit deals 4 less damage for 3 turns.\n- Cast it before a heavy turn or a telegraphed blow." },
     { s: "Deal 14 physical dmg + Bleed 3/turn x4. Costs ~5% max HP.",
       f: "Rip a jagged wound that keeps bleeding long after the blow lands.\n- 14 physical damage + Bleed 3/turn for 4 turns (12 total).\n- BLOOD PRICE: casting it costs ~5% of your max HP (never lethal). Spend, then mend.\n- Strong opener on high-HP targets and bosses; feeds Rupture." },
-    { s: "Spend 2 Blood. Heal 14 HP. Free action.",
-      f: "Command your own blood to close the wound.\n- Costs no AP: spend 2 Blood, heal 14 HP.\n- Mid-fight recovery whenever the reserve is stocked." },
+    { s: "Spend 2 Blood. Heal 11 HP. Free action.",
+      f: "Command your own blood to close the wound.\n- Costs no AP: spend 2 Blood, heal 11 HP.\n- Mid-fight recovery whenever the reserve is stocked." },
     { s: "Deal 24 physical dmg. -30% dmg 3t. Costs ~5% max HP.",
       f: "Bring the full weight of the blow down where the bone is.\n- 24 physical damage. The target deals 30% less damage for 3 turns.\n- BLOOD PRICE: casting it costs ~5% of your max HP (never lethal).\n- Put it on the hardest hitter and take the pressure off yourself." },
     { s: "Spend 1 Blood. 8 Blood dmg. Steal 8 max HP (heal 8).",
@@ -849,8 +849,8 @@ global.abilities_general = [
     // staunches your newest Bleed, 2-turn CD); Second Wind = THE big burst
     // heal (+1 resource) on a 3-turn CD. Its old base cleanse moved into the
     // Field Dressing line (Mender's Rite) / Clean Break node.
-    ability_define("Field Dressing",  1,0,  0,0,   -1,true,  -1,0, "heal",10,0,   true),
-    ability_define("Second Wind",     2,0,  0,0,   -1,true,  -1,0, "heal",24,0,   true),
+    ability_define("Field Dressing",  1,0,  0,0,   -1,true,  -1,0, "heal",8,0,    true),   // 08-27 heal trim: 10 -> 8
+    ability_define("Second Wind",     2,0,  0,0,   -1,true,  -1,0, "heal",19,0,   true),   // 08-27 heal trim: 24 -> 19
     ability_define("Adrenaline Rush", 0,0,  0,0,   -1,true,  -1,0, "status",1,0,  true),
     // The Ashen Duelist's 1st token (DESIGN_DUELIST_CHALLENGE.md): unlocks via
     // the duelist_tokens goal - never sold, only earned in the duel.
@@ -867,10 +867,10 @@ global.abilities_general = [
 var _gen_d = [
     { s:"Deal 10 physical dmg. Refunds its AP on a kill.",
       f:"A plain, honest blow - the kind that keeps a turn moving.\n- 10 physical damage. Momentum: if it kills, the AP comes back.\n- The chaff-clearer any class can carry." },
-    { s:"Heal 10 HP + staunch newest Bleed. 2-turn cooldown.",
-      f:"Cinch the wound tight and keep moving.\n- 1 AP: restore 10 HP and staunch your newest Bleed, on a 2-turn cooldown.\n- Cheap triage between bigger plays - the bleeding stops here." },
-    { s:"Heal 24 HP, +1 resource. 3-turn cooldown.",
-      f:"Spit, straighten up, and come back swinging.\n- 2 AP: restore 24 HP and refund 1 Soul / Blood / Prep, on a 3-turn cooldown.\n- The big mend. When the fight needs a real turnaround, this is it." },
+    { s:"Heal 8 HP + staunch newest Bleed. 2-turn cooldown.",
+      f:"Cinch the wound tight and keep moving.\n- 1 AP: restore 8 HP and staunch your newest Bleed, on a 2-turn cooldown.\n- Cheap triage between bigger plays - the bleeding stops here." },
+    { s:"Heal 19 HP, +1 resource. 3-turn cooldown.",
+      f:"Spit, straighten up, and come back swinging.\n- 2 AP: restore 19 HP and refund 1 Soul / Blood / Prep, on a 3-turn cooldown.\n- The big mend. When the fight needs a real turnaround, this is it." },
     { s:"Pay 5 HP: gain +1 AP. Once per turn.",
       f:"Let the fear do something useful - and keep letting it.\n- Costs no AP: pay 5 HP, gain +1 AP. Once per turn, every turn.\n- The HP-as-fuel lever; feeds lifesteal builds that pay the loan back. Ruinous when you're already bleeding out." },
     { s:"Until next turn: first melee blow is answered for 18.",
