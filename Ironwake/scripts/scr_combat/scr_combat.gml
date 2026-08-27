@@ -928,6 +928,64 @@ function combat_apply_damage(target_struct, damage) {
             }
         }
     }
+    // ------------------------------------------------------------------------
+    // BOSS PHASE SHIFT (batch C, M-locked 08-26): the first time a dungeon boss
+    // is driven below HALF HP - by any source, hits and DoT ticks alike - it
+    // TURNS: boss_phase_shift (scr_enemies) names the change per boss. Wardens
+    // (warden_hook) and the Duelist keep their own bespoke phase machinery.
+    // ------------------------------------------------------------------------
+    if (actual_dealt > 0 && variable_struct_exists(target_struct, "is_player") && !target_struct.is_player
+        && target_struct.HP > 0
+        && variable_struct_exists(target_struct, "max_HP") && target_struct.max_HP > 0
+        && target_struct.HP < target_struct.max_HP * 0.5
+        && !variable_struct_exists(target_struct, "boss_phase_done")
+        && !variable_struct_exists(target_struct, "warden_hook")) {
+        var _bp = boss_phase_shift(target_struct.name);
+        if (_bp != undefined) {
+            target_struct.boss_phase_done = true;
+            if (_bp.dmg_mult != 1.0) {
+                target_struct.damage           = round(target_struct.damage * _bp.dmg_mult);
+                target_struct.telegraph_damage = round(target_struct.telegraph_damage * _bp.dmg_mult);
+            }
+            if (_bp.armor_add != 0) target_struct.armor += _bp.armor_add;
+            if (_bp.heal_pct > 0) {
+                target_struct.HP = min(target_struct.max_HP,
+                    target_struct.HP + round(target_struct.max_HP * _bp.heal_pct));
+            }
+            if (_bp.mech != undefined) {
+                target_struct.mechanic_type  = _bp.mech.t;
+                // double_strike with v<=0 derives 60% of the CURRENT (post-mult,
+                // post-rebase) damage as the per-hit value.
+                target_struct.mechanic_value = (_bp.mech.t == "double_strike" && _bp.mech.v <= 0)
+                    ? max(1, round(target_struct.damage * 0.6)) : _bp.mech.v;
+                target_struct.mechanic_turns = _bp.mech.n;
+            }
+            if (_bp.add_ability != undefined) {
+                // Clone the abilities array first - enemy_clone shares the
+                // TEMPLATE's array by reference, and pushing onto that would
+                // teach the move to every future spawn of the species.
+                var _bp_known = false;
+                var _bp_abs = [];
+                for (var _bp_i = 0; _bp_i < array_length(target_struct.abilities); _bp_i++) {
+                    array_push(_bp_abs, target_struct.abilities[_bp_i]);
+                    if (target_struct.abilities[_bp_i].name == _bp.add_ability.name) _bp_known = true;
+                }
+                if (!_bp_known) array_push(_bp_abs, _bp.add_ability);
+                target_struct.abilities = _bp_abs;
+                // ability_cd re-inits itself on the length mismatch (enemy_pick_ability).
+            }
+            if (instance_exists(obj_combat_controller)) {
+                var _bp_cc = instance_find(obj_combat_controller, 0);
+                array_push(_bp_cc.combat_log, _bp.log);
+                array_push(_bp_cc.damage_popups, { value: 0, text: _bp.toast,
+                    x: 960, y: 300, timer: 65, col: make_color_rgb(255, 170, 90) });
+                _bp_cc.screen_shake_timer = max(_bp_cc.screen_shake_timer, 14);
+                // The turned boss re-reads its plan - the intent chip pulses so
+                // the change is visible, honest information preserved.
+                enemy_roll_intent(target_struct, _bp_cc.player, _bp_cc.combat_state.round + 1, true);
+            }
+        }
+    }
     // Blood Tithe blessing (Shrine V2, 07-29): bank 1 gold per HP the PLAYER
     // loses, any source (hits, spells, DoT ticks all funnel through this sink).
     // The pouch pays out in end_run on extraction; death forfeits it.

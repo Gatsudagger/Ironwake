@@ -1254,3 +1254,80 @@ function warden_scion(warden_name) {
 // Flat 4% per DESIGN §2.1. Wardens recur forever on the cadence, so this is a
 // fishing expedition at whatever depth the player can actually survive.
 function warden_scion_drop_chance() { return 4; }
+
+// =============================================================================
+// BOSS PHASE SHIFTS (COMBAT OVERHAUL batch C, M-locked 08-26). Every dungeon
+// boss changes its behavior ONCE, the moment it is first driven below HALF HP -
+// bosses stop being stat sticks. Keyed by NAME (same convention as weaknesses/
+// immunities) so a boss met outside its own arena still turns. Depth Wardens
+// and the Ashen Duelist are deliberately ABSENT - they carry their own bespoke
+// mechanics (warden_hook phases, duel tiers). The trigger lives in
+// combat_apply_damage (scr_combat) - the single sink every damage source
+// funnels through, same hook idiom as Marked/Overwhelm/the Warden phases.
+//
+// Fields: toast (big center splash) / log (combat-log line) / dmg_mult (scales
+// damage + telegraph_damage) / armor_add / heal_pct (one-time, of max HP) /
+// mech {t,v,n} (REPLACES mechanic_type; v<=0 on double_strike = derive 60% of
+// current damage) / add_ability (enemy_ability pushed onto a CLONED abilities
+// array - never the shared template; skipped if the boss already knows it).
+// =============================================================================
+function boss_phase_shift(name) {
+    switch (name) {
+        // --- Ashen Vault ------------------------------------------------------
+        case "Bone Sovereign": return {
+            toast: "THE COURT RISES!",
+            log:   "BONE SOVEREIGN - the crown blazes, and the COURT RISES to defend it!",
+            dmg_mult: 1.20, armor_add: 0, heal_pct: 0, mech: undefined,
+            add_ability: enemy_ability("Raise the Court", "summon", 45, 3, 0,
+                { msg: "RAISES THE COURT - the dead answer their king" }) };
+        case "Malgrath the Warden": return {
+            toast: "LOCKDOWN!",
+            log:   "MALGRATH - the bars come down. LOCKDOWN: his hide plates over and the chains come out!",
+            dmg_mult: 1.10, armor_add: 4, heal_pct: 0, mech: undefined,
+            add_ability: enemy_ability("Gaol Slam", "control", 30, 4, 0,
+                { status_kind: "stun", turns: 1, msg: "slams the cell shut around you - STUNNED" }) };
+        case "Bone Colossus": return {
+            toast: "CONSENSUS BREAKS!",
+            log:   "BONE COLOSSUS - the congregation splits: hundreds of hands, TWO blows a turn!",
+            dmg_mult: 1.00, armor_add: 0, heal_pct: 0,
+            mech: { t: "double_strike", v: 0, n: 0 },
+            add_ability: undefined };
+        // --- Scorched Depths --------------------------------------------------
+        case "Forge Tyrant": return {
+            toast: "THE FORGE ROARS!",
+            log:   "FORGE TYRANT - the coals catch WHITE: his blows come faster, and burning!",
+            dmg_mult: 1.15, armor_add: 0, heal_pct: 0, mech: undefined,
+            add_ability: enemy_ability("Slag Spray", "dot", 40, 3, 5,
+                { turns: 3, msg: "sprays molten slag across you" }) };
+        case "Molten Revenant": return {
+            toast: "THE HEART POURS!",
+            log:   "MOLTEN REVENANT - grief pours molten: the wound seals over, and it burns brighter!",
+            dmg_mult: 1.15, armor_add: 0, heal_pct: 0.15, mech: undefined,
+            add_ability: undefined };
+        case "The Ashen Colossus": return {
+            toast: "IT WAKES FULLY!",
+            log:   "THE ASHEN COLOSSUS - whatever slept beneath the Depths is NO LONGER ASLEEP.",
+            dmg_mult: 1.30, armor_add: 0, heal_pct: 0, mech: undefined,
+            add_ability: undefined };
+        // --- Tundra Tomb ------------------------------------------------------
+        case "Glacial Warden": return {
+            toast: "THE VAULTS SEAL!",
+            log:   "GLACIAL WARDEN - hoarfrost armors him, and the vault doors grind shut!",
+            dmg_mult: 1.10, armor_add: 0, heal_pct: 0,
+            mech: { t: "fortify", v: 0.5, n: 3 },
+            add_ability: undefined };
+        case "Tomb Archon": return {
+            toast: "JUDGMENT!",
+            log:   "TOMB ARCHON - the black-ice throne rises: JUDGMENT is passed on the living!",
+            dmg_mult: 1.10, armor_add: 0, heal_pct: 0, mech: undefined,
+            add_ability: enemy_ability("Verdict of Frost", "control", 35, 3, 0,
+                { status_kind: "root", turns: 1, msg: "passes VERDICT - your legs freeze in place" }) };
+        case "The Eternal Frost": return {
+            toast: "WINTER DEEPENS!",
+            log:   "THE ETERNAL FROST - the cold stops being weather and starts being intent.",
+            dmg_mult: 1.15, armor_add: 0, heal_pct: 0, mech: undefined,
+            add_ability: enemy_ability("Deepening Winter", "debuff", 40, 2, 0.20,
+                { status_kind: "weaken", turns: 2, msg: "drives the winter into your marrow - weakened" }) };
+    }
+    return undefined;
+}
