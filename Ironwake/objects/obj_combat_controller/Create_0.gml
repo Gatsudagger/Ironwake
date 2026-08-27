@@ -1079,6 +1079,13 @@ array_push(combat_log,
     "Combat begins! " + combat_state.combatants[0].name + " acts first."
 );
 
+// Timed-combat mode readout (batch B follow-up): the mode is a persisted
+// setting with no panel row yet, so SAY what it is every combat - an
+// accidentally-saved OFF (the F6-era lever) is otherwise invisible.
+array_push(combat_log, "Timed combat: " + timed_combat_mode_name(timed_combat_mode())
+    + ((timed_combat_mode() > 0) ? " - guard rings on enemy attacks." : "")
+    + "  [F1 cycles On/Assist/Off]");
+
 // The duel opens with its terms (PAR chip also rides the intent area in Draw).
 if (global.duel_active) {
     array_push(combat_log, "A DUEL - strict one-on-one. Your companion sits out.");
