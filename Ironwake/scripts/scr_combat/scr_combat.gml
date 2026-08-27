@@ -960,6 +960,12 @@ function combat_apply_damage(target_struct, damage) {
                     ? max(1, round(target_struct.damage * 0.6)) : _bp.mech.v;
                 target_struct.mechanic_turns = _bp.mech.n;
             }
+            // Optional telegraph-cadence shift (Vault Sentinel): the charged
+            // swing comes around faster. Intent + enemy_get_attack_damage both
+            // read telegraph_turn live, so the new rhythm is honest immediately.
+            if (variable_struct_exists(_bp, "tele_turn") && _bp.tele_turn > 0) {
+                target_struct.telegraph_turn = _bp.tele_turn;
+            }
             if (_bp.add_ability != undefined) {
                 // Clone the abilities array first - enemy_clone shares the
                 // TEMPLATE's array by reference, and pushing onto that would

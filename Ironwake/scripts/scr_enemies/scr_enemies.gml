@@ -1274,6 +1274,17 @@ function warden_scion_drop_chance() { return 4; }
 function boss_phase_shift(name) {
     switch (name) {
         // --- Ashen Vault ------------------------------------------------------
+        // NOTE (review 08-26): only double_strike + the telegraph cycle are LIVE
+        // enemy mechanics - fortify/retribution/regen/phase_shift/death_burst are
+        // dormant data (mechanic_value is read nowhere but the double-strike
+        // branch). Every shift below uses machinery that actually runs: damage/
+        // armor/heal edits, added ABILITIES, telegraph cadence, double_strike.
+        case "Vault Sentinel": return {
+            toast: "THE ALARM SOUNDS!",
+            log:   "VAULT SENTINEL - the watchfire LIGHTS: its charged blows now come every other turn!",
+            dmg_mult: 1.10, armor_add: 0, heal_pct: 0, mech: undefined,
+            tele_turn: 2,   // telegraph cycle 3 -> 2: the spike swing nearly doubles in cadence
+            add_ability: undefined };
         case "Bone Sovereign": return {
             toast: "THE COURT RISES!",
             log:   "BONE SOVEREIGN - the crown blazes, and the COURT RISES to defend it!",
@@ -1310,12 +1321,16 @@ function boss_phase_shift(name) {
             dmg_mult: 1.30, armor_add: 0, heal_pct: 0, mech: undefined,
             add_ability: undefined };
         // --- Tundra Tomb ------------------------------------------------------
+        // (Review fix 08-26: was a fortify tweak - dormant machinery, a no-op on
+        // his already-"fortify" template. Rebuilt on live systems: real armor,
+        // plus a mending the player must burst through or answer with Mortality.)
         case "Glacial Warden": return {
             toast: "THE VAULTS SEAL!",
-            log:   "GLACIAL WARDEN - hoarfrost armors him, and the vault doors grind shut!",
-            dmg_mult: 1.10, armor_add: 0, heal_pct: 0,
-            mech: { t: "fortify", v: 0.5, n: 3 },
-            add_ability: undefined };
+            log:   "GLACIAL WARDEN - hoarfrost plates over him, and the vault's rime begins to mend his wounds!",
+            dmg_mult: 1.10, armor_add: 3, heal_pct: 0,
+            mech: undefined,
+            add_ability: enemy_ability("Rime Ward", "heal", 35, 3, 14,
+                { msg: "draws the vault's rime over his wounds and mends" }) };
         case "Tomb Archon": return {
             toast: "JUDGMENT!",
             log:   "TOMB ARCHON - the black-ice throne rises: JUDGMENT is passed on the living!",

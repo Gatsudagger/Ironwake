@@ -43,10 +43,12 @@ if (keyboard_check_pressed(vk_f7)) {
     array_push(combat_log, "Arena view: " + (global.combat_25d ? "2.5D stage (v3)" : "flat (classic)") + ".");
 }
 
-// TIMED COMBAT mode lever (batch B 08-26, same idiom as F7 above): F6 cycles
+// TIMED COMBAT mode lever (batch B 08-26, same idiom as F7 above): F1 cycles
 // ON -> ASSIST -> OFF and persists. Windows switch live; the enemy-pressure
 // rebase is stamped at combat spawn, so it updates on the NEXT fight.
-if (keyboard_check_pressed(vk_f6)) {
+// (Review fix: was F6, which collides with obj_game_controller's F6 zoom test
+// lever in IDE/F5 builds - F1 is the one unclaimed function key.)
+if (keyboard_check_pressed(vk_f1)) {
     global.timed_combat = (timed_combat_mode() + 2) mod 3;   // 2 -> 1 -> 0 -> 2
     timed_combat_save();
     array_push(combat_log, "Timed combat: " + timed_combat_mode_name(global.timed_combat)
@@ -4609,10 +4611,19 @@ if (player_turn) {
             // fall through - the action resolves THIS frame with the grade applied
         } else {
             qte_action_grade = 0;   // fresh action - last grade never leaks
+            // The Duelist's T3 PERFECT THRUST cannot be evaded BY DESIGN (M-locked
+            // 08-13: "stun him, weaken him, or wear a shield - footwork does not
+            // answer it") - a timed parry is footwork, so no window opens on the
+            // thrust's telegraph round. Every other action of his parries normally.
+            var _q_thrust = variable_struct_exists(actor, "perfect_thrust") && actor.perfect_thrust
+                && actor.telegraph_turn > 0 && (combat_state.round mod actor.telegraph_turn) == 0
+                && variable_struct_exists(actor, "intent") && actor.intent != undefined
+                && actor.intent.eab == undefined;
             if (timed_combat_on()
                 && variable_struct_exists(actor, "intent") && actor.intent != undefined
                 && (actor.intent.eab == undefined || actor.intent.eab.kind == "spell")
                 && enemy_intent_blocked(actor) == ""
+                && !_q_thrust
                 && player.blink_charges <= 0
                 && player.shadow_step_charges <= 0
                 && !player.phantom_step_active
