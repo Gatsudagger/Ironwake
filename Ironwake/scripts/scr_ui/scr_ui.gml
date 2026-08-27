@@ -10723,6 +10723,15 @@ function ui_compendium_sections() {
             ],
         },
         {
+            title: "Timed Combat",
+            entries: [
+                { term: "The Guard Ring",  text: "When an enemy attack or spell comes for you, a ring CLOSES onto your hero. Press SPACE / click / tap (or pad A) as it lands: the GOLD core is a PERFECT parry - the blow is NEGATED and answered with a riposte (a riposte kill cancels the attack outright). The blue band is a GOOD block: half damage. Late, early or no press: the full hit." },
+                { term: "The Strike Ring", text: "Your own damaging casts hang for a beat while an ember ring closes on the target. Press in the gold band for a TRUE STRIKE (+15% damage) - and ANY press turns an outright miss into a 50% glancing hit instead of a whiff." },
+                { term: "Your dodge kit",  text: "Blink, Shadow Step, Phantom Step and the like are the timing done FOR you - while one is armed, no guard ring appears and the ability resolves as always." },
+                { term: "Modes",           text: "F6 in combat cycles ON / ASSIST / OFF (saved between sessions). ASSIST widens every window - built for touch screens. OFF returns combat to the classic untimed rules, enemy pressure included." },
+            ],
+        },
+        {
             title: "Hit & Crit",
             entries: [
                 { term: "Accuracy",        text: "First the attacker rolls to connect (its Accuracy, capped 5-99%). A failure is a MISS. Blind lowers Accuracy sharply." },

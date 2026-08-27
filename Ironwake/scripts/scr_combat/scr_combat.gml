@@ -1179,6 +1179,90 @@ function awaken_enemy_heal_mult(asc = undefined) {
     return _tbl[_asc] * _end_heal;
 }
 
+// =============================================================================
+// TIMED COMBAT (COMBAT OVERHAUL batch B, M-locked 08-26). Clair Obscur-style
+// reaction windows on enemy attacks: a shrinking ring closes over the player;
+// press / tap / pad-A as it lands. PERFECT (the ring's last frames) NEGATES the
+// blow and answers with a riposte; GOOD halves it; late or no press = the full
+// (rebased) hit. The auto-dodge kit (Blink / Shadow Step / Phantom Step /
+// Afterimage) is "the timing done for you" - no window opens while one is armed.
+//
+// MODES (settings.ini [combat] timed_mode; F6 cycles in combat):
+//   2 = ON      standard windows + the enemy-pressure rebase
+//   1 = ASSIST  wider windows (mobile touch latency ~100ms) + the same rebase
+//   0 = OFF     the classic game, byte-identical: no windows, no rebase
+// OFF is the kill switch M asked for - reverting the feel is one toggle, and
+// a full code revert is `git revert` of the batch-B commits (tree tagged
+// pre-combat-overhaul). NO save-format changes anywhere in this system.
+// =============================================================================
+function timed_combat_mode() {
+    if (!variable_global_exists("timed_combat")) {
+        ini_open("settings.ini");
+        global.timed_combat = clamp(floor(ini_read_real("combat", "timed_mode", 2)), 0, 2);
+        ini_close();
+    }
+    return global.timed_combat;
+}
+function timed_combat_on() { return timed_combat_mode() > 0; }
+function timed_combat_save() {
+    ini_open("settings.ini");
+    ini_write_real("combat", "timed_mode", timed_combat_mode());
+    ini_close();
+}
+function timed_combat_mode_name(_m) {
+    switch (_m) {
+        case 0: return "OFF (classic)";
+        case 1: return "ASSIST (wide windows)";
+    }
+    return "ON";
+}
+
+// Window geometry in frames (60fps). The ring closes over `len` frames; a press
+// is graded by how many frames BEFORE impact it landed: <= perfect = PERFECT,
+// <= good = GOOD, earlier = too early (full damage). Assist runs wider for
+// touch latency and slower thumbs.
+function timed_combat_windows() {
+    if (timed_combat_mode() == 1) return { len: 56, perfect: 14, good: 30 };
+    return { len: 42, perfect: 8, good: 20 };
+}
+
+// Flat riposte a PERFECT parry answers with. A riposte KILL cancels the
+// incoming action outright - the parry ends the exchange.
+function timed_combat_riposte() { return 8; }
+
+// T2 STRIKE WINDOW geometry: a damaging, aimed player cast hangs for a beat
+// while a ring closes on the TARGET. A press in the last `perfect` frames is a
+// TRUE STRIKE (+15% final damage); ANY press salvages an accuracy miss into a
+// 50% glancing hit; no press = the cast resolves exactly as before. Shorter
+// than the defensive window - your own tempo, not a read.
+function timed_combat_strike_windows() {
+    if (timed_combat_mode() == 1) return { len: 40, perfect: 12 };
+    return { len: 30, perfect: 8 };
+}
+
+// The parry press: space / enter, left click, any tap (GM maps touch to mouse),
+// or pad A. Read once per frame by the window tick in obj_combat_controller.
+function timed_combat_press() {
+    if (keyboard_check_pressed(vk_space) || keyboard_check_pressed(vk_enter)) return true;
+    if (mouse_check_button_pressed(mb_left)) return true;
+    if (pad_pressed(gp_face1)) return true;
+    return false;
+}
+
+// ENEMY-PRESSURE REBASE (M-locked: "big rebase, sized for timing"): enemy
+// damage/telegraph_damage multiply by this at combat spawn, ONLY in timed
+// modes - Off keeps the shipped numbers exactly. Steep at low Awakening
+// (where the game was far too easy) and tapering as the awakening acc/dmg
+// ladders start biting on their own. Applied in the Create difficulty passes,
+// so toggling mid-run takes effect on the NEXT fight.
+function timed_pressure_mult(asc = undefined) {
+    if (!timed_combat_on()) return 1.0;
+    var _asc = (asc != undefined) ? asc
+        : (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0);
+    var _tbl = [1.45, 1.40, 1.30, 1.20, 1.15, 1.15];
+    return _tbl[clamp(_asc, 0, array_length(_tbl) - 1)];   // A6+ endless holds at 1.15
+}
+
 // ---------------------------------------------------------------------------
 // combat_evasion_chance(target)
 // Dodge CHANCE (0-100) for the active-evasion abilities Blink / Shadow Step.

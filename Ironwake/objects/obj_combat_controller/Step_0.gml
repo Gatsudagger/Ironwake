@@ -43,6 +43,16 @@ if (keyboard_check_pressed(vk_f7)) {
     array_push(combat_log, "Arena view: " + (global.combat_25d ? "2.5D stage (v3)" : "flat (classic)") + ".");
 }
 
+// TIMED COMBAT mode lever (batch B 08-26, same idiom as F7 above): F6 cycles
+// ON -> ASSIST -> OFF and persists. Windows switch live; the enemy-pressure
+// rebase is stamped at combat spawn, so it updates on the NEXT fight.
+if (keyboard_check_pressed(vk_f6)) {
+    global.timed_combat = (timed_combat_mode() + 2) mod 3;   // 2 -> 1 -> 0 -> 2
+    timed_combat_save();
+    array_push(combat_log, "Timed combat: " + timed_combat_mode_name(global.timed_combat)
+        + ". (Enemy pressure updates next fight.)");
+}
+
 // ===== DELIVERY MUTATOR QUEUE (M 08-11, SYSTEMS_MUTATORS.md) =====
 // Delayed sub-hits: BOUNCE arcs to a random other enemy on a real traveling
 // bolt (v2, 08-11); ECHO repeats on its target at the player's ACTUAL next
@@ -749,6 +759,24 @@ if (player_turn) {
         }
     }
 
+    // =========================================================================
+    // TIMED COMBAT T2 (batch B 08-26): the STRIKE WINDOW tick. While a cast is
+    // held, every other player input waits; the first press is banked, and at
+    // impact the cast re-enters the normal path (pqte_fire) carrying its grade.
+    // =========================================================================
+    if (pqte_state == "window") {
+        pqte_frames--;
+        if (pqte_pressed_at < 0 && timed_combat_press()) pqte_pressed_at = pqte_frames;
+        if (pqte_frames > 0) exit;   // the strike hangs while the ring closes
+        var _pqw = timed_combat_strike_windows();
+        pqte_cast_grade = 0;
+        if (pqte_pressed_at >= 0) pqte_cast_grade = (pqte_pressed_at <= _pqw.perfect) ? 2 : 1;
+        pqte_state = "";
+        pqte_fire  = true;    // consumed at the cast-attempt gate below this frame
+        selected_ability = pqte_ability;   // selection is law - stamped at arm time
+        selected_target  = pqte_target;
+    }
+
     // Onboarding coach-marks (see SYSTEMS_ONBOARDING.md). On the player's turn, teach
     // the AP economy first; once that's seen, teach target-switching the first time a
     // fight has more than one foe. Both are once-only and self-gate (one tip at a time).
@@ -1148,7 +1176,11 @@ if (player_turn) {
     }
 
     // --- Number hotkeys: select and cast the matching ability (1..N, max 9) ---
-    var _should_cast = false;
+    // A strike-window impact (pqte_fire) IS a cast trigger - the held cast
+    // re-enters the exact same path it left, grade in hand (T2, batch B).
+    var _pq_fired = pqte_fire;
+    pqte_fire = false;
+    var _should_cast = _pq_fired;
     var _hk_max = min(array_length(player.abilities), 9);
     for (var _hk = 0; _hk < _hk_max; _hk++) {
         if (input_hotkey(string(_hk + 1))) {
@@ -1303,6 +1335,10 @@ if (player_turn) {
         end_turn_focus = false;
         touch_press(ord("T"));
     } else if (input_confirm_alt() || input_confirm() || _should_cast) {
+
+        // Strike-window re-entry: the stamped selection is authoritative even if
+        // a stray same-frame press touched the ability row above (T2, batch B).
+        if (_pq_fired) { selected_ability = pqte_ability; selected_target = pqte_target; }
 
         var ab = player.abilities[selected_ability];
 
@@ -1473,6 +1509,32 @@ if (player_turn) {
             }
 
         } else {
+            // ===== TIMED COMBAT T2 (batch B 08-26): arm the STRIKE WINDOW =====
+            // Every gate above has passed and nothing is spent yet - a damaging,
+            // aimed cast now hangs for a beat while a ring closes on the target.
+            // Press in the gold band: TRUE STRIKE (+15%). Press at all: an
+            // accuracy miss is salvaged into a 50% glancing hit. No press: the
+            // cast resolves exactly as it always did. Self-casts, traps and
+            // pure-utility abilities never open one.
+            if (timed_combat_on() && pqte_cast_grade < 0
+                && variable_struct_exists(ab, "base_damage") && ab.base_damage > 0
+                && !ab.self_targeted) {
+                var _pqo = timed_combat_strike_windows();
+                pqte_state      = "window";
+                pqte_window_len = _pqo.len;
+                pqte_frames     = _pqo.len;
+                pqte_pressed_at = -1;
+                pqte_ability    = selected_ability;
+                pqte_target     = selected_target;
+                exit;   // the ring starts closing; the cast waits
+            }
+            // Consume the grade into a cast-local so the NEXT cast this turn
+            // opens its own window (-1 = this cast never had one: Off mode,
+            // self-cast, or a utility action).
+            var _pq_grade = pqte_cast_grade;
+            pqte_cast_grade = -1;
+            if (_pq_grade == 2) array_push(combat_log, "TRUE STRIKE - the timing lands (+15% damage)!");
+
             // Same-category synergy discount: apply the -1 AP for this cast (floor 0 for
             // support, 1 for other roles - see _syn_floor above).
             // Applied before Quickcast/Cracked Focus so those can still reduce further.
@@ -1926,6 +1988,16 @@ if (player_turn) {
                         target.dodge,
                         ab.guaranteed_hit || _react_force_hit || _trk_sure
                     );
+
+                    // TIMED COMBAT T2 (batch B): ANY banked press salvages a
+                    // whiff - the miss/dodge becomes a 50% GLANCING hit. Reset
+                    // every target of the loop so one graze can't leak to the next.
+                    var _pq_glance = false;
+                    if (_hit != "hit" && _pq_grade >= 1 && ab.base_damage > 0) {
+                        _pq_glance = true;
+                        _hit = "hit";
+                        array_push(combat_log, "The timing saves it - " + ab.name + " GRAZES " + target.name + "!");
+                    }
 
                     if (_hit != "hit") {
                         // AoE misses name the target too, so every enemy gets a line (#21).
@@ -2679,6 +2751,13 @@ if (player_turn) {
                                 }
                             }
                         }
+
+                        // TIMED COMBAT T2 (batch B): the strike-window verdict lands
+                        // last - a graze halves the salvaged hit, a TRUE STRIKE
+                        // sharpens the whole blow +15% (post-mitigation, so every
+                        // rider above shares the timing bonus).
+                        if (_pq_glance && _final_dmg > 0) _final_dmg = max(1, round(_final_dmg * 0.5));
+                        if (_pq_grade == 2 && _deals_damage && _final_dmg > 0) _final_dmg = round(_final_dmg * 1.15);
 
                         // DUELIST T2 PERFECT PARRY (08-13): an armed guard turns the
                         // next melee blow aside outright - and the riposte answers
@@ -4469,6 +4548,90 @@ if (player_turn) {
             }
         }
 
+        // =====================================================================
+        // TIMED COMBAT T1 (batch B, M-locked 08-26): the REACTION WINDOW.
+        // A damaging enemy action (basic swing or committed spell) holds here
+        // while a shrinking ring closes over the player (Draw_64). The first
+        // press (space/enter, click, tap, pad A) is graded by how close to
+        // impact it landed: PERFECT negates the blow and answers with a
+        // riposte (a riposte KILL cancels the action outright); GOOD halves
+        // it; early/late/none = the full hit. The auto-dodge kit (Blink /
+        // Shadow Step / Phantom Step / Afterimage) is the timing done for
+        // you - while armed, no window opens and those abilities resolve as
+        // always. Non-damaging intents (heal / control / debuff / summon /
+        // stance) never open a window. The sig-move blocks above run FIRST so
+        // an eaten/wiped action never wastes a window; they are once-flagged,
+        // so the held frames re-entering this block cannot re-fire them.
+        // =====================================================================
+        if (qte_state == "window") {
+            qte_frames--;
+            if (qte_pressed_at < 0 && timed_combat_press()) qte_pressed_at = qte_frames;
+            if (qte_frames > 0) exit;   // hold the action while the ring closes
+            // --- Impact: grade the press ---
+            var _qw = timed_combat_windows();
+            qte_state        = "";
+            qte_action_grade = 0;
+            if (qte_pressed_at >= 0) {
+                if (qte_pressed_at <= _qw.perfect)   qte_action_grade = 2;
+                else if (qte_pressed_at <= _qw.good) qte_action_grade = 1;
+            }
+            var _q_px = 475, _q_py = 505;
+            if (combat_25d()) {
+                var _q_pa = combat_player_vfx_anchor(player);
+                _q_px = _q_pa.x + 110; _q_py = _q_pa.y + 30;
+            }
+            if (qte_action_grade == 2) {
+                array_push(damage_popups, { value: 0, text: "PERFECT!", x: _q_px, y: _q_py,
+                    timer: 48, col: make_color_rgb(255, 225, 120) });
+                // The riposte lands BEFORE the blow - steel answers steel.
+                var _q_rip = timed_combat_riposte();
+                combat_apply_damage(actor, _q_rip);
+                actor.hit_flash = max(actor.hit_flash, 10);
+                array_push(combat_log, "PERFECT PARRY! " + actor.name + "'s blow is turned - riposte for " + string(_q_rip) + "!");
+                if (actor.HP <= 0 && !actor.is_defeated) {
+                    combat_on_enemy_defeated(actor, player, combat_log);
+                    array_push(combat_log, "The riposte fells " + actor.name + " - the blow never lands!");
+                    enemy_roll_intent(actor, player, combat_state.round + 1, false);
+                    combat_next_turn(combat_state);
+                    player_turn = combat_state.active.is_player;
+                    if (player_turn) { abilities_used_this_turn = []; if (instance_exists(obj_game_controller)) instance_find(obj_game_controller, 0).items_used_this_turn = 0; need_player_status_tick = true; }
+                    enemy_turn_timer = enemy_turn_delay;
+                    exit;
+                }
+            } else if (qte_action_grade == 1) {
+                array_push(damage_popups, { value: 0, text: "GOOD BLOCK", x: _q_px, y: _q_py,
+                    timer: 42, col: make_color_rgb(150, 210, 255) });
+                array_push(combat_log, "Good guard - " + actor.name + "'s blow lands at HALF.");
+            } else if (qte_pressed_at >= 0) {
+                array_push(damage_popups, { value: 0, text: "TOO EARLY", x: _q_px, y: _q_py,
+                    timer: 36, col: make_color_rgb(150, 150, 160) });
+            }
+            // fall through - the action resolves THIS frame with the grade applied
+        } else {
+            qte_action_grade = 0;   // fresh action - last grade never leaks
+            if (timed_combat_on()
+                && variable_struct_exists(actor, "intent") && actor.intent != undefined
+                && (actor.intent.eab == undefined || actor.intent.eab.kind == "spell")
+                && enemy_intent_blocked(actor) == ""
+                && player.blink_charges <= 0
+                && player.shadow_step_charges <= 0
+                && !player.phantom_step_active
+                && !(variable_struct_exists(player, "afterimage_ready") && player.afterimage_ready)) {
+                var _qo = timed_combat_windows();
+                qte_state      = "window";
+                qte_window_len = _qo.len;
+                qte_frames     = _qo.len;
+                qte_pressed_at = -1;
+                // One-time teach line per session (tutorial-tips gated).
+                if ((!variable_global_exists("qte_taught") || !global.qte_taught)
+                    && (!variable_global_exists("tutorial_enabled") || global.tutorial_enabled)) {
+                    global.qte_taught = true;
+                    array_push(combat_log, "TIMED GUARD: press SPACE / tap as the ring closes on you - perfect timing TURNS the blow!");
+                }
+                exit;   // the ring starts closing; the action waits
+            }
+        }
+
         // THE HOLLOW CROWN (Depth Warden, 08-13): each of its turns it silences
         // one random player ability - a new pick every turn, the old one freed.
         // The fight gets quieter the longer it goes on.
@@ -5357,6 +5520,10 @@ if (player_turn) {
                 var _sdmg = combat_mitigate_player(player,
                     max(1, round(_eab.value * awaken_boss_enrage_mult(combat_state.round))), _eab.dtype, combat_log);
                 if (_incoming_mult < 1.0) _sdmg = max(1, round(_sdmg * _incoming_mult));  // Blink softening
+                // TIMED COMBAT T1: the window's grade bends the cast too -
+                // PERFECT negates, GOOD halves (batch B 08-26).
+                if (qte_action_grade == 2)      _sdmg = 0;
+                else if (qte_action_grade == 1) _sdmg = max(1, round(_sdmg * 0.5));
                 // Held Open (doorling sig move): the first actor's stamped action
                 // deals nothing - the door takes the blow.
                 if (variable_struct_exists(actor, "sig_door_round") && actor.sig_door_round == combat_state.round
@@ -5682,6 +5849,10 @@ if (player_turn) {
             }
             // Blink softening: 2nd/3rd charge takes 50%/25%-reduced damage if the hit lands.
             if (_incoming_mult < 1.0) _final_dmg = max(1, round(_final_dmg * _incoming_mult));
+            // TIMED COMBAT T1: the reaction window's grade bends the blow -
+            // PERFECT negates it outright, GOOD halves it (batch B 08-26).
+            if (qte_action_grade == 2)      _final_dmg = 0;
+            else if (qte_action_grade == 1) _final_dmg = max(1, round(_final_dmg * 0.5));
             // Evasive Roll (audit §6 build): the armed roll halves the next hit above 10,
             // and a clean absorb refunds 1 Preparation.
             if (player.evasive_roll_armed && _final_dmg > 10) {
@@ -6046,6 +6217,10 @@ if (player_turn) {
                 if (pet_egg_ward_mult() != 1.0) _final_dmg2 = max(1, round(_final_dmg2 * pet_egg_ward_mult()));   // Warding egg
                 if (curse_incoming_mult() != 1.0) _final_dmg2 = max(1, round(_final_dmg2 * curse_incoming_mult()));
                 if (_incoming_mult < 1.0) _final_dmg2 = max(1, round(_final_dmg2 * _incoming_mult));  // Blink softening
+                // TIMED COMBAT T1: one window covers the whole action - the
+                // grade bends the second strike too (batch B 08-26).
+                if (qte_action_grade == 2)      _final_dmg2 = 0;
+                else if (qte_action_grade == 1) _final_dmg2 = max(1, round(_final_dmg2 * 0.5));
                 // Evasive Roll: covers the double strike too (audit §6 build).
                 if (player.evasive_roll_armed && _final_dmg2 > 10) {
                     _final_dmg2 = ceil(_final_dmg2 / 2);

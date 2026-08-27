@@ -863,6 +863,23 @@ for (var _ei = 0; _ei < array_length(enemies); _ei++) {
 }
 
 // -----------------------------------------------------------------------------
+// TIMED-COMBAT PRESSURE REBASE (batch B, M-locked 08-26): in timed modes enemy
+// DAMAGE rises hard at low Awakening (+45% A0 tapering to +15% A4+) - the
+// reaction windows are how the player claws it back. Damage only, never HP
+// (fights should threaten, not drag). timed_pressure_mult returns 1.0 with the
+// mode OFF, so classic mode keeps the shipped numbers byte-identical. Same
+// damage/telegraph convention as every other difficulty pass above.
+// -----------------------------------------------------------------------------
+var _tp_mult = timed_pressure_mult();
+if (_tp_mult != 1.0) {
+    for (var _ei = 0; _ei < array_length(enemies); _ei++) {
+        var _e = enemies[_ei];
+        _e.damage           = round(_e.damage * _tp_mult);
+        _e.telegraph_damage = round(_e.telegraph_damage * _tp_mult);
+    }
+}
+
+// -----------------------------------------------------------------------------
 // CURSE PASS - opt-in run difficulty (devil's bargain). Doom buffs enemy HP;
 // Savagery/Doom/Devil's Pact buff enemy damage. Stacks on top of ascendance +
 // difficulty. See SYSTEMS_CURSES.md.
@@ -1030,6 +1047,28 @@ foe_opens_toast_timer = player_turn ? 0 : 150;
 
 // 180 frames at 60 fps (GameMaker default room speed) ≈ 3 seconds.
 enemy_turn_delay = 60;
+
+// -----------------------------------------------------------------------------
+// TIMED COMBAT T1 reaction-window state (batch B 08-26). One window per
+// damaging enemy action: the Step gate opens it, Draw_64 draws the closing
+// ring, the grade rides qte_action_grade through that action's damage sites.
+// -----------------------------------------------------------------------------
+qte_state        = "";     // "" idle | "window" = ring live, action held
+qte_frames       = 0;      // frames until impact while the window is open
+qte_window_len   = 0;      // full window length (ring scale + grade math)
+qte_pressed_at   = -1;     // qte_frames value at the FIRST press (-1 = none yet)
+qte_action_grade = 0;      // 0 late/none (full dmg), 1 GOOD (-50%), 2 PERFECT (negate+riposte)
+// T2 STRIKE WINDOW state (offensive twin of the block above): a damaging cast
+// hangs while a ring closes on its target; the grade rides pqte_cast_grade.
+pqte_state       = "";     // "" idle | "window" = strike ring live, cast held
+pqte_frames      = 0;
+pqte_window_len  = 0;
+pqte_pressed_at  = -1;
+pqte_ability     = 0;      // selection stamped at arm time (restored at fire)
+pqte_target      = 0;
+pqte_fire        = false;  // impact happened - re-enter the cast path this frame
+pqte_cast_grade  = -1;     // -1 no window ran | 0 no press | 1 pressed (salvage) | 2 TRUE STRIKE
+timed_combat_mode();       // ensure the mode global is loaded from settings.ini
 
 
 // -----------------------------------------------------------------------------
