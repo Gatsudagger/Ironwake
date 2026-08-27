@@ -769,6 +769,8 @@ if (player_turn) {
     if (pqte_state == "window") {
         pqte_frames--;
         if (pqte_pressed_at < 0 && timed_combat_press()) pqte_pressed_at = pqte_frames;
+        // Ring audio (08-27 ship polish): one tick as the ring enters the gold band.
+        if (pqte_frames == pqte_perfect_f) audio_play_sound(snd_ui_move, 1, false);
         if (pqte_frames > 0) exit;   // the strike hangs while the ring closes
         // Grade against THIS window's stamped gold band (AP-cost tiered at arm).
         pqte_cast_grade = 0;
@@ -784,22 +786,26 @@ if (player_turn) {
     // fight has more than one foe. Both are once-only and self-gate (one tip at a time).
     if (!combat_over) {
         if (!tutorial_try_show("combat_ap")) {
-            // Count living foes (the roster is combat_state.combatants - player + enemies,
-            // distinguished by is_player; there is no standalone `enemies` array here).
-            var _foe_count = 0;
-            var _cbts = combat_state.combatants;
-            for (var _tci = 0; _tci < array_length(_cbts); _tci++) {
-                var _tcc = _cbts[_tci];
-                if (variable_struct_exists(_tcc, "is_player") && _tcc.is_player) continue;
-                if (variable_struct_exists(_tcc, "HP") && _tcc.HP <= 0) continue;
-                _foe_count++;
-            }
-            // Teach target-switching only in multi-foe fights; once that's handled (shown
-            // now, already seen, or single foe), teach the intent chips, then
-            // inspect-on-hover. One tip at a time.
-            if (!(_foe_count > 1 && tutorial_try_show("targeting"))) {
-                if (!tutorial_try_show("intent")) {
-                    if (!tutorial_try_show("inspect")) tutorial_try_show("weakness");   // P2 gem (08-01)
+            // Timed combat rings (08-27 ship polish): taught right after AP, before
+            // the first guard ring ever closes - and only when a timed mode is on.
+            if (!(timed_combat_on() && tutorial_try_show("timed_combat"))) {
+                // Count living foes (the roster is combat_state.combatants - player + enemies,
+                // distinguished by is_player; there is no standalone `enemies` array here).
+                var _foe_count = 0;
+                var _cbts = combat_state.combatants;
+                for (var _tci = 0; _tci < array_length(_cbts); _tci++) {
+                    var _tcc = _cbts[_tci];
+                    if (variable_struct_exists(_tcc, "is_player") && _tcc.is_player) continue;
+                    if (variable_struct_exists(_tcc, "HP") && _tcc.HP <= 0) continue;
+                    _foe_count++;
+                }
+                // Teach target-switching only in multi-foe fights; once that's handled (shown
+                // now, already seen, or single foe), teach the intent chips, then
+                // inspect-on-hover. One tip at a time.
+                if (!(_foe_count > 1 && tutorial_try_show("targeting"))) {
+                    if (!tutorial_try_show("intent")) {
+                        if (!tutorial_try_show("inspect")) tutorial_try_show("weakness");   // P2 gem (08-01)
+                    }
                 }
             }
         }
@@ -1553,7 +1559,10 @@ if (player_turn) {
             // self-cast, or a utility action).
             var _pq_grade = pqte_cast_grade;
             pqte_cast_grade = -1;
-            if (_pq_grade == 2) array_push(combat_log, "TRUE STRIKE - the timing lands (+15% damage)!");
+            if (_pq_grade == 2) {
+                array_push(combat_log, "TRUE STRIKE - the timing lands (+15% damage)!");
+                audio_play_sound(snd_confirm_major, 1, false);   // ring audio (08-27): the gold band pays
+            }
 
             // Same-category synergy discount: apply the -1 AP for this cast (floor 0 for
             // support, 1 for other roles - see _syn_floor above).
@@ -2017,6 +2026,7 @@ if (player_turn) {
                         _pq_glance = true;
                         _hit = "hit";
                         array_push(combat_log, "The timing saves it - " + ab.name + " GRAZES " + target.name + "!");
+                        audio_play_sound(snd_ui_confirm, 1, false);   // ring audio (08-27): the salvage
                     }
 
                     if (_hit != "hit") {
@@ -4705,6 +4715,10 @@ if (player_turn) {
         if (qte_state == "window") {
             qte_frames--;
             if (qte_pressed_at < 0 && timed_combat_press()) qte_pressed_at = qte_frames;
+            // Ring audio (08-27 ship polish): a tick as the ring crosses into the
+            // good band and again at the gold band - the timing readable by EAR,
+            // not just by eye (second tick = perfect window).
+            if (qte_frames == qte_good_f || qte_frames == qte_perfect_f) audio_play_sound(snd_ui_move, 1, false);
             if (qte_frames > 0) exit;   // hold the action while the ring closes
             // --- Impact: grade the press against THIS window's stamped bands
             //     (danger-tiered at open - see timed_combat_windows) ---
@@ -4722,6 +4736,7 @@ if (player_turn) {
             if (qte_action_grade == 2) {
                 array_push(damage_popups, { value: 0, text: "PERFECT!", x: _q_px, y: _q_py,
                     timer: 48, col: make_color_rgb(255, 225, 120) });
+                audio_play_sound(snd_forge, 1, false);   // steel rings on steel - the parry CLANG
                 // The riposte lands BEFORE the blow - steel answers steel.
                 var _q_rip = timed_combat_riposte();
                 combat_apply_damage(actor, _q_rip);
@@ -4740,6 +4755,7 @@ if (player_turn) {
             } else if (qte_action_grade == 1) {
                 array_push(damage_popups, { value: 0, text: "GOOD BLOCK", x: _q_px, y: _q_py,
                     timer: 42, col: make_color_rgb(150, 210, 255) });
+                audio_play_sound(snd_equip, 1, false);   // dull metal thud - caught on the guard
                 array_push(combat_log, "Good guard - " + actor.name + "'s blow lands at HALF.");
             } else if (qte_pressed_at >= 0) {
                 array_push(damage_popups, { value: 0, text: "TOO EARLY", x: _q_px, y: _q_py,
@@ -4777,12 +4793,10 @@ if (player_turn) {
                 qte_perfect_f  = _qo.perfect;
                 qte_good_f     = _qo.good;
                 qte_pressed_at = -1;
-                // One-time teach line per session (tutorial-tips gated).
-                if ((!variable_global_exists("qte_taught") || !global.qte_taught)
-                    && (!variable_global_exists("tutorial_enabled") || global.tutorial_enabled)) {
-                    global.qte_taught = true;
-                    array_push(combat_log, "TIMED GUARD: press SPACE / tap as the ring closes on you - perfect timing TURNS the blow!");
-                }
+                audio_play_sound(snd_move_whoosh, 1, false);   // the wind-up - the guard ring is LIVE
+                // Teaching lives in the "timed_combat" coach-mark now (08-27 ship
+                // polish, fired on the player's turn with the other combat tips) -
+                // the old one-time log line is retired.
                 exit;   // the ring starts closing; the action waits
             }
         }

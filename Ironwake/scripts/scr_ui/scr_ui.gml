@@ -9267,13 +9267,15 @@ function ui_draw_settings_overlay() {
     draw_set_alpha(1.0);
 
     // Panel (tall enough for: Music, SFX, Hub Music, Dungeon Music, Menu Tick,
-    // Fullscreen, Font Size, Tutorial Tips, On-screen D-pad, Pinch Zoom,
-    // Reset Tutorial). The D-pad + Pinch Zoom rows only exist on touch
-    // platforms - desktop/HTML5 skip them and the panel shrinks. On touch the
-    // row pitches are squeezed (108->92 slider rows, 84->72 toggle rows, header
-    // 150->136) so the 11th row fits the height-capped 1064 panel; highlight
-    // bands are 66 tall, so 72 still leaves a 6px gap - measured, no overlap
-    // (content bottom py+973 < reset flash py+986 < footer py+1022).
+    // Fullscreen, Font Size, Tutorial Tips, Timed Combat, On-screen D-pad,
+    // Pinch Zoom, Reset Tutorial). The D-pad + Pinch Zoom rows only exist on
+    // touch platforms - desktop/HTML5 skip them and the panel shrinks. Pitches
+    // are squeezed AGAIN for the Timed Combat row (08-27; touch header
+    // 136->118, sliders 92->86, toggles 72->66; desktop 150->140, 108->98,
+    // 84->76) so the 12th row fits the height-capped 1064 panel. Only ONE
+    // highlight band draws at a time (the selected row), so the zero-gap 66
+    // pitch cannot overlap - measured: touch last row py+924, band bottom
+    // py+969 < reset flash py+986 < footer py+1022; desktop last row py+912.
     var _has_dpad = touch_platform();
     var _pw = 840, _ph = _has_dpad ? 1064 : 1062;
     var _px = GUI_CX - _pw / 2;
@@ -9290,9 +9292,9 @@ function ui_draw_settings_overlay() {
     draw_set_color(c_white);
     draw_text(GUI_CX, _py + 39, "SETTINGS");
 
-    var _row_y  = _py + (_has_dpad ? 136 : 150);
-    var _row_h  = _has_dpad ? 92 : 108;    // slider-row pitch (squeezed on touch)
-    var _pitch  = _has_dpad ? 72 : 84;     // toggle-row pitch (squeezed on touch)
+    var _row_y  = _py + (_has_dpad ? 118 : 140);
+    var _row_h  = _has_dpad ? 86 : 98;     // slider-row pitch (squeezed on touch)
+    var _pitch  = _has_dpad ? 66 : 76;     // toggle-row pitch (squeezed on touch)
     var _bar_x  = _px + 300;
     var _bar_w  = 420;
     var _bar_h  = 27;
@@ -9518,14 +9520,53 @@ function ui_draw_settings_overlay() {
     draw_set_color(c_white);
     draw_text(_tpx + _tpw / 2, _tpy + _tph / 2, _tut_on ? "ON" : "OFF");
 
-    // --- Eighth row: On-screen D-pad (touch prefs, M 07-18 S25 batch). One row
+    // --- Ninth row: Timed Combat mode selector (On / Assist / Off; 08-27 ship
+    //     polish - F1 in combat and the combat-log line were the only levers, a
+    //     dev-grade secret). A/D cycles, Enter steps forward; writes settings.ini
+    //     [combat] timed_mode via timed_combat_save, same store F1 uses. Value
+    //     box mirrors the font-size selector footprint. ---
+    var _tmy   = _try + _pitch;
+    var _tmsel = (global.settings_cursor == 8);
+    if (_tmsel) {
+        draw_set_alpha(0.20);
+        draw_set_color(make_color_rgb(80, 140, 220));
+        draw_rectangle(_px + 30, _tmy - 21, _px + _pw - 30, _tmy + 45, false);
+        draw_set_alpha(1.0);
+    }
+    draw_set_halign(fa_left);
+    draw_set_valign(fa_middle);
+    draw_set_font(ui_font(fnt_ui));
+    draw_set_color(_tmsel ? c_white : make_color_rgb(170, 180, 200));
+    draw_text(_px + 60, _tmy + 12, (_tmsel ? "> " : "  ") + "Timed Combat");
+    var _tmby    = _tmy + 3;
+    var _tm_mode = timed_combat_mode();
+    var _tm_names = ["Off (classic)", "Assist (wider rings)", "On"];
+    draw_set_color(make_color_rgb(35, 42, 60));
+    draw_rectangle(_bar_x, _tmby, _bar_x + _bar_w, _tmby + _bar_h + 6, false);
+    draw_set_color(_tmsel ? make_color_rgb(120, 190, 255) : make_color_rgb(70, 85, 110));
+    draw_rectangle(_bar_x, _tmby, _bar_x + _bar_w, _tmby + _bar_h + 6, true);
+    draw_set_halign(fa_center);
+    draw_set_color((_tm_mode > 0) ? make_color_rgb(255, 215, 120) : c_white);
+    var _tm_txt = _tm_names[_tm_mode];
+    var _tm_sc  = min(1.0, (_bar_w - 108) / max(1, string_width(_tm_txt)));
+    draw_text_transformed(_bar_x + _bar_w / 2, _tmby + (_bar_h + 6) / 2, _tm_txt, _tm_sc, _tm_sc, 0);
+    draw_set_color(_tmsel ? make_color_rgb(120, 190, 255) : make_color_rgb(90, 100, 125));
+    draw_text(_bar_x + 21,          _tmby + (_bar_h + 6) / 2, "<");
+    draw_text(_bar_x + _bar_w - 21, _tmby + (_bar_h + 6) / 2, ">");
+    draw_set_halign(fa_left);
+    draw_set_font(ui_font(fnt_ui_small));
+    draw_set_color(make_color_rgb(140, 150, 170));
+    draw_text(_bar_x + _bar_w + 24, _tmby + (_bar_h + 6) / 2, "(guard & strike rings)");
+    draw_set_font(ui_font(fnt_ui));
+
+    // --- Tenth row: On-screen D-pad (touch prefs, M 07-18 S25 batch). One row
     //     does both jobs because the panel is height-capped at 1080: A/D nudges
     //     the size (0.80-2.00, step 0.15), Enter toggles the pad entirely, and
     //     the slider reads OFF while disabled. Persisted by touch_settings_save.
     //     TOUCH PLATFORMS ONLY (M 07-28) - desktop/HTML5 skip straight to Reset. ---
-    var _dry  = _try + _pitch;
+    var _dry  = _tmy + _pitch;
     if (_has_dpad) {
-    var _dsel = (global.settings_cursor == 8);
+    var _dsel = (global.settings_cursor == 9);
     if (_dsel) {
         draw_set_alpha(0.20);
         draw_set_color(make_color_rgb(80, 140, 220));
@@ -9569,12 +9610,12 @@ function ui_draw_settings_overlay() {
     }
     }   // end _has_dpad row
 
-    // --- Ninth row: Pinch Zoom on/off (SYSTEMS_PINCH_ZOOM.md; touch platforms
+    // --- Eleventh row: Pinch Zoom on/off (SYSTEMS_PINCH_ZOOM.md; touch platforms
     //     only, same gate as the D-pad row). OFF also hard-resets the zoom. ---
-    var _pzy = _dry + 68;
+    var _pzy = _dry + 66;
     if (_has_dpad) {
         var _pz_on  = !global.pinch_zoom_off;
-        var _pzsel  = (global.settings_cursor == 9);
+        var _pzsel  = (global.settings_cursor == 10);
         if (_pzsel) {
             draw_set_alpha(0.20);
             draw_set_color(make_color_rgb(80, 140, 220));
@@ -9601,10 +9642,10 @@ function ui_draw_settings_overlay() {
         draw_set_font(ui_font(fnt_ui));
     }
 
-    // --- Tenth row: Reset Tutorial (re-show every tip). Takes the D-pad row's
+    // --- Twelfth row: Reset Tutorial (re-show every tip). Takes the D-pad row's
     //     slot when the touch rows are hidden (desktop/HTML5). ---
-    var _rry  = _has_dpad ? (_pzy + 68) : _dry;
-    var _rsel = (global.settings_cursor == 10);
+    var _rry  = _has_dpad ? (_pzy + 66) : _dry;
+    var _rsel = (global.settings_cursor == 11);
     if (_rsel) {
         draw_set_alpha(0.20);
         draw_set_color(make_color_rgb(80, 140, 220));
@@ -9647,11 +9688,11 @@ function ui_draw_settings_overlay() {
         var _stmx   = device_mouse_x_to_gui(0);
         var _stmy   = device_mouse_y_to_gui(0);
         var _st_ys  = [ _row_y, _row_y + _row_h, _row_y + 2 * _row_h, _row_y + 3 * _row_h,
-                        _ky, _fry, _fnty, _try, _dry, _pzy, _rry ];
-        for (var _sri = 0; _sri < 11; _sri++) {
+                        _ky, _fry, _fnty, _try, _tmy, _dry, _pzy, _rry ];
+        for (var _sri = 0; _sri < 12; _sri++) {
             // No D-pad/Pinch rows off-touch: their Y equals the Reset row's, so
-            // skip 8-9 or a Reset tap would read as a toggle.
-            if ((_sri == 8 || _sri == 9) && !_has_dpad) continue;
+            // skip 9-10 or a Reset tap would read as a toggle.
+            if ((_sri == 9 || _sri == 10) && !_has_dpad) continue;
             var _sry = _st_ys[_sri];
             if (_stmx < _px + 30 || _stmx > _px + _pw - 30 || _stmy < _sry - 21 || _stmy > _sry + 45) continue;
             // Click-to-HIGHLIGHT, click-again-to-ACT (M 08-26: "1 click to
@@ -9675,6 +9716,8 @@ function ui_draw_settings_overlay() {
             } else if (_sri == 6) {
                 touch_press(ord("D"));   // font size: cycle Small -> Default -> Large
             } else if (_sri == 8) {
+                touch_press(ord("D"));   // timed combat: cycle Off -> Assist -> On
+            } else if (_sri == 9) {
                 // D-pad row: tap the track to set the size directly while the pad is
                 // on; tapping the rest of the row (or the OFF pill) toggles it.
                 if (!global.touch_gamepad_off && _stmx >= _bar_x && _stmx <= _bar_x + _bar_w) {
@@ -10735,7 +10778,7 @@ function ui_compendium_sections() {
                 { term: "The Guard Ring",  text: "When an enemy attack or spell comes for you, a ring CLOSES onto your hero. Press SPACE / click / tap (or pad A) as it lands: the GOLD core is a PERFECT parry - the blow is NEGATED and answered with a riposte (a riposte kill cancels the attack outright). The blue band is a GOOD block: half damage. Late, early or no press: the full hit. The ring is honest about danger - chip hits give a wide gold core, killing blows a razor-thin one. Read the intent chips." },
                 { term: "The Strike Ring", text: "Your own damaging casts hang for a beat while an ember ring closes on the target. Press in the gold band for a TRUE STRIKE (+15% damage) - and ANY press turns an outright miss into a 50% glancing hit instead of a whiff. Cheap 1-AP casts have a generous gold band; 3-AP finishers demand real precision." },
                 { term: "Your dodge kit",  text: "Blink, Shadow Step, Phantom Step and the like are the timing done FOR you - while one is armed, no guard ring appears and the ability resolves as always." },
-                { term: "Modes",           text: "F1 in combat cycles ON / ASSIST / OFF (saved between sessions). ASSIST widens every window - built for touch screens. OFF returns combat to the classic untimed rules, enemy pressure included." },
+                { term: "Modes",           text: "Set it in SETTINGS (Timed Combat row), or press F1 in combat to cycle ON / ASSIST / OFF (saved between sessions). ASSIST widens every window - built for touch screens. OFF returns combat to the classic untimed rules, enemy pressure included." },
             ],
         },
         {

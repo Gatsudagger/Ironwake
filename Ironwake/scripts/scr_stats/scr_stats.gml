@@ -11652,6 +11652,10 @@ function tutorial_catalog() {
         { id:"loadout",    title:"Prepare to Descend",  body:"Before each run, equip your gear and choose which abilities and traits to bring. You can only take a limited set into the dungeon, so build around how you want to fight. Note the THREE TABS at the top - ABILITIES, TRAITS and COMPANION are picked separately, and it's easy to descend having forgotten your traits. Check all three before you commit." },
         { id:"ascendance", title:"Awakening Tiers",     body:"Higher Awakening tiers make enemies tougher but drop better, rarer loot. Raise the tier when you want more risk for more reward - start low and work up." },
         { id:"combat_ap",  title:"Action Points (AP)",  body:"Each turn you have 3 AP (4 with the Bloodwarden Relentless trait). Abilities cost AP to use; a basic attack is free. Spend your AP wisely, then end your turn to let the enemy act." },
+        // Timed combat rings (08-27 ship polish): fires right after combat_ap,
+        // only while a timed mode is on - see the coach-mark chain in
+        // obj_combat_controller Step_0.
+        { id:"timed_combat", title:"Timed Combat",      body:"When an enemy commits to a blow, a GUARD RING closes over you. Press SPACE (or click / tap / pad A) as it tightens: PERFECT timing turns the blow aside entirely and answers with a riposte; good timing halves it. Listen for the ticks - the second tick marks the perfect window. Dangerous blows run tighter windows, and light ones are forgiving.\nYour own damaging casts open a STRIKE RING over the target: land the gold band for +15% damage, and any press salvages a clean miss into a grazing hit. Cheap abilities are easy to time; expensive ones demand precision.\nDodge abilities (Blink, Shadow Step, Phantom Step) are the timing done for you - while they're armed, no ring opens.\nChange the mode any time in SETTINGS (On / Assist / Off) - Assist widens every window, Off is classic turn-based combat." },
         { id:"targeting",  title:"Choosing a Target",   body:"When several foes are present, Tab or click to pick who you hit. The glowing rune beneath an enemy marks your current target." },
         { id:"intent",     title:"Enemy Intent",        body:"Every enemy telegraphs its next move on the chip above its health bar: red for an attack (with the rough damage you'd take), purple for a spell, green for a heal, amber for a status effect. Intents are honest - and if you Stun, Root or Silence a foe, its chip greys out: that move is cancelled." },
         { id:"inspect",    title:"Inspect Your Foes",   body:"Mouse over an enemy (or its health bar) to inspect it. You'll see whether it fights at Melee or Ranged and with Phys or Spell - and which controls stop it: Root halts melee, Silence stops spells, Stun stops anything. Ranged foes ignore Root, so a trap won't keep them off you. Some families are IMMUNE to a status outright (undead shrug Poison, golems Bleed and Stun, spirits Root and Bleed, fire-kin Burn, frost-kin Chill) - the inspect box and the Bestiary list it." },
@@ -13904,7 +13908,7 @@ function audio_settings_init() {
     if (!variable_global_exists("music_volume")) global.music_volume = 0.7;
     if (!variable_global_exists("sfx_volume"))   global.sfx_volume   = 0.8;
     if (!variable_global_exists("settings_open"))        global.settings_open        = false;
-    if (!variable_global_exists("settings_cursor"))      global.settings_cursor      = 0;   // 0 Music, 1 SFX, 2 Hub Track, 3 Dungeon Track, 4 Menu Tick, 5 Fullscreen, 6 Font Size, 7 Tutorial, 8 D-pad, 9 Pinch, 10 Reset
+    if (!variable_global_exists("settings_cursor"))      global.settings_cursor      = 0;   // 0 Music, 1 SFX, 2 Hub Track, 3 Dungeon Track, 4 Menu Tick, 5 Fullscreen, 6 Font Size, 7 Tutorial, 8 Timed Combat, 9 D-pad, 10 Pinch, 11 Reset
     if (!variable_global_exists("settings_reset_flash")) global.settings_reset_flash = 0;
     if (!variable_global_exists("tutorial_enabled"))     global.tutorial_enabled     = true;
     if (!variable_global_exists("ui_tick_enabled"))      global.ui_tick_enabled      = true;   // the menu-nav glass ping
@@ -13996,20 +14000,20 @@ function audio_settings_handle_input() {
     }
 
     // Rows: 0 Music, 1 SFX, 2 Hub Music, 3 Dungeon Music, 4 Menu Tick,
-    //       5 Fullscreen, 6 Font Size, 7 Tutorial Tips, 8 On-screen D-pad,
-    //       9 Pinch Zoom, 10 Reset Tutorial.
-    // Rows 8-9 exist only on touch platforms (see touch_platform) - the cursor
+    //       5 Fullscreen, 6 Font Size, 7 Tutorial Tips, 8 Timed Combat,
+    //       9 On-screen D-pad, 10 Pinch Zoom, 11 Reset Tutorial.
+    // Rows 9-10 exist only on touch platforms (see touch_platform) - the cursor
     // hops over them on desktop/HTML5, where the rows aren't drawn.
     if (nav_up()) {
-        global.settings_cursor = wrap_index(global.settings_cursor - 1, 11);
-        if (!touch_platform() && (global.settings_cursor == 8 || global.settings_cursor == 9)) global.settings_cursor = 7;
+        global.settings_cursor = wrap_index(global.settings_cursor - 1, 12);
+        if (!touch_platform() && (global.settings_cursor == 9 || global.settings_cursor == 10)) global.settings_cursor = 8;
     }
     if (nav_down()) {
-        global.settings_cursor = wrap_index(global.settings_cursor + 1, 11);
-        if (!touch_platform() && (global.settings_cursor == 8 || global.settings_cursor == 9)) global.settings_cursor = 10;
+        global.settings_cursor = wrap_index(global.settings_cursor + 1, 12);
+        if (!touch_platform() && (global.settings_cursor == 9 || global.settings_cursor == 10)) global.settings_cursor = 11;
     }
-    global.settings_cursor = clamp(global.settings_cursor, 0, 10);
-    if (!touch_platform() && (global.settings_cursor == 8 || global.settings_cursor == 9)) global.settings_cursor = 10;
+    global.settings_cursor = clamp(global.settings_cursor, 0, 11);
+    if (!touch_platform() && (global.settings_cursor == 9 || global.settings_cursor == 10)) global.settings_cursor = 11;
 
     var _left    = nav_left();
     var _right   = nav_right();
@@ -14068,7 +14072,18 @@ function audio_settings_handle_input() {
                 audio_settings_save();
             }
         break;
-        case 8: // On-screen D-pad: A/D sizes it, Enter toggles it off/on entirely
+        case 8: // Timed Combat: A/D cycles Off / Assist / On (Enter steps forward).
+                // Same settings.ini [combat] timed_mode store the in-combat F1
+                // lever writes (timed_combat_* in scr_combat) - change applies to
+                // the NEXT enemy action immediately, no restart needed.
+            if (_left || _right || _confirm) {
+                var _tm_delta = _left ? -1 : 1;
+                global.timed_combat = wrap_index(timed_combat_mode() + _tm_delta, 3);
+                timed_combat_save();
+                audio_play_sound((global.timed_combat > 0) ? snd_ui_toggle_on : snd_ui_toggle_off, 1, false);
+            }
+        break;
+        case 9: // On-screen D-pad: A/D sizes it, Enter toggles it off/on entirely
             if (_left)  { touch_pad_scale_adjust(-TOUCH_PAD_SCALE_STEP); audio_play_sound(snd_ui_move, 1, false); }
             if (_right) { touch_pad_scale_adjust( TOUCH_PAD_SCALE_STEP); audio_play_sound(snd_ui_move, 1, false); }
             if (_confirm) {
@@ -14076,13 +14091,13 @@ function audio_settings_handle_input() {
                 audio_play_sound(global.touch_gamepad_off ? snd_ui_toggle_off : snd_ui_toggle_on, 1, false);
             }
         break;
-        case 9: // Pinch Zoom on/off (SYSTEMS_PINCH_ZOOM.md; touch platforms only)
+        case 10: // Pinch Zoom on/off (SYSTEMS_PINCH_ZOOM.md; touch platforms only)
             if (_left || _right || _confirm) {
                 pinch_zoom_toggle();
                 audio_play_sound(global.pinch_zoom_off ? snd_ui_toggle_off : snd_ui_toggle_on, 1, false);
             }
         break;
-        case 10: // Reset Tutorial - clear seen flags so every tip shows again
+        case 11: // Reset Tutorial - clear seen flags so every tip shows again
             if (_left || _right || _confirm) {
                 tutorial_reset_all();
                 global.tutorial_enabled   = true;   // resetting implies you want the tips back
