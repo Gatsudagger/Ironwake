@@ -421,9 +421,13 @@ global.abilities_bloodwarden = [
         /*effect_type*/"dot", /*effect_value*/3, /*duration*/4, // bleed 3/turn x 4
         /*self*/false),
 
-    // 3: Blood Surge - spend 2 Blood to heal immediately
+    // 3: Blood Surge - spend 1 Blood to heal immediately, on a 2-turn cooldown
+    // (BW sustain pass 08-27, M-locked: was 2 Blood / no CD - a free action with
+    // no cooldown was 11 HP every round forever; the CD is what keeps the free
+    // heal from being spammed, same treatment Void Drain got 08-18. Cost eased
+    // 2 -> 1 to match the halved cadence.)
     ability_define("Blood Surge",
-        /*energy*/0, /*secondary*/2,
+        /*energy*/0, /*secondary*/1,
         /*damage*/0, /*dtype*/0,
         /*acc*/-1, /*guaranteed*/true,
         /*crit_type*/-1, /*base_crit*/0,
@@ -498,12 +502,12 @@ var _bw_d = [
       f: "Set your feet and let your hide turn to metal.\n- Every incoming hit deals 4 less damage for 3 turns.\n- Cast it before a heavy turn or a telegraphed blow." },
     { s: "Deal 14 physical dmg + Bleed 3/turn x4. Costs ~5% max HP.",
       f: "Rip a jagged wound that keeps bleeding long after the blow lands.\n- 14 physical damage + Bleed 3/turn for 4 turns (12 total).\n- BLOOD PRICE: casting it costs ~5% of your max HP (never lethal). Spend, then mend.\n- Strong opener on high-HP targets and bosses; feeds Rupture." },
-    { s: "Spend 2 Blood. Heal 11 HP. Free action.",
-      f: "Command your own blood to close the wound.\n- Costs no AP: spend 2 Blood, heal 11 HP.\n- Mid-fight recovery whenever the reserve is stocked." },
+    { s: "Spend 1 Blood. Heal 11 HP. Free action. 2-turn CD.",
+      f: "Command your own blood to close the wound.\n- Costs no AP: spend 1 Blood, heal 11 HP, on a 2-turn cooldown.\n- Mid-fight recovery whenever the reserve is stocked - but the blood answers only so often." },
     { s: "Deal 24 physical dmg. -30% dmg 3t. Costs ~5% max HP.",
       f: "Bring the full weight of the blow down where the bone is.\n- 24 physical damage. The target deals 30% less damage for 3 turns.\n- BLOOD PRICE: casting it costs ~5% of your max HP (never lethal).\n- Put it on the hardest hitter and take the pressure off yourself." },
-    { s: "Spend 1 Blood. 8 Blood dmg. Steal 8 max HP (heal 8).",
-      f: "Steal the strength out of a foe and make it your own.\n- 8 Blood damage; the target's max HP drops 8 - and YOUR max HP rises 8 and you heal 8, all for the combat.\n- The theft is real now: gut their pool while you grow yours." },
+    { s: "Spend 1 Blood. 8 Blood dmg. Steal 8 max HP (heal 6).",
+      f: "Steal the strength out of a foe and make it your own.\n- 8 Blood damage; the target's max HP drops 8 - and YOUR max HP rises 8 and you heal 6, all for the combat.\n- The theft is real now: gut their pool while you grow yours." },
     { s: "Attackers take 8 dmg per hit for 4 turns.",
       f: "Grow a lattice of thorns from your own spilled blood.\n- Every enemy that hits you takes 8 damage back, for 4 turns.\n- Pair with Iron Skin: they hit softer and bleed for trying." },
     { s: "Spend 3 Blood. Lethal blow: survive at 25% HP, +3 Blood.",
@@ -1387,6 +1391,7 @@ function ability_cooldown(ab) {
         case "Field Dressing": _cd = 2; break;   // was once-per-combat; now a 2-turn CD like Blink
         case "Second Wind":    _cd = 3; break;   // heal split 08-13: THE big burst heal, gated
         case "Void Drain":     _cd = 2; break;   // cheap 1-AP heal/Soul, gated by a 2-turn CD
+        case "Blood Surge":    _cd = 2; break;   // BW sustain 08-27: free-action heal, gated like Void Drain
         // Summons (class pass 08-13): real cooldowns so the obstruction is a
         // decision, not a rotation. The CD starts at SUMMON time; the detonate
         // press bypasses it (handled in the combat controller).
@@ -2253,7 +2258,7 @@ function ability_describe(ab) {
                   + " CONDITIONAL: with a wand, scepter or staff the whole shot fires as that weapon's OWN element (vs wards).";
             break;
         case "Vital Theft":
-            _out += " Steals 8 max HP for the combat: theirs drops, yours rises, and you heal 8.";
+            _out += " Steals 8 max HP for the combat: theirs drops, yours rises, and you heal 6.";
             break;
         case "Arcane Echo":
             _out += " +4 damage per Soul still held, and half the damage echoes to every other enemy.";

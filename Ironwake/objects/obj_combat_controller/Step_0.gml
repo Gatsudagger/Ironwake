@@ -3591,7 +3591,10 @@ if (player_turn) {
                             target.max_HP = max(1, target.max_HP - _vt);
                             if (target.HP > target.max_HP) target.HP = target.max_HP;
                             player.max_HP += _vt;
-                            player.HP = min(player.max_HP, player.HP + _vt);
+                            // BW sustain pass (08-27, M-locked): the STEAL keeps its
+                            // full 8 (the identity) - only the instant mending is
+                            // trimmed to 6, the one heal the -20% pass had skipped.
+                            player.HP = min(player.max_HP, player.HP + 6);
                             array_push(combat_log, "Vital Theft: you steal " + string(_vt) + " max HP - you grow as they wither.");
                         }
 
@@ -5790,7 +5793,8 @@ if (player_turn) {
                     }
                     player.pact_debt = 0;
                 }
-                if (player.class_id == 1 && variable_struct_exists(player, "blood")) player.blood = min(player.blood_max, player.blood + 1);
+                // BW sustain pass (08-27): a PERFECT-parried cast (0 damage) generates no Blood.
+                if (player.class_id == 1 && variable_struct_exists(player, "blood") && _sdmg > 0) player.blood = min(player.blood_max, player.blood + 1);
                 if (player.HP <= 0 && !combat_try_last_stand(player, combat_log)) player.is_defeated = true;
 
             } else {
@@ -6355,7 +6359,10 @@ if (player_turn) {
             }
 
             // --- Blood generation on taking a hit (Bloodwarden) ---
-            if (player.class_id == 1 && variable_struct_exists(player, "blood")) {
+            // BW sustain pass (08-27, M-locked): only a blow that actually LANDS
+            // feeds the engine - a PERFECT parry (damage 0) chose avoidance over
+            // fuel and pays nothing. A GOOD block still hurts, still pays.
+            if (player.class_id == 1 && variable_struct_exists(player, "blood") && _final_dmg > 0) {
                 player.blood = min(player.blood_max, player.blood + 1);
                 array_push(combat_log, "Blood generated: " + string(player.blood) + "/" + string(player.blood_max));
             }
@@ -6522,7 +6529,8 @@ if (player_turn) {
                 }
 
                 // --- Blood generation on taking a hit (Bloodwarden) ---
-                if (player.class_id == 1 && variable_struct_exists(player, "blood")) {
+                // BW sustain pass (08-27): the parried second strike pays no Blood either.
+                if (player.class_id == 1 && variable_struct_exists(player, "blood") && _final_dmg2 > 0) {
                     player.blood = min(player.blood_max, player.blood + 1);
                     array_push(combat_log, "Blood generated: " + string(player.blood) + "/" + string(player.blood_max));
                 }
