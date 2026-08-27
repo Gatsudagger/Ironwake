@@ -1285,9 +1285,23 @@ function timed_combat_mode_name(_m) {
 // is graded by how many frames BEFORE impact it landed: <= perfect = PERFECT,
 // <= good = GOOD, earlier = too early (full damage). Assist runs wider for
 // touch latency and slower thumbs.
-function timed_combat_windows() {
-    if (timed_combat_mode() == 1) return { len: 56, perfect: 14, good: 30 };
-    return { len: 42, perfect: 8, good: 20 };
+// GUARD BANDS SCALE WITH DANGER (M-locked 08-26 tuning): pass the incoming
+// action's post-mitigation damage estimate (the intent chip's hi, doubled for
+// a double strike) as a fraction of the player's max HP - chip hits are
+// forgiving, killing blows are razor-thin. Three learnable tiers:
+//   light  (<=10% max HP): perfect 12 / good 24    (assist 18 / 32)
+//   medium (<=25%):        perfect  8 / good 18    (assist 14 / 26)
+//   heavy  (> 25%):        perfect  5 / good 12    (assist 11 / 20)
+// The caller STAMPS the result on the open window (qte_perfect_f / qte_good_f)
+// so Step grading and the Draw ring always agree about this window's bands.
+function timed_combat_windows(_dmg_frac = 0.15) {
+    var _assist = (timed_combat_mode() == 1);
+    var _p, _g;
+    if (_dmg_frac <= 0.10)      { _p = 12; _g = 24; }
+    else if (_dmg_frac <= 0.25) { _p = 8;  _g = 18; }
+    else                        { _p = 5;  _g = 12; }
+    if (_assist) { _p += 6; _g += 8; }
+    return { len: _assist ? 56 : 42, perfect: _p, good: _g };
 }
 
 // Flat riposte a PERFECT parry answers with. A riposte KILL cancels the
@@ -1299,9 +1313,17 @@ function timed_combat_riposte() { return 8; }
 // TRUE STRIKE (+15% final damage); ANY press salvages an accuracy miss into a
 // 50% glancing hit; no press = the cast resolves exactly as before. Shorter
 // than the defensive window - your own tempo, not a read.
-function timed_combat_strike_windows() {
-    if (timed_combat_mode() == 1) return { len: 40, perfect: 12 };
-    return { len: 30, perfect: 8 };
+// STRIKE BANDS SCALE WITH AP COST (M-locked 08-26 tuning): cheap pokes have a
+// generous gold band, committed finishers demand precision - perfect 12 / 8 /
+// 5 frames at 1 / 2 / 3 AP (assist +4). Reads the ability's PRINTED cost, so
+// synergy discounts never change the difficulty. Stamped on the open window
+// (pqte_perfect_f) by the arm site.
+function timed_combat_strike_windows(ab = undefined) {
+    var _assist = (timed_combat_mode() == 1);
+    var _apc = (is_struct(ab) && variable_struct_exists(ab, "energy_cost")) ? ab.energy_cost : 2;
+    var _p = (_apc <= 1) ? 12 : ((_apc == 2) ? 8 : 5);
+    if (_assist) _p += 4;
+    return { len: _assist ? 40 : 30, perfect: _p };
 }
 
 // The parry press: space / enter, left click, any tap (GM maps touch to mouse),

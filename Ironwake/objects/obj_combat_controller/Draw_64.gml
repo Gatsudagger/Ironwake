@@ -987,12 +987,13 @@ if (qte_state == "window" && qte_window_len > 0) {
         _qr_cx = _qr_pa.x + 110; _qr_cy = _qr_pa.y + 110;
     }
     _qr_cx += screen_shake_x; _qr_cy += screen_shake_y;
-    var _qr_w    = timed_combat_windows();
+    // Bands are STAMPED on the window at open (danger-tiered 08-26) - draw the
+    // stamps, never recompute, so the ring always shows the bands being graded.
     var _qr_prog = clamp(qte_frames / qte_window_len, 0, 1);        // 1 -> 0 closing
     var _qr_rmin = 40, _qr_rmax = 150;
     var _qr_r     = lerp(_qr_rmin, _qr_rmax, _qr_prog);
-    var _qr_rperf = lerp(_qr_rmin, _qr_rmax, _qr_w.perfect / qte_window_len);
-    var _qr_rgood = lerp(_qr_rmin, _qr_rmax, _qr_w.good    / qte_window_len);
+    var _qr_rperf = lerp(_qr_rmin, _qr_rmax, qte_perfect_f / qte_window_len);
+    var _qr_rgood = lerp(_qr_rmin, _qr_rmax, qte_good_f    / qte_window_len);
     // Band markers (static): GOOD in cool blue, PERFECT core in gold.
     draw_set_alpha(0.30);
     draw_set_color(make_color_rgb(120, 190, 255));
@@ -1003,8 +1004,8 @@ if (qte_state == "window" && qte_window_len > 0) {
     draw_circle(_qr_cx, _qr_cy, _qr_rperf - 1, true);
     // The closing ring - white outside, band-colored once inside a band.
     var _qr_col = c_white;
-    if (qte_frames <= _qr_w.perfect)   _qr_col = make_color_rgb(255, 225, 120);
-    else if (qte_frames <= _qr_w.good) _qr_col = make_color_rgb(150, 210, 255);
+    if (qte_frames <= qte_perfect_f)   _qr_col = make_color_rgb(255, 225, 120);
+    else if (qte_frames <= qte_good_f) _qr_col = make_color_rgb(150, 210, 255);
     draw_set_alpha(0.95);
     draw_set_color(_qr_col);
     draw_circle(_qr_cx, _qr_cy, _qr_r, true);
@@ -1015,8 +1016,8 @@ if (qte_state == "window" && qte_window_len > 0) {
     if (qte_pressed_at >= 0) {
         var _qr_hit = lerp(_qr_rmin, _qr_rmax, clamp(qte_pressed_at / qte_window_len, 0, 1));
         draw_set_alpha(0.8);
-        draw_set_color((qte_pressed_at <= _qr_w.perfect) ? make_color_rgb(255, 225, 120)
-                     : ((qte_pressed_at <= _qr_w.good)   ? make_color_rgb(150, 210, 255)
+        draw_set_color((qte_pressed_at <= qte_perfect_f) ? make_color_rgb(255, 225, 120)
+                     : ((qte_pressed_at <= qte_good_f)   ? make_color_rgb(150, 210, 255)
                                                          : make_color_rgb(150, 150, 160)));
         draw_circle(_qr_cx, _qr_cy, _qr_hit, true);
     } else if ((!variable_global_exists("tutorial_enabled") || global.tutorial_enabled)) {
@@ -1044,17 +1045,17 @@ if (pqte_state == "window" && pqte_window_len > 0) {
         var _sr_a   = combat_enemy_anchor(_sr_tgt, pqte_target);
         var _sr_cx  = _sr_a.x + screen_shake_x;
         var _sr_cy  = _sr_a.y + screen_shake_y;
-        var _sr_w    = timed_combat_strike_windows();
+        // Gold band stamped at arm (AP-cost tiered 08-26) - draw the stamp.
         var _sr_prog = clamp(pqte_frames / pqte_window_len, 0, 1);
         var _sr_rmin = 30, _sr_rmax = 105;
         var _sr_r     = lerp(_sr_rmin, _sr_rmax, _sr_prog);
-        var _sr_rperf = lerp(_sr_rmin, _sr_rmax, _sr_w.perfect / pqte_window_len);
+        var _sr_rperf = lerp(_sr_rmin, _sr_rmax, pqte_perfect_f / pqte_window_len);
         draw_set_alpha(0.55);
         draw_set_color(make_color_rgb(255, 225, 120));
         draw_circle(_sr_cx, _sr_cy, _sr_rperf, true);
         draw_circle(_sr_cx, _sr_cy, _sr_rperf - 1, true);
-        var _sr_col = (pqte_frames <= _sr_w.perfect) ? make_color_rgb(255, 225, 120)
-                                                     : make_color_rgb(255, 150, 90);
+        var _sr_col = (pqte_frames <= pqte_perfect_f) ? make_color_rgb(255, 225, 120)
+                                                      : make_color_rgb(255, 150, 90);
         draw_set_alpha(0.95);
         draw_set_color(_sr_col);
         draw_circle(_sr_cx, _sr_cy, _sr_r, true);
@@ -1062,8 +1063,8 @@ if (pqte_state == "window" && pqte_window_len > 0) {
         if (pqte_pressed_at >= 0) {
             var _sr_hit = lerp(_sr_rmin, _sr_rmax, clamp(pqte_pressed_at / pqte_window_len, 0, 1));
             draw_set_alpha(0.8);
-            draw_set_color((pqte_pressed_at <= _sr_w.perfect) ? make_color_rgb(255, 225, 120)
-                                                              : make_color_rgb(200, 205, 220));
+            draw_set_color((pqte_pressed_at <= pqte_perfect_f) ? make_color_rgb(255, 225, 120)
+                                                               : make_color_rgb(200, 205, 220));
             draw_circle(_sr_cx, _sr_cy, _sr_hit, true);
         }
         draw_set_alpha(1.0);

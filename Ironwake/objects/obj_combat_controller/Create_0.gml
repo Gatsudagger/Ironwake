@@ -1058,6 +1058,8 @@ qte_frames       = 0;      // frames until impact while the window is open
 qte_window_len   = 0;      // full window length (ring scale + grade math)
 qte_pressed_at   = -1;     // qte_frames value at the FIRST press (-1 = none yet)
 qte_action_grade = 0;      // 0 late/none (full dmg), 1 GOOD (-50%), 2 PERFECT (negate+riposte)
+qte_perfect_f    = 8;      // THIS window's bands, stamped at open (danger-tiered
+qte_good_f       = 20;     //   08-26: light/medium/heavy by intent dmg vs max HP)
 // T2 STRIKE WINDOW state (offensive twin of the block above): a damaging cast
 // hangs while a ring closes on its target; the grade rides pqte_cast_grade.
 pqte_state       = "";     // "" idle | "window" = strike ring live, cast held
@@ -1068,6 +1070,7 @@ pqte_ability     = 0;      // selection stamped at arm time (restored at fire)
 pqte_target      = 0;
 pqte_fire        = false;  // impact happened - re-enter the cast path this frame
 pqte_cast_grade  = -1;     // -1 no window ran | 0 no press | 1 pressed (salvage) | 2 TRUE STRIKE
+pqte_perfect_f   = 8;      // THIS strike window's gold band, stamped at arm (by AP cost)
 timed_combat_mode();       // ensure the mode global is loaded from settings.ini
 
 

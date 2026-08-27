@@ -770,9 +770,9 @@ if (player_turn) {
         pqte_frames--;
         if (pqte_pressed_at < 0 && timed_combat_press()) pqte_pressed_at = pqte_frames;
         if (pqte_frames > 0) exit;   // the strike hangs while the ring closes
-        var _pqw = timed_combat_strike_windows();
+        // Grade against THIS window's stamped gold band (AP-cost tiered at arm).
         pqte_cast_grade = 0;
-        if (pqte_pressed_at >= 0) pqte_cast_grade = (pqte_pressed_at <= _pqw.perfect) ? 2 : 1;
+        if (pqte_pressed_at >= 0) pqte_cast_grade = (pqte_pressed_at <= pqte_perfect_f) ? 2 : 1;
         pqte_state = "";
         pqte_fire  = true;    // consumed at the cast-attempt gate below this frame
         selected_ability = pqte_ability;   // selection is law - stamped at arm time
@@ -1521,10 +1521,12 @@ if (player_turn) {
             if (timed_combat_on() && pqte_cast_grade < 0
                 && variable_struct_exists(ab, "base_damage") && ab.base_damage > 0
                 && !ab.self_targeted) {
-                var _pqo = timed_combat_strike_windows();
+                // Gold band by PRINTED AP cost (08-26): 12f / 8f / 5f at 1/2/3 AP.
+                var _pqo = timed_combat_strike_windows(ab);
                 pqte_state      = "window";
                 pqte_window_len = _pqo.len;
                 pqte_frames     = _pqo.len;
+                pqte_perfect_f  = _pqo.perfect;
                 pqte_pressed_at = -1;
                 pqte_ability    = selected_ability;
                 pqte_target     = selected_target;
@@ -4569,13 +4571,13 @@ if (player_turn) {
             qte_frames--;
             if (qte_pressed_at < 0 && timed_combat_press()) qte_pressed_at = qte_frames;
             if (qte_frames > 0) exit;   // hold the action while the ring closes
-            // --- Impact: grade the press ---
-            var _qw = timed_combat_windows();
+            // --- Impact: grade the press against THIS window's stamped bands
+            //     (danger-tiered at open - see timed_combat_windows) ---
             qte_state        = "";
             qte_action_grade = 0;
             if (qte_pressed_at >= 0) {
-                if (qte_pressed_at <= _qw.perfect)   qte_action_grade = 2;
-                else if (qte_pressed_at <= _qw.good) qte_action_grade = 1;
+                if (qte_pressed_at <= qte_perfect_f)   qte_action_grade = 2;
+                else if (qte_pressed_at <= qte_good_f) qte_action_grade = 1;
             }
             var _q_px = 475, _q_py = 505;
             if (combat_25d()) {
@@ -4628,10 +4630,17 @@ if (player_turn) {
                 && player.shadow_step_charges <= 0
                 && !player.phantom_step_active
                 && !(variable_struct_exists(player, "afterimage_ready") && player.afterimage_ready)) {
-                var _qo = timed_combat_windows();
+                // Danger-tiered bands (08-26): the intent chip's post-mitigation
+                // hi estimate (doubled for a double strike) vs max HP picks the
+                // tier - a chip hit is easy to parry, a killing blow is not.
+                var _q_hi = (variable_struct_exists(actor.intent, "hi") ? actor.intent.hi : 0)
+                          * ((variable_struct_exists(actor.intent, "x2") && actor.intent.x2) ? 2 : 1);
+                var _qo = timed_combat_windows((player.max_HP > 0) ? (_q_hi / player.max_HP) : 0.15);
                 qte_state      = "window";
                 qte_window_len = _qo.len;
                 qte_frames     = _qo.len;
+                qte_perfect_f  = _qo.perfect;
+                qte_good_f     = _qo.good;
                 qte_pressed_at = -1;
                 // One-time teach line per session (tutorial-tips gated).
                 if ((!variable_global_exists("qte_taught") || !global.qte_taught)

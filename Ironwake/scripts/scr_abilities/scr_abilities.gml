@@ -363,8 +363,8 @@ var _arc_d = [
       f: "Collapse a stored Soul into one roaring detonation of Arcane force.\n- Spend 1 Soul: 32 Arcane damage with a high crit ceiling.\n- FADES: cast on two consecutive turns and the second lands at 50% damage - rest a turn between bursts.\n- Save it for elites and high-HP enemies." },
     { s: "0 AP cost. Gain +2 Souls instantly.",
       f: "Reach out and gather the loose souls the fight has shaken free.\n- Costs no AP: +2 Souls on the spot, once per turn.\n- Top off the reserve before an Arcane Burst or Soul Nova." },
-    { s: "Fully dodge the next attack; soften the 2 after. 3-turn CD.",
-      f: "Step sideways out of the world and let the blow pass through where you stood.\n- Next incoming attack: fully dodged. The two after: 50% then 25% less damage.\n- One charge is spent per attacking enemy, so it spans a swarm. 3-turn cooldown." },
+    { s: "Fully dodge the next attack; soften the 2 after. 5-turn CD.",
+      f: "Step sideways out of the world and let the blow pass through where you stood.\n- Next incoming attack: fully dodged. The two after: 50% then 25% less damage.\n- One charge is spent per attacking enemy, so it spans a swarm. 5-turn cooldown - between casts, your guard is your timing." },
     { s: "Hex: target takes +4 dmg for 3 turns; detonations x2.",
       f: "Whisper a Shadow hex that opens every seam in their defenses.\n- Hexed: +4 damage taken from all hits for 3 turns.\n- Detonations against the hexed target hit twice as hard and spread +2 damage-taken to every other enemy." },
     { s: "Spend 1 Soul. Absorb 10 dmg, +3 per Soul HELD.",
@@ -803,8 +803,8 @@ var _ss_d = [
       f: "One breath, one line, one shot that was always going to land.\n- 14 physical damage, high accuracy, strong Precision crit.\n- +12 damage against a debuffed target - mark first, then fire." },
     { s: "SET a trap. Springs on the next MELEE attack: blocks it, 10 dmg + Root.",
       f: "Set steel jaws where the next foot falls, and wait.\n- DEPLOYED: takes a trap slot and waits. It springs on the first MELEE attack.\n- Springing BLOCKS that attack outright - the blow never lands and their turn is spent - then deals 10 physical damage and Roots them.\n- Useless against a caster or an archer. Read their intent before you set it." },
-    { s: "~(50% + WIS) chance to dodge the next 2 attacks. 2-turn CD.",
-      f: "Walk half a step behind your own shadow and let the blows guess.\n- Each of the next 2 incoming attacks has a (50% + WIS*2)% dodge chance, capped at 85%. Stun halves the odds.\n- 1 AP on a 2-turn cooldown - your traps carry the rest of the guard." },
+    { s: "~(50% + WIS) chance to dodge the next 2 attacks. 4-turn CD.",
+      f: "Walk half a step behind your own shadow and let the blows guess.\n- Each of the next 2 incoming attacks has a (50% + WIS*2)% dodge chance, capped at 85%. Stun halves the odds.\n- 1 AP on a 4-turn cooldown - your traps and your timing carry the rest of the guard." },
     { s: "Deal 7 Poison dmg. Poison: 5 dmg/turn for 4 turns.",
       f: "Flick a needle of something patient into their neck.\n- 7 Poison damage + Poison 5/turn for 4 turns (20 total). Scales with INT gear; armor can't blunt it.\n- Cheap - apply it early and let it tick while you work." },
     { s: "Spend 1 Prep. Enemies -40% acc 2t; YOU +15% dodge.",
@@ -933,8 +933,8 @@ array_push(global.abilities_shadowstrider,
 var _ss_x = [
     { s:"3 strikes, 16 total dmg. +3 per debuff on target.",
       f:"Three cuts in the space most people spend on one.\n- 16 physical damage split across 3 strikes, each rolling its own crit. +3 damage per debuff or DoT on the target.\n- Loves crit scaling; bites softer into heavy armor." },
-    { s:"~(50% + WIS) dodge next attack; your next hit +12 dmg.",
-      f:"Be somewhere else. Then be the knife.\n- (50% + WIS*2)% chance, capped at 85%, to dodge the next attack; Stun halves the odds.\n- Your next hit deals +12 - vanish, then punish." },
+    { s:"~(50% + WIS) dodge next attack; next hit +12. 3-turn CD.",
+      f:"Be somewhere else. Then be the knife.\n- (50% + WIS*2)% chance, capped at 85%, to dodge the next attack; Stun halves the odds.\n- Your next hit deals +12 - vanish, then punish. 3-turn cooldown." },
     { s:"Spend 2 Prep. 12 dmg, +5/debuff. Kills refund 2 AP.",
       f:"Collect on every weakness you've sold them - and keep the turn going.\n- Spend 2 Prep: 12 physical damage, +5 per debuff, mark, and trap effect on the target.\n- The spree: every enemy this cast KILLS refunds 2 AP. The multi-kill sweep vs Assassinate's single execute." },
 ];
@@ -1377,8 +1377,13 @@ function ability_attack_class_tag(ab) {
 function ability_cooldown(ab) {
     var _cd = 0;
     switch (ab.name) {
-        case "Blink":          _cd = 3; break;   // 08-18 (M): 2 -> 3, "still too strong"
-        case "Shadow Step":    _cd = 2; break;
+        // 08-26 timed-combat tuning (M: "hella nerf shadowstep etc"): with the
+        // parry ring as the everyday guard, bought auto-dodges are an occasional
+        // safety spend, not a rotation - Blink 3->5, Shadow Step 2->4, and
+        // Vanish (which had NO cooldown) gains 3. Swift Recovery still -1.
+        case "Blink":          _cd = 5; break;   // 08-18: 2 -> 3; 08-26: 3 -> 5
+        case "Shadow Step":    _cd = 4; break;   // 08-26: 2 -> 4
+        case "Vanish":         _cd = 3; break;   // 08-26: had none
         case "Field Dressing": _cd = 2; break;   // was once-per-combat; now a 2-turn CD like Blink
         case "Second Wind":    _cd = 3; break;   // heal split 08-13: THE big burst heal, gated
         case "Void Drain":     _cd = 2; break;   // cheap 1-AP heal/Soul, gated by a 2-turn CD
@@ -2326,10 +2331,10 @@ function ability_summary(ab) {
             case "Bulwark Slam":    _tag = "Shield -> +dmg"; break;
             case "Counterblade":    _tag = "Riposte 12"; break;
             case "Sanguine Pact":   _tag = "Blood -> shield"; break;
-            case "Blink":           _tag = "Dodge 1, soften 2 - 3t CD"; break;
-            case "Shadow Step":     _tag = "Dodge chance x2 - 2t CD"; break;
+            case "Blink":           _tag = "Dodge 1, soften 2 - 5t CD"; break;
+            case "Shadow Step":     _tag = "Dodge chance x2 - 4t CD"; break;
             case "Evasive Roll":    _tag = "Halve next hit"; break;
-            case "Vanish":          _tag = "Vanish, +12 next"; break;
+            case "Vanish":          _tag = "Vanish, +12 next - 3t CD"; break;
             case "Bloodthorn Aura": _tag = "Thorns " + string(_ev) + "/" + string(_ed) + "t"; break;
             case "Undying":         _tag = "Cheat death"; break;
             case "Vital Theft":     _tag = "Steal " + string(_ev) + " maxHP"; break;
