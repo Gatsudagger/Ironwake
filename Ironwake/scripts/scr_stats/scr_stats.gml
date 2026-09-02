@@ -435,6 +435,11 @@ function end_run(result) {
             if (variable_global_exists("selected_dungeon") && variable_global_exists("dungeon_ascendance_unlocked")
                 && variable_global_exists("dungeon_clears") && variable_global_exists("selected_ascendance")) {
                 var _dung_key = global.selected_dungeon;
+                // §3.0 belt+braces: a pre-ladder struct may lack the new biome keys.
+                if (!variable_struct_exists(global.dungeon_ascendance_unlocked, _dung_key))
+                    variable_struct_set(global.dungeon_ascendance_unlocked, _dung_key, 0);
+                if (!variable_struct_exists(global.dungeon_clears, _dung_key))
+                    variable_struct_set(global.dungeon_clears, _dung_key, 0);
                 var _cur_max  = variable_struct_get(global.dungeon_ascendance_unlocked, _dung_key);
                 var _clears   = variable_struct_get(global.dungeon_clears, _dung_key) + 1;
                 variable_struct_set(global.dungeon_clears, _dung_key, _clears);
@@ -459,8 +464,10 @@ function end_run(result) {
                     }
                 }
                 // Bonus gold reward scales with ascendance tier (table shared with
-                // the dungeon-select AWAKENING EFFECTS panel via awaken_clear_gold_bonus)
-                add_gold(awaken_clear_gold_bonus(global.selected_ascendance));
+                // the dungeon-select AWAKENING EFFECTS panel via awaken_clear_gold_bonus).
+                // §3.0: pays on the EFFECTIVE tier - a Drowned Reach A0 clear is an
+                // A4-strength dive and its completion bonus says so.
+                add_gold(awaken_clear_gold_bonus(awakening_effective()));
                 // Scale run gold by 15% per ascendance tier (already added via add_gold during run)
                 // - this bonus is on top, applied as a flat completion bonus
 
@@ -715,6 +722,12 @@ function end_run(result) {
     global.run_curses          = [];   // curses also last one run only (devil's bargain)
     global.pending_fire_stacks = 0;    // dungeon floor passives don't carry across runs
     global.pending_ap_penalty  = 0;
+    // BIOME IDENTITY PASS (08-27): event-borne carry-overs die with the run too.
+    global.pending_status      = undefined;
+    global.ambush_launch       = false;
+    global.ambush_loot_due     = "";
+    global.grove_offer_pending = false;
+    floor_mods_clear();
     potion_buffs_clear();              // Goldfinger / Faerie's Tear end with the run (incl. death)
     affinity_reset_run_gain();         // clear the per-run affinity grind cap (NOT score/tier)
     // Phase 4a affinity perks that recharge per run:
@@ -1236,6 +1249,10 @@ function dungeon_bias_school() {
         case "scorched_depths": return "fire";
         case "tundra_tomb":     return "frost";
         case "ashen_vault":     return "void";   // ashen/wraith vault theme
+        // 08-27 §3.1/§3.2: the Reach is soaked (Shock answers it), the Canopy
+        // is spore-choked rot - each biome drops the gear its fights speak.
+        case "drowned_reach":   return "shock";
+        case "hollow_canopy":   return "poison";
     }
     return "";
 }
@@ -2061,6 +2078,87 @@ function apply_affixes_to_item(item, affixes) {
 // every dungeon EXCEPT the one that earned it, below the A5 pre-win cap.
 // Entries: { key, name, cur }.
 // ---------------------------------------------------------------------------
+// =============================================================================
+// WORLD DIFFICULTY LADDER (DESIGN_WORLD_EXPANSION_0806.md §3.0, M design-locked
+// 08-27). The five dungeons form a ladder: each carries a BASELINE Awakening
+// offset added to the selected tier everywhere the tier feeds enemy scaling,
+// loot, gold, XP and floor length ("effective tier"). The per-dungeon A0-A5
+// selectable ladders, their unlock ratchet, the A5 win state and the save
+// format all stay on the RAW selected tier - the offset is invisible math plus
+// visible framing (the "Baseline: A#" card line + the reveal coach-marks).
+// =============================================================================
+function dungeon_keys() {
+    return ["ashen_vault", "scorched_depths", "tundra_tomb", "drowned_reach", "hollow_canopy"];
+}
+
+// Baseline Awakening offset per dungeon (§3.0 table). The Descent carries its
+// own fractional floor-tier (selected_ascendance = 5 + floor/2) and its theme
+// dungeon is cosmetic - never add a theme offset on top of a Descent dive.
+function dungeon_baseline_offset(dkey = undefined) {
+    if (variable_global_exists("descent_active") && global.descent_active) return 0;
+    var _d = (dkey != undefined) ? dkey
+        : (variable_global_exists("selected_dungeon") ? global.selected_dungeon : "ashen_vault");
+    switch (_d) {
+        case "scorched_depths": return 1;
+        case "tundra_tomb":     return 2;
+        case "drowned_reach":   return 4;
+        case "hollow_canopy":   return 5;
+    }
+    return 0;   // ashen_vault (the teaching dungeon) + anything unmapped
+}
+
+// The tier the RUN actually plays at: selected + the dungeon's baseline.
+// This is what enemy scaling, AI smarts, loot/gold/XP and floor length read.
+// Progression (ratchet, A5 win marks, saves, the selector UI) stays raw.
+function awakening_effective(asc = undefined, dkey = undefined) {
+    var _a = (asc != undefined) ? asc
+        : (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0);
+    return _a + dungeon_baseline_offset(dkey);
+}
+
+// Chained unlocks (§3.0 rule 3): clearing the PREVIOUS dungeon at Awakening II
+// reveals the next. "" = no gate (the Vault is always open).
+function dungeon_chain_prev(dkey) {
+    switch (dkey) {
+        case "scorched_depths": return "ashen_vault";
+        case "tundra_tomb":     return "scorched_depths";
+        case "drowned_reach":   return "tundra_tomb";
+        case "hollow_canopy":   return "drowned_reach";
+    }
+    return "";
+}
+
+// Revealed = selectable + shown with real card art (locked dungeons sit in the
+// carousel as "?" mystery cards). Two ways in (§3.0 rule 7 - no player loses
+// access they had): the chain gate (previous dungeon unlocked to A2+), or
+// MIGRATION - any own progress (tier unlocks or clears) keeps it revealed.
+function dungeon_is_revealed(dkey) {
+    var _prev = dungeon_chain_prev(dkey);
+    if (_prev == "") return true;
+    // Own progress always wins (pre-ladder saves had all three visible).
+    if (variable_global_exists("dungeon_ascendance_unlocked")
+        && variable_struct_exists(global.dungeon_ascendance_unlocked, dkey)
+        && variable_struct_get(global.dungeon_ascendance_unlocked, dkey) > 0) return true;
+    if (variable_global_exists("dungeon_clears")
+        && variable_struct_exists(global.dungeon_clears, dkey)
+        && variable_struct_get(global.dungeon_clears, dkey) > 0) return true;
+    // Chain gate: previous dungeon carries an A2 unlock (i.e. cleared at A1+).
+    return dungeon_max_ascendance(_prev) >= 2;
+}
+
+// One-shot reveal ceremony bookkeeping: dkey -> true once the card-flip popup
+// has played (persisted per slot). Revealed-but-unseen dungeons queue the popup
+// on the next hub arrival (obj_hub_controller).
+function dungeon_reveal_seen(dkey) {
+    if (!variable_global_exists("dungeon_reveals_seen")) return false;
+    return variable_struct_exists(global.dungeon_reveals_seen, dkey)
+        && variable_struct_get(global.dungeon_reveals_seen, dkey);
+}
+function dungeon_reveal_mark_seen(dkey) {
+    if (!variable_global_exists("dungeon_reveals_seen")) global.dungeon_reveals_seen = {};
+    variable_struct_set(global.dungeon_reveals_seen, dkey, true);
+}
+
 // ---------------------------------------------------------------------------
 // dungeon_max_ascendance(key) - the highest SELECTABLE Awakening for a dungeon.
 // Pre-win: its own ladder unlock (0-5). Post-win (SYSTEMS_ENDLESS.md §2): the
@@ -2079,14 +2177,17 @@ function dungeon_max_ascendance(dkey) {
 function awaken_boost_options() {
     var _out = [];
     if (!variable_global_exists("dungeon_ascendance_unlocked")) return _out;
-    var _keys  = ["ashen_vault", "scorched_depths", "tundra_tomb"];
-    var _names = ["Ashen Vault", "Scorched Depths", "Tundra Tomb"];
-    var _from  = variable_global_exists("awaken_boost_from") ? global.awaken_boost_from : "";
-    for (var _i = 0; _i < 3; _i++) {
+    // §3.0 ladder: only REVEALED dungeons are eligible - boosting a hidden "?"
+    // card would spoil the reveal (and pre-reveal its ladder for free).
+    var _keys = dungeon_keys();
+    var _from = variable_global_exists("awaken_boost_from") ? global.awaken_boost_from : "";
+    for (var _i = 0; _i < array_length(_keys); _i++) {
         if (_keys[_i] == _from) continue;
-        var _u = variable_struct_get(global.dungeon_ascendance_unlocked, _keys[_i]);
+        if (!dungeon_is_revealed(_keys[_i])) continue;
+        var _u = variable_struct_exists(global.dungeon_ascendance_unlocked, _keys[_i])
+            ? variable_struct_get(global.dungeon_ascendance_unlocked, _keys[_i]) : 0;
         if (_u >= 5) continue;
-        array_push(_out, { key: _keys[_i], name: _names[_i], cur: _u });
+        array_push(_out, { key: _keys[_i], name: dungeon_display_name(_keys[_i]), cur: _u });
     }
     return _out;
 }
@@ -2863,7 +2964,7 @@ function item_empower(item, eff_asc, depth_floor = 0) {
 
 // The effective tier + descent floor drop_equipment feeds item_empower with.
 function item_empower_context() {
-    var _asc = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
+    var _asc = awakening_effective();   // §3.0: item power tracks the dungeon baseline
     var _df  = (variable_global_exists("descent_active") && global.descent_active
                 && variable_global_exists("descent_floor")) ? global.descent_floor : 0;
     return { asc: _asc, df: _df };
@@ -3203,7 +3304,10 @@ function drop_equipment(rarity_weights, do_discover = true, curse_tiers = 0) {
     if (curse_tiers > 0 && _rarity < 3) _rarity = min(3, _rarity + curse_tiers);
     if (_native_leg) _rarity = 4;
 
-    var _gate_asc = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
+    // §3.0: the legendary gate reads the EFFECTIVE tier - the new biomes are
+    // late-game dives and their loot ceiling opens accordingly (rule 2: harder
+    // must visibly pay more; the drop_weights true_asc squeeze gets the same).
+    var _gate_asc = awakening_effective();
 
     // LEGENDARY AWAKENING GATE (M 07-28: TWO legendaries dropped on an A0 first
     // run off a +1 curse shrine - "+1 should mean RAREs at A0, not legendaries").
@@ -4230,7 +4334,7 @@ function handle_enemy_drops(enemy_type) {
     // loot-tiers are NOT folded in here any more - they're a post-roll rarity bump
     // passed to drop_equipment via curse_loot_tier_bonus_for(source). Keeping
     // them out also stops curses from silently shrinking _cons_chance below.
-    var _drop_asc   = (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0);
+    var _drop_asc   = awakening_effective();   // §3.0: drops pay the effective tier
     // Faerie's Tear potion + active Boon pet: extra equipment-drop chance (percentage points).
     var _loot_pot = potion_loot_bonus_pts() + pet_active_boon_loot_pts() + pet_active_lck_loot_pts() + pet_active_splash_loot_pts() + pet_active_egg_bonus("loot");
     // Lucky Find trait (07-08 identity split): +5 loot-find points, same currency
@@ -4338,6 +4442,20 @@ function handle_enemy_drops(enemy_type) {
             array_push(global.run_items_found, _c);
             consumable_award(_c);   // pack-full flash removed (M 08-15) - the end-of-chain modal communicates it
             _e_result += " + " + _c.name;
+        }
+        // AMBUSH BONUS (BIOME IDENTITY PASS 08-27): an event that promised loot
+        // for surviving its ambush pays it here - the warden_leg_due idiom.
+        // Uncommon floor so the promise never lands as junk.
+        if (variable_global_exists("ambush_loot_due") && global.ambush_loot_due != "") {
+            var _ab_src = global.ambush_loot_due;
+            global.ambush_loot_due = "";
+            var _ab_w = drop_weights(_ab_src, _drop_asc);
+            _ab_w[1] += _ab_w[0]; _ab_w[0] = 0;
+            var _ab_item = drop_equipment(_ab_w, true, curse_loot_tier_bonus_for(_ab_src));
+            array_push(global.run_items_found, _ab_item);
+            array_push(global.carried_items, _ab_item);
+            discover_item(item_base_name(_ab_item), _ab_item.rarity);
+            _e_result += " + " + _ab_item.name + " [" + item_rarity_name(_ab_item.rarity) + "] (its own prize)";
         }
         return _e_result + _rune_suffix;
 
@@ -5301,18 +5419,23 @@ function sable_brew_catalog() {
         // ladders already resolve. Cheap gold, token dust.
         { id:"salve",    name:"Healing Salve",         effect:"heal",           value:25, desc:"Restore 25 HP",                    gold_val:20, dust:2,  gold:cha_price(10) },
         { id:"tonic",    name:"Energy Tonic",          effect:"energy",         value:1,  desc:"Gain +1 AP this turn (free to use)", gold_val:15, dust:3,  gold:cha_price(12) },
-        { id:"antidote", name:"Antidote",              effect:"cleanse_dot",    value:0,  desc:"Clear all active DoT effects",     gold_val:18, dust:2,  gold:cha_price(8) },
+        // CLEANSE LADDER REWORK (M 08-27): Antidote steps down to ONE DoT so its
+        // new elite (Leechbane Elixir, all DoTs) has room; Purification Draught
+        // left the shop entirely - it is FUSION-ONLY now (sable_fuse_panacea).
+        { id:"antidote", name:"Antidote",              effect:"cleanse_dot_one", value:0, desc:"Cure one damage-over-time effect", gold_val:18, dust:2,  gold:cha_price(8) },
         { id:"salts",    name:"Smelling Salts",        effect:"cleanse_debuff", value:0,  desc:"Remove one active debuff",         gold_val:16, dust:2,  gold:cha_price(8) },
         { id:"gsalve",   name:"Greater Healing Salve", effect:"heal",           value:50, desc:"Restore 50 HP",                    gold_val:45, dust:10, gold:cha_price(22) },
         { id:"adren",    name:"Adrenaline Vial",       effect:"energy",         value:3,  desc:"Gain +3 AP this turn (free to use)", gold_val:55, dust:14, gold:cha_price(30) },
-        { id:"purif",    name:"Purification Draught",  effect:"cleanse_all",    value:0,  desc:"Clear all negative effects",       gold_val:50, dust:10, gold:cha_price(24) },
         { id:"warden",   name:"Warden's Tonic",        effect:"heal_dot",       value:8,  desc:"Restore 8 HP per turn for 3 turns", gold_val:48, dust:12, gold:cha_price(26) },
         { id:"laegis",   name:"Lesser Aegis Draught",  effect:"shield",         value:15, desc:"Gain a 15-point shield",           gold_val:30, dust:10, gold:cha_price(16) },
         // --- Alchemy exclusives (her original list) ---
         { id:"aegis",   name:"Aegis Draught",          effect:"shield",      value:30, desc:"Gain a 30-point shield",            gold_val:40, dust:25, gold:cha_price(30) },
         { id:"master",  name:"Master Healing Draught", effect:"heal",        value:90, desc:"Restore 90 HP",                     gold_val:70, dust:30, gold:cha_price(40) },
         { id:"phoenix", name:"Phoenix Tonic",          effect:"heal_dot",    value:15, desc:"Restore 15 HP per turn for 3 turns",gold_val:60, dust:35, gold:cha_price(40) },
-        { id:"philter", name:"Cleansing Philter",      effect:"cleanse_all", value:0,  desc:"Clear all negative effects",        gold_val:50, dust:20, gold:cha_price(25) },
+        // Repurposed 08-27 (M: it duplicated Purification Draught exactly): the
+        // Philter is now a WARD, drunk before trouble - the next harmful enemy
+        // effect (DoT or debuff) that would land on you simply doesn't.
+        { id:"philter", name:"Cleansing Philter",      effect:"status_ward", value:1,  desc:"Ward yourself: the next harmful enemy effect is negated", gold_val:50, dust:20, gold:cha_price(25) },
         { id:"ley",     name:"Ley Battery",            effect:"resource_ap", value:3,  desc:"Restore +3 of your class resource and +1 AP (free to use)", gold_val:55, dust:30, gold:cha_price(35) },
         // Exotic find-buff potions - effect lasts until 2 bosses are slain (~2 floors),
         // NOT stackable, cleared on death. See potion_* in this file.
@@ -5371,8 +5494,11 @@ function sable_upgrade_map() {
     return [
         { from:"Healing Salve",  to:"Greater Healing Salve" },
         { from:"Energy Tonic",   to:"Adrenaline Vial" },
-        { from:"Antidote",       to:"Purification Draught" },
-        { from:"Smelling Salts", to:"Purification Draught" },
+        // CLEANSE LADDER (M 08-27): both cleansers upgrade into their own "all"
+        // elite; Purification Draught is no longer a 3x target - it is the
+        // PANACEA, fused from 1x of EACH elite (sable_fuse_panacea below).
+        { from:"Antidote",       to:"Leechbane Elixir" },
+        { from:"Smelling Salts", to:"Hexbane Tincture" },
         // Higher tier: fuse 3 elites into their master form (only effects with a real
         // step up). Targets live in global.consumables_master (sable_elite_template).
         { from:"Greater Healing Salve", to:"Master Healing Draught" },
@@ -5480,9 +5606,12 @@ function chaotic_mix_label(_et, _v) {
         case "shield":         return string(_v) + "-pt ward";
         case "energy":         return "+" + string(_v) + " AP";
         case "resource_ap":    return "+" + string(_v) + " resource, +1 AP";
-        case "cleanse_dot":    return "Cleanse DoTs";
-        case "cleanse_debuff": return "Cleanse a debuff";
-        case "cleanse_all":    return "Cleanse everything";
+        case "cleanse_dot":        return "Cleanse all DoTs";
+        case "cleanse_dot_one":    return "Cleanse a DoT";
+        case "cleanse_debuff":     return "Cleanse a debuff";
+        case "cleanse_debuff_all": return "Cleanse all debuffs";
+        case "cleanse_all":        return "Cleanse everything";
+        case "status_ward":        return "Negate-next ward";
         case "gold_find_pot":  return "+" + string(_v) + "% gold find (2 bosses)";
         case "loot_find_pot":  return "+" + string(_v) + "% loot chance (2 bosses)";
     }
@@ -5608,6 +5737,50 @@ function sable_upgrade(from_name) {
     var _tmpl = sable_elite_template(_to);
     if (_tmpl == undefined) return "Upgrade target unavailable.";
     sable_potion_pool_delete([_idxs[0], _idxs[1], _idxs[2]]);
+    global.gold      -= _cost.gold;
+    global.rune_dust -= _cost.dust;
+    array_push(global.consumable_inventory,
+        create_consumable(_tmpl.name, _tmpl.effect_type, _tmpl.effect_value, _tmpl.description, _tmpl.gold_value));
+    save_game();
+    return "";
+}
+
+// =============================================================================
+// PANACEA FUSION (M 08-27): Purification Draught is FUSION-ONLY - the omni
+// cleanse must be BUILT: 1x Leechbane Elixir + 1x Hexbane Tincture + a premium
+// fee. It no longer brews, drops or fuses from 3x anything.
+// =============================================================================
+function sable_panacea_cost() {
+    var _m = sable_cost_mult();   // Sable Companion perk: -20%
+    return { gold: floor(cha_price(30) * _m), dust: floor(15 * _m) };
+}
+// How many of each component the combined stash+pouch pool holds.
+function sable_panacea_counts() {
+    var _pool = sable_potion_pool();
+    var _l = 0, _h = 0;
+    for (var _i = 0; _i < array_length(_pool); _i++) {
+        if (_pool[_i].it.name == "Leechbane Elixir")      _l++;
+        else if (_pool[_i].it.name == "Hexbane Tincture") _h++;
+    }
+    return { leech: _l, hex: _h };
+}
+// Fuse 1 Leechbane + 1 Hexbane -> 1 Purification Draught. "" on success.
+// Pool lists the stash first, so stash copies are spent before carried ones
+// (same rule as sable_upgrade).
+function sable_fuse_panacea() {
+    var _cost = sable_panacea_cost();
+    if (global.gold < _cost.gold) return "Need " + string(_cost.gold) + "g.";
+    if (!variable_global_exists("rune_dust") || global.rune_dust < _cost.dust) return "Need " + string(_cost.dust) + " dust.";
+    var _pool = sable_potion_pool();
+    var _li = -1, _hi = -1;
+    for (var _i = 0; _i < array_length(_pool); _i++) {
+        if (_li < 0 && _pool[_i].it.name == "Leechbane Elixir")      _li = _i;
+        else if (_hi < 0 && _pool[_i].it.name == "Hexbane Tincture") _hi = _i;
+    }
+    if (_li < 0 || _hi < 0) return "Needs 1x Leechbane Elixir + 1x Hexbane Tincture.";
+    var _tmpl = sable_elite_template("Purification Draught");   // consumables_master
+    if (_tmpl == undefined) return "Upgrade target unavailable.";
+    sable_potion_pool_delete([_li, _hi]);
     global.gold      -= _cost.gold;
     global.rune_dust -= _cost.dust;
     array_push(global.consumable_inventory,
@@ -6207,7 +6380,7 @@ function boon_gambler_tier_bonus() {
 
 // Shrine reroll (V2): (10 + 10 x awakening) dust, once per shrine.
 function shrine_reroll_cost() {
-    var _asc = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
+    var _asc = awakening_effective();   // §3.0: run economy follows the effective tier
     return 10 + 10 * clamp(_asc, 0, 5);
 }
 
@@ -6466,7 +6639,7 @@ function curse_loot_tier_bonus() {
 function curse_loot_tier_bonus_for(source) {
     var _b = curse_loot_tier_bonus();
     if (_b <= 0) return 0;
-    var _asc = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
+    var _asc = awakening_effective();   // §3.0: loot context reads the effective tier
     if (_asc >= 2) return _b;
     return (source == "boss" || source == "vault" || source == "reliquary") ? _b : 0;
 }
@@ -9039,7 +9212,9 @@ function pet_guard_toggle(pet) {
 // mechanical. Bar-full Adults sit READY indefinitely until a qualifying run crosses them.
 function pet_awaken_gate_ok(pet, result) {
     if (result != 1) return false;                                   // full clear only
-    var _asc = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
+    // §3.0: the gate asks for an A5-STRENGTH clear - the effective tier counts,
+    // so a Hollow Canopy A0 full clear (effective A5) crosses a ready pet too.
+    var _asc = awakening_effective();
     return (_asc >= 5) && (pet_bond_tier(pet) >= 3);
 }
 // One-line requirement text for UI hints (Bairc feed message, run-end notice).
@@ -9800,7 +9975,8 @@ function pet_species_innate(species_id) {
         case "icewing_skua":   return { name:"Scavenger's Eye", fx:"gold",         val:5,  desc:"+5% gold find while it is your companion." };
         case "pyre_bison":     return { name:"Bankfire",        fx:"fire",         val:4,  desc:"Your Fire-school abilities strike for +4 bonus Fire damage." };
         case "crypt_gryphon":  return { name:"Old Vigil",       fx:"armor_res",    val:2,  desc:"+2 Armor and +2 Elem. Resist while it is your companion." };
-        case "threehunger":    return { name:"Three Appetites", fx:"crit_phys",    val:4,  desc:"+4% Phys Crit while it is your companion." };
+        // M 08-27 redesign: tri-elemental lion (cerberus art abandoned) - active proc innate.
+        case "threehunger":    return { name:"Three Appetites", fx:"tri_strike",   val:6,  desc:"Once per fight its first strike joins yours: +6 damage as Fire, Ice or Lightning." };
         case "wing_hare":      return { name:"Unremarkable",    fx:"slip",         val:12, desc:"The first blow aimed at you each combat has a 12% chance to miss." };
         case "stormkirin":     return { name:"Charged Air",     fx:"crit_spell",   val:5,  desc:"+5% Spell Crit while it is your companion." };
         case "lockjaw_turtle": return { name:"Set Jaw",         fx:"bleed_dmg",    val:1,  desc:"Your Bleeds deal +1 damage per tick." };
@@ -9891,7 +10067,7 @@ function pet_active_sig_move(fx) {
 // Sharp Eye's -15% pet discount applies on top. Dust/item tribute derive from
 // the scaled figure as before (boon_dust_cost / item_tribute_value).
 function shrine_boon_price(base_cost) {
-    var _asc   = variable_global_exists("selected_ascendance") ? clamp(global.selected_ascendance, 0, 5) : 0;
+    var _asc   = clamp(awakening_effective(), 0, 5);   // §3.0: prices track the effective tier
     var _curve = [0.40, 0.55, 0.70, 0.85, 1.00, 1.15];
     var _c     = max(1, round(base_cost * _curve[_asc]));
     return (pet_active_sharpeye() > 0) ? max(1, round(_c * 0.85)) : _c;
@@ -10840,7 +11016,7 @@ function pet_species_catalog() {
         // Fantasy hybrids (M 08-06: "we want hybrid made-up stuff as well")
         { id:"pyre_bison",     name:"Pyre Bison",     blurb:"snow has never once settled on its back" },
         { id:"crypt_gryphon",  name:"Crypt Gryphon",  blurb:"it perches on stone the way a statue would" },
-        { id:"threehunger",    name:"Threehunger",    blurb:"three heads, three appetites, one body to argue in" },
+        { id:"threehunger",    name:"Threehunger",    blurb:"one lion, three appetites - fire, frost and storm" },
         { id:"wing_hare",      name:"Wing Hare",      blurb:"it considers the antlers entirely unremarkable" },
         { id:"stormkirin",     name:"Stormkirin",     blurb:"the air near it is always about to happen" },
         // Biome residents - Drowned Reach (§3.1) + Hollow Canopy (§3.2)
@@ -11205,7 +11381,7 @@ function pet_donate(_idx) {
 function pet_make(species_id, source, archetype, stage, is_egg) {
     if (!variable_global_exists("pet_next_id")) global.pet_next_id = 1;
     var _arch = (archetype < 0) ? irandom(2) : archetype;
-    var _awk  = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
+    var _awk  = awakening_effective();   // §3.0: finds in late biomes carry the tier
     var _sp   = pet_species_get(species_id);
     var _egg  = is_egg ? pet_egg_random() : "";   // eggs carry a random egg-type benefit (§3)
     return {
@@ -11650,8 +11826,11 @@ function tutorial_catalog() {
     return [
         { id:"hub",        title:"The Ironwake Camp",   body:"This is your hub between runs. Visit the camp's merchants and trainers, manage gear and abilities, then approach the dungeon gate to descend. Anything you bank here carries between runs." },
         { id:"loadout",    title:"Prepare to Descend",  body:"Before each run, equip your gear and choose which abilities and traits to bring. You can only take a limited set into the dungeon, so build around how you want to fight. Note the THREE TABS at the top - ABILITIES, TRAITS and COMPANION are picked separately, and it's easy to descend having forgotten your traits. Check all three before you commit." },
-        { id:"ascendance", title:"Awakening Tiers",     body:"Higher Awakening tiers make enemies tougher but drop better, rarer loot. Raise the tier when you want more risk for more reward - start low and work up." },
+        { id:"ascendance", title:"Awakening Tiers",     body:"Higher Awakening tiers make enemies tougher but drop better, rarer loot. Floors grow with the tier too: low Awakenings are quick sprints, high ones are long expeditions with more rooms and events.\n\nEach DUNGEON also carries its own baseline strength - the \"Baseline\" line on its card. A deeper dungeon fights, pays and stretches like that many Awakenings higher, even at A0.\n\nClear a dungeon at Awakening II to reveal the next one on the carousel. Raise the tier when you want more risk for more reward - start low and work up." },
         { id:"combat_ap",  title:"Action Points (AP)",  body:"Each turn you have 3 AP (4 with the Bloodwarden Relentless trait). Abilities cost AP to use; a basic attack is free. Spend your AP wisely, then end your turn to let the enemy act." },
+        // §3.0 coach-mark 2 (M-locked 08-27): advice framing, not a wall - fires
+        // once, when the Drowned Reach reveal ceremony finishes (hub Step).
+        { id:"biome_baseline", title:"Deeper Waters", body:"The Drowned Reach starts at AWAKENING IV strength - even at A0, its foes hit like a Nightmare-tier dive, and its floors run long.\n\nThe rewards are scaled to match: better loot, more gold, richer XP from the very first room.\n\nCome geared. If the Reach turns you back, climb the Tundra Tomb's Awakenings a little higher first - it is advice the drowned never took." },
         // Timed combat rings (08-27 ship polish): fires right after combat_ap,
         // only while a timed mode is on - see the coach-mark chain in
         // obj_combat_controller Step_0.
@@ -12120,6 +12299,31 @@ function item_picker_resolve() {
         _ctx.chosen         = _pb_sel;
         _p.resolved_purpose = "pb_smelt";
         _p.result_msg       = "";
+        item_picker_close();
+        return;
+    }
+
+    // GROVE OFFERING (BIOME IDENTITY PASS, M-locked 08-27): the Canopy's grove
+    // keeps the chosen piece and pays in kind - a mend, cauldron dust, and the
+    // growth held off your combat openers for the rest of this floor.
+    if (_p.purpose == "grove_offering") {
+        var _gv_sel = (_p.cursor >= 0 && _p.cursor < array_length(_p.candidates))
+                      ? _p.candidates[_p.cursor] : undefined;
+        if (_gv_sel == undefined) {
+            _p.resolved_purpose = "grove_offering"; _p.result_msg = "Nothing offered.";
+            item_picker_close(); return;
+        }
+        var _gv_name = item_picker_remove_selected();
+        var _gv_max  = out_of_combat_max_hp();
+        if (!variable_global_exists("run_current_hp") || global.run_current_hp <= 0) global.run_current_hp = _gv_max;
+        global.run_current_hp = min(_gv_max, global.run_current_hp + 25);
+        if (!variable_global_exists("rune_dust")) global.rune_dust = 0;
+        global.rune_dust += 10;
+        floor_mod_set("green_hush", true);
+        _p.resolved_purpose = "grove_offering";
+        _p.result_msg = "The grove closes over " + _gv_name
+            + ". Moss threads it into the wall of offerings. (+25 HP, +10 Dust - and the growth will not choke your openers this floor.)";
+        save_game();
         item_picker_close();
         return;
     }
@@ -12596,6 +12800,33 @@ function event_effect_phrase(fx) {
         array_push(_p, "a borrowed ability (this run)");
     if (variable_struct_exists(fx, "pet_egg") && fx.pet_egg != "")
         array_push(_p, "a creature");
+    // BIOME IDENTITY PASS (08-27): the biome-event effect keys, phrased.
+    if (variable_struct_exists(fx, "sicken") && fx.sicken > 0)
+        array_push(_p, "POISONED next fight");
+    if (variable_struct_exists(fx, "pending_status") && is_struct(fx.pending_status)) {
+        var _pp_k = fx.pending_status.kind;
+        array_push(_p, ((_pp_k == "burn") ? "BURNING" : string_upper(_pp_k) + "ED") + " next fight");
+    }
+    if (variable_struct_exists(fx, "temper") && fx.temper > 0)
+        array_push(_p, "a free TEMPER (+10% quality)");
+    if (variable_struct_exists(fx, "floor_mod") && fx.floor_mod != "") {
+        switch (fx.floor_mod) {
+            case "tide_slack":   array_push(_p, "the tide slows (this floor)"); break;
+            case "green_hush":   array_push(_p, "no first-cast choke (this floor)"); break;
+            case "bellows_heat": array_push(_p, "enemies -2 armor (3 fights)"); break;
+            case "tomb_marked":  array_push(_p, "enemies +5 acc (3 fights)"); break;
+            case "boss_exposed": array_push(_p, "the floor boss enters EXPOSED"); break;
+            default:             array_push(_p, "a lingering change"); break;
+        }
+    }
+    if (variable_struct_exists(fx, "ambush") && fx.ambush != "")
+        array_push(_p, "an ELITE FIGHT" + ((variable_struct_exists(fx, "ambush_loot") && fx.ambush_loot != "") ? " (its prize on the win)" : ""));
+    if (variable_struct_exists(fx, "offer") && fx.offer != "")
+        array_push(_p, "choose an item to sacrifice");
+    if (variable_struct_exists(fx, "ap_penalty") && fx.ap_penalty > 0)
+        array_push(_p, "-" + string(fx.ap_penalty) + " AP next fight's first turn");
+    if (variable_struct_exists(fx, "duel") && fx.duel)
+        array_push(_p, "the DUEL");
     if (array_length(_p) == 0) return "nothing";
     var _s = "";
     for (var _i = 0; _i < array_length(_p); _i++) _s += (_i > 0 ? " + " : "") + _p[_i];
@@ -12682,7 +12913,7 @@ function event_apply_effects(fx) {
     if (fx == undefined) return "";
     // Curse loot-tiers are a post-roll rarity bump now, not an awakening offset
     // (applied per-source via curse_loot_tier_bonus_for at the item roll below).
-    var _asc = (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0);
+    var _asc = awakening_effective();   // §3.0: event rewards pay the effective tier
     var _sum = [];
 
     // Gold
@@ -12831,6 +13062,80 @@ function event_apply_effects(fx) {
         global.pending_sickness = fx.sicken;
         array_push(_sum, "You feel feverish - you will start your next fight POISONED");
     }
+    // ===== BIOME IDENTITY PASS (DESIGN_BIOME_IDENTITY_0827.md §3, M-locked) =====
+    // pending_status: carry a named status into the NEXT fight - the general
+    // form of the sicken idiom above. fx.pending_status = {kind, turns, mag};
+    // kinds: "burn" (fire DoT), "weaken", "blind", "silence", "root".
+    // Consumed in obj_combat_controller Create beside Wanderer's Fever.
+    if (variable_struct_exists(fx, "pending_status") && is_struct(fx.pending_status)) {
+        global.pending_status = fx.pending_status;
+        var _ps_word = string_upper(fx.pending_status.kind);
+        if (_ps_word == "BURN") _ps_word = "BURNING";
+        array_push(_sum, "It follows you - you will start your next fight " + _ps_word);
+    }
+    // temper: one free quality step (+10, cap 100) on a random equipped piece
+    // that still has room - Maren's temper math, paid by the event instead.
+    if (variable_struct_exists(fx, "temper") && fx.temper > 0) {
+        var _tp_cands = [];
+        if (variable_global_exists("inventory")) {
+            for (var _tpi = 0; _tpi < array_length(global.inventory); _tpi++) {
+                var _tp_e = global.inventory[_tpi];
+                if (!is_struct(_tp_e)) continue;
+                var _tp_q = variable_struct_exists(_tp_e, "quality") ? _tp_e.quality : 100;
+                if (_tp_q < 100) array_push(_tp_cands, _tp_e);
+            }
+        }
+        if (array_length(_tp_cands) > 0) {
+            var _tp_pick = _tp_cands[irandom(array_length(_tp_cands) - 1)];
+            _tp_pick.quality = min(100, (variable_struct_exists(_tp_pick, "quality") ? _tp_pick.quality : 100) + 10 * fx.temper);
+            array_push(_sum, _tp_pick.name + " TEMPERED to " + string(_tp_pick.quality) + "%");
+        } else {
+            // Everything already sings - pay the fallback in dust instead.
+            if (!variable_global_exists("rune_dust")) global.rune_dust = 0;
+            global.rune_dust += 6;
+            array_push(_sum, "Your gear is already finished - +6 Dust instead");
+        }
+    }
+    // floor_mod: a this-floor flag the relevant system reads. Canonical values
+    // set here; cleared on floor advance (run_floor_advance) + run end.
+    //   tide_slack   - Rising Water fires every 4th round (Drowned)
+    //   green_hush   - Choking Growth waived this floor (Canopy)
+    //   bellows_heat - next 3 combats: enemies -2 armor (Scorched)
+    //   tomb_marked  - next 3 combats: enemies +5 acc (the Tomb notices thieves)
+    //   boss_exposed - this floor's boss enters the arena Studied (vulnerable)
+    if (variable_struct_exists(fx, "floor_mod") && fx.floor_mod != "") {
+        var _fm_v = true;
+        if (fx.floor_mod == "bellows_heat" || fx.floor_mod == "tomb_marked") _fm_v = 3;
+        floor_mod_set(fx.floor_mod, _fm_v);
+        switch (fx.floor_mod) {
+            case "tide_slack":   array_push(_sum, "The bells hold their breath - the water rises SLOWER this floor"); break;
+            case "green_hush":   array_push(_sum, "The growth parts for you - the Canopy will not choke your openers this floor"); break;
+            case "bellows_heat": array_push(_sum, "HEAT rolls down the halls - enemy armor softens (-2, next 3 fights)"); break;
+            case "tomb_marked":  array_push(_sum, "The Tomb has MARKED you - enemies aim truer (+5 acc, next 3 fights)"); break;
+            case "boss_exposed": array_push(_sum, "You know its habits now - this floor's BOSS will enter the fight EXPOSED"); break;
+        }
+    }
+    // ambush: the result screen closes into a forced ELITE fight (duel-launch
+    // pattern in obj_floor_controller). fx.ambush_loot pre-declares a bonus
+    // drop source paid on the win (consumed in handle_enemy_drops).
+    if (variable_struct_exists(fx, "ambush") && fx.ambush != "") {
+        global.ambush_launch   = true;
+        global.ambush_loot_due = variable_struct_exists(fx, "ambush_loot") ? fx.ambush_loot : "";
+        array_push(_sum, "STEEL ANSWERS - something was waiting for exactly this");
+    }
+    // offer: opens the shared item-sacrifice picker after this result closes
+    // (borrowed-memory pattern; picker purpose "grove_offering" pays out).
+    if (variable_struct_exists(fx, "offer") && fx.offer == "grove") {
+        global.grove_offer_pending = true;
+        array_push(_sum, "The grove waits for what you will give...");
+    }
+    // ap_penalty: dock the player's FIRST turn of the next fight (the Tundra
+    // chill's own machinery, event-paid - pending_ap_penalty caps at -2).
+    if (variable_struct_exists(fx, "ap_penalty") && fx.ap_penalty > 0) {
+        if (!variable_global_exists("pending_ap_penalty")) global.pending_ap_penalty = 0;
+        global.pending_ap_penalty += fx.ap_penalty;
+        array_push(_sum, "Something holds your arm - -" + string(fx.ap_penalty) + " AP on your next fight's first turn");
+    }
 
     var _str = "";
     for (var _i = 0; _i < array_length(_sum); _i++) _str += (_i > 0 ? "\n" : "") + _sum[_i];
@@ -12893,7 +13198,7 @@ function ghost_exclusive_catalog(_asc) {
 }
 
 function ghost_shop_build_stock() {
-    var _asc  = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
+    var _asc  = awakening_effective();   // §3.0: run-shop stock tracks the effective tier
     var _rows = [];
     // 3 rolled pieces, rare floor (M 08-18 retune: the stall used to roll ALL
     // three from one awakening above with the full legendary weight - at A4/A5
@@ -12930,12 +13235,44 @@ function ghost_shop_build_stock() {
     global.ghost_stock = _rows;
 }
 
+// =============================================================================
+// FLOOR MODS (BIOME IDENTITY PASS, M-locked 08-27): this-floor flags biome
+// events set and biome systems read (tide_slack / green_hush / bellows_heat /
+// tomb_marked / boss_exposed - the effect handler documents each). Counters
+// (bellows_heat, tomb_marked) tick down at combat start via floor_mod_tick.
+// Cleared on floor advance (run_floor_advance) and at run end.
+// =============================================================================
+function floor_mod_get(tag) {
+    if (!variable_global_exists("floor_mods")) return 0;
+    return variable_struct_exists(global.floor_mods, tag) ? variable_struct_get(global.floor_mods, tag) : 0;
+}
+function floor_mod_set(tag, v) {
+    if (!variable_global_exists("floor_mods")) global.floor_mods = {};
+    variable_struct_set(global.floor_mods, tag, v);
+}
+// For counter-valued mods: true if active this combat, and one charge is spent.
+function floor_mod_tick(tag) {
+    var _v = floor_mod_get(tag);
+    if (_v <= 0) return false;
+    floor_mod_set(tag, _v - 1);
+    return true;
+}
+function floor_mods_clear() { global.floor_mods = {}; }
+
 // Pick one random event from the catalog (roll-on-entry; not seed-critical).
 // §6 variety: no-repeat within a run - events already shown this run are excluded
 // until the whole catalog has been seen, then the seen-list resets. The tracker
 // (global.events_seen_this_run) is reset per run in end_run().
+// BIOME IDENTITY PASS (08-27): the pool is the generic catalog PLUS the current
+// dungeon's own suite, biome entries double-weighted - in-biome voice is the
+// norm, not a cameo. Same id-keyed no-repeat covers both.
 function event_roll() {
     var _cat = event_catalog();
+    var _bio = event_catalog_biome(variable_global_exists("selected_dungeon") ? global.selected_dungeon : "");
+    for (var _bi = 0; _bi < array_length(_bio); _bi++) {
+        array_push(_cat, _bio[_bi]);
+        array_push(_cat, _bio[_bi]);   // double weight; the seen-filter dedupes by id
+    }
     var _n   = array_length(_cat);
     if (!variable_global_exists("events_seen_this_run")) global.events_seen_this_run = [];
 
@@ -13502,6 +13839,534 @@ function event_catalog() {
 }
 
 // =============================================================================
+// BIOME EVENT SUITES (DESIGN_BIOME_IDENTITY_0827.md §4, M design-locked 08-27).
+// Four events per dungeon, each trading in that biome's own currency - the
+// Vault counts, the Depths temper, the Tomb judges, the Reach keeps time, the
+// Canopy answers. event_roll merges these with the generic catalog at double
+// weight when their dungeon is the one being dived.
+// =============================================================================
+function event_catalog_biome(dungeon) {
+    var _fl  = clamp(global.current_floor - 1, 0, 2);
+    var _out = [];
+
+    if (dungeon == "ashen_vault") {
+        var _av_col = make_color_rgb(160, 120, 60);
+
+        // --- The Unfinished Muster ------------------------------------------
+        var _mu_gold = [30, 45, 70];
+        var _mu_hp   = [12, 16, 22];
+        array_push(_out, {
+            id: "av_unfinished_muster",
+            title: "The Unfinished Muster",
+            body: "A skeleton sergeant reads a muster roll by the light of a dead lantern. One name is called, and called again. No one has answered it for a very long time.",
+            color: _av_col,
+            choices: [
+                { label: "Answer for the missing name", hint: "CHA check - stand the empty post for a moment; the dead pay their relief",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "check",
+                  check_stat: "CHA", check_base: 55, check_per: 6, check_ref: 5,
+                  success: { text: "\"Present,\" you say, and the whole column eases. The sergeant marks the roll and presses the absent soldier's pay into your hand.",
+                             effects: { gold: _mu_gold[_fl], consumable: "standard" } },
+                  fail:    { text: "The wrong voice. The count restarts from the top - and the column marches through where you are standing.",
+                             effects: { hp: -_mu_hp[_fl] } } },
+                { label: "Correct the ledger", hint: "INT check - the roll has an arithmetical error a living eye can catch",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "check",
+                  check_stat: "INT", check_base: 55, check_per: 6, check_ref: 5,
+                  success: { text: "You point to the doubled line. The sergeant stares, strikes it through, and the name is finally allowed to rest. Something in the air unclenches.",
+                             effects: { dust: 8 + 3 * _fl, gold: 20 } },
+                  fail:    { text: "You lose the thread three columns in. The sergeant takes the roll back, gently, the way one does with children.",
+                             effects: {} } },
+                { label: "Leave them to it", hint: "The count has waited centuries - it can wait out you",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+                  outcomes: [ { weight: 100, text: "You edge past the column. The calling follows you down the hall, patient as dust.", effects: {} } ] }
+            ]
+        });
+
+        // --- The Jailer's Ledger --------------------------------------------
+        array_push(_out, {
+            id: "av_jailers_ledger",
+            title: "The Jailer's Ledger",
+            body: "Malgrath kept duplicates. This one lies open on a reading stand, and the ink is not as dry as it should be. Every prisoner the Vault ever held - habits, weaknesses, last words.",
+            color: _av_col,
+            choices: [
+                { label: "Study the warden's entries", hint: "INT check - somewhere in here is the thing this floor is most afraid of",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "check",
+                  check_stat: "INT", check_base: 50, check_per: 6, check_ref: 5,
+                  success: { text: "There. A cramped marginal note in the jailer's own hand, about the thing that holds this floor. You memorize every word.",
+                             effects: { floor_mod: "boss_exposed" } },
+                  fail:    { text: "The entries rearrange themselves as you read. The pages, it turns out, bite.",
+                             effects: { hp: -[10, 14, 18][_fl] } } },
+                { label: "Tear out the bounty pages", hint: "Old warrants, old rewards - some are still payable in coin that spends",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+                  outcomes: [ { weight: 70, text: "Half the warrants are backed in good gold leaf. You peel it like fruit.",
+                                effects: { gold: [40, 60, 90][_fl] } },
+                              { weight: 30, text: "The ledger objects to the withdrawal. The papercut goes to the bone.",
+                                effects: { gold: [20, 30, 45][_fl], hp: -[8, 11, 15][_fl] } } ] },
+                { label: "Close the book", hint: "Some records deserve to stay kept",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+                  outcomes: [ { weight: 100, text: "You close it. The stand creaks, relieved of the reading.", effects: {} } ] }
+            ]
+        });
+
+        // --- A Door That Remembers You --------------------------------------
+        array_push(_out, {
+            id: "av_door_remembers",
+            title: "A Door That Remembers You",
+            body: "A cell door swings open at your footstep - oiled, welcoming, wrong. Inside: a prisoner's hoard, decades of smuggled comfort, and a bed with the blanket turned down.",
+            color: _av_col,
+            choices: [
+                { label: "Take the hoard", hint: "Everything - but the door wants a REPLACEMENT tenant, and it will take a piece of your next fight arguing otherwise",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+                  outcomes: [ { weight: 100, text: "You clear the shelves. Behind you the door drifts shut a hand-width, testing. You leave at a walk that is nearly a run - and something of your breath stays inside.",
+                                effects: { item: "chest", gold: [20, 30, 45][_fl], ap_penalty: 1 } } ] },
+                { label: "Take only what you need", hint: "A guest's portion - the door has no grounds for complaint",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+                  outcomes: [ { weight: 100, text: "You pocket the coin tin and touch nothing else. The door stays exactly where it is, which is somehow the most polite thing in the Vault.",
+                                effects: { gold: [25, 35, 50][_fl] } } ] },
+                { label: "Leave it open", hint: "Whoever it waits for might still come",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+                  outcomes: [ { weight: 100, text: "You wedge it wide with a fallen brick. If they ever come back, they won't have to knock.", effects: {} } ] }
+            ]
+        });
+
+        // --- The Last Post ---------------------------------------------------
+        array_push(_out, {
+            id: "av_last_post",
+            title: "The Last Post",
+            body: "One soldier still stands sentry at a gate that guards nothing. The spear droops. The helm is half dust. It has been at attention since before your town had a name.",
+            color: _av_col,
+            choices: [
+                { label: "Relieve the watch", hint: "CON check - stand the post properly while it stands down; the kit passes to its relief",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "check",
+                  check_stat: "CON", check_base: 55, check_per: 6, check_ref: 5,
+                  success: { text: "You take the stance and hold it, long enough to mean it. The sentry sags, salutes, and hands over everything the post ever owed it.",
+                             effects: { item: "chest", item_min: 1 } },
+                  fail:    { text: "Your shoulders drop an inch too soon. The sentry mistakes you for the enemy it always expected - one last, honest blow.",
+                             effects: { hp: -[12, 16, 22][_fl] } } },
+                { label: "Salute and pass", hint: "A moment of order in the dark - it costs nothing and means everything",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+                  outcomes: [ { weight: 100, text: "You give the salute crisp. Something like pride straightens the old bones, and the corridor beyond feels briefly safer.",
+                                effects: { hp: [8, 10, 13][_fl] } } ] },
+                { label: "Put the watch to rest", hint: "STR check - the kindest order is the last one",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "check",
+                  check_stat: "STR", check_base: 55, check_per: 6, check_ref: 5,
+                  success: { text: "One clean stroke, like an officer dismissing a parade. The post stands empty now, and lighter for it.",
+                             effects: { gold: [30, 45, 65][_fl], dust: 6 + 2 * _fl } },
+                  fail:    { text: "The stroke lands wrong and duty answers on reflex. You put it down on the second try, breathing hard.",
+                             effects: { hp: -[8, 11, 15][_fl], gold: [15, 22, 32][_fl] } } }
+            ]
+        });
+    }
+
+    if (dungeon == "scorched_depths") {
+        var _sd_col = make_color_rgb(200, 80, 30);
+
+        // --- The Quenching Trough -------------------------------------------
+        array_push(_out, {
+            id: "sd_quenching_trough",
+            title: "The Quenching Trough",
+            body: "The great trough still hisses beside a cold anvil, water black as lacquer. Every blade the Depths ever finished was finished here.",
+            color: _sd_col,
+            choices: [
+                { label: "Temper your steel", hint: "STR check - work a piece the old way; success finishes it a step further",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "check",
+                  check_stat: "STR", check_base: 55, check_per: 6, check_ref: 5,
+                  success: { text: "Heat, strike, QUENCH. The trough screams like it remembers, and your gear comes out singing a truer note.",
+                             effects: { temper: 1 } },
+                  fail:    { text: "The steam catches you across the arms - the trough does not forgive a hesitant hand.",
+                             effects: { hp: -[10, 14, 18][_fl], pending_status: { kind: "burn", turns: 2, mag: 4 } } } },
+                { label: "Drink from it", hint: "Forge-water is technically water",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+                  outcomes: [ { weight: 100, text: "It tastes of iron and endings. It is, against every expectation, restorative.",
+                                effects: { hp: [10, 13, 17][_fl] } } ] },
+                { label: "Pass the anvil by", hint: "Not every fire is yours to work",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+                  outcomes: [ { weight: 100, text: "You leave the trough to its hissing. It sounds almost disappointed.", effects: {} } ] }
+            ]
+        });
+
+        // --- Firewalk --------------------------------------------------------
+        array_push(_out, {
+            id: "sd_firewalk",
+            title: "Firewalk",
+            body: "The short way is a hall floored in live coals, breathing orange with the mountain's pulse. On the far side, plainly visible, someone's abandoned strongbox.",
+            color: _sd_col,
+            choices: [
+                { label: "Walk the coals", hint: "Guaranteed burns carried into your next fight - and the strongbox is yours",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+                  outcomes: [ { weight: 100, text: "You cross at a soldier's pace, teeth shut. The soles of your boots will smoke for an hour, and the strongbox opens like an apology.",
+                                effects: { gold: [45, 65, 95][_fl], pending_status: { kind: "burn", turns: 2, mag: 5 } } } ] },
+                { label: "Sacrifice your spare boots", hint: "15g of good leather thrown ahead as stepping stones - cross clean",
+                  cost_gold: 15, req_stat: "", req_amount: 0, resolve: "weighted",
+                  outcomes: [ { weight: 100, text: "Two boots, six lunges, zero dignity. The strongbox holds more than coin.",
+                                effects: { item: "chest" } } ] },
+                { label: "The long way around", hint: "The coals keep the box; you keep your skin",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+                  outcomes: [ { weight: 100, text: "You take the cold corridor. Somewhere behind you the coals sigh and settle.", effects: {} } ] }
+            ]
+        });
+
+        // --- The Tyrant's Tithe Bowl ----------------------------------------
+        array_push(_out, {
+            id: "sd_tithe_bowl",
+            title: "The Tyrant's Tithe Bowl",
+            body: "Every smith of the Depths paid the Forge Tyrant his cut - a bowl of black iron at the crossroads of the vents, worn smooth by ten thousand payments. It is not empty. It is NEVER empty.",
+            color: _sd_col,
+            choices: [
+                { label: "Pay the tithe", hint: "Gold in the bowl - the forge stamps its mark on something worthy of you",
+                  cost_gold: [40, 55, 75][_fl], req_stat: "", req_amount: 0, resolve: "weighted",
+                  outcomes: [ { weight: 100, text: "Your coin rings against the iron. Heat rolls up from the vents like approval, and something finished slides from the shadows at the bowl's foot.",
+                                effects: { item: "vault", item_min: 1 } } ] },
+                { label: "Take from the bowl", hint: "The Tyrant is dead on floor one. Surely his collection rounds died with him",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+                  outcomes: [ { weight: 100, text: "The gold is heavier than gold should be. You are three steps away when the vents exhale - and the DEPTHS COLLECT.",
+                                effects: { gold: [80, 110, 150][_fl], ambush: "elite" } } ] },
+                { label: "Respect the custom", hint: "Neither pay nor rob - some arrangements outlive their collectors",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+                  outcomes: [ { weight: 100, text: "You incline your head to the bowl, which is ridiculous, and correct.", effects: {} } ] }
+            ]
+        });
+
+        // --- The Bellows Still Breathe --------------------------------------
+        array_push(_out, {
+            id: "sd_bellows",
+            title: "The Bellows Still Breathe",
+            body: "The forge's great lungs hang in their frame, leather cracked but whole, rising and falling a finger-width on their own. The Depths run cooler than they were built to. The bellows know it.",
+            color: _sd_col,
+            choices: [
+                { label: "Pump the bellows", hint: "STR check - drive the heat down the halls; softened armor breaks easier (3 fights)",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "check",
+                  check_stat: "STR", check_base: 55, check_per: 6, check_ref: 5,
+                  success: { text: "The lungs catch your rhythm and ROAR. Heat pours down every corridor - out there, old armor is already sweating at its rivets.",
+                             effects: { floor_mod: "bellows_heat" } },
+                  fail:    { text: "The backdraft answers before the bellows do. You keep your eyebrows, barely.",
+                             effects: { hp: -[10, 14, 18][_fl], pending_status: { kind: "burn", turns: 2, mag: 4 } } } },
+                { label: "Cut the fittings loose", hint: "DEX check - the brass alone is worth dust",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "check",
+                  check_stat: "DEX", check_base: 55, check_per: 6, check_ref: 5,
+                  success: { text: "Four clean cuts and the runework fittings drop into your palm, still warm.",
+                             effects: { dust: 10 + 3 * _fl, hp: [6, 8, 10][_fl] } },
+                  fail:    { text: "The lungs exhale, offended, and the frame kicks like a mule.",
+                             effects: { hp: -[9, 12, 16][_fl] } } },
+                { label: "Leave the lungs alone", hint: "Let the forge breathe its own slow years",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+                  outcomes: [ { weight: 100, text: "You leave them to it. Rise. Fall. Rise. The mountain, sleeping.", effects: {} } ] }
+            ]
+        });
+    }
+
+    if (dungeon == "tundra_tomb") {
+        var _tt_col = make_color_rgb(80, 160, 220);
+
+        // --- The Frozen Archivist's Query -----------------------------------
+        array_push(_out, {
+            id: "tt_archivist_query",
+            title: "The Frozen Archivist's Query",
+            body: "A voice from a reading stand, precise as a scalpel: \"One question. Answer correctly and be enriched. Answer poorly and be FILED.\" The stand's inkwell has not frozen. That seems important.",
+            color: _tt_col,
+            choices: [
+                { label: "Answer the question", hint: "INT check - it asks about the Tomb itself; you have been paying attention, haven't you?",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "check",
+                  check_stat: "INT", check_base: 50, check_per: 6, check_ref: 5,
+                  success: { text: "You answer. A pause - the longest of your life - then: \"Adequate.\" Something valuable is stamped, docketed, and issued to you.",
+                             effects: { rune: 2, dust: 8 + 3 * _fl } },
+                  fail:    { text: "\"Incorrect.\" Your voice leaves you mid-word - you watch it be blotted, folded, and FILED under M for Mistaken.",
+                             effects: { pending_status: { kind: "silence", turns: 2, mag: 0 } } } },
+                { label: "Steal the inkwell", hint: "DEX check - ink that never freezes would buy a lot of anything",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "check",
+                  check_stat: "DEX", check_base: 50, check_per: 6, check_ref: 5,
+                  success: { text: "Palmed, pocketed, gone. The stand continues addressing the space where scrupulous people stand.",
+                             effects: { gold: [50, 70, 100][_fl] } },
+                  fail:    { text: "Your fingers close on the well and the well closes on your NAME. The Tomb now has you in its records - and its residents read them.",
+                             effects: { pending_status: { kind: "silence", turns: 2, mag: 0 }, floor_mod: "tomb_marked" } } },
+                { label: "Decline, politely", hint: "Never sit an exam you didn't study for",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+                  outcomes: [ { weight: 100, text: "\"Noted,\" says the voice, and the word lands like a grade.", effects: {} } ] }
+            ]
+        });
+
+        // --- A Body in the Ice ----------------------------------------------
+        array_push(_out, {
+            id: "tt_body_in_ice",
+            title: "A Body in the Ice",
+            body: "Three feet down in blue glass: a warrior in full harness, perfectly kept, sword still sheathed. The Tomb preserves what it values. It valued this one ARMED.",
+            color: _tt_col,
+            choices: [
+                { label: "Chip the warrior free", hint: "It will NOT thaw grateful - but win, and that flawless harness is yours",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+                  outcomes: [ { weight: 100, text: "The last hand-span of ice cracks - and the eyes open FIRST. It comes up through the shards already swinging, and it has had three hundred years to be angry.",
+                                effects: { ambush: "elite", ambush_loot: "vault" } } ] },
+                { label: "Take the sword-hilt above the ice", hint: "The one piece winter left in reach",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+                  outcomes: [ { weight: 100, text: "You work the hilt loose from the frozen scabbard. Below the ice, you would swear the gauntlet's fingers curl.",
+                                effects: { item: "chest" } } ] },
+                { label: "Let winter keep it", hint: "The Tomb chose this one for a reason",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+                  outcomes: [ { weight: 100, text: "You step back from the blue glass. The warrior keeps its long watch, and you keep your distance.", effects: {} } ] }
+            ]
+        });
+
+        // --- The Cold Court --------------------------------------------------
+        array_push(_out, {
+            id: "tt_cold_court",
+            title: "The Cold Court",
+            body: "Thrones of black ice in a half-ring, and the seated dead turn their heads as one. A gavel of frost hangs in the air, waiting for someone to come to order. You appear to be the docket.",
+            color: _tt_col,
+            choices: [
+                { label: "Stand judgment", hint: "CHA check - plead your run so far; acquittal pays well, conviction WEAKENS",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "check",
+                  check_stat: "CHA", check_base: 50, check_per: 6, check_ref: 5,
+                  success: { text: "You give them the whole dive - every floor, every wound, no varnish. The gavel falls: ACQUITTED, with costs awarded to the defendant.",
+                             effects: { dust: 10 + 3 * _fl, hp: [12, 16, 20][_fl], consumable: "elite" } },
+                  fail:    { text: "You embellish exactly once and every frozen head tilts. JUDGED WANTING - the sentence gets into your arms like cold water.",
+                             effects: { pending_status: { kind: "weaken", turns: 2, mag: 0.20 } } } },
+                { label: "Plead guilty at once", hint: "A small fine, paid promptly - the court respects efficiency",
+                  cost_gold: [15, 20, 30][_fl], req_stat: "", req_amount: 0, resolve: "weighted",
+                  outcomes: [ { weight: 100, text: "\"Guilty, your honors, of everything.\" The fine is assessed, the gavel taps once - almost approving - and the case is closed.",
+                                effects: { dust: 4 + 2 * _fl } } ] },
+                { label: "Decline the docket", hint: "You are not subject to a dead jurisdiction. Probably",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+                  outcomes: [ { weight: 100, text: "You walk. Behind you the court adjourns with a sound like a lake deciding to freeze.", effects: {} } ] }
+            ]
+        });
+
+        // --- Grave Goods -----------------------------------------------------
+        array_push(_out, {
+            id: "tt_grave_goods",
+            title: "Grave Goods",
+            body: "A niche of honored dead, each buried rich: swords, circlets, offering-coins on every eyelid. The frost on the grave goods is thinner than the frost on the floor. Something dusts them.",
+            color: _tt_col,
+            choices: [
+                { label: "Take the grave goods", hint: "The best of it - but the Tomb REMEMBERS thieves, and its residents aim truer at remembered faces (3 fights)",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+                  outcomes: [ { weight: 100, text: "You lift the best piece from the stillest hands. Frost creeps over your knuckles in the shape of writing - your description, being taken down.",
+                                effects: { item: "vault", item_min: 1, floor_mod: "tomb_marked" } } ] },
+                { label: "Take only the offering-coins", hint: "Coins were left to be spent by the passing - that IS the offering",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+                  outcomes: [ { weight: 100, text: "You gather the coins the custom intended for travelers. The dead do not stir. Custom is custom.",
+                                effects: { gold: [35, 50, 70][_fl] } } ] },
+                { label: "Add your own offering", hint: "20g laid among the dead - the Tomb notices generosity too",
+                  cost_gold: 20, req_stat: "", req_amount: 0, resolve: "weighted",
+                  outcomes: [ { weight: 100, text: "You lay your coin with theirs. The cold in the niche softens by one degree, which down here is a standing ovation.",
+                                effects: { hp: [12, 15, 19][_fl], dust: 6 + 2 * _fl } } ] }
+            ]
+        });
+    }
+
+    if (dungeon == "drowned_reach") {
+        var _dr_col = make_color_rgb(60, 170, 140);
+
+        // --- The Diving Bell -------------------------------------------------
+        array_push(_out, {
+            id: "dr_diving_bell",
+            title: "The Diving Bell",
+            body: "A salvage rig from the undercity's last working days: bell, winch, chain - all sound. Below the platform the water is black as a closed eye. The salvors' manifest lists what they never came up with.",
+            color: _dr_col,
+            choices: [
+                { label: "Descend in the bell", hint: "CON check - the deep pays best; fail and come up HALF-DROWNED",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "check",
+                  check_stat: "CON", check_base: 50, check_per: 6, check_ref: 5,
+                  success: { text: "Down into the pressing dark, breath rationed like coin. Your hands find the manifest's prize exactly where the salvors drowned reaching for it.",
+                             effects: { item: "reliquary", item_min: 2 } },
+                  fail:    { text: "The bell tips at depth and the black water gets its share of you. The winch hauls up a coughing, lighter version of who went down.",
+                             effects: { hp: -[16, 22, 28][_fl] } } },
+                { label: "Send the hook down blind", hint: "Work the winch from the dry platform - whatever snags, snags",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+                  outcomes: [ { weight: 45, text: "The hook comes up trailing a purse still knotted to someone's belt. Just the purse. Just the belt.",
+                                effects: { gold: [35, 50, 70][_fl] } },
+                              { weight: 30, text: "A crate of stores, wax-sealed and dry inside. The undercity packed well.",
+                                effects: { consumable: "elite" } },
+                              { weight: 25, text: "The hook returns polished clean, which is somehow worse than empty.",
+                                effects: {} } ] },
+                { label: "Leave the winch alone", hint: "The manifest can stay unfinished",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+                  outcomes: [ { weight: 100, text: "You leave the rig to its patience. The water does not remark on it.", effects: {} } ] }
+            ]
+        });
+
+        // --- The Bell-Ringer's Toll -----------------------------------------
+        array_push(_out, {
+            id: "dr_bell_toll",
+            title: "The Bell-Ringer's Toll",
+            body: "A drowned sexton hangs in the flooded belfry, rope still in hand, ringing the hours for a congregation of fish. It gestures - unmistakably - at a collection plate, then at the bells, then at the rising water.",
+            color: _dr_col,
+            choices: [
+                { label: "Pay the toll", hint: "Coin in the plate - the sexton rings SLOWER, and so does the tide (this floor)",
+                  cost_gold: [30, 40, 55][_fl], req_stat: "", req_amount: 0, resolve: "weighted",
+                  outcomes: [ { weight: 100, text: "The coin settles through green water into the plate. The sexton bows, adjusts its grip, and the hours begin arriving fashionably late.",
+                                effects: { floor_mod: "tide_slack" } } ] },
+                { label: "Ring the bells yourself", hint: "STR check - the tide LIKES a strong hand on the rope",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "check",
+                  check_stat: "STR", check_base: 55, check_per: 6, check_ref: 5,
+                  success: { text: "You haul the great rope and the drowned bell speaks FULL VOICE for the first time in a century. Things fall out of the shaken belfry: coin, keepsakes, a sealed jar.",
+                             effects: { gold: [40, 55, 80][_fl], consumable: "standard" } },
+                  fail:    { text: "You ring it badly. The water rises on principle, all at once, to correct your timing.",
+                             effects: { hp: -[12, 16, 21][_fl] } } },
+                { label: "Keep your coin", hint: "The bells have rung this long without your opinion",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+                  outcomes: [ { weight: 100, text: "You wade on. The tolling follows you through three flooded halls, patient as the tide it keeps.", effects: {} } ] }
+            ]
+        });
+
+        // --- The Fisher's Market --------------------------------------------
+        array_push(_out, {
+            id: "dr_fishers_market",
+            title: "The Fisher's Market",
+            body: "A Pale Fisher sits on a dry ledge, lines out, an off-duty air about it. Its catch is laid on cloth with terrible neatness: jars, salves, one pearl the size of an eye. It looks at you. It looks at your purse.",
+            color: _dr_col,
+            choices: [
+                { label: "Trade with it", hint: "Gold for the catch - the Reach's fishers keep what keeps",
+                  cost_gold: [25, 35, 50][_fl], req_stat: "", req_amount: 0, resolve: "weighted",
+                  outcomes: [ { weight: 70, text: "It wraps your purchases in oilcloth with the care of a professional. The jars are good. The salve is better.",
+                                effects: { consumable: "elite", dust: 4 + 2 * _fl } },
+                              { weight: 30, text: "It adds the pearl to your parcel unasked, and taps its own cheekbone once. A tip, or a warning. Possibly both.",
+                                effects: { consumable: "elite", dust: 12 + 3 * _fl } } ] },
+                { label: "Cut its lines", hint: "DEX check - the catch AND the tackle, if your knife is quicker than its patience",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "check",
+                  check_stat: "DEX", check_base: 50, check_per: 6, check_ref: 5,
+                  success: { text: "Four lines part in one pass and you are away with the whole cloth before the ripples close. Somewhere behind you, professional silence.",
+                             effects: { item: "chest", consumable: "standard" } },
+                  fail:    { text: "The line you grab grabs BACK. It was never off-duty. You were simply not yet on the hook.",
+                             effects: { ambush: "elite" } } },
+                { label: "Wave, from a distance", hint: "Fisher etiquette: acknowledge the catch, covet nothing",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+                  outcomes: [ { weight: 100, text: "It returns the wave with one pale hand and goes back to the water. Two professionals, passing.", effects: {} } ] }
+            ]
+        });
+
+        // --- What the Flood Kept --------------------------------------------
+        array_push(_out, {
+            id: "dr_flood_kept",
+            title: "What the Flood Kept",
+            body: "A records cabinet bolted above the waterline, sealed in pitch, dry as a sermon inside its wards. Whatever the undercity most needed to survive the water, it is in here. The seal is load-bearing in more ways than one.",
+            color: _dr_col,
+            choices: [
+                { label: "Pry it open", hint: "STR check - the Reach's best-kept thing, or the Reach's best-kept grudge",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "check",
+                  check_stat: "STR", check_base: 50, check_per: 6, check_ref: 5,
+                  success: { text: "The pitch parts like old scar tissue. Inside, wrapped in three layers of oiled silk: exactly the kind of thing a drowning city saves LAST.",
+                             effects: { item: "reliquary", item_min: 2 } },
+                  fail:    { text: "The seal gives all at once and so does what nested behind the cabinet. Bloatlings, offended, everywhere.",
+                             effects: { hp: -[12, 16, 21][_fl], gold: [15, 22, 30][_fl] } } },
+                { label: "Read the manifest plate", hint: "INT check - know what's inside without owing the seal anything",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "check",
+                  check_stat: "INT", check_base: 55, check_per: 6, check_ref: 5,
+                  success: { text: "The plate lists contents, custodian, and a stipend for whoever keeps the seal UNBROKEN. The stipend clause, you decide, is self-executing.",
+                             effects: { gold: [30, 42, 60][_fl], dust: 6 + 2 * _fl } },
+                  fail:    { text: "The script is pre-flood legal shorthand. You come away knowing only that someone, long ago, billed by the word.",
+                             effects: {} } },
+                { label: "Leave it sealed", hint: "The Reach approves of things that stay shut",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+                  outcomes: [ { weight: 100, text: "You leave the cabinet to its long stewardship. The water laps at the wall below it, respectful, like everyone else.",
+                                effects: { hp: [6, 8, 10][_fl] } } ] }
+            ]
+        });
+    }
+
+    if (dungeon == "hollow_canopy") {
+        var _hc_col = make_color_rgb(110, 170, 60);
+
+        // --- The Grove That Listens -----------------------------------------
+        array_push(_out, {
+            id: "hc_grove_listens",
+            title: "The Grove That Listens",
+            body: "A clearing where the trees lean inward, attentive as a jury. Offerings hang from every branch - swords, lockets, a crown - each grown over with approving moss. The grove is listening. The grove has ALWAYS been listening.",
+            color: _hc_col,
+            choices: [
+                { label: "Make an offering", hint: "Give up one piece of carried gear - the grove pays in kind, and holds the growth off your openers this floor",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+                  outcomes: [ { weight: 100, text: "You raise the offering, and every leaf turns toward it like a held breath. Choose what the grove keeps.",
+                                effects: { offer: "grove" } } ] },
+                { label: "Whisper a lie", hint: "CHA check - the grove pays well for a GOOD story. Emphasis on good",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "check",
+                  check_stat: "CHA", check_base: 50, check_per: 6, check_ref: 5,
+                  success: { text: "You give it a story with a beginning, a middle, and a lie so well-carpentered even you briefly believe it. Coins drop from the branches like applause.",
+                             effects: { gold: [45, 60, 85][_fl] } },
+                  fail:    { text: "It KNOWS. The whole clearing goes flat-eyed at once, and the disappointment gets into your arms like a long apology.",
+                             effects: { pending_status: { kind: "weaken", turns: 2, mag: 0.20 } } } },
+                { label: "Say nothing", hint: "The only thing you can't misspeak",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+                  outcomes: [ { weight: 100, text: "You cross the clearing in respectful silence. The grove files you under harmless, which stings only slightly.", effects: {} } ] }
+            ]
+        });
+
+        // --- Pollen Sleep ----------------------------------------------------
+        array_push(_out, {
+            id: "hc_pollen_sleep",
+            title: "Pollen Sleep",
+            body: "A hollow between root-walls, ankle-deep in drifting gold. The pollen settles on your shoulders with the weight of a blanket being tucked. Everything in you that is tired - which is most of you - votes YES.",
+            color: _hc_col,
+            choices: [
+                { label: "Sleep", hint: "A deep, golden rest - but you will wake WATCHED, and blinking gold from your eyes into the next fight",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+                  outcomes: [ { weight: 100, text: "You sleep like something buried and loved. You wake whole, gilded - and the canopy overhead is FULL of eyes that were not there when you lay down.",
+                                effects: { hp: [24, 30, 38][_fl], pending_status: { kind: "blind", turns: 2, mag: 0.20 } } } ] },
+                { label: "Rest at the edge", hint: "Half the sleep, none of the pollen",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+                  outcomes: [ { weight: 100, text: "You doze sitting up, blade across your knees, just outside the gold. The hollow sighs at the wasted hospitality.",
+                                effects: { hp: [12, 15, 19][_fl] } } ] },
+                { label: "Press on", hint: "Sleep is for the surface",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+                  outcomes: [ { weight: 100, text: "You skirt the hollow. Behind you the pollen drifts back into its patient, golden shape.", effects: {} } ] }
+            ]
+        });
+
+        // --- The Wardens' Graft ---------------------------------------------
+        array_push(_out, {
+            id: "hc_wardens_graft",
+            title: "The Wardens' Graft",
+            body: "A living branch extends from the old wall at exactly gear height, its cut end weeping bright sap. This is how the forest armors its own - the Grafted Knight was VOLUNTEERED the same way. The branch waits, patient as growth.",
+            color: _hc_col,
+            choices: [
+                { label: "Accept the graft", hint: "WIS check - let the wood take to your gear, not to YOU",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "check",
+                  check_stat: "WIS", check_base: 50, check_per: 6, check_ref: 5,
+                  success: { text: "You hold the piece steady and the sap takes to the metal like it was always meant to be bark. The grain closes over old flaws. Finished, the forest's way.",
+                             effects: { temper: 1, hp: [8, 10, 13][_fl] } },
+                  fail:    { text: "The graft prefers the WARMER host. You tear it out of your forearm before it roots properly, but its opinion of the matter lingers.",
+                             effects: { hp: -[10, 14, 18][_fl], pending_status: { kind: "root", turns: 1, mag: 0 } } } },
+                { label: "Cut a switch instead", hint: "The sap alone is worth dust to a cauldron",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+                  outcomes: [ { weight: 100, text: "You take a hand-span of the branch, quick and clean. The wall pulls the rest back like a snubbed hand.",
+                                effects: { dust: 8 + 2 * _fl } } ] },
+                { label: "Refuse - it's still alive", hint: "Whatever it wants to be part of, it won't be you",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+                  outcomes: [ { weight: 100, text: "You step around its reach. The branch tracks you going, the way sunflowers do. The Knight refused too, once. Probably.", effects: {} } ] }
+            ]
+        });
+
+        // --- A Clearing With No Sound ---------------------------------------
+        array_push(_out, {
+            id: "hc_no_sound",
+            title: "A Clearing With No Sound",
+            body: "The birdsong stops at a line you can SEE - a ring of grass where every blade points inward. Inside it your footfalls arrive muffled, secondhand. The Green Silence has fed here. Recently. The quiet is still digesting.",
+            color: _hc_col,
+            choices: [
+                { label: "Listen to the nothing", hint: "WIS check - what the silence ate, it has not finished swallowing",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "check",
+                  check_stat: "WIS", check_base: 50, check_per: 6, check_ref: 5,
+                  success: { text: "You stand in the hush and let it pass THROUGH you - and catch, like sediment, what it stole: a chime, a word of power, a rune's whole name.",
+                             effects: { rune: 2, dust: 6 + 2 * _fl } },
+                  fail:    { text: "The silence notices you listening, and takes your voice as a professional courtesy.",
+                             effects: { pending_status: { kind: "silence", turns: 2, mag: 0 } } } },
+                { label: "Shout into it", hint: "SOMETHING has to be on the other side of all that quiet",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+                  outcomes: [ { weight: 40, text: "The echo comes back late, and carrying: coins ring off the root-walls, shaken loose from somewhere the sound went.",
+                                effects: { gold: [35, 50, 70][_fl] } },
+                              { weight: 35, text: "The echo comes back WRONG - with teeth in it. You are bleeding before you hear the bite.",
+                                effects: { hp: -[10, 14, 18][_fl] } },
+                              { weight: 25, text: "The shout leaves you and simply never lands anywhere. The clearing accepts your donation.",
+                                effects: {} } ] },
+                { label: "Back away quietly", hint: "Match its manners exactly",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+                  outcomes: [ { weight: 100, text: "You withdraw the way you came, placing each step like punctuation. The quiet lets you keep everything, including the quiet.", effects: {} } ] }
+            ]
+        });
+    }
+
+    return _out;
+}
+
+// =============================================================================
 // AUDIO / SOUND SETTINGS
 // Two player-controlled volume categories: Music and SFX. There are no audio
 // groups assigned in the IDE (those need .yy edits), so volume is applied per
@@ -13814,6 +14679,11 @@ function dungeon_ambience_bed() {
     switch (_d) {
         case "scorched_depths": return snd_amb_scorched;
         case "tundra_tomb":     return snd_amb_tundra;
+        // 08-27 STAND-INS until a biome audio session happens (flagged to M):
+        // the Reach borrows the Tomb's cold, wet air; the Canopy borrows the
+        // Vault's still dark. Swap to snd_amb_drowned / snd_amb_canopy on import.
+        case "drowned_reach":   return snd_amb_tundra;
+        case "hollow_canopy":   return snd_amb_ashen;
         default:                return snd_amb_ashen;
     }
 }
@@ -13908,7 +14778,7 @@ function audio_settings_init() {
     if (!variable_global_exists("music_volume")) global.music_volume = 0.7;
     if (!variable_global_exists("sfx_volume"))   global.sfx_volume   = 0.8;
     if (!variable_global_exists("settings_open"))        global.settings_open        = false;
-    if (!variable_global_exists("settings_cursor"))      global.settings_cursor      = 0;   // 0 Music, 1 SFX, 2 Hub Track, 3 Dungeon Track, 4 Menu Tick, 5 Fullscreen, 6 Font Size, 7 Tutorial, 8 Timed Combat, 9 D-pad, 10 Pinch, 11 Reset
+    if (!variable_global_exists("settings_cursor"))      global.settings_cursor      = 0;   // 0 Music, 1 SFX, 2 Hub Track, 3 Dungeon Track, 4 Menu Tick, 5 Fullscreen, 6 V-Sync, 7 Font Size, 8 Tutorial, 9 Timed Combat, 10 D-pad, 11 Pinch, 12 Reset
     if (!variable_global_exists("settings_reset_flash")) global.settings_reset_flash = 0;
     if (!variable_global_exists("tutorial_enabled"))     global.tutorial_enabled     = true;
     if (!variable_global_exists("ui_tick_enabled"))      global.ui_tick_enabled      = true;   // the menu-nav glass ping
@@ -14000,20 +14870,23 @@ function audio_settings_handle_input() {
     }
 
     // Rows: 0 Music, 1 SFX, 2 Hub Music, 3 Dungeon Music, 4 Menu Tick,
-    //       5 Fullscreen, 6 Font Size, 7 Tutorial Tips, 8 Timed Combat,
-    //       9 On-screen D-pad, 10 Pinch Zoom, 11 Reset Tutorial.
-    // Rows 9-10 exist only on touch platforms (see touch_platform) - the cursor
-    // hops over them on desktop/HTML5, where the rows aren't drawn.
+    //       5 Fullscreen, 6 V-Sync, 7 Font Size, 8 Tutorial Tips, 9 Timed Combat,
+    //       10 On-screen D-pad, 11 Pinch Zoom, 12 Reset Tutorial.
+    // Rows 10-11 exist only on touch platforms (see touch_platform) and row 6
+    // (V-Sync) only on desktop - the cursor hops over rows that aren't drawn.
     if (nav_up()) {
-        global.settings_cursor = wrap_index(global.settings_cursor - 1, 12);
-        if (!touch_platform() && (global.settings_cursor == 9 || global.settings_cursor == 10)) global.settings_cursor = 8;
+        global.settings_cursor = wrap_index(global.settings_cursor - 1, 13);
+        if (!touch_platform() && (global.settings_cursor == 10 || global.settings_cursor == 11)) global.settings_cursor = 9;
+        if (touch_platform() && global.settings_cursor == 6) global.settings_cursor = 5;
     }
     if (nav_down()) {
-        global.settings_cursor = wrap_index(global.settings_cursor + 1, 12);
-        if (!touch_platform() && (global.settings_cursor == 9 || global.settings_cursor == 10)) global.settings_cursor = 11;
+        global.settings_cursor = wrap_index(global.settings_cursor + 1, 13);
+        if (!touch_platform() && (global.settings_cursor == 10 || global.settings_cursor == 11)) global.settings_cursor = 12;
+        if (touch_platform() && global.settings_cursor == 6) global.settings_cursor = 7;
     }
-    global.settings_cursor = clamp(global.settings_cursor, 0, 11);
-    if (!touch_platform() && (global.settings_cursor == 9 || global.settings_cursor == 10)) global.settings_cursor = 11;
+    global.settings_cursor = clamp(global.settings_cursor, 0, 12);
+    if (!touch_platform() && (global.settings_cursor == 10 || global.settings_cursor == 11)) global.settings_cursor = 12;
+    if (touch_platform() && global.settings_cursor == 6) global.settings_cursor = 7;
 
     var _left    = nav_left();
     var _right   = nav_right();
@@ -14056,7 +14929,15 @@ function audio_settings_handle_input() {
                 audio_play_sound(window_get_fullscreen() ? snd_ui_toggle_on : snd_ui_toggle_off, 1, false);
             }
         break;
-        case 6: // Font Size: A/D cycles Small / Default / Large (Enter steps forward)
+        case 6: // V-Sync (desktop only): OFF = lowest input latency (default),
+                // ON = the escape hatch for tearing on odd setups. Applies
+                // immediately via display_reset (video_toggle_vsync).
+            if (_left || _right || _confirm) {
+                video_toggle_vsync();
+                audio_play_sound(global.vsync_on ? snd_ui_toggle_on : snd_ui_toggle_off, 1, false);
+            }
+        break;
+        case 7: // Font Size: A/D cycles Small / Default / Large (Enter steps forward)
             if (_left || _right || _confirm) {
                 var _fs_delta = _left ? -1 : 1;
                 global.font_size_mode = wrap_index(global.font_size_mode + _fs_delta, 3);
@@ -14064,7 +14945,7 @@ function audio_settings_handle_input() {
                 audio_settings_save();
             }
         break;
-        case 7: // Tutorial Tips on/off
+        case 8: // Tutorial Tips on/off
             if (_left || _right || _confirm) {
                 if (!variable_global_exists("tutorial_enabled")) global.tutorial_enabled = true;
                 global.tutorial_enabled = !global.tutorial_enabled;
@@ -14072,7 +14953,7 @@ function audio_settings_handle_input() {
                 audio_settings_save();
             }
         break;
-        case 8: // Timed Combat: A/D cycles Off / Assist / On (Enter steps forward).
+        case 9: // Timed Combat: A/D cycles Off / Assist / On (Enter steps forward).
                 // Same settings.ini [combat] timed_mode store the in-combat F1
                 // lever writes (timed_combat_* in scr_combat) - change applies to
                 // the NEXT enemy action immediately, no restart needed.
@@ -14083,7 +14964,7 @@ function audio_settings_handle_input() {
                 audio_play_sound((global.timed_combat > 0) ? snd_ui_toggle_on : snd_ui_toggle_off, 1, false);
             }
         break;
-        case 9: // On-screen D-pad: A/D sizes it, Enter toggles it off/on entirely
+        case 10: // On-screen D-pad: A/D sizes it, Enter toggles it off/on entirely
             if (_left)  { touch_pad_scale_adjust(-TOUCH_PAD_SCALE_STEP); audio_play_sound(snd_ui_move, 1, false); }
             if (_right) { touch_pad_scale_adjust( TOUCH_PAD_SCALE_STEP); audio_play_sound(snd_ui_move, 1, false); }
             if (_confirm) {
@@ -14091,13 +14972,13 @@ function audio_settings_handle_input() {
                 audio_play_sound(global.touch_gamepad_off ? snd_ui_toggle_off : snd_ui_toggle_on, 1, false);
             }
         break;
-        case 10: // Pinch Zoom on/off (SYSTEMS_PINCH_ZOOM.md; touch platforms only)
+        case 11: // Pinch Zoom on/off (SYSTEMS_PINCH_ZOOM.md; touch platforms only)
             if (_left || _right || _confirm) {
                 pinch_zoom_toggle();
                 audio_play_sound(global.pinch_zoom_off ? snd_ui_toggle_off : snd_ui_toggle_on, 1, false);
             }
         break;
-        case 11: // Reset Tutorial - clear seen flags so every tip shows again
+        case 12: // Reset Tutorial - clear seen flags so every tip shows again
             if (_left || _right || _confirm) {
                 tutorial_reset_all();
                 global.tutorial_enabled   = true;   // resetting implies you want the tips back
@@ -14296,6 +15177,19 @@ function video_settings_init() {
         var _fs_default = (os_browser == browser_not_a_browser
                            && (os_type == os_windows || os_type == os_macosx || os_type == os_linux)) ? 1 : 0;
         global.fullscreen = (ini_read_real("video", "fullscreen", _fs_default) >= 0.5);
+        // V-Sync (08-27, M: "slight input delay" on the timed rings): GM's
+        // Windows v-sync buffers 1-3 frames (~16-50ms) - half the hardest
+        // 5-frame perfect band. Default OFF for lowest latency (the project
+        // option ships false too); windowed/borderless on Win11 doesn't tear
+        // (DWM composites). Desktop-only lever - mobile ignores it.
+        global.vsync_on = (ini_read_real("video", "vsync", 0) >= 0.5);
+        // Seed the applied-tracker to "unknown" (-1 never equals a bool) so the
+        // FIRST video_apply always display_reset()s to the desired state. The
+        // runtime is authoritative on purpose: the IDE rewrites the options
+        // .yy on every save (it reverted the 08-27 vsync=false edit mid-
+        // session), so the project option cannot be trusted to match. One
+        // boot-time reset in Create, before anything draws - invisible.
+        global.vsync_applied = -1;
         ini_close();
     }
 }
@@ -14331,6 +15225,17 @@ function video_apply() {
         window_set_size(_win_w, _win_h);
         window_center();
     }
+
+    // V-Sync: apply only when the desired state CHANGES (display_reset rebuilds
+    // the device - surfaces drop, one-frame flash - so never call it redundantly,
+    // e.g. on every F11). The tracker is seeded to the project default (OFF) by
+    // video_settings_init, so this covers a saved-ON boot and the Settings toggle.
+    if (os_type == os_windows || os_type == os_macosx || os_type == os_linux) {
+        if (global.vsync_applied != global.vsync_on) {
+            global.vsync_applied = global.vsync_on;
+            display_reset(0, global.vsync_on);
+        }
+    }
 }
 
 // Flip fullscreen, persist it, and apply immediately. Safe to call from anywhere
@@ -14340,6 +15245,18 @@ function video_toggle_fullscreen() {
     global.fullscreen = !global.fullscreen;
     ini_open("settings.ini");
     ini_write_real("video", "fullscreen", global.fullscreen ? 1 : 0);
+    ini_close();
+    video_apply();
+}
+
+// Flip v-sync, persist it, and apply immediately (Settings overlay row; desktop
+// only). OFF = lowest input latency (the default); ON is the escape hatch for
+// anyone who sees tearing on an odd setup.
+function video_toggle_vsync() {
+    video_settings_init();
+    global.vsync_on = !global.vsync_on;
+    ini_open("settings.ini");
+    ini_write_real("video", "vsync", global.vsync_on ? 1 : 0);
     ini_close();
     video_apply();
 }
@@ -14703,7 +15620,7 @@ function pet_species_lore(species_id) {
         case "gravefox":         return "Digs crowns and circlets out of old barrows and wears them until they fall apart. Vixens have been observed stealing them from each other. There is no evidence the fox understands what a crown is, and considerable evidence it does not care.";
         case "pyre_bison":       return "Banks fire in the shoulder shag the way its northern cousins bank fat, and the herd's collective heat keeps a valley thawed all winter. Snow has never once settled on a living bison's back. Ash does not either.";
         case "crypt_gryphon":    return "Nests indoors, in halls, on plinths - anywhere with a sightline down a long room. Centuries of that have dulled the plumage to the exact grey of the stone it perches on. Hunts almost nothing. It is not clear what sustains it.";
-        case "threehunger":      return "Three heads, three separate appetites, one stomach to settle the argument in. The lion wants meat, the goat wants forage, the serpent wants neither. It is perpetually half-satisfied and correspondingly bad-tempered.";
+        case "threehunger":      return "One lion, three separate appetites, and not one of them for meat. The fire in its mane wants to burn, the frost wants to bite, the storm wants to strike - and only one of them gets fed per fight. It is perpetually two-thirds hungry and correspondingly bad-tempered.";
         case "wing_hare":        return "The antlers are true bone and shed annually like any deer's, which no leporid should be able to do. The hare treats them as unremarkable, grooms around them, and has never been seen to use them for anything at all.";
         case "stormkirin":       return "Carries a charge it never fully discharges, so the air within a few feet of it is permanently on the edge of becoming lightning. Hooves spark on stone. It will not go near standing water and appears to know exactly why.";
         case "lockjaw_turtle":   return "Once the jaw closes it does not open again until the turtle decides, which can be years. Scars on the beak are from things that tried to make it decide sooner. Slow to judge, and utterly final about it.";
@@ -14744,7 +15661,10 @@ function pet_species_lore(species_id) {
 // Wardens spawn and roll their scions now (combat_on_enemy_defeated), so the
 // art-gated scion loop below counts them honestly.
 function compendium_live_dungeons() {
-    return ["ashen_vault", "scorched_depths", "tundra_tomb", "descent"];
+    // drowned_reach + hollow_canopy joined 08-27: the biomes are selectable
+    // (§3.0 ladder), their bosses spawn, and their scions roll.
+    return ["ashen_vault", "scorched_depths", "tundra_tomb", "descent",
+            "drowned_reach", "hollow_canopy"];
 }
 
 // Compendium roster: every OBTAINABLE species, generic then scion, in catalog
@@ -15214,10 +16134,13 @@ function pattern_fam_progress_text(_stat_name) {
 
 // What ONE study from fodder of the given rarity would do for this family.
 // Returns { ok, text } - ok=false only once mastered (no fodder gates, 08-15).
-function pattern_study_preview(_stat_name, _rarity) {
+// _on_item (08-27, M: "i would like to be able to smelt any affix"): a family
+// the fodder does NOT carry can still be studied, but always at weight 1 -
+// matching fodder keeps its rarity-weighted head start.
+function pattern_study_preview(_stat_name, _rarity, _on_item = true) {
     var _p = pattern_fam_get(_stat_name);
     if (_p.s < 6) {
-        var _w    = pattern_study_weight(_stat_name, _rarity);
+        var _w    = _on_item ? pattern_study_weight(_stat_name, _rarity) : 1;
         var _next = (_p.s < 1) ? 1 : ((_p.s < 3) ? 3 : 6);
         var _lbl  = (_p.s < 1) ? "Uncommon" : ((_p.s < 3) ? "Rare" : "Epic");
         return { ok: true, text: "+" + string(_w) + " stud" + ((_w == 1) ? "y" : "ies")
@@ -15226,12 +16149,13 @@ function pattern_study_preview(_stat_name, _rarity) {
     return { ok: false, text: "already mastered" };
 }
 
-// Apply one study (rarity-weighted, 08-15). Returns true if progress moved.
-function pattern_book_study(_stat_name, _rarity) {
-    var _pv = pattern_study_preview(_stat_name, _rarity);
+// Apply one study (rarity-weighted, 08-15; off-item = flat 1, 08-27).
+// Returns true if progress moved.
+function pattern_book_study(_stat_name, _rarity, _on_item = true) {
+    var _pv = pattern_study_preview(_stat_name, _rarity, _on_item);
     if (!_pv.ok) return false;
     var _p = pattern_fam_get(_stat_name);
-    _p.s += pattern_study_weight(_stat_name, _rarity);
+    _p.s += _on_item ? pattern_study_weight(_stat_name, _rarity) : 1;
     return true;
 }
 
@@ -15253,6 +16177,23 @@ function pattern_item_families(_it) {
             for (var _j = 0; _j < array_length(_out); _j++) { if (_out[_j] == _r.stat_name) { _dup = true; break; } }
             if (!_dup) array_push(_out, _r.stat_name);
         }
+    }
+    return _out;
+}
+
+// The FULL studyable list for the smelt popup (08-27, M: "smelt any affix"):
+// the fodder's own families first (they study at the rarity-weighted speed),
+// then every other catalog family (studyable from ANY fodder at weight 1).
+// Entries: { stat_name, on_item }.
+function pattern_smelt_family_list(_it) {
+    var _own = pattern_item_families(_it);
+    var _out = [];
+    for (var _i = 0; _i < array_length(_own); _i++) array_push(_out, { stat_name: _own[_i], on_item: true });
+    var _cat = pattern_family_catalog();
+    for (var _j = 0; _j < array_length(_cat); _j++) {
+        var _dup = false;
+        for (var _k = 0; _k < array_length(_own); _k++) { if (_own[_k] == _cat[_j].stat_name) { _dup = true; break; } }
+        if (!_dup) array_push(_out, { stat_name: _cat[_j].stat_name, on_item: false });
     }
     return _out;
 }
@@ -15307,8 +16248,10 @@ function pattern_art_proxy(_e) {
 function pattern_smelt_fee() { return cha_price(25); }
 
 // Picker candidates: UNEQUIPPED gear only (stash + carried - the worn array is
-// deliberately not a pool), Uncommon..Epic (legendaries have their own three
-// sinks), never dormant. Stash-aware per the 08-11 NPC rule.
+// deliberately not a pool), Common..Epic (08-27, M: "the full item list in
+// smelt" - commons now qualify: a Common ingot, the art, and a weight-1 study;
+// legendaries keep their own three sinks), never dormant. Stash-aware per the
+// 08-11 NPC rule.
 function pattern_smelt_candidates() {
     var _out = [];
     var _pools = [];
@@ -15319,7 +16262,7 @@ function pattern_smelt_candidates() {
         for (var _i = 0; _i < array_length(_arr); _i++) {
             var _g = _arr[_i];
             if (!is_struct(_g) || !variable_struct_exists(_g, "slot") || !variable_struct_exists(_g, "rarity")) continue;
-            if (_g.rarity < 1 || _g.rarity > 3) continue;
+            if (_g.rarity < 0 || _g.rarity > 3) continue;
             if (variable_struct_exists(_g, "dormant") && _g.dormant) continue;
             array_push(_out, { source: _pools[_p].s, idx: _i, item: _g, label: _g.name,
                 rarity: _g.rarity,
@@ -15355,7 +16298,14 @@ function pattern_smelt_commit(_it, _stat_name) {
     if (_stat_name != "") {
         var _fe = pattern_family_entry(_stat_name);
         var _tier_was = pattern_fam_tier(_stat_name);
-        if (pattern_book_study(_stat_name, _rar) && _fe != undefined) {
+        // Off-item families (08-27 "smelt any affix") study at flat weight 1;
+        // the fodder's own affixes keep the rarity-weighted pace.
+        var _own_fams = pattern_item_families(_it);
+        var _on_item = false;
+        for (var _of = 0; _of < array_length(_own_fams); _of++) {
+            if (_own_fams[_of] == _stat_name) { _on_item = true; break; }
+        }
+        if (pattern_book_study(_stat_name, _rar, _on_item) && _fe != undefined) {
             _msg += ", studied " + _fe.label + " (" + pattern_fam_progress_text(_stat_name) + ")";
             // TIER UNLOCK toast (M 08-16: "something should pop up to say
             // you've unlocked tier 1"): drawn topmost on Dorn's screen.

@@ -274,7 +274,7 @@ if (show_loot_screen) {
         for (var _ffi = array_length(global.carried_items) - 1; _ffi >= 0; _ffi--) {
             if (global.carried_items[_ffi] == _ff_old) { array_delete(global.carried_items, _ffi, 1); break; }
         }
-        var _ff_asc = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
+        var _ff_asc = awakening_effective();   // §3.0: drops pay the effective tier
         var _ff_src = variable_global_exists("next_enemy_type") ? global.next_enemy_type : "standard";
         var _ff_new = drop_equipment(drop_weights(_ff_src, _ff_asc), true, curse_loot_tier_bonus_for(_ff_src));
         array_push(global.carried_items, _ff_new);
@@ -430,7 +430,7 @@ if (_result == 1) {
         }
         duel_grade_round = combat_state.round;
         var _dg_par = variable_global_exists("duel_par") ? global.duel_par : duel_turn_par();
-        var _dg_asc = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
+        var _dg_asc = awakening_effective();   // §3.0: duel spoils pay the effective tier (PAR stays raw)
         if (!variable_global_exists("rune_dust")) global.rune_dust = 0;
         if (duel_grade_round <= _dg_par) {
             duel_grade = "GOLD";
@@ -520,7 +520,7 @@ if (_result == 1) {
         random_set_seed(loot_room_seed(0, 2));
         // Phase 2 pets: rare boss-egg drop (odds scale with Awakening). Lands in
         // Bairc's stable; the hub notice on return stays as a second reminder.
-        var _bsr_egg = pet_try_boss_egg(variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0);
+        var _bsr_egg = pet_try_boss_egg(awakening_effective());   // §3.0 effective tier
         if (_bsr_egg != undefined) {
             var _bsr_lbl = _bsr_egg.is_egg
                 ? ("Mysterious " + (pet_egg_label(_bsr_egg) != "" ? pet_egg_label(_bsr_egg) : "Egg"))
@@ -976,9 +976,18 @@ if (player_turn) {
                                         player.energy += 1;
                                         array_push(combat_log, "...+" + string(_chres) + " resource and +1 AP!");
                                     } break;
-                                    case "cleanse_dot":    { var _chc = combat_cleanse(player, "dot"); if (_chc > 0) array_push(combat_log, "...cleared " + string(_chc) + " DoT(s)."); } break;
-                                    case "cleanse_debuff": { var _chc2 = combat_cleanse(player, "one"); if (_chc2 > 0) array_push(combat_log, "...removed a debuff."); } break;
-                                    case "cleanse_all":    { var _chc3 = combat_cleanse(player, "all"); if (_chc3 > 0) array_push(combat_log, "...cleared " + string(_chc3) + " negative effect(s)."); } break;
+                                    case "cleanse_dot":     { var _chc = combat_cleanse(player, "dot"); if (_chc > 0) array_push(combat_log, "...cleared " + string(_chc) + " DoT(s)."); } break;
+                                    case "cleanse_dot_one": { var _chc4 = combat_cleanse(player, "dot_one"); if (_chc4 > 0) array_push(combat_log, "...cured a DoT."); } break;
+                                    case "cleanse_debuff":  { var _chc2 = combat_cleanse(player, "one"); if (_chc2 > 0) array_push(combat_log, "...removed a debuff."); } break;
+                                    case "cleanse_debuff_all": { var _chc5 = combat_cleanse(player, "debuffs"); if (_chc5 > 0) array_push(combat_log, "...stripped " + string(_chc5) + " debuff(s)."); } break;
+                                    case "cleanse_all":     { var _chc3 = combat_cleanse(player, "all"); if (_chc3 > 0) array_push(combat_log, "...cleared " + string(_chc3) + " negative effect(s)."); } break;
+                                    case "status_ward": {
+                                        // Philter residue in the mix (08-27): the ward carries through.
+                                        if (!variable_struct_exists(player, "status_effects")) player.status_effects = [];
+                                        array_push(player.status_effects, { name: "Cleansing Ward", effect_type: "buff",
+                                            kind: "ward", effect_value: 1, duration: 99, element: "" });
+                                        array_push(combat_log, "...a cleansing ward settles over you.");
+                                    } break;
                                     case "gold_find_pot": potion_drink_gold(_chp.effect_value); array_push(combat_log, "...gold drops +" + string(_chp.effect_value) + "% until 2 bosses fall."); break;
                                     case "loot_find_pot": potion_drink_loot(_chp.effect_value); array_push(combat_log, "...loot chance +" + string(_chp.effect_value) + "% until 2 bosses fall."); break;
                                 }
@@ -1044,6 +1053,23 @@ if (player_turn) {
                         array_push(combat_log, "Used " + _citem.name + (_cl_n > 0
                             ? " - cleared " + string(_cl_n) + " negative effect(s)!"
                             : " - no negative effects to clear."));
+                    } else if (_citem.effect_type == "cleanse_dot_one") {
+                        var _cl_n = combat_cleanse(player, "dot_one");
+                        array_push(combat_log, "Used " + _citem.name + (_cl_n > 0
+                            ? " - cured a damage-over-time effect!" : " - no DoT effects to cure."));
+                    } else if (_citem.effect_type == "cleanse_debuff_all") {
+                        var _cl_n = combat_cleanse(player, "debuffs");
+                        array_push(combat_log, "Used " + _citem.name + (_cl_n > 0
+                            ? " - stripped " + string(_cl_n) + " debuff(s)!" : " - no debuffs to strip."));
+                    } else if (_citem.effect_type == "status_ward") {
+                        // Cleansing Philter (08-27): arm the negate-next ward. Kind
+                        // "ward" is a BUFF - cleanses keep it, the enemy status-
+                        // application site consumes it (combat_status_consume_ward).
+                        if (!variable_struct_exists(player, "status_effects")) player.status_effects = [];
+                        array_push(player.status_effects, { name: "Cleansing Ward", effect_type: "buff",
+                            kind: "ward", effect_value: 1, duration: 99, element: "" });
+                        array_push(combat_log, "Used " + _citem.name
+                            + " - the next harmful enemy effect will be negated!");
                     } else if (_citem.effect_type == "heal_dot") {
                         // Heal-over-time: apply a "regen" status that ticks each player
                         // turn via combat_tick_statuses (previously this did NOTHING).
@@ -1484,7 +1510,9 @@ if (player_turn) {
             for (var _cg_i = 0; _cg_i < array_length(combat_state.combatants); _cg_i++) {
                 var _cg_e = combat_state.combatants[_cg_i];
                 if (!_cg_e.is_player && !_cg_e.is_defeated
-                    && variable_struct_exists(_cg_e, "warden_hook") && _cg_e.warden_hook == "crown") {
+                    && ((variable_struct_exists(_cg_e, "warden_hook") && _cg_e.warden_hook == "crown")
+                        // §3.2: The Green Silence shares the crown's gag machinery.
+                        || (variable_struct_exists(_cg_e, "biome_hook") && _cg_e.biome_hook == "green_silence"))) {
                     _crown_gag = true;
                     break;
                 }
@@ -2525,6 +2553,20 @@ if (player_turn) {
                             array_push(combat_log, "[Companion] " + pet_active().name + "'s banked heat rides the blow (+"
                                 + string(pet_active_innate("first_fire")) + " Fire)!");
                         }
+                        // Three Appetites (threehunger redesign, M 08-27): once per fight the
+                        // tri-elemental lion strikes with your first damaging attack - +N as a
+                        // freshly rolled element (Fire/Ice/Lightning). Same attack-class split
+                        // as Banked Heat above.
+                        var _tri_v = pet_active_innate("tri_strike");
+                        if (_tri_v > 0 && _deals_damage
+                            && (_bh_ac == "melee_attack" || _bh_ac == "ranged_attack")
+                            && !variable_struct_exists(player, "innate_tri_done")) {
+                            player.innate_tri_done = true;
+                            _final_dmg += _tri_v;
+                            var _tri_el = choose("Fire", "Ice", "Lightning");
+                            array_push(combat_log, "[Companion] " + pet_active().name + "'s " + _tri_el
+                                + " appetite feeds on the blow (+" + string(_tri_v) + " " + _tri_el + ")!");
+                        }
                         // Reckoning (tallykeep signature move, 08-06): every 3rd ability
                         // you cast lands +20% - it is keeping count. Counter increments
                         // at the spend commit, so this cast IS the 3rd/6th/9th.
@@ -3137,6 +3179,8 @@ if (player_turn) {
                         // Counterphase (task #14): the armed 1-AP discount is spent by this cast.
                         if (variable_struct_exists(player, "blink_tempo_ready")) player.blink_tempo_ready = false;
                 if (variable_struct_exists(player, "ashen_tempo_ready")) player.ashen_tempo_ready = false;   // Ashen Blade discount spent
+                        // CHOKING GROWTH (§3.2): the Canopy's first-cast toll is paid - burn the flag.
+                        if (!variable_struct_exists(player, "choking_used")) player.choking_used = true;
                         ability_web_cast_riders(ab, player, combat_log);   // bespoke on-cast riders (shield/resource)
 
                         // --- Hit log - damaging abilities report damage; pure debuffs/utility
@@ -4015,49 +4059,53 @@ if (player_turn) {
                 // Counterphase (task #14): the armed 1-AP discount is spent by this cast.
                 if (variable_struct_exists(player, "blink_tempo_ready")) player.blink_tempo_ready = false;
                 if (variable_struct_exists(player, "ashen_tempo_ready")) player.ashen_tempo_ready = false;   // Ashen Blade discount spent
+                // CHOKING GROWTH (§3.2): the Canopy's first-cast toll is paid - burn the flag.
+                if (!variable_struct_exists(player, "choking_used")) player.choking_used = true;
                 ability_web_cast_riders(ab, player, combat_log);   // bespoke on-cast riders (shield/resource)
                 if (ab.name == "Shadow Step") {
-                    audio_play_sound(snd_move_whoosh, 1, false);   // movement keeps its whoosh
+                    // 08-27 (M: "shadowstep has no vfx"): the whoosh-only branch
+                    // skipped the self-cast VFX block - the same trap Blink escaped
+                    // on 07-30. Keep the whoosh, fall through to the burst below
+                    // (ability_support_vfx picks the shadow-school dark burst).
+                    audio_play_sound(snd_move_whoosh, 1, false);
+                } else if (ab.name == "Blink") {
+                    // Blink flutter (M 07-30: it shared the Shadow Step whoosh and,
+                    // sitting in the whoosh branch, skipped the VFX block entirely):
+                    // pitched-up arcane shimmer over a fast whoosh - short, instant,
+                    // magical - and it falls through to the haste-clock burst below.
+                    var _bk_sh = audio_play_sound(snd_cast_arcane_2, 1, false);
+                    audio_sound_pitch(_bk_sh, 1.35);
+                    var _bk_wh = audio_play_sound(snd_move_whoosh, 1, false);
+                    audio_sound_pitch(_bk_wh, 1.55);
                 } else {
-                    if (ab.name == "Blink") {
-                        // Blink flutter (M 07-30: it shared the Shadow Step whoosh and,
-                        // sitting in the whoosh branch, skipped the VFX block entirely):
-                        // pitched-up arcane shimmer over a fast whoosh - short, instant,
-                        // magical - and it falls through to the haste-clock burst below.
-                        var _bk_sh = audio_play_sound(snd_cast_arcane_2, 1, false);
-                        audio_sound_pitch(_bk_sh, 1.35);
-                        var _bk_wh = audio_play_sound(snd_move_whoosh, 1, false);
-                        audio_sound_pitch(_bk_wh, 1.55);
-                    } else {
-                        // Support cast - sound keyed to the effect kind (heal/shield/buff/...).
-                        play_ability_cast_sfx(ab, player, false);
-                    }
-                    // Self-cast VFX over the player, keyed to what the ability does
-                    // (heal/shield/resource/self-debuff/evasion/dark pact/offense buff)
-                    // instead of the old heal-or-sword split. See ability_support_vfx.
-                    var _vfxp = ability_support_vfx(ab);
-                    var _pvfa = combat_player_vfx_anchor(player);
-                    vfx_spr       = _vfxp.spr;
-                    vfx_x         = _pvfa.x;
-                    vfx_y         = _pvfa.y;
-                    vfx_timer     = _vfxp.ticks;
-                    vfx_timer_max = _vfxp.ticks;
-                    vfx_school    = ability_school(ab);   // spell-tint blend key
-                    vfx_scale_mult = 1;
-                    // Iron Skin (M 08-26 pick): the owned Gigapack armor-assemble
-                    // anim, BLUE STEEL as authored - plate slivers converge into
-                    // a full shield. Plays as the standard self-cast burst,
-                    // with the "Blue steel!" popup gag over the player (M's
-                    // Zoolander reference). Replaces both the generic shield
-                    // burst AND the 08-13 procedural plate-shard overlay.
-                    if (ab.name == "Iron Skin") {
-                        vfx_spr       = spr_vfx_ironskin;
-                        vfx_timer     = 40;   // 18 frames get room to play
-                        vfx_timer_max = 40;
-                        array_push(damage_popups, { value: 0, text: "Blue steel!",
-                            x: _pvfa.x, y: _pvfa.y - 135,
-                            timer: 50, col: make_color_rgb(140, 205, 245) });
-                    }
+                    // Support cast - sound keyed to the effect kind (heal/shield/buff/...).
+                    play_ability_cast_sfx(ab, player, false);
+                }
+                // Self-cast VFX over the player, keyed to what the ability does
+                // (heal/shield/resource/self-debuff/evasion/dark pact/offense buff)
+                // instead of the old heal-or-sword split. See ability_support_vfx.
+                var _vfxp = ability_support_vfx(ab);
+                var _pvfa = combat_player_vfx_anchor(player);
+                vfx_spr       = _vfxp.spr;
+                vfx_x         = _pvfa.x;
+                vfx_y         = _pvfa.y;
+                vfx_timer     = _vfxp.ticks;
+                vfx_timer_max = _vfxp.ticks;
+                vfx_school    = ability_school(ab);   // spell-tint blend key
+                vfx_scale_mult = 1;
+                // Iron Skin (M 08-26 pick): the owned Gigapack armor-assemble
+                // anim, BLUE STEEL as authored - plate slivers converge into
+                // a full shield. Plays as the standard self-cast burst,
+                // with the "Blue steel!" popup gag over the player (M's
+                // Zoolander reference). Replaces both the generic shield
+                // burst AND the 08-13 procedural plate-shard overlay.
+                if (ab.name == "Iron Skin") {
+                    vfx_spr       = spr_vfx_ironskin;
+                    vfx_timer     = 40;   // 18 frames get room to play
+                    vfx_timer_max = 40;
+                    array_push(damage_popups, { value: 0, text: "Blue steel!",
+                        x: _pvfa.x, y: _pvfa.y - 135,
+                        timer: 50, col: make_color_rgb(140, 205, 245) });
                 }
 
                 if (ab.effect_type == "heal") {
@@ -4813,6 +4861,31 @@ if (player_turn) {
             player.crown_silenced = _hc_pick.name;
             array_push(combat_log, "THE HOLLOW CROWN turns - " + _hc_pick.name + " falls SILENT.");
         }
+        // THE GREEN SILENCE (§3.2 boss hook, 08-27): the Crown's machinery on a
+        // canopy throne - each of its turns one random player ability goes quiet.
+        if (variable_struct_exists(actor, "biome_hook") && actor.biome_hook == "green_silence"
+            && !actor.is_defeated && array_length(player.abilities) > 0) {
+            var _gs_pick = player.abilities[irandom(array_length(player.abilities) - 1)];
+            player.crown_silenced = _gs_pick.name;   // shares the crown gag (one silencer per arena)
+            array_push(combat_log, "THE GREEN SILENCE leans close - " + _gs_pick.name + " makes no sound.");
+        }
+        // CHOIRMOTHER OF THE DEEP (§3.1 boss hook, 08-27): her damage scales
+        // with how many still sing - +15% per living ally, retuned at the top
+        // of each of her turns off the spawn-stamped choir_base_damage.
+        if (variable_struct_exists(actor, "biome_hook") && actor.biome_hook == "choirmother"
+            && !actor.is_defeated && variable_struct_exists(actor, "choir_base_damage")) {
+            var _cm_n = 0;
+            for (var _cm_i = 0; _cm_i < array_length(combat_state.combatants); _cm_i++) {
+                var _cm_c = combat_state.combatants[_cm_i];
+                if (!_cm_c.is_player && !_cm_c.is_defeated && _cm_c != actor) _cm_n++;
+            }
+            var _cm_new = round(actor.choir_base_damage * (1 + 0.15 * _cm_n));
+            if (_cm_new != actor.damage && _cm_n > 0) {
+                array_push(combat_log, "The choir holds " + string(_cm_n)
+                    + " voice(s) - the CHOIRMOTHER's song strikes for " + string(_cm_new) + ".");
+            }
+            actor.damage = _cm_new;
+        }
 
         // Capture control state BEFORE the tick decrements durations, so a 1-turn
         // control still costs the enemy this turn. reach/kind decide which apply:
@@ -5537,7 +5610,7 @@ if (player_turn) {
                 // C1 A3+ SMART TARGETING (M-approved 07-09): the mend goes to the MOST
                 // WOUNDED living ally (itself included), not blindly to itself.
                 var _htgt = actor;
-                if ((variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0) >= 3) {
+                if (awakening_effective() >= 3) {
                     var _worst = (actor.max_HP > 0) ? (actor.HP / actor.max_HP) : 1;
                     for (var _hti = 0; _hti < array_length(combat_state.combatants); _hti++) {
                         var _htc = combat_state.combatants[_hti];
@@ -5587,7 +5660,7 @@ if (player_turn) {
                 // statuses off its target - controls first, so a support enemy can
                 // free a snared ally. One status at A2+, two at A4+. Same
                 // awakening-gated-smarts idiom as the A3 targeting above.
-                var _cl_asc = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
+                var _cl_asc = awakening_effective();   // §3.0: smarts ride the effective tier
                 if (_cl_asc >= 2) {
                     var _cl_n = (_cl_asc >= 4) ? 2 : 1;
                     repeat (_cl_n) {
@@ -5620,7 +5693,7 @@ if (player_turn) {
                 // dungeon's standard roster.
                 var _su_src   = variable_instance_exists(id, "summon_pool") ? summon_pool : [];
                 var _su_elite = false;
-                if ((variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0) >= 5
+                if (awakening_effective() >= 5
                     && variable_instance_exists(id, "summon_is_boss_fight") && summon_is_boss_fight
                     && variable_instance_exists(id, "summon_pool_elite") && array_length(summon_pool_elite) > 0) {
                     _su_src   = summon_pool_elite;
@@ -5651,7 +5724,7 @@ if (player_turn) {
                     _su_new.hit_recoil    = 0;
                     _su_new.dodge_anim    = 0;
                     _su_new.denied_streak = 0;
-                    var _su_asc = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
+                    var _su_asc = awakening_effective();   // §3.0: summons scale like their caller
                     if (_su_asc > 0) {
                         _su_new.max_HP = round(_su_new.max_HP * awaken_hp_mult(_su_asc));
                         _su_new.damage = round(_su_new.damage * awaken_dmg_mult(_su_asc));
@@ -5835,6 +5908,15 @@ if (player_turn) {
                     var _sr_stat = (_eab.status_kind == "stun") ? "Constitution"
                                  : ((_eab.status_kind == "root") ? "Dexterity" : "Wisdom");
                     array_push(combat_log, "Your " + _sr_stat + " shrugs off " + actor.name + "'s " + _eab.name + "!");
+                } else if (combat_status_has_ward(player)) {
+                    // Cleansing Philter ward (08-27): burns AFTER the free outs
+                    // (pet sig / Iron Will / resists) so a shrugged status never
+                    // wastes it - only a blow that would actually land.
+                    combat_status_consume_ward(player);
+                    array_push(combat_log, "The Cleansing Ward flares - " + actor.name + "'s "
+                        + _eab.name + " is negated!");
+                    array_push(damage_popups, { value: 0, text: "WARDED!", x: 475, y: 505,
+                        timer: 45, col: make_color_rgb(150, 230, 200) });
                 } else {
                     var _edur = (_eab.kind == "dot") ? _eab.turns : (_eab.turns + 1);
                     // Iron Will potency ranks (POTENCY V2): later statuses run
@@ -5970,7 +6052,7 @@ if (player_turn) {
         // where stacked defence gets silly. A0-A2 keep NORMAL damage so this can
         // never read as an unfair spike on a player who was defending well.
         if (_rage_now) {
-            var _aw_t = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
+            var _aw_t = awakening_effective();   // §3.0 effective tier
             var _rg_m = (_aw_t >= 5) ? 1.35 : ((_aw_t >= 4) ? 1.25 : ((_aw_t >= 3) ? 1.15 : 1.0));
             if (_rg_m > 1.0) _base_dmg = max(1, round(_base_dmg * _rg_m));
         }

@@ -164,7 +164,7 @@ for (var _i = 0; _i < _count; _i++) {
 ui_draw_combat_hud(combat_state, player, player.abilities, selected_ability, combat_log, false);
 
 // Awakening tier reference - small label top-right, above the enemy HP bars.
-var _awk_asc = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
+var _awk_asc = awakening_effective();   // §3.0: the label reads the tier the fight is AT
 draw_set_font(ui_font(fnt_ui_small));
 draw_set_halign(fa_right);
 draw_set_valign(fa_top);
@@ -2178,7 +2178,9 @@ if (combat_over) {
                 // Awakening) toward time-gated systems (Petra orders; Phase 2 pets).
                 // Fires before the extract/continue/victory branch so the credit banks
                 // regardless of what the player does next.
-                floor_clear_credit(variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0);
+                // §3.0: credit at the EFFECTIVE tier - a Drowned A0 floor IS an
+                // A4-strength clear for Petra orders / board "at Awakening >= K".
+                floor_clear_credit(awakening_effective());
                 // Egg / trinket / banshee rolls moved to the VICTORY FRAME in
                 // Step (M 07-28) so they list on the loot screen as SPECIAL
                 // rows - same deterministic stream, granted before this branch.

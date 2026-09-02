@@ -32,6 +32,11 @@ if (!variable_global_exists("run_seed")) {
 origin_run_start();
 
 
+// Floor toast (BIOME IDENTITY PASS 08-27): a transient boxed line via
+// ui_draw_toast (feedback_toast_standard - drawn topmost in Draw_64).
+floor_toast_msg = "";
+floor_toast_t   = 0;
+
 // -----------------------------------------------------------------------------
 // 2. RETURNING-FROM-COMBAT FLAG
 // Set by Step_0 before room_goto(Room1). Cleared here so we only use it once.
@@ -56,7 +61,12 @@ if (!returning_from_combat) {
 // Apply dungeon passive effects on each room entry (not the very first room)
 if (returning_from_combat) {
     var _dung_passive = variable_global_exists("selected_dungeon") ? global.selected_dungeon : "ashen_vault";
-    var _asc_p = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
+    // §3.0: passive intensity steps ride the EFFECTIVE tier (Scorched A0 is a
+    // baseline-A1 dive, so its searing air opens at 2 stacks - by design).
+    // The 08-27 biome passives (Drowned Rising Water / Canopy Choking Growth)
+    // are combat-turn effects wired in scr_combat/obj_combat_controller, not
+    // room-entry counters - nothing to arm here.
+    var _asc_p = awakening_effective();
     if (_dung_passive == "scorched_depths") {
         // Every room: apply 1 fire stack; 2 stacks at A1+
         if (!variable_global_exists("pending_fire_stacks")) global.pending_fire_stacks = 0;
@@ -92,14 +102,27 @@ if (_need_new_map) {
     //      every node is reachable from the entry AND every node has a path to the
     //      boss (no dead ends). Constrained to the existing draw geometry: entry and
     //      boss layers are single nodes, intermediate layers hold 1-3 nodes, and
-    //      there are 5-6 layers total (so at most 6 columns / 3 rows). ----
+    //      there are 4-8 layers total (7-8 columns narrow the node box). ----
     var _gen_old_seed = random_get_seed();
     random_set_seed(global.run_seed * 101 + global.current_floor * 17 + 3);
 
-    // 5..6 layers (so 3-4 intermediate layers): keeps every floor from being too
-    // short - after the "guarantee >=2 combat/elite" net there's always room left
-    // for loot/event/rest. Width per layer (1-3) is the main shape-variety lever.
-    var _num_layers = 5 + irandom(1);    // 5 or 6 layers (boss layer index 4..5)
+    // Awakening-scaled floor length (M 08-27, curve A): low tiers are replayed the most,
+    // so A0-A2 floors are markedly shorter (fights burnout); A3+ floors are markedly
+    // longer with more rooms/events. Ascendance is fixed for the whole run, so the
+    // seeded block stays reproducible. Width per layer (1-3) also shifts with tier.
+    // §3.0 rule 1: floor length follows the EFFECTIVE tier (selected + dungeon
+    // baseline) - Drowned Reach A0 runs ~7 layers by design. Stable all run, so
+    // the seeded block stays reproducible.
+    var _asc = awakening_effective();
+    var _num_layers;
+    switch (_asc) {
+        case 0:  _num_layers = 4;              break;  // A0: 4 layers  (~5-6 rooms)
+        case 1:  _num_layers = 4 + irandom(1); break;  // A1: 4-5
+        case 2:  _num_layers = 5;              break;  // A2: 5         (old low end)
+        case 3:  _num_layers = 6;              break;  // A3: 6         (old high end)
+        case 4:  _num_layers = 6 + irandom(1); break;  // A4: 6-7
+        default: _num_layers = 7 + irandom(1); break;  // A5+: 7-8      (~11-16 rooms)
+    }
     var _layer_nodes = [];               // _layer_nodes[l] = array of node ids in layer l
     var _layers      = [];
     var _slots       = [];
@@ -110,11 +133,20 @@ if (_need_new_map) {
         if (_gl == 0 || _gl == _num_layers - 1) {
             _cnt = 1;                    // entry + boss are single nodes
         } else {
-            // 1-3 nodes. Readability pass: favor 2-wide layers and make 3-wide RARE so
-            // the map reads as a couple of distinct routes instead of a dense grid.
-            // Roll 0..5 -> 0:1node (1/6), 1-4:2nodes (4/6), 5:3nodes (1/6).
+            // 1-3 nodes, odds tiered by Awakening. Readability pass still holds: favor
+            // 2-wide so the map reads as a couple of distinct routes, not a grid.
             var _r = irandom(5);
-            _cnt = (_r == 0) ? 1 : ((_r == 5) ? 3 : 2);
+            if (_asc <= 1) {
+                // A0-A1 lean: 1-wide 2/6, 2-wide 4/6, never 3-wide
+                _cnt = (_r <= 1) ? 1 : 2;
+            } else if (_asc <= 3) {
+                // A2-A3 (old odds): 1-wide 1/6, 2-wide 4/6, 3-wide 1/6
+                _cnt = (_r == 0) ? 1 : ((_r == 5) ? 3 : 2);
+            } else {
+                // A4+ broad: 2-wide 5/6, 3-wide 1/6, never 1-wide (2/6 threes over
+                // 5-6 layers overshot the curve - sim'd 20-room A5 maps)
+                _cnt = (_r == 5) ? 3 : 2;
+            }
         }
         var _ids = [];
         for (var _gs = 0; _gs < _cnt; _gs++) {
@@ -208,15 +240,24 @@ if (_need_new_map) {
         ["event", "treasure_rare", "elite",          "shrine"]   // floor 3 bonuses
     ];
     var _bonus_list = _bonus_pools[clamp(global.current_floor - 1, 0, 2)];
-    var _bonus_n    = irandom(2);   // 0, 1, or 2 extra optional rooms this floor
+    // Bonus-room roll tiered by Awakening (M 08-27 curve A): short low-tier floors roll
+    // 0-1 extras, A3-A4 roll 1-2, A5 rolls 1-3 - longer floors carry a richer mix.
+    var _bonus_n = (_asc <= 2) ? irandom(1) : ((_asc <= 4) ? 1 + irandom(1) : 1 + irandom(2));
     for (var _bk = 0; _bk < _bonus_n; _bk++) {
         array_push(_pool, _bonus_list[irandom(array_length(_bonus_list) - 1)]);
+    }
+
+    // A3+ guaranteed extra EVENT rooms (M 08-27): +1 at A3-A4, +2 at A5+. High-tier
+    // floors get proportionally more choice rooms, not just more fights.
+    if (_asc >= 3) {
+        array_push(_pool, "event");
+        if (_asc >= 5) array_push(_pool, "event");
     }
 
     // C1 A4+ (M-approved 07-09): COORDINATED PACKS - one extra ELITE chamber per
     // floor at Awakening 4 and above. Guaranteed (not a bonus roll), so high tiers
     // always carry the additional hard fight.
-    if ((variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0) >= 4) {
+    if (_asc >= 4) {
         array_push(_pool, "elite");
     }
 
@@ -272,11 +313,15 @@ if (_need_new_map) {
     }
 
     // Graph draw area: x=30..1320 (w=1290), y=150..1020 (h=870)  [native 1080p x1.5]
-    // Node width 195 (130x1.5) so the widest 6-column templates keep a real gutter
-    // between columns instead of overlapping. Must match _NW in Draw_64.
+    // Node width 195 (130x1.5) keeps a real gutter up to 6 columns; the A4+/A5 7-8
+    // column floors narrow the node so columns never overlap. Published as
+    // global.floor_node_w - Draw_64 and the Step click hit-test read it.
     var _gx1 = 30;  var _gx2 = 1320;
     var _gy1 = 150; var _gy2 = 1020;
-    var _node_w = 195; var _node_h = 96;
+    var _cols = _max_layer + 1;
+    var _node_w = (_cols <= 6) ? 195 : ((_cols == 7) ? 170 : 150);
+    var _node_h = 96;
+    global.floor_node_w = _node_w;
     var _mid_y  = (_gy1 + _gy2) * 0.5;   // 585
     var _y_spread = 165;                   // offset for 2-node layers
 
@@ -374,13 +419,16 @@ if (_need_new_map) {
         });
     }
 
-    // Guarantee at least 2 combat or elite rooms among intermediate nodes
+    // Guarantee combat/elite rooms among intermediate nodes - 2 normally, but on the
+    // shortest floors (A0's 2-intermediate maps) leave at least one NON-fight slot so
+    // the Whetstone/loot always has somewhere to live (entry is a fight already).
+    var _cmbt_need = min(2, max(1, _node_count - 3));
     var _cmbt_cnt = 0;
     for (var _ci = 1; _ci < _node_count - 1; _ci++) {
         var _ctype = _map[_ci].type;
         if (_ctype == "combat" || _ctype == "elite") _cmbt_cnt++;
     }
-    for (var _ci = 1; _ci < _node_count - 1 && _cmbt_cnt < 2; _ci++) {
+    for (var _ci = 1; _ci < _node_count - 1 && _cmbt_cnt < _cmbt_need; _ci++) {
         var _ctype = _map[_ci].type;
         if (_ctype != "combat" && _ctype != "elite") {
             _map[_ci].type    = "combat";

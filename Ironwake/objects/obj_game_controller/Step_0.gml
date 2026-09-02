@@ -2068,7 +2068,11 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()
         // ---- SMELT STUDY POPUP: choose which affix family the fodder teaches.
         if (pb_smelt_open) {
             if (pb_smelt_item == undefined) { pb_smelt_open = false; exit; }
-            var _sm_fams = pattern_item_families(pb_smelt_item);
+            // FULL catalog (08-27, M: "smelt any affix"): the fodder's own
+            // families first (rarity-weighted study), every other family after
+            // (weight 1). Entries are { stat_name, on_item } structs - MUST
+            // match ui_draw_pb_smelt's list (same builder, same window id).
+            var _sm_fams = pattern_smelt_family_list(pb_smelt_item);
             var _sm_rows = array_length(_sm_fams) + 1;   // + "Just the ingot"
             if (input_cancel() || input_back() || input_inject_take("pbsm:cancel")) {
                 pb_smelt_open = false; pb_smelt_item = undefined;
@@ -2086,7 +2090,7 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()
                     shop_notification = "Smelting asks " + string(_sm_fee) + "g.";
                     audio_play_sound(snd_ui_error, 1, false);
                 } else {
-                    var _sm_pick = (pb_smelt_pick < array_length(_sm_fams)) ? _sm_fams[pb_smelt_pick] : "";
+                    var _sm_pick = (pb_smelt_pick < array_length(_sm_fams)) ? _sm_fams[pb_smelt_pick].stat_name : "";
                     var _sm_msg  = pattern_smelt_commit(pb_smelt_item, _sm_pick);
                     if (_sm_msg == "") {
                         shop_notification = "It seems to have gone missing.";
@@ -4596,11 +4600,12 @@ if (variable_instance_exists(id, "sable_open") && sable_open && !menu_open && !f
     } else if (sable_tab == 1) {
         _s_rows = max(1, array_length(_s_brew));                                   // Brew list
     } else if (sable_tab == 2) {
-        // Fusion groups + the always-present CHAOTIC BREW + QUINTESSENCE rows;
-        // in pick mode the rows are the combined stash+pouch pool (08-11).
+        // Fusion groups + the always-present PANACEA (08-27) + CHAOTIC BREW +
+        // QUINTESSENCE rows; in pick mode the rows are the combined
+        // stash+pouch pool (08-11).
         _s_rows = sable_chaos_open
             ? max(1, array_length(sable_potion_pool()))
-            : (array_length(_s_groups) + 2);
+            : (array_length(_s_groups) + 3);
     } else {
         _s_rows = 3;    // Rebirth: class / attunement (M 07-29) / cursed (M 07-28)
     }
@@ -4689,6 +4694,22 @@ if (variable_instance_exists(id, "sable_open") && sable_open && !menu_open && !f
                         sable_cursor = 0;
                     } else {
                         sable_notification = _f_res;
+                        audio_play_sound(snd_ui_error, 1, false);
+                    }
+                } break;
+                case "panacea": {
+                    // 1 Leechbane + 1 Hexbane -> Purification Draught (08-27).
+                    var _pn_res = sable_fuse_panacea();
+                    if (_pn_res == "") {
+                        sable_toast_msg   = "One drop of each... the PURIFICATION DRAUGHT settles out!";
+                        sable_toast_timer = 240;
+                        sable_notification = "";
+                        audio_play_sound(snd_confirm_major, 1, false);
+                        ui_checkout_vfx(spr_vfx_heal, 960, 540);
+                        affinity_add("sable", 2);   // function-use drip (upgrade)
+                        sable_cursor = 0;
+                    } else {
+                        sable_notification = _pn_res;
                         audio_play_sound(snd_ui_error, 1, false);
                     }
                 } break;
@@ -4788,6 +4809,12 @@ if (variable_instance_exists(id, "sable_open") && sable_open && !menu_open && !f
             } else if (sable_tab == 2 && sable_chaos_open) {
                 // Chaotic Brew pick-3 list windows over the whole potion pouch.
                 _sfirst   = ui_list_window("sable_chaos", sable_cursor, _s_rows, _s_cap);
+                _svis_now = min(_s_rows - _sfirst, _s_cap);
+            } else if (sable_tab == 2) {
+                // Fusion list windowed too (08-27, M: "no longer scrolls" - the
+                // recipe list outgrew the panel when the elite->master rung and
+                // the panacea row landed). Same id as the draw side.
+                _sfirst   = ui_list_window("sable_fuse", sable_cursor, _s_rows, _s_cap);
                 _svis_now = min(_s_rows - _sfirst, _s_cap);
             }
             if (_srow >= 0 && _srow < _svis_now) {
@@ -4946,11 +4973,32 @@ if (variable_instance_exists(id, "sable_open") && sable_open && !menu_open && !f
                         sable_notification  = "";
                     }
                 }
-            } else if (sable_cursor >= array_length(_s_groups)) {
-                // The always-present rows: CHAOTIC BREW (groups) and QUINTESSENCE
-                // (groups+1, LEGENDARY FORGE component) - both enter pick-3 mode.
+            } else if (sable_cursor == array_length(_s_groups)) {
+                // PANACEA row (08-27): 1x Leechbane + 1x Hexbane -> Purification
+                // Draught, the fusion-only omni cleanse. Arms the checkout popup.
+                var _pn_c = sable_panacea_counts();
+                if (_pn_c.leech < 1 || _pn_c.hex < 1) {
+                    sable_notification = "Needs 1x Leechbane Elixir + 1x Hexbane Tincture (you hold "
+                        + string(_pn_c.leech) + " / " + string(_pn_c.hex) + ").";
+                    audio_play_sound(snd_ui_error, 1, false);
+                } else {
+                    var _pn_cost = sable_panacea_cost();
+                    sable_confirm       = true;
+                    sable_confirm_kind  = "panacea";
+                    sable_confirm_label = "Purification Draught";
+                    sable_confirm_title = "DISTILL THE PANACEA?";
+                    sable_confirm_subject     = "Leechbane Elixir + Hexbane Tincture  ->  Purification Draught";
+                    sable_confirm_subject_col = make_color_rgb(150, 230, 170);   // Sable's brew green
+                    sable_confirm_subject_sub = "";
+                    sable_confirm_body  = "One of each, distilled for " + string(_pn_cost.gold) + "g + "
+                        + string(_pn_cost.dust) + " dust. The omni cleanse has no other source.";
+                    sable_notification  = "";
+                }
+            } else if (sable_cursor >= array_length(_s_groups) + 1) {
+                // The always-present rows: CHAOTIC BREW (groups+1) and QUINTESSENCE
+                // (groups+2, LEGENDARY FORGE component) - both enter pick-3 mode.
                 var _ch_have = array_length(sable_potion_pool());   // stash + pouch (08-11)
-                var _ch_kind = (sable_cursor == array_length(_s_groups)) ? "chaotic" : "quint";
+                var _ch_kind = (sable_cursor == array_length(_s_groups) + 1) ? "chaotic" : "quint";
                 if (_ch_have < 3) {
                     sable_notification = "You need at least 3 potions (you hold " + string(_ch_have) + ").";
                     audio_play_sound(snd_ui_error, 1, false);
@@ -5643,6 +5691,22 @@ if (mouse_check_button_pressed(mb_left)) {
                                 array_push(_mctrl2.combat_log, "Used " + _mit.name + (_mcl > 0
                                     ? " - cleared " + string(_mcl) + " negative effect(s)!"
                                     : " - no negative effects to clear."));
+                            } else if (_mit.effect_type == "cleanse_dot_one") {
+                                var _mcl = combat_cleanse(_mplyr, "dot_one");
+                                array_push(_mctrl2.combat_log, "Used " + _mit.name + (_mcl > 0
+                                    ? " - cured a damage-over-time effect!" : " - no DoT effects to cure."));
+                            } else if (_mit.effect_type == "cleanse_debuff_all") {
+                                var _mcl = combat_cleanse(_mplyr, "debuffs");
+                                array_push(_mctrl2.combat_log, "Used " + _mit.name + (_mcl > 0
+                                    ? " - stripped " + string(_mcl) + " debuff(s)!" : " - no debuffs to strip."));
+                            } else if (_mit.effect_type == "status_ward") {
+                                // Cleansing Philter (08-27): arm a ward - the next
+                                // harmful enemy effect that would land is negated.
+                                if (!variable_struct_exists(_mplyr, "status_effects")) _mplyr.status_effects = [];
+                                array_push(_mplyr.status_effects, { name: "Cleansing Ward", effect_type: "buff",
+                                    kind: "ward", effect_value: 1, duration: 99, element: "" });
+                                array_push(_mctrl2.combat_log, "Used " + _mit.name
+                                    + " - the next harmful enemy effect will be negated!");
                             } else if (_mit.effect_type == "gold_find_pot") {
                                 potion_drink_gold(_mit.effect_value);
                                 array_push(_mctrl2.combat_log, "Used " + _mit.name
@@ -6010,6 +6074,21 @@ if (menu_tab == 3) {
                         array_push(_ctrl_c.combat_log, "Used " + _item.name + (_cl > 0
                             ? " - cleared " + string(_cl) + " negative effect(s)!"
                             : " - no negative effects to clear."));
+                    } else if (_item.effect_type == "cleanse_dot_one") {
+                        var _cl = combat_cleanse(_player, "dot_one");
+                        array_push(_ctrl_c.combat_log, "Used " + _item.name + (_cl > 0
+                            ? " - cured a damage-over-time effect!" : " - no DoT effects to cure."));
+                    } else if (_item.effect_type == "cleanse_debuff_all") {
+                        var _cl = combat_cleanse(_player, "debuffs");
+                        array_push(_ctrl_c.combat_log, "Used " + _item.name + (_cl > 0
+                            ? " - stripped " + string(_cl) + " debuff(s)!" : " - no debuffs to strip."));
+                    } else if (_item.effect_type == "status_ward") {
+                        // Cleansing Philter (08-27): arm the negate-next ward.
+                        if (!variable_struct_exists(_player, "status_effects")) _player.status_effects = [];
+                        array_push(_player.status_effects, { name: "Cleansing Ward", effect_type: "buff",
+                            kind: "ward", effect_value: 1, duration: 99, element: "" });
+                        array_push(_ctrl_c.combat_log, "Used " + _item.name
+                            + " - the next harmful enemy effect will be negated!");
                     } else if (_item.effect_type == "shield") {
                         if (!variable_struct_exists(_player, "shield_hp")) _player.shield_hp = 0;
                         _player.shield_hp += _item.effect_value;

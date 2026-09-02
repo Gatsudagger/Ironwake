@@ -70,6 +70,9 @@ global.__sprite_includes = [
     spr_icon_consumable_genie_lamp,
     // Chaotic Brew icon (07-28): same string-ref pattern.
     spr_icon_consumable_chaotic_brew,
+    // Cleanse-ladder elite icons (08-27, M picks L12/H14): string-ref with
+    // pre-import fallback in ui_consumable_icon_sprite - listed or stripped.
+    spr_icon_consumable_leechbane_elixir, spr_icon_consumable_hexbane_tincture,
     // Quintessence icon (07-28 M pick): string-ref from the Sable cauldron row.
     spr_icon_consumable_quintessence,
     // Cursed Rebirth ceremony scene (08-04 M pick A): string-ref from the hub
@@ -185,6 +188,85 @@ global.__sprite_includes = [
     spr_pet_saber_hound_baby_s,   spr_pet_saber_hound_baby_e,
     spr_pet_saber_hound_youngadult_s, spr_pet_saber_hound_youngadult_e,
     spr_pet_saber_hound_adult_s,  spr_pet_saber_hound_adult_e,
+    // Missing-art campaign 08-27 (tools/missgen.py) - 3 stages x south/east animated idle.
+    spr_pet_ember_ram_baby_s,       spr_pet_ember_ram_baby_e,
+    spr_pet_ember_ram_youngadult_s, spr_pet_ember_ram_youngadult_e,
+    spr_pet_ember_ram_adult_s,      spr_pet_ember_ram_adult_e,
+    spr_pet_salt_hare_baby_s,     spr_pet_salt_hare_baby_e,
+    spr_pet_salt_hare_youngadult_s, spr_pet_salt_hare_youngadult_e,
+    spr_pet_salt_hare_adult_s,    spr_pet_salt_hare_adult_e,
+    spr_pet_mire_heron_baby_s,    spr_pet_mire_heron_baby_e,
+    spr_pet_mire_heron_youngadult_s, spr_pet_mire_heron_youngadult_e,
+    spr_pet_mire_heron_adult_s,   spr_pet_mire_heron_adult_e,
+    spr_pet_gravel_tick_baby_s,   spr_pet_gravel_tick_baby_e,
+    spr_pet_gravel_tick_youngadult_s, spr_pet_gravel_tick_youngadult_e,
+    spr_pet_gravel_tick_adult_s,  spr_pet_gravel_tick_adult_e,
+    spr_pet_glass_eel_baby_s,     spr_pet_glass_eel_baby_e,
+    spr_pet_glass_eel_youngadult_s, spr_pet_glass_eel_youngadult_e,
+    spr_pet_glass_eel_adult_s,    spr_pet_glass_eel_adult_e,
+    spr_pet_chapel_bat_baby_s,    spr_pet_chapel_bat_baby_e,
+    spr_pet_chapel_bat_youngadult_s, spr_pet_chapel_bat_youngadult_e,
+    spr_pet_chapel_bat_adult_s,   spr_pet_chapel_bat_adult_e,
+    spr_pet_barrow_mole_baby_s,   spr_pet_barrow_mole_baby_e,
+    spr_pet_barrow_mole_youngadult_s, spr_pet_barrow_mole_youngadult_e,
+    spr_pet_barrow_mole_adult_s,  spr_pet_barrow_mole_adult_e,
+    spr_pet_tallow_moth_baby_s,   spr_pet_tallow_moth_baby_e,
+    spr_pet_tallow_moth_youngadult_s, spr_pet_tallow_moth_youngadult_e,
+    spr_pet_tallow_moth_adult_s,  spr_pet_tallow_moth_adult_e,
+    spr_pet_gravemask_baby_s,     spr_pet_gravemask_baby_e,
+    spr_pet_gravemask_youngadult_s, spr_pet_gravemask_youngadult_e,
+    spr_pet_gravemask_adult_s,    spr_pet_gravemask_adult_e,
+    spr_pet_bristleback_baby_s,   spr_pet_bristleback_baby_e,
+    spr_pet_bristleback_youngadult_s, spr_pet_bristleback_youngadult_e,
+    spr_pet_bristleback_adult_s,  spr_pet_bristleback_adult_e,
+    spr_pet_crypt_gryphon_baby_s, spr_pet_crypt_gryphon_baby_e,
+    spr_pet_crypt_gryphon_youngadult_s, spr_pet_crypt_gryphon_youngadult_e,
+    spr_pet_crypt_gryphon_adult_s, spr_pet_crypt_gryphon_adult_e,
+    spr_pet_threehunger_baby_s,   spr_pet_threehunger_baby_e,
+    spr_pet_threehunger_youngadult_s, spr_pet_threehunger_youngadult_e,
+    spr_pet_threehunger_adult_s,  spr_pet_threehunger_adult_e,
+    spr_pet_wing_hare_baby_s,     spr_pet_wing_hare_baby_e,
+    spr_pet_wing_hare_youngadult_s, spr_pet_wing_hare_youngadult_e,
+    spr_pet_wing_hare_adult_s,    spr_pet_wing_hare_adult_e,
+    spr_pet_drowned_lamp_baby_s,  spr_pet_drowned_lamp_baby_e,
+    spr_pet_drowned_lamp_youngadult_s, spr_pet_drowned_lamp_youngadult_e,
+    spr_pet_drowned_lamp_adult_s, spr_pet_drowned_lamp_adult_e,
+    spr_pet_honeymaw_baby_s,      spr_pet_honeymaw_baby_e,
+    spr_pet_honeymaw_youngadult_s, spr_pet_honeymaw_youngadult_e,
+    spr_pet_honeymaw_adult_s,     spr_pet_honeymaw_adult_e,
+    spr_pet_bark_hound_baby_s,    spr_pet_bark_hound_baby_e,
+    spr_pet_bark_hound_youngadult_s, spr_pet_bark_hound_youngadult_e,
+    spr_pet_bark_hound_adult_s,   spr_pet_bark_hound_adult_e,
+    spr_pet_pressure_snail_baby_s, spr_pet_pressure_snail_baby_e,
+    spr_pet_pressure_snail_youngadult_s, spr_pet_pressure_snail_youngadult_e,
+    spr_pet_pressure_snail_adult_s, spr_pet_pressure_snail_adult_e,
+    spr_pet_flicker_finch_baby_s, spr_pet_flicker_finch_baby_e,
+    spr_pet_flicker_finch_youngadult_s, spr_pet_flicker_finch_youngadult_e,
+    spr_pet_flicker_finch_adult_s, spr_pet_flicker_finch_adult_e,
+    spr_pet_rust_vole_baby_s,     spr_pet_rust_vole_baby_e,
+    spr_pet_rust_vole_youngadult_s, spr_pet_rust_vole_youngadult_e,
+    spr_pet_rust_vole_adult_s,    spr_pet_rust_vole_adult_e,
+    spr_pet_paleswimmer_baby_s,   spr_pet_paleswimmer_baby_e,
+    spr_pet_paleswimmer_youngadult_s, spr_pet_paleswimmer_youngadult_e,
+    spr_pet_paleswimmer_adult_s,  spr_pet_paleswimmer_adult_e,
+    spr_pet_doorling_baby_s,      spr_pet_doorling_baby_e,
+    spr_pet_doorling_youngadult_s, spr_pet_doorling_youngadult_e,
+    spr_pet_doorling_adult_s,     spr_pet_doorling_adult_e,
+    spr_pet_tallykeep_baby_s,     spr_pet_tallykeep_baby_e,
+    spr_pet_tallykeep_youngadult_s, spr_pet_tallykeep_youngadult_e,
+    spr_pet_tallykeep_adult_s,    spr_pet_tallykeep_adult_e,
+    spr_pet_sum_moth_baby_s,      spr_pet_sum_moth_baby_e,
+    spr_pet_sum_moth_youngadult_s, spr_pet_sum_moth_youngadult_e,
+    spr_pet_sum_moth_adult_s,     spr_pet_sum_moth_adult_e,
+    spr_pet_mimicling_baby_s,     spr_pet_mimicling_baby_e,
+    spr_pet_mimicling_youngadult_s, spr_pet_mimicling_youngadult_e,
+    spr_pet_mimicling_adult_s,    spr_pet_mimicling_adult_e,
+    spr_pet_chorister_fry_baby_s, spr_pet_chorister_fry_baby_e,
+    spr_pet_chorister_fry_youngadult_s, spr_pet_chorister_fry_youngadult_e,
+    spr_pet_chorister_fry_adult_s, spr_pet_chorister_fry_adult_e,
+    spr_pet_leviathan_calf_baby_s, spr_pet_leviathan_calf_baby_e,
+    spr_pet_leviathan_calf_youngadult_s, spr_pet_leviathan_calf_youngadult_e,
+    spr_pet_leviathan_calf_adult_s, spr_pet_leviathan_calf_adult_e,
     // Themed hatch eggs - static shell (roster/station) + 9-frame hatch anim (cutscene).
     spr_pet_egg_gilded,  spr_pet_egg_gilded_hatch,
     spr_pet_egg_fortune, spr_pet_egg_fortune_hatch,
@@ -435,6 +517,8 @@ global.__sprite_includes = [
     spr_skeleton_soldier_ff2, spr_skeleton_soldier_ff3,
     spr_vault_crawler_ff2,    spr_vault_crawler_ff3,
     spr_dungeon_wraith_ff2,   spr_dungeon_wraith_ff3,
+    // 09-02 new biome cards: ladder reveal resolves by STRING (spr_dungeon_<key>)
+    spr_dungeon_hollow_canopy, spr_dungeon_drowned_reach,
     spr_stone_golem_ff2,      spr_stone_golem_ff3,
     spr_vault_guardian_ff2,   spr_vault_guardian_ff3,
     spr_vault_wraith_ff2,     spr_vault_wraith_ff3,
@@ -547,6 +631,12 @@ if (!variable_global_exists("duelist_encounters"))   global.duelist_encounters  
 if (!variable_global_exists("duelist_tokens"))       global.duelist_tokens       = 0;
 if (!variable_global_exists("duel_offered_this_run")) global.duel_offered_this_run = false;
 if (!variable_global_exists("duel_launch"))          global.duel_launch          = false;
+// BIOME IDENTITY PASS (08-27): event ambush / grove / floor-mod defaults.
+if (!variable_global_exists("ambush_launch"))        global.ambush_launch        = false;
+if (!variable_global_exists("ambush_loot_due"))      global.ambush_loot_due      = "";
+if (!variable_global_exists("grove_offer_pending"))  global.grove_offer_pending  = false;
+if (!variable_global_exists("floor_mods"))           global.floor_mods           = {};
+if (!variable_global_exists("pending_status"))       global.pending_status       = undefined;
 if (!variable_global_exists("duel_active"))          global.duel_active          = false;
 if (!variable_global_exists("run_borrowed_ability")) global.run_borrowed_ability = "";   // Borrowed Memory (expression #6)
 if (!variable_global_exists("run_borrowed_class"))   global.run_borrowed_class   = "";
@@ -1139,26 +1229,33 @@ global.name_bespoke_pairs = [
 // 7. CONSUMABLES
 // Pools used by handle_enemy_drops(); player inventory resets each run.
 // -----------------------------------------------------------------------------
+// CLEANSE LADDER (M 08-27): Antidote 1 DoT / Salts 1 debuff -> their elites
+// purge ALL of their kind -> Purification Draught (everything) is FUSION-ONLY,
+// built from 1x of EACH elite at Sable's (sable_fuse_panacea). PD left the
+// elite drop pool for consumables_master, which feeds no loot table.
 global.consumables_standard = [
-    create_consumable("Healing Salve",    "heal",           25, "Restore 25 HP",                    20),
-    create_consumable("Antidote",         "cleanse_dot",     0, "Clear all active DoT effects",      18),
-    create_consumable("Energy Tonic",     "energy",          1, "Gain +1 AP this turn (free to use)", 15),
-    create_consumable("Smelling Salts",   "cleanse_debuff",  0, "Remove one active debuff",          16),
+    create_consumable("Healing Salve",    "heal",             25, "Restore 25 HP",                    20),
+    create_consumable("Antidote",         "cleanse_dot_one",   0, "Cure one damage-over-time effect",  18),
+    create_consumable("Energy Tonic",     "energy",            1, "Gain +1 AP this turn (free to use)", 15),
+    create_consumable("Smelling Salts",   "cleanse_debuff",    0, "Remove one active debuff",          16),
 ];
 
 global.consumables_elite = [
-    create_consumable("Greater Healing Salve", "heal",        50, "Restore 50 HP",                          45),
-    create_consumable("Purification Draught",  "cleanse_all",  0, "Clear all negative effects",             50),
-    create_consumable("Adrenaline Vial",        "energy",       3, "Gain +3 AP this turn (free to use)",     55),
-    create_consumable("Warden's Tonic",         "heal_dot",     8, "Restore 8 HP per turn for 3 turns",      48),
+    create_consumable("Greater Healing Salve", "heal",               50, "Restore 50 HP",                          45),
+    create_consumable("Leechbane Elixir",      "cleanse_dot",         0, "Purge every damage-over-time effect",    45),
+    create_consumable("Hexbane Tincture",      "cleanse_debuff_all",  0, "Strip every debuff",                     45),
+    create_consumable("Adrenaline Vial",        "energy",              3, "Gain +3 AP this turn (free to use)",     55),
+    create_consumable("Warden's Tonic",         "heal_dot",            8, "Restore 8 HP per turn for 3 turns",      48),
 ];
 
 // Master (3rd) tier - the targets of Sable's elite->master upgrade rung. Names + stats
 // match the matching brew-catalog potions (so the icons already resolve). Only the
-// effects with a meaningful step up have a master rung (heal, heal-over-time).
+// effects with a meaningful step up have a master rung (heal, heal-over-time)
+// - plus the Purification Draught, whose only source is the panacea fusion.
 global.consumables_master = [
-    create_consumable("Master Healing Draught", "heal",     90, "Restore 90 HP",                       70),
-    create_consumable("Phoenix Tonic",          "heal_dot", 15, "Restore 15 HP per turn for 3 turns",  60),
+    create_consumable("Master Healing Draught", "heal",        90, "Restore 90 HP",                       70),
+    create_consumable("Phoenix Tonic",          "heal_dot",    15, "Restore 15 HP per turn for 3 turns",  60),
+    create_consumable("Purification Draught",   "cleanse_all",  0, "Clear ALL negative effects",          80),
 ];
 
 // Per-run consumable inventory (uncapped; lists scroll) and item drop log
@@ -1636,6 +1733,8 @@ if (!variable_global_exists("dungeon_ascendance_unlocked")) {
         ashen_vault:     0,
         scorched_depths: 0,
         tundra_tomb:     0,
+        drowned_reach:   0,
+        hollow_canopy:   0,
     };
 }
 if (!variable_global_exists("dungeon_clears")) {
@@ -1643,12 +1742,39 @@ if (!variable_global_exists("dungeon_clears")) {
         ashen_vault:     0,
         scorched_depths: 0,
         tundra_tomb:     0,
+        drowned_reach:   0,
+        hollow_canopy:   0,
     };
 }
 if (!variable_global_exists("dungeon_clears_total")) global.dungeon_clears_total = 0;
+// §3.0 ladder: BACKFILL the new biome keys onto structs loaded from older saves
+// (load_game ran above) - every variable_struct_get on a missing key crashes.
+var _dk_fill = dungeon_keys();
+for (var _dkf = 0; _dkf < array_length(_dk_fill); _dkf++) {
+    if (!variable_struct_exists(global.dungeon_ascendance_unlocked, _dk_fill[_dkf]))
+        variable_struct_set(global.dungeon_ascendance_unlocked, _dk_fill[_dkf], 0);
+    if (!variable_struct_exists(global.dungeon_clears, _dk_fill[_dkf]))
+        variable_struct_set(global.dungeon_clears, _dk_fill[_dkf], 0);
+}
+// Reveal-ceremony bookkeeping (§3.0 rule 4): dkey -> true once the card-flip
+// popup has played. MIGRATION: any dungeon the player already progressed is
+// marked seen silently, so an old save never gets popups for dungeons it knows.
+if (!variable_global_exists("dungeon_reveals_seen")) global.dungeon_reveals_seen = {};
+for (var _dkr = 0; _dkr < array_length(_dk_fill); _dkr++) {
+    var _dkk = _dk_fill[_dkr];
+    if (dungeon_reveal_seen(_dkk)) continue;
+    var _dk_prog = variable_struct_get(global.dungeon_ascendance_unlocked, _dkk) > 0
+                || variable_struct_get(global.dungeon_clears, _dkk) > 0
+                || dungeon_chain_prev(_dkk) == "";   // the Vault needs no ceremony
+    if (_dk_prog) dungeon_reveal_mark_seen(_dkk);
+}
+// Reveal popup runtime state (hub Step drives it, hub Draw renders it):
+// "" = idle; else the dkey mid-ceremony. t counts frames of the card flip.
+dungeon_reveal_active = "";
+dungeon_reveal_t      = 0;
 
 dungeon_select_open   = false;
-dungeon_select_cursor = 0;   // 0 = ashen_vault, 1 = scorched_depths, 2 = tundra_tomb
+dungeon_select_cursor = 0;   // index into dungeon_keys() (5 cards, §3.0 ladder order)
 dungeon_select_asc    = 0;
 
 // CURSED REBIRTH ritual (07-31): -1 = idle; >=0 counts frames of the dark

@@ -227,13 +227,12 @@ hub_flavor = hub_flavor_lines[irandom(array_length(hub_flavor_lines) - 1)];
 // -----------------------------------------------------------------------------
 tutorial_try_show("hub");
 
-// ORIGINS (08-11): a new game never TOLD the player they hold an egg or who
-// hatches it (M: "nothing guides them to bairc"). If any egg is in the roster
-// on a camp visit, point them at Bairc - once, after the general hub mark.
-var _oe_r = pet_roster();
-for (var _oe = 0; _oe < array_length(_oe_r); _oe++) {
-    if (is_struct(_oe_r[_oe]) && _oe_r[_oe].is_egg) { tutorial_try_show("origin_egg"); break; }
-}
+// ORIGINS "Something Stirs" tip: moved to Step (08-21). Trying it here never
+// worked - the hub tip above had just claimed the one-tip-at-a-time slot, so
+// this call returned false and was never retried (M saw exactly one popup on a
+// new game). It also gated on an egg already sitting in the roster, but the
+// starter egg is only GRANTED at the first Bairc talk - a fresh save had
+// nothing to find. The Step retry fires it the moment the hub tip is dismissed.
 
 // -----------------------------------------------------------------------------
 // 8. PINCH ZOOM INTRO (SYSTEMS_PINCH_ZOOM.md, locked decision #3) - one-time

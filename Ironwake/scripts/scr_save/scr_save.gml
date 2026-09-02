@@ -246,10 +246,12 @@ function save_game() {
         // The enable/disable preference is global and lives in settings.ini, not here.
         tutorial_seen: variable_global_exists("tutorial_seen") ? global.tutorial_seen : {},
 
-        // Dungeon ascendance progression
-        dungeon_ascendance_unlocked: variable_global_exists("dungeon_ascendance_unlocked") ? global.dungeon_ascendance_unlocked : { ashen_vault: 0, scorched_depths: 0, tundra_tomb: 0 },
-        dungeon_clears:              variable_global_exists("dungeon_clears")              ? global.dungeon_clears              : { ashen_vault: 0, scorched_depths: 0, tundra_tomb: 0 },
+        // Dungeon ascendance progression (§3.0: 5-dungeon ladder since 08-27)
+        dungeon_ascendance_unlocked: variable_global_exists("dungeon_ascendance_unlocked") ? global.dungeon_ascendance_unlocked : { ashen_vault: 0, scorched_depths: 0, tundra_tomb: 0, drowned_reach: 0, hollow_canopy: 0 },
+        dungeon_clears:              variable_global_exists("dungeon_clears")              ? global.dungeon_clears              : { ashen_vault: 0, scorched_depths: 0, tundra_tomb: 0, drowned_reach: 0, hollow_canopy: 0 },
         dungeon_clears_total:        variable_global_exists("dungeon_clears_total")        ? global.dungeon_clears_total        : 0,
+        // §3.0 reveal ceremonies already played (dkey -> true)
+        dungeon_reveals_seen:        variable_global_exists("dungeon_reveals_seen")        ? global.dungeon_reveals_seen        : {},
         // Win state (WIN_STATE_SPEC.md): per-dungeon Awakening-V clears + the ending flags
         dungeon_a5_clears:           variable_global_exists("dungeon_a5_clears")           ? global.dungeon_a5_clears           : { ashen_vault: false, scorched_depths: false, tundra_tomb: false },
         // The Bottom (Descent floor 50) cleared - drives the epithet + splash
@@ -521,10 +523,11 @@ function new_game_reset() {
     // Onboarding (per-slot)
     global.tutorial_seen = {};
 
-    // Dungeon ascendance progression
-    global.dungeon_ascendance_unlocked = { ashen_vault: 0, scorched_depths: 0, tundra_tomb: 0 };
-    global.dungeon_clears              = { ashen_vault: 0, scorched_depths: 0, tundra_tomb: 0 };
+    // Dungeon ascendance progression (§3.0: 5-dungeon ladder since 08-27)
+    global.dungeon_ascendance_unlocked = { ashen_vault: 0, scorched_depths: 0, tundra_tomb: 0, drowned_reach: 0, hollow_canopy: 0 };
+    global.dungeon_clears              = { ashen_vault: 0, scorched_depths: 0, tundra_tomb: 0, drowned_reach: 0, hollow_canopy: 0 };
     global.dungeon_clears_total        = 0;
+    global.dungeon_reveals_seen        = { ashen_vault: true };   // the Vault needs no ceremony
     global.dungeon_a5_clears           = { ashen_vault: false, scorched_depths: false, tundra_tomb: false };
     global.descent_bottom_cleared      = false;
     global.ironwake_stands             = false;
@@ -1037,14 +1040,18 @@ function load_game() {
     // audio_settings_init/save) so it persists from the title and across all
     // profiles; loading a slot must not clobber it. Only tutorial_seen is per-slot.
 
-    // Dungeon ascendance progression
+    // Dungeon ascendance progression (§3.0: 5-dungeon ladder; keys missing from
+    // older saves default to 0 - the game controller Create backfills too)
     if (variable_struct_exists(_s, "dungeon_ascendance_unlocked") && is_struct(_s.dungeon_ascendance_unlocked)) {
-        var _dkeys = ["ashen_vault", "scorched_depths", "tundra_tomb"];
+        var _dkeys = dungeon_keys();
         if (!variable_global_exists("dungeon_ascendance_unlocked")) {
-            global.dungeon_ascendance_unlocked = { ashen_vault: 0, scorched_depths: 0, tundra_tomb: 0 };
+            global.dungeon_ascendance_unlocked = { ashen_vault: 0, scorched_depths: 0, tundra_tomb: 0, drowned_reach: 0, hollow_canopy: 0 };
         }
         for (var _di = 0; _di < array_length(_dkeys); _di++) {
             var _dk = _dkeys[_di];
+            if (!variable_struct_exists(global.dungeon_ascendance_unlocked, _dk)) {
+                variable_struct_set(global.dungeon_ascendance_unlocked, _dk, 0);
+            }
             if (variable_struct_exists(_s.dungeon_ascendance_unlocked, _dk)) {
                 variable_struct_set(global.dungeon_ascendance_unlocked, _dk,
                     variable_struct_get(_s.dungeon_ascendance_unlocked, _dk));
@@ -1052,18 +1059,25 @@ function load_game() {
         }
     }
     if (variable_struct_exists(_s, "dungeon_clears") && is_struct(_s.dungeon_clears)) {
-        var _dkeys2 = ["ashen_vault", "scorched_depths", "tundra_tomb"];
+        var _dkeys2 = dungeon_keys();
         if (!variable_global_exists("dungeon_clears")) {
-            global.dungeon_clears = { ashen_vault: 0, scorched_depths: 0, tundra_tomb: 0 };
+            global.dungeon_clears = { ashen_vault: 0, scorched_depths: 0, tundra_tomb: 0, drowned_reach: 0, hollow_canopy: 0 };
         }
         for (var _di = 0; _di < array_length(_dkeys2); _di++) {
             var _dk = _dkeys2[_di];
+            if (!variable_struct_exists(global.dungeon_clears, _dk)) {
+                variable_struct_set(global.dungeon_clears, _dk, 0);
+            }
             if (variable_struct_exists(_s.dungeon_clears, _dk)) {
                 variable_struct_set(global.dungeon_clears, _dk,
                     variable_struct_get(_s.dungeon_clears, _dk));
             }
         }
     }
+    // §3.0 reveal ceremonies (missing on pre-ladder saves -> {}; the game
+    // controller Create marks migrated dungeons seen so no popup spam).
+    global.dungeon_reveals_seen = (variable_struct_exists(_s, "dungeon_reveals_seen")
+        && is_struct(_s.dungeon_reveals_seen)) ? _s.dungeon_reveals_seen : {};
 
     // Win state (WIN_STATE_SPEC.md) - pre-ending saves default to all-false
     if (variable_struct_exists(_s, "dungeon_a5_clears") && is_struct(_s.dungeon_a5_clears)) {
@@ -1303,6 +1317,10 @@ function run_checkpoint_write(_live) {
         run_borrowed_class:   variable_global_exists("run_borrowed_class")   ? global.run_borrowed_class   : "",
         pending_fire_stacks: variable_global_exists("pending_fire_stacks") ? global.pending_fire_stacks : 0,
         pending_ap_penalty:  variable_global_exists("pending_ap_penalty")  ? global.pending_ap_penalty  : 0,
+        // BIOME IDENTITY PASS (08-27): event carry-overs survive a mid-run quit.
+        pending_status:      (variable_global_exists("pending_status") && is_struct(global.pending_status)) ? global.pending_status : 0,
+        floor_mods:          variable_global_exists("floor_mods")      ? global.floor_mods      : {},
+        ambush_loot_due:     variable_global_exists("ambush_loot_due") ? global.ambush_loot_due : "",
         gold_potion_bosses:  variable_global_exists("gold_potion_bosses")  ? global.gold_potion_bosses  : 0,
         loot_potion_bosses:  variable_global_exists("loot_potion_bosses")  ? global.loot_potion_bosses  : 0,
 
@@ -1471,6 +1489,10 @@ function run_checkpoint_apply(_c) {
     global.run_borrowed_class   = variable_struct_exists(_c, "run_borrowed_class")   ? _c.run_borrowed_class   : "";
     global.pending_fire_stacks  = variable_struct_exists(_c, "pending_fire_stacks")  ? _c.pending_fire_stacks  : 0;
     global.pending_ap_penalty   = variable_struct_exists(_c, "pending_ap_penalty")   ? _c.pending_ap_penalty   : 0;
+    // BIOME IDENTITY PASS (08-27): restore event carry-overs (0 = none pending).
+    global.pending_status  = (variable_struct_exists(_c, "pending_status") && is_struct(_c.pending_status)) ? _c.pending_status : undefined;
+    global.floor_mods      = (variable_struct_exists(_c, "floor_mods") && is_struct(_c.floor_mods)) ? _c.floor_mods : {};
+    global.ambush_loot_due = variable_struct_exists(_c, "ambush_loot_due") ? _c.ambush_loot_due : "";
     global.gold_potion_bosses   = variable_struct_exists(_c, "gold_potion_bosses")   ? _c.gold_potion_bosses   : 0;
     global.loot_potion_bosses   = variable_struct_exists(_c, "loot_potion_bosses")   ? _c.loot_potion_bosses   : 0;
 
@@ -1514,6 +1536,8 @@ function run_floor_advance() {
     global.run_extract_pending = false;
     global.just_cleared_boss   = false;
     global.floor_rooms_cleared = [];
+    // BIOME IDENTITY PASS (08-27): this-floor event mods end at the stairs.
+    floor_mods_clear();
     global.current_floor++;
     if (variable_global_exists("descent_active") && global.descent_active) {
         var _dsc_keys = ["ashen_vault", "scorched_depths", "tundra_tomb"];

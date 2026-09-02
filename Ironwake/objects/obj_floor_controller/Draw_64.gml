@@ -32,8 +32,10 @@ var _COL_REST          = make_color_rgb( 80, 200, 120);
 var _COL_EVENT         = make_color_rgb(120, 205, 200);
 var _COL_BOSS          = make_color_rgb(230, 180,  50);
 
-// Node dimensions (must match Create_0 layout - _node_w/_node_h)
-var _NW = 195; var _NH = 96;
+// Node dimensions (must match Create_0 layout - _node_w/_node_h). Width is published
+// per-floor: 7-8 column A4+/A5 maps use a narrower node box.
+var _NW = variable_global_exists("floor_node_w") ? global.floor_node_w : 195;
+var _NH = 96;
 
 
 // -----------------------------------------------------------------------------
@@ -59,13 +61,12 @@ draw_set_font(ui_font(fnt_ui));
 draw_set_color(make_color_rgb(160, 140, 110));
 var _dung_id = variable_global_exists("selected_dungeon") ? global.selected_dungeon : "ashen_vault";
 var _dung_display_name = "The Ashen Vault";
-if (_dung_id == "scorched_depths")  _dung_display_name = "Scorched Depths";
-else if (_dung_id == "tundra_tomb") _dung_display_name = "Tundra Tomb";
+_dung_display_name = dungeon_display_name(_dung_id);   // 08-27: single source, covers the new biomes
 draw_text(GUI_CX, 84, _dung_display_name);
 draw_set_halign(fa_left);
 
 // Awakening tier reference - top-right, matches the combat screen label.
-var _awk_asc = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
+var _awk_asc = awakening_effective();   // §3.0: shows the tier the run is AT
 draw_set_font(ui_font(fnt_ui_small));
 draw_set_halign(fa_right);
 draw_set_color(_awk_asc > 0 ? make_color_rgb(225, 150, 70) : make_color_rgb(120, 130, 150));
@@ -387,7 +388,7 @@ switch (_sel.type) {
     case "treasure_rare":
         _det_desc = "An ancient sealed chamber.\nNo enemies present.\nGuaranteed uncommon+ equipment."; break;
     case "rest":
-        _det_desc = "A sheltered alcove.\nYou may rest and recover here.\n+" + string(15 + 4 * (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0)) + " HP +5% of max HP restored."; break;
+        _det_desc = "A sheltered alcove.\nYou may rest and recover here.\n+" + string(15 + 4 * awakening_effective()) + " HP +5% of max HP restored."; break;
     case "event":
         _det_desc = "A choice awaits - risk and\nreward in equal measure.\nYour stats may tip the odds."; break;
     case "boss":
@@ -417,7 +418,7 @@ if (_sel.cleared) {
 if (!_sel.cleared) {
     if (_sel.type == "rest") {
         draw_set_color(_COL_REST);
-        draw_text(_ddx, _ddy + 300, "+" + string(15 + 4 * (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0)) + " HP +5% max restored");
+        draw_text(_ddx, _ddy + 300, "+" + string(15 + 4 * awakening_effective()) + " HP +5% max restored");
     } else if (_sel.type == "event") {
         draw_set_color(_COL_EVENT);
         draw_text(_ddx, _ddy + 300, "An uncertain encounter.");
@@ -1818,6 +1819,12 @@ if (variable_instance_exists(id, "ghost_shop_open") && ghost_shop_open) {
     draw_set_color(make_color_rgb(120, 140, 170));
     ui_draw_key_legend(960, 900, "W/S: Choose   Enter/Click: Buy   Esc: Leave the cart");
     draw_set_halign(fa_left);
+}
+
+// Floor toast (BIOME IDENTITY PASS 08-27): boxed transient line, topmost.
+if (variable_instance_exists(id, "floor_toast_t") && floor_toast_t > 0) {
+    floor_toast_t--;
+    ui_draw_toast(floor_toast_msg, 960, 132, min(1, floor_toast_t / 40));
 }
 
 // Touch (8d): action-chip bar, then the Back/menu chip + key pump - always LAST (topmost).

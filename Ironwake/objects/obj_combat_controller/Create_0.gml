@@ -491,6 +491,15 @@ switch (_dung) {
         _std_pool = global.enemies_tundra_tomb_standard;
         _eli_pool = global.enemies_tundra_tomb_elite;
         break;
+    // 08-27 §3.1/§3.2 biomes
+    case "drowned_reach":
+        _std_pool = global.enemies_drowned_reach_standard;
+        _eli_pool = global.enemies_drowned_reach_elite;
+        break;
+    case "hollow_canopy":
+        _std_pool = global.enemies_hollow_canopy_standard;
+        _eli_pool = global.enemies_hollow_canopy_elite;
+        break;
     default:
         _std_pool = global.enemies_ashen_vault_standard;
         _eli_pool = global.enemies_ashen_vault_elite;
@@ -627,6 +636,91 @@ if (_enemy_type == "elite") {
             enemy1.armor            = 11; enemy1.el_resist = 9;
             enemy1.mechanic_type    = "fortify";
             enemy1.mechanic_value   = 0.5; enemy1.mechanic_turns = 4;
+        }
+    } else if (_dung == "drowned_reach") {
+        // §3.1 (08-27): the flooded undercity. Base stats sit on the shipped
+        // boss curve - the A4 baseline offset does the late-game heavy lifting.
+        if (_floor == 1) {
+            enemy1 = enemy_clone(_eli_pool[0]);
+            enemy1.name             = "The Tidewright";
+            enemy1.HP               = 85; enemy1.max_HP = 85;
+            enemy1.damage           = 12;
+            enemy1.telegraph_turn   = 3; enemy1.telegraph_damage = 19;
+            enemy1.telegraph_message = "The Tidewright hauls the flood gate wide!";
+            enemy1.armor            = 6; enemy1.el_resist = 8;
+            enemy1.mechanic_type    = "regen";
+            enemy1.mechanic_value   = 4; enemy1.mechanic_turns = 2;
+            // FLOOD / EBB (§3.1 hook): on flood rounds (every even round) the
+            // player's healing is HALVED - resolved at the heal sink beside the
+            // Hollowlight inversion (scr_combat), keyed off this flag.
+            enemy1.biome_hook       = "tidewright";
+        } else if (_floor == 2) {
+            enemy1 = enemy_clone(_eli_pool[1]);
+            enemy1.name             = "Choirmother of the Deep";
+            enemy1.HP               = 102; enemy1.max_HP = 102;
+            enemy1.damage           = 12;
+            enemy1.telegraph_turn   = 4; enemy1.telegraph_damage = 21;
+            enemy1.telegraph_message = "The Choirmother draws breath for the drowning note!";
+            enemy1.armor            = 5; enemy1.el_resist = 10;
+            enemy1.mechanic_type    = "none";
+            enemy1.mechanic_value   = 0; enemy1.mechanic_turns = 0;
+            // HER DAMAGE SCALES WITH THE CHOIR (§3.1 hook): +15% per living
+            // ally, recomputed at her turn upkeep off choir_base_damage. Her
+            // summon (Call the Chorus) rides boss_ability_set.
+            enemy1.biome_hook       = "choirmother";
+            enemy1.choir_base_damage = 12;
+        } else {
+            enemy1 = enemy_clone(_eli_pool[0]);
+            enemy1.name             = "Leviathan Below";
+            enemy1.HP               = 160; enemy1.max_HP = 160;
+            enemy1.damage           = 19;
+            enemy1.telegraph_turn   = 3; enemy1.telegraph_damage = 30;
+            enemy1.telegraph_message = "The water bulges - something enormous is surfacing!";
+            enemy1.armor            = 9; enemy1.el_resist = 10;
+            // §3.1: you fight the parts of it that surface - it SUBMERGES
+            // (untargetable) for 1 turn every 3, then breaches with the spike.
+            enemy1.mechanic_type    = "phase_shift";
+            enemy1.mechanic_value   = 1; enemy1.mechanic_turns = 3;
+        }
+    } else if (_dung == "hollow_canopy") {
+        // §3.2 (08-27): the overgrown dark. A5 baseline - the current peak.
+        if (_floor == 1) {
+            enemy1 = enemy_clone(_eli_pool[0]);
+            enemy1.name             = "The Grafted Stag";
+            enemy1.HP               = 86; enemy1.max_HP = 86;
+            enemy1.damage           = 12;
+            enemy1.telegraph_turn   = 3; enemy1.telegraph_damage = 19;
+            enemy1.telegraph_message = "The Stag lowers its grafted crown to charge!";
+            enemy1.armor            = 6; enemy1.el_resist = 6;
+            enemy1.mechanic_type    = "regen";
+            enemy1.mechanic_value   = 3; enemy1.mechanic_turns = 2;
+            // EVERY WOUND SPROUTS (§3.2): his summon (Sprouting Wound) rides
+            // boss_ability_set - the adds are the wounds you gave him, walking.
+        } else if (_floor == 2) {
+            enemy1 = enemy_clone(_eli_pool[1]);
+            enemy1.name             = "Mother Bramble";
+            enemy1.HP               = 106; enemy1.max_HP = 106;
+            enemy1.damage           = 13;
+            enemy1.telegraph_turn   = 4; enemy1.telegraph_damage = 22;
+            enemy1.telegraph_message = "The thorn walls close in around you!";
+            enemy1.armor            = 8; enemy1.el_resist = 7;
+            // Walls of thorn cut the arena (§3.2): repeat yourself into her
+            // hedges and they answer - plus a root from boss_ability_set.
+            enemy1.mechanic_type    = "retribution";
+            enemy1.mechanic_value   = 6; enemy1.mechanic_turns = 0;
+        } else {
+            enemy1 = enemy_clone(_eli_pool[0]);
+            enemy1.name             = "The Green Silence";
+            enemy1.HP               = 148; enemy1.max_HP = 148;
+            enemy1.damage           = 18;
+            enemy1.telegraph_turn   = 3; enemy1.telegraph_damage = 28;
+            enemy1.telegraph_message = "The forest holds its breath...";
+            enemy1.armor            = 8; enemy1.el_resist = 12;
+            enemy1.mechanic_type    = "none";
+            enemy1.mechanic_value   = 0; enemy1.mechanic_turns = 0;
+            // SILENCES ONE ABILITY PER TURN (§3.2 hook): same machinery as The
+            // Hollow Crown's warden_hook "crown" - keyed off biome_hook here.
+            enemy1.biome_hook       = "green_silence";
         }
     } else {
         // Ashen Vault bosses
@@ -772,7 +866,7 @@ if (_enemy_type == "duel") {
     // Awakening-shifted pack weights (design 2026-07-04): 4-packs were too common
     // everywhere. Low tiers fight mostly 2-3; big packs (and rare 5-packs) become a
     // high-Awakening signature. Deeper floors still nudge the roll toward larger.
-    var _enc_asc = clamp(variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0, 0, 5);
+    var _enc_asc = clamp(awakening_effective(), 0, 5);   // §3.0: pack sizes ride the effective tier
     var _enc_w   = [ [55, 35, 10, 0],     // A0: 2s and 3s, 4-pack rare
                      [50, 40, 10, 0],     // A1
                      [35, 40, 25, 0],     // A2: 3 common, 4 picks up
@@ -835,7 +929,8 @@ while (array_length(enemies) < _enc_count) {
 for (var _ei = 0; _ei < array_length(enemies); _ei++) enemies[_ei].spell_scale = 1.0;
 
 // Apply ascendance stat multipliers (index 0 = the boss/elite/main; gets _boss_extra)
-var _asc = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
+// §3.0: the EFFECTIVE tier scales combat - Drowned Reach A0 fights at A4 numbers.
+var _asc = awakening_effective();
 if (_asc > 0) {
     // Tables live in awaken_hp_mult/awaken_dmg_mult (scr_combat) - shared with the
     // dungeon-select AWAKENING EFFECTS panel so display and combat never drift.
@@ -918,6 +1013,16 @@ for (var _ei = 0; _ei < array_length(enemies); _ei++) {
         && (_e.mechanic_type == "double_strike" || _e.mechanic_type == "death_burst"
             || _e.mechanic_type == "regen")) {
         _e.mechanic_value = max(1, round(_e.mechanic_value * _e.spell_scale));
+    }
+}
+
+// CHOIRMOTHER (§3.1, 08-27): her choir hook rescales damage from a base each
+// of her turns, so the base must be stamped AFTER every difficulty pass above -
+// stamping the hand-authored 12 would silently strip awakening/curse scaling.
+for (var _ei = 0; _ei < array_length(enemies); _ei++) {
+    var _e = enemies[_ei];
+    if (variable_struct_exists(_e, "biome_hook") && _e.biome_hook == "choirmother") {
+        _e.choir_base_damage = _e.damage;
     }
 }
 
@@ -1267,6 +1372,75 @@ if (variable_global_exists("pending_sickness") && global.pending_sickness > 0) {
     });
     array_push(combat_log, "The wanderer's fever takes hold - " + string(_sick_dmg)
         + " poison damage per turn for 3 turns!");
+}
+
+// =============================================================================
+// BIOME IDENTITY PASS (DESIGN_BIOME_IDENTITY_0827.md, M-locked 08-27):
+// carried statuses + this-floor mods, consumed at combat start.
+// =============================================================================
+// pending_status: the general form of the fever above - biome events send a
+// named status into the player's next fight ({kind, turns, mag}).
+if (variable_global_exists("pending_status") && is_struct(global.pending_status)) {
+    var _ps = global.pending_status;
+    global.pending_status = undefined;
+    if (!variable_struct_exists(player, "status_effects")) player.status_effects = [];
+    var _ps_kind = variable_struct_exists(_ps, "kind")  ? _ps.kind  : "";
+    var _ps_turn = variable_struct_exists(_ps, "turns") ? _ps.turns : 2;
+    var _ps_mag  = variable_struct_exists(_ps, "mag")   ? _ps.mag   : 0;
+    if (_ps_kind == "burn") {
+        // Same dot_halve courtesy as the searing air / fever blocks above.
+        if (pet_active_innate("dot_halve") > 0 && !variable_struct_exists(player, "innate_thaw_done")) {
+            player.innate_thaw_done = true;
+            _ps_mag = max(1, ceil(_ps_mag / 2));
+            array_push(combat_log, "[Companion] " + pet_active().name + " weathers the burn - it bites half as deep.");
+        }
+        array_push(player.status_effects, {
+            name: "Carried Embers", effect_type: "dot", kind: "dot",
+            effect_value: _ps_mag, duration: _ps_turn, element: "fire", source: "event" });
+        array_push(combat_log, "The embers you carried catch - " + string(_ps_mag)
+            + " fire damage per turn for " + string(_ps_turn) + " turns!");
+    } else if (_ps_kind != "") {
+        var _ps_name = "The Biome's Mark";
+        switch (_ps_kind) {
+            case "weaken":  _ps_name = "Judged Wanting"; break;
+            case "blind":   _ps_name = "Gilded Eyes";    break;
+            case "silence": _ps_name = "Filed Voice";    break;
+            case "root":    _ps_name = "Rooted Graft";   break;
+        }
+        array_push(player.status_effects, {
+            name: _ps_name, effect_type: "debuff", kind: _ps_kind,
+            effect_value: _ps_mag, duration: _ps_turn, element: "", source: "event" });
+        array_push(combat_log, "It followed you in - you begin this fight " + string_upper(_ps_kind) + "ED"
+            + ((_ps_kind == "root") ? " in place" : "") + " (" + string(_ps_turn) + " turn(s)).");
+    }
+}
+// bellows_heat (Scorched event): the pumped forge-heat softens enemy armor
+// for its remaining charged fights. tomb_marked (Tundra events): the Tomb's
+// residents aim truer at a recorded thief.
+if (floor_mod_tick("bellows_heat")) {
+    for (var _fmi = 0; _fmi < array_length(enemies); _fmi++) {
+        enemies[_fmi].armor = max(0, enemies[_fmi].armor - 2);
+    }
+    array_push(combat_log, "The bellows-heat rolls in ahead of you - enemy armor runs soft (-2).");
+}
+if (floor_mod_tick("tomb_marked")) {
+    for (var _fmj = 0; _fmj < array_length(enemies); _fmj++) {
+        enemies[_fmj].acc += 5;
+    }
+    array_push(combat_log, "The Tomb has your description - its residents aim truer (+5 acc).");
+}
+// boss_exposed (the Jailer's Ledger): the studied boss enters the arena
+// already read - a vulnerable mark, one-shot per floor.
+if (variable_global_exists("next_enemy_type") && global.next_enemy_type == "boss"
+    && floor_mod_get("boss_exposed")) {
+    floor_mod_set("boss_exposed", 0);
+    if (variable_struct_exists(enemy1, "status_effects")) {
+        array_push(enemy1.status_effects, {
+            name: "Studied", effect_type: "debuff", kind: "vulnerable",
+            effect_value: 3, duration: 3, element: "", source: "event" });
+        array_push(combat_log, "You know its habits from the warden's ledger - " + enemy1.name
+            + " enters the fight STUDIED (+3 damage taken per hit, 3 turns)!");
+    }
 }
 
 // Tundra Tomb: the pending chill numbs the player's FIRST turn (-1/-2 AP, never

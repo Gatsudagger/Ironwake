@@ -1388,11 +1388,14 @@ function ui_amulet_icon_sprite(item) {
 // the combat and dungeon screens can show the awakening tier as a reference.
 // ---------------------------------------------------------------------------
 function awakening_label() {
-    var _asc = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
     // THE DESCENT: the fractional floor-scaled tier reads as its floor.
     if (variable_global_exists("descent_active") && global.descent_active) {
         return "THE DESCENT - Floor " + string(variable_global_exists("descent_floor") ? global.descent_floor : 1);
     }
+    // §3.0: the in-run label reads the EFFECTIVE tier (selected + dungeon
+    // baseline) - a Drowned Reach A0 dive says "Awakening A4 - Nightmare",
+    // matching what combat, loot and floor length actually deliver.
+    var _asc = awakening_effective();
     // A6+ endless tiers (SYSTEMS_ENDLESS.md §2).
     if (_asc > 5) return "Awakening A" + string(round(_asc)) + " - Beyond Infernal";
     var _names = ["Normal", "Hardened", "Brutal", "Relentless", "Nightmare", "Infernal"];
@@ -1554,6 +1557,17 @@ function ui_consumable_icon_sprite(cname, item = undefined) {
         case "Smelling Salts":        return spr_icon_consumable_smelling_salts;
         case "Greater Healing Salve": return spr_icon_consumable_greater_healing_salve;
         case "Purification Draught":  return spr_icon_consumable_purification_draught;
+        // Cleanse-ladder elites (08-27). String-ref so the game compiles before
+        // the icon import (same contract as Devil Wine below); until the art
+        // lands they fall back to their base potion's icon.
+        case "Leechbane Elixir": {
+            var _lb_ic = asset_get_index("spr_icon_consumable_leechbane_elixir");
+            return (_lb_ic >= 0) ? _lb_ic : spr_icon_consumable_antidote;
+        }
+        case "Hexbane Tincture": {
+            var _hb_ic = asset_get_index("spr_icon_consumable_hexbane_tincture");
+            return (_hb_ic >= 0) ? _hb_ic : spr_icon_consumable_smelling_salts;
+        }
         case "Adrenaline Vial":       return spr_icon_consumable_adrenaline_vial;
         case "Warden's Tonic":        return spr_icon_consumable_wardens_tonic;
         // Sable's brewed (alchemy-exclusive) potions.
@@ -5620,6 +5634,10 @@ function dungeon_bg_sprite(surface) {
     var _tag = "ashen";
     if      (_d == "scorched_depths") _tag = "scorched";
     else if (_d == "tundra_tomb")     _tag = "tundra";
+    // 08-27 biomes: resolves to -1 (flat-fill fallback) until the art run lands
+    // spr_combatbg_drowned_1..3 / spr_floormap_drowned etc. + __sprite_includes.
+    else if (_d == "drowned_reach")   _tag = "drowned";
+    else if (_d == "hollow_canopy")   _tag = "canopy";
 
     var _name;
     if (surface == "combat") {
@@ -5887,6 +5905,9 @@ function dungeon_bg_draw(surface, scrim_alpha) {
         var _tf = make_color_rgb(235, 232, 244);   // floor tint - near full value
         if (_d25 == "scorched_depths") { _tw = make_color_rgb(135, 92, 72); _tf = make_color_rgb(255, 208, 165); }
         else if (_d25 == "tundra_tomb") { _tw = make_color_rgb(92, 118, 158); _tf = make_color_rgb(215, 235, 255); }
+        // 08-27 §3.1/§3.2 biome moods: green-black water-light / deep green + bone.
+        else if (_d25 == "drowned_reach") { _tw = make_color_rgb(70, 112, 102); _tf = make_color_rgb(196, 232, 220); }
+        else if (_d25 == "hollow_canopy") { _tw = make_color_rgb(84, 110, 70); _tf = make_color_rgb(212, 232, 190); }
 
         // PAINTED PLANE PAIRS (round 11, M-approved: "1 for each floor and for
         // each biome" + a Descent set): spr_wall25_<tag>_<fl> (authored ~4:1,
@@ -5899,6 +5920,8 @@ function dungeon_bg_draw(surface, scrim_alpha) {
         var _tag25 = "ashen";
         if      (_d25 == "scorched_depths") _tag25 = "scorched";
         else if (_d25 == "tundra_tomb")     _tag25 = "tundra";
+        else if (_d25 == "drowned_reach")   _tag25 = "drowned";   // 08-27: art pending - tint fallback until the plane pairs land
+        else if (_d25 == "hollow_canopy")   _tag25 = "canopy";
         if (variable_global_exists("descent_active") && global.descent_active) _tag25 = "descent";
         var _fl25 = clamp(variable_global_exists("current_floor") ? global.current_floor : 1, 1, 3);
         var _wspr25 = asset_get_index("spr_wall25_"  + _tag25 + "_" + string(_fl25));
@@ -6228,6 +6251,7 @@ function status_icon_style(se) {
         case "root":       return { label: "ROOT", color: make_color_rgb( 55, 160, 150) };
         case "silence":    return { label: "SIL",  color: make_color_rgb(125,  90, 205) };
         case "regen":      return { label: "HEAL", color: make_color_rgb( 90, 200, 120) };
+        case "ward":       return { label: "WARD", color: make_color_rgb(150, 230, 200) };   // Cleansing Philter (08-27)
         case "soulbind":   return { label: "BOND", color: make_color_rgb(170, 110, 215) };
         // Enemy self-buff chips (dormant-mechanics batch, 08-27).
         case "fortify":     return { label: "FORT",  color: make_color_rgb(150, 155, 175) };
@@ -6340,6 +6364,7 @@ function status_effect_plain_text(se) {
         case "root":       return "cannot melee";
         case "silence":    return "cannot cast";
         case "regen":      return "+" + string(_val) + " HP/turn";
+        case "ward":       return "negates the next harmful effect";
         case "soulbind":   return "shares " + string(round(_val * 100)) + "% of your pain";
         case "fortify":     return "takes only " + string(round(_val * 100)) + "% damage";
         case "phased":      return "untargetable - blows pass through";
@@ -6657,6 +6682,7 @@ function status_tooltip_desc(se) {
         case "silence":    _base = "Silenced: cannot cast spells."; break;
         case "marked":     _base = "Marked for Death: once below half HP, takes +30% damage from ALL sources."; break;
         case "regen":      _base = "Regenerating: restores " + string(_val) + " HP each turn."; break;
+        case "ward":       _base = "Warded: the next harmful enemy effect (DoT or debuff) that would land on you is negated."; break;
         case "soulbind":   _base = "Soulbound: suffers " + string(round(_val * 100)) + "% of the damage you take, healing you the same. Lasts the whole combat."; break;
         case "overwhelm":  _base = "Overwhelmed: carrying 2 or more DIFFERENT status effects - takes +15% damage from ALL sources while they last."; break;
         default:           _base = "Active effect."; break;
@@ -9267,15 +9293,18 @@ function ui_draw_settings_overlay() {
     draw_set_alpha(1.0);
 
     // Panel (tall enough for: Music, SFX, Hub Music, Dungeon Music, Menu Tick,
-    // Fullscreen, Font Size, Tutorial Tips, Timed Combat, On-screen D-pad,
-    // Pinch Zoom, Reset Tutorial). The D-pad + Pinch Zoom rows only exist on
-    // touch platforms - desktop/HTML5 skip them and the panel shrinks. Pitches
-    // are squeezed AGAIN for the Timed Combat row (08-27; touch header
-    // 136->118, sliders 92->86, toggles 72->66; desktop 150->140, 108->98,
-    // 84->76) so the 12th row fits the height-capped 1064 panel. Only ONE
-    // highlight band draws at a time (the selected row), so the zero-gap 66
-    // pitch cannot overlap - measured: touch last row py+924, band bottom
-    // py+969 < reset flash py+986 < footer py+1022; desktop last row py+912.
+    // Fullscreen, V-Sync, Font Size, Tutorial Tips, Timed Combat, On-screen
+    // D-pad, Pinch Zoom, Reset Tutorial). The D-pad + Pinch Zoom rows only
+    // exist on touch platforms and V-Sync only on desktop (a Windows display-
+    // pipeline lever - mobile has no say in it), so each platform draws 12 of
+    // the 13 rows at most. Pitches were squeezed for the Timed Combat row
+    // (08-27; touch header 136->118, sliders 92->86, toggles 72->66) and the
+    // DESKTOP pitches squeezed AGAIN for the V-Sync row (08-27 latency fix;
+    // header 140->124, sliders 98->92, toggles 76->70) so desktop's 11th row
+    // lands on the same y912 the old layout ended at. Only ONE highlight band
+    // draws at a time (the selected row), so the zero-gap pitches cannot
+    // overlap - measured: touch last row py+924, band bottom py+969 < reset
+    // flash py+986 < footer py+1022; desktop last row py+912, bottom py+957.
     var _has_dpad = touch_platform();
     var _pw = 840, _ph = _has_dpad ? 1064 : 1062;
     var _px = GUI_CX - _pw / 2;
@@ -9292,9 +9321,9 @@ function ui_draw_settings_overlay() {
     draw_set_color(c_white);
     draw_text(GUI_CX, _py + 39, "SETTINGS");
 
-    var _row_y  = _py + (_has_dpad ? 118 : 140);
-    var _row_h  = _has_dpad ? 86 : 98;     // slider-row pitch (squeezed on touch)
-    var _pitch  = _has_dpad ? 66 : 76;     // toggle-row pitch (squeezed on touch)
+    var _row_y  = _py + (_has_dpad ? 118 : 124);
+    var _row_h  = _has_dpad ? 86 : 92;     // slider-row pitch
+    var _pitch  = _has_dpad ? 66 : 70;     // toggle-row pitch
     var _bar_x  = _px + 300;
     var _bar_w  = 420;
     var _bar_h  = 27;
@@ -9457,11 +9486,46 @@ function ui_draw_settings_overlay() {
     draw_set_color(make_color_rgb(140, 150, 170));
     draw_text(_pill_x + _pill_w + 24, _pill_y + _pill_h / 2, "(F11)");
 
-    // --- Seventh row: Font Size selector (Small / Default / Large; ui_font).
+    // --- V-Sync row (cursor 6; DESKTOP ONLY - 08-27 latency fix, M: "slight
+    //     input delay" on the timed rings). OFF by default: GM's Windows v-sync
+    //     buffers 1-3 frames, half the hardest 5-frame perfect band. ON is the
+    //     escape hatch for tearing on odd setups. Touch platforms skip the row
+    //     entirely (the cursor hops it) and Font Size takes this slot. ---
+    var _vsy = _fry + _pitch;
+    if (!_has_dpad) {
+        var _vs_on  = variable_global_exists("vsync_on") && global.vsync_on;
+        var _vssel  = (global.settings_cursor == 6);
+        if (_vssel) {
+            draw_set_alpha(0.20);
+            draw_set_color(make_color_rgb(80, 140, 220));
+            draw_rectangle(_px + 30, _vsy - 21, _px + _pw - 30, _vsy + 45, false);
+            draw_set_alpha(1.0);
+        }
+        draw_set_halign(fa_left);
+        draw_set_valign(fa_middle);
+        draw_set_font(ui_font(fnt_ui));
+        draw_set_color(_vssel ? c_white : make_color_rgb(170, 180, 200));
+        draw_text(_px + 60, _vsy + 12, (_vssel ? "> " : "  ") + "V-Sync");
+        var _vspy = _vsy + 3;
+        draw_set_color(_vs_on ? make_color_rgb(50, 130, 90) : make_color_rgb(45, 50, 66));
+        draw_rectangle(_bar_x, _vspy, _bar_x + 138, _vspy + _bar_h + 6, false);
+        draw_set_color(_vssel ? make_color_rgb(120, 190, 255) : make_color_rgb(70, 85, 110));
+        draw_rectangle(_bar_x, _vspy, _bar_x + 138, _vspy + _bar_h + 6, true);
+        draw_set_halign(fa_center);
+        draw_set_color(c_white);
+        draw_text(_bar_x + 69, _vspy + (_bar_h + 6) / 2, _vs_on ? "ON" : "OFF");
+        draw_set_halign(fa_left);
+        draw_set_font(ui_font(fnt_ui_small));
+        draw_set_color(make_color_rgb(140, 150, 170));
+        draw_text(_bar_x + 138 + 24, _vspy + (_bar_h + 6) / 2, "(off = snappier input)");
+        draw_set_font(ui_font(fnt_ui));
+    }
+
+    // --- Font Size selector (Small / Default / Large; ui_font).
     //     Value box mirrors the music-selector footprint so the column lines up.
     //     Falls back to Default rendering until the variant fonts are imported. ---
-    var _fnty  = _fry + _pitch;
-    var _fnsel = (global.settings_cursor == 6);
+    var _fnty  = _has_dpad ? (_fry + _pitch) : (_vsy + _pitch);
+    var _fnsel = (global.settings_cursor == 7);
     if (_fnsel) {
         draw_set_alpha(0.20);
         draw_set_color(make_color_rgb(80, 140, 220));
@@ -9492,10 +9556,10 @@ function ui_draw_settings_overlay() {
     draw_text(_bar_x + _bar_w + 24, _fnby + (_bar_h + 6) / 2, "(A/D)");
     draw_set_font(ui_font(fnt_ui));
 
-    // --- Eighth row: Tutorial Tips on/off toggle ---
+    // --- Tutorial Tips on/off toggle ---
     var _tut_on = (!variable_global_exists("tutorial_enabled")) || global.tutorial_enabled;
     var _try    = _fnty + _pitch;
-    var _tsel   = (global.settings_cursor == 7);
+    var _tsel   = (global.settings_cursor == 8);
     if (_tsel) {
         draw_set_alpha(0.20);
         draw_set_color(make_color_rgb(80, 140, 220));
@@ -9520,13 +9584,13 @@ function ui_draw_settings_overlay() {
     draw_set_color(c_white);
     draw_text(_tpx + _tpw / 2, _tpy + _tph / 2, _tut_on ? "ON" : "OFF");
 
-    // --- Ninth row: Timed Combat mode selector (On / Assist / Off; 08-27 ship
+    // --- Timed Combat mode selector (On / Assist / Off; 08-27 ship
     //     polish - F1 in combat and the combat-log line were the only levers, a
     //     dev-grade secret). A/D cycles, Enter steps forward; writes settings.ini
     //     [combat] timed_mode via timed_combat_save, same store F1 uses. Value
     //     box mirrors the font-size selector footprint. ---
     var _tmy   = _try + _pitch;
-    var _tmsel = (global.settings_cursor == 8);
+    var _tmsel = (global.settings_cursor == 9);
     if (_tmsel) {
         draw_set_alpha(0.20);
         draw_set_color(make_color_rgb(80, 140, 220));
@@ -9566,7 +9630,7 @@ function ui_draw_settings_overlay() {
     //     TOUCH PLATFORMS ONLY (M 07-28) - desktop/HTML5 skip straight to Reset. ---
     var _dry  = _tmy + _pitch;
     if (_has_dpad) {
-    var _dsel = (global.settings_cursor == 9);
+    var _dsel = (global.settings_cursor == 10);
     if (_dsel) {
         draw_set_alpha(0.20);
         draw_set_color(make_color_rgb(80, 140, 220));
@@ -9615,7 +9679,7 @@ function ui_draw_settings_overlay() {
     var _pzy = _dry + 66;
     if (_has_dpad) {
         var _pz_on  = !global.pinch_zoom_off;
-        var _pzsel  = (global.settings_cursor == 10);
+        var _pzsel  = (global.settings_cursor == 11);
         if (_pzsel) {
             draw_set_alpha(0.20);
             draw_set_color(make_color_rgb(80, 140, 220));
@@ -9645,7 +9709,7 @@ function ui_draw_settings_overlay() {
     // --- Twelfth row: Reset Tutorial (re-show every tip). Takes the D-pad row's
     //     slot when the touch rows are hidden (desktop/HTML5). ---
     var _rry  = _has_dpad ? (_pzy + 66) : _dry;
-    var _rsel = (global.settings_cursor == 11);
+    var _rsel = (global.settings_cursor == 12);
     if (_rsel) {
         draw_set_alpha(0.20);
         draw_set_color(make_color_rgb(80, 140, 220));
@@ -9688,11 +9752,13 @@ function ui_draw_settings_overlay() {
         var _stmx   = device_mouse_x_to_gui(0);
         var _stmy   = device_mouse_y_to_gui(0);
         var _st_ys  = [ _row_y, _row_y + _row_h, _row_y + 2 * _row_h, _row_y + 3 * _row_h,
-                        _ky, _fry, _fnty, _try, _tmy, _dry, _pzy, _rry ];
-        for (var _sri = 0; _sri < 12; _sri++) {
+                        _ky, _fry, _vsy, _fnty, _try, _tmy, _dry, _pzy, _rry ];
+        for (var _sri = 0; _sri < 13; _sri++) {
             // No D-pad/Pinch rows off-touch: their Y equals the Reset row's, so
-            // skip 9-10 or a Reset tap would read as a toggle.
-            if ((_sri == 9 || _sri == 10) && !_has_dpad) continue;
+            // skip 10-11 or a Reset tap would read as a toggle. Same trap for
+            // the desktop-only V-Sync row on touch: its Y is Font Size's slot.
+            if ((_sri == 10 || _sri == 11) && !_has_dpad) continue;
+            if (_sri == 6 && _has_dpad) continue;
             var _sry = _st_ys[_sri];
             if (_stmx < _px + 30 || _stmx > _px + _pw - 30 || _stmy < _sry - 21 || _stmy > _sry + 45) continue;
             // Click-to-HIGHLIGHT, click-again-to-ACT (M 08-26: "1 click to
@@ -9713,11 +9779,11 @@ function ui_draw_settings_overlay() {
                 }
             } else if (_sri <= 3) {
                 touch_press(ord("D"));   // music selector: cycle to the next freed track
-            } else if (_sri == 6) {
+            } else if (_sri == 7) {
                 touch_press(ord("D"));   // font size: cycle Small -> Default -> Large
-            } else if (_sri == 8) {
-                touch_press(ord("D"));   // timed combat: cycle Off -> Assist -> On
             } else if (_sri == 9) {
+                touch_press(ord("D"));   // timed combat: cycle Off -> Assist -> On
+            } else if (_sri == 10) {
                 // D-pad row: tap the track to set the size directly while the pad is
                 // on; tapping the rest of the row (or the OFF pill) toggles it.
                 if (!global.touch_gamepad_off && _stmx >= _bar_x && _stmx <= _bar_x + _bar_w) {
@@ -9728,7 +9794,7 @@ function ui_draw_settings_overlay() {
                     touch_press(vk_enter);
                 }
             } else {
-                touch_press(vk_enter);   // Menu Tick / Fullscreen / Tutorial / Reset: act
+                touch_press(vk_enter);   // Menu Tick / Fullscreen / V-Sync / Tutorial / Reset: act
             }
             break;
         }
@@ -17857,9 +17923,17 @@ function ui_draw_sable_screen() {
             draw_set_halign(fa_left);
             draw_set_font(ui_font(fnt_ui));
         }
-        for (var _ui = 0; _ui < array_length(_groups); _ui++) {
+        // WINDOWED (08-27, M shot: "sable potions menu no longer scrolls" - the
+        // recipe list outgrew the panel when the elite->master rung landed).
+        // Recipes + PANACEA + CHAOTIC + QUINT share one scroll window; id
+        // "sable_fuse" MUST match the Step click mapping.
+        var _fu_total = array_length(_groups) + 3;
+        var _fu_vis   = ui_vendor_visible_rows(9);
+        var _fu_first = ui_list_window("sable_fuse", _cursor, _fu_total, _fu_vis);
+        var _fu_last  = min(_fu_total, _fu_first + _fu_vis);
+        for (var _ui = _fu_first; _ui < min(array_length(_groups), _fu_last); _ui++) {
             var _g   = _groups[_ui];
-            var _tyu = ui_maren_row(_ui, _ui == _cursor);   // base 285 since 08-15 (diagram panel removed)
+            var _tyu = ui_maren_row(_ui - _fu_first, _ui == _cursor);   // base 285 since 08-15 (diagram panel removed)
             // Fusable needs 3 held AND the fee (recipes list always since 07-28).
             var _uaff = (_g.count >= 3) && (global.gold >= _ucost.gold) && (_dust >= _ucost.dust);
             var _ucol = _uaff ? make_color_rgb(190, 220, 195) : make_color_rgb(120, 130, 122);
@@ -17912,10 +17986,50 @@ function ui_draw_sable_screen() {
             draw_set_alpha(1.0);
         }
 
+        // PANACEA row (08-27): the ONLY source of Purification Draught now -
+        // 1x Leechbane Elixir + 1x Hexbane Tincture + a premium fee. Drawn in
+        // the fusion-row idiom (result entry left, recipe icons right).
+        var _pan_i = array_length(_groups);
+        if (_pan_i >= _fu_first && _pan_i < _fu_last) {
+            var _pn_c   = sable_panacea_counts();
+            var _pn_ok  = (_pn_c.leech >= 1 && _pn_c.hex >= 1);
+            var _typ    = ui_maren_row(_pan_i - _fu_first, _pan_i == _cursor);
+            if (!_pn_ok) draw_set_alpha(0.55);
+            var _pn_tmpl = sable_elite_template("Purification Draught");
+            var _pn_col  = _pn_ok ? make_color_rgb(190, 220, 195) : make_color_rgb(120, 130, 122);
+            if (_pn_tmpl != undefined) {
+                ui_draw_consumable_entry(_list_x, _typ, _pn_tmpl, _pn_col);
+            } else {
+                draw_set_color(_pn_col);
+                draw_text(_list_x + 24, _typ, "Purification Draught");
+            }
+            var _pn_l = sable_elite_template("Leechbane Elixir");
+            var _pn_h = sable_elite_template("Hexbane Tincture");
+            var _pn_x = _list_x2 - 24 - 170;   // same anchor as the 3x rows
+            var _pn_y = _typ - 4;
+            if (_pn_l != undefined) ui_draw_consumable_icon(_pn_x,      _pn_y, 34, _pn_l);
+            if (_pn_h != undefined) ui_draw_consumable_icon(_pn_x + 34, _pn_y, 34, _pn_h);
+            draw_set_font(ui_font(fnt_ui));
+            draw_set_color(make_color_rgb(150, 200, 160));
+            draw_text(_pn_x + 96, _pn_y + 4, "->");
+            if (_pn_tmpl != undefined) ui_draw_consumable_icon(_pn_x + 126, _pn_y - 5, 44, _pn_tmpl);
+            draw_set_halign(fa_right);
+            draw_set_font(ui_font(fnt_ui_small));
+            // Its own premium fee (the header fee only covers the 3x rule).
+            var _pn_cost = sable_panacea_cost();
+            draw_set_color(make_color_rgb(200, 180, 130));
+            draw_text(_pn_x - 15, _typ - 10, string(_pn_cost.gold) + "g + " + string(_pn_cost.dust) + " Dust");
+            draw_set_color(_pn_ok ? make_color_rgb(180, 195, 205) : make_color_rgb(210, 160, 110));
+            draw_text(_pn_x - 15, _typ + 12, "have " + string(_pn_c.leech) + " + " + string(_pn_c.hex) + "  (1 each)");
+            draw_set_halign(fa_left);
+            draw_set_alpha(1.0);
+        }
+
         // The always-present CHAOTIC BREW row (M 07-28) - teal. Enter opens the
         // pick-3 list above (Step: sable_chaos_open).
-        var _chaos_i = array_length(_groups);
-        var _tyc2 = ui_maren_row(_chaos_i, _chaos_i == _cursor);   // base 285 since 08-15
+        var _chaos_i = array_length(_groups) + 1;
+        if (_chaos_i >= _fu_first && _chaos_i < _fu_last) {
+        var _tyc2 = ui_maren_row(_chaos_i - _fu_first, _chaos_i == _cursor);   // base 285 since 08-15
         // Real icon (M pick 07-28) with the old gem glyph as pre-reload fallback.
         // Backdrop plate (M 08-04: the dark art was near-invisible on the dark row).
         draw_set_color(make_color_rgb(34, 40, 46));
@@ -17936,10 +18050,12 @@ function ui_draw_sable_screen() {
         draw_set_color(make_color_rgb(200, 180, 130));
         draw_text(_list_x2 - 24, _tyc2 + 6, string(_chc2.gold) + "g  +  " + string(_chc2.dust) + " Dust");
         draw_set_halign(fa_left);
+        }   // end chaotic-row window gate
 
         // QUINTESSENCE row (LEGENDARY FORGE component, M locked 07-28) - violet.
-        var _quint_i = array_length(_groups) + 1;
-        var _tyq = ui_maren_row(_quint_i, _quint_i == _cursor);   // base 285 since 08-15
+        var _quint_i = array_length(_groups) + 2;
+        if (_quint_i >= _fu_first && _quint_i < _fu_last) {
+        var _tyq = ui_maren_row(_quint_i - _fu_first, _quint_i == _cursor);   // base 285 since 08-15
         // Real icon (M pick 07-28; NEW resource - needs one GM project reload,
         // the glyph draws until then).
         // Backdrop plate (same dark-on-dark treatment as the Chaotic Brew row).
@@ -17963,6 +18079,8 @@ function ui_draw_sable_screen() {
         draw_text(_list_x2 - 24, _tyq + 6, string(forge_quint_cost()) + "g");
         draw_set_halign(fa_left);
         draw_set_font(ui_font(fnt_ui));
+        }   // end quint-row window gate
+        ui_draw_sable_scroll_hint(_list_x2 - 24, _fu_first, _fu_last, _fu_total);
         }   // end fusion-list branch (chaos pick list is the sibling above)
     } else {
         // -------- REBIRTH TAB (07-29 restructure - M: the cost table + stacked
@@ -20878,17 +20996,21 @@ function ui_draw_pattern_craft(_gc) {
         if (_ph == 2) {
             draw_text(_pccx, 272, "Your FIRST core-stat pick (Might, Grace, ...) becomes the item's BASE LINE: +3 / +5 / +7 by quality.");
         } else {
+            // 08-27 (M shot: "text collision... too small and muddled"): this
+            // line sat at y292 UNDER the pip row's y288 caption - two hints
+            // stamped on top of each other. The pips moved up to y279; this
+            // line keeps y296 and says ONLY the concentrate rule (the pip
+            // caption already counts the slots).
             var _hint_bud   = pattern_affix_budget(_rar);
             var _hint_picks = array_length(_gc.pb_affix_picks);
             var _hint_spare = max(0, _hint_bud - _hint_picks);
             if (_hint_spare > 0 && _hint_picks > 0) {
                 draw_set_color(make_color_rgb(230, 195, 120));
-                draw_text(_pccx, 292, string(_hint_picks) + " of " + string(_hint_bud)
-                    + " picks - each unused slot CONCENTRATES your picks: they roll x"
+                draw_text(_pccx, 296, "Each unused slot CONCENTRATES your picks: they roll x"
                     + string(1 + 0.5 * _hint_spare) + ".");
             } else {
-                draw_text(_pccx, 292, (_hint_picks == 0)
-                    ? ("Up to " + string(_hint_bud) + " picks. Fewer picks CONCENTRATE: each unused slot multiplies the rest x1.5.")
+                draw_text(_pccx, 296, (_hint_picks == 0)
+                    ? "Fewer picks CONCENTRATE: each unused slot multiplies the rest x1.5."
                     : "All pick slots used - full spread, no concentration.");
             }
         }
@@ -20982,7 +21104,7 @@ function ui_draw_pattern_craft(_gc) {
         var _pips_w = _budget * _pip + (_budget - 1) * _pgap;
         var _pw = _pips_w + 20 + string_width(_cap);
         var _px = _pccx - _pw / 2;
-        var _pcy = 288;
+        var _pcy = 279;   // 08-27: was 288, stamped onto the y292 hint line - see the RULE HINTS block
         for (var _pi = 0; _pi < _budget; _pi++) {
             var _pxc = _px + _pi * (_pip + _pgap) + _pip / 2;
             draw_set_color(make_color_rgb(110, 92, 66));
@@ -21086,14 +21208,18 @@ function ui_draw_pattern_craft(_gc) {
 function ui_draw_pb_smelt(_gc) {
     var _it = _gc.pb_smelt_item;
     if (_it == undefined) return;
-    var _fams = pattern_item_families(_it);
+    // FULL catalog (08-27, M: "smelt any affix"): the fodder's own families
+    // lead (rarity-weighted study), every other family follows at weight 1.
+    // WINDOWED - ~21 rows can never fit the modal; MUST match the Step
+    // handler's list builder and nav count.
+    var _fams = pattern_smelt_family_list(_it);
     var _rows = array_length(_fams) + 1;
+    var _vis  = min(_rows, 6);
     var _x0 = 510, _x1 = 1410;
-    var _y1 = 780;
+    var _y1 = 900;
     // Rows are 76px tall so the grey family-desc subrow sits INSIDE the border
     // (M 08-13 shot: at 48px the 27px-tall subrow straddled the box bottom).
-    // The old 210px dead band above the buttons is reclaimed to pay for it.
-    var _list_h = _rows * 84;
+    var _list_h = _vis * 84;
     var _y0 = _y1 - 120 - _list_h - 130;
     draw_set_alpha(0.66);
     draw_set_color(make_color_rgb(6, 8, 14));
@@ -21113,21 +21239,25 @@ function ui_draw_pb_smelt(_gc) {
     draw_set_color(make_color_rgb(210, 214, 228));
     draw_text_ext((_x0 + _x1) / 2, _y0 + 62,
         "It is DESTROYED for " + string(pattern_smelt_fee()) + "g: +1 " + item_rarity_name(clamp(_it.rarity, 0, 4))
-        + " Reforge Ingot, its icon art joins the book, and Dorn studies ONE affix family from it:",
+        + " Reforge Ingot, its icon art joins the book, and Dorn studies ONE family - its own affixes teach fastest, any other counts 1:",
         max(26, string_height("Ag") + 2), (_x1 - _x0) - 80);
     draw_set_halign(fa_left);
 
     var _mx = device_mouse_x_to_gui(0), _my = device_mouse_y_to_gui(0);
     var _mp = mouse_check_button_pressed(mb_left);
     var _row_y0 = _y0 + 130;
-    for (var _i = 0; _i < _rows; _i++) {
-        var _ry  = _row_y0 + _i * 84;
+    var _win0 = ui_list_window("pb_smelt", _gc.pb_smelt_pick, _rows, _vis);
+    var _wend = min(_rows, _win0 + _vis);
+    for (var _i = _win0; _i < _wend; _i++) {
+        var _ry  = _row_y0 + (_i - _win0) * 84;
         var _sel = (_i == _gc.pb_smelt_pick);
-        var _lb; var _rt; var _ok = true;
+        var _lb; var _rt; var _ok = true; var _on = true;
         if (_i < array_length(_fams)) {
-            var _fe = pattern_family_entry(_fams[_i]);
-            var _pv = pattern_study_preview(_fams[_i], clamp(_it.rarity, 0, 4));
-            _lb = (_fe != undefined) ? _fe.label : _fams[_i];
+            var _fr = _fams[_i];
+            _on = _fr.on_item;
+            var _fe = pattern_family_entry(_fr.stat_name);
+            var _pv = pattern_study_preview(_fr.stat_name, clamp(_it.rarity, 0, 4), _on);
+            _lb = (_fe != undefined) ? _fe.label : _fr.stat_name;
             _rt = _pv.text;
             _ok = _pv.ok;
         } else {
@@ -21139,11 +21269,20 @@ function ui_draw_pb_smelt(_gc) {
         draw_set_color(_sel ? make_color_rgb(210, 140, 70) : make_color_rgb(48, 44, 40));
         draw_rectangle(_x0 + 30, _ry, _x1 - 30, _ry + 76, true);
         draw_set_font(ui_font(fnt_ui));
-        draw_set_color(_ok ? c_white : make_color_rgb(120, 120, 135));
+        draw_set_color(!_ok ? make_color_rgb(120, 120, 135)
+                            : (_on ? make_color_rgb(255, 225, 150) : c_white));
         draw_text(_x0 + 50, _ry + 6, _lb);
+        // "ON THIS PIECE" chip (08-27): the fodder's own families lead the list
+        // in gold and study at the rarity-weighted pace.
+        if (_i < array_length(_fams) && _on) {
+            draw_set_font(ui_font(fnt_ui_small));
+            draw_set_color(make_color_rgb(190, 160, 90));
+            draw_text(_x0 + 50 + string_width(_lb) + 24, _ry + 12, "ON THIS PIECE");
+            draw_set_font(ui_font(fnt_ui));
+        }
         // What the family actually DOES (M 08-13: "youre just choosing the
         // vernacular like 'insight' or 'ruin'") - grey subrow under the name.
-        var _fd = (_i < array_length(_fams)) ? pattern_family_desc(_fams[_i])
+        var _fd = (_i < array_length(_fams)) ? pattern_family_desc(_fams[_i].stat_name)
                                              : "The ore alone - no blueprint study.";
         if (_fd != "") {
             draw_set_font(ui_font(fnt_ui_small));
@@ -21159,6 +21298,13 @@ function ui_draw_pb_smelt(_gc) {
             input_inject("pbsm:row" + string(_i));
         }
     }
+    // Visible scroll markers (standing rule: windowed lists show their edges).
+    draw_set_font(ui_font(fnt_ui_small));
+    draw_set_halign(fa_right);
+    draw_set_color(make_color_rgb(190, 160, 90));
+    if (_win0 > 0)     ui_draw_scroll_more(_x1 - 50, _row_y0 - 26, true,  string(_win0) + " more");
+    if (_wend < _rows) ui_draw_scroll_more(_x1 - 50, _row_y0 + _vis * 84 + 4, false, string(_rows - _wend) + " more");
+    draw_set_halign(fa_left);
     ui_confirm_button(_x0 + 50, _y1 - 90, (_x0 + _x1) / 2 - 20, _y1 - 24, "SMELT  [Enter]",
         make_color_rgb(120, 210, 130), _mx, _my, _mp, "pbsm:ok");
     ui_confirm_button((_x0 + _x1) / 2 + 20, _y1 - 90, _x1 - 50, _y1 - 24, "CANCEL  [Esc]",

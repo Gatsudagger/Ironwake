@@ -159,6 +159,29 @@ function combat_next_turn(combat_state) {
     if (combat_state.turn_index >= count) {
         combat_state.turn_index = 0;
         combat_state.round++;
+
+        // RISING WATER (§3.1 Drowned Reach floor passive, 08-27): every 3rd
+        // round EVERY living combatant loses 2 HP - the player included. No
+        // one out-waits the tide. The water erodes but never drowns outright
+        // (floors at 1 HP both ways): defeat bookkeeping (XP/loot/phases)
+        // stays with real blows, and the pressure still shortens every stall.
+        // tide_slack (Bell-Ringer's Toll event): a paid sexton rings the hours
+        // late - the tide holds to every 4th round this floor.
+        var _rw_step = floor_mod_get("tide_slack") ? 4 : 3;
+        if (variable_global_exists("selected_dungeon") && global.selected_dungeon == "drowned_reach"
+            && !(variable_global_exists("descent_active") && global.descent_active)
+            && (combat_state.round mod _rw_step) == 0) {
+            for (var _rw_i = 0; _rw_i < array_length(combat_state.combatants); _rw_i++) {
+                var _rw_c = combat_state.combatants[_rw_i];
+                // is_player check first - the player struct may not carry is_defeated.
+                if (!_rw_c.is_player && variable_struct_exists(_rw_c, "is_defeated") && _rw_c.is_defeated) continue;
+                _rw_c.HP = max(1, _rw_c.HP - 2);
+            }
+            if (instance_exists(obj_combat_controller)) {
+                array_push(instance_find(obj_combat_controller, 0).combat_log,
+                    "THE WATER RISES - everyone standing loses 2 HP to the tide.");
+            }
+        }
     }
 
     var actor = combat_state.combatants[combat_state.turn_index];
@@ -517,8 +540,7 @@ function combat_enemy_model(_ec, _map) {
     if (_n <= 1) return variable_struct_get(_map, _ec.name);
     if (!variable_struct_exists(_ec, "model_var") || _ec.model_var < 0 || _ec.model_var >= _n) {
         // Awakening-tiered species (bosses like Malgrath) take a fixed model per tier.
-        var _awk_m = enemy_model_for_awakening(_ec.name,
-            variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0);
+        var _awk_m = enemy_model_for_awakening(_ec.name, awakening_effective());
         if (_awk_m >= 0 && _awk_m < _n) { _ec.model_var = _awk_m; return _pool[_awk_m]; }
         var _used = [];
         if (instance_exists(obj_combat_controller)) {
@@ -1232,7 +1254,7 @@ function awaken_clear_gold_bonus(asc) {
 // 07-09): in a BOSS encounter at Awakening 5, enemy damage gains +10% per round
 // past round 6, so the fight can't be turtled forever. 1.0 everywhere else.
 function awaken_boss_enrage_mult(round) {
-    var _asc = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
+    var _asc = awakening_effective();   // §3.0: A5-strength fights enrage, wherever they live
     if (_asc < 5) return 1.0;
     if (!variable_global_exists("next_enemy_type") || global.next_enemy_type != "boss") return 1.0;
     return 1.0 + 0.10 * max(0, round - 6);
@@ -1245,8 +1267,7 @@ function awaken_boss_enrage_mult(round) {
 // L15 stays a kill-everything trophy. Shown on the dungeon-select AWAKENING
 // EFFECTS panel (same single-source rule as the tables above).
 function awaken_xp_mult(asc = undefined) {
-    var _asc = (asc != undefined) ? asc
-        : (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0);
+    var _asc = (asc != undefined) ? asc : awakening_effective();   // §3.0 effective tier
     var _tbl = [1.00, 1.15, 1.30, 1.50, 1.75, 2.00];
     // A6+: +8%/tier compounding on top of the A5 rate (matches the gold curve).
     var _endless = (_asc > 5) ? power(1.08, _asc - 5) : 1.0;
@@ -1260,8 +1281,7 @@ function awaken_xp_mult(asc = undefined) {
 // at A4/A5 even an evasion build gets hit. Added to _enemy_acc in combat.
 // ---------------------------------------------------------------------------
 function awaken_enemy_acc_bonus(asc = undefined) {
-    var _asc = (asc != undefined) ? asc
-        : (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0);
+    var _asc = (asc != undefined) ? asc : awakening_effective();   // §3.0 effective tier
     var _tbl = [0, 0, 5, 10, 18, 28];
     // A6+: +2 accuracy per endless tier (flat, so dodge stays viable-but-fading).
     var _end_acc = (_asc > 5) ? floor(2 * (_asc - 5)) : 0;
@@ -1273,8 +1293,7 @@ function awaken_enemy_acc_bonus(asc = undefined) {
 // curve). At high tiers, self-healing foes punish slow damage and reward burst /
 // anti-heal (mortality) / consumables. See SYSTEMS_VIABILITY_PASS.md (P6c).
 function awaken_enemy_heal_mult(asc = undefined) {
-    var _asc = (asc != undefined) ? asc
-        : (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0);
+    var _asc = (asc != undefined) ? asc : awakening_effective();   // §3.0 effective tier
     var _tbl = [1.0, 1.15, 1.35, 1.6, 1.9, 2.3];
     var _end_heal = awaken_endless_mult(_asc);
     _asc = clamp(_asc, 0, array_length(_tbl) - 1);
@@ -1381,8 +1400,9 @@ function timed_combat_press() {
 // so toggling mid-run takes effect on the NEXT fight.
 function timed_pressure_mult(asc = undefined) {
     if (!timed_combat_on()) return 1.0;
-    var _asc = (asc != undefined) ? asc
-        : (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0);
+    // §3.0 effective tier: in the late biomes the awakening ladders already
+    // bite at A0, so the low-tier pressure boost tapers exactly as designed.
+    var _asc = (asc != undefined) ? asc : awakening_effective();
     var _tbl = [1.45, 1.40, 1.30, 1.20, 1.15, 1.15];
     return _tbl[clamp(_asc, 0, array_length(_tbl) - 1)];   // A6+ endless holds at 1.15
 }
@@ -2128,28 +2148,58 @@ function combat_immune_sweep(combat_state, log, popups) {
 function combat_status_is_debuff(se) {
     switch (combat_status_kind_of(se)) {
         case "regen": return false;   // beneficial heal-over-time
+        case "ward":  return false;   // Cleansing Philter's protective ward (08-27)
     }
     return true;   // dot / vulnerable / weaken / blind / mortality / stun / root / silence / firemark
 }
 
 // combat_cleanse(c, mode) - removes statuses from c.status_effects and returns the
-// count removed. mode: "dot" = every damage-over-time; "one" = the first debuff
-// (Smelling Salts); "all" = every debuff (Purification Draught). Buffs are kept.
-// Single source of truth for ALL cleanse consumables across every use path.
+// count removed. Buffs are kept. Single source of truth for ALL cleanse
+// consumables across every use path. CLEANSE LADDER modes (M 08-27):
+//   "dot_one" = the first DoT                      (Antidote)
+//   "dot"     = every damage-over-time             (Leechbane Elixir)
+//   "one"     = the first NON-DoT debuff           (Smelling Salts)
+//   "debuffs" = every NON-DoT debuff               (Hexbane Tincture)
+//   "all"     = everything negative                (Purification Draught)
+// ("one" used to grab DoTs too - now DoTs are strictly the Antidote line's job.)
 function combat_cleanse(c, mode) {
     if (!variable_struct_exists(c, "status_effects")) return 0;
     var _kept = [];
     var _removed = 0;
     for (var _i = 0; _i < array_length(c.status_effects); _i++) {
         var _se = c.status_effects[_i];
+        var _is_dot = (combat_status_kind_of(_se) == "dot");
         var _take = false;
-        if      (mode == "dot") _take = (combat_status_kind_of(_se) == "dot");
-        else if (mode == "all") _take = combat_status_is_debuff(_se);
-        else if (mode == "one") _take = (_removed == 0 && combat_status_is_debuff(_se));
+        if      (mode == "dot")     _take = _is_dot;
+        else if (mode == "dot_one") _take = (_removed == 0 && _is_dot);
+        else if (mode == "all")     _take = combat_status_is_debuff(_se);
+        else if (mode == "debuffs") _take = (!_is_dot && combat_status_is_debuff(_se));
+        else if (mode == "one")     _take = (_removed == 0 && !_is_dot && combat_status_is_debuff(_se));
         if (_take) _removed++; else array_push(_kept, _se);
     }
     c.status_effects = _kept;
     return _removed;
+}
+
+// --- Cleansing Philter ward (08-27) ---------------------------------------
+// A "ward" status negates the next harmful enemy effect that would land.
+// Checked/consumed at the enemy status-application site in obj_combat_controller
+// (after resists - a shrugged status never burns the ward).
+function combat_status_has_ward(c) {
+    if (!variable_struct_exists(c, "status_effects")) return false;
+    for (var _i = 0; _i < array_length(c.status_effects); _i++) {
+        if (combat_status_kind_of(c.status_effects[_i]) == "ward") return true;
+    }
+    return false;
+}
+function combat_status_consume_ward(c) {
+    for (var _i = 0; _i < array_length(c.status_effects); _i++) {
+        if (combat_status_kind_of(c.status_effects[_i]) == "ward") {
+            array_delete(c.status_effects, _i, 1);
+            return true;
+        }
+    }
+    return false;
 }
 
 // combat_heal_after_mortality(c, amount) - scales a heal by the bearer's
@@ -2172,6 +2222,25 @@ function combat_heal_after_mortality(c, amount) {
                         + " HP runs the wrong way!");
                     combat_apply_damage(c, _hl_amt);
                     return 0;
+                }
+            }
+        }
+    }
+    // THE TIDEWRIGHT (§3.1 boss hook, 08-27): he alternates FLOOD and EBB
+    // rounds - on flood rounds (every even round) the player's healing is
+    // HALVED. Same live-enemy scan idiom as Hollowlight above; a dead
+    // Tidewright commands no tide.
+    if (amount > 0 && variable_struct_exists(c, "is_player") && c.is_player
+        && instance_exists(obj_combat_controller)) {
+        var _tw_cc = instance_find(obj_combat_controller, 0);
+        if ((_tw_cc.combat_state.round mod 2) == 0) {
+            for (var _tw_i = 0; _tw_i < array_length(_tw_cc.combat_state.combatants); _tw_i++) {
+                var _tw_e = _tw_cc.combat_state.combatants[_tw_i];
+                if (!_tw_e.is_player && !_tw_e.is_defeated
+                    && variable_struct_exists(_tw_e, "biome_hook") && _tw_e.biome_hook == "tidewright") {
+                    amount = amount * 0.5;
+                    array_push(_tw_cc.combat_log, "FLOOD TURN - the Tidewright's water swallows half the mend.");
+                    break;
                 }
             }
         }
@@ -2794,7 +2863,7 @@ function combat_on_enemy_defeated(target, player, combat_log) {
     // Devil's Pact curse: a guaranteed bonus equipment drop from every elite & boss.
     if (curse_has_bonus_drops() && (_drop_type == "elite" || _drop_type == "boss")) {
         // Curse loot-tiers are a post-roll rarity bump now, not an awakening offset.
-        var _bonus_asc = (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0);
+        var _bonus_asc = awakening_effective();   // §3.0: drops pay the effective tier
         var _bonus_item = drop_equipment(drop_weights(_drop_type, _bonus_asc), true, curse_loot_tier_bonus_for(_drop_type));
         if (variable_global_exists("run_items_found")) array_push(global.run_items_found, _bonus_item);
         if (variable_global_exists("carried_items"))   array_push(global.carried_items, _bonus_item);

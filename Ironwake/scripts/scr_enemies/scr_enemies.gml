@@ -146,7 +146,7 @@ function enemy_pick_ability(actor, player = undefined) {
     //        that control (stun/root/silence) - they act instead of re-stacking.
     //   A4+  DIVERSIFIED DEBUFFS: skip a debuff/DoT kind the player already carries -
     //        pack members spread afflictions instead of piling one.
-    var _asc = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
+    var _asc = awakening_effective();   // §3.0: AI smarts ride the effective tier
     // DUELIST T3 (08-13, M-locked): he opens EVERY duel with the Feint - he has
     // known your wrist since the second crossing. Consumed once, then normal play.
     if (variable_struct_exists(actor, "duel_open_feint") && actor.duel_open_feint) {
@@ -208,8 +208,15 @@ function enemy_pick_ability(actor, player = undefined) {
 function boss_ability_set(floor, dungeon) {
     var _fl = clamp(floor, 1, 3);
     var _nuke_dmg  = [14, 20, 28][_fl - 1];
-    var _dtype     = (dungeon == "tundra_tomb") ? 1 : ((dungeon == "scorched_depths") ? 1 : 2); // elemental / drain
-    var _nuke_name = (dungeon == "tundra_tomb") ? "Frozen Lance" : ((dungeon == "scorched_depths") ? "Molten Barrage" : "Soul Rend");
+    var _dtype     = 2;   // drain default (ashen)
+    var _nuke_name = "Soul Rend";
+    switch (dungeon) {
+        case "scorched_depths": _dtype = 1; _nuke_name = "Molten Barrage"; break;
+        case "tundra_tomb":     _dtype = 1; _nuke_name = "Frozen Lance";   break;
+        // 08-27 §3.1/§3.2 biomes: elemental nukes in each biome's voice.
+        case "drowned_reach":   _dtype = 1; _nuke_name = "Drowning Surge"; break;
+        case "hollow_canopy":   _dtype = 1; _nuke_name = "Verdant Lash";   break;
+    }
     var _set = [
         enemy_ability(_nuke_name, "spell", 45, 2, _nuke_dmg, { dtype: _dtype, msg: "unleashes " + _nuke_name, reach: "ranged" }),
         enemy_ability("Crushing Slam", "control", 30, 4, 0, { status_kind: "stun", turns: 1, msg: "slams the ground - you are stunned" }),
@@ -219,6 +226,18 @@ function boss_ability_set(floor, dungeon) {
     if (dungeon == "ashen_vault" && _fl == 2) {
         array_push(_set, enemy_ability("Raise the Court", "summon", 25, 4, 0,
             { msg: "RAISES THE COURT - the dead answer their king" }));
+    }
+    // §3.1 Choirmother: she summons Choristers, and her damage scales with how
+    // many still sing (the choirmother hook in Step retunes her every turn).
+    if (dungeon == "drowned_reach" && _fl == 2) {
+        array_push(_set, enemy_ability("Call the Chorus", "summon", 30, 3, 0,
+            { msg: "CALLS THE CHORUS - the water answers in harmony" }));
+    }
+    // §3.2 Grafted Stag: every wound sprouts - his adds are the blows you
+    // landed, walking back to you.
+    if (dungeon == "hollow_canopy" && _fl == 1) {
+        array_push(_set, enemy_ability("Sprouting Wound", "summon", 25, 4, 0,
+            { msg: "a WOUND SPROUTS - what you cut from him takes root and rises" }));
     }
     return _set;
 }
@@ -232,6 +251,7 @@ function boss_ability_set(floor, dungeon) {
 function enemy_is_ranged(name) {
     switch (name) {
         case "Skeleton Archer": case "Lava Spitter": case "Frost Shard": case "Pale Archivist":
+        case "Pale Fisher":   // 08-27 §3.1: he casts the line from the dark water
             return true;
     }
     // Spellcasters cast from beyond the snare (M 07-28 AI pass): a rooted wraith
@@ -247,6 +267,13 @@ function enemy_is_spellcaster(name) {
         case "Ice Specter":    case "Pale Archivist": case "Fire Drake":  case "Lava Spitter":
         case "Frost Shard":    case "Cinder Imp":     case "Infernal Revenant":
         case "Smoldering Revenant":
+        // 08-27 §3.1/§3.2: the biome wraith-likes and spore-minds cast -
+        // silence answers them, root does not.
+        case "Silt Wraith": case "Sunken Chorister": case "The Long Drink":
+        case "Moss Wraith": case "Sporemind":        case "Witchwood Sapling":
+        // BIOME IDENTITY PASS additions (08-27): shades, mourners, auditors.
+        case "Candle Thief": case "Mourner in Ice": case "Barrow Wight":
+        case "The Second Count": case "The Unquenched":
             return true;
     }
     return false;
@@ -269,9 +296,14 @@ function enemy_speed(name) {
         case "Glacial Warden":    case "Tomb Archon":          case "The Eternal Frost":
         case "Vault Sentinel":    case "Bone Sovereign":       case "Malgrath the Warden":
         case "Bone Colossus":
+        // 08-27 §3.1/§3.2 biome bosses - the mountain moves last here too.
+        case "The Tidewright":    case "Choirmother of the Deep": case "Leviathan Below":
+        case "The Grafted Stag":  case "Mother Bramble":          case "The Green Silence":
             return 5;
         case "The Ashen Duelist":
             return 13;
+        case "Slagback Tortoise":   // 08-27: even the slugs pity it
+            return 4;
     }
     // Depth Wardens (scr_enemies warden_catalog names).
     var _wc = warden_catalog();
@@ -318,10 +350,14 @@ function enemy_immunities(name) {
                || string_pos("sovereign", _n) || string_pos("bone ", _n) || string_pos("stalker", _n);
     var _firekin = string_pos("cinder", _n) || string_pos("magma", _n) || string_pos("fire", _n)
                 || string_pos("lava", _n)   || string_pos("smolder", _n) || string_pos("infernal", _n)
-                || string_pos("molten", _n) || string_pos("forge", _n)   || string_pos("ashen colossus", _n);
+                || string_pos("molten", _n) || string_pos("forge", _n)   || string_pos("ashen colossus", _n)
+                // BIOME IDENTITY PASS (08-27): the new Scorched natives shrug burns too.
+                || string_pos("pyre", _n)   || string_pos("slagback", _n) || string_pos("unquenched", _n);
     var _frostkin = string_pos("frost", _n) || string_pos("glacial", _n) || string_pos("ice ", _n)
                  || string_pos("snow", _n)  || string_pos("frozen", _n)  || string_pos("tomb archon", _n)
-                 || string_pos("pale archivist", _n);
+                 || string_pos("pale archivist", _n)
+                 // 08-27: new Tundra natives keep the Tomb's cold, not catch it.
+                 || string_pos("mourner", _n) || string_pos("barrow", _n) || string_pos("cortege", _n);
     if (_spirit) {
         array_push(_out, { kind:"root", element:"",      label:"Root" });
         array_push(_out, { kind:"dot",  element:"bleed", label:"Bleed" });
@@ -350,6 +386,9 @@ function enemy_attack_school(name) {
     var _n = string_lower(name);
     // Exact fits first, where a keyword would misfile them.
     if (_n == "ash wraith") return "fire";        // a wraith OF ash - reads fire, not ghost
+    if (_n == "the second count") return "arcane"; // 08-27: the auditor works in figures, not fists
+    if (_n == "pyre dancer" || _n == "the unquenched") return "fire";
+    if (_n == "mourner in ice" || _n == "barrow wight") return "frost";
     // fire family (Scorched Depths + its bosses)
     if (string_pos("cinder", _n) || string_pos("magma", _n) || string_pos("fire", _n)
      || string_pos("lava", _n)   || string_pos("smolder", _n) || string_pos("infernal", _n)
@@ -635,6 +674,10 @@ function enemy_weak_school(name) {
         case "Grave Stalker":       return "frost";
         case "Bone Sovereign":      return "fire";
         case "Malgrath the Warden": return "arcane";
+        // BIOME IDENTITY PASS additions (08-27)
+        case "Candle Thief":        return "arcane";
+        case "Rustkeeper":          return "shock";
+        case "The Second Count":    return "fire";
         // Scorched Depths (fire-born -> frost)
         case "Cinder Imp":          return "frost";
         case "Magma Slug":          return "frost";
@@ -644,6 +687,9 @@ function enemy_weak_school(name) {
         case "Smoldering Revenant": return "arcane";
         case "Cinder Golem":        return "shock";
         case "Infernal Revenant":   return "arcane";
+        case "Pyre Dancer":         return "frost";   // 08-27 identity additions
+        case "Slagback Tortoise":   return "frost";
+        case "The Unquenched":      return "frost";
         case "Forge Tyrant":        return "shock";
         case "Molten Revenant":     return "arcane";
         case "The Ashen Colossus":  return "shock";
@@ -656,9 +702,46 @@ function enemy_weak_school(name) {
         case "Pale Archivist":      return "arcane";
         case "Glacial Beast":       return "shock";
         case "Frozen Sentinel":     return "shock";
+        case "Mourner in Ice":      return "fire";    // 08-27 identity additions
+        case "Barrow Wight":        return "arcane";
+        case "Cortege Bearer":      return "fire";
         case "Glacial Warden":      return "fire";
         case "Tomb Archon":         return "arcane";
         case "The Eternal Frost":   return "fire";
+        // Drowned Reach (§3.1: everything is soaked -> shock; arcane on the
+        // wraith-likes) - 08-27
+        case "Drowned Deckhand":        return "shock";
+        case "Reach Eel":               return "shock";
+        case "Bloatling":               return "shock";
+        case "Silt Wraith":             return "arcane";
+        case "Barnacle Thrall":         return "shock";
+        case "Tide Crawler":            return "shock";
+        case "Sunken Chorister":        return "arcane";
+        case "Kelp Hound":              return "shock";
+        case "The Long Drink":          return "arcane";
+        case "Anchor Revenant":         return "shock";
+        case "Deepwater Sentinel":      return "shock";
+        case "Pale Fisher":             return "shock";
+        case "The Tidewright":          return "shock";
+        case "Choirmother of the Deep": return "shock";
+        case "Leviathan Below":         return "arcane";
+        // Hollow Canopy (§3.2: overgrown and dry-rotted -> fire; arcane on the
+        // spore-minds) - 08-27
+        case "Bramble Husk":       return "fire";
+        case "Rootbound Corpse":   return "fire";
+        case "Spore Moth":         return "arcane";
+        case "Canopy Stalker":     return "fire";
+        case "Thicket Boar":       return "fire";
+        case "Witchwood Sapling":  return "fire";
+        case "Moss Wraith":        return "arcane";
+        case "Hollow Nester":      return "fire";
+        case "The Grafted Knight": return "fire";
+        case "Sporemind":          return "arcane";
+        case "Old Growth":         return "fire";
+        case "The Nest":           return "fire";
+        case "The Grafted Stag":   return "fire";
+        case "Mother Bramble":     return "fire";
+        case "The Green Silence":  return "arcane";
     }
     return "";
 }
@@ -762,6 +845,30 @@ global.enemies_ashen_vault_standard = [
         ]
     ),
 
+    // 6: Candle Thief (BIOME IDENTITY PASS 08-27) - a shade that hoards light.
+    // The Vault's gentle introduction to BLIND, on a slippery phasing frame.
+    enemy_define(
+        /*name*/"Candle Thief",
+        /*HP*/30, /*damage*/6, /*armor*/0, /*el_resist*/4, /*dodge*/12, /*acc*/74,
+        /*xp*/10, /*gold_min*/5, /*gold_max*/11,
+        /*telegraph_turn*/0, /*telegraph_damage*/0, /*message*/"",
+        /*mechanic*/"phase_shift", /*value*/1, /*turns*/3,
+        /*abilities*/[
+            enemy_ability("Snuff", "debuff", 30, 3, 0.20, { status_kind: "blind", turns: 2, msg: "pinches your light out - the dark closes in" }),
+        ]
+    ),
+
+    // 7: Rustkeeper (08-27) - the construct that maintains the Vault's bars.
+    // Armor + fortify windows, taught on the starter floor.
+    enemy_define(
+        /*name*/"Rustkeeper",
+        /*HP*/44, /*damage*/6, /*armor*/6, /*el_resist*/2, /*dodge*/0, /*acc*/70,
+        /*xp*/11, /*gold_min*/5, /*gold_max*/10,
+        /*telegraph_turn*/4, /*telegraph_damage*/18,
+        /*message*/"raises its maul of fused keys!",
+        /*mechanic*/"fortify", /*value*/0.45, /*turns*/4
+    ),
+
 ];
 
 // -----------------------------------------------------------------------------
@@ -805,6 +912,23 @@ global.enemies_ashen_vault_elite = [
         /*mechanic*/"retribution", /*value*/4, /*turns*/0
     ),
 
+    // 2: The Second Count (BIOME IDENTITY PASS 08-27) - the Sovereign's
+    // auditor. The Vault's one taste of Tundra-style denial (silence + a
+    // mend), foreshadowing the ladder ahead without matching its weight.
+    enemy_define(
+        "The Second Count",
+        /*HP*/76, /*damage*/10,
+        /*armor*/3, /*el_resist*/6, /*dodge*/3, /*acc*/74,
+        /*xp*/34, /*gold_min*/28, /*gold_max*/42,
+        /*telegraph_turn*/3, /*telegraph_damage*/20,
+        /*message*/"totals the column - the sum is YOU!",
+        /*mechanic*/"charge", /*value*/0, /*turns*/0,
+        /*abilities*/[
+            enemy_ability("Audit", "control", 25, 4, 0, { status_kind: "silence", turns: 2, msg: "finds an irregularity in your casting - SILENCED pending review" }),
+            enemy_ability("Carry the One", "heal", 30, 3, 12, { msg: "carries the one, and is briefly whole again" }),
+        ]
+    ),
+
 ];
 
 // =============================================================================
@@ -844,7 +968,8 @@ global.enemies_scorched_depths_standard = [
         /*mechanic*/"charge", /*value*/0, /*turns*/0,
         /*abilities*/[
             enemy_ability("Cinder Breath", "spell", 35, 2, 12, { dtype: 1, msg: "breathes a gout of flame" }),
-            enemy_ability("Searing Brand", "dot", 30, 3, 5, { turns: 3, msg: "sears you with lingering fire" }),
+            // 08-27 identity retune: the biome's burn carrier leans on the brand.
+            enemy_ability("Searing Brand", "dot", 35, 3, 5, { turns: 3, msg: "sears you with lingering fire" }),
         ]
     ),
 
@@ -866,7 +991,31 @@ global.enemies_scorched_depths_standard = [
         /*mechanic*/"death_burst", /*value*/10, /*turns*/0,
         /*abilities*/[
             enemy_ability("Ember Mending", "heal", 30, 3, 10, { msg: "draws on the embers and mends" }),
+            // BIOME IDENTITY PASS (08-27): Scorched claims burn - now it deals it.
+            enemy_ability("Cinder Spit", "dot", 25, 3, 4, { turns: 2, msg: "spits cinders that catch in your clothes" }),
         ]
+    ),
+
+    // Pyre Dancer (BIOME IDENTITY PASS 08-27) - fast twin strikes trailing fire.
+    enemy_define(
+        /*name*/"Pyre Dancer",
+        /*HP*/34, /*damage*/5, /*armor*/0, /*el_resist*/6, /*dodge*/10, /*acc*/76,
+        /*xp*/13, /*gold_min*/4, /*gold_max*/9,
+        /*telegraph_turn*/0, /*telegraph_damage*/0, /*message*/"",
+        /*mechanic*/"double_strike", /*value*/4, /*turns*/0,
+        /*abilities*/[
+            enemy_ability("Trailing Flame", "dot", 30, 3, 4, { turns: 3, msg: "spins past - and the fire follows in its wake" }),
+        ]
+    ),
+
+    // Slagback Tortoise (08-27) - a walking kiln: heavy shell, white-hot end.
+    enemy_define(
+        /*name*/"Slagback Tortoise",
+        /*HP*/52, /*damage*/6, /*armor*/6, /*el_resist*/5, /*dodge*/0, /*acc*/68,
+        /*xp*/15, /*gold_min*/5, /*gold_max*/10,
+        /*telegraph_turn*/4, /*telegraph_damage*/19,
+        /*message*/"its shell glows white - it is going to RAM!",
+        /*mechanic*/"death_burst", /*value*/12, /*turns*/0
     ),
 ];
 
@@ -886,6 +1035,21 @@ global.enemies_scorched_depths_elite = [
         /*telegraph_turn*/4, /*telegraph_damage*/20,
         /*message*/"is channeling hellfire!",
         /*mechanic*/"death_burst", /*value*/12, /*turns*/0
+    ),
+
+    // The Unquenched (BIOME IDENTITY PASS 08-27) - the smith who wouldn't
+    // stop. Scorched's sustain elite: regen + burns, a fire preview of the
+    // Reach's attrition identity.
+    enemy_define(
+        /*name*/"The Unquenched",
+        /*HP*/84, /*damage*/11, /*armor*/4, /*el_resist*/7, /*dodge*/2, /*acc*/74,
+        /*xp*/30, /*gold_min*/15, /*gold_max*/25,
+        /*telegraph_turn*/0, /*telegraph_damage*/0, /*message*/"",
+        /*mechanic*/"regen", /*value*/5, /*turns*/2,
+        /*abilities*/[
+            enemy_ability("Hammer Rain", "spell", 35, 2, 12, { dtype: 1, msg: "works you like hot iron - blow after blow" }),
+            enemy_ability("Stoke", "dot", 30, 3, 5, { turns: 3, msg: "stokes the coals in its chest and the heat rolls over you" }),
+        ]
     ),
 ];
 
@@ -929,7 +1093,8 @@ global.enemies_tundra_tomb_standard = [
         /*telegraph_turn*/0, /*telegraph_damage*/0, /*message*/"",
         /*mechanic*/"phase_shift", /*value*/1, /*turns*/2,
         /*abilities*/[
-            enemy_ability("Numbing Chill", "debuff", 35, 3, 0.20, { status_kind: "weaken", turns: 2, msg: "chills you to the bone - weakened" }),
+            // 08-27 identity retune: the Tomb's weaken carrier chills more often.
+            enemy_ability("Numbing Chill", "debuff", 40, 3, 0.20, { status_kind: "weaken", turns: 2, msg: "chills you to the bone - weakened" }),
         ]
     ),
 
@@ -940,7 +1105,38 @@ global.enemies_tundra_tomb_standard = [
         /*xp*/14, /*gold_min*/4, /*gold_max*/9,
         /*telegraph_turn*/4, /*telegraph_damage*/19,
         /*message*/"is rearing back for a frozen slam!",
-        /*mechanic*/"fortify", /*value*/0.45, /*turns*/4
+        /*mechanic*/"fortify", /*value*/0.45, /*turns*/4,
+        /*abilities*/[
+            // BIOME IDENTITY PASS (08-27): the Tomb's denial reaches the
+            // standard line - the drift grabs at ankles.
+            enemy_ability("Grasp of the Drift", "control", 20, 4, 0, { status_kind: "root", turns: 1, msg: "the drift closes over your boots - ROOTED" }),
+        ]
+    ),
+
+    // Mourner in Ice (BIOME IDENTITY PASS 08-27) - grief that weakens, and
+    // composes itself. The Tomb's chill/mend identity on a standard frame.
+    enemy_define(
+        /*name*/"Mourner in Ice",
+        /*HP*/38, /*damage*/5, /*armor*/1, /*el_resist*/7, /*dodge*/4, /*acc*/71,
+        /*xp*/14, /*gold_min*/4, /*gold_max*/9,
+        /*telegraph_turn*/0, /*telegraph_damage*/0, /*message*/"",
+        /*mechanic*/"regen", /*value*/3, /*turns*/2,
+        /*abilities*/[
+            enemy_ability("Keening", "debuff", 35, 3, 0.20, { status_kind: "weaken", turns: 2, msg: "keens, and the grief gets into your arms - weakened" }),
+            enemy_ability("Composure", "heal", 30, 3, 10, { msg: "composes itself, seam by frozen seam" }),
+        ]
+    ),
+
+    // Barrow Wight (08-27) - the cold under the cold. Phases, and throws it.
+    enemy_define(
+        /*name*/"Barrow Wight",
+        /*HP*/42, /*damage*/7, /*armor*/0, /*el_resist*/8, /*dodge*/7, /*acc*/72,
+        /*xp*/14, /*gold_min*/4, /*gold_max*/9,
+        /*telegraph_turn*/0, /*telegraph_damage*/0, /*message*/"",
+        /*mechanic*/"phase_shift", /*value*/1, /*turns*/3,
+        /*abilities*/[
+            enemy_ability("Chill of the Barrow", "spell", 35, 2, 10, { dtype: 1, msg: "pours the barrow's cold through your ribs" }),
+        ]
     ),
 ];
 
@@ -979,6 +1175,285 @@ global.enemies_tundra_tomb_elite = [
             enemy_ability("Requisition", "summon", 20, 5, 0, { msg: "files a REQUISITION - the Tomb sends another" }),
         ]
     ),
+
+    // Cortege Bearer (BIOME IDENTITY PASS 08-27) - it carries coffins. The
+    // coffins are not empty. Tundra's second summoner, at elite weight.
+    enemy_define(
+        /*name*/"Cortege Bearer",
+        /*HP*/80, /*damage*/10, /*armor*/5, /*el_resist*/6, /*dodge*/1, /*acc*/72,
+        /*xp*/29, /*gold_min*/15, /*gold_max*/24,
+        /*telegraph_turn*/4, /*telegraph_damage*/20,
+        /*message*/"lowers a coffin from its shoulder - gently!",
+        /*mechanic*/"fortify", /*value*/0.4, /*turns*/4,
+        /*abilities*/[
+            enemy_ability("Bear Forth", "summon", 22, 5, 0, { msg: "sets a coffin down, and OPENS it" }),
+        ]
+    ),
+];
+
+// =============================================================================
+// THE DROWNED REACH (§3.1, 08-27) - flooded undercity, shock-weak, floors 1-3.
+// Base stats sit on the shipped standard/elite curve: the dungeon's A4
+// BASELINE offset (§3.0) does the late-game scaling, so these numbers stay
+// comparable to the Tomb's on paper and hit like endgame in the water.
+// =============================================================================
+global.enemies_drowned_reach_standard = [
+    // 0: Drowned Deckhand - soaked line infantry; heaves a boat-hook overhead.
+    enemy_define(
+        /*name*/"Drowned Deckhand",
+        /*HP*/42, /*damage*/6, /*armor*/2, /*el_resist*/4, /*dodge*/3, /*acc*/73,
+        /*xp*/14, /*gold_min*/4, /*gold_max*/9,
+        /*telegraph_turn*/3, /*telegraph_damage*/17,
+        /*message*/"heaves its boat-hook overhead!",
+        /*mechanic*/"charge", /*value*/0, /*turns*/0
+    ),
+    // 1: Reach Eel - fast, slippery, bites twice.
+    enemy_define(
+        /*name*/"Reach Eel",
+        /*HP*/32, /*damage*/4, /*armor*/0, /*el_resist*/5, /*dodge*/12, /*acc*/76,
+        /*xp*/13, /*gold_min*/3, /*gold_max*/8,
+        /*telegraph_turn*/0, /*telegraph_damage*/0, /*message*/"",
+        /*mechanic*/"double_strike", /*value*/4, /*turns*/0
+    ),
+    // 2: Bloatling - swollen and buoyant; pops on death. Kill it at arm's length.
+    enemy_define(
+        /*name*/"Bloatling",
+        /*HP*/34, /*damage*/5, /*armor*/1, /*el_resist*/4, /*dodge*/2, /*acc*/70,
+        /*xp*/13, /*gold_min*/3, /*gold_max*/8,
+        /*telegraph_turn*/0, /*telegraph_damage*/0, /*message*/"",
+        /*mechanic*/"death_burst", /*value*/10, /*turns*/0
+    ),
+    // 3: Silt Wraith - what settled to the bottom, drifting back up. Caster.
+    enemy_define(
+        /*name*/"Silt Wraith",
+        /*HP*/44, /*damage*/7, /*armor*/0, /*el_resist*/9, /*dodge*/8, /*acc*/71,
+        /*xp*/15, /*gold_min*/4, /*gold_max*/9,
+        /*telegraph_turn*/0, /*telegraph_damage*/0, /*message*/"",
+        /*mechanic*/"phase_shift", /*value*/1, /*turns*/3,
+        /*abilities*/[
+            enemy_ability("Silt Choke", "spell", 35, 2, 10, { dtype: 2, msg: "pours silt down your throat" }),
+            enemy_ability("Murk", "debuff", 30, 3, 0.20, { status_kind: "blind", turns: 2, msg: "clouds the water - blinded" }),
+        ]
+    ),
+    // 4: Barnacle Thrall - hull-plated; periodically seals its shell.
+    enemy_define(
+        /*name*/"Barnacle Thrall",
+        /*HP*/46, /*damage*/7, /*armor*/5, /*el_resist*/4, /*dodge*/0, /*acc*/70,
+        /*xp*/15, /*gold_min*/4, /*gold_max*/9,
+        /*telegraph_turn*/4, /*telegraph_damage*/19,
+        /*message*/"winds up a barnacled haymaker!",
+        /*mechanic*/"fortify", /*value*/0.45, /*turns*/4
+    ),
+    // 5: Tide Crawler - armored scuttler; punishes one-note offense.
+    enemy_define(
+        /*name*/"Tide Crawler",
+        /*HP*/38, /*damage*/7, /*armor*/4, /*el_resist*/3, /*dodge*/6, /*acc*/74,
+        /*xp*/14, /*gold_min*/4, /*gold_max*/9,
+        /*telegraph_turn*/0, /*telegraph_damage*/0, /*message*/"",
+        /*mechanic*/"retribution", /*value*/4, /*turns*/0
+    ),
+    // 6: Sunken Chorister - the Choirmother's congregation; sings, saps, mends.
+    enemy_define(
+        /*name*/"Sunken Chorister",
+        /*HP*/36, /*damage*/6, /*armor*/0, /*el_resist*/8, /*dodge*/4, /*acc*/72,
+        /*xp*/15, /*gold_min*/4, /*gold_max*/9,
+        /*telegraph_turn*/0, /*telegraph_damage*/0, /*message*/"",
+        /*mechanic*/"regen", /*value*/3, /*turns*/2,
+        /*abilities*/[
+            enemy_ability("Drowning Note", "spell", 35, 2, 10, { dtype: 1, msg: "holds a note the water carries into you" }),
+            enemy_ability("Dirge", "debuff", 30, 3, 0.20, { status_kind: "weaken", turns: 2, msg: "sings the strength out of your arms" }),
+        ]
+    ),
+    // 7: Kelp Hound - a pack shape in the weed; worries at you twice.
+    enemy_define(
+        /*name*/"Kelp Hound",
+        /*HP*/40, /*damage*/5, /*armor*/1, /*el_resist*/4, /*dodge*/7, /*acc*/75,
+        /*xp*/14, /*gold_min*/4, /*gold_max*/9,
+        /*telegraph_turn*/0, /*telegraph_damage*/0, /*message*/"",
+        /*mechanic*/"double_strike", /*value*/5, /*turns*/0,
+        /*abilities*/[
+            enemy_ability("Dragging Jaws", "dot", 30, 3, 4, { turns: 3, msg: "tears a wound the water keeps open" }),
+        ]
+    ),
+];
+
+global.enemies_drowned_reach_elite = [
+    // 0: The Long Drink - it drinks. Burst it down or be sipped dry.
+    enemy_define(
+        /*name*/"The Long Drink",
+        /*HP*/88, /*damage*/11, /*armor*/3, /*el_resist*/9, /*dodge*/4, /*acc*/74,
+        /*xp*/30, /*gold_min*/15, /*gold_max*/25,
+        /*telegraph_turn*/0, /*telegraph_damage*/0, /*message*/"",
+        /*mechanic*/"regen", /*value*/5, /*turns*/2,
+        /*abilities*/[
+            enemy_ability("Deep Draught", "spell", 35, 2, 12, { dtype: 2, msg: "drinks something out of you" }),
+            enemy_ability("Long Swallow", "heal", 30, 3, 14, { msg: "swallows, and is more" }),
+        ]
+    ),
+    // 1: Anchor Revenant - dead weight with a grudge and a very large anchor.
+    enemy_define(
+        /*name*/"Anchor Revenant",
+        /*HP*/92, /*damage*/12, /*armor*/8, /*el_resist*/5, /*dodge*/0, /*acc*/71,
+        /*xp*/31, /*gold_min*/16, /*gold_max*/26,
+        /*telegraph_turn*/4, /*telegraph_damage*/22,
+        /*message*/"drags its anchor into the killing arc!",
+        /*mechanic*/"fortify", /*value*/0.5, /*turns*/4
+    ),
+    // 2: Deepwater Sentinel - the flooded gate's last watch; answers repetition.
+    enemy_define(
+        /*name*/"Deepwater Sentinel",
+        /*HP*/78, /*damage*/10, /*armor*/6, /*el_resist*/8, /*dodge*/3, /*acc*/74,
+        /*xp*/29, /*gold_min*/14, /*gold_max*/24,
+        /*telegraph_turn*/4, /*telegraph_damage*/20,
+        /*message*/"is preparing a crushing sweep!",
+        /*mechanic*/"retribution", /*value*/5, /*turns*/0
+    ),
+    // 3: Pale Fisher - it fishes for you. The hook is the problem.
+    enemy_define(
+        /*name*/"Pale Fisher",
+        /*HP*/70, /*damage*/12, /*armor*/2, /*el_resist*/6, /*dodge*/6, /*acc*/84,
+        /*xp*/30, /*gold_min*/15, /*gold_max*/25,
+        /*telegraph_turn*/3, /*telegraph_damage*/21,
+        /*message*/"draws back its line for the perfect cast!",
+        /*mechanic*/"charge", /*value*/0, /*turns*/0,
+        /*abilities*/[
+            enemy_ability("The Hook", "control", 25, 4, 0, { status_kind: "root", turns: 1, msg: "sets the hook - you are HELD" }),
+            enemy_ability("Gaff", "dot", 30, 3, 5, { turns: 3, msg: "opens you along the gaff's curve" }),
+        ]
+    ),
+];
+
+// =============================================================================
+// THE HOLLOW CANOPY (§3.2, 08-27) - overgrown dark, fire-weak, floors 1-3.
+// Same base-curve rule as the Reach: the §3.0 A5 baseline is the difficulty.
+// =============================================================================
+global.enemies_hollow_canopy_standard = [
+    // 0: Bramble Husk - a man-shape of thorn; cutting it costs.
+    enemy_define(
+        /*name*/"Bramble Husk",
+        /*HP*/44, /*damage*/6, /*armor*/3, /*el_resist*/3, /*dodge*/3, /*acc*/72,
+        /*xp*/14, /*gold_min*/4, /*gold_max*/9,
+        /*telegraph_turn*/0, /*telegraph_damage*/0, /*message*/"",
+        /*mechanic*/"retribution", /*value*/5, /*turns*/0
+    ),
+    // 1: Rootbound Corpse - the forest reusing what it was given; roots re-knit it.
+    enemy_define(
+        /*name*/"Rootbound Corpse",
+        /*HP*/50, /*damage*/7, /*armor*/2, /*el_resist*/4, /*dodge*/0, /*acc*/69,
+        /*xp*/15, /*gold_min*/4, /*gold_max*/9,
+        /*telegraph_turn*/4, /*telegraph_damage*/18,
+        /*message*/"rears back, roots tightening like cables!",
+        /*mechanic*/"regen", /*value*/4, /*turns*/2
+    ),
+    // 2: Spore Moth - lands soft, bursts softer. Do not breathe in.
+    enemy_define(
+        /*name*/"Spore Moth",
+        /*HP*/28, /*damage*/4, /*armor*/0, /*el_resist*/6, /*dodge*/12, /*acc*/72,
+        /*xp*/13, /*gold_min*/3, /*gold_max*/8,
+        /*telegraph_turn*/0, /*telegraph_damage*/0, /*message*/"",
+        /*mechanic*/"death_burst", /*value*/8, /*turns*/0,
+        /*abilities*/[
+            enemy_ability("Spore Cloud", "debuff", 35, 3, 0.20, { status_kind: "blind", turns: 2, msg: "sheds a blinding cloud of spores" }),
+        ]
+    ),
+    // 3: Canopy Stalker - the watcher in the branches; strikes in pairs.
+    enemy_define(
+        /*name*/"Canopy Stalker",
+        /*HP*/38, /*damage*/5, /*armor*/1, /*el_resist*/3, /*dodge*/10, /*acc*/78,
+        /*xp*/14, /*gold_min*/4, /*gold_max*/9,
+        /*telegraph_turn*/0, /*telegraph_damage*/0, /*message*/"",
+        /*mechanic*/"double_strike", /*value*/5, /*turns*/0
+    ),
+    // 4: Thicket Boar - furious tusked bulk; announces its charge.
+    enemy_define(
+        /*name*/"Thicket Boar",
+        /*HP*/48, /*damage*/7, /*armor*/4, /*el_resist*/2, /*dodge*/2, /*acc*/72,
+        /*xp*/15, /*gold_min*/4, /*gold_max*/9,
+        /*telegraph_turn*/3, /*telegraph_damage*/18,
+        /*message*/"paws the loam and lowers its tusks!",
+        /*mechanic*/"charge", /*value*/0, /*turns*/0
+    ),
+    // 5: Witchwood Sapling - young, rooted, already learning the old tricks.
+    enemy_define(
+        /*name*/"Witchwood Sapling",
+        /*HP*/36, /*damage*/5, /*armor*/1, /*el_resist*/6, /*dodge*/3, /*acc*/71,
+        /*xp*/14, /*gold_min*/4, /*gold_max*/9,
+        /*telegraph_turn*/0, /*telegraph_damage*/0, /*message*/"",
+        /*mechanic*/"regen", /*value*/4, /*turns*/2,
+        /*abilities*/[
+            enemy_ability("Lashing Roots", "control", 25, 4, 0, { status_kind: "root", turns: 1, msg: "whips roots around your ankles - ROOTED" }),
+            enemy_ability("Green Mending", "heal", 30, 3, 10, { msg: "draws sap over its wounds" }),
+        ]
+    ),
+    // 6: Moss Wraith - grief with moss grown over it. Caster.
+    enemy_define(
+        /*name*/"Moss Wraith",
+        /*HP*/42, /*damage*/7, /*armor*/0, /*el_resist*/9, /*dodge*/8, /*acc*/70,
+        /*xp*/15, /*gold_min*/4, /*gold_max*/9,
+        /*telegraph_turn*/0, /*telegraph_damage*/0, /*message*/"",
+        /*mechanic*/"phase_shift", /*value*/1, /*turns*/3,
+        /*abilities*/[
+            enemy_ability("Verdigris Drain", "spell", 35, 2, 10, { dtype: 2, msg: "draws the green through your skin" }),
+        ]
+    ),
+    // 7: Hollow Nester - it built a nest in something's ribcage. Defensive, raking.
+    enemy_define(
+        /*name*/"Hollow Nester",
+        /*HP*/40, /*damage*/6, /*armor*/1, /*el_resist*/4, /*dodge*/8, /*acc*/76,
+        /*xp*/14, /*gold_min*/4, /*gold_max*/9,
+        /*telegraph_turn*/0, /*telegraph_damage*/0, /*message*/"",
+        /*mechanic*/"retribution", /*value*/4, /*turns*/0,
+        /*abilities*/[
+            enemy_ability("Raking Dive", "dot", 30, 3, 4, { turns: 3, msg: "rakes you open on the wing" }),
+        ]
+    ),
+];
+
+global.enemies_hollow_canopy_elite = [
+    // 0: The Grafted Knight - armor grown into bark grown into armor.
+    enemy_define(
+        /*name*/"The Grafted Knight",
+        /*HP*/90, /*damage*/12, /*armor*/9, /*el_resist*/4, /*dodge*/2, /*acc*/73,
+        /*xp*/31, /*gold_min*/16, /*gold_max*/26,
+        /*telegraph_turn*/4, /*telegraph_damage*/22,
+        /*message*/"raises a sword that is also a branch!",
+        /*mechanic*/"fortify", /*value*/0.5, /*turns*/4
+    ),
+    // 1: Sporemind - the colony that learned to want things. Caster.
+    enemy_define(
+        /*name*/"Sporemind",
+        /*HP*/75, /*damage*/10, /*armor*/2, /*el_resist*/9, /*dodge*/4, /*acc*/74,
+        /*xp*/29, /*gold_min*/14, /*gold_max*/24,
+        /*telegraph_turn*/3, /*telegraph_damage*/19,
+        /*message*/"gathers a thunderhead of spores!",
+        /*mechanic*/"regen", /*value*/4, /*turns*/2,
+        /*abilities*/[
+            enemy_ability("Mindspore", "spell", 35, 2, 12, { dtype: 2, msg: "thinks a thought inside YOUR head" }),
+            enemy_ability("Choking Bloom", "debuff", 30, 3, 0.20, { status_kind: "blind", turns: 2, msg: "blooms across your eyes" }),
+            enemy_ability("Colony Mending", "heal", 30, 3, 12, { msg: "regrows what you cut away" }),
+        ]
+    ),
+    // 2: Old Growth - it was here first. It intends to be here last.
+    enemy_define(
+        /*name*/"Old Growth",
+        /*HP*/100, /*damage*/11, /*armor*/10, /*el_resist*/5, /*dodge*/0, /*acc*/69,
+        /*xp*/32, /*gold_min*/16, /*gold_max*/26,
+        /*telegraph_turn*/4, /*telegraph_damage*/24,
+        /*message*/"leans its whole century into the blow!",
+        /*mechanic*/"fortify", /*value*/0.4, /*turns*/3
+    ),
+    // 3: The Nest - the problem is not the nest. The problem is what answers it.
+    enemy_define(
+        /*name*/"The Nest",
+        /*HP*/72, /*damage*/9, /*armor*/3, /*el_resist*/6, /*dodge*/3, /*acc*/72,
+        /*xp*/30, /*gold_min*/15, /*gold_max*/25,
+        /*telegraph_turn*/0, /*telegraph_damage*/0, /*message*/"",
+        /*mechanic*/"death_burst", /*value*/12, /*turns*/0,
+        /*abilities*/[
+            // SUMMONS: the canopy answers its own alarm.
+            enemy_ability("The Canopy Answers", "summon", 25, 4, 0, { msg: "shrieks - and the CANOPY ANSWERS" }),
+        ]
+    ),
 ];
 
 // =============================================================================
@@ -996,6 +1471,14 @@ function enemy_size_mult(name) {
         case "Magma Slug":     return 0.78;
         case "Frost Shard":    return 0.68;
         case "Lava Spitter":   return 0.85;
+        // 08-27 §3.1/§3.2 small-by-design biome vermin.
+        case "Bloatling":         return 0.72;
+        case "Reach Eel":         return 0.85;
+        case "Spore Moth":        return 0.62;
+        case "Witchwood Sapling": return 0.75;
+        // BIOME IDENTITY PASS additions (08-27).
+        case "Candle Thief":      return 0.80;
+        case "Pyre Dancer":       return 0.85;
     }
     // Rank intent (M 08-16 shot: a Bone Sovereign on the FAR station read
     // smaller than a trash skeleton on the NEAR one): the bestiary KIND now
@@ -1087,6 +1570,52 @@ function enemy_sprite_map() {
         "The Understudy":         spr_vault_guardian_ff,
         "The Hollow Crown":       spr_bone_sovereign,
         "The Bottom":             spr_stone_golem_ff,
+        // DROWNED REACH + HOLLOW CANOPY (08-27 §3.1/§3.2): STAND-IN models from
+        // the existing roster until the biome art runs happen (same precedent
+        // as the Depth Wardens above - flagged to M; an unmapped name draws
+        // NOTHING in combat and invisible enemies are worse than borrowed
+        // clothes). Swap each line as its sprite lands.
+        "Drowned Deckhand":        spr_skeleton_soldier_ff,
+        "Reach Eel":               spr_magma_slug_ff,
+        "Bloatling":               spr_cinder_imp_ff,
+        "Silt Wraith":             spr_ash_wraith,
+        "Barnacle Thrall":         spr_frozen_thrall,
+        "Tide Crawler":            spr_vault_crawler_ff,
+        "Sunken Chorister":        spr_pale_archivist,
+        "Kelp Hound":              spr_grave_stalker,
+        "The Long Drink":          spr_dungeon_wraith_ff,
+        "Anchor Revenant":         spr_frozen_sentinel,
+        "Deepwater Sentinel":      spr_vault_sentinel_ff,
+        "Pale Fisher":             spr_skeleton_archer_ff,
+        "The Tidewright":          spr_glacial_warden,
+        "Choirmother of the Deep": spr_tomb_archon,
+        "Leviathan Below":         spr_glacial_beast,
+        "Bramble Husk":            spr_skeleton_soldier_ff,
+        "Rootbound Corpse":        spr_frozen_thrall,
+        "Spore Moth":              spr_frost_shard_ff,
+        "Canopy Stalker":          spr_grave_stalker,
+        "Thicket Boar":            spr_glacial_lurker_ff,
+        "Witchwood Sapling":       spr_cinder_imp_ff,
+        "Moss Wraith":             spr_vault_wraith_ff,
+        "Hollow Nester":           spr_lava_spitter_ff,
+        "The Grafted Knight":      spr_vault_guardian_ff,
+        "Sporemind":               spr_pale_archivist,
+        "Old Growth":              spr_stone_golem_ff,
+        "The Nest":                spr_vault_crawler_ff,
+        "The Grafted Stag":        spr_glacial_beast,
+        "Mother Bramble":          spr_bone_sovereign,
+        "The Green Silence":       spr_eternal_frost,
+        // BIOME IDENTITY PASS (08-27): stand-ins for the identity additions,
+        // same rules as above - swap each line as its art lands.
+        "Candle Thief":            spr_dungeon_wraith_ff,
+        "Rustkeeper":              spr_stone_golem_ff,
+        "The Second Count":        spr_pale_archivist,
+        "Pyre Dancer":             spr_cinder_imp_ff,
+        "Slagback Tortoise":       spr_magma_slug_ff,
+        "The Unquenched":          spr_infernal_revenant,
+        "Mourner in Ice":          spr_snowbound_wraith_ff,
+        "Barrow Wight":            spr_ice_specter,
+        "Cortege Bearer":          spr_frozen_sentinel,
     };
 }
 
@@ -1174,6 +1703,10 @@ function bestiary_catalog() {
         { name:"Grave Stalker",       family:"Ashen Vault",    kind:"Elite",    lore:"It learned to hunt by watching adventurers die: where they look, when they rest, what they reach for last. The stalker is the Vault's memory of every mistake ever made inside it." },
         { name:"Bone Sovereign",      family:"Ashen Vault",    kind:"Boss",     lore:"The king the Vault was built to keep - or to keep in. The Sovereign wears a crown of fused vertebrae and holds court over everything that has ever died down here, which is everything." },
         { name:"Malgrath the Warden", family:"Ashen Vault",    kind:"Boss",     lore:"The Vault's first and last jailer. Malgrath swore no prisoner would leave and, when the end came, applied the oath to himself. He is not angry that you came. He is pleased the count is going up." },
+        // --- Biome identity pass additions (08-27) ---------------------------
+        { name:"Candle Thief",        family:"Ashen Vault",    kind:"Standard", lore:"The Vault's dark was not always this complete. Candle thieves collected it one flame at a time, pinch by pinch, and hoard the stolen light somewhere no one has ever found lit. They will take yours the same way: politely, completely, mid-swing." },
+        { name:"Rustkeeper",          family:"Ashen Vault",    kind:"Standard", lore:"Built to maintain the bars, hinges and locks - a duty with no end condition. Its maul is a fused mass of every key it ever confiscated. It does not consider you a prisoner. It considers you deferred maintenance." },
+        { name:"The Second Count",    family:"Ashen Vault",    kind:"Elite",    lore:"The Sovereign keeps court; the Second Count keeps the BOOKS. Every soul in the Vault is an entry, every escape attempt an irregularity, and irregularities are audited. It has never once been out by so much as one - which is why it wants a very close look at you." },
         { name:"Bone Colossus",       family:"Ashen Vault",    kind:"Boss",     lore:"When the Vault's dead grew too many to walk singly, they walked together. The Colossus is a congregation - hundreds of skeletons in one towering consensus, disagreeing only about which hand should crush you." },
         // --- Scorched Depths -------------------------------------------------
         { name:"Cinder Imp",          family:"Scorched Depths", kind:"Standard", lore:"Sparks that got ideas. Imps pour out of the deep vents in giggling swarms, setting fires they are too small to survive - martyrs to arson, endlessly replaced." },
@@ -1187,6 +1720,10 @@ function bestiary_catalog() {
         { name:"Forge Tyrant",        family:"Scorched Depths", kind:"Boss",     lore:"Master of the great forge at the world's waist. Every weapon in the Depths bears his mark, and he considers every one of them - including the one on your belt - a loan." },
         { name:"Molten Revenant",     family:"Scorched Depths", kind:"Boss",     lore:"The first soul the great fire took, and the one it kept closest. The Molten Revenant is grief hot enough to pour - the Depths' own heart, walking." },
         { name:"The Ashen Colossus",  family:"Scorched Depths", kind:"Boss",     lore:"They say the Depths burned because something enormous lay down to sleep in them. The Colossus is what wakes when the deepest floors go quiet - so the deepest floors are never quiet." },
+        // --- Biome identity pass additions (08-27) ---------------------------
+        { name:"Pyre Dancer",         family:"Scorched Depths", kind:"Standard", lore:"Something that learned grace inside a fire and never entirely came out of either. It fights in turns and pirouettes, and the flame follows it a half-step behind like a devoted partner. Being cut is the lesser problem. The wake is the problem." },
+        { name:"Slagback Tortoise",   family:"Scorched Depths", kind:"Standard", lore:"A kiln that got up and walked. The Depths' smiths once fired blades in the hollow of its shell as it wandered, paying it in coal. The smiths are gone; the temper is not. Do not stand near it at the end. There is a REASON the shell glows." },
+        { name:"The Unquenched",      family:"Scorched Depths", kind:"Elite",    lore:"A smith who refused to let the great fire die, and fed it the last fuel available - himself. The coals in his chest have burned for a century on stubbornness alone. He is still working. The hammer no longer needs iron to fall on." },
         // --- Tundra Tomb -----------------------------------------------------
         { name:"Ice Specter",         family:"Tundra Tomb",    kind:"Standard", lore:"Cold that learned to want. Specters drift the tomb-halls tracing frost-flowers on the sarcophagi, and unravel with a shriek anything warm enough to remind them." },
         { name:"Frost Shard",         family:"Tundra Tomb",    kind:"Standard", lore:"Fragments of the Tomb's shattered ward-glacier, still obeying the last order the wards were given: sharpen, and hold. They travel in glittering, humming clusters." },
@@ -1199,6 +1736,10 @@ function bestiary_catalog() {
         { name:"Glacial Warden",      family:"Tundra Tomb",    kind:"Boss",     lore:"Keeper of the Tomb's sealed vaults, crowned in hoarfrost. The Warden's rounds have not varied in a thousand years; you are the first thing worth changing them for." },
         { name:"Tomb Archon",         family:"Tundra Tomb",    kind:"Boss",     lore:"The Tomb was built to honor the Archon; the cold was its idea. It presides from a throne of black ice, judging the frozen dead - and finds most of them, and all of the living, wanting." },
         { name:"The Eternal Frost",   family:"Tundra Tomb",    kind:"Boss",     lore:"Not a creature so much as the Tomb's winter given a will. Where it walks, torches gutter and time itself slows to a crawl. The dead call it mercy. The living rarely get to call it anything." },
+        // --- Biome identity pass additions (08-27) ---------------------------
+        { name:"Mourner in Ice",      family:"Tundra Tomb",    kind:"Standard", lore:"Professional grief, frozen mid-service. The mourners were hired by the honored dead to weep in perpetuity, and the Tomb held them to the contract. The keening gets into your arms before it gets into your ears. They mend themselves between verses. The contract is very thorough." },
+        { name:"Barrow Wight",        family:"Tundra Tomb",    kind:"Standard", lore:"The cold under the cold. Wights sleep beneath the oldest graves, below the frost line, below the reach of prayers, and surface only when the Tomb wants something reminded of its place. They carry the barrow's chill the way a cup carries water: to pour." },
+        { name:"Cortege Bearer",      family:"Tundra Tomb",    kind:"Elite",    lore:"It has carried coffins to their niches since the Tomb's first winter, and it has never once delivered one empty. The procession is down to a single bearer now, but the schedule holds. When it sets its burden down gently and reaches for the lid, the funeral being announced is yours." },
         // --- 08-06: THE DEPTH WARDENS (DESIGN_WORLD_EXPANSION_0806.md §4) ------
         // Descent-only bosses on a five-floor cadence. Each attacks a HABIT
         // rather than a stat - endless scaling eventually beats raw numbers, so
@@ -1213,6 +1754,40 @@ function bestiary_catalog() {
         { name:"The Understudy",         family:"The Descent", kind:"Boss", lore:"It has watched every descent ever made and has been practising. It knows your build. It is wearing your affixes. It has been waiting a long time for the part." },
         { name:"The Hollow Crown",       family:"The Descent", kind:"Boss", lore:"A circlet the size of a gate, above a throne with nothing on it. The king it belonged to is a thousand years gone and it is still ruling, and the fight gets quieter the longer it goes on." },
         { name:"The Bottom",             family:"The Descent", kind:"Boss", lore:"The floor under the floors. Everything that fell is here, arranged, and it has had a very long time to decide what it thinks of the falling." },
+
+        // --- The Drowned Reach (08-27, §3.1) --------------------------------
+        { name:"Drowned Deckhand",   family:"Drowned Reach", kind:"Standard", lore:"The undercity's dockhands, still working the flooded quays. They kept their boat-hooks and their patience; the water kept everything else. They will help you down. That is what the hook is for." },
+        { name:"Reach Eel",          family:"Drowned Reach", kind:"Standard", lore:"Silver, quick, and always exactly where your blade was a moment ago. Reach eels grew fat on what the flood brought down, and the flood has never once stopped bringing." },
+        { name:"Bloatling",          family:"Drowned Reach", kind:"Standard", lore:"Something small that drowned and did not accept it. The gases of its long refusal hold it upright and buoyant, and give it one final, extremely inclusive argument." },
+        { name:"Silt Wraith",        family:"Drowned Reach", kind:"Standard", lore:"Everything that settles reaches the bottom, and grief settles further than most. Silt wraiths rise when the water is disturbed - and you, walking these galleries, are a disturbance." },
+        { name:"Barnacle Thrall",    family:"Drowned Reach", kind:"Standard", lore:"It stood still too long in the wrong water, and the Reach quietly built a hull on it. The shell is thick, the swings are slow, and neither of those facts helps you in a narrow gallery." },
+        { name:"Tide Crawler",       family:"Drowned Reach", kind:"Standard", lore:"A crab the size of a door, wearing the door. Tide crawlers armor themselves in whatever the flood delivers and have opinions about anyone who hits the same plate twice." },
+        { name:"Sunken Chorister",   family:"Drowned Reach", kind:"Standard", lore:"The undercity's choir never disbanded; it just moved rehearsals underwater. Each chorister holds one note of the Choirmother's hymn, and the water carries every one of them straight into your bones." },
+        { name:"Kelp Hound",         family:"Drowned Reach", kind:"Standard", lore:"A dog-shaped decision made by the kelp. It hunts in the drifting weed where outlines stop meaning anything, and its jaws leave wounds the water refuses to close." },
+        { name:"The Long Drink",     family:"Drowned Reach", kind:"Elite",    lore:"The Reach's oldest thirst, still unslaked. It does not bite, exactly. It sips - and everything you are is, to it, beverage." },
+        { name:"Anchor Revenant",    family:"Drowned Reach", kind:"Elite",    lore:"Buried at sea with full honors and its ship's anchor, which it took personally. It has carried the anchor up forty flooded stairwells to have this conversation with you." },
+        { name:"Deepwater Sentinel", family:"Drowned Reach", kind:"Elite",    lore:"The last watch of the drowned gate, still at its post below the waterline. Its orders predate the flood, and the flood did not countermand them." },
+        { name:"Pale Fisher",        family:"Drowned Reach", kind:"Elite",    lore:"Something tall and patient that fishes the galleries with a line of braided sinew. It is a very good fisher. Consider what that makes you." },
+        { name:"The Tidewright",     family:"Drowned Reach", kind:"Boss",     lore:"Keeper of the lock-works that once held the water back, and the first thing the water forgave. He works the great gates still - flood and ebb, flood and ebb - and every rhythm in the Reach is his." },
+        { name:"Choirmother of the Deep", family:"Drowned Reach", kind:"Boss", lore:"She led the undercity's choir when it sang for congregations. She leads it still; the congregation is the water now, and the water always comes to services. Her hymn gains a voice for every chorister still singing." },
+        { name:"Leviathan Below",    family:"Drowned Reach", kind:"Boss",     lore:"The Reach did not flood by accident. Something needed the room. You will never fight all of it - only the parts that surface, which it can afford to lose, and you cannot." },
+
+        // --- The Hollow Canopy (08-27, §3.2) --------------------------------
+        { name:"Bramble Husk",      family:"Hollow Canopy", kind:"Standard", lore:"The thorn hedge needed hands, so it grew some. A husk is mostly briar and entirely committed; everything you cut off it costs you a piece of whatever did the cutting." },
+        { name:"Rootbound Corpse",  family:"Hollow Canopy", kind:"Standard", lore:"The forest buries nothing. What falls on its floor is requisitioned - roots through the long bones, sap for blood, and back on patrol within the season. The forest considers this recycling. The corpses have not been asked." },
+        { name:"Spore Moth",        family:"Hollow Canopy", kind:"Standard", lore:"Soft as ash and about as trustworthy. Spore moths drift the dark shafts between the branches, and everything about them - the wings, the dust, the dying - is a delivery mechanism." },
+        { name:"Canopy Stalker",    family:"Hollow Canopy", kind:"Standard", lore:"The thing that is watching you from the branches. It has been watching since you came in. The moment you stop thinking about it is a moment it has been waiting for." },
+        { name:"Thicket Boar",      family:"Hollow Canopy", kind:"Standard", lore:"Entirely ordinary boar, extraordinarily located. Generations under the Canopy made it patient, thorn-hided and blind-sided, and it resents lanterns on principle." },
+        { name:"Witchwood Sapling", family:"Hollow Canopy", kind:"Standard", lore:"A witchwood spends its first century learning to hold still. The saplings haven't. They are young enough to chase, old enough to grip, and every one of them is practicing for what it will be." },
+        { name:"Moss Wraith",       family:"Hollow Canopy", kind:"Standard", lore:"Grief the forest grew over. The moss softened its edges and none of its intent; it drifts the ruin it remembers, drawing the green through anything warm enough to notice." },
+        { name:"Hollow Nester",     family:"Hollow Canopy", kind:"Standard", lore:"It nests in ribcages because ribcages are, structurally speaking, excellent nests. It defends the nest on the wing, with rake and wheel and fury, and it does not care whose ribs they were." },
+        { name:"The Grafted Knight", family:"Hollow Canopy", kind:"Elite",   lore:"A knight of the old ruin who knelt too long at a witchwood shrine. The armor took root; the roots took orders. What patrols the Canopy now is a chain of command with bark on it." },
+        { name:"Sporemind",         family:"Hollow Canopy", kind:"Elite",    lore:"The colony crossed some threshold of size and began to want things. It thinks slowly, in weather-length thoughts, and one of its thoughts is now happening inside your head." },
+        { name:"Old Growth",        family:"Hollow Canopy", kind:"Elite",    lore:"It was here before the ruin, before the town, arguably before the word 'here'. It moves perhaps twice a year. You have caught it on a busy day." },
+        { name:"The Nest",          family:"Hollow Canopy", kind:"Elite",    lore:"Not an animal - an address. The Canopy's fastest and angriest all hatched here, and the Nest keeps their loyalty. Break it open and you will meet the family. Leave it and you already have." },
+        { name:"The Grafted Stag",  family:"Hollow Canopy", kind:"Boss",     lore:"The forest's own herald, crowned in graftwork antler that was never entirely his. Every wound he takes is a cutting, and the Canopy plants what it is given - hurt him and count the footsteps that answer." },
+        { name:"Mother Bramble",    family:"Hollow Canopy", kind:"Boss",     lore:"The hedge at the heart of the Canopy, and the will that steers it. Her walls cut the arena to her liking, reaching her costs exactly what she decides it costs, and she has never once been pruned." },
+        { name:"The Green Silence", family:"Hollow Canopy", kind:"Boss",     lore:"The deep forest's final opinion on noise. Where it attends, sound is repossessed - birdsong first, then footsteps, then whichever of your workings it finds loudest. The fight gets quieter. That is not an improvement." },
     ];
 }
 
@@ -1358,6 +1933,44 @@ function boss_phase_shift(name) {
             dmg_mult: 1.15, armor_add: 0, heal_pct: 0, mech: undefined,
             add_ability: enemy_ability("Deepening Winter", "debuff", 40, 2, 0.20,
                 { status_kind: "weaken", turns: 2, msg: "drives the winter into your marrow - weakened" }) };
+        // --- Drowned Reach (08-27, §3.1) --------------------------------------
+        case "The Tidewright": return {
+            toast: "THE GATES OPEN!",
+            log:   "THE TIDEWRIGHT hauls every lock wide - the FLOOD comes for your footing!",
+            dmg_mult: 1.15, armor_add: 0, heal_pct: 0, mech: undefined,
+            add_ability: enemy_ability("Undertow", "control", 30, 4, 0,
+                { status_kind: "root", turns: 1, msg: "drags the water around your legs - HELD by the undertow" }) };
+        case "Choirmother of the Deep": return {
+            toast: "THE CHOIR SWELLS!",
+            log:   "THE CHOIRMOTHER opens the hymn's second movement - the water itself joins the choir!",
+            dmg_mult: 1.10, armor_add: 0, heal_pct: 0, mech: undefined,
+            add_ability: enemy_ability("Call the Chorus", "summon", 45, 3, 0,
+                { msg: "CALLS THE CHORUS - the water answers in harmony" }) };
+        case "Leviathan Below": return {
+            toast: "IT BREACHES IN FULL!",
+            log:   "LEVIATHAN BELOW - the parts stop pretending to be separate. It is ALL surfacing now.",
+            dmg_mult: 1.25, armor_add: 0, heal_pct: 0, mech: undefined,
+            tele_turn: 2,   // the breach cadence nearly doubles
+            add_ability: undefined };
+        // --- Hollow Canopy (08-27, §3.2) --------------------------------------
+        case "The Grafted Stag": return {
+            toast: "THE WOUNDS OPEN!",
+            log:   "THE GRAFTED STAG staggers - and every wound you gave him begins to SPROUT.",
+            dmg_mult: 1.10, armor_add: 0, heal_pct: 0, mech: undefined,
+            add_ability: enemy_ability("Sprouting Wound", "summon", 45, 3, 0,
+                { msg: "a WOUND SPROUTS - what you cut from him takes root and rises" }) };
+        case "Mother Bramble": return {
+            toast: "THE HEDGE CLOSES!",
+            log:   "MOTHER BRAMBLE draws her walls in - thorn plates over her, and the arena gets SMALLER.",
+            dmg_mult: 1.10, armor_add: 4, heal_pct: 0, mech: undefined,
+            add_ability: enemy_ability("Bramble Wall", "control", 30, 4, 0,
+                { status_kind: "root", turns: 1, msg: "walls you in with thorn - ROOTED against the hedge" }) };
+        case "The Green Silence": return {
+            toast: "THE QUIET DEEPENS!",
+            log:   "THE GREEN SILENCE - the forest stops listening to you altogether.",
+            dmg_mult: 1.15, armor_add: 0, heal_pct: 0.10, mech: undefined,
+            add_ability: enemy_ability("Stolen Voice", "debuff", 40, 2, 0.20,
+                { status_kind: "weaken", turns: 2, msg: "takes the sound out of your swing - weakened" }) };
     }
     return undefined;
 }

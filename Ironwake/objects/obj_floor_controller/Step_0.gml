@@ -576,6 +576,45 @@ if (showing_event_choice) {
                 room_goto(Room1);
                 exit;
             }
+            // AMBUSH (BIOME IDENTITY PASS, M-locked 08-27): greed at the Tithe
+            // Bowl / the thawed warrior / the Fisher's line closes this result
+            // into a forced ELITE fight - the duel-launch idiom exactly. Any
+            // pre-declared bonus loot (global.ambush_loot_due) pays at the
+            // elite's drop roll (handle_enemy_drops).
+            if (variable_global_exists("ambush_launch") && global.ambush_launch) {
+                global.ambush_launch = false;
+                showing_event_choice = false;
+                current_rooms[selected_room].cleared = true;
+                global.floor_rooms_cleared[selected_room] = true;
+                music_dungeon_stop();
+                global.next_enemy_type    = "elite";
+                global.current_room_index = selected_room;
+                global.just_cleared_room  = false;
+                global.just_cleared_boss  = false;
+                room_goto(Room1);
+                exit;
+            }
+            // GROVE OFFERING (Canopy event): the result closes into the shared
+            // item-sacrifice picker (project_item_picker: every sacrifice site
+            // routes through it). Empty-handed divers get the grove's pity
+            // instead of a picker with nothing in it.
+            if (variable_global_exists("grove_offer_pending") && global.grove_offer_pending) {
+                global.grove_offer_pending = false;
+                showing_event_choice = false;
+                current_rooms[selected_room].cleared = true;
+                global.floor_rooms_cleared[selected_room] = true;
+                var _gv_cands = item_picker_candidates_by_rarity(0);
+                if (array_length(_gv_cands) > 0) {
+                    item_picker_open("grove_offering", {}, _gv_cands);
+                } else {
+                    // Nothing to give: a smaller kindness, no offering taken.
+                    if (!variable_global_exists("run_current_hp")) global.run_current_hp = out_of_combat_max_hp();
+                    global.run_current_hp = min(out_of_combat_max_hp(), global.run_current_hp + 10);
+                    floor_toast_msg = "You have nothing the grove would keep - it settles for the visit. (+10 HP)";
+                    floor_toast_t   = 165;
+                }
+                exit;
+            }
             // Borrowed Memory DRAFT (07-16 combo batch): if the event just offered
             // memories, the overlay stays open and becomes the pick-1-of-3 screen -
             // a synthetic event rendered by the same generic choice UI. The room
@@ -897,7 +936,7 @@ if (input_confirm() || input_confirm_alt()) {
                 // Cartographer's Cut: the trait's bonus slot becomes a choice of two
                 // fresh equipment rolls instead of one auto-grant.
                 if (_t_is_bonus && trait_transcended("Treasure Hunter")) {
-                    var _cc_asc = (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0);
+                    var _cc_asc = awakening_effective();   // §3.0 effective tier
                     var _cc1 = drop_equipment(drop_weights("chest", _cc_asc), true, _t_tb);
                     var _cc2 = drop_equipment(drop_weights("chest", _cc_asc), true, _t_tb);
                     item_picker_open("cartographer", { chosen: undefined, c1: _cc1, c2: _cc2 }, [
@@ -920,7 +959,7 @@ if (input_confirm() || input_confirm_alt()) {
                     _t_found = _tc;
                 } else {
                     // Curse loot-tiers are a post-roll rarity bump now, not an awakening offset.
-                    var _te_asc = (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0);
+                    var _te_asc = awakening_effective();   // §3.0 effective tier
                     var _te = drop_equipment(drop_weights("chest", _te_asc), true, _t_tb);
                     array_push(global.run_items_found, _te);
                     array_push(global.carried_items, _te);
@@ -951,7 +990,7 @@ if (input_confirm() || input_confirm_alt()) {
         // run_current_hp; a deferred heal made rest sites look broken). Awakening-
         // scaled: flat = base + 4/tier, plus 5% of the geared max HP, which
         // out_of_combat_max_hp() can resolve here.
-        var _rest_tier = variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0;
+        var _rest_tier = awakening_effective();   // §3.0: alcoves keep pace with the real tier
         var _rest_flat = (trait_active("Quick Recovery") ? round(25 * trait_potency_mult("Quick Recovery")) : 15)
                        + 4 * _rest_tier;
         var _rest_max  = out_of_combat_max_hp();
@@ -1017,7 +1056,7 @@ if (input_confirm() || input_confirm_alt()) {
         if (!variable_global_exists("run_items_found")) global.run_items_found = [];
         if (!variable_global_exists("carried_items"))   global.carried_items   = [];
         // Curse loot-tiers are a post-roll rarity bump now, not an awakening offset.
-        var _tv_asc = (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0);
+        var _tv_asc = awakening_effective();   // §3.0 effective tier
         // LOOT ABUNDANCE (M 08-18): the armory pays gear 70% of the time; the other 30%
         // it pays DOUBLE gold instead (was a guaranteed piece every time).
         var _tv_e = undefined;
@@ -1048,7 +1087,7 @@ if (input_confirm() || input_confirm_alt()) {
         if (!variable_global_exists("run_items_found")) global.run_items_found = [];
         if (!variable_global_exists("carried_items"))   global.carried_items   = [];
         // Curse loot-tiers are a post-roll rarity bump now, not an awakening offset.
-        var _tr_asc = (variable_global_exists("selected_ascendance") ? global.selected_ascendance : 0);
+        var _tr_asc = awakening_effective();   // §3.0 effective tier
         var _tr_e = drop_equipment(drop_weights("reliquary", _tr_asc), true, curse_loot_tier_bonus_for("reliquary"));
         array_push(global.run_items_found, _tr_e);
         array_push(global.carried_items, _tr_e);
@@ -1181,9 +1220,10 @@ if (mouse_check_button_pressed(mb_left)) {
     for (var _mi = 0; _mi < array_length(current_rooms); _mi++) {
         if (!_mreach[_mi]) continue;
         var _mr  = current_rooms[_mi];
-        var _mnx = _mr.px - 98;
+        var _mnw = variable_global_exists("floor_node_w") ? global.floor_node_w : 195;
+        var _mnx = _mr.px - _mnw * 0.5;
         var _mny = _mr.py - 48;
-        if (_mx >= _mnx && _mx < _mnx + 195 && _my >= _mny && _my < _mny + 96) {
+        if (_mx >= _mnx && _mx < _mnx + _mnw && _my >= _mny && _my < _mny + 96) {
             // Touch (8c): tapping the ALREADY-selected node enters it (simulated
             // Enter -> the unchanged ENTER ROOM handler next step). First tap
             // selects, second tap commits - guards against travel mis-taps.

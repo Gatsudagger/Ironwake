@@ -1637,6 +1637,24 @@ function ability_effective_cost(ab, caster) {
         _cost = 0;
     }
 
+    // CHOKING GROWTH (§3.2 Hollow Canopy floor passive, 08-27): the FIRST
+    // ability cast each combat costs +1 AP - openers get punished, cheap first
+    // moves rewarded. Player only, never inside a Descent (themes carry no
+    // biome passives there). The choking_used flag burns at cast commit (both
+    // commit sites in obj_combat_controller Step_0), so display and charge
+    // always agree - the same idiom as every discount above, sign reversed.
+    // Applied LAST and after the Brand on purpose: the Canopy chokes even a
+    // branded opener back up to 1 AP.
+    if (variable_global_exists("selected_dungeon") && global.selected_dungeon == "hollow_canopy"
+        && !(variable_global_exists("descent_active") && global.descent_active)
+        && variable_struct_exists(caster, "is_player") && caster.is_player
+        && !variable_struct_exists(caster, "choking_used")
+        // green_hush (the Grove That Listens): an accepted offering holds the
+        // growth off your openers for the rest of the floor.
+        && !floor_mod_get("green_hush")) {
+        _cost += 1;
+    }
+
     return _cost;
 }
 

@@ -63,6 +63,19 @@ if (zoom_intro_open) {
     exit;
 }
 
+// ORIGINS ONBOARDING RETRY (08-21) - the "Something Stirs" tip that points a new
+// player at Bairc. Its old Create-time call fired one line after the hub tip
+// claimed the one-tip-at-a-time slot, so it silently never showed; it also
+// required an egg already in the roster, but the starter egg is only granted at
+// the FIRST Bairc talk - so a fresh save never qualified. Retry every step:
+// once the hub tip is dismissed it takes the slot, and it stops being due the
+// moment the player has had that first talk (the tip's job is done).
+// tutorial_try_show self-guards seen/disabled, so this is a cheap no-op after.
+if (!tutorial_seen_has("origin_egg") && tutorial_seen_has("hub")
+    && (!variable_global_exists("pet_starter_given") || !global.pet_starter_given)) {
+    tutorial_try_show("origin_egg");
+}
+
 // AWAKENING BOOST POPUP (SYSTEMS_ENDLESS.md §1) - a first-time tier clear earned
 // a pick: raise ONE other dungeon's awakening by +1. Fully modal on hub arrival;
 // the ending sequence outranks it. Card geometry MUST match Draw_64.
@@ -111,6 +124,53 @@ if (awaken_boost_open) {
         save_game();
     }
     exit;   // modal - nothing else on the hub moves while the choice is up
+}
+
+// -----------------------------------------------------------------------------
+// DUNGEON REVEAL CEREMONY (§3.0 rule 4, M design-locked 08-27): a "?" mystery
+// card flips over to show the newly unlocked dungeon's face. Fires on hub
+// arrival for any dungeon that is revealed (chain gate crossed / boost / save
+// migration edge) but has not had its ceremony. Modal; boost + ending outrank
+// it. State lives on the game controller; Draw_64 renders the flip topmost.
+// -----------------------------------------------------------------------------
+var _gc_rv = instance_exists(obj_game_controller) ? instance_find(obj_game_controller, 0) : noone;
+if (_gc_rv != noone) {
+    if (!variable_struct_exists(_gc_rv, "dungeon_reveal_active")) {
+        _gc_rv.dungeon_reveal_active = "";
+        _gc_rv.dungeon_reveal_t      = 0;
+    }
+    if (_gc_rv.dungeon_reveal_active == "" && !awaken_boost_open && !ending_active
+        && (!variable_global_exists("ending_pending") || !global.ending_pending)
+        && !_gc_rv.dungeon_select_open && !tutorial_is_active()) {
+        var _rv_keys = dungeon_keys();
+        for (var _rvi = 0; _rvi < array_length(_rv_keys); _rvi++) {
+            var _rk = _rv_keys[_rvi];
+            if (dungeon_reveal_seen(_rk))    continue;
+            if (!dungeon_is_revealed(_rk))   continue;
+            _gc_rv.dungeon_reveal_active = _rk;
+            _gc_rv.dungeon_reveal_t      = 0;
+            audio_play_sound(snd_sting_levelup, 1, false);
+            break;
+        }
+    }
+    if (_gc_rv.dungeon_reveal_active != "") {
+        _gc_rv.dungeon_reveal_t++;
+        // Dismiss once the flip has finished (~1.5s) - Enter / Space / Esc / tap.
+        if (_gc_rv.dungeon_reveal_t > 90
+            && (input_confirm() || input_confirm_alt() || input_cancel()
+                || mouse_check_button_pressed(mb_left))) {
+            var _rv_done = _gc_rv.dungeon_reveal_active;
+            dungeon_reveal_mark_seen(_rv_done);
+            _gc_rv.dungeon_reveal_active = "";
+            _gc_rv.dungeon_reveal_t      = 0;
+            audio_play_sound(snd_npc_confirm, 1, false);
+            save_game();
+            // §3.0 coach-mark 2: the Drowned Reach reveal carries the
+            // "starts at Awakening IV strength" advice - fires exactly once.
+            if (_rv_done == "drowned_reach") tutorial_try_show("biome_baseline");
+        }
+        exit;   // modal - the ceremony owns the hub
+    }
 }
 
 // Onboarding coach-mark is modal - freeze the hub entirely while one is up. gc owns
@@ -241,16 +301,19 @@ if (input_cancel() && !ui_input_blocked() && !global.ui_overlay_latch
 if (instance_exists(obj_game_controller)) {
     var _gc_dsel = instance_find(obj_game_controller, 0);
     if (_gc_dsel.dungeon_select_open) {
-        var _dungeon_keys = ["ashen_vault", "scorched_depths", "tundra_tomb"];
+        // §3.0: the carousel holds ALL FIVE cards (locked ones show as "?"
+        // mystery cards); wrap follows the registry length, not a literal 3.
+        var _dungeon_keys = dungeon_keys();
+        var _dungeon_n    = array_length(_dungeon_keys);
 
-        // A/D navigate dungeons - wraps cyclically through all 3
+        // A/D navigate dungeons - wraps cyclically through all cards
         if (nav_left()) {
-            _gc_dsel.dungeon_select_cursor = wrap_index(_gc_dsel.dungeon_select_cursor - 1, 3);
+            _gc_dsel.dungeon_select_cursor = wrap_index(_gc_dsel.dungeon_select_cursor - 1, _dungeon_n);
             var _dk = _dungeon_keys[_gc_dsel.dungeon_select_cursor];
             _gc_dsel.dungeon_select_asc = min(_gc_dsel.dungeon_select_asc, dungeon_max_ascendance(_dk));
         }
         if (nav_right()) {
-            _gc_dsel.dungeon_select_cursor = wrap_index(_gc_dsel.dungeon_select_cursor + 1, 3);
+            _gc_dsel.dungeon_select_cursor = wrap_index(_gc_dsel.dungeon_select_cursor + 1, _dungeon_n);
             var _dk = _dungeon_keys[_gc_dsel.dungeon_select_cursor];
             _gc_dsel.dungeon_select_asc = min(_gc_dsel.dungeon_select_asc, dungeon_max_ascendance(_dk));
         }
@@ -289,8 +352,13 @@ if (instance_exists(obj_game_controller)) {
             }
         }
 
-        // Enter: confirm dungeon + ascendance, open loadout
-        if (input_confirm() || input_confirm_alt()) {
+        // Enter: confirm dungeon + ascendance, open loadout.
+        // §3.0: a LOCKED "?" card cannot embark - the card face says what
+        // opens it (Draw); here the confirm just declines.
+        if ((input_confirm() || input_confirm_alt())
+            && !dungeon_is_revealed(_dungeon_keys[_gc_dsel.dungeon_select_cursor])) {
+            audio_play_sound(snd_ui_error, 1, false);
+        } else if (input_confirm() || input_confirm_alt()) {
             global.selected_dungeon    = _dungeon_keys[_gc_dsel.dungeon_select_cursor];
             global.selected_ascendance = _gc_dsel.dungeon_select_asc;
             // THE DESCENT overrides the choice: random first theme, floor-1 tier.
@@ -299,6 +367,8 @@ if (instance_exists(obj_game_controller)) {
                 global.descent_pending     = false;   // one-shot arm
                 global.descent_active      = true;
                 global.descent_floor       = 1;
+                // Descent themes stay the ORIGINAL trio (registry slots 0-2);
+                // §3.0 offsets never apply inside a Descent (see dungeon_baseline_offset).
                 global.selected_dungeon    = _dungeon_keys[irandom(2)];
                 global.selected_ascendance = 5.5;     // floor 1 = A5 + 0.5
             } else {
@@ -1174,7 +1244,7 @@ if (selected_npc == array_length(npc_names)
         } else {
             // Open dungeon selection (player picks dungeon + ascendance before loadout)
             var _cur_dk2 = variable_global_exists("selected_dungeon") ? global.selected_dungeon : "ashen_vault";
-            var _dungeon_keys2 = ["ashen_vault", "scorched_depths", "tundra_tomb"];
+            var _dungeon_keys2 = dungeon_keys();   // §3.0: seed the cursor across all 5 cards
             _gc_e.dungeon_select_cursor = 0;
             for (var _dki = 0; _dki < array_length(_dungeon_keys2); _dki++) {
                 if (_dungeon_keys2[_dki] == _cur_dk2) { _gc_e.dungeon_select_cursor = _dki; break; }
@@ -1291,7 +1361,7 @@ if (mouse_check_button_pressed(mb_left)) {
             } else {
                 // Open dungeon selection overlay (mirrors keyboard handler)
                 var _cur_dk3 = variable_global_exists("selected_dungeon") ? global.selected_dungeon : "ashen_vault";
-                var _dkeys3 = ["ashen_vault", "scorched_depths", "tundra_tomb"];
+                var _dkeys3 = dungeon_keys();   // §3.0: seed the cursor across all 5 cards
                 _gc_e2.dungeon_select_cursor = 0;
                 for (var _dki3 = 0; _dki3 < array_length(_dkeys3); _dki3++) {
                     if (_dkeys3[_dki3] == _cur_dk3) { _gc_e2.dungeon_select_cursor = _dki3; break; }

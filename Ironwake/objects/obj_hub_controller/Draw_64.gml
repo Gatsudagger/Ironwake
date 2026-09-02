@@ -1097,19 +1097,32 @@ draw_set_alpha(1.0);
 var _gc_ds = instance_exists(obj_game_controller) ? instance_find(obj_game_controller, 0) : noone;
 if (_gc_ds != noone && _gc_ds.dungeon_select_open) {
 
-    var _dungeons  = ["ashen_vault", "scorched_depths", "tundra_tomb"];
-    var _dung_names = ["Ashen Vault", "Scorched Depths", "Tundra Tomb"];
-    var _dung_art  = [spr_dungeon_ashen_vault, spr_dungeon_scorched_depths, spr_dungeon_tundra_tomb];
+    // §3.0 (08-27): all five ladder dungeons ride the carousel. Locked ones
+    // render as "?" mystery cards (name/desc/art hidden, unlock hint shown).
+    // New biome card art resolves by string so the overlay ships before the
+    // sprites land (asset_get_index -> -1 draws the "?" face instead).
+    var _dungeons  = dungeon_keys();
+    var _dung_n    = array_length(_dungeons);
+    var _dung_names = ["Ashen Vault", "Scorched Depths", "Tundra Tomb", "Drowned Reach", "Hollow Canopy"];
+    var _dung_art  = [spr_dungeon_ashen_vault, spr_dungeon_scorched_depths, spr_dungeon_tundra_tomb,
+                      spr_dungeon_drowned_reach, spr_dungeon_hollow_canopy];
     var _dung_desc  = [
         "Ancient catacombs filled with undead soldiers and stone constructs. The original vault of the Ironwake.",
         "Volcanic caverns beneath the earth. Fire-wreathed enemies, intense heat, and burning dungeon passives.",
-        "Frozen tombs of a lost civilization. Ice-bound horrors and cold air that slows your reflexes."
+        "Frozen tombs of a lost civilization. Ice-bound horrors and cold air that slows your reflexes.",
+        "A flooded undercity, knee-deep and rising. Nothing down here has been dry in a very long time.",
+        "A forest that grew over the ruins, then over itself. The floor has forgotten daylight - and things up in the branches are watching."
     ];
     var _dung_color = [
         make_color_rgb(160, 120, 60),
         make_color_rgb(200, 80,  30),
         make_color_rgb(80,  160, 220),
+        make_color_rgb(60,  170, 140),
+        make_color_rgb(110, 170, 60),
     ];
+    // Locked state + unlock hints, precomputed per card.
+    var _dung_locked = array_create(_dung_n, false);
+    for (var _dli = 0; _dli < _dung_n; _dli++) _dung_locked[_dli] = !dungeon_is_revealed(_dungeons[_dli]);
     var _asc_labels = ["Awakening A0 - Normal", "Awakening A1 - Hardened", "Awakening A2 - Brutal", "Awakening A3 - Relentless", "Awakening A4 - Nightmare", "Awakening A5 - Infernal"];
     // Tier one-liner under the selector is DATA-DRIVEN from the same awaken_*
     // helpers combat uses (the old hand-written percentages had drifted badly);
@@ -1133,8 +1146,8 @@ if (_gc_ds != noone && _gc_ds.dungeon_select_open) {
     _gc_ds.carousel_lerp = lerp(_gc_ds.carousel_lerp, _gc_ds.dungeon_select_cursor, 0.16);
 
     var _cursor   = _gc_ds.dungeon_select_cursor;
-    var _left_i   = (_cursor - 1 + 3) mod 3;
-    var _right_i  = (_cursor + 1) mod 3;
+    var _left_i   = (_cursor - 1 + _dung_n) mod _dung_n;   // §3.0: generalized from the mod-3 hardcode
+    var _right_i  = (_cursor + 1) mod _dung_n;
 
     // Side arrows - drawn triangles instead of "<" ">" text (M 07-08: the glyphs
     // read as placeholder), and the LEFT one sits just left of the selected card
@@ -1159,6 +1172,10 @@ if (_gc_ds != noone && _gc_ds.dungeon_select_open) {
         var _di  = _draw_order[_doi];
         var _dkey = _dungeons[_di];
         var _dcol = _dung_color[_di];
+        // §3.0: a locked card keeps its secrets - muted steel accent, "?" face.
+        var _locked = _dung_locked[_di];
+        if (_locked) _dcol = make_color_rgb(90, 96, 120);
+        var _base_off = dungeon_baseline_offset(_dkey);
         var _unlocked_asc = dungeon_max_ascendance(_dkey);   // A6+ frontier post-win
 
         var _is_center = (_di == _cursor);
@@ -1203,7 +1220,20 @@ if (_gc_ds != noone && _gc_ds.dungeon_select_open) {
         draw_set_halign(fa_center);
         draw_set_font(ui_font(_name_font));
         draw_set_color(_is_center ? _dcol : make_color_rgb(80, 88, 110));
-        draw_text(_cx + _cw / 2, _cy + 21, _dung_names[_di]);
+        draw_text(_cx + _cw / 2, _cy + 21, _locked ? "???" : _dung_names[_di]);
+        // §3.0 rule 6: the card names its baseline in the shared tier color
+        // language (gray A0, gold A1-A3, the select screen's red at A4+).
+        // Drawn above the Max Awakening line (the +420 band sits clear of the
+        // description text, which wraps to ~3 lines ending near +380).
+        if (_is_center && !_locked) {
+            var _bl_col = (_base_off == 0) ? make_color_rgb(100, 110, 140)
+                        : (_base_off >= 4  ? make_color_rgb(255, 70, 70)
+                                           : make_color_rgb(255, 200, 50));
+            draw_set_font(ui_font(fnt_ui_small));
+            draw_set_color(_bl_col);
+            draw_text(_cx + _cw / 2, _cy + 420, "Baseline: A" + string(_base_off)
+                + ((_base_off > 0) ? "  -  foes fight A" + string(_base_off) + "-strong at Awakening 0" : ""));
+        }
 
         // Dungeon art image - preserve the sprite's aspect ratio (square source),
         // fit it inside the banner slot, and center it. Uniform scale prevents the
@@ -1216,18 +1246,70 @@ if (_gc_ds != noone && _gc_ds.dungeon_select_open) {
         var _box_h   = _is_center ? 180 : 150;
         var _box_x   = _cx + (_cw - _box_w) / 2;
         var _box_y   = _cy + (_is_center ? 84 : 54);
-        var _src_w   = sprite_get_width(_art_spr);
-        var _src_h   = sprite_get_height(_art_spr);
-        if (_src_w <= 0) _src_w = 192;
-        if (_src_h <= 0) _src_h = 192;
-        var _art_scale = min(_box_w / _src_w, _box_h / _src_h);
-        var _art_dw    = _src_w * _art_scale;
-        var _art_dh    = _src_h * _art_scale;
-        var _art_x     = _box_x + (_box_w - _art_dw) / 2;
-        var _art_y     = _box_y + (_box_h - _art_dh) / 2;
-        draw_sprite_ext(_art_spr, 0, _art_x, _art_y, _art_scale, _art_scale, 0, c_white, _alpha);
+        // §3.0: locked cards (and unlocked biomes whose card art hasn't been
+        // imported yet - asset_get_index returned -1) draw the "?" face.
+        if (_locked || _art_spr < 0 || !sprite_exists(_art_spr)) {
+            draw_set_color(make_color_rgb(10, 12, 22));
+            draw_rectangle(_box_x + 30, _box_y, _box_x + _box_w - 30, _box_y + _box_h, false);
+            draw_set_color(_dcol);
+            draw_rectangle(_box_x + 30, _box_y, _box_x + _box_w - 30, _box_y + _box_h, true);
+            draw_set_halign(fa_center);
+            draw_set_valign(fa_middle);
+            draw_set_font(ui_font(fnt_ui_title));
+            // The "?" breathes a little so the card reads alive, not broken.
+            draw_set_alpha(_alpha * (0.65 + 0.35 * (0.5 + 0.5 * sin(current_time / 480))));
+            draw_text(_box_x + _box_w / 2, _box_y + _box_h / 2, "?");
+            draw_set_alpha(_alpha);
+            draw_set_valign(fa_top);
+        } else {
+            var _src_w   = sprite_get_width(_art_spr);
+            var _src_h   = sprite_get_height(_art_spr);
+            if (_src_w <= 0) _src_w = 192;
+            if (_src_h <= 0) _src_h = 192;
+            var _art_scale = min(_box_w / _src_w, _box_h / _src_h);
+            var _art_dw    = _src_w * _art_scale;
+            var _art_dh    = _src_h * _art_scale;
+            var _art_x     = _box_x + (_box_w - _art_dw) / 2;
+            var _art_y     = _box_y + (_box_h - _art_dh) / 2;
+            draw_sprite_ext(_art_spr, 0, _art_x, _art_y, _art_scale, _art_scale, 0, c_white, _alpha);
+        }
 
-        if (_is_center) {
+        if (_is_center && _locked) {
+            // §3.0 LOCKED "?" CARD: the content stack is replaced by a mystery
+            // face + the unlock condition. The carousel arrows stay clickable.
+            var _lk_x = _cx + 24;
+            var _lk_w = _cw - 48;
+            draw_set_color(make_color_rgb(35, 42, 65));
+            draw_line(_cx + 18, _cy + 273, _cx + _cw - 18, _cy + 273);
+            draw_set_halign(fa_center);
+            draw_set_font(ui_font(fnt_ui_small));
+            draw_set_color(make_color_rgb(140, 148, 175));
+            draw_text_ext(_lk_x + _lk_w / 2, _cy + 306,
+                "Something waits beyond the known dark.\nThe camp's maps end here - for now.", 30, _lk_w);
+            // Unlock condition, plainly stated (shallow gate, never a re-climb).
+            var _lk_prev = dungeon_chain_prev(_dkey);
+            draw_set_font(ui_font(fnt_ui));
+            draw_set_color(make_color_rgb(255, 200, 50));
+            draw_text_ext(_lk_x + _lk_w / 2, _cy + 447,
+                "Clear " + dungeon_display_name(_lk_prev) + " at Awakening II\nto reveal these depths.", 33, _lk_w);
+            // Sealed bar where EMBARK would sit - same geometry, inert.
+            var _lk_cy = _cy + _ch - 87;
+            draw_set_color(make_color_rgb(22, 24, 38));
+            draw_rectangle(_cx + 21, _lk_cy, _cx + _cw - 21, _lk_cy + 66, false);
+            draw_set_color(make_color_rgb(70, 76, 100));
+            draw_rectangle(_cx + 21, _lk_cy, _cx + _cw - 21, _lk_cy + 66, true);
+            draw_set_font(ui_font(fnt_ui));
+            draw_text(_cx + _cw / 2, _lk_cy + 20, "SEALED");
+            // Carousel cycling stays mouse/touch reachable on a locked card.
+            if (input_device() == 2) {
+                draw_set_color(make_color_rgb(120, 130, 160));
+                draw_rectangle(474, GUI_CY - 66, 582, GUI_CY + 90, true);
+                draw_rectangle(1338, GUI_CY - 66, 1446, GUI_CY + 90, true);
+            }
+            if      (touch_tapped(444, GUI_CY - 90, 600, GUI_CY + 114))   touch_press(ord("A"));
+            else if (touch_tapped(1300, GUI_CY - 90, 1482, GUI_CY + 114)) touch_press(ord("D"));
+
+        } else if (_is_center) {
             // Center card content is a clean top-to-bottom stack so nothing overlaps:
             //   divider -> description -> Max Awakening -> selector -> tier desc -> confirm
             var _body_x = _cx + 24;
@@ -1307,12 +1389,17 @@ if (_gc_ds != noone && _gc_ds.dungeon_select_open) {
             else if (touch_tapped(_cx + 21, _cy + _ch - 87, _cx + _cw - 21, _cy + _ch - 21)) touch_press(vk_enter);
 
             // Tier description - below the selector box (computed, matches combat)
+            // §3.0: the one-liner quotes the EFFECTIVE tier (selected + baseline)
+            // so display and combat never drift - same single-source rule.
             var _sel_a   = _gc_ds.dungeon_select_asc;
-            var _sel_txt = (_sel_a == 0)
+            var _sel_eff = _sel_a + _base_off;
+            var _sel_txt = (_sel_eff == 0)
                 ? "Standard difficulty. No modifiers. Full effects listed on the right."
-                : "Enemies: +" + string(round((awaken_hp_mult(_sel_a) - 1) * 100)) + "% HP, +"
-                    + string(round((awaken_dmg_mult(_sel_a) - 1) * 100))
-                    + "% damage. Full effects listed on the right.";
+                : "Enemies: +" + string(round((awaken_hp_mult(_sel_eff) - 1) * 100)) + "% HP, +"
+                    + string(round((awaken_dmg_mult(_sel_eff) - 1) * 100))
+                    + "% damage"
+                    + ((_base_off > 0) ? " (incl. the A" + string(_base_off) + " baseline)" : "")
+                    + ". Full effects listed on the right.";
             draw_set_halign(fa_left);
             draw_set_font(ui_font(fnt_ui_small));
             draw_set_color(make_color_rgb(140, 150, 185));
@@ -1336,10 +1423,20 @@ if (_gc_ds != noone && _gc_ds.dungeon_select_open) {
             draw_set_halign(fa_center);
             draw_set_font(ui_font(fnt_ui_small));
             draw_set_color(make_color_rgb(60, 68, 92));
-            draw_text(_cx + _cw / 2, _cy + 219, "A" + string(_unlocked_asc) + " max");
-            draw_set_halign(fa_left);
-            draw_set_color(make_color_rgb(55, 60, 82));
-            draw_text_ext(_cx + 18, _cy + 252, _dung_desc[_di], 27, _cw - 36);
+            if (_locked) {
+                // §3.0: a locked flank keeps its mystery.
+                draw_text(_cx + _cw / 2, _cy + 219, "sealed");
+                draw_set_color(make_color_rgb(55, 60, 82));
+                draw_text_ext(_cx + 18, _cy + 252, "The camp's maps end here.", 27, _cw - 36);
+                draw_set_halign(fa_left);
+            } else {
+                // §3.0 rule 6: flanks carry the baseline in the shared shorthand.
+                draw_text(_cx + _cw / 2, _cy + 219, "A" + string(_unlocked_asc) + " max"
+                    + ((_base_off > 0) ? "   |   Baseline A" + string(_base_off) : ""));
+                draw_set_halign(fa_left);
+                draw_set_color(make_color_rgb(55, 60, 82));
+                draw_text_ext(_cx + 18, _cy + 252, _dung_desc[_di], 27, _cw - 36);
+            }
             // Click/tap a SIDE card to cycle to it (08-19 mouse pass).
             if (touch_tapped(_cx, _cy, _cx + _cw, _cy + _ch)) touch_press(_is_left ? ord("A") : ord("D"));
         }
@@ -1355,9 +1452,17 @@ if (_gc_ds != noone && _gc_ds.dungeon_select_open) {
     var _fx_x1 = 1464, _fx_x2 = 1893, _fx_y1 = 123, _fx_y2 = 1040;
     var _fx_a    = _gc_ds.dungeon_select_asc;
     var _fx_dkey = _dungeons[_cursor];
-    var _fx_tcol = (_fx_a == 0) ? make_color_rgb(150, 160, 190)
-                 : (_fx_a >= 4  ? make_color_rgb(255, 70, 70)
-                                : make_color_rgb(255, 200, 50));
+    // §3.0: every number on this panel is computed at the EFFECTIVE tier
+    // (selected + dungeon baseline) - the same values combat/loot consume, so
+    // the panel can never go stale. Tier COLOR keys off effective too: a
+    // Drowned Reach A0 panel reads red, because the fight is red.
+    var _fx_off  = dungeon_baseline_offset(_fx_dkey);
+    var _fx_eff  = _fx_a + _fx_off;
+    var _fx_lock = _dung_locked[_cursor];
+    var _fx_tcol = (_fx_eff == 0) ? make_color_rgb(150, 160, 190)
+                 : (_fx_eff >= 4  ? make_color_rgb(255, 70, 70)
+                                  : make_color_rgb(255, 200, 50));
+    if (_fx_lock) _fx_tcol = make_color_rgb(90, 96, 120);
 
     draw_set_color(make_color_rgb(14, 16, 28));
     draw_rectangle(_fx_x1, _fx_y1, _fx_x2, _fx_y2, false);
@@ -1377,28 +1482,47 @@ if (_gc_ds != noone && _gc_ds.dungeon_select_open) {
     draw_set_font(ui_font(fnt_ui_small));
     draw_set_color(make_color_rgb(180, 188, 215));
     draw_text(_fx_x1 + (_fx_x2 - _fx_x1) / 2, _fxy, _asc_labels[_fx_a]);
-    _fxy += 48;
+    _fxy += 33;
+    // §3.0: name the baseline math right under the tier so the numbers below
+    // never read as a bug ("why is A0 showing +120% HP?").
+    if (!_fx_lock && _fx_off > 0) {
+        draw_set_color(_fx_tcol);
+        draw_text(_fx_x1 + (_fx_x2 - _fx_x1) / 2, _fxy,
+            "Dungeon baseline +" + string(_fx_off) + "  ->  effective A" + string(_fx_eff));
+        _fxy += 33;
+    } else {
+        _fxy += 15;
+    }
     draw_set_halign(fa_left);
+
+    if (_fx_lock) {
+        // §3.0: a sealed dungeon's panel keeps its secrets too.
+        draw_set_color(make_color_rgb(140, 148, 175));
+        draw_text_ext(_fxx, _fxy,
+            "The camp knows nothing of what waits here.\n\nClear "
+            + dungeon_display_name(dungeon_chain_prev(_fx_dkey))
+            + " at Awakening II to reveal it.", 30, _fxw);
+    } else {
 
     // ---- ENEMIES ----
     draw_set_color(make_color_rgb(235, 110, 90));
     draw_text(_fxx, _fxy, "ENEMIES"); _fxy += 33;
     draw_set_color(make_color_rgb(200, 206, 228));
-    if (_fx_a == 0) {
+    if (_fx_eff == 0) {
         draw_text(_fxx, _fxy, "No stat bonus - baseline foes."); _fxy += 30;
     } else {
-        draw_text(_fxx, _fxy, "HP +" + string(round((awaken_hp_mult(_fx_a) - 1) * 100))
-            + "%    Damage +" + string(round((awaken_dmg_mult(_fx_a) - 1) * 100)) + "%");
+        draw_text(_fxx, _fxy, "HP +" + string(round((awaken_hp_mult(_fx_eff) - 1) * 100))
+            + "%    Damage +" + string(round((awaken_dmg_mult(_fx_eff) - 1) * 100)) + "%");
         _fxy += 30;
     }
-    if (awaken_enemy_acc_bonus(_fx_a) > 0) {
-        draw_text(_fxx, _fxy, "Accuracy +" + string(awaken_enemy_acc_bonus(_fx_a))
+    if (awaken_enemy_acc_bonus(_fx_eff) > 0) {
+        draw_text(_fxx, _fxy, "Accuracy +" + string(awaken_enemy_acc_bonus(_fx_eff))
             + " (dodge builds get hit more)");
         _fxy += 30;
     }
-    if (awaken_enemy_heal_mult(_fx_a) > 1.0) {
+    if (awaken_enemy_heal_mult(_fx_eff) > 1.0) {
         draw_text(_fxx, _fxy, "Self-healing +"
-            + string(round((awaken_enemy_heal_mult(_fx_a) - 1) * 100)) + "%");
+            + string(round((awaken_enemy_heal_mult(_fx_eff) - 1) * 100)) + "%");
         _fxy += 30;
     }
     var _fx_packs = ["Packs: mostly 2-3 foes, 4s rare",
@@ -1407,18 +1531,27 @@ if (_gc_ds != noone && _gc_ds.dungeon_select_open) {
                      "Packs: 4-strong turn common",
                      "Packs: 4s common, 5s appear",
                      "Packs: 4s common, 5s appear"];
-    draw_text(_fxx, _fxy, _fx_packs[_fx_a]); _fxy += 30;
+    draw_text(_fxx, _fxy, _fx_packs[min(_fx_eff, 5)]); _fxy += 30;
+    // Awakening-scaled floor length (M 08-27): mirrors the layer table in
+    // obj_floor_controller Create_0 - keep in sync if the curve changes.
+    var _fx_floors = ["Floors: short - 4-6 rooms",
+                      "Floors: short - 5-8 rooms",
+                      "Floors: standard - 7-9 rooms",
+                      "Floors: long - 9-12 rooms, +1 event",
+                      "Floors: long - 11-14 rooms, +1 event",
+                      "Floors: vast - 12-16 rooms, +2 events"];
+    draw_text(_fxx, _fxy, _fx_floors[min(_fx_eff, 5)]); _fxy += 30;
     // C1 behavior ladder (M-approved 07-09) - one cumulative line, tier-tinted.
     var _fx_beh = "";
-    if      (_fx_a >= 4) _fx_beh = "Cunning: spread debuffs, no wasted control, +1 elite";
-    else if (_fx_a >= 3) _fx_beh = "Cunning: no wasted control, smart mending";
-    else if (_fx_a >= 2) _fx_beh = "Abilities used more often";
+    if      (_fx_eff >= 4) _fx_beh = "Cunning: spread debuffs, no wasted control, +1 elite";
+    else if (_fx_eff >= 3) _fx_beh = "Cunning: no wasted control, smart mending";
+    else if (_fx_eff >= 2) _fx_beh = "Abilities used more often";
     if (_fx_beh != "") {
         draw_set_color(make_color_rgb(230, 160, 90));
         draw_text(_fxx, _fxy, _fx_beh); _fxy += 30;
         draw_set_color(make_color_rgb(200, 206, 228));
     }
-    if (_fx_a >= 5) {
+    if (_fx_eff >= 5) {
         draw_set_color(make_color_rgb(255, 110, 110));
         draw_text(_fxx, _fxy, "Bosses: +25% HP & dmg; ENRAGE past round 6"); _fxy += 30;
     }
@@ -1431,8 +1564,8 @@ if (_gc_ds != noone && _gc_ds.dungeon_select_open) {
     // Concrete drop odds from the SAME drop_weights table the loot rolls use
     // (#14 / M 07-09: show the actual loot increase per tier, not abstract pips).
     // Rare-or-better and Epic-or-better chance for standard mobs and bosses.
-    var _fx_wstd  = drop_weights("standard", _fx_a);
-    var _fx_wboss = drop_weights("boss", _fx_a);
+    var _fx_wstd  = drop_weights("standard", _fx_eff);
+    var _fx_wboss = drop_weights("boss", _fx_eff);
     draw_text(_fxx, _fxy, "Rare+ drops: " + string(_fx_wstd[2] + _fx_wstd[3] + _fx_wstd[4])
         + "% mobs / " + string(_fx_wboss[2] + _fx_wboss[3] + _fx_wboss[4]) + "% bosses");
     _fxy += 30;
@@ -1441,13 +1574,13 @@ if (_gc_ds != noone && _gc_ds.dungeon_select_open) {
     _fxy += 30;
     draw_set_color(make_color_rgb(200, 206, 228));
     // Awakening XP multiplier (C3): the panel is the single reference for it.
-    if (awaken_xp_mult(_fx_a) > 1.0) {
-        draw_text(_fxx, _fxy, "XP from kills +" + string(round((awaken_xp_mult(_fx_a) - 1) * 100)) + "%");
+    if (awaken_xp_mult(_fx_eff) > 1.0) {
+        draw_text(_fxx, _fxy, "XP from kills +" + string(round((awaken_xp_mult(_fx_eff) - 1) * 100)) + "%");
         _fxy += 30;
     }
-    draw_text(_fxx, _fxy, "Full-clear bonus: +" + string(awaken_clear_gold_bonus(_fx_a)) + "g");
+    draw_text(_fxx, _fxy, "Full-clear bonus: +" + string(awaken_clear_gold_bonus(_fx_eff)) + "g");
     _fxy += 30;
-    draw_text(_fxx, _fxy, "Rest alcoves heal +" + string(15 + 4 * _fx_a) + " HP");
+    draw_text(_fxx, _fxy, "Rest alcoves heal +" + string(15 + 4 * _fx_eff) + " HP");
     _fxy += 42;
 
     // ---- DUNGEON PASSIVE (selected dungeon at this tier) ----
@@ -1456,13 +1589,19 @@ if (_gc_ds != noone && _gc_ds.dungeon_select_open) {
     draw_set_color(make_color_rgb(200, 206, 228));
     var _fx_pass = "";
     if (_fx_dkey == "scorched_depths") {
-        var _fx_heat = (_fx_a >= 1) ? 4 : 2;
+        var _fx_heat = (_fx_eff >= 1) ? 4 : 2;   // §3.0: steps ride the effective tier
         _fx_pass = "Searing air: each room entered opens the next combat with a burn - "
             + string(_fx_heat) + " fire damage per turn for 2 turns.";
     } else if (_fx_dkey == "tundra_tomb") {
-        _fx_pass = (_fx_a >= 3)
+        _fx_pass = (_fx_eff >= 3)
             ? "Numbing cold on EVERY floor: -1 AP on your first turn of each combat."
             : "Numbing cold on odd floors: -1 AP on your first turn of each combat.";
+    } else if (_fx_dkey == "drowned_reach") {
+        // §3.1 Rising Water - wired at the round tick in combat.
+        _fx_pass = "Rising Water: every 3rd combat round, EVERY combatant loses 2 HP - you, your companion, and everything you are fighting. No one out-waits the tide.";
+    } else if (_fx_dkey == "hollow_canopy") {
+        // §3.2 Choking Growth - wired in ability_effective_cost.
+        _fx_pass = "Choking Growth: the FIRST ability you cast each combat costs +1 AP. Open cheap, or open with steel.";
     } else {
         _fx_pass = "No environmental passive - the Vault's dead do not meddle.";
     }
@@ -1490,15 +1629,19 @@ if (_gc_ds != noone && _gc_ds.dungeon_select_open) {
         draw_set_color(_ft_lock ? make_color_rgb(70, 76, 100)
                      : (_ft_sel ? c_white : make_color_rgb(150, 158, 185)));
         draw_text(_fxx, _fxy, "A" + string(_ft));
-        var _ft_hp  = round((awaken_hp_mult(_ft)  - 1) * 100);
-        var _ft_dmg = round((awaken_dmg_mult(_ft) - 1) * 100);
+        // §3.0: rows quote the numbers each selectable tier actually plays at
+        // (selected + baseline), matching every figure above.
+        var _ft_hp  = round((awaken_hp_mult(_ft + _fx_off)  - 1) * 100);
+        var _ft_dmg = round((awaken_dmg_mult(_ft + _fx_off) - 1) * 100);
         draw_text(_fxx + 55,  _fxy, (_ft_hp  > 0) ? ("+" + string(_ft_hp)  + "% HP")  : "-");
         draw_text(_fxx + 175, _fxy, (_ft_dmg > 0) ? ("+" + string(_ft_dmg) + "% dmg") : "-");
         draw_set_halign(fa_right);
-        draw_text(_fx_x2 - 27, _fxy, _ft_lock ? "LOCKED" : ("+" + string(awaken_clear_gold_bonus(_ft)) + "g"));
+        draw_text(_fx_x2 - 27, _fxy, _ft_lock ? "LOCKED" : ("+" + string(awaken_clear_gold_bonus(_ft + _fx_off)) + "g"));
         draw_set_halign(fa_left);
         _fxy += 31;
     }
+
+    }   // end !_fx_lock (§3.0 sealed-panel branch)
 
     // Footer
     draw_set_halign(fa_center);
@@ -3118,6 +3261,106 @@ if (variable_instance_exists(id, "awaken_boost_done_timer") && awaken_boost_done
     draw_set_font(-1);
 }
 
+// -----------------------------------------------------------------------------
+// DUNGEON REVEAL CEREMONY (§3.0 rule 4, 08-27): the "?" mystery card flips to
+// the new dungeon's face. Step drives state (gc.dungeon_reveal_active / _t);
+// timings: 0-30 the card back holds, 30-45 it folds shut, 45-60 the face
+// unfolds, 60+ the name/baseline settle in. Enter dismisses after t=90.
+// -----------------------------------------------------------------------------
+var _gc_rvd = instance_exists(obj_game_controller) ? instance_find(obj_game_controller, 0) : noone;
+if (_gc_rvd != noone && variable_struct_exists(_gc_rvd, "dungeon_reveal_active")
+    && _gc_rvd.dungeon_reveal_active != "") {
+    var _rv_key = _gc_rvd.dungeon_reveal_active;
+    var _rv_t   = _gc_rvd.dungeon_reveal_t;
+    var _rv_name = dungeon_display_name(_rv_key);
+    var _rv_off  = dungeon_baseline_offset(_rv_key);
+    var _rv_col  = make_color_rgb(160, 120, 60);
+    if (_rv_key == "scorched_depths") _rv_col = make_color_rgb(200, 80, 30);
+    if (_rv_key == "tundra_tomb")     _rv_col = make_color_rgb(80, 160, 220);
+    if (_rv_key == "drowned_reach")   _rv_col = make_color_rgb(60, 170, 140);
+    if (_rv_key == "hollow_canopy")   _rv_col = make_color_rgb(110, 170, 60);
+
+    // Dark cover
+    draw_set_alpha(0.92);
+    draw_set_color(make_color_rgb(6, 6, 14));
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
+    draw_set_alpha(1.0);
+
+    // Card geometry (centered; the flip is a horizontal xscale fold).
+    var _rv_cw = 540, _rv_ch = 660;
+    var _rv_cx = GUI_CX, _rv_cy = GUI_CY - 30;
+    var _rv_flip;   // 1 -> 0 (back folds) then 0 -> 1 (face unfolds)
+    var _rv_face = (_rv_t >= 45);
+    if      (_rv_t < 30) _rv_flip = 1.0;
+    else if (_rv_t < 45) _rv_flip = 1.0 - (_rv_t - 30) / 15;
+    else if (_rv_t < 60) _rv_flip = (_rv_t - 45) / 15;
+    else                 _rv_flip = 1.0;
+    var _rv_hw = (_rv_cw / 2) * max(0.02, _rv_flip);
+
+    draw_set_color(_rv_face ? make_color_rgb(18, 22, 40) : make_color_rgb(12, 14, 24));
+    draw_rectangle(_rv_cx - _rv_hw, _rv_cy - _rv_ch / 2, _rv_cx + _rv_hw, _rv_cy + _rv_ch / 2, false);
+    draw_set_color(_rv_face ? _rv_col : make_color_rgb(70, 76, 100));
+    draw_rectangle(_rv_cx - _rv_hw, _rv_cy - _rv_ch / 2, _rv_cx + _rv_hw, _rv_cy + _rv_ch / 2, true);
+
+    draw_set_halign(fa_center);
+    if (!_rv_face) {
+        // The mystery back: the breathing "?".
+        draw_set_valign(fa_middle);
+        draw_set_font(ui_font(fnt_ui_title));
+        draw_set_color(make_color_rgb(120, 128, 158));
+        if (_rv_flip > 0.3) draw_text(_rv_cx, _rv_cy - 60, "?");
+        draw_set_valign(fa_top);
+    } else if (_rv_flip > 0.85) {
+        // The face: art (or the card frame if art hasn't landed), name, baseline.
+        // Direct refs for agent-authored cards (asset_get_index misses them at runtime).
+        var _rv_spr = (_rv_key == "hollow_canopy") ? spr_dungeon_hollow_canopy
+                    : (_rv_key == "drowned_reach") ? spr_dungeon_drowned_reach
+                                                   : asset_get_index("spr_dungeon_" + _rv_key);
+        if (_rv_spr >= 0 && sprite_exists(_rv_spr)) {
+            var _rv_sw = max(1, sprite_get_width(_rv_spr));
+            var _rv_sh = max(1, sprite_get_height(_rv_spr));
+            var _rv_sc = min((_rv_cw - 60) / _rv_sw, 300 / _rv_sh);
+            draw_sprite_ext(_rv_spr, 0, _rv_cx - _rv_sw * _rv_sc / 2,
+                _rv_cy - _rv_ch / 2 + 120, _rv_sc, _rv_sc, 0, c_white, 1);
+        } else {
+            draw_set_color(_rv_col);
+            draw_rectangle(_rv_cx - _rv_cw / 2 + 45, _rv_cy - _rv_ch / 2 + 120,
+                           _rv_cx + _rv_cw / 2 - 45, _rv_cy - _rv_ch / 2 + 390, true);
+        }
+        var _rv_settle = min(1, (_rv_t - 60) / 20);
+        draw_set_alpha(_rv_settle);
+        draw_set_font(ui_font(fnt_ui_title));
+        draw_set_color(_rv_col);
+        draw_text(_rv_cx, _rv_cy - _rv_ch / 2 + 30, _rv_name);
+        draw_set_font(ui_font(fnt_ui));
+        var _rv_bcol = (_rv_off >= 4) ? make_color_rgb(255, 70, 70)
+                     : (_rv_off > 0 ? make_color_rgb(255, 200, 50) : make_color_rgb(150, 160, 190));
+        draw_set_color(_rv_bcol);
+        draw_text(_rv_cx, _rv_cy + _rv_ch / 2 - 180, "Baseline: A" + string(_rv_off));
+        draw_set_font(ui_font(fnt_ui_small));
+        draw_set_color(make_color_rgb(180, 188, 215));
+        draw_text_ext(_rv_cx, _rv_cy + _rv_ch / 2 - 138,
+            (_rv_off >= 4) ? "Its foes fight at Awakening " + string(_rv_off) + " strength from the first room.\nThe spoils are scaled to match."
+                           : "A new dungeon joins the carousel at the gate.", 27, _rv_cw - 60);
+        draw_set_alpha(1.0);
+    }
+
+    // Header + dismiss hint above/below the card.
+    draw_set_font(ui_font(fnt_ui_title));
+    draw_set_color(make_color_rgb(240, 215, 150));
+    draw_text_outline(GUI_CX, 96, _rv_face ? "A NEW DUNGEON IS REVEALED" : "THE MAPS GROW...");
+    if (_rv_t > 90) {
+        draw_set_font(ui_font(fnt_ui_small));
+        draw_set_alpha(0.6 + 0.4 * sin(current_time / 300));
+        draw_set_color(make_color_rgb(150, 160, 190));
+        draw_text(GUI_CX, _rv_cy + _rv_ch / 2 + 33,
+            (input_device() == 2) ? "Tap to continue" : "[ Enter ]  Continue");
+        draw_set_alpha(1.0);
+    }
+    draw_set_halign(fa_left);
+    draw_set_font(-1);
+}
+
 ui_draw_item_picker();
 ui_draw_reagent_picker();
 
@@ -3472,11 +3715,8 @@ if (variable_global_exists("resume_pending") && global.resume_pending) {
     var _rd = global.resume_data;
     var _rd_dung = "the dungeon";
     if (is_struct(_rd) && variable_struct_exists(_rd, "selected_dungeon")) {
-        switch (_rd.selected_dungeon) {
-            case "ashen_vault":     _rd_dung = "the Ashen Vault";     break;
-            case "scorched_depths": _rd_dung = "the Scorched Depths"; break;
-            case "tundra_tomb":     _rd_dung = "the Tundra Tomb";     break;
-        }
+        // 08-27: single source - covers the new biomes too.
+        _rd_dung = "the " + dungeon_display_name(_rd.selected_dungeon);
     }
     var _rd_floor = (is_struct(_rd) && variable_struct_exists(_rd, "current_floor")) ? _rd.current_floor : 1;
     draw_text_ext((_rz0 + _rz1) / 2, _rw0 + 84,

@@ -136,6 +136,72 @@ collector pull M is after.
 
 ---
 
+### 3.0 World difficulty ladder (DESIGN-LOCKED 08-27, supersedes "follows the existing shape exactly" on difficulty)
+
+> **BUILT 08-27 (code-complete, awaiting M's F5):** offsets + `awakening_effective()`
+> wired through enemy scaling/AI/loot/gold/XP/floor length; chained A2 unlocks with
+> "?" mystery cards, card-flip reveal popup, save migration, both coach-marks, and
+> the 5-card carousel (mod-3 hardcode generalized). §3.1 + §3.2 rosters, bosses
+> (with bespoke hooks), floor passives, bestiary, scion plumbing all live.
+> **ART/AUDIO PENDING:** dungeon card art (`spr_dungeon_drowned_reach` /
+> `spr_dungeon_hollow_canopy`), combat/floor-map backgrounds + 2.5D plane pairs
+> (`drowned` / `canopy` tags resolve by string and fall back gracefully), enemy
+> sprites (stand-ins from the shipped roster, Depth-Warden precedent), ambience
+> beds (borrowing tundra/ashen). Steam achievements for the new dungeons: not
+> created (needs Steamworks work).
+
+The five dungeons are no longer parallel same-baseline zones — the **world itself
+is the difficulty ladder**. Each dungeon gets a **baseline Awakening offset**,
+added to `selected_ascendance` everywhere the tier feeds enemy scaling, loot,
+gold, and floor length. Each dungeon keeps its own selectable A0–A5 ladder and
+existing `dungeon_ascendance_unlocked` save data untouched; the offset is
+invisible math plus visible framing.
+
+| Dungeon | Offset | Effective range | Role |
+|---|---|---|---|
+| Ashen Vault | +0 | A0–A5 | Teaching dungeon (no floor passive — the starter) |
+| Scorched Depths | +1 | A1–A6 | Early-mid |
+| Tundra Tomb | +2 | A2–A7 | Mid |
+| Drowned Reach | +4 | A4–A9 | Late |
+| Hollow Canopy | +5 | A5–A10 | Current peak |
+
+**Rules (all locked with M via scope questions 08-27):**
+
+1. **Floor length follows the EFFECTIVE tier** (base + offset) through the 08-27
+   awakening-scaled floor-length curve — Drowned Reach A0 runs ~7 layers by
+   design; new biomes feel like long late-game dives.
+2. **Loot/gold scale off the effective tier** so harder always visibly pays more
+   (Isaac-Repentance lesson: elevated difficulty without elevated reward reads
+   as a tax). Check the existing `true_asc` guard in `drop_weights`
+   (scr_stats.gml ~2733) when wiring — it exists to catch inflated asc values.
+3. **Chained unlocks, A2 keys**: Ashen Vault A2 unlocks Scorched Depths →
+   Scorched A2 unlocks Tundra Tomb → Tundra A2 unlocks Drowned Reach → Drowned
+   Reach A2 unlocks Hollow Canopy. The gate is always shallow — two tiers into
+   content you're already geared for — never a full re-climb (Slay-the-Spire
+   re-climb grind is the anti-pattern; Diablo-4 World Tier backlash is the
+   hard-gate anti-pattern).
+4. **Hidden "?" cards + reveal moment**: locked dungeons appear in the select
+   carousel as mystery cards (question-mark face) so players know content
+   awaits. On unlock, a popup plays the card revealing itself — new card art +
+   dungeon name shown. (Carousel is currently hardcoded `mod 3` in
+   obj_hub_controller Draw_64 ~1136 — must generalize to N cards with hidden
+   states.)
+5. **Two coach-marks** (existing `tutorial_catalog`/`try_show` system):
+   - *First dungeon launch*: what Awakening tiers do, that dungeons themselves
+     have baseline strength, climb to unlock the next.
+   - *First biome-tier reveal* (Drowned Reach unlock): "these depths start at
+     Awakening IV strength" — advice framing, not a wall (Elden Ring
+     Shadow-of-the-Erdtree lesson: endgame-tuned zones land only when the
+     tuning is explicitly communicated).
+6. **Card UI shows the baseline** ("Baseline: A4") reusing the existing tier
+   color language (select screen already goes red at A4+).
+7. **Save migration**: existing saves keep everything already unlocked — any
+   dungeon with `dungeon_ascendance_unlocked > 0` or `dungeon_clears > 0` is
+   revealed and enterable regardless of the new chain. No player loses access
+   they had.
+
+---
+
 ### 3.1 The Drowned Reach (`drowned_reach`)
 
 *A flooded undercity. The water is knee-high on the first floor and over your
