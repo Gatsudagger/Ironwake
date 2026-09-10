@@ -244,9 +244,47 @@ if (input_hotkey("O") && !ui_input_blocked() && !show_history && !_dsel_open) {
 // Runs BEFORE the pause block so Esc closes the dialogue, not opens the menu.
 // -----------------------------------------------------------------------------
 if (bond_dialog_open) {
-    if (input_confirm() || input_confirm_alt() || input_cancel()
-        || mouse_check_button_pressed(mb_left)) {
+    if (!variable_instance_exists(id, "bond_dialog_mode")) bond_dialog_mode = "info";
+    if (bond_dialog_mode == "info") {
+        if (input_confirm() || input_confirm_alt() || input_cancel()
+            || mouse_check_button_pressed(mb_left)) {
+            bond_dialog_open = false;
+        }
+        exit;
+    }
+    // CHOICE modes (09-03 relationship rework): the NPC asked a question. The
+    // Draw's buttons inject bond:ok / bond:cancel; Enter = OK, Esc = decline.
+    // A stray click closes nothing - the decision has to be made on a button.
+    if (input_cancel() || input_inject_take("bond:cancel")) {
         bond_dialog_open = false;
+        bond_dialog_mode = "info";
+        exit;
+    }
+    if (input_confirm() || input_inject_take("bond:ok")) {
+        var _bq_id = bond_dialog_npc;
+        if (bond_dialog_mode == "ask") {
+            var _bq_st  = affinity_gate_status(_bq_id);
+            var _bq_acc = affinity_accept_favor(_bq_id);
+            bond_dialog_mode  = "info";
+            bond_dialog_ok    = "";
+            bond_dialog_title = npc_display_name(_bq_id);
+            bond_dialog_body  = (_bq_acc == "")
+                ? ("\"Good. Come and find me when it's done.\"\n\n(\"" + ((_bq_st.def != undefined) ? _bq_st.def.name : "The favor")
+                    + "\" is tracked in your Journal.)")
+                : _bq_acc;
+        } else {
+            var _bq_cr = affinity_confirm_cross(_bq_id);
+            if (_bq_cr == "") {
+                hub_bond_show_crossing(id, _bq_id);
+            } else {
+                bond_dialog_mode  = "info";
+                bond_dialog_ok    = "";
+                bond_dialog_title = npc_display_name(_bq_id);
+                bond_dialog_body  = _bq_cr;
+            }
+        }
+        if (room == rm_hub || room == rm_character_select) save_game();
+        exit;
     }
     exit;
 }
@@ -1179,37 +1217,10 @@ if (input_hotkey("B") && selected_npc < array_length(affinity_npc_ids()) && !sho
     var _bond_ids = affinity_npc_ids();
     var _bond_id  = _bond_ids[selected_npc];
     if (affinity_gate_ready(_bond_id)) {
-        var _adv = affinity_try_advance(_bond_id);
-        // M 07-28 rework: the whole exchange happens in ONE bordered dialogue
-        // window at the NPC - the ask, the progress reminder, and the crossing
-        // (a FINISHED favor now turns in right here; no tavern-board trip).
-        bond_dialog_open = true;
-        bond_dialog_npc  = _bond_id;
-        if (_adv == "") {
-            // Friendly lore beat + heart burst on the crossing (M 08-15);
-            // the Lover elevation gets its own authored line.
-            var _bd_tier = affinity_tier(_bond_id);
-            var _bd_lore = affinity_deepen_line(_bond_id, _bd_tier);
-            if (_bd_lore == "") _bd_lore = "Something settles between you - warmer than words.";
-            bond_dialog_title = npc_names[selected_npc] + "  -  " + affinity_tier_name(_bond_id);
-            bond_dialog_body  = _bd_lore + "\n\nYour bond with "
-                + npc_names[selected_npc] + " deepens to " + affinity_tier_name(_bond_id) + ".";
-            // Seed the floating hearts (drawn in the bond dialog, hub Draw).
-            bond_dialog_hearts = [];
-            var _bd_n = (_bd_tier >= 4) ? 14 : 7;
-            repeat (_bd_n) {
-                array_push(bond_dialog_hearts, {
-                    x: 460 + random(1000), y: 780 + random(60),
-                    vy: 0.8 + random(1.2), sway: random(pi * 2),
-                    sc: 0.7 + random(0.8), a: 0.9
-                });
-            }
-            audio_play_sound(snd_quest_ready, 1, false);
-        } else {
-            bond_dialog_hearts = [];
-            bond_dialog_title = npc_names[selected_npc];
-            bond_dialog_body  = _adv;   // gate-quest ask / progress reminder
-        }
+        // 09-03 rework: B only OPENS the conversation. The NPC asks (favor, or
+        // the crossing itself) and the answer is a button in the dialogue -
+        // see the 0a2 modal block above. Nothing crosses here.
+        hub_bond_open(id, _bond_id);
         if (room == rm_hub || room == rm_character_select) save_game();
     }
 }

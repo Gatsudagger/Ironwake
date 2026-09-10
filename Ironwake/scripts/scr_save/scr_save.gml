@@ -279,7 +279,11 @@ function save_game() {
         total_boss_kills:            variable_global_exists("total_boss_kills")            ? global.total_boss_kills            : 0,
         // The Ashen Duelist (DESIGN_DUELIST_CHALLENGE.md): lifetime rival ledger.
         duelist_encounters:          variable_global_exists("duelist_encounters")          ? global.duelist_encounters          : 0,
-        duelist_tokens:              variable_global_exists("duelist_tokens")              ? global.duelist_tokens              : 0,
+        seashell_pieces:             variable_global_exists("seashell_pieces")             ? global.seashell_pieces             : 0,      // Seahorse Knight (09-03)
+        knight_encounters:           variable_global_exists("knight_encounters")           ? global.knight_encounters           : 0,
+        knight_egg_given:            variable_global_exists("knight_egg_given")            ? global.knight_egg_given            : false,
+        knight_lore_read:            variable_global_exists("knight_lore_read")            ? global.knight_lore_read            : 0,      // shell-lore entries read (09-09; saved 09-10)
+        duelist_tokens:             variable_global_exists("duelist_tokens")              ? global.duelist_tokens              : 0,
         duelist_wins:                variable_global_exists("duelist_wins")                ? global.duelist_wins                : 0,
         // Understudy ledger (mimicling sig move, 08-06): last/previous active species.
         pet_last_species:            variable_global_exists("pet_last_species")            ? global.pet_last_species            : "",
@@ -545,6 +549,10 @@ function new_game_reset() {
     global.npc_ranks                   = {};   // NPC PROGRESSION (08-15)
     global.total_boss_kills            = 0;
     global.duelist_encounters          = 0;   // Ashen Duelist: lifetime duels fought (+10% stats each)
+    global.seashell_pieces             = 0;   // Seahorse Knight (09-03): necklace pieces kept
+    global.knight_encounters           = 0;
+    global.knight_egg_given            = false;
+    global.knight_lore_read            = 0;
     global.duelist_tokens              = 0;   // Ashen Duelist: gold-tier tokens (Duelist Arts ladder)
     global.duelist_wins                = 0;   // Ashen Duelist: total WINS (Dueling Relics ladder, 08-11)
     global.pet_last_species            = "";  // Understudy ledger: current active species (08-06 wiring)
@@ -1115,6 +1123,10 @@ function load_game() {
     if (variable_struct_exists(_s, "dungeon_clears_total"))    global.dungeon_clears_total    = _s.dungeon_clears_total;
     if (variable_struct_exists(_s, "total_boss_kills"))        global.total_boss_kills        = _s.total_boss_kills;
     if (variable_struct_exists(_s, "duelist_encounters"))      global.duelist_encounters      = _s.duelist_encounters;
+    if (variable_struct_exists(_s, "seashell_pieces"))         global.seashell_pieces         = _s.seashell_pieces;
+    if (variable_struct_exists(_s, "knight_encounters"))       global.knight_encounters       = _s.knight_encounters;
+    if (variable_struct_exists(_s, "knight_egg_given"))        global.knight_egg_given        = _s.knight_egg_given;
+    global.knight_lore_read = variable_struct_exists(_s, "knight_lore_read") ? _s.knight_lore_read : 0;   // pre-09-10 saves: none read
     if (variable_struct_exists(_s, "duelist_tokens"))          global.duelist_tokens          = _s.duelist_tokens;
     if (variable_struct_exists(_s, "duelist_wins"))            global.duelist_wins            = _s.duelist_wins;
     if (variable_struct_exists(_s, "pet_last_species"))        global.pet_last_species        = _s.pet_last_species;
@@ -1190,6 +1202,7 @@ function run_state_reset() {
     // THE DESCENT is run-scoped - a fresh run never starts mid-fall.
     global.descent_active       = false;
     global.descent_floor        = 0;
+    tide_reset();                          // THE TIDE (§1) is run-scoped - the wheel starts at slack
     // IRONMAN resume: a torn-down run has no pending extract choice. The
     // checkpoint FILE is deliberately NOT deleted here - load_game calls this
     // before peeking at the file, and quit-to-title calls it after writing one.
@@ -1295,6 +1308,9 @@ function run_checkpoint_write(_live) {
         run_trinkets:         variable_global_exists("run_trinkets")         ? global.run_trinkets         : [],
         run_boons:            variable_global_exists("run_boons")            ? global.run_boons            : [],
         run_curses:           variable_global_exists("run_curses")           ? global.run_curses           : [],
+        // THE TIDE (§1, 09-09): the wheel's position + any Slack Water hold.
+        tide_ticks:           variable_global_exists("tide_ticks")           ? global.tide_ticks           : 0,
+        tide_hold:            variable_global_exists("tide_hold")            ? global.tide_hold            : 0,
         run_honing:           variable_global_exists("run_honing")           ? global.run_honing           : {},
         events_seen_this_run: variable_global_exists("events_seen_this_run") ? global.events_seen_this_run : [],
         // Equip/loadout can change mid-run (loot-screen equips, Borrowed Memory),
@@ -1468,6 +1484,9 @@ function run_checkpoint_apply(_c) {
     global.run_trinkets         = variable_struct_exists(_c, "run_trinkets")         ? _c.run_trinkets         : [];
     global.run_boons            = variable_struct_exists(_c, "run_boons")            ? _c.run_boons            : [];
     global.run_curses           = variable_struct_exists(_c, "run_curses")           ? _c.run_curses           : [];
+    tide_reset();   // THE TIDE (§1): guarded restore (pre-09-09 checkpoints carry no wheel)
+    global.tide_ticks           = variable_struct_exists(_c, "tide_ticks")           ? _c.tide_ticks           : 0;
+    global.tide_hold            = variable_struct_exists(_c, "tide_hold")            ? _c.tide_hold            : 0;
     // A resumed run already received its origin run-start grants (08-11).
     global.origin_run_granted   = true;
     global.run_honing           = variable_struct_exists(_c, "run_honing")           ? _c.run_honing           : {};

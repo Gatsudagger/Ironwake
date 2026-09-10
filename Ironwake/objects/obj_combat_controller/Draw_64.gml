@@ -374,6 +374,38 @@ if (_pet_co != undefined && !_pet_co.is_egg) {
     }
 }
 
+// THE SEAHORSE KNIGHT (M 09-03): the untargetable ally, a step past the pet
+// station (right of the hero, clear of the POTENTIAL DAMAGE box at x30-320).
+// Same procedural lunge as the pet, driven by global.knight_lunge_t0. Asset-
+// guarded: before spr_seahorse_knight lands only the log + toast announce him.
+if (variable_instance_exists(id, "knight_joined") && knight_joined) {
+    var _kspr = asset_get_index("spr_seahorse_knight");
+    if (_kspr >= 0 && sprite_exists(_kspr)) {
+        var _kx = _pbx + screen_shake_x + sprite_get_width(_pspr) * _pscale * 0.5 + (combat_25d() ? 310 : 300);
+        var _ky = combat_25d() ? (696 + screen_shake_y) : (716 + screen_shake_y);
+        var _kh = combat_25d() ? 205 : 225;
+        var _kfit = pet_sprite_fit(_kspr, _kx, _ky, _kh, _kh * 1.4);
+        var _klx = 0, _ksx = _kfit.scale, _kfl = 0;
+        var _kt0 = variable_global_exists("knight_lunge_t0") ? global.knight_lunge_t0 : -100000;
+        var _kpr = (current_time - _kt0) / 260;
+        if (_kpr >= 0 && _kpr <= 1) {
+            var _ka = sin(_kpr * pi);
+            _klx = _ka * 110;
+            _ksx = _kfit.scale * (1 + 0.16 * _ka);
+            if (_kpr > 0.34 && _kpr < 0.60) _kfl = 0.55;
+        }
+        var _kvw = (sprite_get_bbox_right(_kspr) - sprite_get_bbox_left(_kspr) + 1) * _kfit.scale;
+        ui_draw_cast_shadow(_kx, _ky, _kvw * 0.8, -1);
+        var _kfr = pet_anim_frame(_kspr);
+        draw_sprite_ext(_kspr, _kfr, _kfit.x + _klx, _kfit.y, _ksx, _kfit.scale, 0, c_white, 1.0);
+        if (_kfl > 0) {
+            gpu_set_blendmode(bm_add);
+            draw_sprite_ext(_kspr, _kfr, _kfit.x + _klx, _kfit.y, _ksx, _kfit.scale, 0, c_white, _kfl);
+            gpu_set_blendmode(bm_normal);
+        }
+    }
+}
+
 // Ground shadow beneath the player so the sprite reads against busy backgrounds.
 // Sized by the VISIBLE model (sprite bbox), not the padded canvas - the canvas
 // width made the player's shadow read LARGER than a giant pet's (M 07-27
@@ -539,13 +571,20 @@ for (var _ei = 0; _ei < _ecnt; _ei++) {
             var _dl_a   = min(1.0, _ec.death_linger / 20.0);
             // Depth scale stamped at death (faux-2.5D); pre-lever kills read 3x.
             var _dl_es  = variable_struct_exists(_ec, "last_esc") ? _ec.last_esc : 3;
+            // Facing (M 09-02: "mobs turn to face east on death"): the ghost keeps
+            // the mirror the living draw used - stamped as last_east with last_ex.
+            var _dl_fx = _ec.last_ex, _dl_fs = _dl_es;
+            if (variable_struct_exists(_ec, "last_east") && _ec.last_east) {
+                _dl_fx += sprite_get_width(_dl_spr) * _dl_es;
+                _dl_fs  = -_dl_es;
+            }
             draw_set_alpha(_dl_a);
-            draw_sprite_ext(_dl_spr, _dl_frm, _ec.last_ex + screen_shake_x, _ec.last_ey + screen_shake_y, _dl_es, _dl_es, 0, c_white, _dl_a);
+            draw_sprite_ext(_dl_spr, _dl_frm, _dl_fx + screen_shake_x, _ec.last_ey + screen_shake_y, _dl_fs, _dl_es, 0, c_white, _dl_a);
             // Late-arriving hit flash (the killing bolt landing) reads on the ghost.
             if (variable_struct_exists(_ec, "hit_flash") && _ec.hit_flash > 0) {
                 _ec.hit_flash--;
                 gpu_set_blendmode(bm_add);
-                draw_sprite_ext(_dl_spr, _dl_frm, _ec.last_ex, _ec.last_ey, _dl_es, _dl_es, 0, c_white, _dl_a * 0.8);
+                draw_sprite_ext(_dl_spr, _dl_frm, _dl_fx, _ec.last_ey, _dl_fs, _dl_es, 0, c_white, _dl_a * 0.8);
                 gpu_set_blendmode(bm_normal);
             }
             draw_set_alpha(1.0);
@@ -688,6 +727,7 @@ for (var _ei = 0; _ei < _ecnt; _ei++) {
     // the ghost draw re-applies live shake itself). Depth scale rides along so
     // the ghost stays the size it died at (faux-2.5D).
     _ec.last_ex  = _ex - screen_shake_x;
+    _ec.last_east = _cm_east;   // death-linger ghost keeps this facing (09-02)
     _ec.last_ey  = _ey - screen_shake_y;
     _ec.last_esc = _es;
     // Visual CENTER stamp (2.5D v3): burst/impact VFX target this instead of
@@ -980,7 +1020,14 @@ vfx_bursts = _kept_bursts;
 // takes the band's color as it enters it - press when it burns gold. Drawn
 // under the damage popups so PERFECT!/GOOD BLOCK float above it.
 // =============================================================================
-if (qte_state == "window" && qte_window_len > 0) {
+if ((qte_state == "window" || qte_hold > 0) && qte_window_len > 0) {
+    // FREEZE-ON-PRESS (M 09-02: "the ring continues to close after my input,
+    // removing any visual feedback"): once a press is banked the closing ring
+    // STOPS where it landed, and the whole ring lingers past impact (qte_hold,
+    // stamped by Step at resolution) so you can read how close you were.
+    var _qr_live   = (qte_state == "window");
+    var _qr_hold_a = _qr_live ? 1.0 : clamp(qte_hold / 36.0, 0, 1);
+    if (!_qr_live) qte_hold--;
     var _qr_cx = 475, _qr_cy = 545;
     if (combat_25d()) {
         var _qr_pa = combat_player_vfx_anchor(player);
@@ -989,38 +1036,36 @@ if (qte_state == "window" && qte_window_len > 0) {
     _qr_cx += screen_shake_x; _qr_cy += screen_shake_y;
     // Bands are STAMPED on the window at open (danger-tiered 08-26) - draw the
     // stamps, never recompute, so the ring always shows the bands being graded.
-    var _qr_prog = clamp(qte_frames / qte_window_len, 0, 1);        // 1 -> 0 closing
+    var _qr_at   = (qte_pressed_at >= 0) ? qte_pressed_at : qte_frames;   // frozen at the press
+    var _qr_prog = clamp(_qr_at / qte_window_len, 0, 1);                 // 1 -> 0 closing
     var _qr_rmin = 40, _qr_rmax = 150;
     var _qr_r     = lerp(_qr_rmin, _qr_rmax, _qr_prog);
     var _qr_rperf = lerp(_qr_rmin, _qr_rmax, qte_perfect_f / qte_window_len);
     var _qr_rgood = lerp(_qr_rmin, _qr_rmax, qte_good_f    / qte_window_len);
     // Band markers (static): GOOD in cool blue, PERFECT core in gold.
-    draw_set_alpha(0.30);
+    draw_set_alpha(0.30 * _qr_hold_a);
     draw_set_color(make_color_rgb(120, 190, 255));
     draw_circle(_qr_cx, _qr_cy, _qr_rgood, true);
-    draw_set_alpha(0.55);
+    draw_set_alpha(0.55 * _qr_hold_a);
     draw_set_color(make_color_rgb(255, 225, 120));
     draw_circle(_qr_cx, _qr_cy, _qr_rperf, true);
     draw_circle(_qr_cx, _qr_cy, _qr_rperf - 1, true);
-    // The closing ring - white outside, band-colored once inside a band.
+    // The closing ring - white outside, band-colored once inside a band. After
+    // a press it is FROZEN at the press radius in the band color it earned
+    // (grey = too early): the ring itself is the grade.
     var _qr_col = c_white;
-    if (qte_frames <= qte_perfect_f)   _qr_col = make_color_rgb(255, 225, 120);
-    else if (qte_frames <= qte_good_f) _qr_col = make_color_rgb(150, 210, 255);
-    draw_set_alpha(0.95);
+    if (qte_pressed_at >= 0) {
+        _qr_col = (qte_pressed_at <= qte_perfect_f) ? make_color_rgb(255, 225, 120)
+                : ((qte_pressed_at <= qte_good_f)   ? make_color_rgb(150, 210, 255)
+                                                    : make_color_rgb(150, 150, 160));
+    } else if (qte_frames <= qte_perfect_f)   _qr_col = make_color_rgb(255, 225, 120);
+    else if (qte_frames <= qte_good_f)        _qr_col = make_color_rgb(150, 210, 255);
+    draw_set_alpha(0.95 * _qr_hold_a);
     draw_set_color(_qr_col);
     draw_circle(_qr_cx, _qr_cy, _qr_r, true);
     draw_circle(_qr_cx, _qr_cy, _qr_r + 1, true);
     draw_circle(_qr_cx, _qr_cy, _qr_r + 2, true);
-    // Once a press is banked, freeze a tick ring where it landed - instant
-    // "that's where you hit" feedback before the grade text arrives.
-    if (qte_pressed_at >= 0) {
-        var _qr_hit = lerp(_qr_rmin, _qr_rmax, clamp(qte_pressed_at / qte_window_len, 0, 1));
-        draw_set_alpha(0.8);
-        draw_set_color((qte_pressed_at <= qte_perfect_f) ? make_color_rgb(255, 225, 120)
-                     : ((qte_pressed_at <= qte_good_f)   ? make_color_rgb(150, 210, 255)
-                                                         : make_color_rgb(150, 150, 160)));
-        draw_circle(_qr_cx, _qr_cy, _qr_hit, true);
-    } else if ((!variable_global_exists("tutorial_enabled") || global.tutorial_enabled)) {
+    if (qte_pressed_at < 0 && _qr_live && (!variable_global_exists("tutorial_enabled") || global.tutorial_enabled)) {
         // Prompt word above the ring while unpressed (tips-gated).
         draw_set_alpha(0.9);
         draw_set_font(ui_font(fnt_ui_small));
@@ -1038,35 +1083,48 @@ if (qte_state == "window" && qte_window_len > 0) {
 // held, an ember-colored ring closes on the TARGET enemy; press as it burns
 // gold for the TRUE STRIKE. Smaller radii than the guard ring so the two never
 // read as the same prompt.
-if (pqte_state == "window" && pqte_window_len > 0) {
-    var _sr_liv = combat_living_enemies(combat_state);
-    if (pqte_target < array_length(_sr_liv)) {
-        var _sr_tgt = _sr_liv[pqte_target];
-        var _sr_a   = combat_enemy_anchor(_sr_tgt, pqte_target);
-        var _sr_cx  = _sr_a.x + screen_shake_x;
-        var _sr_cy  = _sr_a.y + screen_shake_y;
+if ((pqte_state == "window" || pqte_hold > 0) && pqte_window_len > 0) {
+    // FREEZE-ON-PRESS + linger, same as the guard ring above (M 09-02). While
+    // live the anchor is re-read each frame and stamped (pqte_hold_x/y); the
+    // linger draws from the stamp so a strike that KILLS its target does not
+    // slide the frozen ring onto the next foe in the row.
+    var _sr_live   = (pqte_state == "window");
+    var _sr_hold_a = _sr_live ? 1.0 : clamp(pqte_hold / 36.0, 0, 1);
+    if (!_sr_live) pqte_hold--;
+    var _sr_ok = true;
+    if (_sr_live) {
+        var _sr_liv = combat_living_enemies(combat_state);
+        _sr_ok = (pqte_target < array_length(_sr_liv));
+        if (_sr_ok) {
+            var _sr_a = combat_enemy_anchor(_sr_liv[pqte_target], pqte_target);
+            pqte_hold_x = _sr_a.x; pqte_hold_y = _sr_a.y;
+        }
+    }
+    if (_sr_ok) {
+        var _sr_cx  = pqte_hold_x + screen_shake_x;
+        var _sr_cy  = pqte_hold_y + screen_shake_y;
         // Gold band stamped at arm (AP-cost tiered 08-26) - draw the stamp.
-        var _sr_prog = clamp(pqte_frames / pqte_window_len, 0, 1);
+        var _sr_at   = (pqte_pressed_at >= 0) ? pqte_pressed_at : pqte_frames;   // frozen at the press
+        var _sr_prog = clamp(_sr_at / pqte_window_len, 0, 1);
         var _sr_rmin = 30, _sr_rmax = 105;
         var _sr_r     = lerp(_sr_rmin, _sr_rmax, _sr_prog);
         var _sr_rperf = lerp(_sr_rmin, _sr_rmax, pqte_perfect_f / pqte_window_len);
-        draw_set_alpha(0.55);
+        draw_set_alpha(0.55 * _sr_hold_a);
         draw_set_color(make_color_rgb(255, 225, 120));
         draw_circle(_sr_cx, _sr_cy, _sr_rperf, true);
         draw_circle(_sr_cx, _sr_cy, _sr_rperf - 1, true);
-        var _sr_col = (pqte_frames <= pqte_perfect_f) ? make_color_rgb(255, 225, 120)
+        var _sr_col;
+        if (pqte_pressed_at >= 0) {
+            _sr_col = (pqte_pressed_at <= pqte_perfect_f) ? make_color_rgb(255, 225, 120)
+                                                          : make_color_rgb(200, 205, 220);
+        } else {
+            _sr_col = (pqte_frames <= pqte_perfect_f) ? make_color_rgb(255, 225, 120)
                                                       : make_color_rgb(255, 150, 90);
-        draw_set_alpha(0.95);
+        }
+        draw_set_alpha(0.95 * _sr_hold_a);
         draw_set_color(_sr_col);
         draw_circle(_sr_cx, _sr_cy, _sr_r, true);
         draw_circle(_sr_cx, _sr_cy, _sr_r + 1, true);
-        if (pqte_pressed_at >= 0) {
-            var _sr_hit = lerp(_sr_rmin, _sr_rmax, clamp(pqte_pressed_at / pqte_window_len, 0, 1));
-            draw_set_alpha(0.8);
-            draw_set_color((pqte_pressed_at <= pqte_perfect_f) ? make_color_rgb(255, 225, 120)
-                                                               : make_color_rgb(200, 205, 220));
-            draw_circle(_sr_cx, _sr_cy, _sr_hit, true);
-        }
         draw_set_alpha(1.0);
     }
 }
@@ -1151,6 +1209,77 @@ if (global.combat_weak_tip != undefined && global.combat_status_tip == undefined
     ui_draw_weakness_tooltip(global.combat_weak_tip.x, global.combat_weak_tip.y,
                              global.combat_weak_tip.school, global.combat_weak_tip.ename);
 }
+
+// =============================================================================
+// THE TIDE (§1, 09-09): the BREATH RING. A water-tinted disc over the player;
+// the gold BAND sits between the two band radii; the LUNG ring grows from the
+// centre while the breath is held (white -> gold inside the band -> red past
+// it, toward the burst radius). Frozen + lingering after resolution so the
+// grade can be read (same freeze idiom as the guard ring above).
+// =============================================================================
+if (bqte_state == "window" || bqte_hold_t > 0) {
+    var _br_live = (bqte_state == "window");
+    var _br_a    = _br_live ? 1.0 : clamp(bqte_hold_t / 40.0, 0, 1);
+    if (!_br_live) bqte_hold_t--;
+    var _br_cx = 475, _br_cy = 545;
+    if (combat_25d()) {
+        var _br_pa = combat_player_vfx_anchor(player);
+        _br_cx = _br_pa.x + 110; _br_cy = _br_pa.y + 110;
+    }
+    _br_cx += screen_shake_x; _br_cy += screen_shake_y;
+    var _br_rmin = 30, _br_rmax = 150;
+    var _br_rlo  = lerp(_br_rmin, _br_rmax, bqte_band_lo / bqte_burst);
+    var _br_rhi  = lerp(_br_rmin, _br_rmax, bqte_band_hi / bqte_burst);
+    var _br_r    = lerp(_br_rmin, _br_rmax, clamp(bqte_held / bqte_burst, 0, 1));
+    // Water disc.
+    draw_set_alpha(0.16 * _br_a);
+    draw_set_color(make_color_rgb(40, 120, 190));
+    draw_circle(_br_cx, _br_cy, _br_rmax, false);
+    // The band: a gold wash between the two band radii, edged.
+    draw_set_alpha(0.22 * _br_a);
+    draw_set_color(make_color_rgb(255, 225, 120));
+    for (var _br_k = _br_rlo; _br_k <= _br_rhi; _br_k += 1.5) draw_circle(_br_cx, _br_cy, _br_k, true);
+    draw_set_alpha(0.65 * _br_a);
+    draw_circle(_br_cx, _br_cy, _br_rlo, true);
+    draw_circle(_br_cx, _br_cy, _br_rhi, true);
+    // Burst edge in red.
+    draw_set_alpha(0.35 * _br_a);
+    draw_set_color(make_color_rgb(230, 90, 80));
+    draw_circle(_br_cx, _br_cy, _br_rmax, true);
+    // The lung ring.
+    var _br_col = c_white;
+    if (bqte_holding || !_br_live) {
+        if (bqte_held > bqte_band_hi)      _br_col = make_color_rgb(230, 100, 90);
+        else if (bqte_held >= bqte_band_lo) _br_col = make_color_rgb(255, 225, 120);
+    }
+    if (!_br_live && bqte_grade == 0 && !bqte_holding) _br_col = make_color_rgb(150, 150, 160);   // never drew breath
+    draw_set_alpha(0.95 * _br_a);
+    draw_set_color(_br_col);
+    draw_circle(_br_cx, _br_cy, _br_r, true);
+    draw_circle(_br_cx, _br_cy, _br_r + 1, true);
+    draw_circle(_br_cx, _br_cy, _br_r + 2, true);
+    // Prompt + the time left to draw breath (a thin draining bar).
+    if (_br_live && (!variable_global_exists("tutorial_enabled") || global.tutorial_enabled)) {
+        draw_set_alpha(0.9);
+        draw_set_font(ui_font(fnt_ui_small));
+        draw_set_halign(fa_center);
+        draw_set_valign(fa_middle);
+        draw_set_color(c_white);
+        var _br_txt = bqte_holding ? "RELEASE IN THE BAND"
+                    : ((input_device() == 2) ? "HOLD!" : ((input_device() == 1) ? "HOLD A!" : "HOLD SPACE!"));
+        draw_text(_br_cx, _br_cy - _br_rmax - 24, _br_txt);
+        draw_set_halign(fa_left);
+        draw_set_valign(fa_top);
+    }
+    if (_br_live && !bqte_holding && bqte_len > 0) {
+        var _br_bw = 120 * clamp(bqte_frames / bqte_len, 0, 1);
+        draw_set_alpha(0.7);
+        draw_set_color(make_color_rgb(90, 150, 220));
+        draw_rectangle(_br_cx - 60, _br_cy + _br_rmax + 10, _br_cx - 60 + _br_bw, _br_cy + _br_rmax + 14, false);
+    }
+    draw_set_alpha(1.0);
+}
+
 
 // -----------------------------------------------------------------------------
 // 3a. AP SYSTEM OVERLAYS (player turn only)
@@ -1548,7 +1677,7 @@ if (instance_exists(obj_game_controller)) {
             draw_set_halign(fa_right);
             if (_is_pend) {
                 draw_set_color(make_color_rgb(235, 165, 50));
-                draw_text(_bx_r - _bx_padx, _sy + 9, string(_cur_val) + "  ->  " + string(_cur_val + 1));
+                ui_draw_text_arrows(_bx_r - _bx_padx, _sy + 9, string(_cur_val) + "  ->  " + string(_cur_val + 1));
             } else {
                 draw_set_color(_lbl_col);
                 draw_text(_bx_r - _bx_padx, _sy + 9, string(_cur_val));
@@ -2337,3 +2466,42 @@ ui_draw_find_banner();   // FIND banner (pets / eggs / banshee) - topmost, M 08-
 // not the three-bar menu glyph (M 07-18, inspecting an ability in combat).
 ui_draw_touch_back(24, ability_detail_open || consumable_quick_open);
 ui_draw_touch_gamepad();   // on-screen d-pad in the left gutter (M 07-17)
+
+// =============================================================================
+// THE TIDE (§1, 09-09): surge / drain wash, the ship's wheel (drawn late so its
+// tooltip sits over the battlers; top band left of centre, clear of the Lv/XP
+// HUD at x<=405 and the y21 toast band), and the turn toast - topmost.
+if (tide_active()) {
+    if (tide_wash_t > 0) { tide_draw_wash(tide_wash_t, tide_wash_high); tide_wash_t--; }
+    tide_draw_wheel(62, 268, 30, true);
+    if (tide_toast_t > 0) {
+        tide_toast_t--;
+        ui_draw_toast(tide_is_high() ? "THE TIDE TURNS - HIGH WATER" : "THE TIDE TURNS - LOW WATER",
+                      GUI_CX, 21, min(1.0, tide_toast_t / 30.0), tide_col());
+    }
+}
+
+// THE SEAHORSE KNIGHT intro (09-03): boxed toast per the toast standard, topmost.
+if (variable_instance_exists(id, "knight_joined") && knight_joined && knight_intro_t > 0) {
+    knight_intro_t--;
+    ui_draw_toast("THE SEAHORSE KNIGHT rides to your side!", 960, 176, min(1, knight_intro_t / 40));
+}
+
+// PERF OVERLAY (09-02, F8 lever in Step): fps / last frame / decaying worst
+// frame, top-left, over everything. Dev-only readout - no game logic reads it.
+// =============================================================================
+if (variable_global_exists("debug_perf") && global.debug_perf) {
+    draw_set_font(ui_font(fnt_ui_small));
+    draw_set_halign(fa_left); draw_set_valign(fa_top);
+    draw_set_alpha(0.85);
+    draw_set_color(c_black);
+    draw_rectangle(GUI_XL + 8, 8, GUI_XL + 330, 74, false);
+    draw_set_alpha(1.0);
+    var _pf_w = variable_global_exists("perf_worst_ms") ? global.perf_worst_ms : 0;
+    var _pf_l = variable_global_exists("perf_last_ms")  ? global.perf_last_ms  : 0;
+    draw_set_color((_pf_w > 16.7) ? make_color_rgb(255, 140, 120) : make_color_rgb(150, 220, 160));
+    draw_text(GUI_XL + 16, 12, "F8 PERF   fps " + string(fps) + "   real " + string(fps_real));
+    draw_text(GUI_XL + 16, 40, "frame " + string_format(_pf_l, 1, 1) + " ms   worst " + string_format(_pf_w, 1, 1) + " ms"
+        + "   popups " + string(array_length(damage_popups)));
+    draw_set_font(-1);
+}

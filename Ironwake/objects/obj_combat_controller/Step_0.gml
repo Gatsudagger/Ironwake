@@ -43,6 +43,20 @@ if (keyboard_check_pressed(vk_f7)) {
     array_push(combat_log, "Arena view: " + (global.combat_25d ? "2.5D stage (v3)" : "flat (classic)") + ".");
 }
 
+// PERF OVERLAY lever (09-02, M: "sometimes in combat it feels like it lags"):
+// F8 toggles a frame-time readout (Draw_64 tail). Static review found no
+// per-frame hog, so this is the measuring stick - watch WORST ms when a hitch
+// happens; > 16.7 is a dropped frame at 60fps.
+if (keyboard_check_pressed(vk_f8)) {
+    global.debug_perf = !(variable_global_exists("debug_perf") && global.debug_perf);
+}
+if (variable_global_exists("debug_perf") && global.debug_perf) {
+    if (!variable_global_exists("perf_worst_ms")) global.perf_worst_ms = 0;
+    var _pf_ms = delta_time / 1000;
+    global.perf_worst_ms = max(global.perf_worst_ms * 0.97, _pf_ms);   // decaying peak
+    global.perf_last_ms  = _pf_ms;
+}
+
 // TIMED COMBAT mode lever (batch B 08-26, same idiom as F7 above): F1 cycles
 // ON -> ASSIST -> OFF and persists. Windows switch live; the enemy-pressure
 // rebase is stamped at combat spawn, so it updates on the NEXT fight.
@@ -209,6 +223,40 @@ if (input_device() == 2) {
 // 1. EARLY EXIT - combat already resolved
 // -----------------------------------------------------------------------------
 if (combat_over) exit;
+
+// =============================================================================
+// THE TIDE (§1, 09-09): consume a phase flip. From a ROUND tick it is a real
+// mid-fight event - SURGE (to HIGH): the player loses 1 AP, the water rises
+// once (-2 HP all round) and the drowned shrug off low water; DRAIN (to LOW):
+// the drowned falter (-15%, live). From a room pick / event lever it is the
+// wash + the stat stamp only (Create already read the phase at spawn).
+// =============================================================================
+if (variable_global_exists("tide_flip") && global.tide_flip != "" && tide_active()) {
+    var _tf_high = (global.tide_flip == "high");
+    var _tf_src  = global.tide_flip_src;
+    global.tide_flip = ""; global.tide_flip_src = "";
+    tide_wash_t = 70; tide_wash_high = _tf_high; tide_toast_t = 150;
+    var _tf_si = audio_play_sound(snd_gate, 1, false);
+    audio_sound_pitch(_tf_si, _tf_high ? 0.8 : 1.15);
+    if (_tf_high) {
+        tide_combat_high(combat_state);
+        if (_tf_src == "round") {
+            if (player_turn && player.energy > 0) player.energy -= 1;
+            else player.tide_ap_penalty = max(player.tide_ap_penalty, 1);
+            for (var _tf_i = 0; _tf_i < array_length(combat_state.combatants); _tf_i++) {
+                var _tf_c = combat_state.combatants[_tf_i];
+                if (!_tf_c.is_player && variable_struct_exists(_tf_c, "is_defeated") && _tf_c.is_defeated) continue;
+                _tf_c.HP = max(1, _tf_c.HP - 2);
+            }
+            array_push(combat_log, "THE TIDE TURNS - HIGH WATER. The surge batters everyone (-2 HP), takes 1 AP, and the drowned stand tall again.");
+        } else {
+            array_push(combat_log, "HIGH WATER - the Reach fills; the drowned stand tall.");
+        }
+    } else {
+        tide_combat_low(combat_state);
+        array_push(combat_log, "THE TIDE TURNS - LOW WATER. The flood drains and the drowned falter (-15% damage and HP).");
+    }
+}
 
 // Vigil (Awakened Guardian splash): polled every live-combat frame so it catches any
 // damage source the moment the player first drops below 40% HP. Fires at most once
@@ -411,6 +459,12 @@ if (_result == 1) {
     // with the haul. GOLD (<= par): a Duelist Token (cap 3; post-arc pays 25
     // dust instead) + an item at elite weights +1 tier. SILVER (<= par+2):
     // elite-weighted item + 25 dust. BRONZE (any win): 15 dust + a 50g purse.
+    // THE SEAHORSE KNIGHT (M 09-03): he rode with you and you won - the meeting
+    // on the shore opens over the floor map once this room settles.
+    if (!combat_over && knight_joined && !knight_scene_armed) {
+        knight_scene_armed = true;
+        global.knight_scene_pending = true;
+    }
     if (!combat_over && global.duel_active && !duel_rewards_granted) {
         duel_rewards_granted = true;
         global.duelist_encounters += 1;   // he remembers this one bitterly
@@ -700,6 +754,17 @@ if (player_turn) {
     // (DoTs deal damage; all durations decrement). Mirrors the enemy tick.
     if (need_player_status_tick) {
         need_player_status_tick = false;
+        // TIDEBOUND NECKLACE (09-03): once per combat, opening a turn below 30%
+        // HP the tide comes in - heal 20% max HP and wash one affliction away.
+        if (variable_struct_exists(player, "leg_tide") && player.leg_tide && !player.leg_tide_used
+            && player.HP > 0 && player.HP < player.max_HP * 0.30) {
+            player.leg_tide_used = true;
+            var _td_heal = max(1, round(player.max_HP * 0.20));
+            player.HP = min(player.max_HP, player.HP + _td_heal);
+            var _td_cl = combat_cleanse_one(player);
+            array_push(combat_log, "[Tidebound] The tide comes in - +" + string(_td_heal) + " HP"
+                + ((_td_cl != "") ? (", " + _td_cl + " washed away") : "") + ".");
+        }
         // Reset the same-category AP synergy tracker at the start of each player turn
         // (SYSTEMS_ABILITY_SYNERGY.md): the first ability of a category pays full cost
         // again. This is the single canonical player-turn-start hook (the per-turn
@@ -762,6 +827,94 @@ if (player_turn) {
     }
 
     // =========================================================================
+    // THE TIDE (§1, 09-09): the BREATH RING. At HIGH tide the crest (each
+    // Rising Water round) opens it at the top of the player's turn: HOLD
+    // (space / enter / mouse / touch / pad A) and a ring fills as the lungs
+    // do; RELEASE inside the band. PERFECT = nothing happens (the best the
+    // tide offers). POOR (released outside the band) = -1 AP next round.
+    // MISS (never held, or held until the lungs burst) = -1 AP + drowning
+    // damage (8% max HP, min 4; Tide-touched gear softens it by a quarter
+    // per piece). The turn waits while the ring is live. Classic mode (rings
+    // Off) has no ring and auto-resolves POOR - the crest still costs.
+    // =========================================================================
+    if (bqte_state == "window") {
+        bqte_frames--;
+        var _bq_pad  = input_pad();
+        var _bq_down = keyboard_check(vk_space) || keyboard_check(vk_enter) || mouse_check_button(mb_left)
+                    || (_bq_pad >= 0 && gamepad_button_check(_bq_pad, gp_face1));
+        var _bq_res = -1;
+        if (!bqte_holding) {
+            if (_bq_down) { bqte_holding = true; bqte_held = 0; audio_play_sound(snd_move_whoosh, 1, false); }
+            else if (bqte_frames <= 0) _bq_res = 0;                      // never drew breath
+        } else {
+            bqte_held++;
+            if (bqte_held == bqte_band_lo) audio_play_sound(snd_ui_move, 1, false);   // the band, by ear
+            if (!_bq_down)                  _bq_res = (bqte_held >= bqte_band_lo && bqte_held <= bqte_band_hi) ? 2 : 1;
+            else if (bqte_held >= bqte_burst) _bq_res = 0;               // lungs burst
+        }
+        if (_bq_res < 0) exit;   // the turn waits on the breath
+        bqte_state  = "";
+        bqte_grade  = _bq_res;
+        bqte_hold_t = 40;
+        var _bq_px = 475, _bq_py = 505;
+        if (combat_25d()) {
+            var _bq_pa = combat_player_vfx_anchor(player);
+            _bq_px = _bq_pa.x + 110; _bq_py = _bq_pa.y + 30;
+        }
+        if (_bq_res == 2) {
+            array_push(damage_popups, { value: 0, text: "BREATH HELD", x: _bq_px, y: _bq_py, timer: 48, col: make_color_rgb(255, 225, 120) });
+            audio_play_sound(snd_ui_confirm, 1, false);
+            array_push(combat_log, "You take the crest on a full breath. The water passes over you and finds nothing to take.");
+        } else if (_bq_res == 1) {
+            array_push(damage_popups, { value: 0, text: "GASPING", x: _bq_px, y: _bq_py, timer: 42, col: make_color_rgb(150, 180, 210) });
+            play_player_vocal("snd_player_grunt", -1);
+            player.tide_ap_penalty = max(player.tide_ap_penalty, 1);
+            array_push(combat_log, "You surface gasping - the tide has your breath: -1 AP next round.");
+        } else {
+            var _bq_dmg = max(4, round(player.max_HP * 0.08));
+            _bq_dmg = max(1, round(_bq_dmg * max(0.25, 1 - 0.25 * player.tide_touched)));
+            player.HP -= _bq_dmg;
+            combat_state.player_took_damage = true;
+            player.tide_ap_penalty = max(player.tide_ap_penalty, 1);
+            array_push(damage_popups, { value: _bq_dmg, text: "DROWNING", x: _bq_px, y: _bq_py, timer: 48, col: make_color_rgb(90, 150, 220) });
+            play_player_vocal("snd_player_hurt", -1);
+            array_push(combat_log, "The crest takes you under - DROWNING for " + string(_bq_dmg) + " and -1 AP next round.");
+            if (player.HP <= 0 && !combat_try_last_stand(player, combat_log)) {
+                player.is_defeated = true;
+                exit;
+            }
+        }
+    }
+    if (global.tide_breath_due && !(tide_active() && tide_is_high())) global.tide_breath_due = false;   // the tide turned before the breath
+    if (global.tide_breath_due && bqte_state == "" && !combat_over && !tutorial_is_active()) {
+        // First crest ever: the coach-mark goes up first; the ring opens the
+        // frame after it closes (tide_breath_due stays armed).
+        if (!tutorial_try_show("breath_ring")) {
+            global.tide_breath_due = false;
+            if (!timed_combat_on()) {
+                player.tide_ap_penalty = max(player.tide_ap_penalty, 1);
+                array_push(combat_log, "THE WATER CRESTS - without a breath ring (classic mode) the crest costs 1 AP next round.");
+            } else {
+                var _bq_wide = (timed_combat_mode() == 1) ? 1.6 : 1.0;   // Assist widens every window
+                _bq_wide *= 1 + 0.20 * player.tide_touched;
+                var _bq_half = 8 * _bq_wide;
+                bqte_band_lo = max(12, round(48 - _bq_half));
+                bqte_band_hi = min(68, round(48 + _bq_half));
+                bqte_burst   = 72;
+                bqte_len     = 150;
+                bqte_frames  = 150;
+                bqte_held    = 0;
+                bqte_holding = false;
+                bqte_grade   = -1;
+                bqte_state   = "window";
+                audio_play_sound(snd_cast_frost, 1, false);   // the crest - cold water rising
+                array_push(combat_log, "THE WATER CRESTS - hold your breath! (HOLD, release in the band)");
+                exit;
+            }
+        }
+    }
+
+    // =========================================================================
     // TIMED COMBAT T2 (batch B 08-26): the STRIKE WINDOW tick. While a cast is
     // held, every other player input waits; the first press is banked, and at
     // impact the cast re-enters the normal path (pqte_fire) carrying its grade.
@@ -776,6 +929,7 @@ if (player_turn) {
         pqte_cast_grade = 0;
         if (pqte_pressed_at >= 0) pqte_cast_grade = (pqte_pressed_at <= pqte_perfect_f) ? 2 : 1;
         pqte_state = "";
+        pqte_hold  = (pqte_pressed_at >= 0) ? 36 : 0;   // frozen-ring linger (Draw)
         pqte_fire  = true;    // consumed at the cast-attempt gate below this frame
         selected_ability = pqte_ability;   // selection is law - stamped at arm time
         selected_target  = pqte_target;
@@ -1310,7 +1464,8 @@ if (player_turn) {
             if (!player_turn) {
                 // Pet takes its turn before the enemies (Pets Phase 3 lightweight hook).
                 enemy_turn_timer = enemy_turn_delay
-                    + (combat_pet_act(combat_state, player, combat_log, damage_popups) ? 45 : 0);
+                    + (combat_pet_act(combat_state, player, combat_log, damage_popups) ? 45 : 0)
+                    + ((knight_joined && combat_knight_act(combat_state, player, combat_log, damage_popups, knight_dmg)) ? 45 : 0);   // Seahorse Knight (09-03)
             }
             exit;
         }
@@ -1357,7 +1512,8 @@ if (player_turn) {
         if (!player_turn) {
             // Pet takes its turn before the enemies (Pets Phase 3 lightweight hook).
             enemy_turn_timer = enemy_turn_delay
-                + (combat_pet_act(combat_state, player, combat_log, damage_popups) ? 45 : 0);
+                + (combat_pet_act(combat_state, player, combat_log, damage_popups) ? 45 : 0)
+                    + ((knight_joined && combat_knight_act(combat_state, player, combat_log, damage_popups, knight_dmg)) ? 45 : 0);   // Seahorse Knight (09-03)
         }
     }
 
@@ -1578,6 +1734,7 @@ if (player_turn) {
                 pqte_frames     = _pqo.len;
                 pqte_perfect_f  = _pqo.perfect;
                 pqte_pressed_at = -1;
+                pqte_hold       = 0;
                 pqte_ability    = selected_ability;
                 pqte_target     = selected_target;
                 exit;   // the ring starts closing; the cast waits
@@ -4775,6 +4932,7 @@ if (player_turn) {
             //     (danger-tiered at open - see timed_combat_windows) ---
             qte_state        = "";
             qte_action_grade = 0;
+            qte_hold         = (qte_pressed_at >= 0) ? 36 : 0;   // frozen-ring linger (Draw); nothing to show if never pressed
             if (qte_pressed_at >= 0) {
                 if (qte_pressed_at <= qte_perfect_f)   qte_action_grade = 2;
                 else if (qte_pressed_at <= qte_good_f) qte_action_grade = 1;
@@ -4844,6 +5002,7 @@ if (player_turn) {
                 qte_perfect_f  = _qo.perfect;
                 qte_good_f     = _qo.good;
                 qte_pressed_at = -1;
+                qte_hold       = 0;
                 audio_play_sound(snd_move_whoosh, 1, false);   // the wind-up - the guard ring is LIVE
                 // Teaching lives in the "timed_combat" coach-mark now (08-27 ship
                 // polish, fired on the player's turn with the other combat tips) -

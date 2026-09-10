@@ -134,6 +134,11 @@ bond_dialog_open  = false;
 bond_dialog_npc   = "";   // affinity id ("petra"...) for the portrait
 bond_dialog_title = "";
 bond_dialog_body  = "";
+// 09-03 rework: the window asks QUESTIONS now. "info" = any key closes;
+// "ask" = ACCEPT / DECLINE the favor; "confirm" = DEEPEN (PROFESS at Lover) /
+// NOT YET. bond_dialog_ok is the OK button's label in the choice modes.
+bond_dialog_mode  = "info";
+bond_dialog_ok    = "";
 
 // STATION UPGRADE checkout (NPC PROGRESSION 08-15): npc id while the popup is
 // armed ("" = closed); Step 0a3 is modal while set.

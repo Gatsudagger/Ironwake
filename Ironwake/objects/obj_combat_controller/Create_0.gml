@@ -354,6 +354,10 @@ player.crown_hollow_king = false;  // +1 trait slot (hub loadout screen)
 player.gatewarden_used   = false;  // tracks if the 0-AP proc is available this combat
 // 07-28 expansion legendaries (M approved 10) - flags read at their effect sites.
 player.leg_rebuke        = false;  // Duelist's Rebuke: after a dodge, next ability this turn +50%
+player.leg_tide          = false;  // Tidebound Necklace (09-03): Knight every Drowned fight + once-per-combat tide surge
+player.leg_tide_used     = false;
+player.tide_touched      = 0;      // THE TIDE (§1, 09-09): Tide-touched pieces worn - widen the breath band, soften drowning
+player.tide_ap_penalty   = 0;      // a poor / missed breath (or the surge): -1 AP next turn
 player.leg_rebuke_primed = false;  // set by the dodge, consumed by the next ability
 // Duelist Arts (DESIGN_DUELIST_CHALLENGE.md)
 player.measured_riposte_active = false;  // Measured Riposte: first melee blow answered at 18 (until next turn)
@@ -405,6 +409,8 @@ for (var _li = 0; _li < array_length(global.inventory); _li++) {
     if (_lit.unique_effect == "oathbreakers_shard")  player.leg_shard    = true;
     if (_lit.unique_effect == "crownfire_diadem")    player.leg_diadem   = true;
     if (_lit.unique_effect == "kindled_reliquary")   player.leg_reliquary = true;
+    if (_lit.unique_effect == "tidebound")           player.leg_tide      = true;   // Seahorse Knight's necklace (09-03)
+    if (_lit.unique_effect == "tide_touched")        player.tide_touched += 1;      // THE TIDE drops (09-09)
     // (hollow_kings_signet / beggars_fortune / lantern_last_door are hub-side -
     // legendary_worn() in scr_stats reads the worn slots directly.)
     // Class-weapon affixes
@@ -434,6 +440,8 @@ if (player.leg_reliquary) {
 }
 
 // Ashkeeper Blade: start each combat with a shield (stacks with any other shield grant)
+// Tidewall (Hippocamp innate, 09-03): the companion's shield rides the same channel.
+player.weapon_start_shield += pet_active_innate("start_shield");
 if (player.weapon_start_shield > 0) {
     player.shield_hp += player.weapon_start_shield;
 // Bonelattice dark gift (08-04): +N Soul Shield at combat start, summed across
@@ -1003,6 +1011,15 @@ if (_curse_ehp != 1.0 || _curse_edm != 1.0) {
     }
 }
 
+// -----------------------------------------------------------------------------
+// THE TIDE (§1, 09-09): LOW water - the drowned falter (-15% damage / HP). A
+// mid-fight flip toggles the same stamp live (obj_combat_controller Step via
+// tide_combat_low / tide_combat_high in scr_combat).
+// -----------------------------------------------------------------------------
+if (tide_active() && !tide_is_high()) {
+    for (var _ei = 0; _ei < array_length(enemies); _ei++) tide_enemy_low(enemies[_ei]);
+}
+
 // mechanic_value IS clone-local (a scalar the clone owns), so it scales once
 // here at spawn: the double_strike per-hit value, the death_burst eruption and
 // the regen tick all keep pace with the pressure passes above. Fraction-valued
@@ -1136,6 +1153,23 @@ selected_target = 0;
 // supports mouse-wheel scrollback via combat_log_scroll (0 = pinned to newest).
 combat_log          = [];
 combat_log_scroll   = 0;    // rows scrolled back from the newest entry
+
+// THE SEAHORSE KNIGHT (M 09-03, scr_stats knight_*): Drowned Reach only, 5% (or
+// every fight with the Tidebound Necklace). Untargetable ally - NOT a combatant
+// in the initiative queue; he strikes at the end of the player's turn (Step,
+// beside the pet hook) and is drawn beside the pet station (Draw_64).
+knight_joined      = false;
+knight_dmg         = 0;
+knight_intro_t     = 0;       // intro toast frames (Draw)
+knight_scene_armed = false;   // the shore meeting is owed once per won fight
+knight_state_ensure();
+if (knight_can_join(player)) {
+    knight_joined  = true;
+    knight_dmg     = knight_strike_base(enemies);
+    knight_intro_t = 170;
+    global.knight_encounters += 1;
+    array_push(combat_log, "[Ally] Hooves on the surf - THE SEAHORSE KNIGHT rides in at your side!");
+}
 // Parallel to combat_log: a damage-breakdown struct per line (undefined for most
 // lines). Hovering a damage line shows the math, BG3/Pathfinder-style. Kept aligned
 // lazily by combat_log_push_breakdown(). Feature-flagged (global.combat_log_breakdowns)
@@ -1183,6 +1217,21 @@ enemy_turn_delay = 60;
 // damaging enemy action: the Step gate opens it, Draw_64 draws the closing
 // ring, the grade rides qte_action_grade through that action's damage sites.
 // -----------------------------------------------------------------------------
+// THE TIDE (§1, 09-09): the BREATH RING - opened by the crest at HIGH tide on
+// the player's turn. HOLD to draw breath (the ring fills), RELEASE in the band.
+bqte_state       = "";     // "" idle | "window" = live, the turn waits
+bqte_frames      = 0;      // frames left to START holding (never drew breath = miss)
+bqte_len         = 0;
+bqte_held        = 0;      // frames the breath has been held
+bqte_holding     = false;
+bqte_grade       = -1;     // -1 unresolved | 0 MISS (drowning) | 1 POOR (-1 AP) | 2 PERFECT (nothing)
+bqte_hold_t      = 0;      // linger frames after resolution (Draw)
+bqte_band_lo     = 40;     // band (held frames), stamped at open - Assist + tide-touched gear widen it
+bqte_band_hi     = 56;
+bqte_burst       = 72;     // hold this long and the lungs give
+tide_wash_t      = 0;      // surge / drain wash (Draw)
+tide_wash_high   = false;
+tide_toast_t     = 0;
 qte_state        = "";     // "" idle | "window" = ring live, action held
 qte_frames       = 0;      // frames until impact while the window is open
 qte_window_len   = 0;      // full window length (ring scale + grade math)
@@ -1190,12 +1239,16 @@ qte_pressed_at   = -1;     // qte_frames value at the FIRST press (-1 = none yet
 qte_action_grade = 0;      // 0 late/none (full dmg), 1 GOOD (-50%), 2 PERFECT (negate+riposte)
 qte_perfect_f    = 8;      // THIS window's bands, stamped at open (danger-tiered
 qte_good_f       = 20;     //   08-26: light/medium/heavy by intent dmg vs max HP)
+qte_hold         = 0;      // frames the FROZEN ring lingers past impact (09-02 freeze-on-press)
 // T2 STRIKE WINDOW state (offensive twin of the block above): a damaging cast
 // hangs while a ring closes on its target; the grade rides pqte_cast_grade.
 pqte_state       = "";     // "" idle | "window" = strike ring live, cast held
 pqte_frames      = 0;
 pqte_window_len  = 0;
 pqte_pressed_at  = -1;
+pqte_hold        = 0;      // frozen strike ring linger (09-02)
+pqte_hold_x      = 0;      // target anchor stamped while live - the linger draws here
+pqte_hold_y      = 0;
 pqte_ability     = 0;      // selection stamped at arm time (restored at fire)
 pqte_target      = 0;
 pqte_fire        = false;  // impact happened - re-enter the cast path this frame
@@ -1469,6 +1522,7 @@ damage_popups = [];
 // Awakened splash hooks (Stage 4 crossover): Vigil arms fresh each combat, and a
 // Feral Echo pet lashes out once right now, before anyone takes a turn.
 global.pet_vigil_used = false;
+tide_ensure(); global.tide_breath_due = false;   // THE TIDE (§1): a crest never carries into a new fight
 combat_pet_echo_open(combat_state, player, combat_log, damage_popups);
 
 // Attack slide animation - attacker lunges toward target over 20 frames

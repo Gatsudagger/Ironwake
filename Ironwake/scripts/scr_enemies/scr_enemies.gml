@@ -431,9 +431,12 @@ function enemy_model_faces_east(spr) {
     static _east = {
         spr_skeleton_archer_ff: 1,  spr_skeleton_archer_ff2: 1, spr_skeleton_archer_ff3: 1,
         spr_magma_slug_ff: 1,       spr_magma_slug_ff2: 1,      spr_magma_slug_ff3: 1,
-        spr_cinder_imp_ff2: 1,      spr_cinder_imp_ff3: 1,
         spr_vault_wraith_ff2: 1,    spr_dungeon_wraith_ff2: 1,
         spr_skeleton_soldier_ff2: 1, spr_stone_golem_ff2: 1,    spr_vault_guardian_ff2: 1,
+        // 09-02 facing SCAN (M: "ashen skeleton and rustkeeper"; every model rendered as
+        // combat draws it -> _for_review/facing_scan_0902): the BASE soldier and golem
+        // models angle right too (soldier's sword thrust + golem's head both to the east).
+        spr_skeleton_soldier_ff: 1, spr_stone_golem_ff: 1,
         spr_malgrath_warden_ff2: 1,   // 08-18 (M): the one-key Warden angles right
         // 08-18 full facing AUDIT (M: "some enemies spawn facing right"): every model in
         // enemy_sprite_map + variants reviewed as drawn - these five still angled right.
@@ -443,12 +446,115 @@ function enemy_model_faces_east(spr) {
         // Imp"): re-read at 4x. cinder_imp_ff and infernal_revenant face LEFT/frontal (they
         // were wrongly mirrored); forge_tyrant (head + hammer to the right) and
         // lava_spitter_ff3 (head angled right) are the east-authored ones.
-        spr_forge_tyrant: 1, spr_lava_spitter_ff3: 1,
-        spr_vault_sentinel_ff3: 1,   // 08-19 (M): head + eyes turned right at 4x
+        spr_forge_tyrant: 1, spr_vault_sentinel_ff3: 1,   // 08-19 (M): head + eyes turned right at 4x
         // 08-18 later (M: "snowbound wraith facing right"): re-read the sheet - _ff2 is
         // frontal (tail trails right = drifting LEFT, so mirroring it was the bug) and
         // _ff3 is the one angled right (face + raised arm on the viewer's right).
         spr_snowbound_wraith_ff3: 1,
+        // 09-02 BIOME ART RUN facing RE-CHECK (M: "many many new enemies facing the wrong
+        // way"): the first pass flagged 27 biome models (hound/boar/stag/nester/tortoise/
+        // bearer/count/thief x3, Tally, two null-hounds) as east-authored - re-read against
+        // _for_review/facing_recheck_0902: ALL of them face LEFT in the raw art, so the
+        // mirror was turning them away from the player. Flags removed; genuine
+        // right-facers from the same run are listed below.
+        // face on the right
+        spr_pyre_dancer_ff: 1, spr_pyre_dancer_ff2: 1, spr_pyre_dancer_ff3: 1, // skull turned right, flame trails left
+        spr_rootbound_corpse_ff: 1,                                       // head angled right (ff2/ff3 frontal)
+        spr_rustkeeper_ff: 1, spr_rustkeeper_ff2: 1, spr_rustkeeper_ff3: 1, // hammer thrust + visor to the right
+        spr_sister_fathom_ff: 1, spr_sister_fathom_ff2: 1,                // looking + reaching right (ff3 frontal)
+        spr_the_long_drink_ff2: 1, spr_the_long_drink_ff3: 1,             // profile to the right (ff frontal)
+        spr_the_understudy_ff3: 1,                                        // sword thrust right (ff/ff2 frontal)
+        spr_the_unquenched_ff: 1, spr_the_unquenched_ff2: 1,              // hammer + head right (ff3 frontal)
+        // head profile right (ff frontal)
+        spr_nothing_in_particular_ff3: 1,                                 // head pointing right (ff points left, ff2 frontal)
+        spr_pale_fisher_ff: 1, spr_pale_fisher_ff2: 1, spr_pale_fisher_ff3: 1, // hood opening + rod to the right
+        // 09-09 M's read of the AS-DRAWN sheet (_for_review/facing_asdrawn_0909): authored RIGHT.
+        spr_anchor_revenant_ff: 1,
+        spr_anchor_revenant_ff2: 1,
+        spr_anchor_revenant_ff3: 1,
+        spr_barnacle_thrall_ff: 1,
+        spr_barnacle_thrall_ff2: 1,
+        spr_barnacle_thrall_ff3: 1,
+        spr_barrow_wight_ff: 1,
+        spr_barrow_wight_ff2: 1,
+        spr_barrow_wight_ff3: 1,
+        spr_bloatling_ff: 1,
+        spr_bloatling_ff3: 1,
+        spr_bone_colossus_ff: 1,
+        spr_bone_colossus_ff2: 1,
+        spr_bone_colossus_ff3: 1,
+        spr_bramble_husk_ff: 1,
+        spr_bramble_husk_ff2: 1,
+        spr_bramble_husk_ff3: 1,
+        spr_candle_thief_ff: 1,
+        spr_candle_thief_ff2: 1,
+        spr_candle_thief_ff3: 1,
+        spr_choirmother_ff3: 1,
+        spr_cortege_bearer_ff: 1,
+        spr_cortege_bearer_ff2: 1,
+        spr_cortege_bearer_ff3: 1,
+        spr_deepwater_sentinel_ff: 1,
+        spr_deepwater_sentinel_ff2: 1,
+        spr_deepwater_sentinel_ff3: 1,
+        spr_drowned_deckhand_ff: 1,
+        spr_drowned_deckhand_ff2: 1,
+        spr_drowned_deckhand_ff3: 1,
+        spr_dungeon_wraith_ff: 1,
+        spr_dungeon_wraith_ff3: 1,
+        spr_first_door_ff: 1,
+        spr_first_door_ff2: 1,
+        spr_first_door_ff3: 1,
+        spr_frost_shard_ff: 1,
+        spr_frost_shard_ff2: 1,
+        spr_frost_shard_ff3: 1,
+        spr_glacial_lurker_ff: 1,
+        spr_glacial_lurker_ff2: 1,
+        spr_glacial_lurker_ff3: 1,
+        spr_grafted_knight_ff: 1,
+        spr_grafted_knight_ff2: 1,
+        spr_grafted_knight_ff3: 1,
+        spr_grafted_stag_ff: 1,
+        spr_grafted_stag_ff2: 1,
+        spr_green_silence_ff: 1,
+        spr_green_silence_ff3: 1,
+        // 09-09 M's read of the AS-DRAWN sheet (_for_review/facing_asdrawn_0909): authored RIGHT.
+        spr_kelp_hound_ff: 1,
+        spr_kelp_hound_ff2: 1,
+        spr_kelp_hound_ff3: 1,
+        spr_moss_wraith_ff: 1,
+        spr_moss_wraith_ff2: 1,
+        spr_moss_wraith_ff3: 1,
+        spr_old_growth_ff: 1,
+        spr_old_growth_ff2: 1,
+        spr_old_growth_ff3: 1,
+        spr_second_count_ff: 1,
+        spr_second_count_ff2: 1,
+        spr_second_count_ff3: 1,
+        spr_sporemind_ff: 1,
+        spr_sporemind_ff2: 1,
+        spr_sporemind_ff3: 1,
+        spr_stone_golem_ff3: 1,
+        spr_sunken_chorister_ff: 1,
+        spr_sunken_chorister_ff2: 1,
+        spr_sunken_chorister_ff3: 1,
+        spr_the_bottom_ff: 1,
+        spr_the_bottom_ff2: 1,
+        spr_the_bottom_ff3: 1,
+        spr_the_tally_ff: 1,
+        spr_the_understudy_ff: 1,
+        spr_the_understudy_ff2: 1,
+        spr_the_unquenched_ff3: 1,
+        spr_weight_of_ironwake_ff: 1,
+        spr_weight_of_ironwake_ff2: 1,
+        // 09-09 M's read of the AS-DRAWN sheet (_for_review/facing_asdrawn_0909): authored RIGHT.
+        spr_bloatling_ff2: 1,
+        spr_hollow_nester_ff: 1,
+        spr_hollow_nester_ff2: 1,
+        spr_hollow_nester_ff3: 1,
+        spr_thicket_boar_ff: 1,
+        spr_thicket_boar_ff2: 1,
+        spr_the_long_drink_ff: 1,
+        spr_vault_crawler_ff: 1,
     };
     if (spr < 0 || !sprite_exists(spr)) return false;
     return variable_struct_exists(_east, sprite_get_name(spr));
@@ -1557,65 +1663,61 @@ function enemy_sprite_map() {
         // higher tiers resolve through duelist_sprite_for(). Spec in
         // DESIGN_DUELIST_CHALLENGE.md.
         "The Ashen Duelist":    spr_ashen_duelist,
-        // DEPTH WARDENS (08-13): STAND-IN models from the existing roster until
-        // a warden art run happens - an unmapped name draws NOTHING in combat,
-        // and invisible bosses are worse than borrowed clothes.
-        "The First Door":         spr_vault_sentinel_ff,
-        "Sister Fathom":          spr_snowbound_wraith_ff,
-        "The Tally":              spr_pale_archivist,
-        "Hollowlight":            spr_ash_wraith,
-        "The Weight of Ironwake": spr_bone_colossus_ff,
-        "The Long Arithmetic":    spr_tomb_archon,
-        "Nothing In Particular":  spr_grave_stalker,
-        "The Understudy":         spr_vault_guardian_ff,
-        "The Hollow Crown":       spr_bone_sovereign,
-        "The Bottom":             spr_stone_golem_ff,
-        // DROWNED REACH + HOLLOW CANOPY (08-27 §3.1/§3.2): STAND-IN models from
-        // the existing roster until the biome art runs happen (same precedent
-        // as the Depth Wardens above - flagged to M; an unmapped name draws
-        // NOTHING in combat and invisible enemies are worse than borrowed
-        // clothes). Swap each line as its sprite lands.
-        "Drowned Deckhand":        spr_skeleton_soldier_ff,
-        "Reach Eel":               spr_magma_slug_ff,
-        "Bloatling":               spr_cinder_imp_ff,
-        "Silt Wraith":             spr_ash_wraith,
-        "Barnacle Thrall":         spr_frozen_thrall,
-        "Tide Crawler":            spr_vault_crawler_ff,
-        "Sunken Chorister":        spr_pale_archivist,
-        "Kelp Hound":              spr_grave_stalker,
-        "The Long Drink":          spr_dungeon_wraith_ff,
-        "Anchor Revenant":         spr_frozen_sentinel,
-        "Deepwater Sentinel":      spr_vault_sentinel_ff,
-        "Pale Fisher":             spr_skeleton_archer_ff,
-        "The Tidewright":          spr_glacial_warden,
-        "Choirmother of the Deep": spr_tomb_archon,
-        "Leviathan Below":         spr_glacial_beast,
-        "Bramble Husk":            spr_skeleton_soldier_ff,
-        "Rootbound Corpse":        spr_frozen_thrall,
-        "Spore Moth":              spr_frost_shard_ff,
-        "Canopy Stalker":          spr_grave_stalker,
-        "Thicket Boar":            spr_glacial_lurker_ff,
-        "Witchwood Sapling":       spr_cinder_imp_ff,
-        "Moss Wraith":             spr_vault_wraith_ff,
-        "Hollow Nester":           spr_lava_spitter_ff,
-        "The Grafted Knight":      spr_vault_guardian_ff,
-        "Sporemind":               spr_pale_archivist,
-        "Old Growth":              spr_stone_golem_ff,
-        "The Nest":                spr_vault_crawler_ff,
-        "The Grafted Stag":        spr_glacial_beast,
-        "Mother Bramble":          spr_bone_sovereign,
-        "The Green Silence":       spr_eternal_frost,
-        // BIOME IDENTITY PASS (08-27): stand-ins for the identity additions,
-        // same rules as above - swap each line as its art lands.
-        "Candle Thief":            spr_dungeon_wraith_ff,
-        "Rustkeeper":              spr_stone_golem_ff,
-        "The Second Count":        spr_pale_archivist,
-        "Pyre Dancer":             spr_cinder_imp_ff,
-        "Slagback Tortoise":       spr_magma_slug_ff,
-        "The Unquenched":          spr_infernal_revenant,
-        "Mourner in Ice":          spr_snowbound_wraith_ff,
-        "Barrow Wight":            spr_ice_specter,
-        "Cortege Bearer":          spr_frozen_sentinel,
+        // DEPTH WARDENS: bespoke boss art landed 09-02 late (same biome art run;
+        // 80px canvases, M-approved picks) - no recycled models remain in this map.
+        "The First Door":         spr_first_door_ff,
+        "Sister Fathom":          spr_sister_fathom_ff,
+        "The Tally":              spr_the_tally_ff,
+        "Hollowlight":            spr_hollowlight_ff,
+        "The Weight of Ironwake": spr_weight_of_ironwake_ff,
+        "The Long Arithmetic":    spr_long_arithmetic_ff,
+        "Nothing In Particular":  spr_nothing_in_particular_ff,
+        "The Understudy":         spr_the_understudy_ff,
+        "The Hollow Crown":       spr_hollow_crown_ff,
+        "The Bottom":             spr_the_bottom_ff,
+        // DROWNED REACH + HOLLOW CANOPY: bespoke FF-density art landed 09-02
+        // (tools/gen_biome_enemies_0902.py, M-approved picks; _ff2/_ff3 variants
+        // resolve by string through enemy_sprite_variants).
+        "Drowned Deckhand":        spr_drowned_deckhand_ff,
+        "Reach Eel":               spr_reach_eel_ff,
+        "Bloatling":               spr_bloatling_ff,
+        "Silt Wraith":             spr_silt_wraith_ff,
+        "Barnacle Thrall":         spr_barnacle_thrall_ff,
+        "Tide Crawler":            spr_tide_crawler_ff,
+        "Sunken Chorister":        spr_sunken_chorister_ff,
+        "Kelp Hound":              spr_kelp_hound_ff,
+        "The Long Drink":          spr_the_long_drink_ff,
+        "Anchor Revenant":         spr_anchor_revenant_ff,
+        "Deepwater Sentinel":      spr_deepwater_sentinel_ff,
+        "Pale Fisher":             spr_pale_fisher_ff,
+        "The Tidewright":          spr_the_tidewright_ff,
+        "Choirmother of the Deep": spr_choirmother_ff,
+        "Leviathan Below":         spr_leviathan_below_ff,
+        "Bramble Husk":            spr_bramble_husk_ff,
+        "Rootbound Corpse":        spr_rootbound_corpse_ff,
+        "Spore Moth":              spr_spore_moth_ff,
+        "Canopy Stalker":          spr_canopy_stalker_ff,
+        "Thicket Boar":            spr_thicket_boar_ff,
+        "Witchwood Sapling":       spr_witchwood_sapling_ff,
+        "Moss Wraith":             spr_moss_wraith_ff,
+        "Hollow Nester":           spr_hollow_nester_ff,
+        "The Grafted Knight":      spr_grafted_knight_ff,
+        "Sporemind":               spr_sporemind_ff,
+        "Old Growth":              spr_old_growth_ff,
+        "The Nest":                spr_the_nest_ff,
+        "The Grafted Stag":        spr_grafted_stag_ff,
+        "Mother Bramble":          spr_mother_bramble_ff,
+        "The Green Silence":       spr_green_silence_ff,
+        // BIOME IDENTITY PASS (08-27): bespoke art landed 09-02, same run.
+        "Candle Thief":            spr_candle_thief_ff,
+        "Rustkeeper":              spr_rustkeeper_ff,
+        "The Second Count":        spr_second_count_ff,
+        "Pyre Dancer":             spr_pyre_dancer_ff,
+        "Slagback Tortoise":       spr_slagback_tortoise_ff,
+        "The Unquenched":          spr_the_unquenched_ff,
+        "Mourner in Ice":          spr_mourner_in_ice_ff,
+        "Barrow Wight":            spr_barrow_wight_ff,
+        "Cortege Bearer":          spr_cortege_bearer_ff,
     };
 }
 

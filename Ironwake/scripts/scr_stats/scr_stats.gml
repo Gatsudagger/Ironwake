@@ -3281,6 +3281,20 @@ function drop_equipment(rarity_weights, do_discover = true, curse_tiers = 0) {
     // caps at EPIC. A legendary comes ONLY from the native weight roll (or the
     // authored boss/forge paths). Remember whether the roll itself was
     // legendary so the bumps can't lower it either.
+    // THE TIDE (§1, 09-09): at HIGH tide in the Drowned Reach the water takes
+    // a rarity tier off every roll - and one roll in ten comes up a TIDE DROP,
+    // a hand-authored piece the deep gives up at no other time (never at the
+    // hub / Dorn - tide_active is dungeon-only).
+    if (tide_active() && tide_is_high()) {
+        if (irandom(99) < 10) {
+            var _td_item = tide_drop_make();
+            if (_td_item != undefined) {
+                if (do_discover) discover_item(item_base_name(_td_item), 3);
+                return _td_item;
+            }
+        }
+        if (_rarity > 0) _rarity--;
+    }
     var _native_leg = (_rarity >= 4);
     // Prospector trait: loot rolls one quality tier better (capped at Epic).
     // POTENCY V2: +5%/rank chance the bump is TWO tiers; TRANSCEND "Motherlode":
@@ -6750,7 +6764,7 @@ function affinity_fresh() {
     var _a = {};
     var _ids = affinity_npc_ids();
     for (var _i = 0; _i < array_length(_ids); _i++) {
-        variable_struct_set(_a, _ids[_i], { score: 0, tier: 0, gate_ready: false, run_gain: 0 });
+        variable_struct_set(_a, _ids[_i], { score: 0, tier: 0, gate_ready: false, run_gain: 0, professed: false });
     }
     return _a;
 }
@@ -6766,13 +6780,23 @@ function affinity_ensure() {
     for (var _i = 0; _i < array_length(_ids); _i++) {
         var _id = _ids[_i];
         if (!variable_struct_exists(global.npc_affinity, _id) || !is_struct(variable_struct_get(global.npc_affinity, _id))) {
-            variable_struct_set(global.npc_affinity, _id, { score: 0, tier: 0, gate_ready: false, run_gain: 0 });
+            variable_struct_set(global.npc_affinity, _id, { score: 0, tier: 0, gate_ready: false, run_gain: 0, professed: false });
         } else {
             var _e = variable_struct_get(global.npc_affinity, _id);
             if (!variable_struct_exists(_e, "score"))      _e.score      = 0;
             if (!variable_struct_exists(_e, "tier"))       _e.tier       = 0;
             if (!variable_struct_exists(_e, "gate_ready")) _e.gate_ready = false;
             if (!variable_struct_exists(_e, "run_gain"))   _e.run_gain   = 0;
+            if (!variable_struct_exists(_e, "professed")) {
+                // 09-03 MIGRATION (M: "I never wanted to become lovers with Bairc,
+                // it happened without me even noticing"): before the PROFESS
+                // confirm existed, a Lover gate could be crossed from the tavern
+                // board with no decision. Pre-confirm saves drop any Lover back to
+                // Companion. Score is untouched, so the gate is READY at once and
+                // the NPC asks the question properly on the next visit.
+                _e.professed = false;
+                if (_e.tier >= 4) { _e.tier = 3; _e.gate_ready = false; }
+            }
         }
     }
     return global.npc_affinity;
@@ -6965,7 +6989,17 @@ function affinity_refresh_gate(id) {
             ledger_add(id, "milestone", "We're past nodding terms now - acquaintances.");
             affinity_refresh_gate(id);   // score may already clear the next gate
         } else {
-            if (!_e.gate_ready) journal_badge_npc(id);   // newly ready -> badge once
+            if (!_e.gate_ready) {
+                journal_badge_npc(id);   // newly ready -> badge once
+                // 09-03: a ready gate announces itself. The NPC does the asking
+                // (no tavern-board posting any more), so tell the player to go
+                // and hear them out.
+                if (variable_global_exists("pet_find_notice")) {
+                    var _gm = npc_display_name(id) + " has something to ask you - find them at camp.";
+                    global.pet_find_notice = (global.pet_find_notice != "")
+                        ? (global.pet_find_notice + "   " + _gm) : _gm;
+                }
+            }
             _e.gate_ready = true;        // awaits the deepen-bond confirm
         }
     } else {
@@ -6990,45 +7024,76 @@ function affinity_add(id, amount) {
     quest_tick("use_function", id, 1);   // quest objective: N interactions with this NPC
 }
 
-// [B] Deepen at a ready gate (4c: routes through the GATE QUEST, PHASE4C_SPEC.md).
-//   quest available -> starts it (this IS the player-elected pursue for Lover);
-//   quest active    -> progress reminder;
-//   quest done      -> free one-click recross (re-climb after neglect/demotion -
-//                      neglect never re-quests; slot demotion resets the quest so
-//                      that path DOES land in "available" again).
-// Returns "" when the tier actually crossed, else a message for the notification
-// line (starting a quest is a message, not a cross).
-function affinity_try_advance(id) {
+// GATE STATUS at an NPC - side-effect free (09-03 rework, M: "we should be
+// having multiple prompts and popups before that happens for each stage").
+// Every tier past Acquaintance is now TWO explicit decisions at the NPC: the
+// ASK (accept their favor or decline) and, once the favor is done, the
+// CROSSING (Deepen - or PROFESS for Lover). Nothing crosses on a threshold and
+// nothing crosses from the tavern board. kind:
+//   "none"     - no gate ready
+//   "ask"      - gate ready, favor not yet accepted        -> Accept / Decline
+//   "progress" - favor underway, not finished              -> reminder only
+//   "confirm"  - favor finished, or already cleared once   -> Deepen / Profess
+//                (re-climb after neglect keeps the cleared favor; slot demotion
+//                and betrayal reset it, so those land in "ask" again).
+function affinity_gate_status(id) {
+    var _none = { kind: "none", target: 0, qid: "", def: undefined, state: undefined };
     var _e = affinity_entry(id);
-    if (_e == undefined)         return "Unknown.";
-    if (!affinity_gate_ready(id)) return "Not ready.";   // live check (also applies auto-cross)
+    if (_e == undefined || !affinity_gate_ready(id)) return _none;   // live check (also applies auto-cross)
     var _target = _e.tier + 1;
-
     var _gnames = ["", "", "friend", "companion", "lover"];
     var _qid = "gate_" + id + "_" + _gnames[_target];
     var _qs  = quest_state(_qid);
-    if (_qs == undefined || _qs.status == "done") {
-        // No authored gate quest (future NPCs) or already cleared once: cross free.
-        affinity_gate_cross(id, _target);
-        return "";
+    var _qd  = quest_def(_qid);
+    if (_qs == undefined || _qd == undefined || _qs.status == "done") {
+        return { kind: "confirm", target: _target, qid: _qid, def: _qd, state: _qs };
     }
-    var _qd = quest_def(_qid);
     if (_qs.status == "active") {
-        // All-in-one turn-in (M 07-28): a FINISHED favor completes right here
-        // at the NPC - no tavern-board round trip. quest_turn_in crosses the
-        // gate itself (the board turn-in path still works as an alternative).
-        if (_qs.progress >= _qd.obj_target) {
-            var _ti = quest_turn_in(_qid);
-            return _ti;   // "" = crossed
-        }
-        return "\"" + _qd.name + "\" is underway - " + _qd.objective
-            + "  (" + string(min(_qs.progress, _qd.obj_target)) + "/" + string(_qd.obj_target)
-            + ").\n\nCome back to me when it's done.";
+        var _fin = (_qs.progress >= _qd.obj_target);
+        return { kind: _fin ? "confirm" : "progress", target: _target, qid: _qid, def: _qd, state: _qs };
     }
-    quest_start(_qid);
-    ledger_add(id, "quest", "They asked something of you first: \"" + _qd.name + "\".");
-    return npc_display_name(id) + " asks: " + _qd.objective
-        + "\n\n(\"" + _qd.name + "\" - tracked in your Journal. Return here when it's done.)";
+    return { kind: "ask", target: _target, qid: _qid, def: _qd, state: _qs };
+}
+
+// The player said YES to the ask: start the favor. "" ok / reason.
+function affinity_accept_favor(id) {
+    var _st = affinity_gate_status(id);
+    if (_st.kind != "ask") return "Nothing to accept.";
+    var _r = quest_start(_st.qid);
+    if (_r != "") return _r;
+    ledger_add(id, "quest", "They asked something of you first: \"" + _st.def.name + "\".");
+    return "";
+}
+
+// The player CONFIRMED the crossing (Deepen, or Profess for Lover). Turns the
+// finished favor in (which crosses), or crosses outright when the favor was
+// cleared on an earlier climb. Stamps `professed` on a Lover crossing so the
+// save migration in affinity_ensure never rolls a chosen Lover back. "" ok / reason.
+function affinity_confirm_cross(id) {
+    var _st = affinity_gate_status(id);
+    if (_st.kind != "confirm") return "Not ready.";
+    if (_st.state != undefined && _st.state.status == "active") {
+        var _ti = quest_turn_in(_st.qid);   // gate turn-in crosses via affinity_gate_cross
+        if (_ti != "") return _ti;
+    } else {
+        affinity_gate_cross(id, _st.target);
+    }
+    if (_st.target >= 4) {
+        var _e = affinity_entry(id);
+        if (_e != undefined) _e.professed = true;
+    }
+    return "";
+}
+
+// The NPC currently at Lover, or "" - the PROFESS confirm names who would be
+// betrayed by a second declaration.
+function affinity_current_lover() {
+    affinity_ensure();
+    var _ids = affinity_npc_ids();
+    for (var _i = 0; _i < array_length(_ids); _i++) {
+        if (variable_struct_get(global.npc_affinity, _ids[_i]).tier >= 4) return _ids[_i];
+    }
+    return "";
 }
 
 // Cross a tier NOW (gate-quest turn-in, done-quest recross, or future-NPC fallback).
@@ -7694,8 +7759,11 @@ function tavern_board_rows() {
     board_bootstrap();   // first-open stock for new chars + pre-board saves
     var _g = quest_groups();
     var _out = [];
-    for (var _a = 0; _a < array_length(_g.active); _a++)    array_push(_out, _g.active[_a]);
-    for (var _v = 0; _v < array_length(_g.available); _v++) array_push(_out, _g.available[_v]);
+    // 09-03: relationship (gate) favors are NEVER posted on the board - they come
+    // from the NPC and are answered at the NPC (M: "ALL RELATIONSHIP QUESTS should
+    // only come from the npcs themselves"). The Journal still tracks them.
+    for (var _a = 0; _a < array_length(_g.active); _a++)    if (!quest_is_gate(quest_def(_g.active[_a])))    array_push(_out, _g.active[_a]);
+    for (var _v = 0; _v < array_length(_g.available); _v++) if (!quest_is_gate(quest_def(_g.available[_v]))) array_push(_out, _g.available[_v]);
     return _out;
 }
 
@@ -7757,6 +7825,36 @@ function reforge_ingot_spend(_rarity) {
     var _t = reforge_ingot_tier_for(_rarity);
     if (_t >= 0) global.reforge_ingots[_t] -= 1;
     return _t;
+}
+// 09-03 FORGE restructure helpers -------------------------------------------
+// Spend a SPECIFIC held tier (the confirm-screen ingot picker); falls back to
+// the lowest qualifying one. Returns the tier spent, or -1.
+function reforge_ingot_spend_tier(_rarity, _tier) {
+    reforge_ingots_ensure();
+    if (_tier >= clamp(_rarity, 0, 4) && _tier <= 4 && global.reforge_ingots[_tier] > 0) {
+        global.reforge_ingots[_tier] -= 1;
+        return _tier;
+    }
+    return reforge_ingot_spend(_rarity);
+}
+// Every HELD tier that can work a piece of _rarity, ascending.
+function reforge_eligible_tiers(_rarity) {
+    reforge_ingots_ensure();
+    var _out = [];
+    for (var _t = clamp(_rarity, 0, 4); _t < 5; _t++) if (global.reforge_ingots[_t] > 0) array_push(_out, _t);
+    return _out;
+}
+// Picker default: the hoard row the player has highlighted if it qualifies,
+// else the lowest qualifying tier (-1 = none held).
+function reforge_pick_default(_rarity, _pref) {
+    reforge_ingots_ensure();
+    if (_pref >= clamp(_rarity, 0, 4) && _pref <= 4 && global.reforge_ingots[_pref] > 0) return _pref;
+    return reforge_ingot_tier_for(_rarity);
+}
+// Per-tier FUSE check (each hoard row fuses its own tier now): 3 held, below Legendary.
+function reforge_can_fuse_tier(_t) {
+    reforge_ingots_ensure();
+    return (_t >= 0 && _t <= 3 && global.reforge_ingots[_t] >= 3);
 }
 // Lowest ingot tier (0-3) holding 3 or more - the tier a FUSE would combine
 // (3 -> 1 of the next tier up; Legendary ingots don't fuse). -1 = nothing to
@@ -9714,6 +9812,10 @@ function pet_run_complete(result) {
         }
         _p.stage += 1;
         _p.growth = 0;
+        // Hippocamp easter egg (M 09-03): the Brinecolt grows into its adult
+        // name - unless the player already named it themselves.
+        if (variable_struct_exists(_p, "species") && _p.species == "hippocamp"
+            && _p.stage >= PET_STAGE_ADULT && !pet_named(_p) && _p.name == "Brinecolt") _p.name = "Hippocamp";
         // Journal form reveal (M 08-13): this species has now been SEEN at this
         // stage - the Creatures tab may show the form.
         if (variable_struct_exists(_p, "species")) compendium_stage_stamp(_p.species, _p.stage);
@@ -9817,6 +9919,18 @@ function pet_sprite_fit(spr, cx, feet_y, target_h, max_w = -1) {
 function pet_sprite(pet, dir = "s") {
     if (!is_struct(pet)) return -1;
     var _key  = pet_sprite_key(pet);
+    // HIPPOCAMP easter egg (M 09-03): the line has TWO looks chosen by the hatched
+    // archetype - Guardian = teal/navy (spr_pet_hippocamp_*), Warrior = navy/pink
+    // (spr_pet_hippocamp_w_*). Same species, same name, same innate.
+    if (pet.species == "hippocamp" && !pet.is_egg && variable_struct_exists(pet, "archetype")
+        && pet.archetype == PET_ARCH_COMBATANT) {
+        var _wb = "spr_pet_hippocamp_w_" + _key;
+        var _wc = [_wb + "_" + dir, _wb + "_s"];
+        for (var _w = 0; _w < array_length(_wc); _w++) {
+            var _wa = asset_get_index(_wc[_w]);
+            if (_wa >= 0) return _wa;
+        }
+    }
     var _base = "spr_pet_" + pet.species + "_" + _key;
     var _cands = [_base + "_" + dir, _base + "_s", _base];   // directional -> south -> legacy static
     for (var _i = 0; _i < array_length(_cands); _i++) {
@@ -10042,6 +10156,7 @@ function pet_species_sig_move(species_id) {
         case "griefwisp":       return { name:"Abdication",    fx:"abdication",   desc:"Once per combat: the first elite or boss ability costs that enemy its next turn." };
         // --- 08-06: new biome scions (§3.1 Drowned Reach, §3.2 Hollow Canopy) -----
         case "sluice_otter":    return { name:"Ebb",           fx:"ebb",          desc:"Once per combat: the first heal you receive is doubled." };
+        case "hippocamp":       return { name:"Tidewall",      fx:"start_shield", val:8,  desc:"Begins every combat with an 8-point shield around you." };
         case "chorister_fry":   return { name:"Descant",       fx:"descant",      desc:"Once per combat: the first summon an enemy calls arrives at 1 HP." };
         case "leviathan_calf":  return { name:"Something Larger", fx:"something_larger", desc:"Once per combat: the first enemy to strike you takes 25% of its own max HP." };
         case "graftling":       return { name:"Take Root",     fx:"take_root",    desc:"Once per combat: the first enemy add arrives Rooted." };
@@ -11065,6 +11180,10 @@ function pet_species_signature_catalog() {
         // --- 08-06: new biome scions (§3.1 Drowned Reach, §3.2 Hollow Canopy) -----
         { id:"sluice_otter",   name:"Sluice Otter",     boss:"The Tidewright",          dungeon:"drowned_reach", floor:1, blurb:"it lived in the lock-works and still wears one" },
         { id:"chorister_fry",  name:"Chorister Fry",    boss:"Choirmother of the Deep", dungeon:"drowned_reach", floor:2, blurb:"it hums the part it was taught" },
+        // THE SEAHORSE KNIGHT's own line (M 09-03): a one-of-a-kind egg he gifts
+        // at 3 seashells kept. unique = never rolls from any generic source.
+        // Two-part name easter egg: hatchling "Brinecolt", renamed "Hippocamp" at Adult.
+        { id:"hippocamp",      name:"Hippocamp",        unique:true, blurb:"born a Brinecolt in the surf; the tide answers when it moves" },
         { id:"leviathan_calf", name:"Leviathan Calf",   boss:"Leviathan Below",         dungeon:"drowned_reach", floor:3, blurb:"enormous, eventually" },
         { id:"graftling",      name:"Graftling",        boss:"The Grafted Stag",        dungeon:"hollow_canopy", floor:1, blurb:"antlers already, and it is very small" },
         { id:"thornlet",       name:"Thornlet",         boss:"Mother Bramble",          dungeon:"hollow_canopy", floor:2, blurb:"it hugs, and you bleed a little" },
@@ -11076,8 +11195,11 @@ function pet_species_signature_catalog() {
 // falls back to a generic species roll, so an unmapped boss can never break the drop).
 function pet_boss_signature_species(dungeon, fl) {
     var _c = pet_species_signature_catalog();
-    for (var _i = 0; _i < array_length(_c); _i++)
+    for (var _i = 0; _i < array_length(_c); _i++) {
+        // Gifted-only lines (the Knight's Hippocamp, 09-03) carry no boss slot - skip.
+        if (!variable_struct_exists(_c[_i], "dungeon") || !variable_struct_exists(_c[_i], "floor")) continue;
         if (_c[_i].dungeon == dungeon && _c[_i].floor == fl) return _c[_i].id;
+    }
     return "";
 }
 
@@ -11095,8 +11217,10 @@ function pet_species_random() {
     // roll from any source (starter already filtered; this covers altar eggs,
     // board rewards and every other generic grant).
     var _ok = [];
-    for (var _i = 0; _i < array_length(_c); _i++)
+    for (var _i = 0; _i < array_length(_c); _i++) {
+        if (variable_struct_exists(_c[_i], "unique") && _c[_i].unique) continue;   // gifted-only lines (Hippocamp)
         if (pet_species_has_art(_c[_i].id)) array_push(_ok, _c[_i].id);
+    }
     if (array_length(_ok) == 0) return _c[irandom(array_length(_c) - 1)].id;
     return _ok[irandom(array_length(_ok) - 1)];
 }
@@ -11387,7 +11511,7 @@ function pet_make(species_id, source, archetype, stage, is_egg) {
     return {
         uid:            global.pet_next_id++,
         species:        species_id,
-        name:           _sp.name,                         // species name until the player names it
+        name:           (species_id == "hippocamp") ? "Brinecolt" : _sp.name,   // species name until the player names it (Hippocamp hatches as a Brinecolt, 09-03)
         named:          false,                            // has the player given it a custom name? (1st free, rename 20 dust)
         archetype:      _arch,
         source:         source,                          // egg_event/egg_shrine/egg_curse/egg_boss/found
@@ -11672,6 +11796,8 @@ function pet_egg_type_catalog() {
         { id:"dust",    name:"Dust Egg",     effect:"dust",   val:0.08, desc:"+8% rune dust while its hatchling is active." },
         { id:"warding", name:"Warding Egg",  effect:"ward",   val:0.06, desc:"-6% damage taken while its hatchling is active." },
         { id:"keen",    name:"Keen Egg",     effect:"crit",   val:5,    desc:"+5% crit chance while its hatchling is active." },
+        // The Seahorse Knight's clutch (09-03) - unique, never rolled.
+        { id:"tidal",   name:"Tidal Egg",    effect:"ward",   val:0.06, unique:true, desc:"-6% damage taken while its hatchling is active. The Seahorse Knight's own clutch." },
     ];
 }
 function pet_egg_type_get(id) {
@@ -11681,7 +11807,10 @@ function pet_egg_type_get(id) {
 }
 function pet_egg_random() {
     var _c = pet_egg_type_catalog();
-    return _c[irandom(array_length(_c) - 1)].id;
+    var _ok = [];
+    for (var _i = 0; _i < array_length(_c); _i++)
+        if (!(variable_struct_exists(_c[_i], "unique") && _c[_i].unique)) array_push(_ok, _c[_i].id);
+    return _ok[irandom(array_length(_ok) - 1)];
 }
 
 // The active pet's egg benefit for a given kind ("gold"/"loot"/"dmg"/"mend"), honoring the
@@ -11830,6 +11959,8 @@ function tutorial_catalog() {
         { id:"combat_ap",  title:"Action Points (AP)",  body:"Each turn you have 3 AP (4 with the Bloodwarden Relentless trait). Abilities cost AP to use; a basic attack is free. Spend your AP wisely, then end your turn to let the enemy act." },
         // §3.0 coach-mark 2 (M-locked 08-27): advice framing, not a wall - fires
         // once, when the Drowned Reach reveal ceremony finishes (hub Step).
+        { id:"the_tide",      title:"The Tide",           body:"The SHIP'S WHEEL is the Drowned Reach's clock. It turns once for every room you enter and once for every combat ROUND, and the tide changes every 8 turns.\n\nLOW TIDE: the water sleeps. Enemies hit softer and carry less, and rooms resolve as they should.\n\nHIGH TIDE: the water ruins every gamble - checks fail, choices turn sour, loot drops a rarity - but one drop in ten is a TIDE DROP the deep gives up at no other time. In combat, when the water crests, HOLD to take a breath and RELEASE in the band.\n\nYou steer it. Burn a few turns in a fight if the next room is one you'd rather meet at low water. Hover the wheel any time to read it." },
+        { id:"breath_ring",   title:"The Breath Ring",    body:"The water crests. HOLD SPACE (or hold the mouse / touch / pad A) and a ring fills as your lungs do; RELEASE when it burns gold.\n\nRelease in the band and nothing happens - that is the best outcome the tide offers. Release outside it and you surface gasping: -1 AP next round. Never draw breath, or hold until your lungs burst, and you also take DROWNING damage.\n\nIt opens only at HIGH tide, every third round. Tide-touched gear widens the band." },
         { id:"biome_baseline", title:"Deeper Waters", body:"The Drowned Reach starts at AWAKENING IV strength - even at A0, its foes hit like a Nightmare-tier dive, and its floors run long.\n\nThe rewards are scaled to match: better loot, more gold, richer XP from the very first room.\n\nCome geared. If the Reach turns you back, climb the Tundra Tomb's Awakenings a little higher first - it is advice the drowned never took." },
         // Timed combat rings (08-27 ship polish): fires right after combat_ap,
         // only while a timed mode is on - see the coach-mark chain in
@@ -11845,7 +11976,7 @@ function tutorial_catalog() {
         { id:"escape_item", title:"A Way Out",          body:"You carry an escape item. On the floor map, press G (or tap the LAMP / WINE button) to use it: the Genie Lamp whisks you back to camp with ALL your loot, free. Devil Wine does the same - but drains 2 random stat points. WARNING: the Wine's toll is PERMANENT - those points are gone from your hero on every future run, not just this one. Cash out a greedy run before the dungeon takes it back." },
         { id:"garden_scene", title:"Bairc's Garden",   body:"This is where your creatures live between runs. Look around: hold A / D or the arrow keys, DRAG with the mouse, swipe on touch, or push the left stick on a pad. Tap a creature (or press [E]) to pet it, [1]-[3] to toss crumbs, set a stone or forage, and [B] opens the ornament shop. The garden is early - big things are coming for decorating it." },
         { id:"origin_egg",  title:"Something Stirs",    body:"The egg you stumbled upon in your travels stirs - perhaps someone here can help with that. Bairc the beast-warden can identify and hatch it: find him on the camp carousel and set the egg under his care. A raised creature fights beside you, or blesses your runs." },
-        { id:"bond_gates",  title:"Growing Closer",     body:"Someone in camp has warmed to you - their bond has reached a GATE. Crossing a gate now takes a FAVOR: talk to them and take on their gate quest (it appears on the tavern board and in your Journal). Finish it and the friendship deepens, unlocking their next perk. Mind your bonds: friendships DECAY if neglected, and only a few can hold the deepest tiers - deepening one may demote another." },
+        { id:"bond_gates",  title:"Growing Closer",     body:"Someone in camp has warmed to you - their bond has reached a GATE. Crossing a gate takes a FAVOR: speak with them at camp and they will ask it of you - accept or decline. Finish it, return, and they will ask whether you want to grow closer. Nothing deepens until you say yes. Mind your bonds: friendships DECAY if neglected, and only a few can hold the deepest tiers - deepening one may demote another." },
         { id:"maren_forge", title:"Rough Steel",       body:"Items drop UNFINISHED. The QUALITY tag shows how much of an item's true power it delivers right now.\nDorn's TEMPER tab raises that by +10% per step, for gold and rune dust. Each step also adds a little bonus max HP.\nA raw legendary barely beats a finished epic - always worth tempering what you love." },
         { id:"rune_caps",  title:"Aspect Runes Stack - to a Point", body:"Aspect runes socketed here ADD UP: three Hunter runes give three times the ranged accuracy. But each accuracy family is CAPPED - Hunter (ranged attacks) and Seer (spells) each stop at +12% total, so past that a fourth rune is wasted. The cap is printed on the rune and on the Accuracy line of your STATS page." },
         { id:"dormant_leg", title:"A Sleeping Legend", body:"You found a DORMANT legendary. It fell asleep when its last bearer died - it carries only a shadow of its true strength for now. Take it to Maren's AWAKEN craft (Runesmithing tab): 300g, 60 rune dust and two epics fed to the fire will wake it. Only the storied named legendaries are ever found awake." },
@@ -12889,13 +13020,34 @@ function event_first_unlocked(ev) {
 }
 
 // Resolve a confirmed choice to one outcome struct { text, effects }.
-function event_resolve_choice(choice) {
+function event_resolve_choice(choice, ev = undefined) {
+    // THE TIDE (§1, 09-09): at HIGH tide in the Drowned Reach the water ruins
+    // every gamble - a check resolves to its FAIL branch, a weighted roll to
+    // its worst outcome, a lone paid-for reward to nothing. A lone neutral
+    // outcome (walking away) stays neutral. Tide levers (Wheelhouse / Slack
+    // Water), the Duelist and the Knight are tide_immune.
+    var _tide_ruin = tide_active() && tide_is_high()
+        && !(is_struct(ev) && variable_struct_exists(ev, "tide_immune") && ev.tide_immune);
     if (choice.resolve == "check") {
+        if (_tide_ruin) return tide_ruin_outcome(choice.fail, ev);
         var _pct = event_check_chance(choice.check_stat, choice.check_base, choice.check_per, choice.check_ref);
         return (irandom(99) < _pct) ? choice.success : choice.fail;
     }
     // weighted
     var _outs  = choice.outcomes;
+    if (_tide_ruin) {
+        if (array_length(_outs) > 1) {
+            var _wi = 0; var _ws = 999999;
+            for (var _ti = 0; _ti < array_length(_outs); _ti++) {
+                var _ts = tide_outcome_score(_outs[_ti].effects);
+                if (_ts < _ws) { _ws = _ts; _wi = _ti; }
+            }
+            return tide_ruin_outcome(_outs[_wi], ev);
+        }
+        if (array_length(_outs) == 1 && tide_outcome_score(_outs[0].effects) > 0) {
+            return tide_ruin_outcome({ text: "Nothing comes of it. The water has already taken what this place was going to give.", effects: {} }, ev);
+        }
+    }
     var _total = 0;
     for (var _i = 0; _i < array_length(_outs); _i++) _total += _outs[_i].weight;
     var _roll = irandom(max(0, _total - 1));
@@ -12990,6 +13142,38 @@ function event_apply_effects(fx) {
         var _rn = rune_random(fx.rune);
         array_push(global.rune_inventory, _rn);
         array_push(_sum, _rn.name + " " + rune_tier_roman(_rn.tier) + " [Rune]");
+    }
+    // THE SEAHORSE KNIGHT (09-03): necklace pieces / the Tide Pearl / his egg.
+    if (variable_struct_exists(fx, "seashell") && fx.seashell > 0) {
+        array_push(_sum, knight_accept_seashell());
+    }
+    // Knight scene flow (09-09): lore entry read / the leave choice.
+    if (variable_struct_exists(fx, "knight_lore") && fx.knight_lore > 0) {
+        knight_state_ensure();
+        global.knight_lore_read = max(global.knight_lore_read, fx.knight_lore);
+        array_push(_sum, "[LORE] The Seahorse Knight - shell " + string(fx.knight_lore) + " of " + string(SEASHELL_NECKLACE_GOAL));
+    }
+    if (variable_struct_exists(fx, "knight_leave") && fx.knight_leave) {
+        knight_state_ensure();
+        global.knight_leave = true;
+    }
+    if (variable_struct_exists(fx, "knight_pearl") && fx.knight_pearl) {
+        if (!variable_global_exists("run_items_found"))      global.run_items_found      = [];
+        if (!variable_global_exists("consumable_inventory")) global.consumable_inventory = [];
+        var _kp = knight_make_pearl();
+        array_push(global.consumable_inventory, _kp);
+        array_push(global.run_items_found, _kp);
+        array_push(_sum, _kp.name + " [Valuable - sell at camp]");
+    }
+    if (variable_struct_exists(fx, "knight_egg") && fx.knight_egg) {
+        var _ke = knight_grant_egg();
+        if (_ke != undefined) {
+            array_push(_sum, "[COMPANION] The Seahorse Knight's Tidal Egg - a Brinecolt waits at Bairc's");
+            var _ke_msg = "The Seahorse Knight gave you his Tidal Egg - visit Bairc.";
+            global.pet_find_notice = (variable_global_exists("pet_find_notice") && global.pet_find_notice != "")
+                ? (global.pet_find_notice + "   " + _ke_msg) : _ke_msg;
+            global.event_pet_found = _ke;
+        }
     }
     // Pet egg/creature (Phase 2) - fx.pet_egg is a source tag ("egg_event"/"egg_shrine"/
     // "egg_curse"). Lands in Bairc's stable; ~15% arrive as a found creature instead.
@@ -13095,6 +13279,25 @@ function event_apply_effects(fx) {
             global.rune_dust += 6;
             array_push(_sum, "Your gear is already finished - +6 Dust instead");
         }
+    }
+    // THE TIDE (§1, 09-09): the Wheelhouse / Slack Water levers.
+    //   tide_set: "high"/"low" - snap to the start of that phase
+    //   tide_advance: n        - move the counter n ticks (negative rewinds)
+    //   tide_hold: n           - the next n room picks do not tick the wheel
+    if (variable_struct_exists(fx, "tide_set") && fx.tide_set != "") {
+        tide_set_phase(fx.tide_set == "high", "event");
+        array_push(_sum, "The wheel groans over - " + tide_phase_name() + " (turns in " + string(tide_ticks_to_turn()) + ")");
+    }
+    if (variable_struct_exists(fx, "tide_advance") && fx.tide_advance != 0) {
+        var _ta_n = fx.tide_advance;
+        var _ta_f = tide_tick(_ta_n, "event");
+        array_push(_sum, "The tide moves " + string(abs(_ta_n)) + ((abs(_ta_n) == 1) ? " tick" : " ticks")
+            + ((_ta_n > 0) ? " on" : " back") + ((_ta_f != "") ? (" - it TURNS: " + tide_phase_name()) : ""));
+    }
+    if (variable_struct_exists(fx, "tide_hold") && fx.tide_hold > 0) {
+        tide_ensure();
+        global.tide_hold += fx.tide_hold;
+        array_push(_sum, "SLACK WATER - the wheel holds for the next " + string(fx.tide_hold) + " rooms");
     }
     // floor_mod: a this-floor flag the relevant system reads. Canonical values
     // set here; cleared on floor advance (run_floor_advance) + run end.
@@ -13306,6 +13509,7 @@ function event_roll() {
         if (_force_duel) global.debug_force_duel = false;
         global.duel_offered_this_run = true;
         _chosen = duelist_event();
+        _chosen.tide_immune = true;   // blades only - the tide does not referee
     }
 
     // Silvered Tongue blessing (Shrine V2, 07-29): every event offers one extra,
@@ -13331,6 +13535,220 @@ function event_roll() {
 }
 
 // =============================================================================
+// =============================================================================
+// THE SEAHORSE KNIGHT (M 09-03) - the Drowned Reach's answer to the Duelist,
+// and the biome's shirt-logo character. A rider on a hippocamp who ANSWERS 5%
+// of Drowned Reach fights on the PLAYER'S side (every fight once the Tidebound
+// Necklace is worn): untargetable, one shock strike on a random foe at the end
+// of each player turn (combat_knight_act, scr_combat). After a WON fight he
+// meets you on the shore - knight_event rides the event-room overlay over the
+// settled floor map (obj_floor_controller Create arms it off
+// global.knight_scene_pending):
+//   - "Accept seashell necklace." - mandatory piece; 10 forge the TIDEBOUND
+//     NECKLACE (legendary amulet); after that each meeting pays a Tide Pearl.
+//   - at 3 pieces held, once per save: his one-of-a-kind HIPPOCAMP egg (always
+//     Guardian or Warrior; hatchling "Brinecolt", adult "Hippocamp").
+//   - a lore branch M authors later (placeholder line for now).
+// Art (every draw asset-guarded, so the mechanic runs before art lands):
+//   spr_seahorse_knight            combat ally, 64px raw, faces RIGHT (ally side)
+//   spr_event_splash_seahorse_knight  400x224 shore scene (event-splash canvas)
+//   spr_npc_seahorse_knight_idle   his animated idle standing in that scene
+// Persisted: seashell_pieces / knight_encounters / knight_egg_given (scr_save).
+// =============================================================================
+#macro KNIGHT_JOIN_PCT        5
+#macro SEASHELL_NECKLACE_GOAL 10
+
+function knight_state_ensure() {
+    if (!variable_global_exists("seashell_pieces"))     global.seashell_pieces     = 0;      // pieces accepted, lifetime
+    if (!variable_global_exists("knight_encounters"))   global.knight_encounters   = 0;      // fights he rode in
+    if (!variable_global_exists("knight_egg_given"))    global.knight_egg_given    = false;  // the one egg, once per save
+    if (!variable_global_exists("knight_scene_pending")) global.knight_scene_pending = false; // run-scoped: shore meeting owed
+    if (!variable_global_exists("knight_lore_read"))    global.knight_lore_read    = 0;      // highest shell-lore entry read (09-09)
+    if (!variable_global_exists("knight_leave"))        global.knight_leave        = false;  // scene-scoped: the "thank him" exit was chosen
+    // DEV lever (09-04): force him into every Drowned fight. NOT persisted.
+    // Ships OFF (09-10) - F3 in the hub (IDE only) toggles it live for testing.
+    if (!variable_global_exists("knight_dev_force")) global.knight_dev_force = false;
+}
+
+// Does he ride in for THIS fight? Drowned Reach only, never the Duelist's duel.
+// The Tidebound Necklace (player.leg_tide, stamped by the combat Create scan)
+// makes it every fight; otherwise the 5% roll.
+function knight_can_join(player) {
+    knight_state_ensure();
+    var _dung = variable_global_exists("selected_dungeon") ? global.selected_dungeon : "";
+    if (_dung != "drowned_reach") return false;
+    if (variable_global_exists("duel_active") && global.duel_active) return false;
+    if (variable_global_exists("next_enemy_type") && global.next_enemy_type == "duel") return false;
+    if (is_struct(player) && variable_struct_exists(player, "leg_tide") && player.leg_tide) return true;
+    if (global.knight_dev_force) return true;   // F3 dev lever (IDE testing)
+    return irandom(99) < KNIGHT_JOIN_PCT;
+}
+
+// His lance: 75% of the average enemy attack in the room (min 3) - scales with
+// floor, Awakening and Descent for free because the enemies already do.
+function knight_strike_base(enemies) {
+    var _sum = 0, _n = 0;
+    for (var _i = 0; _i < array_length(enemies); _i++) {
+        var _e = enemies[_i];
+        if (is_struct(_e) && variable_struct_exists(_e, "damage")) { _sum += _e.damage; _n++; }
+    }
+    if (_n == 0) return 3;
+    return max(3, round((_sum / _n) * 0.75));
+}
+
+// The egg branch shows only while it is still owed AND the species art exists
+// (a hatchling with no sprites would break the stable - art-gate like every
+// other species).
+function knight_egg_available() {
+    knight_state_ensure();
+    // Both looks must exist (Guardian teal set + Warrior "hippocamp_w" navy/pink set).
+    return !global.knight_egg_given && global.seashell_pieces >= 3
+        && pet_species_has_art("hippocamp") && pet_species_has_art("hippocamp_w");
+}
+
+// The shore meeting - an event struct for the floor's event overlay.
+function knight_event() {
+    knight_state_ensure();
+    var _pieces = global.seashell_pieces;
+    var _done   = (_pieces >= SEASHELL_NECKLACE_GOAL);
+    var _choices = [];
+    array_push(_choices, {
+        label: _done ? "Accept his gift." : "Accept seashell necklace.",
+        hint:  _done ? "A Tide Pearl - Petra pays well for them"
+                     : ("Piece " + string(_pieces + 1) + " of " + string(SEASHELL_NECKLACE_GOAL)),
+        cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+        outcomes: [ { weight: 100,
+            text: _done
+                ? "He turns a pearl over in his gauntlet, then tosses it to you. \"The necklace is whole. This is only the tide, saying thank you.\""
+                : "He unhooks a shell from the cord at his throat and presses it into your palm. Each one seems to be a piece of something greater, perhaps than its parts?",
+            effects: _done ? { knight_pearl: true } : { seashell: 1 } } ]
+    });
+    if (knight_egg_available()) {
+        array_push(_choices, {
+            label: "Ask about the egg at his saddle.", hint: "Three shells kept - he has judged you fit to raise it",
+            cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+            outcomes: [ { weight: 100,
+                text: "\"Three shells, and you kept every one.\" He lifts a mottled egg from the saddle-bag, still warm from the ride. \"Her line carried me out of the deep. See that it carries you.\"",
+                effects: { knight_egg: true } } ]
+        });
+    }
+    // Lore branch (M 09-09: "his dialogue should open up for every necklace
+    // you have - a new lore entry / text progression box"): one entry per shell
+    // held, read in order; the newest unlocks with each piece. knight_lore_line
+    // holds the text - PLACEHOLDERS until M writes the tree.
+    if (_pieces > 0) {
+        var _lore_next = clamp(global.knight_lore_read + 1, 1, min(_pieces, SEASHELL_NECKLACE_GOAL));
+        var _lore_all  = (global.knight_lore_read >= min(_pieces, SEASHELL_NECKLACE_GOAL));
+        array_push(_choices, {
+            label: _lore_all ? "\"Tell me again.\"" : "\"Tell me about the shells.\"",
+            hint:  _lore_all ? ("Every story the " + string(_pieces) + " shells hold - read again from the first")
+                             : ("Shell " + string(_lore_next) + " of " + string(_pieces) + " held - a new piece of his story"),
+            cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+            outcomes: [ { weight: 100, text: knight_lore_line(_lore_all ? 1 : _lore_next),
+                          effects: { knight_lore: (_lore_all ? 1 : _lore_next) } } ]
+        });
+    } else {
+        array_push(_choices, {
+            label: "\"Who are you?\"", hint: "He does not answer quickly",
+            cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+            outcomes: [ { weight: 100,
+                text: "He looks past you at the water for a long moment. \"Not yet,\" he says, and the hippocamp stamps once in the surf. \"Carry a shell first.\"",
+                effects: {} } ]
+        });
+    }
+    // The scene stays open after every choice (M 09-09: accepting a shell or the
+    // egg must not end the meeting) - THIS is the only way out.
+    array_push(_choices, {
+        label: "Thank him and return to the depths.", hint: "The meeting ends; the shells stay with you",
+        cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+        outcomes: [ { weight: 100,
+            text: "He nods once, turns the hippocamp into the surf, and is gone between one wave and the next.",
+            effects: { knight_leave: true } } ]
+    });
+    return {
+        id: "seahorse_knight",
+        title: "The Seahorse Knight",
+        body: "The rider reins in where the floor meets the water. Surf runs off his mount's flanks; he salutes with the flat of the blade."
+            + (_done ? "  The seashell necklace at your throat is whole."
+                     : ("  Seashell necklace: " + string(_pieces) + " / " + string(SEASHELL_NECKLACE_GOAL) + " pieces.")),
+        color: make_color_rgb(70, 160, 210),
+        choices: _choices
+    };
+}
+
+// The shell-lore tree, one entry per piece (1..10). PLACEHOLDERS - M writes the
+// real lines (09-09: "his dialogue should open up for every necklace you have").
+function knight_lore_line(n) {
+    switch (n) {
+        case 1:  return "\"The first shell I picked off the harbor floor the day the gate went. I was under it.\" He does not elaborate. (Lore entry 1 of 10 - placeholder; M writes the tree.)";
+        case 2:  return "\"The second was hers.\" He touches the hippocamp's neck. \"Her dam's. Old line. Older than the Reach.\" (Lore entry 2 of 10 - placeholder.)";
+        case 3:  return "\"Three, and I stopped counting the drowned. Three, and I started counting the tide.\" (Lore entry 3 of 10 - placeholder.)";
+        case 4:  return "\"The fourth I took from a man who no longer needed it. He had my face.\" (Lore entry 4 of 10 - placeholder.)";
+        case 5:  return "\"Halfway. The necklace was whole once. I am putting it back the way I found it - one hand at a time.\" (Lore entry 5 of 10 - placeholder.)";
+        case 6:  return "\"Six. The Tidewright knows my name. He had it before the water did.\" (Lore entry 6 of 10 - placeholder.)";
+        case 7:  return "\"Seven. I rode the flood the night the belfry went under. I heard the sexton ring the hour from below.\" (Lore entry 7 of 10 - placeholder.)";
+        case 8:  return "\"Eight. The Leviathan is not the deepest thing in the Reach. I have seen what it hides from.\" (Lore entry 8 of 10 - placeholder.)";
+        case 9:  return "\"Nine. When the cord is whole the tide will answer you as it answers me. That is the bargain. I did not make it.\" (Lore entry 9 of 10 - placeholder.)";
+        default: return "\"Ten. It is yours now, and so is the rest of it.\" He salutes with the flat of the blade and says nothing more. (Lore entry 10 of 10 - placeholder.)";
+    }
+}
+
+// A piece accepted. At the goal the pieces become the Tidebound Necklace
+// (sent to the PACK like every other in-run prize). Returns the summary line.
+function knight_accept_seashell() {
+    knight_state_ensure();
+    global.seashell_pieces += 1;
+    if (global.seashell_pieces == SEASHELL_NECKLACE_GOAL) {
+        var _tb = knight_make_tidebound();
+        if (!variable_global_exists("carried_items"))   global.carried_items   = [];
+        if (!variable_global_exists("run_items_found")) global.run_items_found = [];
+        array_push(global.carried_items, _tb);
+        array_push(global.run_items_found, _tb);
+        discover_item(item_base_name(_tb), _tb.rarity);
+        audio_play_sound(snd_confirm_major, 1, false);
+        return "Ten shells close into one - TIDEBOUND NECKLACE [Legendary]";
+    }
+    return "Seashell necklace piece (" + string(global.seashell_pieces) + " / " + string(SEASHELL_NECKLACE_GOAL) + ")";
+}
+
+// TIDEBOUND NECKLACE (M 09-03): +5 CON, +4% crit, the Knight answers every
+// Drowned Reach fight, and once per combat below 30% HP the tide heals 20% and
+// washes one affliction away (obj_combat_controller Step, player-turn hook).
+function knight_make_tidebound() {
+    var _n = create_item("Tidebound Necklace", "amulet", 4, "CON", 5,
+        "ten shells on a cord of kelp, and the tide in every one", 500);
+    _n.class_req     = -1;
+    _n.affixes       = [{ suffix: "of the Knight", prefix: "Tidebound", stat_name: "crit_flat", stat_value: 4 }];
+    _n.unique_effect = "tidebound";
+    _n.unique_desc   = "The Seahorse Knight rides to every Drowned Reach fight; once per combat, below 30% HP the tide heals 20% and washes one affliction away";
+    _n.lore = "Each one seemed to be a piece of something greater, perhaps than its parts. Together they are: the rider's own necklace, given shell by shell to the one person the tide kept giving back.";
+    return _n;
+}
+
+// After the necklace is whole: a Tide Pearl valuable (sell-only, 150g at camp).
+function knight_make_pearl() {
+    return create_consumable("Tide Pearl", "valuable", 0,
+        "A pearl the Seahorse Knight turned over in his gauntlet before he tossed it to you. Petra knows a buyer - sell it at camp.", 150);
+}
+
+// His one egg: the HIPPOCAMP, always Guardian or Warrior, identified (he tells
+// you what it is), never corrupted, in his own Tidal Egg shell.
+function knight_grant_egg() {
+    knight_state_ensure();
+    if (global.knight_egg_given) return undefined;
+    global.knight_egg_given = true;
+    var _arch = choose(PET_ARCH_GUARDIAN, PET_ARCH_COMBATANT);
+    var _pet  = pet_make("hippocamp", "egg_knight", _arch, PET_STAGE_BABY, true);
+    _pet.egg_type   = "tidal";
+    _pet.identified = true;
+    _pet.corrupted  = false; _pet.corruption_state = "none";
+    if (!variable_global_exists("run_found_pets")) global.run_found_pets = [];
+    array_push(global.run_found_pets, "Tidal Egg (Brinecolt)");
+    find_banner_push("egg", "The Seahorse Knight's Tidal Egg",
+        "A Brinecolt sleeps inside - his own line. Waiting at Bairc's.", pet_sprite(_pet));
+    return pet_add(_pet);
+}
+
 // THE ASHEN DUELIST (DESIGN_DUELIST_CHALLENGE.md, M-locked 07-29). A recurring
 // rival: strict 1v1 with a turn PAR, graded rewards, a token ladder (Duelist
 // Arts at Vex), and a mercy loss - his killing blow stops at 1 HP, he heals you
@@ -13441,17 +13859,20 @@ function event_catalog() {
         body: "Floor plates click beneath the dust. A mechanism is primed somewhere in the dark.",
         color: make_color_rgb(180, 90, 210),
         choices: [
-            { label: "Disarm the mechanism", hint: "DEX check - success: loot - failure: you take the hit",
+            // Reward ladder (M 09-03): the SKILL CHECK is the best outcome - gear +
+            // gold on success. Forcing pays the hit for the lesser haul (a potion
+            // + the coin). Before this the check paid a potion and forcing paid gear.
+            { label: "Disarm the mechanism", hint: "DEX check - success: the stash intact (gear + gold) - failure: you take the hit",
               cost_gold: 0, req_stat: "", req_amount: 0, resolve: "check",
               check_stat: "DEX", check_base: 55, check_per: 6, check_ref: 5,
-              success: { text: "Steady hands. The trap goes slack and you pocket the bait.",
-                         effects: { gold: _tc_gold[_fl], consumable: "standard" } },
+              success: { text: "Steady hands. The trap goes slack and the stash behind it is yours, untouched.",
+                         effects: { gold: _tc_gold[_fl], item: "chest" } },
               fail:    { text: "A wire snaps - darts hiss out of the wall.",
                          effects: { hp: -_tc_fail[_fl] } } },
-            { label: "Force through", hint: "Take a guaranteed hit, grab the loot anyway",
+            { label: "Force through", hint: "Take a guaranteed hit, grab what you can as the trap springs",
               cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
-              outcomes: [ { weight: 100, text: "You barrel through the spikes and snatch what's stashed here.",
-                            effects: { hp: -_tc_frc[_fl], item: "chest" } } ] },
+              outcomes: [ { weight: 100, text: "You barrel through the spikes. Half the stash is ruined; you take what survived.",
+                            effects: { hp: -_tc_frc[_fl], consumable: "standard", gold: _tc_gold[_fl] } } ] },
             { label: "Retreat", hint: "Leave it untouched - no risk, no reward",
               cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
               outcomes: [ { weight: 100, text: "You back out the way you came.", effects: {} } ] }
@@ -13788,18 +14209,20 @@ function event_catalog() {
         body: "A gaunt hound watches from the shadows, ribs sharp, eyes wary but not yet hostile.",
         color: make_color_rgb(150, 130, 90),
         choices: [
-            { label: "Feed it", hint: "Win it over - it may lead you somewhere",
+            // Reward ladder (M 09-03): the STR CHECK is the top prize (the hound's
+            // buried cache = gear + gold); the no-check gamble pays rations + coin.
+            { label: "Feed it", hint: "Win it over - it may lead you to scraps",
               cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
               outcomes: [
-                { weight: 65, text: "It trots ahead and noses out a hidden stash.",
-                  effects: { gold: _sh_gold[_fl], item: "chest" } },
+                { weight: 65, text: "It trots ahead and noses out a traveller's dropped pack.",
+                  effects: { gold: _sh_gold[_fl], consumable: "standard" } },
                 { weight: 35, text: "It snatches the food and snaps at you.",
                   effects: { hp: -_sh_bite[_fl] } } ] },
-            { label: "Hunt it", hint: "STR check - run it down for rations and coin",
+            { label: "Hunt it", hint: "STR check - run it down to its den and the cache it guards",
               cost_gold: 0, req_stat: "", req_amount: 0, resolve: "check",
               check_stat: "STR", check_base: 50, check_per: 6, check_ref: 6,
-              success: { text: "You corner the beast - rations and a dropped purse.",
-                         effects: { consumable: "standard", gold: _sh_gold[_fl] } },
+              success: { text: "You corner the beast at its den - and in the den, what it dragged home.",
+                         effects: { item: "chest", gold: _sh_gold[_fl] } },
               fail:    { text: "It's faster than it looks, and bites on the way past.",
                          effects: { hp: -_sh_bite[_fl] } } },
             { label: "Drive it off", hint: "Wave it away - no fuss",
@@ -14159,6 +14582,7 @@ function event_catalog_biome(dungeon) {
         array_push(_out, {
             id: "dr_diving_bell",
             title: "The Diving Bell",
+            tide_text: "The platform is awash and the bell rides its chain like a buoy; the winch drum turns under the water and grips nothing.",
             body: "A salvage rig from the undercity's last working days: bell, winch, chain - all sound. Below the platform the water is black as a closed eye. The salvors' manifest lists what they never came up with.",
             color: _dr_col,
             choices: [
@@ -14187,6 +14611,7 @@ function event_catalog_biome(dungeon) {
         array_push(_out, {
             id: "dr_bell_toll",
             title: "The Bell-Ringer's Toll",
+            tide_text: "The belfry has flooded to the rope; the sexton rings underwater now, and the plate has floated off with your coin.",
             body: "A drowned sexton hangs in the flooded belfry, rope still in hand, ringing the hours for a congregation of fish. It gestures - unmistakably - at a collection plate, then at the bells, then at the rising water.",
             color: _dr_col,
             choices: [
@@ -14211,6 +14636,7 @@ function event_catalog_biome(dungeon) {
         array_push(_out, {
             id: "dr_fishers_market",
             title: "The Fisher's Market",
+            tide_text: "The ledge is under a foot of water and the Fisher has packed its cloth; what it sells you now is whatever the tide left on the stones.",
             body: "A Pale Fisher sits on a dry ledge, lines out, an off-duty air about it. Its catch is laid on cloth with terrible neatness: jars, salves, one pearl the size of an eye. It looks at you. It looks at your purse.",
             color: _dr_col,
             choices: [
@@ -14235,6 +14661,7 @@ function event_catalog_biome(dungeon) {
 
         // --- What the Flood Kept --------------------------------------------
         array_push(_out, {
+            tide_text: "High water. The hoard is under the tide and so, in a moment, is the way you came.",
             id: "dr_flood_kept",
             title: "What the Flood Kept",
             body: "A records cabinet bolted above the waterline, sealed in pitch, dry as a sermon inside its wards. Whatever the undercity most needed to survive the water, it is in here. The seal is load-bearing in more ways than one.",
@@ -14258,6 +14685,59 @@ function event_catalog_biome(dungeon) {
                   cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
                   outcomes: [ { weight: 100, text: "You leave the cabinet to its long stewardship. The water laps at the wall below it, respectful, like everyone else.",
                                 effects: { hp: [6, 8, 10][_fl] } } ] }
+            ]
+        });
+    }
+
+    if (dungeon == "drowned_reach") {
+        // --- THE TIDE (§1 + §6, 09-09): the two tide levers -----------------
+        // The Wheelhouse - work the wheel: snap the tide to LOW (STR) or HIGH (paid in blood).
+        array_push(_out, {
+            id: "dr_wheelhouse",
+            title: "The Wheelhouse",
+            tide_immune: true,
+            body: "A harbor-master's wheelhouse, dry above the waterline by some accident of masonry. The great tide-wheel still sits on its shaft, and the sluices below still answer it - slowly, and not kindly. A brass plate reads: HAUL WITH CARE. THE WATER REMEMBERS.",
+            color: _dr_col,
+            choices: [
+                { label: "Haul the wheel to LOW water", hint: "STR check - drag the tide back to slack; fail and the wheel takes the skin off your hands and the water comes on anyway",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "check",
+                  check_stat: "STR", check_base: 50, check_per: 6, check_ref: 5,
+                  success: { text: "The wheel fights you for every spoke, then gives all at once. Somewhere below, a gate drops home with a boom you feel in your teeth, and the water begins, grudgingly, to leave.",
+                             effects: { tide_set: "low" } },
+                  fail:    { text: "The wheel kicks back. It takes your palms with it and turns the wrong way for two spokes before it seizes. The water, which was listening, rises.",
+                             effects: { hp: -[10, 14, 18][_fl], tide_advance: 2 } } },
+                { label: "Haul the wheel to HIGH water", hint: "Open the gates to the deep - the tide's own gear surfaces at high water, but the flood takes its share of you first",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+                  outcomes: [ { weight: 100, text: "The wheel turns easily this way. It was built to. Black water climbs the wheelhouse stair and takes the breath out of you on its way past; the Reach fills, and whatever the deep has been keeping comes up with it.",
+                                effects: { hp: -[8, 11, 15][_fl], tide_set: "high" } } ] },
+                { label: "Leave the wheel", hint: "The tide keeps its own hours",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+                  outcomes: [ { weight: 100, text: "You leave the wheel to the water's schedule. The brass plate, you notice on the way out, has been polished by a great many hands.", effects: {} } ] }
+            ]
+        });
+
+        // Slack Water - wedge a sluice: the wheel holds for the next rooms (DEX), or sit out the turn.
+        array_push(_out, {
+            id: "dr_slack_water",
+            title: "Slack Water",
+            tide_immune: true,
+            body: "Between the ebb and the flood there is a stillness the drowned call slack water. Here a sluice gate hangs half-shut on a rusted chain. Wedge it and the tide forgets this stretch of the Reach for a while. Wait, and it remembers all at once.",
+            color: _dr_col,
+            choices: [
+                { label: "Wedge the sluice", hint: "DEX check - jam the chain; the wheel HOLDS for the next 3 rooms. Fail: the gate drops on you and the water moves on",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "check",
+                  check_stat: "DEX", check_base: 55, check_per: 6, check_ref: 5,
+                  success: { text: "A keel-spike through the chain's third link, hammered home with the flat of your blade. The gate shudders and holds. For a few rooms at least, the water will have to go around.",
+                             effects: { tide_hold: 3 } },
+                  fail:    { text: "The link parts before the spike seats. The gate comes down on your shoulder like a verdict, and the water it was holding comes through in a hurry.",
+                             effects: { hp: -[10, 14, 18][_fl], tide_advance: 1 } } },
+                { label: "Wait for the turn", hint: "Sit it out - the wheel moves 4 ticks on while the cold takes a little of you",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+                  outcomes: [ { weight: 100, text: "You sit on the dry step and let the Reach keep its hours without you. The cold gets into your hands. The water, when it moves, moves a long way.",
+                                effects: { hp: -[6, 8, 11][_fl], tide_advance: 4 } } ] },
+                { label: "Move on", hint: "Slack water never lasts",
+                  cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
+                  outcomes: [ { weight: 100, text: "You leave the gate to its chain. Behind you the stillness holds a moment longer, then does not.", effects: {} } ] }
             ]
         });
     }
@@ -15644,6 +16124,7 @@ function pet_species_lore(species_id) {
         case "mimicling":        return "Never develops features of its own. It copies whatever creature it saw most recently and holds that shape imperfectly, so a mimicling raised alongside a companion becomes a poor, earnest impression of it.";
         case "griefwisp":        return "Forms where a grief was set down and not picked back up. The circlet is genuine and far too large, and the wisp keeps it balanced with what looks a great deal like effort.";
         // --- 08-06 expansion: new biome scions --------------------------------
+        case "hippocamp":        return "The Seahorse Knight's own line. It hatches small and skittish - a Brinecolt, all fin and nerve - and grows into something that can carry a rider in full plate through breaking surf. Only one has ever been given away.";
         case "sluice_otter":     return "Lived in the lock-works, learned the flood cycle by feel, and times its dives to the ebb with better accuracy than the Tidewright's own mechanisms. The valve-wheel on its tail cannot be removed and is plainly a favourite.";
         case "chorister_fry":    return "Hatches already knowing one part of the Choirmother's song and holds that one note its entire life. A shoal produces a chord. Removing a single fry leaves an audible gap in the water.";
         case "leviathan_calf":   return "Already scarred, already barnacled, and already too heavy for its size. Growth does not slow. Nobody has kept one long enough to establish where it stops, and the Reach suggests it does not.";
@@ -15780,6 +16261,7 @@ function compendium_habitat(species_id) {
     var _s = pet_species_signature_catalog();
     for (var _i = 0; _i < array_length(_s); _i++) {
         if (_s[_i].id != species_id) continue;
+        if (!variable_struct_exists(_s[_i], "dungeon")) return "The Drowned Reach - a gift of the Seahorse Knight; it drops from no boss.";   // Hippocamp (09-03)
         if (_s[_i].dungeon == "descent") return "The Descent - a rare drop from " + _s[_i].boss + ".";
         return dungeon_display_name(_s[_i].dungeon) + " - dropped by " + _s[_i].boss + ".";
     }
@@ -16051,6 +16533,15 @@ function pattern_family_catalog() {
                                prefix: _s.prefix, suffix: _s.suffix });
         }
     }
+    // Families that never sit in the drop pool but DO ride on gear - shield
+    // armor lines and the Wardglass / Ironmarrow dark gifts (09-02, M: "there
+    // are still some missing like elemental resist"). Studyable from a piece
+    // that carries them, craftable like any family; u/r/e are the natural
+    // per-rarity values pattern_band_range bands from (no affix_pool row).
+    array_push(_out, { stat_name: "armor",     label: "Armor",            kind: "stat",
+                       prefix: "Sturdy",    suffix: "of Warding",  u_val: 2, r_val: 3, e_val: 5 });
+    array_push(_out, { stat_name: "el_resist", label: "Elemental resist", kind: "stat",
+                       prefix: "Wardglass", suffix: "of the Ward", u_val: 2, r_val: 3, e_val: 4 });
     return _out;
 }
 
@@ -16079,6 +16570,8 @@ function pattern_family_desc(_stat_name) {
         case "gold_find":    return "+Gold found from kills and chests";
         case "crit_spell":   return "+Spell critical chance (casters)";
         case "crit_phys":    return "+Physical critical chance (weapons)";
+        case "armor":        return "+Armor - flat physical damage soak";
+        case "el_resist":    return "+Elemental resist - shrugs fire/frost/shock and the other schools";
     }
     if (string_pos("school_", _stat_name) == 1) {
         var _sch = string_delete(_stat_name, 1, 7);
@@ -16159,9 +16652,10 @@ function pattern_book_study(_stat_name, _rarity, _on_item = true) {
     return true;
 }
 
-// The affix families a given item can teach: its base stat + every affix row
-// whose stat_name is a known family (school rows included; elem riders are not
-// stat_name rows so they naturally fall out).
+// The affix families a given item can teach: its base stat + EVERY positive
+// affix row it carries (school rows, dark-gift lines, shield armor lines - all
+// of them; M 09-02: "if it had 5 dif stats it would only let me choose one of
+// the generic 3"). Curses (negative rows) teach nothing.
 function pattern_item_families(_it) {
     var _out = [];
     if (!is_struct(_it)) return _out;
@@ -16172,6 +16666,7 @@ function pattern_item_families(_it) {
         for (var _i = 0; _i < array_length(_it.affixes); _i++) {
             var _r = _it.affixes[_i];
             if (!is_struct(_r) || !variable_struct_exists(_r, "stat_name")) continue;
+            if (variable_struct_exists(_r, "stat_value") && _r.stat_value < 0) continue;   // a curse is not a lesson
             if (pattern_family_entry(_r.stat_name) == undefined) continue;
             var _dup = false;
             for (var _j = 0; _j < array_length(_out); _j++) { if (_out[_j] == _r.stat_name) { _dup = true; break; } }
@@ -16181,20 +16676,17 @@ function pattern_item_families(_it) {
     return _out;
 }
 
-// The FULL studyable list for the smelt popup (08-27, M: "smelt any affix"):
-// the fodder's own families first (they study at the rarity-weighted speed),
-// then every other catalog family (studyable from ANY fodder at weight 1).
-// Entries: { stat_name, on_item }.
+// The studyable list for the smelt popup: the piece's OWN families, ALL of
+// them (base line + every positive affix, dark gifts and armor lines included).
+// 09-02 REVERT of the 08-27 "any catalog family from any fodder" list - M: "i
+// did not say allow ANY affix... i meant before you could not get some of the
+// affixes on an item when you went to smelt it". A piece teaches what it is.
+// Entries: { stat_name, on_item } (on_item stays true; the study-weight
+// plumbing keeps the flag).
 function pattern_smelt_family_list(_it) {
     var _own = pattern_item_families(_it);
     var _out = [];
     for (var _i = 0; _i < array_length(_own); _i++) array_push(_out, { stat_name: _own[_i], on_item: true });
-    var _cat = pattern_family_catalog();
-    for (var _j = 0; _j < array_length(_cat); _j++) {
-        var _dup = false;
-        for (var _k = 0; _k < array_length(_own); _k++) { if (_own[_k] == _cat[_j].stat_name) { _dup = true; break; } }
-        if (!_dup) array_push(_out, { stat_name: _cat[_j].stat_name, on_item: false });
-    }
     return _out;
 }
 
@@ -16461,12 +16953,22 @@ function stash_misc_rows() {
             sub: "Reworks an item's affixes at Dorn - covers its own tier or below.",
             col: item_rarity_color(_t) });
     }
+    // The Seahorse Knight's shells (09-09, M: "seashell necklaces should show in misc").
+    knight_state_ensure();
+    if (global.seashell_pieces > 0) {
+        var _ssp = global.seashell_pieces;
+        array_push(_rows, { spr: asset_get_index("spr_icon_valuable_seashell"),
+            name: (_ssp >= SEASHELL_NECKLACE_GOAL) ? "Seashell Necklace (whole)" : ("Seashell Necklace (" + string(_ssp) + " / " + string(SEASHELL_NECKLACE_GOAL) + ")"),
+            count: _ssp,
+            sub: "Shells from the Seahorse Knight's own cord - ten close into the Tidebound Necklace.",
+            col: make_color_rgb(110, 200, 240) });
+    }
     // Legendary Forge parts (frame / core / quintessence).
     forge_components_ensure();
-    array_push(_rows, { spr: -1, name: "Mythril Frame", count: global.forge_comp_frame,
+    array_push(_rows, { spr: asset_get_index("spr_icon_forge_mythril_frame"), name: "Mythril Frame", count: global.forge_comp_frame,
         sub: "Dorn strikes it (gold + a Legendary ingot) - 1 of 3 Legendary Forge parts.",
         col: make_color_rgb(210, 140, 70) });
-    array_push(_rows, { spr: -1, name: "Runeheart Core", count: global.forge_comp_core,
+    array_push(_rows, { spr: asset_get_index("spr_icon_forge_runeheart_core"), name: "Runeheart Core", count: global.forge_comp_core,
         sub: "Maren seals it (a tier-III+ rune + dust) - 1 of 3 Legendary Forge parts.",
         col: make_color_rgb(180, 150, 230) });
     array_push(_rows, { spr: asset_get_index("spr_icon_consumable_quintessence"),
@@ -16562,6 +17064,11 @@ function pattern_band_range(_stat_name, _rarity, _tier) {
         // band from the range TOP so a crafted caster line competes with a
         // good drop, not an average one.
         if (_rarity == 2) _nat = 4; else if (_rarity >= 3) _nat = 6;
+    } else if (variable_struct_exists(_fe, "u_val")) {
+        // Catalog extras (armor / el_resist) band from their own natural values.
+        if (_rarity <= 1)      _nat = _fe.u_val;
+        else if (_rarity == 2) _nat = _fe.r_val;
+        else                   _nat = _fe.e_val;
     } else if (variable_global_exists("affix_pool")) {
         for (var _i = 0; _i < array_length(global.affix_pool); _i++) {
             var _a = global.affix_pool[_i];
@@ -16783,4 +17290,310 @@ function pattern_name_roll(_slot, _base_stat, _affix_names, _icon) {
     else if (irandom(1) == 0) _nm = _noun + " " + _sfx;
     else                 _nm = _pfx + " " + _noun;
     return string_copy(_nm, 1, 24);
+}
+
+
+// =============================================================================
+// =============================================================================
+// THE TIDE - Drowned Reach active mechanic (DESIGN_BIOME_ACTIVE_0902.md §1,
+// M's design 09-02, built 09-09). "The ocean beats you down, waves wear you
+// away." A tide counter ticks once per floor-map node pick and once per
+// combat ROUND, cycling LOW <-> HIGH every tide_phase_len ticks (8/8). The
+// player STEERS it by burning turns in a fight or by working the Wheelhouse.
+//   LOW  - enemies -15% dmg / -15% HP, Rising Water asleep, rooms resolve normally.
+//   HIGH - every event resolves to its bad branch, loot rarity -1 tier, ~10%
+//          of drops are a hand-authored TIDE DROP (the only reason to want it),
+//          and in combat the crest opens the BREATH RING (hold, release in the
+//          band: perfect = nothing; poor = -1 AP next round; miss = -1 AP +
+//          drowning damage). Punish-only, per ground rule 0.
+//   A flip DURING combat is consumed by obj_combat_controller Step (surge /
+//   drain VFX + effects); a flip on the map by obj_floor_controller Step.
+// The run starts at LOW tide (the wheel is learned before it bites).
+// Persisted in the run checkpoint (tide_ticks / tide_hold); reset per run.
+// =============================================================================
+function tide_ensure() {
+    if (!variable_global_exists("tide_ticks"))      global.tide_ticks      = 0;
+    if (!variable_global_exists("tide_phase_ticks"))  global.tide_phase_ticks  = 8;     // tuning knob (M: 6 too short, 4 far too short)
+    if (!variable_global_exists("tide_hold"))       global.tide_hold       = 0;     // Slack Water: room picks the tide ignores
+    if (!variable_global_exists("tide_flip"))       global.tide_flip       = "";    // "high" / "low" - pending flip for the controllers
+    if (!variable_global_exists("tide_flip_src"))   global.tide_flip_src   = "";    // "room" / "round" / "event"
+    if (!variable_global_exists("tide_breath_due")) global.tide_breath_due = false; // the crest: combat opens the breath ring
+    if (!variable_global_exists("tide_wheel_ang"))  global.tide_wheel_ang  = 0;     // drawn wheel angle (eases toward ticks*45)
+    if (!variable_global_exists("tide_tip_t"))      global.tide_tip_t      = 0;     // touch: tapped-wheel tooltip timer
+}
+function tide_reset() {
+    tide_ensure();
+    global.tide_ticks      = 0;
+    global.tide_hold       = 0;
+    global.tide_flip       = "";
+    global.tide_flip_src   = "";
+    global.tide_breath_due = false;
+    global.tide_wheel_ang  = 0;
+}
+// The tide only runs in the Drowned Reach, in the dungeon (never the hub,
+// never a Descent floor that happens to wear the Reach's key).
+function tide_active() {
+    if (!variable_global_exists("selected_dungeon") || global.selected_dungeon != "drowned_reach") return false;
+    if (variable_global_exists("descent_active") && global.descent_active) return false;
+    return (room == rm_dungeon_floor || instance_exists(obj_combat_controller));
+}
+function tide_phase_len()     { tide_ensure(); return max(2, global.tide_phase_ticks); }
+function tide_is_high()       { tide_ensure(); return ((global.tide_ticks div tide_phase_len()) mod 2) == 1; }
+function tide_ticks_to_turn() { tide_ensure(); return tide_phase_len() - (global.tide_ticks mod tide_phase_len()); }
+function tide_phase_name()    { return tide_is_high() ? "HIGH TIDE" : "LOW TIDE"; }
+function tide_col()           { return tide_is_high() ? make_color_rgb(90, 170, 210) : make_color_rgb(200, 185, 140); }
+
+// Advance the counter. Returns "" or the new phase ("high"/"low") when the
+// tick crossed a phase edge; the flip is also parked in global.tide_flip for
+// whichever controller consumes it next. Negative n rewinds (Wheelhouse).
+function tide_tick(n = 1, source = "") {
+    tide_ensure();
+    if (!tide_active()) return "";
+    if (source == "room" && global.tide_hold > 0) { global.tide_hold--; return ""; }
+    var _was = tide_is_high();
+    global.tide_ticks = max(0, global.tide_ticks + n);
+    var _now = tide_is_high();
+    if (_was == _now) return "";
+    global.tide_flip     = _now ? "high" : "low";
+    global.tide_flip_src = source;
+    return global.tide_flip;
+}
+// Snap to the START of a phase (a full run of ticks before it turns).
+function tide_set_phase(high, source = "event") {
+    tide_ensure();
+    var _len = tide_phase_len();
+    var _cur = global.tide_ticks div _len;
+    if (tide_is_high() == high) { global.tide_ticks = _cur * _len; return ""; }
+    global.tide_ticks    = (_cur + 1) * _len;
+    global.tide_flip     = high ? "high" : "low";
+    global.tide_flip_src = source;
+    return global.tide_flip;
+}
+
+// One-line effect blurb per phase (tooltips / coach-mark / detail panels).
+function tide_phase_blurb() {
+    if (tide_is_high()) return "Events turn bad. Loot -1 rarity (10% TIDE DROP). The crest opens the BREATH RING in combat.";
+    return "Enemies -15% damage and HP. The water does not rise. Rooms resolve as they should.";
+}
+
+// -----------------------------------------------------------------------------
+// THE SHIP'S WHEEL - the gauge, drawn on the floor map AND in combat. Code-
+// drawn (zero gens): a water level behind a wooden wheel that turns one spoke
+// per tick, phase name + ticks-to-turn beneath. Hover (or tap) = tooltip.
+// -----------------------------------------------------------------------------
+function tide_draw_wheel(cx, cy, r, compact = false) {
+    tide_ensure();
+    var _high  = tide_is_high();
+    var _left  = tide_ticks_to_turn();
+    var _tcol  = tide_col();
+    // Ease the drawn angle toward the tick angle (45 deg = one spoke per tick).
+    var _target = global.tide_ticks * 45;
+    global.tide_wheel_ang += (_target - global.tide_wheel_ang) * 0.10;
+    var _ang = global.tide_wheel_ang;
+
+    // Water behind the rim: a filled circle, its upper part masked by the
+    // level - HIGH sits near the top, LOW near the bottom, sloshing gently.
+    var _lvl  = _high ? -0.45 : 0.45;
+    _lvl += sin(current_time / 520) * 0.05;
+    var _wy   = cy + _lvl * r;                // water line
+    var _ri   = r - 3;
+    draw_set_alpha(0.85);
+    draw_set_color(make_color_rgb(10, 16, 28));
+    draw_circle(cx, cy, _ri, false);
+    // Water = circle segment below the water line (triangle fan on the arc).
+    var _d = clamp((_wy - cy) / _ri, -0.999, 0.999);
+    var _a0 = darcsin(_d);                    // angle (deg, y-down) of the chord ends
+    draw_set_color(_high ? make_color_rgb(40, 120, 170) : make_color_rgb(60, 110, 120));
+    draw_primitive_begin(pr_trianglefan);
+    draw_vertex(cx, cy + _ri * 0.5 * (1 + _d));
+    for (var _k = 0; _k <= 24; _k++) {
+        var _t  = _a0 + (180 - 2 * _a0) * (_k / 24);   // sweep the lower arc
+        draw_vertex(cx + _ri * dcos(_t), cy + _ri * dsin(_t));
+    }
+    draw_primitive_end();
+    draw_set_alpha(1.0);
+    // Wheel: rim, 8 spokes with handles past the rim, hub.
+    var _wood = make_color_rgb(118, 82, 44);
+    var _wood_hi = make_color_rgb(170, 125, 70);
+    draw_set_color(_wood);
+    draw_circle(cx, cy, r * 0.62, true);
+    draw_circle(cx, cy, r * 0.62 - 1, true);
+    draw_circle(cx, cy, r * 0.62 - 2, true);
+    for (var _s = 0; _s < 8; _s++) {
+        var _sa = _ang + _s * 45;
+        var _hx = cx + dcos(_sa) * r * 0.92, _hy = cy - dsin(_sa) * r * 0.92;
+        draw_set_color(_wood);
+        draw_line_width(cx, cy, _hx, _hy, max(2, r * 0.07));
+        draw_set_color(_wood_hi);
+        draw_circle(_hx, _hy, max(2, r * 0.075), false);
+    }
+    draw_set_color(_wood_hi);
+    draw_circle(cx, cy, r * 0.16, false);
+    draw_set_color(_tcol);
+    draw_circle(cx, cy, r, true);
+    draw_circle(cx, cy, r + 1, true);
+
+    // Readout.
+    draw_set_font(ui_font(fnt_ui_small));
+    draw_set_valign(fa_top);
+    if (compact) {
+        draw_set_halign(fa_left);
+        draw_set_color(_tcol);
+        draw_text(cx + r + 10, cy - 15, tide_phase_name());
+        draw_set_color(make_color_rgb(170, 175, 190));
+        draw_text(cx + r + 10, cy + 3, "turns in " + string(_left));
+    } else {
+        draw_set_halign(fa_center);
+        draw_set_color(_tcol);
+        draw_text(cx, cy + r + 8, tide_phase_name());
+        draw_set_color(make_color_rgb(170, 175, 190));
+        draw_text(cx, cy + r + 27, "turns in " + string(_left) + ((_left == 1) ? " tick" : " ticks"));
+        if (global.tide_hold > 0) {
+            draw_set_color(make_color_rgb(200, 185, 140));
+            draw_text(cx, cy + r + 46, "SLACK - held " + string(global.tide_hold) + " more rooms");
+        }
+    }
+    draw_set_halign(fa_left);
+
+    // Tooltip: hover, or a tap (touch) that lingers ~3s. Hit-test lives with
+    // the geometry (touch rule).
+    var _mx = device_mouse_x_to_gui(0), _my = device_mouse_y_to_gui(0);
+    var _over = point_distance(_mx, _my, cx, cy) <= r + 4;
+    if (_over && mouse_check_button_pressed(mb_left)) global.tide_tip_t = 180;
+    if (global.tide_tip_t > 0) global.tide_tip_t--;
+    if (_over || global.tide_tip_t > 0) {
+        var _tw = 400, _lh = 20;
+        var _t1 = tide_phase_name() + " - turns in " + string(_left);
+        var _t2 = tide_phase_blurb();
+        var _t3 = "The wheel turns once per room and once per combat round. The ocean beats you down; waves wear you away.";
+        var _h2 = string_height_ext(_t2, _lh, _tw - 24);
+        var _h3 = string_height_ext(_t3, _lh, _tw - 24);
+        var _th = 16 + _lh + 6 + _h2 + 6 + _h3 + 12;
+        var _tx = clamp(cx - _tw * 0.5, GUI_XL + 10, GUI_XR - _tw - 10);
+        var _ty = (cy + r + 60 + _th < GUI_H - 10) ? cy + r + 60 : cy - r - 12 - _th;
+        draw_set_alpha(0.94);
+        draw_set_color(make_color_rgb(14, 18, 30));
+        draw_rectangle(_tx, _ty, _tx + _tw, _ty + _th, false);
+        draw_set_alpha(1.0);
+        draw_set_color(_tcol);
+        draw_rectangle(_tx, _ty, _tx + _tw, _ty + _th, true);
+        draw_text(_tx + 12, _ty + 10, _t1);
+        draw_set_color(c_white);
+        draw_text_ext(_tx + 12, _ty + 10 + _lh + 6, _t2, _lh, _tw - 24);
+        draw_set_color(make_color_rgb(150, 155, 170));
+        draw_text_ext(_tx + 12, _ty + 10 + _lh + 6 + _h2 + 6, _t3, _lh, _tw - 24);
+    }
+    draw_set_font(-1);
+}
+
+// The scrim wash a flip paints over whichever screen consumed it: a blue surge
+// rolling up (to HIGH) or a sandy drain sinking (to LOW). t = frames left of 70.
+function tide_draw_wash(t, to_high) {
+    if (t <= 0) return;
+    var _a = clamp(t / 70, 0, 1);
+    var _col = to_high ? make_color_rgb(30, 90, 150) : make_color_rgb(120, 110, 80);
+    var _edge = to_high ? (GUI_H * (1 - _a)) : (GUI_H * _a);   // surge climbs, drain sinks
+    draw_set_alpha(0.40 * _a);
+    draw_set_color(_col);
+    if (to_high) draw_rectangle(GUI_XL, _edge, GUI_XR, GUI_H, false);
+    else         draw_rectangle(GUI_XL, 0, GUI_XR, _edge, false);
+    draw_set_alpha(0.22 * _a);
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
+    draw_set_alpha(1.0);
+}
+
+// -----------------------------------------------------------------------------
+// TIDE DROPS - the high-tide reason: six hand-authored Epic pieces that only
+// fall at HIGH tide (~10% of any equipment roll in the Reach). Every one is
+// TIDE-TOUCHED: each piece worn widens the breath ring's band and softens
+// drowning damage (hooked in the breath ring, obj_combat_controller Step).
+// -----------------------------------------------------------------------------
+function tide_drop_catalog() {
+    return [
+        { name: "Ebbwarden Helm",      slot: "helm",    stat: "CON", v: 5,
+          affixes: [{ prefix: "Ebbwarden", suffix: "", stat_name: "armor", stat_value: 3 },
+                    { prefix: "", suffix: "of the Undertow", stat_name: "el_resist", stat_value: 6 }],
+          desc: "a diver's helm, still weeping brine from the seams",
+          lore: "The ebbwardens walked the harbor floor on chains, patching the sea gate from below. When the gate went, they stayed down there. Their helms are still very good helms." },
+        { name: "Undertow Ring",       slot: "ring",    stat: "DEX", v: 5,
+          affixes: [{ prefix: "Undertow", suffix: "", stat_name: "dodge_flat", stat_value: 5 },
+                    { prefix: "", suffix: "of Slack Water", stat_name: "crit_flat", stat_value: 3 }],
+          desc: "a band of green sea-glass that pulls, gently, toward the deep",
+          lore: "Worn by the pilots who read the undertow by feel. It still tugs at the finger a moment before the current changes, which is how you learn to trust it, and how it drowned three of them." },
+        { name: "Drowned Bell Amulet", slot: "amulet",  stat: "WIS", v: 5,
+          affixes: [{ prefix: "Belfry", suffix: "", stat_name: "bonus_max_hp", stat_value: 14 },
+                    { prefix: "", suffix: "of the Toll", stat_name: "el_resist", stat_value: 5 }],
+          desc: "a bell the size of a thumbnail; it rings when the water does",
+          lore: "Cast from the clapper of the sexton's own bell after the flood took the tower. Hold it to your ear and you can hear the hours still being kept, somewhere below." },
+        { name: "Saltglass Buckler",   slot: "offhand", stat: "CON", v: 4,
+          affixes: [{ prefix: "Saltglass", suffix: "", stat_name: "armor", stat_value: 4 },
+                    { prefix: "", suffix: "of the Breakwater", stat_name: "dodge_flat", stat_value: 3 }],
+          desc: "a round shield of fused salt and glass, cloudy as a drowned eye",
+          lore: "The Reach's smiths fired sea-salt into glass when the iron ran out. It should not stop a blade. It stops a blade. No one who made one is left to explain." },
+        { name: "Wreckwood Cudgel",    slot: "weapon",  stat: "STR", v: 6,
+          affixes: [{ prefix: "Wreckwood", suffix: "", stat_name: "crit_flat", stat_value: 5 },
+                    { prefix: "", suffix: "of the Keel", stat_name: "bonus_max_hp", stat_value: 8 }],
+          desc: "a keel-timber club, barnacled and dense as stone",
+          lore: "Cut from a ship that went down with the harbor and came back up in pieces a century later, heavier than it left. The wood remembers the weight of the water." },
+        { name: "Kelpstitch Gloves",   slot: "gloves",  stat: "DEX", v: 4,
+          affixes: [{ prefix: "Kelpstitch", suffix: "", stat_name: "crit_flat", stat_value: 4 },
+                    { prefix: "", suffix: "of the Tideline", stat_name: "gold_find", stat_value: 8 }],
+          desc: "gloves woven from kelp cord, cold and never quite dry",
+          lore: "Tideline pickers wore them to work the wreck-lines between waves. Quick hands, quicker than the water - most of the time." }
+    ];
+}
+// Build one tide drop the player doesn't already own (worn / stash / carried).
+// undefined when every piece is owned - the caller falls back to a plain roll.
+function tide_drop_make() {
+    var _cat = tide_drop_catalog();
+    var _pool = [];
+    for (var _i = 0; _i < array_length(_cat); _i++) {
+        if (!legendary_owned(_cat[_i].name)) array_push(_pool, _cat[_i]);
+    }
+    if (array_length(_pool) == 0) return undefined;
+    var _d  = _pool[irandom(array_length(_pool) - 1)];
+    var _it = create_item(_d.name, _d.slot, 3, _d.stat, _d.v, _d.desc, 260);
+    _it.class_req     = -1;
+    _it.affixes       = _d.affixes;
+    _it.unique_effect = "tide_touched";
+    _it.unique_desc   = "TIDE-TOUCHED: only surfaces at high tide. Each Tide-touched piece worn widens the breath ring's band and softens drowning damage by a quarter.";
+    _it.lore          = _d.lore;
+    _it.tide_drop     = true;
+    var _ec = item_empower_context();
+    item_empower(_it, _ec.asc, _ec.df);
+    item_quality_stamp(_it, 55, 80);
+    return _it;
+}
+
+// -----------------------------------------------------------------------------
+// HIGH-TIDE EVENT RESOLUTION - the water ruins every gamble: a stat check
+// resolves to its FAIL branch, a weighted roll to its worst outcome. Walking
+// away (a lone neutral outcome) stays neutral. The event's authored tide_text
+// (or a generic line) is prefixed so the result reads as the tide's doing.
+// -----------------------------------------------------------------------------
+function tide_outcome_score(fx) {
+    if (!is_struct(fx)) return 0;
+    var _s = 0;
+    var _keys = variable_struct_get_names(fx);
+    for (var _i = 0; _i < array_length(_keys); _i++) {
+        var _k = _keys[_i];
+        var _v = variable_struct_get(fx, _k);
+        if (_k == "hp")          _s += (is_real(_v) && _v < 0) ? -2 + _v * 0.05 : 1;
+        else if (_k == "ambush") _s -= 3;
+        else if (_k == "gold" || _k == "dust" || _k == "item" || _k == "consumable"
+              || _k == "rune" || _k == "boon" || _k == "trinket" || _k == "floor_mod"
+              || _k == "offer" || _k == "max_hp" || _k == "pet_bond" || _k == "tide_hold") _s += 1;
+    }
+    return _s;
+}
+function tide_ruin_line(ev) {
+    if (is_struct(ev) && variable_struct_exists(ev, "tide_text") && ev.tide_text != "") return ev.tide_text;
+    var _lines = [
+        "The water got here first. Whatever this place had to offer, the tide has already taken its share.",
+        "High water. The floor is a foot under and rising; nothing here goes the way it was meant to.",
+        "The tide fills the room to the knee and everything in it turns against you." ];
+    return _lines[irandom(array_length(_lines) - 1)];
+}
+function tide_ruin_outcome(o, ev) {
+    return { text: "HIGH TIDE - " + tide_ruin_line(ev) + "\n\n" + o.text, effects: o.effects };
 }

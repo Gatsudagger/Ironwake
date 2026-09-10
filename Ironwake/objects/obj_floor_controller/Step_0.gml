@@ -33,6 +33,17 @@ if (_fck_sig != run_ckpt_sig && run_ckpt_cooldown <= 0) {
     run_checkpoint_write(undefined);
 }
 
+// THE TIDE (§1, 09-09): a phase flip that landed on the map (a node pick or
+// an event lever) - wash + toast here; the wheel in Draw turns on its own.
+if (variable_global_exists("tide_flip") && global.tide_flip != "" && tide_active()) {
+    tide_wash_high = (global.tide_flip == "high");
+    tide_wash_t    = 70;
+    tide_toast_t   = 150;
+    global.tide_flip = ""; global.tide_flip_src = "";
+    var _tf_si = audio_play_sound(snd_gate, 1, false);
+    audio_sound_pitch(_tf_si, tide_wash_high ? 0.8 : 1.15);
+}
+
 if (ui_input_blocked()) exit;
 
 // Pause / Esc menu - freeze the floor while it (or its Settings sub-screen) is open.
@@ -656,6 +667,17 @@ if (showing_event_choice) {
                 ghost_cursor    = 0;
                 exit;
             }
+            // THE SEAHORSE KNIGHT (09-09, M): choices are not mutually exclusive -
+            // after any result the meeting REOPENS with the choices it now offers
+            // (shell count / egg / next lore entry) until "Thank him" is chosen.
+            if (event_active.id == "seahorse_knight" && !(variable_global_exists("knight_leave") && global.knight_leave)) {
+                event_active      = knight_event();
+                event_cursor      = event_first_unlocked(event_active);
+                event_phase       = "choose";
+                event_result_text = "";
+                exit;
+            }
+            if (variable_global_exists("knight_leave")) global.knight_leave = false;
             showing_event_choice = false;
             current_rooms[selected_room].cleared = true;
             global.floor_rooms_cleared[selected_room] = true;
@@ -686,7 +708,7 @@ if (showing_event_choice) {
 
             global.event_gold_gained = 0;
             global.event_hp_hit      = 0;
-            var _out     = event_resolve_choice(_ch);
+            var _out     = event_resolve_choice(_ch, event_active);   // THE TIDE: high water ruins non-immune events
             var _rewards = event_apply_effects(_out.effects);
             event_result_text = _out.text + (_rewards != "" ? "\n\n" + _rewards : "");
             event_phase = "result";
@@ -852,10 +874,16 @@ if (input_hotkey("G") && variable_global_exists("consumable_inventory")) {
 var _nav_reach = floor_compute_reachable(current_rooms);
 var _cur = current_rooms[selected_room];
 
+// THE TIDE (§1): first sight of the wheel on a Drowned map - the coach-mark.
+if (tide_active()) tutorial_try_show("the_tide");
+
 // Horizontal: pick the nearest column on the chosen side, then the room in it
 // whose vertical position is closest to the current one.
-var _go_left  = nav_left();
-var _go_right = nav_right();
+// THE TIDE (§1, 09-09): on a DESCENDING map (global.floor_vertical) the axes
+// swap - up/down walks the layers, left/right the slots within one.
+var _fv = variable_global_exists("floor_vertical") && global.floor_vertical;
+var _go_left  = _fv ? nav_up()   : nav_left();
+var _go_right = _fv ? nav_down() : nav_right();
 if (_go_left || _go_right) {
     var _best_layer = -1;
     for (var _i = 0; _i < array_length(current_rooms); _i++) {
@@ -871,7 +899,7 @@ if (_go_left || _go_right) {
         var _best_i = -1; var _best_dy = 999999;
         for (var _i = 0; _i < array_length(current_rooms); _i++) {
             if (!_nav_reach[_i] || current_rooms[_i].layer != _best_layer) continue;
-            var _dy = abs(current_rooms[_i].py - _cur.py);
+            var _dy = _fv ? abs(current_rooms[_i].px - _cur.px) : abs(current_rooms[_i].py - _cur.py);
             if (_dy < _best_dy) { _best_dy = _dy; _best_i = _i; }
         }
         if (_best_i != -1) selected_room = _best_i;
@@ -879,16 +907,17 @@ if (_go_left || _go_right) {
 }
 
 // Vertical: move to the nearest reachable room in the same column above/below.
-var _go_up   = nav_up();
-var _go_down = nav_down();
+var _go_up   = _fv ? nav_left()  : nav_up();
+var _go_down = _fv ? nav_right() : nav_down();
 if (_go_up || _go_down) {
     var _v_best_i = -1; var _v_best_dy = 999999;
     for (var _i = 0; _i < array_length(current_rooms); _i++) {
         if (!_nav_reach[_i] || current_rooms[_i].layer != _cur.layer || _i == selected_room) continue;
-        var _ry = current_rooms[_i].py;
-        var _ok = _go_up ? (_ry < _cur.py) : (_ry > _cur.py);
+        var _ry = _fv ? current_rooms[_i].px : current_rooms[_i].py;
+        var _cy = _fv ? _cur.px : _cur.py;
+        var _ok = _go_up ? (_ry < _cy) : (_ry > _cy);
         if (!_ok) continue;
-        var _dy = abs(_ry - _cur.py);
+        var _dy = abs(_ry - _cy);
         if (_dy < _v_best_dy) { _v_best_dy = _dy; _v_best_i = _i; }
     }
     if (_v_best_i != -1) selected_room = _v_best_i;
@@ -903,6 +932,11 @@ if (input_confirm() || input_confirm_alt()) {
 
     // Enter only if reachable now (handles cleared + sibling-lock); see scr_stats.
     if (!floor_room_enterable(current_rooms, selected_room)) exit;
+
+    // THE TIDE (§1, 09-09): every node pick turns the wheel once (Slack Water
+    // holds swallow the tick). A flip here is consumed next step - by this
+    // controller for a popup room, by the combat controller for a fight.
+    tide_tick(1, "room");
 
     // --- Handle by type ---
 

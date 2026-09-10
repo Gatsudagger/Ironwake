@@ -3128,7 +3128,7 @@ function ui_draw_journal() {
             draw_text(_dx2, _dy2, "Objective:  " + _sd.objective
                 + "   (" + string(min(_ss.progress, _sd.obj_target)) + " / " + string(_sd.obj_target) + ")"); _dy2 += 36;
             draw_set_color(make_color_rgb(185, 200, 160));
-            draw_text(_dx2, _dy2, "Reward:  " + journal_quest_reward_text(_sd)); _dy2 += 48;
+            ui_draw_text_arrows(_dx2, _dy2, "Reward:  " + journal_quest_reward_text(_sd)); _dy2 += 48;
             draw_set_color(make_color_rgb(170, 176, 195));
             draw_text_ext(_dx2, _dy2, _sd.flavor, 27, _det_x2 - _dx2 - 10);
             _dy2 += string_height_ext(_sd.flavor, 27, _det_x2 - _dx2 - 10) + 30;
@@ -3892,7 +3892,7 @@ function ui_draw_tavern_board() {
         draw_text(_lx + 24, _qy + 48, _sub);
         draw_set_halign(fa_right);
         draw_set_color(make_color_rgb(185, 200, 160));
-        draw_text(_rx, _qy + 9, journal_quest_reward_text(_qd));
+        ui_draw_text_arrows(_rx, _qy + 9, journal_quest_reward_text(_qd));
         // Expiry tag (board requests): run-count clock, red when this is the last run.
         // A fulfilled-awaiting-turn-in request never rots, so no tag once it's DONE.
         if (_is_board && !quest_is_complete(_qid)) {
@@ -4560,7 +4560,9 @@ function ui_draw_bairc_screen() {
             // just there") arrive alive from ~15% of egg sources - say so here,
             // where the player actually looks, not only in the hub notice.
             if (variable_struct_exists(_pet, "raised") && !_pet.raised) _l2 += "  -  found alive, never an egg";
-            _l2 += pet_injury_tag(_pet) + pet_corruption_tag(_pet);
+            // Corruption tag dropped from the ROW (M 09-02: "[CORRUPTING 0/3] in the name
+            // bracket list... messy... not even readable") - the inspect panel says it.
+            _l2 += pet_injury_tag(_pet);
         }
         // Truncate against the stage pill / ACTIVE tag on the right - a long tag
         // cluster ("Fortune - Vital Egg [CORRUPTING 1/3]") ran into both (M 07-09).
@@ -5123,7 +5125,7 @@ function ui_draw_bairc_screen() {
                     ? ("+" + string(pet_treat_bond_for(_ff, _p)) + " bond")
                     : (_grown ? ("+" + string(10 + _ff.growth * 10) + " hunger")
                     : ((_fg_eff < _ff.growth) ? ("+" + string(_ff.growth) + " -> +" + string(_fg_eff)) : ("+" + string(_ff.growth))));
-                draw_text(_txt_x, _fby + 8, "[" + string(_fi + 1) + "]  " + _ff.name + "   " + _fg_txt + (_tfav ? "   - a favored treat!" : (_fav ? "   - its favorite!" : "")));
+                ui_draw_text_arrows(_txt_x, _fby + 8, "[" + string(_fi + 1) + "]  " + _ff.name + "   " + _fg_txt + (_tfav ? "   - a favored treat!" : (_fav ? "   - its favorite!" : "")));
                 if (_tfav) ui_draw_heart(_txt_x + string_width("[" + string(_fi + 1) + "]  " + _ff.name) + 12, _fby + 24, 7, make_color_rgb(235, 110, 140));
                 draw_set_font(ui_font_dense(fnt_ui_small));
                 draw_set_halign(fa_right);
@@ -5172,21 +5174,37 @@ function ui_draw_bairc_screen() {
     // (the old always-on "[G] Its Gift" read as nonsense out of context).
     // Chunk 7b: on a gamepad the letters live in the A action submenu, so the
     // footer collapses to the four real buttons instead of a wall of dead keys.
-    var _bfoot;
+    var _bfoot, _bfoot2 = "";
     if (input_device() == 1) {
         _bfoot = "[D-Pad] Browse  [A] Actions  [RT] Gift Bairc  [L3] Station  [Y] Details  [B] Leave";
     } else {
+        // CONTEXTUAL, two deliberate rows (M 09-09 shot: "menu legend is
+        // cluttered" - twelve keys wrapped as one wall). Row 1 = what the
+        // highlighted entry can do RIGHT NOW: eggs get Identify or Hatch,
+        // hatched creatures get Set Active (only when not already active),
+        // Name/Rename, Donate, and Cure only while a corruption is pushing.
+        // Row 2 = the screen-level keys, always the same four.
         _bfoot = "[W/S] Browse  [1-6] Feed";
         if (_n > 0) {
             var _fp = _roster[_cur];
-            if (is_struct(_fp) && !_fp.is_egg) {
-                if (variable_struct_exists(_fp, "capstone_pending") && _fp.capstone_pending)   _bfoot += "  [G] Capstone";
-                else if (variable_struct_exists(_fp, "splash_pending") && _fp.splash_pending)  _bfoot += "  [G] Splash";
+            if (is_struct(_fp)) {
+                if (_fp.is_egg) {
+                    _bfoot += pet_egg_identified(_fp) ? "  [Enter] Hatch" : "  [I] Identify";
+                } else {
+                    if (global.active_pet != _cur) _bfoot += "  [Enter] Set Active";
+                    if (variable_struct_exists(_fp, "capstone_pending") && _fp.capstone_pending)   _bfoot += "  [G] Capstone";
+                    else if (variable_struct_exists(_fp, "splash_pending") && _fp.splash_pending)  _bfoot += "  [G] Splash";
+                    _bfoot += pet_named(_fp) ? "  [N] Rename" : "  [N] Name";
+                    if (pet_corr_state(_fp) == "pushing") _bfoot += "  [C] Cure";
+                    _bfoot += "  [R] Donate";
+                }
+                _bfoot += "  [Tab] Details";
             }
         }
-        _bfoot += "  [V] Garden  [F] Gift Bairc  [U] Station  [N] Name  [C] Cure  [R] Donate  [Tab] Details  [Enter] Hatch/Active  [Esc] Leave";   // [V] added 08-16 (M: "I didn't even see it")
+        _bfoot2 = "[V] Garden  [F] Gift Bairc  [U] Station  [Esc] Leave";   // [V] added 08-16 (M: "I didn't even see it")
     }
-    ui_draw_key_legend((_x1 + 1500) / 2, _y2 - 42, _bfoot, undefined, false, (1500 - _x1) - 40);   // wraps to 2 rows inside the panel (M 08-16 shot)
+    if (_bfoot2 != "") ui_draw_key_legend((_x1 + 1500) / 2, _y2 - 70, _bfoot, undefined, false, (1500 - _x1) - 40);
+    ui_draw_key_legend((_x1 + 1500) / 2, _y2 - 42, (_bfoot2 != "") ? _bfoot2 : _bfoot, undefined, false, (1500 - _x1) - 40);
     draw_set_halign(fa_left); draw_set_valign(fa_top);
     draw_set_color(c_white);
     draw_set_font(-1);
@@ -5634,8 +5652,7 @@ function dungeon_bg_sprite(surface) {
     var _tag = "ashen";
     if      (_d == "scorched_depths") _tag = "scorched";
     else if (_d == "tundra_tomb")     _tag = "tundra";
-    // 08-27 biomes: resolves to -1 (flat-fill fallback) until the art run lands
-    // spr_combatbg_drowned_1..3 / spr_floormap_drowned etc. + __sprite_includes.
+    // 09-02 biomes: combat bgs, floor maps + 2.5D plane pairs all imported.
     else if (_d == "drowned_reach")   _tag = "drowned";
     else if (_d == "hollow_canopy")   _tag = "canopy";
 
@@ -5887,7 +5904,26 @@ function dungeon_bg_draw(surface, scrim_alpha) {
     if (_spr == -1 || !sprite_exists(_spr)) return false;
     draw_set_color(c_white);
     draw_set_alpha(1.0);
+    // 09-02 (M: Drowned combat showed the procedural test bricks): a biome whose
+    // 2.5D plane pair hasn't been painted yet draws its FLAT combat painting
+    // rather than the grey test stones. The three shipped biomes have all nine
+    // pairs, so their 2.5D path is untouched; Drowned / Canopy / Descent take
+    // the flat branch until their wall25/floor25 pairs land.
+    var _planes_ok = true;
     if (surface == "combat" && combat_25d()) {
+        var _pd = variable_global_exists("selected_dungeon") ? global.selected_dungeon : "ashen_vault";
+        var _ptag = "ashen";
+        if      (_pd == "scorched_depths") _ptag = "scorched";
+        else if (_pd == "tundra_tomb")     _ptag = "tundra";
+        else if (_pd == "drowned_reach")   _ptag = "drowned";
+        else if (_pd == "hollow_canopy")   _ptag = "canopy";
+        if (variable_global_exists("descent_active") && global.descent_active) _ptag = "descent";
+        var _pfl = clamp(variable_global_exists("current_floor") ? global.current_floor : 1, 1, 3);
+        var _pw25 = asset_get_index("spr_wall25_"  + _ptag + "_" + string(_pfl));
+        var _pf25 = asset_get_index("spr_floor25_" + _ptag + "_" + string(_pfl));
+        _planes_ok = (_pw25 >= 0 && sprite_exists(_pw25)) || (_pf25 >= 0 && sprite_exists(_pf25));
+    }
+    if (surface == "combat" && combat_25d() && _planes_ok) {
         // ===== 2.5D v3 round 2 (M 08-13): TWO SEPARATE PLANES. =====
         // A dedicated WALL image stands flat above the horizon; a dedicated
         // FLOOR image lies below it, strip-projected (Mode-7 row compression)
@@ -5920,7 +5956,7 @@ function dungeon_bg_draw(surface, scrim_alpha) {
         var _tag25 = "ashen";
         if      (_d25 == "scorched_depths") _tag25 = "scorched";
         else if (_d25 == "tundra_tomb")     _tag25 = "tundra";
-        else if (_d25 == "drowned_reach")   _tag25 = "drowned";   // 08-27: art pending - tint fallback until the plane pairs land
+        else if (_d25 == "drowned_reach")   _tag25 = "drowned";
         else if (_d25 == "hollow_canopy")   _tag25 = "canopy";
         if (variable_global_exists("descent_active") && global.descent_active) _tag25 = "descent";
         var _fl25 = clamp(variable_global_exists("current_floor") ? global.current_floor : 1, 1, 3);
@@ -6159,6 +6195,11 @@ function ui_draw_sable_scroll_hint(right_x, first, last, count) {
     if (first > 0)    ui_draw_scroll_more(right_x, 262, true,  string(first) + " more");
     if (last < count) ui_draw_scroll_more(right_x, 952, false, string(count - last) + " more");
     draw_set_halign(fa_left);
+    // Visible scroll bar (standing rule: overflowing lists show a bar, not just
+    // "N more" - 09-10, the fusion tab had only the arrows). Track spans the
+    // visible rows just outside the row frames (x1508, same lane as Petra).
+    var _sb_p = ui_vendor_row_pitch();
+    ui_pb_scrollbar(1508, 285, 285 + max(1, last - first) * _sb_p - 6, count, max(1, last - first), first);
 }
 
 // ---------------------------------------------------------------------------
@@ -6984,7 +7025,7 @@ function ui_draw_item_tooltip(ttx, tty, item, compared_item) {
         if (_row.tag != "") {
             draw_set_halign(fa_right);
             draw_set_color(_row.tagcol);
-            draw_text(ttx + _tw - _pad, _cy, _row.tag);
+            ui_draw_text_arrows(ttx + _tw - _pad, _cy, _row.tag);
             draw_set_halign(fa_left);
         }
         _cy += (_row.txt == "") ? _lh : string_height_ext(_row.txt, _lh, _ww);
@@ -7719,7 +7760,7 @@ function ui_tab_hint_body(key) {
     switch (key) {
         case "dorn:BUY":     return "Dorn's rotating stock - weapons, armor and gear. Restocks between runs; his Awakening-scaled shelf improves as you climb. Station rank 1 widens the stall by 2 pieces.";
         case "dorn:SELL":    return "Sell unequipped gear from your pack and stash for gold.";
-        case "dorn:REFORGE": return "Two crafts. REWORK GEAR: spend a Reforge Ingot of the item's tier or higher to reroll its affixes - same item, fresh stats. SMELT: destroy a piece for an ingot - Dorn studies one of its affixes into the PATTERN BOOK and keeps its ICON for the art page. CRAFT builds an item to your own design from studied blueprints (mastered blueprints roll PAST natural drops), wearing any smelted icon that fits the slot - then HONE buys +1s for gold.";
+        case "dorn:FORGE":   return "Three crafts on three sub-tabs. REWORK: spend a Reforge Ingot of the item's tier or higher to melt and re-strike its affixes - same item, fresh stats; fuse 3 ingots of one tier into 1 of the next. CRAFT: SMELT gear for an ingot while Dorn studies an affix into his PATTERN BOOK, then build a piece to your own design from what he has learned. LEGENDARY: three parts, one from each smith, forge a custom legendary.";
         case "dorn:TEMPER":  return "Work rough gear toward its true potential: each step is +10% QUALITY (gold + rune dust), plus a little bonus max HP. A raw legendary barely beats a finished epic. Station rank 2 makes each step +12%.";
         case "maren:Socket Gear":   return "Socket GEAR runes into equipped items with open sockets. Runes come back out freely - nothing is lost by experimenting. Station rank 2 unlocks DEEP SOCKET [D]: +1 socket, once per run.";
         case "maren:Aspects":       return "Socket ASPECT runes into your character's aspect slots - per-school damage (Ember, Rime...), Serration, Surge and the flagships live here.";
@@ -9193,7 +9234,12 @@ function ui_draw_tutorial_tip() {
     // Title
     draw_set_font(fnt_ui_title);
     draw_set_color(make_color_rgb(228, 200, 130));
-    draw_text(GUI_CX, _by + 33, _t.title);
+    // Fit the title to the box (M 09-02 shot: "ASPECT RUNES STACK - TO A POINT"
+    // ran past both rims) - shrink, never wrap; same idiom as Bairc's name card.
+    var _tt_avail = _bw - 90;
+    var _tt_w     = string_width(_t.title);
+    var _tt_sc    = (_tt_w > _tt_avail) ? (_tt_avail / _tt_w) : 1;
+    draw_text_transformed(GUI_CX, _by + 33 + (1 - _tt_sc) * string_height(_t.title) * 0.5, _t.title, _tt_sc, _tt_sc, 0);
 
     // Divider under the title
     draw_set_color(make_color_rgb(70, 64, 48));
@@ -10904,7 +10950,7 @@ function ui_compendium_sections() {
             title: "Townsfolk",
             entries: [
                 { term: "Affinity", text: "Camp folk remember you. Trading, feeding, gifting and quests all deepen affinity; gifts they LIKE or LOVE count for more. Higher tiers unlock each vendor's personal perks (discounts, extra stock, services)." },
-                { term: "Gates", text: "Past Acquaintance, each new tier is a GATE: crossing takes a FAVOR - a gate quest posted on the tavern board. Finish it, then deepen the bond with them in camp." },
+                { term: "Gates", text: "Past Acquaintance, each new tier is a GATE: crossing takes a FAVOR the NPC asks of you in person - accept or decline. Finish it, return, and they ask whether you want to grow closer. Lover is a declaration you make yourself; it is never automatic." },
                 { term: "Neglect & limits", text: "Friendships DECAY if ignored for many runs, and only a limited number of townsfolk can hold the deepest tiers at once - deepening one may demote another. Betrayal (robbing the one who trusts you) is remembered hardest of all." },
             ],
         },
@@ -11603,9 +11649,9 @@ function ui_draw_character_menu() {
         draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(make_color_rgb(120, 130, 150));
         if (_equip_in_hub) {
-            draw_text(1850, 120, "Stash: " + string(_stash_count) + "   Pack: " + string(_pack_count));
+            draw_text(1850, 100, "Stash: " + string(_stash_count) + "   Pack: " + string(_pack_count));   // 09-09: y120 sat on the frame's top band
         } else {
-            draw_text(1850, 120, "Pack: " + string(_pack_count) + "  (stash left in town)");
+            draw_text(1850, 100, "Pack: " + string(_pack_count) + "  (stash left in town)");
         }
         draw_set_halign(fa_left);
 
@@ -11737,6 +11783,7 @@ function ui_draw_character_menu() {
                 var _sock_bx  = _dp_x1 + 34;
                 for (var _si = 0; _si < _scount; _si++) {
                     var _sy = _info_y + _si * 54;
+                    if (_sy + _sock_box > _dp_y2 - 34) break;   // 09-09 (M shot): a long unique line pushed socket rows onto the frame
                     draw_set_color(make_color_rgb(28, 32, 46));
                     draw_rectangle(_sock_bx, _sy, _sock_bx + _sock_box, _sy + _sock_box, false);
                     draw_set_color(make_color_rgb(72, 80, 104));
@@ -11963,7 +12010,7 @@ function ui_draw_character_menu() {
                 draw_text(_fc_x1 + 52, _egy + 3, ui_truncate(_fsr.label, _fs_rx - (_fc_x1 + 52) - 90));
                 draw_set_halign(fa_right);
                 draw_set_color(make_color_rgb(120, 124, 138));
-                draw_text(_fs_rx, _egy + 3, _fsr.right);
+                ui_draw_text_arrows(_fs_rx, _egy + 3, _fsr.right);
                 draw_set_halign(fa_left);
             }
             if (_fs_over) {
@@ -11991,11 +12038,11 @@ function ui_draw_character_menu() {
         draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(make_color_rgb(80, 90, 110));
         if (_gc.equip_picker_open) {
-            ui_draw_key_legend(960, 1035, "W/S: Navigate   Enter: Equip   Esc: Cancel");
+            ui_draw_key_legend(960, 1050, "W/S: Navigate   Enter: Equip   Esc: Cancel");
         } else if (_ff) {
-            ui_draw_key_legend(960, 1035, "W/S: Browse Pack   Enter: Equip   A/<-: Back to Slots   (click 'Sort' to reorder)");
+            ui_draw_key_legend(960, 1050, "W/S: Browse Pack   Enter: Equip   A/<-: Back to Slots   (click 'Sort' to reorder)");
         } else {
-            ui_draw_key_legend(960, 1035, "W/S: Slots   Enter: Equip   U: Unequip   D/->: Browse Found Items");
+            ui_draw_key_legend(960, 1050, "W/S: Slots   Enter: Equip   U: Unequip   D/->: Browse Found Items");
             // Touch UNEQUIP (07-24 audit): tap-users could swap gear via the picker
             // but never EMPTY a slot - U had no touch path. Button only while the
             // selected slot actually holds an item (the U handler's own condition),
@@ -13000,11 +13047,13 @@ function ui_draw_npc_bond(npc_id, x, y) {
             draw_text(x + 210, y, ui_truncate("Favor: " + _gq.def.objective
                 + "  (" + string(min(_gq.state.progress, _gq.def.obj_target)) + "/" + string(_gq.def.obj_target) + ")", 470));
         } else if (_gq != undefined) {
+            // 09-03: the crossing is a question the NPC asks at the camp
+            // carousel (bond dialogue) - no shortcut inside their counter.
             draw_set_color(c_aqua);
-            draw_text(x + 210, y, "Favor done - [B] Deepen");
+            draw_text(x + 210, y, ui_truncate("Favor done - a question awaits at camp", 440));
         } else {
             draw_set_color(c_aqua);
-            draw_text(x + 210, y, "Ready - [B] Deepen");
+            draw_text(x + 210, y, ui_truncate("They want a word at camp", 440));
         }
     } else if (_tier < 4) {
         var _bx = x + 210, _by = y + 6, _bw = 220, _bh = 12;
@@ -13016,6 +13065,92 @@ function ui_draw_npc_bond(npc_id, x, y) {
         draw_rectangle(_bx, _by, _bx + _bw, _by + _bh, true);
     }
     draw_set_font(-1);
+}
+
+// ---------------------------------------------------------------------------
+// BOND DIALOGUE openers (09-03 relationship rework). The hub's bond window
+// (obj_hub_controller bond_dialog_*) now has three MODES:
+//   "info"    - any key closes (reminders, the crossing beat)
+//   "ask"     - the NPC asks their favor: ACCEPT / DECLINE buttons
+//   "confirm" - the favor is done: DEEPEN (or PROFESS at Lover) / NOT YET
+// hub_bond_open picks the mode from affinity_gate_status; the hub Step commits
+// the choice and calls hub_bond_show_crossing for the beat after a crossing.
+// ---------------------------------------------------------------------------
+function hub_bond_open(_hub, _id) {
+    var _st = affinity_gate_status(_id);
+    var _nm = npc_display_name(_id);
+    _hub.bond_dialog_open   = true;
+    _hub.bond_dialog_npc    = _id;
+    _hub.bond_dialog_hearts = [];
+    _hub.bond_dialog_mode   = "info";
+    _hub.bond_dialog_ok     = "";
+    switch (_st.kind) {
+        case "ask":
+            _hub.bond_dialog_mode  = "ask";
+            _hub.bond_dialog_ok    = "ACCEPT";
+            _hub.bond_dialog_title = _nm + "  -  a favor";
+            _hub.bond_dialog_body  = _st.def.flavor + "\n\nTHE FAVOR:  " + _st.def.objective
+                + "\n\nTake it on? (Tracked in your Journal. Declining costs nothing - ask again any time.)";
+            break;
+        case "progress":
+            _hub.bond_dialog_title = _nm;
+            _hub.bond_dialog_body  = "\"" + _st.def.name + "\" is underway - " + _st.def.objective
+                + "  (" + string(min(_st.state.progress, _st.def.obj_target)) + "/" + string(_st.def.obj_target)
+                + ").\n\nCome back to me when it's done.";
+            break;
+        case "confirm":
+            _hub.bond_dialog_mode = "confirm";
+            var _tn = affinity_tier_name_for(_st.target);
+            if (_st.target >= 4) {
+                // The Lover crossing is a DECLARATION the player makes, never a
+                // threshold (M 09-03). Names the cost when someone else holds it.
+                var _cur = affinity_current_lover();
+                _hub.bond_dialog_ok    = "PROFESS";
+                _hub.bond_dialog_title = _nm + "  -  the question";
+                _hub.bond_dialog_body  = "Profess your love to " + _nm + "?"
+                    + "\n\nThere is room for one such bond in Ironwake."
+                    + ((_cur != "" && _cur != _id) ? "  " + npc_display_name(_cur) + " holds it now - they will not forgive this, and that bond breaks." : "")
+                    + "\n\nNothing is said until you say it.";
+            } else {
+                _hub.bond_dialog_ok    = "DEEPEN";
+                _hub.bond_dialog_title = _nm + "  -  " + _tn;
+                _hub.bond_dialog_body  = ((_st.def != undefined) ? ("You did what they asked - \"" + _st.def.name + "\".\n\n") : "")
+                    + "Grow closer to " + _nm + " - " + _tn + "?"
+                    + ((_st.target == 3 && affinity_count_at_tier(3) >= affinity_max_companions())
+                        ? ("\n\nYou already keep " + string(affinity_max_companions()) + " Companions - the least-tended of them steps back to Friend.") : "");
+            }
+            break;
+        default:
+            _hub.bond_dialog_title = _nm;
+            _hub.bond_dialog_body  = "Nothing to say just now.";
+            break;
+    }
+}
+
+// The beat after a confirmed crossing: authored lore line, the tier, and the
+// floating hearts (M 08-15 "popup and little heart animation"; drawn by the
+// hub's bond dialogue). Lover gets the red burst count.
+function hub_bond_show_crossing(_hub, _id) {
+    var _tier = affinity_tier(_id);
+    var _nm   = npc_display_name(_id);
+    var _lore = affinity_deepen_line(_id, _tier);
+    if (_lore == "") _lore = "Something settles between you - warmer than words.";
+    _hub.bond_dialog_open   = true;
+    _hub.bond_dialog_npc    = _id;
+    _hub.bond_dialog_mode   = "info";
+    _hub.bond_dialog_ok     = "";
+    _hub.bond_dialog_title  = _nm + "  -  " + affinity_tier_name_for(_tier);
+    _hub.bond_dialog_body   = _lore + "\n\nYour bond with " + _nm + " deepens to " + affinity_tier_name_for(_tier) + ".";
+    _hub.bond_dialog_hearts = [];
+    var _n = (_tier >= 4) ? 14 : 7;
+    repeat (_n) {
+        array_push(_hub.bond_dialog_hearts, {
+            x: 460 + random(1000), y: 780 + random(60),
+            vy: 0.8 + random(1.2), sway: random(pi * 2),
+            sc: 0.7 + random(0.8), a: 0.9
+        });
+    }
+    audio_play_sound(snd_quest_ready, 1, false);
 }
 
 // ---------------------------------------------------------------------------
@@ -13166,7 +13301,7 @@ function ui_draw_shop_screen() {
     // Dorn gained a 4th tab on 08-08 when TEMPER moved here from Maren's forge.
     // Tab COUNT must come from shop_tab_count() - the Step hit-tests lay their
     // boxes out from the same number, and a mismatch silently misroutes clicks.
-    var _tab_labels  = _is_petra ? ["BUY", "SELL", "TRADE"] : ["BUY", "SELL", "REFORGE", "TEMPER"];
+    var _tab_labels  = _is_petra ? ["BUY", "SELL", "TRADE"] : ["BUY", "SELL", "FORGE", "TEMPER"];
     // 3rd tab accent differs per NPC: Petra's Trade = violet, Dorn's Reforge = forge
     // copper; 4th (Dorn only) is the tempering gold used by the forge-result banner.
     var _tab_accents = [_accent, make_color_rgb(220, 155, 45),
@@ -13445,7 +13580,7 @@ function ui_draw_shop_screen() {
                     draw_text(960, _cy0 + 96, "Blueprint:  " + ((_bpd != undefined) ? _bpd.name : _o.rune_id)
                         + " " + rune_tier_roman(_o.rune_tier));
                 } else {
-                    draw_text(960, _cy0 + 96, item_rarity_name(_o.input_tier) + "   ->   " + item_rarity_name(_o.output_tier));
+                    ui_draw_text_arrows(960, _cy0 + 96, item_rarity_name(_o.input_tier) + "   ->   " + item_rarity_name(_o.output_tier));
                 }
 
                 if (!_ready) {
@@ -13918,7 +14053,7 @@ function ui_draw_shop_screen() {
                     draw_set_color(make_color_rgb(200, 190, 215));
                     var _bp_gold = floor(_rung3.gold * petra_gold_mult());
                     var _bp_fl   = max(1, _rung3.cost_floors - petra_delivery_reduction());
-                    draw_text_ext(960, _bp_y0 + 78,
+                    ui_draw_text_arrows_ext(960, _bp_y0 + 78,
                         "3 " + item_rarity_name(_sel_rar) + "  ->  1 " + item_rarity_name(_rung3.out_rarity)
                         + "   -   " + string(_bp_gold) + "g, delivered in " + string(_bp_fl) + " floor" + (_bp_fl == 1 ? "" : "s")
                         + ((_rung3.req_awk > 0) ? ("  (A" + string(_rung3.req_awk) + "+)") : "")
@@ -13999,7 +14134,7 @@ function ui_draw_shop_screen() {
                 _rv.dust_bias ? "melted down  -  roll-biased order" : "melted down");
             draw_set_font(ui_font(fnt_ui));
             draw_set_color(make_color_rgb(200, 190, 170));
-            draw_text(960, 560, "->");
+            ui_draw_text_arrows(960, 560, "->");
             if (_rv.is_rune) {
                 ui_reforge_card(1020, 348, 1450, 800, "RECEIVED", make_color_rgb(120, 210, 130),
                     rune_title(_rv.rune), 3, rune_effect(_rv.rune));
@@ -14244,14 +14379,11 @@ function ui_draw_shop_screen() {
         }
     }
 
-    // Buy tab footer (raised to clear the bottom rim band). Dorn's affix rework now
-    // lives on its own REFORGE tab (Q/E, or the [R] shortcut) - nudge toward it.
+    // Buy tab footer (raised to clear the bottom rim band). The "[R] or Q/E ->
+    // REFORGE tab" nudge line is gone (M 09-02: "overly messy... unnecessary") -
+    // the tab strip and its hover hint already say where reforging lives.
     draw_set_halign(fa_center);
     draw_set_font(ui_font(fnt_ui_small));
-    if (!_is_petra && input_device() != 2) {
-        draw_set_color(make_color_rgb(220, 185, 110));
-        draw_text_outline(960, 993, "[R] or Q/E -> REFORGE tab: rework an item's affixes with your ingots");
-    }
     draw_set_color(make_color_rgb(75, 85, 105));
     ui_draw_key_legend(960, 1026, "W/S: Navigate   Q/E: Tab   Enter: Buy   F: Gift   U: Station   Esc: Close     (purchases go to your stash)");
     draw_set_halign(fa_left);
@@ -14386,7 +14518,7 @@ function ui_draw_dorn_temper(_gc) {
         draw_text(_av, _ry2, ui_truncate(_rw.a, 180));
         draw_set_halign(fa_center);
         draw_set_color(make_color_rgb(88, 94, 116));
-        draw_text(_mid, _ry2, "->");
+        ui_draw_text_arrows(_mid, _ry2, "->");
         draw_set_halign(fa_left);
         draw_set_color((_rw.better > 0) ? make_color_rgb(120, 210, 130)
                     : ((_rw.better < 0) ? make_color_rgb(214, 112, 112)
@@ -14469,174 +14601,366 @@ function ui_draw_dorn_reforge(_gc) {
     var _copper   = make_color_rgb(210, 140, 70);
     var _panel_bg = make_color_rgb(16, 16, 22);
     var _panel_ln = make_color_rgb(70, 55, 40);
-
-    // ---- LEFT PANEL: YOUR INGOTS ------------------------------------------
-    var _lx0 = 150, _lx1 = 600, _ly0 = 189, _ly1 = 900;
-    draw_set_color(_panel_bg); draw_rectangle(_lx0, _ly0, _lx1, _ly1, false);
-    draw_set_color(_panel_ln); draw_rectangle(_lx0, _ly0, _lx1, _ly1, true);
-    draw_set_halign(fa_center);
-    draw_set_font(ui_font(fnt_ui));
-    draw_set_color(_copper);
-    draw_text((_lx0 + _lx1) / 2, _ly0 + 15, "YOUR INGOTS");
-
-    // 07-29 layout fix (M screenshot): the old 96px rows ran the Epic/Legendary
-    // tiers straight into the LEGENDARY FORGE block (the Legendary row was drawn
-    // UNDER the buttons and read as missing). Compressed rows + the forge block
-    // pushed below the full 5-row list; a FUSE verb joins the panel.
-    var _tier_names = ["Common", "Uncommon", "Rare", "Epic", "Legendary"];
-    for (var _t = 0; _t < 5; _t++) {
-        var _cnt = global.reforge_ingots[_t];
-        var _has = (_cnt > 0);
-        var _iry = _ly0 + 54 + _t * 70;
-        draw_set_alpha(_has ? 1.0 : 0.32);
-        draw_sprite_stretched(reforge_ingot_sprite(_t), 0, _lx0 + 30, _iry, 52, 52);
-        draw_set_alpha(1.0);
-        draw_set_halign(fa_left);
-        draw_set_font(ui_font(fnt_ui));
-        draw_set_color(_has ? item_rarity_color(_t) : make_color_rgb(88, 88, 100));
-        draw_text(_lx0 + 100, _iry + 12, _tier_names[_t]);
-        draw_set_halign(fa_right);
-        draw_set_color(_has ? c_white : make_color_rgb(78, 78, 90));
-        draw_text(_lx1 - 24, _iry + 12, "x" + string(_cnt));
-    }
-    draw_set_halign(fa_left);
-
     var _dfx = device_mouse_x_to_gui(0), _dfy = device_mouse_y_to_gui(0);
     var _dfp = mouse_check_button_pressed(mb_left);
+    if (!variable_instance_exists(_gc, "forge_sub")) _gc.forge_sub = 0;
+    if (!variable_instance_exists(_gc, "ingot_sel")) _gc.ingot_sel = 0;
+    var _sub = clamp(_gc.forge_sub, 0, 2);
+    var _tier_names = ["Common", "Uncommon", "Rare", "Epic", "Legendary"];
 
-    // Fuse verb (M 07-29): 3 same-tier ingots -> 1 of the next tier up.
-    var _cmb_t = reforge_combine_tier();
-    ui_confirm_button(_lx0 + 24, 610, _lx1 - 24, 654,
-        (_cmb_t >= 0) ? ("Fuse 3 " + _tier_names[_cmb_t] + " -> 1 " + _tier_names[_cmb_t + 1] + "  [C]")
-                      : "Fuse 3 same-tier -> 1  [C]",
-        (_cmb_t >= 0) ? make_color_rgb(190, 160, 90) : make_color_rgb(90, 90, 105),
-        _dfx, _dfy, _dfp, "dorn:combine");
-
-    // ---- THE LEGENDARY FORGE (M locked 07-28): component readout + verbs ----
-    forge_components_ensure();
-    draw_set_color(_panel_ln);
-    draw_line(_lx0 + 18, 668, _lx1 - 18, 668);
-    draw_set_halign(fa_center);
+    // ---- SUB-TAB BAR (09-03 restructure): REWORK / CRAFT / LEGENDARY ---------
+    // The old REFORGE tab stacked seven verbs on one screen (M: "many things are
+    // ambiguous or messy or side notes of text"). Each craft owns a sub-tab now;
+    // the top tab reads FORGE. Chip clicks inject dorn:sub<i>; Tab cycles.
+    var _sx0 = 150, _sx1 = 1500;
+    var _sub_labels = ["REWORK", "CRAFT", "LEGENDARY"];
+    var _sub_hints  = [
+        "Spend a Reforge Ingot to melt and re-strike a piece's affixes - same item, fresh stats. Fuse 3 ingots of one tier into 1 of the next. Legendaries recast for gold instead.",
+        "SMELT unequipped gear for an ingot while Dorn studies one of its affixes into his PATTERN BOOK. CRAFT then builds a piece to your own design from everything he has studied.",
+        "THE LEGENDARY FORGE: three parts, one from each smith, become a custom legendary - your slot, your power, your name."
+    ];
+    var _sw = 300, _sg = 20, _sy0 = 189, _sy1 = 231;
+    var _sxs = (_sx0 + _sx1) / 2 - (3 * _sw + 2 * _sg) / 2;
     draw_set_font(ui_font(fnt_ui));
-    draw_set_color(make_color_rgb(255, 225, 150));
-    draw_text((_lx0 + _lx1) / 2, 678, "THE LEGENDARY FORGE");
-    draw_set_font(ui_font(fnt_ui_small));
-    draw_set_color(make_color_rgb(170, 160, 190));
-    // Component readout + verb (08-11 reword, M: "what mithril frame? theres no
-    // mention of this elsewhere" - the bare "Strike Frame" button gave no hint
-    // it was a forge PART or that Dorn's part is called the Mythril Frame).
-    draw_text((_lx0 + _lx1) / 2, 712, "Parts held:  Frame x" + string(global.forge_comp_frame)
-        + "   Core x" + string(global.forge_comp_core)
-        + "   Quint. x" + string(global.forge_comp_quint));
+    for (var _si = 0; _si < 3; _si++) {
+        var _stx  = _sxs + _si * (_sw + _sg);
+        var _son  = (_si == _sub);
+        var _shov = (_dfx >= _stx && _dfx < _stx + _sw && _dfy >= _sy0 && _dfy < _sy1);
+        draw_set_color(_son ? make_color_rgb(30, 24, 18) : (_shov ? make_color_rgb(22, 20, 24) : _panel_bg));
+        draw_rectangle(_stx, _sy0, _stx + _sw, _sy1, false);
+        draw_set_color(_son ? _copper : make_color_rgb(60, 50, 40));
+        draw_rectangle(_stx, _sy0, _stx + _sw, _sy1, true);
+        if (_son) draw_rectangle(_stx + 1, _sy0 + 1, _stx + _sw - 1, _sy1 - 1, true);
+        draw_set_halign(fa_center);
+        draw_set_color(_son ? _copper : make_color_rgb(120, 105, 85));
+        draw_text(_stx + _sw / 2, _sy0 + 9, _sub_labels[_si]);
+        ui_tab_hover_stash(_stx, _sy0, _stx + _sw, _sy1, _sub_labels[_si], _sub_hints[_si]);
+        if (_shov && _dfp && !_son) input_inject("dorn:sub" + string(_si));
+    }
     draw_set_halign(fa_left);
-    ui_confirm_button(_lx0 + 24, 740, _lx1 - 24, 784, "Forge part: Mythril Frame  [G]",
-        make_color_rgb(210, 140, 70), _dfx, _dfy, _dfp, "dorn:frame");
-    ui_confirm_button(_lx0 + 24, 792, _lx1 - 24, 836, forge_components_ready() ? "FORGE  [V]" : "Forge - needs all 3  [V]",
-        forge_components_ready() ? make_color_rgb(120, 210, 130) : make_color_rgb(90, 90, 105), _dfx, _dfy, _dfp, "dorn:forge");
+    var _cy0 = 250, _cy1 = 900;   // content band under the sub-tab bar
 
-    draw_set_font(ui_font(fnt_ui_small));
-    draw_set_color(make_color_rgb(150, 135, 110));
-    draw_text_ext(_lx0 + 24, _ly1 - 56, "A higher-tier ingot reworks its own tier or below - a Legendary ingot works on anything.", 24, (_lx1 - _lx0) - 48);
-
-    // ---- RIGHT PANEL: REWORK GEAR -----------------------------------------
-    var _rx0 = 630, _rx1 = 1500, _ry0 = 189, _ry1 = 900;
-    draw_set_color(_panel_bg); draw_rectangle(_rx0, _ry0, _rx1, _ry1, false);
-    draw_set_color(_panel_ln); draw_rectangle(_rx0, _ry0, _rx1, _ry1, true);
-    draw_set_halign(fa_center);
-    draw_set_font(ui_font(fnt_ui));
-    draw_set_color(_copper);
-    draw_text((_rx0 + _rx1) / 2, _ry0 + 15, "REWORK GEAR");
-    draw_set_halign(fa_left);
-
-    var _list = item_picker_candidates_affixed();
-    var _n    = array_length(_list);
-    if (_n == 0) {
+    if (_sub == 0) {
+        // =====================================================================
+        // REWORK: LEFT = the ingot hoard (selectable rows, each with its own
+        // FUSE); RIGHT = every affix-bearing piece, status tracking the
+        // highlighted ingot. The confirm screen carries the ingot PICKER.
+        // =====================================================================
+        var _lx0 = 150, _lx1 = 600, _ly0 = _cy0, _ly1 = _cy1;
+        draw_set_color(_panel_bg); draw_rectangle(_lx0, _ly0, _lx1, _ly1, false);
+        draw_set_color(_panel_ln); draw_rectangle(_lx0, _ly0, _lx1, _ly1, true);
         draw_set_halign(fa_center);
         draw_set_font(ui_font(fnt_ui));
-        draw_set_color(make_color_rgb(120, 120, 135));
-        draw_text_ext((_rx0 + _rx1) / 2, _ry0 + 240,
-            "No affix-bearing gear to rework.\n(Equipped gear must be unequipped first.)", 34, (_rx1 - _rx0) - 80);
+        draw_set_color(_copper);
+        draw_text((_lx0 + _lx1) / 2, _ly0 + 15, "YOUR INGOTS");
+        draw_set_halign(fa_left);
+
+        var _isel = clamp(_gc.ingot_sel, 0, 4);
+        for (var _t = 0; _t < 5; _t++) {
+            var _cnt = global.reforge_ingots[_t];
+            var _has = (_cnt > 0);
+            var _iry = _ly0 + 54 + _t * 76;
+            var _ion = (_t == _isel);
+            var _ihv = (_dfx >= _lx0 + 12 && _dfx < _lx1 - 12 && _dfy >= _iry && _dfy < _iry + 68);
+            draw_set_color(_ion ? make_color_rgb(38, 32, 24) : (_ihv ? make_color_rgb(24, 22, 28) : make_color_rgb(20, 20, 26)));
+            draw_rectangle(_lx0 + 12, _iry, _lx1 - 12, _iry + 68, false);
+            draw_set_color(_ion ? _copper : make_color_rgb(48, 44, 40));
+            draw_rectangle(_lx0 + 12, _iry, _lx1 - 12, _iry + 68, true);
+            draw_set_alpha(_has ? 1.0 : 0.32);
+            draw_sprite_stretched(reforge_ingot_sprite(_t), 0, _lx0 + 26, _iry + 8, 52, 52);
+            draw_set_alpha(1.0);
+            draw_set_font(ui_font(fnt_ui));
+            draw_set_color(_has ? item_rarity_color(_t) : make_color_rgb(88, 88, 100));
+            draw_text(_lx0 + 96, _iry + 20, _tier_names[_t]);
+            draw_set_halign(fa_right);
+            draw_set_color(_has ? c_white : make_color_rgb(78, 78, 90));
+            draw_text(_lx1 - 28, _iry + 20, "x" + string(_cnt));
+            draw_set_halign(fa_left);
+            if (_ihv && _dfp && !_ion) input_inject("dorn:ingot" + string(_t));
+        }
+
+        // FUSE for the highlighted tier: a drawn preview (3 ingots, arrow, 1 of
+        // the next tier) over the button - no text arrows (M 09-03).
+        var _fy = _ly0 + 54 + 5 * 76 + 8;   // 692
+        var _can_fuse = reforge_can_fuse_tier(_isel);
+        var _fuse_col = _can_fuse ? make_color_rgb(190, 160, 90) : make_color_rgb(90, 90, 105);
+        draw_set_alpha(_can_fuse ? 1.0 : 0.4);
+        if (_isel <= 3) {
+            for (var _fi = 0; _fi < 3; _fi++) draw_sprite_stretched(reforge_ingot_sprite(_isel), 0, _lx0 + 44 + _fi * 42, _fy + 4, 40, 40);
+            ui_draw_arrow_glyph(_lx0 + 240, _fy + 24, 70, 8, _fuse_col);
+            draw_sprite_stretched(reforge_ingot_sprite(_isel + 1), 0, _lx0 + 300, _fy - 2, 52, 52);
+            draw_set_font(ui_font(fnt_ui_small));
+            draw_set_color(item_rarity_color(_isel));
+            draw_text(_lx0 + 44, _fy + 46, "3 " + _tier_names[_isel]);
+            draw_set_color(item_rarity_color(_isel + 1));
+            draw_text(_lx0 + 300, _fy + 50, "1 " + _tier_names[_isel + 1]);
+        } else {
+            draw_set_font(ui_font(fnt_ui_small));
+            draw_set_color(make_color_rgb(150, 135, 110));
+            draw_text_ext(_lx0 + 24, _fy + 8, "Legendary ingots are the top of the ladder - they don't fuse.", 22, (_lx1 - _lx0) - 48);
+        }
+        draw_set_alpha(1.0);
+        ui_confirm_button(_lx0 + 24, _fy + 80, _lx1 - 24, _fy + 124, "FUSE  [C]", _fuse_col, _dfx, _dfy, _dfp, "dorn:combine");
+
+        draw_set_font(ui_font(fnt_ui_small));
+        draw_set_color(make_color_rgb(150, 135, 110));
+        draw_text_ext(_lx0 + 24, _ly1 - 76, "Ingots come from SMELTING gear and tavern-board pay. A higher-tier ingot works any piece at its tier or below.", 24, (_lx1 - _lx0) - 48);
+
+        // ---- RIGHT: REWORK GEAR ---------------------------------------------
+        var _rx0 = 630, _rx1 = 1500, _ry0 = _cy0, _ry1 = _cy1;
+        draw_set_color(_panel_bg); draw_rectangle(_rx0, _ry0, _rx1, _ry1, false);
+        draw_set_color(_panel_ln); draw_rectangle(_rx0, _ry0, _rx1, _ry1, true);
+        draw_set_halign(fa_center);
+        draw_set_font(ui_font(fnt_ui));
+        draw_set_color(_copper);
+        draw_text((_rx0 + _rx1) / 2, _ry0 + 15, "REWORK GEAR");
+        draw_set_halign(fa_left);
+
+        var _list = item_picker_candidates_affixed();
+        var _n    = array_length(_list);
+        if (_n == 0) {
+            draw_set_halign(fa_center);
+            draw_set_font(ui_font(fnt_ui));
+            draw_set_color(make_color_rgb(120, 120, 135));
+            draw_text_ext((_rx0 + _rx1) / 2, _ry0 + 240,
+                "No affix-bearing gear to rework.\n(Equipped gear must be unequipped first.)", 34, (_rx1 - _rx0) - 80);
+            draw_set_halign(fa_left);
+        } else {
+            var _cur  = clamp(_gc.reforge_index, 0, _n - 1);
+            var _vis  = 5;
+            // Edge-triggered window: driven by the persistent reforge_scroll the Step handler
+            // advances only when the cursor hits an edge (so the selector moves, not the list).
+            var _win0 = clamp(_gc.reforge_scroll, 0, max(0, _n - _vis));
+            var _win1 = min(_n, _win0 + _vis);
+            var _row_h = 96, _row_y0 = _ry0 + 66;   // 316 - the Step's hit-tests mirror this
+            var _name_maxw = (_rx1 - 320) - (_rx0 + 30);   // right zone reserved for the status
+
+            for (var _i = _win0; _i < _win1; _i++) {
+                var _c    = _list[_i];
+                var _rar  = variable_struct_exists(_c.item, "rarity") ? clamp(_c.item.rarity, 0, 4) : 0;
+                var _pt   = (_rar >= 4) ? -1 : reforge_pick_default(_rar, _isel);   // the ingot this row would spend
+                var _able = (_rar >= 4) || (_pt >= 0);
+                var _sel  = (_i == _cur);
+                var _ry   = _row_y0 + (_i - _win0) * (_row_h + 6);
+
+                draw_set_alpha(_sel ? 1.0 : 0.85);
+                draw_set_color(_sel ? make_color_rgb(38, 32, 24) : make_color_rgb(20, 20, 26));
+                draw_rectangle(_rx0 + 12, _ry, _rx1 - 12, _ry + _row_h, false);
+                draw_set_alpha(1.0);
+                draw_set_color(_sel ? _copper : make_color_rgb(48, 44, 40));
+                draw_rectangle(_rx0 + 12, _ry, _rx1 - 12, _ry + _row_h, true);
+
+                draw_set_font(ui_font(fnt_ui));
+                var _nc = item_rarity_color(_rar);
+                draw_set_color(_able ? _nc : merge_color(_nc, c_black, 0.55));
+                draw_text(_rx0 + 30, _ry + 12, ui_truncate(_c.label, _name_maxw));
+                draw_set_font(ui_font(fnt_ui_small));
+                draw_set_color(_able ? make_color_rgb(150, 150, 165) : make_color_rgb(95, 95, 108));
+                draw_text(_rx0 + 30, _ry + 54, "[" + item_rarity_name(_rar) + "]");
+
+                // Status column: the ingot this row spends (drawn, not just named).
+                draw_set_halign(fa_right);
+                if (_rar >= 4) {
+                    draw_set_color(make_color_rgb(230, 210, 150));
+                    draw_text(_rx1 - 30, _ry + 32, "Recast  " + string(legendary_recast_cost()) + "g");
+                } else if (_able) {
+                    draw_sprite_stretched(reforge_ingot_sprite(_pt), 0, _rx1 - 74, _ry + 26, 44, 44);
+                    draw_set_color(item_rarity_color(_pt));
+                    draw_text(_rx1 - 84, _ry + 32, _sel ? ("Rework: " + _tier_names[_pt] + " ingot") : (_tier_names[_pt] + " ingot"));
+                } else {
+                    draw_set_color(make_color_rgb(190, 90, 80));
+                    draw_text(_rx1 - 30, _ry + 32, "Need " + item_rarity_name(_rar) + "+ ingot");
+                }
+                draw_set_halign(fa_left);
+            }
+
+            if (_n > _vis) {
+                draw_set_halign(fa_center);
+                draw_set_font(ui_font(fnt_ui_small));
+                draw_set_color(make_color_rgb(150, 130, 100));
+                draw_text((_rx0 + _rx1) / 2, _ry1 - 30, string(_cur + 1) + " / " + string(_n));
+                draw_set_halign(fa_left);
+            }
+        }
+    } else if (_sub == 1) {
+        // =====================================================================
+        // CRAFT: study progress strip + three verb cards (SMELT / PATTERN BOOK
+        // / CRAFT). Each card carries the live number that matters for it.
+        // =====================================================================
+        var _px0 = 150, _px1 = 1500, _py0 = _cy0, _py1 = _cy1;
+        var _pcx = (_px0 + _px1) / 2;
+        draw_set_color(_panel_bg); draw_rectangle(_px0, _py0, _px1, _py1, false);
+        draw_set_color(_panel_ln); draw_rectangle(_px0, _py0, _px1, _py1, true);
+        draw_set_halign(fa_center);
+        draw_set_font(ui_font(fnt_ui_small));
+        draw_set_color(make_color_rgb(170, 160, 190));
+        draw_text(_pcx, _py0 + 18, "Dorn studies what you smelt. What he has studied, he can craft.");
+
+        // Study strip: how many affix families have reached each craft quality.
+        pattern_book_ensure();
+        var _fcat = pattern_family_catalog();
+        var _fn   = array_length(_fcat);
+        var _fu = 0, _fr = 0, _fe = 0;
+        for (var _fk = 0; _fk < _fn; _fk++) {
+            var _ft = pattern_fam_tier(_fcat[_fk].stat_name);
+            if (_ft >= 1) _fu++;
+            if (_ft >= 2) _fr++;
+            if (_ft >= 3) _fe++;
+        }
+        var _pill_w = 300, _pill_g = 24, _pill_y0 = _py0 + 60, _pill_y1 = _py0 + 124;
+        var _pill_x = _pcx - (3 * _pill_w + 2 * _pill_g) / 2;
+        var _pill_lab = ["UNCOMMON crafts", "RARE crafts", "EPIC crafts"];
+        var _pill_cnt = [_fu, _fr, _fe];
+        var _pill_req = ["1 study", "3 studies", "6 studies"];
+        for (var _pi = 0; _pi < 3; _pi++) {
+            var _pxx = _pill_x + _pi * (_pill_w + _pill_g);
+            var _prc = item_rarity_color(_pi + 1);
+            draw_set_color(make_color_rgb(20, 20, 26)); draw_rectangle(_pxx, _pill_y0, _pxx + _pill_w, _pill_y1, false);
+            draw_set_color(merge_color(_prc, c_black, 0.45)); draw_rectangle(_pxx, _pill_y0, _pxx + _pill_w, _pill_y1, true);
+            // fill bar = families unlocked / all families
+            var _pfrac = (_fn > 0) ? (_pill_cnt[_pi] / _fn) : 0;
+            draw_set_alpha(0.35); draw_set_color(_prc);
+            draw_rectangle(_pxx + 1, _pill_y0 + 1, _pxx + 1 + (_pill_w - 2) * _pfrac, _pill_y1 - 1, false);
+            draw_set_alpha(1.0);
+            draw_set_halign(fa_left);
+            draw_set_font(ui_font(fnt_ui_small));
+            draw_set_color(_prc);
+            draw_text(_pxx + 14, _pill_y0 + 8, _pill_lab[_pi]);
+            draw_set_color(make_color_rgb(150, 140, 160));
+            draw_text(_pxx + 14, _pill_y0 + 36, _pill_req[_pi] + " per family");
+            draw_set_halign(fa_right);
+            draw_set_font(ui_font(fnt_ui));
+            draw_set_color(c_white);
+            draw_text(_pxx + _pill_w - 14, _pill_y0 + 14, string(_pill_cnt[_pi]) + " / " + string(_fn));
+        }
+        draw_set_halign(fa_left);
+
+        // Three verb cards.
+        var _cw = 400, _cg = 25, _cy_a = _py0 + 160, _cy_b = _py1 - 40;
+        var _cx_a = _pcx - (3 * _cw + 2 * _cg) / 2;
+        var _smelt_n = array_length(pattern_smelt_candidates());
+        var _art_n   = array_length(global.pattern_book.art);
+        var _best    = (_fe > 0) ? "Epic" : ((_fr > 0) ? "Rare" : ((_fu > 0) ? "Uncommon" : "none yet"));
+        var _cards = [
+            { title: "SMELT", key: "T", tag: "dorn:smelt", col: make_color_rgb(190, 160, 90),
+              big: string(_smelt_n), sub: (_smelt_n == 1) ? "piece ready to smelt" : "pieces ready to smelt",
+              body: "Destroy an unequipped piece for a Reforge Ingot of its tier. Dorn studies one of its affixes into the book and keeps its icon for the art page. Rarer fodder teaches faster." },
+            { title: "PATTERN BOOK", key: "B", tag: "dorn:book", col: _copper,
+              big: string(_fu) + " / " + string(_fn), sub: "affix families studied",
+              body: "Browse every blueprint Dorn has learned, how far each is studied, and the " + string(_art_n) + " icon" + ((_art_n == 1) ? "" : "s") + " on his art page." },
+            { title: "CRAFT", key: "N", tag: "dorn:craft", col: make_color_rgb(120, 210, 130),
+              big: _best, sub: "best craft quality unlocked",
+              body: "Build a piece to your own design: type, slot, quality, up to two blueprints, its art and its name. Fewer blueprints CONCENTRATE the rest. Costs gold, dust, an ingot and dungeon reagents." }
+        ];
+        for (var _ci = 0; _ci < 3; _ci++) {
+            var _cd  = _cards[_ci];
+            var _cx0 = _cx_a + _ci * (_cw + _cg), _cx1 = _cx0 + _cw;
+            var _ccx = (_cx0 + _cx1) / 2;
+            draw_set_color(make_color_rgb(20, 20, 26)); draw_rectangle(_cx0, _cy_a, _cx1, _cy_b, false);
+            draw_set_color(merge_color(_cd.col, c_black, 0.4)); draw_rectangle(_cx0, _cy_a, _cx1, _cy_b, true);
+            draw_set_halign(fa_center);
+            draw_set_font(ui_font(fnt_ui));
+            draw_set_color(_cd.col);
+            draw_text(_ccx, _cy_a + 16, _cd.title);
+            if (_ci == 0) draw_sprite_stretched(reforge_ingot_sprite(2), 0, _ccx - 36, _cy_a + 58, 72, 72);
+            draw_set_font(ui_font(fnt_ui));
+            draw_set_color(c_white);
+            draw_text(_ccx, _cy_a + ((_ci == 0) ? 140 : 76), _cd.big);
+            draw_set_font(ui_font(fnt_ui_small));
+            draw_set_color(make_color_rgb(150, 140, 160));
+            draw_text(_ccx, _cy_a + ((_ci == 0) ? 180 : 116), _cd.sub);
+            draw_set_color(make_color_rgb(190, 185, 200));
+            draw_text_ext(_ccx, _cy_a + 226, _cd.body, 26, _cw - 48);
+            ui_confirm_button(_cx0 + 24, _cy_b - 72, _cx1 - 24, _cy_b - 20, _cd.title + "  [" + _cd.key + "]", _cd.col, _dfx, _dfy, _dfp, _cd.tag);
+        }
         draw_set_halign(fa_left);
     } else {
-        var _cur  = clamp(_gc.reforge_index, 0, _n - 1);
-        var _vis  = 5;   // 08-11: row 6's band now hosts the Pattern Book verbs
-        // Edge-triggered window: driven by the persistent reforge_scroll the Step handler
-        // advances only when the cursor hits an edge (so the selector moves, not the list).
-        var _win0 = clamp(_gc.reforge_scroll, 0, max(0, _n - _vis));
-        var _win1 = min(_n, _win0 + _vis);
-        var _row_h = 96, _row_y0 = _ry0 + 66;
-        var _name_maxw = (_rx1 - 300) - (_rx0 + 30);   // reserve a right zone for status text
+        // =====================================================================
+        // LEGENDARY: the three forge parts as cards (who makes it, what it
+        // costs, how many held) and ONE forge button. The "Mythril Frame" is
+        // explained in place instead of as a side note.
+        // =====================================================================
+        var _px0 = 150, _px1 = 1500, _py0 = _cy0, _py1 = _cy1;
+        var _pcx = (_px0 + _px1) / 2;
+        forge_components_ensure();
+        draw_set_color(_panel_bg); draw_rectangle(_px0, _py0, _px1, _py1, false);
+        draw_set_color(make_color_rgb(120, 90, 50)); draw_rectangle(_px0, _py0, _px1, _py1, true);
+        draw_set_halign(fa_center);
+        draw_set_font(ui_font(fnt_ui));
+        draw_set_color(make_color_rgb(255, 225, 150));
+        draw_text(_pcx, _py0 + 15, "THE LEGENDARY FORGE");
+        draw_set_font(ui_font(fnt_ui_small));
+        draw_set_color(make_color_rgb(170, 160, 190));
+        draw_text(_pcx, _py0 + 54, "Three parts, one from each smith. Bring all three and Dorn forges a legendary to your design.");
 
-        for (var _i = _win0; _i < _win1; _i++) {
-            var _c    = _list[_i];
-            var _rar  = variable_struct_exists(_c.item, "rarity") ? clamp(_c.item.rarity, 0, 4) : 0;
-            // Legendaries recast for gold (07-28) - never dimmed by the ingot gate.
-            var _able = (_rar >= 4) || (reforge_ingot_tier_for(_rar) >= 0);
-            var _sel  = (_i == _cur);
-            var _ry   = _row_y0 + (_i - _win0) * (_row_h + 6);
-
-            draw_set_alpha(_sel ? 1.0 : 0.85);
-            draw_set_color(_sel ? make_color_rgb(38, 32, 24) : make_color_rgb(20, 20, 26));
-            draw_rectangle(_rx0 + 12, _ry, _rx1 - 12, _ry + _row_h, false);
-            draw_set_alpha(1.0);
-            draw_set_color(_sel ? _copper : make_color_rgb(48, 44, 40));
-            draw_rectangle(_rx0 + 12, _ry, _rx1 - 12, _ry + _row_h, true);
-
-            // Name (rarity-colored, dimmed when unaffordable) - truncate to its zone.
-            draw_set_font(ui_font(fnt_ui));
-            var _disp = _c.label;
-            if (string_width(_disp) > _name_maxw) {
-                while (string_length(_disp) > 1 && string_width(_disp + "...") > _name_maxw) {
-                    _disp = string_copy(_disp, 1, string_length(_disp) - 1);
-                }
-                _disp += "...";
-            }
-            var _nc = item_rarity_color(_rar);
-            draw_set_color(_able ? _nc : merge_color(_nc, c_black, 0.55));
-            draw_text(_rx0 + 30, _ry + 12, _disp);
-            draw_set_font(ui_font(fnt_ui_small));
-            draw_set_color(_able ? make_color_rgb(150, 150, 165) : make_color_rgb(95, 95, 108));
-            draw_text(_rx0 + 30, _ry + 54, "[" + item_rarity_name(_rar) + "]");
-
-            draw_set_halign(fa_right);
-            if (_rar >= 4) {
-                // Legendaries RECAST for gold (M 07-28) - no ingot gate.
-                draw_set_color(make_color_rgb(230, 210, 150));
-                draw_text(_rx1 - 30, _ry + 32, _sel ? ("Enter: Recast (" + string(legendary_recast_cost()) + "g)") : "Recastable");
-            } else if (_able) {
-                draw_set_color(make_color_rgb(120, 210, 130));
-                draw_text(_rx1 - 30, _ry + 32, _sel ? "Enter: Rework" : "Ready");
-            } else {
-                draw_set_color(make_color_rgb(190, 90, 80));
-                draw_text(_rx1 - 30, _ry + 32, "Need " + item_rarity_name(_rar) + "+ ingot");
-            }
-            draw_set_halign(fa_left);
-        }
-
-        // Position readout instead of "N more above/below" - shows where the selected
-        // row sits in the whole list (e.g. "23 / 56"). Only when the list overflows.
-        if (_n > _vis) {
+        var _cw = 400, _cg = 25, _cy_a = _py0 + 100, _cy_b = _py0 + 480;
+        var _cx_a = _pcx - (3 * _cw + 2 * _cg) / 2;
+        var _rune_spr = asset_get_index("spr_icon_rune_might");
+        var _parts = [
+            { title: "MYTHRIL FRAME", who: "Dorn's part - made here", held: global.forge_comp_frame,
+              spr: spr_icon_reforge_ingot_legendary,
+              cost: string(forge_frame_cost()) + "g + 1 Legendary Reforge Ingot",
+              btn: "STRIKE FRAME  [G]", tag: "dorn:frame" },
+            { title: "RUNEHEART CORE", who: "Maren's part - Runesmithing", held: global.forge_comp_core,
+              spr: _rune_spr,
+              cost: "40 rune dust + a tier III or better rune",
+              btn: "", tag: "" },
+            { title: "QUINTESSENCE", who: "Sable's part - the Cauldron", held: global.forge_comp_quint,
+              spr: asset_get_index("spr_icon_consumable_quintessence"),
+              cost: string(forge_quint_cost()) + "g + 3 different specialty brews",
+              btn: "", tag: "" }
+        ];
+        for (var _pi = 0; _pi < 3; _pi++) {
+            var _pd  = _parts[_pi];
+            var _cx0 = _cx_a + _pi * (_cw + _cg), _cx1 = _cx0 + _cw;
+            var _ccx = (_cx0 + _cx1) / 2;
+            var _held = (_pd.held > 0);
+            draw_set_color(make_color_rgb(20, 20, 26)); draw_rectangle(_cx0, _cy_a, _cx1, _cy_b, false);
+            draw_set_color(_held ? make_color_rgb(120, 210, 130) : make_color_rgb(70, 55, 40));
+            draw_rectangle(_cx0, _cy_a, _cx1, _cy_b, true);
             draw_set_halign(fa_center);
+            draw_set_font(ui_font(fnt_ui));
+            draw_set_color(make_color_rgb(255, 225, 150));
+            draw_text(_ccx, _cy_a + 16, _pd.title);
             draw_set_font(ui_font(fnt_ui_small));
-            draw_set_color(make_color_rgb(150, 130, 100));
-            draw_text((_rx0 + _rx1) / 2, _ry1 - 30, string(_cur + 1) + " / " + string(_n));
-            draw_set_halign(fa_left);
+            draw_set_color(make_color_rgb(150, 140, 160));
+            draw_text(_ccx, _cy_a + 52, _pd.who);
+            if (_pd.spr != -1 && sprite_exists(_pd.spr)) {
+                draw_set_alpha(_held ? 1.0 : 0.35);
+                ui_draw_sprite_contain(_pd.spr, 0, _ccx - 44, _cy_a + 90, 88, 88, 1.0);
+                draw_set_alpha(1.0);
+            }
+            draw_set_font(ui_font(fnt_ui));
+            draw_set_color(_held ? make_color_rgb(120, 210, 130) : make_color_rgb(190, 90, 80));
+            draw_text(_ccx, _cy_a + 196, _held ? ("HELD  x" + string(_pd.held)) : "MISSING");
+            draw_set_font(ui_font(fnt_ui_small));
+            draw_set_color(make_color_rgb(190, 185, 200));
+            draw_text_ext(_ccx, _cy_a + 244, _pd.cost, 26, _cw - 48);
+            if (_pd.btn != "") {
+                ui_confirm_button(_cx0 + 24, _cy_b - 72, _cx1 - 24, _cy_b - 20, _pd.btn, make_color_rgb(210, 140, 70), _dfx, _dfy, _dfp, _pd.tag);
+            } else {
+                draw_set_color(make_color_rgb(120, 110, 130));
+                draw_text(_ccx, _cy_b - 54, "Bring it here once made.");
+            }
         }
+        var _ready = forge_components_ready();
+        ui_confirm_button(_pcx - 260, _py1 - 128, _pcx + 260, _py1 - 72,
+            _ready ? "FORGE A LEGENDARY  [V]" : "FORGE - needs all three parts  [V]",
+            _ready ? make_color_rgb(120, 210, 130) : make_color_rgb(90, 90, 105), _dfx, _dfy, _dfp, "dorn:forge");
+        draw_set_halign(fa_center);
+        draw_set_font(ui_font(fnt_ui_small));
+        draw_set_color(make_color_rgb(150, 135, 110));
+        draw_text(_pcx, _py1 - 50, "Choose the slot, one of five powers, and name it. There will be exactly one.");
+        draw_set_halign(fa_left);
     }
-
-    // PATTERN BOOK verb row (08-11): smelt fodder in, the book to browse, the
-    // craft wizard out. Occupies the band the 6th gear row used to hold.
-    ui_confirm_button(_rx0 + 12, 772, _rx0 + 292, 824, "SMELT  [T]",
-        make_color_rgb(190, 160, 90), _dfx, _dfy, _dfp, "dorn:smelt");
-    ui_confirm_button(_rx0 + 304, 772, _rx0 + 584, 824, "PATTERN BOOK  [B]",
-        make_color_rgb(210, 140, 70), _dfx, _dfy, _dfp, "dorn:book");
-    ui_confirm_button(_rx0 + 596, 772, _rx1 - 12, 824, "CRAFT  [N]",
-        make_color_rgb(120, 210, 130), _dfx, _dfy, _dfp, "dorn:craft");
 
     draw_set_halign(fa_center);
     draw_set_font(ui_font(fnt_ui_small));
     draw_set_color(make_color_rgb(75, 85, 105));
-    ui_draw_key_legend(960, 1026, "W/S: Gear   Enter: Rework   T: Smelt   B: Book   N: Craft   G: Frame   V: Forge   U: Station   Q/E: Tab   Esc: Close");
+    var _leg = (_sub == 0) ? "W/S: Gear   A/D: Ingot   Enter: Rework   C: Fuse   Tab: Sub-tab   Q/E: Tab   Esc: Close"
+             : ((_sub == 1) ? "T: Smelt   B: Book   N: Craft   Tab: Sub-tab   Q/E: Tab   Esc: Close"
+                            : "G: Strike Frame   V: Forge   Tab: Sub-tab   Q/E: Tab   Esc: Close");
+    ui_draw_key_legend(960, 1026, _leg);
     draw_set_halign(fa_left);
 
     // Mythril Frame checkout popup + component-craft burst (drawn topmost).
@@ -14684,7 +15008,7 @@ function ui_confirm_button(_x0, _y0, _x1, _y1, _txt, _col, _mx, _my, _press, _ta
     // Width guard too: a long label in a narrow box drops to the small font.
     if (string_width(_txt) > (_x1 - _x0) - 12) draw_set_font(ui_font_dense(fnt_ui_small));
     draw_set_valign(fa_middle);
-    draw_text((_x0 + _x1) / 2, (_y0 + _y1) / 2 + 1, _txt);
+    ui_draw_text_arrows((_x0 + _x1) / 2, (_y0 + _y1) / 2 + 1, _txt);
     draw_set_valign(fa_top);
     draw_set_halign(fa_left);
     if (_hov && _press) input_inject(_tag);
@@ -14737,6 +15061,34 @@ function ui_arrow_button(_x0, _y0, _x1, _y1, _dir, _col, _mx, _my, _press, _tag)
     draw_set_color(_hov ? c_white : _col);
     if (_dir < 0) draw_triangle(_acx - _ahw, _acy + _ahw * 0.7, _acx + _ahw, _acy + _ahw * 0.7, _acx, _acy - _ahw * 0.8, false);
     else          draw_triangle(_acx - _ahw, _acy - _ahw * 0.7, _acx + _ahw, _acy - _ahw * 0.7, _acx, _acy + _ahw * 0.8, false);
+    if (_hov && _press) input_inject(_tag);
+}
+
+// ui_draw_arrow_glyph(cx, cy, len, thick, col) - a RIGHT-pointing arrow drawn
+// as a shaft + triangular head (09-03, M: "not '->' for an arrow"). Vector, so
+// it stays crisp at every size and never falls to a fallback font.
+function ui_draw_arrow_glyph(_cx, _cy, _len, _thick, _col) {
+    var _head = _thick * 2.6;
+    var _x0 = _cx - _len / 2, _x1 = _cx + _len / 2;
+    draw_set_color(_col);
+    draw_rectangle(_x0, _cy - _thick / 2, _x1 - _head, _cy + _thick / 2, false);
+    draw_triangle(_x1 - _head, _cy - _head * 0.85, _x1 - _head, _cy + _head * 0.85, _x1, _cy, false);
+}
+
+// ui_chevron_button(x0,y0,x1,y1, dir, col, mx,my,press, tag) - the horizontal
+// twin of ui_arrow_button: a boxed LEFT (dir -1) / RIGHT (+1) chevron for
+// pickers. Hover + inject idiom identical to ui_confirm_button.
+function ui_chevron_button(_x0, _y0, _x1, _y1, _dir, _col, _mx, _my, _press, _tag) {
+    var _hov = (_mx >= _x0 && _mx < _x1 && _my >= _y0 && _my < _y1);
+    draw_set_color(_hov ? make_color_rgb(40, 42, 36) : make_color_rgb(24, 26, 32));
+    draw_rectangle(_x0, _y0, _x1, _y1, false);
+    draw_set_color(_col);
+    draw_rectangle(_x0, _y0, _x1, _y1, true);
+    var _acx = (_x0 + _x1) / 2, _acy = (_y0 + _y1) / 2;
+    var _ahw = min(_x1 - _x0, _y1 - _y0) * 0.26;
+    draw_set_color(_hov ? c_white : _col);
+    if (_dir < 0) draw_triangle(_acx + _ahw * 0.7, _acy - _ahw, _acx + _ahw * 0.7, _acy + _ahw, _acx - _ahw * 0.8, _acy, false);
+    else          draw_triangle(_acx - _ahw * 0.7, _acy - _ahw, _acx - _ahw * 0.7, _acy + _ahw, _acx + _ahw * 0.8, _acy, false);
     if (_hov && _press) input_inject(_tag);
 }
 
@@ -14798,7 +15150,7 @@ function ui_draw_checkout_confirm(_title, _body, _ok_tag, _cancel_tag, _subject 
         draw_set_font(ui_font(fnt_ui_small));
         _m_cby += (_subject_sub != "") ? (string_height("Ag") + 12) : 8;
     }
-    var _y1 = clamp(max(708, _m_cby + string_height_ext(_body, _clh, _cbw) + 114), 708, 1044);
+    var _y1 = clamp(max(708, _m_cby + ui_string_height_arrows_ext(_body, _clh, _cbw) + 114), 708, 1044);
     draw_set_alpha(0.97);
     draw_set_color(make_color_rgb(22, 20, 30));
     draw_rectangle(_x0, _y0, _x1, _y1, false);
@@ -14834,7 +15186,7 @@ function ui_draw_checkout_confirm(_title, _body, _ok_tag, _cancel_tag, _subject 
         }
     }
     draw_set_color(make_color_rgb(210, 214, 228));
-    draw_text_ext((_x0 + _x1) / 2, _cby, _body, _clh, _cbw);
+    ui_draw_text_arrows_ext((_x0 + _x1) / 2, _cby, _body, _clh, _cbw);   // "->" in bodies draws as a glyph (09-10)
     draw_set_halign(fa_left);
     var _ccx = device_mouse_x_to_gui(0), _ccy = device_mouse_y_to_gui(0);
     var _ccp = mouse_check_button_pressed(mb_left);
@@ -14919,15 +15271,19 @@ function ui_draw_reforge_confirm(_gc) {
     // instead of an ingot.
     var _recast = variable_instance_exists(_gc, "reforge_is_recast") && _gc.reforge_is_recast;
     draw_set_halign(fa_center);
+    draw_set_valign(fa_top);
     draw_set_font(fnt_ui_title);
     draw_set_color(_copper);
-    draw_text(_pcx, _py0 + 20, (_stage == 1) ? (_recast ? "RECAST THIS LEGENDARY?" : "REWORK THIS GEAR?")
-        : ((_stage == 2) ? "DORN WORKS THE FORGE..." : (_recast ? "RECAST" : "REFORGED")));
-
+    var _ttl = (_stage == 1) ? (_recast ? "RECAST THIS LEGENDARY?" : "REWORK THIS GEAR?")
+        : ((_stage == 2) ? "DORN WORKS THE FORGE..." : (_recast ? "RECAST" : "REFORGED"));
+    draw_text(_pcx, _py0 + 20, _ttl);
+    // Subtitle sits BELOW the measured title height (09-03: it used to ride on
+    // the title's descenders at every font size).
+    var _ttl_h = string_height(_ttl);
     if (_stage == 1) {
         draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(make_color_rgb(200, 150, 110));
-        draw_text(_pcx, _py0 + 72, _recast
+        draw_text(_pcx, _py0 + 20 + _ttl_h + 8, _recast
             ? "It melts down entirely and returns as a DIFFERENT legendary. This cannot be undone."
             : "Its affixes are melted and re-struck. This cannot be undone.");
     }
@@ -14942,34 +15298,9 @@ function ui_draw_reforge_confirm(_gc) {
         _b_rar  = variable_struct_exists(_item, "rarity") ? clamp(_item.rarity, 0, 4) : 0;
         _b_stat = ui_item_stat_str(_item);
     }
-    // Cards trimmed 40px each on the gutter side (M 08-26: "the two boxes cover
-    // the ingot in the middle") - the center gutter grew 170 -> 250px so the
-    // ingot + its cost line never sit on the card borders at any font size.
-    var _lc0 = 190, _lc1 = 700, _cy0 = 290, _cy1 = 790;
+    var _lc0 = 190, _lc1 = 700, _cy0 = 300, _cy1 = 770;
     ui_reforge_card(_lc0, _cy0, _lc1, _cy1, (_stage >= 2) ? "BEFORE" : "YOUR GEAR",
         make_color_rgb(120, 118, 130), _b_lab, _b_rar, _b_stat);
-
-    // Center column: arrow + the ingot this rework costs (spent tier once rolled).
-    draw_set_font(ui_font(fnt_ui));
-    draw_set_color(make_color_rgb(200, 190, 170));
-    draw_text(_pcx, 500, "->");
-    if (_recast) {
-        draw_set_font(ui_font(fnt_ui));
-        draw_set_color(make_color_rgb(230, 210, 150));
-        draw_text(_pcx, 560, string(legendary_recast_cost()) + "g");
-        draw_set_font(ui_font(fnt_ui_small));
-        draw_set_color(make_color_rgb(160, 145, 120));
-        draw_text(_pcx, 604, (_stage >= 2) ? "paid to the forge" : "the forge's price");
-    } else {
-        var _cost_tier = (_stage >= 2) ? _gc.reforge_spent_tier : reforge_ingot_tier_for(_b_rar);
-        if (_cost_tier >= 0) {
-            draw_sprite_stretched(reforge_ingot_sprite(_cost_tier), 0, _pcx - 36, 534, 72, 72);
-            draw_set_font(ui_font(fnt_ui_small));
-            draw_set_color(item_rarity_color(_cost_tier));
-            // Wrapped inside the widened 250px gutter between the cards.
-            draw_text_ext(_pcx, 618, ((_stage >= 2) ? "spent 1 " : "costs 1 ") + item_rarity_name(_cost_tier) + " ingot", 26, 230);
-        }
-    }
 
     // AFTER card (right): "?" until the reveal, then the reworked item in green.
     var _rc0 = 950, _rc1 = 1460;
@@ -14987,6 +15318,7 @@ function ui_draw_reforge_confirm(_gc) {
         }
     } else {
         ui_reforge_card(_rc0, _cy0, _rc1, _cy1, "AFTER", merge_color(_copper, c_black, 0.35), "", 0, "");
+        draw_set_halign(fa_center);
         draw_set_font(fnt_ui_title);
         draw_set_color(merge_color(_copper, c_black, (_stage == 2) ? 0.1 : 0.45));
         draw_text(_rcx, _rcy - 60, "?");
@@ -15014,20 +15346,54 @@ function ui_draw_reforge_confirm(_gc) {
         }
     }
 
-    // Buttons (inside the panel, under the cards) - tap targets per the touch rule.
+    // CENTER COLUMN - drawn AFTER both cards so nothing covers it (09-03: the
+    // AFTER card's fill used to paint over the cost line). A drawn arrow, the
+    // ingot this rework spends, and at stage 1 a PICKER: chevrons cycle every
+    // held tier that can work the piece (M: "we can't even select which ingots").
     var _mx = device_mouse_x_to_gui(0), _my = device_mouse_y_to_gui(0);
     var _press = mouse_check_button_pressed(mb_left);
+    draw_set_halign(fa_center);
+    ui_draw_arrow_glyph(_pcx, _cy0 + 110, 120, 10, make_color_rgb(200, 190, 170));
+    if (_recast) {
+        draw_set_font(ui_font(fnt_ui));
+        draw_set_color(make_color_rgb(230, 210, 150));
+        draw_text(_pcx, _cy0 + 190, string(legendary_recast_cost()) + "g");
+        draw_set_font(ui_font(fnt_ui_small));
+        draw_set_color(make_color_rgb(160, 145, 120));
+        draw_text(_pcx, _cy0 + 236, (_stage >= 2) ? "paid to the forge" : "the forge's price");
+    } else {
+        var _cost_tier = (_stage >= 2) ? _gc.reforge_spent_tier
+            : (variable_instance_exists(_gc, "reforge_pick_tier") ? reforge_pick_default(_b_rar, _gc.reforge_pick_tier) : reforge_ingot_tier_for(_b_rar));
+        if (_cost_tier >= 0) {
+            var _ing_y = _cy0 + 170;
+            draw_sprite_stretched(reforge_ingot_sprite(_cost_tier), 0, _pcx - 48, _ing_y, 96, 96);
+            draw_set_font(ui_font(fnt_ui_small));
+            draw_set_color(item_rarity_color(_cost_tier));
+            draw_text_ext(_pcx, _ing_y + 108, ((_stage >= 2) ? "spent 1 " : "spends 1 ") + item_rarity_name(_cost_tier) + " ingot", 26, 230);
+            if (_stage == 1) {
+                var _elig = reforge_eligible_tiers(_b_rar);
+                if (array_length(_elig) > 1) {
+                    ui_chevron_button(_pcx - 116, _ing_y + 28, _pcx - 72, _ing_y + 68, -1, make_color_rgb(200, 170, 110), _mx, _my, _press, "reforge:prev");
+                    ui_chevron_button(_pcx + 72,  _ing_y + 28, _pcx + 116, _ing_y + 68,  1, make_color_rgb(200, 170, 110), _mx, _my, _press, "reforge:next");
+                    draw_set_color(make_color_rgb(130, 120, 110));
+                    draw_text_ext(_pcx, _ing_y + 170, "A/D: choose the ingot  (" + string(array_length(_elig)) + " tiers held)", 24, 230);
+                }
+            }
+        }
+    }
+
+    // Buttons (inside the panel, under the cards) - tap targets per the touch rule.
     if (_stage == 1) {
-        ui_confirm_button(390, 816, 760, 882, "COMMIT  [Enter]", make_color_rgb(120, 210, 130), _mx, _my, _press, "reforge:commit");
-        ui_confirm_button(890, 816, 1260, 882, "BACK  [Esc]",    make_color_rgb(190, 120, 110), _mx, _my, _press, "reforge:back");
+        ui_confirm_button(390, 800, 760, 862, "COMMIT  [Enter]", make_color_rgb(120, 210, 130), _mx, _my, _press, "reforge:commit");
+        ui_confirm_button(890, 800, 1260, 862, "BACK  [Esc]",    make_color_rgb(190, 120, 110), _mx, _my, _press, "reforge:back");
     } else if (_stage == 3) {
-        ui_confirm_button(640, 816, 1010, 882, "DONE  [Enter]",  make_color_rgb(120, 210, 130), _mx, _my, _press, "reforge:done");
+        ui_confirm_button(640, 800, 1010, 862, "DONE  [Enter]",  make_color_rgb(120, 210, 130), _mx, _my, _press, "reforge:done");
     }
 
     draw_set_halign(fa_center);
     draw_set_font(ui_font(fnt_ui_small));
     draw_set_color(make_color_rgb(75, 85, 105));
-    ui_draw_key_legend(960, 1026, (_stage == 1) ? "Enter: Commit    Esc: Back"
+    ui_draw_key_legend(960, 1026, (_stage == 1) ? "Enter: Commit    A/D: Ingot    Esc: Back"
         : ((_stage == 2) ? "Enter: Skip" : "Enter: Done"));
     draw_set_halign(fa_left);
     ui_draw_checkout_vfx();   // Gigapack reveal burst (fired at stage 3 entry)
@@ -15589,11 +15955,11 @@ function ui_draw_stash_screen() {
     if (_hoard_ing > 0 || _hoard_ban > 0) {
         draw_set_font(ui_font(fnt_ui_small));
         draw_set_valign(fa_middle);
-        var _hy = 1052, _hsz = 26, _hlbl = "HOARD:  ";
+        var _hy = 164, _hsz = 26, _hlbl = "HOARD:  ";   // 09-09 (M): top-right beside the tabs - the bottom row was off-screen
         var _hw = string_width(_hlbl);
         for (var _ht = 0; _ht < 5; _ht++) if (global.reforge_ingots[_ht] > 0) _hw += _hsz + 4 + string_width("x" + string(global.reforge_ingots[_ht])) + 18;
         if (_hoard_ban > 0) _hw += _hsz + 4 + string_width("x" + string(_hoard_ban)) + 18;
-        var _hx = 960 - _hw / 2;
+        var _hx = 1866 - _hw;
         draw_set_halign(fa_left);
         draw_set_color(make_color_rgb(200, 185, 140));
         draw_text(_hx, _hy, _hlbl); _hx += string_width(_hlbl);
@@ -17190,7 +17556,7 @@ function ui_draw_maren_screen() {
                 draw_set_halign(fa_right);
                 draw_set_font(ui_font(fnt_ui_small));
                 draw_set_color(make_color_rgb(150, 200, 255));
-                draw_text(_list_x2 - 24, _tyc - 11,
+                ui_draw_text_arrows(_list_x2 - 24, _tyc - 11,
                     "x3  ->  " + _grp.name + " " + rune_tier_roman(_grp.tier + 1)
                     + "   (have " + string(_grp.count) + ")");
                 draw_set_color(_caff ? make_color_rgb(200, 180, 130) : make_color_rgb(165, 110, 110));
@@ -17218,7 +17584,7 @@ function ui_draw_maren_screen() {
                 var _yield = (_sr.tier > 1)
                     ? (_sr.name + " " + rune_tier_roman(_sr.tier - 1) + "  +  " + string(_db) + " Dust")
                     : (string(_db) + " Dust");
-                draw_text(_list_x2 - 24, _tys + 23, "->  " + _yield);
+                ui_draw_text_arrows(_list_x2 - 24, _tys + 23, "->  " + _yield);
                 draw_set_halign(fa_left);
             }
             ui_maren_scroll_hint(_scroll, _vis, _split_n);
@@ -17241,7 +17607,7 @@ function ui_draw_maren_screen() {
                 draw_set_halign(fa_right);
                 draw_set_font(ui_font(fnt_ui_small));
                 draw_set_color(make_color_rgb(212, 150, 245));
-                draw_text(_list_x2 - 24, _tym + 23, "->  Runeheart Core   (40 Dust)");
+                ui_draw_text_arrows(_list_x2 - 24, _tym + 23, "->  Runeheart Core   (40 Dust)");
                 draw_set_halign(fa_left);
             }
             ui_maren_scroll_hint(_scroll, _vis, _mc_n);
@@ -17776,7 +18142,7 @@ function ui_draw_sable_screen() {
                         draw_text(_list_x2 - 24, _tyt, "PICKED");
                     } else {
                         draw_set_color(make_color_rgb(130, 150, 138));
-                        draw_text(_list_x2 - 24, _tyt, "->  random " + rune_tier_roman(_tr.tier + 1)
+                        ui_draw_text_arrows(_list_x2 - 24, _tyt, "->  random " + rune_tier_roman(_tr.tier + 1)
                             + "   (" + string(sable_transmute_cost(_tr.tier)) + "g)");
                     }
                     draw_set_halign(fa_left);
@@ -17972,7 +18338,7 @@ function ui_draw_sable_screen() {
             }
             draw_set_font(ui_font(fnt_ui));
             draw_set_color(make_color_rgb(150, 200, 160));
-            draw_text(_fus_x + 96, _fus_y + 4, "->");
+            ui_draw_text_arrows(_fus_x + 96, _fus_y + 4, "->");
             if (_utmpl != undefined) {
                 ui_draw_consumable_icon(_fus_x + 126, _fus_y - 5, 44, _utmpl);
             }
@@ -18011,7 +18377,7 @@ function ui_draw_sable_screen() {
             if (_pn_h != undefined) ui_draw_consumable_icon(_pn_x + 34, _pn_y, 34, _pn_h);
             draw_set_font(ui_font(fnt_ui));
             draw_set_color(make_color_rgb(150, 200, 160));
-            draw_text(_pn_x + 96, _pn_y + 4, "->");
+            ui_draw_text_arrows(_pn_x + 96, _pn_y + 4, "->");
             if (_pn_tmpl != undefined) ui_draw_consumable_icon(_pn_x + 126, _pn_y - 5, 44, _pn_tmpl);
             draw_set_halign(fa_right);
             draw_set_font(ui_font(fnt_ui_small));
@@ -18141,7 +18507,33 @@ function ui_draw_sable_screen() {
         // ---- Detail panel: the selected craft, explained with room to breathe.
         // Rows end at 285+2*72+66=495; notification owns y999 (UI_BANDS). ----
         var _dp_c   = _rb_cards[clamp(_cursor, 0, 2)];
-        var _dpx1 = 300, _dpx2 = 1500, _dpy1 = 531, _dpy2 = 963;
+        // Panel top FOLLOWS the measured row pitch (M 08-27 shot "cursed rebirth
+        // box is cut off": the rows grew to the 2-line vendor pitch on 08-16
+        // but this sat at a fixed y531 and painted over the third row). The
+        // bottom stays at 963 (notification band at 999); the content is
+        // measured against the room left and steps down - roomy -> tight ->
+        // tight with the small body font - until it fits.
+        var _rb_p = ui_vendor_row_pitch();
+        var _dpx1 = 300, _dpx2 = 1500, _dpy1 = 285 + 3 * _rb_p + 6, _dpy2 = 963;
+        var _dp_bw = _dpx2 - _dpx1 - 60;
+        var _dp_room = (_dpy2 - _dpy1) - 16;
+        var _dp_lvl = 0;
+        var _m_top, _m_lp, _m_gap, _m_hdr, _m_cp, _m_tail, _m_h = 0;
+        for (_dp_lvl = 0; _dp_lvl < 3; _dp_lvl++) {
+            var _tight = (_dp_lvl > 0);
+            _m_top  = _tight ? 60 : 75;
+            _m_lp   = _tight ? 32 : 39;
+            _m_gap  = _tight ? 16 : 30;
+            _m_hdr  = _tight ? 30 : 36;
+            _m_cp   = _tight ? 29 : 33;
+            _m_tail = _tight ? 8  : 15;
+            draw_set_font((_dp_lvl == 2) ? ui_font(fnt_ui_small) : ui_font(fnt_ui));
+            var _m_bh = string_height_ext(_dp_c.body, _m_lp, _dp_bw);
+            draw_set_font(ui_font(fnt_ui_small));
+            var _m_fh = string_height("Ag");
+            _m_h = _m_top + _m_bh + _m_gap + _m_hdr + array_length(_dp_c.costs) * _m_cp + _m_tail + _m_fh;
+            if (_m_h <= _dp_room) break;
+        }
         draw_set_color(make_color_rgb(16, 14, 24));
         draw_rectangle(_dpx1, _dpy1, _dpx2, _dpy2, false);
         draw_set_color(make_color_rgb(150, 110, 220));
@@ -18150,18 +18542,20 @@ function ui_draw_sable_screen() {
         draw_set_color(_dp_c.tcol);
         draw_text(_dpx1 + 30, _dpy1 + 24, _dp_c.title);
         draw_set_color(make_color_rgb(205, 210, 220));
-        var _dp_ty = _dpy1 + 75;
-        draw_text_ext(_dpx1 + 30, _dp_ty, _dp_c.body, 39, _dpx2 - _dpx1 - 60);
-        _dp_ty += string_height_ext(_dp_c.body, 39, _dpx2 - _dpx1 - 60) + 30;
+        var _dp_ty = _dpy1 + _m_top;
+        draw_set_font((_dp_lvl >= 2) ? ui_font(fnt_ui_small) : ui_font(fnt_ui));
+        draw_text_ext(_dpx1 + 30, _dp_ty, _dp_c.body, _m_lp, _dp_bw);
+        _dp_ty += string_height_ext(_dp_c.body, _m_lp, _dp_bw) + _m_gap;
+        draw_set_font(ui_font(fnt_ui));
         draw_set_color(make_color_rgb(200, 180, 130));
         draw_text(_dpx1 + 30, _dp_ty, "COST");
-        _dp_ty += 36;
+        _dp_ty += _m_hdr;
         draw_set_color(make_color_rgb(185, 190, 200));
         for (var _dci = 0; _dci < array_length(_dp_c.costs); _dci++) {
             draw_text(_dpx1 + 54, _dp_ty, _dp_c.costs[_dci]);
-            _dp_ty += 33;
+            _dp_ty += _m_cp;
         }
-        _dp_ty += 15;
+        _dp_ty += _m_tail;
         draw_set_font(ui_font(fnt_ui_small));
         draw_set_color((_dp_c.n > 0) ? make_color_rgb(150, 200, 160) : make_color_rgb(170, 120, 120));
         draw_text(_dpx1 + 30, _dp_ty, (_dp_c.n > 0)
@@ -19527,7 +19921,7 @@ function ui_draw_forge_result() {
             draw_text(_cav, _cry, ui_truncate(_cr.a, 200));
             draw_set_halign(fa_center);
             draw_set_color(make_color_rgb(88, 94, 116));
-            draw_text(_cx, _cry, "->");
+            ui_draw_text_arrows(_cx, _cry, "->");
             draw_set_halign(fa_left);
             // Green = this craft improved it, red = it cost you something, plain
             // white = changed sideways or not at all. An all-white table is a
@@ -19845,7 +20239,7 @@ function npc_tour_steps(_npc) {
             // Tab bar: 4 tabs, y96..138, x284 + t*344, 320 wide.
             { r: [278, 90, 1622, 144],  cx: 680, cy: 320,
               t: "Dorn's four counters",
-              b: "Everything at the forge lives behind these tabs: BUY from his stock, SELL what you've outgrown, REFORGE to reroll and craft, TEMPER to finish rough steel. Q/E or a click switches counters - and resting the mouse on a tab reminds you what lives there." },
+              b: "Everything at the forge lives behind these tabs: BUY from his stock, SELL what you've outgrown, FORGE to rework, craft and build legendaries, TEMPER to finish rough steel. Q/E or a click switches counters - and resting the mouse on a tab reminds you what lives there." },
             // Buy rows region (x150..1500, y189+, 117px rows; 3 rows high so the
             // card always fits beneath it).
             { r: [144, 183, 1506, 562], cx: 960, cy: 600,
@@ -19853,7 +20247,7 @@ function npc_tour_steps(_npc) {
               b: "Dorn restocks between runs, and his shelf improves as your Awakening climbs. Names are tinted by rarity - and a price you can't pay yet is a reason to descend, not to despair." },
             { r: [946, 90, 1278, 144],  cx: 500, cy: 320,
               t: "Reforge, smelt, craft",
-              b: "Three crafts share this counter. REWORK rerolls an unequipped item's affixes with a Reforge Ingot. SMELT destroys a piece for an ingot - Dorn STUDIES one of its affixes into his PATTERN BOOK and keeps its ICON for the art page. CRAFT then builds an item to YOUR design from everything he has studied - wearing any smelted icon that fits its slot." },
+              b: "Three crafts share this counter, each on its own sub-tab: REWORK, CRAFT and LEGENDARY. REWORK rerolls an unequipped item's affixes with a Reforge Ingot. SMELT destroys a piece for an ingot - Dorn STUDIES one of its affixes into his PATTERN BOOK and keeps its ICON for the art page. CRAFT then builds an item to YOUR design from everything he has studied - wearing any smelted icon that fits its slot." },
             { r: [1290, 90, 1622, 144], cx: 500, cy: 320,
               t: "Finish rough steel",
               b: "Loot drops UNFINISHED - the QUALITY tag says how much of its true power it delivers. Each temper step buys +10% quality for gold and rune dust, plus a little bonus max HP. A raw legendary barely beats a finished epic - temper what you love." },
@@ -20952,7 +21346,7 @@ function ui_draw_pattern_craft(_gc) {
                 draw_set_halign(fa_right);
                 var _hdone = (_hr.value >= _hr.cap);
                 draw_set_color(_hdone ? make_color_rgb(120, 210, 130) : make_color_rgb(230, 195, 120));
-                draw_text(1330, _hry + 12, _hdone ? ("+" + string(_hr.value) + "  (finished)")
+                ui_draw_text_arrows(1330, _hry + 12, _hdone ? ("+" + string(_hr.value) + "  (finished)")
                                                   : ("+" + string(_hr.value) + "  ->  cap +" + string(_hr.cap)));
                 draw_set_halign(fa_left);
             }
@@ -21208,10 +21602,9 @@ function ui_draw_pattern_craft(_gc) {
 function ui_draw_pb_smelt(_gc) {
     var _it = _gc.pb_smelt_item;
     if (_it == undefined) return;
-    // FULL catalog (08-27, M: "smelt any affix"): the fodder's own families
-    // lead (rarity-weighted study), every other family follows at weight 1.
-    // WINDOWED - ~21 rows can never fit the modal; MUST match the Step
-    // handler's list builder and nav count.
+    // The piece's OWN families, all of them (09-02 revert - see
+    // pattern_smelt_family_list). WINDOWED in case a gifted, cursed legendary
+    // carries more rows than fit; MUST match the Step handler's list builder.
     var _fams = pattern_smelt_family_list(_it);
     var _rows = array_length(_fams) + 1;
     var _vis  = min(_rows, 6);
@@ -21239,7 +21632,7 @@ function ui_draw_pb_smelt(_gc) {
     draw_set_color(make_color_rgb(210, 214, 228));
     draw_text_ext((_x0 + _x1) / 2, _y0 + 62,
         "It is DESTROYED for " + string(pattern_smelt_fee()) + "g: +1 " + item_rarity_name(clamp(_it.rarity, 0, 4))
-        + " Reforge Ingot, its icon art joins the book, and Dorn studies ONE family - its own affixes teach fastest, any other counts 1:",
+        + " Reforge Ingot, its icon art joins the book, and Dorn studies ONE of its lines - pick which:",
         max(26, string_height("Ag") + 2), (_x1 - _x0) - 80);
     draw_set_halign(fa_left);
 
@@ -21309,4 +21702,122 @@ function ui_draw_pb_smelt(_gc) {
         make_color_rgb(120, 210, 130), _mx, _my, _mp, "pbsm:ok");
     ui_confirm_button((_x0 + _x1) / 2 + 20, _y1 - 90, _x1 - 50, _y1 - 24, "CANCEL  [Esc]",
         make_color_rgb(190, 120, 110), _mx, _my, _mp, "pbsm:cancel");
+}
+
+// =============================================================================
+// ui_draw_text_arrows(x, y, str) - draw_text that renders a typed "->" / "<-"
+// as a DRAWN arrow glyph (09-09, M: "there are '->' in various npc screens and
+// menu systems" - replace the keyboard symbols with proper visuals). Honors
+// the current font, halign, valign, color and alpha, so it is a drop-in for
+// draw_text at any single-line site. Strings without an arrow draw as before.
+// =============================================================================
+function ui_draw_text_arrows(_x, _y, _s) {
+    _s = string(_s);
+    if (string_pos("->", _s) == 0 && string_pos("<-", _s) == 0) { draw_text(_x, _y, _s); return; }
+    var _parts = [], _kinds = [], _cur = "";
+    var _n = string_length(_s), _i = 1;
+    while (_i <= _n) {
+        var _two = string_copy(_s, _i, 2);
+        if (_two == "->" || _two == "<-") {
+            array_push(_parts, _cur); array_push(_kinds, 0);
+            array_push(_parts, "");   array_push(_kinds, (_two == "->") ? 1 : -1);
+            _cur = ""; _i += 2;
+        } else { _cur += string_char_at(_s, _i); _i++; }
+    }
+    array_push(_parts, _cur); array_push(_kinds, 0);
+    var _fh = string_height("A");
+    var _aw = round(_fh * 0.95);                       // the glyph's slot width
+    var _tot = 0;
+    for (var _k = 0; _k < array_length(_parts); _k++) _tot += (_kinds[_k] == 0) ? string_width(_parts[_k]) : _aw;
+    var _ha = draw_get_halign(), _va = draw_get_valign();
+    var _x0 = _x;
+    if (_ha == fa_center) _x0 = _x - _tot * 0.5; else if (_ha == fa_right) _x0 = _x - _tot;
+    var _cy = _y;
+    if (_va == fa_top) _cy = _y + _fh * 0.5; else if (_va == fa_bottom) _cy = _y - _fh * 0.5;
+    var _col = draw_get_color();
+    var _len = _aw * 0.78, _thick = max(2, round(_fh * 0.11));
+    draw_set_halign(fa_left);
+    for (var _k = 0; _k < array_length(_parts); _k++) {
+        if (_kinds[_k] == 0) {
+            if (_parts[_k] != "") draw_text(_x0, _y, _parts[_k]);
+            _x0 += string_width(_parts[_k]);
+        } else {
+            var _acx = _x0 + _aw * 0.5;
+            if (_kinds[_k] > 0) {
+                ui_draw_arrow_glyph(_acx, _cy, _len, _thick, _col);
+            } else {   // left arrow: the glyph mirrored
+                var _head = _thick * 2.6;
+                var _l0 = _acx - _len * 0.5, _l1 = _acx + _len * 0.5;
+                draw_set_color(_col);
+                draw_rectangle(_l0 + _head, _cy - _thick * 0.5, _l1, _cy + _thick * 0.5, false);
+                draw_triangle(_l0 + _head, _cy - _head * 0.85, _l0 + _head, _cy + _head * 0.85, _l0, _cy, false);
+            }
+            _x0 += _aw;
+        }
+    }
+    draw_set_halign(_ha);
+    draw_set_color(_col);
+}
+
+// ---------------------------------------------------------------------------
+// MULTI-LINE twin of ui_draw_text_arrows (09-10 - the two modal bodies that
+// still showed a text "->": checkout confirm + Petra's blueprint order).
+// ui_text_arrows_wrap(str, w) word-wraps like draw_text_ext ("\n" honored,
+// breaks on spaces, an over-long word stands alone) but measures each
+// "->" / "<-" at the glyph slot width ui_draw_text_arrows uses.
+// ui_draw_text_arrows_ext(x, y, str, sep, w) is the draw_text_ext drop-in;
+// ui_string_height_arrows_ext(str, sep, w) the string_height_ext one.
+// sep < 0 = the font's line height, as in draw_text_ext.
+// ---------------------------------------------------------------------------
+function ui_text_arrows_width(_s) {
+    var _fh = string_height("A");
+    var _aw = round(_fh * 0.95);
+    var _n_ar = 0, _plain = "";
+    var _len = string_length(_s), _i = 1;
+    while (_i <= _len) {
+        var _two = string_copy(_s, _i, 2);
+        if (_two == "->" || _two == "<-") { _n_ar++; _i += 2; }
+        else { _plain += string_char_at(_s, _i); _i++; }
+    }
+    return string_width(_plain) + _n_ar * _aw;
+}
+
+function ui_text_arrows_wrap(_s, _w) {
+    _s = string(_s);
+    var _out = [];
+    var _paras = string_split(_s, "\n");
+    for (var _p = 0; _p < array_length(_paras); _p++) {
+        var _words = string_split(_paras[_p], " ");
+        var _line = "";
+        for (var _k = 0; _k < array_length(_words); _k++) {
+            var _wd = _words[_k];
+            var _try = (_line == "") ? _wd : (_line + " " + _wd);
+            if (_line != "" && _w > 0 && ui_text_arrows_width(_try) > _w) {
+                array_push(_out, _line);
+                _line = _wd;
+            } else {
+                _line = _try;
+            }
+        }
+        array_push(_out, _line);
+    }
+    return _out;
+}
+
+function ui_string_height_arrows_ext(_s, _sep, _w) {
+    if (_sep < 0) _sep = string_height("A");
+    return array_length(ui_text_arrows_wrap(_s, _w)) * _sep;
+}
+
+function ui_draw_text_arrows_ext(_x, _y, _s, _sep, _w) {
+    if (_sep < 0) _sep = string_height("A");
+    var _lines = ui_text_arrows_wrap(_s, _w);
+    var _n = array_length(_lines);
+    // Honor the caller's valign for the BLOCK, then draw each line top-aligned.
+    var _va = draw_get_valign();
+    var _y0 = _y;
+    if (_va == fa_middle) _y0 = _y - (_n * _sep) * 0.5; else if (_va == fa_bottom) _y0 = _y - _n * _sep;
+    draw_set_valign(fa_top);
+    for (var _k = 0; _k < _n; _k++) ui_draw_text_arrows(_x, _y0 + _k * _sep, _lines[_k]);
+    draw_set_valign(_va);
 }

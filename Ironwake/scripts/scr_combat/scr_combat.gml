@@ -167,10 +167,15 @@ function combat_next_turn(combat_state) {
         // stays with real blows, and the pressure still shortens every stall.
         // tide_slack (Bell-Ringer's Toll event): a paid sexton rings the hours
         // late - the tide holds to every 4th round this floor.
+        // THE TIDE (§1, 09-09): every combat ROUND is a tick of the wheel (the
+        // flip itself is consumed by obj_combat_controller Step - surge/drain).
+        // At LOW tide the water sleeps: no Rising Water. At HIGH tide each
+        // crest also opens the BREATH RING on the player's next turn.
+        var _rw_flip = tide_tick(1, "round");
         var _rw_step = floor_mod_get("tide_slack") ? 4 : 3;
-        if (variable_global_exists("selected_dungeon") && global.selected_dungeon == "drowned_reach"
-            && !(variable_global_exists("descent_active") && global.descent_active)
+        if (tide_active() && tide_is_high() && _rw_flip == ""
             && (combat_state.round mod _rw_step) == 0) {
+            global.tide_breath_due = true;
             for (var _rw_i = 0; _rw_i < array_length(combat_state.combatants); _rw_i++) {
                 var _rw_c = combat_state.combatants[_rw_i];
                 // is_player check first - the player struct may not carry is_defeated.
@@ -208,6 +213,15 @@ function combat_next_turn(combat_state) {
         actor.galvanize_ap = 0;
     }
 
+    // THE TIDE (§1): a poor / missed breath, or the surge, docks 1 AP from the
+    // player's next turn - never below 1 AP (same idiom as the Tundra chill).
+    if (actor.is_player && variable_struct_exists(actor, "tide_ap_penalty") && actor.tide_ap_penalty > 0) {
+        actor.energy = max(1, actor.energy - actor.tide_ap_penalty);
+        actor.tide_ap_penalty = 0;
+        if (instance_exists(obj_combat_controller)) {
+            array_push(instance_find(obj_combat_controller, 0).combat_log, "The tide has your breath - 1 AP short this turn.");
+        }
+    }
     // Tundra Tomb floor passive: the pending chill docks AP from the player's FIRST
     // turn of this combat (set in obj_combat_controller Create; never below 1 AP).
     if (actor.is_player && variable_struct_exists(actor, "chill_ap_penalty") && actor.chill_ap_penalty > 0) {
@@ -3023,6 +3037,31 @@ function combat_enemy_anchor(_c, _slot) {
     return { x: 1620 + _slot * (-120), y: 233 + _slot * 105 };
 }
 
+// THE SEAHORSE KNIGHT (M 09-03): the untargetable ally's strike - one shock
+// blow on a random living enemy at the end of the player's turn. Mirrors the
+// pet Warrior path (resolve vs armor / el_resist; Marked and Overwhelm ride in
+// combat_apply_damage). Returns true when it struck (pads the enemy delay).
+function combat_knight_act(combat_state, player, combat_log, damage_popups, dmg) {
+    var _pool = [], _slots = [], _live = 0;
+    for (var _i = 0; _i < array_length(combat_state.combatants); _i++) {
+        var _c = combat_state.combatants[_i];
+        if (_c.is_player || _c.is_defeated) continue;
+        array_push(_pool, _c); array_push(_slots, _live); _live++;
+    }
+    if (array_length(_pool) == 0) return false;
+    var _pick = irandom(array_length(_pool) - 1);
+    var _t = _pool[_pick];
+    var _d = combat_resolve_damage(max(1, dmg), 0, _t.armor, _t.el_resist);
+    if (_d < 1) _d = 1;
+    combat_apply_damage(_t, _d);
+    var _ka = combat_enemy_anchor(_t, _slots[_pick]);
+    array_push(damage_popups, { value: _d, x: _ka.x, y: _ka.y - 105, timer: 50, col: make_color_rgb(110, 200, 240) });
+    array_push(combat_log, "[Ally] The Seahorse Knight's lance takes " + _t.name + " for " + string(_d) + " shock!");
+    if (_t.HP <= 0) combat_on_enemy_defeated(_t, player, combat_log);
+    global.knight_lunge_t0 = current_time;   // procedural lunge (combat draw)
+    return true;
+}
+
 function combat_pet_act(combat_state, player, combat_log, damage_popups) {
     // Ashen Duelist (M-locked): the duel is STRICTLY 1v1 - the companion sits out.
     if (variable_global_exists("duel_active") && global.duel_active) return false;
@@ -3409,4 +3448,53 @@ function combat_pet_vigil_check(player, combat_log, damage_popups) {
     array_push(combat_log, "[Companion] " + _p.name + " keeps its Vigil - a ward flares around you (+" + string(_sh) + " shield).");
     array_push(damage_popups, { value: _sh, x: 475, y: 600, timer: 50, col: make_color_rgb(140, 190, 255) });
     return true;
+}
+
+
+// =============================================================================
+// THE TIDE - combat side (DESIGN_BIOME_ACTIVE_0902.md §1, 09-09). LOW water
+// makes the drowned falter: -15% damage / telegraph / spell scale / HP. The
+// stamp is applied at spawn (obj_combat_controller Create) and toggled LIVE
+// by a mid-fight flip (Step) - the base values ride each enemy so HIGH water
+// restores them exactly. Summons that arrive later are native and untouched.
+// =============================================================================
+function tide_enemy_low(c) {
+    if (!is_struct(c) || (variable_struct_exists(c, "is_player") && c.is_player)) return;
+    if (variable_struct_exists(c, "tide_low") && c.tide_low) return;
+    if (!variable_struct_exists(c, "damage") || !variable_struct_exists(c, "max_HP")) return;
+    // A downed enemy is hidden (is_defeated) but victory reads HP <= 0 - raising
+    // it to 1 here REVIVED an invisible foe and the fight could never end (M 09-09).
+    if ((variable_struct_exists(c, "is_defeated") && c.is_defeated) || c.HP <= 0) return;
+    c.tide_low  = true;
+    c.tide_base = {
+        damage:           c.damage,
+        telegraph_damage: variable_struct_exists(c, "telegraph_damage")  ? c.telegraph_damage  : -1,
+        spell_scale:      variable_struct_exists(c, "spell_scale")       ? c.spell_scale       : -1,
+        choir:            variable_struct_exists(c, "choir_base_damage") ? c.choir_base_damage : -1,
+        max_HP:           c.max_HP
+    };
+    c.damage = round(c.damage * 0.85);
+    if (c.tide_base.telegraph_damage >= 0) c.telegraph_damage  = round(c.telegraph_damage * 0.85);
+    if (c.tide_base.spell_scale      >= 0) c.spell_scale      *= 0.85;
+    if (c.tide_base.choir            >= 0) c.choir_base_damage = round(c.choir_base_damage * 0.85);
+    c.max_HP = max(1, round(c.max_HP * 0.85));
+    c.HP     = clamp(round(c.HP * 0.85), 1, c.max_HP);
+}
+function tide_enemy_high(c) {
+    if (!is_struct(c) || !variable_struct_exists(c, "tide_low") || !c.tide_low) return;
+    var _b = c.tide_base;
+    c.damage = _b.damage;
+    if (_b.telegraph_damage >= 0) c.telegraph_damage  = _b.telegraph_damage;
+    if (_b.spell_scale      >= 0) c.spell_scale       = _b.spell_scale;
+    if (_b.choir            >= 0) c.choir_base_damage = _b.choir;
+    c.max_HP   = _b.max_HP;          // HP stays where the fight left it - the water lifts, it does not heal
+    c.tide_low = false;
+}
+function tide_combat_low(cs) {
+    if (!is_struct(cs)) return;
+    for (var _i = 0; _i < array_length(cs.combatants); _i++) tide_enemy_low(cs.combatants[_i]);
+}
+function tide_combat_high(cs) {
+    if (!is_struct(cs)) return;
+    for (var _i = 0; _i < array_length(cs.combatants); _i++) tide_enemy_high(cs.combatants[_i]);
 }

@@ -548,9 +548,9 @@ if (hub_use_carousel) {
         }
         if (_cv_rdy) {
             draw_set_color(c_aqua);
-            var _cv_bt = "Bond ready - visit to deepen";
-            if (input_device() == 0)      _cv_bt = "[B] Deepen bond - ready";
-            else if (input_device() == 1) _cv_bt = "[R3] Deepen bond - ready";
+            var _cv_bt = "They want a word - tap to hear it";
+            if (input_device() == 0)      _cv_bt = "[B] They want a word with you";
+            else if (input_device() == 1) _cv_bt = "[R3] They want a word with you";
             draw_text(_cv_cx, _cv_line_y, _cv_bt);
         } else {
             draw_set_color(make_color_rgb(210, 190, 130));
@@ -813,7 +813,7 @@ if (selected_npc < array_length(_aff_ids)) {
     draw_text(_ddx, _ddy + 100, "Bond: " + affinity_tier_name(_aff_id));
     if (_aff_rdy) {
         draw_set_color(c_aqua);
-        draw_text(_ddx + 200, _ddy + 100, (input_device() == 1) ? "[R3] Deepen bond" : "[B] Deepen bond");
+        draw_text(_ddx + 200, _ddy + 100, (input_device() == 1) ? "[R3] They want a word" : "[B] They want a word");
     } else if (_aff_tier < 4) {
         // thin progress bar toward the next gate
         var _bx = _ddx, _by = _ddy + 124, _bw = 320, _bh = 8;
@@ -1107,7 +1107,7 @@ if (_gc_ds != noone && _gc_ds.dungeon_select_open) {
     var _dung_art  = [spr_dungeon_ashen_vault, spr_dungeon_scorched_depths, spr_dungeon_tundra_tomb,
                       spr_dungeon_drowned_reach, spr_dungeon_hollow_canopy];
     var _dung_desc  = [
-        "Ancient catacombs filled with undead soldiers and stone constructs. The original vault of the Ironwake.",
+        "Ancient catacombs filled with undead soldiers and stone constructs. Where the souls of those who do not find rest after their ironwake.",
         "Volcanic caverns beneath the earth. Fire-wreathed enemies, intense heat, and burning dungeon passives.",
         "Frozen tombs of a lost civilization. Ice-bound horrors and cold air that slows your reflexes.",
         "A flooded undercity, knee-deep and rising. Nothing down here has been dry in a very long time.",
@@ -1470,9 +1470,31 @@ if (_gc_ds != noone && _gc_ds.dungeon_select_open) {
     draw_rectangle(_fx_x1, _fx_y1, _fx_x2, _fx_y1 + 6, false);
     draw_rectangle(_fx_x1, _fx_y1, _fx_x2, _fx_y2, true);
 
+    // 09-02 (M shot: an A5-effective panel ran off the bottom and right): the
+    // content is drawn to a surface clipped to the panel and SCROLLS (wheel /
+    // drag, visible bar) whenever it is taller than the panel; long lines wrap.
+    var _fx_sw = (_fx_x2 - _fx_x1) - 2, _fx_sh = (_fx_y2 - _fx_y1) - 8;
+    if (!variable_instance_exists(id, "fx_scroll")) { fx_scroll = 0; fx_content_h = 0; fx_drag_my = -1; }
+    if (!variable_instance_exists(id, "fx_surf") || !surface_exists(fx_surf)) fx_surf = surface_create(_fx_sw, _fx_sh);
+    var _fx_mx = device_mouse_x_to_gui(0), _fx_my = device_mouse_y_to_gui(0);
+    var _fx_over = point_in_rectangle(_fx_mx, _fx_my, _fx_x1, _fx_y1, _fx_x2, _fx_y2);
+    if (_fx_over && mouse_wheel_down()) fx_scroll += 48;
+    if (_fx_over && mouse_wheel_up())   fx_scroll -= 48;
+    if (mouse_check_button(mb_left) && (_fx_over || fx_drag_my >= 0)) {
+        if (fx_drag_my >= 0) fx_scroll -= (_fx_my - fx_drag_my);
+        fx_drag_my = _fx_my;
+    } else {
+        fx_drag_my = -1;
+    }
+    fx_scroll = clamp(fx_scroll, 0, max(0, fx_content_h - _fx_sh));
+    surface_set_target(fx_surf);
+    draw_clear_alpha(c_black, 0);
+    var _fx_px1 = _fx_x1, _fx_px2 = _fx_x2, _fx_py1 = _fx_y1;   // on-screen panel rect
+    _fx_x1 = 0; _fx_x2 = _fx_sw; _fx_y1 = 0;                     // surface-local from here
+
     var _fxx = _fx_x1 + 21;
     var _fxw = (_fx_x2 - _fx_x1) - 42;
-    var _fxy = _fx_y1 + 24;
+    var _fxy = _fx_y1 + 24 - fx_scroll;
 
     draw_set_halign(fa_center);
     draw_set_font(ui_font(fnt_ui));
@@ -1487,7 +1509,7 @@ if (_gc_ds != noone && _gc_ds.dungeon_select_open) {
     // never read as a bug ("why is A0 showing +120% HP?").
     if (!_fx_lock && _fx_off > 0) {
         draw_set_color(_fx_tcol);
-        draw_text(_fx_x1 + (_fx_x2 - _fx_x1) / 2, _fxy,
+        ui_draw_text_arrows(_fx_x1 + (_fx_x2 - _fx_x1) / 2, _fxy,
             "Dungeon baseline +" + string(_fx_off) + "  ->  effective A" + string(_fx_eff));
         _fxy += 33;
     } else {
@@ -1516,9 +1538,9 @@ if (_gc_ds != noone && _gc_ds.dungeon_select_open) {
         _fxy += 30;
     }
     if (awaken_enemy_acc_bonus(_fx_eff) > 0) {
-        draw_text(_fxx, _fxy, "Accuracy +" + string(awaken_enemy_acc_bonus(_fx_eff))
-            + " (dodge builds get hit more)");
-        _fxy += 30;
+        var _fx_acc = "Accuracy +" + string(awaken_enemy_acc_bonus(_fx_eff)) + " (dodge builds get hit more)";
+        draw_text_ext(_fxx, _fxy, _fx_acc, 27, _fxw);
+        _fxy += string_height_ext(_fx_acc, 27, _fxw) + 3;
     }
     if (awaken_enemy_heal_mult(_fx_eff) > 1.0) {
         draw_text(_fxx, _fxy, "Self-healing +"
@@ -1548,12 +1570,13 @@ if (_gc_ds != noone && _gc_ds.dungeon_select_open) {
     else if (_fx_eff >= 2) _fx_beh = "Abilities used more often";
     if (_fx_beh != "") {
         draw_set_color(make_color_rgb(230, 160, 90));
-        draw_text(_fxx, _fxy, _fx_beh); _fxy += 30;
+        draw_text_ext(_fxx, _fxy, _fx_beh, 27, _fxw); _fxy += string_height_ext(_fx_beh, 27, _fxw) + 3;
         draw_set_color(make_color_rgb(200, 206, 228));
     }
     if (_fx_eff >= 5) {
         draw_set_color(make_color_rgb(255, 110, 110));
-        draw_text(_fxx, _fxy, "Bosses: +25% HP & dmg; ENRAGE past round 6"); _fxy += 30;
+        var _fx_bos = "Bosses: +25% HP & dmg; ENRAGE past round 6";
+        draw_text_ext(_fxx, _fxy, _fx_bos, 27, _fxw); _fxy += string_height_ext(_fx_bos, 27, _fxw) + 3;
     }
     _fxy += 12;
 
@@ -1642,6 +1665,23 @@ if (_gc_ds != noone && _gc_ds.dungeon_select_open) {
     }
 
     }   // end !_fx_lock (§3.0 sealed-panel branch)
+
+    fx_content_h = _fxy + fx_scroll + 16;
+    surface_reset_target();
+    draw_set_alpha(1.0);
+    draw_set_color(c_white);
+    draw_surface(fx_surf, _fx_px1 + 1, _fx_py1 + 7);
+    _fx_x1 = _fx_px1; _fx_x2 = _fx_px2; _fx_y1 = _fx_py1;
+    if (fx_content_h > _fx_sh) {
+        // Visible scrollbar (feedback_scrollable_visual_ui): track + thumb on the panel's right edge.
+        var _fx_ty1 = _fx_y1 + 14, _fx_ty2 = _fx_y2 - 8;
+        var _fx_th  = max(24, (_fx_ty2 - _fx_ty1) * _fx_sh / fx_content_h);
+        var _fx_ty  = _fx_ty1 + (_fx_ty2 - _fx_ty1 - _fx_th) * (fx_scroll / max(1, fx_content_h - _fx_sh));
+        draw_set_color(make_color_rgb(40, 44, 64));
+        draw_rectangle(_fx_x2 - 10, _fx_ty1, _fx_x2 - 4, _fx_ty2, false);
+        draw_set_color(make_color_rgb(150, 158, 185));
+        draw_rectangle(_fx_x2 - 10, _fx_ty, _fx_x2 - 4, _fx_ty + _fx_th, false);
+    }
 
     // Footer
     draw_set_halign(fa_center);
@@ -3226,7 +3266,7 @@ if (variable_instance_exists(id, "awaken_boost_open") && awaken_boost_open) {
         draw_text(_abx + 210, 455, _abo.name);
         draw_set_font(fnt_ui_title);
         draw_set_color(_sel ? make_color_rgb(235, 210, 140) : make_color_rgb(120, 118, 100));
-        draw_text(_abx + 210, 520, "A" + string(_abo.cur) + "  ->  A" + string(_abo.cur + 1));
+        ui_draw_text_arrows(_abx + 210, 520, "A" + string(_abo.cur) + "  ->  A" + string(_abo.cur + 1));
         draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(make_color_rgb(140, 145, 165));
         draw_text(_abx + 210, 615, "Awakening " + string(_abo.cur + 1) + " unlocks without the climb");
@@ -3313,9 +3353,10 @@ if (_gc_rvd != noone && variable_struct_exists(_gc_rvd, "dungeon_reveal_active")
     } else if (_rv_flip > 0.85) {
         // The face: art (or the card frame if art hasn't landed), name, baseline.
         // Direct refs for agent-authored cards (asset_get_index misses them at runtime).
-        var _rv_spr = (_rv_key == "hollow_canopy") ? spr_dungeon_hollow_canopy
-                    : (_rv_key == "drowned_reach") ? spr_dungeon_drowned_reach
-                                                   : asset_get_index("spr_dungeon_" + _rv_key);
+        var _rv_spr = -1;
+        if (_rv_key == "hollow_canopy") _rv_spr = spr_dungeon_hollow_canopy;
+        else if (_rv_key == "drowned_reach") _rv_spr = spr_dungeon_drowned_reach;
+        else _rv_spr = asset_get_index("spr_dungeon_" + _rv_key);
         if (_rv_spr >= 0 && sprite_exists(_rv_spr)) {
             var _rv_sw = max(1, sprite_get_width(_rv_spr));
             var _rv_sh = max(1, sprite_get_height(_rv_spr));
@@ -3670,11 +3711,27 @@ if (bond_dialog_open) {
         }
         draw_set_alpha(1.0);
     }
-    draw_set_halign(fa_center);
-    draw_set_color(make_color_rgb(140, 150, 175));
-    draw_set_font(ui_font(fnt_ui_small));
-    ui_draw_key_legend((_bdx0 + _bdx1) / 2, _bdy1 - 46,
-        (input_device() == 2) ? "Tap to continue" : "Enter / Esc: Continue");
+    if (!variable_instance_exists(id, "bond_dialog_mode")) bond_dialog_mode = "info";
+    if (bond_dialog_mode != "info") {
+        // CHOICE buttons (09-03 rework): ACCEPT/DECLINE for the favor ask,
+        // DEEPEN (PROFESS at Lover, in heart-red) / NOT YET for the crossing.
+        // Hit-test here, inject bond:ok / bond:cancel for the Step's modal block.
+        var _bbx = device_mouse_x_to_gui(0), _bby = device_mouse_y_to_gui(0);
+        var _bbp = mouse_check_button_pressed(mb_left);
+        var _bb_ok_col = (bond_dialog_ok == "PROFESS") ? make_color_rgb(235, 100, 140) : make_color_rgb(120, 210, 130);
+        var _bb_no     = (bond_dialog_mode == "ask") ? "DECLINE" : "NOT YET";
+        var _bb_w = 268, _bb_gap = 24, _bb_y0 = _bdy1 - 104, _bb_y1 = _bdy1 - 50;
+        ui_confirm_button(_bd_tx, _bb_y0, _bd_tx + _bb_w, _bb_y1, bond_dialog_ok + "  [Enter]",
+            _bb_ok_col, _bbx, _bby, _bbp, "bond:ok");
+        ui_confirm_button(_bd_tx + _bb_w + _bb_gap, _bb_y0, _bd_tx + _bb_w * 2 + _bb_gap, _bb_y1, _bb_no + "  [Esc]",
+            make_color_rgb(190, 120, 110), _bbx, _bby, _bbp, "bond:cancel");
+    } else {
+        draw_set_halign(fa_center);
+        draw_set_color(make_color_rgb(140, 150, 175));
+        draw_set_font(ui_font(fnt_ui_small));
+        ui_draw_key_legend((_bdx0 + _bdx1) / 2, _bdy1 - 46,
+            (input_device() == 2) ? "Tap to continue" : "Enter / Esc: Continue");
+    }
     draw_set_halign(fa_left);
     draw_set_font(-1);
 }

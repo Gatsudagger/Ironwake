@@ -36,6 +36,7 @@ var _COL_BOSS          = make_color_rgb(230, 180,  50);
 // per-floor: 7-8 column A4+/A5 maps use a narrower node box.
 var _NW = variable_global_exists("floor_node_w") ? global.floor_node_w : 195;
 var _NH = 96;
+var _VERT = variable_global_exists("floor_vertical") && global.floor_vertical;   // THE TIDE: Drowned maps descend
 
 
 // -----------------------------------------------------------------------------
@@ -48,6 +49,26 @@ if (!dungeon_bg_draw("floormap", 0.45)) {
     draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
 }
 
+
+// THE TIDE (§1, 09-09): the Drowned Reach DESCENDS - a shaft behind the graph
+// that darkens toward the exit at the bottom, walled in wet stone.
+if (_VERT) {
+    var _sh_x0 = 30, _sh_x1 = 1320, _sh_y0 = 130, _sh_y1 = 1040;
+    var _sh_n = 14;
+    for (var _sh_i = 0; _sh_i < _sh_n; _sh_i++) {
+        var _sh_t  = _sh_i / _sh_n;
+        var _sh_ya = _sh_y0 + (_sh_y1 - _sh_y0) * _sh_t;
+        var _sh_yb = _sh_y0 + (_sh_y1 - _sh_y0) * (_sh_t + 1 / _sh_n);
+        draw_set_alpha(0.06 + 0.50 * _sh_t * _sh_t);
+        draw_set_color(make_color_rgb(4, 8, 16));
+        draw_rectangle(_sh_x0, _sh_ya, _sh_x1, _sh_yb, false);
+    }
+    draw_set_alpha(0.55);
+    draw_set_color(make_color_rgb(60, 95, 110));
+    draw_line_width(_sh_x0, _sh_y0, _sh_x0, _sh_y1, 3);
+    draw_line_width(_sh_x1, _sh_y0, _sh_x1, _sh_y1, 3);
+    draw_set_alpha(1.0);
+}
 
 // -----------------------------------------------------------------------------
 // 2. HEADER
@@ -105,6 +126,7 @@ for (var _i = 0; _i < _count; _i++) {
         var _y1 = _room.py;
         var _x2 = _child.px - _NW * 0.5;
         var _y2 = _child.py;
+        if (_VERT) { _x1 = _room.px; _y1 = _room.py + _NH * 0.5; _x2 = _child.px; _y2 = _child.py - _NH * 0.5; }
 
         var _edge_dead   = (!_p_reach || !_reachable[_child_id]) && !_room.cleared;
         var _top_col; var _top_w; var _top_a;
@@ -440,6 +462,13 @@ if (!_sel.cleared) {
         draw_text(_ddx, _ddy + 300, string(_sel.gold_min) + "-" + string(_sel.gold_max) + " gold  +  rare gear");
     }
 }
+
+
+// -----------------------------------------------------------------------------
+// 4b. THE TIDE (§1, 09-09): the ship's wheel, under the detail panel (the
+// panel ends at y780; the footer starts past y1040). Hover / tap = tooltip.
+// -----------------------------------------------------------------------------
+if (tide_active()) tide_draw_wheel(_dp_x + _dp_w * 0.5, 868, 64, false);
 
 
 // -----------------------------------------------------------------------------
@@ -1109,10 +1138,21 @@ if (showing_event_choice && event_active != undefined) {
         case "trapped_corridor":  _splash = spr_event_splash_trapped_corridor;  break;
         case "vagrant_oracle":    _splash = spr_event_splash_vagrant_oracle;    break;
         case "wounded_wanderer":  _splash = spr_event_splash_wounded_wanderer;  break;
+        // THE SEAHORSE KNIGHT shore scene (09-03) - asset-guarded until the art lands.
+        case "seahorse_knight":   _splash = asset_get_index("spr_event_splash_seahorse_knight"); break;
     }
     if (_splash != -1) {
         var _sp_x0 = GUI_CX - 400, _sp_y0 = 40, _sp_x1 = GUI_CX + 400, _sp_y1 = _sp_y0 + 448;
         draw_sprite_stretched(_splash, 0, _sp_x0, _sp_y0, 800, 448);
+        // THE SEAHORSE KNIGHT (09-03): his animated idle stands IN the painted
+        // shore (drawn before the fades so it belongs to the scene).
+        if (_ev.id == "seahorse_knight") {
+            var _kn_idle = asset_get_index("spr_npc_seahorse_knight_idle");
+            if (_kn_idle >= 0 && sprite_exists(_kn_idle)) {
+                var _kn_fr = (current_time div 140) mod max(1, sprite_get_number(_kn_idle));
+                ui_draw_sprite_contain(_kn_idle, _kn_fr, _sp_x0 + 460, _sp_y0 + 50, 320, 360, 1.0);
+            }
+        }
         gpu_set_blendmode(bm_subtract);
         // Bottom dissolve (fades to the dark scrim before the rows at y315+).
         draw_rectangle_color(_sp_x0, 300, _sp_x1, _sp_y1, c_black, c_black, c_white, c_white, false);
@@ -1203,6 +1243,18 @@ if (showing_event_choice && event_active != undefined) {
     draw_set_font(ui_font(fnt_ui));
     draw_set_color(make_color_rgb(185, 192, 208));
     draw_text_ext(GUI_CX, 168, ui_sentence(_ev.body), -1, 1140);
+
+    // THE TIDE (§1): at HIGH tide the water ruins every gamble here - said
+    // BEFORE the choice (top band, clear of the title), so walking away is an
+    // informed option. Tide levers / the Duelist / the Knight are immune.
+    if (event_phase == "choose" && tide_active() && tide_is_high()
+        && !(variable_struct_exists(_ev, "tide_immune") && _ev.tide_immune)) {
+        draw_set_font(ui_font(fnt_ui_small));
+        draw_set_halign(fa_center);
+        draw_set_color(tide_col());
+        draw_text(GUI_CX, 36, "HIGH TIDE - checks FAIL and gambles turn sour here. Walking away costs nothing.");
+        draw_set_font(ui_font(fnt_ui));
+    }
 
     if (event_phase == "result") {
         // Framed result panel (same visual language as the choice rows).
@@ -1833,6 +1885,14 @@ if (variable_instance_exists(id, "floor_toast_t") && floor_toast_t > 0) {
 var _ghost_up = variable_instance_exists(id, "ghost_shop_open") && ghost_shop_open;
 if (!_ghost_up) ui_draw_touch_chips();
 ui_draw_touch_back(108, _ghost_up);
+// THE TIDE (§1, 09-09): surge / drain wash + the turn toast, topmost.
+if (tide_wash_t > 0)  { tide_draw_wash(tide_wash_t, tide_wash_high); tide_wash_t--; }
+if (tide_toast_t > 0) {
+    tide_toast_t--;
+    ui_draw_toast(tide_is_high() ? "THE TIDE TURNS - HIGH WATER" : "THE TIDE TURNS - LOW WATER",
+                  GUI_CX, 21, min(1.0, tide_toast_t / 30.0), tide_col());
+}
+
 ui_draw_touch_gamepad();   // on-screen d-pad in the left gutter (M 07-17)
 
 // Reset the HP-hit shake translate so objects drawing after us are unshaken.

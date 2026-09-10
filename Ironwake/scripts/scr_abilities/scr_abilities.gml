@@ -906,10 +906,13 @@ var _arc_x = [
     { s:"Spend 3 Souls. 20 Void dmg to ALL enemies - then CONSUMES their every status, detonating each.",
       f:"Somewhere past this line, nothing keeps its shape.\n- Spend 3 Souls: 20 Void damage to EVERY enemy.\n- Then the horizon takes its due: every status on every enemy is CONSUMED, and each fires its detonation reaction as it goes - chills SHATTER, bleeds BURST, stuns turn the crush into a sure crit, shocks ARC onward.\n- The board comes out stripped bare. Stack your afflictions deep, then collapse them all at once." },
 ];
-for (var _i = 0; _i < 3; _i++) {
-    global.abilities_arcanist[10 + _i].desc_short = _arc_x[_i].s;
-    global.abilities_arcanist[10 + _i].desc_full  = _arc_x[_i].f;
-}
+// 09-09: stamped BY NAME - the 10-12 indices went stale when summons/traps were inserted before these.
+ability_stamp(global.abilities_arcanist, "Mana Sever", "desc_short", _arc_x[0].s);
+ability_stamp(global.abilities_arcanist, "Mana Sever", "desc_full",  _arc_x[0].f);
+ability_stamp(global.abilities_arcanist, "Arcane Echo", "desc_short", _arc_x[1].s);
+ability_stamp(global.abilities_arcanist, "Arcane Echo", "desc_full",  _arc_x[1].f);
+ability_stamp(global.abilities_arcanist, "Event Horizon", "desc_short", _arc_x[2].s);
+ability_stamp(global.abilities_arcanist, "Event Horizon", "desc_full",  _arc_x[2].f);
 
 // --- BLOODWARDEN extras (indices 10-12) ---
 array_push(global.abilities_bloodwarden,
@@ -924,10 +927,13 @@ var _bw_x = [
     { s:"Spend 3 Blood. Deal 22 Blood dmg, heal 20 HP. Ultimate.",
       f:"Their blood, your wound, one motion - the high mark of the art.\n- Spend 3 Blood: 22 Blood damage and a 20 HP heal on impact.\n- Swings a losing fight back in your favor." },
 ];
-for (var _i = 0; _i < 3; _i++) {
-    global.abilities_bloodwarden[10 + _i].desc_short = _bw_x[_i].s;
-    global.abilities_bloodwarden[10 + _i].desc_full  = _bw_x[_i].f;
-}
+// 09-09: stamped BY NAME - the 10-12 indices went stale when summons/traps were inserted before these.
+ability_stamp(global.abilities_bloodwarden, "Sanguine Pact", "desc_short", _bw_x[0].s);
+ability_stamp(global.abilities_bloodwarden, "Sanguine Pact", "desc_full",  _bw_x[0].f);
+ability_stamp(global.abilities_bloodwarden, "Bonebreaker", "desc_short", _bw_x[1].s);
+ability_stamp(global.abilities_bloodwarden, "Bonebreaker", "desc_full",  _bw_x[1].f);
+ability_stamp(global.abilities_bloodwarden, "Crimson Apex", "desc_short", _bw_x[2].s);
+ability_stamp(global.abilities_bloodwarden, "Crimson Apex", "desc_full",  _bw_x[2].f);
 
 // --- SHADOWSTRIDER extras (indices 10-12) ---
 array_push(global.abilities_shadowstrider,
@@ -942,10 +948,13 @@ var _ss_x = [
     { s:"Spend 2 Prep. 12 dmg, +5/debuff. Kills refund 2 AP.",
       f:"Collect on every weakness you've sold them - and keep the turn going.\n- Spend 2 Prep: 12 physical damage, +5 per debuff, mark, and trap effect on the target.\n- The spree: every enemy this cast KILLS refunds 2 AP. The multi-kill sweep vs Assassinate's single execute." },
 ];
-for (var _i = 0; _i < 3; _i++) {
-    global.abilities_shadowstrider[10 + _i].desc_short = _ss_x[_i].s;
-    global.abilities_shadowstrider[10 + _i].desc_full  = _ss_x[_i].f;
-}
+// 09-09: stamped BY NAME - the 10-12 indices went stale when summons/traps were inserted before these.
+ability_stamp(global.abilities_shadowstrider, "Flurry", "desc_short", _ss_x[0].s);
+ability_stamp(global.abilities_shadowstrider, "Flurry", "desc_full",  _ss_x[0].f);
+ability_stamp(global.abilities_shadowstrider, "Vanish", "desc_short", _ss_x[1].s);
+ability_stamp(global.abilities_shadowstrider, "Vanish", "desc_full",  _ss_x[1].f);
+ability_stamp(global.abilities_shadowstrider, "Killing Spree", "desc_short", _ss_x[2].s);
+ability_stamp(global.abilities_shadowstrider, "Killing Spree", "desc_full",  _ss_x[2].f);
 
 
 // =============================================================================
@@ -976,12 +985,12 @@ array_push(global.abilities_arcanist,
         /*crit_type*/2, /*base_crit*/8, // arcane (INT)
         /*effect_type*/"damage", /*effect_value*/0, /*duration*/0,
         /*self*/false));
-global.abilities_arcanist[13].desc_short = "8 Fire dmg. Sear [Fire+]: +3 Fire/hit 2t. +1 Soul.";
-global.abilities_arcanist[13].desc_full  = "Drag a burning thumb across the target and leave the mark smoldering.\n- 8 Fire damage, +1 Soul. Sear [Fire+]: every follow-up hit deals +3 Fire for 2 turns.\n- Open with this, then detonate with Arcane Burst or Soul Nova.";
-global.abilities_arcanist[14].desc_short = "Spend up to 4 Souls. Deal 8 Arcane +7 per Soul. Detonates statuses.";
+ability_stamp(global.abilities_arcanist, "Scorch", "desc_short", "8 Fire dmg. Sear [Fire+]: +3 Fire/hit 2t. +1 Soul.");
+ability_stamp(global.abilities_arcanist, "Scorch", "desc_full", "Drag a burning thumb across the target and leave the mark smoldering.\n- 8 Fire damage, +1 Soul. Sear [Fire+]: every follow-up hit deals +3 Fire for 2 turns.\n- Open with this, then detonate with Arcane Burst or Soul Nova.");
+ability_stamp(global.abilities_arcanist, "Soul Nova", "desc_short", "Spend up to 4 Souls. Deal 8 Arcane +7 per Soul. Detonates statuses.");
 // desc_full no longer repeats the numbers (M 08-14: the popup said the same
 // thing twice - MECHANICS is the authoritative breakdown, this is context).
-global.abilities_arcanist[14].desc_full  = "Crack your reserve open and release everything at once.\n- Strongest into a debuffed target: prime with Scorch or Curse, then release.\n- Cheaper and more flexible than Arcane Burst - rewards a turn of Soul generation.";
+ability_stamp(global.abilities_arcanist, "Soul Nova", "desc_full", "Crack your reserve open and release everything at once.\n- Strongest into a debuffed target: prime with Scorch or Curse, then release.\n- Cheaper and more flexible than Arcane Burst - rewards a turn of Soul generation.");
 
 // --- BLOODWARDEN: Cleave (free filler) + Rupture (Vex payoff) ---
 array_push(global.abilities_bloodwarden,
@@ -1005,10 +1014,10 @@ array_push(global.abilities_bloodwarden,
         /*crit_type*/2, /*base_crit*/8, // arcane (INT) - scales with Blood theme
         /*effect_type*/"damage", /*effect_value*/0, /*duration*/0,
         /*self*/false));
-global.abilities_bloodwarden[13].desc_short = "Deal 9 physical dmg to ALL enemies. Cheap sweep.";
-global.abilities_bloodwarden[13].desc_full  = "Turn the swing wide and let everything standing catch an edge.\n- 1 AP: 9 physical damage to every enemy.\n- Less per target than a focused hit, but it softens a whole pack at once.";
-global.abilities_bloodwarden[14].desc_short = "Detonator: 8 Blood dmg; bleeds +5/tick, chills shatter.";
-global.abilities_bloodwarden[14].desc_full  = "Seize every open wound at once and tear them all wider.\n- 8 Blood damage, and it DETONATES the target's strongest status: bleeds +5 per remaining tick (consumed), chills SHATTER (+30%), poison spreads Mortality, void heals you.\n- Build with Gore Strike or Spike Trap, then cash out.";
+ability_stamp(global.abilities_bloodwarden, "Cleave", "desc_short", "Deal 9 physical dmg to ALL enemies. Cheap sweep.");
+ability_stamp(global.abilities_bloodwarden, "Cleave", "desc_full", "Turn the swing wide and let everything standing catch an edge.\n- 1 AP: 9 physical damage to every enemy.\n- Less per target than a focused hit, but it softens a whole pack at once.");
+ability_stamp(global.abilities_bloodwarden, "Rupture", "desc_short", "Detonator: 8 Blood dmg; bleeds +5/tick, chills shatter.");
+ability_stamp(global.abilities_bloodwarden, "Rupture", "desc_full", "Seize every open wound at once and tear them all wider.\n- 8 Blood damage, and it DETONATES the target's strongest status: bleeds +5 per remaining tick (consumed), chills SHATTER (+30%), poison spreads Mortality, void heals you.\n- Build with Gore Strike or Spike Trap, then cash out.");
 
 // --- SHADOWSTRIDER: Throat Slit (free primer) + Assassinate (Vex payoff) ---
 array_push(global.abilities_shadowstrider,
@@ -1030,10 +1039,10 @@ array_push(global.abilities_shadowstrider,
         /*crit_type*/1, /*base_crit*/12, // precision (DEX)
         /*effect_type*/"damage", /*effect_value*/0, /*duration*/0,
         /*self*/false));
-global.abilities_shadowstrider[13].desc_short = "Deal 5 physical dmg. Expose target (+4 dmg/hit, 2t).";
-global.abilities_shadowstrider[13].desc_full  = "A shallow cut in exactly the wrong place to have one.\n- 5 physical damage. Exposed: every follow-up hit deals +4 for 2 turns.\n- Your cheapest setup - chain it into Snipe, Flurry, or Assassinate.";
-global.abilities_shadowstrider[14].desc_short = "Spend 2 Prep. 26 dmg, DOUBLED if target below 30% HP.";
-global.abilities_shadowstrider[14].desc_full  = "The job was never the fight. The job was this moment.\n- Spend 2 Prep: 26 physical damage, DOUBLED against a target below 30% HP.\n- Read the board and save it for the kill turn - your biggest single hit.";
+ability_stamp(global.abilities_shadowstrider, "Throat Slit", "desc_short", "Deal 5 physical dmg. Expose target (+4 dmg/hit, 2t).");
+ability_stamp(global.abilities_shadowstrider, "Throat Slit", "desc_full", "A shallow cut in exactly the wrong place to have one.\n- 5 physical damage. Exposed: every follow-up hit deals +4 for 2 turns.\n- Your cheapest setup - chain it into Snipe, Flurry, or Assassinate.");
+ability_stamp(global.abilities_shadowstrider, "Assassinate", "desc_short", "Spend 2 Prep. 26 dmg, DOUBLED if target below 30% HP.");
+ability_stamp(global.abilities_shadowstrider, "Assassinate", "desc_full", "The job was never the fight. The job was this moment.\n- Spend 2 Prep: 26 physical damage, DOUBLED against a target below 30% HP.\n- Read the board and save it for the kill turn - your biggest single hit.");
 
 
 // =============================================================================
@@ -1075,12 +1084,12 @@ array_push(global.abilities_arcanist,
         /*crit_type*/2, /*base_crit*/10, // arcane (INT)
         /*effect_type*/"damage", /*effect_value*/0, /*duration*/0,
         /*self*/false));
-global.abilities_arcanist[15].desc_short = "Melee: 16 Fire dmg + Sear [Fire+]. +1 Soul on hit.";
-global.abilities_arcanist[15].desc_full  = "Drive a burning palm into them at arm's length and leave the print smoldering.\n- Melee spell: 16 Fire damage, +1 Soul on a landed hit. Your melee weapon's damage rides along.\n- Sear [Fire+]: every follow-up hit on the target deals +3 Fire for 2 turns - open with the palm, then let the reserve spend itself.";
-global.abilities_arcanist[16].desc_short = "Melee: 16 Void dmg, always hits. Root 1t.";
-global.abilities_arcanist[16].desc_full  = "Close a grave-cold hand around them and let the earth remember its claim.\n- Melee spell: guaranteed 16 Void damage that ignores all armor.\n- Roots the target for 1 turn - melee enemies skip their attack, and detonators shatter the hold for bonus damage.";
-global.abilities_arcanist[17].desc_short = "Melee: 30 Arcane dmg +8 per Soul consumed (max 2).";
-global.abilities_arcanist[17].desc_full  = "Take hold of whatever keeps them standing and tear it loose.\n- Melee spell: 30 Arcane damage, +8 per Soul consumed (up to 2).\n- The committed finisher - walk in with a stocked reserve and end something.";
+ability_stamp(global.abilities_arcanist, "Blazing Palm", "desc_short", "Melee: 16 Fire dmg + Sear [Fire+]. +1 Soul on hit.");
+ability_stamp(global.abilities_arcanist, "Blazing Palm", "desc_full", "Drive a burning palm into them at arm's length and leave the print smoldering.\n- Melee spell: 16 Fire damage, +1 Soul on a landed hit. Your melee weapon's damage rides along.\n- Sear [Fire+]: every follow-up hit on the target deals +3 Fire for 2 turns - open with the palm, then let the reserve spend itself.");
+ability_stamp(global.abilities_arcanist, "Gravewrack Grip", "desc_short", "Melee: 16 Void dmg, always hits. Root 1t.");
+ability_stamp(global.abilities_arcanist, "Gravewrack Grip", "desc_full", "Close a grave-cold hand around them and let the earth remember its claim.\n- Melee spell: guaranteed 16 Void damage that ignores all armor.\n- Roots the target for 1 turn - melee enemies skip their attack, and detonators shatter the hold for bonus damage.");
+ability_stamp(global.abilities_arcanist, "Soul Rend", "desc_short", "Melee: 30 Arcane dmg +8 per Soul consumed (max 2).");
+ability_stamp(global.abilities_arcanist, "Soul Rend", "desc_full", "Take hold of whatever keeps them standing and tear it loose.\n- Melee spell: 30 Arcane damage, +8 per Soul consumed (up to 2).\n- The committed finisher - walk in with a stocked reserve and end something.");
 
 
 // =============================================================================
@@ -1088,10 +1097,10 @@ global.abilities_arcanist[17].desc_full  = "Take hold of whatever keeps them sta
 // Default (tag absent) = single-target. aoe_falloff defaults to 1.0 (full
 // damage to all); combat reads `ab.is_aoe` and `ab.aoe_falloff`.
 // =============================================================================
-global.abilities_arcanist[8].is_aoe       = true;   // Rift        - elemental nuke, all enemies
-global.abilities_arcanist[12].is_aoe      = true;   // Event Horizon - ultimate, all enemies
-global.abilities_shadowstrider[4].is_aoe  = true;   // Smoke Bomb  - blind, all enemies (no damage)
-global.abilities_bloodwarden[13].is_aoe   = true;   // Cleave      - 1-AP sweep, all enemies (vs single-target Strike)
+ability_stamp(global.abilities_arcanist, "Rift", "is_aoe", true);   // Rift        - elemental nuke, all enemies
+ability_stamp(global.abilities_arcanist, "Event Horizon", "is_aoe", true);   // Event Horizon - ultimate, all enemies
+ability_stamp(global.abilities_shadowstrider, "Smoke Bomb", "is_aoe", true);   // Smoke Bomb  - blind, all enemies (no damage)
+ability_stamp(global.abilities_bloodwarden, "Cleave", "is_aoe", true);   // Cleave      - 1-AP sweep, all enemies (vs single-target Strike)
 
 
 // =============================================================================
@@ -1102,16 +1111,16 @@ global.abilities_bloodwarden[13].is_aoe   = true;   // Cleave      - 1-AP sweep,
 // Sever) and blood (Blood Leech/Vital Theft/Bloodfeast/Crimson Apex/Rupture)
 // abilities need no tag here. (SYSTEMS_ELEMENT_SCHOOLS.md §B.)
 // =============================================================================
-global.abilities_arcanist[0].school  = "fire";    // Soulfire     - elemental -> fire
-global.abilities_arcanist[5].school  = "shadow";  // Curse        - dark hex (no dmg; flavor)
-global.abilities_arcanist[9].school  = "shadow";  // Soulbind     - dark binding
-global.abilities_arcanist[13].school = "fire";    // Scorch       - burn primer
-global.abilities_arcanist[15].school = "fire";    // Blazing Palm - burning melee palm (#26)
+ability_stamp(global.abilities_arcanist, "Soulfire", "school", "fire");    // Soulfire     - elemental -> fire
+ability_stamp(global.abilities_arcanist, "Curse", "school", "shadow");  // Curse        - dark hex (no dmg; flavor)
+ability_stamp(global.abilities_arcanist, "Soulbind", "school", "shadow");  // Soulbind     - dark binding
+ability_stamp(global.abilities_arcanist, "Scorch", "school", "fire");    // Scorch       - burn primer
+ability_stamp(global.abilities_arcanist, "Blazing Palm", "school", "fire");    // Blazing Palm - burning melee palm (#26)
 
-global.abilities_bloodwarden[8].school = "poison"; // Plague Touch - plague (no dmg; flavor)
+ability_stamp(global.abilities_bloodwarden, "Plague Touch", "school", "poison"); // Plague Touch - plague (no dmg; flavor)
 
-global.abilities_shadowstrider[3].school = "poison"; // Poison Dart - the poison ability
-global.abilities_shadowstrider[5].school = "frost";  // Frost Shot - the SS shatter-primer (07-16)
+ability_stamp(global.abilities_shadowstrider, "Poison Dart", "school", "poison"); // Poison Dart - the poison ability
+ability_stamp(global.abilities_shadowstrider, "Frost Shot", "school", "frost");  // Frost Shot - the SS shatter-primer (07-16)
 
 
 // =============================================================================
@@ -4487,4 +4496,19 @@ function ability_delivery_mutator(ab) {
         return _mi;
     }
     return undefined;
+}
+
+// =============================================================================
+// ability_stamp(list, name, field, value) - set one field on the ability with
+// this NAME. (09-09, M: "Event Horizon has Burning Palm's text": every
+// index-based stamp above went stale when the summons (arcanist 10-12) and the
+// trap kit (shadowstrider 9-13) were inserted ahead of the pushed extras.
+// Names are stable; indices are not. Loud in the IDE if the name is missing.)
+// =============================================================================
+function ability_stamp(_list, _name, _field, _value) {
+    for (var _i = 0; _i < array_length(_list); _i++) {
+        if (_list[_i].name == _name) { variable_struct_set(_list[_i], _field, _value); return true; }
+    }
+    show_debug_message("[ABILITY_STAMP] no ability named '" + _name + "' - stamp of " + _field + " dropped");
+    return false;
 }

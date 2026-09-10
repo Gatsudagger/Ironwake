@@ -335,6 +335,20 @@ if (_need_new_map) {
         var _t = (_max_layer > 0) ? (_l / _max_layer) : 0.5;
         array_push(_layer_xs, _gx1 + _node_w * 0.5 + _t * (_gx2 - _gx1 - _node_w));
     }
+    // THE TIDE (§1, 09-09): the Drowned Reach DESCENDS - layer 0 at the TOP,
+    // the boss at the BOTTOM, slots spread left/right across the shaft. Draw_64
+    // (edges, shaft) and Step (nav) read global.floor_vertical; px/py stay the
+    // single source so hit-tests and popups need no change.
+    var _vert = (variable_global_exists("selected_dungeon") && global.selected_dungeon == "drowned_reach"
+                 && !(variable_global_exists("descent_active") && global.descent_active));
+    global.floor_vertical = _vert;
+    var _mid_x    = (_gx1 + _gx2) * 0.5;   // 675
+    var _x_spread = 330;
+    var _layer_ys = [];
+    for (var _l = 0; _l <= _max_layer; _l++) {
+        var _tv = (_max_layer > 0) ? (_l / _max_layer) : 0.5;
+        array_push(_layer_ys, _gy1 + _node_h * 0.5 + _tv * (_gy2 - _gy1 - _node_h));
+    }
 
     // ---- Build the map ----
     var _map = [];
@@ -400,6 +414,12 @@ if (_need_new_map) {
             if (_slots[_i] == 0)      _py = _mid_y - _y_spread;
             else if (_slots[_i] == 1) _py = _mid_y;
             else                      _py = _mid_y + _y_spread;
+        }
+        if (_vert) {   // descending shaft: layers down the page, slots across it
+            _py = _layer_ys[_layers[_i]];
+            _px = _mid_x;
+            if (_lcount == 2)      _px = (_slots[_i] == 0) ? _mid_x - _x_spread : _mid_x + _x_spread;
+            else if (_lcount >= 3) _px = (_slots[_i] == 0) ? _mid_x - _x_spread : ((_slots[_i] == 1) ? _mid_x : _mid_x + _x_spread);
         }
 
         array_push(_map, {
@@ -617,7 +637,26 @@ event_phase          = "choose";   // "choose" | "result"
 event_result_text    = "";
 event_coins          = [];         // gold-burst particles on a gold-yielding result
 hp_shake_timer       = 0;          // event HP-hit map jolt (Draw_64 world-matrix shake)
+// THE TIDE (§1, 09-09): a phase flip consumed on the map - wash + toast (Draw_64).
+tide_wash_t          = 0;
+tide_wash_high       = false;
+tide_toast_t         = 0;
 hp_hit_popup         = undefined;  // { value, timer } floating "-N" by the HUD HP readout
+
+// THE SEAHORSE KNIGHT (M 09-03): he rode with you and the fight is won - the
+// meeting on the shore opens over the settled map, on the event-room overlay.
+knight_state_ensure();
+if (returning_from_combat && global.knight_scene_pending) {
+    global.knight_scene_pending = false;
+    global.knight_leave  = false;      // 09-09: the meeting stays open until "Thank him" is chosen
+    event_active         = knight_event();
+    event_active.tide_immune = true;   // THE TIDE (§1): the Knight's shore is his own weather
+    event_cursor         = event_first_unlocked(event_active);
+    event_phase          = "choose";
+    event_result_text    = "";
+    showing_event_choice = true;
+    audio_play_sound(snd_sting_mystery, 1, false);
+}
 
 
 // -----------------------------------------------------------------------------
@@ -652,6 +691,19 @@ if (global.current_floor == 1 && !returning_from_combat) {
 // in Draw_64). It is modal with no cancel - the choice must be made, same as
 // the combat popup it replaces.
 // -----------------------------------------------------------------------------
+// SOFT-LOCK GUARD (09-09, M stuck on floor 1 after the boss-kill crash): the
+// boss room is CLEARED but the EXTRACT/CONTINUE choice was never written (the
+// crash landed between the kill and the popup), so the map had no way off the
+// floor. A cleared boss with no pending choice re-arms the choice here.
+if (!(variable_global_exists("run_extract_pending") && global.run_extract_pending)) {
+    for (var _sl_i = 0; _sl_i < array_length(current_rooms); _sl_i++) {
+        if (current_rooms[_sl_i].type == "boss" && current_rooms[_sl_i].cleared) {
+            global.run_extract_pending = true;
+            show_debug_message("[FLOOR DEBUG] boss already cleared with no exit choice - re-offering EXTRACT/CONTINUE");
+            break;
+        }
+    }
+}
 showing_extract = variable_global_exists("run_extract_pending") && global.run_extract_pending;
 extract_arm     = "";
 run_ckpt_sig      = "";

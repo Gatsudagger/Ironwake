@@ -594,12 +594,12 @@ if (GM_build_type == "run" && os_type == os_windows && keyboard_check_pressed(vk
 // COMPILED OUT OF RELEASE BUILDS: gated on GM_build_type == "run" (IDE/F5 only).
 // =============================================================================
 // =============================================================================
-// TEST LEVER (08-26, M) - F2 grants a CRAFTING DEMO KIT for the crafting video:
+// TEST LEVER (08-26, M) - SHIFT+F2 grants a CRAFTING DEMO KIT (plain F2 in the hub = Seahorse Knight seashell, 09-04) for the crafting video:
 // +5 of each dungeon reagent, +250 rune dust and +2 Reforge Ingots per tier, so
 // Dorn's smelt/craft/rework loop can be demoed without farming. ADDITIVE ONLY.
 // COMPILED OUT OF RELEASE BUILDS: gated on GM_build_type == "run" (IDE/F5 only).
 // =============================================================================
-if (GM_build_type == "run" && keyboard_check_pressed(vk_f2)) {
+if (GM_build_type == "run" && keyboard_check(vk_shift) && keyboard_check_pressed(vk_f2)) {
     reagents_ensure();
     var _dk_cat = reagent_catalog();
     for (var _dki = 0; _dki < array_length(_dk_cat); _dki++) reagent_add(_dk_cat[_dki].id, 5);
@@ -613,6 +613,62 @@ if (GM_build_type == "run" && keyboard_check_pressed(vk_f2)) {
     if (instance_exists(obj_hub_controller)) {
         instance_find(obj_hub_controller, 0).notification = "DEV: crafting kit - +5 each reagent, +250 dust, +2 each ingot tier.";
     }
+}
+
+// =============================================================================
+// SEAHORSE KNIGHT TEST LEVERS (09-04, M) - IDE only (GM_build_type == "run"), hub:
+//   F2 = accept one seashell piece (3 presses -> the egg branch on his next
+//        shore scene; the 10th press forges the Tidebound Necklace into the pack)
+//   F3 = toggle FORCE-JOIN: he rides into EVERY Drowned Reach fight (defaults OFF
+//        since 09-10 - knight_state_ensure; the native 5% roll is the shipped state)
+// =============================================================================
+if (GM_build_type == "run" && room == rm_hub && keyboard_check_pressed(vk_f2) && !keyboard_check(vk_shift)) {
+    knight_state_ensure();
+    var _kl_line = "[F2] " + knight_accept_seashell();
+    if (instance_exists(obj_hub_controller)) instance_find(obj_hub_controller, 0).notification = _kl_line;
+    save_game();
+}
+if (GM_build_type == "run" && room == rm_hub && keyboard_check_pressed(vk_f3)) {
+    knight_state_ensure();
+    global.knight_dev_force = !global.knight_dev_force;
+    var _kf_line = "[F3] Seahorse Knight force-join: " + (global.knight_dev_force ? "ON - every Drowned Reach fight" : "OFF - 5% roll");
+    if (instance_exists(obj_hub_controller)) instance_find(obj_hub_controller, 0).notification = _kf_line;
+}
+
+// =============================================================================
+// TEST LEVER (09-02, M) - F5 in the HUB unlocks AWAKENING II on every SHIPPED
+// biome (Vault, Scorched, Tundra, Drowned) - never lowers an existing unlock,
+// never touches Hollow Canopy so its chain reveal (Drowned at A2+) can be
+// exercised by hand. Any newly-revealed dungeon that hasn't had its card-flip
+// ceremony queues it on the next hub step (obj_hub_controller reveal block).
+// COMPILED OUT OF RELEASE BUILDS: gated on GM_build_type == "run" (IDE/F5 only).
+// =============================================================================
+if (GM_build_type == "run" && room == rm_hub && keyboard_check_pressed(vk_f5)) {
+    if (!variable_global_exists("dungeon_ascendance_unlocked")) {
+        global.dungeon_ascendance_unlocked = { ashen_vault: 0, scorched_depths: 0, tundra_tomb: 0, drowned_reach: 0, hollow_canopy: 0 };
+    }
+    var _dv_keys = ["ashen_vault", "scorched_depths", "tundra_tomb", "drowned_reach"];
+    for (var _dvk = 0; _dvk < array_length(_dv_keys); _dvk++) {
+        var _dv_cur = variable_struct_exists(global.dungeon_ascendance_unlocked, _dv_keys[_dvk])
+            ? variable_struct_get(global.dungeon_ascendance_unlocked, _dv_keys[_dvk]) : 0;
+        variable_struct_set(global.dungeon_ascendance_unlocked, _dv_keys[_dvk], max(_dv_cur, 2));
+    }
+    if (variable_global_exists("save_slot") && global.save_slot >= 0) save_game();
+    var _dv_si = audio_play_sound(snd_ui_toggle_on, 1, false);
+    audio_sound_pitch(_dv_si, 1.4);
+    show_debug_message("[TEST] F5: Vault/Scorched/Tundra/Drowned unlocked to Awakening II (Canopy untouched)");
+    if (instance_exists(obj_hub_controller)) {
+        instance_find(obj_hub_controller, 0).notification = "DEV: Awakening II unlocked on Vault, Scorched, Tundra, Drowned. Canopy left for the chain reveal.";
+    }
+}
+
+// THE TIDE test levers (09-09), IDE only, inside the Drowned Reach:
+//   Shift+T = +1 tick of the wheel     Ctrl+T = jump to the next phase edge
+if (GM_build_type == "run" && keyboard_check_pressed(ord("T")) && tide_active()) {
+    var _tt_line = "";
+    if (keyboard_check(vk_control))    { tide_set_phase(!tide_is_high(), "event"); _tt_line = "[Ctrl+T] tide -> " + tide_phase_name(); }
+    else if (keyboard_check(vk_shift)) { tide_tick(1, "event"); _tt_line = "[Shift+T] tide +1 -> " + tide_phase_name() + " (" + string(tide_ticks_to_turn()) + " to turn)"; }
+    if (_tt_line != "") show_debug_message("[TEST] " + _tt_line);
 }
 
 if (GM_build_type == "run" && keyboard_check_pressed(vk_f4)) {
@@ -1610,37 +1666,12 @@ if (input_device() == 2) {
 // screen is open). Maps the currently-open NPC screen to its affinity id. No-ops
 // when no NPC screen is open (B stays free for the hub list / combat).
 // =============================================================================
-if (input_hotkey("B")) {
-    var _bond_npc = "";
-    if (shop_open == 0)                                                    _bond_npc = "petra";
-    else if (shop_open == 1)                                               _bond_npc = "dorn";
-    else if (variable_instance_exists(id, "trainer_open") && trainer_open) _bond_npc = "vex";
-    else if (variable_instance_exists(id, "maren_open")   && maren_open)   _bond_npc = "maren";
-    else if (variable_instance_exists(id, "sable_open")   && sable_open)   _bond_npc = "sable";
-    else if (variable_instance_exists(id, "vael_open")    && vael_open)    _bond_npc = "vael";
-    if (_bond_npc != "" && affinity_gate_ready(_bond_npc)) {
-        // 4c: advancing may START the gate quest instead of crossing. Show the
-        // result ON THE OPEN SCREEN's own notification line - the hub line is
-        // hidden behind the overlay, so pressing B looked like it did nothing and
-        // players only discovered the change later in the journal (M 07-08). A
-        // successful crossing ("" return) gets an explicit message too.
-        var _adv_msg = affinity_try_advance(_bond_npc);
-        if (_adv_msg == "") {
-            _adv_msg = npc_display_name(_bond_npc) + ": your bond deepens to " + affinity_tier_name(_bond_npc) + "!";
-        }
-        if (_adv_msg != "Not ready.") {
-            switch (_bond_npc) {
-                case "petra": case "dorn": shop_notification    = _adv_msg; break;
-                case "vex":                trainer_notification = _adv_msg; break;
-                case "maren":              maren_notification   = _adv_msg; break;
-                case "sable":              sable_notification   = _adv_msg; break;
-                case "vael":               vael_notification    = _adv_msg; break;
-            }
-            if (instance_exists(obj_hub_controller)) instance_find(obj_hub_controller, 0).notification = _adv_msg;
-        }
-        if (room == rm_hub || room == rm_character_select) save_game();
-    }
-}
+// 09-03 RELATIONSHIP REWORK: the in-screen [B] deepen shortcut is GONE. It
+// crossed tiers (Lover included) with no dialogue, and it collided with
+// screen hotkeys - at Dorn's REFORGE tab [B] is PATTERN BOOK, so opening the
+// book also started/turned in his bond favor. Bonds now advance only through
+// the camp-carousel bond dialogue (hub Step 0a2 / 2b), where the NPC asks and
+// the player answers on a button.
 
 // =============================================================================
 // F = GIVE A GIFT, inside the open NPC's engagement window (Phase 4b UX, M: gifting
@@ -1892,6 +1923,9 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()
         // Pattern Book coach-mark (08-11): queues behind the forge one (the
         // one-at-a-time guard inside makes this safe to call every frame).
         tutorial_try_show("pattern_book");
+        // 09-03 FORGE restructure state: sub-tab (REWORK/CRAFT/LEGENDARY), the
+        // hoard cursor, the confirm-screen ingot pick, the armed fuse tier.
+        if (!variable_instance_exists(id, "forge_sub")) { forge_sub = 0; ingot_sel = 0; reforge_pick_tier = -1; dorn_ck_tier = -1; }
 
         // THE LEGENDARY FORGE (M locked 07-28) - modal over the reforge tab.
         // Phases: 0 pick slot, 1 pick effect, 2 NAME IT (keyboard_string, the
@@ -2021,7 +2055,7 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()
                 }
                 // Ingot fuse checkout (M 07-29): 3 same-tier -> 1 next tier.
                 if (dorn_ck_kind == "combine") {
-                    var _cmb2 = reforge_combine_tier();
+                    var _cmb2 = (variable_instance_exists(id, "dorn_ck_tier") && reforge_can_fuse_tier(dorn_ck_tier)) ? dorn_ck_tier : reforge_combine_tier();
                     if (_cmb2 < 0) {
                         shop_notification = "Nothing to fuse - it asks 3 ingots of one tier.";
                         audio_play_sound(snd_ui_error, 1, false);
@@ -2068,10 +2102,10 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()
         // ---- SMELT STUDY POPUP: choose which affix family the fodder teaches.
         if (pb_smelt_open) {
             if (pb_smelt_item == undefined) { pb_smelt_open = false; exit; }
-            // FULL catalog (08-27, M: "smelt any affix"): the fodder's own
-            // families first (rarity-weighted study), every other family after
-            // (weight 1). Entries are { stat_name, on_item } structs - MUST
-            // match ui_draw_pb_smelt's list (same builder, same window id).
+            // The piece's OWN families only, every one of them (09-02 revert of
+            // the 08-27 any-family list). Entries are { stat_name, on_item }
+            // structs - MUST match ui_draw_pb_smelt's list (same builder, same
+            // window id).
             var _sm_fams = pattern_smelt_family_list(pb_smelt_item);
             var _sm_rows = array_length(_sm_fams) + 1;   // + "Just the ingot"
             if (input_cancel() || input_back() || input_inject_take("pbsm:cancel")) {
@@ -2366,6 +2400,20 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()
         if (reforge_stage > 0) {
             if (reforge_target == undefined) { reforge_stage = 0; exit; }
             if (reforge_stage == 1) {
+                // Ingot PICKER (09-03): A/D or the chevrons (reforge:prev / next)
+                // cycle through every held tier that can work this piece.
+                if (!reforge_is_recast) {
+                    var _pk_rar = variable_struct_exists(reforge_target, "rarity") ? clamp(reforge_target.rarity, 0, 4) : 0;
+                    var _pk_el  = reforge_eligible_tiers(_pk_rar);
+                    var _pk_n   = array_length(_pk_el);
+                    if (_pk_n > 0) {
+                        var _pk_i = 0;
+                        for (var _pk_k = 0; _pk_k < _pk_n; _pk_k++) if (_pk_el[_pk_k] == reforge_pick_tier) _pk_i = _pk_k;
+                        if (nav_left()  || input_inject_take("reforge:prev")) _pk_i = wrap_index(_pk_i - 1, _pk_n);
+                        if (nav_right() || input_inject_take("reforge:next")) _pk_i = wrap_index(_pk_i + 1, _pk_n);
+                        reforge_pick_tier = _pk_el[_pk_i];
+                    }
+                }
                 if (input_cancel() || input_back() || input_inject_take("reforge:back")) {
                     reforge_stage = 0; reforge_target = undefined;
                 } else if (input_confirm() || input_inject_take("reforge:commit")) {
@@ -2397,7 +2445,7 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()
                             reforge_stage = 0; reforge_target = undefined;
                         }
                     } else if (chit_reforge_item(_rb)) {
-                        reforge_spent_tier = reforge_ingot_spend(reforge_before.rar);
+                        reforge_spent_tier = reforge_ingot_spend_tier(reforge_before.rar, reforge_pick_tier);
                         audio_play_sound(snd_forge, 1, false);
                         affinity_add("dorn", 2);   // function-use drip (rework) - M 08-16
                         reforge_stage = 2; reforge_anim_t = 0;
@@ -2456,9 +2504,13 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()
         // [C] / chip - fuse 3 same-tier ingots into 1 of the next tier (M 07-29:
         // low-tier ingots' real role once rerolling commons stops being worth it).
         if (input_hotkey("C") || input_inject_take("dorn:combine")) {
-            var _cmb = reforge_combine_tier();
+            // 09-03: FUSE works the HIGHLIGHTED hoard row, not the lowest fusable tier.
+            var _cmb = reforge_can_fuse_tier(ingot_sel) ? ingot_sel : -1;
+            dorn_ck_tier = _cmb;
             if (_cmb < 0) {
-                shop_notification = "Fusing asks 3 Reforge Ingots of one tier (Legendary ingots don't fuse).";
+                shop_notification = (ingot_sel >= 4)
+                    ? "Legendary ingots are the top of the ladder - they don't fuse."
+                    : ("Fusing asks 3 " + item_rarity_name(ingot_sel) + " Reforge Ingots - you hold " + string(global.reforge_ingots[ingot_sel]) + ".");
                 audio_play_sound(snd_ui_error, 1, false);
             } else {
                 dorn_ck_open  = true;
@@ -2508,7 +2560,20 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()
             exit;
         }
 
-        if (_rf_n > 0) {
+        // ---- FORGE sub-tabs (09-03 restructure): REWORK / CRAFT / LEGENDARY.
+        // Tab cycles; the Draw's chips inject dorn:sub<i>. Hotkeys (C/T/B/N/G/V)
+        // stay live on every sub-tab; only rows and chips are per-sub-tab.
+        if (keyboard_check_pressed(vk_tab)) { forge_sub = (forge_sub + 1) mod 3; shop_notification = ""; }
+        for (var _fsi = 0; _fsi < 3; _fsi++) if (input_inject_take("dorn:sub" + string(_fsi))) { forge_sub = _fsi; shop_notification = ""; }
+        if (forge_sub == 0) {
+            // Hoard row: A/D pick the ingot tier - its FUSE and the rework
+            // picker's default follow it. Row clicks inject dorn:ingot<i>.
+            if (nav_left())  ingot_sel = wrap_index(ingot_sel - 1, 5);
+            if (nav_right()) ingot_sel = wrap_index(ingot_sel + 1, 5);
+            for (var _isi = 0; _isi < 5; _isi++) if (input_inject_take("dorn:ingot" + string(_isi))) ingot_sel = _isi;
+        }
+
+        if (forge_sub == 0 && _rf_n > 0) {
             if (nav_up())   { reforge_index = wrap_index(reforge_index - 1, _rf_n); shop_notification = ""; }
             if (nav_down()) { reforge_index = wrap_index(reforge_index + 1, _rf_n); shop_notification = ""; }
 
@@ -2529,6 +2594,7 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()
                         // Open the confirmation screen - nothing is spent or rolled yet.
                         reforge_target = _rc.item; reforge_stage = 1;
                         reforge_is_recast = false;
+                        reforge_pick_tier = reforge_pick_default(_rr, ingot_sel);
                         reforge_anim_t = 0; shop_notification = "";
                     }
                 }
@@ -2545,7 +2611,7 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()
         reforge_scroll = clamp(reforge_scroll, 0, max(0, _rf_n - _rf_vis));
 
         // Mouse: click a tab header to leave, or a gear row to select it (Enter reworks).
-        // Row window MUST mirror ui_draw_dorn_reforge (5 visible, pitch 102, top y255).
+        // Row window MUST mirror ui_draw_dorn_reforge (5 visible, pitch 102, top y316).
         if (mouse_check_button_pressed(mb_left)) {
             var _rmx = device_mouse_x_to_gui(0);
             var _rmy = device_mouse_y_to_gui(0);
@@ -2557,12 +2623,12 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()
                     shop_tab = _rti; shop_notification = ""; sell_index = 0; sell_scroll = 0;
                 }
             }
-            if (_rf_n > 0) {
+            if (forge_sub == 0 && _rf_n > 0) {
                 var _rvis  = 5;
                 var _rwin0 = clamp(reforge_scroll, 0, max(0, _rf_n - _rvis));
                 var _rwin1 = min(_rf_n, _rwin0 + _rvis);
                 for (var _rri = _rwin0; _rri < _rwin1; _rri++) {
-                    var _rry = 255 + (_rri - _rwin0) * 102;
+                    var _rry = 316 + (_rri - _rwin0) * 102;   // 09-03: rows sit under the sub-tab bar
                     if (_rmx >= 642 && _rmx < 1488 && _rmy >= _rry && _rmy < _rry + 96) {
                         if (_rri == reforge_index) {
                             // Second tap on the selected row = Enter (opens the
@@ -2579,6 +2645,7 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()
                             } else {
                                 reforge_target = _rc2.item; reforge_stage = 1;
                                 reforge_is_recast = false;
+                                reforge_pick_tier = reforge_pick_default(_rr2, ingot_sel);
                                 reforge_anim_t = 0; shop_notification = "";
                             }
                         } else {
