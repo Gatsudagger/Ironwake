@@ -3893,6 +3893,8 @@ function weapon_required_stat(item) {
 function item_stat_requirement(item) {
     var _none = { stat: "", value: 0 };
     if (!is_struct(item)) return _none;
+    // Origin gifts (09-17, M): worn in - no stat gate, ever. See origin_roll_item.
+    if (variable_struct_exists(item, "origin_gift") && item.origin_gift) return _none;
     // Explicit per-item override wins.
     if (variable_struct_exists(item, "req_stat") && is_string(item.req_stat) && item.req_stat != ""
         && variable_struct_exists(item, "req_value") && item.req_value > 0) {
@@ -6764,7 +6766,7 @@ function affinity_fresh() {
     var _a = {};
     var _ids = affinity_npc_ids();
     for (var _i = 0; _i < array_length(_ids); _i++) {
-        variable_struct_set(_a, _ids[_i], { score: 0, tier: 0, gate_ready: false, run_gain: 0, professed: false });
+        variable_struct_set(_a, _ids[_i], { score: 0, tier: 0, gate_ready: false, run_gain: 0, professed: false, lover_declined: false });
     }
     return _a;
 }
@@ -6780,13 +6782,14 @@ function affinity_ensure() {
     for (var _i = 0; _i < array_length(_ids); _i++) {
         var _id = _ids[_i];
         if (!variable_struct_exists(global.npc_affinity, _id) || !is_struct(variable_struct_get(global.npc_affinity, _id))) {
-            variable_struct_set(global.npc_affinity, _id, { score: 0, tier: 0, gate_ready: false, run_gain: 0, professed: false });
+            variable_struct_set(global.npc_affinity, _id, { score: 0, tier: 0, gate_ready: false, run_gain: 0, professed: false, lover_declined: false });
         } else {
             var _e = variable_struct_get(global.npc_affinity, _id);
             if (!variable_struct_exists(_e, "score"))      _e.score      = 0;
             if (!variable_struct_exists(_e, "tier"))       _e.tier       = 0;
             if (!variable_struct_exists(_e, "gate_ready")) _e.gate_ready = false;
             if (!variable_struct_exists(_e, "run_gain"))   _e.run_gain   = 0;
+            if (!variable_struct_exists(_e, "lover_declined")) _e.lover_declined = false;   // 09-22 "stay as we are"
             if (!variable_struct_exists(_e, "professed")) {
                 // 09-03 MIGRATION (M: "I never wanted to become lovers with Bairc,
                 // it happened without me even noticing"): before the PROFESS
@@ -6966,7 +6969,49 @@ function affinity_gate_ready(id) {
     var _th = affinity_thresholds();
     if (_e.tier == 0 && _e.score >= _th[1]) { _e.tier = 1; global.heart_pending = 1; }   // auto-cross on-ramp, live
     if (_e.tier < 1 || _e.tier >= array_length(_th) - 1) return false;
+    if (affinity_lover_declined(id)) return false;   // 09-22: "stay as we are" - the question is closed, no badge
     return _e.score >= _th[_e.tier + 1];
+}
+
+// --- "Stay as we are" (09-22, M: "bairc is permanently waiting to become a
+// lover which i dont want") ------------------------------------------------
+// A Companion whose score clears the Lover gate used to badge every card, menu
+// and journal line forever. The Lover question now carries a third answer that
+// CLOSES it: lover_declined. While set, the NPC never reports gate-ready and the
+// Lover favor stays hidden; [B] at camp offers to reopen the question instead.
+// Clears on any fresh crossing (re-climb after demotion/betrayal asks anew).
+function affinity_lover_declined(id) {
+    var _e = affinity_entry(id);
+    if (_e == undefined) return false;
+    if (!variable_struct_exists(_e, "lover_declined")) _e.lover_declined = false;
+    return (_e.tier == 3 && _e.lover_declined);
+}
+
+// True when the closed question COULD be reopened: declined, and the score still
+// clears the Lover gate. Drives the [B] "reconsider" path and its hint text.
+function affinity_lover_reopenable(id) {
+    var _e = affinity_entry(id);
+    if (_e == undefined || !affinity_lover_declined(id)) return false;
+    var _th = affinity_thresholds();
+    return _e.score >= _th[4];
+}
+
+function affinity_decline_lover(id) {
+    var _e = affinity_entry(id);
+    if (_e == undefined || _e.tier != 3) return "Not at that door.";
+    _e.lover_declined = true;
+    _e.gate_ready     = false;
+    ledger_add(id, "milestone", "You told them plainly: Companions, and no more. They took it well.");
+    journal_badge_npc(id);
+    return "";
+}
+
+function affinity_reconsider_lover(id) {
+    var _e = affinity_entry(id);
+    if (_e == undefined) return "Nothing to reconsider.";
+    _e.lover_declined = false;
+    affinity_refresh_gate(id);
+    return "";
 }
 
 // --- Earning + gates -------------------------------------------------------
@@ -6979,6 +7024,7 @@ function affinity_refresh_gate(id) {
     if (_e == undefined) return;
     var _th = affinity_thresholds();
     if (_e.tier >= array_length(_th) - 1) { _e.gate_ready = false; return; }   // maxed (Lover)
+    if (affinity_lover_declined(id))      { _e.gate_ready = false; return; }   // 09-22: question closed by the player
 
     if (_e.score >= _th[_e.tier + 1]) {
         if (_e.tier == 0) {
@@ -7106,6 +7152,7 @@ function affinity_gate_cross(id, target) {
     if (target == 3) affinity_slot_demote_for(id);
     if (target == 4) affinity_betrayal_for(id);
     if (_e.tier < target) _e.tier = target;
+    _e.lover_declined = false;          // 09-22: a fresh crossing reopens the road ahead
     global.heart_pending = target;      // tier-up heart burst (blue tiers 1-3, red Lover)
     journal_badge_npc(id);
     ledger_add(id, "milestone", "We grew closer - " + affinity_tier_name_for(target) + " now.");
@@ -7984,8 +8031,17 @@ function board_retire(id) {
 }
 
 // Family display bits for cull requests (families = enemy_sound_family buckets).
+// 09-15 (M): only families the player can actually reach. Cinderkin live in
+// the Scorched Depths and Pale Shards in the Tundra Tomb (enemy_cull_family,
+// scr_combat) - offered only once that dungeon is revealed. The other four
+// walk the Vault, so they are always postable.
+function board_cull_family_open(fam) {
+    if (fam == "fire") return dungeon_is_revealed("scorched_depths");
+    if (fam == "ice")  return dungeon_is_revealed("tundra_tomb");
+    return true;
+}
 function board_cull_families() {
-    return [
+    var _all = [
         { fam:"wraith",    label:"the Restless",    kind:"wraith-kind" },
         { fam:"construct", label:"the Stoneborn",   kind:"construct" },
         { fam:"beast",     label:"the Deep Beasts", kind:"beast" },
@@ -7993,6 +8049,10 @@ function board_cull_families() {
         { fam:"ice",       label:"the Pale Shards", kind:"frost-touched" },
         { fam:"undead",    label:"the Hollow-born", kind:"undead" },
     ];
+    var _out = [];
+    for (var _i = 0; _i < array_length(_all); _i++)
+        if (board_cull_family_open(_all[_i].fam)) array_push(_out, _all[_i]);
+    return _out;
 }
 
 // Build one rolled request def (sans id). All numbers scale with the highest
@@ -8151,6 +8211,14 @@ function board_refill() {
     var _b   = board_requests_ensure();
     var _a   = highest_awakening_unlocked();
     var _cap = board_slot_count();
+    // 09-15: a posted cull for a family whose dungeon is still locked (older
+    // saves, or rolled before the gate) is pulled and its slot refilled below.
+    for (var _ri = array_length(_b) - 1; _ri >= 0; _ri--) {
+        var _rd = _b[_ri];
+        if (variable_struct_exists(_rd, "template") && _rd.template == "cull"
+            && !board_cull_family_open(_rd.obj_param)) board_retire(_rd.id);
+    }
+    _b = board_requests_ensure();
     // The SPECIAL posting rides above capacity - don't let it starve a normal slot.
     var _normal_count = 0;
     for (var _nc = 0; _nc < array_length(_b); _nc++) if (!board_is_special(_b[_nc])) _normal_count++;
@@ -10089,6 +10157,7 @@ function pet_species_innate(species_id) {
         case "icewing_skua":   return { name:"Scavenger's Eye", fx:"gold",         val:5,  desc:"+5% gold find while it is your companion." };
         case "pyre_bison":     return { name:"Bankfire",        fx:"fire",         val:4,  desc:"Your Fire-school abilities strike for +4 bonus Fire damage." };
         case "crypt_gryphon":  return { name:"Old Vigil",       fx:"armor_res",    val:2,  desc:"+2 Armor and +2 Elem. Resist while it is your companion." };
+        case "barrowhorn":     return { name:"Lowered Horns",   fx:"thorns",       val:3,  desc:"Enemies that strike you take 3 damage back." };
         // M 08-27 redesign: tri-elemental lion (cerberus art abandoned) - active proc innate.
         case "threehunger":    return { name:"Three Appetites", fx:"tri_strike",   val:6,  desc:"Once per fight its first strike joins yours: +6 damage as Fire, Ice or Lightning." };
         case "wing_hare":      return { name:"Unremarkable",    fx:"slip",         val:12, desc:"The first blow aimed at you each combat has a 12% chance to miss." };
@@ -11131,6 +11200,8 @@ function pet_species_catalog() {
         // Fantasy hybrids (M 08-06: "we want hybrid made-up stuff as well")
         { id:"pyre_bison",     name:"Pyre Bison",     blurb:"snow has never once settled on its back" },
         { id:"crypt_gryphon",  name:"Crypt Gryphon",  blurb:"it perches on stone the way a statue would" },
+        // 09-15: grown from the retired gryphon-baby cub (horned black ox-drake line, M pick).
+        { id:"barrowhorn",     name:"Barrowhorn",     blurb:"a horned crypt ox that grew up in the dark and never minded" },
         { id:"threehunger",    name:"Threehunger",    blurb:"one lion, three appetites - fire, frost and storm" },
         { id:"wing_hare",      name:"Wing Hare",      blurb:"it considers the antlers entirely unremarkable" },
         { id:"stormkirin",     name:"Stormkirin",     blurb:"the air near it is always about to happen" },
@@ -11330,10 +11401,273 @@ function bairc_garden_blessing_pct() {
 // forage day-ledger).
 // =============================================================================
 
-function garden_world_w() { return 4800; }
+// 09-17 DIORAMA (DESIGN_GARDEN_0917.md): ONE painted plate (spr_garden_plate, 1920x640 @ x4,
+// drawn at y = GARDEN_PLATE_Y) - world coords == screen coords, no camera. The walkable
+// ground band and every blocker below are AUTHORED against that plate; re-measure if the
+// art is ever re-rolled.
+#macro GARDEN_PLATE_Y  440
+#macro GARDEN_BAND_TOP 730
+#macro GARDEN_BAND_BOT 1072
+#macro GARDEN_POND_X   770
+#macro GARDEN_POND_Y   965
+#macro GARDEN_POND_RX  252
+#macro GARDEN_POND_RY  114
+#macro GARDEN_CAIRN_X  1720
+#macro GARDEN_CAIRN_Y  985
+#macro GARDEN_BAIRC_X  1440
+#macro GARDEN_BAIRC_Y  988
+#macro GARDEN_MEM_X    190
+#macro GARDEN_MEM_Y    790
+function garden_world_w() { return 1920; }
+
+// Solid things on the plate the walkers slide around. kind: "ell" (pond), "rect" (hut,
+// stones), "circ" (lantern, cairn).
+function garden_blockers() {
+    return [
+        { kind:"ell",  x:GARDEN_POND_X, y:GARDEN_POND_Y, rx:GARDEN_POND_RX + 14, ry:GARDEN_POND_RY + 10 },
+        { kind:"rect", x0:1236, y0:600, x1:1552, y1:942 },      // Bairc's hut (feet may stand just below its sill)
+        { kind:"circ", x:1190, y:978, r:30 },                   // stone lantern
+        { kind:"circ", x:GARDEN_CAIRN_X, y:GARDEN_CAIRN_Y, r:44 },
+        { kind:"rect", x0:GARDEN_MEM_X - 60, y0:GARDEN_MEM_Y - 30, x1:GARDEN_MEM_X + 230, y1:GARDEN_MEM_Y + 8 },  // the quiet corner
+    ];
+}
+function garden_walkable(_x, _y) {
+    if (!garden_walkable_static(_x, _y)) return false;
+    // Placed ornaments are small round blockers (bloom patches are flat: r 0).
+    if (variable_global_exists("garden_decor") && is_struct(global.garden_decor)
+        && variable_struct_exists(global.garden_decor, "placed")) {
+        var _l = global.garden_decor.placed;
+        for (var _i = 0; _i < array_length(_l); _i++) {
+            var _r = garden_decor_radius(_l[_i].id);
+            if (_r > 0 && point_distance(_x, _y, _l[_i].x, _l[_i].y) < _r) return false;
+        }
+    }
+    return true;
+}
+function garden_walkable_static(_x, _y) {
+    if (_y < GARDEN_BAND_TOP || _y > GARDEN_BAND_BOT) return false;
+    if (_x < 40 || _x > garden_world_w() - 40) return false;
+    var _b = garden_blockers();
+    for (var _i = 0; _i < array_length(_b); _i++) {
+        var _k = _b[_i];
+        switch (_k.kind) {
+            case "ell":  if (sqr((_x - _k.x) / _k.rx) + sqr((_y - _k.y) / _k.ry) < 1) return false; break;
+            case "rect": if (_x >= _k.x0 && _x <= _k.x1 && _y >= _k.y0 && _y <= _k.y1) return false; break;
+            case "circ": if (point_distance(_x, _y, _k.x, _k.y) < _k.r) return false; break;
+        }
+    }
+    return true;
+}
+// 2.5D depth: things lower on the band draw larger (plane idiom).
+function garden_depth_scale(_y) {
+    return lerp(0.84, 1.0, clamp((_y - GARDEN_BAND_TOP) / (GARDEN_BAND_BOT - GARDEN_BAND_TOP), 0, 1));
+}
+// Nearest walkable point to (x, y) - spiral search, for tap targets on the pond/hut.
+function garden_nearest_walkable(_x, _y) {
+    if (garden_walkable(_x, _y)) return { x:_x, y:_y };
+    for (var _r = 12; _r <= 420; _r += 12) {
+        for (var _a = 0; _a < 360; _a += 20) {
+            var _px = _x + lengthdir_x(_r, _a), _py = _y + lengthdir_y(_r, _a);
+            if (garden_walkable(_px, _py)) return { x:_px, y:_py };
+        }
+    }
+    return { x:300, y:1000 };
+}
+// The player's 8-direction skin frame for a movement vector. Frame order (measured 09-17
+// on spr_skin_ashen): 0 S, 1 SE, 2 NE, 3 SW, 4 E, 5 N, 6 NW, 7 W. Single source - fix here.
+function garden_skin_frame(_dx, _dy) {
+    if (_dx == 0 && _dy == 0) return 0;
+    var _a = point_direction(0, 0, _dx, -_dy);   // GM: y down, so flip to compass angles
+    var _oct = floor(((_a + 22.5) mod 360) / 45);   // 0 E, 1 NE, 2 N, 3 NW, 4 W, 5 SW, 6 S, 7 SE
+    var _map = [4, 2, 5, 6, 7, 3, 0, 1];
+    return _map[_oct];
+}
+// The player's garden sprite = their combat look (active skin / class default).
+function garden_player_sprite() {
+    var _ci = variable_global_exists("player_class") ? global.player_class : 0;
+    return player_combat_sprite(_ci);
+}
+
+// ---- RESIDENT STEERING ------------------------------------------------------------------
+// One struct per donated creature, rebuilt when the roster count changes. Stable home
+// spots hash from the index so the garden looks the same each visit.
+function garden_pets_ensure(_gc) {
+    var _don = bairc_donated();
+    var _n = array_length(_don);
+    if (_gc.garden_pets_n == _n && array_length(_gc.garden_pets) == _n) return;
+    _gc.garden_pets = [];
+    for (var _i = 0; _i < _n; _i++) {
+        var _h1 = frac(sin((_i + 1) * 91.17) * 47453.25);
+        var _h2 = frac(sin((_i + 1) * 37.31) * 21871.13);
+        var _home = garden_nearest_walkable(120 + _h1 * (garden_world_w() - 240),
+                                            GARDEN_BAND_TOP + 30 + _h2 * (GARDEN_BAND_BOT - GARDEN_BAND_TOP - 60));
+        array_push(_gc.garden_pets, {
+            i:_i, x:_home.x, y:_home.y, hx:_home.x, hy:_home.y, tx:_home.x, ty:_home.y,
+            state:"dwell", t:60 + irandom(180), vx:0, vy:0, moving:false, hop:0,
+            face:-1, seed:_h1,
+        });
+    }
+    _gc.garden_pets_n = _n;
+}
+// Per-frame steering. States: dwell / wander / approach (drift toward a nearby player) /
+// bank (a fresh crumb pulls anyone near the pond to its edge) / nap (by the lantern).
+function garden_pets_tick(_gc) {
+    var _pets = _gc.garden_pets;
+    var _n = array_length(_pets);
+    var _crumb = (current_time - _gc.garden_crumb_t < 4500);
+    for (var _i = 0; _i < _n; _i++) {
+        var _p = _pets[_i];
+        _p.t -= 1;
+        var _dp = point_distance(_p.x, _p.y, _gc.garden_px, _gc.garden_py);
+        // Crumb: everyone within 800px heads for the bank (once per crumb).
+        if (_crumb && _p.state != "bank" && _dp < 9999
+            && point_distance(_p.x, _p.y, GARDEN_POND_X, GARDEN_POND_Y) < 800) {
+            var _ba = point_direction(GARDEN_POND_X, GARDEN_POND_Y, _p.x, _p.y);
+            var _bx = GARDEN_POND_X + lengthdir_x(GARDEN_POND_RX + 60, _ba);
+            var _by = GARDEN_POND_Y + lengthdir_y(GARDEN_POND_RY + 50, _ba);
+            var _bw = garden_nearest_walkable(_bx, _by);
+            _p.tx = _bw.x; _p.ty = _bw.y; _p.state = "bank"; _p.t = 320;
+        }
+        // Player nearby: curious creatures drift over and face you.
+        if (_dp < 260 && _p.state != "bank" && _p.state != "approach" && _p.state != "nap" && _p.t < 200) {
+            _p.state = "approach"; _p.t = 240;
+        }
+        if (_p.state == "approach") {
+            if (_dp > 96) {
+                var _aa = point_direction(_gc.garden_px, _gc.garden_py, _p.x, _p.y);
+                _p.tx = _gc.garden_px + lengthdir_x(88, _aa);
+                _p.ty = _gc.garden_py + lengthdir_y(88, _aa);
+            } else { _p.tx = _p.x; _p.ty = _p.y; }
+            if (_p.t <= 0 || _dp > 420) { _p.state = "dwell"; _p.t = 90 + irandom(120); }
+        } else if (_p.t <= 0) {
+            switch (_p.state) {
+                case "dwell": {
+                    // Nap chance near the lantern, else wander within ~340px of home.
+                    if (irandom(5) == 0) {
+                        var _nw = garden_nearest_walkable(1190 + irandom_range(-150, -60), 978 + irandom_range(-10, 60));
+                        _p.tx = _nw.x; _p.ty = _nw.y; _p.state = "wander"; _p.t = 600;
+                        _p.seed = -1;   // flag: nap on arrival
+                    } else {
+                        var _wa = irandom(359), _wd = 80 + irandom(260);
+                        var _ww = garden_nearest_walkable(_p.hx + lengthdir_x(_wd, _wa), _p.hy + lengthdir_y(_wd, _wa) * 0.55);
+                        _p.tx = _ww.x; _p.ty = _ww.y; _p.state = "wander"; _p.t = 600;
+                    }
+                    break;
+                }
+                case "wander": case "bank": _p.state = "dwell"; _p.t = 90 + irandom(240); break;
+                case "nap": _p.state = "dwell"; _p.t = 60 + irandom(120); break;
+            }
+        }
+        // Move toward the target (slow, stage-independent), slide round blockers.
+        var _td = point_distance(_p.x, _p.y, _p.tx, _p.ty);
+        var _spd = (_p.state == "approach") ? 2.6 : ((_p.state == "bank") ? 2.4 : 1.4);
+        var _mvx = 0, _mvy = 0;
+        if (_td > 5 && _p.state != "dwell" && _p.state != "nap") {
+            _mvx = (_p.tx - _p.x) / _td * _spd;
+            _mvy = (_p.ty - _p.y) / _td * _spd;
+            // Separation: nudge away from any resident closer than 70px.
+            for (var _j = 0; _j < _n; _j++) {
+                if (_j == _i) continue;
+                var _q = _pets[_j];
+                var _dq = point_distance(_p.x, _p.y, _q.x, _q.y);
+                if (_dq < 70 && _dq > 0.1) { _mvx += (_p.x - _q.x) / _dq * 0.6; _mvy += (_p.y - _q.y) / _dq * 0.6; }
+            }
+            var _nx = _p.x + _mvx, _ny = _p.y + _mvy;
+            var _moved = false;
+            if (garden_walkable(_nx, _p.y)) { _p.x = _nx; _moved = true; }
+            if (garden_walkable(_p.x, _ny)) { _p.y = _ny; _moved = true; }
+            if (!_moved) { _p.tx = _p.x; _p.ty = _p.y; }   // wedged: give up this leg
+            _p.moving = _moved;
+        } else {
+            _p.moving = false;
+            if (_p.state == "wander" && _p.seed == -1) { _p.state = "nap"; _p.t = 480 + irandom(360); _p.seed = 0.5; }
+            else if (_p.state == "wander") { _p.state = "dwell"; _p.t = 90 + irandom(240); }
+        }
+        _p.vx = _mvx; _p.vy = _mvy;
+        _p.hop = _p.moving ? abs(sin(current_time / 110 + _i)) * 7 : 0;
+        // Face: keep the last horizontal facing while still (-1 = front/south).
+        if (_p.moving && abs(_mvx) > abs(_mvy) * 0.7) _p.face = sign(_mvx);
+        else if (!_p.moving && _p.state == "approach") _p.face = (abs(_gc.garden_px - _p.x) > 40) ? sign(_gc.garden_px - _p.x) : -1;
+        else if (!_p.moving) _p.face = -1;
+    }
+}
+
+// The one interactable in reach of the player (Step acts on it; Draw shows its prompt).
+// Returns undefined or { tag, label, x, y, reach }.
+function garden_interactables(_gc) {
+    var _out = [];
+    var _don = bairc_donated();
+    for (var _i = 0; _i < array_length(_gc.garden_pets); _i++) {
+        var _p = _gc.garden_pets[_i];
+        if (_i >= array_length(_don)) break;
+        array_push(_out, { tag:"garden:pet" + string(_i), label:"Pet " + _don[_i].name, x:_p.x, y:_p.y, reach:120, top:130 });
+    }
+    // The pond: reach measured from its rim.
+    var _pdx = (_gc.garden_px - GARDEN_POND_X) / (GARDEN_POND_RX + 110);
+    var _pdy = (_gc.garden_py - GARDEN_POND_Y) / (GARDEN_POND_RY + 100);
+    array_push(_out, { tag:"garden:crumb", label:"Toss a crumb", x:GARDEN_POND_X, y:GARDEN_POND_Y + GARDEN_POND_RY + 40,
+                       reach:(sqr(_pdx) + sqr(_pdy) <= 1) ? 99999 : 0, top:GARDEN_POND_RY + 120 });
+    var _stacked = variable_global_exists("garden_cairn") ? global.garden_cairn : 0;
+    if (_stacked < 5) array_push(_out, { tag:"garden:stone", label:"Place a stone (" + string(_stacked) + "/5)", x:GARDEN_CAIRN_X, y:GARDEN_CAIRN_Y, reach:130, top:150 });
+    var _spots = garden_forage_spots();
+    for (var _s = 0; _s < array_length(_spots); _s++) {
+        if (_spots[_s].taken) continue;
+        array_push(_out, { tag:"garden:forage" + string(_spots[_s].idx), label:"Forage", x:_spots[_s].x, y:_spots[_s].y, reach:100, top:70 });
+    }
+    array_push(_out, { tag:"garden:bairc", label:"Bairc", x:GARDEN_BAIRC_X, y:GARDEN_BAIRC_Y, reach:140, top:190 });
+    // Placed ornaments: "take up" (two presses - the second confirms, see Step garden_remove_arm).
+    var _dl = garden_decor_list();
+    for (var _o = 0; _o < array_length(_dl); _o++) {
+        var _od = garden_decor_get(_dl[_o].id);
+        array_push(_out, { tag:"garden:orn" + string(_o), label:"Take up " + ((_od == undefined) ? "ornament" : _od.name),
+                           x:_dl[_o].x, y:_dl[_o].y, reach:78, top:120 });
+    }
+    if (array_length(bairc_memorials()) > 0)
+        array_push(_out, { tag:"garden:memorial", label:"The quiet corner", x:GARDEN_MEM_X + 90, y:GARDEN_MEM_Y + 30, reach:150, top:90 });
+    return _out;
+}
+function garden_nearest_interactable(_gc) {
+    var _list = garden_interactables(_gc);
+    var _best = undefined, _bd = 999999;
+    for (var _i = 0; _i < array_length(_list); _i++) {
+        var _k = _list[_i];
+        var _d = point_distance(_gc.garden_px, _gc.garden_py, _k.x, _k.y);
+        if (_d > _k.reach) continue;
+        if (_d < _bd) { _bd = _d; _best = _k; }
+    }
+    return _best;
+}
+// Bairc's garden small-talk (hashed by visit count so it varies but never repeats twice running).
+function garden_bairc_line() {
+    var _lines = [
+        "\"They settle faster when you walk among them. I don't know why. I stopped asking.\"",
+        "\"The pond is older than the wall. The wall is older than me. Mind the edge.\"",
+        "\"Don't wake the ones by the lantern. They earned it.\"",
+        "\"Every stone on that cairn is a run someone came back from.\"",
+        "\"You could just sit. They'd come. They always come.\"",
+    ];
+    var _rc = variable_global_exists("run_count") ? global.run_count : 0;
+    return _lines[(_rc + array_length(bairc_donated())) mod array_length(_lines)];
+}
 
 function garden_ensure() {
     if (!variable_global_exists("garden_decor") || !is_struct(global.garden_decor))  global.garden_decor = {};
+    // 09-17 late FREE PLACEMENT: garden_decor.placed = [{id, x, y}] (multiples allowed). The struct
+    // stays a struct so scr_save's is_struct guard keeps persisting it unchanged. Old saves held
+    // "a<i>" -> id on 8 fixed plots: migrate them once onto those plots' coordinates.
+    if (!variable_struct_exists(global.garden_decor, "placed") || !is_array(global.garden_decor.placed)) {
+        var _mig = [];
+        var _old_anch = garden_decor_anchors();
+        for (var _mi = 0; _mi < array_length(_old_anch); _mi++) {
+            var _mk = "a" + string(_mi);
+            if (variable_struct_exists(global.garden_decor, _mk)) {
+                var _mid = variable_struct_get(global.garden_decor, _mk);
+                if (is_string(_mid) && _mid != "") array_push(_mig, { id:_mid, x:_old_anch[_mi].x, y:_old_anch[_mi].y });
+                variable_struct_remove(global.garden_decor, _mk);
+            }
+        }
+        global.garden_decor.placed = _mig;
+    }
     if (!variable_global_exists("garden_cairn"))                                     global.garden_cairn = 0;
     if (!variable_global_exists("garden_forage_seed"))                               global.garden_forage_seed = -1;
     if (!variable_global_exists("garden_forage_taken") || !is_array(global.garden_forage_taken)) global.garden_forage_taken = [];
@@ -11347,9 +11681,10 @@ function garden_ensure() {
 
 // The 8 fixed ornament plots (world coords; y is the standing baseline).
 function garden_decor_anchors() {
+    // 09-17: re-anchored onto the single diorama plate (open grass, clear of every blocker).
     return [
-        { x: 560,  y: 930 }, { x: 860,  y: 778 }, { x: 1650, y: 782 }, { x: 2050, y: 940 },
-        { x: 2350, y: 778 }, { x: 3050, y: 928 }, { x: 3450, y: 782 }, { x: 3850, y: 932 },
+        { x: 130,  y: 1040 }, { x: 420,  y: 790 }, { x: 1080, y: 790 }, { x: 1650, y: 800 },
+        { x: 1840, y: 1050 }, { x: 330,  y: 940 }, { x: 1560, y: 1055 }, { x: 900,  y: 770 },
     ];
 }
 
@@ -11371,37 +11706,130 @@ function garden_decor_get(id) {
     for (var _i = 0; _i < array_length(_c); _i++) if (_c[_i].id == id) return _c[_i];
     return undefined;
 }
-// Ornament placed at anchor i ("" = empty plot).
+// Placed ornaments: array of { id, x, y } (x, y = standing baseline on the grass).
+function garden_decor_list() { garden_ensure(); return global.garden_decor.placed; }
+// How many of this ornament stand in the garden (multiples allowed since 09-17 late).
+function garden_decor_count(id) {
+    var _l = garden_decor_list(), _n = 0;
+    for (var _i = 0; _i < array_length(_l); _i++) if (_l[_i].id == id) _n++;
+    return _n;
+}
+function garden_decor_placed(id) { return garden_decor_count(id) > 0; }
+// Legacy accessor kept for the stable-panel band garden: the i-th placed ornament's id ("" past the end).
 function garden_decor_at(i) {
-    garden_ensure();
-    var _k = "a" + string(i);
-    return variable_struct_exists(global.garden_decor, _k) ? variable_struct_get(global.garden_decor, _k) : "";
+    var _l = garden_decor_list();
+    return (i >= 0 && i < array_length(_l)) ? _l[i].id : "";
 }
-// Is this ornament already placed anywhere? (One of each.)
-function garden_decor_placed(id) {
-    for (var _i = 0; _i < array_length(garden_decor_anchors()); _i++) {
-        if (garden_decor_at(_i) == id) return true;
+// Ornament footprint: blocks walkers except flat patches (bloom).
+function garden_decor_radius(id) { return (id == "bloom") ? 0 : ((id == "gate") ? 40 : 26); }
+// Can an ornament stand here? "" = yes, else the reason (Draw tints the ghost by this).
+function garden_decor_spot_ok(id, _x, _y) {
+    if (_y < GARDEN_BAND_TOP + 10 || _y > GARDEN_BAND_BOT - 4) return "Only on the grass.";
+    if (!garden_walkable(_x, _y)) return "Something already stands there.";
+    var _l = garden_decor_list();
+    for (var _i = 0; _i < array_length(_l); _i++) {
+        if (point_distance(_x, _y, _l[_i].x, _l[_i].y) < 70) return "Too close to another ornament.";
     }
-    return false;
+    if (point_distance(_x, _y, GARDEN_BAIRC_X, GARDEN_BAIRC_Y) < 90) return "Bairc needs room to stand.";
+    return "";
 }
-// Buy + set the ornament into an EMPTY plot. "" on success else the reason.
-function garden_decor_place(anchor_idx, id) {
+// Buy + set the ornament at a free spot. "" on success else the reason.
+function garden_decor_place_at(id, _x, _y) {
     garden_ensure();
     var _d = garden_decor_get(id);
     if (_d == undefined) return "Unknown ornament.";
-    if (garden_decor_placed(id)) return "That ornament already stands in the garden.";
-    if (anchor_idx < 0 || anchor_idx >= array_length(garden_decor_anchors())) return "No such plot.";
-    if (garden_decor_at(anchor_idx) != "") return "That plot is taken.";
+    var _why = garden_decor_spot_ok(id, _x, _y);
+    if (_why != "") return _why;
     if (!variable_global_exists("rune_dust")) global.rune_dust = 0;
     if (global.gold < _d.gold || global.rune_dust < _d.dust) {
         return "Needs " + string(_d.gold) + "g + " + string(_d.dust) + " dust.";
     }
     global.gold      -= _d.gold;
     global.rune_dust -= _d.dust;
-    variable_struct_set(global.garden_decor, "a" + string(anchor_idx), id);
+    array_push(global.garden_decor.placed, { id:id, x:_x, y:_y });
     affinity_add("bairc", 2);   // tending his garden warms him (function-use drip)
     if (room == rm_hub || room == rm_character_select) save_game();
     return "";
+}
+// Take an ornament up again: half its price back. Returns the notice line.
+function garden_decor_remove(idx) {
+    var _l = garden_decor_list();
+    if (idx < 0 || idx >= array_length(_l)) return "";
+    var _d = garden_decor_get(_l[idx].id);
+    var _rg = (_d == undefined) ? 0 : (_d.gold div 2), _rd = (_d == undefined) ? 0 : (_d.dust div 2);
+    if (!variable_global_exists("rune_dust")) global.rune_dust = 0;
+    global.gold += _rg; global.rune_dust += _rd;
+    array_delete(global.garden_decor.placed, idx, 1);
+    if (room == rm_hub || room == rm_character_select) save_game();
+    return "You take up the " + ((_d == undefined) ? "ornament" : _d.name) + " (+" + string(_rg) + "g, +" + string(_rd) + " dust).";
+}
+// Real ornament art (09-17 late batch) - -1 before import, and the vignette draws instead.
+function garden_ornament_sprite(id) { return asset_get_index("spr_garden_orn_" + id); }
+
+// ---- GROUNDS THEMES (M-locked 09-17 late: seasons LAYERED on the one plate) ------------
+// A theme = sky palette + plate tint + canopy strip + weather particles. State lives inside
+// global.garden_decor (theme, themes_owned) so scr_save persists it with no schema change.
+function garden_theme_catalog() {
+    return [
+        { id:"night",     name:"Still Night",  gold:0,   dust:0,   runs:0,  blurb:"The garden as Bairc keeps it.",
+          sky_top:make_color_rgb(2, 1, 12),   sky_bot:make_color_rgb(3, 2, 20),   tint:c_white,
+          moon:make_color_rgb(222, 224, 210), particle:"none",   canopy:"spr_garden_canopy" },
+        { id:"autumn",    name:"Ember Fall",   gold:400, dust:40,  runs:10, blurb:"Every leaf a small fire going out. They nest in the drifts.",
+          sky_top:make_color_rgb(10, 4, 8),   sky_bot:make_color_rgb(24, 10, 12),  tint:make_color_rgb(255, 214, 170),
+          moon:make_color_rgb(240, 200, 150), particle:"leaves", canopy:"spr_garden_canopy_autumn" },
+        { id:"winter",    name:"Hollow Frost", gold:500, dust:60,  runs:20, blurb:"The pond holds still. Breath shows. Nothing here minds the cold.",
+          sky_top:make_color_rgb(4, 6, 18),   sky_bot:make_color_rgb(12, 18, 36),  tint:make_color_rgb(190, 210, 255),
+          moon:make_color_rgb(230, 238, 255), particle:"snow",   canopy:"spr_garden_canopy", canopy_tint:make_color_rgb(150, 175, 225) },   // own strip MISSED 09-17 -> frosted bare crowns
+        { id:"spring",    name:"Pale Bloom",   gold:500, dust:60,  runs:30, blurb:"Blossom that only opens for the dark. The young ones chase the petals.",
+          sky_top:make_color_rgb(6, 3, 14),   sky_bot:make_color_rgb(14, 8, 26),   tint:make_color_rgb(220, 235, 210),
+          moon:make_color_rgb(235, 225, 235), particle:"petals", canopy:"spr_garden_canopy", canopy_tint:make_color_rgb(200, 160, 200) },   // own strip MISSED 09-17 -> blushed bare crowns
+        { id:"bloodmoon", name:"Blood Moon",   gold:800, dust:100, runs:40, blurb:"The sky remembers what the dungeon does. The garden does not flinch.",
+          sky_top:make_color_rgb(14, 2, 4),   sky_bot:make_color_rgb(34, 6, 10),   tint:make_color_rgb(255, 170, 160),
+          moon:make_color_rgb(220, 60, 50),   particle:"ash",    canopy:"spr_garden_canopy", canopy_tint:make_color_rgb(150, 50, 50) },   // own strip MISSED 09-17 -> blood-lit bare crowns
+    ];
+}
+function garden_theme_get(id) {
+    var _c = garden_theme_catalog();
+    for (var _i = 0; _i < array_length(_c); _i++) if (_c[_i].id == id) return _c[_i];
+    return _c[0];
+}
+function garden_theme_id() {
+    garden_ensure();
+    if (!variable_struct_exists(global.garden_decor, "theme") || !is_string(global.garden_decor.theme)) global.garden_decor.theme = "night";
+    return global.garden_decor.theme;
+}
+function garden_theme() { return garden_theme_get(garden_theme_id()); }
+function garden_theme_owned(id) {
+    garden_ensure();
+    if (id == "night") return true;
+    if (!variable_struct_exists(global.garden_decor, "themes_owned") || !is_array(global.garden_decor.themes_owned)) global.garden_decor.themes_owned = [];
+    var _o = global.garden_decor.themes_owned;
+    for (var _i = 0; _i < array_length(_o); _i++) if (_o[_i] == id) return true;
+    return false;
+}
+// Why a theme can't be bought yet ("" = it can).
+function garden_theme_locked_reason(id) {
+    var _t = garden_theme_get(id);
+    var _rc = variable_global_exists("run_count") ? global.run_count : 0;
+    if (_rc < _t.runs) return "Needs " + string(_t.runs) + " runs (" + string(_rc) + " so far).";
+    if (!variable_global_exists("rune_dust")) global.rune_dust = 0;
+    if (global.gold < _t.gold || global.rune_dust < _t.dust) return "Needs " + string(_t.gold) + "g + " + string(_t.dust) + " dust.";
+    return "";
+}
+// Buy (if needed) and make it the grounds' theme. Returns the notice line.
+function garden_theme_choose(id) {
+    garden_ensure();
+    var _t = garden_theme_get(id);
+    if (!garden_theme_owned(id)) {
+        var _why = garden_theme_locked_reason(id);
+        if (_why != "") return _why;
+        global.gold -= _t.gold; global.rune_dust -= _t.dust;
+        array_push(global.garden_decor.themes_owned, id);
+        affinity_add("bairc", 3);
+    }
+    global.garden_decor.theme = id;
+    if (room == rm_hub || room == rm_character_select) save_game();
+    return "The grounds turn: " + _t.name + ".";
 }
 
 // Today's 3 forage spots (seeded by run_count; taken flags from the ledger).
@@ -11415,8 +11843,10 @@ function garden_forage_spots() {
         for (var _j = 0; _j < array_length(global.garden_forage_taken); _j++) {
             if (global.garden_forage_taken[_j] == _i) { _taken = true; break; }
         }
-        array_push(_out, { idx: _i, x: 380 + _h * (garden_world_w() - 760),
-                           y: (_h2 < 0.5) ? 800 : 952, taken: _taken });
+        // 09-17: anywhere on the walkable band (nearest walkable to the hashed spot).
+        var _fw = garden_nearest_walkable(120 + _h * (garden_world_w() - 240),
+                                          GARDEN_BAND_TOP + 20 + _h2 * (GARDEN_BAND_BOT - GARDEN_BAND_TOP - 40));
+        array_push(_out, { idx: _i, x: _fw.x, y: _fw.y, taken: _taken });
     }
     return _out;
 }
@@ -11974,7 +12404,7 @@ function tutorial_catalog() {
         { id:"shrine",     title:"Altars",              body:"A shrine is an altar. A Blessing altar sells boons for tribute - prices scale with your Awakening, and once per shrine [R] rerolls the offer for rune dust. A Cursed altar lets you take on a curse - a run-long penalty - in exchange for far better spoils. Loot-tier rewards lift drops as far as EPIC; a Legendary is never forced, only found. Choose how greedy you dare to be." },
         { id:"gold_risk",  title:"Gold at Risk",        body:"Gold you FIND during a run is at risk - die and you lose most of it (a quarter is returned as mercy). Gold banked before the run is always safe at camp. The number in brackets on your HUD is what you're gambling: extract to keep it all." },
         { id:"escape_item", title:"A Way Out",          body:"You carry an escape item. On the floor map, press G (or tap the LAMP / WINE button) to use it: the Genie Lamp whisks you back to camp with ALL your loot, free. Devil Wine does the same - but drains 2 random stat points. WARNING: the Wine's toll is PERMANENT - those points are gone from your hero on every future run, not just this one. Cash out a greedy run before the dungeon takes it back." },
-        { id:"garden_scene", title:"Bairc's Garden",   body:"This is where your creatures live between runs. Look around: hold A / D or the arrow keys, DRAG with the mouse, swipe on touch, or push the left stick on a pad. Tap a creature (or press [E]) to pet it, [1]-[3] to toss crumbs, set a stone or forage, and [B] opens the ornament shop. The garden is early - big things are coming for decorating it." },
+        { id:"garden_scene", title:"Bairc's Garden",   body:"This is where your creatures live between runs - and you can walk among them. Move with WASD, the arrow keys, the left stick, or tap anywhere on the grass to walk there. Walk up to a creature, the pond, the cairn or a glint in the moss and press [E] (or tap the prompt) to act. Tapping a creature walks you to it. [B] opens the ornament shop, [M] changes the music, Esc leaves." },
         { id:"origin_egg",  title:"Something Stirs",    body:"The egg you stumbled upon in your travels stirs - perhaps someone here can help with that. Bairc the beast-warden can identify and hatch it: find him on the camp carousel and set the egg under his care. A raised creature fights beside you, or blesses your runs." },
         { id:"bond_gates",  title:"Growing Closer",     body:"Someone in camp has warmed to you - their bond has reached a GATE. Crossing a gate takes a FAVOR: speak with them at camp and they will ask it of you - accept or decline. Finish it, return, and they will ask whether you want to grow closer. Nothing deepens until you say yes. Mind your bonds: friendships DECAY if neglected, and only a few can hold the deepest tiers - deepening one may demote another." },
         { id:"maren_forge", title:"Rough Steel",       body:"Items drop UNFINISHED. The QUALITY tag shows how much of an item's true power it delivers right now.\nDorn's TEMPER tab raises that by +10% per step, for gold and rune dust. Each step also adds a little bonus max HP.\nA raw legendary barely beats a finished epic - always worth tempering what you love." },
@@ -14334,16 +14764,18 @@ function event_catalog_biome(dungeon) {
         array_push(_out, {
             id: "av_door_remembers",
             title: "A Door That Remembers You",
-            body: "A cell door swings open at your footstep - oiled, welcoming, wrong. Inside: a prisoner's hoard, decades of smuggled comfort, and a bed with the blanket turned down.",
+            // (09-15 rewrite, M: the old text read as AI slop - "blanket turned
+            // down", "your next fight arguing otherwise". Same three outcomes.)
+            body: "A cell door swings open at your footstep - oiled, silent, expecting you. Inside is a prisoner's hoard: decades of smuggled comfort, a shelf of coin tins, a bed made up and waiting. This cell has been kept for someone. It seems to have decided that someone is you.",
             color: _av_col,
             choices: [
-                { label: "Take the hoard", hint: "Everything - but the door wants a REPLACEMENT tenant, and it will take a piece of your next fight arguing otherwise",
+                { label: "Take the hoard", hint: "Everything on the shelves - but the door wants a tenant, and it will keep a piece of you through your next fight (-1 AP)",
                   cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
-                  outcomes: [ { weight: 100, text: "You clear the shelves. Behind you the door drifts shut a hand-width, testing. You leave at a walk that is nearly a run - and something of your breath stays inside.",
+                  outcomes: [ { weight: 100, text: "You strip the shelves. Behind you the door drifts shut a hand's width, testing whether you will notice. You leave at a walk that is nearly a run, and some part of you does not leave at all.",
                                 effects: { item: "chest", gold: [20, 30, 45][_fl], ap_penalty: 1 } } ] },
-                { label: "Take only what you need", hint: "A guest's portion - the door has no grounds for complaint",
+                { label: "Take only what you need", hint: "A guest's share - the door has no cause to object",
                   cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
-                  outcomes: [ { weight: 100, text: "You pocket the coin tin and touch nothing else. The door stays exactly where it is, which is somehow the most polite thing in the Vault.",
+                  outcomes: [ { weight: 100, text: "You pocket the coin tin and touch nothing else. The door stays exactly where it is, which is the most courteous thing in the Vault.",
                                 effects: { gold: [25, 35, 50][_fl] } } ] },
                 { label: "Leave it open", hint: "Whoever it waits for might still come",
                   cost_gold: 0, req_stat: "", req_amount: 0, resolve: "weighted",
@@ -16100,6 +16532,7 @@ function pet_species_lore(species_id) {
         case "gravefox":         return "Digs crowns and circlets out of old barrows and wears them until they fall apart. Vixens have been observed stealing them from each other. There is no evidence the fox understands what a crown is, and considerable evidence it does not care.";
         case "pyre_bison":       return "Banks fire in the shoulder shag the way its northern cousins bank fat, and the herd's collective heat keeps a valley thawed all winter. Snow has never once settled on a living bison's back. Ash does not either.";
         case "crypt_gryphon":    return "Nests indoors, in halls, on plinths - anywhere with a sightline down a long room. Centuries of that have dulled the plumage to the exact grey of the stone it perches on. Hunts almost nothing. It is not clear what sustains it.";
+        case "barrowhorn":       return "Calved somewhere under Ironwake and walked up into the light on its own. The horns come in early and keep coming; by adulthood it can carry a cart-load of grave goods on its neck without noticing. Placid until something touches the calf, and then it is not.";
         case "threehunger":      return "One lion, three separate appetites, and not one of them for meat. The fire in its mane wants to burn, the frost wants to bite, the storm wants to strike - and only one of them gets fed per fight. It is perpetually two-thirds hungry and correspondingly bad-tempered.";
         case "wing_hare":        return "The antlers are true bone and shed annually like any deer's, which no leporid should be able to do. The hare treats them as unremarkable, grooms around them, and has never been seen to use them for anything at all.";
         case "stormkirin":       return "Carries a charge it never fully discharges, so the air within a few feet of it is permanently on the edge of becoming lightning. Hooves spark on stone. It will not go near standing water and appears to know exactly why.";
@@ -16296,7 +16729,7 @@ function origin_catalog() {
         { id:"forester",   name:"Forest Tender",            blurb:"You kept a warden's grove before the dark took it.",
           start:"Start with an extra creature egg." },
         { id:"deserter",   name:"Legion Deserter",          blurb:"You walked away from the Iron Legion - with your kit.",
-          start:"Start with a Rare weapon (rough quality)." },
+          start:"Start with a worn-in Rare weapon for your class (no stat gate)." },
         { id:"gravekeeper",name:"Gravekeeper's Apprentice", blurb:"You learned what the dead leave behind, and how to use it.",
           start:"Start with 60 rune dust and a Common Reforge Ingot." },
         { id:"survivor",   name:"Plague Survivor",          blurb:"The fever took the village. It could not take you.",
@@ -16314,7 +16747,7 @@ function origin_catalog() {
         { id:"whisperer",  name:"Beast-Whisperer",          blurb:"Animals never learned to fear you.",
           start:"Pet bonds grow 25% faster. 3 treats per run instead of 2." },
         { id:"debtor",     name:"The Debtor",               blurb:"The money was never yours. The blade you bought with it is.",
-          start:"Start with a random Epic item - and a 400g debt that WILL be collected." },
+          start:"Start with a worn-in Epic item (no stat gate) - and a 400g debt that WILL be collected." },
     ];
 }
 
@@ -16343,18 +16776,49 @@ function origin_minor_boons() { return ["greed", "aegis", "vampirism"]; }
 // Roll one rarity-forced drop of a given slot family. slot_filter: "" = any,
 // "weapon" = weapons only, "armor" = wearable non-weapon gear. Bounded retry -
 // the loot tables are big enough that 30 rolls always find the family.
+// 09-17 (M): origin gifts are WORN IN - flagged origin_gift so the Rare/Epic
+// stat gate (item_stat_requirement: 12/14 vs a fresh 9-cap character) never
+// locks the Deserter's blade or the Debtor's epic away from the character it was
+// given to. Only these items are exempt. Weapons also roll to the class's
+// primary stat (INT staff/wand for Arcanist, STR blade for Bloodwarden, DEX
+// bow/dagger for Shadowstrider) so the gift is usable, not just equippable.
+function origin_class_primary_stat() {
+    var _cid = variable_global_exists("chosen_class") ? global.chosen_class : -1;
+    switch (_cid) {
+        case 0: return "INT";
+        case 1: return "STR";
+        case 2: return "DEX";
+    }
+    return "";
+}
+function origin_mark_gift(_it) {
+    if (is_struct(_it)) _it.origin_gift = true;
+    return _it;
+}
 function origin_roll_item(_rarity, _slot_filter) {
     var _w = [0, 0, 0, 0, 0];
     _w[_rarity] = 100;
-    for (var _try = 0; _try < 30; _try++) {
+    var _prim = origin_class_primary_stat();
+    var _fallback = undefined;   // right family, wrong stat - taken if no match in 60 rolls
+    for (var _try = 0; _try < 60; _try++) {
         var _it = drop_equipment(_w, false);
         if (!is_struct(_it)) continue;
         var _sl = variable_struct_exists(_it, "slot") ? _it.slot : "";
-        if (_slot_filter == "") return _it;
-        if (_slot_filter == "weapon" && _sl == "weapon") return _it;
-        if (_slot_filter == "armor" && (_sl == "chest" || _sl == "helm" || _sl == "gloves" || _sl == "boots")) return _it;
+        var _is_weapon = (_sl == "weapon" || _sl == "ranged_weapon");
+        var _ok = false;
+        if (_slot_filter == "")       _ok = true;
+        if (_slot_filter == "weapon") _ok = _is_weapon;
+        if (_slot_filter == "armor")  _ok = (_sl == "chest" || _sl == "helm" || _sl == "gloves" || _sl == "boots");
+        if (!_ok) continue;
+        // Weapons: prefer the class's primary stat (any-slot gifts too, if a weapon came up).
+        if (_is_weapon && _prim != "" && weapon_required_stat(_it) != _prim) {
+            if (_fallback == undefined) _fallback = _it;
+            continue;
+        }
+        return origin_mark_gift(_it);
     }
-    return drop_equipment(_w, false);   // family miss after 30 - take what came
+    if (_fallback != undefined) return origin_mark_gift(_fallback);
+    return origin_mark_gift(drop_equipment(_w, false));   // family miss after 60 - take what came
 }
 
 // Push a standard-catalog consumable by name into the pouch (n copies).
@@ -16390,7 +16854,7 @@ function origin_apply_new_game() {
         case "gravekeeper":
             if (!variable_global_exists("rune_dust")) global.rune_dust = 0;
             global.rune_dust += 60;
-            reforge_ingot_add(0, 1);
+            reforge_ingot_grant(0, 1);   // 09-17 review: was reforge_ingot_add (undefined) - crashed the origin
             break;
         case "survivor":   global.perm_con_bonus += 1; break;   // + per-run Antidote
         case "orphan":     global.perm_dex_bonus += 1; break;   // + origin_price_mult
@@ -17000,7 +17464,19 @@ function stash_misc_rows() {
             sub: "Stirring in Bairc's hatchery - hatch it at his station.",
             col: make_color_rgb(226, 214, 178) });
     }
-    return _rows;
+    // 09-15 (M: "stop showing items we don't have - x0 rows are messy and
+    // confusing"): only rows the player actually holds. One-of rows (count -1:
+    // songs, eggs) always pass. If NOTHING is held the tab shows one empty-state
+    // row so the cursor math (Step mirrors array_length) never hits zero.
+    var _held = [];
+    for (var _hi = 0; _hi < array_length(_rows); _hi++)
+        if (_rows[_hi].count != 0) array_push(_held, _rows[_hi]);
+    if (array_length(_held) == 0) {
+        array_push(_held, { spr: -1, name: "Nothing yet", count: -1,
+            sub: "Reagents, rune dust, ingots, forge parts, bottled spirits and eggs will appear here as you find them.",
+            col: make_color_rgb(140, 140, 155) });
+    }
+    return _held;
 }
 
 // =============================================================================

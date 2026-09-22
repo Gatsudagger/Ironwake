@@ -2974,7 +2974,8 @@ function ui_draw_journal() {
                 draw_set_color(make_color_rgb(140, 145, 165));
                 draw_text(_bx2, _by2 + 20, affinity_gate_ready(_pid)
                     ? "Ready to grow closer - see them at the hub."
-                    : "Growing closer...");
+                    : (affinity_lover_declined(_pid) ? "Companions, by your word. ([B] at camp to reconsider.)"
+                                                     : "Growing closer..."));
             } else {
                 draw_set_color(make_color_rgb(226, 150, 150));
                 draw_text(_px + 240, _py + 92, "Yours, and you theirs.");
@@ -6825,9 +6826,23 @@ function ui_draw_enemy_inspect_tooltip(mx, my, enemy) {
     // Family immunities (M-locked 08-17) - what this foe SHRUGS entirely.
     var _imt = enemy_immunity_text(_name);
     if (_imt != "") array_push(_lines, { t: "IMMUNE to " + _imt, c: make_color_rgb(200, 200, 215) });
+    // 09-15 (M: "special mobs like the Second Count or Duelist should have a
+    // bonus explanation when moused over"): every bespoke mechanic + named
+    // ability this foe carries, read off the live combatant so the text can
+    // never drift from what the combat code actually does.
+    var _mech = enemy_mechanic_lines(enemy);
+    if (array_length(_mech) > 0) {
+        array_push(_lines, { t: "", c: c_white });   // spacer row
+        for (var _mi = 0; _mi < array_length(_mech); _mi++)
+            array_push(_lines, { t: _mech[_mi], c: make_color_rgb(235, 200, 120) });
+    }
 
     var _pad = 15, _lh = 27, _w = 420;
-    var _h = _pad * 2 + _lh * (2 + array_length(_lines)) + 6;   // name + class + control lines + gap
+    // Mechanic rows wrap (draw_text_ext below) - measure the real height.
+    var _wrap_w = _w - _pad * 2;
+    var _h = _pad * 2 + _lh * 2 + 6;   // name + class + gap
+    for (var _hi = 0; _hi < array_length(_lines); _hi++)
+        _h += (_lines[_hi].t == "") ? (_lh div 2) : (string_height_ext(_lines[_hi].t, _lh, _wrap_w) + 2);
 
     var _x = mx + 24, _y = my + 18;
     if (_x + _w > 1905) _x = mx - _w - 18;   // enemies sit top-right; flip left near the edge
@@ -6852,14 +6867,143 @@ function ui_draw_enemy_inspect_tooltip(mx, my, enemy) {
     draw_text(_cx, _cy, _class_str);
     _cy += _lh + 6;
     for (var _li = 0; _li < array_length(_lines); _li++) {
+        if (_lines[_li].t == "") { _cy += _lh div 2; continue; }
         draw_set_color(_lines[_li].c);
-        draw_text(_cx, _cy, _lines[_li].t);
-        _cy += _lh;
+        draw_text_ext(_cx, _cy, _lines[_li].t, _lh, _wrap_w);
+        _cy += string_height_ext(_lines[_li].t, _lh, _wrap_w) + 2;
     }
 
     draw_set_font(-1);
     draw_set_halign(fa_left); draw_set_valign(fa_top);
     draw_set_alpha(1.0);
+}
+
+// ---------------------------------------------------------------------------
+// enemy_mechanic_lines(enemy) - plain-language lines for the inspect tooltip
+// (09-15). Data-driven off the LIVE combatant: its mechanic_type (upkeep in
+// obj_combat_controller Step, sinks in combat_apply_damage /
+// combat_on_enemy_defeated), its telegraph cadence, every enemy_ability it
+// carries (kind/status/value/turns), the boss phase (boss_phase_shift), and
+// the Duelist's bespoke duel rules (obj_combat_controller Create). Standard
+// foes with nothing special return [] and the tooltip shows no section.
+// ---------------------------------------------------------------------------
+function enemy_mechanic_lines(enemy) {
+    var _out = [];
+    if (!is_struct(enemy)) return _out;
+    var _nm = variable_struct_exists(enemy, "name") ? enemy.name : "";
+    var _mt = variable_struct_exists(enemy, "mechanic_type")  ? enemy.mechanic_type  : "none";
+    var _mv = variable_struct_exists(enemy, "mechanic_value") ? enemy.mechanic_value : 0;
+    var _mn = variable_struct_exists(enemy, "mechanic_turns") ? enemy.mechanic_turns : 0;
+    var _every = (_mn > 1) ? ("every " + string(_mn) + " rounds") : "every round";
+    var _is_duel = (_nm == "The Ashen Duelist");
+
+    // --- The Ashen Duelist: everything about him is bespoke ---
+    if (_is_duel) {
+        var _dt = variable_struct_exists(enemy, "duel_tier") ? enemy.duel_tier : 0;
+        var _rd = variable_struct_exists(enemy, "riposte_dmg") ? enemy.riposte_dmg : 12;
+        var _de = variable_global_exists("duelist_encounters") ? global.duelist_encounters : 0;
+        array_push(_out, "DUEL: strictly one on one - your companion sits this out.");
+        array_push(_out, "Riposte: every melee blow he survives answers for " + string(_rd) + ".");
+        array_push(_out, "Execute: below 25% of your HP his swings hit 50% harder.");
+        array_push(_out, "Grows +10% per past duel (" + string(_de) + " so far). Tier " + string(_dt) + " of 3.");
+        if (_dt >= 2) array_push(_out, "Perfect Parry: a stance - the next melee blow is turned and the riposte answers double.");
+        if (_dt >= 3) array_push(_out, "The Perfect Thrust: his charged blow cannot be dodged - stun, weaken or shield it.");
+    }
+
+    // --- Depth Wardens: bespoke sinks in combat_apply_damage (warden_hook) ---
+    if (variable_struct_exists(enemy, "warden_hook")) {
+        switch (enemy.warden_hook) {
+            case "door":        array_push(_out, "WARDEN: an opening shield eats your damage first - break it and the door swings wide."); break;
+            case "fathom":      array_push(_out, "WARDEN: any single hit above 30 gives the excess back to her. Many small hits, not one big one."); break;
+            case "tally":       array_push(_out, "WARDEN: every ability you repeat adds a permanent stack against you. Vary your abilities."); break;
+            case "hollowlight": array_push(_out, "WARDEN: rounds 1-2 your healing is inverted - it wounds you. Hold the potions."); break;
+            case "weight":      array_push(_out, "WARDEN: three phases as it is worn down, +25% damage each. Drops a Depthforged legendary."); break;
+            case "arithmetic":  array_push(_out, "WARDEN: damage you deal is capped at your CURRENT HP - the books must balance."); break;
+            case "nothing":     array_push(_out, "WARDEN: untargetable on even rounds - blows pass straight through. Strike on odd rounds."); break;
+            case "understudy":  array_push(_out, "WARDEN: wears your own weapon's affixes against you."); break;
+        }
+    }
+
+    // --- Authored mechanic (scr_enemies mechanic_type) ---
+    switch (_mt) {
+        case "fortify":
+            array_push(_out, "Fortifies " + _every + ": damage it takes is cut to " + string(round(_mv * 100)) + "% until its next turn."); break;
+        case "regen":
+            array_push(_out, "Regenerates " + string(_mv) + " HP " + _every + "."); break;
+        case "phase_shift":
+            array_push(_out, "Phases out " + _every + " for " + string(_mv) + " turn" + ((_mv == 1) ? "" : "s") + " - blows pass through it."); break;
+        case "retribution":
+            array_push(_out, "Retribution: two hits in a row of the same damage type raise its armor by " + string(_mv) + " for two of your turns. Vary your damage."); break;
+        case "death_burst":
+            array_push(_out, "Death burst: erupts for " + string(round(_mv)) + " damage to you when it falls - no dodge."); break;
+        case "double_strike":
+            array_push(_out, "Double strike: a second hit for " + string(_mv) + " rides on every attack."); break;
+    }
+    // --- Charged blow (telegraph) ---
+    var _tt = variable_struct_exists(enemy, "telegraph_turn")   ? enemy.telegraph_turn   : 0;
+    var _td = variable_struct_exists(enemy, "telegraph_damage") ? enemy.telegraph_damage : 0;
+    if (_tt > 0 && _td > 0)
+        array_push(_out, (_is_duel ? "Charged thrust every " : "Charged blow every ") + string(_tt) + " rounds for " + string(_td) + " - it warns you the turn before.");
+
+    // --- Named abilities ---
+    if (variable_struct_exists(enemy, "abilities") && is_array(enemy.abilities)) {
+        for (var _i = 0; _i < array_length(enemy.abilities); _i++) {
+            var _a = enemy.abilities[_i];
+            if (!is_struct(_a)) continue;
+            var _an = variable_struct_exists(_a, "name") ? _a.name : "";
+            var _ak = variable_struct_exists(_a, "kind") ? _a.kind : "";
+            var _av = variable_struct_exists(_a, "value") ? _a.value : 0;
+            var _as = variable_struct_exists(_a, "status_kind") ? _a.status_kind : "";
+            var _at = variable_struct_exists(_a, "turns") ? _a.turns : 1;
+            var _tn = string(_at) + " turn" + ((_at == 1) ? "" : "s");
+            var _line = "";
+            switch (_ak) {
+                case "control":
+                    if (_as == "stun")         _line = "STUNS you for " + _tn + " - you lose the turn.";
+                    else if (_as == "silence") _line = "SILENCES you for " + _tn + " - no spells.";
+                    else if (_as == "root")    _line = "ROOTS you for " + _tn + " - melee only.";
+                    else                       _line = string_upper(_as) + " for " + _tn + ".";
+                    break;
+                case "debuff":
+                    if (_as == "weaken")       _line = "WEAKENS you for " + _tn + " (-" + string(round(_av * 100)) + "% damage dealt).";
+                    else if (_as == "blind")   _line = "BLINDS you for " + _tn + " (-" + string(round(_av * 100)) + "% accuracy).";
+                    else                       _line = string_upper(_as) + " for " + _tn + ".";
+                    break;
+                case "dot":
+                    _line = "damage over time - " + string(_av) + " per turn for " + _tn + ".";
+                    break;
+                case "spell":
+                    _line = "a " + string(_av) + "-damage strike.";
+                    break;
+                case "heal":
+                    _line = "mends itself for " + string(_av) + " HP.";
+                    break;
+                case "summon":
+                    _line = "calls reinforcements into the fight.";
+                    break;
+                default:
+                    _line = "";   // stance etc. (Duelist Perfect Parry is spelled out above)
+            }
+            if (_line != "" && _an != "") array_push(_out, _an + ": " + _line);
+        }
+    }
+    // --- Boss phase (the shift fires at the HP threshold in combat_apply_damage) ---
+    if (string_lower(enemy_kind_of(_nm)) == "boss" && !variable_struct_exists(enemy, "warden_hook")) {
+        var _bp = boss_phase_shift(_nm);
+        if (is_struct(_bp)) {
+            var _pl = "PHASE at half HP: ";
+            var _bits = [];
+            if (variable_struct_exists(_bp, "dmg_mult") && _bp.dmg_mult > 1)  array_push(_bits, "+" + string(round((_bp.dmg_mult - 1) * 100)) + "% damage");
+            if (variable_struct_exists(_bp, "armor_add") && _bp.armor_add > 0) array_push(_bits, "+" + string(_bp.armor_add) + " armor");
+            if (variable_struct_exists(_bp, "heal_pct") && _bp.heal_pct > 0)   array_push(_bits, "heals " + string(round(_bp.heal_pct * 100)) + "%");
+            if (variable_struct_exists(_bp, "tele_turn"))                        array_push(_bits, "charged blows every " + string(_bp.tele_turn) + " rounds");
+            if (variable_struct_exists(_bp, "mech") && is_struct(_bp.mech))     array_push(_bits, "gains " + string_replace(_bp.mech.t, "_", " "));
+            if (variable_struct_exists(_bp, "add_ability") && is_struct(_bp.add_ability)) array_push(_bits, "learns " + _bp.add_ability.name);
+            for (var _bi = 0; _bi < array_length(_bits); _bi++) _pl += ((_bi > 0) ? ", " : "") + _bits[_bi];
+            if (array_length(_bits) > 0) array_push(_out, _pl + ".");
+        }
+    }
+    return _out;
 }
 
 // ---------------------------------------------------------------------------
@@ -6945,6 +7089,10 @@ function ui_draw_item_tooltip(ttx, tty, item, compared_item) {
         var _req_met = (player_base_stat(_req.stat) >= _req.value);
         var _req_col = _req_met ? make_color_rgb(110, 170, 110) : make_color_rgb(225, 80, 80);
         array_push(_rows, { kind: "text", txt: "Requires " + string(_req.value) + " " + _req.stat, col: _req_col, tag: "", tagcol: c_white });
+    } else if (variable_struct_exists(item, "origin_gift") && item.origin_gift
+               && variable_struct_exists(item, "rarity") && item.rarity >= 2) {
+        // 09-17: origin gifts skip the Rare/Epic stat gate - say so where the gate would sit.
+        array_push(_rows, { kind: "text", txt: "Origin gift - worn in, no requirement", col: make_color_rgb(110, 170, 110), tag: "", tagcol: c_white });
     }
     // Permanent-level gate reads like a stat requirement (M 08-15: was hidden
     // until an equip attempt bounced).
@@ -13084,6 +13232,17 @@ function hub_bond_open(_hub, _id) {
     _hub.bond_dialog_hearts = [];
     _hub.bond_dialog_mode   = "info";
     _hub.bond_dialog_ok     = "";
+    _hub.bond_dialog_third  = "";
+    // 09-22 "stay as we are": the question was closed by the player. [B] now
+    // offers to reopen it - nothing badges while it stays closed.
+    if (_st.kind == "none" && affinity_lover_reopenable(_id)) {
+        _hub.bond_dialog_mode  = "reconsider";
+        _hub.bond_dialog_ok    = "RECONSIDER";
+        _hub.bond_dialog_title = _nm + "  -  the closed door";
+        _hub.bond_dialog_body  = "You told " + _nm + " you would rather stay as you are - Companions."
+            + "\n\nReopen the question? They will ask again, and you can still say no.";
+        return;
+    }
     switch (_st.kind) {
         case "ask":
             _hub.bond_dialog_mode  = "ask";
@@ -13091,6 +13250,12 @@ function hub_bond_open(_hub, _id) {
             _hub.bond_dialog_title = _nm + "  -  a favor";
             _hub.bond_dialog_body  = _st.def.flavor + "\n\nTHE FAVOR:  " + _st.def.objective
                 + "\n\nTake it on? (Tracked in your Journal. Declining costs nothing - ask again any time.)";
+            if (_st.target >= 4) {
+                // The Lover favor: a third answer closes the question for good
+                // (until you reopen it yourself) - no more badges, no more asking.
+                _hub.bond_dialog_third = "STAY AS WE ARE";
+                _hub.bond_dialog_body += "\n\nOr tell them plainly: Companions, and no more. They will not ask again.";
+            }
             break;
         case "progress":
             _hub.bond_dialog_title = _nm;
@@ -13110,7 +13275,9 @@ function hub_bond_open(_hub, _id) {
                 _hub.bond_dialog_body  = "Profess your love to " + _nm + "?"
                     + "\n\nThere is room for one such bond in Ironwake."
                     + ((_cur != "" && _cur != _id) ? "  " + npc_display_name(_cur) + " holds it now - they will not forgive this, and that bond breaks." : "")
-                    + "\n\nNothing is said until you say it.";
+                    + "\n\nNothing is said until you say it."
+                    + "\n\nOr tell them plainly: Companions, and no more. They will not ask again.";
+                _hub.bond_dialog_third = "STAY AS WE ARE";
             } else {
                 _hub.bond_dialog_ok    = "DEEPEN";
                 _hub.bond_dialog_title = _nm + "  -  " + _tn;
@@ -13139,6 +13306,7 @@ function hub_bond_show_crossing(_hub, _id) {
     _hub.bond_dialog_npc    = _id;
     _hub.bond_dialog_mode   = "info";
     _hub.bond_dialog_ok     = "";
+    _hub.bond_dialog_third  = "";
     _hub.bond_dialog_title  = _nm + "  -  " + affinity_tier_name_for(_tier);
     _hub.bond_dialog_body   = _lore + "\n\nYour bond with " + _nm + " deepens to " + affinity_tier_name_for(_tier) + ".";
     _hub.bond_dialog_hearts = [];
@@ -16143,15 +16311,18 @@ function ui_draw_comparison_panel(new_item, equipped_item) {
     if (variable_struct_exists(new_item, "affixes")) {
         for (var _i = 0; _i < array_length(new_item.affixes); _i++) {
             var _a = new_item.affixes[_i];
-            if (!variable_struct_exists(_sn, _a.stat_type)) _sn[$ _a.stat_type] = 0;
-            _sn[$ _a.stat_type] += _a.stat_value;
+            // 09-17 review: affixes carry stat_name (clone_item), never stat_type - crashed here
+            if (!is_struct(_a) || !variable_struct_exists(_a, "stat_name")) continue;
+            if (!variable_struct_exists(_sn, _a.stat_name)) _sn[$ _a.stat_name] = 0;
+            _sn[$ _a.stat_name] += _a.stat_value;
         }
     }
     if (equipped_item != undefined && variable_struct_exists(equipped_item, "affixes")) {
         for (var _i = 0; _i < array_length(equipped_item.affixes); _i++) {
             var _a = equipped_item.affixes[_i];
-            if (!variable_struct_exists(_se, _a.stat_type)) _se[$ _a.stat_type] = 0;
-            _se[$ _a.stat_type] += _a.stat_value;
+            if (!is_struct(_a) || !variable_struct_exists(_a, "stat_name")) continue;
+            if (!variable_struct_exists(_se, _a.stat_name)) _se[$ _a.stat_name] = 0;
+            _se[$ _a.stat_name] += _a.stat_value;
         }
     }
 
@@ -17840,7 +18011,7 @@ function ui_draw_maren_screen() {
                 draw_set_color(make_color_rgb(200, 180, 130));
                 draw_text(GUI_CX, _br_by + 717, "New " + ((_br_res.track.pool == "both") ? "Hub & Dungeon"
                         : ((_br_res.track.pool == "hub") ? "Hub" : "Dungeon"))
-                    + " music track - choose it in Settings.");
+                    + " music track - pick it in Settings under Hub Music / Dungeon Music.");
             } else {
                 draw_text_ext(GUI_CX, _br_by + 546,
                     "The spirit unwinds into the rafters - but you already know every song she knew.\nShe leaves what dust a grateful ghost can gather.", 36, _br_bw - 120);
@@ -20468,377 +20639,356 @@ function ui_draw_garden_scene() {
     var _gc = instance_find(obj_game_controller, 0);
     if (!variable_instance_exists(_gc, "garden_open") || !_gc.garden_open) return;
     garden_ensure();
-    var _cam = _gc.garden_cam_x;
+    garden_pets_ensure(_gc);
     var _W   = garden_world_w();
     var _t   = current_time / 1000;
     var _mx  = device_mouse_x_to_gui(0), _my = device_mouse_y_to_gui(0);
+    var _placing  = (_gc.garden_place_pick != "");
+    var _tap_used = false;   // an interactable / chip claimed this frame's tap -> ground walk stands down
 
-    // ---- SKY: layered night gradient + moon + hashed stars ----
+    // ---- SKY above the plate: gradient + hashed stars + moon. The plate's own treeline
+    //      and star band starts at GARDEN_PLATE_Y, so the gradient lands on its sky colour. ----
     draw_set_alpha(1.0);
-    draw_set_color(make_color_rgb(7, 9, 18));    draw_rectangle(GUI_XL, 0,   GUI_XR, 300,  false);
-    draw_set_color(make_color_rgb(10, 13, 24));  draw_rectangle(GUI_XL, 300, GUI_XR, 480,  false);
-    draw_set_color(make_color_rgb(14, 18, 30));  draw_rectangle(GUI_XL, 480, GUI_XR, 640,  false);
-    for (var _si = 0; _si < 60; _si++) {
+    // Plate sky sampled at (3,2,20) - the Still Night gradient must LAND on exactly that tone
+    // (M 09-17: "abrupt hard line" when it landed on (8,10,20)). Other GROUNDS themes recolour
+    // the sky AND tint the plate, so the seam moves with them (see the plate tint below).
+    var _th = garden_theme();
+    draw_rectangle_color(GUI_XL, 0, GUI_XR, GARDEN_PLATE_Y, _th.sky_top, _th.sky_top, _th.sky_bot, _th.sky_bot, false);
+    for (var _si = 0; _si < 70; _si++) {
         var _sh  = frac(sin(_si * 71.3) * 34781.7);
         var _sh2 = frac(sin(_si * 13.9) * 91733.1);
-        var _sx  = frac(_sh - _cam * 0.18 / _W) * 1920;
-        var _sy  = _sh2 * 560;
+        var _sx  = GUI_XL + _sh * (GUI_XR - GUI_XL);
+        var _sy  = _sh2 * (GARDEN_PLATE_Y - 20);
         draw_set_alpha(0.25 + 0.45 * abs(sin(_t * (0.6 + _sh) + _si)));
         draw_set_color(make_color_rgb(200, 210, 235));
         draw_rectangle(_sx, _sy, _sx + 2, _sy + 2, false);
     }
     draw_set_alpha(1.0);
-    var _moon_x = 760 - _cam * 0.30;
-    draw_set_color(make_color_rgb(222, 224, 210));
-    draw_circle(_moon_x, 190, 58, false);
-    draw_set_color(make_color_rgb(14, 16, 28));
-    draw_circle(_moon_x - 22, 176, 50, false);   // waning crescent bite
-
-    // ---- Distant treeline (parallax 0.55) ----
-    draw_set_color(make_color_rgb(11, 16, 20));
-    for (var _tr = 0; _tr < 40; _tr++) {
-        var _th  = frac(sin(_tr * 37.7) * 15731.3);
-        var _tx  = _tr * 130 - frac(_cam * 0.55 / 5200) * 5200;
-        if (_tx < -160 || _tx > 2080) continue;
-        var _tth = 90 + _th * 130;
-        draw_triangle(_tx - 70, 660, _tx + 70, 660, _tx, 660 - _tth, false);
+    draw_set_color(_th.moon);
+    draw_circle(1500, 180, (_th.id == "bloodmoon") ? 66 : 56, false);
+    if (_th.id != "bloodmoon") {   // waning crescent bite (the blood moon hangs full)
+        draw_set_color(_th.sky_top);
+        draw_circle(1478, 166, 48, false);
     }
+    // Moon halo: two very faint rings (a single 0.06 disc read as a hard-edged grey circle in the screenshot).
+    draw_set_color(_th.moon);
+    draw_set_alpha(0.025); draw_circle(1500, 180, 150, false);
+    draw_set_alpha(0.025); draw_circle(1500, 180, 100, false);
+    draw_set_alpha(1.0);
 
-    // ---- Ground: earth bands + lanes + hashed grass tufts ----
-    draw_set_color(make_color_rgb(18, 24, 20));  draw_rectangle(GUI_XL, 640, GUI_XR, 820,  false);   // back lane
-    draw_set_color(make_color_rgb(22, 29, 23));  draw_rectangle(GUI_XL, 820, GUI_XR, 1000, false);   // front lane
-    draw_set_color(make_color_rgb(16, 20, 17));  draw_rectangle(GUI_XL, 1000, GUI_XR, GUI_H, false); // foreground earth
-    draw_set_color(make_color_rgb(30, 38, 30));
-    draw_line(GUI_XL, 820, GUI_XR, 820);
-    for (var _gt = 0; _gt < 200; _gt++) {
-        var _gh  = frac(sin(_gt * 57.1) * 24631.9);
-        var _gwx = _gh * _W;
-        var _gsx = _gwx - _cam;
-        if (_gsx < -20 || _gsx > 1940) continue;
-        var _gy  = 660 + frac(sin(_gt * 11.7) * 7351.3) * 380;
-        draw_set_color(make_color_rgb(28, 40, 28));
-        draw_line(_gsx, _gy, _gsx - 3, _gy - 9);
-        draw_line(_gsx, _gy, _gsx + 3, _gy - 10);
-    }
-
-    // ---- Entrance gate (world x 140) ----
-    var _eg = 140 - _cam;
-    if (_eg > -220 && _eg < 2140) {
-        draw_set_color(make_color_rgb(38, 32, 30));
-        draw_rectangle(_eg - 90, 560, _eg - 66, 900, false);
-        draw_rectangle(_eg + 66, 560, _eg + 90, 900, false);
-        draw_rectangle(_eg - 110, 530, _eg + 110, 566, false);
-        draw_set_color(make_color_rgb(240, 190, 110));
-        draw_set_alpha(0.5 + 0.2 * sin(_t * 2.1));
-        draw_circle(_eg - 78, 600, 10, false);
-        draw_circle(_eg + 78, 600, 10, false);
-        draw_set_alpha(1.0);
-    }
-
-    // ---- Memorial grove (world x 4150+): every stone remembered ----
-    var _mems = bairc_memorials();
-    var _mgn  = min(array_length(_mems), 8);
-    for (var _mg = 0; _mg < _mgn; _mg++) {
-        var _mgx = 4180 + (_mg mod 4) * 110 + ((_mg div 4) * 55) - _cam;
-        var _mgy = 780 + (_mg div 4) * 120;
-        if (_mgx < -40 || _mgx > 1960) continue;
-        draw_set_color(make_color_rgb(66, 70, 82));
-        draw_roundrect_ext(_mgx - 16, _mgy - 44, _mgx + 16, _mgy, 10, 10, false);
-        draw_set_color(make_color_rgb(30, 33, 42));
-        draw_roundrect_ext(_mgx - 16, _mgy - 44, _mgx + 16, _mgy, 10, 10, true);
-        draw_line(_mgx - 8, _mgy - 28, _mgx + 8, _mgy - 28);
-    }
-    if (array_length(_mems) > 0 && 4390 - _cam > -200 && 4390 - _cam < 2100) {
-        draw_set_halign(fa_center);
-        draw_set_font(ui_font(fnt_ui_small));
-        draw_set_color(make_color_rgb(110, 118, 132));
-        draw_text(4390 - _cam, 660, "the quiet corner");
+    // ---- THE PLATE (spr_garden_plate 1920x640 @ x4, tools/gen_garden_plate_0917.py).
+    //      Fallback before import: the old flat earth bands so the scene never breaks. ----
+    var _plate = asset_get_index("spr_garden_plate");
+    if (_plate >= 0 && sprite_exists(_plate)) {
+        // Gutters (ultrawide) get the plate's grass tone so the band reads continuous.
+        draw_set_color(merge_color(make_color_rgb(24, 33, 26), _th.tint, 0.5));
+        draw_rectangle(GUI_XL, GARDEN_BAND_TOP - 30, GUI_XR, GUI_H, false);
+        draw_set_color(_th.sky_bot);
+        draw_rectangle(GUI_XL, GARDEN_PLATE_Y, GUI_XR, GARDEN_BAND_TOP - 30, false);
+        draw_sprite_ext(_plate, 0, 0, GARDEN_PLATE_Y, 1, 1, 0, _th.tint, 1);   // theme tint (c_white = untouched)
+        if (_th.id != "night") {
+            // Themed sky over the plate's own star band, so its (3,2,20) navy takes the theme too.
+            draw_set_alpha(0.55); draw_set_color(_th.sky_bot);
+            draw_rectangle(GUI_XL, GARDEN_PLATE_Y, GUI_XR, GARDEN_PLATE_Y + 150, false);
+            draw_set_alpha(1.0);
+        }
+        // CANOPY LAYER (M 09-17 late: "the trees have no tops ... separate layer ... parallax"):
+        // spr_garden_canopy = transparent branch-crown silhouettes (1600x448 @ x4, bottom 88px
+        // pre-faded) tiled across the width, its base 80px into the plate's trunk band so the
+        // painted trunks appear to continue up into the crowns. Parallax: crowns drift against
+        // the player's x (0.06) - far layer, small move.
+        var _can = asset_get_index(_th.canopy);
+        if (_can < 0) _can = asset_get_index("spr_garden_canopy");   // themed strip not imported -> bare crowns
+        if (_can >= 0 && sprite_exists(_can)) {
+            var _cw  = sprite_get_width(_can);
+            var _cy  = GARDEN_PLATE_Y + 80 - sprite_get_height(_can);
+            var _cpx = -(_gc.garden_px - 960) * 0.06;
+            var _cx0 = (_cpx mod _cw) - _cw;
+            // Themes without their own strip tint the bare crowns (frost / blossom blush).
+            var _ctint = variable_struct_exists(_th, "canopy_tint") ? _th.canopy_tint : c_white;
+            for (var _ck = 0; _ck < 3; _ck++) draw_sprite_ext(_can, 0, _cx0 + _ck * _cw, _cy, 1, 1, 0, _ctint, 1);
+        } else {
+            // Pre-import fallback: sky-coloured fade sinks the trunk tops into the night.
+            var _fade_col = make_color_rgb(3, 2, 20);
+            draw_primitive_begin(pr_trianglestrip);
+            draw_vertex_color(GUI_XL, GARDEN_PLATE_Y - 2,   _fade_col, 1.0);
+            draw_vertex_color(GUI_XR, GARDEN_PLATE_Y - 2,   _fade_col, 1.0);
+            draw_vertex_color(GUI_XL, GARDEN_PLATE_Y + 150, _fade_col, 0.0);
+            draw_vertex_color(GUI_XR, GARDEN_PLATE_Y + 150, _fade_col, 0.0);
+            draw_primitive_end();
+        }
+    } else {
+        draw_set_color(make_color_rgb(11, 16, 20));  draw_rectangle(GUI_XL, GARDEN_PLATE_Y, GUI_XR, 700, false);
+        draw_set_color(make_color_rgb(30, 38, 30));  draw_rectangle(GUI_XL, 690, GUI_XR, 712, false);   // wall stand-in
+        draw_set_color(make_color_rgb(22, 29, 23));  draw_rectangle(GUI_XL, 712, GUI_XR, GUI_H, false);
+        draw_set_color(make_color_rgb(20, 32, 44));
+        draw_ellipse(GARDEN_POND_X - GARDEN_POND_RX, GARDEN_POND_Y - GARDEN_POND_RY, GARDEN_POND_X + GARDEN_POND_RX, GARDEN_POND_Y + GARDEN_POND_RY, false);
+        draw_set_color(make_color_rgb(38, 32, 30)); draw_rectangle(1236, 600, 1552, 942, false);
+        draw_set_font(ui_font(fnt_ui_small)); draw_set_halign(fa_center); draw_set_color(make_color_rgb(150, 160, 150));
+        draw_text(960, 460, "(garden plate not imported - run tools/gen_garden_plate_0917.py import with GM closed)");
         draw_set_halign(fa_left);
     }
 
-    // ---- Ornaments in their plots (+ glowing rings in placement mode) ----
-    var _anch = garden_decor_anchors();
-    var _has_jar = false, _has_wheel = false;
-    for (var _ai = 0; _ai < array_length(_anch); _ai++) {
-        var _aid = garden_decor_at(_ai);
-        var _ax  = _anch[_ai].x - _cam;
-        var _ay  = _anch[_ai].y;
-        if (_aid == "jar")   _has_jar = true;
-        if (_aid == "wheel") _has_wheel = true;
-        if (_ax < -160 || _ax > 2080) continue;
-        if (_aid == "") {
-            // Empty plot: visible ONLY while choosing a spot - glowing ring + number.
-            if (_gc.garden_place_pick != "") {
-                draw_set_alpha(0.55 + 0.30 * sin(_t * 3 + _ai));
-                draw_set_color(make_color_rgb(150, 220, 160));
-                draw_ellipse(_ax - 52, _ay - 18, _ax + 52, _ay + 14, true);
-                draw_ellipse(_ax - 46, _ay - 15, _ax + 46, _ay + 11, true);
-                draw_set_alpha(1.0);
-                draw_set_halign(fa_center);
-                draw_set_font(ui_font(fnt_ui));
-                draw_text(_ax, _ay - 62, "[" + string(_ai + 1) + "]");
-                draw_set_halign(fa_left);
-                if (touch_tapped(_ax - 60, _ay - 70, _ax + 60, _ay + 20)) input_inject("garden:plot" + string(_ai));
-            }
-            continue;
+    // ---- Koi shadows on the pond (baked water, live fish): three slow orbiters, +2 with the
+    //      pond wheel; a fresh crumb pulls them to where it landed. ----
+    var _placed = garden_decor_list();
+    var _has_jar = garden_decor_placed("jar"), _has_wheel = garden_decor_placed("wheel");
+    var _crumb_live = (current_time - _gc.garden_crumb_t < 4500);
+    for (var _ko = 0; _ko < 3 + (_has_wheel ? 2 : 0); _ko++) {
+        var _ka  = _t * (0.35 + 0.1 * _ko) + _ko * 2.2;
+        var _kx  = GARDEN_POND_X + cos(_ka) * (150 - _ko * 26);
+        var _ky  = GARDEN_POND_Y + 10 + sin(_ka) * (60 - _ko * 9);
+        if (_crumb_live) {
+            var _kt = clamp((current_time - _gc.garden_crumb_t) / 900, 0, 1);
+            _kx = lerp(_kx, _gc.garden_crumb_x + cos(_ka * 3) * 26, _kt);
+            _ky = lerp(_ky, GARDEN_POND_Y + sin(_ka * 3) * 14, _kt);
         }
-        // Each ornament: a small code-drawn vignette.
-        switch (_aid) {
-            case "lantern":
-                draw_set_color(make_color_rgb(70, 72, 80));
-                draw_rectangle(_ax - 10, _ay - 76, _ax + 10, _ay, false);
-                draw_rectangle(_ax - 22, _ay - 96, _ax + 22, _ay - 72, false);
-                draw_set_color(make_color_rgb(26, 27, 34));
-                draw_rectangle(_ax - 22, _ay - 96, _ax + 22, _ay - 72, true);
-                draw_set_color(make_color_rgb(250, 200, 120));
-                draw_set_alpha(0.55 + 0.25 * sin(_t * 2.4 + _ai));
-                draw_rectangle(_ax - 12, _ay - 92, _ax + 12, _ay - 76, false);
-                draw_set_alpha(0.10 + 0.05 * sin(_t * 2.4 + _ai));
-                draw_circle(_ax, _ay - 84, 90, false);
-                draw_set_alpha(1.0);
-                break;
-            case "gate":
-                draw_set_color(make_color_rgb(52, 38, 40));
-                draw_rectangle(_ax - 64, _ay - 130, _ax - 48, _ay, false);
-                draw_rectangle(_ax + 48, _ay - 130, _ax + 64, _ay, false);
-                draw_rectangle(_ax - 80, _ay - 150, _ax + 80, _ay - 126, false);
-                draw_rectangle(_ax - 70, _ay - 120, _ax + 70, _ay - 106, false);
-                draw_set_alpha(0.20 + 0.10 * sin(_t * 1.4));
-                draw_set_color(make_color_rgb(170, 120, 220));
-                draw_rectangle(_ax - 46, _ay - 104, _ax + 46, _ay - 4, false);
-                draw_set_alpha(1.0);
-                break;
-            case "basin":
-                draw_set_color(make_color_rgb(72, 74, 84));
-                draw_rectangle(_ax - 8, _ay - 40, _ax + 8, _ay, false);
-                draw_ellipse(_ax - 42, _ay - 58, _ax + 42, _ay - 34, false);
-                draw_set_color(make_color_rgb(30, 44, 60));
-                draw_ellipse(_ax - 34, _ay - 54, _ax + 34, _ay - 38, false);
-                draw_set_color(make_color_rgb(222, 224, 210));
-                draw_set_alpha(0.7);
-                draw_circle(_ax + 8 * sin(_t * 0.7), _ay - 46, 6, false);
-                draw_set_alpha(1.0);
-                break;
-            case "bloom":
-                for (var _bf = 0; _bf < 7; _bf++) {
-                    var _bfx = _ax - 42 + _bf * 14;
-                    var _bfy = _ay - 6 - frac(sin(_bf * 91.7 + _ai) * 351.3) * 16;
-                    draw_set_color(make_color_rgb(30, 44, 32));
-                    draw_line(_bfx, _ay, _bfx, _bfy);
-                    draw_set_alpha(0.65 + 0.30 * sin(_t * 1.8 + _bf));
-                    draw_set_color((_bf mod 2 == 0) ? make_color_rgb(150, 110, 220) : make_color_rgb(110, 180, 235));
-                    draw_circle(_bfx, _bfy, 5, false);
-                    draw_set_alpha(1.0);
-                }
-                break;
-            case "ward":
-                draw_set_color(make_color_rgb(60, 70, 58));
-                draw_roundrect_ext(_ax - 20, _ay - 66, _ax + 20, _ay, 12, 12, false);
-                draw_circle(_ax, _ay - 74, 16, false);
-                draw_set_color(make_color_rgb(40, 52, 40));
-                draw_roundrect_ext(_ax - 20, _ay - 66, _ax + 20, _ay, 12, 12, true);
-                // Eyes blink every few seconds.
-                if (frac(_t * 0.21 + _ai * 0.37) > 0.06) {
-                    draw_set_color(make_color_rgb(160, 230, 170));
-                    draw_circle(_ax - 6, _ay - 76, 2, false);
-                    draw_circle(_ax + 6, _ay - 76, 2, false);
-                }
-                break;
-            case "chimes":
-                draw_set_color(make_color_rgb(48, 40, 36));
-                draw_rectangle(_ax - 3, _ay - 120, _ax + 3, _ay, false);
-                draw_rectangle(_ax - 40, _ay - 124, _ax + 40, _ay - 116, false);
-                for (var _ch = 0; _ch < 4; _ch++) {
-                    var _chx = _ax - 28 + _ch * 19;
-                    var _chs = 5 * sin(_t * 1.1 + _ch * 1.7);
-                    draw_set_color(make_color_rgb(210, 205, 190));
-                    draw_line(_chx, _ay - 116, _chx + _chs, _ay - 76 + _ch * 4);
-                    draw_rectangle(_chx + _chs - 2, _ay - 76 + _ch * 4, _chx + _chs + 2, _ay - 56 + _ch * 4, false);
-                }
-                break;
-            case "wheel":
-                draw_set_color(make_color_rgb(52, 44, 38));
-                draw_circle(_ax, _ay - 40, 34, true);
-                for (var _ws = 0; _ws < 4; _ws++) {
-                    var _wa = _t * 0.8 + _ws * pi / 2;
-                    draw_line(_ax - cos(_wa) * 32, _ay - 40 - sin(_wa) * 32,
-                              _ax + cos(_wa) * 32, _ay - 40 + sin(_wa) * 32);
-                }
-                draw_set_color(make_color_rgb(70, 60, 50));
-                draw_rectangle(_ax - 6, _ay - 40, _ax + 6, _ay, false);
-                break;
-            case "jar":
-                draw_set_color(make_color_rgb(120, 140, 150));
-                draw_roundrect_ext(_ax - 14, _ay - 40, _ax + 14, _ay, 8, 8, true);
-                draw_set_color(make_color_rgb(90, 96, 104));
-                draw_rectangle(_ax - 10, _ay - 46, _ax + 10, _ay - 40, false);
-                for (var _fj = 0; _fj < 3; _fj++) {
-                    draw_set_alpha(0.5 + 0.5 * sin(_t * 3 + _fj * 2.1));
-                    draw_set_color(make_color_rgb(220, 235, 140));
-                    draw_circle(_ax - 8 + _fj * 8, _ay - 12 - 8 * frac(sin(_fj * 7.3) * 133.7) - 4 * sin(_t + _fj), 2, false);
-                    draw_set_alpha(1.0);
-                }
-                break;
-        }
-    }
-
-    // ---- THE POND (world x 1250, front lane) ----
-    var _pd = 1250 - _cam;
-    if (_pd > -420 && _pd < 2340) {
-        draw_set_color(make_color_rgb(20, 32, 44));
-        draw_ellipse(_pd - 340, 830, _pd + 340, 972, false);
-        draw_set_color(make_color_rgb(34, 56, 74));
-        draw_ellipse(_pd - 310, 842, _pd + 310, 960, false);
-        draw_set_color(make_color_rgb(80, 120, 146));
-        draw_ellipse(_pd - 340, 830, _pd + 340, 972, true);
-        // Moon glint drifting on the surface.
-        draw_set_alpha(0.45);
-        draw_set_color(make_color_rgb(150, 190, 215));
-        var _gl = _pd - 60 + 40 * sin(_t * 0.5);
-        draw_line(_gl - 26, 890, _gl + 26, 890);
-        draw_line(_gl - 12, 898, _gl + 30, 898);
-        draw_set_alpha(1.0);
-        // Koi shadows: three slow orbiters; a fresh crumb pulls them in.
-        var _crumb_live = (current_time - _gc.garden_crumb_t < 4500);
-        for (var _ko = 0; _ko < 3 + (_has_wheel ? 2 : 0); _ko++) {
-            var _ka  = _t * (0.35 + 0.1 * _ko) + _ko * 2.2;
-            var _kx  = _pd + cos(_ka) * (170 - _ko * 30);
-            var _ky  = 901 + sin(_ka) * (38 - _ko * 6);
-            if (_crumb_live) {
-                var _kt = clamp((current_time - _gc.garden_crumb_t) / 900, 0, 1);
-                _kx = lerp(_kx, _gc.garden_crumb_x - _cam + cos(_ka * 3) * 26, _kt);
-                _ky = lerp(_ky, 900 + sin(_ka * 3) * 12, _kt);
-            }
-            draw_set_alpha(0.55);
-            draw_set_color(make_color_rgb(16, 24, 34));
-            draw_ellipse(_kx - 20, _ky - 6, _kx + 20, _ky + 6, false);
+        // 09-19: real koi sprites (spr_garden_koi_a orange / _b pale, 16x8 native @ x4, drawn
+        //        pointing RIGHT) - heading = the orbit tangent, tail wag = a small angle
+        //        wobble, plus a soft shadow so they sit UNDER the baked water.
+        var _kspr = asset_get_index((_ko mod 2 == 0) ? "spr_garden_koi_a" : "spr_garden_koi_b");
+        var _khd  = point_direction(0, 0, -sin(_ka) * (150 - _ko * 26), cos(_ka) * (60 - _ko * 9));
+        if (_kspr >= 0 && sprite_exists(_kspr)) {
+            var _kwag = 6 * sin(_t * 9 + _ko * 1.7);   // sprites are CENTRE-origin
+            draw_set_alpha(0.45);
+            draw_sprite_ext(_kspr, 0, _kx + 3, _ky + 5, 1, 1, _khd + _kwag, make_color_rgb(10, 14, 22), 1);
             draw_set_alpha(0.8);
-            draw_set_color((_ko mod 2 == 0) ? make_color_rgb(200, 120, 90) : make_color_rgb(200, 190, 175));
-            draw_ellipse(_kx - 14, _ky - 4, _kx + 6, _ky + 4, false);
+            draw_sprite_ext(_kspr, 0, _kx, _ky, 1, 1, _khd + _kwag, make_color_rgb(150, 170, 190), 1);
+            draw_set_alpha(1.0);
+        } else {
+            draw_set_alpha(0.5); draw_set_color(make_color_rgb(10, 14, 22));
+            draw_ellipse(_kx - 18, _ky - 5, _kx + 18, _ky + 5, false);
+            draw_set_alpha(0.75);
+            draw_set_color((_ko mod 2 == 0) ? make_color_rgb(190, 110, 80) : make_color_rgb(190, 180, 165));
+            draw_ellipse(_kx - 13, _ky - 4, _kx + 6, _ky + 4, false);
             draw_set_alpha(1.0);
         }
-        // Tap the water itself = toss a crumb.
-        if (touch_tapped(_pd - 340, 830, _pd + 340, 972)) input_inject("garden:crumb");
+    }
+    // Moon glint drifting on the surface.
+    draw_set_alpha(0.35); draw_set_color(make_color_rgb(150, 190, 215));
+    var _gl = GARDEN_POND_X - 40 + 40 * sin(_t * 0.5);
+    draw_line(_gl - 26, GARDEN_POND_Y - 20, _gl + 26, GARDEN_POND_Y - 20);
+    draw_line(_gl - 12, GARDEN_POND_Y - 12, _gl + 30, GARDEN_POND_Y - 12);
+    draw_set_alpha(1.0);
+
+    // ---- Placement mode (09-17 late, FREE placement): a ghost of the ornament follows the
+    //      cursor / finger over the grass, green where it may stand, red where it may not; the
+    //      footprint ring shows on the ground. Tap = place there; keyboard/pad = walk and
+    //      press Enter to set it at your feet (Step). ----
+    if (_placing) {
+        var _ghx = clamp(_mx, 40, _W - 40), _ghy = clamp(_my, GARDEN_BAND_TOP + 10, GARDEN_BAND_BOT - 4);
+        var _gh_why = garden_decor_spot_ok(_gc.garden_place_pick, _ghx, _ghy);
+        var _gh_ok  = (_gh_why == "");
+        draw_set_alpha(0.55 + 0.25 * sin(_t * 4));
+        draw_set_color(_gh_ok ? make_color_rgb(150, 220, 160) : make_color_rgb(220, 110, 110));
+        draw_ellipse(_ghx - 46, _ghy - 15, _ghx + 46, _ghy + 11, true);
+        draw_set_alpha(0.6);
+        ui_garden_draw_ornament(_gc.garden_place_pick, _ghx, _ghy, _t, 99, _gh_ok ? c_white : make_color_rgb(255, 150, 150));
+        draw_set_alpha(1.0);
+        if (!_gh_ok) {
+            draw_set_halign(fa_center); draw_set_font(ui_font(fnt_ui_small)); draw_set_color(make_color_rgb(235, 170, 170));
+            draw_text(_ghx, _ghy + 18, _gh_why);
+            draw_set_halign(fa_left);
+        }
     }
 
-    // ---- THE CAIRN (world x 2650) ----
-    var _cn = 2650 - _cam;
-    var _stacked = variable_global_exists("garden_cairn") ? global.garden_cairn : 0;
-    if (_cn > -200 && _cn < 2120) {
-        // Flat base stone.
-        draw_set_color(make_color_rgb(58, 62, 70));
-        draw_ellipse(_cn - 56, 866, _cn + 56, 890, false);
-        // The stack: stones shrink as they rise; the newest wobbles as it lands.
-        var _sy0 = 866;
-        for (var _st = 0; _st < _stacked; _st++) {
-            var _sw2 = 44 - _st * 7;
-            var _sh3 = 22 - _st * 2;
-            var _wob = 0;
-            for (var _gfw = 0; _gfw < array_length(_gc.garden_fx); _gfw++) {
-                var _gfs2 = _gc.garden_fx[_gfw];
-                if (_gfs2.kind == "stone" && _st == _stacked - 1 && current_time - _gfs2.t0 < 700) {
-                    _wob = 4 * sin((current_time - _gfs2.t0) / 60) * (1 - (current_time - _gfs2.t0) / 700);
-                }
-            }
-            draw_set_color(make_color_rgb(74 + _st * 6, 78 + _st * 6, 88 + _st * 6));
-            draw_ellipse(_cn - _sw2 + _wob, _sy0 - _sh3, _cn + _sw2 + _wob, _sy0, false);
-            draw_set_color(make_color_rgb(34, 36, 44));
-            draw_ellipse(_cn - _sw2 + _wob, _sy0 - _sh3, _cn + _sw2 + _wob, _sy0, true);
-            _sy0 -= _sh3 - 4;
-        }
-        // Loose stones waiting at the base.
-        for (var _ls = 0; _ls < 5 - _stacked; _ls++) {
-            var _lsx = _cn - 120 - _ls * 44;
-            draw_set_color(make_color_rgb(64, 66, 76));
-            draw_ellipse(_lsx - 18, 886, _lsx + 18, 902, false);
-            draw_set_color(make_color_rgb(34, 36, 44));
-            draw_ellipse(_lsx - 18, 886, _lsx + 18, 902, true);
-        }
-        // Completed cairn: a soft standing shimmer.
-        if (_stacked >= 5) {
-            draw_set_alpha(0.18 + 0.08 * sin(_t * 1.6));
-            draw_set_color(make_color_rgb(160, 230, 170));
-            draw_circle(_cn, 800, 70, false);
-            draw_set_alpha(1.0);
-        }
-        if (touch_tapped(_cn - 170, 760, _cn + 90, 910)) input_inject("garden:stone");
-    }
-
-    // ---- Forage sparkles (3/day, seeded) ----
+    // ---- Forage glints (3/run, seeded) - ground level, drawn under the walkers ----
     var _spots = garden_forage_spots();
     for (var _fs = 0; _fs < array_length(_spots); _fs++) {
         var _fsp = _spots[_fs];
         if (_fsp.taken) continue;
-        var _fx = _fsp.x - _cam;
-        if (_fx < -40 || _fx > 1960) continue;
         var _tw = 0.5 + 0.5 * sin(_t * 4 + _fs * 2.3);
         draw_set_alpha(0.55 + 0.45 * _tw);
         draw_set_color(make_color_rgb(240, 230, 150));
-        draw_line(_fx - 8 - 4 * _tw, _fsp.y, _fx + 8 + 4 * _tw, _fsp.y);
-        draw_line(_fx, _fsp.y - 8 - 4 * _tw, _fx, _fsp.y + 8 + 4 * _tw);
-        draw_circle(_fx, _fsp.y, 3, false);
+        draw_line(_fsp.x - 8 - 4 * _tw, _fsp.y, _fsp.x + 8 + 4 * _tw, _fsp.y);
+        draw_line(_fsp.x, _fsp.y - 8 - 4 * _tw, _fsp.x, _fsp.y + 8 + 4 * _tw);
+        draw_circle(_fsp.x, _fsp.y, 3, false);
         draw_set_alpha(1.0);
-        if (touch_tapped(_fx - 34, _fsp.y - 34, _fx + 34, _fsp.y + 34)) input_inject("garden:forage" + string(_fsp.idx));
+        if (!_placing && touch_tapped(_fsp.x - 40, _fsp.y - 40, _fsp.x + 40, _fsp.y + 40)) {
+            _gc.garden_goal = "garden:forage" + string(_fsp.idx); _gc.garden_goal_x = _fsp.x; _gc.garden_goal_y = _fsp.y + 20;
+            input_inject("garden:goal"); _tap_used = true;
+        }
     }
 
-    // ---- RESIDENTS: the entrusted creatures, two lanes, dwell-and-stroll ----
-    var _dn  = array_length(bairc_donated());
-    var _dsh = min(_dn, 16);
-    var _crumb_on = (current_time - _gc.garden_crumb_t < 4500);
+    // ---- Y-SORTED WALKERS + SET DRESSING: everything standing on the band, lower = in front ----
+    var _dl = [];
+    for (var _ai = 0; _ai < array_length(_placed); _ai++) {
+        array_push(_dl, { y:_placed[_ai].y, kind:"ornament", id:_placed[_ai].id, x:_placed[_ai].x, i:_ai });
+    }
+    array_push(_dl, { y:GARDEN_CAIRN_Y, kind:"cairn" });
+    array_push(_dl, { y:GARDEN_BAIRC_Y, kind:"bairc" });
+    if (array_length(bairc_memorials()) > 0) array_push(_dl, { y:GARDEN_MEM_Y, kind:"memorial" });
+    for (var _pi = 0; _pi < array_length(_gc.garden_pets); _pi++) array_push(_dl, { y:_gc.garden_pets[_pi].y, kind:"pet", i:_pi });
+    array_push(_dl, { y:_gc.garden_py, kind:"player" });
+    array_sort(_dl, function(_a, _b) { return _a.y - _b.y; });
+
+    var _don = bairc_donated();
     var _hover_name = "";
-    for (var _pass = 0; _pass < 2; _pass++) {          // 0 = back lane, 1 = front
-        for (var _ri = 0; _ri < _dsh; _ri++) {
-            var _back = (_ri mod 2 == 1);
-            if (_back != (_pass == 0)) continue;
-            var _rd  = bairc_donated()[_ri];
-            var _rp  = { is_egg: false, species: _rd.species, stage: _rd.stage };
-            var _rsp = pet_sprite(_rp, "s");
-            if (_rsp < 0) continue;
-            // Home x matches the Step's petting math EXACTLY.
-            var _rh  = frac(sin((_ri + 1) * 91.17) * 47453.25);
-            var _rx  = 260 + _rh * (_W - 620);
-            // Dwell-and-stroll (band idiom): eased sine, clamped to linger.
-            var _rsw = sin(_t * (0.14 + 0.04 * (_ri mod 3)) + _ri * 2.13);
-            var _rmv = clamp((_rsw + 0.55) / 1.10, 0, 1);
-            _rmv = _rmv * _rmv * (3 - 2 * _rmv);
-            _rx += lerp(-130, 130, _rmv);
-            // A fresh crumb draws anyone near the pond to the bank.
-            if (_crumb_on && abs(_rx - 1250) < 760) {
-                var _rct = clamp((current_time - _gc.garden_crumb_t) / 1200, 0, 1);
-                _rx = lerp(_rx, 1250 + ((_rx < 1250) ? -380 : 380), _rct * 0.8);
+    for (var _di = 0; _di < array_length(_dl); _di++) {
+        var _d = _dl[_di];
+        switch (_d.kind) {
+            case "ornament": {
+                ui_garden_draw_ornament(_d.id, _d.x, _d.y, _t, _d.i);
+                // Tap a placed ornament = walk over (its "take up" prompt then shows).
+                if (!_placing && touch_tapped(_d.x - 40, _d.y - 110, _d.x + 40, _d.y + 12)) {
+                    _gc.garden_goal = ""; _gc.garden_goal_x = _d.x; _gc.garden_goal_y = _d.y + 40;
+                    input_inject("garden:goal"); _tap_used = true;
+                }
+                break;
             }
-            var _ry  = _back ? 800 : 952;
-            var _rsx = _rx - _cam;
-            if (_rsx < -100 || _rsx > 2020) continue;
-            // Idle bob + drink-dip at the pond.
-            var _rbob = 2 * sin(_t * 2 + _ri);
-            var _rfit = pet_sprite_fit(_rsp, _rsx, _ry + _rbob, (_back ? 74 : 104) * pet_stage_size_mult(_rd.stage));   // stage-scaled (08-19)
-            draw_sprite_ext(_rsp, pet_anim_frame(_rsp), _rfit.x, _rfit.y,
-                _rfit.scale, _rfit.scale, 0, c_white, _back ? 0.92 : 1);
-            // Hover: name label; tap: a pet on the head.
-            var _hw = _back ? 50 : 68;
-            if (_mx >= _rsx - _hw && _mx <= _rsx + _hw && _my >= _ry - 130 && _my <= _ry + 10) {
-                _hover_name = _rd.name + "  (" + pet_stage_name(_rd.stage) + ")";
-                if (touch_tapped(_rsx - _hw, _ry - 130, _rsx + _hw, _ry + 10)) input_inject("garden:pet" + string(_ri));
+            case "cairn":    ui_garden_draw_cairn(GARDEN_CAIRN_X, GARDEN_CAIRN_Y, _gc, _t); break;
+            case "memorial": {
+                // The quiet corner: small headstones, newest nearest the path; names on approach.
+                var _mems = bairc_memorials();
+                var _mgn  = min(array_length(_mems), 8);
+                for (var _mg = 0; _mg < _mgn; _mg++) {
+                    var _mgx = GARDEN_MEM_X + (_mg mod 4) * 56 + ((_mg div 4) * 28);
+                    var _mgy = GARDEN_MEM_Y - 24 + (_mg div 4) * 30;
+                    draw_set_color(make_color_rgb(66, 70, 82));
+                    draw_roundrect_ext(_mgx - 12, _mgy - 34, _mgx + 12, _mgy, 8, 8, false);
+                    draw_set_color(make_color_rgb(30, 33, 42));
+                    draw_roundrect_ext(_mgx - 12, _mgy - 34, _mgx + 12, _mgy, 8, 8, true);
+                    draw_line(_mgx - 6, _mgy - 22, _mgx + 6, _mgy - 22);
+                }
+                draw_set_halign(fa_center); draw_set_font(ui_font(fnt_ui_small));
+                draw_set_color(make_color_rgb(110, 118, 132));
+                draw_text(GARDEN_MEM_X + 90, GARDEN_MEM_Y - 78, "the quiet corner");
+                draw_set_halign(fa_left);
+                break;
+            }
+            case "bairc": {
+                var _bspr = asset_get_index("spr_npc_bairc_idle");
+                if (_bspr >= 0 && sprite_exists(_bspr)) {
+                    var _bfr = (current_time div 170) mod max(1, sprite_get_number(_bspr));
+                    var _bfit = pet_sprite_fit(_bspr, GARDEN_BAIRC_X, GARDEN_BAIRC_Y, 176 * garden_depth_scale(GARDEN_BAIRC_Y));
+                    draw_set_alpha(0.35); draw_set_color(c_black);
+                    draw_ellipse(GARDEN_BAIRC_X - 34, GARDEN_BAIRC_Y - 8, GARDEN_BAIRC_X + 34, GARDEN_BAIRC_Y + 8, false);
+                    draw_set_alpha(1.0);
+                    draw_sprite_ext(_bspr, _bfr, _bfit.x, _bfit.y, _bfit.scale, _bfit.scale, 0, c_white, 1);
+                    if (!_placing && touch_tapped(GARDEN_BAIRC_X - 60, GARDEN_BAIRC_Y - 190, GARDEN_BAIRC_X + 60, GARDEN_BAIRC_Y + 10)) {
+                        _gc.garden_goal = "garden:bairc"; _gc.garden_goal_x = GARDEN_BAIRC_X - 110; _gc.garden_goal_y = GARDEN_BAIRC_Y + 10;
+                        input_inject("garden:goal"); _tap_used = true;
+                    }
+                }
+                break;
+            }
+            case "pet": {
+                var _p = _gc.garden_pets[_d.i];
+                if (_d.i >= array_length(_don)) break;
+                var _rd  = _don[_d.i];
+                var _rp  = { is_egg: false, species: _rd.species, stage: _rd.stage };
+                var _side = (_p.face != -1);
+                var _rsp = pet_sprite(_rp, _side ? "e" : "s");
+                if (_rsp < 0) break;
+                var _ds  = garden_depth_scale(_p.y);
+                var _rh  = 104 * pet_stage_size_mult(_rd.stage) * _ds;
+                var _feet = _p.y - _p.hop;
+                // Shadow stays on the ground while the body hops.
+                draw_set_alpha(0.35); draw_set_color(c_black);
+                draw_ellipse(_p.x - _rh * 0.32, _p.y - 6, _p.x + _rh * 0.32, _p.y + 6, false);
+                draw_set_alpha(1.0);
+                var _rfit = pet_sprite_fit(_rsp, _p.x, _feet, _rh);
+                var _rxs  = _rfit.scale, _rdx = _rfit.x;
+                if (_side && _p.face < 0) {
+                    // _e faces RIGHT; mirror about the visible centre for a left-walker.
+                    _rxs = -_rfit.scale;
+                    _rdx = _p.x + ((sprite_get_bbox_left(_rsp) + sprite_get_bbox_right(_rsp) + 1) * 0.5 - sprite_get_xoffset(_rsp)) * _rfit.scale;
+                }
+                var _nap = (_p.state == "nap");
+                draw_sprite_ext(_rsp, _nap ? 0 : pet_anim_frame(_rsp), _rdx, _rfit.y + (_nap ? 2 * sin(_t * 1.2 + _d.i) : 0),
+                    _rxs, _rfit.scale, 0, _nap ? make_color_rgb(200, 205, 225) : c_white, 1);
+                if (_nap) {
+                    draw_set_font(ui_font(fnt_ui_small)); draw_set_color(make_color_rgb(170, 190, 220));
+                    draw_set_alpha(0.5 + 0.4 * sin(_t * 2 + _d.i));
+                    draw_text(_p.x + 18, _feet - _rh - 10 - 6 * frac(_t * 0.4 + _d.i * 0.3) * 4, "z");
+                    draw_set_alpha(1.0);
+                }
+                // Hover: name label; tap: walk over and pet it.
+                var _hw = _rh * 0.45;
+                if (_mx >= _p.x - _hw && _mx <= _p.x + _hw && _my >= _feet - _rh - 10 && _my <= _p.y + 10) {
+                    _hover_name = _rd.name + "  (" + pet_stage_name(_rd.stage) + ((_nap) ? ", asleep)" : ")");
+                    if (!_placing && touch_tapped(_p.x - _hw, _feet - _rh - 10, _p.x + _hw, _p.y + 10)) {
+                        _gc.garden_goal = "garden:pet" + string(_d.i); _gc.garden_goal_x = _p.x; _gc.garden_goal_y = _p.y + 20;
+                        input_inject("garden:goal"); _tap_used = true;
+                    }
+                }
+                break;
+            }
+            case "player": {
+                var _pspr = garden_player_sprite();
+                if (_pspr < 0 || !sprite_exists(_pspr)) break;
+                var _pds  = garden_depth_scale(_gc.garden_py);
+                var _bob  = _gc.garden_moving ? abs(sin(_gc.garden_walk_t * 0.32)) * 5 : 0;
+                var _lean = _gc.garden_moving ? sign(_gc.garden_vx) * 2.5 * sin(_gc.garden_walk_t * 0.32) : 0;
+                var _pfr  = (sprite_get_number(_pspr) >= 8) ? _gc.garden_face : 0;
+                draw_set_alpha(0.38); draw_set_color(c_black);
+                draw_ellipse(_gc.garden_px - 30 * _pds, _gc.garden_py - 7, _gc.garden_px + 30 * _pds, _gc.garden_py + 7, false);
+                draw_set_alpha(1.0);
+                var _pfit = pet_sprite_fit(_pspr, _gc.garden_px, _gc.garden_py - _bob, 150 * _pds);
+                // Rotate about the feet: shift the draw origin so the lean pivots at the ground.
+                var _pcx = _gc.garden_px, _pcy = _gc.garden_py - _bob;
+                var _pox = _pfit.x - _pcx, _poy = _pfit.y - _pcy;
+                var _rlx = _pcx + _pox * dcos(_lean) + _poy * dsin(_lean);
+                var _rly = _pcy - _pox * dsin(_lean) + _poy * dcos(_lean);
+                draw_sprite_ext(_pspr, _pfr, _rlx, _rly, _pfit.scale, _pfit.scale, _lean, c_white, 1);
+                // Tap target ring while walking to a spot.
+                if (_gc.garden_tx >= 0) {
+                    draw_set_alpha(0.35 + 0.25 * sin(_t * 6)); draw_set_color(make_color_rgb(190, 230, 190));
+                    draw_ellipse(_gc.garden_tx - 22, _gc.garden_ty - 9, _gc.garden_tx + 22, _gc.garden_ty + 9, true);
+                    draw_set_alpha(1.0);
+                }
+                break;
             }
         }
     }
-    if (_dn > _dsh && 60 - 0 < 2000) {
-        draw_set_font(ui_font(fnt_ui_small));
-        draw_set_color(make_color_rgb(120, 130, 120));
-        draw_text(30, 1002, "+" + string(_dn - _dsh) + " more live deeper in the grounds");
-    }
 
     // ---- Ambient fireflies (more near a placed jar) ----
-    var _ffn = 20 + (_has_jar ? 16 : 0);
+    var _ffn = 22 + (_has_jar ? 16 : 0);
     for (var _ff = 0; _ff < _ffn; _ff++) {
         var _fh  = frac(sin(_ff * 43.7) * 82631.1);
-        var _ffx = frac(_fh + _t * 0.008 * (1 + _fh)) * _W - _cam;
-        if (_ffx < -10 || _ffx > 1930) continue;
-        var _ffy = 620 + frac(sin(_ff * 17.3) * 5417.9) * 400 + 14 * sin(_t * 1.1 + _ff);
+        var _ffx = frac(_fh + _t * 0.008 * (1 + _fh)) * _W;
+        var _ffy = GARDEN_PLATE_Y + 200 + frac(sin(_ff * 17.3) * 5417.9) * 420 + 14 * sin(_t * 1.1 + _ff);
         draw_set_alpha(0.35 + 0.55 * abs(sin(_t * 1.9 + _ff * 1.3)));
         draw_set_color(make_color_rgb(215, 235, 140));
         draw_circle(_ffx, _ffy, 2, false);
+        draw_set_alpha(1.0);
+    }
+
+    // ---- Weather particles per GROUNDS theme (leaves / snow / petals / ash): hashed motes on
+    //      a time loop, the ember/firefly idiom. Drawn over the walkers, under the HUD. ----
+    if (_th.particle != "none") {
+        var _pn = (_th.particle == "snow") ? 90 : 48;
+        for (var _pp = 0; _pp < _pn; _pp++) {
+            var _ph  = frac(sin(_pp * 91.7) * 43758.5);
+            var _ph2 = frac(sin(_pp * 17.1) * 12543.8);
+            var _pspd = (_th.particle == "snow") ? 0.035 : ((_th.particle == "ash") ? -0.025 : 0.05);
+            var _pt  = frac(_ph2 + _t * _pspd * (0.7 + _ph));
+            var _ppy = GARDEN_PLATE_Y - 60 + _pt * (GUI_H - GARDEN_PLATE_Y + 60);
+            if (_th.particle == "ash") _ppy = GUI_H - _pt * (GUI_H - 200);
+            var _ppx = _ph * _W + 40 * sin(_t * (0.6 + _ph) + _pp) + ((_th.particle == "leaves") ? _t * 18 : 0);
+            _ppx = ((_ppx mod _W) + _W) mod _W;
+            var _pfade = clamp(min(_pt, 1 - _pt) * 6, 0, 1);
+            switch (_th.particle) {
+                case "leaves":
+                    draw_set_alpha(0.85 * _pfade);
+                    draw_set_color((_pp mod 3 == 0) ? make_color_rgb(200, 110, 40) : ((_pp mod 3 == 1) ? make_color_rgb(150, 50, 30) : make_color_rgb(220, 160, 60)));
+                    var _la = _t * 120 * (0.5 + _ph);
+                    draw_line_width(_ppx - 5 * dcos(_la), _ppy - 5 * dsin(_la), _ppx + 5 * dcos(_la), _ppy + 5 * dsin(_la), 3);
+                    break;
+                case "snow":
+                    draw_set_alpha(0.7 * _pfade); draw_set_color(make_color_rgb(235, 240, 250));
+                    draw_circle(_ppx, _ppy, 1.5 + 1.5 * _ph, false);
+                    break;
+                case "petals":
+                    draw_set_alpha(0.8 * _pfade); draw_set_color((_pp mod 2 == 0) ? make_color_rgb(235, 170, 200) : make_color_rgb(240, 225, 230));
+                    draw_ellipse(_ppx - 4, _ppy - 2, _ppx + 4, _ppy + 2, false);
+                    break;
+                case "ash":
+                    draw_set_alpha(0.5 * _pfade); draw_set_color((_pp mod 4 == 0) ? make_color_rgb(230, 90, 60) : make_color_rgb(120, 110, 110));
+                    draw_rectangle(_ppx, _ppy, _ppx + 2, _ppy + 2, false);
+                    break;
+            }
+        }
         draw_set_alpha(1.0);
     }
 
@@ -20846,8 +20996,7 @@ function ui_draw_garden_scene() {
     for (var _xf = 0; _xf < array_length(_gc.garden_fx); _xf++) {
         var _fx2 = _gc.garden_fx[_xf];
         var _age = (current_time - _fx2.t0) / 1000;
-        var _fxx = _fx2.x - _cam;
-        if (_fxx < -100 || _fxx > 2020) continue;
+        var _fxx = _fx2.x;
         if (_fx2.kind == "hearts" && _age < 2.2) {
             for (var _hh = 0; _hh < 3; _hh++) {
                 var _ht = _age - _hh * 0.25;
@@ -20870,29 +21019,50 @@ function ui_draw_garden_scene() {
         }
     }
 
-    // ---- Verb chips above the features currently on screen ----
-    draw_set_font(ui_font(fnt_ui_small));
-    if (_pd > -240 && _pd < 2160) ui_garden_chip(_pd, 792, "[1] TOSS A CRUMB", "garden:crumb");
-    if (_cn > -240 && _cn < 2160) {
-        ui_garden_chip(_cn, 726, (_stacked >= 5) ? "the cairn holds" : "[2] PLACE A STONE  (" + string(_stacked) + "/5)",
-            (_stacked >= 5) ? "" : "garden:stone");
+    // ---- Pond tap = walk to the bank and toss a crumb ----
+    if (!_placing && !_tap_used
+        && touch_tapped(GARDEN_POND_X - GARDEN_POND_RX, GARDEN_POND_Y - GARDEN_POND_RY, GARDEN_POND_X + GARDEN_POND_RX, GARDEN_POND_Y + GARDEN_POND_RY)) {
+        _gc.garden_goal = "garden:crumb";
+        var _bka = point_direction(GARDEN_POND_X, GARDEN_POND_Y, _gc.garden_px, _gc.garden_py);
+        _gc.garden_goal_x = GARDEN_POND_X + lengthdir_x(GARDEN_POND_RX + 60, _bka);
+        _gc.garden_goal_y = GARDEN_POND_Y + lengthdir_y(GARDEN_POND_RY + 50, _bka);
+        input_inject("garden:goal"); _tap_used = true;
     }
-    for (var _fs2 = 0; _fs2 < array_length(_spots); _fs2++) {
-        var _fc2 = _spots[_fs2];
-        if (_fc2.taken) continue;
-        var _fx3 = _fc2.x - _cam;
-        if (_fx3 > -120 && _fx3 < 2040) ui_garden_chip(_fx3, _fc2.y - 66, "[3] FORAGE", "garden:forage" + string(_fc2.idx));
+    // ---- Cairn tap = walk over and place a stone ----
+    if (!_placing && !_tap_used && touch_tapped(GARDEN_CAIRN_X - 90, GARDEN_CAIRN_Y - 140, GARDEN_CAIRN_X + 70, GARDEN_CAIRN_Y + 20)) {
+        _gc.garden_goal = "garden:stone"; _gc.garden_goal_x = GARDEN_CAIRN_X - 90; _gc.garden_goal_y = GARDEN_CAIRN_Y + 30;
+        input_inject("garden:goal"); _tap_used = true;
+    }
+
+    // ---- The ONE proximity prompt: nearest interactable in reach (chip = tap target) ----
+    draw_set_font(ui_font(fnt_ui_small));
+    if (!_placing) {
+        var _near = garden_nearest_interactable(_gc);
+        if (_near != undefined) {
+            var _cpx = clamp(_near.x, 120, _W - 120);
+            var _cpy = clamp(_near.y - _near.top - 44, 80, 990);
+            ui_garden_chip(_cpx, _cpy, "[E] " + string_upper(_near.label), "garden:act");
+            // A chip tap is an act, not a ground walk.
+            if (mouse_check_button_pressed(mb_left) && abs(_mx - _cpx) < 160 && _my >= _cpy && _my <= _cpy + 40) _tap_used = true;
+        }
     }
     if (_hover_name != "") {
         draw_set_halign(fa_center);
         draw_set_color(make_color_rgb(210, 220, 210));
         draw_text(_mx, _my - 42, _hover_name);
         draw_set_color(make_color_rgb(150, 165, 150));
-        draw_text(_mx, _my - 18, ui_hint("[E] or click to pet", "Tap to pet"));
+        draw_text(_mx, _my - 18, ui_hint("click to walk over", "tap to walk over"));
         draw_set_halign(fa_left);
     }
 
-    // ---- HUD frame: title, leave/shop chips, position strip, hints, gold ----
+    // ---- Ground tap: walk there - or, in placement mode, set the ornament there (last, so
+    //      every interactable above wins the tap) ----
+    if (!_tap_used && touch_tapped(GUI_XL, GARDEN_BAND_TOP - 80, GUI_XR, GUI_H - 50)) {
+        _gc.garden_tap_x = _mx; _gc.garden_tap_y = _my;
+        input_inject(_placing ? "garden:placeat" : "garden:walk");
+    }
+
+    // ---- HUD frame: title, leave/shop chips, hints, gold ----
     draw_set_alpha(0.55);
     draw_set_color(c_black);
     draw_rectangle(GUI_XL, 0, GUI_XR, 66, false);
@@ -20909,26 +21079,16 @@ function ui_draw_garden_scene() {
     draw_set_halign(fa_right);
     draw_set_color(c_yellow);
     draw_text(1560, 22, "Gold: " + string(global.gold) + "   Dust: " + string(variable_global_exists("rune_dust") ? global.rune_dust : 0));
-    // 08-18 (M screenshot "text collisions all over baircs garden"): the 48px bottom band
-    // (1032-1080) is fixed-height, so it draws in the DENSE font (base size even in Large
-    // mode), the hint row sits at the top of the band with the position strip UNDER it,
-    // and the chips are measured (ui_garden_chip) so they never spill past GUI_H.
+    // 48px bottom band (1032-1080): dense font, measured chips (08-18 collision rule).
     draw_set_font(ui_font_dense(fnt_ui_small));
     draw_set_halign(fa_center); draw_set_valign(fa_top);
     draw_set_color(make_color_rgb(130, 145, 132));
-    // Device-aware hint (08-18 mobile pass): on touch the letter keys mean nothing -
-    // the verbs are the tappable chips over the pond / cairn / forage spots.
+    var _dn = array_length(_don);
     var _gh_hint = (input_device() == 2)
-        ? "Drag to wander        Tap a creature to pet        Tap a chip to act        "
-        : "A/D or drag: wander        [E] pet        [1] pond    [2] cairn    [3] forage        ";
-    draw_text(960, 1035, _gh_hint + string(_dn) + " resident" + ((_dn == 1) ? "" : "s"));
+        ? "Tap the grass to walk        Tap a creature to visit it        Tap the prompt to act        "
+        : "WASD / stick: walk        click the grass to walk there        [E] act on what's near        ";
+    draw_text(960, 1040, _gh_hint + string(_dn) + " resident" + ((_dn == 1) ? "" : "s"));
     draw_set_halign(fa_left);
-    // Position strip: where the camera window sits over the grounds (below the hint row).
-    draw_set_color(make_color_rgb(30, 38, 32));
-    draw_rectangle(660, 1066, 1260, 1073, false);
-    draw_set_color(make_color_rgb(150, 200, 150));
-    var _ps0 = 660 + 600 * (_cam / _W);
-    draw_rectangle(_ps0, 1066, _ps0 + 600 * (1920 / _W), 1073, false);
     // Music selector chip (bottom-right): cycles the garden's track pool.
     ui_garden_chip(1700, 1036, "[M] MUSIC", "garden:music", true);
 
@@ -20936,28 +21096,6 @@ function ui_draw_garden_scene() {
     if (_gc.garden_notice != "" && _gc.garden_notice_t > 0) {
         ui_draw_toast(_gc.garden_notice, 960, 120, min(1, _gc.garden_notice_t / 30));
     }
-    // ---- WORK-IN-PROGRESS banner (M 08-18): every entry, 8s, fades over its last second.
-    //      Boxed + measured (longest line sets the width) so it never spills. ----
-    if (variable_instance_exists(_gc, "garden_wip_t") && _gc.garden_wip_t > 0) {
-        var _wa  = min(1, _gc.garden_wip_t / 60);
-        var _wl1 = "THE GARDEN IS A WORK IN PROGRESS";
-        var _wl2 = "Apologies for the rough edges - big things are coming for customizing your pet garden.";
-        var _wl3 = "Please bear with us.";
-        draw_set_font(ui_font(fnt_ui));
-        var _ww = max(string_width(_wl1), string_width(_wl2), string_width(_wl3)) + 60;
-        var _wh = 132;
-        var _wx = 960 - _ww / 2, _wy = 165;
-        draw_set_alpha(0.90 * _wa); draw_set_color(make_color_rgb(14, 20, 16));
-        draw_rectangle(_wx, _wy, _wx + _ww, _wy + _wh, false);
-        draw_set_alpha(_wa); draw_set_color(make_color_rgb(150, 205, 150));
-        draw_rectangle(_wx, _wy, _wx + _ww, _wy + _wh, true);
-        draw_set_halign(fa_center); draw_set_valign(fa_top);
-        draw_set_color(make_color_rgb(235, 220, 150)); draw_text(960, _wy + 16, _wl1);
-        draw_set_color(make_color_rgb(215, 225, 215)); draw_text(960, _wy + 54, _wl2);
-        draw_text(960, _wy + 88, _wl3);
-        draw_set_halign(fa_left); draw_set_alpha(1.0);
-    }
-
     // ---- ORNAMENT SHOP overlay ----
     if (_gc.garden_shop_open) {
         draw_set_alpha(0.62); draw_set_color(c_black);
@@ -20968,46 +21106,93 @@ function ui_draw_garden_scene() {
         draw_rectangle(_sx0, _sy0, _sx1, _sy1, false);
         draw_set_color(make_color_rgb(110, 170, 120));
         draw_rectangle(_sx0, _sy0, _sx1, _sy1, true);
+        // Two tabs (09-17 late): ORNAMENTS | GROUNDS (seasonal themes). Tab chips are tap targets.
+        var _stab = _gc.garden_shop_tab;
         draw_set_halign(fa_center);
         draw_set_font(ui_font(fnt_ui));
-        draw_set_color(make_color_rgb(190, 230, 190));
-        draw_text((_sx0 + _sx1) / 2, _sy0 + 16, "ORNAMENTS FOR THE GARDEN");
+        for (var _tb = 0; _tb < 2; _tb++) {
+            var _tbx0 = (_sx0 + _sx1) / 2 - 300 + _tb * 300, _tbx1 = _tbx0 + 300;
+            var _tbon = (_tb == _stab);
+            draw_set_color(_tbon ? make_color_rgb(26, 38, 28) : make_color_rgb(14, 18, 15));
+            draw_rectangle(_tbx0 + 4, _sy0 + 8, _tbx1 - 4, _sy0 + 46, false);
+            draw_set_color(_tbon ? make_color_rgb(150, 210, 160) : make_color_rgb(48, 62, 50));
+            draw_rectangle(_tbx0 + 4, _sy0 + 8, _tbx1 - 4, _sy0 + 46, true);
+            draw_set_color(_tbon ? make_color_rgb(190, 230, 190) : make_color_rgb(110, 125, 112));
+            draw_text((_tbx0 + _tbx1) / 2, _sy0 + 16, (_tb == 0) ? "ORNAMENTS" : "GROUNDS");
+            if (touch_tapped(_tbx0, _sy0 + 4, _tbx1, _sy0 + 50)) input_inject("garden:shoptab" + string(_tb));
+        }
         draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(make_color_rgb(120, 140, 125));
-        draw_text((_sx0 + _sx1) / 2, _sy0 + 52, "\"It could use a little something. They notice, you know.\"");
+        draw_text((_sx0 + _sx1) / 2, _sy0 + 58, (_stab == 0)
+            ? "\"It could use a little something. They notice, you know.\""
+            : "\"The grounds can be turned. Takes gold, dust, and a few seasons' worth of coming back.\"");
         draw_set_halign(fa_left);
-        var _sc_cat = garden_decor_catalog();
         var _srow_y = _sy0 + 96, _srow_h = 82;
-        for (var _sr = 0; _sr < array_length(_sc_cat); _sr++) {
+        if (_stab == 1) {
+            // GROUNDS rows: themes - swatch, name, status / price, requirement line.
+            var _tc = garden_theme_catalog();
+            for (var _tr = 0; _tr < array_length(_tc); _tr++) {
+                var _td = _tc[_tr];
+                var _try = _srow_y + _tr * _srow_h;
+                var _ton = (_tr == _gc.garden_shop_cur);
+                var _tactive = (garden_theme_id() == _td.id), _towned = garden_theme_owned(_td.id);
+                if (touch_tapped(_sx0 + 16, _try, _sx1 - 16, _try + _srow_h - 8)) input_inject("garden:shoprow" + string(_tr));
+                draw_set_color(_ton ? make_color_rgb(26, 38, 28) : make_color_rgb(18, 22, 19));
+                draw_rectangle(_sx0 + 16, _try, _sx1 - 16, _try + _srow_h - 8, false);
+                draw_set_color(_ton ? make_color_rgb(150, 210, 160) : make_color_rgb(48, 62, 50));
+                draw_rectangle(_sx0 + 16, _try, _sx1 - 16, _try + _srow_h - 8, true);
+                // Swatch: sky gradient + moon dot.
+                draw_rectangle_color(_sx0 + 30, _try + 8, _sx0 + 100, _try + _srow_h - 16, _td.sky_top, _td.sky_top, _td.sky_bot, _td.sky_bot, false);
+                draw_set_color(_td.moon); draw_circle(_sx0 + 84, _try + 22, 6, false);
+                draw_set_color(merge_color(make_color_rgb(24, 33, 26), _td.tint, 0.5)); draw_rectangle(_sx0 + 30, _try + _srow_h - 30, _sx0 + 100, _try + _srow_h - 16, false);
+                draw_set_font(ui_font(fnt_ui));
+                draw_set_color(c_white);
+                draw_text(_sx0 + 120, _try + 8, _td.name);
+                draw_set_font(ui_font(fnt_ui_small));
+                draw_set_color(make_color_rgb(130, 145, 132));
+                draw_text(_sx0 + 120, _try + 44, _td.blurb);
+                draw_set_halign(fa_right);
+                if (_tactive)      { draw_set_color(make_color_rgb(190, 230, 190)); draw_text(_sx1 - 36, _try + 12, "ACTIVE"); }
+                else if (_towned)  { draw_set_color(make_color_rgb(120, 200, 140)); draw_text(_sx1 - 36, _try + 12, "OWNED - choose"); }
+                else {
+                    draw_set_color(c_yellow); draw_text(_sx1 - 36, _try + 12, string(_td.gold) + "g + " + string(_td.dust) + " dust");
+                    draw_set_color(make_color_rgb(150, 130, 110)); draw_text(_sx1 - 36, _try + 44, string(_td.runs) + " runs");
+                }
+                draw_set_halign(fa_left);
+            }
+        }
+        var _sc_cat = garden_decor_catalog();
+        for (var _sr = 0; _sr < array_length(_sc_cat) && _stab == 0; _sr++) {
             var _sd = _sc_cat[_sr];
             var _sry = _srow_y + _sr * _srow_h;
             var _son = (_sr == _gc.garden_shop_cur);
-            var _splaced = garden_decor_placed(_sd.id);
+            var _scount = garden_decor_count(_sd.id);   // multiples allowed (09-17 late)
             if (touch_tapped(_sx0 + 16, _sry, _sx1 - 16, _sry + _srow_h - 8)) input_inject("garden:shoprow" + string(_sr));
             draw_set_color(_son ? make_color_rgb(26, 38, 28) : make_color_rgb(18, 22, 19));
             draw_rectangle(_sx0 + 16, _sry, _sx1 - 16, _sry + _srow_h - 8, false);
-            draw_set_color(_splaced ? make_color_rgb(70, 110, 80) : (_son ? make_color_rgb(150, 210, 160) : make_color_rgb(48, 62, 50)));
+            draw_set_color(_son ? make_color_rgb(150, 210, 160) : make_color_rgb(48, 62, 50));
             draw_rectangle(_sx0 + 16, _sry, _sx1 - 16, _sry + _srow_h - 8, true);
+            // The ornament itself, drawn small at the row's left (art or vignette).
+            var _srs = garden_ornament_sprite(_sd.id);
+            if (_srs >= 0 && sprite_exists(_srs)) {
+                var _srsc = min(1, (_srow_h - 16) / max(1, sprite_get_height(_srs)));
+                draw_sprite_ext(_srs, 0, _sx0 + 30, _sry + 4 + ((_srow_h - 16) - sprite_get_height(_srs) * _srsc) / 2, _srsc, _srsc, 0, c_white, 1);
+            }
             draw_set_font(ui_font(fnt_ui));
-            draw_set_color(_splaced ? make_color_rgb(120, 140, 125) : c_white);
-            draw_text(_sx0 + 36, _sry + 8, _sd.name);
+            draw_set_color(c_white);
+            draw_text(_sx0 + 120, _sry + 8, _sd.name + ((_scount > 0) ? "   x" + string(_scount) : ""));
             draw_set_font(ui_font(fnt_ui_small));
             draw_set_color(make_color_rgb(130, 145, 132));
-            draw_text(_sx0 + 36, _sry + 44, _sd.blurb);
+            draw_text(_sx0 + 120, _sry + 44, _sd.blurb);
             draw_set_halign(fa_right);
-            if (_splaced) {
-                draw_set_color(make_color_rgb(120, 200, 140));
-                draw_text(_sx1 - 36, _sry + 12, "PLACED");
-            } else {
-                draw_set_color(c_yellow);
-                draw_text(_sx1 - 36, _sry + 12, string(_sd.gold) + "g + " + string(_sd.dust) + " dust");
-            }
+            draw_set_color(c_yellow);
+            draw_text(_sx1 - 36, _sry + 12, string(_sd.gold) + "g + " + string(_sd.dust) + " dust");
             draw_set_halign(fa_left);
         }
         draw_set_halign(fa_center);
         draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(make_color_rgb(130, 150, 135));
-        ui_draw_key_legend((_sx0 + _sx1) / 2, _sy1 - 30, "W/S: Browse    Enter: Choose    Esc: Close");
+        ui_draw_key_legend((_sx0 + _sx1) / 2, _sy1 - 30, "W/S: Browse    Tab: Ornaments / Grounds    Enter: Choose    Esc: Close");
         draw_set_halign(fa_left);
     }
 
@@ -21021,6 +21206,197 @@ function ui_draw_garden_scene() {
 
     draw_set_color(c_white); draw_set_alpha(1.0); draw_set_font(-1);
     draw_set_halign(fa_left); draw_set_valign(fa_top);
+}
+
+
+// Ornament vignette (code-drawn set dressing, 08-15 catalog) at its plot; y = standing baseline.
+function ui_garden_draw_ornament(_aid, _ax, _ay, _t, _ai, _tint = c_white) {
+    // 09-17 late: real art (spr_garden_orn_<id>, x4 plate density, origin top-left) stands with
+    // its feet on the baseline; the LIVE touches (ember pulse, eye blink, motes, glows) draw over
+    // it. The code vignette below stays as the pre-import fallback.
+    var _os = garden_ornament_sprite(_aid);
+    if (_os >= 0 && sprite_exists(_os)) {
+        var _ow = sprite_get_width(_os), _oh = sprite_get_height(_os);
+        var _obb = sprite_get_bbox_bottom(_os) + 1;   // opaque feet, not the canvas edge
+        var _a0  = draw_get_alpha();                  // caller's alpha (the placement ghost passes 0.6)
+        draw_set_alpha(0.32 * _a0); draw_set_color(c_black);
+        draw_ellipse(_ax - _ow * 0.3, _ay - 5, _ax + _ow * 0.3, _ay + 5, false);
+        draw_set_alpha(_a0);
+        draw_sprite_ext(_os, 0, _ax - _ow / 2, _ay - _obb, 1, 1, 0, _tint, _a0);
+        switch (_aid) {
+            case "lantern":
+                gpu_set_blendmode(bm_add);
+                draw_set_alpha(0.10 + 0.05 * sin(_t * 2.4 + _ai)); draw_set_color(make_color_rgb(250, 200, 120));
+                draw_circle(_ax, _ay - _oh * 0.55, 100, false);
+                gpu_set_blendmode(bm_normal); draw_set_alpha(1.0);
+                break;
+            case "gate":
+                draw_set_alpha(0.12 + 0.08 * sin(_t * 1.4)); draw_set_color(make_color_rgb(170, 120, 220));
+                draw_rectangle(_ax - _ow * 0.28, _ay - _oh * 0.8, _ax + _ow * 0.28, _ay - 4, false);
+                draw_set_alpha(1.0);
+                break;
+            case "ward":
+                if (frac(_t * 0.21 + _ai * 0.37) > 0.06) {
+                    draw_set_color(make_color_rgb(160, 230, 170));
+                    draw_circle(_ax - 6, _ay - _oh * 0.72, 2, false);
+                    draw_circle(_ax + 6, _ay - _oh * 0.72, 2, false);
+                }
+                break;
+            case "jar":
+                for (var _fj = 0; _fj < 3; _fj++) {
+                    draw_set_alpha(0.5 + 0.5 * sin(_t * 3 + _fj * 2.1)); draw_set_color(make_color_rgb(220, 235, 140));
+                    draw_circle(_ax - 8 + _fj * 8, _ay - _oh * 0.45 - 4 * sin(_t + _fj), 2, false);
+                }
+                draw_set_alpha(1.0);
+                break;
+            case "basin":
+                draw_set_alpha(0.5 + 0.2 * sin(_t * 0.9)); draw_set_color(make_color_rgb(222, 224, 210));
+                draw_circle(_ax + 6 * sin(_t * 0.7), _ay - _oh * 0.62, 4, false);
+                draw_set_alpha(1.0);
+                break;
+            case "bloom":
+                for (var _bf = 0; _bf < 4; _bf++) {
+                    draw_set_alpha(0.25 + 0.25 * sin(_t * 1.8 + _bf)); draw_set_color(make_color_rgb(150, 110, 220));
+                    draw_circle(_ax - 30 + _bf * 20, _ay - _oh * 0.7, 6, false);
+                }
+                draw_set_alpha(1.0);
+                break;
+        }
+        return;
+    }
+    switch (_aid) {
+        case "lantern":
+            draw_set_color(make_color_rgb(70, 72, 80));
+            draw_rectangle(_ax - 10, _ay - 76, _ax + 10, _ay, false);
+            draw_rectangle(_ax - 22, _ay - 96, _ax + 22, _ay - 72, false);
+            draw_set_color(make_color_rgb(26, 27, 34));
+            draw_rectangle(_ax - 22, _ay - 96, _ax + 22, _ay - 72, true);
+            draw_set_color(make_color_rgb(250, 200, 120));
+            draw_set_alpha(0.55 + 0.25 * sin(_t * 2.4 + _ai));
+            draw_rectangle(_ax - 12, _ay - 92, _ax + 12, _ay - 76, false);
+            draw_set_alpha(0.10 + 0.05 * sin(_t * 2.4 + _ai));
+            draw_circle(_ax, _ay - 84, 90, false);
+            draw_set_alpha(1.0);
+            break;
+        case "gate":
+            draw_set_color(make_color_rgb(52, 38, 40));
+            draw_rectangle(_ax - 64, _ay - 130, _ax - 48, _ay, false);
+            draw_rectangle(_ax + 48, _ay - 130, _ax + 64, _ay, false);
+            draw_rectangle(_ax - 80, _ay - 150, _ax + 80, _ay - 126, false);
+            draw_rectangle(_ax - 70, _ay - 120, _ax + 70, _ay - 106, false);
+            draw_set_alpha(0.20 + 0.10 * sin(_t * 1.4));
+            draw_set_color(make_color_rgb(170, 120, 220));
+            draw_rectangle(_ax - 46, _ay - 104, _ax + 46, _ay - 4, false);
+            draw_set_alpha(1.0);
+            break;
+        case "basin":
+            draw_set_color(make_color_rgb(72, 74, 84));
+            draw_rectangle(_ax - 8, _ay - 40, _ax + 8, _ay, false);
+            draw_ellipse(_ax - 42, _ay - 58, _ax + 42, _ay - 34, false);
+            draw_set_color(make_color_rgb(30, 44, 60));
+            draw_ellipse(_ax - 34, _ay - 54, _ax + 34, _ay - 38, false);
+            draw_set_color(make_color_rgb(222, 224, 210));
+            draw_set_alpha(0.7);
+            draw_circle(_ax + 8 * sin(_t * 0.7), _ay - 46, 6, false);
+            draw_set_alpha(1.0);
+            break;
+        case "bloom":
+            for (var _bf = 0; _bf < 7; _bf++) {
+                var _bfx = _ax - 42 + _bf * 14;
+                var _bfy = _ay - 6 - frac(sin(_bf * 91.7 + _ai) * 351.3) * 16;
+                draw_set_color(make_color_rgb(30, 44, 32));
+                draw_line(_bfx, _ay, _bfx, _bfy);
+                draw_set_alpha(0.65 + 0.30 * sin(_t * 1.8 + _bf));
+                draw_set_color((_bf mod 2 == 0) ? make_color_rgb(150, 110, 220) : make_color_rgb(110, 180, 235));
+                draw_circle(_bfx, _bfy, 5, false);
+                draw_set_alpha(1.0);
+            }
+            break;
+        case "ward":
+            draw_set_color(make_color_rgb(60, 70, 58));
+            draw_roundrect_ext(_ax - 20, _ay - 66, _ax + 20, _ay, 12, 12, false);
+            draw_circle(_ax, _ay - 74, 16, false);
+            draw_set_color(make_color_rgb(40, 52, 40));
+            draw_roundrect_ext(_ax - 20, _ay - 66, _ax + 20, _ay, 12, 12, true);
+            if (frac(_t * 0.21 + _ai * 0.37) > 0.06) {   // eyes blink every few seconds
+                draw_set_color(make_color_rgb(160, 230, 170));
+                draw_circle(_ax - 6, _ay - 76, 2, false);
+                draw_circle(_ax + 6, _ay - 76, 2, false);
+            }
+            break;
+        case "chimes":
+            draw_set_color(make_color_rgb(48, 40, 36));
+            draw_rectangle(_ax - 3, _ay - 120, _ax + 3, _ay, false);
+            draw_rectangle(_ax - 40, _ay - 124, _ax + 40, _ay - 116, false);
+            for (var _ch = 0; _ch < 4; _ch++) {
+                var _chx = _ax - 28 + _ch * 19;
+                var _chs = 5 * sin(_t * 1.1 + _ch * 1.7);
+                draw_set_color(make_color_rgb(210, 205, 190));
+                draw_line(_chx, _ay - 116, _chx + _chs, _ay - 76 + _ch * 4);
+                draw_rectangle(_chx + _chs - 2, _ay - 76 + _ch * 4, _chx + _chs + 2, _ay - 56 + _ch * 4, false);
+            }
+            break;
+        case "wheel":
+            draw_set_color(make_color_rgb(52, 44, 38));
+            draw_circle(_ax, _ay - 40, 34, true);
+            for (var _ws = 0; _ws < 4; _ws++) {
+                var _wa = _t * 0.8 + _ws * pi / 2;
+                draw_line(_ax - cos(_wa) * 32, _ay - 40 - sin(_wa) * 32,
+                          _ax + cos(_wa) * 32, _ay - 40 + sin(_wa) * 32);
+            }
+            draw_set_color(make_color_rgb(70, 60, 50));
+            draw_rectangle(_ax - 6, _ay - 40, _ax + 6, _ay, false);
+            break;
+        case "jar":
+            draw_set_color(make_color_rgb(120, 140, 150));
+            draw_roundrect_ext(_ax - 14, _ay - 40, _ax + 14, _ay, 8, 8, true);
+            draw_set_color(make_color_rgb(90, 96, 104));
+            draw_rectangle(_ax - 10, _ay - 46, _ax + 10, _ay - 40, false);
+            for (var _fj = 0; _fj < 3; _fj++) {
+                draw_set_alpha(0.5 + 0.5 * sin(_t * 3 + _fj * 2.1));
+                draw_set_color(make_color_rgb(220, 235, 140));
+                draw_circle(_ax - 8 + _fj * 8, _ay - 12 - 8 * frac(sin(_fj * 7.3) * 133.7) - 4 * sin(_t + _fj), 2, false);
+                draw_set_alpha(1.0);
+            }
+            break;
+    }
+}
+
+// The cairn (5-stone stack + loose stones waiting at its base). (_cx, _cy) = base centre.
+function ui_garden_draw_cairn(_cn, _cy, _gc, _t) {
+    var _stacked = variable_global_exists("garden_cairn") ? global.garden_cairn : 0;
+    draw_set_color(make_color_rgb(58, 62, 70));
+    draw_ellipse(_cn - 56, _cy - 12, _cn + 56, _cy + 12, false);
+    var _sy0 = _cy;
+    for (var _st = 0; _st < _stacked; _st++) {
+        var _sw2 = 44 - _st * 7;
+        var _sh3 = 22 - _st * 2;
+        var _wob = 0;
+        for (var _gfw = 0; _gfw < array_length(_gc.garden_fx); _gfw++) {
+            var _gfs2 = _gc.garden_fx[_gfw];
+            if (_gfs2.kind == "stone" && _st == _stacked - 1 && current_time - _gfs2.t0 < 700) {
+                _wob = 4 * sin((current_time - _gfs2.t0) / 60) * (1 - (current_time - _gfs2.t0) / 700);
+            }
+        }
+        draw_set_color(make_color_rgb(74 + _st * 6, 78 + _st * 6, 88 + _st * 6));
+        draw_ellipse(_cn - _sw2 + _wob, _sy0 - _sh3, _cn + _sw2 + _wob, _sy0, false);
+        draw_set_color(make_color_rgb(34, 36, 44));
+        draw_ellipse(_cn - _sw2 + _wob, _sy0 - _sh3, _cn + _sw2 + _wob, _sy0, true);
+        _sy0 -= _sh3 - 4;
+    }
+    for (var _ls = 0; _ls < 5 - _stacked; _ls++) {
+        var _lsx = _cn - 100 - _ls * 36;
+        draw_set_color(make_color_rgb(64, 66, 76));
+        draw_ellipse(_lsx - 16, _cy + 6, _lsx + 16, _cy + 20, false);
+        draw_set_color(make_color_rgb(34, 36, 44));
+        draw_ellipse(_lsx - 16, _cy + 6, _lsx + 16, _cy + 20, true);
+    }
+    if (_stacked >= 5) {   // completed cairn: a soft standing shimmer
+        draw_set_alpha(0.18 + 0.08 * sin(_t * 1.6));
+        draw_set_color(make_color_rgb(160, 230, 170));
+        draw_circle(_cn, _cy - 80, 70, false);
+        draw_set_alpha(1.0);
+    }
 }
 
 // Small tappable verb chip, centred on x. Empty tag = label only (no action).

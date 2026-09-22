@@ -256,12 +256,36 @@ if (bond_dialog_open) {
     // Draw's buttons inject bond:ok / bond:cancel; Enter = OK, Esc = decline.
     // A stray click closes nothing - the decision has to be made on a button.
     if (input_cancel() || input_inject_take("bond:cancel")) {
-        bond_dialog_open = false;
-        bond_dialog_mode = "info";
+        bond_dialog_open  = false;
+        bond_dialog_mode  = "info";
+        bond_dialog_third = "";
+        exit;
+    }
+    if (!variable_instance_exists(id, "bond_dialog_third")) bond_dialog_third = "";
+    // 09-22 THIRD answer: "STAY AS WE ARE" closes the Lover question - no more
+    // badges, no more asking, until the player reopens it from [B].
+    if (bond_dialog_third != "" && (input_hotkey("N") || input_inject_take("bond:third"))) {
+        var _bq3_id = bond_dialog_npc;
+        var _bq3_r  = affinity_decline_lover(_bq3_id);
+        bond_dialog_mode  = "info";
+        bond_dialog_ok    = "";
+        bond_dialog_third = "";
+        bond_dialog_title = npc_display_name(_bq3_id);
+        bond_dialog_body  = (_bq3_r == "")
+            ? ("\"As we are, then. That's no small thing.\"\n\n(Companions - the question is closed. Press [B] on their card if you ever change your mind.)")
+            : _bq3_r;
+        if (room == rm_hub || room == rm_character_select) save_game();
         exit;
     }
     if (input_confirm() || input_inject_take("bond:ok")) {
         var _bq_id = bond_dialog_npc;
+        if (bond_dialog_mode == "reconsider") {
+            // Reopen the closed Lover question and drop straight into it.
+            affinity_reconsider_lover(_bq_id);
+            hub_bond_open(id, _bq_id);
+            if (room == rm_hub || room == rm_character_select) save_game();
+            exit;
+        }
         if (bond_dialog_mode == "ask") {
             var _bq_st  = affinity_gate_status(_bq_id);
             var _bq_acc = affinity_accept_favor(_bq_id);
@@ -1216,7 +1240,7 @@ if (input_confirm() || input_confirm_alt()) {
 if (input_hotkey("B") && selected_npc < array_length(affinity_npc_ids()) && !show_history) {
     var _bond_ids = affinity_npc_ids();
     var _bond_id  = _bond_ids[selected_npc];
-    if (affinity_gate_ready(_bond_id)) {
+    if (affinity_gate_ready(_bond_id) || affinity_lover_reopenable(_bond_id)) {
         // 09-03 rework: B only OPENS the conversation. The NPC asks (favor, or
         // the crossing itself) and the answer is a button in the dialogue -
         // see the 0a2 modal block above. Nothing crosses here.

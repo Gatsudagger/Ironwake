@@ -2415,6 +2415,42 @@ function enemy_sound_family(name) {
     return "undead";
 }
 
+// 09-15 (M: "quests shouldn't generate for unopened biomes ... I can't kill fire
+// foes if I only have the Vault"): the BOARD's cull families are judged by the
+// foe's ELEMENTAL identity first (Fire Drake / Cinder Golem / Frost Shard are
+// Cinderkin / Pale Shards, not beasts / constructs) so a "Cull the Cinderkin"
+// posting is fillable in the Scorched Depths. enemy_sound_family stays as-is
+// for SFX. Pair with board_cull_families(), which only offers a family whose
+// home dungeon is revealed.
+function enemy_cull_family(name) {
+    var _n = string_lower(name);
+    // 09-17 review: "ash" alone tagged the Vault's Ashen Skeleton / Ashen Duelist
+    // as Cinderkin, "pale" tagged the Drowned Reach's Pale Fisher as a Shard, and
+    // Pyre Dancer / Slagback Tortoise (Scorched) fell through to undead. Keyword
+    // "ash " (word) + pyre/slag; "pale" only as the Tundra's "pale archivist".
+    var _ash = string_pos("ash ", _n) || string_pos("ash-", _n);   // "Ash Wraith", never "Ashen"
+    if (string_pos("cinder", _n) || string_pos("magma", _n) || string_pos("lava", _n)
+        || _ash || string_pos("infernal", _n) || string_pos("smolder", _n)
+        || string_pos("ember", _n) || string_pos("flame", _n) || string_pos("fire", _n)
+        || string_pos("pyre", _n) || string_pos("slag", _n))
+        return "fire";
+    if (string_pos("frost", _n) || string_pos("ice", _n) || string_pos("glacial", _n)
+        || string_pos("frozen", _n) || string_pos("snow", _n) || string_pos("pale archivist", _n)
+        || string_pos("shard", _n) || string_pos("rime", _n))
+        return "ice";
+    if (string_pos("wraith", _n) || string_pos("specter", _n) || string_pos("spectre", _n)
+        || string_pos("revenant", _n) || string_pos("archivist", _n) || string_pos("ghost", _n))
+        return "wraith";
+    if (string_pos("golem", _n) || string_pos("colossus", _n) || string_pos("sentinel", _n)
+        || string_pos("guardian", _n) || string_pos("stone", _n))
+        return "construct";
+    if (string_pos("imp", _n) || string_pos("drake", _n) || string_pos("slug", _n)
+        || string_pos("crawler", _n) || string_pos("stalker", _n) || string_pos("lurker", _n)
+        || string_pos("beast", _n) || string_pos("hound", _n))
+        return "beast";
+    return "undead";
+}
+
 // play_sfx_var(base, fallback) - play a RANDOM existing variation of a string-named
 // sound. Probes `base`, `base_2`, `base_3`; if any are imported it plays one at
 // random (so repeated swings/casts don't sound identical), else the existing-library
@@ -2866,7 +2902,7 @@ function combat_on_enemy_defeated(target, player, combat_log) {
     add_gold(_gold_drop);
     global.current_run_kills++;
     global.total_kills++;   // lifetime counter - was initialized/saved/shown but never incremented (hub always read 0)
-    quest_tick("kill_family", enemy_sound_family(target.name), 1);   // Phase 4a quest objective
+    quest_tick("kill_family", enemy_cull_family(target.name), 1);   // 09-15: elemental-first family   // Phase 4a quest objective
     array_push(combat_log, "Gained " + string(_gold_drop) + "g!");
 
     // Item / consumable drop

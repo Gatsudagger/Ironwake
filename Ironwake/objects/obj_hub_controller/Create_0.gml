@@ -139,6 +139,9 @@ bond_dialog_body  = "";
 // NOT YET. bond_dialog_ok is the OK button's label in the choice modes.
 bond_dialog_mode  = "info";
 bond_dialog_ok    = "";
+// 09-22: optional THIRD button ("STAY AS WE ARE" on the Lover question; "" =
+// none). "reconsider" mode reopens a closed Lover question from [B].
+bond_dialog_third = "";
 
 // STATION UPGRADE checkout (NPC PROGRESSION 08-15): npc id while the popup is
 // armed ("" = closed); Step 0a3 is modal while set.

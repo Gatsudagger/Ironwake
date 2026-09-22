@@ -231,7 +231,12 @@ if (garden_open && bairc_open) {
 
     // ---- ORNAMENT SHOP overlay (modal within the garden) ----
     if (garden_shop_open) {
-        var _gs_cat = garden_decor_catalog();
+        // Tabs (09-17 late): 0 ORNAMENTS / 1 GROUNDS. Tab key, pad bumpers, or the header chips.
+        for (var _gst = 0; _gst < 2; _gst++) {
+            if (input_inject_take("garden:shoptab" + string(_gst)) && garden_shop_tab != _gst) { garden_shop_tab = _gst; garden_shop_cur = 0; }
+        }
+        if (input_tab_next() || input_tab_prev()) { garden_shop_tab = 1 - garden_shop_tab; garden_shop_cur = 0; }
+        var _gs_cat = (garden_shop_tab == 1) ? garden_theme_catalog() : garden_decor_catalog();
         var _gs_n   = array_length(_gs_cat);
         for (var _gsi = 0; _gsi < _gs_n; _gsi++) {
             if (input_inject_take("garden:shoprow" + string(_gsi))) {
@@ -241,12 +246,14 @@ if (garden_open && bairc_open) {
         }
         if (nav_up())   garden_shop_cur = wrap_index(garden_shop_cur - 1, _gs_n);
         if (nav_down()) garden_shop_cur = wrap_index(garden_shop_cur + 1, _gs_n);
-        if (input_confirm() || input_inject_take("garden:shopgo")) {
+        if (garden_shop_tab == 1 && (input_confirm() || input_inject_take("garden:shopgo"))) {
+            var _gt_d = _gs_cat[garden_shop_cur];
+            var _gt_ok = garden_theme_owned(_gt_d.id) || garden_theme_locked_reason(_gt_d.id) == "";
+            garden_notice = garden_theme_choose(_gt_d.id); garden_notice_t = 200;
+            audio_play_sound(_gt_ok ? snd_confirm_major : snd_ui_error, 1, false);
+        } else if (input_confirm() || input_inject_take("garden:shopgo")) {
             var _gs_d = _gs_cat[garden_shop_cur];
-            if (garden_decor_placed(_gs_d.id)) {
-                garden_notice = "The " + _gs_d.name + " already stands in the garden.";
-                garden_notice_t = 150;
-            } else if (global.gold < _gs_d.gold
+            if (global.gold < _gs_d.gold
                 || (variable_global_exists("rune_dust") ? global.rune_dust : 0) < _gs_d.dust) {
                 garden_notice = _gs_d.name + " needs " + string(_gs_d.gold) + "g + " + string(_gs_d.dust) + " dust.";
                 garden_notice_t = 150;
@@ -254,7 +261,7 @@ if (garden_open && bairc_open) {
             } else {
                 garden_place_pick = _gs_d.id;   // charged at placement
                 garden_shop_open  = false;
-                garden_notice = "Choose a plot for the " + _gs_d.name + " - tap a glowing ring, or press its number.";
+                garden_notice = "Set the " + _gs_d.name + " down: tap a spot on the grass, or walk there and press Enter. Esc puts it back.";
                 garden_notice_t = 300;
                 audio_play_sound(snd_page, 1, false);
             }
@@ -266,22 +273,23 @@ if (garden_open && bairc_open) {
     } else {
         // ---- PLACEMENT mode: pick a plot for garden_place_pick ----
         if (garden_place_pick != "") {
-            var _gp_anchors = garden_decor_anchors();
-            for (var _gpi = 0; _gpi < array_length(_gp_anchors); _gpi++) {
-                if (keyboard_check_pressed(ord(string(_gpi + 1)))
-                    || input_inject_take("garden:plot" + string(_gpi))) {
-                    var _gp_res = garden_decor_place(_gpi, garden_place_pick);
-                    if (_gp_res == "") {
-                        var _gp_d = garden_decor_get(garden_place_pick);
-                        garden_notice = "The " + _gp_d.name + " settles into the earth.";
-                        garden_notice_t = 200;
-                        garden_place_pick = "";
-                        audio_play_sound(snd_confirm_major, 1, false);
-                    } else {
-                        garden_notice = _gp_res; garden_notice_t = 150;
-                        audio_play_sound(snd_ui_error, 1, false);
-                    }
-                    break;
+            // FREE placement (09-17 late): tap/click a spot on the grass (Draw injects
+            // garden:placeat with garden_tap_x/y), or walk there and press Enter / E / pad A
+            // to set it just ahead of your feet. Walking stays live below.
+            var _gp_x = -1, _gp_y = -1;
+            if (input_inject_take("garden:placeat")) { _gp_x = garden_tap_x; _gp_y = garden_tap_y; }
+            else if (input_confirm() || keyboard_check_pressed(ord("E"))) { _gp_x = garden_px; _gp_y = garden_py + 36; }
+            if (_gp_x >= 0) {
+                var _gp_res = garden_decor_place_at(garden_place_pick, _gp_x, clamp(_gp_y, GARDEN_BAND_TOP + 10, GARDEN_BAND_BOT - 4));
+                if (_gp_res == "") {
+                    var _gp_d = garden_decor_get(garden_place_pick);
+                    garden_notice = "The " + _gp_d.name + " settles into the earth.";
+                    garden_notice_t = 200;
+                    garden_place_pick = "";
+                    audio_play_sound(snd_confirm_major, 1, false);
+                } else {
+                    garden_notice = _gp_res; garden_notice_t = 150;
+                    audio_play_sound(snd_ui_error, 1, false);
                 }
             }
             if (input_cancel() || input_back()) {
@@ -298,122 +306,153 @@ if (garden_open && bairc_open) {
             audio_play_sound(snd_page, 1, false);
         }
 
-        // ---- Activities (hotkeys; the draw chips inject these same tags) ----
+        {   // ---- walking is live in every mode (placement included) ----
+        // ---- 09-17 WALK (DESIGN_GARDEN_0917.md): keys / left stick / d-pad, or tap-to-walk.
+        //      Draw hit-tests the ground and injects "garden:walk" (garden_tap_x/y); tapping
+        //      an interactable injects "garden:goal" with garden_goal = the verb to fire on
+        //      arrival. Movement resolves X then Y so the walker slides round blockers.
+        var _gw_dx = 0, _gw_dy = 0;
+        if (keyboard_check(ord("D")) || keyboard_check(vk_right)) _gw_dx += 1;
+        if (keyboard_check(ord("A")) || keyboard_check(vk_left))  _gw_dx -= 1;
+        if (keyboard_check(ord("S")) || keyboard_check(vk_down))  _gw_dy += 1;
+        if (keyboard_check(ord("W")) || keyboard_check(vk_up))    _gw_dy -= 1;
+        if (gamepad_is_connected(0)) {
+            var _gax = gamepad_axis_value(0, gp_axislh), _gay = gamepad_axis_value(0, gp_axislv);
+            if (abs(_gax) > 0.25) _gw_dx += _gax;
+            if (abs(_gay) > 0.25) _gw_dy += _gay;
+            if (gamepad_button_check(0, gp_padr)) _gw_dx += 1;
+            if (gamepad_button_check(0, gp_padl)) _gw_dx -= 1;
+            if (gamepad_button_check(0, gp_padd)) _gw_dy += 1;
+            if (gamepad_button_check(0, gp_padu)) _gw_dy -= 1;
+        }
+        if (input_inject_take("garden:walk")) {
+            var _gwt = garden_nearest_walkable(garden_tap_x, garden_tap_y);
+            garden_tx = _gwt.x; garden_ty = _gwt.y; garden_goal = "";
+        }
+        if (input_inject_take("garden:goal")) {
+            var _ggt = garden_nearest_walkable(garden_goal_x, garden_goal_y);
+            garden_tx = _ggt.x; garden_ty = _ggt.y;   // garden_goal was set by Draw with the tap
+        }
+        var _gw_manual = (_gw_dx != 0 || _gw_dy != 0);
+        if (_gw_manual) { garden_tx = -1; garden_ty = -1; garden_goal = ""; }
+        else if (garden_tx >= 0) {
+            var _gtd = point_distance(garden_px, garden_py, garden_tx, garden_ty);
+            if (_gtd <= 6) {
+                garden_tx = -1; garden_ty = -1;
+                if (garden_goal != "") { input_inject(garden_goal); garden_goal = ""; }
+            } else { _gw_dx = (garden_tx - garden_px) / _gtd; _gw_dy = (garden_ty - garden_py) / _gtd; }
+        }
+        var _gw_len = point_distance(0, 0, _gw_dx, _gw_dy);
+        var _gw_moved = false;
+        if (_gw_len > 0.01) {
+            var _gw_spd = 5.2 * garden_depth_scale(garden_py);
+            var _gw_vx = _gw_dx / max(1, _gw_len) * _gw_spd;          // stick magnitudes < 1 walk slower
+            var _gw_vy = _gw_dy / max(1, _gw_len) * _gw_spd * 0.8;    // foreshortened depth axis
+            if (garden_walkable(garden_px + _gw_vx, garden_py)) { garden_px += _gw_vx; _gw_moved = true; }
+            if (garden_walkable(garden_px, garden_py + _gw_vy)) { garden_py += _gw_vy; _gw_moved = true; }
+            garden_face = garden_skin_frame(_gw_dx, _gw_dy);
+            garden_vx = _gw_vx; garden_vy = _gw_vy;
+            // Wedged against a blocker on the way to a tap target: stop here; a goal still fires if close.
+            if (!_gw_moved && garden_tx >= 0) {
+                var _gwd2 = point_distance(garden_px, garden_py, garden_tx, garden_ty);
+                garden_tx = -1; garden_ty = -1;
+                if (garden_goal != "" && _gwd2 < 200) input_inject(garden_goal);
+                garden_goal = "";
+            }
+        } else { garden_vx = 0; garden_vy = 0; }
+        garden_moving = _gw_moved;
+        garden_walk_t = _gw_moved ? garden_walk_t + 1 : 0;
+        }
+        if (garden_remove_arm_t > 0) { garden_remove_arm_t--; if (garden_remove_arm_t == 0) garden_remove_arm = -1; }
         if (garden_place_pick == "") {
-            if (keyboard_check_pressed(ord("1")) || input_inject_take("garden:crumb")) {
-                garden_crumb_t = current_time;
-                garden_crumb_x = 1250 + irandom_range(-60, 60);
-                array_push(garden_fx, { kind: "ripple", x: garden_crumb_x, y: 900, t0: current_time });
-                garden_notice = "The water dimples. Shapes rise to meet it.";
-                garden_notice_t = 120;
-            }
-            if (keyboard_check_pressed(ord("2")) || input_inject_take("garden:stone")) {
-                var _gc_msg = garden_cairn_place();
-                if (_gc_msg != "") {
-                    garden_notice = _gc_msg; garden_notice_t = 200;
-                    array_push(garden_fx, { kind: "stone", x: 2650, y: 870, t0: current_time });
-                    audio_play_sound(snd_page, 1, false);
-                }
-            }
-            if (keyboard_check_pressed(ord("3")) || input_inject_take("garden:forage")) {
-                // Nearest untaken sparkle to the screen centre.
-                var _gf_spots = garden_forage_spots();
-                var _gf_best = -1, _gf_bd = 999999;
-                for (var _gfj = 0; _gfj < array_length(_gf_spots); _gfj++) {
-                    var _gfs = _gf_spots[_gfj];
-                    if (_gfs.taken) continue;
-                    var _gfd = abs(_gfs.x - (garden_cam_x + 960));
-                    if (_gfd < _gf_bd) { _gf_bd = _gfd; _gf_best = _gfs.idx; }
-                }
-                if (_gf_best >= 0 && _gf_bd < 1100) {
-                    garden_notice = garden_forage_take(_gf_best);
-                    garden_notice_t = 220;
+        // ---- ACT: [E] / Enter / pad A / the proximity chip -> the nearest interactable in reach ----
+        if (keyboard_check_pressed(ord("E")) || input_confirm() || input_inject_take("garden:act")) {
+            var _gna = garden_nearest_interactable(id);
+            if (_gna != undefined) input_inject(_gna.tag);
+            else { garden_notice = "Nothing within reach - walk closer to a creature, the pond, the cairn or a glint in the moss."; garden_notice_t = 140; }
+        }
+        // ---- Take up a placed ornament: first press arms (2s), second press within it confirms
+        //      (destructive one-click rule) - half the price comes back. ----
+        var _gorn_n = array_length(garden_decor_list());
+        for (var _go = 0; _go < _gorn_n; _go++) {
+            if (input_inject_take("garden:orn" + string(_go))) {
+                if (garden_remove_arm == _go && garden_remove_arm_t > 0) {
+                    garden_notice = garden_decor_remove(_go); garden_notice_t = 220;
+                    garden_remove_arm = -1; garden_remove_arm_t = 0;
                     audio_play_sound(snd_confirm_major, 1, false);
-                } else if (_gf_best >= 0) {
-                    garden_notice = "Nothing glitters here - wander further.";
-                    garden_notice_t = 120;
                 } else {
-                    garden_notice = "The grounds are picked clean today. A run will turn up more.";
-                    garden_notice_t = 180;
+                    garden_remove_arm = _go; garden_remove_arm_t = 120;
+                    garden_notice = "Take it up? Press again to confirm - half its price comes back."; garden_notice_t = 120;
                 }
+                break;
             }
-            // Tap on a specific sparkle (draw injects the exact index).
-            for (var _gfk = 0; _gfk < 3; _gfk++) {
-                if (input_inject_take("garden:forage" + string(_gfk))) {
-                    var _gfm = garden_forage_take(_gfk);
-                    if (_gfm != "") {
-                        garden_notice = _gfm; garden_notice_t = 220;
-                        audio_play_sound(snd_confirm_major, 1, false);
-                    }
-                }
+        }
+        // ---- Verbs. Each is also reachable by tapping the thing itself (Draw walks you there, then fires). ----
+        if (input_inject_take("garden:crumb")) {
+            garden_crumb_t = current_time;
+            garden_crumb_x = GARDEN_POND_X + irandom_range(-60, 60);
+            array_push(garden_fx, { kind: "ripple", x: garden_crumb_x, y: GARDEN_POND_Y - 10, t0: current_time });
+            garden_notice = "The water dimples. Shapes rise to meet it.";
+            garden_notice_t = 120;
+        }
+        if (input_inject_take("garden:stone")) {
+            var _gc_msg = garden_cairn_place();
+            if (_gc_msg != "") {
+                garden_notice = _gc_msg; garden_notice_t = 200;
+                array_push(garden_fx, { kind: "stone", x: GARDEN_CAIRN_X, y: GARDEN_CAIRN_Y, t0: current_time });
+                audio_play_sound(snd_page, 1, false);
             }
-            // Petting: [E] pets the resident nearest the screen centre; a tap
-            // on a resident injects its exact index.
-            var _gpe_pick = -1;
-            if (keyboard_check_pressed(ord("E"))) _gpe_pick = -2;   // nearest
-            var _gpe_dn = array_length(bairc_donated());
-            for (var _gpl = 0; _gpl < min(_gpe_dn, 16); _gpl++) {
-                if (input_inject_take("garden:pet" + string(_gpl))) _gpe_pick = _gpl;
+        }
+        for (var _gfk = 0; _gfk < 3; _gfk++) {
+            if (input_inject_take("garden:forage" + string(_gfk))) {
+                var _gfm = garden_forage_take(_gfk);
+                if (_gfm != "") { garden_notice = _gfm; garden_notice_t = 220; audio_play_sound(snd_confirm_major, 1, false); }
             }
-            if (_gpe_pick != -1 && _gpe_dn > 0) {
-                var _gpe_i = _gpe_pick;
-                if (_gpe_i == -2) {
-                    // Nearest by the same deterministic home-x the draw uses.
-                    var _gpe_bd = 999999; _gpe_i = 0;
-                    for (var _gpn = 0; _gpn < min(_gpe_dn, 16); _gpn++) {
-                        var _gph = frac(sin((_gpn + 1) * 91.17) * 47453.25);
-                        var _gpx = 260 + _gph * (garden_world_w() - 620);
-                        var _gpd = abs(_gpx - (garden_cam_x + 960));
-                        if (_gpd < _gpe_bd) { _gpe_bd = _gpd; _gpe_i = _gpn; }
-                    }
-                }
-                var _gpe_d = bairc_donated()[_gpe_i];
-                var _gpe_h = frac(sin((_gpe_i + 1) * 91.17) * 47453.25);
-                array_push(garden_fx, { kind: "hearts",
-                    x: 260 + _gpe_h * (garden_world_w() - 620),
-                    y: (_gpe_i mod 2 == 0) ? 952 : 800, t0: current_time });
+        }
+        var _gpe_dn = min(array_length(bairc_donated()), array_length(garden_pets));
+        for (var _gpl = 0; _gpl < _gpe_dn; _gpl++) {
+            if (input_inject_take("garden:pet" + string(_gpl))) {
+                var _gpe_d = bairc_donated()[_gpl];
+                var _gpe_p = garden_pets[_gpl];
+                array_push(garden_fx, { kind: "hearts", x: _gpe_p.x, y: _gpe_p.y, t0: current_time });
+                _gpe_p.state = "approach"; _gpe_p.t = 200;   // it turns to you and lingers
                 garden_notice = garden_pet_line(_gpe_d.name);
                 garden_notice_t = 200;
                 audio_play_sound(snd_page, 1, false);
             }
-            // Shop open.
-            if (input_hotkey("B") || input_inject_take("garden:shop")) {
-                garden_shop_open = true;
-                garden_shop_cur  = 0;
-                audio_play_sound(snd_page, 1, false);
-            }
-            // [M] / the music chip: cycle Default + the garden's track pool
-            // (per-save selection, banshee-selector idiom - live-swaps here).
-            if (input_hotkey("M") || input_inject_take("garden:music")) {
-                if (music_selection_cycle("garden", 1)) {
-                    var _gm_t = music_selected_track("garden");
-                    garden_notice = "Now playing: " + ((_gm_t == undefined) ? "Stillwater" : _gm_t.name);
-                    garden_notice_t = 150;
-                    if (variable_global_exists("save_slot") && global.save_slot >= 0) save_game();
-                }
+        }
+        if (input_inject_take("garden:bairc")) {
+            garden_notice = "Bairc: " + garden_bairc_line(); garden_notice_t = 280;
+            audio_play_sound(snd_page, 1, false);
+        }
+        if (input_inject_take("garden:memorial")) {
+            var _gmm = bairc_memorials(), _gms = "";
+            for (var _gmi = 0; _gmi < min(6, array_length(_gmm)); _gmi++) _gms += ((_gmi > 0) ? ", " : "") + _gmm[_gmi].name;
+            if (array_length(_gmm) > 6) _gms += " and " + string(array_length(_gmm) - 6) + " more";
+            garden_notice = "The quiet corner remembers " + _gms + "."; garden_notice_t = 300;
+        }
+        // Shop open.
+        if (input_hotkey("B") || input_inject_take("garden:shop")) {
+            garden_shop_open = true;
+            garden_shop_cur  = 0;
+            audio_play_sound(snd_page, 1, false);
+        }
+        // [M] / the music chip: cycle Default + the garden's track pool
+        // (per-save selection, banshee-selector idiom - live-swaps here).
+        if (input_hotkey("M") || input_inject_take("garden:music")) {
+            if (music_selection_cycle("garden", 1)) {
+                var _gm_t = music_selected_track("garden");
+                garden_notice = "Now playing: " + ((_gm_t == undefined) ? "Stillwater" : _gm_t.name);
+                garden_notice_t = 150;
+                if (variable_global_exists("save_slot") && global.save_slot >= 0) save_game();
             }
         }
+        }   // !placement
 
-        // ---- Camera pan: held keys + drag (mouse/touch) ----
-        var _gcam_v = 0;
-        if (keyboard_check(ord("D")) || keyboard_check(vk_right)) _gcam_v += 16;
-        if (keyboard_check(ord("A")) || keyboard_check(vk_left))  _gcam_v -= 16;
-        // Gamepad: left stick / d-pad pans too (input parity, 08-18).
-        if (gamepad_is_connected(0)) {
-            var _gax = gamepad_axis_value(0, gp_axislh);
-            if (abs(_gax) > 0.25) _gcam_v += 16 * _gax;
-            if (gamepad_button_check(0, gp_padr)) _gcam_v += 16;
-            if (gamepad_button_check(0, gp_padl)) _gcam_v -= 16;
-        }
-        garden_cam_x += _gcam_v;
-        if (mouse_check_button(mb_left)) {
-            var _gdm = device_mouse_x_to_gui(0);
-            if (garden_drag_mx >= 0) garden_cam_x -= (_gdm - garden_drag_mx);
-            garden_drag_mx = _gdm;
-        } else {
-            garden_drag_mx = -1;
-        }
-        garden_cam_x = clamp(garden_cam_x, 0, garden_world_w() - 1920);
+        // ---- Residents live on their own clock (steering), placement mode or not ----
+        garden_pets_ensure(id);
+        garden_pets_tick(id);
+        garden_cam_x = 0;   // single plate: world == screen (legacy field kept for the save/HUD)
     }
     }   // !garden_tut_up (08-18 softlock fix)
 }
@@ -3750,8 +3789,13 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open && npc_tour_step < 
         garden_fade   = 24;
         garden_cam_x  = 0;
         garden_notice = ""; garden_notice_t = 0;
-        garden_wip_t  = 480;   // 8s WORK-IN-PROGRESS banner on every entry (M 08-18)
+        garden_wip_t  = 0;     // WIP banner retired 09-17 (walkable diorama shipped)
         garden_shop_open = false; garden_place_pick = ""; garden_fx = [];
+        // 09-17: spawn just inside the grounds, facing east; fresh steering state.
+        garden_px = 300; garden_py = 1000; garden_vx = 0; garden_vy = 0;
+        garden_face = garden_skin_frame(1, 0); garden_moving = false; garden_walk_t = 0;
+        garden_tx = -1; garden_ty = -1; garden_goal = "";
+        garden_pets = []; garden_pets_n = -1;
         // The garden's own music pool (selection via the [M] chip in-scene).
         music_hub_stop();
         audio_play_sound(music_garden_snd(), 1, true);

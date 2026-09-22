@@ -397,6 +397,9 @@ global.__sprite_includes = [
     spr_pet_crypt_gryphon_baby_s, spr_pet_crypt_gryphon_baby_e,
     spr_pet_crypt_gryphon_youngadult_s, spr_pet_crypt_gryphon_youngadult_e,
     spr_pet_crypt_gryphon_adult_s, spr_pet_crypt_gryphon_adult_e,
+    spr_pet_barrowhorn_baby_s, spr_pet_barrowhorn_baby_e,   // 09-15 Barrowhorn (grown from the old gryphon cub)
+    spr_pet_barrowhorn_youngadult_s, spr_pet_barrowhorn_youngadult_e,
+    spr_pet_barrowhorn_adult_s, spr_pet_barrowhorn_adult_e,
     spr_pet_threehunger_baby_s,   spr_pet_threehunger_baby_e,
     spr_pet_threehunger_youngadult_s, spr_pet_threehunger_youngadult_e,
     spr_pet_threehunger_adult_s,  spr_pet_threehunger_adult_e,
@@ -599,6 +602,19 @@ global.__sprite_includes = [
     spr_npc_bairc_idle, spr_npc_bairc_action, spr_npc_bairc_portrait,
     spr_tavern_board,   // Tavern Requests panel art (asset_get_index string ref, Phase 4b)
     spr_hub_background,
+    spr_garden_koi_a,
+    spr_garden_koi_b,
+    spr_garden_canopy,
+    spr_garden_orn_lantern,
+    spr_garden_orn_gate,
+    spr_garden_orn_basin,
+    spr_garden_orn_bloom,
+    spr_garden_orn_ward,
+    spr_garden_orn_chimes,
+    spr_garden_orn_wheel,
+    spr_garden_canopy_autumn,
+    spr_garden_orn_jar,
+    spr_garden_plate,
     spr_title_background,
     spr_title_foreground,
     spr_ui_frame,
@@ -852,7 +868,27 @@ garden_place_pick = "";     // ornament id awaiting a plot choice
 garden_fx         = [];     // transient reactions: { kind, x, y, t0 }
 garden_crumb_t    = -10000; // last pond crumb (koi converge window)
 garden_crumb_x    = 0;
-garden_drag_mx    = -1;     // last mouse x while drag-panning (-1 = not dragging)
+garden_drag_mx    = -1;     // (legacy, unused since the 09-17 diorama - no drag-pan)
+// 09-17 WALKABLE DIORAMA (DESIGN_GARDEN_0917.md): the player walks the painted plate.
+garden_px         = 300;    // player feet (world == screen coords, single plate)
+garden_py         = 1000;
+garden_vx         = 0;      // last frame's velocity (facing + lean)
+garden_vy         = 0;
+garden_face       = 4;      // 8-dir skin frame index (see garden_skin_frame)
+garden_moving     = false;
+garden_walk_t     = 0;      // frames spent walking (bob phase)
+garden_tx         = -1;     // tap-to-walk target (-1 = none)
+garden_ty         = -1;
+garden_goal       = "";     // verb tag fired on arrival at (garden_tx, garden_ty)
+garden_tap_x      = 0;      // ground tap landing spot (Draw hit-tests, Step consumes "garden:walk")
+garden_tap_y      = 0;
+garden_goal_x     = 0;      // interactable tapped in Draw -> walk there then fire garden_goal
+garden_goal_y     = 0;
+garden_pets       = [];     // resident steering state (garden_pets_ensure/_tick)
+garden_pets_n     = -1;     // resident count the state was built for (rebuild on change)
+garden_shop_tab     = 0;    // 0 = ORNAMENTS, 1 = GROUNDS (seasonal themes)
+garden_remove_arm   = -1;   // placed-ornament index armed for "take up" (second press confirms)
+garden_remove_arm_t = 0;    // frames the arm stays live
 
 // Pets (Phase 2). Cross-run persistent roster + active companion index + uid counter.
 // Saved per slot; NOT reset in end_run (pets are raised ACROSS runs). See scr_stats /

@@ -1,0 +1,52 @@
+{
+ "_doc": "Facing logged AT GENERATION (never judged by eye - feedback_log_facing_at_generation). One entry per imported sprite: which PixelLab rotation/direction produced it and which way the creature faces on screen. Pets are never mirrored in code; _e must face RIGHT as generated.",
+ "spr_pet_crypt_gryphon_baby_s": {
+  "source": "animate_character v3 south",
+  "faces": "south",
+  "session": "0915",
+  "char": "0ce2d17c-5542-4d78-a3b7-6d827bfc2c4d"
+ },
+ "spr_pet_crypt_gryphon_baby_e": {
+  "source": "animate_character v3 east",
+  "faces": "right (3/4)",
+  "session": "0915",
+  "char": "0ce2d17c-5542-4d78-a3b7-6d827bfc2c4d",
+  "note": "south-east strip rendered front-on for this chick; true east faces right - used"
+ },
+ "spr_pet_barrowhorn_baby_s": {
+  "source": "animate_character v3 south (reused old crypt_gryphon baby character)",
+  "faces": "south",
+  "session": "0915",
+  "char": "3d617d22-0c87-4e4b-a83f-d642843e02e7"
+ },
+ "spr_pet_barrowhorn_baby_e": {
+  "source": "animate_character v3 south-east (reused old crypt_gryphon baby character)",
+  "faces": "right (3/4)",
+  "session": "0915",
+  "char": "3d617d22-0c87-4e4b-a83f-d642843e02e7"
+ },
+ "spr_pet_barrowhorn_youngadult_s": {
+  "source": "animate_character v3 south",
+  "faces": "south",
+  "session": "0915",
+  "char": "65ee6924-9c25-4721-b83d-8add58ebbea9"
+ },
+ "spr_pet_barrowhorn_youngadult_e": {
+  "source": "animate_character v3 east",
+  "faces": "right",
+  "session": "0915",
+  "char": "65ee6924-9c25-4721-b83d-8add58ebbea9"
+ },
+ "spr_pet_barrowhorn_adult_s": {
+  "source": "animate_character v3 south",
+  "faces": "south",
+  "session": "0915",
+  "char": "64e721a3-3673-4b43-92a1-c6ef9bc5bc73"
+ },
+ "spr_pet_barrowhorn_adult_e": {
+  "source": "animate_character v3 east",
+  "faces": "right",
+  "session": "0915",
+  "char": "64e721a3-3673-4b43-92a1-c6ef9bc5bc73"
+ }
+}

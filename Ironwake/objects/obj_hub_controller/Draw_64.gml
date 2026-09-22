@@ -814,6 +814,10 @@ if (selected_npc < array_length(_aff_ids)) {
     if (_aff_rdy) {
         draw_set_color(c_aqua);
         draw_text(_ddx + 200, _ddy + 100, (input_device() == 1) ? "[R3] They want a word" : "[B] They want a word");
+    } else if (affinity_lover_reopenable(_aff_id)) {
+        // 09-22: the Lover question was closed by the player - quiet hint, no badge.
+        draw_set_color(make_color_rgb(140, 150, 175));
+        draw_text(_ddx + 200, _ddy + 100, (input_device() == 1) ? "[R3] Companions, by your word" : "[B] Companions, by your word");
     } else if (_aff_tier < 4) {
         // thin progress bar toward the next gate
         var _bx = _ddx, _by = _ddy + 124, _bw = 320, _bh = 8;
@@ -3719,12 +3723,22 @@ if (bond_dialog_open) {
         var _bbx = device_mouse_x_to_gui(0), _bby = device_mouse_y_to_gui(0);
         var _bbp = mouse_check_button_pressed(mb_left);
         var _bb_ok_col = (bond_dialog_ok == "PROFESS") ? make_color_rgb(235, 100, 140) : make_color_rgb(120, 210, 130);
-        var _bb_no     = (bond_dialog_mode == "ask") ? "DECLINE" : "NOT YET";
-        var _bb_w = 268, _bb_gap = 24, _bb_y0 = _bdy1 - 104, _bb_y1 = _bdy1 - 50;
+        var _bb_no     = (bond_dialog_mode == "ask") ? "DECLINE"
+                       : (bond_dialog_mode == "reconsider") ? "LEAVE IT" : "NOT YET";
+        if (!variable_instance_exists(id, "bond_dialog_third")) bond_dialog_third = "";
+        // 09-22: a THIRD answer on the Lover question ("STAY AS WE ARE") - three
+        // narrower buttons so the row still fits the text column (590px).
+        var _bb_three = (bond_dialog_third != "");
+        var _bb_w = _bb_three ? 184 : 268, _bb_gap = _bb_three ? 16 : 24;
+        var _bb_y0 = _bdy1 - 104, _bb_y1 = _bdy1 - 50;
         ui_confirm_button(_bd_tx, _bb_y0, _bd_tx + _bb_w, _bb_y1, bond_dialog_ok + "  [Enter]",
             _bb_ok_col, _bbx, _bby, _bbp, "bond:ok");
         ui_confirm_button(_bd_tx + _bb_w + _bb_gap, _bb_y0, _bd_tx + _bb_w * 2 + _bb_gap, _bb_y1, _bb_no + "  [Esc]",
             make_color_rgb(190, 120, 110), _bbx, _bby, _bbp, "bond:cancel");
+        if (_bb_three) {
+            ui_confirm_button(_bd_tx + (_bb_w + _bb_gap) * 2, _bb_y0, _bd_tx + _bb_w * 3 + _bb_gap * 2, _bb_y1,
+                bond_dialog_third + "  [N]", make_color_rgb(150, 160, 190), _bbx, _bby, _bbp, "bond:third");
+        }
     } else {
         draw_set_halign(fa_center);
         draw_set_color(make_color_rgb(140, 150, 175));
