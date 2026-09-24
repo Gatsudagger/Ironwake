@@ -11418,17 +11418,67 @@ function bairc_garden_blessing_pct() {
 #macro GARDEN_BAIRC_Y  988
 #macro GARDEN_MEM_X    190
 #macro GARDEN_MEM_Y    790
+// 09-22 BAIRC'S HUT interior (DESIGN_HUT_INTERIOR_0922.md): spr_hut_plate = the full 400x224
+// canvas @ x4 (1600x896) drawn at HUT_PLATE_X/Y, so screen = plate origin + preview pixel.
+// Every number below was measured on _for_review/hut_0922/spr_hut_plate_a_preview_x4.png.
+#macro HUT_PLATE_X   160
+#macro HUT_PLATE_Y   240
+#macro HUT_BAND_TOP  770
+#macro HUT_BAND_BOT  985
+#macro HUT_X0        410
+#macro HUT_X1        1520
+#macro HUT_DOOR_X    850     // the gap in the front wall - walk down through it to step outside
+#macro HUT_HEARTH_X  670
+#macro HUT_HEARTH_Y  800
+#macro HUT_DESK_Y    800
+#macro HUT_SHELF_X   1340    // keepsake shelf interactable (the big bookshelf)
+#macro HUT_SHELF_X0  1176    // first keepsake slot on the top board (09-24: 1188/42 -> 1176/46, trinkets are up to 48px wide)
+#macro HUT_SHELF_DX  46
+#macro HUT_SHELF_Y   476     // board baseline the trinkets stand on
+#macro HUT_BAIRC_X   1130
+#macro HUT_BAIRC_Y   870
+// 09-22 late: the peddler's cart on the grounds (rotating decor stock) - by the back wall, left.
+#macro GARDEN_CART_X 560
+#macro GARDEN_CART_Y 792
 function garden_world_w() { return 1920; }
+
+// ---- 09-22 ROOMS (DESIGN_HUT_INTERIOR_0922.md): "grounds" (the plate) or "hut" (Bairc's hut
+//      interior). One global so the side-effect-free helpers below (walkable, blockers, spot
+//      checks, catalog) all agree without threading a parameter through every call. The gc
+//      Step resets it to "grounds" on every garden entry; it is never saved.
+function garden_room()        { return variable_global_exists("garden_room_cur") ? global.garden_room_cur : "grounds"; }
+function garden_room_set(_r)  { global.garden_room_cur = _r; }
+function garden_band_top()    { return (garden_room() == "hut") ? HUT_BAND_TOP : GARDEN_BAND_TOP; }
+function garden_band_bot()    { return (garden_room() == "hut") ? HUT_BAND_BOT : GARDEN_BAND_BOT; }
+function garden_x0()          { return (garden_room() == "hut") ? HUT_X0 : 40; }
+function garden_x1()          { return (garden_room() == "hut") ? HUT_X1 : garden_world_w() - 40; }
+function garden_bairc_x()     { return (garden_room() == "hut") ? HUT_BAIRC_X : GARDEN_BAIRC_X; }
+function garden_bairc_y()     { return (garden_room() == "hut") ? HUT_BAIRC_Y : GARDEN_BAIRC_Y; }
+function garden_pet_room(_p)  { return (is_struct(_p) && variable_struct_exists(_p, "room")) ? _p.room : "grounds"; }
+function garden_decor_entry_room(_e) { return (is_struct(_e) && variable_struct_exists(_e, "room")) ? _e.room : "grounds"; }
 
 // Solid things on the plate the walkers slide around. kind: "ell" (pond), "rect" (hut,
 // stones), "circ" (lantern, cairn).
 function garden_blockers() {
+    if (garden_room() == "hut") {
+        // 09-22: authored against spr_hut_plate (screen = HUT_PLATE_X/Y + preview px).
+        return [
+            { kind:"rect", x0:575,  y0:560, x1:765,  y1:800 },     // hearth + stone surround
+            { kind:"rect", x0:430,  y0:830, x1:545,  y1:965 },     // candle desk, left
+            { kind:"rect", x0:800,  y0:640, x1:910,  y1:780 },     // small shelf
+            { kind:"circ", x:985,   y:760,  r:32 },                // bucket
+            { kind:"rect", x0:1060, y0:620, x1:1450, y1:805 },     // ledger desk + chair
+            { kind:"rect", x0:1445, y0:670, x1:1530, y1:965 },     // potion stand, right
+            { kind:"circ", x:HUT_BAIRC_X, y:HUT_BAIRC_Y, r:34 },   // Bairc at his ledgers
+        ];
+    }
     return [
         { kind:"ell",  x:GARDEN_POND_X, y:GARDEN_POND_Y, rx:GARDEN_POND_RX + 14, ry:GARDEN_POND_RY + 10 },
         { kind:"rect", x0:1236, y0:600, x1:1552, y1:942 },      // Bairc's hut (feet may stand just below its sill)
         { kind:"circ", x:1190, y:978, r:30 },                   // stone lantern
         { kind:"circ", x:GARDEN_CAIRN_X, y:GARDEN_CAIRN_Y, r:44 },
         { kind:"rect", x0:GARDEN_MEM_X - 60, y0:GARDEN_MEM_Y - 30, x1:GARDEN_MEM_X + 230, y1:GARDEN_MEM_Y + 8 },  // the quiet corner
+        { kind:"circ", x:GARDEN_CART_X, y:GARDEN_CART_Y, r:52 },   // 09-22 late: the peddler's cart
     ];
 }
 function garden_walkable(_x, _y) {
@@ -11438,6 +11488,7 @@ function garden_walkable(_x, _y) {
         && variable_struct_exists(global.garden_decor, "placed")) {
         var _l = global.garden_decor.placed;
         for (var _i = 0; _i < array_length(_l); _i++) {
+            if (garden_decor_entry_room(_l[_i]) != garden_room()) continue;   // 09-22: other room's
             var _r = garden_decor_radius(_l[_i].id);
             if (_r > 0 && point_distance(_x, _y, _l[_i].x, _l[_i].y) < _r) return false;
         }
@@ -11445,8 +11496,8 @@ function garden_walkable(_x, _y) {
     return true;
 }
 function garden_walkable_static(_x, _y) {
-    if (_y < GARDEN_BAND_TOP || _y > GARDEN_BAND_BOT) return false;
-    if (_x < 40 || _x > garden_world_w() - 40) return false;
+    if (_y < garden_band_top() || _y > garden_band_bot()) return false;   // 09-22: per room
+    if (_x < garden_x0() || _x > garden_x1()) return false;
     var _b = garden_blockers();
     for (var _i = 0; _i < array_length(_b); _i++) {
         var _k = _b[_i];
@@ -11460,7 +11511,7 @@ function garden_walkable_static(_x, _y) {
 }
 // 2.5D depth: things lower on the band draw larger (plane idiom).
 function garden_depth_scale(_y) {
-    return lerp(0.84, 1.0, clamp((_y - GARDEN_BAND_TOP) / (GARDEN_BAND_BOT - GARDEN_BAND_TOP), 0, 1));
+    return lerp(0.84, 1.0, clamp((_y - garden_band_top()) / (garden_band_bot() - garden_band_top()), 0, 1));
 }
 // Nearest walkable point to (x, y) - spiral search, for tap targets on the pond/hut.
 function garden_nearest_walkable(_x, _y) {
@@ -11499,15 +11550,49 @@ function garden_pets_ensure(_gc) {
     for (var _i = 0; _i < _n; _i++) {
         var _h1 = frac(sin((_i + 1) * 91.17) * 47453.25);
         var _h2 = frac(sin((_i + 1) * 37.31) * 21871.13);
-        var _home = garden_nearest_walkable(120 + _h1 * (garden_world_w() - 240),
-                                            GARDEN_BAND_TOP + 30 + _h2 * (GARDEN_BAND_BOT - GARDEN_BAND_TOP - 60));
+        // 09-22 ROOMS: ~30% of residents are homebodies who live INSIDE Bairc's hut (stable per
+        // index); the rest start on the grounds. Anyone near the player follows them through
+        // the door either way (garden_pets_follow).
+        var _room = (_h1 < 0.3) ? "hut" : "grounds";
+        var _home;
+        if (_room == "hut") _home = garden_hut_home(_i);
+        else _home = garden_nearest_walkable(120 + _h1 * (garden_world_w() - 240),
+                                             GARDEN_BAND_TOP + 30 + _h2 * (GARDEN_BAND_BOT - GARDEN_BAND_TOP - 60));
         array_push(_gc.garden_pets, {
             i:_i, x:_home.x, y:_home.y, hx:_home.x, hy:_home.y, tx:_home.x, ty:_home.y,
             state:"dwell", t:60 + irandom(180), vx:0, vy:0, moving:false, hop:0,
-            face:-1, seed:_h1,
+            face:-1, seed:_h1, room:_room,
         });
     }
     _gc.garden_pets_n = _n;
+}
+// Safe hut floor spots for the homebodies (authored against the hut blockers).
+function garden_hut_home(_i) {
+    var _spots = [ [600, 900], [700, 930], [900, 880], [1000, 940], [1200, 900], [1400, 900], [640, 965], [1300, 950] ];
+    var _s = _spots[_i mod array_length(_spots)];
+    return { x:_s[0] + (((_i div array_length(_spots)) * 23) mod 60), y:_s[1] };
+}
+// 09-22: residents near the player follow them through the hut door (either way). They land
+// just inside the destination's door and pick their steering up there. Returns how many.
+function garden_pets_follow(_gc, _to) {
+    var _n = 0;
+    for (var _i = 0; _i < array_length(_gc.garden_pets); _i++) {
+        var _p = _gc.garden_pets[_i];
+        if (!variable_struct_exists(_p, "room")) _p.room = "grounds";
+        if (_p.room == _to) continue;
+        if (point_distance(_p.x, _p.y, _gc.garden_px, _gc.garden_py) > 300) continue;
+        _p.room = _to;
+        var _dx = HUT_DOOR_X + (-120 + _n * 80), _dy = HUT_BAND_BOT - 60 - (_n mod 2) * 40;
+        if (_to == "grounds") { _dx = 1394 + (-140 + _n * 70); _dy = 985 + (_n mod 2) * 30; }
+        // 09-24: the row of landing spots runs into the potion stand from the 10th follower on -
+        //        snap each one to the nearest free floor so nobody spawns inside a blocker.
+        var _land = garden_nearest_walkable(_dx, _dy);
+        _dx = _land.x; _dy = _land.y;
+        _p.x = _dx; _p.y = _dy; _p.hx = _dx; _p.hy = _dy; _p.tx = _dx; _p.ty = _dy;
+        _p.state = "dwell"; _p.t = 40 + irandom(80); _p.moving = false; _p.hop = 0;
+        _n++;
+    }
+    return _n;
 }
 // Per-frame steering. States: dwell / wander / approach (drift toward a nearby player) /
 // bank (a fresh crumb pulls anyone near the pond to its edge) / nap (by the lantern).
@@ -11517,10 +11602,12 @@ function garden_pets_tick(_gc) {
     var _crumb = (current_time - _gc.garden_crumb_t < 4500);
     for (var _i = 0; _i < _n; _i++) {
         var _p = _pets[_i];
+        if (!variable_struct_exists(_p, "room")) _p.room = "grounds";
+        if (_p.room != garden_room()) continue;   // 09-22: the other room's residents stand still
         _p.t -= 1;
         var _dp = point_distance(_p.x, _p.y, _gc.garden_px, _gc.garden_py);
         // Crumb: everyone within 800px heads for the bank (once per crumb).
-        if (_crumb && _p.state != "bank" && _dp < 9999
+        if (_crumb && garden_room() == "grounds" && _p.state != "bank" && _dp < 9999
             && point_distance(_p.x, _p.y, GARDEN_POND_X, GARDEN_POND_Y) < 800) {
             var _ba = point_direction(GARDEN_POND_X, GARDEN_POND_Y, _p.x, _p.y);
             var _bx = GARDEN_POND_X + lengthdir_x(GARDEN_POND_RX + 60, _ba);
@@ -11544,7 +11631,9 @@ function garden_pets_tick(_gc) {
                 case "dwell": {
                     // Nap chance near the lantern, else wander within ~340px of home.
                     if (irandom(5) == 0) {
-                        var _nw = garden_nearest_walkable(1190 + irandom_range(-150, -60), 978 + irandom_range(-10, 60));
+                        var _nw = (garden_room() == "hut")   // 09-22: inside, the nap spot is the hearth
+                            ? garden_nearest_walkable(HUT_HEARTH_X + irandom_range(-70, 70), HUT_HEARTH_Y + irandom_range(30, 110))
+                            : garden_nearest_walkable(1190 + irandom_range(-150, -60), 978 + irandom_range(-10, 60));
                         _p.tx = _nw.x; _p.ty = _nw.y; _p.state = "wander"; _p.t = 600;
                         _p.seed = -1;   // flag: nap on arrival
                     } else {
@@ -11597,11 +11686,20 @@ function garden_pets_tick(_gc) {
 function garden_interactables(_gc) {
     var _out = [];
     var _don = bairc_donated();
+    var _room = garden_room();
     for (var _i = 0; _i < array_length(_gc.garden_pets); _i++) {
         var _p = _gc.garden_pets[_i];
         if (_i >= array_length(_don)) break;
+        if (garden_pet_room(_p) != _room) continue;   // 09-22: this room's residents only
         array_push(_out, { tag:"garden:pet" + string(_i), label:"Pet " + _don[_i].name, x:_p.x, y:_p.y, reach:120, top:130 });
     }
+    if (_room == "hut") {
+        // 09-22 HUT: Bairc at his ledgers (-> creature station), the keepsake shelf, the fire, the door.
+        array_push(_out, { tag:"garden:desk",   label:"Bairc - see the creatures", x:HUT_BAIRC_X,  y:HUT_BAIRC_Y, reach:150, top:190 });
+        array_push(_out, { tag:"garden:shelf",  label:"The keepsake shelf",        x:HUT_SHELF_X,  y:HUT_DESK_Y,  reach:150, top:200 });
+        array_push(_out, { tag:"garden:hearth", label:"Stoke the fire",            x:HUT_HEARTH_X, y:HUT_HEARTH_Y, reach:140, top:150 });
+        array_push(_out, { tag:"garden:out",    label:"Step outside",              x:HUT_DOOR_X,   y:HUT_BAND_BOT, reach:110, top:40 });
+    } else {
     // The pond: reach measured from its rim.
     var _pdx = (_gc.garden_px - GARDEN_POND_X) / (GARDEN_POND_RX + 110);
     var _pdy = (_gc.garden_py - GARDEN_POND_Y) / (GARDEN_POND_RY + 100);
@@ -11614,15 +11712,20 @@ function garden_interactables(_gc) {
         if (_spots[_s].taken) continue;
         array_push(_out, { tag:"garden:forage" + string(_spots[_s].idx), label:"Forage", x:_spots[_s].x, y:_spots[_s].y, reach:100, top:70 });
     }
-    array_push(_out, { tag:"garden:bairc", label:"Bairc", x:GARDEN_BAIRC_X, y:GARDEN_BAIRC_Y, reach:140, top:190 });
+    // 09-22: Bairc opens his creature station from here now (M: "right now he does nothing").
+    array_push(_out, { tag:"garden:bairc", label:"Bairc - see the creatures", x:GARDEN_BAIRC_X, y:GARDEN_BAIRC_Y, reach:140, top:190 });
+    array_push(_out, { tag:"garden:door",  label:"Bairc's hut - go inside",  x:1394, y:960, reach:120, top:120 });
+    array_push(_out, { tag:"garden:shop",  label:"The peddler's cart",       x:GARDEN_CART_X, y:GARDEN_CART_Y + 30, reach:140, top:150 });
+    }
     // Placed ornaments: "take up" (two presses - the second confirms, see Step garden_remove_arm).
     var _dl = garden_decor_list();
     for (var _o = 0; _o < array_length(_dl); _o++) {
+        if (garden_decor_entry_room(_dl[_o]) != _room) continue;
         var _od = garden_decor_get(_dl[_o].id);
         array_push(_out, { tag:"garden:orn" + string(_o), label:"Take up " + ((_od == undefined) ? "ornament" : _od.name),
                            x:_dl[_o].x, y:_dl[_o].y, reach:78, top:120 });
     }
-    if (array_length(bairc_memorials()) > 0)
+    if (_room == "grounds" && array_length(bairc_memorials()) > 0)
         array_push(_out, { tag:"garden:memorial", label:"The quiet corner", x:GARDEN_MEM_X + 90, y:GARDEN_MEM_Y + 30, reach:150, top:90 });
     return _out;
 }
@@ -11689,26 +11792,103 @@ function garden_decor_anchors() {
 }
 
 // Ornament catalog - dark-fantasy zen set dressing, one of each may be placed.
-function garden_decor_catalog() {
+function garden_decor_catalog_all() {
     return [
-        { id:"lantern", name:"Stone Lantern",    gold:120, dust:10, blurb:"A warm ember behind carved slate." },
-        { id:"gate",    name:"Spirit Gate",      gold:200, dust:20, blurb:"A weathered arch the dead pass under kindly." },
-        { id:"basin",   name:"Moon Basin",       gold:100, dust:10, blurb:"Still water that holds the moon in place." },
-        { id:"bloom",   name:"Nightbloom Patch", gold:80,  dust:5,  blurb:"Flowers that only open for the dark." },
-        { id:"ward",    name:"Moss Ward",        gold:150, dust:15, blurb:"A small stone spirit, green with years." },
-        { id:"chimes",  name:"Bone Chimes",      gold:120, dust:10, blurb:"They only sound when nothing is wrong." },
-        { id:"wheel",   name:"Pond Wheel",       gold:180, dust:15, blurb:"A slow feeder wheel - the koi grow bold." },
-        { id:"jar",     name:"Firefly Jar",      gold:60,  dust:5,  blurb:"Someone always leaves the lid loose." },
+        { id:"lantern", name:"Stone Lantern",    gold:120, dust:10, room:"grounds", blurb:"A warm ember behind carved slate." },
+        { id:"gate",    name:"Spirit Gate",      gold:200, dust:20, room:"grounds", blurb:"A weathered arch the dead pass under kindly." },
+        { id:"basin",   name:"Moon Basin",       gold:100, dust:10, room:"grounds", blurb:"Still water that holds the moon in place." },
+        { id:"bloom",   name:"Nightbloom Patch", gold:80,  dust:5,  room:"grounds", blurb:"Flowers that only open for the dark." },
+        { id:"ward",    name:"Moss Ward",        gold:150, dust:15, room:"grounds", blurb:"A small stone spirit, green with years." },
+        { id:"chimes",  name:"Bone Chimes",      gold:120, dust:10, room:"grounds", blurb:"They only sound when nothing is wrong." },
+        { id:"wheel",   name:"Pond Wheel",       gold:180, dust:15, room:"grounds", blurb:"A slow feeder wheel - the koi grow bold." },
+        { id:"jar",     name:"Firefly Jar",      gold:60,  dust:5,  room:"grounds", blurb:"Someone always leaves the lid loose." },
+        // 09-22 HUT interior (DESIGN_HUT_INTERIOR_0922.md) - shown only inside.
+        { id:"rug",     name:"Wolf-pelt Rug",    gold:90,  dust:5,  room:"hut", blurb:"Grey, ragged, and the warmest spot on the floor." },
+        { id:"shelf2",  name:"Ledger Shelf",     gold:160, dust:15, room:"hut", blurb:"More room for the books he swears he will finish." },
+        { id:"herbs",   name:"Hanging Herbs",    gold:70,  dust:5,  room:"hut", blurb:"Dried bundles. The hut smells of them for days." },
+        { id:"cot",     name:"Straw Cot",        gold:140, dust:10, room:"hut", blurb:"A low bed. Something will claim it within the hour." },
+        { id:"kettle",  name:"Iron Kettle",      gold:80,  dust:5,  room:"hut", blurb:"Always on. Never quite boiling." },
+        { id:"crate",   name:"Feed Crates",      gold:100, dust:10, room:"hut", blurb:"Grain and dried fish, stacked against the wall." },
+        { id:"candles", name:"Candle Cluster",   gold:60,  dust:5,  room:"hut", blurb:"Tallow stubs on a flat stone. Steadier than they look." },
+        { id:"perch",   name:"Roost Perch",      gold:120, dust:10, room:"hut", blurb:"For the ones that would rather look down on the rest." },
     ];
 }
+// The catalog for the CURRENT room (the shop lists this; garden_decor_get searches all).
+function garden_decor_catalog() {
+    var _all = garden_decor_catalog_all(), _out = [], _r = garden_room();
+    for (var _i = 0; _i < array_length(_all); _i++) if (_all[_i].room == _r) array_push(_out, _all[_i]);
+    return _out;
+}
 function garden_decor_get(id) {
-    var _c = garden_decor_catalog();
+    var _c = garden_decor_catalog_all();
     for (var _i = 0; _i < array_length(_c); _i++) if (_c[_i].id == id) return _c[_i];
     return undefined;
 }
 // Placed ornaments: array of { id, x, y } (x, y = standing baseline on the grass).
-function garden_decor_list() { garden_ensure(); return global.garden_decor.placed; }
+function garden_decor_list() {
+    garden_ensure();
+    var _l = global.garden_decor.placed;
+    // 09-22: entries carry their room; pre-hut saves are all grounds.
+    for (var _i = 0; _i < array_length(_l); _i++) if (!variable_struct_exists(_l[_i], "room")) _l[_i].room = "grounds";
+    return _l;
+}
 // How many of this ornament stand in the garden (multiples allowed since 09-17 late).
+// ---- 09-22 late STORES (M: "when players remove objects it doesn't sell or delete them but goes
+//      into an inventory only accessible in the garden and hut"): global.garden_decor.stored =
+//      [id, ...]. Taking an ornament up stores it (no refund); placing from the stores is free;
+//      buying something for the OTHER room stores it too. Persisted inside garden_decor as-is.
+function garden_decor_stored() {
+    garden_ensure();
+    if (!variable_struct_exists(global.garden_decor, "stored") || !is_array(global.garden_decor.stored)) global.garden_decor.stored = [];
+    return global.garden_decor.stored;
+}
+function garden_decor_stored_count(id) {
+    var _s = garden_decor_stored(), _n = 0;
+    for (var _i = 0; _i < array_length(_s); _i++) if (_s[_i] == id) _n++;
+    return _n;
+}
+// Distinct stored ids, catalog order, with counts - the STORED tab's rows.
+function garden_decor_stored_rows() {
+    var _all = garden_decor_catalog_all(), _out = [];
+    for (var _i = 0; _i < array_length(_all); _i++) {
+        var _n = garden_decor_stored_count(_all[_i].id);
+        if (_n > 0) array_push(_out, { def:_all[_i], count:_n });
+    }
+    return _out;
+}
+function garden_decor_store(id) { array_push(garden_decor_stored(), id); }
+// Pull ONE copy out of the stores (true if there was one).
+function garden_decor_unstore(id) {
+    var _s = garden_decor_stored();
+    for (var _i = 0; _i < array_length(_s); _i++) if (_s[_i] == id) { array_delete(_s, _i, 1); return true; }
+    return false;
+}
+// ---- 09-22 late ROTATING STOCK (M-locked: per run, 5 items): the peddler's cart shows a
+//      run_count-seeded slice of the whole catalog (both rooms), so everything comes round.
+function garden_shop_stock() {
+    var _all = garden_decor_catalog_all();
+    var _n = array_length(_all), _want = min(5, _n);
+    var _rc = variable_global_exists("run_count") ? global.run_count : 0;
+    var _out = [], _used = array_create(_n, false);
+    for (var _k = 0; _k < _want; _k++) {
+        var _h = abs(frac(sin((_rc + 1) * 12.9898 + (_k + 1) * 78.233) * 43758.5453));   // frac() keeps the sign in GML
+        var _j = clamp(floor(_h * _n), 0, _n - 1);
+        while (_used[_j]) _j = (_j + 1) mod _n;
+        _used[_j] = true;
+        array_push(_out, _all[_j]);
+    }
+    return _out;
+}
+// Charge for an ornament (the shop does this at BUY time now; placement is free). "" ok / reason.
+function garden_decor_buy(id) {
+    var _d = garden_decor_get(id);
+    if (_d == undefined) return "Unknown ornament.";
+    if (!variable_global_exists("rune_dust")) global.rune_dust = 0;
+    if (global.gold < _d.gold || global.rune_dust < _d.dust) return "Needs " + string(_d.gold) + "g + " + string(_d.dust) + " dust.";
+    global.gold -= _d.gold; global.rune_dust -= _d.dust;
+    affinity_add("bairc", 2);   // tending his garden warms him (function-use drip)
+    return "";
+}
 function garden_decor_count(id) {
     var _l = garden_decor_list(), _n = 0;
     for (var _i = 0; _i < array_length(_l); _i++) if (_l[_i].id == id) _n++;
@@ -11721,16 +11901,26 @@ function garden_decor_at(i) {
     return (i >= 0 && i < array_length(_l)) ? _l[i].id : "";
 }
 // Ornament footprint: blocks walkers except flat patches (bloom).
-function garden_decor_radius(id) { return (id == "bloom") ? 0 : ((id == "gate") ? 40 : 26); }
+function garden_decor_radius(id) {
+    switch (id) {
+        case "bloom": case "rug": return 0;        // flat
+        case "gate":  return 40;
+        case "cot":   return 34;
+        case "crate": return 30;
+        case "herbs": case "candles": return 20;
+        default: return 26;
+    }
+}
 // Can an ornament stand here? "" = yes, else the reason (Draw tints the ghost by this).
 function garden_decor_spot_ok(id, _x, _y) {
-    if (_y < GARDEN_BAND_TOP + 10 || _y > GARDEN_BAND_BOT - 4) return "Only on the grass.";
+    if (_y < garden_band_top() + 10 || _y > garden_band_bot() - 4) return (garden_room() == "hut") ? "Only on the floor." : "Only on the grass.";
     if (!garden_walkable(_x, _y)) return "Something already stands there.";
     var _l = garden_decor_list();
     for (var _i = 0; _i < array_length(_l); _i++) {
+        if (garden_decor_entry_room(_l[_i]) != garden_room()) continue;
         if (point_distance(_x, _y, _l[_i].x, _l[_i].y) < 70) return "Too close to another ornament.";
     }
-    if (point_distance(_x, _y, GARDEN_BAIRC_X, GARDEN_BAIRC_Y) < 90) return "Bairc needs room to stand.";
+    if (point_distance(_x, _y, garden_bairc_x(), garden_bairc_y()) < 90) return "Bairc needs room to stand.";
     return "";
 }
 // Buy + set the ornament at a free spot. "" on success else the reason.
@@ -11740,31 +11930,112 @@ function garden_decor_place_at(id, _x, _y) {
     if (_d == undefined) return "Unknown ornament.";
     var _why = garden_decor_spot_ok(id, _x, _y);
     if (_why != "") return _why;
-    if (!variable_global_exists("rune_dust")) global.rune_dust = 0;
-    if (global.gold < _d.gold || global.rune_dust < _d.dust) {
-        return "Needs " + string(_d.gold) + "g + " + string(_d.dust) + " dust.";
-    }
-    global.gold      -= _d.gold;
-    global.rune_dust -= _d.dust;
-    array_push(global.garden_decor.placed, { id:id, x:_x, y:_y });
-    affinity_add("bairc", 2);   // tending his garden warms him (function-use drip)
+    // 09-22 late: paid at BUY time (garden_decor_buy) or pulled from the stores - placing is free.
+    array_push(global.garden_decor.placed, { id:id, x:_x, y:_y, room:garden_room() });
     if (room == rm_hub || room == rm_character_select) save_game();
     return "";
 }
-// Take an ornament up again: half its price back. Returns the notice line.
+// Take an ornament up again: it goes to your STORES (09-22 late, M: no selling, no deleting -
+// "players place things as they please"). Returns the notice line.
 function garden_decor_remove(idx) {
     var _l = garden_decor_list();
     if (idx < 0 || idx >= array_length(_l)) return "";
     var _d = garden_decor_get(_l[idx].id);
-    var _rg = (_d == undefined) ? 0 : (_d.gold div 2), _rd = (_d == undefined) ? 0 : (_d.dust div 2);
-    if (!variable_global_exists("rune_dust")) global.rune_dust = 0;
-    global.gold += _rg; global.rune_dust += _rd;
+    garden_decor_store(_l[idx].id);
     array_delete(global.garden_decor.placed, idx, 1);
     if (room == rm_hub || room == rm_character_select) save_game();
-    return "You take up the " + ((_d == undefined) ? "ornament" : _d.name) + " (+" + string(_rg) + "g, +" + string(_rd) + " dust).";
+    return "You take up the " + ((_d == undefined) ? "ornament" : _d.name) + " - it goes to your stores ([B]).";
 }
 // Real ornament art (09-17 late batch) - -1 before import, and the vignette draws instead.
 function garden_ornament_sprite(id) { return asset_get_index("spr_garden_orn_" + id); }
+
+// ---- KEEPSAKE SHELF (09-22, hut): trinkets earned from state the game already keeps ----
+function garden_keepsake_catalog() {
+    return [
+        { id:"first_egg",  name:"The First Shell",   blurb:"Half a shell from the first egg that hatched in your care." },
+        { id:"full_cairn", name:"Five Stones",       blurb:"The cairn by the wall, finished - five runs come home." },
+        { id:"awakened",   name:"A Waking",          blurb:"A creature of yours reached its Awakened form." },
+        { id:"ten_kinds",  name:"Ten Kinds",         blurb:"Ten different species hatched under this roof." },
+        { id:"board25",    name:"Twenty-five Jobs",  blurb:"Tavern requests seen through - twenty-five of them." },
+        { id:"remembered", name:"The Quiet Corner",  blurb:"A creature laid to rest in the garden, and remembered." },
+        { id:"his_word",   name:"His Word",          blurb:"Bairc calls you Companion, or closer." },
+        { id:"deep_runs",  name:"Twenty-five Dives", blurb:"Twenty-five runs into the dark, and back." },
+    ];
+}
+function garden_keepsake_earned(id) {
+    ach_counters_init();
+    var _c = global.ach_counters;
+    switch (id) {
+        case "first_egg":  return array_length(_c.species_hatched) > 0;
+        case "full_cairn": return (variable_global_exists("garden_cairn") ? global.garden_cairn : 0) >= 5;
+        case "awakened": {
+            var _names = variable_struct_get_names(_c.species_stage_max);
+            for (var _i = 0; _i < array_length(_names); _i++) {
+                if (variable_struct_get(_c.species_stage_max, _names[_i]) >= PET_STAGE_AWAKENED) return true;
+            }
+            return false;
+        }
+        case "ten_kinds":  return array_length(_c.species_hatched) >= 10;
+        case "board25":    return _c.board_done >= 25;
+        case "remembered": return array_length(bairc_memorials()) > 0;
+        case "his_word":   return affinity_tier("bairc") >= 3;
+        case "deep_runs":  return (variable_global_exists("run_count") ? global.run_count : 0) >= 25;
+    }
+    return false;
+}
+function garden_keepsake_count() {
+    var _k = garden_keepsake_catalog(), _n = 0;
+    for (var _i = 0; _i < array_length(_k); _i++) if (garden_keepsake_earned(_k[_i].id)) _n++;
+    return _n;
+}
+
+// ---- 09-22 HUT: enter / step out / hand off to the creature station ---------------------
+function garden_hut_enter(_gc) {
+    garden_room_set("hut");
+    _gc.garden_px = HUT_DOOR_X; _gc.garden_py = HUT_BAND_BOT - 24;
+    _gc.garden_vx = 0; _gc.garden_vy = 0; _gc.garden_face = garden_skin_frame(0, -1);
+    _gc.garden_moving = false; _gc.garden_walk_t = 0;
+    _gc.garden_tx = -1; _gc.garden_ty = -1; _gc.garden_goal = "";
+    garden_place_abandon(_gc); _gc.garden_shop_open = false; _gc.garden_shop_tab = 0;
+    _gc.garden_remove_arm = -1; _gc.garden_remove_arm_t = 0;
+    _gc.garden_fade = 16;
+    var _n = garden_pets_follow(_gc, "hut");
+    _gc.garden_notice = (_n > 0)
+        ? (string(_n) + ((_n == 1) ? " creature follows" : " creatures follow") + " you in. The fire is low but warm.")
+        : "Bairc's hut. The fire is low but warm.";
+    _gc.garden_notice_t = 160;
+    audio_play_sound(snd_page, 1, false);
+}
+function garden_hut_exit(_gc) {
+    garden_room_set("grounds");
+    _gc.garden_px = 1394; _gc.garden_py = 968;
+    _gc.garden_vx = 0; _gc.garden_vy = 0; _gc.garden_face = garden_skin_frame(0, 1);
+    _gc.garden_moving = false; _gc.garden_walk_t = 0;
+    _gc.garden_tx = -1; _gc.garden_ty = -1; _gc.garden_goal = "";
+    garden_place_abandon(_gc); _gc.garden_shop_open = false;
+    _gc.garden_remove_arm = -1; _gc.garden_remove_arm_t = 0;
+    _gc.garden_fade = 16;
+    garden_pets_follow(_gc, "grounds");
+    audio_play_sound(snd_page, 1, false);
+}
+// Bairc's creature station from inside the scene (M 09-22: "right now he does nothing"):
+// closes the garden the way [Esc] LEAVE does; his garden line becomes the station notice.
+// 09-24: an ornament mid-placement is PAID for (charged at buy) - any exit from placement that
+// is not the Esc path must put it in the stores, never drop it.
+function garden_place_abandon(_gc) {
+    if (_gc.garden_place_pick != "") garden_decor_store(_gc.garden_place_pick);
+    _gc.garden_place_pick = "";
+}
+function garden_to_station(_gc) {
+    _gc.garden_open = false;
+    garden_place_abandon(_gc);
+    garden_room_set("grounds");
+    music_garden_stop();
+    audio_play_sound(music_hub_snd(), 1, true);
+    audio_apply_volumes();
+    audio_play_sound(snd_page, 1, false);
+    _gc.bairc_notification = "Bairc: " + garden_bairc_line();
+}
 
 // ---- GROUNDS THEMES (M-locked 09-17 late: seasons LAYERED on the one plate) ------------
 // A theme = sky palette + plate tint + canopy strip + weather particles. State lives inside
@@ -12404,7 +12675,7 @@ function tutorial_catalog() {
         { id:"shrine",     title:"Altars",              body:"A shrine is an altar. A Blessing altar sells boons for tribute - prices scale with your Awakening, and once per shrine [R] rerolls the offer for rune dust. A Cursed altar lets you take on a curse - a run-long penalty - in exchange for far better spoils. Loot-tier rewards lift drops as far as EPIC; a Legendary is never forced, only found. Choose how greedy you dare to be." },
         { id:"gold_risk",  title:"Gold at Risk",        body:"Gold you FIND during a run is at risk - die and you lose most of it (a quarter is returned as mercy). Gold banked before the run is always safe at camp. The number in brackets on your HUD is what you're gambling: extract to keep it all." },
         { id:"escape_item", title:"A Way Out",          body:"You carry an escape item. On the floor map, press G (or tap the LAMP / WINE button) to use it: the Genie Lamp whisks you back to camp with ALL your loot, free. Devil Wine does the same - but drains 2 random stat points. WARNING: the Wine's toll is PERMANENT - those points are gone from your hero on every future run, not just this one. Cash out a greedy run before the dungeon takes it back." },
-        { id:"garden_scene", title:"Bairc's Garden",   body:"This is where your creatures live between runs - and you can walk among them. Move with WASD, the arrow keys, the left stick, or tap anywhere on the grass to walk there. Walk up to a creature, the pond, the cairn or a glint in the moss and press [E] (or tap the prompt) to act. Tapping a creature walks you to it. [B] opens the ornament shop, [M] changes the music, Esc leaves." },
+        { id:"garden_scene", title:"Bairc's Garden",   body:"This is where your creatures live between runs - and you can walk among them. Move with WASD, the arrow keys, the left stick, or tap anywhere on the grass to walk there. Walk up to a creature, the pond, the cairn or a glint in the moss and press [E] (or tap the prompt) to act. Tapping a creature walks you to it. The peddler's cart by the wall sells decorations - five a run, different next run - and [B] opens your decor anywhere: the cart's stock and everything you have put away. Bairc's hut has a door now. [M] changes the music, Esc leaves." },
         { id:"origin_egg",  title:"Something Stirs",    body:"The egg you stumbled upon in your travels stirs - perhaps someone here can help with that. Bairc the beast-warden can identify and hatch it: find him on the camp carousel and set the egg under his care. A raised creature fights beside you, or blesses your runs." },
         { id:"bond_gates",  title:"Growing Closer",     body:"Someone in camp has warmed to you - their bond has reached a GATE. Crossing a gate takes a FAVOR: speak with them at camp and they will ask it of you - accept or decline. Finish it, return, and they will ask whether you want to grow closer. Nothing deepens until you say yes. Mind your bonds: friendships DECAY if neglected, and only a few can hold the deepest tiers - deepening one may demote another." },
         { id:"maren_forge", title:"Rough Steel",       body:"Items drop UNFINISHED. The QUALITY tag shows how much of an item's true power it delivers right now.\nDorn's TEMPER tab raises that by +10% per step, for gold and rune dust. Each step also adds a little bonus max HP.\nA raw legendary barely beats a finished epic - always worth tempering what you love." },

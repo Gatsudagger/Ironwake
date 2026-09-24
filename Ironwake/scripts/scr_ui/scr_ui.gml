@@ -20640,19 +20640,45 @@ function ui_draw_garden_scene() {
     if (!variable_instance_exists(_gc, "garden_open") || !_gc.garden_open) return;
     garden_ensure();
     garden_pets_ensure(_gc);
+    var _room = garden_room();   // 09-22 ROOMS: "grounds" | "hut" (DESIGN_HUT_INTERIOR_0922.md)
     var _W   = garden_world_w();
     var _t   = current_time / 1000;
     var _mx  = device_mouse_x_to_gui(0), _my = device_mouse_y_to_gui(0);
     var _placing  = (_gc.garden_place_pick != "");
     var _tap_used = false;   // an interactable / chip claimed this frame's tap -> ground walk stands down
+    // 09-24: declared ABOVE the room branch - the weather / particle checks after the walkers
+    // read _th in the hut too (it was grounds-only and crashed on the first frame inside).
+    var _th = garden_theme();
 
+    if (_room == "hut") {
+        // ---- 09-22 HUT INTERIOR: the room plate (spr_hut_plate = the full 400x224 canvas @ x4,
+        //      1600x896, at HUT_PLATE_X/Y) on the hut's dark inside. Live set dressing (hearth
+        //      glow + embers, keepsakes on the shelf) rides the y-sort below. Walk band and
+        //      blockers: garden_blockers() hut branch. ----
+        draw_set_color(make_color_rgb(4, 4, 8));
+        draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
+        var _hplate = asset_get_index("spr_hut_plate");
+        if (_hplate >= 0 && sprite_exists(_hplate)) {
+            draw_sprite(_hplate, 0, HUT_PLATE_X, HUT_PLATE_Y);
+        } else {
+            draw_set_color(make_color_rgb(34, 28, 24)); draw_rectangle(HUT_X0 - 40, HUT_PLATE_Y + 100, HUT_X1 + 40, HUT_BAND_BOT + 20, false);
+            draw_set_color(make_color_rgb(52, 44, 38)); draw_rectangle(HUT_X0 - 40, HUT_PLATE_Y + 100, HUT_X1 + 40, HUT_BAND_TOP - 10, false);
+            draw_set_font(ui_font(fnt_ui_small)); draw_set_halign(fa_center); draw_set_color(make_color_rgb(150, 160, 150));
+            draw_text(960, 460, "(hut plate not imported - run tools/gen_hut_interior_0922.py import with GM closed)");
+            draw_set_halign(fa_left);
+        }
+        // Tap the door gap in the front wall = walk out.
+        if (!_placing && touch_tapped(HUT_DOOR_X - 90, HUT_BAND_BOT, HUT_DOOR_X + 90, 1032)) {
+            _gc.garden_goal = "garden:out"; _gc.garden_goal_x = HUT_DOOR_X; _gc.garden_goal_y = HUT_BAND_BOT - 4;
+            input_inject("garden:goal"); _tap_used = true;
+        }
+    } else {
     // ---- SKY above the plate: gradient + hashed stars + moon. The plate's own treeline
     //      and star band starts at GARDEN_PLATE_Y, so the gradient lands on its sky colour. ----
     draw_set_alpha(1.0);
     // Plate sky sampled at (3,2,20) - the Still Night gradient must LAND on exactly that tone
     // (M 09-17: "abrupt hard line" when it landed on (8,10,20)). Other GROUNDS themes recolour
     // the sky AND tint the plate, so the seam moves with them (see the plate tint below).
-    var _th = garden_theme();
     draw_rectangle_color(GUI_XL, 0, GUI_XR, GARDEN_PLATE_Y, _th.sky_top, _th.sky_top, _th.sky_bot, _th.sky_bot, false);
     for (var _si = 0; _si < 70; _si++) {
         var _sh  = frac(sin(_si * 71.3) * 34781.7);
@@ -20688,8 +20714,14 @@ function ui_draw_garden_scene() {
         draw_sprite_ext(_plate, 0, 0, GARDEN_PLATE_Y, 1, 1, 0, _th.tint, 1);   // theme tint (c_white = untouched)
         if (_th.id != "night") {
             // Themed sky over the plate's own star band, so its (3,2,20) navy takes the theme too.
-            draw_set_alpha(0.55); draw_set_color(_th.sky_bot);
-            draw_rectangle(GUI_XL, GARDEN_PLATE_Y, GUI_XR, GARDEN_PLATE_Y + 150, false);
+            // 09-22: a FADE (0.55 -> 0 over the band), not a flat rect - the flat one ended on a
+            // hard line at +150 (M: "sky and background transition is a bit disjointed").
+            draw_primitive_begin(pr_trianglestrip);
+            draw_vertex_color(GUI_XL, GARDEN_PLATE_Y,       _th.sky_bot, 0.55);
+            draw_vertex_color(GUI_XR, GARDEN_PLATE_Y,       _th.sky_bot, 0.55);
+            draw_vertex_color(GUI_XL, GARDEN_PLATE_Y + 150, _th.sky_bot, 0.0);
+            draw_vertex_color(GUI_XR, GARDEN_PLATE_Y + 150, _th.sky_bot, 0.0);
+            draw_primitive_end();
             draw_set_alpha(1.0);
         }
         // CANOPY LAYER (M 09-17 late: "the trees have no tops ... separate layer ... parallax"):
@@ -20701,11 +20733,18 @@ function ui_draw_garden_scene() {
         if (_can < 0) _can = asset_get_index("spr_garden_canopy");   // themed strip not imported -> bare crowns
         if (_can >= 0 && sprite_exists(_can)) {
             var _cw  = sprite_get_width(_can);
-            var _cy  = GARDEN_PLATE_Y + 80 - sprite_get_height(_can);
+            // 09-22 SEAM FIX (M: "sky and background transition is a bit disjointed"): the strip
+            // is one solid crown mass (30,32,42) whose steep bottom fade used to land EXACTLY on
+            // the plate's top edge (y 440), so both edges fused into one hard band. Base moved
+            // 80 -> 120 so the fade straddles the trunk tops, and the mass is pulled toward the
+            // theme's sky colour so it reads as distant crowns the trunks rise into (variant B
+            // of the 09-22 composite sheet). Themed strips (autumn) keep more of their colour.
+            var _cy  = GARDEN_PLATE_Y + 120 - sprite_get_height(_can);
             var _cpx = -(_gc.garden_px - 960) * 0.06;
             var _cx0 = (_cpx mod _cw) - _cw;
             // Themes without their own strip tint the bare crowns (frost / blossom blush).
             var _ctint = variable_struct_exists(_th, "canopy_tint") ? _th.canopy_tint : c_white;
+            _ctint = merge_color(_ctint, _th.sky_bot, (_th.canopy == "spr_garden_canopy") ? 0.45 : 0.30);
             for (var _ck = 0; _ck < 3; _ck++) draw_sprite_ext(_can, 0, _cx0 + _ck * _cw, _cy, 1, 1, 0, _ctint, 1);
         } else {
             // Pre-import fallback: sky-coloured fade sinks the trunk tops into the night.
@@ -20728,12 +20767,23 @@ function ui_draw_garden_scene() {
         draw_text(960, 460, "(garden plate not imported - run tools/gen_garden_plate_0917.py import with GM closed)");
         draw_set_halign(fa_left);
     }
+    // 09-22: Bairc's hut has a door now - a faint warm sill glow marks it; tapping the hut walks
+    // you to the sill and in (the [E] prompt does the same on foot).
+    draw_set_alpha(0.16 + 0.08 * sin(_t * 2.5)); draw_set_color(make_color_rgb(255, 200, 120));
+    draw_ellipse(1394 - 46, 944, 1394 + 46, 962, false);
+    draw_set_alpha(1.0);
+    if (!_placing && touch_tapped(1236, 600, 1552, 942)) {
+        _gc.garden_goal = "garden:door"; _gc.garden_goal_x = 1394; _gc.garden_goal_y = 960;
+        input_inject("garden:goal"); _tap_used = true;
+    }
+    }   // grounds: sky + plate + canopy + hut door
 
     // ---- Koi shadows on the pond (baked water, live fish): three slow orbiters, +2 with the
     //      pond wheel; a fresh crumb pulls them to where it landed. ----
     var _placed = garden_decor_list();
     var _has_jar = garden_decor_placed("jar"), _has_wheel = garden_decor_placed("wheel");
     var _crumb_live = (current_time - _gc.garden_crumb_t < 4500);
+    if (_room == "grounds") {
     for (var _ko = 0; _ko < 3 + (_has_wheel ? 2 : 0); _ko++) {
         var _ka  = _t * (0.35 + 0.1 * _ko) + _ko * 2.2;
         var _kx  = GARDEN_POND_X + cos(_ka) * (150 - _ko * 26);
@@ -20770,13 +20820,14 @@ function ui_draw_garden_scene() {
     draw_line(_gl - 26, GARDEN_POND_Y - 20, _gl + 26, GARDEN_POND_Y - 20);
     draw_line(_gl - 12, GARDEN_POND_Y - 12, _gl + 30, GARDEN_POND_Y - 12);
     draw_set_alpha(1.0);
+    }   // grounds: koi + moon glint
 
     // ---- Placement mode (09-17 late, FREE placement): a ghost of the ornament follows the
     //      cursor / finger over the grass, green where it may stand, red where it may not; the
     //      footprint ring shows on the ground. Tap = place there; keyboard/pad = walk and
     //      press Enter to set it at your feet (Step). ----
     if (_placing) {
-        var _ghx = clamp(_mx, 40, _W - 40), _ghy = clamp(_my, GARDEN_BAND_TOP + 10, GARDEN_BAND_BOT - 4);
+        var _ghx = clamp(_mx, garden_x0(), garden_x1()), _ghy = clamp(_my, garden_band_top() + 10, garden_band_bot() - 4);
         var _gh_why = garden_decor_spot_ok(_gc.garden_place_pick, _ghx, _ghy);
         var _gh_ok  = (_gh_why == "");
         draw_set_alpha(0.55 + 0.25 * sin(_t * 4));
@@ -20793,7 +20844,7 @@ function ui_draw_garden_scene() {
     }
 
     // ---- Forage glints (3/run, seeded) - ground level, drawn under the walkers ----
-    var _spots = garden_forage_spots();
+    var _spots = (_room == "grounds") ? garden_forage_spots() : [];
     for (var _fs = 0; _fs < array_length(_spots); _fs++) {
         var _fsp = _spots[_fs];
         if (_fsp.taken) continue;
@@ -20813,12 +20864,22 @@ function ui_draw_garden_scene() {
     // ---- Y-SORTED WALKERS + SET DRESSING: everything standing on the band, lower = in front ----
     var _dl = [];
     for (var _ai = 0; _ai < array_length(_placed); _ai++) {
+        if (garden_decor_entry_room(_placed[_ai]) != _room) continue;   // 09-22: this room's only
         array_push(_dl, { y:_placed[_ai].y, kind:"ornament", id:_placed[_ai].id, x:_placed[_ai].x, i:_ai });
     }
-    array_push(_dl, { y:GARDEN_CAIRN_Y, kind:"cairn" });
-    array_push(_dl, { y:GARDEN_BAIRC_Y, kind:"bairc" });
-    if (array_length(bairc_memorials()) > 0) array_push(_dl, { y:GARDEN_MEM_Y, kind:"memorial" });
-    for (var _pi = 0; _pi < array_length(_gc.garden_pets); _pi++) array_push(_dl, { y:_gc.garden_pets[_pi].y, kind:"pet", i:_pi });
+    if (_room == "grounds") {
+        array_push(_dl, { y:GARDEN_CART_Y, kind:"cart" });   // 09-22 late: the peddler's cart
+        array_push(_dl, { y:GARDEN_CAIRN_Y, kind:"cairn" });
+        if (array_length(bairc_memorials()) > 0) array_push(_dl, { y:GARDEN_MEM_Y, kind:"memorial" });
+    } else {
+        array_push(_dl, { y:HUT_BAND_TOP - 200, kind:"hearth" });   // painted-wall dressing: under every walker
+        array_push(_dl, { y:HUT_BAND_TOP - 199, kind:"shelf" });
+    }
+    array_push(_dl, { y:garden_bairc_y(), kind:"bairc" });
+    for (var _pi = 0; _pi < array_length(_gc.garden_pets); _pi++) {
+        if (garden_pet_room(_gc.garden_pets[_pi]) != _room) continue;
+        array_push(_dl, { y:_gc.garden_pets[_pi].y, kind:"pet", i:_pi });
+    }
     array_push(_dl, { y:_gc.garden_py, kind:"player" });
     array_sort(_dl, function(_a, _b) { return _a.y - _b.y; });
 
@@ -20837,6 +20898,29 @@ function ui_draw_garden_scene() {
                 break;
             }
             case "cairn":    ui_garden_draw_cairn(GARDEN_CAIRN_X, GARDEN_CAIRN_Y, _gc, _t); break;
+            case "cart": {
+                // 09-22 late: the peddler's cart (spr_garden_cart, x4, origin top-left) - the decor
+                // stock. Lantern flicker over it; tap = walk over and open the shop.
+                var _cspr = asset_get_index("spr_garden_cart");
+                if (_cspr >= 0 && sprite_exists(_cspr)) {
+                    var _cw = sprite_get_width(_cspr), _cbb = sprite_get_bbox_bottom(_cspr) + 1;
+                    draw_set_alpha(0.32); draw_set_color(c_black);
+                    draw_ellipse(GARDEN_CART_X - _cw * 0.34, GARDEN_CART_Y - 6, GARDEN_CART_X + _cw * 0.34, GARDEN_CART_Y + 6, false);
+                    draw_set_alpha(1.0);
+                    draw_sprite(_cspr, 0, GARDEN_CART_X - _cw / 2, GARDEN_CART_Y - _cbb);
+                    gpu_set_blendmode(bm_add);
+                    draw_set_alpha(0.10 + 0.05 * sin(_t * 5.1)); draw_set_color(make_color_rgb(255, 190, 90));
+                    draw_ellipse(GARDEN_CART_X - 90, GARDEN_CART_Y - 150, GARDEN_CART_X + 90, GARDEN_CART_Y + 20, false);
+                    gpu_set_blendmode(bm_normal); draw_set_alpha(1.0);
+                } else {
+                    draw_set_color(make_color_rgb(70, 52, 40)); draw_rectangle(GARDEN_CART_X - 60, GARDEN_CART_Y - 90, GARDEN_CART_X + 60, GARDEN_CART_Y, false);
+                }
+                if (!_placing && touch_tapped(GARDEN_CART_X - 80, GARDEN_CART_Y - 170, GARDEN_CART_X + 80, GARDEN_CART_Y + 10)) {
+                    _gc.garden_goal = "garden:shop"; _gc.garden_goal_x = GARDEN_CART_X + 90; _gc.garden_goal_y = GARDEN_CART_Y + 40;
+                    input_inject("garden:goal"); _tap_used = true;
+                }
+                break;
+            }
             case "memorial": {
                 // The quiet corner: small headstones, newest nearest the path; names on approach.
                 var _mems = bairc_memorials();
@@ -20856,17 +20940,60 @@ function ui_draw_garden_scene() {
                 draw_set_halign(fa_left);
                 break;
             }
+            case "hearth": {
+                // 09-22: live fire over the painted hearth - additive flicker on the floor + embers
+                // (a burst after "Stoke the fire").
+                var _hf = 0.75 + 0.25 * sin(_t * 7.3) * sin(_t * 3.1 + 1);
+                gpu_set_blendmode(bm_add);
+                draw_set_alpha(0.16 * _hf); draw_set_color(make_color_rgb(255, 150, 60));
+                draw_ellipse(HUT_HEARTH_X - 210, HUT_HEARTH_Y - 40, HUT_HEARTH_X + 210, HUT_HEARTH_Y + 150, false);
+                draw_set_alpha(0.10 * _hf);
+                draw_ellipse(HUT_HEARTH_X - 120, HUT_HEARTH_Y - 20, HUT_HEARTH_X + 120, HUT_HEARTH_Y + 90, false);
+                gpu_set_blendmode(bm_normal);
+                var _stoked = variable_instance_exists(_gc, "garden_hearth_t") && (current_time - _gc.garden_hearth_t < 6000);
+                var _emn = _stoked ? 26 : 9;
+                for (var _em = 0; _em < _emn; _em++) {
+                    var _eh = frac(sin(_em * 57.3) * 12345.6);
+                    var _ep = frac(_eh + _t * (0.18 + 0.12 * _eh));
+                    var _ex = HUT_HEARTH_X + (-40 + 80 * _eh) + 10 * sin(_t * 3 + _em);
+                    var _ey = HUT_HEARTH_Y - 60 - _ep * 220;
+                    draw_set_alpha((1 - _ep) * 0.8);
+                    draw_set_color((_em mod 3 == 0) ? make_color_rgb(255, 210, 120) : make_color_rgb(255, 130, 50));
+                    draw_rectangle(_ex, _ey, _ex + 2, _ey + 2, false);
+                }
+                draw_set_alpha(1.0);
+                break;
+            }
+            case "shelf": {
+                // 09-22: keepsakes on the bookshelf's top board - earned = the trinket, else a dark slot.
+                var _kc = garden_keepsake_catalog();
+                for (var _kk = 0; _kk < array_length(_kc); _kk++) {
+                    var _kx = HUT_SHELF_X0 + _kk * HUT_SHELF_DX, _ky = HUT_SHELF_Y;
+                    if (garden_keepsake_earned(_kc[_kk].id)) {
+                        var _ks = asset_get_index("spr_keep_" + _kc[_kk].id);
+                        if (_ks >= 0 && sprite_exists(_ks)) draw_sprite(_ks, 0, _kx - sprite_get_width(_ks) / 2, _ky - sprite_get_height(_ks));
+                        else { draw_set_color(make_color_rgb(200, 180, 120)); draw_rectangle(_kx - 8, _ky - 18, _kx + 8, _ky, false); }
+                    } else {
+                        draw_set_alpha(0.35); draw_set_color(make_color_rgb(20, 16, 14));
+                        draw_rectangle(_kx - 9, _ky - 16, _kx + 9, _ky, false);
+                        draw_set_alpha(1.0);
+                    }
+                }
+                break;
+            }
             case "bairc": {
                 var _bspr = asset_get_index("spr_npc_bairc_idle");
+                var _bx = garden_bairc_x(), _by = garden_bairc_y();   // 09-22: at his ledgers inside the hut
                 if (_bspr >= 0 && sprite_exists(_bspr)) {
                     var _bfr = (current_time div 170) mod max(1, sprite_get_number(_bspr));
-                    var _bfit = pet_sprite_fit(_bspr, GARDEN_BAIRC_X, GARDEN_BAIRC_Y, 176 * garden_depth_scale(GARDEN_BAIRC_Y));
+                    var _bfit = pet_sprite_fit(_bspr, _bx, _by, 176 * garden_depth_scale(_by));
                     draw_set_alpha(0.35); draw_set_color(c_black);
-                    draw_ellipse(GARDEN_BAIRC_X - 34, GARDEN_BAIRC_Y - 8, GARDEN_BAIRC_X + 34, GARDEN_BAIRC_Y + 8, false);
+                    draw_ellipse(_bx - 34, _by - 8, _bx + 34, _by + 8, false);
                     draw_set_alpha(1.0);
                     draw_sprite_ext(_bspr, _bfr, _bfit.x, _bfit.y, _bfit.scale, _bfit.scale, 0, c_white, 1);
-                    if (!_placing && touch_tapped(GARDEN_BAIRC_X - 60, GARDEN_BAIRC_Y - 190, GARDEN_BAIRC_X + 60, GARDEN_BAIRC_Y + 10)) {
-                        _gc.garden_goal = "garden:bairc"; _gc.garden_goal_x = GARDEN_BAIRC_X - 110; _gc.garden_goal_y = GARDEN_BAIRC_Y + 10;
+                    if (!_placing && touch_tapped(_bx - 60, _by - 190, _bx + 60, _by + 10)) {
+                        _gc.garden_goal = (_room == "hut") ? "garden:desk" : "garden:bairc";
+                        _gc.garden_goal_x = _bx - 110; _gc.garden_goal_y = _by + 10;
                         input_inject("garden:goal"); _tap_used = true;
                     }
                 }
@@ -20943,7 +21070,7 @@ function ui_draw_garden_scene() {
     }
 
     // ---- Ambient fireflies (more near a placed jar) ----
-    var _ffn = 22 + (_has_jar ? 16 : 0);
+    var _ffn = (_room == "hut") ? 0 : 22 + (_has_jar ? 16 : 0);   // 09-22: no fireflies indoors
     for (var _ff = 0; _ff < _ffn; _ff++) {
         var _fh  = frac(sin(_ff * 43.7) * 82631.1);
         var _ffx = frac(_fh + _t * 0.008 * (1 + _fh)) * _W;
@@ -20956,7 +21083,7 @@ function ui_draw_garden_scene() {
 
     // ---- Weather particles per GROUNDS theme (leaves / snow / petals / ash): hashed motes on
     //      a time loop, the ember/firefly idiom. Drawn over the walkers, under the HUD. ----
-    if (_th.particle != "none") {
+    if (_th.particle != "none" && _room == "grounds") {
         var _pn = (_th.particle == "snow") ? 90 : 48;
         for (var _pp = 0; _pp < _pn; _pp++) {
             var _ph  = frac(sin(_pp * 91.7) * 43758.5);
@@ -21071,10 +21198,11 @@ function ui_draw_garden_scene() {
     draw_set_halign(fa_center);
     draw_set_font(ui_font(fnt_ui));
     draw_set_color(make_color_rgb(170, 210, 170));
-    draw_text(960, 16, "B A I R C ' S   G A R D E N");
+    draw_text(960, 16, (_room == "hut") ? "B A I R C ' S   H U T" : "B A I R C ' S   G A R D E N");
     draw_set_halign(fa_left);
-    ui_garden_chip(140, 16, "[Esc] LEAVE", "garden:leave");
-    ui_garden_chip(1700, 16, "[B] ORNAMENTS", "garden:shop");
+    if (_room == "hut") ui_garden_chip(140, 16, "[Esc] OUTSIDE", "garden:out");
+    else                ui_garden_chip(140, 16, "[Esc] LEAVE", "garden:leave");
+    ui_garden_chip(1700, 16, "[B] DECOR", "garden:shop");
     draw_set_font(ui_font(fnt_ui_small));
     draw_set_halign(fa_right);
     draw_set_color(c_yellow);
@@ -21083,7 +21211,8 @@ function ui_draw_garden_scene() {
     draw_set_font(ui_font_dense(fnt_ui_small));
     draw_set_halign(fa_center); draw_set_valign(fa_top);
     draw_set_color(make_color_rgb(130, 145, 132));
-    var _dn = array_length(_don);
+    var _dn = 0;   // residents IN THIS ROOM (09-22)
+    for (var _dq = 0; _dq < min(array_length(_don), array_length(_gc.garden_pets)); _dq++) if (garden_pet_room(_gc.garden_pets[_dq]) == _room) _dn++;
     var _gh_hint = (input_device() == 2)
         ? "Tap the grass to walk        Tap a creature to visit it        Tap the prompt to act        "
         : "WASD / stick: walk        click the grass to walk there        [E] act on what's near        ";
@@ -21095,6 +21224,41 @@ function ui_draw_garden_scene() {
     // ---- Notice toast (standard boxed toast, topmost of the scene HUD) ----
     if (_gc.garden_notice != "" && _gc.garden_notice_t > 0) {
         ui_draw_toast(_gc.garden_notice, 960, 120, min(1, _gc.garden_notice_t / 30));
+    }
+    // ---- KEEPSAKE SHELF panel (09-22, hut): the eight trinkets, earned or not ----
+    if (variable_instance_exists(_gc, "garden_shelf_open") && _gc.garden_shelf_open) {
+        draw_set_alpha(0.62); draw_set_color(c_black);
+        draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
+        draw_set_alpha(1.0);
+        var _kx0 = 520, _ky0 = 150, _kx1 = 1400, _ky1 = 936;
+        draw_set_color(make_color_rgb(18, 15, 13)); draw_rectangle(_kx0, _ky0, _kx1, _ky1, false);
+        draw_set_color(make_color_rgb(170, 140, 100)); draw_rectangle(_kx0, _ky0, _kx1, _ky1, true);
+        var _kcat = garden_keepsake_catalog();
+        draw_set_halign(fa_center); draw_set_font(ui_font(fnt_ui)); draw_set_color(make_color_rgb(230, 205, 160));
+        draw_text((_kx0 + _kx1) / 2, _ky0 + 16, "K E E P S A K E S     " + string(garden_keepsake_count()) + " / " + string(array_length(_kcat)));
+        draw_set_halign(fa_left);
+        for (var _kr = 0; _kr < array_length(_kcat); _kr++) {
+            var _kd = _kcat[_kr], _kon = garden_keepsake_earned(_kd.id);
+            var _kry = _ky0 + 70 + _kr * 84;
+            draw_set_color(_kon ? make_color_rgb(30, 26, 22) : make_color_rgb(22, 19, 17));
+            draw_rectangle(_kx0 + 24, _kry, _kx1 - 24, _kry + 72, false);
+            draw_set_color(_kon ? make_color_rgb(120, 100, 70) : make_color_rgb(50, 44, 40));
+            draw_rectangle(_kx0 + 24, _kry, _kx1 - 24, _kry + 72, true);
+            var _kspr = asset_get_index("spr_keep_" + _kd.id);
+            if (_kon && _kspr >= 0 && sprite_exists(_kspr)) {
+                draw_sprite(_kspr, 0, _kx0 + 60 - sprite_get_width(_kspr) / 2, _kry + 36 - sprite_get_height(_kspr) / 2);
+            } else {
+                draw_set_color(make_color_rgb(40, 34, 30)); draw_rectangle(_kx0 + 44, _kry + 20, _kx0 + 76, _kry + 52, false);
+            }
+            draw_set_font(ui_font(fnt_ui)); draw_set_color(_kon ? make_color_rgb(235, 215, 170) : make_color_rgb(110, 100, 92));
+            draw_text(_kx0 + 104, _kry + 8, _kon ? _kd.name : "? ? ?");
+            draw_set_font(ui_font(fnt_ui_small)); draw_set_color(_kon ? make_color_rgb(180, 170, 150) : make_color_rgb(96, 90, 84));
+            draw_text(_kx0 + 104, _kry + 42, ui_truncate(_kd.blurb, _kx1 - _kx0 - 150));
+        }
+        draw_set_halign(fa_center); draw_set_font(ui_font(fnt_ui_small)); draw_set_color(make_color_rgb(140, 150, 175));
+        ui_draw_key_legend((_kx0 + _kx1) / 2, _ky1 - 26, (input_device() == 2) ? "Tap to close" : "Enter / Esc: Close");
+        if (touch_tapped(GUI_XL, 0, GUI_XR, GUI_H)) input_inject("garden:shelfclose");
+        draw_set_halign(fa_left); draw_set_font(-1);
     }
     // ---- ORNAMENT SHOP overlay ----
     if (_gc.garden_shop_open) {
@@ -21110,25 +21274,30 @@ function ui_draw_garden_scene() {
         var _stab = _gc.garden_shop_tab;
         draw_set_halign(fa_center);
         draw_set_font(ui_font(fnt_ui));
-        for (var _tb = 0; _tb < 2; _tb++) {
-            var _tbx0 = (_sx0 + _sx1) / 2 - 300 + _tb * 300, _tbx1 = _tbx0 + 300;
+        // 09-22 late: STOCK (the cart's rotating 5) | STORED (your put-away ornaments) | GROUNDS
+        // (seasonal themes, outside-only).
+        var _ntabs = (_room == "grounds") ? 3 : 2;
+        var _tbw = 260;
+        for (var _tb = 0; _tb < _ntabs; _tb++) {
+            var _tbx0 = (_sx0 + _sx1) / 2 - (_tbw * _ntabs) / 2 + _tb * _tbw, _tbx1 = _tbx0 + _tbw;
             var _tbon = (_tb == _stab);
             draw_set_color(_tbon ? make_color_rgb(26, 38, 28) : make_color_rgb(14, 18, 15));
             draw_rectangle(_tbx0 + 4, _sy0 + 8, _tbx1 - 4, _sy0 + 46, false);
             draw_set_color(_tbon ? make_color_rgb(150, 210, 160) : make_color_rgb(48, 62, 50));
             draw_rectangle(_tbx0 + 4, _sy0 + 8, _tbx1 - 4, _sy0 + 46, true);
             draw_set_color(_tbon ? make_color_rgb(190, 230, 190) : make_color_rgb(110, 125, 112));
-            draw_text((_tbx0 + _tbx1) / 2, _sy0 + 16, (_tb == 0) ? "ORNAMENTS" : "GROUNDS");
+            draw_text((_tbx0 + _tbx1) / 2, _sy0 + 16, (_tb == 0) ? "STOCK" : ((_tb == 1) ? ("STORED  (" + string(array_length(garden_decor_stored())) + ")") : "GROUNDS"));
             if (touch_tapped(_tbx0, _sy0 + 4, _tbx1, _sy0 + 50)) input_inject("garden:shoptab" + string(_tb));
         }
         draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(make_color_rgb(120, 140, 125));
         draw_text((_sx0 + _sx1) / 2, _sy0 + 58, (_stab == 0)
-            ? "\"It could use a little something. They notice, you know.\""
-            : "\"The grounds can be turned. Takes gold, dust, and a few seasons' worth of coming back.\"");
+            ? "The peddler's cart - five things this run, different next. Bought for the other room? It waits in your stores."
+            : ((_stab == 1) ? "Everything you have taken up or set aside. Placing from here is free."
+                            : "\"The grounds can be turned. Takes gold, dust, and a few seasons' worth of coming back.\""));
         draw_set_halign(fa_left);
         var _srow_y = _sy0 + 96, _srow_h = 82;
-        if (_stab == 1) {
+        if (_stab == 2) {
             // GROUNDS rows: themes - swatch, name, status / price, requirement line.
             var _tc = garden_theme_catalog();
             for (var _tr = 0; _tr < array_length(_tc); _tr++) {
@@ -21161,12 +21330,22 @@ function ui_draw_garden_scene() {
                 draw_set_halign(fa_left);
             }
         }
-        var _sc_cat = garden_decor_catalog();
-        for (var _sr = 0; _sr < array_length(_sc_cat) && _stab == 0; _sr++) {
+        // STOCK / STORED rows (09-22 late): the real sprite, name, room tag, price or count.
+        var _sc_cat = [];
+        if (_stab == 0)      _sc_cat = garden_shop_stock();
+        else if (_stab == 1) { var _srows = garden_decor_stored_rows(); for (var _sq = 0; _sq < array_length(_srows); _sq++) array_push(_sc_cat, _srows[_sq].def); }
+        if (_stab == 1 && array_length(_sc_cat) == 0) {
+            draw_set_halign(fa_center); draw_set_font(ui_font(fnt_ui_small)); draw_set_color(make_color_rgb(110, 125, 112));
+            draw_text((_sx0 + _sx1) / 2, _srow_y + 40, "Nothing put away. Take up a placed ornament and it lands here.");
+            draw_set_halign(fa_left);
+        }
+        for (var _sr = 0; _sr < array_length(_sc_cat) && _stab <= 1; _sr++) {
             var _sd = _sc_cat[_sr];
             var _sry = _srow_y + _sr * _srow_h;
             var _son = (_sr == _gc.garden_shop_cur);
             var _scount = garden_decor_count(_sd.id);   // multiples allowed (09-17 late)
+            var _sstored = garden_decor_stored_count(_sd.id);
+            var _shere = (_sd.room == _room);
             if (touch_tapped(_sx0 + 16, _sry, _sx1 - 16, _sry + _srow_h - 8)) input_inject("garden:shoprow" + string(_sr));
             draw_set_color(_son ? make_color_rgb(26, 38, 28) : make_color_rgb(18, 22, 19));
             draw_rectangle(_sx0 + 16, _sry, _sx1 - 16, _sry + _srow_h - 8, false);
@@ -21180,19 +21359,29 @@ function ui_draw_garden_scene() {
             }
             draw_set_font(ui_font(fnt_ui));
             draw_set_color(c_white);
-            draw_text(_sx0 + 120, _sry + 8, _sd.name + ((_scount > 0) ? "   x" + string(_scount) : ""));
+            draw_text(_sx0 + 120, _sry + 8, _sd.name + ((_scount > 0) ? "   x" + string(_scount) + " placed" : ""));
             draw_set_font(ui_font(fnt_ui_small));
-            draw_set_color(make_color_rgb(130, 145, 132));
-            draw_text(_sx0 + 120, _sry + 44, _sd.blurb);
+            draw_set_color(_shere ? make_color_rgb(130, 145, 132) : make_color_rgb(150, 130, 100));
+            draw_text(_sx0 + 120, _sry + 44, ui_truncate(((_sd.room == "hut") ? "[hut]  " : "[grounds]  ") + _sd.blurb, 560));
             draw_set_halign(fa_right);
-            draw_set_color(c_yellow);
-            draw_text(_sx1 - 36, _sry + 12, string(_sd.gold) + "g + " + string(_sd.dust) + " dust");
+            if (_stab == 0) {
+                draw_set_color(c_yellow);
+                draw_text(_sx1 - 36, _sry + 12, string(_sd.gold) + "g + " + string(_sd.dust) + " dust");
+                if (_sstored > 0) { draw_set_color(make_color_rgb(130, 145, 132)); draw_text(_sx1 - 36, _sry + 44, string(_sstored) + " in stores"); }
+            } else {
+                draw_set_color(make_color_rgb(190, 230, 190));
+                draw_text(_sx1 - 36, _sry + 12, "x" + string(_sstored) + " stored");
+                draw_set_color(_shere ? make_color_rgb(130, 145, 132) : make_color_rgb(150, 130, 100));
+                draw_text(_sx1 - 36, _sry + 44, _shere ? "Enter: place" : ((_sd.room == "hut") ? "place it inside the hut" : "place it on the grounds"));
+            }
             draw_set_halign(fa_left);
         }
         draw_set_halign(fa_center);
         draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(make_color_rgb(130, 150, 135));
-        ui_draw_key_legend((_sx0 + _sx1) / 2, _sy1 - 30, "W/S: Browse    Tab: Ornaments / Grounds    Enter: Choose    Esc: Close");
+        ui_draw_key_legend((_sx0 + _sx1) / 2, _sy1 - 30, (_room == "grounds")
+            ? "W/S: Browse    Tab: Stock / Stored / Grounds    Enter: Choose    Esc: Close"
+            : "W/S: Browse    Tab: Stock / Stored    Enter: Choose    Esc: Close");
         draw_set_halign(fa_left);
     }
 

@@ -229,41 +229,78 @@ if (garden_open && bairc_open) {
         if (current_time - garden_fx[_gfi].t0 > 4000) array_delete(garden_fx, _gfi, 1);
     }
 
+    // ---- KEEPSAKE SHELF panel (09-22, hut): modal; confirm / cancel / tap closes ----
+    if (!variable_instance_exists(id, "garden_shelf_open")) garden_shelf_open = false;
+    if (garden_shelf_open) {
+        if (input_cancel() || input_back() || input_confirm() || input_inject_take("garden:shelfclose")) {
+            garden_shelf_open = false; audio_play_sound(snd_page, 1, false);
+        }
+    } else
     // ---- ORNAMENT SHOP overlay (modal within the garden) ----
     if (garden_shop_open) {
-        // Tabs (09-17 late): 0 ORNAMENTS / 1 GROUNDS. Tab key, pad bumpers, or the header chips.
-        for (var _gst = 0; _gst < 2; _gst++) {
-            if (input_inject_take("garden:shoptab" + string(_gst)) && garden_shop_tab != _gst) { garden_shop_tab = _gst; garden_shop_cur = 0; }
+        // Tabs (09-22 late): 0 STOCK (the cart's rotating 5) / 1 STORED / 2 GROUNDS (outside only).
+        // Tab key, pad bumpers, or the header chips.
+        var _gs_ntabs = (garden_room() == "grounds") ? 3 : 2;
+        for (var _gst = 0; _gst < 3; _gst++) {
+            if (input_inject_take("garden:shoptab" + string(_gst)) && garden_shop_tab != _gst && _gst < _gs_ntabs) { garden_shop_tab = _gst; garden_shop_cur = 0; }
         }
-        if (input_tab_next() || input_tab_prev()) { garden_shop_tab = 1 - garden_shop_tab; garden_shop_cur = 0; }
-        var _gs_cat = (garden_shop_tab == 1) ? garden_theme_catalog() : garden_decor_catalog();
+        if (input_tab_next()) { garden_shop_tab = (garden_shop_tab + 1) mod _gs_ntabs; garden_shop_cur = 0; }
+        if (input_tab_prev()) { garden_shop_tab = (garden_shop_tab + _gs_ntabs - 1) mod _gs_ntabs; garden_shop_cur = 0; }
+        if (garden_shop_tab >= _gs_ntabs) garden_shop_tab = 0;
+        var _gs_cat = [];
+        if (garden_shop_tab == 2)      _gs_cat = garden_theme_catalog();
+        else if (garden_shop_tab == 0) _gs_cat = garden_shop_stock();
+        else { var _gs_rows = garden_decor_stored_rows(); for (var _gsr = 0; _gsr < array_length(_gs_rows); _gsr++) array_push(_gs_cat, _gs_rows[_gsr].def); }
         var _gs_n   = array_length(_gs_cat);
+        if (garden_shop_cur >= _gs_n) garden_shop_cur = 0;
         for (var _gsi = 0; _gsi < _gs_n; _gsi++) {
             if (input_inject_take("garden:shoprow" + string(_gsi))) {
                 if (garden_shop_cur == _gsi) input_inject("garden:shopgo");   // 2nd tap = pick
                 else garden_shop_cur = _gsi;
             }
         }
-        if (nav_up())   garden_shop_cur = wrap_index(garden_shop_cur - 1, _gs_n);
-        if (nav_down()) garden_shop_cur = wrap_index(garden_shop_cur + 1, _gs_n);
-        if (garden_shop_tab == 1 && (input_confirm() || input_inject_take("garden:shopgo"))) {
+        if (_gs_n > 0 && nav_up())   garden_shop_cur = wrap_index(garden_shop_cur - 1, _gs_n);
+        if (_gs_n > 0 && nav_down()) garden_shop_cur = wrap_index(garden_shop_cur + 1, _gs_n);
+        if (garden_shop_tab == 2 && (input_confirm() || input_inject_take("garden:shopgo"))) {
             var _gt_d = _gs_cat[garden_shop_cur];
             var _gt_ok = garden_theme_owned(_gt_d.id) || garden_theme_locked_reason(_gt_d.id) == "";
             garden_notice = garden_theme_choose(_gt_d.id); garden_notice_t = 200;
             audio_play_sound(_gt_ok ? snd_confirm_major : snd_ui_error, 1, false);
-        } else if (input_confirm() || input_inject_take("garden:shopgo")) {
+        } else if (_gs_n > 0 && (input_confirm() || input_inject_take("garden:shopgo"))) {
             var _gs_d = _gs_cat[garden_shop_cur];
-            if (global.gold < _gs_d.gold
-                || (variable_global_exists("rune_dust") ? global.rune_dust : 0) < _gs_d.dust) {
-                garden_notice = _gs_d.name + " needs " + string(_gs_d.gold) + "g + " + string(_gs_d.dust) + " dust.";
-                garden_notice_t = 150;
-                audio_play_sound(snd_ui_error, 1, false);
+            var _gs_here = (_gs_d.room == garden_room());
+            if (garden_shop_tab == 0) {
+                // BUY (09-22 late): charged HERE. For this room -> straight to placement (Esc stores
+                // it, never refunds); for the other room -> into the stores with a note.
+                var _gs_buy = garden_decor_buy(_gs_d.id);
+                if (_gs_buy != "") {
+                    garden_notice = _gs_d.name + ": " + _gs_buy; garden_notice_t = 150;
+                    audio_play_sound(snd_ui_error, 1, false);
+                } else if (!_gs_here) {
+                    garden_decor_store(_gs_d.id);
+                    garden_notice = "The " + _gs_d.name + " goes to your stores - place it " + ((_gs_d.room == "hut") ? "inside the hut." : "out on the grounds.");
+                    garden_notice_t = 220;
+                    if (room == rm_hub || room == rm_character_select) save_game();
+                    audio_play_sound(snd_confirm_major, 1, false);
+                } else {
+                    garden_place_pick = _gs_d.id;
+                    garden_shop_open  = false;
+                    garden_notice = "Set the " + _gs_d.name + " down: tap a spot, or walk there and press Enter. Esc puts it in your stores.";
+                    garden_notice_t = 300;
+                    audio_play_sound(snd_page, 1, false);
+                }
             } else {
-                garden_place_pick = _gs_d.id;   // charged at placement
-                garden_shop_open  = false;
-                garden_notice = "Set the " + _gs_d.name + " down: tap a spot on the grass, or walk there and press Enter. Esc puts it back.";
-                garden_notice_t = 300;
-                audio_play_sound(snd_page, 1, false);
+                // PLACE FROM STORES: free; one copy leaves the stores while it is being set down.
+                if (!_gs_here) {
+                    garden_notice = "That belongs " + ((_gs_d.room == "hut") ? "inside the hut." : "out on the grounds."); garden_notice_t = 150;
+                    audio_play_sound(snd_ui_error, 1, false);
+                } else if (garden_decor_unstore(_gs_d.id)) {
+                    garden_place_pick = _gs_d.id;
+                    garden_shop_open  = false;
+                    garden_notice = "Set the " + _gs_d.name + " down: tap a spot, or walk there and press Enter. Esc puts it back in your stores.";
+                    garden_notice_t = 300;
+                    audio_play_sound(snd_page, 1, false);
+                }
             }
         }
         if (input_cancel() || input_back()) {
@@ -280,7 +317,7 @@ if (garden_open && bairc_open) {
             if (input_inject_take("garden:placeat")) { _gp_x = garden_tap_x; _gp_y = garden_tap_y; }
             else if (input_confirm() || keyboard_check_pressed(ord("E"))) { _gp_x = garden_px; _gp_y = garden_py + 36; }
             if (_gp_x >= 0) {
-                var _gp_res = garden_decor_place_at(garden_place_pick, _gp_x, clamp(_gp_y, GARDEN_BAND_TOP + 10, GARDEN_BAND_BOT - 4));
+                var _gp_res = garden_decor_place_at(garden_place_pick, _gp_x, clamp(_gp_y, garden_band_top() + 10, garden_band_bot() - 4));
                 if (_gp_res == "") {
                     var _gp_d = garden_decor_get(garden_place_pick);
                     garden_notice = "The " + _gp_d.name + " settles into the earth.";
@@ -293,10 +330,16 @@ if (garden_open && bairc_open) {
                 }
             }
             if (input_cancel() || input_back()) {
+                garden_decor_store(garden_place_pick);   // 09-22 late: never lost - into the stores
                 garden_place_pick = "";
-                garden_notice = "Placement set aside.";
-                garden_notice_t = 100;
+                garden_notice = "Set aside - it waits in your stores ([B]).";
+                garden_notice_t = 120;
+                if (room == rm_hub || room == rm_character_select) save_game();
             }
+        } else if (garden_room() == "hut"
+                   && (input_cancel() || input_back() || input_inject_take("garden:out") || input_inject_take("garden:leave"))) {
+            // ---- 09-22: inside the hut, Esc / the chip / the door step OUT to the grounds first ----
+            garden_hut_exit(id);
         } else if (input_cancel() || input_back() || input_inject_take("garden:leave")) {
             // ---- Leave the garden -> back to Bairc's station ----
             garden_open = false;
@@ -306,7 +349,7 @@ if (garden_open && bairc_open) {
             audio_play_sound(snd_page, 1, false);
         }
 
-        {   // ---- walking is live in every mode (placement included) ----
+        if (!garden_shelf_open) {   // ---- walking is live in every mode (placement included) ----
         // ---- 09-17 WALK (DESIGN_GARDEN_0917.md): keys / left stick / d-pad, or tap-to-walk.
         //      Draw hit-tests the ground and injects "garden:walk" (garden_tap_x/y); tapping
         //      an interactable injects "garden:goal" with garden_goal = the verb to fire on
@@ -352,6 +395,10 @@ if (garden_open && bairc_open) {
             if (garden_walkable(garden_px, garden_py + _gw_vy)) { garden_py += _gw_vy; _gw_moved = true; }
             garden_face = garden_skin_frame(_gw_dx, _gw_dy);
             garden_vx = _gw_vx; garden_vy = _gw_vy;
+            // 09-22: walking down through the hut's door gap steps outside.
+            // 09-24: threshold 8px (was 3) - a step is ~4.1px and the walkable check caps py at the band
+            //        bottom, so from the entry spot py stalled at ~981.8 and never reached 982.
+            if (garden_room() == "hut" && _gw_dy > 0 && garden_py >= HUT_BAND_BOT - 8 && abs(garden_px - HUT_DOOR_X) < 90) input_inject("garden:out");
             // Wedged against a blocker on the way to a tap target: stop here; a goal still fires if close.
             if (!_gw_moved && garden_tx >= 0) {
                 var _gwd2 = point_distance(garden_px, garden_py, garden_tx, garden_ty);
@@ -364,7 +411,7 @@ if (garden_open && bairc_open) {
         garden_walk_t = _gw_moved ? garden_walk_t + 1 : 0;
         }
         if (garden_remove_arm_t > 0) { garden_remove_arm_t--; if (garden_remove_arm_t == 0) garden_remove_arm = -1; }
-        if (garden_place_pick == "") {
+        if (garden_place_pick == "" && !garden_shelf_open) {
         // ---- ACT: [E] / Enter / pad A / the proximity chip -> the nearest interactable in reach ----
         if (keyboard_check_pressed(ord("E")) || input_confirm() || input_inject_take("garden:act")) {
             var _gna = garden_nearest_interactable(id);
@@ -376,14 +423,10 @@ if (garden_open && bairc_open) {
         var _gorn_n = array_length(garden_decor_list());
         for (var _go = 0; _go < _gorn_n; _go++) {
             if (input_inject_take("garden:orn" + string(_go))) {
-                if (garden_remove_arm == _go && garden_remove_arm_t > 0) {
-                    garden_notice = garden_decor_remove(_go); garden_notice_t = 220;
-                    garden_remove_arm = -1; garden_remove_arm_t = 0;
-                    audio_play_sound(snd_confirm_major, 1, false);
-                } else {
-                    garden_remove_arm = _go; garden_remove_arm_t = 120;
-                    garden_notice = "Take it up? Press again to confirm - half its price comes back."; garden_notice_t = 120;
-                }
+                // 09-22 late: one press - nothing is lost, it goes to the stores (no refund to guard).
+                garden_notice = garden_decor_remove(_go); garden_notice_t = 220;
+                garden_remove_arm = -1; garden_remove_arm_t = 0;
+                audio_play_sound(snd_confirm_major, 1, false);
                 break;
             }
         }
@@ -421,8 +464,24 @@ if (garden_open && bairc_open) {
                 audio_play_sound(snd_page, 1, false);
             }
         }
-        if (input_inject_take("garden:bairc")) {
-            garden_notice = "Bairc: " + garden_bairc_line(); garden_notice_t = 280;
+        // 09-22 (M: "right now he does nothing"): Bairc - outside, or at his ledgers inside -
+        // opens his creature station; his line rides along as the station notice.
+        if (input_inject_take("garden:bairc") || input_inject_take("garden:desk")) {
+            garden_to_station(id);
+        }
+        // ---- 09-22 HUT verbs: the door in, the keepsake shelf, the fire ----
+        if (input_inject_take("garden:door"))  garden_hut_enter(id);
+        if (input_inject_take("garden:shelf")) { garden_shelf_open = true; audio_play_sound(snd_page, 1, false); }
+        if (input_inject_take("garden:hearth")) {
+            garden_hearth_t = current_time;
+            array_push(garden_fx, { kind: "hearts", x: HUT_HEARTH_X, y: HUT_HEARTH_Y + 40, t0: current_time });
+            for (var _gh = 0; _gh < array_length(garden_pets); _gh++) {
+                var _ghp = garden_pets[_gh];
+                if (garden_pet_room(_ghp) != "hut" || _ghp.state == "nap") continue;
+                var _ghw = garden_nearest_walkable(HUT_HEARTH_X + irandom_range(-80, 80), HUT_HEARTH_Y + irandom_range(30, 110));
+                _ghp.tx = _ghw.x; _ghp.ty = _ghw.y; _ghp.state = "wander"; _ghp.t = 600; _ghp.seed = -1;   // nap on arrival
+            }
+            garden_notice = "You feed the fire. It takes a moment, then leans into it."; garden_notice_t = 200;
             audio_play_sound(snd_page, 1, false);
         }
         if (input_inject_take("garden:memorial")) {
@@ -3791,6 +3850,7 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open && npc_tour_step < 
         garden_notice = ""; garden_notice_t = 0;
         garden_wip_t  = 0;     // WIP banner retired 09-17 (walkable diorama shipped)
         garden_shop_open = false; garden_place_pick = ""; garden_fx = [];
+        garden_room_set("grounds"); garden_shelf_open = false; garden_hearth_t = -100000;   // 09-22 rooms
         // 09-17: spawn just inside the grounds, facing east; fresh steering state.
         garden_px = 300; garden_py = 1000; garden_vx = 0; garden_vy = 0;
         garden_face = garden_skin_frame(1, 0); garden_moving = false; garden_walk_t = 0;

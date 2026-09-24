@@ -602,6 +602,24 @@ global.__sprite_includes = [
     spr_npc_bairc_idle, spr_npc_bairc_action, spr_npc_bairc_portrait,
     spr_tavern_board,   // Tavern Requests panel art (asset_get_index string ref, Phase 4b)
     spr_hub_background,
+    spr_garden_cart,
+    spr_garden_orn_rug,
+    spr_garden_orn_perch,
+    spr_hut_plate,
+    spr_garden_orn_shelf2,
+    spr_garden_orn_herbs,
+    spr_garden_orn_cot,
+    spr_garden_orn_kettle,
+    spr_garden_orn_crate,
+    spr_garden_orn_candles,
+    spr_keep_first_egg,
+    spr_keep_full_cairn,
+    spr_keep_awakened,
+    spr_keep_ten_kinds,
+    spr_keep_board25,
+    spr_keep_remembered,
+    spr_keep_his_word,
+    spr_keep_deep_runs,
     spr_garden_koi_a,
     spr_garden_koi_b,
     spr_garden_canopy,
@@ -889,6 +907,8 @@ garden_pets_n     = -1;     // resident count the state was built for (rebuild o
 garden_shop_tab     = 0;    // 0 = ORNAMENTS, 1 = GROUNDS (seasonal themes)
 garden_remove_arm   = -1;   // placed-ornament index armed for "take up" (second press confirms)
 garden_remove_arm_t = 0;    // frames the arm stays live
+garden_shelf_open   = false;   // 09-22 keepsake shelf panel (hut interior)
+garden_hearth_t     = -100000; // 09-22 last "stoke the fire" (ember burst window)
 
 // Pets (Phase 2). Cross-run persistent roster + active companion index + uid counter.
 // Saved per slot; NOT reset in end_run (pets are raised ACROSS runs). See scr_stats /

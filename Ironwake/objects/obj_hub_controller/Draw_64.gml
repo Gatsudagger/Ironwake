@@ -3723,8 +3723,9 @@ if (bond_dialog_open) {
         var _bbx = device_mouse_x_to_gui(0), _bby = device_mouse_y_to_gui(0);
         var _bbp = mouse_check_button_pressed(mb_left);
         var _bb_ok_col = (bond_dialog_ok == "PROFESS") ? make_color_rgb(235, 100, 140) : make_color_rgb(120, 210, 130);
-        var _bb_no     = (bond_dialog_mode == "ask") ? "DECLINE"
-                       : (bond_dialog_mode == "reconsider") ? "LEAVE IT" : "NOT YET";
+        var _bb_no = "NOT YET";
+        if (bond_dialog_mode == "ask")        _bb_no = "DECLINE";
+        if (bond_dialog_mode == "reconsider") _bb_no = "LEAVE IT";
         if (!variable_instance_exists(id, "bond_dialog_third")) bond_dialog_third = "";
         // 09-22: a THIRD answer on the Lover question ("STAY AS WE ARE") - three
         // narrower buttons so the row still fits the text column (590px).
