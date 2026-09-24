@@ -3661,7 +3661,10 @@ if (bond_dialog_open) {
     draw_set_alpha(0.72);
     draw_set_color(make_color_rgb(6, 8, 14));
     draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
-    var _bdx0 = 460, _bdy0 = 300, _bdx1 = 1460, _bdy1 = 780;
+    // 09-24: the Lover question carries a THIRD answer - its two button rows need 60px more
+    //        panel (the body's last line ends ~650; rows sit at 680 and 742 on a 840 bottom).
+    if (!variable_instance_exists(id, "bond_dialog_third")) bond_dialog_third = "";
+    var _bdx0 = 460, _bdy0 = 300, _bdx1 = 1460, _bdy1 = (bond_dialog_third != "") ? 840 : 780;
     draw_set_alpha(0.97);
     draw_set_color(make_color_rgb(22, 20, 30));
     draw_rectangle(_bdx0, _bdy0, _bdx1, _bdy1, false);
@@ -3729,15 +3732,21 @@ if (bond_dialog_open) {
         if (!variable_instance_exists(id, "bond_dialog_third")) bond_dialog_third = "";
         // 09-22: a THIRD answer on the Lover question ("STAY AS WE ARE") - three
         // narrower buttons so the row still fits the text column (590px).
+        // 09-24 (M shot: "options extend beyond boxes"): three 184px buttons overran the
+        //       542px column beside the portrait and "STAY AS WE ARE  [N]" spilled out of its
+        //       box. Now TWO ROWS when there are three answers: PROFESS / NOT YET on the upper
+        //       row, the third answer full-width beneath them - every label fits its box.
         var _bb_three = (bond_dialog_third != "");
-        var _bb_w = _bb_three ? 184 : 268, _bb_gap = _bb_three ? 16 : 24;
-        var _bb_y0 = _bdy1 - 104, _bb_y1 = _bdy1 - 50;
+        var _bb_col_w = (_bdx1 - 48) - _bd_tx;                 // the text column's width
+        var _bb_gap = 24, _bb_w = min(268, (_bb_col_w - _bb_gap) div 2);
+        var _bb_y0 = _bb_three ? _bdy1 - 160 : _bdy1 - 104;
+        var _bb_y1 = _bb_y0 + 54;
         ui_confirm_button(_bd_tx, _bb_y0, _bd_tx + _bb_w, _bb_y1, bond_dialog_ok + "  [Enter]",
             _bb_ok_col, _bbx, _bby, _bbp, "bond:ok");
         ui_confirm_button(_bd_tx + _bb_w + _bb_gap, _bb_y0, _bd_tx + _bb_w * 2 + _bb_gap, _bb_y1, _bb_no + "  [Esc]",
             make_color_rgb(190, 120, 110), _bbx, _bby, _bbp, "bond:cancel");
         if (_bb_three) {
-            ui_confirm_button(_bd_tx + (_bb_w + _bb_gap) * 2, _bb_y0, _bd_tx + _bb_w * 3 + _bb_gap * 2, _bb_y1,
+            ui_confirm_button(_bd_tx, _bdy1 - 98, _bd_tx + _bb_w * 2 + _bb_gap, _bdy1 - 50,
                 bond_dialog_third + "  [N]", make_color_rgb(150, 160, 190), _bbx, _bby, _bbp, "bond:third");
         }
     } else {
