@@ -4441,7 +4441,7 @@ function handle_enemy_drops(enemy_type) {
         var _ew = drop_weights("elite", _drop_asc);
         _ew[1] += _ew[0]; _ew[0] = 0;   // never common (M: "even if just uncommon")
         var _gt = boon_gambler_tier_bonus();   // Gambler's Icon: fast fights roll +1 tier
-        var _item = drop_equipment(_ew, true, curse_loot_tier_bonus_for("elite") + _gt);
+        var _item = drop_equipment(_ew, true, curse_loot_tier_bonus_for("elite") + _gt + enemy_affix_loot_bonus());   // +1 tier per elite affix (09-24)
         array_push(global.run_items_found, _item);
         array_push(global.carried_items, _item);
         discover_item(item_base_name(_item), _item.rarity);
@@ -4488,7 +4488,7 @@ function handle_enemy_drops(enemy_type) {
             global.warden_leg_due = false;
             _boss_w = [0, 0, 0, 0, 100];
         }
-        var _item = drop_equipment(_boss_w, true, curse_loot_tier_bonus_for("boss") + _gt);
+        var _item = drop_equipment(_boss_w, true, curse_loot_tier_bonus_for("boss") + _gt + enemy_affix_loot_bonus());   // +1 tier per affix (09-24)
         array_push(global.run_items_found, _item);
         array_push(global.carried_items, _item);
         discover_item(item_base_name(_item), _item.rarity);
@@ -12678,6 +12678,8 @@ function tutorial_catalog() {
         { id:"garden_scene", title:"Bairc's Garden",   body:"This is where your creatures live between runs - and you can walk among them. Move with WASD, the arrow keys, the left stick, or tap anywhere on the grass to walk there. Walk up to a creature, the pond, the cairn or a glint in the moss and press [E] (or tap the prompt) to act. Tapping a creature walks you to it. The peddler's cart by the wall sells decorations - five a run, different next run - and [B] opens your decor anywhere: the cart's stock and everything you have put away. Bairc's hut has a door now. [M] changes the music, Esc leaves." },
         { id:"origin_egg",  title:"Something Stirs",    body:"The egg you stumbled upon in your travels stirs - perhaps someone here can help with that. Bairc the beast-warden can identify and hatch it: find him on the camp carousel and set the egg under his care. A raised creature fights beside you, or blesses your runs." },
         { id:"bond_gates",  title:"Growing Closer",     body:"Someone in camp has warmed to you - their bond has reached a GATE. Crossing a gate takes a FAVOR: speak with them at camp and they will ask it of you - accept or decline. Finish it, return, and they will ask whether you want to grow closer. Nothing deepens until you say yes. Mind your bonds: friendships DECAY if neglected, and only a few can hold the deepest tiers - deepening one may demote another." },
+        { id:"pet_commands",  title:"Orders",          body:"Your companion takes ONE free order a turn - no AP. SIC [Z]: it goes for YOUR target this turn and leaves it Exposed. HEEL [X]: it steps in front of the next blow aimed at you and takes a third of it - guaranteed, once. FETCH [F]: a Luck check - it rifles your target's pockets for gold, once per foe. A used order rests through your next turn. On a pad: Y / LB / RB. On touch: the chips beside END TURN." },
+        { id:"elite_affixes", title:"Marked Foes",     body:"Some elites carry a MARK beside their name - Warded, Hasted, Thorned, Vampiric, Twinned. Warded: tougher hide. Hasted: acts early and hits harder. Thorned: your MELEE hits cost you 4 HP - cast or shoot instead. Vampiric: it heals from what it deals - burst it down. Twinned: it brought a weaker copy. Every mark on the field is a better loot roll when it falls. From Awakening 3 elites carry two, and bosses one." },
         { id:"maren_forge", title:"Rough Steel",       body:"Items drop UNFINISHED. The QUALITY tag shows how much of an item's true power it delivers right now.\nDorn's TEMPER tab raises that by +10% per step, for gold and rune dust. Each step also adds a little bonus max HP.\nA raw legendary barely beats a finished epic - always worth tempering what you love." },
         { id:"rune_caps",  title:"Aspect Runes Stack - to a Point", body:"Aspect runes socketed here ADD UP: three Hunter runes give three times the ranged accuracy. But each accuracy family is CAPPED - Hunter (ranged attacks) and Seer (spells) each stop at +12% total, so past that a fourth rune is wasted. The cap is printed on the rune and on the Accuracy line of your STATS page." },
         { id:"dormant_leg", title:"A Sleeping Legend", body:"You found a DORMANT legendary. It fell asleep when its last bearer died - it carries only a shadow of its true strength for now. Take it to Maren's AWAKEN craft (Runesmithing tab): 300g, 60 rune dust and two epics fed to the fire will wake it. Only the storied named legendaries are ever found awake." },

@@ -1061,6 +1061,33 @@ for (var _ei = 0; _ei < array_length(enemies); _ei++) {
 
 // combat_init sorts the array by DEX (WIS tiebreak) and returns a combat_state
 // struct that tracks the initiative queue and the active combatant.
+// ELITE AFFIXES (DESIGN_IMPROVEMENT_PLAN_0924.md §2.5, 09-24): the headliner of an
+// elite fight rolls 1 affix (2 at Awakening 3+); bosses roll 1 at A3+. Duels stay
+// pure. A Twinned headliner brings a half-strength copy of itself (field cap 4).
+// Each affix on the field is +1 loot tier for this fight's drop roll.
+global.affix_loot_bonus = 0;
+var _afx_awk = awakening_effective();
+var _afx_n = 0;
+if (_enemy_type == "elite")                      _afx_n = (_afx_awk >= 3) ? 2 : 1;
+else if (_enemy_type == "boss" && _afx_awk >= 3) _afx_n = 1;
+if (_afx_n > 0 && array_length(enemies) > 0
+    && !(variable_global_exists("duel_active") && global.duel_active)) {
+    var _afx = enemy_affix_roll(enemies[0], _afx_n, array_length(enemies) < 4);
+    global.affix_loot_bonus = array_length(_afx);
+    if (enemy_affix_has(enemies[0], "twinned") && array_length(enemies) < 4) {
+        var _tw = enemy_clone(enemies[0]);
+        _tw.affixes  = [];
+        _tw.max_HP   = max(1, round(_tw.max_HP * 0.5));
+        _tw.HP       = _tw.max_HP;
+        _tw.xp_value = round(_tw.xp_value * 0.5);
+        _tw.gold_min = round(_tw.gold_min * 0.5);
+        _tw.gold_max = round(_tw.gold_max * 0.5);
+        _tw.is_twin   = true;                    // drops like a common mob, never a second elite roll (09-25 audit)
+        _tw.drop_slot = array_length(enemies);   // own reward-seed slot - a shared slot would clone the headliner's loot
+        array_push(enemies, _tw);
+    }
+    if (array_length(_afx) > 0) tutorial_try_show("elite_affixes");
+}
 var _combatants = [player];
 for (var _ei = 0; _ei < array_length(enemies); _ei++) {
     // Stamp the HEADLINER (the boss / elite / duel rival = enemies[0]) so the 2.5D
@@ -1569,6 +1596,7 @@ vfx_bursts         = [];   // { spr, x, y, timer, timer_max, school }
 
 // Hit flash counters on each combatant struct (counts down from 15)
 player.hit_flash = 0;
+combat_pet_cmd_init(player);   // COMPANION COMMANDS (09-24, §2.3): fresh orders + cooldowns every fight
 for (var _ei = 0; _ei < array_length(enemies); _ei++) enemies[_ei].hit_flash = 0;
 
 // Battle music - boss gets its own track, everything else gets the combat loop.

@@ -222,6 +222,9 @@ function save_game() {
         // the forage day-ledger.
         garden_decor:        (variable_global_exists("garden_decor") && is_struct(global.garden_decor)) ? global.garden_decor : {},
         garden_cairn:        variable_global_exists("garden_cairn")        ? global.garden_cairn        : 0,
+        enemy_kills:         (variable_global_exists("enemy_kills") && is_struct(global.enemy_kills)) ? global.enemy_kills : {},   // Hunter's Marks (09-24)
+        shop_buyback:        (variable_global_exists("shop_buyback") && is_array(global.shop_buyback)) ? global.shop_buyback : [],   // BUY-BACK ledger (09-24)
+        loadout_presets:     (variable_global_exists("loadout_presets") && is_array(global.loadout_presets)) ? global.loadout_presets : [],   // Gate presets (09-24)
         garden_forage_seed:  variable_global_exists("garden_forage_seed")  ? global.garden_forage_seed  : -1,
         garden_forage_taken: (variable_global_exists("garden_forage_taken") && is_array(global.garden_forage_taken)) ? global.garden_forage_taken : [],
 
@@ -455,6 +458,9 @@ function new_game_reset() {
     // Bairc's Garden scene - bare grounds for a new character.
     global.garden_decor        = {};
     global.garden_cairn        = 0;
+    global.enemy_kills         = {};   // Hunter's Marks (09-24)
+    global.shop_buyback        = [];   // BUY-BACK ledger (09-24)
+    global.loadout_presets     = [];   // Gate presets (09-24)
     global.garden_forage_seed  = -1;
     global.garden_forage_taken = [];
 
@@ -837,6 +843,9 @@ function load_game() {
     // Bairc's Garden scene (08-15): pre-garden saves get bare grounds.
     global.garden_decor        = (variable_struct_exists(_s, "garden_decor") && is_struct(_s.garden_decor)) ? _s.garden_decor : {};
     global.garden_cairn        = variable_struct_exists(_s, "garden_cairn")       ? _s.garden_cairn       : 0;
+    global.enemy_kills         = (variable_struct_exists(_s, "enemy_kills") && is_struct(_s.enemy_kills)) ? _s.enemy_kills : {};   // Hunter's Marks (09-24); pre-mark saves start at zero
+    global.shop_buyback        = (variable_struct_exists(_s, "shop_buyback") && is_array(_s.shop_buyback)) ? _s.shop_buyback : [];   // BUY-BACK ledger (09-24)
+    global.loadout_presets     = (variable_struct_exists(_s, "loadout_presets") && is_array(_s.loadout_presets)) ? _s.loadout_presets : [];   // Gate presets (09-24)
     global.garden_forage_seed  = variable_struct_exists(_s, "garden_forage_seed") ? _s.garden_forage_seed : -1;
     global.garden_forage_taken = (variable_struct_exists(_s, "garden_forage_taken") && is_array(_s.garden_forage_taken)) ? _s.garden_forage_taken : [];
 

@@ -663,7 +663,32 @@ if (instance_exists(obj_game_controller)) {
         if (input_tab_next() || nav_right()) { _gc_ld.loadout_tab = (_gc_ld.loadout_tab + 1) mod 3; _gc_ld.loadout_cursor = 0; audio_play_sound(snd_page, 1, false); }
         if (input_tab_prev() || nav_left())  { _gc_ld.loadout_tab = (_gc_ld.loadout_tab + 2) mod 3; _gc_ld.loadout_cursor = 0; audio_play_sound(snd_page, 1, false); }
 
+        // LOADOUT PRESETS (09-24, §3.5): [1-3] load, [V] arms SAVE then [1-3] writes.
+        // Pad L3 / R3 / Select / Start via the "loadout" hotkey map; touch = the chips.
+        if (!variable_instance_exists(_gc_ld, "preset_save_arm")) { _gc_ld.preset_save_arm = false; _gc_ld.preset_msg = ""; _gc_ld.preset_msg_t = 0; }
+        if (_gc_ld.preset_msg_t > 0) _gc_ld.preset_msg_t--;
+        if (input_hotkey("V")) {
+            _gc_ld.preset_save_arm = !_gc_ld.preset_save_arm;
+            _gc_ld.preset_msg   = _gc_ld.preset_save_arm ? "SAVE armed - press 1, 2 or 3 to write the current picks there." : "Save cancelled.";
+            _gc_ld.preset_msg_t = 240;
+            audio_play_sound(snd_page, 1, false);
+        }
+        for (var _pk = 0; _pk < LOADOUT_PRESET_N; _pk++) {
+            if (!input_hotkey(string(_pk + 1))) continue;
+            if (_gc_ld.preset_save_arm) {
+                _gc_ld.preset_msg = loadout_preset_save(_pk, _gc_ld);
+                _gc_ld.preset_save_arm = false;
+                audio_play_sound(snd_confirm_major, 1, false);
+                save_game();
+            } else {
+                _gc_ld.preset_msg = loadout_preset_load(_pk, _gc_ld);
+                audio_play_sound(loadout_preset_set(_pk) ? snd_page : snd_ui_error, 1, false);
+            }
+            _gc_ld.preset_msg_t = 240;
+        }
+
         if (input_cancel()) {
+            _gc_ld.preset_save_arm = false;
             _gc_ld.loadout_open = false;
             exit;
         }

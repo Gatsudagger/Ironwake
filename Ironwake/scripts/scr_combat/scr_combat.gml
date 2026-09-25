@@ -44,7 +44,7 @@ function combat_init(combatant_array) {
     // close the round; a stalker can genuinely jump a lead-footed Soulrender.
     for (var i = 0; i < count; i++) {
         var c0 = combatant_array[i];
-        c0.initiative = c0.is_player ? (10 + c0.stats.DEX / 2) : enemy_speed(c0.name);
+        c0.initiative = c0.is_player ? (10 + c0.stats.DEX / 2) : (enemy_speed(c0.name) + enemy_affix_initiative(c0));   // Hasted affix +6 (09-24)
     }
     var sorted = array_create(count);
     array_copy(sorted, 0, combatant_array, 0, count);
@@ -2902,11 +2902,14 @@ function combat_on_enemy_defeated(target, player, combat_log) {
     add_gold(_gold_drop);
     global.current_run_kills++;
     global.total_kills++;   // lifetime counter - was initialized/saved/shown but never incremented (hub always read 0)
+    mark_record_kill(target.name);   // Hunter's Marks per species (09-24, §5.4)
     quest_tick("kill_family", enemy_cull_family(target.name), 1);   // 09-15: elemental-first family   // Phase 4a quest objective
     array_push(combat_log, "Gained " + string(_gold_drop) + "g!");
 
     // Item / consumable drop
     var _drop_type = variable_global_exists("next_enemy_type") ? global.next_enemy_type : "standard";
+    // A Twinned copy drops like a common mob - the elite roll belongs to the headliner (09-25 audit)
+    if (variable_struct_exists(target, "is_twin") && target.is_twin) _drop_type = "standard";
     var _drop_result = handle_enemy_drops(_drop_type);
     if (_drop_result != "") array_push(combat_log, "Loot: " + _drop_result + "!");
 
@@ -3134,12 +3137,41 @@ function combat_pet_act(combat_state, player, combat_log, damage_popups) {
     }
 
     var _stance = pet_stance(_p);   // combat stance (expression #3), set at the Gate
+    // COMPANION COMMANDS (09-24, §2.3): SIC overrides the stance for this act - a Warrior
+    // takes the assist path (your target + Pack Tactics) at full power; anyone else
+    // makes a half-power strike on your target instead of its usual act.
+    var _sic = variable_struct_exists(player, "pet_command") && player.pet_command == "sic";
+    if (_sic && _p.archetype == PET_ARCH_COMBATANT) _stance = "assist";
+    if (_sic && _p.archetype != PET_ARCH_COMBATANT) {
+        var _sel = instance_exists(obj_combat_controller) ? instance_find(obj_combat_controller, 0).selected_target : -1;
+        var _spk = combat_pet_pick_target(combat_state, _sel);
+        if (_spk.t == undefined) return false;
+        var _sdm = max(1, round((_adult ? 16 : 8) * 0.5 * _imult * _cmult * pet_stat_mult(_p, "pow")));
+        var _sdd = combat_resolve_damage(_sdm, 0, _spk.t.armor, _spk.t.el_resist);
+        if (_sdd < 1) _sdd = 1;
+        combat_apply_damage(_spk.t, _sdd);
+        var _spt = combat_enemy_vfx_point(_spk.t);
+        combat_pet_vfx(_spt.x, _spt.y, spr_vfx_impact, "", 1.0);
+        var _sa = combat_enemy_anchor(_spk.t, _spk.slot);
+        array_push(damage_popups, { value: _sdd, x: _sa.x, y: _sa.y - 105, timer: 50, col: make_color_rgb(190, 120, 220) });
+        if (_spk.t.HP > 0) {
+            var _spf = false;
+            for (var _spi = 0; _spi < array_length(_spk.t.status_effects); _spi++) {
+                if (_spk.t.status_effects[_spi].name == "Pack Tactics") { _spk.t.status_effects[_spi].duration = 2; _spf = true; break; }
+            }
+            if (!_spf) array_push(_spk.t.status_effects, { name: "Pack Tactics", effect_type: "debuff", kind: "vulnerable", effect_value: 2, duration: 2, element: "", source: "pet" });
+        }
+        array_push(combat_log, "[Companion] SIC - " + _p.name + " goes for " + _spk.t.name + " with you for " + string(_sdd) + " - Pack Tactics!");
+        if (_spk.t.HP <= 0) combat_on_enemy_defeated(_spk.t, player, combat_log);
+        global.pet_lunge_t0 = current_time;
+        return true;
+    }
 
     if (_p.archetype == PET_ARCH_COMBATANT) {
         var _base = max(1, round((_adult ? 16 : 8) * _imult * _cmult * pet_stat_mult(_p, "pow") * (1 + _kit.dmg + pet_active_egg_bonus("dmg"))));
         // Guarded stance trades striking power for the intercept chance (rolled in the
-        // enemy-attack path in obj_combat_controller Step).
-        if (_stance == "guarded") _base = max(1, round(_base * 0.5));
+        // enemy-attack path in obj_combat_controller Step). A SIC order lifts the trade.
+        if (_stance == "guarded" && !_sic) _base = max(1, round(_base * 0.5));
         var _exec = (_kit.execute > 0) ? (1 + _kit.execute) : 1;   // Executioner capstone vs low-HP foes
         // Executioner slay threshold (BALANCE_NOTE C4, M-approved 07-09): in a
         // non-elite / non-boss encounter, its strike outright slays a target left
@@ -3533,4 +3565,131 @@ function tide_combat_low(cs) {
 function tide_combat_high(cs) {
     if (!is_struct(cs)) return;
     for (var _i = 0; _i < array_length(cs.combatants); _i++) tide_enemy_high(cs.combatants[_i]);
+}
+
+// =============================================================================
+// COMPANION COMMANDS (DESIGN_IMPROVEMENT_PLAN_0924.md §2.3, built 09-24)
+// One FREE command per player turn (0 AP): SIC (the pet strikes YOUR target this
+// turn and leaves it Exposed via Pack Tactics; non-Warriors make a half-power
+// strike instead of their usual act), HEEL (the pet intercepts the next blow on
+// you, guaranteed, once), FETCH (a LCK check - it rifles the target's pockets
+// for gold on the spot). Each command has its own 2-turn cooldown. State lives
+// on the player struct and is re-initialised every combat - nothing is saved.
+// Keys Z / X / F; pad Y / LB / RB; touch chips (combat_pet_cmd_geom).
+// =============================================================================
+function combat_pet_cmd_init(player) {
+    player.pet_command    = "";
+    player.pet_heel       = false;
+    player.pet_heel_round = -1;
+    player.pet_cmd_used   = false;   // ONE order per player turn, any kind (09-25 audit: HEEL could ride along with SIC)
+    player.pet_cmd_cd     = { sic:0, heel:0, fetch:0 };
+}
+function combat_pet_cmd_ids()  { return ["sic", "heel", "fetch"]; }
+function combat_pet_cmd_label(id) {
+    switch (id) { case "sic": return "SIC"; case "heel": return "HEEL"; case "fetch": return "FETCH"; }
+    return "";
+}
+function combat_pet_cmd_key(id) {
+    var _pad = (input_device() == 1);
+    switch (id) { case "sic": return _pad ? "Y" : "Z"; case "heel": return _pad ? "LB" : "X"; case "fetch": return _pad ? "RB" : "F"; }
+    return "";
+}
+// Can the companion take commands at all this fight? (active, grown, standing, fed, no duel)
+function combat_pet_cmd_available() {
+    if (variable_global_exists("duel_active") && global.duel_active) return false;
+    var _p = pet_active();
+    if (_p == undefined || _p.is_egg || _p.stage < PET_STAGE_YOUNGADULT) return false;
+    if (pet_injury_mult(_p.injured) <= 0 || pet_hp(_p) <= 0 || pet_hunger_mult(_p) <= 0) return false;
+    if (pet_guard_off(_p)) return false;
+    return true;
+}
+function combat_pet_cmd_cd(player, id) {
+    if (!variable_struct_exists(player, "pet_cmd_cd")) return 0;
+    return variable_struct_exists(player.pet_cmd_cd, id) ? variable_struct_get(player.pet_cmd_cd, id) : 0;
+}
+// Why a command is unavailable right now ("" = usable). The chip prints this.
+function combat_pet_cmd_blocked(player, id) {
+    if (!combat_pet_cmd_available()) return "no companion";
+    if (combat_pet_cmd_cd(player, id) > 0) return string(combat_pet_cmd_cd(player, id)) + "t";
+    if (id == "heel" && variable_struct_exists(player, "pet_heel") && player.pet_heel) return "set";
+    if (variable_struct_exists(player, "pet_cmd_used") && player.pet_cmd_used) return "ordered";   // one order a turn, any kind
+    return "";
+}
+// Called once per End Turn: cooldowns tick, and a HEEL set on an earlier round expires.
+function combat_pet_cmd_tick(player, round) {
+    if (!variable_struct_exists(player, "pet_cmd_cd")) combat_pet_cmd_init(player);
+    var _ids = combat_pet_cmd_ids();
+    for (var _i = 0; _i < array_length(_ids); _i++) {
+        var _v = variable_struct_get(player.pet_cmd_cd, _ids[_i]);
+        if (_v > 0) variable_struct_set(player.pet_cmd_cd, _ids[_i], _v - 1);
+    }
+    if (player.pet_heel && player.pet_heel_round != round) { player.pet_heel = false; player.pet_heel_round = -1; }
+    player.pet_cmd_used = false;   // a fresh order next turn
+}
+// The enemy the player has targeted (living-list index), else the lowest-HP foe.
+function combat_pet_pick_target(combat_state, selected_target) {
+    var _liv = combat_living_enemies(combat_state);
+    if (array_length(_liv) == 0) return { t: undefined, slot: -1 };
+    if (selected_target >= 0 && selected_target < array_length(_liv)) return { t: _liv[selected_target], slot: selected_target };
+    var _best = _liv[0], _bs = 0;
+    for (var _i = 1; _i < array_length(_liv); _i++) if (_liv[_i].HP < _best.HP) { _best = _liv[_i]; _bs = _i; }
+    return { t: _best, slot: _bs };
+}
+// Issue a command. Returns the log line ("" when nothing happened).
+function combat_pet_cmd_use(id, combat_state, player, combat_log, damage_popups, selected_target) {
+    if (!variable_struct_exists(player, "pet_cmd_cd")) combat_pet_cmd_init(player);
+    if (combat_pet_cmd_blocked(player, id) != "") return "";
+    var _p = pet_active();
+    var _line = "";
+    switch (id) {
+        case "sic": {
+            player.pet_command  = "sic";
+            player.pet_cmd_used = true;
+            variable_struct_set(player.pet_cmd_cd, "sic", 2);
+            _line = "[Companion] SIC! " + _p.name + " fixes on your target.";
+            break;
+        }
+        case "heel": {
+            player.pet_heel       = true;
+            player.pet_heel_round = combat_state.round;
+            player.pet_cmd_used   = true;
+            variable_struct_set(player.pet_cmd_cd, "heel", 2);
+            _line = "[Companion] HEEL. " + _p.name + " plants itself before you - it takes the brunt of the next blow.";
+            break;
+        }
+        case "fetch": {
+            var _pk = combat_pet_pick_target(combat_state, selected_target);
+            if (_pk.t == undefined) return "";
+            // Once per foe (09-25 audit): a high-LCK companion could otherwise lift +75%
+            // of a target's purse every other turn - Greed / Charisma gold-find would be
+            // a footnote. The pockets are turned out once; the order is not spent.
+            if (variable_struct_exists(_pk.t, "fetched") && _pk.t.fetched) {
+                _line = "[Companion] FETCH - " + _pk.t.name + "'s pockets are already turned out.";
+                break;
+            }
+            _pk.t.fetched = true;
+            player.pet_cmd_used = true;
+            variable_struct_set(player.pet_cmd_cd, "fetch", 2);
+            var _ch = 0.25 + 0.05 * pet_stat(_p, "lck") + ((_p.archetype == PET_ARCH_BOON) ? 0.15 : 0);
+            if (random(1) < _ch) {
+                var _g = max(1, round((_pk.t.gold_min + _pk.t.gold_max) * 0.75));
+                add_gold(_g);
+                _line = "[Companion] FETCH - " + _p.name + " rifles " + _pk.t.name + "'s pockets: +" + string(_g) + "g!";
+                var _fa = combat_enemy_anchor(_pk.t, _pk.slot);
+                array_push(damage_popups, { value: _g, x: _fa.x, y: _fa.y - 105, timer: 50, col: make_color_rgb(240, 210, 90) });
+            } else {
+                _line = "[Companion] FETCH - " + _p.name + " darts in and comes back empty-pawed.";
+            }
+            global.pet_lunge_t0 = current_time;
+            break;
+        }
+    }
+    if (_line != "") array_push(combat_log, _line);
+    return _line;
+}
+// Chip geometry shared by Draw (hit-test) and the legend. Touch: three 140px chips
+// left of the GUARD/END TURN row (y856-916); desktop/pad: the y946-982 corridor.
+function combat_pet_cmd_geom(i) {
+    if (input_device() == 2) return { x0: 20 + i * 150, y0: 856, x1: 160 + i * 150, y1: 916 };
+    return { x0: 40 + i * 205, y0: 946, x1: 235 + i * 205, y1: 982 };
 }

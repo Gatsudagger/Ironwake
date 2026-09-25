@@ -2391,7 +2391,11 @@ if (instance_exists(obj_game_controller)) {
 
             // --- Controls hint: y=1050 ---
             draw_set_color(make_color_rgb(65, 75, 100));
-            if (input_device() != 2) ui_draw_key_legend(GUI_CX, 1050, "W/S: Navigate   Q/E: Switch Tab   Enter: Toggle   Tab: Details   M: Talent Web   Space: Confirm   Esc: Cancel");
+            if (input_device() != 2) ui_draw_key_legend(GUI_CX, 1050, "W/S: Navigate   Q/E: Switch Tab   Enter: Toggle   Tab: Details   M: Talent Web   1-3: Preset   V: Save preset   Space: Confirm   Esc: Cancel");
+            // Preset feedback line (09-24): loaded / saved / armed, fades over 4s.
+            if (variable_instance_exists(_gc_ov, "preset_msg_t") && _gc_ov.preset_msg_t > 0 && _gc_ov.preset_msg != "") {
+                ui_draw_toast(_gc_ov.preset_msg, GUI_CX, 1006, min(1, _gc_ov.preset_msg_t / 30));
+            }
             draw_set_halign(fa_left);
 
             // --- Tab ability-detail popup, drawn over the loadout (P7) ---

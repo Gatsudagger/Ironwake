@@ -443,6 +443,7 @@ run's average banked gold per resolved mission (tunable constant `LEDGER_GOLD_CA
 | Phase | Items | Size | Save | Art |
 |---|---|---|---|---|
 | **P0 quick wins** | 2.3 companion commands · 2.5 elite affixes · 4.4 combat readability (4 items) · 4.5 buy-back + filters · 3.5 presets · 5.4 Marks | 1-2 sessions | additive | none |
+| ↳ **P0 status 09-24** | BUILT, awaiting M F5: elite affixes (5, nameplate + inspect + compendium + tutorial + loot tier) · companion commands SIC/HEEL/FETCH (keys Z/X/F, pad Y/LB/RB, touch chips, tutorial) · Hunter's Marks (kill ledger saved, +3/5/8%, bestiary + inspect lines) · BUY-BACK tab on Petra + Dorn (last 10 sales, +25%, saved) · loadout presets P1-P3 (keys 1-3 / V, pad L3/R3/Select/Start, chips, saved). **Deferred to P0b:** stash filters + search, ability hold-to-preview on touch, enemy-panel tap on touch, bottom-docked End Turn (existing touch layout was M-tuned; revisit with the S25 pass). The turn-order strip already existed (top chips). | | | |
 | **P1 THE LEDGER** | §1 in full (jobs, dispatch, away state, report) + 4.1 Inbox + 4.2 run summary + 1.7 Callings | 3-4 sessions | additive | none |
 | **P2 combat depth** | 2.1 cover · 2.2 break bar · 2.4 Momentum + finishers · 2.7 items · 2.6 props (art) | 2-3 sessions | none | 5 props |
 | **P3 identity** | 3.1 Oaths · 3.2 Heirloom + cursed items · 3.3 tints · 3.4 Scars · 3.6 heraldry · 4.6 settings | 3 sessions | additive | none (shader) |

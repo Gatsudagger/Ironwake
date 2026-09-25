@@ -449,6 +449,15 @@ function ui_draw_touch_chips() {
                     _ld_row++;
                 }
             }
+            // LOADOUT PRESETS (09-24, §3.5): P1-P3 load (a * marks a filled slot); SAVE
+            // arms a write and lights hot until a slot is picked.
+            if (_ld_gc != noone) {
+                var _ld_arm = variable_instance_exists(_ld_gc, "preset_save_arm") && _ld_gc.preset_save_arm;
+                for (var _ldq = 0; _ldq < LOADOUT_PRESET_N; _ldq++) {
+                    array_push(_chips, { lbl: loadout_preset_label(_ldq), key: ord(string(_ldq + 1)), hot: _ld_arm });
+                }
+                array_push(_chips, { lbl: _ld_arm ? "SAVE >" : "SAVE", key: ord("V"), hot: _ld_arm });
+            }
             if (array_length(_chips) == 0) return;
             break;
         case "kb":
@@ -3434,6 +3443,9 @@ function ui_draw_journal() {
             // Family immunities ride the header line (M-locked 08-17): "Ashen Vault - Elite  |  IMMUNE: Bleed, Stun".
             var _bimt = enemy_immunity_text(_bd.name);
             draw_text(_det_x1, _bdy, _bd.family + "  -  " + _bd.kind + ((_bimt != "") ? ("   |   IMMUNE: " + _bimt) : "")); _bdy += 44;
+            // HUNTER'S MARK (09-24, §5.4): lifetime kills + the damage mark they earned.
+            draw_set_color((mark_tier(_bd.name) > 0) ? make_color_rgb(230, 200, 120) : make_color_rgb(130, 140, 150));
+            draw_text(_det_x1, _bdy, mark_text(_bd.name)); _bdy += 40;
             // #8: the creature itself, SOUTH-facing (frame 0 of the 8-dir sheet),
             // centred between the header and the lore with a footing shadow.
             var _bsm = enemy_sprite_map();
@@ -6826,6 +6838,15 @@ function ui_draw_enemy_inspect_tooltip(mx, my, enemy) {
     // Family immunities (M-locked 08-17) - what this foe SHRUGS entirely.
     var _imt = enemy_immunity_text(_name);
     if (_imt != "") array_push(_lines, { t: "IMMUNE to " + _imt, c: make_color_rgb(200, 200, 215) });
+    // Elite affixes (09-24, §2.5): each mark, spelled out.
+    if (variable_struct_exists(enemy, "affixes") && is_array(enemy.affixes)) {
+        for (var _afi = 0; _afi < array_length(enemy.affixes); _afi++) {
+            var _afd = enemy_affix_get(enemy.affixes[_afi]);
+            if (_afd != undefined) array_push(_lines, { t: _afd.name + " - " + _afd.desc, c: make_color_rgb(235, 170, 110) });
+        }
+    }
+    // Hunter's Mark (09-24, §5.4): your lifetime record against this species.
+    array_push(_lines, { t: mark_text(_name), c: (mark_tier(_name) > 0) ? make_color_rgb(230, 200, 120) : make_color_rgb(150, 158, 170) });
     // 09-15 (M: "special mobs like the Second Count or Duelist should have a
     // bonus explanation when moused over"): every bespoke mechanic + named
     // ability this foe carries, read off the live combatant so the text can
@@ -8441,8 +8462,39 @@ function ui_truncate(str, max_w) {
 // click hit-tests in obj_game_controller/Step lay out from this, so they can
 // never drift apart.
 function shop_tab_count(_shop_open) {
-    return (_shop_open == 1) ? 4 : 3;
+    return ((_shop_open == 1) ? 4 : 3) + 1;   // +1: BUY-BACK tab on both merchants (09-24, MISC §9)
 }
+// BUY-BACK (09-24, DESIGN_IMPROVEMENT_PLAN §4.5 / MISC §9): the last 10 things you sold
+// to ANY merchant, repurchasable at the sale price +25%. Shared list, saved additively.
+#macro SHOP_BUYBACK_MAX 10
+function shop_buyback_list() {
+    if (!variable_global_exists("shop_buyback") || !is_array(global.shop_buyback)) global.shop_buyback = [];
+    return global.shop_buyback;
+}
+function shop_buyback_push(item, price, src) {
+    var _l = shop_buyback_list();
+    array_insert(_l, 0, { item: item, price: price, src: src });
+    while (array_length(_l) > SHOP_BUYBACK_MAX) array_delete(_l, array_length(_l) - 1, 1);
+}
+function shop_buyback_cost(entry) { return max(1, round(entry.price * 1.25)); }
+// Returns the item to the container it was sold from (0 stash, 1 consumable stash,
+// 2 carried, 3 run consumables). "" on success, else the reason.
+function shop_buyback_take(idx) {
+    var _l = shop_buyback_list();
+    if (idx < 0 || idx >= array_length(_l)) return "Nothing there.";
+    var _e = _l[idx], _cost = shop_buyback_cost(_e);
+    if (global.gold < _cost) return "Not enough gold (" + string(_cost) + "g).";
+    global.gold -= _cost;
+    switch (_e.src) {
+        case 1:  if (!variable_global_exists("consumable_stash"))     global.consumable_stash     = []; array_push(global.consumable_stash,     _e.item); break;
+        case 2:  if (!variable_global_exists("carried_items"))        global.carried_items        = []; array_push(global.carried_items,        _e.item); break;
+        case 3:  if (!variable_global_exists("consumable_inventory")) global.consumable_inventory = []; array_push(global.consumable_inventory, _e.item); break;
+        default: if (!variable_global_exists("equipment_stash"))      global.equipment_stash      = []; array_push(global.equipment_stash,      _e.item); break;
+    }
+    array_delete(_l, idx, 1);
+    return "";
+}
+function shop_buyback_tab(_shop_open) { return shop_tab_count(_shop_open) - 1; }
 
 // =============================================================================
 // TRAPS ON THE FIELD (08-08 v2). M: "what i want is for the trap to physically
@@ -10969,6 +11021,18 @@ function ui_compendium_sections() {
             ],
         },
         {
+            title: "Marked Foes (Elite Affixes)",
+            entries: [
+                { term: "Marks",    text: "Elites (and bosses from Awakening 3) can carry one or two MARKS, shown after their name on the nameplate. Each mark on the field adds +1 loot tier to the fight's drop." },
+                { term: "Warded",   text: "+4 Armor and +15% HP. Bring elemental or Void damage - Armor only checks Physical." },
+                { term: "Hasted",   text: "Acts early in the round (+6 initiative) and deals +20% damage. Its intent chip already shows the higher band." },
+                { term: "Thorned",  text: "Every MELEE hit you land costs you 4 HP. Spells and ranged shots are safe." },
+                { term: "Vampiric", text: "Heals 30% of the damage it deals you. Shields and parries starve it." },
+                { term: "Twinned",  text: "Arrives with a half-strength twin of itself. The twin carries no marks and pays half XP and gold." },
+                { term: "Hunter's Marks", text: "Every species in the Bestiary keeps your lifetime kill count. 10 kills = Mark I (+3% damage against it), 30 = Mark II (+5%), 75 = Mark III (+8%). The inspect tooltip in combat shows where you stand." },
+            ]
+        },
+        {
             title: "Status Effects",
             entries: [
                 { term: "Damage over Time", text: "The target loses HP at the start of each of its turns for a set number of turns." },
@@ -13469,12 +13533,13 @@ function ui_draw_shop_screen() {
     // Dorn gained a 4th tab on 08-08 when TEMPER moved here from Maren's forge.
     // Tab COUNT must come from shop_tab_count() - the Step hit-tests lay their
     // boxes out from the same number, and a mismatch silently misroutes clicks.
-    var _tab_labels  = _is_petra ? ["BUY", "SELL", "TRADE"] : ["BUY", "SELL", "FORGE", "TEMPER"];
+    // 09-24: BUY-BACK is the last tab on both (shop_tab_count carries the +1).
+    var _tab_labels  = _is_petra ? ["BUY", "SELL", "TRADE", "BUY-BACK"] : ["BUY", "SELL", "FORGE", "TEMPER", "BUY-BACK"];
     // 3rd tab accent differs per NPC: Petra's Trade = violet, Dorn's Reforge = forge
     // copper; 4th (Dorn only) is the tempering gold used by the forge-result banner.
-    var _tab_accents = [_accent, make_color_rgb(220, 155, 45),
-                        _is_petra ? make_color_rgb(190, 120, 210) : make_color_rgb(210, 140, 70),
-                        make_color_rgb(200, 170, 110)];
+    var _tab_accents = _is_petra
+        ? [_accent, make_color_rgb(220, 155, 45), make_color_rgb(190, 120, 210), make_color_rgb(140, 180, 150)]
+        : [_accent, make_color_rgb(220, 155, 45), make_color_rgb(210, 140, 70), make_color_rgb(200, 170, 110), make_color_rgb(140, 180, 150)];
     var _tab_n     = array_length(_tab_labels);
     var _tab_total = _tab_n * _tab_w + (_tab_n - 1) * _tab_gap;
     var _tab_x0    = 960 - _tab_total / 2;
@@ -13533,6 +13598,52 @@ function ui_draw_shop_screen() {
     var _rh   = 117;   // tall enough for 3 lines (stats + unique desc / class tag)
     var _rgap = 9;
     var _ry0  = 189;   // shifted down to make room for tab bar
+
+    // =========================================================================
+    // BUY-BACK TAB (09-24, MISC §9) - last 10 sales, any merchant, +25%.
+    // =========================================================================
+    if (_gc.shop_tab == shop_buyback_tab(_gc.shop_open)) {
+        var _bb_l = shop_buyback_list(), _bb_n = array_length(_bb_l);
+        var _bb_cur = variable_instance_exists(_gc, "buyback_index") ? _gc.buyback_index : 0;
+        draw_set_halign(fa_center); draw_set_font(ui_font(fnt_ui_small)); draw_set_color(make_color_rgb(120, 140, 125));
+        draw_text(960, _ry0 - 30, "What you have sold lately - to anyone. It waits here until it is sold on.");
+        draw_set_halign(fa_left);
+        if (_bb_n == 0) {
+            draw_set_halign(fa_center); draw_set_font(ui_font(fnt_ui)); draw_set_color(make_color_rgb(90, 100, 120));
+            draw_text(960, 480, "Nothing sold lately.");
+            draw_set_halign(fa_left);
+        }
+        var _bb_rh = 74;
+        for (var _bbi = 0; _bbi < _bb_n; _bbi++) {
+            var _bbe = _bb_l[_bbi], _bbit = _bbe.item;
+            var _bby = _ry0 + _bbi * (_bb_rh + _rgap);
+            if (_bby + _bb_rh > 1000) break;   // 10 rows max fit the band
+            var _bbsel = (_bbi == _bb_cur);
+            var _bbcol = variable_struct_exists(_bbit, "rarity") ? item_rarity_color(_bbit.rarity) : make_color_rgb(80, 210, 210);
+            draw_set_alpha(_bbsel ? 1.0 : 0.55);
+            draw_set_color(_bbsel ? make_color_rgb(30, 26, 10) : make_color_rgb(14, 18, 28));
+            draw_rectangle(_rx0, _bby, _rx0 + _rw, _bby + _bb_rh, false);
+            draw_set_alpha(1.0);
+            draw_set_color(_bbsel ? make_color_rgb(200, 155, 40) : make_color_rgb(55, 50, 25));
+            draw_rectangle(_rx0, _bby, _rx0 + _rw, _bby + _bb_rh, true);
+            if (variable_struct_exists(_bbit, "slot")) ui_draw_item_icon(_rx0 + 15, _bby + 13, 48, _bbit);
+            else ui_draw_consumable_icon(_rx0 + 15, _bby + 13, 48, _bbit);
+            draw_set_font(ui_font(fnt_ui)); draw_set_color(_bbcol);
+            draw_text(_rx0 + 75, _bby + 10, ui_truncate(_bbit.name, _rw - 420));
+            draw_set_font(ui_font(fnt_ui_small)); draw_set_color(make_color_rgb(150, 160, 175));
+            var _bbsub = variable_struct_exists(_bbit, "slot") ? ui_item_stat_str(_bbit) : (variable_struct_exists(_bbit, "description") ? _bbit.description : "");
+            ui_draw_stat_line_fit(_rx0 + 75, _bby + 43, _bbsub, (_rx0 + _rw - 200) - (_rx0 + 75));
+            draw_set_halign(fa_right); draw_set_font(ui_font(fnt_ui));
+            var _bbc = shop_buyback_cost(_bbe);
+            draw_set_color((global.gold >= _bbc) ? make_color_rgb(255, 215, 90) : make_color_rgb(200, 90, 90));
+            draw_text(_rx0 + _rw - 24, _bby + 22, string(_bbc) + "g");
+            draw_set_halign(fa_left);
+            if (touch_tapped(_rx0, _bby, _rx0 + _rw, _bby + _bb_rh)) input_inject("shop:bbrow" + string(_bbi));
+        }
+        draw_set_halign(fa_center); draw_set_font(ui_font(fnt_ui_small)); draw_set_color(make_color_rgb(75, 85, 105));
+        ui_draw_key_legend(960, 1026, (input_device() == 2) ? "Tap a row, tap again to buy back" : "W/S: Browse   Enter: Buy back   Q/E: Tab   Esc: Close");
+        draw_set_halign(fa_left);
+    }
 
     // =========================================================================
     // SELL TAB

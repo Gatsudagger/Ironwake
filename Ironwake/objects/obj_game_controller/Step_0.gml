@@ -1855,6 +1855,38 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()
     }
 
     // =========================================================================
+    // BUY-BACK TAB (09-24, MISC §9): the last 10 things sold to any merchant, at the
+    // sale price +25%. Last tab on both merchants (shop_buyback_tab). Rows are hit-
+    // tested in the Draw (touch rule) and arrive as "shop:bbrowN" injects.
+    // =========================================================================
+    if (shop_tab == shop_buyback_tab(shop_open)) {
+        if (!variable_instance_exists(id, "buyback_index")) buyback_index = 0;
+        var _bb_l = shop_buyback_list(), _bb_n = array_length(_bb_l);
+        if (buyback_index >= _bb_n) buyback_index = max(0, _bb_n - 1);
+        for (var _bbi = 0; _bbi < _bb_n; _bbi++) {
+            if (input_inject_take("shop:bbrow" + string(_bbi))) {
+                if (buyback_index == _bbi) input_inject("shop:bbgo");   // second tap = buy
+                else { buyback_index = _bbi; shop_notification = ""; }
+            }
+        }
+        if (_bb_n > 0 && nav_up())   { buyback_index = wrap_index(buyback_index - 1, _bb_n); shop_notification = ""; }
+        if (_bb_n > 0 && nav_down()) { buyback_index = wrap_index(buyback_index + 1, _bb_n); shop_notification = ""; }
+        if (_bb_n > 0 && (input_confirm() || input_inject_take("shop:bbgo"))) {
+            var _bb_nm  = _bb_l[buyback_index].item.name;
+            var _bb_res = shop_buyback_take(buyback_index);
+            if (_bb_res == "") {
+                shop_notification = "Bought back " + _bb_nm + ".";
+                audio_play_sound(snd_sell, 1, false);
+                if (room == rm_hub || room == rm_character_select) save_game();
+            } else {
+                shop_notification = _bb_res;
+                audio_play_sound(snd_ui_error, 1, false);
+            }
+        }
+        if (input_cancel()) { shop_open = -1; shop_tab = 0; shop_index = 0; shop_notification = ""; audio_play_sound(snd_page, 1, false); }   // tab reset like every other tab's close (09-25 audit: Petra's tab 3 is BUY-BACK, Dorn's is TEMPER)
+    }
+
+    // =========================================================================
     // SELL TAB
     // =========================================================================
     if (shop_tab == 1) {
@@ -1934,6 +1966,7 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()
                         // Hook: replace the direct write below with add_gold(_sell_price)
                         // if the design decision changes.
                         global.gold       += _sell_price;
+                        shop_buyback_push(_cur_item, _sell_price, _cur_src);   // BUY-BACK ledger (09-24)
                         sell_index         = clamp(sell_index, 0, max(0, _sl_count - 2));
                         shop_notification  = "Sold for +" + string(_sell_price) + "g!";
                         audio_play_sound(snd_sell, 1, false);
@@ -1951,6 +1984,7 @@ if (shop_open != -1 && !stash_mode_open && !menu_open && !forge_result_up()
                 else if (_cur_src == 3) array_delete(global.consumable_inventory,  _src_idx, 1);
                 // Scavenger trait intentionally not applied to vendor sales.
                 global.gold       += _sell_price;
+                shop_buyback_push(_cur_item, _sell_price, _cur_src);   // BUY-BACK ledger (09-24)
                 sell_index         = clamp(sell_index, 0, max(0, _sl_count - 2));
                 shop_notification  = "Sold for +" + string(_sell_price) + "g!";
                 audio_play_sound(snd_sell, 1, false);

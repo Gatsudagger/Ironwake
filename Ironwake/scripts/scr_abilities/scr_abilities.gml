@@ -4512,3 +4512,77 @@ function ability_stamp(_list, _name, _field, _value) {
     show_debug_message("[ABILITY_STAMP] no ability named '" + _name + "' - stamp of " + _field + " dropped");
     return false;
 }
+
+// =============================================================================
+// LOADOUT PRESETS (DESIGN_IMPROVEMENT_PLAN_0924.md §3.5, built 09-24)
+// Three named slots on the Gate loadout screen: abilities + traits + companion +
+// its stance. [1]/[2]/[3] loads a slot; [V] arms SAVE, then a slot key writes the
+// LIVE selection into it. Pad: L3 / R3 / Select load, Start arms save. Touch: the
+// P1-P3 / SAVE chips. Stored in global.loadout_presets (additive save).
+// =============================================================================
+#macro LOADOUT_PRESET_N 3
+function loadout_presets() {
+    if (!variable_global_exists("loadout_presets") || !is_array(global.loadout_presets)) global.loadout_presets = [];
+    // Empty slots are {} (never undefined - json_stringify would write null and the
+    // round-trip is not guaranteed to come back as undefined).
+    while (array_length(global.loadout_presets) < LOADOUT_PRESET_N) array_push(global.loadout_presets, {});
+    return global.loadout_presets;
+}
+function loadout_preset_set(i) {
+    var _p = loadout_presets();
+    return (i >= 0 && i < LOADOUT_PRESET_N && is_struct(_p[i]) && variable_struct_exists(_p[i], "abilities"));
+}
+// Chip / legend label: "P2" plain, "P2*" when it holds something.
+function loadout_preset_label(i) { return "P" + string(i + 1) + (loadout_preset_set(i) ? "*" : ""); }
+function loadout_preset_save(i, gc) {
+    if (i < 0 || i >= LOADOUT_PRESET_N || !instance_exists(gc)) return "";
+    var _p = loadout_presets();
+    var _ab = [], _tr = [];
+    for (var _a = 0; _a < array_length(gc.loadout_selected); _a++) array_push(_ab, gc.loadout_selected[_a]);
+    for (var _t = 0; _t < array_length(gc.traits_selected);  _t++) array_push(_tr, gc.traits_selected[_t]);
+    var _pet = pet_active();
+    _p[i] = {
+        abilities: _ab,
+        traits:    _tr,
+        pet_uid:   (_pet == undefined || !variable_struct_exists(_pet, "uid")) ? -1 : _pet.uid,   // pre-uid pets: no companion in the slot (09-25 audit)
+        stance:    (_pet == undefined || !variable_struct_exists(_pet, "stance")) ? "" : _pet.stance
+    };
+    return "Preset " + string(i + 1) + " saved.";
+}
+// Loads a slot into the LIVE selection (the Step's cap/trim logic runs after, as it
+// does for any pick). Abilities not in the class pool any more are skipped.
+function loadout_preset_load(i, gc) {
+    if (!loadout_preset_set(i) || !instance_exists(gc)) return "Preset " + string(i + 1) + " is empty - [V] then [" + string(i + 1) + "] saves the current picks.";
+    var _s = loadout_presets()[i];
+    var _pool = abilities_class_pool(variable_global_exists("chosen_class") ? global.chosen_class : 0);
+    var _ab = [];
+    // 09-25 audit: a preset must never hand back something the character has not
+    // EARNED - locked abilities / traits (and traits of another class) are skipped,
+    // exactly as the Gate's own pick lists hide them.
+    for (var _a = 0; _a < array_length(_s.abilities); _a++) {
+        if (!ability_is_unlocked(_s.abilities[_a])) continue;
+        for (var _k = 0; _k < array_length(_pool); _k++) if (_pool[_k].name == _s.abilities[_a]) { array_push(_ab, _s.abilities[_a]); break; }
+    }
+    var _tr = [];
+    var _cls = variable_global_exists("chosen_class") ? global.chosen_class : 0;
+    for (var _t = 0; _t < array_length(_s.traits); _t++) {
+        var _td = trait_get_by_name(_s.traits[_t]);
+        if (_td == undefined || !trait_is_unlocked(_s.traits[_t])) continue;
+        if (_td.class_req != -1 && _td.class_req != _cls) continue;
+        array_push(_tr, _s.traits[_t]);
+    }
+    gc.loadout_selected = _ab;
+    gc.traits_selected  = _tr;
+    if (_s.pet_uid >= 0 && variable_global_exists("pet_roster")) {
+        for (var _r = 0; _r < array_length(global.pet_roster); _r++) {
+            var _rp = global.pet_roster[_r];
+            if (is_struct(_rp) && variable_struct_exists(_rp, "uid") && _rp.uid == _s.pet_uid && !_rp.is_egg) {
+                global.active_pet = _r;
+                var _sl = pet_stance_list(_rp);
+                for (var _q = 0; _q < array_length(_sl); _q++) if (_sl[_q] == _s.stance) { _rp.stance = _s.stance; break; }
+                break;
+            }
+        }
+    }
+    return "Preset " + string(i + 1) + " loaded.";
+}

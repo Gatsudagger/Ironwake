@@ -283,7 +283,10 @@ function __input_pad_hotkey_map() {
                  _s[$ "V"] = gp_stickr;     _s[$ "I"] = gp_start;
                  // 07-24 audit: G (companion guard) + P (perm-points overlay)
                  // were keyboard-only in combat.
-                 _s[$ "G"] = gp_stickl;     _s[$ "P"] = gp_select;   _m[$ "combat"]   = _s;
+                 _s[$ "G"] = gp_stickl;     _s[$ "P"] = gp_select;
+                 // 09-24 companion commands: Z SIC / X HEEL / F FETCH on Y / LB / RB.
+                 _s[$ "Z"] = gp_face4;      _s[$ "X"] = gp_shoulderl; _s[$ "F"] = gp_shoulderr;
+                 _m[$ "combat"]   = _s;
         _s = {}; _s[$ "E"] = gp_shoulderrb;                          _m[$ "loot"]     = _s;
         _s = {}; _s[$ "1"] = gp_face3;      _s[$ "2"] = gp_face4;
                  // Shrine V2 (07-29): R = reroll the blessing offer (dust spend).
@@ -291,7 +294,12 @@ function __input_pad_hotkey_map() {
         _s = {}; _s[$ "K"] = gp_shoulderrb; _s[$ "T"] = gp_shoulderlb;
                  _s[$ "R"] = gp_stickr;                              _m[$ "board"]    = _s;
         _s = {}; _s[$ "H"] = gp_face4;                               _m[$ "kb"]       = _s;
-        _s = {}; _s[$ "M"] = gp_shoulderrb; _s[$ "B"] = gp_shoulderrb; _m[$ "loadout"]  = _s;
+        // 09-24 loadout presets ride the SAME loadout map (09-25 audit: a second
+        // _m[$ "loadout"] assignment silently replaced this one): 1 / 2 / 3 load on
+        // L3 / R3 / Select, V (arm save) on Start.
+        _s = {}; _s[$ "M"] = gp_shoulderrb; _s[$ "B"] = gp_shoulderrb;
+                 _s[$ "1"] = gp_stickl;     _s[$ "2"] = gp_stickr;
+                 _s[$ "3"] = gp_select;     _s[$ "V"] = gp_start;    _m[$ "loadout"]  = _s;
         _s = {}; _s[$ "T"] = gp_shoulderrb; _s[$ "U"] = gp_shoulderrb;
                  _s[$ "I"] = gp_start;                               _m[$ "charmenu"] = _s;
         _s = {}; _s[$ "O"] = gp_select;                              _m[$ "settings"] = _s;

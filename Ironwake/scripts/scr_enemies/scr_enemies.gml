@@ -2076,3 +2076,116 @@ function boss_phase_shift(name) {
     }
     return undefined;
 }
+
+// =============================================================================
+// ELITE AFFIXES (DESIGN_IMPROVEMENT_PLAN_0924.md §2.5, built 09-24)
+// Diablo-style suffixes rolled onto the HEADLINER of an elite fight (1 at A0-2,
+// 2 at A3+) and onto bosses at A3+. Each rides a mechanic the engine already has:
+// armor/HP (Warded), initiative + damage (Hasted), the on-hit price idiom
+// (Thorned), the on-strike heal (Vampiric), the summon clone path (Twinned).
+// The nameplate shows the words ("Ash Revenant, Thorned"); each affix adds +1
+// loot tier to the fight's drop roll (global.affix_loot_bonus, set in combat
+// Create, read by handle_enemy_drops). Combat-scoped only - nothing is saved.
+// =============================================================================
+function enemy_affix_catalog() {
+    return [
+        { id:"warded",   name:"Warded",   desc:"+4 armor and +15% HP." },
+        { id:"hasted",   name:"Hasted",   desc:"Acts early in the round; +20% damage." },
+        { id:"thorned",  name:"Thorned",  desc:"Each of your MELEE hits on it costs you 4 HP." },
+        { id:"vampiric", name:"Vampiric", desc:"Heals 30% of the damage it deals you." },
+        { id:"twinned",  name:"Twinned",  desc:"Arrives with a half-strength twin." },
+    ];
+}
+function enemy_affix_get(id) {
+    var _c = enemy_affix_catalog();
+    for (var _i = 0; _i < array_length(_c); _i++) if (_c[_i].id == id) return _c[_i];
+    return undefined;
+}
+function enemy_affix_has(c, id) {
+    if (!is_struct(c) || !variable_struct_exists(c, "affixes") || !is_array(c.affixes)) return false;
+    for (var _i = 0; _i < array_length(c.affixes); _i++) if (c.affixes[_i] == id) return true;
+    return false;
+}
+// ", Warded, Hasted" for the nameplate ("" when plain).
+function enemy_affix_suffix(c) {
+    if (!is_struct(c) || !variable_struct_exists(c, "affixes") || !is_array(c.affixes)) return "";
+    var _s = "";
+    for (var _i = 0; _i < array_length(c.affixes); _i++) {
+        var _d = enemy_affix_get(c.affixes[_i]);
+        if (_d != undefined) _s += ", " + _d.name;
+    }
+    return _s;
+}
+// Hasted foes jump the initiative order (+6 on top of their family speed).
+function enemy_affix_initiative(c) { return enemy_affix_has(c, "hasted") ? 6 : 0; }
+function enemy_affix_loot_bonus() { return variable_global_exists("affix_loot_bonus") ? global.affix_loot_bonus : 0; }
+// Roll n distinct affixes onto a CLONED enemy and apply their stat side. Twinned is
+// only offered when the field has room for the twin (the caller spawns it).
+function enemy_affix_roll(c, n, allow_twin) {
+    if (!is_struct(c)) return [];
+    var _pool = [];
+    var _cat = enemy_affix_catalog();
+    for (var _i = 0; _i < array_length(_cat); _i++) {
+        if (_cat[_i].id == "twinned" && !allow_twin) continue;
+        array_push(_pool, _cat[_i].id);
+    }
+    c.affixes = [];
+    for (var _k = 0; _k < n && array_length(_pool) > 0; _k++) {
+        var _j = irandom(array_length(_pool) - 1);
+        var _id = _pool[_j];
+        array_delete(_pool, _j, 1);
+        array_push(c.affixes, _id);
+        switch (_id) {
+            case "warded":
+                c.armor  += 4;
+                c.max_HP  = max(1, round(c.max_HP * 1.15));
+                c.HP      = c.max_HP;
+                break;
+            case "hasted":
+                c.damage  = max(1, round(c.damage * 1.2));   // intents read the live field, so the chip stays honest
+                if (variable_struct_exists(c, "telegraph_damage")) c.telegraph_damage = max(1, round(c.telegraph_damage * 1.2));   // the big hit too (09-25 audit)
+                break;
+        }
+    }
+    return c.affixes;
+}
+
+// =============================================================================
+// HUNTER'S MARKS (DESIGN_IMPROVEMENT_PLAN_0924.md §5.4, built 09-24)
+// Lifetime kills per enemy NAME (global.enemy_kills, saved additively). Every
+// bestiary entry carries a Mark that rises with the count - 10 / 30 / 75 kills =
+// Mark I / II / III = +3% / +5% / +8% damage against that species. Shown on the
+// bestiary detail line and the in-combat inspect tooltip.
+// =============================================================================
+function enemy_kills_ensure() {
+    if (!variable_global_exists("enemy_kills") || !is_struct(global.enemy_kills)) global.enemy_kills = {};
+}
+function mark_record_kill(name) {
+    enemy_kills_ensure();
+    if (!is_string(name) || name == "") return;
+    var _n = variable_struct_exists(global.enemy_kills, name) ? variable_struct_get(global.enemy_kills, name) : 0;
+    variable_struct_set(global.enemy_kills, name, _n + 1);
+}
+function mark_kills(name) {
+    enemy_kills_ensure();
+    return (is_string(name) && variable_struct_exists(global.enemy_kills, name)) ? variable_struct_get(global.enemy_kills, name) : 0;
+}
+function mark_thresholds() { return [10, 30, 75]; }
+function mark_tier(name) {
+    var _k = mark_kills(name), _t = mark_thresholds(), _tier = 0;
+    for (var _i = 0; _i < array_length(_t); _i++) if (_k >= _t[_i]) _tier = _i + 1;
+    return _tier;
+}
+function mark_dmg_bonus(name) {
+    switch (mark_tier(name)) { case 1: return 0.03; case 2: return 0.05; case 3: return 0.08; }
+    return 0;
+}
+function mark_tier_label(tier) { return (tier <= 0) ? "" : ((tier == 1) ? "Mark I" : ((tier == 2) ? "Mark II" : "Mark III")); }
+// "Mark II  +5% dmg  (34 kills, 75 for Mark III)"
+function mark_text(name) {
+    var _k = mark_kills(name), _tier = mark_tier(name), _t = mark_thresholds();
+    var _s = (_tier > 0) ? (mark_tier_label(_tier) + "  +" + string(round(mark_dmg_bonus(name) * 100)) + "% dmg") : "No mark yet";
+    _s += "  (" + string(_k) + ((_k == 1) ? " kill" : " kills");
+    if (_tier < array_length(_t)) _s += ", " + string(_t[_tier]) + " for " + mark_tier_label(_tier + 1);
+    return _s + ")";
+}

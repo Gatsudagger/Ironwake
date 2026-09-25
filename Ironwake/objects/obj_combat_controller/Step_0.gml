@@ -958,7 +958,11 @@ if (player_turn) {
                 // inspect-on-hover. One tip at a time.
                 if (!(_foe_count > 1 && tutorial_try_show("targeting"))) {
                     if (!tutorial_try_show("intent")) {
-                        if (!tutorial_try_show("inspect")) tutorial_try_show("weakness");   // P2 gem (08-01)
+                        if (!tutorial_try_show("inspect")) {
+                            if (!tutorial_try_show("weakness")) {   // P2 gem (08-01)
+                                if (combat_pet_cmd_available()) tutorial_try_show("pet_commands");   // 09-24 orders
+                            }
+                        }
                     }
                 }
             }
@@ -986,6 +990,29 @@ if (player_turn) {
         consumable_quick_open = !consumable_quick_open;
         if (consumable_quick_open) consumable_quick_cursor = 0;
         consumable_confirm_idx = -1;   // never reopen with a row still armed
+    }
+    // COMPANION COMMANDS (09-24, §2.3): Z / X / F (pad Y / LB / RB, touch chips -> inject).
+    // Free, one per kind per 2 turns; the chip explains why one is greyed.
+    if (player_turn && !consumable_quick_open && !ability_detail_open && !combat_over) {
+        var _pc_ids = combat_pet_cmd_ids();
+        for (var _pci = 0; _pci < array_length(_pc_ids); _pci++) {
+            var _pc_id  = _pc_ids[_pci];
+            var _pc_key = (_pc_id == "sic") ? "Z" : ((_pc_id == "heel") ? "X" : "F");   // input_hotkey adds the pad map (Y / LB / RB)
+            var _pc_hit = input_hotkey(_pc_key) || input_inject_take("combat:cmd_" + _pc_id);
+            if (!_pc_hit) continue;
+            var _pc_why = combat_pet_cmd_blocked(player, _pc_id);
+            if (_pc_why != "") {
+                var _pc_msg = (_pc_why == "no companion") ? "No companion can take orders right now."
+                            : ((_pc_why == "ordered") ? "It already has its order this turn."
+                            : ((_pc_why == "set") ? "It is already standing guard."
+                            : (combat_pet_cmd_label(_pc_id) + " is resting (" + _pc_why + ")")));
+                array_push(combat_log, "[Companion] " + _pc_msg);
+                audio_play_sound(snd_ui_error, 1, false);
+            } else {
+                combat_pet_cmd_use(_pc_id, combat_state, player, combat_log, damage_popups, selected_target);
+                audio_play_sound(snd_page, 1, false);
+            }
+        }
     }
 
     if (mouse_check_button_pressed(mb_left)) {
@@ -1459,6 +1486,7 @@ if (player_turn) {
             if (variable_struct_exists(player, "glacial_ward_turns") && player.glacial_ward_turns > 0) {
                 player.glacial_ward_turns--;
             }
+            combat_pet_cmd_tick(player, combat_state.round);   // command cooldowns; a stale HEEL expires (09-24)
             combat_next_turn(combat_state);
             player_turn = combat_state.active.is_player;
             if (!player_turn) {
@@ -1466,6 +1494,7 @@ if (player_turn) {
                 enemy_turn_timer = enemy_turn_delay
                     + (combat_pet_act(combat_state, player, combat_log, damage_popups) ? 45 : 0)
                     + ((knight_joined && combat_knight_act(combat_state, player, combat_log, damage_popups, knight_dmg)) ? 45 : 0);   // Seahorse Knight (09-03)
+                player.pet_command = "";   // the SIC order is spent with the act (09-24)
             }
             exit;
         }
@@ -1507,6 +1536,7 @@ if (player_turn) {
         if (variable_struct_exists(player, "glacial_ward_turns") && player.glacial_ward_turns > 0) {
             player.glacial_ward_turns--;
         }
+        combat_pet_cmd_tick(player, combat_state.round);   // 09-25 audit: the T-key path skipped the command tick (cooldowns never fell, HEEL never expired)
         combat_next_turn(combat_state);
         player_turn = combat_state.active.is_player;
         if (!player_turn) {
@@ -1514,6 +1544,7 @@ if (player_turn) {
             enemy_turn_timer = enemy_turn_delay
                 + (combat_pet_act(combat_state, player, combat_log, damage_popups) ? 45 : 0)
                     + ((knight_joined && combat_knight_act(combat_state, player, combat_log, damage_popups, knight_dmg)) ? 45 : 0);   // Seahorse Knight (09-03)
+            player.pet_command = "";   // the SIC order is spent with the act (09-24)
         }
     }
 
@@ -3001,6 +3032,21 @@ if (player_turn) {
                             combat_apply_damage(player, _pp_rip);
                             player.hit_flash = max(player.hit_flash, 10);
                             array_push(damage_popups, { value: _pp_rip, x: 475, y: 545, timer: 40, delay: 10, col: make_color_rgb(230, 140, 100) });
+                            if (player.HP <= 0 && !combat_try_last_stand(player, combat_log)) player.is_defeated = true;
+                        }
+                        // HUNTER'S MARK (09-24, §5.4): +3/5/8% against a species you have hunted.
+                        if (_deals_damage && _final_dmg > 0 && mark_dmg_bonus(target.name) > 0) {
+                            _final_dmg = round(_final_dmg * (1 + mark_dmg_bonus(target.name)));
+                        }
+                        // THORNED elite affix (09-24, §2.5): a landed MELEE hit costs you 4 HP -
+                        // the brambles idiom turned on the player. Spells and shots go around it.
+                        if (_deals_damage && _final_dmg > 0 && player.HP > 0
+                            && enemy_affix_has(target, "thorned")
+                            && ability_class_is_melee(ability_attack_class(ab))) {
+                            combat_apply_damage(player, 4);
+                            array_push(combat_log, "Thorned - " + target.name + "'s hide bites back for 4!");
+                            player.hit_flash = max(player.hit_flash, 8);
+                            array_push(damage_popups, { value: 4, x: 475, y: 545, timer: 40, delay: 10, col: make_color_rgb(200, 150, 90) });
                             if (player.HP <= 0 && !combat_try_last_stand(player, combat_log)) player.is_defeated = true;
                         }
                         // Pure debuffs never deal damage, even if a rider tried to add some.
@@ -5152,6 +5198,7 @@ if (player_turn) {
                     add_gold(_gold_drop);
                     global.current_run_kills++;
                     global.total_kills++;   // lifetime counter (see combat_on_enemy_defeated)
+                    mark_record_kill(actor.name);   // Hunter's Marks - DoT kills count too (09-25 audit)
                     array_push(combat_log, "Gained " + string(_gold_drop) + "g!");
                     // --- Item / consumable drop ---
                     var _drop_type;
@@ -5160,6 +5207,8 @@ if (player_turn) {
                     } else {
                         _drop_type = "standard";
                     }
+                    // A Twinned copy drops like a common mob - the elite roll belongs to the headliner (09-25 audit)
+                    if (variable_struct_exists(actor, "is_twin") && actor.is_twin) _drop_type = "standard";
                     var _drop_result = handle_enemy_drops(_drop_type);
                     if (_drop_result != "") {
                         array_push(combat_log, "Loot: " + _drop_result + "!");
@@ -5949,6 +5998,12 @@ if (player_turn) {
                 }
                 if (_sdmg > 0) combat_state.player_took_damage = true;
                 combat_apply_damage(player, _sdmg);
+                // VAMPIRIC elite affix (09-25 audit): its spells drink too, not only its swings.
+                if (_sdmg > 0 && enemy_affix_has(actor, "vampiric") && actor.HP > 0 && actor.HP < actor.max_HP) {
+                    var _vamp_s = min(actor.max_HP - actor.HP, max(1, round(_sdmg * 0.3)));
+                    actor.HP += _vamp_s;
+                    array_push(combat_log, "Vampiric - " + actor.name + " drinks " + string(_vamp_s) + " back.");
+                }
                 play_player_vocal("snd_player_hurt", -1);
                 // Conveyance (08-04): a RANGED-delivered spell now FLIES to you (dtype-
                 // keyed bolt; flash/shake/popup/HP-drain defer to arrival). A melee-
@@ -6311,7 +6366,16 @@ if (player_turn) {
                 // (0.90x) - capstone toughness, not a surcharge (was +25%).
                 if (_gpet.archetype == PET_ARCH_GUARDIAN && pet_kit_mods(_gpet).bodyguard) { _g_can = true; _g_body = true; }
             }
-            if (_g_can && _final_dmg > 1 && irandom(99) < (_g_body ? 40 : 25)) {
+            // HEEL command (09-24, §2.3): a standing companion intercepts the next blow
+            // GUARANTEED, once, in any stance / archetype. Consumed here.
+            var _g_heel = false;
+            if (_gpet != undefined && !_gpet.is_egg && _gpet.stage >= PET_STAGE_YOUNGADULT
+                && !pet_guard_off(_gpet) && pet_injury_mult(_gpet.injured) > 0 && pet_hp(_gpet) > 0
+                && variable_struct_exists(player, "pet_heel") && player.pet_heel && _final_dmg > 1) {
+                _g_can = true; _g_heel = true;
+                player.pet_heel = false; player.pet_heel_round = -1;
+            }
+            if (_g_can && _final_dmg > 1 && (_g_heel || irandom(99) < (_g_body ? 40 : 25))) {
                 var _gcut = max(1, round(_final_dmg * 0.35));
                 _final_dmg -= _gcut;
                 var _gko = pet_take_damage(_gpet, _g_body ? max(1, round(_gcut * 0.90)) : _gcut);
@@ -6371,6 +6435,12 @@ if (player_turn) {
             // absorb keeps the fight untouched (defense play stays rewarded).
             if (_final_dmg > 0) combat_state.player_took_damage = true;
             combat_apply_damage(player, _final_dmg);
+            // VAMPIRIC elite affix (09-24, §2.5): it drinks 30% of what it dealt.
+            if (_final_dmg > 0 && enemy_affix_has(actor, "vampiric") && actor.HP > 0 && actor.HP < actor.max_HP) {
+                var _vamp = min(actor.max_HP - actor.HP, max(1, round(_final_dmg * 0.3)));
+                actor.HP += _vamp;
+                array_push(combat_log, "Vampiric - " + actor.name + " drinks " + string(_vamp) + " back.");
+            }
             // Bramble Hide / Spore Cloud (thorn_boar / sporeling innates, 08-01):
             // striking you has a price. Thorns route through the universal damage
             // sink (deaths sweep like any DoT kill); the spore is a 2/turn poison.

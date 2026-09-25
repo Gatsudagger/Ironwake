@@ -108,7 +108,7 @@ for (var _i = 0; _i < _count; _i++) {
     // value over a few frames, and a projectile in flight holds the drain
     // (hp_hold, set at cast) so the bar moves when the bolt lands.
     ui_draw_hp_bar(_bar_x, _bar_y, _bar_width, _bar_height,
-                   combat_hp_vis(_c), _c.max_HP, _c.name, true);
+                   combat_hp_vis(_c), _c.max_HP, _c.name + enemy_affix_suffix(_c), true);   // ", Thorned" etc. (09-24 affixes)
 
     // Intent chip (INTENT_SPEC.md): the foe's telegraphed next action, drawn as a
     // compact plate above the bar (clears the ornate frame at y-4). Greys out with
@@ -1317,6 +1317,41 @@ if (player_turn && !combat_over) {
             draw_set_halign(fa_left);
             draw_set_valign(fa_top);
         }
+    }
+
+    // COMPANION COMMAND chips (09-24, §2.3): SIC / HEEL / FETCH. Shown whenever the
+    // companion could take orders this fight; a chip greys with its reason (cooldown,
+    // already ordered, not your turn). Geometry shared with the legend/hit-test
+    // (combat_pet_cmd_geom): touch = y856-916 left of GUARD, desktop = y946-982 left.
+    if (combat_pet_cmd_available() && !combat_over) {
+        var _pc_ids = combat_pet_cmd_ids();
+        var _pc_mx = device_mouse_x_to_gui(0), _pc_my = device_mouse_y_to_gui(0);
+        var _pc_press = mouse_check_button_pressed(mb_left);
+        draw_set_font(ui_font_dense(fnt_ui_small));
+        draw_set_halign(fa_center); draw_set_valign(fa_middle);
+        for (var _pci = 0; _pci < array_length(_pc_ids); _pci++) {
+            var _pc_id = _pc_ids[_pci];
+            var _pg    = combat_pet_cmd_geom(_pci);
+            var _pwhy  = player_turn ? combat_pet_cmd_blocked(player, _pc_id) : "wait";
+            var _pon   = (_pwhy == "");
+            var _pset  = (_pc_id == "heel" && player.pet_heel) || (_pc_id == "sic" && player.pet_command == "sic");
+            draw_set_alpha(0.86); draw_set_color(make_color_rgb(14, 18, 26));
+            draw_rectangle(_pg.x0, _pg.y0, _pg.x1, _pg.y1, false);
+            draw_set_alpha(1.0);
+            draw_set_color(_pset ? make_color_rgb(255, 224, 120) : (_pon ? make_color_rgb(120, 150, 190) : make_color_rgb(58, 62, 72)));
+            draw_rectangle(_pg.x0, _pg.y0, _pg.x1, _pg.y1, true);
+            draw_set_color(_pset ? make_color_rgb(255, 235, 170) : (_pon ? make_color_rgb(190, 210, 235) : make_color_rgb(110, 116, 128)));
+            var _ptxt = combat_pet_cmd_label(_pc_id) + "  [" + combat_pet_cmd_key(_pc_id) + "]";
+            if (_pset) _ptxt = combat_pet_cmd_label(_pc_id) + "  SET";
+            else if (!_pon && _pwhy != "wait" && _pwhy != "no companion") _ptxt += "  " + _pwhy;
+            draw_text((_pg.x0 + _pg.x1) / 2, (_pg.y0 + _pg.y1) / 2 + 1, _ptxt);
+            if (input_device() == 2) {
+                if (touch_tapped(_pg.x0, _pg.y0, _pg.x1, _pg.y1)) input_inject("combat:cmd_" + _pc_id);
+            } else if (_pc_press && _pc_mx >= _pg.x0 && _pc_mx < _pg.x1 && _pc_my >= _pg.y0 && _pc_my < _pg.y1) {
+                input_inject("combat:cmd_" + _pc_id);
+            }
+        }
+        draw_set_valign(fa_top); draw_set_halign(fa_left);
     }
 
     // End Turn prompt - brighter when out of AP to make it more visible
