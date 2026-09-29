@@ -907,9 +907,14 @@ if (hatch_active) {
 if (global.tutorial_dismiss_pending) {
     tutorial_dismiss();                       // mark seen + clear active
     global.tutorial_dismiss_pending = false;
+    if (variable_global_exists("dbg_tip_dismissed")) global.dbg_tip_dismissed += 1;   // 09-29 TEMP DIAG
 }
 if (tutorial_is_active()) {
+    // 09-29 TEMP DIAG: count handler frames / hits (shown in the held-F8 readout).
+    if (!variable_global_exists("dbg_tip_frames")) { global.dbg_tip_frames = 0; global.dbg_tip_hits = 0; global.dbg_tip_dismissed = 0; }
+    global.dbg_tip_frames += 1;
     if (input_any() || mouse_check_button_pressed(mb_any)) {
+        global.dbg_tip_hits += 1;
         global.tutorial_dismiss_pending = true;   // clear next frame, not now
     }
     exit;
