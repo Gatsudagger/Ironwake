@@ -275,6 +275,15 @@ for (var _i = 0; _i < _count; _i++) {
     draw_set_valign(fa_bottom);
     draw_set_color(_acc ? _tc : make_color_rgb(40, 46, 62));
     draw_text(_nx + _NW - 9, _ny + _NH - 6, _tl);
+    // CONTRACTS (09-29): the sealed room - a wax seal in the corner, gold while it waits.
+    if (variable_struct_exists(_room, "contract") && _room.contract && !_room.cleared) {
+        draw_set_color(make_color_rgb(200, 150, 50)); draw_circle(_nx + 14, _ny + 14, 9, false);
+        draw_set_color(make_color_rgb(60, 40, 10));   draw_circle(_nx + 14, _ny + 14, 9, true);
+        draw_set_halign(fa_center); draw_set_valign(fa_middle);
+        draw_set_font(ui_font(fnt_ui_small)); draw_set_color(make_color_rgb(40, 26, 8));
+        draw_text(_nx + 14, _ny + 14, "!");
+        draw_set_halign(fa_right); draw_set_valign(fa_bottom);
+    }
 
     // Sense trait: show extra difficulty hint for uncleared accessible rooms.
     // TRANSCEND "Omniscience" (POTENCY V2): hints show on EVERY uncleared room

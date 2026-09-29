@@ -110,6 +110,8 @@ function grant_xp(amount) {
     if (!variable_global_exists("run_xp"))              return 0;
     if (!variable_global_exists("pending_stat_points")) return 0;
 
+    if (variable_global_exists("run_boon_mods") && is_struct(global.run_boon_mods) && global.run_boon_mods.xp_mult > 1)
+        amount = ceil(amount * global.run_boon_mods.xp_mult);   // CONTRACTS (09-29): "+25% XP next run" card
     global.run_xp += amount;
     var _gained = 0;
 
@@ -163,6 +165,10 @@ function add_gold(amount) {
     // item sells write global.gold directly and are intentionally unaffected).
     var _gf = cha_gold_find();
     if (_gf > 0) amount = ceil(amount * (1 + _gf));
+    // CONTRACTS (09-29): the "+20% gold find next run" card, and Petra's LEDGER OF DEBTS (+15%).
+    if (variable_global_exists("run_boon_mods") && is_struct(global.run_boon_mods) && global.run_boon_mods.gold_mult > 1)
+        amount = ceil(amount * global.run_boon_mods.gold_mult);
+    if (legendary_worn("storied_petra")) amount = ceil(amount * 1.15);
     // IN COLLECTIONS (Debtor origin, 08-11): the creditor garnishes a quarter
     // of everything earned, at the source, until the debt clears.
     amount = debt_garnish(amount);
@@ -219,7 +225,8 @@ function signet_price_mult() { return legendary_worn("hollow_kings_signet") ? 0.
 function beggar_price_mult() { return legendary_worn("beggars_fortune")     ? 1.10 : 1.0; }
 function cha_price(base_gold) {
     return max(1, round(base_gold * (1 - cha_discount()) * signet_price_mult() * beggar_price_mult()
-        * origin_price_mult()));   // Gutter Orphan origin: 5% off everywhere (08-11)
+        * origin_price_mult()                                     // Gutter Orphan origin: 5% off everywhere (08-11)
+        * (legendary_worn("storied_petra") ? 0.90 : 1.0)));       // Petra's LEDGER OF DEBTS (CONTRACTS 09-29)
 }
 
 // Gold-find fraction - 1% more earned gold per CHA point, capped at 30%.
@@ -662,6 +669,7 @@ function end_run(result) {
     // 09-25 RUN SUMMARY (§4.2): one struct the hub shows before anything else. Built here,
     // after gold settled and the record closed, before the per-run counters reset below.
     run_summary_build(_run_record, _sum_pet0, _sum_g0, _sum_b0, _sum_s0, _sum_found);
+    contracts_run_end(result);   // CONTRACTS (09-29): Escort survival / Timed clock -> pay_mult / tier_bonus; run boon mods reset
 
     // --- Steam achievements: run-outcome hooks (08-05 wiring). result: 1 full
     // clear / 0 extraction / -1 death. ---
@@ -1678,7 +1686,8 @@ function consumable_use_out_of_combat(item) {
         if (!variable_global_exists("run_current_hp") || global.run_current_hp <= 0) {
             global.run_current_hp = _max;
         }
-        global.run_current_hp = min(_max, global.run_current_hp + item.effect_value);
+        global.run_current_hp = min(_max, global.run_current_hp + item.effect_value
+            + (legendary_worn("storied_sable") ? ceil(_max * 0.10) : 0));   // ALEMBIC HEART (CONTRACTS 09-29)
         return true;
     }
     // Sable's exotic find-buff potions apply out of combat too (drink between floors).
@@ -4504,7 +4513,10 @@ function handle_enemy_drops(enemy_type) {
             global.warden_leg_due = false;
             _boss_w = [0, 0, 0, 0, 100];
         }
-        var _item = drop_equipment(_boss_w, true, curse_loot_tier_bonus_for("boss") + _gt + enemy_affix_loot_bonus());   // +1 tier per affix (09-24)
+        // CONTRACTS (09-29): the "+1 loot tier on the next boss" card, spent here.
+        var _cbt = (variable_global_exists("run_boon_mods") && is_struct(global.run_boon_mods)) ? global.run_boon_mods.boss_tier : 0;
+        if (_cbt > 0) global.run_boon_mods.boss_tier = 0;
+        var _item = drop_equipment(_boss_w, true, curse_loot_tier_bonus_for("boss") + _gt + enemy_affix_loot_bonus() + _cbt);   // +1 tier per affix (09-24)
         array_push(global.run_items_found, _item);
         array_push(global.carried_items, _item);
         discover_item(item_base_name(_item), _item.rarity);
@@ -6369,6 +6381,7 @@ function boon_damage_mult(target_hp_frac, player = undefined) {
     if (boon_active("feast") && variable_global_exists("feast_stacks") && global.feast_stacks > 0) {
         _m += 0.08 * global.feast_stacks;
     }
+    if (target_hp_frac <= 0.30 && legendary_worn("storied_vex")) _m += 0.25;   // TRAINER'S LASH (CONTRACTS 09-29)
     return _m;
 }
 
@@ -6418,7 +6431,13 @@ function shrine_reroll_cost() {
 
 // Incoming-damage multiplier from boons (Warding).
 function boon_incoming_mult() {
-    return boon_active("warding") ? (1.0 - boon_value("warding")) : 1.0;
+    var _m = boon_active("warding") ? (1.0 - boon_value("warding")) : 1.0;
+    // MASK OF THE AESTHETE (CONTRACTS 09-29): -10% incoming while above 70% HP.
+    if (legendary_worn("storied_vael") && instance_exists(obj_combat_controller)) {
+        var _vp = instance_find(obj_combat_controller, 0).player;
+        if (is_struct(_vp) && variable_struct_exists(_vp, "max_HP") && _vp.max_HP > 0 && _vp.HP > _vp.max_HP * 0.7) _m *= 0.90;
+    }
+    return _m;
 }
 
 // Max-HP multiplier from boons (Ironhide +20%, Glass Cannon -15%).
@@ -7539,7 +7558,9 @@ function quest_visible(id) {
 function quest_def(id) {
     var _c = quest_catalog();
     for (var _i = 0; _i < array_length(_c); _i++) if (_c[_i].id == id) return _c[_i];
-    return board_request_def(id);   // procedural board requests (BOARD_REQUESTS_SPEC.md)
+    var _bd = board_request_def(id);   // procedural board requests (BOARD_REQUESTS_SPEC.md)
+    if (_bd != undefined) return _bd;
+    return story_step_def(id);         // CONTRACTS story chains (09-29)
 }
 
 // Guarantee global.quests holds one state row per catalog entry (append-migrates when
@@ -7566,6 +7587,7 @@ function quest_state(id) {
 function quest_is_complete(id) {
     var _s = quest_state(id); var _d = quest_def(id);
     if (_s == undefined || _d == undefined) return false;
+    if (contract_has_want(_d)) return _s.status == "active" && want_satisfiable(_d.want);   // CONTRACTS (09-29): a want is done when you hold the object
     return _s.status == "active" && _s.progress >= _d.obj_target;
 }
 
@@ -7820,6 +7842,7 @@ function journal_quest_rows() {
 // Quests tab keeps the full ledger including its Completed group.
 function tavern_board_rows() {
     board_bootstrap();   // first-open stock for new chars + pre-board saves
+    story_ensure();      // CONTRACTS (09-29): chains open at Friend
     var _g = quest_groups();
     var _out = [];
     // 09-03: relationship (gate) favors are NEVER posted on the board - they come
@@ -8159,7 +8182,7 @@ function board_build_template(t, a, scale, urgent) {
     }
     // Item roll: urgent always; otherwise 25% on non-challenge (non-chit) templates.
     var _item = urgent || (_chit == 0 && irandom(99) < 25);
-    if (urgent) _gold *= 2;
+    // (09-29 CONTRACTS: urgent x2 now pays on the COIN card only - reward_pick_open.)
     // Ingot tier scales with the request's Awakening: early requests give low-tier
     // ingots, and tier-or-higher makes the high ones from harder content universal.
     if (_chit > 0) _ctier = clamp(a, 0, 4);
@@ -8196,7 +8219,8 @@ function board_generate_request(urgent, avoid_template = "") {
     board_requests_ensure();
     var _a     = highest_awakening_unlocked();
     var _scale = 1 + 0.5 * _a;
-    var _pool  = ["cull", "cull", "depth", "bounty", "haul", "craft", "flawless", "swift", "clean"];
+    // CONTRACTS (09-29): "hunt" = a named-foe bounty poster, "want" = an object request.
+    var _pool  = ["hunt", "hunt", "want", "want", "want", "cull", "depth", "bounty", "haul", "craft", "flawless", "swift", "clean"];
     if (avoid_template != "") {
         var _fpool = [];
         for (var _fi = 0; _fi < array_length(_pool); _fi++)
@@ -8206,7 +8230,8 @@ function board_generate_request(urgent, avoid_template = "") {
     var _def   = undefined;
     for (var _try = 0; _try < 8; _try++) {
         var _t = _pool[irandom(array_length(_pool) - 1)];
-        var _cand = board_build_template(_t, _a, _scale, urgent);
+        var _cand = (_t == "hunt") ? board_build_hunt(_a, _scale, urgent)
+                  : ((_t == "want") ? board_build_want(_a, _scale, urgent) : board_build_template(_t, _a, _scale, urgent));
         var _dupe = false;
         for (var _i = 0; _i < array_length(global.board_requests); _i++) {
             var _e = global.board_requests[_i];
@@ -10618,6 +10643,7 @@ function pet_hp(pet) {
 function pet_take_damage(pet, amount) {
     if (!is_struct(pet) || amount <= 0) return false;
     if (pet_calling_has(pet, "ironhide")) amount = max(1, round(amount * 0.85));   // IRONHIDE calling: -15% damage taken (09-25, §1.7)
+    if (legendary_worn("storied_bairc"))  amount = max(1, round(amount * 0.75));   // KEEPER'S WHISTLE (CONTRACTS 09-29): -25%
     var _was_up = pet_hp(pet) > 0;   // lazy-inits hp_dmg
     pet.hp_dmg = min(pet.hp_dmg + amount, pet_max_hp(pet));
     return _was_up && pet_hp(pet) <= 0;
@@ -13130,6 +13156,7 @@ function item_picker_prompt() {
         case "cursed_rebirth": return "An Inequivalent Exchange... feed a legendary to the dark";
         case "statreq_rebirth": return "Choose an item to RE-ATTUNE - its stat requirement re-sets to a random other stat";
         case "pb_smelt": return "Choose gear to SMELT (" + string(pattern_smelt_fee()) + "g) - destroyed for an ingot, a blueprint study and its art";
+        case "board_want": return "Hand over the piece that fits the request - it is theirs to keep";
     }
     return "Choose an item";
 }
@@ -13148,6 +13175,7 @@ function item_picker_verb() {
         case "cursed_rebirth": return "Sacrifice";
         case "statreq_rebirth": return "Re-attune";
         case "pb_smelt":       return "Smelt";
+        case "board_want":     return "Hand over";
     }
     return "Trade away";
 }
@@ -13170,6 +13198,16 @@ function item_picker_resolve() {
                       ? _p.candidates[_p.cursor].item : undefined;
         _ctx.chosen         = _pb_sel;
         _p.resolved_purpose = "pb_smelt";
+        _p.result_msg       = "";
+        item_picker_close();
+        return;
+    }
+    // CONTRACTS (09-29): a board REQUEST's handed object - consumed here, then the
+    // pick-of-three opens (contract_resolve_pick). The gc owns the modal.
+    if (_p.purpose == "board_want") {
+        var _bw_gc = instance_exists(obj_game_controller) ? instance_find(obj_game_controller, 0) : noone;
+        if (_bw_gc != noone) contract_resolve_pick(_bw_gc);
+        _p.resolved_purpose = "board_want";
         _p.result_msg       = "";
         item_picker_close();
         return;
@@ -13699,6 +13737,12 @@ function event_effect_phrase(fx) {
         array_push(_p, "-" + string(fx.ap_penalty) + " AP next fight's first turn");
     if (variable_struct_exists(fx, "duel") && fx.duel)
         array_push(_p, "the DUEL");
+    // CONTRACT EVENTS (09-29)
+    if (variable_struct_exists(fx, "escort") && fx.escort != "")           array_push(_p, "an ESCORT joins you (double pay if they walk out)");
+    if (variable_struct_exists(fx, "timed_start") && fx.timed_start > 0)   array_push(_p, "the clock starts - " + string(fx.timed_start) + " rounds for +1 reward tier");
+    if (variable_struct_exists(fx, "story_choice") && fx.story_choice != "") array_push(_p, "a choice the story remembers");
+    if (variable_struct_exists(fx, "cache_qid") && fx.cache_qid != "")     array_push(_p, "the requested object");
+    if (variable_struct_exists(fx, "ambush_name") && fx.ambush_name != "") array_push(_p, "the bounty's foe, affix guaranteed");
     if (array_length(_p) == 0) return "nothing";
     var _s = "";
     for (var _i = 0; _i < array_length(_p); _i++) _s += (_i > 0 ? " + " : "") + _p[_i];
@@ -13954,6 +13998,35 @@ function event_apply_effects(fx) {
         global.run_borrowed_class   = variable_struct_exists(fx, "memory_pick_class") ? fx.memory_pick_class : "";
         array_push(_sum, "BORROWED MEMORY: " + fx.memory_pick + " (" + global.run_borrowed_class + " - this run)");
     }
+    // CONTRACT EVENTS (DESIGN_QUESTS_0925.md §4, 09-29) --------------------------
+    if (variable_struct_exists(fx, "escort") && fx.escort != "") {
+        var _hl = story_hireling(fx.escort);
+        var _emax = max(12, round(out_of_combat_max_hp() * 0.6));
+        global.contract_escort = { npc:fx.escort, qid:fx.escort_qid, name:_hl.name, loss_line:_hl.loss_line, hp:_emax, max_hp:_emax, alive:true };
+        array_push(_sum, "[ALLY] " + _hl.name + " joins you for the rest of the run - " + npc_display_name(fx.escort) + " pays double if they walk out");
+    }
+    if (variable_struct_exists(fx, "timed_start") && fx.timed_start > 0) {
+        global.contract_timed = { qid:fx.timed_qid, left:fx.timed_start, total:fx.timed_start };
+        array_push(_sum, "THE CLOCK RUNS - " + string(fx.timed_start) + " combat rounds to finish the dungeon");
+    }
+    if (variable_struct_exists(fx, "story_choice") && fx.story_choice != "") {
+        var _scs = quest_state(fx.story_qid);
+        if (_scs != undefined) { _scs.choice = fx.story_choice; _scs.progress = 1; }
+        array_push(_sum, "[STORY] " + npc_display_name(fx.story_npc) + " will know which you chose");
+    }
+    if (variable_struct_exists(fx, "cache_qid") && fx.cache_qid != "") {
+        var _cqd = quest_def(fx.cache_qid);
+        var _cit = contract_has_want(_cqd) ? want_make_item(_cqd.want) : undefined;
+        if (_cit != undefined) {
+            if (!variable_global_exists("run_items_found")) global.run_items_found = [];
+            if (!variable_global_exists("carried_items"))   global.carried_items   = [];
+            discover_item(item_base_name(_cit), _cit.rarity);
+            array_push(global.run_items_found, _cit);
+            array_push(global.carried_items, _cit);
+            array_push(_sum, _cit.name + " [" + item_rarity_name(_cit.rarity) + "] - exactly what was asked for");
+        }
+    }
+    if (variable_struct_exists(fx, "ambush_name") && fx.ambush_name != "") global.ambush_force_name = fx.ambush_name;
     // The Ashen Duelist: arm the duel - the floor controller launches the 1v1
     // combat when this event's result screen closes.
     if (variable_struct_exists(fx, "duel") && fx.duel) {
@@ -19308,6 +19381,7 @@ function run_summary_build(rec, pet0, g0, b0, s0, found = undefined) {
         pets_found: is_array(found) ? found : (variable_global_exists("run_found_pets") ? global.run_found_pets : []),
         pet:        _pet,
         missions:   _missions,
+        boons:      (variable_global_exists("run_boon_mods") && is_struct(global.run_boon_mods)) ? global.run_boon_mods.labels : [],   // CONTRACTS (09-29)
         epithet:    variable_global_exists("player_epithet") ? global.player_epithet : "",
         perm:       rec.perm_points_earned,
         run:        rec.run_number
@@ -19342,3 +19416,1069 @@ function run_summary_step(gc) {
         if (room == rm_hub || room == rm_character_select) save_game();
     }
 }
+
+
+// =============================================================================
+// CONTRACTS (DESIGN_QUESTS_0925.md, M-locked 09-29): the quest / board rework.
+// The tavern board grows three tabs - BOUNTIES (a NAMED foe, its affix guaranteed
+// in that dungeon), REQUESTS (a predicate on an object you hand over: "a Frostbound
+// blade, DEX 4+", "6 Cinder Marrow", "a Valuable worth 300g+", "a Drowned creature
+// at Young Adult+") and STORIES (one authored chain per NPC, unlocked at Friend,
+// ending in a rarity-4 STORIED item with its own combat hook). Every bounty and
+// request turn-in opens the PICK-OF-THREE (COIN / A BOON FOR THE NEXT RUN / AN ITEM);
+// story steps pay fixed. Contract EVENTS (Escort / Timed / Choice / Cache / Ambush)
+// ride into the next run on a sealed floor-map room while a matching contract is
+// taken. Data is additive on the board request def ({want, bounty, contract, tab})
+// and the quest state row ({tier_bonus, pay_mult, choice}); global.next_run_boons
+// and global.story are the two new saved globals.
+// =============================================================================
+function contracts_ensure() {
+    if (!variable_global_exists("next_run_boons") || !is_array(global.next_run_boons)) global.next_run_boons = [];
+    if (!variable_global_exists("run_boon_mods") || !is_struct(global.run_boon_mods))
+        global.run_boon_mods = { xp_mult:1, gold_mult:1, boss_tier:0, labels:[] };
+    if (!variable_global_exists("story") || !is_struct(global.story)) global.story = {};
+    var _n = story_npcs();
+    for (var _i = 0; _i < array_length(_n); _i++)
+        if (!variable_struct_exists(global.story, _n[_i])) variable_struct_set(global.story, _n[_i], { step:0, choice:"", done:false });
+    if (!variable_global_exists("contract_fired_this_run") || !is_array(global.contract_fired_this_run)) global.contract_fired_this_run = [];
+    if (!variable_global_exists("contract_escort"))   global.contract_escort   = undefined;
+    if (!variable_global_exists("contract_timed"))    global.contract_timed    = undefined;
+    if (!variable_global_exists("ambush_force_name")) global.ambush_force_name = "";
+}
+function story_npcs() { return ["dorn", "sable", "maren", "vex", "petra", "vael", "bairc"]; }
+
+// Which board tab a def lives on: "bounty" / "request" / "story".
+function contract_tab(d) {
+    if (d == undefined) return "request";
+    if (variable_struct_exists(d, "kind") && d.kind == "story") return "story";
+    if (variable_struct_exists(d, "tab")) return d.tab;
+    if (variable_struct_exists(d, "template")) {
+        switch (d.template) {
+            case "hunt": case "cull": case "bounty": case "flawless": case "swift": return "bounty";
+        }
+    }
+    return "request";
+}
+function contract_has_want(d)     { return d != undefined && variable_struct_exists(d, "want")     && is_struct(d.want); }
+function contract_has_bounty(d)   { return d != undefined && variable_struct_exists(d, "bounty")   && is_struct(d.bounty); }
+function contract_has_contract(d) { return d != undefined && variable_struct_exists(d, "contract") && is_struct(d.contract); }
+function contract_is_story(d)     { return d != undefined && variable_struct_exists(d, "kind") && d.kind == "story"; }
+
+// -----------------------------------------------------------------------------
+// WANTS - the "find me a weapon with XYZ" generator + predicate. Zero new
+// mechanics: it reads the item / reagent / valuable / pet structs that exist.
+// -----------------------------------------------------------------------------
+function want_slots() { return ["weapon", "ranged_weapon", "chest", "helm", "gloves", "boots", "ring", "amulet", "offhand"]; }
+function want_slot_label(slot) {
+    switch (slot) {
+        case "weapon":        return "blade";
+        case "ranged_weapon": return "ranged weapon";
+        case "chest":         return "chestpiece";
+        case "helm":          return "helm";
+        case "gloves":        return "pair of gloves";
+        case "boots":         return "pair of boots";
+        case "ring":          return "ring";
+        case "amulet":        return "amulet";
+        case "offhand":       return "offhand piece";
+    }
+    return slot;
+}
+function want_stat_label(stat) {
+    switch (stat) {
+        case "STR": case "DEX": case "CON": case "INT": case "WIS": case "CHA": return stat;
+        case "bonus_max_hp": return "Vitality";
+        case "crit_flat":    return "Ruin (crit)";
+        case "dodge_flat":   return "Shadows (dodge)";
+        case "gold_find":    return "Greed (gold find)";
+        case "crit_spell":   return "Hexruin (spell crit)";
+        case "crit_phys":    return "Bloodshed (phys crit)";
+    }
+    if (string_pos("school_", stat) == 1) return string_upper(string_copy(stat, 8, 1)) + string_copy(stat, 9, string_length(stat) - 8) + " damage";
+    return stat;
+}
+function want_elem_label(e) {
+    var _f = elem_affix_family(e);
+    return (_f != undefined) ? _f.prefix : e;
+}
+// One want, possible at the poster's Awakening (never epic at A0, never a school
+// affix on a non-caster slot, never a reagent from a dungeon you can't reach).
+function want_generate(a, npc) {
+    var _roll = irandom(99);
+    // Bairc / Petra lean to creatures; Sable / Maren to reagents; everyone asks for gear.
+    var _kind = "item";
+    if ((npc == "bairc" || npc == "petra") && _roll < 45)      _kind = "creature";
+    else if ((npc == "sable" || npc == "maren") && _roll < 45) _kind = "reagent";
+    else if (npc == "petra" && _roll < 70)                     _kind = "valuable";
+    else if (_roll < 22)                                       _kind = "reagent";
+    else if (_roll < 32)                                       _kind = "valuable";
+    if (_kind == "creature") {
+        var _habs = want_creature_habitats();
+        if (array_length(_habs) == 0) _kind = "item";
+        else {
+            var _hab = _habs[irandom(array_length(_habs) - 1)];
+            var _stg = (a < 2) ? (PET_STAGE_ADOLESCENT + irandom(1)) : (PET_STAGE_YOUNGADULT + irandom(1));
+            return { kind:"creature", habitat:_hab, stage_min:_stg };
+        }
+    }
+    if (_kind == "reagent") {
+        var _rc = reagent_catalog(), _open = [];
+        for (var _i = 0; _i < array_length(_rc); _i++)
+            if (_rc[_i].dungeon == "ashen_vault" || dungeon_is_revealed(_rc[_i].dungeon)) array_push(_open, _rc[_i].id);
+        if (array_length(_open) == 0) _kind = "item";
+        else return { kind:"reagent", reagent:_open[irandom(array_length(_open) - 1)], n:min(8, 3 + irandom(2) + a) };
+    }
+    if (_kind == "valuable") {
+        return { kind:"valuable", gold_value_min:((a < 2) ? 150 : ((a < 4) ? 300 : 600)) };
+    }
+    // Item want.
+    var _slots = want_slots();
+    var _slot  = _slots[irandom(array_length(_slots) - 1)];
+    var _rmin  = 1 + irandom(1);
+    if (a >= 2 && irandom(99) < 40) _rmin = 3;
+    _rmin = min(_rmin, (a < 2) ? 2 : 3);
+    var _w = { kind:"item", slot:_slot, rarity_min:_rmin, stat_name:"", stat_min:0, affix_stat:"", elem:"", sockets_min:0 };
+    // One or two conditions from the set the slot can actually carry.
+    var _conds = ["stat", "affix"];
+    if (_slot == "weapon" || _slot == "ranged_weapon") array_push(_conds, "elem");
+    if (_rmin >= 1) array_push(_conds, "sockets");
+    var _nc = (irandom(99) < 40) ? 2 : 1;
+    for (var _k = 0; _k < _nc && array_length(_conds) > 0; _k++) {
+        var _ci = irandom(array_length(_conds) - 1);
+        var _c  = _conds[_ci];
+        array_delete(_conds, _ci, 1);
+        switch (_c) {
+            case "stat": {
+                var _st = ["STR", "DEX", "CON", "INT", "WIS", "CHA"];
+                _w.stat_name = _st[irandom(5)];
+                _w.stat_min  = 2 + min(a, 3);
+            } break;
+            case "affix": {
+                var _caster = (_slot == "ring" || _slot == "amulet" || _slot == "offhand");
+                if (_caster && irandom(99) < 35 && variable_global_exists("school_affix_pool")) {
+                    var _sp = global.school_affix_pool;
+                    _w.affix_stat = _sp[irandom(array_length(_sp) - 1)].stat_name;
+                } else if (variable_global_exists("affix_pool")) {
+                    var _ap = global.affix_pool;
+                    _w.affix_stat = _ap[irandom(array_length(_ap) - 1)].stat_name;
+                }
+            } break;
+            case "elem": {
+                var _el = ["burn", "frost", "shock"];
+                _w.elem = _el[irandom(2)];
+            } break;
+            case "sockets": _w.sockets_min = (_rmin >= 3) ? 2 : 1; break;
+        }
+    }
+    return _w;
+}
+// Habitats a creature want may name: dungeons you have opened that have a species.
+function want_creature_habitats() {
+    var _all = ["ashen_vault", "scorched_depths", "tundra_tomb", "drowned_reach", "hollow_canopy"];
+    var _out = [];
+    for (var _i = 0; _i < array_length(_all); _i++) {
+        if (_all[_i] != "ashen_vault" && !dungeon_is_revealed(_all[_i])) continue;
+        if (array_length(ledger_species_for(_all[_i])) == 0) continue;
+        array_push(_out, _all[_i]);
+    }
+    return _out;
+}
+// "a Frostbound blade, DEX 4+, Rare or better" - the poster's object line.
+function want_text(w) {
+    if (!is_struct(w)) return "";
+    switch (w.kind) {
+        case "reagent": {
+            var _r = reagent_get(w.reagent);
+            return string(w.n) + " " + ((_r != undefined) ? _r.name : w.reagent);
+        }
+        case "valuable": return "a Valuable worth " + string(w.gold_value_min) + "g or more";
+        case "creature": return "a creature of the " + dungeon_display_name(w.habitat) + ", " + pet_stage_name(w.stage_min) + " or older (shown, not given)";
+    }
+    var _s = "a";
+    if (w.elem != "") _s += " " + want_elem_label(w.elem);
+    _s += " " + want_slot_label(w.slot);
+    var _parts = [];
+    if (w.stat_name != "")  array_push(_parts, w.stat_name + " " + string(w.stat_min) + "+");
+    if (w.affix_stat != "") array_push(_parts, "an affix of " + want_stat_label(w.affix_stat));
+    if (w.sockets_min > 0)  array_push(_parts, string(w.sockets_min) + "+ socket" + ((w.sockets_min == 1) ? "" : "s"));
+    array_push(_parts, item_rarity_name(w.rarity_min) + " or better");
+    for (var _i = 0; _i < array_length(_parts); _i++) _s += ", " + _parts[_i];
+    return _s;
+}
+function want_item_matches(w, it) {
+    if (!is_struct(w) || !is_struct(it) || w.kind != "item") return false;
+    if (!variable_struct_exists(it, "slot") || it.slot != w.slot) return false;
+    if (variable_struct_exists(it, "item_category") && it.item_category != "equipment") return false;
+    var _r = variable_struct_exists(it, "rarity") ? it.rarity : 0;
+    if (_r < w.rarity_min) return false;
+    if (w.stat_name != "" && !(variable_struct_exists(it, "stat_name") && it.stat_name == w.stat_name && it.stat_value >= w.stat_min)) return false;
+    if (w.affix_stat != "") {
+        var _hit = false;
+        if (variable_struct_exists(it, "affixes") && is_array(it.affixes))
+            for (var _i = 0; _i < array_length(it.affixes); _i++) if (it.affixes[_i].stat_name == w.affix_stat) { _hit = true; break; }
+        if (!_hit) return false;
+    }
+    if (w.elem != "" && !(variable_struct_exists(it, "elem_affix") && is_struct(it.elem_affix) && it.elem_affix.element == w.elem)) return false;
+    if (w.sockets_min > 0 && !(variable_struct_exists(it, "socket_count") && it.socket_count >= w.sockets_min)) return false;
+    return true;
+}
+function want_valuable_matches(w, it) {
+    return is_struct(w) && w.kind == "valuable" && is_struct(it) && variable_struct_exists(it, "effect_type")
+        && it.effect_type == "valuable" && variable_struct_exists(it, "gold_value") && it.gold_value >= w.gold_value_min;
+}
+function want_pet_matches(w, p) {
+    if (!is_struct(w) || w.kind != "creature" || !is_struct(p) || p.is_egg) return false;
+    if (p.stage < w.stage_min) return false;
+    if (variable_struct_exists(p, "away_until") && p.away_until > 0) return false;
+    return pet_habitat(p) == w.habitat;
+}
+// Picker candidates for an item / valuable want (hub: stash + pack; valuables live in
+// the consumable pouch -> source 2, consumed by contract_resolve_pick, not the picker).
+function want_candidates(w) {
+    var _out = [];
+    if (!is_struct(w)) return _out;
+    if (w.kind == "item") {
+        for (var _s = 0; _s < 2; _s++) {
+            var _arr = (_s == 0) ? global.equipment_stash : global.carried_items;
+            for (var _i = 0; _i < array_length(_arr); _i++) {
+                var _it = _arr[_i];
+                if (!want_item_matches(w, _it)) continue;
+                array_push(_out, { source:_s, idx:_i, item:_it, label:_it.name, rarity:_it.rarity, value:item_sell_value(_it) });
+            }
+        }
+    } else if (w.kind == "valuable" && variable_global_exists("consumable_inventory")) {
+        var _ci = global.consumable_inventory;
+        for (var _j = 0; _j < array_length(_ci); _j++) {
+            var _v = _ci[_j];
+            if (!want_valuable_matches(w, _v)) continue;
+            array_push(_out, { source:2, idx:_j, item:_v, label:_v.name, rarity:(variable_struct_exists(_v, "rarity") ? _v.rarity : 0), value:item_sell_value(_v) });
+        }
+    }
+    array_sort(_out, function(a, b) { if (a.rarity != b.rarity) return a.rarity - b.rarity; return a.value - b.value; });
+    return _out;
+}
+// True when something you hold / a creature at home satisfies the want (Journal tick,
+// board DONE state). Reagents count the pouch.
+function want_satisfiable(w) {
+    if (!is_struct(w)) return false;
+    switch (w.kind) {
+        case "reagent":  return reagent_count(w.reagent) >= w.n;
+        case "creature": return want_first_pet(w) != undefined;
+    }
+    return array_length(want_candidates(w)) > 0;
+}
+function want_first_pet(w) {
+    if (!variable_global_exists("pet_roster")) return undefined;
+    for (var _i = 0; _i < array_length(global.pet_roster); _i++)
+        if (want_pet_matches(w, global.pet_roster[_i])) return global.pet_roster[_i];
+    return undefined;
+}
+// The wanted object, built to order (the CACHE contract event hands it over).
+function want_make_item(w) {
+    if (!is_struct(w) || w.kind != "item") return undefined;
+    var _it = contract_roll_item(w.rarity_min, w.slot);
+    if (_it == undefined) return undefined;
+    if (w.stat_name != "") { _it.stat_name = w.stat_name; _it.stat_value = max(_it.stat_value, w.stat_min); }
+    if (w.affix_stat != "") {
+        var _has = false;
+        if (!variable_struct_exists(_it, "affixes") || !is_array(_it.affixes)) _it.affixes = [];
+        for (var _i = 0; _i < array_length(_it.affixes); _i++) if (_it.affixes[_i].stat_name == w.affix_stat) _has = true;
+        if (!_has) {
+            var _def = undefined;
+            var _ap = global.affix_pool;
+            for (var _j = 0; _j < array_length(_ap); _j++) if (_ap[_j].stat_name == w.affix_stat) _def = _ap[_j];
+            if (_def != undefined) array_push(_it.affixes, { suffix:_def.suffix, prefix:_def.prefix, stat_name:_def.stat_name, stat_value:_def.r_val });
+            else if (variable_global_exists("school_affix_pool")) {
+                var _sp = global.school_affix_pool;
+                for (var _k = 0; _k < array_length(_sp); _k++) if (_sp[_k].stat_name == w.affix_stat)
+                    array_push(_it.affixes, { suffix:_sp[_k].suffix, prefix:_sp[_k].prefix, stat_name:_sp[_k].stat_name, stat_value:school_affix_value(max(1, w.rarity_min)) });
+            }
+        }
+    }
+    if (w.elem != "" && !(variable_struct_exists(_it, "elem_affix") && is_struct(_it.elem_affix)))
+        apply_elemental_affix_to_item(_it, make_elem_affix(w.elem, max(1, w.rarity_min)));
+    if (w.sockets_min > 0) _it.socket_count = max(_it.socket_count, w.sockets_min);
+    return _it;
+}
+
+// -----------------------------------------------------------------------------
+// BOUNTIES - a named foe from a revealed dungeon's elite pool + an affix the poster
+// promises. The next ELITE fight of that species in that dungeon rolls the affix
+// (obj_combat_controller Create reads bounty_forced_affix).
+// -----------------------------------------------------------------------------
+function bounty_dungeons() {
+    var _all = ["ashen_vault", "scorched_depths", "tundra_tomb", "drowned_reach", "hollow_canopy"];
+    var _out = [];
+    for (var _i = 0; _i < array_length(_all); _i++) if (_all[_i] == "ashen_vault" || dungeon_is_revealed(_all[_i])) array_push(_out, _all[_i]);
+    return _out;
+}
+function bounty_elite_pool(dkey) {
+    switch (dkey) {
+        case "scorched_depths": return global.enemies_scorched_depths_elite;
+        case "tundra_tomb":     return global.enemies_tundra_tomb_elite;
+        case "drowned_reach":   return global.enemies_drowned_reach_elite;
+        case "hollow_canopy":   return global.enemies_hollow_canopy_elite;
+    }
+    return global.enemies_ashen_vault_elite;
+}
+function bounty_generate(a) {
+    var _ds = bounty_dungeons();
+    var _d  = _ds[irandom(array_length(_ds) - 1)];
+    var _pool = bounty_elite_pool(_d);
+    var _e  = _pool[irandom(array_length(_pool) - 1)];
+    var _afx = "";
+    if (a >= 1 || irandom(99) < 50) {
+        var _cat = enemy_affix_catalog();
+        _afx = _cat[irandom(array_length(_cat) - 1)].id;
+    }
+    return { target:_e.name, affix:_afx, dungeon:_d };
+}
+function bounty_text(b) {
+    if (!is_struct(b)) return "";
+    var _s = b.target;
+    if (b.affix != "") { var _ad = enemy_affix_get(b.affix); _s = ((_ad != undefined) ? _ad.name : b.affix) + " " + _s; }
+    _s += " - " + dungeon_display_name(b.dungeon);
+    var _mt = mark_tier(b.target);
+    if (_mt > 0) _s += "  (" + mark_tier_label(_mt) + " on this one - +" + string(mark_dmg_bonus(b.target)) + "%)";
+    return _s;
+}
+// The affix an ACTIVE bounty guarantees for this species in the current dungeon ("" = none).
+function bounty_forced_affix(enemy_name) {
+    if (!variable_global_exists("quests") || !is_array(global.quests)) return "";
+    var _dg = variable_global_exists("selected_dungeon") ? global.selected_dungeon : "";
+    for (var _i = 0; _i < array_length(global.quests); _i++) {
+        var _s = global.quests[_i];
+        if (_s.status != "active") continue;
+        var _d = quest_def(_s.id);
+        if (!contract_has_bounty(_d)) continue;
+        if (_d.bounty.target == enemy_name && _d.bounty.dungeon == _dg && _d.bounty.affix != "") return _d.bounty.affix;
+    }
+    return "";
+}
+// True if any taken bounty names this species in this dungeon (kill tick reads it).
+function bounty_tick_kill(enemy_name) {
+    var _dg = variable_global_exists("selected_dungeon") ? global.selected_dungeon : "";
+    quest_tick("bounty_kill", enemy_name + "@" + _dg, 1);
+}
+
+// -----------------------------------------------------------------------------
+// POSTING BUILDERS - "hunt" (a named bounty poster) and "want" (an object request)
+// join the nine classic templates in board_generate_request's pool.
+// -----------------------------------------------------------------------------
+function contract_poster_rarity(a) { return (a <= 1) ? 1 : ((a <= 3) ? 2 : 3); }
+function board_build_hunt(a, scale, urgent) {
+    var _b = bounty_generate(a);
+    var _ps = ["dorn", "vex", "petra"]; var _npc = _ps[irandom(2)];
+    var _gold = round(120 * scale);
+    var _lines = [
+        "\"It has a name now. Things with names get hunted.\"",
+        "\"Bring me word it is dead. I will know if you lie.\"",
+        "\"The town has had enough of that one. Go and end it.\""
+    ];
+    return {
+        id:"", kind:"board", template:"hunt", tab:"bounty", urgent:urgent, special:false, expires:(urgent ? 1 : 3),
+        npc:_npc, name:"WANTED: " + _b.target, obj_type:"bounty_kill", obj_target:1, obj_param:(_b.target + "@" + _b.dungeon),
+        reward:{ gold:_gold, feed:"", feed_n:0, rune_id:"", rune_tier:0, dust:(4 + 2 * a), item:false, chit:0, chit_tier:-1 },
+        flavor:_lines[irandom(2)], objective:"Slay " + bounty_text(_b),
+        bounty:_b, want:undefined, contract:(irandom(99) < 35 ? { kind:"ambush" } : undefined)
+    };
+}
+function board_build_want(a, scale, urgent) {
+    var _ps = ["dorn", "sable", "maren", "petra", "bairc", "vael", "vex"]; var _npc = _ps[irandom(6)];
+    var _w  = want_generate(a, _npc);
+    var _gold = round(100 * scale);
+    var _nm = "", _fl = "";
+    switch (_w.kind) {
+        case "reagent":  _nm = "Reagents Wanted";  _fl = (_npc == "sable") ? "\"Bring them dry, darling. Wet reagents sulk.\"" : "\"I need the raw stuff. The dungeon has it; you have legs.\""; break;
+        case "valuable": _nm = "A Buyer Waits";    _fl = "\"Someone up the coast pays for pretty things. Find me one worth the trip.\""; break;
+        case "creature": _nm = "Show Me a Creature"; _fl = (_npc == "bairc") ? "\"...I want to see one raised right. Bring it by. Just to look.\"" : "\"Walk it past me once. I have a wager on what they grow into.\""; break;
+        default: {
+            _nm = "Gear Wanted";
+            switch (_npc) {
+                case "dorn":  _fl = "\"A specific piece. Don't bring me close-enough.\""; break;
+                case "maren": _fl = "\"The settings only take if the metal is right. Find me the right metal.\""; break;
+                case "vael":  _fl = "\"Something with the correct LINE to it. You'll know it when it's ugly enough.\""; break;
+                case "vex":   _fl = "\"Bring me a piece that fits the drill. I'm not asking twice.\""; break;
+                default:      _fl = "\"There's a buyer. There's a price. Bring the thing.\""; break;
+            }
+        }
+    }
+    return {
+        id:"", kind:"board", template:"want", tab:"request", urgent:urgent, special:false, expires:(urgent ? 1 : 3),
+        npc:_npc, name:_nm, obj_type:"want", obj_target:1, obj_param:"",
+        reward:{ gold:_gold, feed:"", feed_n:0, rune_id:"", rune_tier:0, dust:(3 + a), item:false, chit:0, chit_tier:-1 },
+        flavor:_fl, objective:"Bring " + want_text(_w),
+        bounty:undefined, want:_w, contract:((_w.kind == "item" && irandom(99) < 40) ? { kind:"cache" } : undefined)
+    };
+}
+
+// -----------------------------------------------------------------------------
+// TURN-IN - the board's Enter on a board / story row routes here instead of
+// quest_turn_in. Returns "" when a modal took over (picker / pick-of-three), else
+// the note to show.
+// -----------------------------------------------------------------------------
+function contract_ready(id) {
+    var _s = quest_state(id); var _d = quest_def(id);
+    if (_s == undefined || _d == undefined || _s.status != "active") return false;
+    if (contract_has_want(_d)) return want_satisfiable(_d.want);
+    return _s.progress >= _d.obj_target;
+}
+function contract_turn_in(gc, id) {
+    var _s = quest_state(id); var _d = quest_def(id);
+    if (_s == undefined || _d == undefined) return "Unknown posting.";
+    if (_s.status != "active") return "Not underway.";
+    if (!contract_has_want(_d)) {
+        if (_s.progress < _d.obj_target) return "Not finished yet - " + _d.objective + ".";
+        return contract_finish(gc, id, 0);
+    }
+    var _w = _d.want;
+    switch (_w.kind) {
+        case "reagent": {
+            if (reagent_count(_w.reagent) < _w.n) return "You hold " + string(reagent_count(_w.reagent)) + " - the ask is " + want_text(_w) + ".";
+            reagent_add(_w.reagent, -_w.n);
+            return contract_finish(gc, id, 0);
+        }
+        case "creature": {
+            var _p = want_first_pet(_w);
+            if (_p == undefined) return "No creature at home fits: " + want_text(_w) + ".";
+            _p.bond = pet_bond(_p) + 2;
+            if (!variable_struct_exists(_p, "tags") || !is_array(_p.tags)) _p.tags = [];
+            array_push(_p.tags, npc_display_name(_d.npc) + "'s " + ((_d.npc == "bairc") ? "Favourite" : "Wager"));
+            ledger_add(_d.npc, "quest", npc_display_name(_d.npc) + " looked " + _p.name + " over a long while. (bond +2, keepsake tag)");
+            return contract_finish(gc, id, 0);
+        }
+    }
+    var _cands = want_candidates(_w);
+    if (array_length(_cands) == 0) return "Nothing you hold fits: " + want_text(_w) + ".";
+    item_picker_open("board_want", { qid:id }, _cands);
+    return "";
+}
+// The picker chose the handed object: consume it, bank the over-delivery tier, then
+// the pick-of-three. Called from item_picker_resolve.
+function contract_resolve_pick(gc) {
+    var _p = global.item_picker;
+    var _c = (_p.cursor >= 0 && _p.cursor < array_length(_p.candidates)) ? _p.candidates[_p.cursor] : undefined;
+    if (_c == undefined) return;
+    var _qid = _p.context.qid;
+    var _d = quest_def(_qid);
+    var _bonus = 0;
+    if (_c.source == 2) {
+        if (variable_global_exists("consumable_inventory")) {
+            for (var _i = 0; _i < array_length(global.consumable_inventory); _i++)
+                if (global.consumable_inventory[_i] == _c.item) { array_delete(global.consumable_inventory, _i, 1); break; }
+        }
+        if (contract_has_want(_d) && _c.item.gold_value >= _d.want.gold_value_min * 2) _bonus = 1;
+    } else {
+        item_picker_remove_selected();
+        if (contract_has_want(_d) && _c.rarity > _d.want.rarity_min) _bonus = 1;
+    }
+    contract_finish(gc, _qid, _bonus);
+}
+// Every road ends here: story steps pay fixed and advance; bounties / requests open
+// the pick-of-three (the state row stays ACTIVE until a card is chosen - the handed
+// object is already gone, so there is no cancel).
+function contract_finish(gc, id, tier_bonus) {
+    var _s = quest_state(id); var _d = quest_def(id);
+    if (_s == undefined || _d == undefined) return "Unknown posting.";
+    if (contract_is_story(_d)) return story_turn_in(id);
+    var _tb = tier_bonus + (variable_struct_exists(_s, "tier_bonus") ? _s.tier_bonus : 0);
+    var _pm = variable_struct_exists(_s, "pay_mult") ? _s.pay_mult : 1;
+    reward_pick_open(gc, id, clamp(_tb, 0, 2), _pm);
+    return "";
+}
+
+// -----------------------------------------------------------------------------
+// PICK-OF-THREE (§3): COIN / A BOON FOR THE NEXT RUN / AN ITEM. gc owns the modal
+// (reward_pick_open + reward_pick_data), scr_ui draws it, reward_pick_step runs it.
+// -----------------------------------------------------------------------------
+function reward_pick_open(gc, id, tier_bonus, pay_mult) {
+    var _d = quest_def(id);
+    var _a = highest_awakening_unlocked();
+    var _r = _d.reward;
+    var _urgent = variable_struct_exists(_d, "urgent") && _d.urgent;
+    var _coin = round(_r.gold * 1.5) * (_urgent ? 2 : 1) * pay_mult;
+    // The boon card: one of four, rolled at the offer.
+    var _boons = [
+        { kind:"xp",        value:0.25, label:"+25% XP on the next run" },
+        { kind:"gold",      value:0.20, label:"+20% gold find on the next run" },
+        { kind:"boon",      value:0,    label:"Start the next run with a random Boon" },
+        { kind:"boss_tier", value:1,    label:"+1 loot tier on the next boss you fell" }
+    ];
+    var _bn = _boons[irandom(3)];
+    // The item card: two rolled pieces of two slots, the ask's slot first.
+    var _rar = clamp(contract_poster_rarity(_a) + tier_bonus, 1, 3);
+    if (contract_has_want(_d) && _d.want.kind == "item") _rar = clamp(_d.want.rarity_min + tier_bonus, 1, 3);
+    var _slots = want_slots();
+    var _s1 = (contract_has_want(_d) && _d.want.kind == "item") ? _d.want.slot : _slots[irandom(array_length(_slots) - 1)];
+    var _s2 = _slots[irandom(array_length(_slots) - 1)];
+    var _tries = 0;
+    while (_s2 == _s1 && _tries++ < 8) _s2 = _slots[irandom(array_length(_slots) - 1)];
+    var _i1 = contract_roll_item(_rar, _s1), _i2 = contract_roll_item(_rar, _s2);
+    gc.reward_pick_data = {
+        qid:id, coin:_coin, dust:(variable_struct_exists(_r, "dust") ? _r.dust : 0),
+        chit:(variable_struct_exists(_r, "chit") ? _r.chit : 0), chit_tier:(variable_struct_exists(_r, "chit_tier") ? _r.chit_tier : 0),
+        boon:_bn, items:[_i1, _i2], item_sel:0, tier_bonus:tier_bonus, pay_mult:pay_mult, urgent:_urgent
+    };
+    gc.reward_pick_open   = true;
+    gc.reward_pick_cursor = 0;
+    gc.reward_pick_armed  = false;
+    gc.reward_pick_t      = 0;
+    audio_play_sound(snd_sting_quest, 1, false);
+}
+// A rolled item of a rarity, preferring a slot (14 tries at the weights, then any).
+function contract_roll_item(rarity, slot) {
+    var _w = [0, 0, 0, 0, 0];
+    _w[clamp(rarity, 0, 3)] = 100;
+    var _last = undefined;
+    for (var _t = 0; _t < 14; _t++) {
+        var _it = drop_equipment(_w, false);
+        if (_it == undefined) continue;
+        _last = _it;
+        if (variable_struct_exists(_it, "slot") && _it.slot == slot && _it.rarity <= 3) return _it;
+    }
+    return _last;
+}
+function reward_pick_step(gc) {
+    gc.reward_pick_t += 1;
+    var _d = gc.reward_pick_data;
+    if (_d == undefined) { gc.reward_pick_open = false; return; }
+    if (!gc.reward_pick_armed) {
+        if (gc.reward_pick_t > 12 && !input_any_held() && !mouse_check_button(mb_left)) gc.reward_pick_armed = true;
+        return;
+    }
+    if (nav_left())  { gc.reward_pick_cursor = wrap_index(gc.reward_pick_cursor - 1, 3); audio_play_sound(snd_ui_move, 1, false); }
+    if (nav_right()) { gc.reward_pick_cursor = wrap_index(gc.reward_pick_cursor + 1, 3); audio_play_sound(snd_ui_move, 1, false); }
+    if (gc.reward_pick_cursor == 2 && (nav_up() || nav_down())) { _d.item_sel = 1 - _d.item_sel; audio_play_sound(snd_ui_move, 1, false); }
+    var _tap = input_inject_take("reward:card");
+    if (input_inject_take("reward:item_a")) { gc.reward_pick_cursor = 2; _d.item_sel = 0; }
+    if (input_inject_take("reward:item_b")) { gc.reward_pick_cursor = 2; _d.item_sel = 1; }
+    if (input_confirm() || input_confirm_alt() || _tap) reward_pick_commit(gc);
+}
+function reward_pick_commit(gc) {
+    var _d = gc.reward_pick_data;
+    var _qid = _d.qid;
+    var _def = quest_def(_qid); var _s = quest_state(_qid);
+    if (_def == undefined || _s == undefined) { gc.reward_pick_open = false; gc.reward_pick_data = undefined; return; }
+    var _parts = [];
+    var _card = gc.reward_pick_cursor;
+    if (_card == 0) {
+        global.gold += _d.coin;
+        array_push(_parts, string(_d.coin) + "g");
+        if (_d.dust > 0) { if (!variable_global_exists("rune_dust")) global.rune_dust = 0; global.rune_dust += _d.dust; array_push(_parts, string(_d.dust) + " rune dust"); }
+        if (_d.chit > 0) { reforge_ingot_grant(clamp(_d.chit_tier, 0, 4), _d.chit); array_push(_parts, string(_d.chit) + " " + item_rarity_name(clamp(_d.chit_tier, 0, 4)) + " Reforge Ingot"); }
+        audio_play_sound(snd_gold, 1, false);
+    } else if (_card == 1) {
+        contracts_ensure();
+        array_push(global.next_run_boons, { kind:_d.boon.kind, value:_d.boon.value, label:_d.boon.label });
+        array_push(_parts, _d.boon.label);
+        audio_play_sound(snd_ui_confirm, 1, false);
+    } else {
+        var _it = _d.items[clamp(_d.item_sel, 0, 1)];
+        if (_it == undefined) _it = _d.items[0];
+        if (_it != undefined) {
+            discover_item(item_base_name(_it), _it.rarity);
+            array_push(global.equipment_stash, _it);
+            array_push(_parts, _it.name + " (stashed)");
+        }
+        audio_play_sound(snd_ui_confirm, 1, false);
+    }
+    _s.status = "done";
+    _s.reward_pick = (_card == 0) ? "coin" : ((_card == 1) ? "boon" : "item");
+    ach_counters_init();
+    global.ach_counters.board_done += 1;
+    var _rtxt = "their thanks";
+    if (array_length(_parts) > 0) { _rtxt = _parts[0]; for (var _pi = 1; _pi < array_length(_parts); _pi++) _rtxt += ", " + _parts[_pi]; }
+    ledger_add(_def.npc, "quest", "Finished \"" + _def.name + "\" - chose " + _rtxt + ".");
+    journal_badge_npc(_def.npc);
+    journal_badge_quest(_qid);
+    if (quest_is_board(_def)) board_retire(_qid);
+    gc.tavern_board_note = "\"" + _def.name + "\" fulfilled - " + _rtxt + ".";
+    gc.reward_pick_open = false;
+    gc.reward_pick_data = undefined;
+    audio_play_sound(snd_sting_quest, 1, false);
+    if (room == rm_hub || room == rm_character_select) save_game();
+}
+// "Armed for the next run: +25% XP, ..." ("" when nothing is armed).
+function next_run_boons_text() {
+    contracts_ensure();
+    var _s = "";
+    for (var _i = 0; _i < array_length(global.next_run_boons); _i++) _s += ((_s != "") ? ", " : "") + global.next_run_boons[_i].label;
+    return _s;
+}
+// Dungeon confirm: every armed card becomes this run's modifier (grant_xp / add_gold /
+// handle_enemy_drops read run_boon_mods; a Boon card grants outright). Also resets the
+// per-run contract trackers. Called once, right before the hub walks into the floor.
+function contracts_run_start_arm() {
+    contracts_ensure();
+    global.run_boon_mods = { xp_mult:1, gold_mult:1, boss_tier:0, labels:[] };
+    for (var _i = 0; _i < array_length(global.next_run_boons); _i++) {
+        var _b = global.next_run_boons[_i];
+        switch (_b.kind) {
+            case "xp":        global.run_boon_mods.xp_mult   += _b.value; break;
+            case "gold":      global.run_boon_mods.gold_mult += _b.value; break;
+            case "boss_tier": global.run_boon_mods.boss_tier += _b.value; break;
+            case "boon": {
+                var _offers = boon_offer_roll();
+                if (array_length(_offers) > 0) {
+                    if (!variable_global_exists("run_boons")) global.run_boons = [];
+                    if (!boon_active(_offers[0])) array_push(global.run_boons, _offers[0]);
+                    var _bd = boon_get(_offers[0]);
+                    _b.label = "Boon: " + ((_bd != undefined) ? _bd.name : _offers[0]);
+                }
+            } break;
+        }
+        array_push(global.run_boon_mods.labels, _b.label);
+    }
+    global.next_run_boons = [];
+    global.contract_fired_this_run = [];
+    global.contract_escort = undefined;
+    global.contract_timed  = undefined;
+    global.ambush_force_name = "";
+}
+// end_run: settle the run-scoped contract states (Escort survival, Timed clock).
+function contracts_run_end(result) {
+    contracts_ensure();
+    if (global.contract_escort != undefined) {
+        var _es = global.contract_escort;
+        var _st = quest_state(_es.qid);
+        if (_st != undefined && _st.status == "active") {
+            if (_es.alive && result >= 0) { _st.pay_mult = 2; ledger_add(_es.npc, "quest", _es.name + " walked out beside you. " + npc_display_name(_es.npc) + " will pay double."); }
+            else { _st.pay_mult = 1; ledger_add(_es.npc, "quest", _es.name + " did not make it out. \"" + _es.loss_line + "\""); }
+        }
+        global.contract_escort = undefined;
+    }
+    if (global.contract_timed != undefined) {
+        var _tm = global.contract_timed;
+        var _ts = quest_state(_tm.qid);
+        if (_ts != undefined && _ts.status == "active" && result >= 0 && _tm.left > 0) _ts.tier_bonus = max(1, variable_struct_exists(_ts, "tier_bonus") ? _ts.tier_bonus : 0);
+        global.contract_timed = undefined;
+    }
+    global.run_boon_mods = { xp_mult:1, gold_mult:1, boss_tier:0, labels:[] };
+    global.ambush_force_name = "";
+}
+
+// -----------------------------------------------------------------------------
+// CONTRACT EVENTS (§4) - five rooms that only exist while a matching contract is
+// taken. The floor seals ONE event room (obj_floor_controller Create), and entering
+// it rolls contract_event_roll() instead of event_roll().
+// -----------------------------------------------------------------------------
+// The first taken contract whose event has not fired this run ({qid, def} / undefined).
+function contract_pending() {
+    contracts_ensure();
+    if (!variable_global_exists("quests") || !is_array(global.quests)) return undefined;
+    for (var _i = 0; _i < array_length(global.quests); _i++) {
+        var _s = global.quests[_i];
+        if (_s.status != "active") continue;
+        var _d = quest_def(_s.id);
+        if (!contract_has_contract(_d)) continue;
+        var _fired = false;
+        for (var _j = 0; _j < array_length(global.contract_fired_this_run); _j++) if (global.contract_fired_this_run[_j] == _s.id) _fired = true;
+        if (_fired) continue;
+        if (contract_has_want(_d) && want_satisfiable(_d.want)) continue;   // already have the object - no cache needed
+        if (_d.contract.kind == "ambush" && contract_has_bounty(_d) && _d.bounty.dungeon != (variable_global_exists("selected_dungeon") ? global.selected_dungeon : "")) continue;
+        if (!contract_has_bounty(_d) && _s.progress >= _d.obj_target && !contract_has_want(_d)) continue;
+        return { qid:_s.id, def:_d };
+    }
+    return undefined;
+}
+function contract_event_roll() {
+    var _p = contract_pending();
+    if (_p == undefined) return event_roll();
+    array_push(global.contract_fired_this_run, _p.qid);
+    var _d = _p.def; var _k = _d.contract.kind;
+    var _npc = npc_display_name(_d.npc);
+    var _ev = undefined;
+    switch (_k) {
+        case "escort": {
+            var _h = story_hireling(_d.npc);
+            _ev = { id:"contract_escort", title:_h.name + " Waits", tide_immune:true,
+                body:_h.name + " is crouched by the wall with a lantern turned low. \"" + _npc + " sent me. I go where you go - to the exit, or not at all.\"",
+                color:make_color_rgb(120, 200, 150),
+                choices:[
+                    { label:"\"Stay close.\"", hint:"A second companion for the rest of the run - " + _npc + " pays DOUBLE if they walk out with you",
+                      cost_gold:0, req_stat:"", req_amount:0, resolve:"weighted",
+                      outcomes:[ { weight:100, text:_h.name + " shoulders the lantern and falls in a step behind you.", effects:{ escort:_d.npc, escort_qid:_p.qid } } ] },
+                    { label:"\"Wait here for the way back.\"", hint:"No risk - the base pay stands",
+                      cost_gold:0, req_stat:"", req_amount:0, resolve:"weighted",
+                      outcomes:[ { weight:100, text:"A nod. The lantern goes out.", effects:{} } ] }
+                ] };
+        } break;
+        case "timed": {
+            var _n = 18 + 4 * clamp(highest_awakening_unlocked(), 0, 5);
+            _ev = { id:"contract_timed", title:"The Clock Starts", tide_immune:true,
+                body:"A brass water-clock, still running, chained to the floor. " + _npc + "'s seal is on it. The note says: \"From the moment you read this.\"",
+                color:make_color_rgb(230, 190, 90),
+                choices:[
+                    { label:"Break the seal", hint:"Finish the dungeon within " + string(_n) + " combat rounds: the reward rises a tier",
+                      cost_gold:0, req_stat:"", req_amount:0, resolve:"weighted",
+                      outcomes:[ { weight:100, text:"The water begins to fall. " + string(_n) + " rounds.", effects:{ timed_start:_n, timed_qid:_p.qid } } ] },
+                    { label:"Leave it chained", hint:"The base pay stands",
+                      cost_gold:0, req_stat:"", req_amount:0, resolve:"weighted",
+                      outcomes:[ { weight:100, text:"You let the water keep its own time.", effects:{} } ] }
+                ] };
+        } break;
+        case "choice": {
+            var _c = story_choice_room(_d.npc, _p.qid);
+            _ev = _c;
+        } break;
+        case "cache": {
+            var _obj = contract_has_want(_d) ? want_text(_d.want) : "the thing " + _npc + " wanted";
+            _ev = { id:"contract_cache", title:"A Sealed Cache", tide_immune:true,
+                body:"A strongbox under a fallen beam, its lock rusted through. Inside, wrapped in oilcloth: " + _obj + ". Exactly what " + _npc + " asked for.",
+                color:make_color_rgb(200, 170, 110),
+                choices:[
+                    { label:"Take it", hint:"The request completes the moment you are back at the board",
+                      cost_gold:0, req_stat:"", req_amount:0, resolve:"weighted",
+                      outcomes:[ { weight:100, text:"You lift it free. It is heavier than it should be.", effects:{ cache_qid:_p.qid } } ] },
+                    { label:"Leave it", hint:"Someone else's luck",
+                      cost_gold:0, req_stat:"", req_amount:0, resolve:"weighted",
+                      outcomes:[ { weight:100, text:"You close the lid.", effects:{} } ] }
+                ] };
+        } break;
+        case "ambush": {
+            var _t = contract_has_bounty(_d) ? _d.bounty.target : "the one you hunt";
+            _ev = { id:"contract_ambush", title:"It Found You First", tide_immune:true,
+                body:"The floor is scored with fresh claw-marks that circle back on themselves. " + _t + " has been hunting the hunter.",
+                color:make_color_rgb(220, 90, 70),
+                choices:[
+                    { label:"Stand your ground", hint:"The bounty's foe, with the poster's affix - no flee",
+                      cost_gold:0, req_stat:"", req_amount:0, resolve:"weighted",
+                      outcomes:[ { weight:100, text:"Something big stops pretending to be a shadow.", effects:{ ambush:"bounty", ambush_name:_t } } ] }
+                ] };
+        } break;
+    }
+    if (_ev == undefined) return event_roll();
+    return _ev;
+}
+// The seven hirelings (§4, no art: NPC portraits stand in).
+function story_hireling(npc) {
+    switch (npc) {
+        case "dorn":  return { name:"Hesk",   loss_line:"He was my brother's boy." };
+        case "sable": return { name:"Wren",   loss_line:"She mixed my tinctures. Nobody else could read my hand." };
+        case "maren": return { name:"Tally",  loss_line:"Six months learning the settings. Six." };
+        case "vex":   return { name:"Brann",  loss_line:"Best sparring partner I ever had. Slow feet, though." };
+        case "petra": return { name:"Cobb",   loss_line:"He carried my ledgers for twelve years." };
+        case "vael":  return { name:"Iris",   loss_line:"She had a better eye than me and never once said so." };
+        case "bairc": return { name:"Moss",   loss_line:"...she was my cousin." };
+    }
+    return { name:"a hireling", loss_line:"They were somebody's." };
+}
+// Hireling in combat: rides the Seahorse Knight ally path (knight_dmg + combat_knight_act).
+function contract_escort_join_combat(enemies) {
+    contracts_ensure();
+    var _e = global.contract_escort;
+    if (_e == undefined || !_e.alive) return false;
+    if (variable_global_exists("duel_active") && global.duel_active) return false;
+    if (variable_global_exists("next_enemy_type") && global.next_enemy_type == "duel") return false;
+    return true;
+}
+// Mirrored blows: the hireling takes 30% of every hit you take; at 0 they flee the run.
+function contract_escort_mirror(dmg, log = undefined) {
+    if (!variable_global_exists("contract_escort") || global.contract_escort == undefined) return;
+    var _e = global.contract_escort;
+    if (!_e.alive || dmg <= 0) return;
+    _e.hp -= max(1, round(dmg * 0.3));
+    if (_e.hp <= 0) {
+        _e.alive = false;
+        if (is_array(log)) array_push(log, "[Ally] " + _e.name + " goes down under the same blow - and crawls for the stairs. They are out of this run.");
+    }
+}
+
+// -----------------------------------------------------------------------------
+// STORY CHAINS (§5) - one per NPC, three steps, unlocked at Friend, advancing only by
+// turn-in. Steps are quest defs with kind "story"; state rows live in global.quests
+// like the board's (pushed when the step opens). The finale pays a STORIED item.
+// -----------------------------------------------------------------------------
+function story_catalog() {
+    return {
+        dorn: [
+            { name:"The Cold Grave",    obj_type:"want", want:{ kind:"item", slot:"weapon", rarity_min:1, stat_name:"", stat_min:0, affix_stat:"", elem:"frost", sockets_min:0 },
+              objective:"Bring a Frostbound blade", contract:{ kind:"cache" },
+              flavor:"\"My brother's grave is under the Vault. It needs cooling, and I'm not built to go down. Bring me a blade with frost on it.\"",
+              line:"He turns the blade over twice and doesn't say anything for a long time. \"That'll do it.\"" },
+            { name:"Warden's Reckoning", obj_type:"bounty_kill", bounty:{ target:"Stone Golem", affix:"warded", dungeon:"ashen_vault" },
+              objective:"Slay a Warded Stone Golem in the Ashen Vault", contract:{ kind:"ambush" },
+              flavor:"\"There's a golem down there that wears the old warden's plate. My brother's plate. Break it.\"",
+              line:"\"Bring the pieces by the forge. I'll melt what's left of the mark off them.\"" },
+            { name:"Gatebreaker",       obj_type:"clear_floors", obj_target:3,
+              objective:"Clear 3 dungeon floors carrying nothing from Dorn's forge (he trusts you now)",
+              flavor:"\"One more thing. Go below three floors and come back. That's all. Just come back.\"",
+              line:"He sets a maul on the counter, its head wrapped in the warden's cloth. \"I made it for him. He'd want it swung.\"" }
+        ],
+        sable: [
+            { name:"Marrow and Salt",   obj_type:"want", want:{ kind:"reagent", reagent:"vault_ash", n:5 },
+              objective:"Bring 5 Vault Ash",
+              flavor:"\"Darling, I'm out of the grey stuff and the grey stuff is what keeps me interesting. Five measures.\"",
+              line:"\"Oh, LOVELY. Still warm. Don't tell anyone I said that.\"" },
+            { name:"The Letters",       obj_type:"choice", contract:{ kind:"choice" },
+              objective:"Find the sealed room below and decide what to do with what's in it",
+              flavor:"\"There's a room down there with my old letters in it. From before. I need them gone - burned, or read, I can't decide. You decide.\"",
+              line:"She doesn't ask which you chose. She can tell." },
+            { name:"Alembic",           obj_type:"clean_fight", obj_target:3,
+              objective:"Win 3 fights without using consumables",
+              flavor:"\"Prove to me you can live without my bottles. Three fights, no drinking. Then I'll give you the one that matters.\"",
+              line:"She presses a ring into your palm - a glass heart with something red still moving in it. \"It was going to be for someone else. Wear it better.\"" }
+        ],
+        maren: [
+            { name:"The Right Metal",   obj_type:"want", want:{ kind:"item", slot:"gloves", rarity_min:2, stat_name:"", stat_min:0, affix_stat:"DEX", elem:"", sockets_min:1 },
+              objective:"Bring a socketed pair of gloves with a DEX affix, Rare or better", contract:{ kind:"cache" },
+              flavor:"\"I need a pair of gloves that already knows how to hold a rune. Socketed, quick. Rare at least.\"",
+              line:"She fits them on, flexes, takes them off. \"Yes. These remember hands.\"" },
+            { name:"Proof of Setting",  obj_type:"socket_rune", obj_target:3,
+              objective:"Socket 3 runes with Maren",
+              flavor:"\"Set three with me. I want to watch your hands.\"",
+              line:"\"You don't rush. Good. Most people rush.\"" },
+            { name:"Runebinder",        obj_type:"boss_kill", obj_target:2,
+              objective:"Slay 2 floor-lords", contract:{ kind:"timed" },
+              flavor:"\"Two floor-lords. Wear the gloves. If the settings hold under that, they'll hold under anything.\"",
+              line:"She hands them back re-worked, every seam threaded with something that hums. \"They're bound now. To you. Don't lose a finger.\"" }
+        ],
+        vex: [
+            { name:"Untouched",         obj_type:"flawless_fight", obj_target:2,
+              objective:"Win 2 fights taking no damage",
+              flavor:"\"Two clean wins. No bleeding. If you can't, don't sign.\"",
+              line:"\"Hm.\" That is the whole review." },
+            { name:"The Drill",         obj_type:"bounty_kill", bounty:{ target:"Stone Golem", affix:"hasted", dungeon:"ashen_vault" },
+              objective:"Slay a Hasted Stone Golem in the Ashen Vault", contract:{ kind:"timed" },
+              flavor:"\"There's a golem that moves too fast for what it is. Kill it fast, or it'll teach you what slow costs.\"",
+              line:"\"Faster than I expected. Slower than I'd like.\"" },
+            { name:"Trainer's Lash",    obj_type:"want", want:{ kind:"item", slot:"ranged_weapon", rarity_min:2, stat_name:"DEX", stat_min:3, affix_stat:"", elem:"", sockets_min:0 },
+              objective:"Bring a ranged weapon with DEX 3+, Rare or better", contract:{ kind:"cache" },
+              flavor:"\"Bring me something that reaches. Then I'll show you how to finish what it starts.\"",
+              line:"Vex takes the weapon, strips it, and hands back a whip of braided sinew with a hook at the tip. \"Aim for the ones already falling.\"" }
+        ],
+        petra: [
+            { name:"A Heavy Purse",     obj_type:"run_haul", obj_target:1, obj_param:"250",
+              objective:"End a run carrying 250+ gold",
+              flavor:"\"Come back rich for once. The town likes to see it.\"",
+              line:"\"See? Doesn't that feel better than dying poor.\"" },
+            { name:"The Debtor",        obj_type:"bounty_kill", bounty:{ target:"Stone Golem", affix:"vampiric", dungeon:"ashen_vault" },
+              objective:"Slay a Vampiric Stone Golem in the Ashen Vault", contract:{ kind:"ambush" },
+              flavor:"\"Something down there took a shipment of mine and it's been living off the interest. Collect.\"",
+              line:"\"Paid in full.\" She writes something in a book you have never seen her open." },
+            { name:"Ledger of Debts",   obj_type:"want", want:{ kind:"valuable", gold_value_min:300 },
+              objective:"Bring a Valuable worth 300g or more",
+              flavor:"\"One last pretty thing for the book. Then the book is yours.\"",
+              line:"She hands you the ledger itself - bound in something that was once a purse. \"Everyone who ever owed me. Some of them are still down there.\"" }
+        ],
+        vael: [
+            { name:"The Line",          obj_type:"want", want:{ kind:"item", slot:"helm", rarity_min:2, stat_name:"", stat_min:0, affix_stat:"CHA", elem:"", sockets_min:0 },
+              objective:"Bring a helm with a CHA affix, Rare or better", contract:{ kind:"cache" },
+              flavor:"\"I need a helm with the correct LINE to it. Charm on it, obviously. Rare or it isn't worth my eyes.\"",
+              line:"\"Hideous. Perfect.\"" },
+            { name:"Two Faces",         obj_type:"choice", contract:{ kind:"choice" },
+              objective:"Find the mirror room below and choose which face to keep",
+              flavor:"\"There's a mirror down there that shows you two ways. Pick one. I'll know which.\"",
+              line:"Vael looks at you a long moment. \"Yes. That one suits you.\"" },
+            { name:"The Aesthete",      obj_type:"clear_floors", obj_target:4,
+              objective:"Clear 4 dungeon floors",
+              flavor:"\"Wear it below. Four floors. Let the dark see it.\"",
+              line:"The mask, re-cut. \"It took the shape of how you walk. Don't let anyone else wear it - it would look wrong on them now.\"" }
+        ],
+        bairc: [
+            { name:"A Good Start",      obj_type:"want", want:{ kind:"creature", habitat:"ashen_vault", stage_min:PET_STAGE_ADOLESCENT },
+              objective:"Show Bairc a creature of the Ashen Vault, Adolescent or older",
+              flavor:"\"...raise one. Just to Adolescent. Bring it by. You'll see why I do this.\"",
+              line:"He crouches and lets it smell his hand for a long time. \"Good. Good.\"" },
+            { name:"Moss",              obj_type:"clear_floors", obj_target:2, contract:{ kind:"escort" },
+              objective:"Clear 2 floors with Bairc's cousin Moss at your side",
+              flavor:"\"My cousin wants to see the deep. I said no. She's going anyway. Take her.\"",
+              line:"He doesn't ask about Moss. He looks at the door until you tell him." },
+            { name:"Keeper's Whistle",  obj_type:"pet_stage", obj_target:PET_STAGE_YOUNGADULT,
+              objective:"Raise any creature to Young Adult",
+              flavor:"\"One more. Young Adult. Then I've got something that was my grandfather's.\"",
+              line:"A bone whistle on a leather cord. \"They hear it. I don't know how. Blow it when one of them's hurt.\"" }
+        ]
+    };
+}
+function story_step_def(id) {
+    if (string_pos("story_", id) != 1) return undefined;
+    var _rest = string_copy(id, 7, string_length(id) - 6);
+    var _us = string_pos("_", _rest);
+    if (_us <= 0) return undefined;
+    var _npc = string_copy(_rest, 1, _us - 1);
+    var _n   = real(string_copy(_rest, _us + 1, string_length(_rest) - _us));
+    var _cat = story_catalog();
+    if (!variable_struct_exists(_cat, _npc)) return undefined;
+    var _steps = variable_struct_get(_cat, _npc);
+    if (_n < 1 || _n > array_length(_steps)) return undefined;
+    var _s = _steps[_n - 1];
+    var _d = {
+        id:id, kind:"story", npc:_npc, step:_n, steps:array_length(_steps), finale:(_n == array_length(_steps)),
+        name:_s.name, obj_type:_s.obj_type,
+        obj_target:(variable_struct_exists(_s, "obj_target") ? _s.obj_target : 1),
+        obj_param:(variable_struct_exists(_s, "obj_param") ? _s.obj_param : ""),
+        objective:_s.objective, flavor:_s.flavor, line:_s.line,
+        reward:{ gold:(60 + 40 * _n), feed:"", feed_n:0, rune_id:"", rune_tier:0 },
+        want:(variable_struct_exists(_s, "want") ? _s.want : undefined),
+        bounty:(variable_struct_exists(_s, "bounty") ? _s.bounty : undefined),
+        contract:(variable_struct_exists(_s, "contract") ? _s.contract : undefined)
+    };
+    if (_d.bounty != undefined) _d.obj_param = _d.bounty.target + "@" + _d.bounty.dungeon;
+    if (_d.obj_type == "choice") { _d.obj_target = 1; }
+    return _d;
+}
+// Open the next step for every chain whose NPC is a Friend (tier 2+). Idempotent; hub.
+function story_ensure() {
+    contracts_ensure();
+    var _n = story_npcs();
+    for (var _i = 0; _i < array_length(_n); _i++) {
+        var _npc = _n[_i];
+        var _st = variable_struct_get(global.story, _npc);
+        if (_st.done) continue;
+        if (affinity_tier(_npc) < 2) continue;
+        if (_st.step == 0) _st.step = 1;
+        var _id = "story_" + _npc + "_" + string(_st.step);
+        if (story_step_def(_id) == undefined) { _st.done = true; continue; }
+        if (quest_state(_id) == undefined) {
+            array_push(global.quests, { id:_id, status:"available", progress:0, step:_st.step, choice:"", reward_pick:"", tier_bonus:0, pay_mult:1 });
+            var _msg = npc_display_name(_npc) + " has a story for you - the tavern board, STORIES.";
+            if (variable_global_exists("pet_find_notice")) global.pet_find_notice = (global.pet_find_notice != "") ? (global.pet_find_notice + "   " + _msg) : _msg;
+        }
+    }
+}
+// The active step's state row for an NPC (Choice rooms write .choice here).
+function story_active_state(npc) {
+    if (!variable_global_exists("quests")) return undefined;
+    for (var _i = 0; _i < array_length(global.quests); _i++) {
+        var _s = global.quests[_i];
+        if (string_pos("story_" + npc + "_", _s.id) == 1 && _s.status == "active") return _s;
+    }
+    return undefined;
+}
+function story_turn_in(id) {
+    var _s = quest_state(id); var _d = quest_def(id);
+    if (_s == undefined || _d == undefined) return "Unknown step.";
+    _s.status = "done";
+    global.gold += _d.reward.gold;
+    var _parts = string(_d.reward.gold) + "g";
+    var _st = variable_struct_get(global.story, _d.npc);
+    if (_st != undefined && _s.step >= _st.step) {
+        if (variable_struct_exists(_s, "choice") && _s.choice != "") _st.choice = _s.choice;
+        _st.step = _s.step + 1;
+    }
+    if (_d.finale) {
+        var _it = storied_make(_d.npc, (_st != undefined) ? _st.choice : "");
+        if (_it != undefined) {
+            discover_item(item_base_name(_it), 4);
+            array_push(global.equipment_stash, _it);
+            _parts += ", " + _it.name + " (stashed)";
+            ach_unlock("ACH_FIRST_LEGEND");
+        }
+        if (_st != undefined) _st.done = true;
+    } else {
+        story_ensure();
+    }
+    ledger_add(_d.npc, "quest", "\"" + _d.name + "\" - " + _d.line);
+    journal_badge_npc(_d.npc);
+    journal_badge_quest(id);
+    audio_play_sound(snd_sting_quest, 1, false);
+    if (room == rm_hub || room == rm_character_select) save_game();
+    return _d.line + "  (" + _parts + ")";
+}
+// The two-ending rooms (Sable's letters, Vael's mirror). Each ending stamps
+// state.choice; the finale item's variant reads it.
+function story_choice_room(npc, qid) {
+    if (npc == "sable") {
+        return { id:"contract_choice_sable", title:"The Sealed Room", tide_immune:true,
+            body:"A door with Sable's mark scratched over three older marks. Inside, a box of letters in a hand you know. Some of the wax is still red.",
+            color:make_color_rgb(210, 120, 170),
+            choices:[
+                { label:"Burn them", hint:"She asked for gone. The ring she makes will be warmer for it",
+                  cost_gold:0, req_stat:"", req_amount:0, resolve:"weighted",
+                  outcomes:[ { weight:100, text:"They catch fast. You do not read a single one.", effects:{ story_choice:"burn", story_npc:npc, story_qid:qid } } ] },
+                { label:"Read them", hint:"She asked for decided. The ring she makes will be sharper for it",
+                  cost_gold:0, req_stat:"", req_amount:0, resolve:"weighted",
+                  outcomes:[ { weight:100, text:"You read them all. You will never tell her what was in the last one.", effects:{ story_choice:"read", story_npc:npc, story_qid:qid } } ] }
+            ] };
+    }
+    if (npc == "vael") {
+        return { id:"contract_choice_vael", title:"The Mirror Room", tide_immune:true,
+            body:"A tall glass, unbroken, in a room where everything else is. It shows you twice: once as you are, once as you could be, and the second one is smiling.",
+            color:make_color_rgb(190, 150, 230),
+            choices:[
+                { label:"Keep the face you have", hint:"The mask holds Charm",
+                  cost_gold:0, req_stat:"", req_amount:0, resolve:"weighted",
+                  outcomes:[ { weight:100, text:"The second reflection stops smiling and fades.", effects:{ story_choice:"own", story_npc:npc, story_qid:qid } } ] },
+                { label:"Take the other one", hint:"The mask holds Insight",
+                  cost_gold:0, req_stat:"", req_amount:0, resolve:"weighted",
+                  outcomes:[ { weight:100, text:"For a moment you are not sure which side of the glass you are on.", effects:{ story_choice:"other", story_npc:npc, story_qid:qid } } ] }
+            ] };
+    }
+    return { id:"contract_choice_" + npc, title:"A Choice", tide_immune:true, body:"Two ways through.", color:make_color_rgb(180, 180, 200),
+        choices:[
+            { label:"The first", hint:"", cost_gold:0, req_stat:"", req_amount:0, resolve:"weighted", outcomes:[ { weight:100, text:"You choose.", effects:{ story_choice:"a", story_npc:npc, story_qid:qid } } ] },
+            { label:"The second", hint:"", cost_gold:0, req_stat:"", req_amount:0, resolve:"weighted", outcomes:[ { weight:100, text:"You choose.", effects:{ story_choice:"b", story_npc:npc, story_qid:qid } } ] }
+        ] };
+}
+
+// -----------------------------------------------------------------------------
+// STORIED ITEMS (§5, M-locked rarity 4 with a true unique effect each). Built at the
+// grant site only - never in a drop pool. Hooks: obj_combat_controller Create stamps
+// storied_* flags (Dorn armor / Maren crit), pet_take_damage (Bairc), the consumable
+// paths (Sable), boon_damage_mult (Vex), add_gold + cha_price (Petra), boon_incoming_mult (Vael).
+// -----------------------------------------------------------------------------
+function storied_make(npc, choice) {
+    var _it = undefined;
+    switch (npc) {
+        case "dorn":
+            _it = create_item("Gatebreaker's Maul", "weapon", 4, "STR", 5, "the warden's cloth is still wrapped around the head", 400);
+            _it.affixes = [{ suffix:"of Grit", prefix:"Sturdy", stat_name:"CON", stat_value:3 }];
+            _it.unique_effect = "storied_dorn";
+            _it.unique_desc   = "+1 armor per Reforge Ingot you hold (max +5)";
+            _it.lore = "Dorn made it for his brother, who died with the gate between them. It swings heavier when the forge is full - as if every ingot laid by is a promise the maul intends to keep.";
+            break;
+        case "sable":
+            _it = create_item("Alembic Heart", "ring", 4, "INT", 4, "a glass heart with something red still moving in it", 400);
+            _it.affixes = (choice == "read")
+                ? [{ suffix:"of Hexruin", prefix:"Hexed", stat_name:"crit_spell", stat_value:4 }]
+                : [{ suffix:"of Vitality", prefix:"Vital", stat_name:"bonus_max_hp", stat_value:10 }];
+            _it.unique_effect = "storied_sable";
+            _it.unique_desc   = "Every consumable you drink also restores 10% of your max HP";
+            _it.lore = (choice == "read")
+                ? "You read the letters. The ring knows. It beats a little faster whenever you hurt something."
+                : "You burned the letters. The ring is warm against the finger, like a hand that has decided not to let go.";
+            break;
+        case "maren":
+            _it = create_item("Runebinder's Gauntlets", "gloves", 4, "DEX", 4, "every seam threaded with something that hums", 400);
+            _it.affixes = [{ suffix:"of Grace", prefix:"Swift", stat_name:"DEX", stat_value:2 }];
+            _it.unique_effect = "storied_maren";
+            _it.unique_desc   = "+1% crit per rune socketed across your worn gear (max +8%)";
+            _it.lore = "Maren re-set them after they held under two floor-lords. The runes in the rest of your gear answer the gauntlets now - a whole choir tuning to one pair of hands.";
+            break;
+        case "vex":
+            _it = create_item("Trainer's Lash", "ranged_weapon", 4, "DEX", 5, "braided sinew, a hook at the tip", 400);
+            _it.affixes = [{ suffix:"of Bloodshed", prefix:"Honed", stat_name:"crit_phys", stat_value:3 }];
+            _it.unique_effect = "storied_vex";
+            _it.unique_desc   = "Enemies below 30% HP take +25% damage from you";
+            _it.lore = "Vex stripped a good weapon to make it and never said what for. It reaches for the ones already falling. So does she.";
+            break;
+        case "petra":
+            _it = create_item("Ledger of Debts", "offhand", 4, "CHA", 4, "bound in something that was once a purse", 400);
+            _it.affixes = [{ suffix:"of Greed", prefix:"Lucky", stat_name:"gold_find", stat_value:6 }];
+            _it.unique_effect = "storied_petra";
+            _it.unique_desc   = "+15% gold from every source; every shop in camp 10% cheaper";
+            _it.lore = "Everyone who ever owed Petra, in her own hand. Some of the names are crossed out. Some are underlined. Some are still down there.";
+            break;
+        case "vael":
+            _it = create_item("Mask of the Aesthete", "helm", 4, (choice == "other") ? "INT" : "CHA", 4, "re-cut to the shape of how you walk", 400);
+            _it.affixes = (choice == "other")
+                ? [{ suffix:"of Insight", prefix:"Arcane", stat_name:"INT", stat_value:3 }]
+                : [{ suffix:"of Charm",   prefix:"Gilded", stat_name:"CHA", stat_value:3 }];
+            _it.unique_effect = "storied_vael";
+            _it.unique_desc   = "Take 10% less damage while above 70% HP";
+            _it.lore = (choice == "other")
+                ? "You took the other face. Vael says it suits you. The mask agrees, and never lets the first blow land quite square."
+                : "You kept your own face. Vael pretended to be disappointed. The mask sits like it was always yours - which, he says, is the whole art.";
+            break;
+        case "bairc":
+            _it = create_item("Keeper's Whistle", "amulet", 4, "WIS", 4, "a bone whistle on a leather cord", 400);
+            _it.affixes = [{ suffix:"of Clarity", prefix:"Lucid", stat_name:"WIS", stat_value:2 }];
+            _it.unique_effect = "storied_bairc";
+            _it.unique_desc   = "Your companion takes 25% less damage, and each of its strikes restores 2 HP to you";
+            _it.lore = "Bairc's grandfather's. They hear it - he does not know how. When one of them is hurt and you blow it, they come, and they come angry.";
+            break;
+    }
+    if (_it != undefined) { _it.class_req = -1; _it.storied = true; }
+    return _it;
+}
+function storied_worn(npc) { return legendary_worn("storied_" + npc); }

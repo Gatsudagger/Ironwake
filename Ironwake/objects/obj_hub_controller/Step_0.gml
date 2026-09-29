@@ -219,6 +219,7 @@ if (!tutorial_seen_has("station_ranks") && tutorial_seen_has("hub")
 // resolved flag just gets cleared here.
 if (variable_global_exists("item_picker")) {
     if (global.item_picker.resolved_purpose == "gift") global.item_picker.resolved_purpose = "";
+    if (global.item_picker.resolved_purpose == "board_want") global.item_picker.resolved_purpose = "";   // CONTRACTS (09-29): the pick-of-three took over
     if (global.item_picker.open) exit;
 }
 // Cursed-rebirth reagent stage (M 08-05): same freeze - gc steps the modal.
@@ -728,6 +729,7 @@ if (instance_exists(obj_game_controller)) {
                     _gc_ld.loadout_open      = false;
                     _gc_ld.loadout_confirmed = true;
                     audio_play_sound(snd_confirm_major, 1, false);   // committing to the descent
+                    contracts_run_start_arm();   // CONTRACTS (09-29): armed next-run cards become this run's modifiers
                     music_hub_stop();   // stops the default AND any banshee-jukebox hub track
                     room_goto(rm_dungeon_floor);
                 }

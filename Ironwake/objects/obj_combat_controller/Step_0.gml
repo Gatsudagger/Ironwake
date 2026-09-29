@@ -10,6 +10,11 @@
 // Family immunities (M-locked 08-17): strip any status an enemy is immune to the
 // frame it lands - IMMUNE popup + log. One central hook (see combat_immune_sweep).
 if (!combat_over && is_struct(combat_state)) combat_immune_sweep(combat_state, combat_log, damage_popups);
+// CONTRACTS (09-29): the escort hireling went down under a mirrored blow - they leave the run.
+if (escort_joined && variable_global_exists("contract_escort") && (global.contract_escort == undefined || !global.contract_escort.alive)) {
+    escort_joined = false;
+    array_push(combat_log, "[Ally] " + escort_name + " goes down under the same blow - and crawls for the stairs. They are out of this run.");
+}
 
 // IRONMAN resume anti-cheese watcher (SYSTEMS_RUN_RESUME.md): mirror the LIVE
 // player HP/resources into the checkpoint whenever they change (1s throttle),
@@ -1111,6 +1116,11 @@ if (player_turn) {
                     array_push(combat_log, "Need 1 AP to use a consumable.");
                 } else {
                     combat_state.used_consumable = true;   // board "clean fights" requests
+                    if (legendary_worn("storied_sable") && player.HP < player.max_HP) {   // ALEMBIC HEART (CONTRACTS 09-29): +10% max HP per drink
+                        var _ah = min(ceil(player.max_HP * 0.10), player.max_HP - player.HP);
+                        player.HP += _ah;
+                        array_push(combat_log, "The Alembic Heart beats - +" + string(_ah) + " HP.");
+                    }
                     audio_play_sound(snd_potion, 1, false);
                     // CHAOTIC BREW (reworked 08-15, M-locked): effects were stamped
                     // at BREW time (60% of each base + a rolled downside, all readable
@@ -1492,8 +1502,9 @@ if (player_turn) {
             if (!player_turn) {
                 // Pet takes its turn before the enemies (Pets Phase 3 lightweight hook).
                 enemy_turn_timer = enemy_turn_delay
-                    + (combat_pet_act(combat_state, player, combat_log, damage_popups) ? 45 : 0)
-                    + ((knight_joined && combat_knight_act(combat_state, player, combat_log, damage_popups, knight_dmg)) ? 45 : 0);   // Seahorse Knight (09-03)
+                    + (combat_pet_act_storied(combat_state, player, combat_log, damage_popups) ? 45 : 0)
+                    + ((knight_joined && combat_knight_act(combat_state, player, combat_log, damage_popups, knight_dmg)) ? 45 : 0)
+                    + ((escort_joined && combat_knight_act(combat_state, player, combat_log, damage_popups, escort_dmg, escort_name + "'s blade opens")) ? 45 : 0)   // CONTRACTS escort (09-29);   // Seahorse Knight (09-03)
                 player.pet_command = "";   // the SIC order is spent with the act (09-24)
             }
             exit;
@@ -1542,8 +1553,9 @@ if (player_turn) {
         if (!player_turn) {
             // Pet takes its turn before the enemies (Pets Phase 3 lightweight hook).
             enemy_turn_timer = enemy_turn_delay
-                + (combat_pet_act(combat_state, player, combat_log, damage_popups) ? 45 : 0)
-                    + ((knight_joined && combat_knight_act(combat_state, player, combat_log, damage_popups, knight_dmg)) ? 45 : 0);   // Seahorse Knight (09-03)
+                + (combat_pet_act_storied(combat_state, player, combat_log, damage_popups) ? 45 : 0)
+                    + ((knight_joined && combat_knight_act(combat_state, player, combat_log, damage_popups, knight_dmg)) ? 45 : 0)
+                    + ((escort_joined && combat_knight_act(combat_state, player, combat_log, damage_popups, escort_dmg, escort_name + "'s blade opens")) ? 45 : 0)   // CONTRACTS escort (09-29);   // Seahorse Knight (09-03)
             player.pet_command = "";   // the SIC order is spent with the act (09-24)
         }
     }

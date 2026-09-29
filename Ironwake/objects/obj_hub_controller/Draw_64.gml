@@ -3178,6 +3178,7 @@ hatch_cutscene_draw();   // full-screen egg-hatch sequence, over the Bairc scree
 ui_draw_journal();       // J-key Journal overlay (Phase 4a) - over hub content, under pause
 ui_draw_tavern_board();  // Tavern Requests board (Phase 4b) - the quest action surface
 ui_draw_knucklebones();  // Knucklebones dice game (expression #1) - over the board
+ui_draw_reward_pick();   // CONTRACTS pick-of-three (09-29) - over the board
 ui_draw_character_menu();
 ui_draw_inbox();            // hub INBOX list (09-25, §4.1) - over hub content
 ui_draw_run_summary();      // RUN SUMMARY (09-25, §4.2) - first thing on hub arrival, over everything

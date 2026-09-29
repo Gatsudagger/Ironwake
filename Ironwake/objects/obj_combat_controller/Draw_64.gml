@@ -378,6 +378,29 @@ if (_pet_co != undefined && !_pet_co.is_egg) {
 // station (right of the hero, clear of the POTENTIAL DAMAGE box at x30-320).
 // Same procedural lunge as the pet, driven by global.knight_lunge_t0. Asset-
 // guarded: before spr_seahorse_knight lands only the log + toast announce him.
+// CONTRACTS (09-29) ESCORT hireling: the asker's portrait icon stands in (no art), at
+// the Knight's station, with a small HP bar - they share your blows.
+if (variable_instance_exists(id, "escort_joined") && escort_joined && variable_global_exists("contract_escort") && global.contract_escort != undefined) {
+    var _espr = asset_get_index("spr_icon_npc_" + string(escort_npc));
+    if (_espr >= 0 && sprite_exists(_espr)) {
+        var _ex = _pbx + screen_shake_x + sprite_get_width(_pspr) * _pscale * 0.5 + (combat_25d() ? 310 : 300) + (knight_joined ? 150 : 0);
+        var _ey = combat_25d() ? (696 + screen_shake_y) : (716 + screen_shake_y);
+        var _eh = combat_25d() ? 150 : 165;
+        var _esc = _eh / max(1, sprite_get_height(_espr));
+        var _ew = sprite_get_width(_espr) * _esc;
+        ui_draw_cast_shadow(_ex, _ey, _ew * 0.8, -1);
+        var _et0 = variable_global_exists("knight_lunge_t0") ? global.knight_lunge_t0 : -100000;
+        var _epr = (current_time - _et0) / 260;
+        var _elx = (_epr >= 0 && _epr <= 1) ? sin(_epr * pi) * 60 : 0;
+        draw_sprite_ext(_espr, 0, _ex - _ew / 2 + _elx, _ey - _eh, _esc, _esc, 0, c_white, 1.0);
+        var _ehp = clamp(global.contract_escort.hp / max(1, global.contract_escort.max_hp), 0, 1);
+        draw_set_color(make_color_rgb(20, 20, 26)); draw_rectangle(_ex - 50, _ey + 6, _ex + 50, _ey + 14, false);
+        draw_set_color(make_color_rgb(120, 210, 150)); draw_rectangle(_ex - 50, _ey + 6, _ex - 50 + 100 * _ehp, _ey + 14, false);
+        draw_set_font(ui_font(fnt_ui_small)); draw_set_halign(fa_center); draw_set_valign(fa_top);
+        draw_set_color(make_color_rgb(200, 220, 200)); draw_text(_ex, _ey + 18, escort_name);
+        draw_set_halign(fa_left);
+    }
+}
 if (variable_instance_exists(id, "knight_joined") && knight_joined) {
     var _kspr = asset_get_index("spr_seahorse_knight");
     if (_kspr >= 0 && sprite_exists(_kspr)) {

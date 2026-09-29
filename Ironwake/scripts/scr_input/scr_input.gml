@@ -231,6 +231,7 @@ function __input_ctx() {
     if (_gc != noone) {
         if (variable_instance_exists(_gc, "kb_open") && _gc.kb_open)       return "kb";
         // 09-25: run summary / ledger report / inbox / ledger screen own input while up.
+        if (variable_instance_exists(_gc, "reward_pick_open") && _gc.reward_pick_open)   return "none";      // 09-29 contracts pick-of-three
         if (variable_instance_exists(_gc, "welcome_open") && _gc.welcome_open)           return "none";      // 09-28 welcome splash
         if (variable_instance_exists(_gc, "summary_open") && _gc.summary_open)           return "summary";
         if (variable_instance_exists(_gc, "ledger_report_open") && _gc.ledger_report_open) return "none";

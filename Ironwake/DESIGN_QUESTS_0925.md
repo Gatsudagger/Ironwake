@@ -1,6 +1,8 @@
 # DESIGN_QUESTS_0925 — CONTRACTS: the quest / board rework
 
-Status: **LOCKED by M 2026-09-29 (decisions in §9).** Was DRAFT 2026-09-25. Pulls §5.1 Contracts forward from P4 and folds in
+Status: **BUILT 2026-09-29 (all five §8 steps, statically audited, awaiting M's F5).** Locked by M 2026-09-29 (§9). Was DRAFT 2026-09-25.
+
+Build notes (09-29): run-start banner is the board header line + a run-summary block rather than a floor toast; §6 bond effects (Companion doubles a card, Lover free variant) not built; story bounties all name the Stone Golem (Ashen Vault) so every chain is completable at A0; contract seal = first uncleared EVENT room per floor; escort shares 30% of your blows and flees at 0 (never dies). Pulls §5.1 Contracts forward from P4 and folds in
 M's 09-25 asks. Builds as the batch right after Bairc's Ledger. Nothing here is built yet.
 
 M (09-25): *"right now they're blind click and farm mindless turn in for supplemental

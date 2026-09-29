@@ -159,6 +159,12 @@ function combat_next_turn(combat_state) {
     if (combat_state.turn_index >= count) {
         combat_state.turn_index = 0;
         combat_state.round++;
+        // CONTRACTS (09-29) TIMED clock: every combat round of the run burns one.
+        if (variable_global_exists("contract_timed") && global.contract_timed != undefined && global.contract_timed.left > 0) {
+            global.contract_timed.left -= 1;
+            if (global.contract_timed.left == 0 && instance_exists(obj_combat_controller))
+                array_push(instance_find(obj_combat_controller, 0).combat_log, "The water-clock runs dry. The contract's bonus is lost - the base pay stands.");
+        }
 
         // RISING WATER (§3.1 Drowned Reach floor passive, 08-27): every 3rd
         // round EVERY living combatant loses 2 HP - the player included. No
@@ -983,6 +989,7 @@ function combat_apply_damage(target_struct, damage) {
         if (variable_struct_exists(target_struct, "is_player") && target_struct.is_player) {
             if (!variable_global_exists("run_dmg_taken")) global.run_dmg_taken = 0;
             global.run_dmg_taken += actual_dealt;
+            contract_escort_mirror(actual_dealt);   // CONTRACTS (09-29): the hireling shares your blows
         } else {
             if (!variable_global_exists("run_dmg_dealt")) global.run_dmg_dealt = 0;
             global.run_dmg_dealt += actual_dealt;
@@ -2913,6 +2920,7 @@ function combat_on_enemy_defeated(target, player, combat_log) {
     global.current_run_kills++;
     global.total_kills++;   // lifetime counter - was initialized/saved/shown but never incremented (hub always read 0)
     mark_record_kill(target.name);   // Hunter's Marks per species (09-24, §5.4)
+    bounty_tick_kill(target.name);   // CONTRACTS (09-29): named-foe bounties ("Stone Golem@ashen_vault")
     quest_tick("kill_family", enemy_cull_family(target.name), 1);   // 09-15: elemental-first family   // Phase 4a quest objective
     array_push(combat_log, "Gained " + string(_gold_drop) + "g!");
 
@@ -3090,7 +3098,7 @@ function combat_enemy_anchor(_c, _slot) {
 // blow on a random living enemy at the end of the player's turn. Mirrors the
 // pet Warrior path (resolve vs armor / el_resist; Marked and Overwhelm ride in
 // combat_apply_damage). Returns true when it struck (pads the enemy delay).
-function combat_knight_act(combat_state, player, combat_log, damage_popups, dmg) {
+function combat_knight_act(combat_state, player, combat_log, damage_popups, dmg, who_line = "The Seahorse Knight's lance takes") {
     var _pool = [], _slots = [], _live = 0;
     for (var _i = 0; _i < array_length(combat_state.combatants); _i++) {
         var _c = combat_state.combatants[_i];
@@ -3105,7 +3113,7 @@ function combat_knight_act(combat_state, player, combat_log, damage_popups, dmg)
     combat_apply_damage(_t, _d);
     var _ka = combat_enemy_anchor(_t, _slots[_pick]);
     array_push(damage_popups, { value: _d, x: _ka.x, y: _ka.y - 105, timer: 50, col: make_color_rgb(110, 200, 240) });
-    array_push(combat_log, "[Ally] The Seahorse Knight's lance takes " + _t.name + " for " + string(_d) + " shock!");
+    array_push(combat_log, "[Ally] " + who_line + " " + _t.name + " for " + string(_d) + "!");
     if (_t.HP <= 0) combat_on_enemy_defeated(_t, player, combat_log);
     global.knight_lunge_t0 = current_time;   // procedural lunge (combat draw)
     return true;
@@ -3702,4 +3710,17 @@ function combat_pet_cmd_use(id, combat_state, player, combat_log, damage_popups,
 function combat_pet_cmd_geom(i) {
     if (input_device() == 2) return { x0: 20 + i * 150, y0: 856, x1: 160 + i * 150, y1: 916 };
     return { x0: 40 + i * 205, y0: 946, x1: 235 + i * 205, y1: 982 };
+}
+
+// CONTRACTS (09-29): companion act wrapper - Bairc's KEEPER'S WHISTLE heals you 2 HP
+// whenever the companion actually struck this turn.
+function combat_pet_act_storied(combat_state, player, combat_log, damage_popups) {
+    var _acted = combat_pet_act(combat_state, player, combat_log, damage_popups);
+    if (_acted && is_struct(player) && variable_struct_exists(player, "storied_bairc") && player.storied_bairc
+        && player.HP > 0 && player.HP < player.max_HP) {
+        var _h = min(2, player.max_HP - player.HP);
+        player.HP += _h;
+        array_push(combat_log, "[Companion] The whistle's note - you recover " + string(_h) + " HP.");
+    }
+    return _acted;
 }

@@ -217,6 +217,8 @@ if (!variable_instance_exists(id, "garden_open")) garden_open = false;
 // event (08-18 softlock lesson), so none of these branches may `exit` while one is active.
 // FIRST-NIGHT WELCOME (09-28): owns input outright while up - before the summary, before any tip.
 if (variable_instance_exists(id, "welcome_open") && welcome_open) { hub_welcome_step(id); exit; }
+// CONTRACTS pick-of-three (09-29): owns input while up - the handed object is already gone.
+if (variable_instance_exists(id, "reward_pick_open") && reward_pick_open) { reward_pick_step(id); exit; }
 if (variable_instance_exists(id, "summary_open") && !tutorial_is_active()) {
     if (room == rm_hub && !summary_open && !ledger_report_open && run_summary_pending()) {
         summary_open = true; summary_armed = false;
@@ -1172,7 +1174,10 @@ if (tavern_board_open) {
             exit;
         }
     }
-    var _tb = tavern_board_rows();   // active + available only - fulfilled live in the Journal
+    // CONTRACTS (09-29): three tabs - A/D (pad L/R) switch; each tab lists its own rows.
+    if (nav_left())  { tavern_board_tab = wrap_index(tavern_board_tab - 1, 3); tavern_board_cursor = 0; tavern_board_note = ""; audio_play_sound(snd_ui_move, 1, false); }
+    if (nav_right()) { tavern_board_tab = wrap_index(tavern_board_tab + 1, 3); tavern_board_cursor = 0; tavern_board_note = ""; audio_play_sound(snd_ui_move, 1, false); }
+    var _tb = tavern_board_rows_tab(tavern_board_tab);   // active + available only - fulfilled live in the Journal
     var _tbn = array_length(_tb);
     if (_tbn > 0) {
         if (nav_up())   { tavern_board_cursor = wrap_index(tavern_board_cursor - 1, _tbn); tavern_board_note = ""; }
@@ -1190,7 +1195,14 @@ if (tavern_board_open) {
             var _tbid = _tb[tavern_board_cursor];
             var _tbd  = quest_def(_tbid);
             journal_clear_quest(_tbid);
-            if (quest_is_complete(_tbid)) {
+            // CONTRACTS (09-29): board postings + story steps settle through contract_turn_in
+            // (picker for handed objects, then the pick-of-three; stories pay fixed).
+            if ((quest_is_board(_tbd) || contract_is_story(_tbd)) && quest_state(_tbid) != undefined && quest_state(_tbid).status == "active") {
+                if (contract_ready(_tbid)) {
+                    var _ctr = contract_turn_in(id, _tbid);
+                    if (_ctr != "") { tavern_board_note = _ctr; if (quest_state(_tbid) == undefined || quest_state(_tbid).status == "done") save_game(); }
+                } else tavern_board_note = "Still underway - " + _tbd.objective + ".";
+            } else if (quest_is_complete(_tbid)) {
                 var _tbres = quest_turn_in(_tbid);
                 if (_tbres == "") {
                     tavern_board_note = quest_is_gate(_tbd)

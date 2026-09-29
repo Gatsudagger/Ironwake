@@ -1159,7 +1159,8 @@ if (input_confirm() || input_confirm_alt()) {
             show_debug_message("[FLOOR DEBUG] room=" + string(selected_room) + " type=event COURIER n=" + string(courier_picks_left));
         } else {
             // Event room - roll an event and open the interactive choice overlay.
-            event_active      = event_roll();
+            event_active      = (variable_struct_exists(current_rooms[selected_room], "contract") && current_rooms[selected_room].contract)
+                                ? contract_event_roll() : event_roll();   // CONTRACTS (09-29): the sealed room
             event_cursor      = event_first_unlocked(event_active);
             event_phase       = "choose";
             event_result_text = "";

@@ -411,6 +411,17 @@ for (var _li = 0; _li < array_length(global.inventory); _li++) {
     if (_lit.unique_effect == "kindled_reliquary")   player.leg_reliquary = true;
     if (_lit.unique_effect == "tidebound")           player.leg_tide      = true;   // Seahorse Knight's necklace (09-03)
     if (_lit.unique_effect == "tide_touched")        player.tide_touched += 1;      // THE TIDE drops (09-09)
+    // STORIED items (CONTRACTS 09-29, one per NPC chain finale)
+    if (_lit.unique_effect == "storied_dorn")  player.equip_armor += min(5, reforge_ingot_total());   // GATEBREAKER'S MAUL
+    if (_lit.unique_effect == "storied_maren") {                                                        // RUNEBINDER'S GAUNTLETS
+        var _rb_n = 0;
+        for (var _rbi = 0; _rbi < array_length(global.inventory); _rbi++) {
+            var _rbit = global.inventory[_rbi];
+            if (is_struct(_rbit) && variable_struct_exists(_rbit, "runes") && is_array(_rbit.runes)) _rb_n += array_length(_rbit.runes);
+        }
+        player.weapon_crit_bonus += min(8, _rb_n);
+    }
+    if (_lit.unique_effect == "storied_bairc") player.storied_bairc = true;                              // KEEPER'S WHISTLE
     // (hollow_kings_signet / beggars_fortune / lantern_last_door are hub-side -
     // legendary_worn() in scr_stats reads the worn slots directly.)
     // Class-weapon affixes
@@ -516,6 +527,11 @@ switch (_dung) {
 
 if (_enemy_type == "elite") {
     var _elite_idx   = irandom(array_length(_eli_pool) - 1);
+    // CONTRACTS (09-29) AMBUSH: the bounty's own foe found you - it IS the headliner.
+    if (variable_global_exists("ambush_force_name") && global.ambush_force_name != "") {
+        for (var _afi = 0; _afi < array_length(_eli_pool); _afi++) if (_eli_pool[_afi].name == global.ambush_force_name) { _elite_idx = _afi; break; }
+        global.ambush_force_name = "";
+    }
     var _support_idx = irandom(array_length(_std_pool) - 1);
     enemy1 = enemy_clone(_eli_pool[_elite_idx]);
     enemy2 = enemy_clone(_std_pool[_support_idx]);
@@ -1073,6 +1089,9 @@ else if (_enemy_type == "boss" && _afx_awk >= 3) _afx_n = 1;
 if (_afx_n > 0 && array_length(enemies) > 0
     && !(variable_global_exists("duel_active") && global.duel_active)) {
     var _afx = enemy_affix_roll(enemies[0], _afx_n, array_length(enemies) < 4);
+    // CONTRACTS (09-29): a taken BOUNTY's affix is guaranteed on its species in its dungeon.
+    var _bfa = bounty_forced_affix(enemies[0].name);
+    if (_bfa != "" && !enemy_affix_has(enemies[0], _bfa)) { enemy_affix_force(enemies[0], _bfa, array_length(enemies) < 4); _afx = enemies[0].affixes; }
     global.affix_loot_bonus = array_length(_afx);
     if (enemy_affix_has(enemies[0], "twinned") && array_length(enemies) < 4) {
         var _tw = enemy_clone(enemies[0]);
@@ -1196,6 +1215,20 @@ if (knight_can_join(player)) {
     knight_intro_t = 170;
     global.knight_encounters += 1;
     array_push(combat_log, "[Ally] Hooves on the surf - THE SEAHORSE KNIGHT rides in at your side!");
+}
+// CONTRACTS (09-29) ESCORT: the hireling rides the Knight's ally path - untargetable,
+// strikes at the end of your turn (combat_knight_act with their own line), drawn
+// beside the pet station. They share your blows (contract_escort_mirror) and flee at 0.
+escort_joined = false;
+escort_dmg    = 0;
+escort_name   = "";
+escort_npc    = "";
+if (contract_escort_join_combat(enemies)) {
+    escort_joined = true;
+    escort_name   = global.contract_escort.name;
+    escort_npc    = global.contract_escort.npc;
+    escort_dmg    = max(2, round(knight_strike_base(enemies) * 0.8));
+    array_push(combat_log, "[Ally] " + escort_name + " keeps the lantern low and a blade ready (" + string(global.contract_escort.hp) + " HP).");
 }
 // Parallel to combat_log: a damage-breakdown struct per line (undefined for most
 // lines). Hovering a damage line shows the math, BG3/Pathfinder-style. Kept aligned

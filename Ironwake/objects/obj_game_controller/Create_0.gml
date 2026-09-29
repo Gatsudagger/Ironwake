@@ -1864,6 +1864,15 @@ journal_cursor  = 0;    // Relationships: met-NPC row | Quests: flattened groupe
 tavern_board_open   = false;
 tavern_board_cursor = 0;
 tavern_board_note   = "";   // one-line feedback under the list (accepted / turned in / reasons)
+tavern_board_tab    = 0;    // CONTRACTS (09-29): 0 BOUNTIES / 1 REQUESTS / 2 STORIES
+// CONTRACTS pick-of-three modal (09-29): opened by reward_pick_open, drawn by
+// ui_draw_reward_pick, stepped by reward_pick_step. Owns input outright while up.
+reward_pick_open   = false;
+reward_pick_cursor = 0;
+reward_pick_data   = undefined;
+reward_pick_armed  = false;
+reward_pick_t      = 0;
+contracts_ensure();
 
 // --- GIFT RESULT POPUP (Phase 4b UX): set by gift_give (global.gift_popup struct),
 // dismissed on any confirm key; shows reaction, bond delta, tier + progress bar. ---

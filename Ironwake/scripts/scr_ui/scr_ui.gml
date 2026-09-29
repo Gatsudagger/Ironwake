@@ -466,6 +466,8 @@ function ui_draw_touch_chips() {
             array_push(_chips, { lbl: "RULES", key: ord("H"), hot: false });
             break;
         case "board":
+            array_push(_chips, { lbl: "< TAB", key: vk_left,  hot: false });   // CONTRACTS (09-29) tabs
+            array_push(_chips, { lbl: "TAB >", key: vk_right, hot: false });
             array_push(_chips, { lbl: "KNUCKLEBONES", key: ord("K"), hot: false });
             array_push(_chips, { lbl: "HIGH TABLE",   key: ord("T"), hot: false });
             array_push(_chips, { lbl: "REROLL",       key: ord("R"), hot: false });
@@ -2139,6 +2141,7 @@ function ui_input_blocked() {
     if (variable_instance_exists(_gc, "inbox_open") && _gc.inbox_open) return true;               // hub Inbox (09-25)
     if (variable_instance_exists(_gc, "summary_open") && _gc.summary_open) return true;           // run summary (09-25)
     if (variable_instance_exists(_gc, "welcome_open") && _gc.welcome_open) return true;           // first-night welcome splash (09-28)
+    if (variable_instance_exists(_gc, "reward_pick_open") && _gc.reward_pick_open) return true;   // contracts pick-of-three (09-29)
     if (variable_instance_exists(_gc, "ledger_report_open") && _gc.ledger_report_open) return true;   // Bairc's report page (09-25)
     if (variable_instance_exists(_gc, "kb_open") && _gc.kb_open) return true;                     // Knucklebones (expression #1)
     return false;
@@ -3122,9 +3125,14 @@ function ui_draw_journal() {
             draw_text(_list_x1 + 10, _qy + 6, _qd.name);
             draw_set_font(ui_font(fnt_ui_small));
             draw_set_color(make_color_rgb(140, 145, 165));
-            draw_text(_list_x1 + 10, _qy + 40, npc_display_name(_qd.npc)
-                + ((_qs.status == "active") ? ("   " + string(min(_qs.progress, _qd.obj_target)) + " / " + string(_qd.obj_target)
-                    + (quest_is_complete(_qid) ? "  -  READY" : "")) : ""));
+            // CONTRACTS (09-29): a want shows its predicate + a tick when something held fits;
+            // a story step shows its rail position.
+            var _jq_sub = npc_display_name(_qd.npc);
+            if (contract_is_story(_qd)) _jq_sub += "   story " + string(_qd.step) + " / " + string(_qd.steps);
+            if (contract_has_want(_qd)) _jq_sub += "   " + want_text(_qd.want) + ((_qs.status == "active" && want_satisfiable(_qd.want)) ? "   [v] you have it" : "");
+            else if (_qs.status == "active") _jq_sub += "   " + string(min(_qs.progress, _qd.obj_target)) + " / " + string(_qd.obj_target)
+                    + (quest_is_complete(_qid) ? "  -  READY" : "");
+            ui_draw_text_fit(_list_x1 + 10, _qy + 40, _jq_sub, _list_x2 - _list_x1 - 40);
             if (journal_quest_badged(_qid)) {
                 draw_set_color(make_color_rgb(235, 180, 80));
                 draw_circle(_list_x2 - 16, _qy + 16, 7, false);
@@ -3152,7 +3160,8 @@ function ui_draw_journal() {
             draw_text(_dx2, _dy2, "Objective:  " + _sd.objective
                 + "   (" + string(min(_ss.progress, _sd.obj_target)) + " / " + string(_sd.obj_target) + ")"); _dy2 += 36;
             draw_set_color(make_color_rgb(185, 200, 160));
-            ui_draw_text_arrows(_dx2, _dy2, "Reward:  " + journal_quest_reward_text(_sd)); _dy2 += 48;
+            ui_draw_text_arrows(_dx2, _dy2, "Reward:  " + (contract_is_story(_sd) ? (_sd.finale ? "a STORIED item (rarity 4)" : (string(_sd.reward.gold) + "g + a word"))
+                : (quest_is_board(_sd) ? "your pick of COIN / a next-run BOON / an ITEM" : journal_quest_reward_text(_sd)))); _dy2 += 48;
             draw_set_color(make_color_rgb(170, 176, 195));
             draw_text_ext(_dx2, _dy2, _sd.flavor, 27, _det_x2 - _dx2 - 10);
             _dy2 += string_height_ext(_sd.flavor, 27, _det_x2 - _dx2 - 10) + 30;
@@ -3806,6 +3815,7 @@ function ui_draw_tavern_board() {
     if (!instance_exists(obj_game_controller)) return;
     var _gc = instance_find(obj_game_controller, 0);
     if (!variable_instance_exists(_gc, "tavern_board_open") || !_gc.tavern_board_open) return;
+    if (!variable_instance_exists(_gc, "tavern_board_tab")) _gc.tavern_board_tab = 0;
 
     draw_set_alpha(0.86); draw_set_color(c_black);
     draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
@@ -3813,8 +3823,6 @@ function ui_draw_tavern_board() {
     var _x1 = 240, _y1 = 66, _x2 = 1680, _y2 = 1020;
     // Board backdrop: the tavern-board art fills the panel (cover-crop), darkened so
     // the parchment rows stay readable. Wooden tones as the pre-import fallback.
-    // NOTE: spr_tavern_board is a NEW resource - GameMaker must RELOAD the project
-    // once to pick it up; until then the fallback draws.
     var _tb_bg = asset_get_index("spr_tavern_board");
     if (_tb_bg >= 0) {
         ui_draw_sprite_cover(_tb_bg, 0, _x1, _y1, _x2 - _x1, _y2 - _y1, 1.0);
@@ -3832,46 +3840,71 @@ function ui_draw_tavern_board() {
     draw_set_halign(fa_center); draw_set_valign(fa_top);
     draw_set_font(fnt_ui_title);
     draw_set_color(make_color_rgb(230, 210, 160));
-    draw_text((_x1 + _x2) / 2, _y1 + 33, "TAVERN REQUESTS");
+    draw_text((_x1 + _x2) / 2, _y1 + 33, "TAVERN BOARD");
     draw_set_font(ui_font(fnt_ui_small));
-    // High Table invitation (dice v2) replaces the subtitle while it stands.
+    // High Table invitation (dice v2) replaces the subtitle while it stands; an armed
+    // next-run card (CONTRACTS 09-29) takes the line after that.
     kb_tourney_ensure();
+    var _armed = next_run_boons_text();
     if (global.kb_tourney_ready) {
         draw_set_color(make_color_rgb(255, 205, 90));
         draw_text((_x1 + _x2) / 2, _y1 + 87, "The HIGH TABLE is set - [T] to sit. "
             + string(kb_tourney_buyin()) + "g buy-in, three seats, one pot.");
+    } else if (_armed != "") {
+        draw_set_color(make_color_rgb(160, 220, 190));
+        ui_draw_text_fit((_x1 + _x2) / 2, _y1 + 87, "Armed for your next run: " + _armed, _x2 - _x1 - 140);
     } else {
         draw_set_color(make_color_rgb(170, 150, 120));
-        draw_text((_x1 + _x2) / 2, _y1 + 87, "Jobs, hunts and favors posted by the townsfolk.");
+        draw_text((_x1 + _x2) / 2, _y1 + 87, "Bounties on named foes, requests for specific things, and the townsfolk's own stories.");
     }
     draw_set_halign(fa_left);
 
-    // Board rows = active + available only. Fulfilled requests come off the board
-    // (their notes are "taken down") and live in the Journal's Completed group.
-    var _rows = tavern_board_rows();
+    // ---- The three tabs (CONTRACTS §1) ----
+    var _tabs = ["BOUNTIES", "REQUESTS", "STORIES"];
+    var _tab_keys = ["bounty", "request", "story"];
+    var _tw = 300, _th = 44, _tx0 = (_x1 + _x2) / 2 - _tw * 1.5 - 12, _ty = _y1 + 122;
+    for (var _t = 0; _t < 3; _t++) {
+        var _tx = _tx0 + _t * (_tw + 12);
+        var _hot = (_gc.tavern_board_tab == _t);
+        var _cnt = array_length(tavern_board_rows_tab(_t));
+        draw_set_color(_hot ? make_color_rgb(70, 54, 30) : make_color_rgb(34, 26, 18));
+        draw_rectangle(_tx, _ty, _tx + _tw, _ty + _th, false);
+        draw_set_color(_hot ? make_color_rgb(240, 200, 110) : make_color_rgb(90, 72, 50));
+        draw_rectangle(_tx, _ty, _tx + _tw, _ty + _th, true);
+        draw_set_font(ui_font(fnt_ui));
+        draw_set_halign(fa_center); draw_set_valign(fa_middle);
+        draw_set_color(_hot ? make_color_rgb(255, 235, 180) : make_color_rgb(170, 150, 120));
+        draw_text(_tx + _tw / 2, _ty + _th / 2, _tabs[_t] + "  (" + string(_cnt) + ")");
+        draw_set_halign(fa_left); draw_set_valign(fa_top);
+        if (touch_tapped(_tx, _ty, _tx + _tw, _ty + _th) && !_hot) { _gc.tavern_board_tab = _t; _gc.tavern_board_cursor = 0; _gc.tavern_board_note = ""; }
+    }
+
+    // Board rows = active + available only, on this tab.
+    var _rows = tavern_board_rows_tab(_gc.tavern_board_tab);
     var _n    = array_length(_rows);
     var _cur  = clamp(_gc.tavern_board_cursor, 0, max(0, _n - 1));
     var _lx = _x1 + 66, _rx = _x2 - 66;
-    var _qy = _y1 + 144;
+    var _qy = _y1 + 196;
     if (_n == 0) {
         draw_set_font(ui_font(fnt_ui)); draw_set_color(make_color_rgb(160, 140, 115));
-        draw_text(_lx, _qy, "The board is bare.");
+        var _empty = "Nothing posted here.";
+        if (_gc.tavern_board_tab == 2) _empty = "No stories yet - the townsfolk open up once you are FRIENDS (bond tier 2). Talk to them, gift them, run their favours.";
+        draw_text_ext(_lx, _qy, _empty, 30, _rx - _lx);
     }
-    // Windowed list (M 07-09 screenshot: with 7+ notes the last row ran under the
-    // key-legend footer). 6 notes + their group headers fit between the subtitle
-    // and the footer band; the window follows the cursor, drawn-triangle
-    // indicators show what's clipped.
-    var _bl_vis   = 6;
+    // Windowed list: 5 posters + their group headers fit between the tabs and the
+    // footer band; the window follows the cursor.
+    var _bl_vis   = 5;
     var _bl_first = ui_list_window("tavern_board", _cur, _n, _bl_vis);
     var _bl_last  = min(_n, _bl_first + _bl_vis);
     if (_bl_first > 0) {
         draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(make_color_rgb(190, 170, 130));
         draw_set_halign(fa_right);
-        ui_draw_scroll_more(_rx, _qy - 27, true, string(_bl_first) + " more");
+        ui_draw_scroll_more(_rx, _qy - 24, true, string(_bl_first) + " more");
         draw_set_halign(fa_left);
     }
     var _last_status = "";
+    var _RH = 108;
     for (var _i = _bl_first; _i < _bl_last; _i++) {
         var _qid = _rows[_i];
         var _qd  = quest_def(_qid);
@@ -3881,66 +3914,89 @@ function ui_draw_tavern_board() {
             draw_set_font(ui_font(fnt_ui_small));
             draw_set_color(make_color_rgb(150, 190, 130));
             draw_text(_lx, _qy, (_qs.status == "active") ? "TAKEN BY YOU" : "POSTED");
-            _qy += 33;
+            _qy += 30;
         }
         var _hot = (_i == _cur);
-        var _is_board = quest_is_board(_qd);
+        var _is_board   = quest_is_board(_qd);
+        var _is_story   = contract_is_story(_qd);
         var _is_urgent  = _is_board && _qd.urgent;
         var _is_special = _is_board && board_is_special(_qd);
-        // Pinned-note row: parchment tint, brighter when highlighted; urgent offers
-        // get an ember-red cast so they read as "grab this before it's gone"; the
-        // rotating SPECIAL posting (v2) gets a gilded cast + wax-gold pin.
+        var _done = quest_is_complete(_qid);
+        // Poster: parchment tint; urgent = ember cast; special = gilt; story = ink-blue.
         if      (_is_special) draw_set_color(_hot ? make_color_rgb(72, 58, 22)  : make_color_rgb(54, 44, 18));
         else if (_is_urgent)  draw_set_color(_hot ? make_color_rgb(74, 42, 30)  : make_color_rgb(56, 30, 22));
+        else if (_is_story)   draw_set_color(_hot ? make_color_rgb(40, 46, 66)  : make_color_rgb(28, 32, 48));
         else                  draw_set_color(_hot ? make_color_rgb(62, 50, 34)  : make_color_rgb(46, 36, 26));
-        draw_rectangle(_lx - 12, _qy, _rx + 12, _qy + 96, false);
+        draw_rectangle(_lx - 12, _qy, _rx + 12, _qy + _RH - 12, false);
         if      (_is_special) draw_set_color(_hot ? make_color_rgb(255, 205, 90) : make_color_rgb(170, 130, 50));
         else if (_is_urgent)  draw_set_color(_hot ? make_color_rgb(235, 120, 80) : make_color_rgb(140, 62, 44));
+        else if (_is_story)   draw_set_color(_hot ? make_color_rgb(170, 190, 240) : make_color_rgb(70, 80, 120));
         else                  draw_set_color(_hot ? make_color_rgb(220, 190, 130) : make_color_rgb(80, 64, 46));
-        draw_rectangle(_lx - 12, _qy, _rx + 12, _qy + 96, true);
-        // Touch (8d, punch item 4): tap a note to highlight it, tap the
-        // highlighted note again to take / turn in (simulated Enter).
-        if (touch_tapped(_lx - 12, _qy, _rx + 12, _qy + 96)) {   // click too (08-19 mouse pass): click selects, click again takes
+        draw_rectangle(_lx - 12, _qy, _rx + 12, _qy + _RH - 12, true);
+        // Touch / click: tap a note to highlight it, tap the highlighted note again to take / turn in.
+        if (touch_tapped(_lx - 12, _qy, _rx + 12, _qy + _RH - 12)) {
             if (_i == _cur) touch_press(vk_enter);
             else { _gc.tavern_board_cursor = _i; _cur = _i; }
         }
-        // "Pin"
+        // Asker portrait (existing NPC icons), 72px, with the wax pin above it.
+        var _pspr = asset_get_index("spr_icon_npc_" + string(_qd.npc));
+        if (_pspr >= 0 && sprite_exists(_pspr)) {
+            var _psc = 72 / max(1, sprite_get_height(_pspr));
+            draw_sprite_ext(_pspr, 0, _lx + 2, _qy + 12, _psc, _psc, 0, c_white, 1.0);
+        }
         draw_set_color(_is_special ? make_color_rgb(255, 205, 90)
                      : (_is_urgent ? make_color_rgb(235, 80, 55) : make_color_rgb(180, 60, 50)));
-        draw_circle(_lx + 6, _qy + 12, 5, false);
+        draw_circle(_lx - 2, _qy + 8, 5, false);
+        // Title line + the object line.
+        var _tx1 = _lx + 88;
         draw_set_font(ui_font(fnt_ui));
-        draw_set_color(_qs.status == "done" ? make_color_rgb(140, 125, 105) : (_hot ? make_color_rgb(240, 228, 200) : make_color_rgb(205, 190, 165)));
-        draw_text(_lx + 24, _qy + 9, (_is_special ? "SPECIAL: " : (_is_urgent ? "URGENT: " : "")) + _qd.name);
+        draw_set_color(_hot ? make_color_rgb(240, 228, 200) : make_color_rgb(205, 190, 165));
+        var _ttl = (_is_special ? "SPECIAL: " : (_is_urgent ? "URGENT: " : "")) + _qd.name;
+        if (_is_story) _ttl = npc_display_name(_qd.npc) + "'s story, part " + string(_qd.step) + " of " + string(_qd.steps) + ":  " + _qd.name;
+        ui_draw_text_fit(_tx1, _qy + 8, _ttl, _rx - _tx1 - 330);
         draw_set_font(ui_font(fnt_ui_small));
-        draw_set_color(make_color_rgb(160, 145, 120));
-        var _sub = npc_display_name(_qd.npc) + "   -   " + _qd.objective;
-        if (_qs.status == "active") _sub += "   (" + string(min(_qs.progress, _qd.obj_target)) + " / " + string(_qd.obj_target)
-            + (quest_is_complete(_qid) ? "  -  DONE" : "") + ")";
-        draw_text(_lx + 24, _qy + 48, _sub);
+        draw_set_color(make_color_rgb(175, 160, 130));
+        var _sub = npc_display_name(_qd.npc) + "  -  " + _qd.objective;
+        if (_qs.status == "active" && !contract_has_want(_qd) && _qd.obj_type != "choice")
+            _sub += "   (" + string(min(_qs.progress, _qd.obj_target)) + " / " + string(_qd.obj_target) + ")";
+        if (_done) _sub += "   -  DONE, turn in";
+        ui_draw_text_fit(_tx1, _qy + 42, _sub, _rx - _tx1 - 20);
+        // Third line: danger pips (bounties), contract seal, and the reward preview.
+        var _ly = _qy + 68;
+        draw_set_color(make_color_rgb(140, 128, 105));
+        var _tag = "";
+        if (contract_has_bounty(_qd)) {
+            var _dp = 1 + ((highest_awakening_unlocked() >= 2) ? 1 : 0) + ((highest_awakening_unlocked() >= 4) ? 1 : 0);
+            _tag = "danger ";
+            for (var _pp = 0; _pp < 3; _pp++) _tag += (_pp < _dp) ? "*" : "-";
+            if (_qd.bounty.affix != "") _tag += "   affix GUARANTEED on that foe";
+        }
+        if (contract_has_contract(_qd)) {
+            var _ck = _qd.contract.kind;
+            _tag += ((_tag != "") ? "   " : "") + "[SEAL] " + ((_ck == "escort") ? "an escort rides with you" : ((_ck == "timed") ? "a clock below" : ((_ck == "choice") ? "a choice below" : ((_ck == "cache") ? "the object may be cached below" : "it may ambush you"))));
+        }
+        if (_tag != "") ui_draw_text_fit(_tx1, _ly, _tag, _rx - _tx1 - 330);
+        // Right column: reward preview + expiry.
         draw_set_halign(fa_right);
-        draw_set_color(make_color_rgb(185, 200, 160));
-        ui_draw_text_arrows(_rx, _qy + 9, journal_quest_reward_text(_qd));
-        // Expiry tag (board requests): run-count clock, red when this is the last run.
-        // A fulfilled-awaiting-turn-in request never rots, so no tag once it's DONE.
-        if (_is_board && !quest_is_complete(_qid)) {
-            if (_qd.expires <= 1) {
-                draw_set_color(make_color_rgb(235, 110, 80));
-                draw_text(_rx, _qy + 48, "THIS RUN ONLY");
-            } else {
-                draw_set_color(make_color_rgb(200, 170, 110));
-                draw_text(_rx, _qy + 48, string(_qd.expires) + " runs left");
-            }
+        if (_is_story) {
+            draw_set_color(make_color_rgb(185, 200, 160));
+            draw_text(_rx, _qy + 8, _qd.finale ? "a STORIED item" : (string(_qd.reward.gold) + "g + a word"));
+        } else {
+            draw_set_color(_done ? make_color_rgb(230, 210, 150) : make_color_rgb(120, 112, 95));
+            draw_text(_rx, _qy + 8, "pick: COIN / BOON / ITEM");
+            draw_set_color(make_color_rgb(150, 140, 120));
+            draw_text(_rx, _qy + 42, "coin " + string(round(_qd.reward.gold * 1.5) * (_is_urgent ? 2 : 1)) + "g" + ((variable_struct_exists(_qd.reward, "dust") && _qd.reward.dust > 0) ? (" +" + string(_qd.reward.dust) + " dust") : ""));
+        }
+        if (_is_board && !_done) {
+            if (_qd.expires <= 1) { draw_set_color(make_color_rgb(235, 110, 80)); draw_text(_rx, _ly, "THIS RUN ONLY"); }
+            else { draw_set_color(make_color_rgb(200, 170, 110)); draw_text(_rx, _ly, string(_qd.expires) + " runs left"); }
         }
         draw_set_halign(fa_left);
         if (journal_quest_badged(_qid)) {
             draw_set_color(make_color_rgb(235, 180, 80));
-            // "unseen" dot sits in the empty gap BETWEEN the reward row (y+9) and
-            // the expiry row (y+48) so it can't overlap the right-aligned expiry
-            // text - "2 runs lef[dot]" collision, M 07-20. y+60 put it into the
-            // expiry line; y+38 is clear of both rows.
-            draw_circle(_rx + 2, _qy + 38, 6, false);
+            draw_circle(_rx + 2, _qy + 30, 6, false);
         }
-        _qy += 108;
+        _qy += _RH;
     }
     if (_bl_last < _n) {
         draw_set_font(ui_font(fnt_ui_small));
@@ -3955,22 +4011,142 @@ function ui_draw_tavern_board() {
     draw_set_font(ui_font(fnt_ui_small));
     if (_gc.tavern_board_note != "") {
         draw_set_color(make_color_rgb(230, 210, 150));
-        draw_text((_x1 + _x2) / 2, _y2 - 72, _gc.tavern_board_note);
+        draw_text_ext((_x1 + _x2) / 2, _y2 - 66, _gc.tavern_board_note, 24, _x2 - _x1 - 120);
     }
     if (input_device() == 2) {
-        // Touch: rows are tappable (tap again = take/turn in); the chip bar
-        // (ui_draw_touch_chips "board" ctx) carries Knucklebones/Table/Reroll.
         draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(make_color_rgb(160, 145, 120));
         draw_set_halign(fa_center);
-        draw_text((_x1 + _x2) / 2, _y2 - 30, "Tap a note to read it  -  tap again to take / turn in");
+        draw_text((_x1 + _x2) / 2, _y2 - 30, "Tap a tab  -  tap a note to read it  -  tap again to take / turn in");
     } else {
-        ui_draw_key_legend((_x1 + _x2) / 2, _y2 - 30, "W/S: Browse    Enter: Take / Turn in    R: Reroll ("
+        ui_draw_key_legend((_x1 + _x2) / 2, _y2 - 30, "A/D: Tab    W/S: Browse    Enter: Take / Turn in    R: Reroll ("
             + string(board_reroll_cost()) + "g)    K: Knucklebones    T: High Table    Esc: Leave    (done: Journal, J)",
             make_color_rgb(160, 145, 120));
     }
     draw_set_halign(fa_left); draw_set_valign(fa_top);
     draw_set_alpha(1.0); draw_set_color(c_white); draw_set_font(-1);
+}
+
+// ---------------------------------------------------------------------------
+// ui_draw_reward_pick() - CONTRACTS pick-of-three (DESIGN_QUESTS_0925.md §3): three
+// cards over the board - COIN / A BOON FOR THE NEXT RUN / AN ITEM (two slots to choose
+// from). gc.reward_pick_* owns state; reward_pick_step (scr_stats) runs input; the
+// hit-tests live here (touch rule) and inject "reward:*" tags.
+// ---------------------------------------------------------------------------
+function ui_draw_reward_pick() {
+    if (!instance_exists(obj_game_controller)) return;
+    var _gc = instance_find(obj_game_controller, 0);
+    if (!variable_instance_exists(_gc, "reward_pick_open") || !_gc.reward_pick_open || _gc.reward_pick_data == undefined) return;
+    var _d = _gc.reward_pick_data;
+    var _qd = quest_def(_d.qid);
+    var _t = _gc.reward_pick_t / 60;
+    var _fade = min(1, _gc.reward_pick_t / 18);
+    var _pad = (input_device() == 1), _touch = (input_device() == 2);
+    var _mx = device_mouse_x_to_gui(0), _my = device_mouse_y_to_gui(0);
+    var _press = mouse_check_button_pressed(mb_left);
+
+    draw_set_alpha(0.88 * _fade); draw_set_color(make_color_rgb(4, 3, 6));
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
+    draw_set_alpha(_fade);
+
+    var _x1 = 300, _y1 = 110, _x2 = 1620, _y2 = 990;
+    draw_set_color(make_color_rgb(22, 16, 12)); draw_rectangle(_x1, _y1, _x2, _y2, false);
+    ui_draw_gothic_frame(_x1, _y1, _x2, _y2, 36);
+    draw_set_halign(fa_center); draw_set_valign(fa_top);
+    draw_set_font(fnt_ui_title);
+    draw_set_color(make_color_rgb(240, 215, 160));
+    draw_text(GUI_CX, _y1 + 30, "CHOOSE YOUR REWARD");
+    draw_set_font(ui_font(fnt_ui_small)); draw_set_color(make_color_rgb(175, 160, 130));
+    var _hd = (_qd != undefined) ? ("\"" + _qd.name + "\" fulfilled for " + npc_display_name(_qd.npc)) : "Fulfilled";
+    if (_d.tier_bonus > 0) _hd += "   -   over-delivered: +" + string(_d.tier_bonus) + " tier";
+    if (_d.pay_mult > 1)   _hd += "   -   escort walked out: coin x" + string(_d.pay_mult);
+    if (_d.urgent)         _hd += "   -   URGENT: coin x2";
+    ui_draw_text_fit(GUI_CX, _y1 + 88, _hd, _x2 - _x1 - 120);
+
+    var _cw = 380, _ch = 560, _gap = 40;
+    var _cx0 = GUI_CX - _cw * 1.5 - _gap, _cy = _y1 + 150;
+    var _titles = ["COIN", "A BOON FOR THE NEXT RUN", "AN ITEM"];
+    var _cols   = [make_color_rgb(240, 200, 90), make_color_rgb(140, 210, 170), make_color_rgb(190, 150, 240)];
+    for (var _c = 0; _c < 3; _c++) {
+        var _cx = _cx0 + _c * (_cw + _gap);
+        var _hot = (_gc.reward_pick_cursor == _c);
+        var _pulse = _hot ? (0.5 + 0.5 * sin(_t * 5)) : 0;
+        draw_set_color(_hot ? make_color_rgb(44, 36, 26) : make_color_rgb(28, 24, 18));
+        draw_rectangle(_cx, _cy, _cx + _cw, _cy + _ch, false);
+        draw_set_color(_hot ? merge_color(_cols[_c], c_white, 0.3 * _pulse) : merge_color(_cols[_c], c_black, 0.55));
+        draw_rectangle(_cx, _cy, _cx + _cw, _cy + _ch, true);
+        draw_rectangle(_cx, _cy, _cx + _cw, _cy + 6, false);
+        draw_set_font(ui_font(fnt_ui));
+        draw_set_halign(fa_center);
+        draw_set_color(_hot ? c_white : make_color_rgb(200, 190, 170));
+        draw_text_ext(_cx + _cw / 2, _cy + 26, _titles[_c], 30, _cw - 40);
+        draw_set_font(ui_font(fnt_ui_small));
+        var _by = _cy + 110;
+        if (_c == 0) {
+            draw_set_font(fnt_ui_title); draw_set_color(_cols[0]);
+            draw_text(_cx + _cw / 2, _by, string(_d.coin) + "g"); _by += 70;
+            draw_set_font(ui_font(fnt_ui_small)); draw_set_color(make_color_rgb(190, 175, 145));
+            if (_d.dust > 0) { draw_text(_cx + _cw / 2, _by, "+ " + string(_d.dust) + " rune dust"); _by += 30; }
+            if (_d.chit > 0) { draw_text_ext(_cx + _cw / 2, _by, "+ " + string(_d.chit) + " " + item_rarity_name(clamp(_d.chit_tier, 0, 4)) + " Reforge Ingot", 26, _cw - 40); _by += 60; }
+            _by += 20; draw_set_color(make_color_rgb(140, 128, 105));
+            draw_text_ext(_cx + _cw / 2, _by, "The safe pick. Spend it at camp tonight.", 26, _cw - 50);
+        } else if (_c == 1) {
+            draw_set_font(ui_font(fnt_ui)); draw_set_color(_cols[1]);
+            draw_text_ext(_cx + _cw / 2, _by, _d.boon.label, 32, _cw - 40); _by += 110;
+            draw_set_font(ui_font(fnt_ui_small)); draw_set_color(make_color_rgb(140, 128, 105));
+            draw_text_ext(_cx + _cw / 2, _by, "Armed when you next walk into a dungeon. Shown on the board until then, and on the run summary after.", 26, _cw - 50);
+        } else {
+            draw_set_color(make_color_rgb(150, 140, 120));
+            draw_text(_cx + _cw / 2, _by, "one of two:"); _by += 34;
+            for (var _k = 0; _k < 2; _k++) {
+                var _it = _d.items[_k];
+                var _sel = (_d.item_sel == _k);
+                var _iy0 = _by, _iy1 = _by + 150;
+                draw_set_color(_sel && _hot ? make_color_rgb(54, 44, 62) : make_color_rgb(24, 20, 28));
+                draw_rectangle(_cx + 16, _iy0, _cx + _cw - 16, _iy1, false);
+                draw_set_color(_sel ? _cols[2] : make_color_rgb(70, 60, 80));
+                draw_rectangle(_cx + 16, _iy0, _cx + _cw - 16, _iy1, true);
+                if (_it != undefined) {
+                    draw_set_font(ui_font(fnt_ui)); draw_set_color(item_rarity_color(_it.rarity));
+                    draw_text_ext(_cx + _cw / 2, _iy0 + 10, _it.name, 28, _cw - 60);
+                    draw_set_font(ui_font(fnt_ui_small)); draw_set_color(make_color_rgb(190, 175, 145));
+                    var _il = item_rarity_name(_it.rarity) + " " + want_slot_label(_it.slot) + "  -  " + _it.stat_name + " +" + string(_it.stat_value);
+                    if (variable_struct_exists(_it, "affixes") && is_array(_it.affixes) && array_length(_it.affixes) > 0) {
+                        for (var _ai = 0; _ai < array_length(_it.affixes); _ai++) _il += "\n" + want_stat_label(_it.affixes[_ai].stat_name) + " +" + string(_it.affixes[_ai].stat_value);
+                    }
+                    if (variable_struct_exists(_it, "elem_affix") && is_struct(_it.elem_affix)) _il += "\n" + want_elem_label(_it.elem_affix.element) + " +" + string(_it.elem_affix.dmg);
+                    draw_text_ext(_cx + _cw / 2, _iy0 + 70, _il, 24, _cw - 60);
+                } else {
+                    draw_set_color(make_color_rgb(120, 110, 100)); draw_text(_cx + _cw / 2, _iy0 + 60, "(nothing rolled)");
+                }
+                if (_press && _mx >= _cx + 16 && _mx < _cx + _cw - 16 && _my >= _iy0 && _my < _iy1) input_inject((_k == 0) ? "reward:item_a" : "reward:item_b");
+                _by = _iy1 + 16;
+            }
+            draw_set_font(ui_font(fnt_ui_small)); draw_set_color(make_color_rgb(140, 128, 105));
+            draw_text_ext(_cx + _cw / 2, _by + 6, _touch ? "tap one to choose it" : (_pad ? "Up/Down picks" : "W/S picks"), 24, _cw - 50);
+        }
+        // Card hit-test: tap selects, tap again confirms.
+        if (_press && _mx >= _cx && _mx < _cx + _cw && _my >= _cy && _my < _cy + _ch
+            && !(_c == 2 && _my >= _cy + 144 && _my < _cy + 144 + 2 * 166)) {
+            if (_hot) input_inject("reward:card");
+            else _gc.reward_pick_cursor = _c;
+        }
+    }
+    draw_set_halign(fa_center); draw_set_valign(fa_bottom);
+    draw_set_font(ui_font(fnt_ui_small)); draw_set_color(make_color_rgb(160, 145, 120));
+    draw_text(GUI_CX, _y2 - 28, _touch ? "Tap a card, tap again to take it. There is no going back - the job is done."
+        : (_pad ? "Left/Right: card    A: take it    (no going back - the job is done)" : "A/D: card    Enter: take it    (no going back - the job is done)"));
+    draw_set_halign(fa_left); draw_set_valign(fa_top);
+    draw_set_alpha(1.0); draw_set_color(c_white); draw_set_font(-1);
+}
+
+// Rows for ONE board tab (0 bounty / 1 request / 2 story), in board order.
+function tavern_board_rows_tab(tab) {
+    var _all = tavern_board_rows();
+    var _key = (tab == 0) ? "bounty" : ((tab == 1) ? "request" : "story");
+    var _out = [];
+    for (var _i = 0; _i < array_length(_all); _i++) if (contract_tab(quest_def(_all[_i])) == _key) array_push(_out, _all[_i]);
+    return _out;
 }
 
 // ---------------------------------------------------------------------------
@@ -11277,16 +11453,6 @@ function ui_draw_toast(_msg, _cx, _ytop, _alpha = 1.0, _txt_col = undefined) {
     draw_set_color(c_white);
     draw_set_alpha(1.0);
 }
-// ui_draw_text_fit(x, y, str, max_w) - one line that must stay inside a box: drawn as-is when
-// it fits, else scaled down uniformly to max_w (09-28, M: "text starts and ends outside the
-// popup"). Honors the current halign; for a caption that may wrap use draw_text_ext instead.
-function ui_draw_text_fit(_x, _y, _s, _max_w) {
-    var _w = string_width(_s);
-    if (_max_w <= 0 || _w <= _max_w) { draw_text(_x, _y, _s); return; }
-    var _k = _max_w / _w;
-    draw_text_transformed(_x, _y, _s, _k, _k, 0);
-}
-
 // =============================================================================
 // FIND BANNER (M 08-18: "I have no idea when I got this pet ... whenever a pet,
 // banshee bottle, or egg is found there should always be a popup"). A queued,
@@ -23167,6 +23333,13 @@ function ui_draw_run_summary() {
     draw_set_font(ui_font(fnt_ui));
     if (array_length(_s.missions) == 0) { draw_set_color(make_color_rgb(110, 118, 135)); draw_text(_rx, _ry, "no parties came home this run"); _ry += 34; }
     for (var _m = 0; _m < min(4, array_length(_s.missions)); _m++) { draw_set_color(make_color_rgb(230, 200, 120)); draw_text(_rx, _ry, ui_truncate(_s.missions[_m], 620)); _ry += 34; }
+    // CONTRACTS (09-29): the next-run cards this run spent.
+    if (variable_struct_exists(_s, "boons") && is_array(_s.boons) && array_length(_s.boons) > 0) {
+        _ry += 8;
+        draw_set_font(ui_font(fnt_ui_small)); draw_set_color(make_color_rgb(200, 190, 160)); draw_text(_rx, _ry, "CONTRACT CARDS SPENT"); _ry += 30;
+        draw_set_font(ui_font(fnt_ui));
+        for (var _cb = 0; _cb < min(3, array_length(_s.boons)); _cb++) { draw_set_color(make_color_rgb(160, 220, 190)); draw_text(_rx, _ry, ui_truncate(string(_s.boons[_cb]), 620)); _ry += 34; }
+    }
     // Continue
     var _bx0 = _x2 - 300, _by0 = _y2 - 96, _bx1 = _x2 - 40, _by1 = _y2 - 36;
     draw_set_color(make_color_rgb(40, 34, 18)); draw_rectangle(_bx0, _by0, _bx1, _by1, false);

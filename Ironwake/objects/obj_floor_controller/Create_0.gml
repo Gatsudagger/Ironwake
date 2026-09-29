@@ -546,8 +546,16 @@ for (var _i = 0; _i < array_length(_fmap); _i++) {
         parents:  _n.parents,
         children: _n.children,
         px:       _n.px,
-        py:       _n.py
+        py:       _n.py,
+        contract: false   // CONTRACTS (09-29): the sealed room (set just below)
     });
+}
+// CONTRACTS (09-29, §4): while a taken contract still owes its event this run, the
+// first uncleared EVENT room carries its seal - entering it rolls contract_event_roll.
+if (contract_pending() != undefined) {
+    for (var _ci = 1; _ci < array_length(current_rooms) - 1; _ci++) {
+        if (current_rooms[_ci].type == "event" && !current_rooms[_ci].cleared) { current_rooms[_ci].contract = true; break; }
+    }
 }
 
 // Start the cursor on the first room you can actually enter (the frontier),

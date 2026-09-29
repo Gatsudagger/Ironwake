@@ -196,6 +196,9 @@ function save_game() {
         // (unlike the code-authored catalog), plus the id sequence + Reforge Chits.
         board_requests:  (variable_global_exists("board_requests")  && is_array(global.board_requests))   ? global.board_requests  : [],
         board_seq:       variable_global_exists("board_seq")     ? global.board_seq     : 0,
+        // CONTRACTS (09-29): armed next-run cards + the seven story chains.
+        next_run_boons:  (variable_global_exists("next_run_boons") && is_array(global.next_run_boons)) ? global.next_run_boons : [],
+        story:           (variable_global_exists("story") && is_struct(global.story)) ? global.story : undefined,
         reforge_ingots:  (variable_global_exists("reforge_ingots") && is_array(global.reforge_ingots)) ? global.reforge_ingots : [0, 0, 0, 0, 0],
         // Pattern Book (08-11): blueprint studies + unlocked art page.
         pattern_book:    (variable_global_exists("pattern_book") && is_struct(global.pattern_book)) ? global.pattern_book : undefined,
@@ -440,6 +443,9 @@ function new_game_reset() {
     // Tavern board requests: empty - board_bootstrap() stocks it on first board open.
     global.board_requests = [];
     global.board_seq      = 0;
+    global.next_run_boons = [];   // CONTRACTS (09-29)
+    global.story          = {};
+    contracts_ensure();
     global.reforge_ingots = [0, 0, 0, 0, 0];
     global.pattern_book   = { fam: {}, art: [] };
     // Board v2 + dice v2 cadences: fresh clocks, no standing invitation.
@@ -820,6 +826,10 @@ function load_game() {
     // stocks the board the first time it is opened).
     global.board_requests = (variable_struct_exists(_s, "board_requests") && is_array(_s.board_requests)) ? _s.board_requests : [];
     global.board_seq      = (variable_struct_exists(_s, "board_seq"))     ? _s.board_seq     : 0;
+    // CONTRACTS (09-29): older saves -> nothing armed, chains at step 0 (story_ensure opens them).
+    global.next_run_boons = (variable_struct_exists(_s, "next_run_boons") && is_array(_s.next_run_boons)) ? _s.next_run_boons : [];
+    global.story          = (variable_struct_exists(_s, "story") && is_struct(_s.story)) ? _s.story : {};
+    contracts_ensure();
     global.reforge_ingots = (variable_struct_exists(_s, "reforge_ingots") && is_array(_s.reforge_ingots) && array_length(_s.reforge_ingots) == 5) ? _s.reforge_ingots : [0, 0, 0, 0, 0];
     // Pattern Book (08-11): older saves -> empty book; pattern_book_ensure()
     // repairs any missing sub-field on first touch.

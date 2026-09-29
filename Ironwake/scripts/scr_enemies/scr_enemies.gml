@@ -2150,6 +2150,28 @@ function enemy_affix_roll(c, n, allow_twin) {
     return c.affixes;
 }
 
+// CONTRACTS (09-29): a BOUNTY poster guarantees its affix on that species in that
+// dungeon - push it on (if the roll missed it) and apply the stat side. Twinned is
+// honoured only when the field has room; the caller spawns the twin as usual.
+function enemy_affix_force(c, id, allow_twin) {
+    if (!is_struct(c) || id == "") return;
+    if (id == "twinned" && !allow_twin) return;
+    if (!variable_struct_exists(c, "affixes") || !is_array(c.affixes)) c.affixes = [];
+    if (enemy_affix_has(c, id)) return;
+    array_push(c.affixes, id);
+    switch (id) {
+        case "warded":
+            c.armor  += 4;
+            c.max_HP  = max(1, round(c.max_HP * 1.15));
+            c.HP      = c.max_HP;
+            break;
+        case "hasted":
+            c.damage  = max(1, round(c.damage * 1.2));
+            if (variable_struct_exists(c, "telegraph_damage")) c.telegraph_damage = max(1, round(c.telegraph_damage * 1.2));
+            break;
+    }
+}
+
 // =============================================================================
 // HUNTER'S MARKS (DESIGN_IMPROVEMENT_PLAN_0924.md §5.4, built 09-24)
 // Lifetime kills per enemy NAME (global.enemy_kills, saved additively). Every
