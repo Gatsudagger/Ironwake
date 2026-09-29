@@ -19892,7 +19892,7 @@ function contract_finish(gc, id, tier_bonus) {
     if (contract_is_story(_d)) return story_turn_in(id);
     var _tb = tier_bonus + (variable_struct_exists(_s, "tier_bonus") ? _s.tier_bonus : 0);
     var _pm = variable_struct_exists(_s, "pay_mult") ? _s.pay_mult : 1;
-    reward_pick_open(gc, id, clamp(_tb, 0, 2), _pm);
+    reward_pick_begin(gc, id, clamp(_tb, 0, 2), _pm);
     return "";
 }
 
@@ -19900,7 +19900,7 @@ function contract_finish(gc, id, tier_bonus) {
 // PICK-OF-THREE (§3): COIN / A BOON FOR THE NEXT RUN / AN ITEM. gc owns the modal
 // (reward_pick_open + reward_pick_data), scr_ui draws it, reward_pick_step runs it.
 // -----------------------------------------------------------------------------
-function reward_pick_open(gc, id, tier_bonus, pay_mult) {
+function reward_pick_begin(gc, id, tier_bonus, pay_mult) {
     var _d = quest_def(id);
     var _a = highest_awakening_unlocked();
     var _r = _d.reward;

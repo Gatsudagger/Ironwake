@@ -3908,31 +3908,3 @@ ui_draw_tab_tip();
 // NPC STATION GUIDED TOUR (M-locked 08-15) - the true last call: the spotlight
 // dim + explainer card must ride above the station screens AND the tab tips.
 ui_draw_npc_tour();
-
-// =============================================================================
-// 09-29 DIAGNOSTIC (temporary, M's Bairc-station input freeze): HOLD F8 to see every
-// flag that can own or block input. Drawn straight from Draw so it works even when the
-// gc Step is exiting early. Remove once the freeze is found.
-// =============================================================================
-if (keyboard_check(vk_f8) && instance_exists(obj_game_controller)) {
-    var _dg = instance_find(obj_game_controller, 0);
-    var _dfl = function(_o, _nm) { return variable_instance_exists(_o, _nm) ? string(variable_instance_get(_o, _nm)) : "n/a"; };
-    var _dl = "";
-    _dl += "ui_input_blocked=" + string(ui_input_blocked()) + "  tutorial_active='" + (variable_global_exists("tutorial_active") ? string(global.tutorial_active) : "n/a") + "'  text_entry=" + string(text_entry_active()) + "  forge_result=" + string(forge_result_up()) + "\n";
-    _dl += "welcome=" + _dfl(_dg, "welcome_open") + "  summary=" + _dfl(_dg, "summary_open") + "  report=" + _dfl(_dg, "ledger_report_open") + "  inbox=" + _dfl(_dg, "inbox_open") + "  ledger=" + _dfl(_dg, "ledger_open") + "  reward_pick=" + _dfl(_dg, "reward_pick_open") + "\n";
-    _dl += "bairc=" + _dfl(_dg, "bairc_open") + "  intro=" + _dfl(_dg, "bairc_intro_open") + "  lore=" + _dfl(_dg, "bairc_lore_open") + "  garden=" + _dfl(_dg, "garden_open") + "  hatch=" + _dfl(_dg, "hatch_active") + "  tour_step=" + _dfl(_dg, "npc_tour_step") + "/" + _dfl(_dg, "npc_tour_npc") + "\n";
-    _dl += "naming=" + _dfl(_dg, "bairc_naming") + "  capstone=" + _dfl(_dg, "bairc_capstone_open") + "  release=" + _dfl(_dg, "bairc_release_confirm") + "  padmenu=" + _dfl(_dg, "bairc_pad_menu_open") + "  detail=" + _dfl(_dg, "bairc_detail_open") + "  menu=" + _dfl(_dg, "menu_open") + "  journal=" + _dfl(_dg, "journal_open") + "  board=" + _dfl(_dg, "tavern_board_open") + "  kb=" + _dfl(_dg, "kb_open") + "\n";
-    _dl += "picker=" + (variable_global_exists("item_picker") ? string(global.item_picker.open) + "/" + string(global.item_picker.purpose) : "n/a") + "  reagent_picker=" + (variable_global_exists("reagent_picker") ? string(global.reagent_picker != undefined) : "n/a") + "  gift_popup=" + (variable_global_exists("gift_popup") ? string(global.gift_popup != undefined) : "n/a") + "  settings=" + (variable_global_exists("settings_open") ? string(global.settings_open) : "n/a") + "\n";
-    _dl += "gc_instances=" + string(instance_number(obj_game_controller)) + "  tip_frames=" + (variable_global_exists("dbg_tip_frames") ? string(global.dbg_tip_frames) : "0") + "  tip_hits=" + (variable_global_exists("dbg_tip_hits") ? string(global.dbg_tip_hits) : "0") + "  tip_dismissed=" + (variable_global_exists("dbg_tip_dismissed") ? string(global.dbg_tip_dismissed) : "0") + "  lastkey=" + string(keyboard_lastkey) + "  seen_hub=" + string(tutorial_seen_has("hub")) + "  enabled=" + (variable_global_exists("tutorial_enabled") ? string(global.tutorial_enabled) : "n/a") + "\n";
-    if (variable_global_exists("dbg_mark")) {
-        var _mk = variable_struct_get_names(global.dbg_mark); array_sort(_mk, true);
-        _dl += "last_exit=" + (variable_global_exists("dbg_last_exit") ? string(global.dbg_last_exit) : "none") + "  marks(ms ago): ";
-        for (var _mi = 0; _mi < array_length(_mk); _mi++) _dl += _mk[_mi] + "=" + string(current_time - global.dbg_mark[$ _mk[_mi]]) + "  ";
-        _dl += "\n";
-    }
-    _dl += "any_held=" + string(input_any_held()) + "  device=" + string(input_device()) + "  latch=" + (variable_global_exists("ui_overlay_latch") ? string(global.ui_overlay_latch) : "n/a") + "  dismiss_pending=" + (variable_global_exists("tutorial_dismiss_pending") ? string(global.tutorial_dismiss_pending) : "n/a") + "  lore_queue=" + string(array_length(bairc_lore_queue())) + "  reports=" + string(ledger_reports_pending()) + "  summary_pending=" + string(run_summary_pending()) + "  ctx=" + string(__input_ctx());
-    draw_set_alpha(0.92); draw_set_color(c_black); draw_rectangle(GUI_XL + 20, 20, GUI_XR - 20, 330, false); draw_set_alpha(1.0);
-    draw_set_font(ui_font(fnt_ui_small)); draw_set_halign(fa_left); draw_set_valign(fa_top); draw_set_color(make_color_rgb(120, 255, 160));
-    draw_text_ext(GUI_XL + 34, 30, _dl, 32, GUI_W - 70);
-    draw_set_color(c_white); draw_set_font(-1);
-}
