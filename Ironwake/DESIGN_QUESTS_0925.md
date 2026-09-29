@@ -1,6 +1,6 @@
 # DESIGN_QUESTS_0925 — CONTRACTS: the quest / board rework
 
-Status: **DRAFT for M's lock (2026-09-25).** Pulls §5.1 Contracts forward from P4 and folds in
+Status: **LOCKED by M 2026-09-29 (decisions in §9).** Was DRAFT 2026-09-25. Pulls §5.1 Contracts forward from P4 and folds in
 M's 09-25 asks. Builds as the batch right after Bairc's Ledger. Nothing here is built yet.
 
 M (09-25): *"right now they're blind click and farm mindless turn in for supplemental
@@ -142,13 +142,12 @@ render as today.
 Total ≈ **L** (about the size of the Ledger batch). Build order as listed; each step is F5-able
 alone. Ships after Bairc's Ledger.
 
-## 9. Decisions for M (lock these)
+## 9. Decisions (LOCKED by M, 2026-09-29)
 
-1. Chains in v1: all 7, or 3 (Dorn, Bairc, Sable) first?
-2. Pick-of-three on **every** bounty/request, or only on non-urgent ones?
-3. The BOON card's "start with a random Boon" — keep, or replace with a fixed "+1 potion"?
-4. Storied items at rarity 3 (epic) with fixed affixes — or rarity 4 with a true unique effect
-   each (bigger: 7 new combat hooks)?
-5. Escort hirelings reuse the Knight ally math (lance strike + 45-frame act) — fine as v1?
-6. Requests consume the handed item (yes per the Sacrifice idea) — confirm.
-7. Bounty affix guarantee overrides the elite affix roll for that species in that dungeon — confirm.
+1. Chains in v1: **all 7** NPCs.
+2. Pick-of-three on **every** bounty/request. Urgent pays x2 on the COIN card only.
+3. BOON card keeps "start the run with a random Boon".
+4. Storied items at **rarity 4 with a true unique effect each** (7 new combat hooks, one per NPC).
+5. Escort hirelings reuse the Knight ally math (lance strike + 45-frame act) as v1.
+6. Requests **consume** the handed item (Sacrifice). Creature wants are shown, not consumed.
+7. Bounty affix guarantee **overrides** the elite affix roll for that species in that dungeon.
