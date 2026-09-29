@@ -5250,7 +5250,7 @@ function ui_draw_bairc_screen() {
             var _grown  = (_p.stage >= pet_max_stage());
             var _owned  = pet_feed_owned_list();
             var _fready = pet_growth_ready(_p);
-            var _fy0    = _after, _fy1 = _y2 - 66;
+            var _fy0    = _after, _fy1 = _y2 - 104;   // 09-29: clears the footer BAND (y2-92) - the feed rows + scroll hint sat under it
             draw_set_color(make_color_rgb(15, 17, 24));
             draw_rectangle(_dx - 14, _fy0, _dx + _dw, _fy1, false);
             draw_set_color(make_color_rgb(52, 58, 80));
