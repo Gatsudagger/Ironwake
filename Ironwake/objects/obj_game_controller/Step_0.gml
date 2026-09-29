@@ -220,26 +220,28 @@ if (!variable_instance_exists(id, "garden_open")) garden_open = false;
 // event (08-18 softlock lesson), so none of these branches may `exit` while one is active.
 // FIRST-NIGHT WELCOME (09-28): owns input outright while up - before the summary, before any tip.
 if (!variable_global_exists("dbg_mark")) global.dbg_mark = {}; global.dbg_mark[$ "d_before_welcome"] = current_time;   // 09-29 TEMP DIAG
-if (variable_instance_exists(id, "welcome_open") && welcome_open) { hub_welcome_step(id); exit; }
+if (variable_instance_exists(id, "welcome_open") && welcome_open) { global.dbg_last_exit = "welcome"; hub_welcome_step(id); exit; }
+global.dbg_mark[$ "d1_after_welcome"] = current_time;   // 09-29 TEMP DIAG
 // CONTRACTS pick-of-three (09-29): owns input while up - the handed object is already gone.
-if (variable_instance_exists(id, "reward_pick_open") && reward_pick_open) { reward_pick_step(id); exit; }
+if (variable_instance_exists(id, "reward_pick_open") && reward_pick_open) { global.dbg_last_exit = "reward_pick"; reward_pick_step(id); exit; }
+global.dbg_mark[$ "d2_after_reward"] = current_time;   // 09-29 TEMP DIAG
 if (variable_instance_exists(id, "summary_open") && !tutorial_is_active()) {
     if (room == rm_hub && !summary_open && !ledger_report_open && run_summary_pending()) {
         summary_open = true; summary_armed = false;
     }
-    if (summary_open) { run_summary_step(id); exit; }
+    if (summary_open) { global.dbg_last_exit = "summary"; run_summary_step(id); exit; }
     if (room == rm_hub && !ledger_report_open && !ui_input_blocked() && ledger_reports_pending()) {
         ledger_report_open = true; ledger_report_armed = false;
     }
-    if (ledger_report_open) { ledger_report_step(id); exit; }
-    if (inbox_open)  { inbox_step(id);  exit; }
-    if (ledger_open) { ledger_step(id); exit; }
+    if (ledger_report_open) { global.dbg_last_exit = "report"; ledger_report_step(id); exit; }
+    if (inbox_open)  { global.dbg_last_exit = "inbox"; inbox_step(id);  exit; }
+    if (ledger_open) { global.dbg_last_exit = "ledger"; ledger_step(id); exit; }
     // N (pad RB) / the bell chip: the Inbox, from the hub root only.
     if (room == rm_hub && !ui_input_blocked() && !global.ui_overlay_latch && !hub_dialog_up()
         && (input_hotkey("N") || input_inject_take("hub:inbox"))) {
         inbox_open = true; inbox_cursor = 0; inbox_scroll = 0;
         audio_play_sound(snd_page, 1, false);
-        exit;
+        global.dbg_last_exit = "inbox_open"; exit;
     }
     // L (pad LB) / the PARTIES OUT chip: the Ledger straight from the hub root (09-25 UX pass) -
     // the desk stays the front door, this is the shortcut once you know the way.
@@ -247,9 +249,10 @@ if (variable_instance_exists(id, "summary_open") && !tutorial_is_active()) {
         && (input_hotkey("L") || input_inject_take("hub:ledger"))) {
         ledger_screen_open(id);
         tutorial_try_show("ledger_intro");
-        exit;
+        global.dbg_last_exit = "ledger_open"; exit;
     }
 }
+global.dbg_mark[$ "d3_after_router"] = current_time;   // 09-29 TEMP DIAG
 
 if (!variable_global_exists("dbg_mark")) global.dbg_mark = {}; global.dbg_mark[$ "e_before_garden"] = current_time;   // 09-29 TEMP DIAG
 if (garden_open && bairc_open) {

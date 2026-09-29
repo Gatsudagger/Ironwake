@@ -3926,7 +3926,7 @@ if (keyboard_check(vk_f8) && instance_exists(obj_game_controller)) {
     _dl += "gc_instances=" + string(instance_number(obj_game_controller)) + "  tip_frames=" + (variable_global_exists("dbg_tip_frames") ? string(global.dbg_tip_frames) : "0") + "  tip_hits=" + (variable_global_exists("dbg_tip_hits") ? string(global.dbg_tip_hits) : "0") + "  tip_dismissed=" + (variable_global_exists("dbg_tip_dismissed") ? string(global.dbg_tip_dismissed) : "0") + "  lastkey=" + string(keyboard_lastkey) + "  seen_hub=" + string(tutorial_seen_has("hub")) + "  enabled=" + (variable_global_exists("tutorial_enabled") ? string(global.tutorial_enabled) : "n/a") + "\n";
     if (variable_global_exists("dbg_mark")) {
         var _mk = variable_struct_get_names(global.dbg_mark); array_sort(_mk, true);
-        _dl += "marks(ms ago): ";
+        _dl += "last_exit=" + (variable_global_exists("dbg_last_exit") ? string(global.dbg_last_exit) : "none") + "  marks(ms ago): ";
         for (var _mi = 0; _mi < array_length(_mk); _mi++) _dl += _mk[_mi] + "=" + string(current_time - global.dbg_mark[$ _mk[_mi]]) + "  ";
         _dl += "\n";
     }
