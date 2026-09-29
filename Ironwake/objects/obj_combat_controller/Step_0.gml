@@ -6375,7 +6375,8 @@ if (player_turn) {
                 _g_can = true; _g_heel = true;
                 player.pet_heel = false; player.pet_heel_round = -1;
             }
-            if (_g_can && _final_dmg > 1 && (_g_heel || irandom(99) < (_g_body ? 40 : 25))) {
+            var _g_sent = (_gpet != undefined && pet_calling_has(_gpet, "sentinel")) ? 10 : 0;   // SENTINEL calling: +10% intercept (09-25, §1.7)
+            if (_g_can && _final_dmg > 1 && (_g_heel || irandom(99) < ((_g_body ? 40 : 25) + _g_sent))) {
                 var _gcut = max(1, round(_final_dmg * 0.35));
                 _final_dmg -= _gcut;
                 var _gko = pet_take_damage(_gpet, _g_body ? max(1, round(_gcut * 0.90)) : _gcut);

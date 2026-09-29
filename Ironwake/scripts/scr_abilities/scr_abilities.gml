@@ -4576,7 +4576,7 @@ function loadout_preset_load(i, gc) {
     if (_s.pet_uid >= 0 && variable_global_exists("pet_roster")) {
         for (var _r = 0; _r < array_length(global.pet_roster); _r++) {
             var _rp = global.pet_roster[_r];
-            if (is_struct(_rp) && variable_struct_exists(_rp, "uid") && _rp.uid == _s.pet_uid && !_rp.is_egg) {
+            if (is_struct(_rp) && variable_struct_exists(_rp, "uid") && _rp.uid == _s.pet_uid && !_rp.is_egg && !ledger_pet_away(_rp)) {   // 09-25: an away creature stays out
                 global.active_pet = _r;
                 var _sl = pet_stance_list(_rp);
                 for (var _q = 0; _q < array_length(_sl); _q++) if (_sl[_q] == _s.stance) { _rp.stance = _s.stance; break; }

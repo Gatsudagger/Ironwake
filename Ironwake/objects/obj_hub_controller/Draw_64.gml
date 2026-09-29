@@ -195,6 +195,7 @@ draw_set_color(c_white);
 draw_text(_px, _py + _line_h,     "Runs:       " + string(_display_runs));
 draw_text(_px, _py + _line_h * 2, "Best Floor: " + string(_display_best_floor));
 draw_text(_px, _py + _line_h * 3, "Kills:      " + string(_display_kills));
+ui_draw_inbox_chip();   // hub INBOX bell (09-25, §4.1): top-right, unread count; tap / N opens
 // The Debtor's ledger (08-11 origin): one line in the free band just below the
 // info panel (panel ends y315; the Last Run panel starts y420). Red once IN
 // COLLECTIONS - a quarter of all earned gold is garnished at the source.
@@ -1067,8 +1068,8 @@ if (input_device() != 2) {
         : (hub_use_carousel ? "A/D: Rotate   W/S: Gate   Enter / Space: Interact   "
                             : "W/S: Navigate   Enter / Space: Interact   ");
     var _foot_txt = _foot_nav + (_hub_pad_ui
-        ? "LT: Journal (Quests / Codex / Bestiary)   Y: History   RT: Stash   L3: Upgrade   Select: Settings"
-        : "J: Journal (Quests / Codex / Bestiary)   H: History   T: Stash   P: Upgrade   O: Settings");
+        ? "LT: Journal (Quests / Codex / Bestiary)   Y: History   RT: Stash   L3: Upgrade   LB: Ledger   RB: Inbox   Select: Settings"
+        : "J: Journal (Quests / Codex / Bestiary)   H: History   T: Stash   P: Upgrade   L: Ledger   N: Inbox   O: Settings");
     draw_text_outline(GUI_CX, 1073, _foot_txt);
     // Unread-Journal cue: overdraw the "J: Journal" segment in flashing gold (M 2026-07-04:
     // the old floating pulse dot read as disjoint clutter). Alpha pulse over the same
@@ -2909,7 +2910,7 @@ if (instance_exists(obj_game_controller)) {
         } else {
             var _eqp = [];
             for (var _cpi = 0; _cpi < pet_count(); _cpi++) {
-                if (!global.pet_roster[_cpi].is_egg) array_push(_eqp, _cpi);
+                if (!global.pet_roster[_cpi].is_egg && !ledger_pet_away(global.pet_roster[_cpi])) array_push(_eqp, _cpi);   // away parties are not here to pick (09-25)
             }
             var _crows = array_length(_eqp) + 1;   // pets + a "No companion" row
             var _ccur  = clamp(_gc_ov.loadout_cursor, 0, _crows - 1);
@@ -3086,6 +3087,8 @@ if (instance_exists(obj_game_controller)) {
                 // invisible here and on the detail popup once chosen (M 07-09).
                 var _cspl = pet_splash_text(_hp);
                 if (_cspl != "") _ceff += "\n" + _cspl;
+                var _crc = pet_report_card(_hp);   // 09-25 (§1.10): the ledger's report card + its Calling
+                if (_crc != "") _ceff += "\n" + _crc;
                 draw_set_font(ui_font(fnt_ui));
                 var _ew = (_gx1 - _gx0) - 28;
                 var _eh = string_height_ext(_ceff, 30, _ew);
@@ -3169,11 +3172,16 @@ ui_draw_bairc_intro();      // first-talk dialogue popup (before the station ope
 ui_draw_bairc_lore();       // queued one-time lore fragment, over the garden (design Â§10)
 ui_draw_bairc_capstone();   // raised-Adult capstone pick modal, over the Bairc screen
 ui_draw_garden_scene();     // BAIRC'S GARDEN full-screen grounds (M-locked 08-15) - covers the station
+ui_draw_ledger_screen();    // BAIRC'S LEDGER (09-25, §1) - over the garden / station
+ui_draw_ledger_report();    // his report page on hub arrival (09-25, §1.4) - Bairc dialogue idiom
 hatch_cutscene_draw();   // full-screen egg-hatch sequence, over the Bairc screen
 ui_draw_journal();       // J-key Journal overlay (Phase 4a) - over hub content, under pause
 ui_draw_tavern_board();  // Tavern Requests board (Phase 4b) - the quest action surface
 ui_draw_knucklebones();  // Knucklebones dice game (expression #1) - over the board
 ui_draw_character_menu();
+ui_draw_inbox();            // hub INBOX list (09-25, §4.1) - over hub content
+ui_draw_run_summary();      // RUN SUMMARY (09-25, §4.2) - first thing on hub arrival, over everything
+ui_draw_hub_welcome();      // FIRST-NIGHT WELCOME (09-28) - once, above all of it
 
 // Comparison panel - drawn above all overlays
 if (instance_exists(obj_game_controller)) {

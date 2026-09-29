@@ -479,7 +479,13 @@ function ui_draw_touch_chips() {
             if (array_length(touch_action_menu_items()) > 0) {
                 array_push(_chips, { lbl: "ACTIONS", key: -1, hot: false });
             }
+            array_push(_chips, { lbl: "LEDGER", key: ord("L"), hot: false });   // 09-25 Bairc's Ledger (§1.8)
             if (array_length(_chips) == 0) return;
+            break;
+        case "ledger":
+            // 09-25 THE LEDGER: rows / offers / SEND are direct taps in ui_draw_ledger_screen;
+            // the tab flip rides E (input_tab_next) so it is one chip here.
+            array_push(_chips, { lbl: "OFFERS / OUT", key: ord("E"), hot: false });
             break;
         default: return;   // other screens: direct taps + the X chip cover them
     }
@@ -2129,6 +2135,11 @@ function ui_input_blocked() {
     if (variable_instance_exists(_gc, "codex_open")       && _gc.codex_open)       return true;   // full Item Codex gallery (opens anywhere since 07-28)
     if (variable_instance_exists(_gc, "pet_inspect_open") && _gc.pet_inspect_open) return true;   // P companion inspect
     if (variable_instance_exists(_gc, "tavern_board_open") && _gc.tavern_board_open) return true; // Tavern Requests board (Phase 4b)
+    if (variable_instance_exists(_gc, "ledger_open") && _gc.ledger_open) return true;             // Bairc's Ledger (09-25)
+    if (variable_instance_exists(_gc, "inbox_open") && _gc.inbox_open) return true;               // hub Inbox (09-25)
+    if (variable_instance_exists(_gc, "summary_open") && _gc.summary_open) return true;           // run summary (09-25)
+    if (variable_instance_exists(_gc, "welcome_open") && _gc.welcome_open) return true;           // first-night welcome splash (09-28)
+    if (variable_instance_exists(_gc, "ledger_report_open") && _gc.ledger_report_open) return true;   // Bairc's report page (09-25)
     if (variable_instance_exists(_gc, "kb_open") && _gc.kb_open) return true;                     // Knucklebones (expression #1)
     return false;
 }
@@ -2413,7 +2424,8 @@ function ui_draw_bairc_capstone() {
     if (!is_struct(_pet)) return;
     // Mode: Stage-3 capstone pick, or the Stage-4 Awakened SPLASH pick (off-archetype pool).
     var _splash = variable_instance_exists(_gc, "bairc_capstone_mode") && _gc.bairc_capstone_mode == "splash";
-    var _pool = _splash ? pet_splash_pool(_pet.archetype) : pet_archetype_capstones(_pet.archetype);
+    var _callm  = variable_instance_exists(_gc, "bairc_capstone_mode") && _gc.bairc_capstone_mode == "calling";   // 09-25 CALLINGS (§1.7)
+    var _pool = _callm ? pet_calling_pool(_pet) : (_splash ? pet_splash_pool(_pet.archetype) : pet_archetype_capstones(_pet.archetype));
     var _np   = array_length(_pool);
     if (_np == 0) return;
     var _sel = clamp(_gc.bairc_capstone_sel, 0, _np - 1);
@@ -2435,9 +2447,11 @@ function ui_draw_bairc_capstone() {
     draw_set_halign(fa_center); draw_set_valign(fa_top);
     draw_set_font(fnt_ui_title);
     draw_set_color(make_color_rgb(230, 210, 150));
-    draw_text((_px1 + _px2) / 2, _py1 + 34, _splash
+    draw_text((_px1 + _px2) / 2, _py1 + 34, _callm
+        ? ("Choose " + _pet.name + "'s Calling")
+        : (_splash
         ? ("Choose " + _pet.name + "'s Awakened Splash")
-        : ("Choose " + _pet.name + "'s Gift"));
+        : ("Choose " + _pet.name + "'s Gift")));
     draw_set_font(ui_font(fnt_ui_small));
     draw_set_color(make_color_rgb(150, 160, 185));
     draw_text((_px1 + _px2) / 2, _py1 + 92, _splash
@@ -4010,7 +4024,7 @@ function ui_draw_knucklebones() {
         draw_text(GUI_CX, 480, "< " + string(_g.stake) + "g >");
         draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(make_color_rgb(160, 150, 130));
-        draw_text(GUI_CX, 570, "Winner takes double. Equal dice in a column multiply; matching their column smashes their dice.");
+        ui_draw_text_fit(GUI_CX, 570, "Winner takes double. Equal dice in a column multiply; matching their column smashes their dice.", (_x1 - _x0) - 40);
         if (_g.msg != "") { draw_set_color(make_color_rgb(220, 140, 120)); draw_text(GUI_CX, 630, _g.msg); }
         draw_set_color(make_color_rgb(150, 140, 120));
         ui_draw_key_legend(GUI_CX, _y1 - 60, "A/D: Stake     Enter: Sit down     H: Rules     Esc: Not tonight",
@@ -4240,6 +4254,7 @@ function ui_draw_pet_stat_tooltip(mx, my, pet, which) {
         var _src = "Base " + string(_bd.base) + "   Stage +" + string(_bd.stage) + "   Talent +" + string(_bd.talent);
         if (_bd.bond > 0)      _src += "   Bond +" + string(_bd.bond);
         if (_bd.signature > 0) _src += "   Scion +" + string(_bd.signature);
+        if (variable_struct_exists(_bd, "calling") && _bd.calling > 0) _src += "   Calling +" + string(_bd.calling);   // 09-25 Callings
         array_push(_lines, { txt: _src, col: make_color_rgb(170, 178, 198) });
     }
     if (_ledger) {
@@ -4418,6 +4433,19 @@ function ui_draw_bairc_screen() {
     draw_set_font(ui_font_dense(fnt_ui_small));
     draw_set_color(make_color_rgb(150, 160, 185));
     draw_text(_x1 + _pad, _y1 + _pad + 66, "He tends the creatures you carry up from below.");
+    // 09-25 UX pass: the ledger's status rides the header - who is out, when the first is due -
+    // and the strip itself is the tap-through to the Ledger (same [L] the keyboard uses).
+    {
+        var _ls_txt = ledger_parties_summary() + "   -   " + ((input_device() == 2) ? "tap: LEDGER" : ((input_device() == 1) ? "[LT] Ledger" : "[L] Ledger"));
+        var _ls_out = (array_length(ledger_ensure().active) > 0);
+        draw_set_font(ui_font_dense(fnt_ui_small));
+        var _ls_w = string_width(_ls_txt) + 30, _ls_x0 = _x1 + _pad, _ls_y0 = _y1 + _pad + 96, _ls_y1 = _ls_y0 + 34;
+        draw_set_color(_ls_out ? make_color_rgb(38, 32, 16) : make_color_rgb(16, 20, 30)); draw_rectangle(_ls_x0, _ls_y0, _ls_x0 + _ls_w, _ls_y1, false);
+        draw_set_color(_ls_out ? make_color_rgb(210, 170, 90) : make_color_rgb(60, 62, 76)); draw_rectangle(_ls_x0, _ls_y0, _ls_x0 + _ls_w, _ls_y1, true);
+        draw_set_color(_ls_out ? make_color_rgb(245, 225, 170) : make_color_rgb(140, 148, 165));
+        draw_text(_ls_x0 + 15, _ls_y0 + 6, _ls_txt);
+        if (touch_tapped(_ls_x0, _ls_y0, _ls_x0 + _ls_w, _ls_y1)) input_inject("bairc:L");
+    }
     // VISIT THE GARDEN (M design-locked 08-15): walk the full grounds - the
     // chip taps through to the same [V] the keyboard uses.
     ui_garden_chip(1330, _y1 + _pad + 4, "VISIT THE GARDEN  [V]", "bairc:garden");
@@ -4537,6 +4565,9 @@ function ui_draw_bairc_screen() {
                      : (_pet.is_egg ? make_color_rgb(210, 195, 130) : make_color_rgb(220, 226, 238)));
         draw_text(_tx, _ry + 10, (_pet.is_egg ? (_pet.name + " Egg") : _pet.name));
         var _pill_txt = _pet.is_egg ? pet_egg_label(_pet) : pet_stage_name(_pet.stage);
+        // 09-25: an away party reads AWAY on its pill; a chosen Calling rides after the stage.
+        if (!_pet.is_egg && ledger_pet_away(_pet)) _pill_txt = ledger_away_text(_pet, true);   // "AWAY - Hunt - 2r"
+        else if (!_pet.is_egg && pet_calling_label(_pet) != "") _pill_txt += " - " + pet_calling_label(_pet);
         draw_set_font(ui_font_dense(fnt_ui_small));
         var _pl_w  = string_width(_pill_txt) + 22;
         var _pl_x1 = _list_x + _list_w - 12, _pl_x0 = _pl_x1 - _pl_w;
@@ -5189,7 +5220,7 @@ function ui_draw_bairc_screen() {
     // footer collapses to the four real buttons instead of a wall of dead keys.
     var _bfoot, _bfoot2 = "";
     if (input_device() == 1) {
-        _bfoot = "[D-Pad] Browse  [A] Actions  [RT] Gift Bairc  [L3] Station  [Y] Details  [B] Leave";
+        _bfoot = "[D-Pad] Browse  [A] Actions  [RT] Gift Bairc  [LT] Ledger  [L3] Station  [Y] Details  [B] Leave";   // [LT] Ledger 09-25
     } else {
         // CONTEXTUAL, two deliberate rows (M 09-09 shot: "menu legend is
         // cluttered" - twelve keys wrapped as one wall). Row 1 = what the
@@ -5197,7 +5228,7 @@ function ui_draw_bairc_screen() {
         // hatched creatures get Set Active (only when not already active),
         // Name/Rename, Donate, and Cure only while a corruption is pushing.
         // Row 2 = the screen-level keys, always the same four.
-        _bfoot = "[W/S] Browse  [1-6] Feed";
+        _bfoot = "";   // 09-28 (M: "cluttered, commands collide"): row 1 = ONLY what the highlighted creature can do
         if (_n > 0) {
             var _fp = _roster[_cur];
             if (is_struct(_fp)) {
@@ -5205,7 +5236,8 @@ function ui_draw_bairc_screen() {
                     _bfoot += pet_egg_identified(_fp) ? "  [Enter] Hatch" : "  [I] Identify";
                 } else {
                     if (global.active_pet != _cur) _bfoot += "  [Enter] Set Active";
-                    if (variable_struct_exists(_fp, "capstone_pending") && _fp.capstone_pending)   _bfoot += "  [G] Capstone";
+                    if (pet_calling_can_pick(_fp)) _bfoot += "  [G] Calling";   // 09-25 (§1.7)
+                    else if (variable_struct_exists(_fp, "capstone_pending") && _fp.capstone_pending)   _bfoot += "  [G] Capstone";
                     else if (variable_struct_exists(_fp, "splash_pending") && _fp.splash_pending)  _bfoot += "  [G] Splash";
                     _bfoot += pet_named(_fp) ? "  [N] Rename" : "  [N] Name";
                     if (pet_corr_state(_fp) == "pushing") _bfoot += "  [C] Cure";
@@ -5214,10 +5246,23 @@ function ui_draw_bairc_screen() {
                 _bfoot += "  [Tab] Details";
             }
         }
-        _bfoot2 = "[V] Garden  [F] Gift Bairc  [U] Station  [Esc] Leave";   // [V] added 08-16 (M: "I didn't even see it")
+        if (_bfoot == "") _bfoot = "[W/S] Browse";
+        else _bfoot = string_copy(_bfoot, 3, string_length(_bfoot) - 2);   // trim the leading gap
+        _bfoot2 = "[V] Garden  [L] Ledger  [F] Gift Bairc  [U] Station  [Esc] Leave";   // [V] added 08-16 (M: "I didn't even see it"); [L] 09-25
     }
-    if (_bfoot2 != "") ui_draw_key_legend((_x1 + 1500) / 2, _y2 - 70, _bfoot, undefined, false, (1500 - _x1) - 40);
-    ui_draw_key_legend((_x1 + 1500) / 2, _y2 - 42, (_bfoot2 != "") ? _bfoot2 : _bfoot, undefined, false, (1500 - _x1) - 40);
+    // 09-28: the legend lives in its own footer BAND (dark, ruled off from the panel) so the two
+    // rows read as one control strip instead of loose text drifting over the garden plot.
+    if (input_device() != 2) {
+        draw_set_alpha(0.85); draw_set_color(make_color_rgb(9, 11, 18));
+        draw_rectangle(_x1 + 18, _y2 - 92, 1500 - 18, _y2 - 22, false);
+        draw_set_alpha(1.0); draw_set_color(make_color_rgb(70, 66, 56));
+        draw_line(_x1 + 18, _y2 - 92, 1500 - 18, _y2 - 92);
+        draw_set_font(ui_font_dense(fnt_ui_small)); draw_set_color(make_color_rgb(110, 118, 135)); draw_set_halign(fa_left);
+        draw_text(_x1 + 30, _y2 - 88, (input_device() == 1) ? "" : "THIS CREATURE");
+        draw_text(_x1 + 30, _y2 - 58, (input_device() == 1) ? "" : "THE STATION");
+    }
+    if (_bfoot2 != "") ui_draw_key_legend((_x1 + 1500) / 2 + 60, _y2 - 70, _bfoot, undefined, false, (1500 - _x1) - 200);
+    ui_draw_key_legend((_x1 + 1500) / 2 + 60, _y2 - 42, (_bfoot2 != "") ? _bfoot2 : _bfoot, undefined, false, (1500 - _x1) - 200);
     draw_set_halign(fa_left); draw_set_valign(fa_top);
     draw_set_color(c_white);
     draw_set_font(-1);
@@ -7943,6 +7988,32 @@ function ui_tab_hint_body(key) {
         case "petra:BUY":      return "Supplies for the road - potions, creature feed and consumables. Restocks between runs; her SPECIAL shelf sometimes carries something rarer, and a LIMITED lot of one dungeon reagent rotates each run.";
         case "petra:SELL":     return "Sell unequipped gear from your pack and stash for gold.";
         case "petra:TRADE":    return "The treasure ladder: 3 same-tier items trade up to the next tier, delivered after floor clears. [R] cycles RUNE mode (5 same-tier runes buy a BLUEPRINT rune of your choosing) and REAGENT mode (swap 2 of one dungeon reagent for 1 of another). Traded goods are destroyed. Station rank 1 opens a SECOND ledger line.";
+    }
+    return "";
+}
+
+// STAT HOVER (M 09-28): mousing over a stat box on character creation shows what
+// the points actually buy. Numbers come from the diminishing curves in
+// scr_combat (stat_curve) and stats_derive, so keep them in step with those.
+function ui_stat_hover_title(stat) {
+    switch (stat) {
+        case "STR": return "STR  -  Strength";
+        case "DEX": return "DEX  -  Dexterity";
+        case "CON": return "CON  -  Constitution";
+        case "INT": return "INT  -  Intelligence";
+        case "WIS": return "WIS  -  Wisdom";
+        case "CHA": return "CHA  -  Charisma";
+    }
+    return stat;
+}
+function ui_stat_hover_body(stat) {
+    switch (stat) {
+        case "STR": return "Physical damage +0.5 per point, and physical damage taken -0.25 per point. Governs POWER crits (weapon hits and physical abilities): the chance climbs with diminishing returns toward 40% - about 13% at 8, 20% at 16.";
+        case "DEX": return "Accuracy (about +3% at 8, plateaus at +10%), Dodge (about 8% at 8, plateaus at 30%) and PRECISION crits for weapon and ranged strikes (toward 45% - about 14% at 8). Also turn order: initiative = 10 + DEX/2, so high DEX acts before most foes and shrugs off Root.";
+        case "CON": return "+3 max HP per point on top of a base of 10. The only stat that directly buys survivability - every class wants some.";
+        case "INT": return "Elemental and spell damage +0.3 per point. Governs ARCANE crits for spells: the chance climbs toward 38% - about 11% at 8, 17% at 16. The Arcanist's main stat.";
+        case "WIS": return "Damage-over-time and effect damage +0.3 per point. Governs EFFECT crits (poison, burn, bleed, hexes and other status damage): 5% base, climbing toward 40% - about 17% at 8.";
+        case "CHA": return "Ability damage +0.3 per point. Every NPC price is 1.5% cheaper per point (cap 30%) and you find +1% more gold per point (cap 30%). Also opens stat-gated event choices in the dark.";
     }
     return "";
 }
@@ -11186,8 +11257,10 @@ function ui_draw_toast(_msg, _cx, _ytop, _alpha = 1.0, _txt_col = undefined) {
     if (_msg == "" || _alpha <= 0) return;
     if (_txt_col == undefined) _txt_col = make_color_rgb(100, 220, 130);
     draw_set_font(ui_font(fnt_ui));
-    var _tw = string_width(_msg);
-    var _th = string_height(_msg);
+    // 09-28 (M: notice text ran past its box): wrap at 1100px, box sized to the wrapped block.
+    var _maxw = 1100;
+    var _tw = min(string_width(_msg), _maxw);
+    var _th = string_height_ext(_msg, 30, _maxw);
     var _x1 = _cx - _tw / 2 - 27, _x2 = _cx + _tw / 2 + 27;
     var _y2 = _ytop + _th + 24;
     draw_set_alpha(0.93 * _alpha);
@@ -11199,10 +11272,19 @@ function ui_draw_toast(_msg, _cx, _ytop, _alpha = 1.0, _txt_col = undefined) {
     draw_set_halign(fa_center);
     draw_set_valign(fa_top);
     draw_set_color(_txt_col);
-    draw_text(_cx, _ytop + 12, _msg);
+    draw_text_ext(_cx, _ytop + 12, _msg, 30, _maxw);
     draw_set_halign(fa_left);
     draw_set_color(c_white);
     draw_set_alpha(1.0);
+}
+// ui_draw_text_fit(x, y, str, max_w) - one line that must stay inside a box: drawn as-is when
+// it fits, else scaled down uniformly to max_w (09-28, M: "text starts and ends outside the
+// popup"). Honors the current halign; for a caption that may wrap use draw_text_ext instead.
+function ui_draw_text_fit(_x, _y, _s, _max_w) {
+    var _w = string_width(_s);
+    if (_max_w <= 0 || _w <= _max_w) { draw_text(_x, _y, _s); return; }
+    var _k = _max_w / _w;
+    draw_text_transformed(_x, _y, _s, _k, _k, 0);
 }
 
 // =============================================================================
@@ -11747,6 +11829,7 @@ function ui_draw_character_menu() {
                     draw_text(_rx, _by, "+ " + _bb.name);
                     draw_set_color(make_color_rgb(120, 130, 110));
                     draw_text(_rx + 24, _by + 24, ui_truncate(_bb.desc, 540));
+                    ui_tab_hover_stash(_rx, _by - 4, _rx + 564, _by + 50, "Boon: " + _bb.name, _bb.desc);   // full text on hover (M 09-28: rows ran off screen)
                     _by += 57; _rows++; _any = true;
                 }
             }
@@ -11757,6 +11840,7 @@ function ui_draw_character_menu() {
                 draw_text(_rx, _by, "+ Borrowed Memory: " + global.run_borrowed_ability);
                 draw_set_color(make_color_rgb(125, 115, 160));
                 draw_text(_rx + 24, _by + 24, ui_truncate("A " + global.run_borrowed_class + " ability, yours until this run ends.", 540));
+                ui_tab_hover_stash(_rx, _by - 4, _rx + 564, _by + 50, "Borrowed Memory: " + global.run_borrowed_ability, "A " + global.run_borrowed_class + " ability, yours until this run ends.");
                 _by += 57; _rows++; _any = true;
             }
             // Active run curses (devil's bargain) - red, with penalty text. The
@@ -11780,6 +11864,7 @@ function ui_draw_character_menu() {
                     }
                     draw_set_color(make_color_rgb(150, 110, 110));
                     draw_text(_rx + 24, _by + 24, ui_truncate(_cc.desc, 540));
+                    ui_tab_hover_stash(_rx, _by - 4, _rx + 564, _by + 50, "Curse: " + _cc.name + ((_cc_pay != "") ? ("  -  pays " + _cc_pay) : ""), _cc.desc);
                     _by += 57; _rows++; _any = true;
                 }
             }
@@ -11794,6 +11879,7 @@ function ui_draw_character_menu() {
                     draw_text(_rx, _by, "- " + _ss.name + " (" + _sst.label + ")");
                     draw_set_color(make_color_rgb(150, 140, 120));
                     draw_text(_rx + 24, _by + 24, ui_truncate(status_effect_plain_text(_ss) + "  -  " + string(_sdur) + " turn" + (_sdur == 1 ? "" : "s") + " left", 540));
+                    ui_tab_hover_stash(_rx, _by - 4, _rx + 564, _by + 50, _ss.name + " (" + _sst.label + ")", status_effect_plain_text(_ss) + "  -  " + string(_sdur) + " turn" + (_sdur == 1 ? "" : "s") + " left");
                     _by += 57; _rows++; _any = true;
                 }
             }
@@ -12620,7 +12706,7 @@ function ui_draw_character_menu() {
             draw_set_font(ui_font(fnt_ui_small));
             draw_set_color(make_color_rgb(140, 150, 170));
             draw_set_halign(fa_center);
-            draw_text(GUI_CX, _tf_y + 14, "W/S: Move    A/D: Change page    Enter: Take this one (asks first)    Esc: Back        Vael can undo the whole trunk for 500g + 50 dust");
+            ui_draw_text_fit(GUI_CX, _tf_y + 14, "W/S: Move    A/D: Change page    Enter: Take this one (asks first)    Esc: Back        Vael can undo the whole trunk for 500g + 50 dust", (_tv_x2 - _tv_x1) - 80);
             draw_set_halign(fa_left);
         }
         draw_set_font(-1);
@@ -13233,6 +13319,7 @@ function ui_draw_character_menu() {
         ui_draw_toast(_gc.equip_notif_msg, 960, 52, clamp(_gc.equip_notif_timer / 30.0, 0, 1.0));
     }
     ui_acc_cap_popup_flush();   // Accuracy rune-cap hover (armed at the stats rows) - topmost
+    ui_draw_tab_tip();          // Boons & Effects row hover (full desc) - consumed here so it rides above the sheet on every screen that hosts it
     draw_set_font(-1);
 }
 
@@ -15170,7 +15257,7 @@ function ui_draw_dorn_reforge(_gc) {
         draw_text(_pcx, _py0 + 15, "THE LEGENDARY FORGE");
         draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(make_color_rgb(170, 160, 190));
-        draw_text(_pcx, _py0 + 54, "Three parts, one from each smith. Bring all three and Dorn forges a legendary to your design.");
+        ui_draw_text_fit(_pcx, _py0 + 54, "Three parts, one from each smith. Bring all three and Dorn forges a legendary to your design.", (_px1 - _px0) - 40);
 
         var _cw = 400, _cg = 25, _cy_a = _py0 + 100, _cy_b = _py0 + 480;
         var _cx_a = _pcx - (3 * _cw + 2 * _cg) / 2;
@@ -19521,7 +19608,7 @@ function ui_draw_item_picker() {
     draw_text(_px + _pw / 2, _py + 21, item_picker_prompt());
     draw_set_font(ui_font(fnt_ui_small));
     draw_set_color(c_ltgray);
-    draw_text(_px + _pw / 2, _py + 63, "(only items you didn't pick are safe - nothing is lost until you confirm)");
+    ui_draw_text_fit(_px + _pw / 2, _py + 63, "(only items you didn't pick are safe - nothing is lost until you confirm)", _pw - 30);
     draw_set_halign(fa_left);
 
     if (_n == 0) {
@@ -20991,6 +21078,13 @@ function ui_draw_garden_scene() {
         if (garden_pet_room(_gc.garden_pets[_pi]) != _room) continue;
         array_push(_dl, { y:_gc.garden_pets[_pi].y, kind:"pet", i:_pi });
     }
+    // 09-25 LEDGER (§1.5): parties seen leaving / coming home walk the grounds (transients).
+    if (_room == "grounds" && variable_instance_exists(_gc, "garden_transients")) {
+        for (var _wi = 0; _wi < array_length(_gc.garden_transients); _wi++) {
+            if (_gc.garden_transients[_wi].delay > 0) continue;
+            array_push(_dl, { y:_gc.garden_transients[_wi].y, kind:"walker", i:_wi });
+        }
+    }
     array_push(_dl, { y:_gc.garden_py, kind:"player" });
     array_sort(_dl, function(_a, _b) { return _a.y - _b.y; });
 
@@ -21097,9 +21191,9 @@ function ui_draw_garden_scene() {
                 var _bx = garden_bairc_x(), _by = garden_bairc_y();   // 09-22: at his ledgers inside the hut
                 if (_bspr >= 0 && sprite_exists(_bspr)) {
                     var _bfr = (current_time div 170) mod max(1, sprite_get_number(_bspr));
-                    var _bfit = pet_sprite_fit(_bspr, _bx, _by, 176 * garden_depth_scale(_by));
+                    var _bfit = pet_sprite_fit(_bspr, _bx, _by, 236 * garden_depth_scale(_by));   // 09-28: 176 -> 236 (M: too small beside the hut)
                     draw_set_alpha(0.35); draw_set_color(c_black);
-                    draw_ellipse(_bx - 34, _by - 8, _bx + 34, _by + 8, false);
+                    draw_ellipse(_bx - 40, _by - 9, _bx + 40, _by + 3, false);   // 09-28: shadow sits under the feet, not below them
                     draw_set_alpha(1.0);
                     draw_sprite_ext(_bspr, _bfr, _bfit.x, _bfit.y, _bfit.scale, _bfit.scale, 0, c_white, 1);
                     if (!_placing && touch_tapped(_bx - 60, _by - 190, _bx + 60, _by + 10)) {
@@ -21108,6 +21202,31 @@ function ui_draw_garden_scene() {
                         input_inject("garden:goal"); _tap_used = true;
                     }
                 }
+                break;
+            }
+            case "walker": {   // 09-25 LEDGER (§1.5): a party member leaving for / returning from a job
+                if (_d.i >= array_length(_gc.garden_transients)) break;
+                var _w   = _gc.garden_transients[_d.i];
+                var _wp  = { is_egg: false, species: _w.species, stage: _w.stage };
+                var _wsp = pet_sprite(_wp, "e");
+                if (_wsp < 0) break;
+                var _wds = garden_depth_scale(_w.y);
+                var _wh  = 104 * pet_stage_size_mult(_w.stage) * _wds;
+                var _wfeet = _w.y - _w.hop;
+                draw_set_alpha(0.35); draw_set_color(c_black);
+                draw_ellipse(_w.x - _wh * 0.32, _w.y - 6, _w.x + _wh * 0.32, _w.y + 6, false);
+                draw_set_alpha(1.0);
+                var _wfit = pet_sprite_fit(_wsp, _w.x, _wfeet, _wh);
+                var _wxs  = _wfit.scale, _wdx = _wfit.x;
+                if (_w.face < 0) {
+                    _wxs = -_wfit.scale;
+                    _wdx = _w.x + ((sprite_get_bbox_left(_wsp) + sprite_get_bbox_right(_wsp) + 1) * 0.5 - sprite_get_xoffset(_wsp)) * _wfit.scale;
+                }
+                draw_sprite_ext(_wsp, pet_anim_frame(_wsp), _wdx, _wfit.y, _wxs, _wfit.scale, 0, c_white, 1);
+                draw_set_font(ui_font(fnt_ui_small)); draw_set_halign(fa_center);
+                draw_set_color(make_color_rgb(200, 190, 150));
+                draw_text(_w.x, _wfeet - _wh - 26, _w.name + (_w.leaving ? "  (out the gate)" : "  (home)"));
+                draw_set_halign(fa_left);
                 break;
             }
             case "pet": {
@@ -21160,9 +21279,9 @@ function ui_draw_garden_scene() {
                 var _lean = _gc.garden_moving ? sign(_gc.garden_vx) * 2.5 * sin(_gc.garden_walk_t * 0.32) : 0;
                 var _pfr  = (sprite_get_number(_pspr) >= 8) ? _gc.garden_face : 0;
                 draw_set_alpha(0.38); draw_set_color(c_black);
-                draw_ellipse(_gc.garden_px - 30 * _pds, _gc.garden_py - 7, _gc.garden_px + 30 * _pds, _gc.garden_py + 7, false);
+                draw_ellipse(_gc.garden_px - 36 * _pds, _gc.garden_py - 9, _gc.garden_px + 36 * _pds, _gc.garden_py + 3, false);   // 09-28: under the feet
                 draw_set_alpha(1.0);
-                var _pfit = pet_sprite_fit(_pspr, _gc.garden_px, _gc.garden_py - _bob, 150 * _pds);
+                var _pfit = pet_sprite_fit(_pspr, _gc.garden_px, _gc.garden_py - _bob, 205 * _pds);   // 09-28: 150 -> 205 (M: too small in the world)
                 // Rotate about the feet: shift the draw origin so the lean pivots at the ground.
                 var _pcx = _gc.garden_px, _pcy = _gc.garden_py - _bob;
                 var _pox = _pfit.x - _pcx, _poy = _pfit.y - _pcy;
@@ -21332,10 +21451,8 @@ function ui_draw_garden_scene() {
     // Music selector chip (bottom-right): cycles the garden's track pool.
     ui_garden_chip(1700, 1036, "[M] MUSIC", "garden:music", true);
 
-    // ---- Notice toast (standard boxed toast, topmost of the scene HUD) ----
-    if (_gc.garden_notice != "" && _gc.garden_notice_t > 0) {
-        ui_draw_toast(_gc.garden_notice, 960, 120, min(1, _gc.garden_notice_t / 30));
-    }
+    // ---- Notice toast: moved to the END of this function (09-28, M: "the error for placing hut
+    //      things outside is not visible over the decor menu") - see the tail. ----
     // ---- KEEPSAKE SHELF panel (09-22, hut): the eight trinkets, earned or not ----
     if (variable_instance_exists(_gc, "garden_shelf_open") && _gc.garden_shelf_open) {
         draw_set_alpha(0.62); draw_set_color(c_black);
@@ -21402,10 +21519,11 @@ function ui_draw_garden_scene() {
         }
         draw_set_font(ui_font(fnt_ui_small));
         draw_set_color(make_color_rgb(120, 140, 125));
-        draw_text((_sx0 + _sx1) / 2, _sy0 + 58, (_stab == 0)
+        ui_draw_text_fit((_sx0 + _sx1) / 2, _sy0 + 58, (_stab == 0)
             ? "The peddler's cart - five things this run, different next. Bought for the other room? It waits in your stores."
             : ((_stab == 1) ? "Everything you have taken up or set aside. Placing from here is free."
-                            : "\"The grounds can be turned. Takes gold, dust, and a few seasons' worth of coming back.\""));
+                            : "\"The grounds can be turned. Takes gold, dust, and a few seasons' worth of coming back.\"")
+            , (_sx1 - _sx0) - 40);   // 09-28: fits the box
         draw_set_halign(fa_left);
         var _srow_y = _sy0 + 96, _srow_h = 82;
         if (_stab == 2) {
@@ -21494,6 +21612,12 @@ function ui_draw_garden_scene() {
             ? "W/S: Browse    Tab: Stock / Stored / Grounds    Enter: Choose    Esc: Close"
             : "W/S: Browse    Tab: Stock / Stored    Enter: Choose    Esc: Close");
         draw_set_halign(fa_left);
+    }
+
+    // ---- Notice toast (standard boxed toast) - TOPMOST: above the decor menu, the shelf and
+    //      every chip, so a placement refusal reads while its error sound plays (09-28). ----
+    if (_gc.garden_notice != "" && _gc.garden_notice_t > 0) {
+        ui_draw_toast(_gc.garden_notice, 960, 120, min(1, _gc.garden_notice_t / 30));
     }
 
     // ---- Fade-in from black ----
@@ -22497,3 +22621,662 @@ function ui_draw_text_arrows_ext(_x, _y, _s, _sep, _w) {
     for (var _k = 0; _k < _n; _k++) ui_draw_text_arrows(_x, _y0 + _k * _sep, _lines[_k]);
     draw_set_valign(_va);
 }
+
+// =============================================================================
+// BAIRC'S LEDGER SCREEN (DESIGN_IMPROVEMENT_PLAN_0924.md §1.8, built 09-25)
+// Left column = offers (88px rows, tap = select); right pane = the offer (kind, habitat
+// crest, governing stat, tier, duration, payout, risk), the LIVE success meter, a 3-slot
+// party strip, then roster rows (portrait, name, stat trio with the governing one lit,
+// habitat match, hunger pip, blocked reason). SEND is a 210px button bottom-right.
+// Every hit-test is here (touch rule); taps inject ledger:offerN / ledger:petN /
+// ledger:send / ledger:tab / ledger:close, consumed by ledger_step (scr_stats).
+// =============================================================================
+function ui_draw_ledger_screen() {
+    if (!instance_exists(obj_game_controller)) return;
+    var _gc = instance_find(obj_game_controller, 0);
+    if (!variable_instance_exists(_gc, "ledger_open") || !_gc.ledger_open) return;
+    var _pad = (input_device() == 1), _touch = (input_device() == 2);
+    var _mx = device_mouse_x_to_gui(0), _my = device_mouse_y_to_gui(0);
+    var _l  = ledger_ensure();
+    var _offers = ledger_offers();
+    var _rows   = ledger_roster_rows();
+    var _no = array_length(_offers), _nr = array_length(_rows);
+    var _oi = clamp(_gc.ledger_offer, 0, max(0, _no - 1));
+    var _o  = (_no > 0) ? _offers[_oi] : undefined;
+
+    draw_set_alpha(0.93); draw_set_color(make_color_rgb(6, 8, 14));
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
+    draw_set_alpha(1.0);
+    var _x1 = 120, _y1 = 44, _x2 = 1800, _y2 = 1036;
+    draw_set_color(make_color_rgb(13, 15, 24)); draw_rectangle(_x1, _y1, _x2, _y2, false);
+    draw_set_color(make_color_rgb(140, 118, 72)); draw_rectangle(_x1, _y1, _x2, _y2, true);
+    draw_rectangle(_x1, _y1, _x2, _y1 + 4, false);
+
+    draw_set_halign(fa_center); draw_set_valign(fa_top);
+    draw_set_font(fnt_ui_title); draw_set_color(make_color_rgb(232, 210, 150));
+    draw_text(GUI_CX, _y1 + 14, "BAIRC'S LEDGER");
+    draw_set_font(ui_font(fnt_ui_small)); draw_set_color(make_color_rgb(150, 160, 185));
+    draw_set_font(ui_font_dense(fnt_ui_small));
+    draw_text(GUI_CX, _y1 + 68, "Parties out: " + string(array_length(_l.active)) + " / " + string(ledger_parties_max())
+        + "     Offers are tier " + string(ledger_tier()) + "     Run " + string(ledger_run())
+        + "     Sent so far: " + string(_l.sent_total));
+    draw_set_halign(fa_left);
+
+    // Tabs
+    var _tabs = ["OFFERS", "OUT (" + string(array_length(_l.active)) + ")"];
+    for (var _t = 0; _t < 2; _t++) {
+        var _tx0 = _x1 + 30 + _t * 262, _ty0 = _y1 + 106, _tx1 = _tx0 + 246, _ty1 = _ty0 + 54;   // 09-28 layout pass
+        var _hot = (_gc.ledger_tab == _t);
+        draw_set_color(_hot ? make_color_rgb(44, 38, 22) : make_color_rgb(18, 20, 30)); draw_rectangle(_tx0, _ty0, _tx1, _ty1, false);
+        draw_set_color(_hot ? make_color_rgb(220, 180, 90) : make_color_rgb(70, 66, 56)); draw_rectangle(_tx0, _ty0, _tx1, _ty1, true);
+        draw_set_font(ui_font(fnt_ui)); draw_set_color(_hot ? make_color_rgb(245, 225, 170) : make_color_rgb(150, 150, 160));
+        draw_set_halign(fa_center); draw_text((_tx0 + _tx1) / 2, _ty0 + 13, _tabs[_t]); draw_set_halign(fa_left);
+        if (!_hot && touch_tapped(_tx0, _ty0, _tx1, _ty1)) input_inject("ledger:tab");
+    }
+    // CLOSE (top-right)
+    var _cx0 = _x2 - 150, _cy0 = _y1 + 106, _cx1 = _x2 - 30, _cy1 = _cy0 + 54;
+    draw_set_color(make_color_rgb(18, 20, 30)); draw_rectangle(_cx0, _cy0, _cx1, _cy1, false);
+    draw_set_color(make_color_rgb(90, 80, 70));  draw_rectangle(_cx0, _cy0, _cx1, _cy1, true);
+    draw_set_font(ui_font(fnt_ui_small)); draw_set_color(make_color_rgb(190, 180, 170)); draw_set_halign(fa_center);
+    draw_text((_cx0 + _cx1) / 2, _cy0 + 16, _touch ? "CLOSE" : (_pad ? "[B] Close" : "[Esc] Close")); draw_set_halign(fa_left);
+    if (touch_tapped(_cx0, _cy0, _cx1, _cy1)) input_inject("ledger:close");
+
+    var _top = _y1 + 208;   // 09-28: rows start below the tab strip + its label
+    if (_gc.ledger_tab == 1) {
+        // ---------------- OUT: parties (left column, cursor) + the party in full (right pane) ----------------
+        // Mirrors the OFFERS layout so the eye never relearns the screen: rows left, detail right.
+        var _lx0 = _x1 + 30, _lx1 = _x1 + 560;
+        var _na  = array_length(_l.active);
+        var _oc  = clamp(_gc.ledger_out_cursor, 0, max(0, _na - 1));
+        draw_set_font(ui_font(fnt_ui_small)); draw_set_color(make_color_rgb(150, 160, 185));
+        draw_text(_lx0, _top - 30, ledger_parties_summary());
+        if (_na == 0) {
+            draw_set_font(ui_font(fnt_ui)); draw_set_color(make_color_rgb(110, 118, 135));
+            draw_text_ext(_lx0, _top + 10, "No one is out.\n\nPick a job on OFFERS, toggle up to three creatures into the party and SEND. They come home when the run count comes round; Bairc reads you the result.", 30, _lx1 - _lx0);
+            // Pathway: a button straight to OFFERS.
+            var _gx0 = _lx0, _gy0 = _top + 200, _gx1 = _lx0 + 300, _gy1 = _gy0 + 56;
+            draw_set_color(make_color_rgb(40, 34, 18)); draw_rectangle(_gx0, _gy0, _gx1, _gy1, false);
+            draw_set_color(make_color_rgb(240, 200, 110)); draw_rectangle(_gx0, _gy0, _gx1, _gy1, true);
+            draw_set_font(ui_font(fnt_ui)); draw_set_color(make_color_rgb(255, 235, 180)); draw_set_halign(fa_center);
+            draw_text((_gx0 + _gx1) / 2, _gy0 + 14, _touch ? "GO TO OFFERS" : (_pad ? "GO TO OFFERS  [A]" : "GO TO OFFERS  [Enter]"));
+            draw_set_halign(fa_left);
+            if (touch_tapped(_gx0, _gy0, _gx1, _gy1)) input_inject("ledger:tooffers");
+        }
+        for (var _a = 0; _a < _na; _a++) {
+            var _m = _l.active[_a];
+            var _left = max(0, _m.due_run - ledger_run());
+            var _ry = _top + _a * 96;
+            var _sel = (_a == _oc);
+            draw_set_color(_sel ? make_color_rgb(40, 34, 18) : make_color_rgb(16, 20, 30)); draw_rectangle(_lx0, _ry, _lx1, _ry + 88, false);
+            draw_set_color(_sel ? make_color_rgb(220, 180, 90) : make_color_rgb(60, 62, 76)); draw_rectangle(_lx0, _ry, _lx1, _ry + 88, true);
+            // Portraits of the party, small, left of the text.
+            var _mp = ledger_mission_pets(_m);
+            var _px = _lx0 + 14;
+            for (var _q = 0; _q < array_length(_mp); _q++) {
+                var _qs = pet_sprite(_mp[_q], "s");
+                if (_qs >= 0) { var _qf = pet_sprite_fit(_qs, _px + 24, _ry + 80, 56); draw_sprite_ext(_qs, 0, _qf.x, _qf.y, _qf.scale, _qf.scale, 0, c_white, 1); }
+                _px += 52;
+            }
+            var _tx = _lx0 + 14 + max(1, array_length(_mp)) * 52 + 10;
+            draw_set_font(ui_font(fnt_ui)); draw_set_color(_sel ? make_color_rgb(245, 228, 175) : make_color_rgb(225, 220, 200));
+            draw_text(_tx, _ry + 10, ui_truncate(_m.name, _lx1 - _tx - 20));
+            draw_set_font(ui_font(fnt_ui_small)); draw_set_color(make_color_rgb(160, 168, 185));
+            draw_text(_tx, _ry + 46, ui_truncate(_m.names, _lx1 - _tx - 20));
+            draw_set_halign(fa_right); draw_set_color((_left <= 0) ? make_color_rgb(150, 235, 160) : make_color_rgb(230, 200, 120));
+            draw_text(_lx1 - 12, _ry + 64, (_left <= 0) ? "DUE" : ("back in " + string(_left) + ((_left == 1) ? " run" : " runs")));
+            draw_set_halign(fa_left);
+            if (touch_tapped(_lx0, _ry, _lx1, _ry + 88)) input_inject("ledger:out" + string(_a));
+        }
+        // Right pane: the selected party in full.
+        var _rx0 = _x1 + 600, _rx1 = _x2 - 30;
+        if (_na > 0) {
+            var _sm = _l.active[_oc];
+            var _sk = ledger_kind_get(_sm.kind);
+            var _sleft = max(0, _sm.due_run - ledger_run());
+            var _crest = (_sm.dungeon != "") ? asset_get_index("spr_dungeon_" + _sm.dungeon) : -1;
+            if (_crest >= 0) {
+                var _cs = 130 / max(1, sprite_get_height(_crest));
+                draw_set_alpha(0.9);
+                draw_sprite_ext(_crest, 0, _rx1 - sprite_get_width(_crest) * _cs, _top - 12, _cs, _cs, 0, c_white, 1);   // clears the CLOSE button (y190)
+                draw_set_alpha(1.0);
+            }
+            draw_set_font(fnt_ui_title); draw_set_color(make_color_rgb(240, 222, 170));
+            draw_text(_rx0, _top - 34, ui_truncate(_sm.name, _rx1 - _rx0 - 260));
+            draw_set_font(ui_font(fnt_ui_small)); draw_set_color(make_color_rgb(175, 180, 195));
+            draw_text(_rx0, _top + 18, _sk.name + " in the " + ledger_habitat_name(_sm.dungeon) + "   -   tier " + string(_sm.tier) + "   -   governed by " + ledger_kind_stat_label(_sk));
+            draw_set_color(make_color_rgb(200, 190, 160));
+            draw_text(_rx0, _top + 46, "Sent run " + string(_sm.sent_run) + "   -   due run " + string(_sm.due_run) + "   -   " + ((_sleft <= 0) ? "DUE: resolves when you next return from a run" : ("home in " + string(_sleft) + ((_sleft == 1) ? " run" : " runs"))));
+            draw_set_color(make_color_rgb(150, 200, 160)); draw_text(_rx0, _top + 74, "Pays: " + _sk.pays);
+            draw_set_color(make_color_rgb(210, 150, 130)); draw_text(_rx0, _top + 102, "Risk: " + _sk.risk);
+            // The meter as it stood at dispatch (the roll is made; only the reveal waits).
+            var _by = _top + 150;
+            draw_set_color(make_color_rgb(150, 160, 185)); draw_text(_rx0, _by - 30, "CHANCE AT DISPATCH   score " + string(_sm.score) + " vs " + string(_sm.req) + "   -   matched " + string(_sm.matched) + "   -   GREAT " + string(_sm.great) + "%");
+            draw_set_color(make_color_rgb(110, 118, 135)); draw_text(_rx0, _by + 32, "The die is cast at the gate - Bairc reads it when they return.");
+            var _bw = _rx1 - _rx0 - 200, _pf = _sm.p / 100;
+            draw_set_color(make_color_rgb(20, 22, 30)); draw_rectangle(_rx0, _by, _rx0 + _bw, _by + 26, false);
+            draw_set_color((_pf >= 0.7) ? make_color_rgb(110, 210, 130) : ((_pf >= 0.45) ? make_color_rgb(230, 200, 100) : make_color_rgb(220, 110, 90)));
+            draw_rectangle(_rx0, _by, _rx0 + _bw * _pf, _by + 26, false);
+            draw_set_color(make_color_rgb(90, 86, 76)); draw_rectangle(_rx0, _by, _rx0 + _bw, _by + 26, true);
+            draw_set_font(ui_font(fnt_ui)); draw_set_color(make_color_rgb(240, 235, 220)); draw_text(_rx0 + _bw + 16, _by - 4, string(_sm.p) + "%");
+            // The party, roster-row style.
+            var _pmp = ledger_mission_pets(_sm);
+            var _ry0 = _by + 64;
+            draw_set_font(ui_font(fnt_ui_small)); draw_set_color(make_color_rgb(150, 160, 185));
+            draw_text(_rx0, _ry0 - 26, "THE PARTY (" + string(array_length(_pmp)) + ")");
+            for (var _r = 0; _r < array_length(_pmp); _r++) {
+                var _pet = _pmp[_r];
+                var _yy  = _ry0 + _r * 90, _rh = 84, _rx1r = _rx1 - 30;
+                draw_set_color(make_color_rgb(16, 20, 30)); draw_rectangle(_rx0, _yy, _rx1r, _yy + _rh, false);
+                draw_set_color(make_color_rgb(60, 62, 76)); draw_rectangle(_rx0, _yy, _rx1r, _yy + _rh, true);
+                var _spr = pet_sprite(_pet, "s");
+                if (_spr >= 0) { var _fit = pet_sprite_fit(_spr, _rx0 + 44, _yy + _rh - 8, 66); draw_sprite_ext(_spr, 0, _fit.x, _fit.y, _fit.scale, _fit.scale, 0, c_white, 1); }
+                draw_set_font(ui_font(fnt_ui)); draw_set_color(make_color_rgb(230, 226, 210));
+                draw_text(_rx0 + 96, _yy + 10, _pet.name + ((pet_calling_label(_pet) != "") ? ("  -  " + pet_calling_label(_pet)) : ""));
+                draw_set_font(ui_font(fnt_ui_small));
+                var _sx = _rx0 + 96, _sy = _yy + 48;
+                var _keys = ["pow", "spr", "lck"], _labs = ["PWR", "SPR", "LCK"];
+                for (var _q2 = 0; _q2 < 3; _q2++) {
+                    var _gov = (_sk.stat == _keys[_q2]) || (_sk.stat == "powspr" && _q2 < 2) || (_sk.stat == "mixed") || (_sk.stat == "all") || (_sk.stat == "any");
+                    draw_set_color(_gov ? make_color_rgb(240, 210, 130) : make_color_rgb(120, 128, 145));
+                    draw_text(_sx, _sy, _labs[_q2] + " " + string(pet_stat(_pet, _keys[_q2])));
+                    _sx += 96;
+                }
+                var _home = (pet_habitat(_pet) == _sm.dungeon) || (pet_calling_has(_pet, "nightwise") && ledger_habitat_is_night(_sm.dungeon));
+                draw_set_color(make_color_rgb(150, 160, 185));
+                draw_text(_sx + 10, _sy, pet_stage_name(_pet.stage) + "   -   " + pet_hunger_state_label(_pet) + (_home ? "   -   HOME habitat" : ""));
+                draw_set_halign(fa_right); draw_set_color(make_color_rgb(230, 200, 120));
+                draw_text(_rx1r - 14, _yy + 12, ledger_away_text(_pet, true));
+                draw_set_halign(fa_left);
+            }
+            // The log, under the party.
+            var _oy = _ry0 + max(1, array_length(_pmp)) * 90 + 16;
+            draw_set_font(ui_font(fnt_ui_small)); draw_set_color(make_color_rgb(200, 190, 160));
+            draw_text(_rx0, _oy, "THE LOG"); _oy += 30;
+            for (var _g = 0; _g < min(6, array_length(_l.log)); _g++) {
+                if (_oy > _y2 - 110) break;
+                draw_set_color((_g == 0) ? make_color_rgb(210, 205, 190) : make_color_rgb(120, 126, 140));
+                draw_text(_rx0, _oy, "Run " + string(_l.log[_g].run) + "  -  " + ui_truncate(_l.log[_g].text, _rx1 - _rx0 - 40));
+                _oy += 28;
+            }
+            // Pathway button: back to OFFERS to send another party.
+            var _bx0 = _x2 - 330, _by0 = _y2 - 96, _bx1 = _x2 - 30, _by1 = _y2 - 36;
+            draw_set_color(make_color_rgb(40, 34, 18)); draw_rectangle(_bx0, _by0, _bx1, _by1, false);
+            draw_set_color(make_color_rgb(240, 200, 110)); draw_rectangle(_bx0, _by0, _bx1, _by1, true);
+            draw_set_font(ui_font(fnt_ui)); draw_set_halign(fa_center); draw_set_color(make_color_rgb(255, 235, 180));
+            draw_text((_bx0 + _bx1) / 2, _by0 + 16, _touch ? "SEND ANOTHER" : (_pad ? "SEND ANOTHER  [A]" : "SEND ANOTHER  [Enter]"));
+            draw_set_halign(fa_left);
+            if (touch_tapped(_bx0, _by0, _bx1, _by1)) input_inject("ledger:tooffers");
+        } else {
+            // Even with no one out, the log on the right keeps the last words.
+            draw_set_font(ui_font(fnt_ui_small)); draw_set_color(make_color_rgb(200, 190, 160));
+            draw_text(_rx0, _top - 30, "THE LOG");
+            var _oy2 = _top + 4;
+            if (array_length(_l.log) == 0) { draw_set_color(make_color_rgb(110, 118, 135)); draw_text(_rx0, _oy2, "Nothing written yet."); }
+            for (var _g2 = 0; _g2 < min(10, array_length(_l.log)); _g2++) {
+                draw_set_color((_g2 == 0) ? make_color_rgb(210, 205, 190) : make_color_rgb(120, 126, 140));
+                draw_text(_rx0, _oy2, "Run " + string(_l.log[_g2].run) + "  -  " + ui_truncate(_l.log[_g2].text, _rx1 - _rx0 - 40));
+                _oy2 += 28;
+            }
+        }
+    } else {
+        // ---------------- OFFERS (left column) ----------------
+        var _lx0 = _x1 + 30, _lx1 = _x1 + 560;
+        draw_set_font(ui_font(fnt_ui_small)); draw_set_color(make_color_rgb(150, 160, 185));
+        draw_text(_lx0, _top - 30, "JOBS ON THE LEDGER   (" + (_pad ? "LB/RB" : "A/D") + " to pick)");
+        for (var _i = 0; _i < _no; _i++) {
+            var _of = _offers[_i];
+            var _ry = _top + _i * 96;
+            if (_ry + 88 > _y2 - 40) break;
+            var _sel = (_i == _oi);
+            draw_set_color(_sel ? make_color_rgb(40, 34, 18) : make_color_rgb(16, 20, 30)); draw_rectangle(_lx0, _ry, _lx1, _ry + 88, false);
+            draw_set_color(_sel ? make_color_rgb(220, 180, 90) : make_color_rgb(60, 62, 76)); draw_rectangle(_lx0, _ry, _lx1, _ry + 88, true);
+            var _kd = ledger_kind_get(_of.kind);
+            draw_set_font(ui_font(fnt_ui)); draw_set_color(_of.taken ? make_color_rgb(110, 110, 120) : (_sel ? make_color_rgb(245, 228, 175) : make_color_rgb(225, 220, 200)));
+            draw_text(_lx0 + 18, _ry + 12, ui_truncate(ledger_offer_title(_of), _lx1 - _lx0 - 130));
+            draw_set_font(ui_font(fnt_ui_small)); draw_set_color(make_color_rgb(150, 160, 185));
+            draw_text(_lx0 + 18, _ry + 50, ui_truncate(ledger_kind_stat_label(_kd) + "  -  " + ledger_habitat_name(_of.dungeon) + "  -  tier " + string(_of.tier) + "  -  " + string(_kd.dur) + ((_kd.dur == 1) ? " run" : " runs"), _lx1 - _lx0 - 36));   // 09-28: numeric tier, clipped to the row
+            if (_of.taken) { draw_set_halign(fa_right); draw_set_color(make_color_rgb(120, 120, 130)); draw_text(_lx1 - 14, _ry + 12, "TAKEN"); draw_set_halign(fa_left); }
+            else if (_of.npc != "") { draw_set_halign(fa_right); draw_set_color(make_color_rgb(190, 150, 210)); draw_text(_lx1 - 14, _ry + 12, "ERRAND"); draw_set_halign(fa_left); }
+            else if (_of.kind == "expedition") { draw_set_halign(fa_right); draw_set_color(make_color_rgb(230, 170, 90)); draw_text(_lx1 - 14, _ry + 12, "3 RUNS"); draw_set_halign(fa_left); }
+            if (touch_tapped(_lx0, _ry, _lx1, _ry + 88)) input_inject("ledger:offer" + string(_i));
+        }
+        // HOW IT WORKS (09-28, M: "hard to follow"): the three steps, in the empty space under the
+        // offers, until the first party has ever been sent. The coach-mark covers the rest.
+        if (_l.sent_total == 0) {
+            var _hy0 = _top + min(_no, 5) * 96 + 14, _hy1 = _y2 - 104;
+            if (_hy1 - _hy0 > 120) {
+                draw_set_color(make_color_rgb(22, 26, 20)); draw_rectangle(_lx0, _hy0, _lx1, _hy1, false);
+                draw_set_color(make_color_rgb(120, 150, 100)); draw_rectangle(_lx0, _hy0, _lx1, _hy1, true);
+                draw_set_font(ui_font_dense(fnt_ui_small)); draw_set_color(make_color_rgb(190, 225, 170));
+                draw_text(_lx0 + 16, _hy0 + 10, "HOW IT WORKS");
+                draw_set_color(make_color_rgb(190, 195, 205));
+                draw_text_ext(_lx0 + 16, _hy0 + 38,
+                    "1.  Pick a JOB on the left. Its governing stat and habitat are on the right.\n"
+                  + "2.  Toggle up to three creatures into the party - the CHANCE bar answers as you go.\n"
+                  + "3.  SEND. They are gone for the runs shown, and Bairc reads you the result when you next come home.",
+                    24, _lx1 - _lx0 - 32);
+            }
+        }
+
+        // ---------------- The offer (right pane) ----------------
+        var _rx0 = _x1 + 600, _rx1 = _x2 - 30;
+        if (_o != undefined) {
+            var _k = ledger_kind_get(_o.kind);
+            var _crest = (_o.dungeon != "") ? asset_get_index("spr_dungeon_" + _o.dungeon) : -1;
+            if (_crest >= 0) {
+                var _cs = 130 / max(1, sprite_get_height(_crest));
+                draw_set_alpha(0.9);
+                draw_sprite_ext(_crest, 0, _rx1 - sprite_get_width(_crest) * _cs, _top - 12, _cs, _cs, 0, c_white, 1);   // clears the CLOSE button (y190)
+                draw_set_alpha(1.0);
+            }
+            draw_set_font(fnt_ui_title); draw_set_color(make_color_rgb(240, 222, 170));
+            draw_text(_rx0, _top - 34, ui_truncate(ledger_offer_title(_o), _rx1 - _rx0 - 260));
+            draw_set_font(ui_font(fnt_ui_small)); draw_set_color(make_color_rgb(175, 180, 195));
+            draw_text_ext(_rx0, _top + 18, _o.blurb, 24, _rx1 - _rx0 - 260);
+            var _iy = _top + 96;
+            draw_set_color(make_color_rgb(200, 190, 160));
+            draw_text(_rx0, _iy,      "Governed by " + ledger_kind_stat_label(_k) + "     Tier " + string(_o.tier) + "     " + string(_k.dur) + ((_k.dur == 1) ? " run" : " runs") + "     Habitat: " + ledger_habitat_name(_o.dungeon));
+            draw_set_color(make_color_rgb(150, 200, 160)); draw_text(_rx0, _iy + 28, "Pays: " + _k.pays);
+            draw_set_color(make_color_rgb(210, 150, 130)); draw_text(_rx0, _iy + 56, "Risk: " + _k.risk);
+
+            // Success meter (live)
+            var _ev = ledger_party_eval(_o, _gc.ledger_party);
+            var _my0 = _iy + 100;
+            draw_set_font(ui_font(fnt_ui_small)); draw_set_color(make_color_rgb(150, 160, 185));
+            draw_text(_rx0, _my0, "CHANCE" + ((_ev.n == 0) ? "   (pick a party below)" : ("   score " + string(round(_ev.score)) + " vs " + string(_ev.req) + " needed")));
+            var _bw = _rx1 - _rx0 - 200, _by = _my0 + 30;
+            draw_set_color(make_color_rgb(20, 22, 30)); draw_rectangle(_rx0, _by, _rx0 + _bw, _by + 26, false);
+            var _pcol = (_ev.p >= 0.7) ? make_color_rgb(110, 210, 130) : ((_ev.p >= 0.45) ? make_color_rgb(230, 200, 100) : make_color_rgb(220, 110, 90));
+            if (_ev.n > 0) { draw_set_color(_pcol); draw_rectangle(_rx0, _by, _rx0 + _bw * _ev.p, _by + 26, false); }
+            draw_set_color(make_color_rgb(90, 86, 76)); draw_rectangle(_rx0, _by, _rx0 + _bw, _by + 26, true);
+            draw_set_font(ui_font(fnt_ui)); draw_set_color(make_color_rgb(240, 235, 220));
+            draw_text(_rx0 + _bw + 16, _by - 4, (_ev.n > 0) ? (string(round(_ev.p * 100)) + "%") : "-");
+            draw_set_font(ui_font(fnt_ui_small)); draw_set_color(make_color_rgb(130, 140, 160));
+            var _hint = "+12% per home-habitat creature (max 2)   +5% per Devoted bond   -20% if any is hungry";
+            if (_ev.n > 0) _hint = "matched " + string(_ev.matched) + "   devoted " + string(_ev.devoted) + (_ev.hungry ? "   HUNGRY -20%" : "") + "   GREAT " + string(round(_ev.great * 100)) + "%" + (_ev.trail ? "   Trailblazer: -1 run" : "");
+            draw_text(_rx0, _by + 34, _hint);
+
+            // Party strip
+            var _py0 = _by + 70;
+            for (var _s = 0; _s < LEDGER_PARTY_MAX; _s++) {
+                var _sx0 = _rx0 + _s * 330, _sx1 = _sx0 + 300;
+                var _has = (_s < array_length(_gc.ledger_party));
+                draw_set_color(_has ? make_color_rgb(30, 40, 30) : make_color_rgb(16, 20, 30)); draw_rectangle(_sx0, _py0, _sx1, _py0 + 56, false);
+                draw_set_color(_has ? make_color_rgb(120, 190, 130) : make_color_rgb(60, 62, 76)); draw_rectangle(_sx0, _py0, _sx1, _py0 + 56, true);
+                draw_set_font(ui_font(fnt_ui_small)); draw_set_color(_has ? make_color_rgb(200, 240, 200) : make_color_rgb(90, 96, 110));
+                if (_has) {
+                    var _sp = pet_roster()[_gc.ledger_party[_s]];
+                    draw_text(_sx0 + 14, _py0 + 16, _sp.name + "   " + ledger_kind_stat_label(_k) + " " + string(round(ledger_kind_stat_value(_sp, _k))) + (ledger_pet_matches(_sp, _o) ? "   home" : ""));
+                } else draw_text(_sx0 + 14, _py0 + 16, "- empty slot -");
+            }
+
+            // Roster rows
+            var _ry0 = _py0 + 80;
+            draw_set_font(ui_font(fnt_ui_small)); draw_set_color(make_color_rgb(150, 160, 185));
+            draw_text(_rx0, _ry0 - 26, "YOUR CREATURES (" + string(_nr) + ")   " + (_touch ? "tap to toggle" : (_pad ? "[A] toggle" : "[Space] toggle")));
+            var _vis = 4;
+            var _first = ui_list_window("ledger_roster", _gc.ledger_cursor, _nr, _vis);
+            var _last  = min(_nr, _first + _vis);
+            var _rh = 80, _rgap = 6;   // 4 rows end at y932, clear of the SEND button (y940)
+            for (var _r = _first; _r < _last; _r++) {
+                var _pi  = _rows[_r];
+                var _pet = pet_roster()[_pi];
+                var _yy  = _ry0 + (_r - _first) * (_rh + _rgap);
+                var _cur = (_r == _gc.ledger_cursor);
+                var _in  = (ledger_party_has(_gc, _pi) >= 0);
+                var _why = ledger_pet_blocked(_pet, _o);
+                var _rx1r = _rx1 - 30;
+                draw_set_color(_in ? make_color_rgb(26, 40, 28) : (_cur ? make_color_rgb(34, 30, 20) : make_color_rgb(16, 20, 30)));
+                draw_rectangle(_rx0, _yy, _rx1r, _yy + _rh, false);
+                draw_set_color(_in ? make_color_rgb(120, 190, 130) : (_cur ? make_color_rgb(220, 180, 90) : make_color_rgb(60, 62, 76)));
+                draw_rectangle(_rx0, _yy, _rx1r, _yy + _rh, true);
+                var _spr = pet_sprite(_pet, "s");
+                if (_spr >= 0) {
+                    var _fit = pet_sprite_fit(_spr, _rx0 + 44, _yy + _rh - 8, 66);
+                    draw_sprite_ext(_spr, 0, _fit.x, _fit.y, _fit.scale, _fit.scale, 0, (_why != "") ? make_color_rgb(120, 120, 130) : c_white, 1);
+                }
+                draw_set_font(ui_font(fnt_ui)); draw_set_color((_why != "") ? make_color_rgb(140, 140, 150) : make_color_rgb(230, 226, 210));
+                draw_text(_rx0 + 96, _yy + 10, _pet.name + ((pet_calling_label(_pet) != "") ? ("  -  " + pet_calling_label(_pet)) : ""));
+                draw_set_font(ui_font(fnt_ui_small));
+                var _sx = _rx0 + 96, _sy = _yy + 48;
+                var _keys = ["pow", "spr", "lck"], _labs = ["PWR", "SPR", "LCK"];
+                for (var _q = 0; _q < 3; _q++) {
+                    var _gov = (_k.stat == _keys[_q]) || (_k.stat == "powspr" && _q < 2) || (_k.stat == "mixed") || (_k.stat == "all") || (_k.stat == "any");
+                    draw_set_color(_gov ? make_color_rgb(240, 210, 130) : make_color_rgb(120, 128, 145));
+                    draw_text(_sx, _sy, _labs[_q] + " " + string(pet_stat(_pet, _keys[_q])));
+                    _sx += 96;
+                }
+                draw_set_color(make_color_rgb(150, 160, 185));
+                draw_text(_sx + 10, _sy, pet_stage_name(_pet.stage) + "   -   " + pet_hunger_state_label(_pet) + (ledger_pet_matches(_pet, _o) ? "   -   HOME habitat" : ("   -   " + ((pet_habitat(_pet) != "") ? ledger_habitat_name(pet_habitat(_pet)) : "no habitat"))));
+                draw_set_halign(fa_right);
+                if (_why != "") { draw_set_color(make_color_rgb(215, 120, 100)); draw_text(_rx1r - 14, _yy + 12, _why); }
+                else if (_in)   { draw_set_color(make_color_rgb(160, 235, 170)); draw_text(_rx1r - 14, _yy + 12, "IN THE PARTY"); }
+                draw_set_halign(fa_left);
+                if (touch_tapped(_rx0, _yy, _rx1r, _yy + _rh)) input_inject("ledger:pet" + string(_r));
+            }
+            if (_nr > _vis) {
+                // Visible scrollbar (project rule: info-dense lists scroll with a bar).
+                var _sbx = _rx1 - 22, _sby0 = _ry0, _sby1 = _ry0 + _vis * (_rh + _rgap) - _rgap;
+                draw_set_color(make_color_rgb(30, 32, 44)); draw_rectangle(_sbx, _sby0, _sbx + 10, _sby1, false);
+                var _th = max(30, (_sby1 - _sby0) * _vis / _nr);
+                var _ty = _sby0 + ((_sby1 - _sby0) - _th) * (_first / max(1, _nr - _vis));
+                draw_set_color(make_color_rgb(160, 140, 90)); draw_rectangle(_sbx, _ty, _sbx + 10, _ty + _th, false);
+            }
+            // SEND button (thumb zone, bottom-right)
+            var _bx0 = _x2 - 250, _by0 = _y2 - 96, _bx1 = _x2 - 30, _by1 = _y2 - 36;
+            var _can = (array_length(_gc.ledger_party) > 0 && !_o.taken);
+            draw_set_color(_can ? make_color_rgb(50, 42, 20) : make_color_rgb(20, 22, 30)); draw_rectangle(_bx0, _by0, _bx1, _by1, false);
+            draw_set_color(_can ? make_color_rgb(240, 200, 110) : make_color_rgb(70, 70, 80)); draw_rectangle(_bx0, _by0, _bx1, _by1, true);
+            draw_set_font(ui_font(fnt_ui)); draw_set_halign(fa_center);
+            draw_set_color(_can ? make_color_rgb(255, 235, 180) : make_color_rgb(110, 110, 120));
+            draw_text((_bx0 + _bx1) / 2, _by0 + 16, _touch ? "SEND" : (_pad ? "SEND  [RT]" : "SEND  [R]"));
+            draw_set_halign(fa_left);
+            if (touch_tapped(_bx0, _by0, _bx1, _by1)) input_inject("ledger:send");
+        }
+    }
+    // Notice + legend
+    if (_gc.ledger_notice != "") {
+        draw_set_font(ui_font(fnt_ui_small)); draw_set_halign(fa_center);
+        var _ok = (string_pos("Sent.", _gc.ledger_notice) == 1);
+        draw_set_color(_ok ? make_color_rgb(200, 240, 200) : make_color_rgb(230, 150, 130));
+        draw_text(_x1 + 560 + (_x2 - 280 - _x1 - 560) / 2, _y2 - 76, ui_truncate(_gc.ledger_notice, 860));
+        draw_set_halign(fa_left);
+    }
+    draw_set_color(make_color_rgb(65, 75, 100));
+    if (!_touch) ui_draw_key_legend(GUI_CX, 1050, (_gc.ledger_tab == 1)
+        ? (_pad ? "D-Pad: Party   A: Send another   LB/RB: Tab   B: Close"
+                : "W/S: Party   Enter: Send another   Q/E: Tab   Esc: Close")
+        : (_pad ? "D-Pad L/R: Job   D-Pad U/D: Creature   A: Toggle   RT: Send   LB/RB: Tab   B: Close"
+                : "A/D: Job   W/S: Creature   Space: Toggle   R: Send   Q/E: Tab   Esc: Close"));
+    draw_set_halign(fa_left); draw_set_valign(fa_top); draw_set_alpha(1.0); draw_set_color(c_white); draw_set_font(-1);
+}
+
+// Bairc's report page (§1.4): the Bairc dialogue idiom, one block per mission that came home.
+function ui_draw_ledger_report() {
+    if (!instance_exists(obj_game_controller)) return;
+    var _gc = instance_find(obj_game_controller, 0);
+    if (!variable_instance_exists(_gc, "ledger_report_open") || !_gc.ledger_report_open) return;
+    ui_draw_bairc_dialogue("The ledger, while you were below.\n\n" + ledger_report_text());
+}
+
+// =============================================================================
+// HUB INBOX (§4.1): bell chip + the list. Rows 88px, visible scrollbar, mark-read.
+// =============================================================================
+function ui_draw_inbox_chip() {
+    if (room != rm_hub || !instance_exists(obj_game_controller)) return;
+    if (ui_input_blocked() || hub_dialog_up()) return;
+    var _gc = instance_find(obj_game_controller, 0);
+    if (variable_instance_exists(_gc, "garden_open") && _gc.garden_open) return;
+    if (_gc.dungeon_select_open || _gc.loadout_open) return;
+    var _n = inbox_unread();
+    var _pad = (input_device() == 1), _touch = (input_device() == 2);
+    draw_set_font(ui_font(fnt_ui_small));
+    var _txt = "INBOX" + ((_n > 0) ? ("  " + string(_n)) : "") + (_touch ? "" : (_pad ? "  [RB]" : "  [N]"));
+    var _w = string_width(_txt) + 40, _h = 44;
+    var _x1 = GUI_XR - 34, _x0 = _x1 - _w, _y0 = 30, _y1 = _y0 + _h;
+    draw_set_alpha(0.86); draw_set_color(make_color_rgb(14, 18, 26)); draw_rectangle(_x0, _y0, _x1, _y1, false); draw_set_alpha(1.0);
+    var _pulse = (_n > 0) ? (0.6 + 0.4 * (0.5 + 0.5 * sin(current_time / 300))) : 1.0;
+    draw_set_color((_n > 0) ? merge_color(make_color_rgb(120, 100, 50), make_color_rgb(255, 215, 110), _pulse) : make_color_rgb(70, 74, 90));
+    draw_rectangle(_x0, _y0, _x1, _y1, true);
+    draw_set_color((_n > 0) ? make_color_rgb(255, 232, 170) : make_color_rgb(150, 156, 170));
+    draw_set_halign(fa_center); draw_set_valign(fa_middle);
+    draw_text((_x0 + _x1) / 2, (_y0 + _y1) / 2 + 1, _txt);
+    draw_set_halign(fa_left); draw_set_valign(fa_top);
+    if (touch_tapped(_x0, _y0, _x1, _y1)) input_inject("hub:inbox");
+    // 09-25 UX pass: the LEDGER chip beside the bell - parties out, the next due - taps through
+    // to the Ledger (same [L] the keyboard uses). Quiet when nothing is out.
+    var _la = ledger_ensure();
+    var _lo = array_length(_la.active);
+    var _lt = (_lo > 0)
+        ? ("LEDGER  " + string(_lo) + " out  -  home in " + string(ledger_next_home_runs()) + "r")
+        : "LEDGER";
+    _lt += (_touch ? "" : (_pad ? "  [LB]" : "  [L]"));
+    var _lw = string_width(_lt) + 40;
+    var _lx1 = _x0 - 14, _lx0 = _lx1 - _lw;
+    draw_set_alpha(0.86); draw_set_color(make_color_rgb(14, 18, 26)); draw_rectangle(_lx0, _y0, _lx1, _y1, false); draw_set_alpha(1.0);
+    var _due = (_lo > 0 && ledger_next_home_runs() <= 1);
+    draw_set_color(_due ? make_color_rgb(150, 235, 160) : ((_lo > 0) ? make_color_rgb(210, 170, 90) : make_color_rgb(70, 74, 90)));
+    draw_rectangle(_lx0, _y0, _lx1, _y1, true);
+    draw_set_color((_lo > 0) ? make_color_rgb(245, 225, 170) : make_color_rgb(150, 156, 170));
+    draw_set_halign(fa_center); draw_set_valign(fa_middle);
+    draw_text((_lx0 + _lx1) / 2, (_y0 + _y1) / 2 + 1, _lt);
+    draw_set_halign(fa_left); draw_set_valign(fa_top);
+    if (touch_tapped(_lx0, _y0, _lx1, _y1)) input_inject("hub:ledger");
+}
+function ui_draw_inbox() {
+    if (!instance_exists(obj_game_controller)) return;
+    var _gc = instance_find(obj_game_controller, 0);
+    if (!variable_instance_exists(_gc, "inbox_open") || !_gc.inbox_open) return;
+    var _l = inbox_ensure(), _n = array_length(_l);
+    var _pad = (input_device() == 1), _touch = (input_device() == 2);
+    draw_set_alpha(0.9); draw_set_color(make_color_rgb(6, 8, 14)); draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false); draw_set_alpha(1.0);
+    var _x1 = 300, _y1 = 90, _x2 = 1620, _y2 = 990;
+    draw_set_color(make_color_rgb(13, 15, 24)); draw_rectangle(_x1, _y1, _x2, _y2, false);
+    draw_set_color(make_color_rgb(140, 118, 72)); draw_rectangle(_x1, _y1, _x2, _y2, true); draw_rectangle(_x1, _y1, _x2, _y1 + 4, false);
+    draw_set_halign(fa_center); draw_set_font(fnt_ui_title); draw_set_color(make_color_rgb(232, 210, 150));
+    draw_text(GUI_CX, _y1 + 14, "INBOX");
+    draw_set_font(ui_font(fnt_ui_small)); draw_set_color(make_color_rgb(150, 160, 185));
+    ui_draw_text_fit(GUI_CX, _y1 + 58, string(inbox_unread()) + " unread of " + string(_n) + "   -   what the town, the ledger and your creatures had to say while you were below", (_x2 - _x1) - 60);
+    draw_set_halign(fa_left);
+    var _cx0 = _x2 - 150, _cy0 = _y1 + 92, _cx1 = _x2 - 30, _cy1 = _cy0 + 54;
+    draw_set_color(make_color_rgb(18, 20, 30)); draw_rectangle(_cx0, _cy0, _cx1, _cy1, false);
+    draw_set_color(make_color_rgb(90, 80, 70));  draw_rectangle(_cx0, _cy0, _cx1, _cy1, true);
+    draw_set_color(make_color_rgb(190, 180, 170)); draw_set_halign(fa_center);
+    draw_text((_cx0 + _cx1) / 2, _cy0 + 16, _touch ? "CLOSE" : (_pad ? "[B] Close" : "[Esc] Close")); draw_set_halign(fa_left);
+    if (touch_tapped(_cx0, _cy0, _cx1, _cy1)) input_inject("inbox:close");
+    var _top = _y1 + 168, _lx0 = _x1 + 30, _lx1 = _x1 + 720, _rh = 84, _gap = 6, _vis = 8;
+    if (_n == 0) {
+        draw_set_font(ui_font(fnt_ui)); draw_set_color(make_color_rgb(90, 100, 120)); draw_set_halign(fa_center);
+        draw_text(GUI_CX, 500, "Nothing yet. Notices from runs, the board, your bonds and Bairc's ledger collect here.");
+        draw_set_halign(fa_left);
+    }
+    var _first = ui_list_window("hub_inbox", _gc.inbox_cursor, _n, _vis), _last = min(_n, _first + _vis);
+    for (var _i = _first; _i < _last; _i++) {
+        var _e  = _l[_i];
+        var _yy = _top + (_i - _first) * (_rh + _gap);
+        var _cur = (_i == _gc.inbox_cursor);
+        draw_set_color(_cur ? make_color_rgb(34, 30, 20) : make_color_rgb(16, 20, 30)); draw_rectangle(_lx0, _yy, _lx1, _yy + _rh, false);
+        draw_set_color(_cur ? make_color_rgb(220, 180, 90) : make_color_rgb(60, 62, 76)); draw_rectangle(_lx0, _yy, _lx1, _yy + _rh, true);
+        var _kc = (_e.kind == "ledger") ? make_color_rgb(200, 170, 90) : ((_e.kind == "pet") ? make_color_rgb(150, 220, 160) : ((_e.kind == "bond") ? make_color_rgb(220, 140, 170) : ((_e.kind == "board") ? make_color_rgb(140, 180, 220) : make_color_rgb(150, 156, 170))));
+        draw_set_font(ui_font_dense(fnt_ui_small)); draw_set_color(_kc);
+        draw_text(_lx0 + 16, _yy + 12, inbox_kind_label(_e.kind) + "   run " + string(_e.run));
+        draw_set_font(ui_font(fnt_ui)); draw_set_color(_e.read ? make_color_rgb(150, 150, 160) : make_color_rgb(235, 230, 215));
+        draw_text(_lx0 + 16, _yy + 40, ui_truncate(_e.title, _lx1 - _lx0 - 70));
+        if (!_e.read) { draw_set_color(make_color_rgb(255, 215, 110)); draw_circle(_lx1 - 22, _yy + 22, 6, false); }
+        if (touch_tapped(_lx0, _yy, _lx1, _yy + _rh)) input_inject("inbox:row" + string(_i));
+    }
+    if (_n > _vis) {
+        var _sbx = _lx1 + 8, _sby0 = _top, _sby1 = _top + _vis * (_rh + _gap) - _gap;
+        draw_set_color(make_color_rgb(30, 32, 44)); draw_rectangle(_sbx, _sby0, _sbx + 10, _sby1, false);
+        var _th = max(30, (_sby1 - _sby0) * _vis / _n);
+        var _ty = _sby0 + ((_sby1 - _sby0) - _th) * (_first / max(1, _n - _vis));
+        draw_set_color(make_color_rgb(160, 140, 90)); draw_rectangle(_sbx, _ty, _sbx + 10, _ty + _th, false);
+    }
+    // Detail pane
+    if (_n > 0) {
+        var _d = _l[clamp(_gc.inbox_cursor, 0, _n - 1)];
+        var _dx0 = _lx1 + 40, _dx1 = _x2 - 30;
+        draw_set_color(make_color_rgb(16, 20, 30)); draw_rectangle(_dx0, _top, _dx1, _y2 - 80, false);
+        draw_set_color(make_color_rgb(60, 62, 76)); draw_rectangle(_dx0, _top, _dx1, _y2 - 80, true);
+        draw_set_font(ui_font(fnt_ui)); draw_set_color(make_color_rgb(240, 225, 175));
+        draw_text_ext(_dx0 + 20, _top + 16, _d.title, 30, _dx1 - _dx0 - 40);
+        draw_set_font(ui_font(fnt_ui_small)); draw_set_color(make_color_rgb(200, 205, 215));
+        draw_text_ext(_dx0 + 20, _top + 90, _d.body, 26, _dx1 - _dx0 - 40);
+    }
+    draw_set_color(make_color_rgb(65, 75, 100));
+    if (!_touch) ui_draw_key_legend(GUI_CX, 1026, _pad ? "D-Pad: Browse   A: Mark read   B: Close" : "W/S: Browse   Enter: Mark read   N / Esc: Close");
+    draw_set_halign(fa_left); draw_set_valign(fa_top); draw_set_alpha(1.0); draw_set_color(c_white); draw_set_font(-1);
+}
+
+// =============================================================================
+// RUN SUMMARY (§4.2): one screen after any run end, before the hub. [Enter] continues.
+// =============================================================================
+function ui_draw_run_summary() {
+    if (!instance_exists(obj_game_controller)) return;
+    var _gc = instance_find(obj_game_controller, 0);
+    if (!variable_instance_exists(_gc, "summary_open") || !_gc.summary_open || !run_summary_pending()) return;
+    var _s = global.run_summary_data;
+    var _pad = (input_device() == 1), _touch = (input_device() == 2);
+    draw_set_alpha(0.95); draw_set_color(make_color_rgb(4, 6, 12)); draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false); draw_set_alpha(1.0);
+    var _x1 = 240, _y1 = 70, _x2 = 1680, _y2 = 1010;
+    var _res_col = (_s.result == 1) ? make_color_rgb(140, 230, 150) : ((_s.result == 0) ? make_color_rgb(240, 205, 110) : make_color_rgb(230, 110, 100));
+    var _res_txt = (_s.result == 1) ? "CLEARED" : ((_s.result == 0) ? "EXTRACTED" : "FELL");
+    draw_set_color(make_color_rgb(13, 15, 24)); draw_rectangle(_x1, _y1, _x2, _y2, false);
+    draw_set_color(_res_col); draw_rectangle(_x1, _y1, _x2, _y2, true); draw_rectangle(_x1, _y1, _x2, _y1 + 5, false);
+    draw_set_halign(fa_center); draw_set_font(fnt_ui_title); draw_set_color(_res_col);
+    draw_text(GUI_CX, _y1 + 20, "RUN " + string(_s.run) + "  -  " + _res_txt);
+    draw_set_font(ui_font(fnt_ui_small)); draw_set_color(make_color_rgb(160, 168, 185));
+    var _dn = (_s.dungeon == "") ? "the dark" : ledger_habitat_name(_s.dungeon);
+    draw_text(GUI_CX, _y1 + 66, _dn + "   -   Awakening " + string(_s.awakening) + ((_s.epithet != "") ? ("   -   " + _s.epithet) : ""));
+    draw_set_halign(fa_left);
+    // Left column: the numbers.
+    var _lx = _x1 + 60, _ly = _y1 + 130, _lh = 44;
+    draw_set_font(ui_font(fnt_ui));
+    var _rows = [
+        ["Floor reached",   string(_s.floor)],
+        ["Kills",           string(_s.kills)],
+        ["Damage dealt",    string(_s.dmg_dealt)],
+        ["Damage taken",    string(_s.dmg_taken)],
+        ["Gold earned",     string(_s.gold_earned) + "g"],
+        ["Gold banked",     string(_s.gold_kept) + "g" + ((_s.gold_earned > _s.gold_kept) ? ("   (lost " + string(_s.gold_earned - _s.gold_kept) + "g)") : "")],
+        ["Level reached",   string(_s.level)],
+        ["Permanent points", string(_s.perm)]
+    ];
+    for (var _i = 0; _i < array_length(_rows); _i++) {
+        draw_set_color(make_color_rgb(150, 160, 185)); draw_text(_lx, _ly + _i * _lh, _rows[_i][0]);
+        draw_set_color((_i == 5 && _s.gold_earned > _s.gold_kept) ? make_color_rgb(230, 150, 130) : make_color_rgb(235, 230, 215));
+        draw_text(_lx + 300, _ly + _i * _lh, _rows[_i][1]);
+    }
+    // Right column: loot, creatures, companion, missions.
+    var _rx = _x1 + 760, _ry = _y1 + 130;
+    draw_set_font(ui_font(fnt_ui_small)); draw_set_color(make_color_rgb(200, 190, 160)); draw_text(_rx, _ry, "LOOT HIGHLIGHTS"); _ry += 30;
+    draw_set_font(ui_font(fnt_ui));
+    if (array_length(_s.items) == 0) { draw_set_color(make_color_rgb(110, 118, 135)); draw_text(_rx, _ry, "nothing carried home"); _ry += 34; }
+    for (var _j = 0; _j < array_length(_s.items); _j++) { draw_set_color(item_rarity_color(_s.items[_j].rarity)); draw_text(_rx, _ry, ui_truncate(_s.items[_j].name, 600)); _ry += 34; }
+    _ry += 12;
+    if (array_length(_s.pets_found) > 0) {
+        draw_set_font(ui_font(fnt_ui_small)); draw_set_color(make_color_rgb(200, 190, 160)); draw_text(_rx, _ry, "CREATURES FOUND"); _ry += 30;
+        draw_set_font(ui_font(fnt_ui)); draw_set_color(make_color_rgb(150, 220, 160));
+        for (var _p = 0; _p < min(3, array_length(_s.pets_found)); _p++) { draw_text(_rx, _ry, string(_s.pets_found[_p])); _ry += 34; }
+        _ry += 12;
+    }
+    draw_set_font(ui_font(fnt_ui_small)); draw_set_color(make_color_rgb(200, 190, 160)); draw_text(_rx, _ry, "COMPANION"); _ry += 30;
+    draw_set_font(ui_font(fnt_ui)); draw_set_color(make_color_rgb(235, 230, 215));
+    draw_text_ext(_rx, _ry, (_s.pet != "") ? _s.pet : "no companion carried", 30, 620); _ry += 70;
+    draw_set_font(ui_font(fnt_ui_small)); draw_set_color(make_color_rgb(200, 190, 160)); draw_text(_rx, _ry, "BAIRC'S LEDGER"); _ry += 30;
+    draw_set_font(ui_font(fnt_ui));
+    if (array_length(_s.missions) == 0) { draw_set_color(make_color_rgb(110, 118, 135)); draw_text(_rx, _ry, "no parties came home this run"); _ry += 34; }
+    for (var _m = 0; _m < min(4, array_length(_s.missions)); _m++) { draw_set_color(make_color_rgb(230, 200, 120)); draw_text(_rx, _ry, ui_truncate(_s.missions[_m], 620)); _ry += 34; }
+    // Continue
+    var _bx0 = _x2 - 300, _by0 = _y2 - 96, _bx1 = _x2 - 40, _by1 = _y2 - 36;
+    draw_set_color(make_color_rgb(40, 34, 18)); draw_rectangle(_bx0, _by0, _bx1, _by1, false);
+    draw_set_color(make_color_rgb(240, 200, 110)); draw_rectangle(_bx0, _by0, _bx1, _by1, true);
+    draw_set_font(ui_font(fnt_ui)); draw_set_halign(fa_center); draw_set_color(make_color_rgb(255, 235, 180));
+    draw_text((_bx0 + _bx1) / 2, _by0 + 16, _touch ? "CONTINUE" : (_pad ? "CONTINUE  [A]" : "CONTINUE  [Enter]"));
+    draw_set_halign(fa_left);
+    if (touch_tapped(_bx0, _by0, _bx1, _by1)) input_inject("summary:continue");
+    draw_set_halign(fa_left); draw_set_valign(fa_top); draw_set_alpha(1.0); draw_set_color(c_white); draw_set_font(-1);
+}
+
+// =============================================================================
+// FIRST-NIGHT WELCOME (M 09-28): a big, vibrant, once-only splash on the first camp arrival that
+// points at the two things new players miss - BAIRC'S GARDEN and the CREATURE QUESTS (his
+// Ledger). Procedural swirl (additive blobs + motes), no art. Seen-flag rides tutorial_seen
+// ("welcome_camp"); the "hub" coach-mark follows on dismiss. Input: hub_welcome_step (scr_stats).
+// =============================================================================
+function ui_draw_hub_welcome() {
+    if (!instance_exists(obj_game_controller)) return;
+    var _gc = instance_find(obj_game_controller, 0);
+    if (!variable_instance_exists(_gc, "welcome_open") || !_gc.welcome_open) return;
+    var _t = _gc.welcome_t / 60;
+    var _pad = (input_device() == 1), _touch = (input_device() == 2);
+    var _fade = min(1, _gc.welcome_t / 30);
+
+    draw_set_alpha(0.90 * _fade); draw_set_color(make_color_rgb(3, 4, 9));
+    draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
+
+    // ---- The swirl: fourteen soft blobs orbiting the centre, additive, hue-cycled ----
+    gpu_set_blendmode(bm_add);
+    var _hues = [make_color_rgb(90, 40, 160), make_color_rgb(30, 120, 150), make_color_rgb(170, 90, 30),
+                 make_color_rgb(40, 140, 80),  make_color_rgb(150, 40, 90),  make_color_rgb(60, 80, 180)];
+    for (var _i = 0; _i < 14; _i++) {
+        var _ang = _t * (26 + 8 * (_i mod 5)) + _i * 51.4;
+        var _rad = 260 + 200 * sin(_t * 0.6 + _i);
+        var _bx  = GUI_CX + lengthdir_x(_rad, _ang), _by = GUI_CY + lengthdir_y(_rad * 0.55, _ang);
+        var _r   = 170 + 80 * sin(_t * 1.3 + _i * 0.9);
+        draw_set_alpha((0.09 + 0.05 * sin(_t * 2 + _i)) * _fade);
+        draw_set_color(_hues[_i mod 6]);
+        draw_circle(_bx, _by, _r, false);
+    }
+    // ---- Motes drifting up through the swirl ----
+    for (var _m = 0; _m < 70; _m++) {
+        var _h  = frac(sin(_m * 12.9898) * 43758.5453);
+        var _mx = GUI_XL + frac(_h + 0.02 * sin(_t * 0.7 + _m)) * GUI_W;
+        var _my = frac(sin(_m * 78.233) * 12345.678 - _t * (0.03 + 0.04 * _h)) * GUI_H;
+        draw_set_alpha((0.25 + 0.75 * abs(sin(_t * 3 + _m))) * _fade);
+        draw_set_color(merge_color(c_white, _hues[_m mod 6], 0.5));
+        draw_circle(_mx, _my, 1 + (_m mod 2), false);
+    }
+    gpu_set_blendmode(bm_normal); draw_set_alpha(1.0);
+
+    // ---- The card ----
+    var _x1 = 330, _y1 = 96, _x2 = 1590, _y2 = 1000;
+    draw_set_alpha(0.93 * _fade); draw_set_color(make_color_rgb(10, 10, 20)); draw_rectangle(_x1, _y1, _x2, _y2, false);
+    draw_set_alpha(_fade);
+    var _pulse = 0.5 + 0.5 * sin(_t * 4);
+    var _gold  = merge_color(make_color_rgb(200, 150, 60), make_color_rgb(255, 235, 150), _pulse);
+    draw_set_color(_gold); draw_rectangle(_x1, _y1, _x2, _y2, true); draw_rectangle(_x1, _y1, _x2, _y1 + 6, false);
+    draw_set_halign(fa_center); draw_set_valign(fa_top);
+    draw_set_font(fnt_ui_title);
+    draw_set_color(merge_color(make_color_rgb(255, 225, 150), make_color_rgb(160, 225, 255), 0.5 + 0.5 * sin(_t * 1.6)));
+    draw_text(GUI_CX, _y1 + 30, "WELCOME TO THE CAMP");
+    draw_set_font(ui_font(fnt_ui)); draw_set_color(make_color_rgb(205, 210, 225));
+    draw_text(GUI_CX, _y1 + 92, "Two things almost every wanderer misses on the first night. Do not miss them.");
+
+    // ---- Two feature cards ----
+    var _cw = 590, _ch = 560, _cy = _y1 + 150, _gap = 30;
+    var _cards = [
+        { x: GUI_CX - _cw - _gap / 2, col: make_color_rgb(120, 210, 140), tag: "WALK AMONG THEM",
+          title: "BAIRC'S GARDEN",
+          body: "Every creature you carry up from below lives here between runs - and you can walk the grounds with them.\n\nFind BAIRC on the camp carousel and press [V] VISIT THE GARDEN. Feed them, name them, step through the hut door, and dress the grounds from the peddler's cart.",
+          hint: _touch ? "Bairc  >  VISIT THE GARDEN" : (_pad ? "Bairc  >  [V] Garden" : "Bairc  >  [V] Garden") },
+        { x: GUI_CX + _gap / 2, col: make_color_rgb(240, 200, 110), tag: "CREATURE QUESTS",
+          title: "BAIRC'S LEDGER",
+          body: "Your bench does not have to sit idle. Send creatures out on JOBS while you run - Hunts, Vigils, Scavenges, Rescues - and they come home in one to three runs with reagents, gold, valuables, sometimes a new creature.\n\nPick a job, pick a party of up to three, SEND. Bairc reads you the result when you return.",
+          hint: _touch ? "the LEDGER chip, or the desk in his hut" : (_pad ? "[LB] anywhere in camp, or the desk in his hut" : "[L] anywhere in camp, or the desk in his hut") }
+    ];
+    for (var _c = 0; _c < 2; _c++) {
+        var _cd = _cards[_c];
+        var _cx0 = _cd.x, _cx1 = _cd.x + _cw, _cy0 = _cy, _cy1 = _cy + _ch;
+        var _glow = 0.5 + 0.5 * sin(_t * 3 + _c * 1.7);
+        draw_set_color(make_color_rgb(14, 18, 26)); draw_rectangle(_cx0, _cy0, _cx1, _cy1, false);
+        draw_set_color(merge_color(_cd.col, c_white, 0.35 * _glow)); draw_rectangle(_cx0, _cy0, _cx1, _cy1, true);
+        draw_rectangle(_cx0, _cy0, _cx1, _cy0 + 4, false);
+        // NEW ribbon
+        draw_set_color(_cd.col); draw_rectangle(_cx1 - 96, _cy0 + 14, _cx1 - 16, _cy0 + 44, false);
+        draw_set_font(ui_font_dense(fnt_ui_small)); draw_set_color(make_color_rgb(10, 10, 16));
+        draw_text(_cx1 - 56, _cy0 + 20, "NEW");
+        draw_set_halign(fa_left);
+        draw_set_font(ui_font_dense(fnt_ui_small)); draw_set_color(_cd.col);
+        draw_text(_cx0 + 24, _cy0 + 22, _cd.tag);
+        draw_set_font(fnt_ui_title); draw_set_color(make_color_rgb(245, 238, 220));
+        draw_text(_cx0 + 24, _cy0 + 48, _cd.title);
+        draw_set_font(ui_font(fnt_ui)); draw_set_color(make_color_rgb(210, 214, 226));
+        draw_text_ext(_cx0 + 24, _cy0 + 122, _cd.body, 30, _cw - 48);
+        draw_set_color(make_color_rgb(18, 22, 30)); draw_rectangle(_cx0 + 16, _cy1 - 70, _cx1 - 16, _cy1 - 16, false);
+        draw_set_color(_cd.col); draw_rectangle(_cx0 + 16, _cy1 - 70, _cx1 - 16, _cy1 - 16, true);
+        draw_set_font(ui_font(fnt_ui_small)); draw_set_color(merge_color(_cd.col, c_white, 0.4)); draw_set_halign(fa_center);
+        draw_text((_cx0 + _cx1) / 2, _cy1 - 54, _cd.hint);
+    }
+    // ---- Footer line + CONTINUE ----
+    draw_set_font(ui_font(fnt_ui_small)); draw_set_color(make_color_rgb(150, 156, 175)); draw_set_halign(fa_center);
+    draw_text(GUI_CX, _y2 - 112, "Also worth a look: the TAVERN BOARD posts requests, and the INBOX (top-right) keeps every notice.");
+    var _bx0 = GUI_CX - 150, _by0 = _y2 - 84, _bx1 = GUI_CX + 150, _by1 = _y2 - 26;
+    draw_set_color(make_color_rgb(40, 34, 18)); draw_rectangle(_bx0, _by0, _bx1, _by1, false);
+    draw_set_color(_gold); draw_rectangle(_bx0, _by0, _bx1, _by1, true);
+    draw_set_font(ui_font(fnt_ui)); draw_set_color(make_color_rgb(255, 235, 180));
+    draw_text(GUI_CX, _by0 + 15, _touch ? "LET'S GO" : (_pad ? "LET'S GO  [A]" : "LET'S GO  [Enter]"));
+    if (touch_tapped(_bx0, _by0, _bx1, _by1)) input_inject("welcome:continue");
+    draw_set_halign(fa_left); draw_set_valign(fa_top); draw_set_alpha(1.0); draw_set_color(c_white); draw_set_font(-1);
+}
+

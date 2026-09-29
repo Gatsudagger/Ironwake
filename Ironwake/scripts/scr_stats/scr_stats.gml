@@ -300,6 +300,7 @@ function end_run(result) {
     if (variable_global_exists("run_level")) {
         _end_level = global.run_level;
     }
+    var _sum_found = (variable_global_exists("run_found_pets") && is_array(global.run_found_pets)) ? global.run_found_pets : [];   // run summary reads it (09-25) - captured before the reset
     global.run_found_pets = [];   // run-scoped "creatures found" strip (equipment Found column)
     // Per-run station-rank charges re-arm here (M-locked 08-15): Maren's Deep
     // Socket and Vael's free portrait change are once PER RUN. The garden's
@@ -311,6 +312,16 @@ function end_run(result) {
     global.run_count++;
     global.last_run_result = result;
     global.last_run_gold   = global.current_run_gold;
+    // 09-25 RUN SUMMARY (§4.2): snapshot the companion BEFORE pet_run_complete banks its
+    // growth / bond so the summary can show what this run earned it.
+    var _sum_pet0 = pet_active();
+    var _sum_g0 = (_sum_pet0 == undefined || _sum_pet0.is_egg) ? 0 : _sum_pet0.growth;
+    var _sum_b0 = (_sum_pet0 == undefined || _sum_pet0.is_egg) ? 0 : pet_bond(_sum_pet0);
+    var _sum_s0 = (_sum_pet0 == undefined || _sum_pet0.is_egg) ? -1 : _sum_pet0.stage;
+    // 09-25 BAIRC'S LEDGER (§1.4): every party whose due run has come resolves now - any
+    // result; a death brings them home too (they were not with you). Reports queue for
+    // the hub arrival page; rewards land in stash / pouches as they would from a run.
+    ledger_resolve_due();
     global.last_run_kills  = global.current_run_kills;
 
     // Tavern board requests (BOARD_REQUESTS_SPEC.md): score run-scoped proofs
@@ -648,6 +659,9 @@ function end_run(result) {
     if (variable_global_exists("run_history")) {
         array_push(global.run_history, _run_record);
     }
+    // 09-25 RUN SUMMARY (§4.2): one struct the hub shows before anything else. Built here,
+    // after gold settled and the record closed, before the per-run counters reset below.
+    run_summary_build(_run_record, _sum_pet0, _sum_g0, _sum_b0, _sum_s0, _sum_found);
 
     // --- Steam achievements: run-outcome hooks (08-05 wiring). result: 1 full
     // clear / 0 extraction / -1 death. ---
@@ -682,6 +696,8 @@ function end_run(result) {
 
     global.current_run_gold    = 0;
     global.current_run_kills   = 0;
+    global.run_dmg_dealt       = 0;   // run summary counters (09-25) - fed by combat_apply_damage
+    global.run_dmg_taken       = 0;
     global.run_current_hp      = 0;
     global.run_borrowed_ability = "";   // Borrowed Memory is run-scoped (expression #6)
     global.run_borrowed_class   = "";
@@ -6880,7 +6896,7 @@ function npc_rank_perk_text(id, rank) {
         case "vael:1":  return "Atelier - tints and skins cost 20% less";
         case "vael:2":  return "Private Gallery - one free portrait change each run";
         case "bairc:1": return "Warm Pens - hunger drains 30% slower, and his ledger opens: full stat breakdowns on hover";
-        case "bairc:2": return "Night Garden - garden donations grow 50% faster";
+        case "bairc:2": return "Night Garden - garden donations grow 50% faster, and his Ledger sends a THIRD party out at once";
     }
     return "";
 }
@@ -9880,6 +9896,9 @@ function pet_run_complete(result) {
         }
         _p.stage += 1;
         _p.growth = 0;
+        // CALLINGS (09-25, §1.7 / M-locked §8.5): the Young Adult crossing offers two of
+        // the six; the pick happens at Bairc (same modal as the capstone, mode "calling").
+        if (_p.stage == PET_STAGE_YOUNGADULT) pet_calling_offer_roll(_p);
         // Hippocamp easter egg (M 09-03): the Brinecolt grows into its adult
         // name - unless the player already named it themselves.
         if (variable_struct_exists(_p, "species") && _p.species == "hippocamp"
@@ -10094,9 +10113,11 @@ function pet_active_boon_loot_pts() {
 function pet_active_kit_crit() {
     var _p = pet_active();
     if (_p == undefined || _p.is_egg) return 0;
+    // NIGHTWISE calling (09-25, §1.7 combat echo): +3% crit for you in the night dungeons.
+    var _nw = (pet_calling_has(_p, "nightwise") && ledger_habitat_is_night(variable_global_exists("selected_dungeon") ? global.selected_dungeon : "")) ? 3 : 0;
     var _c = pet_kit_mods(_p).crit;
-    if (_c <= 0) return 0;
-    return _c * pet_injury_mult(_p.injured) * pet_corruption_mult(_p) * pet_stat_mult(_p, "lck") * pet_hunger_mult(_p);
+    if (_c <= 0) return _nw;
+    return _nw + _c * pet_injury_mult(_p.injured) * pet_corruption_mult(_p) * pet_stat_mult(_p, "lck") * pet_hunger_mult(_p);
 }
 // Fate's Coin: once-per-combat lethal save (checked in combat_try_last_stand).
 function pet_active_has_fatecoin() {
@@ -10261,7 +10282,7 @@ function shrine_boon_price(base_cost) {
 // matching ability's effectiveness. Derived from archetype + stage + a stable per-creature
 // "talent" (0..2, hashed from uid) so NO new saved fields are needed and old pets Just Work.
 //   PWR -> Combatant strike damage   SPR -> Guardian heal/shield   LCK -> Boon gold/loot
-#macro PET_STAT_COEFF 0.03   // effectiveness gain per stat point (very weak, TBD-balance)
+#macro PET_STAT_COEFF 0.05   // effectiveness gain per stat point (0.03 -> 0.05 with the Ledger, 09-25 §1.6: a point reads on both boards)
 
 // The archetype's primary (governing) stat key.
 function pet_stat_primary(archetype) {
@@ -10286,8 +10307,9 @@ function pet_stat_talent(pet, which) {
 // The point-source breakdown is its own function (the stat hover tooltip itemises it);
 // pet_stat just sums it so the two can never disagree.
 function pet_stat_breakdown(pet, which) {
-    var _bd = { base:0, stage:0, talent:0, bond:0, signature:0 };
+    var _bd = { base:0, stage:0, talent:0, bond:0, signature:0, calling:0 };
     if (!is_struct(pet)) return _bd;
+    if (pet_calling_stat(pet) == which) _bd.calling = 2;   // CALLING +2 (09-25, §1.7)
     var _stage  = pet.is_egg ? 0 : pet.stage;
     var _is_pri = (which == pet_stat_primary(pet.archetype));
     _bd.base   = _is_pri ? 3 : 1;
@@ -10303,7 +10325,7 @@ function pet_stat_breakdown(pet, which) {
 function pet_stat(pet, which) {
     if (!is_struct(pet)) return 0;
     var _bd = pet_stat_breakdown(pet, which);
-    return _bd.base + _bd.stage + _bd.talent + _bd.bond + _bd.signature;
+    return _bd.base + _bd.stage + _bd.talent + _bd.bond + _bd.signature + _bd.calling;
 }
 // The effectiveness multiplier a stat grants (1.0 for eggs).
 function pet_stat_mult(pet, which) {
@@ -10595,6 +10617,7 @@ function pet_hp(pet) {
 // Apply damage to the pet's pool. Returns true when THIS hit knocked it out.
 function pet_take_damage(pet, amount) {
     if (!is_struct(pet) || amount <= 0) return false;
+    if (pet_calling_has(pet, "ironhide")) amount = max(1, round(amount * 0.85));   // IRONHIDE calling: -15% damage taken (09-25, §1.7)
     var _was_up = pet_hp(pet) > 0;   // lazy-inits hp_dmg
     pet.hp_dmg = min(pet.hp_dmg + amount, pet_max_hp(pet));
     return _was_up && pet_hp(pet) <= 0;
@@ -11695,7 +11718,7 @@ function garden_interactables(_gc) {
     }
     if (_room == "hut") {
         // 09-22 HUT: Bairc at his ledgers (-> creature station), the keepsake shelf, the fire, the door.
-        array_push(_out, { tag:"garden:desk",   label:"Bairc - see the creatures", x:HUT_BAIRC_X,  y:HUT_BAIRC_Y, reach:150, top:190 });
+        array_push(_out, { tag:"garden:desk",   label:"Bairc's Ledger - send the roster out", x:HUT_BAIRC_X,  y:HUT_BAIRC_Y, reach:150, top:190 });   // 09-25: the desk is THE LEDGER (M-locked §8.1)
         array_push(_out, { tag:"garden:shelf",  label:"The keepsake shelf",        x:HUT_SHELF_X,  y:HUT_DESK_Y,  reach:150, top:200 });
         array_push(_out, { tag:"garden:hearth", label:"Stoke the fire",            x:HUT_HEARTH_X, y:HUT_HEARTH_Y, reach:140, top:150 });
         array_push(_out, { tag:"garden:out",    label:"Step outside",              x:HUT_DOOR_X,   y:HUT_BAND_BOT, reach:110, top:40 });
@@ -12235,6 +12258,15 @@ function pet_make(species_id, source, archetype, stage, is_egg) {
         egg_type:       _egg,                             // RNG egg-type benefit kept after hatch (§3)
         awk_at_acquire: _awk,
         signature:      (source == "egg_boss"),          // boss-egg => unique species + awk stat ceiling (§3.1)
+        // BAIRC'S LEDGER + CALLINGS (09-25, §1.5 / §1.7) - additive; older pets lazy-init via the helpers.
+        away_until:     0,                                // run index it returns on (0 = home)
+        away_kind:      "",                               // the job it is on
+        calling:        (!is_egg && stage >= PET_STAGE_YOUNGADULT) ? pet_calling_random_id() : "",   // found creatures roll one
+        calling_offer:  [],                               // the two offered at the Young Adult crossing (raised)
+        ledger_done:    0,                                // report card: missions completed
+        ledger_great:   0,                                //   GREAT results
+        ledger_fav:     "",                               //   most-visited habitat
+        ledger_inj:     "",                               //   last injury line
         // sprite-state (animation shelved; fields reserved per design §6/§13)
         sprite_name:    "spr_pet_" + species_id,
         sprite_state:   "idle",
@@ -12679,6 +12711,8 @@ function tutorial_catalog() {
         { id:"origin_egg",  title:"Something Stirs",    body:"The egg you stumbled upon in your travels stirs - perhaps someone here can help with that. Bairc the beast-warden can identify and hatch it: find him on the camp carousel and set the egg under his care. A raised creature fights beside you, or blesses your runs." },
         { id:"bond_gates",  title:"Growing Closer",     body:"Someone in camp has warmed to you - their bond has reached a GATE. Crossing a gate takes a FAVOR: speak with them at camp and they will ask it of you - accept or decline. Finish it, return, and they will ask whether you want to grow closer. Nothing deepens until you say yes. Mind your bonds: friendships DECAY if neglected, and only a few can hold the deepest tiers - deepening one may demote another." },
         { id:"pet_commands",  title:"Orders",          body:"Your companion takes ONE free order a turn - no AP. SIC [Z]: it goes for YOUR target this turn and leaves it Exposed. HEEL [X]: it steps in front of the next blow aimed at you and takes a third of it - guaranteed, once. FETCH [F]: a Luck check - it rifles your target's pockets for gold, once per foe. A used order rests through your next turn. On a pad: Y / LB / RB. On touch: the chips beside END TURN." },
+        { id:"ledger_intro",  title:"Bairc's Ledger",  body:"The bench works now. Pick a JOB on the left - each is ruled by one stat (PWR hunts, SPR keeps vigil, LCK scavenges) and prefers a HABITAT; a creature from that dungeon counts double. Toggle up to three creatures into the party and watch the meter, then SEND. They leave through the garden gate for one to three RUNS and Bairc reads you what came home when you next return. Your active companion, eggs, the badly hurt and the starving stay." },
+        { id:"ledger_first_send", title:"Out the Gate", body:"They are gone until the run count comes round - a death still brings them home; they were not with you. Two parties can be out at once (three once Bairc reaches rank 2). Long Forages grow the bench but never cross a stage on their own; Rescues can bring back a creature alive; Expeditions test all three stats for three runs. The OUT tab tracks who is where." },
         { id:"elite_affixes", title:"Marked Foes",     body:"Some elites carry a MARK beside their name - Warded, Hasted, Thorned, Vampiric, Twinned. Warded: tougher hide. Hasted: acts early and hits harder. Thorned: your MELEE hits cost you 4 HP - cast or shoot instead. Vampiric: it heals from what it deals - burst it down. Twinned: it brought a weaker copy. Every mark on the field is a better loot roll when it falls. From Awakening 3 elites carry two, and bosses one." },
         { id:"maren_forge", title:"Rough Steel",       body:"Items drop UNFINISHED. The QUALITY tag shows how much of an item's true power it delivers right now.\nDorn's TEMPER tab raises that by +10% per step, for gold and rune dust. Each step also adds a little bonus max HP.\nA raw legendary barely beats a finished epic - always worth tempering what you love." },
         { id:"rune_caps",  title:"Aspect Runes Stack - to a Point", body:"Aspect runes socketed here ADD UP: three Hunter runes give three times the ranged accuracy. But each accuracy family is CAPPED - Hunter (ranged attacks) and Seer (spells) each stop at +12% total, so past that a fourth rune is wasted. The cap is printed on the rune and on the Accuracy line of your STATS page." },
@@ -12730,6 +12764,10 @@ function tutorial_mark_seen(id) {
 // interrupted show re-shows next time.
 function tutorial_try_show(id) {
     if (variable_global_exists("tutorial_enabled") && !global.tutorial_enabled) return false;
+    if (instance_exists(obj_game_controller)) {   // 09-28: the welcome splash owns the screen first
+        var _wg = instance_find(obj_game_controller, 0);
+        if (variable_instance_exists(_wg, "welcome_open") && _wg.welcome_open) return false;
+    }
     if (tutorial_seen_has(id)) return false;
     if (tutorial_get(id) == undefined) return false;
     if (variable_global_exists("tutorial_active") && global.tutorial_active != "") return false; // one at a time
@@ -18345,4 +18383,962 @@ function tide_ruin_line(ev) {
 }
 function tide_ruin_outcome(o, ev) {
     return { text: "HIGH TIDE - " + tide_ruin_line(ev) + "\n\n" + o.text, effects: o.effects };
+}
+
+// =============================================================================
+// BAIRC'S LEDGER (DESIGN_IMPROVEMENT_PLAN_0924.md §1, M-locked §8.1-8.5; built 09-25)
+// Send the BENCH out. Pick a job from the ledger at his hut desk, pick one to three
+// stabled creatures, they leave through the garden gate for one to three RUNS (runs
+// are the clock). Every job is governed by one pet stat and prefers a habitat (the
+// species' dungeon key, else the favored-treat family). The outcome is rolled at
+// dispatch on a seed (run_seed x mission uid) and only REVEALED at end_run - no
+// save-scum reroll. Rewards land where a run would put them (stash / pouches);
+// Bairc's report page reads them out on the next hub arrival; the Inbox keeps them.
+// State: global.pet_ledger (offers / active / log / reports), pet.away_until /
+// away_kind / calling / calling_offer / ledger_* - all additive (scr_save x3).
+// =============================================================================
+#macro LEDGER_LOG_MAX   12
+#macro LEDGER_PARTY_MAX 3
+
+function ledger_ensure() {
+    if (!variable_global_exists("pet_ledger") || !is_struct(global.pet_ledger)) global.pet_ledger = {};
+    var _l = global.pet_ledger;
+    if (!variable_struct_exists(_l, "offers"))     _l.offers     = [];
+    if (!variable_struct_exists(_l, "offers_run")) _l.offers_run = -1;
+    if (!variable_struct_exists(_l, "active"))     _l.active     = [];
+    if (!variable_struct_exists(_l, "log"))        _l.log        = [];
+    if (!variable_struct_exists(_l, "reports"))    _l.reports    = [];
+    if (!variable_struct_exists(_l, "next_uid"))   _l.next_uid   = 1;
+    if (!variable_struct_exists(_l, "departures")) _l.departures = [];   // {species, stage, name} seen LEAVING on the next garden visit
+    if (!variable_struct_exists(_l, "returns"))    _l.returns    = [];   // seen coming home
+    if (!variable_struct_exists(_l, "sent_total")) _l.sent_total = 0;
+    return _l;
+}
+function ledger_run()         { return variable_global_exists("run_count") ? global.run_count : 0; }
+function ledger_parties_max() { return 2 + ((npc_rank("bairc") >= 2) ? 1 : 0); }   // M-locked §8.2: third slot = Bairc rank 2
+function ledger_tier()        { return min(3, 1 + (highest_awakening_unlocked() div 2)); }
+
+// --- Jobs ----------------------------------------------------------------------
+function ledger_kind_catalog() {
+    return [
+        { id:"hunt",       name:"Hunt",        stat:"pow",    dur:1, weight:30, inj:25, inj_max:1,
+          pays:"dungeon reagents, a valuable, a feed",         risk:"On a failure one may limp home (injury, 25%).",
+          blurb:"Track and bring down what the dark breeds. Power carries the day." },
+        { id:"vigil",      name:"Vigil",       stat:"spr",    dur:1, weight:15, inj:0,  inj_max:0,
+          pays:"rune dust, a Mending Mash, eases corruption",  risk:"A Vigil never injures.",
+          blurb:"Sit the long watch over an old ward. Spirit holds it." },
+        { id:"scavenge",   name:"Scavenge",    stat:"lck",    dur:1, weight:25, inj:0,  inj_max:0,
+          pays:"gold, valuables - once in fifty, an egg",       risk:"On a failure they simply come back empty.",
+          blurb:"Turn over what the dead left behind. Luck finds the seam." },
+        { id:"forage",     name:"Long Forage", stat:"mixed",  dur:2, weight:15, inj:0,  inj_max:0,
+          pays:"GROWTH for every member; a preferred feed",     risk:"Hunger drains twice as fast out there.",
+          blurb:"Two runs in the wild. They come back bigger - never grown up on their own." },
+        { id:"rescue",     name:"Rescue",      stat:"powspr", dur:2, weight:10, inj:35, inj_max:2,
+          pays:"a FOUND creature - or nothing",                 risk:"On a failure: injuries, tier 1-2 (35%).",
+          blurb:"Something is trapped down there and still alive. Power and Spirit both." },
+        { id:"patrol",     name:"Patrol",      stat:"any",    dur:1, weight:0,  inj:0,  inj_max:0,
+          pays:"+1 bond each, a little coin",                   risk:"None. It is a walk.",
+          blurb:"Walk the fence line. Always on the ledger, never fails." },
+        { id:"expedition", name:"Expedition",  stat:"all",    dur:3, weight:0,  inj:30, inj_max:2,
+          pays:"a tier-3 Hunt AND Scavenge, a valuable, growth - once in twenty, an egg", risk:"On a failure: injuries, tier 1-2 (30%).",
+          blurb:"Three runs beyond the maps. Everything they are, tested at once." }
+    ];
+}
+function ledger_kind_get(id) {
+    var _c = ledger_kind_catalog();
+    for (var _i = 0; _i < array_length(_c); _i++) if (_c[_i].id == id) return _c[_i];
+    return _c[0];
+}
+function ledger_kind_stat_label(k) {
+    switch (k.stat) {
+        case "pow": return "PWR"; case "spr": return "SPR"; case "lck": return "LCK";
+        case "powspr": return "PWR + SPR"; case "any": return "any stat"; default: return "all three";
+    }
+}
+// NPC errands (one at a time, 40%): the existing affinity drip, in their voices.
+function ledger_errand_catalog() {
+    return [
+        { npc:"petra", kind:"scavenge", dungeon:"drowned_reach",   name:"Petra's Eel Run",    blurb:"\"Eight Brine Jerky's worth of eel. The wet-born do it fastest, and I pay in coin and thanks.\"" },
+        { npc:"dorn",  kind:"hunt",     dungeon:"scorched_depths", name:"Dorn's Marrow",      blurb:"\"Cinder Marrow. The forge wants it and I don't climb any more.\"" },
+        { npc:"maren", kind:"vigil",    dungeon:"ashen_vault",     name:"Maren's Ward-Watch", blurb:"\"An old ward needs sitting through the night. Send something with a soul.\"" },
+        { npc:"sable", kind:"hunt",     dungeon:"tundra_tomb",     name:"Sable's Cold Cut",   blurb:"\"Rime salt, and whatever bled on it. Don't ask what for.\"" },
+        { npc:"vex",   kind:"scavenge", dungeon:"hollow_canopy",   name:"Vex's Lost Purse",   blurb:"\"I dropped it. Somewhere with leaves. Your beast can keep half.\"" }
+    ];
+}
+
+// --- Habitats ----------------------------------------------------------------------
+function ledger_habitats() { return ["ashen_vault", "scorched_depths", "tundra_tomb", "drowned_reach", "hollow_canopy", "descent"]; }
+function ledger_habitat_name(k) {
+    if (k == "" || k == undefined) return "anywhere";
+    if (k == "descent") return "The Descent";
+    return dungeon_display_name(k);
+}
+function ledger_habitat_is_night(k) { return (k == "hollow_canopy" || k == "ashen_vault"); }
+function ledger_habitat_reagent(k) {
+    switch (k) {
+        case "ashen_vault":     return "vault_ash";
+        case "scorched_depths": return "cinder_marrow";
+        case "tundra_tomb":     return "rime_salt";
+        case "descent":         return "void_silt";
+    }
+    var _c = reagent_catalog();
+    return _c[irandom(array_length(_c) - 1)].id;
+}
+function ledger_treat_habitat(treat_id) {
+    switch (treat_id) {
+        case "treat_ember_nut":   return "scorched_depths";
+        case "treat_grave_lily":  return "ashen_vault";
+        case "treat_moon_moth":   return "hollow_canopy";
+        case "treat_brine_jerky": return "drowned_reach";
+        case "treat_frost_root":  return "tundra_tomb";
+        case "treat_iron_grub":   return "descent";
+    }
+    return "";
+}
+// The habitat a species calls home: its dungeon key when it has one, else the favored
+// treat family (zero new data - §1.3).
+function pet_habitat(pet) {
+    if (!is_struct(pet) || !variable_struct_exists(pet, "species")) return "";
+    var _sp = pet_species_get(pet.species);
+    if (_sp != undefined && variable_struct_exists(_sp, "dungeon") && _sp.dungeon != "") return _sp.dungeon;
+    var _tc = pet_treat_catalog();
+    for (var _i = 0; _i < array_length(_tc); _i++) {
+        if (!variable_struct_exists(_tc[_i], "favored")) continue;
+        for (var _j = 0; _j < array_length(_tc[_i].favored); _j++) {
+            if (_tc[_i].favored[_j] == pet.species) return ledger_treat_habitat(_tc[_i].id);
+        }
+    }
+    return "";
+}
+// A species that lives in this habitat (for Rescue finds / Scavenge eggs).
+function ledger_species_for(habitat) {
+    var _cat = pet_species_catalog(), _pool = [];
+    for (var _i = 0; _i < array_length(_cat); _i++) {
+        var _s = _cat[_i];
+        if (variable_struct_exists(_s, "dungeon") && _s.dungeon == habitat) array_push(_pool, _s.id);
+    }
+    if (array_length(_pool) == 0) {
+        var _tc = pet_treat_catalog();
+        for (var _t = 0; _t < array_length(_tc); _t++) {
+            if (!variable_struct_exists(_tc[_t], "favored") || ledger_treat_habitat(_tc[_t].id) != habitat) continue;
+            for (var _j = 0; _j < array_length(_tc[_t].favored); _j++) array_push(_pool, _tc[_t].favored[_j]);
+        }
+    }
+    // Art-gated like every other grant (pet_species_has_art); gifted-only lines never roll.
+    var _ok = [];
+    for (var _k = 0; _k < array_length(_pool); _k++) {
+        var _sd = pet_species_get(_pool[_k]);
+        if (_sd != undefined && variable_struct_exists(_sd, "unique") && _sd.unique) continue;
+        if (pet_species_has_art(_pool[_k])) array_push(_ok, _pool[_k]);
+    }
+    if (array_length(_ok) == 0) return pet_species_random();
+    return _ok[irandom(array_length(_ok) - 1)];
+}
+
+// --- Offers (3 rotating + errand 40% + Expedition + Patrol; seeded by run_count) -------
+function ledger_offer_title(o) {
+    if (variable_struct_exists(o, "name") && o.name != "") return o.name;
+    var _k = ledger_kind_get(o.kind);
+    if (o.kind == "patrol") return "Patrol the fence line";
+    return _k.name + " - " + ledger_habitat_name(o.dungeon);
+}
+function ledger_offer_make(kind, dungeon, tier, npc, name, blurb) {
+    var _k = ledger_kind_get(kind);
+    return { id: kind + "_" + dungeon + "_" + string(irandom(9999)), kind: kind, dungeon: dungeon, tier: tier, dur: _k.dur,
+             npc: npc, name: name, blurb: (blurb != "") ? blurb : _k.blurb, taken: false };
+}
+function ledger_expedition_out() {
+    var _l = ledger_ensure();
+    for (var _i = 0; _i < array_length(_l.active); _i++) if (_l.active[_i].kind == "expedition") return true;
+    return false;
+}
+function ledger_offers() {
+    var _l = ledger_ensure();
+    var _rc = ledger_run();
+    if (_l.offers_run != _rc || array_length(_l.offers) == 0) ledger_offers_rebuild(_l, _rc);
+    return _l.offers;
+}
+function ledger_offers_rebuild(_l, _rc) {
+    var _keep = random_get_seed();
+    random_set_seed(_rc * 7919 + 4243);
+    var _out  = [];
+    var _tier = ledger_tier();
+    var _hab  = ledger_habitats();
+    var _kinds = ["hunt", "vigil", "scavenge", "forage", "rescue"], _w = [30, 15, 25, 15, 10];
+    for (var _i = 0; _i < 3; _i++) {
+        var _r = irandom(94), _k = "hunt";
+        for (var _j = 0; _j < array_length(_w); _j++) { _r -= _w[_j]; if (_r < 0) { _k = _kinds[_j]; break; } }
+        array_push(_out, ledger_offer_make(_k, _hab[irandom(array_length(_hab) - 1)], _tier, "", "", ""));
+    }
+    if (irandom(99) < 40) {
+        var _ec = ledger_errand_catalog();
+        var _e  = _ec[irandom(array_length(_ec) - 1)];
+        array_push(_out, ledger_offer_make(_e.kind, _e.dungeon, _tier, _e.npc, _e.name, _e.blurb));
+    }
+    // M-locked §8.3: the 3-run EXPEDITION - one offer at a time, never at tier 1.
+    if (_tier >= 2 && !ledger_expedition_out() && irandom(99) < 60) {
+        array_push(_out, ledger_offer_make("expedition", _hab[irandom(array_length(_hab) - 1)], 3, "", "", ""));
+    }
+    array_push(_out, ledger_offer_make("patrol", "", 1, "", "", ""));
+    random_set_seed(_keep);
+    _l.offers = _out; _l.offers_run = _rc;
+}
+
+// --- Eligibility, score, chance ------------------------------------------------------
+function ledger_pet_uid(pet) {
+    if (!variable_struct_exists(pet, "uid")) { if (!variable_global_exists("pet_next_id")) global.pet_next_id = 1; pet.uid = global.pet_next_id++; }
+    return pet.uid;
+}
+function ledger_pet_away(pet) { return is_struct(pet) && variable_struct_exists(pet, "away_until") && pet.away_until > 0; }
+function ledger_pet_away_runs(pet) { return ledger_pet_away(pet) ? max(1, pet.away_until - ledger_run()) : 0; }
+// The active mission this creature is on (undefined when home) - the quick reference every
+// AWAY read-out hangs off (09-25 UX pass: "which job, where, back when" in one line).
+function ledger_pet_mission(pet) {
+    if (!ledger_pet_away(pet) || !variable_struct_exists(pet, "uid")) return undefined;
+    var _l = ledger_ensure();
+    for (var _i = 0; _i < array_length(_l.active); _i++) {
+        var _m = _l.active[_i];
+        for (var _j = 0; _j < array_length(_m.party); _j++) if (_m.party[_j] == pet.uid) return _m;
+    }
+    return undefined;
+}
+function ledger_mission_index(m) {
+    var _l = ledger_ensure();
+    for (var _i = 0; _i < array_length(_l.active); _i++) if (_l.active[_i] == m) return _i;
+    return -1;
+}
+// "AWAY - Hunt, Scorched Depths - back in 2 runs" (short = "AWAY - Hunt - 2r").
+function ledger_away_text(pet, short = false) {
+    if (!ledger_pet_away(pet)) return "";
+    var _n = ledger_pet_away_runs(pet);
+    var _m = ledger_pet_mission(pet);
+    var _job = (_m == undefined) ? "out" : ledger_kind_get(_m.kind).name;
+    if (short) return "AWAY - " + _job + " - " + string(_n) + "r";
+    var _where = (_m == undefined || _m.dungeon == "") ? "" : (", " + ledger_habitat_name(_m.dungeon));
+    return "AWAY - " + _job + _where + " - back in " + string(_n) + ((_n == 1) ? " run" : " runs");
+}
+// Runs until the soonest party is due (0 when none is out).
+function ledger_next_home_runs() {
+    var _l = ledger_ensure(), _best = 0;
+    for (var _i = 0; _i < array_length(_l.active); _i++) {
+        var _d = max(1, _l.active[_i].due_run - ledger_run());
+        if (_best == 0 || _d < _best) _best = _d;
+    }
+    return _best;
+}
+// The hub's own modal dialogs (bond question, three-answer Lover question) live on the hub
+// controller, outside ui_input_blocked - the hub-root shortcuts (N / L) stand down while one is up.
+function hub_dialog_up() {
+    if (!instance_exists(obj_hub_controller)) return false;
+    var _h = instance_find(obj_hub_controller, 0);
+    if (variable_instance_exists(_h, "bond_dialog_open") && _h.bond_dialog_open) return true;
+    if (variable_instance_exists(_h, "bond_dialog_third") && _h.bond_dialog_third != "") return true;
+    return false;
+}
+// One-line status for headers and chips: "PARTIES OUT: 2 / 3 - next home in 1 run".
+function ledger_parties_summary() {
+    var _l = ledger_ensure();
+    var _n = array_length(_l.active);
+    if (_n == 0) return "No parties out";
+    var _h = ledger_next_home_runs();
+    return "PARTIES OUT: " + string(_n) + " / " + string(ledger_parties_max()) + "  -  next home in " + string(_h) + ((_h == 1) ? " run" : " runs");
+}
+function ledger_pet_is_active(pet) {
+    var _r = pet_roster();
+    return (variable_global_exists("active_pet") && global.active_pet >= 0 && global.active_pet < array_length(_r) && _r[global.active_pet] == pet);
+}
+// "" = can go; else the reason the row prints.
+function ledger_pet_blocked(pet, offer) {
+    if (!is_struct(pet)) return "-";
+    if (pet.is_egg) return "an egg";
+    if (ledger_pet_away(pet)) return ledger_away_text(pet, false);
+    if (ledger_pet_is_active(pet)) return "your companion";
+    if (pet.injured >= 2) return "too hurt";
+    if (pet_hp(pet) <= 0) return "knocked out";
+    if (pet_hunger(pet) <= 0) return "starving";
+    if (offer != undefined && offer.kind == "rescue" && pet_corr_state(pet) == "pushing") return "corruption pushing";
+    return "";
+}
+function ledger_kind_stat_value(pet, k) {
+    var _pow = pet_stat(pet, "pow"), _spr = pet_stat(pet, "spr"), _lck = pet_stat(pet, "lck");
+    switch (k.stat) {
+        case "pow":    return _pow;
+        case "spr":    return _spr;
+        case "lck":    return _lck;
+        case "powspr": return (_pow + _spr) / 2;
+        case "any":    return max(_pow, _spr, _lck);
+    }
+    return (_pow + _spr + _lck) / 3;
+}
+function ledger_pet_matches(pet, offer) {
+    if (offer == undefined || offer.dungeon == "") return false;
+    if (pet_habitat(pet) == offer.dungeon) return true;
+    if (pet_calling_has(pet, "nightwise") && ledger_habitat_is_night(offer.dungeon)) return true;
+    return false;
+}
+// The live success meter: recomputed as the party toggles.
+function ledger_party_eval(offer, party_idx) {
+    var _r  = pet_roster();
+    var _k  = ledger_kind_get(offer.kind);
+    var _n  = array_length(party_idx);
+    var _ev = { n:_n, score:0, req:0, p:0, great:0, matched:0, devoted:0, hungry:false, dur:_k.dur, lck:0, trail:false };
+    for (var _i = 0; _i < _n; _i++) {
+        var _p = _r[party_idx[_i]];
+        if (!is_struct(_p)) continue;
+        _ev.score += ledger_kind_stat_value(_p, _k) + (_p.stage div 2);
+        if (offer.kind == "hunt" && pet_is_signature(_p)) _ev.score += 1;   // boss-blooded
+        if (ledger_pet_matches(_p, offer)) _ev.matched += 1;
+        if (pet_bond_tier(_p) >= 2) _ev.devoted += 1;
+        if (pet_hunger(_p) < 30) _ev.hungry = true;
+        _ev.lck += pet_stat(_p, "lck");
+        if (pet_calling_has(_p, "trailblazer")) _ev.trail = true;
+    }
+    if (_ev.trail) _ev.dur = max(1, _ev.dur - 1);
+    _ev.req = 4 * offer.tier + 2 * max(0, _n - 1);
+    if (_n == 0) return _ev;
+    if (offer.kind == "patrol") { _ev.p = 1; _ev.great = 0; return _ev; }
+    var _p0 = clamp(0.35 + 0.08 * (_ev.score - _ev.req), 0.10, 0.92);
+    _p0 += 0.12 * min(2, _ev.matched) + 0.05 * _ev.devoted - (_ev.hungry ? 0.20 : 0);
+    _ev.p     = clamp(_p0, 0.05, 0.95);
+    _ev.great = min(0.30, 0.04 + 0.02 * _ev.lck);
+    return _ev;
+}
+function ledger_outcome_word(o) {
+    switch (o) { case "great": return "a GREAT result"; case "success": return "success"; case "partial": return "a partial haul"; }
+    return "failure";
+}
+
+// --- Dispatch (deterministic roll, stored, revealed at end_run) -----------------------
+function ledger_dispatch(offer_i, party_idx) {
+    var _l = ledger_ensure();
+    var _offers = ledger_offers();
+    if (offer_i < 0 || offer_i >= array_length(_offers)) return "Pick a job first.";
+    var _o = _offers[offer_i];
+    if (_o.taken) return "That job is already taken.";
+    var _n = array_length(party_idx);
+    if (_n < 1) return "Pick at least one creature.";
+    if (_n > LEDGER_PARTY_MAX) return "Three at most.";
+    if (array_length(_l.active) >= ledger_parties_max()) return "Bairc will not track more than " + string(ledger_parties_max()) + " parties at once.";
+    if (_o.kind == "expedition" && ledger_expedition_out()) return "One expedition at a time.";
+    var _r = pet_roster();
+    var _names = "", _uids = [];
+    for (var _i = 0; _i < _n; _i++) {
+        var _p = _r[party_idx[_i]];
+        var _why = ledger_pet_blocked(_p, _o);
+        if (_why != "") return _p.name + " cannot go - " + _why + ".";
+        array_push(_uids, ledger_pet_uid(_p));
+        _names += ((_i > 0) ? ((_i == _n - 1) ? " and " : ", ") : "") + _p.name;
+    }
+    var _ev  = ledger_party_eval(_o, party_idx);
+    var _uid = _l.next_uid++;
+    var _seed = ((variable_global_exists("run_seed") ? global.run_seed : 1) * 131 + _uid * 7919) mod 1000000007;
+    var _keep = random_get_seed();
+    random_set_seed(_seed);
+    var _roll = random(1);
+    var _outcome = (_roll < _ev.p) ? ((random(1) < _ev.great) ? "great" : "success")
+                 : ((_roll < _ev.p + 0.15) ? "partial" : "fail");
+    random_set_seed(_keep);
+    var _due = ledger_run() + _ev.dur;
+    var _m = { uid:_uid, kind:_o.kind, dungeon:_o.dungeon, tier:_o.tier, npc:_o.npc, name:ledger_offer_title(_o),
+               party:_uids, names:_names, sent_run:ledger_run(), due_run:_due, dur:_ev.dur, seed:_seed,
+               outcome:_outcome, p:round(_ev.p * 100), great:round(_ev.great * 100), matched:_ev.matched, score:round(_ev.score), req:_ev.req };
+    for (var _j = 0; _j < _n; _j++) {
+        var _pj = _r[party_idx[_j]];
+        _pj.away_until = _due; _pj.away_kind = _o.kind;
+        array_push(_l.departures, { species:_pj.species, stage:_pj.stage, name:_pj.name });
+    }
+    _o.taken = true;
+    array_push(_l.active, _m);
+    _l.sent_total += 1;
+    ledger_log_add(_names + " left for " + _m.name + ". Back in " + string(_ev.dur) + ((_ev.dur == 1) ? " run." : " runs."));
+    if (room == rm_hub || room == rm_character_select) save_game();
+    return "";
+}
+function ledger_log_add(line) {
+    var _l = ledger_ensure();
+    array_insert(_l.log, 0, { run: ledger_run(), text: line });
+    while (array_length(_l.log) > LEDGER_LOG_MAX) array_delete(_l.log, array_length(_l.log) - 1, 1);
+}
+function ledger_mission_pets(m) {
+    var _r = pet_roster(), _out = [];
+    for (var _i = 0; _i < array_length(m.party); _i++) {
+        for (var _j = 0; _j < array_length(_r); _j++) {
+            if (is_struct(_r[_j]) && variable_struct_exists(_r[_j], "uid") && _r[_j].uid == m.party[_i]) { array_push(_out, _r[_j]); break; }
+        }
+    }
+    return _out;
+}
+
+// --- Resolution (end_run) --------------------------------------------------------------
+function ledger_resolve_due() {
+    var _l = ledger_ensure();
+    var _rc = ledger_run();
+    for (var _i = array_length(_l.active) - 1; _i >= 0; _i--) {
+        var _m = _l.active[_i];
+        if (_m.due_run > _rc) continue;
+        array_push(_l.reports, ledger_resolve_mission(_m));
+        array_delete(_l.active, _i, 1);
+    }
+}
+function ledger_reports_pending() { var _l = ledger_ensure(); return array_length(_l.reports) > 0; }
+function ledger_pay_gold(n, pay) { if (n <= 0) return; global.gold += n; array_push(pay, string(n) + "g"); }
+function ledger_pay_reagent(id, n, pay) {
+    if (n <= 0) return;
+    reagent_add(id, n);
+    var _d = reagent_get(id);
+    array_push(pay, ((_d != undefined) ? _d.name : id) + " x" + string(n));
+}
+function ledger_pay_feed(id, n, pay) {
+    if (n <= 0) return;
+    pet_feed_pouch_add(id, n);
+    var _f = pet_feed_get(id);
+    array_push(pay, ((_f != undefined) ? _f.name : id) + ((n > 1) ? (" x" + string(n)) : ""));
+}
+function ledger_pay_valuable(src, pay) {
+    var _v = valuable_roll(src);
+    if (!variable_global_exists("consumable_stash")) global.consumable_stash = [];
+    array_push(global.consumable_stash, _v);
+    array_push(pay, _v.name + " [Valuable]");
+}
+function ledger_pay_dust(n, pay) {
+    if (n <= 0) return;
+    if (!variable_global_exists("rune_dust")) global.rune_dust = 0;
+    global.rune_dust += n;
+    array_push(pay, string(n) + " rune dust");
+}
+function ledger_pay_egg(habitat, source, pay) {
+    var _e = pet_make(ledger_species_for(habitat), source, -1, PET_STAGE_BABY, true);
+    _e.identified = false;
+    var _ap0 = variable_global_exists("active_pet") ? global.active_pet : -1;
+    pet_add(_e);
+    if (_ap0 < 0) global.active_pet = -1;   // 09-28 audit: "no companion" stays chosen - pet_add would promote roster[0], which may be AWAY
+    array_push(pay, "an EGG (unidentified - Bairc can tell you what)");
+    return _e;
+}
+function ledger_pay_found(habitat, pay) {
+    var _f = pet_make(ledger_species_for(habitat), "found_ledger", -1, 1 + irandom(1), false);
+    var _ap1 = variable_global_exists("active_pet") ? global.active_pet : -1;
+    pet_add(_f);
+    if (_ap1 < 0) global.active_pet = -1;   // 09-28 audit: see ledger_pay_egg
+    array_push(pay, _f.name + " - a " + pet_stage_name(_f.stage) + ", found alive");
+    return _f;
+}
+function ledger_resolve_mission(m) {
+    var _keep = random_get_seed();
+    random_set_seed(m.seed + 17);
+    var _party = ledger_mission_pets(m);
+    var _k     = ledger_kind_get(m.kind);
+    var _rc    = ledger_run();
+    var _awk   = highest_awakening_unlocked();
+    var _mult  = (m.outcome == "great") ? 2 : ((m.outcome == "success") ? 1 : ((m.outcome == "partial") ? 0.5 : 0));
+    var _pay   = [];
+    var _lines = [];
+    var _packmule = false, _bloodnose = false, _sentinel = false, _ironhide = undefined;
+    for (var _i = 0; _i < array_length(_party); _i++) {
+        if (pet_calling_has(_party[_i], "packmule"))  _packmule  = true;
+        if (pet_calling_has(_party[_i], "bloodnose")) _bloodnose = true;
+        if (pet_calling_has(_party[_i], "sentinel"))  _sentinel  = true;
+        if (pet_calling_has(_party[_i], "ironhide"))  _ironhide  = _party[_i];
+    }
+    var _tier = m.tier;
+    // --- Payout by kind (GREAT = x2 and one extra rare roll; PARTIAL = half, no injury).
+    if (_mult > 0) {
+        var _hab = (m.dungeon != "") ? m.dungeon : ledger_habitats()[irandom(5)];
+        switch (m.kind) {
+            case "hunt": {
+                var _n = round((2 + irandom(3) + (_tier - 1) + (_bloodnose ? 1 : 0)) * _mult);
+                ledger_pay_reagent(ledger_habitat_reagent(_hab), max(1, _n), _pay);
+                if (irandom(99) < 45 * _mult) ledger_pay_valuable((_tier >= 3) ? "elite" : "standard", _pay);
+                if (_mult >= 1) ledger_pay_feed("prime", 1, _pay);
+                if (m.outcome == "great") ledger_pay_valuable("elite", _pay);
+                break;
+            }
+            case "vigil": {
+                ledger_pay_dust(round((15 + irandom(25) + 8 * (_tier - 1)) * _mult), _pay);
+                if (_mult >= 1) ledger_pay_feed("mending_mash", 1, _pay);
+                for (var _v = 0; _v < array_length(_party); _v++) {
+                    var _vp = _party[_v];
+                    if (pet_corr_state(_vp) == "pushing" && variable_struct_exists(_vp, "corruption_runs") && _vp.corruption_runs > 0) {
+                        _vp.corruption_runs -= 1;
+                        array_push(_lines, _vp.name + " sat the watch quieter than it left. The dark loosened a finger.");
+                        break;
+                    }
+                }
+                if (m.outcome == "great") ledger_pay_dust(20, _pay);
+                break;
+            }
+            case "scavenge": {
+                ledger_pay_gold(round((60 + irandom(160)) * (1 + 0.5 * _awk) * _mult), _pay);
+                if (irandom(99) < 40 * _mult) ledger_pay_valuable("standard", _pay);
+                if (_packmule) ledger_pay_valuable("standard", _pay);   // PACKMULE: +1 payout roll
+                if (irandom(99) < 2 * _mult) ledger_pay_egg(_hab, "egg_ledger", _pay);
+                if (m.outcome == "great") ledger_pay_valuable("elite", _pay);
+                break;
+            }
+            case "forage": {
+                for (var _f = 0; _f < array_length(_party); _f++) {
+                    var _fp = _party[_f];
+                    if (_fp.stage >= pet_max_stage()) continue;
+                    var _need = pet_growth_needed(_fp.stage);
+                    _fp.growth = min(_need, _fp.growth + 3 * m.dur);   // M-locked §8.4: never crosses a stage by itself
+                }
+                array_push(_pay, "growth for every member (" + string(3 * m.dur) + ")");
+                var _pf = (array_length(_party) > 0) ? pet_feed_preferred_for(_party[irandom(array_length(_party) - 1)].species) : undefined;   // 09-28 audit: empty party guard
+                if (_pf != undefined && variable_struct_exists(_pf, "id")) ledger_pay_feed(_pf.id, 1, _pay);
+                else ledger_pay_feed("forage", 2, _pay);
+                if (m.outcome == "great") ledger_pay_feed("hearty_roast", 1, _pay);
+                break;
+            }
+            case "rescue": {
+                if (m.outcome == "great" || irandom(99) < 60 * _mult) ledger_pay_found(_hab, _pay);
+                else array_push(_lines, "They found the place. Whatever had been trapped there was gone before them.");
+                break;
+            }
+            case "patrol": {
+                ledger_pay_gold(15 + 5 * _awk, _pay);
+                break;
+            }
+            case "expedition": {
+                ledger_pay_reagent(ledger_habitat_reagent(_hab), round((4 + irandom(3) + (_bloodnose ? 1 : 0)) * _mult), _pay);
+                ledger_pay_gold(round((160 + irandom(200)) * (1 + 0.5 * _awk) * _mult), _pay);
+                ledger_pay_valuable("elite", _pay);
+                if (_packmule) ledger_pay_valuable("standard", _pay);
+                if (irandom(99) < 5 * _mult) ledger_pay_egg(_hab, "egg_ledger", _pay);
+                for (var _x = 0; _x < array_length(_party); _x++) {
+                    var _xp = _party[_x];
+                    if (_xp.stage >= pet_max_stage()) continue;
+                    _xp.growth = min(pet_growth_needed(_xp.stage), _xp.growth + 3 * m.dur);
+                }
+                if (m.outcome == "great") ledger_pay_valuable("boss", _pay);
+                break;
+            }
+        }
+        if (m.npc != "" && _mult >= 1) { affinity_add(m.npc, 3); array_push(_pay, "+3 bond with " + npc_display_name(m.npc)); }
+    }
+    // --- Injury on a FAILURE only (Sentinel: never; Ironhide: takes it for the partner).
+    var _inj_line = "";
+    if (m.outcome == "fail" && _k.inj > 0 && !_sentinel && array_length(_party) > 0 && irandom(99) < _k.inj) {
+        var _victim = (_ironhide != undefined) ? _ironhide : _party[irandom(array_length(_party) - 1)];
+        var _t = 1 + ((_k.inj_max >= 2 && irandom(99) < 40) ? 1 : 0);
+        _victim.injured = max(_victim.injured, _t);
+        _inj_line = _victim.name + " came home hurt" + ((_t >= 2) ? " - badly. It will need the healer before it goes out again." : ". It will not eat for a day.");
+        _victim.ledger_inj = "Run " + string(_rc) + ": hurt on " + m.name;
+        array_push(_lines, _inj_line);
+    }
+    // --- Every member: bond +1, hunger, home, report card.
+    for (var _b = 0; _b < array_length(_party); _b++) {
+        var _bp = _party[_b];
+        pet_bond_gain(_bp, 1);
+        _bp.hunger = max(0, pet_hunger(_bp) - 10 * m.dur * ((m.kind == "forage") ? 2 : 1));
+        _bp.away_until = 0; _bp.away_kind = "";
+        if (!variable_struct_exists(_bp, "ledger_done")) { _bp.ledger_done = 0; _bp.ledger_great = 0; _bp.ledger_fav = ""; _bp.ledger_inj = ""; }
+        _bp.ledger_done += 1;
+        if (m.outcome == "great") _bp.ledger_great += 1;
+        if (m.dungeon != "") _bp.ledger_fav = m.dungeon;
+        var _l0 = ledger_ensure();
+        // A departure never seen (no garden visit in between) is dropped - it walks IN, not both.
+        for (var _dq = array_length(_l0.departures) - 1; _dq >= 0; _dq--) if (_l0.departures[_dq].name == _bp.name) array_delete(_l0.departures, _dq, 1);
+        array_push(_l0.returns, { species:_bp.species, stage:_bp.stage, name:_bp.name });
+    }
+    random_set_seed(_keep);
+    // --- The report, in his voice. Sparse.
+    var _head = m.names + " - " + m.name + ": " + ledger_outcome_word(m.outcome) + ".";
+    var _body = "";
+    if (array_length(_pay) > 0) {
+        _body = "Brought back: ";
+        for (var _q = 0; _q < array_length(_pay); _q++) _body += ((_q > 0) ? ", " : "") + _pay[_q];
+        _body += ".";
+    } else if (m.outcome == "fail") {
+        _body = "Nothing. " + ((m.kind == "scavenge") ? "The seam was dry." : "The ground kept what it had.");
+    }
+    array_insert(_lines, 0, _head);
+    if (_body != "") array_insert(_lines, 1, _body);
+    ledger_log_add(_head);
+    var _ib = _body;
+    for (var _z = 2; _z < array_length(_lines); _z++) _ib += ((_ib != "") ? "\n" : "") + _lines[_z];
+    inbox_push("ledger", m.name + " - " + m.names, (_ib != "") ? _ib : _head);
+    return { title: m.name, names: m.names, outcome: m.outcome, lines: _lines, run: _rc };
+}
+// The page Bairc reads on hub arrival (one block per mission).
+function ledger_report_text() {
+    var _l = ledger_ensure();
+    var _t = "", _n = 0;
+    for (var _i = 0; _i < array_length(_l.reports); _i++) {
+        var _r = _l.reports[_i];
+        for (var _j = 0; _j < array_length(_r.lines); _j++) {
+            if (_n >= 12) { _t += "\n...and more - it is all in your Inbox."; return _t; }   // the panel holds ~12 lines
+            _t += ((_t != "") ? "\n" : "") + _r.lines[_j]; _n++;
+        }
+        if (_i < array_length(_l.reports) - 1) { _t += "\n"; _n++; }
+    }
+    return (_t != "") ? _t : "Nothing came home this run.";
+}
+// Arm-then-dismiss idiom (same as the lore page): any key / click closes, reports clear.
+function ledger_report_step(gc) {
+    if (!gc.ledger_report_armed) {
+        if (!input_any_held() && !mouse_check_button(mb_left)) gc.ledger_report_armed = true;
+        return;
+    }
+    if (input_any() || mouse_check_button_pressed(mb_left)) {
+        gc.ledger_report_open = false;
+        ledger_ensure().reports = [];
+        if (room == rm_hub || room == rm_character_select) save_game();
+    }
+}
+
+// --- The Ledger screen (input; the draw lives in ui_draw_ledger_screen) ----------------
+function ledger_roster_rows() {
+    var _r = pet_roster(), _out = [];
+    for (var _i = 0; _i < array_length(_r); _i++) if (is_struct(_r[_i]) && !_r[_i].is_egg) array_push(_out, _i);
+    return _out;
+}
+function ledger_screen_open(gc) {
+    ledger_ensure();
+    ledger_offers();
+    gc.ledger_open   = true;
+    gc.ledger_tab    = 0;
+    gc.ledger_offer  = 0;
+    gc.ledger_cursor = 0;
+    gc.ledger_scroll = 0;
+    gc.ledger_party  = [];
+    gc.ledger_notice = "";
+    gc.ledger_out_cursor = 0;
+    // Smart landing (09-25 UX pass): with parties out and nothing new to send, open on OUT.
+    if (array_length(ledger_ensure().active) > 0 && array_length(ledger_ensure().active) >= ledger_parties_max()) gc.ledger_tab = 1;
+    audio_play_sound(snd_page, 1, false);
+}
+function ledger_party_has(gc, idx) {
+    for (var _i = 0; _i < array_length(gc.ledger_party); _i++) if (gc.ledger_party[_i] == idx) return _i;
+    return -1;
+}
+function ledger_step(gc) {
+    var _offers = ledger_offers();
+    var _rows   = ledger_roster_rows();
+    var _no     = array_length(_offers), _nr = array_length(_rows);
+    gc.ledger_offer  = clamp(gc.ledger_offer, 0, max(0, _no - 1));
+    gc.ledger_cursor = clamp(gc.ledger_cursor, 0, max(0, _nr - 1));
+    // Tabs: OFFERS | OUT
+    if (input_tab_next() || input_tab_prev() || input_inject_take("ledger:tab")) {
+        gc.ledger_tab = (gc.ledger_tab + 1) mod 2; gc.ledger_notice = "";
+        audio_play_sound(snd_page, 1, false);
+    }
+    if (input_cancel() || input_inject_take("ledger:close")) {
+        gc.ledger_open = false;
+        audio_play_sound(snd_page, 1, false);
+        return;
+    }
+    if (gc.ledger_tab == 1) {
+        // OUT: a cursor over the parties, taps, and [Enter] = back to OFFERS to send another.
+        var _na = array_length(ledger_ensure().active);
+        gc.ledger_out_cursor = clamp(gc.ledger_out_cursor, 0, max(0, _na - 1));
+        if (_na > 0 && nav_up())   gc.ledger_out_cursor = wrap_index(gc.ledger_out_cursor - 1, _na);
+        if (_na > 0 && nav_down()) gc.ledger_out_cursor = wrap_index(gc.ledger_out_cursor + 1, _na);
+        for (var _ai = 0; _ai < _na; _ai++) if (input_inject_take("ledger:out" + string(_ai))) gc.ledger_out_cursor = _ai;
+        if (input_confirm() || input_confirm_alt() || input_inject_take("ledger:tooffers")) {
+            gc.ledger_tab = 0; gc.ledger_notice = ""; audio_play_sound(snd_page, 1, false);
+        }
+        return;
+    }
+    // Offer select: A/D (left/right), taps.
+    if (_no > 0 && nav_left())  { gc.ledger_offer = wrap_index(gc.ledger_offer - 1, _no); gc.ledger_party = []; gc.ledger_notice = ""; }
+    if (_no > 0 && nav_right()) { gc.ledger_offer = wrap_index(gc.ledger_offer + 1, _no); gc.ledger_party = []; gc.ledger_notice = ""; }
+    for (var _oi = 0; _oi < _no; _oi++) {
+        if (input_inject_take("ledger:offer" + string(_oi))) {
+            if (gc.ledger_offer != _oi) { gc.ledger_offer = _oi; gc.ledger_party = []; gc.ledger_notice = ""; }
+        }
+    }
+    // Roster cursor + toggle: W/S + Space/Enter (pad A), taps.
+    if (_nr > 0 && nav_up())   gc.ledger_cursor = wrap_index(gc.ledger_cursor - 1, _nr);
+    if (_nr > 0 && nav_down()) gc.ledger_cursor = wrap_index(gc.ledger_cursor + 1, _nr);
+    var _toggle = -1;
+    if (_nr > 0 && (input_confirm() || input_confirm_alt())) _toggle = _rows[gc.ledger_cursor];
+    for (var _ri = 0; _ri < _nr; _ri++) if (input_inject_take("ledger:pet" + string(_ri))) { _toggle = _rows[_ri]; gc.ledger_cursor = _ri; }
+    if (_toggle >= 0 && _no > 0) {
+        var _at = ledger_party_has(gc, _toggle);
+        if (_at >= 0) { array_delete(gc.ledger_party, _at, 1); gc.ledger_notice = ""; audio_play_sound(snd_page, 1, false); }
+        else {
+            var _tp  = pet_roster()[_toggle];
+            var _why = ledger_pet_blocked(_tp, _offers[gc.ledger_offer]);
+            if (ledger_pet_away(_tp)) {
+                // Smart pathway (09-25 UX pass): picking an AWAY creature jumps to its party on OUT.
+                var _tm = ledger_pet_mission(_tp);
+                gc.ledger_tab = 1;
+                gc.ledger_out_cursor = max(0, ledger_mission_index(_tm));
+                gc.ledger_notice = "";
+                audio_play_sound(snd_page, 1, false);
+            }
+            else if (_why != "") { gc.ledger_notice = _tp.name + " cannot go - " + _why + "."; audio_play_sound(snd_ui_error, 1, false); }
+            else if (array_length(gc.ledger_party) >= LEDGER_PARTY_MAX) { gc.ledger_notice = "Three at most."; audio_play_sound(snd_ui_error, 1, false); }
+            else { array_push(gc.ledger_party, _toggle); gc.ledger_notice = ""; audio_play_sound(snd_page, 1, false); }
+        }
+    }
+    // SEND: R (pad RT) / the button.
+    if (input_hotkey("R") || input_inject_take("ledger:send")) {
+        var _res = ledger_dispatch(gc.ledger_offer, gc.ledger_party);
+        if (_res == "") {
+            var _sent = _offers[gc.ledger_offer];
+            gc.ledger_notice = "Sent. " + ledger_offer_title(_sent) + " - back in " + string(ledger_party_eval(_sent, gc.ledger_party).dur) + " run(s).";
+            gc.ledger_party = [];
+            audio_play_sound(snd_confirm_major, 1, false);
+            tutorial_try_show("ledger_first_send");
+        } else {
+            gc.ledger_notice = _res;
+            audio_play_sound(snd_ui_error, 1, false);
+        }
+    }
+}
+
+// --- Garden: the party is SEEN leaving / coming home (transient walkers, zero art) -----
+// Spawned on the grounds from the ledger's departures / returns queues; they walk between
+// the hut sill (x1394) and the plate's right edge and vanish. Drawn by ui_draw_garden_scene.
+function ledger_garden_tick(gc) {
+    if (!variable_instance_exists(gc, "garden_transients")) gc.garden_transients = [];
+    var _l = ledger_ensure();
+    if (garden_room() == "grounds") {
+        var _edge = garden_world_w() - 70;
+        while (array_length(_l.departures) > 0) {
+            var _d = _l.departures[0]; array_delete(_l.departures, 0, 1);
+            var _k = array_length(gc.garden_transients);
+            array_push(gc.garden_transients, { species:_d.species, stage:_d.stage, name:_d.name, x:1394 - 40 * (_k mod 3), y:985 + 24 * (_k mod 2),
+                                               tx:_edge, ty:985 + 24 * (_k mod 2), face:1, leaving:true, t:0, delay:_k * 18, hop:0 });
+        }
+        while (array_length(_l.returns) > 0) {
+            var _r = _l.returns[0]; array_delete(_l.returns, 0, 1);
+            var _k2 = array_length(gc.garden_transients);
+            array_push(gc.garden_transients, { species:_r.species, stage:_r.stage, name:_r.name, x:_edge, y:985 + 24 * (_k2 mod 2),
+                                               tx:1394 - 60 - 40 * (_k2 mod 3), ty:985 + 24 * (_k2 mod 2), face:-1, leaving:false, t:0, delay:_k2 * 18, hop:0 });
+        }
+    }
+    for (var _i = array_length(gc.garden_transients) - 1; _i >= 0; _i--) {
+        var _w = gc.garden_transients[_i];
+        if (_w.delay > 0) { _w.delay--; continue; }
+        _w.t++;
+        var _dx = _w.tx - _w.x, _dy = _w.ty - _w.y;
+        var _dist = point_distance(_w.x, _w.y, _w.tx, _w.ty);
+        if (_dist < 4) { array_delete(gc.garden_transients, _i, 1); continue; }
+        var _sp = 2.4;
+        _w.x += _dx / _dist * _sp; _w.y += _dy / _dist * _sp;
+        _w.hop = abs(sin(_w.t * 0.35)) * 6;
+    }
+}
+
+// =============================================================================
+// CALLINGS (§1.7, M-locked §8.5): at the Young Adult crossing Bairc offers TWO of six;
+// found creatures roll one. Permanent: +2 to one stat and one expedition perk that also
+// reads in combat. Field `calling` on the pet; `calling_offer` holds the two offered.
+// =============================================================================
+function pet_calling_catalog() {
+    return [
+        { id:"trailblazer", name:"Trailblazer", stat:"pow", desc:"+2 PWR. Its parties come home a run sooner (never under one). In the field it acts first among companions." },
+        { id:"packmule",    name:"Packmule",    stat:"lck", desc:"+2 LCK. One extra payout roll on Scavenges and Expeditions. Carries what others drop." },
+        { id:"sentinel",    name:"Sentinel",    stat:"spr", desc:"+2 SPR. A party with a Sentinel is never injured on a failure. In combat its intercepts land 10% more often." },
+        { id:"nightwise",   name:"Nightwise",   stat:"lck", desc:"+2 LCK. The night habitats (Canopy, Vault) always count as home. Under those skies you crit 3% more." },
+        { id:"ironhide",    name:"Ironhide",    stat:"spr", desc:"+2 SPR. Takes the injury instead of a partner. In combat it takes 15% less damage." },
+        { id:"bloodnose",   name:"Bloodnose",   stat:"pow", desc:"+2 PWR. Hunts bring back one reagent more. In combat it deals 20% more to a bleeding foe." }
+    ];
+}
+function pet_calling_get(id) {
+    var _c = pet_calling_catalog();
+    for (var _i = 0; _i < array_length(_c); _i++) if (_c[_i].id == id) return _c[_i];
+    return undefined;
+}
+function pet_calling_random_id() { var _c = pet_calling_catalog(); return _c[irandom(array_length(_c) - 1)].id; }
+function pet_calling_has(pet, id) { return is_struct(pet) && variable_struct_exists(pet, "calling") && pet.calling == id; }
+function pet_calling_stat(pet) {
+    if (!is_struct(pet) || !variable_struct_exists(pet, "calling") || pet.calling == "") return "";
+    var _d = pet_calling_get(pet.calling);
+    return (_d == undefined) ? "" : _d.stat;
+}
+function pet_calling_label(pet) {
+    if (!is_struct(pet) || !variable_struct_exists(pet, "calling") || pet.calling == "") return "";
+    var _d = pet_calling_get(pet.calling);
+    return (_d == undefined) ? "" : _d.name;
+}
+// Two distinct offers, rolled once at the crossing (raised creatures pick at Bairc).
+function pet_calling_offer_roll(pet, notice = true) {
+    if (!is_struct(pet)) return;
+    if (variable_struct_exists(pet, "calling") && pet.calling != "") return;
+    var _c = pet_calling_catalog();
+    var _a = irandom(array_length(_c) - 1), _b = _a;
+    while (_b == _a) _b = irandom(array_length(_c) - 1);
+    pet.calling_offer = [_c[_a].id, _c[_b].id];
+    if (notice && variable_global_exists("pet_find_notice")) {
+        var _msg = pet.name + " has come of age - Bairc has two Callings to offer it ([G] at his station).";
+        global.pet_find_notice = (global.pet_find_notice != "") ? (global.pet_find_notice + "   " + _msg) : _msg;
+    }
+}
+function pet_calling_can_pick(pet) {
+    if (!is_struct(pet) || pet.is_egg) return false;
+    if (variable_struct_exists(pet, "calling") && pet.calling != "") return false;
+    if (pet.stage < PET_STAGE_YOUNGADULT) return false;
+    // Creatures that crossed Young Adult BEFORE the Ledger existed (older saves) get their two
+    // offers the first time Bairc looks at them - quietly, no hub notice.
+    if (!variable_struct_exists(pet, "calling_offer") || !is_array(pet.calling_offer) || array_length(pet.calling_offer) < 2) {
+        if (!variable_struct_exists(pet, "calling")) pet.calling = "";
+        pet_calling_offer_roll(pet, false);
+    }
+    return is_array(pet.calling_offer) && array_length(pet.calling_offer) >= 2;
+}
+// The modal's pool (same {id, name, desc} shape as the capstone cards).
+function pet_calling_pool(pet) {
+    var _out = [];
+    if (!pet_calling_can_pick(pet)) return _out;
+    for (var _i = 0; _i < array_length(pet.calling_offer); _i++) {
+        var _d = pet_calling_get(pet.calling_offer[_i]);
+        if (_d != undefined) array_push(_out, _d);
+    }
+    return _out;
+}
+function pet_calling_choose(pet, id) {
+    if (!pet_calling_can_pick(pet)) return false;
+    if (pet_calling_get(id) == undefined) return false;
+    pet.calling = id;
+    pet.calling_offer = [];
+    return true;
+}
+// The Companion tab / station report card (§1.10): what the ledger knows about it.
+function pet_report_card(pet) {
+    if (!is_struct(pet) || pet.is_egg) return "";
+    var _done  = variable_struct_exists(pet, "ledger_done")  ? pet.ledger_done  : 0;
+    var _great = variable_struct_exists(pet, "ledger_great") ? pet.ledger_great : 0;
+    var _fav   = variable_struct_exists(pet, "ledger_fav")   ? pet.ledger_fav   : "";
+    var _s = "Ledger: " + string(_done) + ((_done == 1) ? " job" : " jobs") + " done, " + string(_great) + " great";
+    if (_fav != "") _s += "  |  knows the " + ledger_habitat_name(_fav);
+    if (pet_calling_label(pet) != "") _s += "  |  " + pet_calling_label(pet);
+    return _s;
+}
+
+// =============================================================================
+// HUB INBOX (§4.1): a notice queue in place of the one concatenated string. Fed by
+// ledger reports, evolutions / bond milestones (via inbox_from_notice on hub arrival),
+// board completions. Last 30 kept; saved additively. A bell chip shows the unread count.
+// =============================================================================
+#macro INBOX_MAX 30
+function inbox_ensure() {
+    if (!variable_global_exists("hub_inbox") || !is_array(global.hub_inbox)) global.hub_inbox = [];
+    return global.hub_inbox;
+}
+function inbox_push(kind, title, body) {
+    var _l = inbox_ensure();
+    array_insert(_l, 0, { kind: kind, title: title, body: body, run: ledger_run(), read: false });
+    while (array_length(_l) > INBOX_MAX) array_delete(_l, array_length(_l) - 1, 1);
+}
+function inbox_unread() {
+    var _l = inbox_ensure(), _n = 0;
+    for (var _i = 0; _i < array_length(_l); _i++) if (!_l[_i].read) _n++;
+    return _n;
+}
+function inbox_mark_all_read() { var _l = inbox_ensure(); for (var _i = 0; _i < array_length(_l); _i++) _l[_i].read = true; }
+// The old notice string is "msg   msg   msg" - one Inbox row per message, so nothing that
+// already feeds pet_find_notice needed touching.
+function inbox_from_notice(str) {
+    if (!is_string(str) || str == "") return;
+    var _parts = string_split(str, "   ", true);
+    for (var _i = array_length(_parts) - 1; _i >= 0; _i--) {
+        var _s = string_trim(_parts[_i]);
+        if (_s == "") continue;
+        var _kind = "note";
+        if (string_pos("evolve", _s) > 0 || string_pos("grew", _s) > 0 || string_pos("Awaken", _s) > 0) _kind = "pet";
+        else if (string_pos("bond", _s) > 0 || string_pos("Bond", _s) > 0) _kind = "bond";
+        else if (string_pos("request", _s) > 0 || string_pos("Request", _s) > 0 || string_pos("board", _s) > 0) _kind = "board";
+        var _title = _s;
+        var _cut = string_pos(" - ", _s);
+        if (_cut > 0 && _cut < 48) _title = string_copy(_s, 1, _cut - 1);
+        else if (string_length(_s) > 44) _title = string_copy(_s, 1, 42) + "...";
+        inbox_push(_kind, _title, _s);
+    }
+}
+function inbox_kind_label(k) {
+    switch (k) { case "ledger": return "LEDGER"; case "pet": return "CREATURE"; case "bond": return "BOND"; case "board": return "BOARD"; }
+    return "NOTE";
+}
+function inbox_step(gc) {
+    var _l = inbox_ensure(), _n = array_length(_l);
+    gc.inbox_cursor = clamp(gc.inbox_cursor, 0, max(0, _n - 1));
+    if (_n > 0 && nav_up())   gc.inbox_cursor = wrap_index(gc.inbox_cursor - 1, _n);
+    if (_n > 0 && nav_down()) gc.inbox_cursor = wrap_index(gc.inbox_cursor + 1, _n);
+    for (var _i = 0; _i < _n; _i++) if (input_inject_take("inbox:row" + string(_i))) { gc.inbox_cursor = _i; _l[_i].read = true; }
+    if (_n > 0 && (input_confirm() || input_confirm_alt())) _l[gc.inbox_cursor].read = true;
+    if (input_hotkey("N") || input_cancel() || input_inject_take("inbox:close")) {
+        gc.inbox_open = false;
+        audio_play_sound(snd_page, 1, false);
+        if (room == rm_hub || room == rm_character_select) save_game();
+    }
+}
+
+// =============================================================================
+// RUN SUMMARY (§4.2): one screen after any run end, before the hub. Built inside end_run
+// from state it already has; the hub shows it once and clears it.
+// =============================================================================
+function run_summary_build(rec, pet0, g0, b0, s0, found = undefined) {
+    var _items = [];
+    if (variable_global_exists("carried_items")) {
+        for (var _i = 0; _i < array_length(global.carried_items); _i++) {
+            var _it = global.carried_items[_i];
+            if (is_struct(_it) && variable_struct_exists(_it, "name")) array_push(_items, { name: _it.name, rarity: variable_struct_exists(_it, "rarity") ? _it.rarity : 0 });
+        }
+    }
+    array_sort(_items, function(_a, _b) { return _b.rarity - _a.rarity; });
+    while (array_length(_items) > 4) array_delete(_items, array_length(_items) - 1, 1);
+    var _pet = "";
+    if (pet0 != undefined && !pet0.is_egg) {
+        var _dg = pet0.growth - g0, _db = pet_bond(pet0) - b0;
+        _pet = pet0.name;
+        if (pet0.stage != s0 && s0 >= 0) _pet += " - EVOLVED to " + pet_stage_name(pet0.stage);
+        else if (_dg > 0) _pet += " - growth +" + string(_dg);
+        if (_db > 0) _pet += ", bond +" + string(_db);
+        if (pet0.injured > 0) _pet += ", INJURED";
+        if (pet_hp(pet0) <= 0) _pet += ", knocked out";
+    }
+    var _missions = [];
+    var _l = ledger_ensure();
+    for (var _m = 0; _m < array_length(_l.reports); _m++) array_push(_missions, _l.reports[_m].names + " - " + _l.reports[_m].title + ": " + ledger_outcome_word(_l.reports[_m].outcome));
+    global.run_summary_data = {
+        result:     rec.result,
+        dungeon:    rec.dungeon,
+        awakening:  rec.ascendance,
+        floor:      rec.floor_reached,
+        kills:      rec.kills,
+        level:      rec.end_level,
+        gold_earned: rec.gold_earned,
+        gold_kept:  rec.gold_kept,
+        dmg_dealt:  variable_global_exists("run_dmg_dealt") ? global.run_dmg_dealt : 0,
+        dmg_taken:  variable_global_exists("run_dmg_taken") ? global.run_dmg_taken : 0,
+        items:      _items,
+        pets_found: is_array(found) ? found : (variable_global_exists("run_found_pets") ? global.run_found_pets : []),
+        pet:        _pet,
+        missions:   _missions,
+        epithet:    variable_global_exists("player_epithet") ? global.player_epithet : "",
+        perm:       rec.perm_points_earned,
+        run:        rec.run_number
+    };
+}
+function run_summary_pending() { return variable_global_exists("run_summary_data") && is_struct(global.run_summary_data); }
+// FIRST-NIGHT WELCOME (09-28): input for ui_draw_hub_welcome. Arm-then-dismiss; marks the
+// tutorial flag "welcome_camp" seen and lets the hub coach-mark follow.
+function hub_welcome_step(gc) {
+    gc.welcome_t += 1;
+    if (!gc.welcome_armed) {
+        if (gc.welcome_t > 20 && !input_any_held() && !mouse_check_button(mb_left)) gc.welcome_armed = true;
+        return;
+    }
+    if (input_confirm() || input_confirm_alt() || input_cancel() || input_inject_take("welcome:continue") || mouse_check_button_pressed(mb_left)) {
+        gc.welcome_open = false;
+        tutorial_mark_seen("welcome_camp");
+        audio_play_sound(snd_page, 1, false);
+        if (room == rm_hub || room == rm_character_select) save_game();
+        tutorial_try_show("hub");
+    }
+}
+function run_summary_step(gc) {
+    if (!gc.summary_armed) {
+        if (!input_any_held() && !mouse_check_button(mb_left)) gc.summary_armed = true;
+        return;
+    }
+    if (input_confirm() || input_confirm_alt() || input_cancel() || input_inject_take("summary:continue") || mouse_check_button_pressed(mb_left)) {
+        gc.summary_open = false;
+        global.run_summary_data = undefined;
+        audio_play_sound(snd_page, 1, false);
+        if (room == rm_hub || room == rm_character_select) save_game();
+    }
 }

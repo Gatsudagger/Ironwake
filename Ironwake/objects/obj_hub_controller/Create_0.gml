@@ -107,6 +107,7 @@ if (array_length(_eq_dropped) > 0) {
 // Persist immediately so a creature found mid-run can't be lost before the next save.
 if (variable_global_exists("pet_find_notice") && global.pet_find_notice != "") {
     notification = (notification != "" ? notification + "   " : "") + global.pet_find_notice;
+    inbox_from_notice(global.pet_find_notice);   // 09-25 INBOX (§4.1): every notice also becomes a row that keeps
     global.pet_find_notice = "";
     if (variable_global_exists("save_slot") && global.save_slot >= 0) save_game();
 }
@@ -233,7 +234,15 @@ hub_flavor = hub_flavor_lines[irandom(array_length(hub_flavor_lines) - 1)];
 // (the first surface they see after character creation). Once-only; gated by the
 // saved tutorial flags. See SYSTEMS_ONBOARDING.md.
 // -----------------------------------------------------------------------------
-tutorial_try_show("hub");
+// 09-28 FIRST-NIGHT WELCOME: the big garden + creature-quests splash comes first, once; the
+// "hub" coach-mark follows when it is dismissed (hub_welcome_step). Honors the tutorials toggle.
+if (!tutorial_seen_has("welcome_camp") && (!variable_global_exists("tutorial_enabled") || global.tutorial_enabled)
+    && instance_exists(obj_game_controller)) {
+    var _wgc = instance_find(obj_game_controller, 0);
+    _wgc.welcome_open = true; _wgc.welcome_armed = false; _wgc.welcome_t = 0;
+} else {
+    tutorial_try_show("hub");
+}
 
 // ORIGINS "Something Stirs" tip: moved to Step (08-21). Trying it here never
 // worked - the hub tip above had just claimed the one-tip-at-a-time slot, so

@@ -206,8 +206,48 @@ if (_nt_id != "") {
 // also has a tap path via chips drawn in ui_draw_garden_scene (touch rule).
 // =============================================================================
 if (!variable_instance_exists(id, "garden_open")) garden_open = false;
+
+// =============================================================================
+// 09-25 RUN SUMMARY (§4.2) -> BAIRC'S REPORT PAGE (§1.4) -> hub INBOX (§4.1) -> THE LEDGER (§1).
+// Hub-arrival order is summary first, then the report; each owns input while up. The
+// handlers live in scr_stats (run_summary_step / ledger_report_step / inbox_step /
+// ledger_step) so this block stays a router. All four draw from obj_hub_controller.
+// =============================================================================
+// A coach-mark owns input while it is up - the shared dismiss handler lives FURTHER DOWN this
+// event (08-18 softlock lesson), so none of these branches may `exit` while one is active.
+// FIRST-NIGHT WELCOME (09-28): owns input outright while up - before the summary, before any tip.
+if (variable_instance_exists(id, "welcome_open") && welcome_open) { hub_welcome_step(id); exit; }
+if (variable_instance_exists(id, "summary_open") && !tutorial_is_active()) {
+    if (room == rm_hub && !summary_open && !ledger_report_open && run_summary_pending()) {
+        summary_open = true; summary_armed = false;
+    }
+    if (summary_open) { run_summary_step(id); exit; }
+    if (room == rm_hub && !ledger_report_open && !ui_input_blocked() && ledger_reports_pending()) {
+        ledger_report_open = true; ledger_report_armed = false;
+    }
+    if (ledger_report_open) { ledger_report_step(id); exit; }
+    if (inbox_open)  { inbox_step(id);  exit; }
+    if (ledger_open) { ledger_step(id); exit; }
+    // N (pad RB) / the bell chip: the Inbox, from the hub root only.
+    if (room == rm_hub && !ui_input_blocked() && !global.ui_overlay_latch && !hub_dialog_up()
+        && (input_hotkey("N") || input_inject_take("hub:inbox"))) {
+        inbox_open = true; inbox_cursor = 0; inbox_scroll = 0;
+        audio_play_sound(snd_page, 1, false);
+        exit;
+    }
+    // L (pad LB) / the PARTIES OUT chip: the Ledger straight from the hub root (09-25 UX pass) -
+    // the desk stays the front door, this is the shortcut once you know the way.
+    if (room == rm_hub && !ui_input_blocked() && !global.ui_overlay_latch && !hub_dialog_up()
+        && (input_hotkey("L") || input_inject_take("hub:ledger"))) {
+        ledger_screen_open(id);
+        tutorial_try_show("ledger_intro");
+        exit;
+    }
+}
+
 if (garden_open && bairc_open) {
     garden_ensure();
+    ledger_garden_tick(id);   // 09-25: parties seen leaving / coming home (transient walkers, §1.5)
     if (garden_fade > 0) garden_fade--;
     // First visit: the garden coach-mark (pan/drag/verbs) - M 08-18. The tip is modal
     // (any confirm dismisses it), so the scene's verbs stand down while it is up.
@@ -342,6 +382,18 @@ if (garden_open && bairc_open) {
             garden_hut_exit(id);
         } else if (input_cancel() || input_back() || input_inject_take("garden:leave")) {
             // ---- Leave the garden -> back to Bairc's station ----
+            // 09-25 GARDEN CHORES (§1.10): a resident napping by the hearth warms the active
+            // companion - +5 hunger on the way out, once per visit.
+            var _nap_warm = false;
+            for (var _nw = 0; _nw < array_length(garden_pets); _nw++) {
+                var _np = garden_pets[_nw];
+                if (variable_struct_exists(_np, "room") && _np.room == "hut" && _np.state == "nap") { _nap_warm = true; break; }
+            }
+            var _nap_pet = pet_active();
+            if (_nap_warm && _nap_pet != undefined && !_nap_pet.is_egg && pet_hunger(_nap_pet) < 100) {
+                _nap_pet.hunger = min(100, pet_hunger(_nap_pet) + 5);
+                bairc_notification = "Bairc: something was asleep by my fire. " + _nap_pet.name + " sat with it a while - it looks fed.";
+            }
             garden_open = false;
             music_garden_stop();
             audio_play_sound(music_hub_snd(), 1, true);
@@ -466,8 +518,14 @@ if (garden_open && bairc_open) {
         }
         // 09-22 (M: "right now he does nothing"): Bairc - outside, or at his ledgers inside -
         // opens his creature station; his line rides along as the station notice.
-        if (input_inject_take("garden:bairc") || input_inject_take("garden:desk")) {
+        if (input_inject_take("garden:bairc")) {
             garden_to_station(id);
+        }
+        // 09-25 (M-locked §8.1): the hut DESK opens THE LEDGER; Bairc on the grounds keeps
+        // opening the station. The garden stays underneath and resumes on close.
+        if (input_inject_take("garden:desk")) {
+            ledger_screen_open(id);
+            tutorial_try_show("ledger_intro");
         }
         // ---- 09-22 HUT verbs: the door in, the keepsake shelf, the fire ----
         if (input_inject_take("garden:door"))  garden_hut_enter(id);
@@ -3940,10 +3998,11 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open && npc_tour_step < 
         // splash (bairc_capstone_mode switches the pool + lock fn; same two-step UX).
         var _cp_pet    = (_bp_n > 0) ? global.pet_roster[bairc_cursor] : undefined;
         var _cp_splash = (bairc_capstone_mode == "splash");
+        var _cp_call   = (bairc_capstone_mode == "calling");   // 09-25 CALLINGS (§1.7): same modal, third pool
         var _cp_pool   = [];
-        if (is_struct(_cp_pet)) _cp_pool = _cp_splash ? pet_splash_pool(_cp_pet.archetype) : pet_archetype_capstones(_cp_pet.archetype);
+        if (is_struct(_cp_pet)) _cp_pool = _cp_call ? pet_calling_pool(_cp_pet) : (_cp_splash ? pet_splash_pool(_cp_pet.archetype) : pet_archetype_capstones(_cp_pet.archetype));
         var _cp_n    = array_length(_cp_pool);
-        var _cp_ok   = _cp_splash ? pet_splash_can_pick(_cp_pet) : pet_capstone_can_pick(_cp_pet);
+        var _cp_ok   = _cp_call ? pet_calling_can_pick(_cp_pet) : (_cp_splash ? pet_splash_can_pick(_cp_pet) : pet_capstone_can_pick(_cp_pet));
         if (!_cp_ok || _cp_n == 0) { bairc_capstone_open = false; exit; }
 
         if (!bairc_capstone_confirm) {
@@ -3961,11 +4020,14 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open && npc_tour_step < 
             // Yes/No confirm - permanent choice.
             if (input_confirm() || input_inject_take("capstone:lock")) {
                 var _pick   = _cp_pool[clamp(bairc_capstone_sel, 0, _cp_n - 1)];
-                var _locked = _cp_splash ? pet_splash_choose(_cp_pet, _pick.id) : pet_capstone_choose(_cp_pet, _pick.id);
+                var _locked = _cp_call ? pet_calling_choose(_cp_pet, _pick.id)
+                            : (_cp_splash ? pet_splash_choose(_cp_pet, _pick.id) : pet_capstone_choose(_cp_pet, _pick.id));
                 if (_locked) {
-                    bairc_notification = _cp_splash
+                    bairc_notification = _cp_call
+                        ? (_cp_pet.name + " answers its Calling - " + _pick.name + ". It reads on the ledger and in the field.")
+                        : (_cp_splash
                         ? (_cp_pet.name + " draws " + _pick.name + " into itself - the crossing is complete.")
-                        : (_cp_pet.name + " takes up " + _pick.name + " - its path is set.");
+                        : (_cp_pet.name + " takes up " + _pick.name + " - its path is set."));
                     audio_play_sound(snd_npc_confirm, 1, false);
                     affinity_add("bairc", 2);   // function-use drip (gift/splash pick)
                     if (room == rm_hub || room == rm_character_select) save_game();
@@ -3982,6 +4044,11 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open && npc_tour_step < 
     // creature to Bairc's garden. Enter confirms, Esc keeps it. Swallows all other input.
     if (bairc_release_confirm) {
         if (_bp_n == 0) { bairc_release_confirm = false; exit; }
+        if (input_confirm() && ledger_pet_away(global.pet_roster[bairc_cursor])) {   // 09-25: not while it is out on the ledger
+            bairc_notification = global.pet_roster[bairc_cursor].name + " is out on the ledger - wait for it to come home.";
+            bairc_release_confirm = false;
+            exit;
+        }
         if (input_confirm()) {
             var _rl = pet_donate(bairc_cursor);
             if (_rl != "") {
@@ -4080,6 +4147,9 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open && npc_tour_step < 
             } else if (_bp.is_egg) {
                 hatch_cutscene_start(_bp);   // full-screen shake -> crack -> reveal; hatches at the reveal
                 affinity_add("bairc", 2);    // function-use drip (hatching together)
+            } else if (ledger_pet_away(_bp)) {   // 09-25: an away creature cannot be the companion (§1.5)
+                bairc_notification = _bp.name + " is out on the ledger - back in " + string(ledger_pet_away_runs(_bp)) + " run(s).";
+                audio_play_sound(snd_ui_error, 1, false);
             } else {
                 global.active_pet  = bairc_cursor;
                 bairc_notification = _bp.name + " is now your active companion.";
@@ -4126,6 +4196,8 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open && npc_tour_step < 
             if (_feed_idx >= array_length(_owned)) {
                 if (!_bp.is_egg && pet_feed_pouch_total() <= 0)
                     bairc_notification = "No feed on hand - buy some from Petra the Trader.";
+            } else if (ledger_pet_away(_bp)) {   // 09-25: away parties eat from the mission (§1.5)
+                bairc_notification = _bp.name + " is out on the ledger - it eats on the road. Back in " + string(ledger_pet_away_runs(_bp)) + " run(s).";
             } else {
                 var _fr = pet_feed_apply(_bp, _owned[_feed_idx].id);
                 if (_fr == "") {
@@ -4163,8 +4235,19 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open && npc_tour_step < 
 
         // G: choose the raised pet's permanent pick - Stage-3 capstone first, then the
         // Stage-4 Awakened splash once it crosses (same modal, bairc_capstone_mode).
+        // L (pad LT): THE LEDGER from the station too (09-25, §1.8) - the desk is the front door.
+        if (input_hotkey("L") || input_inject_take("bairc:L")) {
+            ledger_screen_open(id);
+            tutorial_try_show("ledger_intro");
+            exit;
+        }
         if (input_hotkey("G") || input_inject_take("bairc:G")) {
-            if (pet_capstone_can_pick(_bp)) {
+            if (pet_calling_can_pick(_bp)) {   // 09-25 CALLINGS: the Young Adult pick comes first
+                bairc_capstone_mode    = "calling";
+                bairc_capstone_open    = true;
+                bairc_capstone_sel     = 0;
+                bairc_capstone_confirm = false;
+            } else if (pet_capstone_can_pick(_bp)) {
                 bairc_capstone_mode    = "cap";
                 bairc_capstone_open    = true;
                 bairc_capstone_sel     = 0;

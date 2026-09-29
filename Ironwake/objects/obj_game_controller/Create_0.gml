@@ -1818,6 +1818,25 @@ bairc_capstone_mode    = "cap";  // "cap" = Stage-3 capstone | "splash" = Awaken
 bairc_release_confirm  = false;  // "Donate" modal: entrust the highlighted creature to Bairc's garden
 bairc_lore_open        = false;  // one-time lore-fragment dialogue (bond milestones / first donation, §10)
 bairc_lore_armed       = false;  // same 1-frame arm as the intro so the opening keypress can't skip it
+// BAIRC'S LEDGER (09-25, DESIGN_IMPROVEMENT_PLAN_0924 §1) + hub INBOX (§4.1) + RUN SUMMARY (§4.2)
+ledger_open            = false;  // the Ledger screen (hut desk / [L] at the station)
+ledger_tab             = 0;      // 0 OFFERS | 1 OUT
+ledger_offer           = 0;      // highlighted offer
+ledger_cursor          = 0;      // highlighted roster row
+ledger_scroll          = 0;
+ledger_party           = [];     // roster indices picked for the offer
+ledger_out_cursor      = 0;      // highlighted party on the OUT tab
+ledger_notice          = "";     // one-line feedback under the SEND button
+ledger_report_open     = false;  // Bairc's report page (missions that came home) - shown on hub arrival
+ledger_report_armed    = false;
+inbox_open             = false;  // the hub Inbox list
+inbox_cursor           = 0;
+inbox_scroll           = 0;
+summary_open           = false;  // the run summary screen (before anything else on hub arrival)
+summary_armed          = false;
+welcome_open           = false;  // FIRST-NIGHT WELCOME splash (09-28) - garden + creature quests, once
+welcome_armed          = false;
+welcome_t              = 0;
 bairc_pad_menu_open    = false;  // gamepad action submenu (chunk 7b): A on a roster row lists the
 bairc_pad_menu_cursor  = 0;      //   creature's actions (Set Active/Hatch, Feed..., Gift, Name, ...);
 bairc_pad_menu_level   = 0;      //   0 = action list, 1 = feed list. Keyboard keeps the direct letters.

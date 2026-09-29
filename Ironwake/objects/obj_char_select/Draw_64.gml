@@ -267,6 +267,13 @@ for (var _s = 0; _s < 6; _s++) {
     draw_set_font(ui_font(fnt_ui));
     draw_set_color(c_white);
     draw_text(_bx + _box_w / 2, _box_y + 48, string(_stat_v));
+
+    // Hover explainer (M 09-28): what a point in this stat buys. Drawn LAST via
+    // ui_draw_tab_tip() at the end of this event; silent while any overlay is up.
+    if (!naming_active && !portrait_active && !origin_active && !vow_active && !touch_intro_open) {
+        ui_tab_hover_stash(_bx, _box_y, _bx + _box_w, _box_y + _box_h,
+            ui_stat_hover_title(_stat_names[_s]), ui_stat_hover_body(_stat_names[_s]));
+    }
 }
 
 // Stat description for currently selected stat
@@ -733,3 +740,6 @@ if (touch_intro_open) {
     draw_set_color(c_white);
     draw_set_font(-1);
 }
+
+// Stat-box hover explainer - last, so it rides above every panel on this screen.
+ui_draw_tab_tip();

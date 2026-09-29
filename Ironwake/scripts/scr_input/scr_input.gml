@@ -230,6 +230,12 @@ function __input_ctx() {
     var _gc = instance_exists(obj_game_controller) ? instance_find(obj_game_controller, 0) : noone;
     if (_gc != noone) {
         if (variable_instance_exists(_gc, "kb_open") && _gc.kb_open)       return "kb";
+        // 09-25: run summary / ledger report / inbox / ledger screen own input while up.
+        if (variable_instance_exists(_gc, "welcome_open") && _gc.welcome_open)           return "none";      // 09-28 welcome splash
+        if (variable_instance_exists(_gc, "summary_open") && _gc.summary_open)           return "summary";
+        if (variable_instance_exists(_gc, "ledger_report_open") && _gc.ledger_report_open) return "none";
+        if (variable_instance_exists(_gc, "inbox_open") && _gc.inbox_open)               return "inbox";
+        if (variable_instance_exists(_gc, "ledger_open") && _gc.ledger_open)             return "ledger";
         if (_gc.tavern_board_open)                                         return "board";
         if (_gc.journal_open)                                              return "journal";
         if (_gc.menu_open)                                                 return "charmenu";
@@ -275,7 +281,13 @@ function __input_pad_hotkey_map() {
         _s = {}; _s[$ "T"] = gp_shoulderrb; _s[$ "J"] = gp_shoulderlb;
                  _s[$ "I"] = gp_start;      _s[$ "O"] = gp_select;
                  _s[$ "H"] = gp_face4;      _s[$ "P"] = gp_stickl;
-                 _s[$ "B"] = gp_stickr;                              _m[$ "hub"]      = _s;
+                 _s[$ "B"] = gp_stickr;
+                 _s[$ "N"] = gp_shoulderr;  /* 09-25 Inbox on RB */
+                 _s[$ "L"] = gp_shoulderl;  /* 09-25 Ledger on LB */       _m[$ "hub"]      = _s;
+        // 09-25 Bairc's Ledger screen: R = SEND the party (RT), Q/E tabs ride input_tab_prev/next.
+        _s = {}; _s[$ "R"] = gp_shoulderrb;                          _m[$ "ledger"]   = _s;
+        _s = {};                                                     _m[$ "inbox"]    = _s;
+        _s = {};                                                     _m[$ "summary"]  = _s;
         _s = {}; _s[$ "E"] = gp_shoulderrb; _s[$ "G"] = gp_stickr;
                  _s[$ "J"] = gp_shoulderlb; _s[$ "I"] = gp_start;
                  _s[$ "P"] = gp_stickl;                              _m[$ "floor"]    = _s;
@@ -308,7 +320,8 @@ function __input_pad_hotkey_map() {
                  _s[$ "C"] = gp_shoulderlb; _s[$ "B"] = gp_stickr;
                  _s[$ "U"] = gp_stickl;                              _m[$ "shop"]     = _s;   // U = station rank (08-17)
         _s = {}; _s[$ "F"] = gp_shoulderrb; _s[$ "B"] = gp_stickr;
-                 _s[$ "U"] = gp_stickl;                              _m[$ "bairc"]    = _s;   // U = station rank (08-17)
+                 _s[$ "U"] = gp_stickl;     _s[$ "L"] = gp_shoulderlb;   // L = Bairc's Ledger on LT (09-25)
+                                                                     _m[$ "bairc"]    = _s;   // U = station rank (08-17)
         // 07-24 audit: gender toggle had no pad path (cells are tap/keyboard only).
         _s = {}; _s[$ "X"] = gp_shoulderlb; _s[$ "G"] = gp_shoulderrb; _m[$ "charsel"]  = _s;
         _s = {}; _s[$ "O"] = gp_select;                              _m[$ "title"]    = _s;

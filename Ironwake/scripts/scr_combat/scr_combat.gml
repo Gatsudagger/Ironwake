@@ -978,6 +978,16 @@ function combat_apply_damage(target_struct, damage) {
     var prev_hp         = target_struct.HP;
     target_struct.HP    = max(0, target_struct.HP - damage);
     var actual_dealt    = prev_hp - target_struct.HP;
+    // RUN SUMMARY counters (09-25, §4.2): what you dealt and what you took, this run.
+    if (actual_dealt > 0) {
+        if (variable_struct_exists(target_struct, "is_player") && target_struct.is_player) {
+            if (!variable_global_exists("run_dmg_taken")) global.run_dmg_taken = 0;
+            global.run_dmg_taken += actual_dealt;
+        } else {
+            if (!variable_global_exists("run_dmg_dealt")) global.run_dmg_dealt = 0;
+            global.run_dmg_dealt += actual_dealt;
+        }
+    }
     // DEPTH WARDEN post-damage hooks: Sister Fathom records the excess and gives
     // it back to herself; the Weight of Ironwake shifts phases as it is worn down.
     if (actual_dealt > 0 && variable_struct_exists(target_struct, "is_player") && !target_struct.is_player

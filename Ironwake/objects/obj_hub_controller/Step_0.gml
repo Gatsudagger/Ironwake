@@ -826,7 +826,7 @@ if (instance_exists(obj_game_controller)) {
             // Equippable pets = non-egg roster entries; rows = those + a final "None".
             var _eq_pets = [];
             for (var _pci = 0; _pci < pet_count(); _pci++) {
-                if (!global.pet_roster[_pci].is_egg) array_push(_eq_pets, _pci);
+                if (!global.pet_roster[_pci].is_egg && !ledger_pet_away(global.pet_roster[_pci])) array_push(_eq_pets, _pci);   // mirrors the Draw list (09-25: away parties hidden)
             }
             var _comp_rows = array_length(_eq_pets) + 1;   // pets + the "No companion" row
             if (nav_up())   _gc_ld.loadout_cursor = wrap_index(_gc_ld.loadout_cursor - 1, _comp_rows);
