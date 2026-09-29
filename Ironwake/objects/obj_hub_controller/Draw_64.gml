@@ -3924,8 +3924,14 @@ if (keyboard_check(vk_f8) && instance_exists(obj_game_controller)) {
     _dl += "naming=" + _dfl(_dg, "bairc_naming") + "  capstone=" + _dfl(_dg, "bairc_capstone_open") + "  release=" + _dfl(_dg, "bairc_release_confirm") + "  padmenu=" + _dfl(_dg, "bairc_pad_menu_open") + "  detail=" + _dfl(_dg, "bairc_detail_open") + "  menu=" + _dfl(_dg, "menu_open") + "  journal=" + _dfl(_dg, "journal_open") + "  board=" + _dfl(_dg, "tavern_board_open") + "  kb=" + _dfl(_dg, "kb_open") + "\n";
     _dl += "picker=" + (variable_global_exists("item_picker") ? string(global.item_picker.open) + "/" + string(global.item_picker.purpose) : "n/a") + "  reagent_picker=" + (variable_global_exists("reagent_picker") ? string(global.reagent_picker != undefined) : "n/a") + "  gift_popup=" + (variable_global_exists("gift_popup") ? string(global.gift_popup != undefined) : "n/a") + "  settings=" + (variable_global_exists("settings_open") ? string(global.settings_open) : "n/a") + "\n";
     _dl += "gc_instances=" + string(instance_number(obj_game_controller)) + "  tip_frames=" + (variable_global_exists("dbg_tip_frames") ? string(global.dbg_tip_frames) : "0") + "  tip_hits=" + (variable_global_exists("dbg_tip_hits") ? string(global.dbg_tip_hits) : "0") + "  tip_dismissed=" + (variable_global_exists("dbg_tip_dismissed") ? string(global.dbg_tip_dismissed) : "0") + "  lastkey=" + string(keyboard_lastkey) + "  seen_hub=" + string(tutorial_seen_has("hub")) + "  enabled=" + (variable_global_exists("tutorial_enabled") ? string(global.tutorial_enabled) : "n/a") + "\n";
+    if (variable_global_exists("dbg_mark")) {
+        var _mk = variable_struct_get_names(global.dbg_mark); array_sort(_mk, true);
+        _dl += "marks(ms ago): ";
+        for (var _mi = 0; _mi < array_length(_mk); _mi++) _dl += _mk[_mi] + "=" + string(current_time - global.dbg_mark[$ _mk[_mi]]) + "  ";
+        _dl += "\n";
+    }
     _dl += "any_held=" + string(input_any_held()) + "  device=" + string(input_device()) + "  latch=" + (variable_global_exists("ui_overlay_latch") ? string(global.ui_overlay_latch) : "n/a") + "  dismiss_pending=" + (variable_global_exists("tutorial_dismiss_pending") ? string(global.tutorial_dismiss_pending) : "n/a") + "  lore_queue=" + string(array_length(bairc_lore_queue())) + "  reports=" + string(ledger_reports_pending()) + "  summary_pending=" + string(run_summary_pending()) + "  ctx=" + string(__input_ctx());
-    draw_set_alpha(0.92); draw_set_color(c_black); draw_rectangle(GUI_XL + 20, 20, GUI_XR - 20, 290, false); draw_set_alpha(1.0);
+    draw_set_alpha(0.92); draw_set_color(c_black); draw_rectangle(GUI_XL + 20, 20, GUI_XR - 20, 330, false); draw_set_alpha(1.0);
     draw_set_font(ui_font(fnt_ui_small)); draw_set_halign(fa_left); draw_set_valign(fa_top); draw_set_color(make_color_rgb(120, 255, 160));
     draw_text_ext(GUI_XL + 34, 30, _dl, 32, GUI_W - 70);
     draw_set_color(c_white); draw_set_font(-1);

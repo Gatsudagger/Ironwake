@@ -1,10 +1,12 @@
 // Pinch-zoom gesture (SYSTEMS_PINCH_ZOOM.md): tracked BEFORE the one-finger
 // classifier so a two-finger pinch mutes taps/drags for the whole frame.
+if (!variable_global_exists("dbg_mark")) global.dbg_mark = {}; global.dbg_mark[$ "a_top"] = current_time;   // 09-29 TEMP DIAG
 touch_pinch_update();
 
 // Touch gesture classifier (8d): updated once per frame, before anything reads
 // taps/drags/long-presses. No-op on non-touch devices.
 touch_gesture_update();
+if (!variable_global_exists("dbg_mark")) global.dbg_mark = {}; global.dbg_mark[$ "b_after_touch"] = current_time;   // 09-29 TEMP DIAG
 find_banner_tick();   // FIND banner queue (pets / eggs / banshee bottles) - runs in every room
 
 // IRONMAN resume (SYSTEMS_RUN_RESUME.md): Android is about to suspend the game
@@ -14,6 +16,7 @@ find_banner_tick();   // FIND banner queue (pets / eggs / banshee bottles) - run
 // tightens the loss window. No-op outside a run or once combat is decided.
 if (os_is_paused()) run_checkpoint_write_now();
 
+if (!variable_global_exists("dbg_mark")) global.dbg_mark = {}; global.dbg_mark[$ "c_after_banner"] = current_time;   // 09-29 TEMP DIAG
 // Latch whether any gc-managed overlay/modal is open at the START of this Step,
 // BEFORE the ESC-close handlers below clear their flags. The hub AND floor pause-
 // menu triggers check this so the same Esc press that closes an overlay (inventory,
@@ -216,6 +219,7 @@ if (!variable_instance_exists(id, "garden_open")) garden_open = false;
 // A coach-mark owns input while it is up - the shared dismiss handler lives FURTHER DOWN this
 // event (08-18 softlock lesson), so none of these branches may `exit` while one is active.
 // FIRST-NIGHT WELCOME (09-28): owns input outright while up - before the summary, before any tip.
+if (!variable_global_exists("dbg_mark")) global.dbg_mark = {}; global.dbg_mark[$ "d_before_welcome"] = current_time;   // 09-29 TEMP DIAG
 if (variable_instance_exists(id, "welcome_open") && welcome_open) { hub_welcome_step(id); exit; }
 // CONTRACTS pick-of-three (09-29): owns input while up - the handed object is already gone.
 if (variable_instance_exists(id, "reward_pick_open") && reward_pick_open) { reward_pick_step(id); exit; }
@@ -247,6 +251,7 @@ if (variable_instance_exists(id, "summary_open") && !tutorial_is_active()) {
     }
 }
 
+if (!variable_global_exists("dbg_mark")) global.dbg_mark = {}; global.dbg_mark[$ "e_before_garden"] = current_time;   // 09-29 TEMP DIAG
 if (garden_open && bairc_open) {
     garden_ensure();
     ledger_garden_tick(id);   // 09-25: parties seen leaving / coming home (transient walkers, §1.5)
@@ -577,6 +582,7 @@ if (garden_open && bairc_open) {
 }
 
 // Global fullscreen toggle (F11) - works in every room, persists in settings.ini.
+if (!variable_global_exists("dbg_mark")) global.dbg_mark = {}; global.dbg_mark[$ "f_before_f11"] = current_time;   // 09-29 TEMP DIAG
 if (keyboard_check_pressed(vk_f11)) {
     video_toggle_fullscreen();
 }
@@ -839,6 +845,7 @@ if (GM_build_type == "run" && keyboard_check_pressed(vk_f4)) {
 // Hub station flavor loops (SOUND_ATMOSPHERE_SPEC.md section 3): keep each open
 // NPC screen's quiet bed in lock-step with its *_open flag. Runs above every
 // modal early-exit below so a loop can never stick on while one is up.
+if (!variable_global_exists("dbg_mark")) global.dbg_mark = {}; global.dbg_mark[$ "g_before_ambience"] = current_time;   // 09-29 TEMP DIAG
 hub_station_ambience_update();
 
 // Android (8c): pop the OS on-screen keyboard whenever a typed-text modal is
@@ -893,6 +900,7 @@ if (_nt_id != "" && npc_tour_step < 0 && !tutorial_is_active() && !text_entry_ac
 // --- Full-screen hatch cutscene ---
 // While an egg is hatching it owns every input; the cutscene advances itself and
 // applies pet_hatch at the reveal. Drawn over the Bairc screen by hatch_cutscene_draw().
+if (!variable_global_exists("dbg_mark")) global.dbg_mark = {}; global.dbg_mark[$ "h_before_hatch"] = current_time;   // 09-29 TEMP DIAG
 if (hatch_active) {
     hatch_cutscene_step();
     exit;
