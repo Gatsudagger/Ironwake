@@ -935,7 +935,8 @@ if (variable_global_exists("item_picker") && global.item_picker.open
         || global.item_picker.purpose == "chit_reforge" || global.item_picker.purpose == "pb_smelt"
         || global.item_picker.purpose == "maren_sunder" || global.item_picker.purpose == "cursed_rebirth"
         || global.item_picker.purpose == "maren_temper" || global.item_picker.purpose == "maren_awaken"
-        || global.item_picker.purpose == "statreq_rebirth")) {
+        || global.item_picker.purpose == "statreq_rebirth"
+        || global.item_picker.purpose == "board_want")) {   // CONTRACTS (09-29): request hand-over
     item_picker_step();
     exit;
 }

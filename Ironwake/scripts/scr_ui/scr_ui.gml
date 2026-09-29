@@ -3816,6 +3816,10 @@ function ui_draw_tavern_board() {
     var _gc = instance_find(obj_game_controller, 0);
     if (!variable_instance_exists(_gc, "tavern_board_open") || !_gc.tavern_board_open) return;
     if (!variable_instance_exists(_gc, "tavern_board_tab")) _gc.tavern_board_tab = 0;
+    // A modal above the board (hand-over picker / pick-of-three) owns the taps - the
+    // board's own hit-tests stand down so a card tap can't also press a row.
+    var _tb_taps = !((variable_instance_exists(_gc, "reward_pick_open") && _gc.reward_pick_open)
+                  || (variable_global_exists("item_picker") && global.item_picker.open));
 
     draw_set_alpha(0.86); draw_set_color(c_black);
     draw_rectangle(GUI_XL, 0, GUI_XR, GUI_H, false);
@@ -3876,7 +3880,7 @@ function ui_draw_tavern_board() {
         draw_set_color(_hot ? make_color_rgb(255, 235, 180) : make_color_rgb(170, 150, 120));
         draw_text(_tx + _tw / 2, _ty + _th / 2, _tabs[_t] + "  (" + string(_cnt) + ")");
         draw_set_halign(fa_left); draw_set_valign(fa_top);
-        if (touch_tapped(_tx, _ty, _tx + _tw, _ty + _th) && !_hot) { _gc.tavern_board_tab = _t; _gc.tavern_board_cursor = 0; _gc.tavern_board_note = ""; }
+        if (_tb_taps && touch_tapped(_tx, _ty, _tx + _tw, _ty + _th) && !_hot) { _gc.tavern_board_tab = _t; _gc.tavern_board_cursor = 0; _gc.tavern_board_note = ""; }
     }
 
     // Board rows = active + available only, on this tab.
@@ -3934,7 +3938,7 @@ function ui_draw_tavern_board() {
         else                  draw_set_color(_hot ? make_color_rgb(220, 190, 130) : make_color_rgb(80, 64, 46));
         draw_rectangle(_lx - 12, _qy, _rx + 12, _qy + _RH - 12, true);
         // Touch / click: tap a note to highlight it, tap the highlighted note again to take / turn in.
-        if (touch_tapped(_lx - 12, _qy, _rx + 12, _qy + _RH - 12)) {
+        if (_tb_taps && touch_tapped(_lx - 12, _qy, _rx + 12, _qy + _RH - 12)) {
             if (_i == _cur) touch_press(vk_enter);
             else { _gc.tavern_board_cursor = _i; _cur = _i; }
         }

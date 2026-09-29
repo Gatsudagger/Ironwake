@@ -6433,7 +6433,8 @@ function shrine_reroll_cost() {
 function boon_incoming_mult() {
     var _m = boon_active("warding") ? (1.0 - boon_value("warding")) : 1.0;
     // MASK OF THE AESTHETE (CONTRACTS 09-29): -10% incoming while above 70% HP.
-    if (legendary_worn("storied_vael") && instance_exists(obj_combat_controller)) {
+    if (legendary_worn("storied_vael") && instance_exists(obj_combat_controller)
+        && variable_instance_exists(instance_find(obj_combat_controller, 0), "player")) {
         var _vp = instance_find(obj_combat_controller, 0).player;
         if (is_struct(_vp) && variable_struct_exists(_vp, "max_HP") && _vp.max_HP > 0 && _vp.HP > _vp.max_HP * 0.7) _m *= 0.90;
     }
@@ -8287,6 +8288,15 @@ function board_run_scoring(result) {
             quest_tick("run_haul", _d.obj_param, 1);
         }
     }
+    // CONTRACTS (09-29): story steps live outside board_requests - score their hauls too.
+    if (variable_global_exists("quests") && is_array(global.quests)) {
+        for (var _si = 0; _si < array_length(global.quests); _si++) {
+            var _ss = global.quests[_si];
+            if (_ss.status != "active" || string_pos("story_", _ss.id) != 1) continue;
+            var _sd = quest_def(_ss.id);
+            if (_sd != undefined && _sd.obj_type == "run_haul" && global.current_run_gold >= real(_sd.obj_param)) quest_tick("run_haul", _sd.obj_param, 1);
+        }
+    }
 }
 
 // Run-end lifecycle: fulfilled requests never rot; everything else counts down,
@@ -8298,7 +8308,7 @@ function board_run_end() {
     for (var _i = 0; _i < array_length(_b); _i++) {
         var _d = _b[_i];
         var _s = quest_state(_d.id);
-        var _fulfilled = (_s != undefined && _s.status == "active" && _s.progress >= _d.obj_target);
+        var _fulfilled = (_s != undefined && quest_is_complete(_d.id));   // CONTRACTS (09-29): a satisfiable want counts as fulfilled too
         if (!_fulfilled) _d.expires -= 1;
         if (_d.expires <= 0 && !_fulfilled) {
             if (_s != undefined && _s.status == "active" && variable_global_exists("pet_find_notice")) {
@@ -19910,8 +19920,7 @@ function reward_pick_open(gc, id, tier_bonus, pay_mult) {
     var _slots = want_slots();
     var _s1 = (contract_has_want(_d) && _d.want.kind == "item") ? _d.want.slot : _slots[irandom(array_length(_slots) - 1)];
     var _s2 = _slots[irandom(array_length(_slots) - 1)];
-    var _tries = 0;
-    while (_s2 == _s1 && _tries++ < 8) _s2 = _slots[irandom(array_length(_slots) - 1)];
+    for (var _tries = 0; _tries < 8 && _s2 == _s1; _tries++) _s2 = _slots[irandom(array_length(_slots) - 1)];
     var _i1 = contract_roll_item(_rar, _s1), _i2 = contract_roll_item(_rar, _s2);
     gc.reward_pick_data = {
         qid:id, coin:_coin, dust:(variable_struct_exists(_r, "dust") ? _r.dust : 0),
@@ -20176,6 +20185,9 @@ function contract_escort_mirror(dmg, log = undefined) {
     if (!variable_global_exists("contract_escort") || global.contract_escort == undefined) return;
     var _e = global.contract_escort;
     if (!_e.alive || dmg <= 0) return;
+    if (!instance_exists(obj_combat_controller)) return;
+    var _cc = instance_find(obj_combat_controller, 0);
+    if (!variable_instance_exists(_cc, "escort_joined") || !_cc.escort_joined) return;   // sat out (duel) = safe
     _e.hp -= max(1, round(dmg * 0.3));
     if (_e.hp <= 0) {
         _e.alive = false;
@@ -20349,8 +20361,9 @@ function story_turn_in(id) {
     var _s = quest_state(id); var _d = quest_def(id);
     if (_s == undefined || _d == undefined) return "Unknown step.";
     _s.status = "done";
-    global.gold += _d.reward.gold;
-    var _parts = string(_d.reward.gold) + "g";
+    var _sg = _d.reward.gold * (variable_struct_exists(_s, "pay_mult") ? max(1, _s.pay_mult) : 1);   // escort walked out = x2
+    global.gold += _sg;
+    var _parts = string(_sg) + "g";
     var _st = variable_struct_get(global.story, _d.npc);
     if (_st != undefined && _s.step >= _st.step) {
         if (variable_struct_exists(_s, "choice") && _s.choice != "") _st.choice = _s.choice;
