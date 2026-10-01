@@ -111,7 +111,7 @@ haptics a post-EA nice-to-have.
 
 ### P9. Safe areas + camera punch-hole
 Ports inset interactive UI from display cutouts and rounded corners.
-**Ironwake:** 8b chunk (planned, ANDROID_PORT_PLAN.md §2). Note the S25's
+**Ironwake:** 8b chunk (planned, docs/_done/ANDROID_PORT_PLAN.md §2). Note the S25's
 punch-hole is top-center in landscape-left — our top-edge labels may collide.
 
 ### P10. Confirmation on destructive/irreversible taps only

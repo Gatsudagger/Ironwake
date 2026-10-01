@@ -123,7 +123,29 @@ for (var _i = 0; _i < _count; _i++) {
     draw_set_halign(fa_right);
     draw_set_valign(fa_top);
     draw_set_color(_ec_ranged ? make_color_rgb(220, 170, 80) : make_color_rgb(140, 155, 185));
+    // §2.1 / §2.2 (09-29): the line state rides the class tag - COVERED (back line behind a
+    // standing front), STAGGERED (guard broken), or PULLED (dragged forward).
+    var _lt_tag = "";
+    if (variable_struct_exists(_c, "staggered_turns") && _c.staggered_turns > 0) _lt_tag = "STAGGERED   ";
+    else if (variable_struct_exists(_c, "guard_braced") && _c.guard_braced) _lt_tag = "BRACED   ";
+    else if (combat_enemy_covered(combat_state, _c)) _lt_tag = "COVERED   ";
+    else if (variable_struct_exists(_c, "pulled_turns") && _c.pulled_turns > 0) _lt_tag = "PULLED   ";
     draw_text(_bar_x + _bar_width, _bar_y + _bar_height + 9, enemy_class_tag(_c));
+    if (_lt_tag != "") {
+        draw_set_color((_lt_tag == "COVERED   ") ? make_color_rgb(120, 170, 230) : ((_lt_tag == "BRACED   ") ? make_color_rgb(170, 185, 205) : make_color_rgb(255, 190, 80)));
+        draw_text(_bar_x + _bar_width - string_width(enemy_class_tag(_c)), _bar_y + _bar_height + 9, _lt_tag);
+    }
+    // §2.2 BREAK BAR: a thin amber guard strip hugging the HP bar's underside, with
+    // crack ticks at 50%. Drawn only for foes that carry guard (elite/boss headliners).
+    if (variable_struct_exists(_c, "guard_max") && _c.guard_max > 0) {
+        var _gy = _bar_y + _bar_height + 1, _gf = clamp(_c.guard / _c.guard_max, 0, 1);
+        draw_set_color(make_color_rgb(40, 30, 14)); draw_rectangle(_bar_x, _gy, _bar_x + _bar_width, _gy + 4, false);
+        var _gbr = variable_struct_exists(_c, "guard_braced") && _c.guard_braced;   // 09-30: steel while BRACED
+        draw_set_color((_c.staggered_turns > 0) ? make_color_rgb(255, 90, 60) : (_gbr ? make_color_rgb(170, 185, 205) : make_color_rgb(235, 170, 60)));
+        if (_c.staggered_turns > 0) _gf = 1;   // broken: a red strip until it recovers
+        draw_rectangle(_bar_x, _gy, _bar_x + _bar_width * _gf, _gy + 4, false);
+        draw_set_color(c_black); draw_line(_bar_x + _bar_width * 0.5, _gy, _bar_x + _bar_width * 0.5, _gy + 4);
+    }
     draw_set_halign(fa_left);
     draw_set_font(-1);
 
@@ -723,6 +745,12 @@ for (var _ei = 0; _ei < _ecnt; _ei++) {
             && touch_tap_in(_ex - 15, _ey - 15, _ex + _isp_w + 15, _ey + _isp_h + 15)) {
             selected_target = _espr_idx;
         }
+        // 09-29 P0b: LONG-PRESS the model pins its inspect panel on touch (hover can't exist).
+        if (input_device() == 2 && touch_lp()
+            && touch_lp_in(_ex - 15, _ey - 15, _ex + _isp_w + 15, _ey + _isp_h + 15)) {
+            selected_target = _espr_idx;
+            touch_inspect_idx = _espr_idx;
+        }
     }
 
     // Attack slide for the enemy that is currently attacking
@@ -1221,7 +1249,29 @@ if (global.combat_status_tip != undefined) {
 // Enemy inspect tooltip - attack class + which controls stop the hovered foe. Drawn
 // last (over bars/HUD) but suppressed while a status-badge tooltip is up, so the two
 // hover popups don't overlap.
-if (_inspect_target != undefined && global.combat_status_tip == undefined) {
+// 09-29 P0b touch: a finger has no hover - the stale last-touch point must not pop the
+// panel. Touch shows it ONLY for the enemy a long-press pinned (bar or model), anchored
+// mid-screen; any later tap unpins it (Step).
+if (input_device() == 2) {
+    _inspect_target = undefined;
+    if (touch_inspect_idx >= 0) {
+        // 09-30 audit: resolve the pinned index to the CREATURE once; a death elsewhere in the
+        // line no longer slides the panel onto a different foe - its own death unpins it.
+        if (!variable_instance_exists(id, "touch_inspect_ref") || touch_inspect_ref == undefined || touch_inspect_ref_idx != touch_inspect_idx) {
+            touch_inspect_ref = undefined; touch_inspect_ref_idx = touch_inspect_idx;
+            var _tli = 0;
+            for (var _tci = 0; _tci < array_length(combat_state.combatants); _tci++) {
+                var _tcc = combat_state.combatants[_tci];
+                if (_tcc.is_player || _tcc.is_defeated) continue;
+                if (_tli == touch_inspect_idx) { touch_inspect_ref = _tcc; break; }
+                _tli++;
+            }
+        }
+        if (touch_inspect_ref != undefined && !touch_inspect_ref.is_defeated && touch_inspect_ref.HP > 0) _inspect_target = touch_inspect_ref;
+        else { touch_inspect_idx = -1; touch_inspect_ref = undefined; }   // it died
+    }
+    if (_inspect_target != undefined && global.combat_status_tip == undefined) ui_draw_enemy_inspect_tooltip(700, 330, _inspect_target);
+} else if (_inspect_target != undefined && global.combat_status_tip == undefined) {
     ui_draw_enemy_inspect_tooltip(_mx_gui, _my_gui, _inspect_target);
 }
 

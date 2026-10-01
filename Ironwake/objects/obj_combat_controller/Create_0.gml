@@ -1092,6 +1092,7 @@ if (_afx_n > 0 && array_length(enemies) > 0
     // CONTRACTS (09-29): a taken BOUNTY's affix is guaranteed on its species in its dungeon.
     var _bfa = bounty_forced_affix(enemies[0].name);
     if (_bfa != "" && !enemy_affix_has(enemies[0], _bfa)) { enemy_affix_force(enemies[0], _bfa, array_length(enemies) < 4); _afx = enemies[0].affixes; }
+    enemies[0].bounty_mark = (_bfa != "" && enemy_affix_has(enemies[0], _bfa));   // 09-30 audit: the one that carries the promised affix
     global.affix_loot_bonus = array_length(_afx);
     if (enemy_affix_has(enemies[0], "twinned") && array_length(enemies) < 4) {
         var _tw = enemy_clone(enemies[0]);
@@ -1107,6 +1108,17 @@ if (_afx_n > 0 && array_length(enemies) > 0
     }
     if (array_length(_afx) > 0) tutorial_try_show("elite_affixes");
 }
+// BREAK BAR (§2.2, 09-29): the headliner of an elite or boss fight carries GUARD
+// (25% max HP). Duels stay pure; a Twinned copy never gets its own bar.
+if ((_enemy_type == "elite" || _enemy_type == "boss") && array_length(enemies) > 0
+    && !(variable_global_exists("duel_active") && global.duel_active)) {
+    combat_guard_stamp(enemies[0]);
+    tutorial_try_show("break_bar");
+}
+var _covered_any = false;
+for (var _cvi = 0; _cvi < array_length(enemies); _cvi++) if (combat_enemy_is_back(enemies[_cvi])) _covered_any = true;
+if (_covered_any && array_length(enemies) > 1) tutorial_try_show("cover_lines");
+player.fervor = 0; player.fervor_last_cat = "";   // §2.4 FERVOR is combat-scoped
 var _combatants = [player];
 for (var _ei = 0; _ei < array_length(enemies); _ei++) {
     // Stamp the HEADLINER (the boss / elite / duel rival = enemies[0]) so the 2.5D
@@ -1194,6 +1206,8 @@ end_turn_focus = false;
 // currently targeted enemy. Cycled with Tab. Reset to 0 after each kill via
 // the safety fallback in Step_0.
 selected_target = 0;
+touch_inspect_idx = -1;   // 09-29 P0b: living-enemy index whose inspect panel a touch long-press pinned (-1 = none)
+touch_inspect_ref = undefined; touch_inspect_ref_idx = -1;   // 09-30 audit: the pinned CREATURE (not a list slot)
 
 // Append-only array of strings; ui_draw_combat_log renders newest-at-bottom and
 // supports mouse-wheel scrollback via combat_log_scroll (0 = pinned to newest).
@@ -1224,6 +1238,7 @@ escort_dmg    = 0;
 escort_name   = "";
 escort_npc    = "";
 if (contract_escort_join_combat(enemies)) {
+    global.contract_escort.fights = (variable_struct_exists(global.contract_escort, "fights") ? global.contract_escort.fights : 0) + 1;   // 09-30 audit
     escort_joined = true;
     escort_name   = global.contract_escort.name;
     escort_npc    = global.contract_escort.npc;

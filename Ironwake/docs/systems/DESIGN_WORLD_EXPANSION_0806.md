@@ -1,7 +1,7 @@
 # DESIGN — World Expansion: Creatures, Biomes, Descent Bosses, Awakened Forms
 
-**Status: DRAFT 2026-08-06 — awaiting M's design-lock.** No code written, no art
-generated. Scope set by M: 10 new generic pets + 5 Descent pets, unique Descent
+**Status: LARGELY BUILT (08-06 → 09-04):** Compendium, species expansion, Depth Wardens + scions, Drowned Reach + Hollow Canopy. NOT built: Stormcrag (§8 Q5 - it exists only as a display name in `dungeon_display_name`, no content). Open art debt lives in ROADMAP.md. Original draft text follows. (Was: DRAFT 2026-08-06, no code written, no art
+generated.) Scope set by M: 10 new generic pets + 5 Descent pets, unique Descent
 bosses every few floors, more boss variety, new biome dungeons, pet types
 segregated by dungeon, and a full Awakened-form art pass across every species.
 

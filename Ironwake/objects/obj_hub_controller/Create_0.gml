@@ -5,6 +5,8 @@
 // be persistent before this room is loaded.
 // =============================================================================
 
+pet_stage_quest_sync();   // 09-30 audit: "raise a creature to X" steps count creatures you already raised
+
 // Seed a shop if this character doesn't have one yet. Shop stock persists per slot
 // (saved/restored in scr_save), so a loaded character keeps their exact Dorn/Petra
 // stock and this is a no-op. It only rolls a fresh shop when the stock is empty -

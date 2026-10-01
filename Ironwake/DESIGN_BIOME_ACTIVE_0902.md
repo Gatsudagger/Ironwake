@@ -1,11 +1,11 @@
 # DESIGN LOCK — Active per-biome mechanics (09-02 late, designed with M)
 
-Status: **§1 THE TIDE BUILT 09-09 (uncommitted, awaiting M F5).** §2-§5 still design-locked, not built. Build order = §7.
-Companion to `DESIGN_BIOME_IDENTITY_0827.md` (the passive identities, all built).
+Status: **§1 THE TIDE BUILT + SHIPPED in 1.0.7 (a4a0d243), with the Drowned half of §6 (high-tide event variants, The Wheelhouse, Slack Water).** §2-§5 and the rest of §6 are design-locked, NOT built. Build order = §7. Renamed 09-29 to avoid clashes: the Vault gamble is THE COUNT'S TALLY (not "Ledger" - that is Bairc's expedition screen).
+Companion to `docs/systems/DESIGN_BIOME_IDENTITY_0827.md` (the passive identities, all built).
 
 ## 0. Ground rules (M's, 09-02)
 - A biome mechanic **costs or punishes the player; it never hands out free advantage.**
-  The only upside anywhere is an opt-in *gamble* with a real downside (Scorched Quench, Vault Ledger)
+  The only upside anywhere is an opt-in *gamble* with a real downside (Scorched Quench, Vault Tally)
   or a *lever* the player works (Drowned tide). "Some offer too much advantage without much
   disadvantage" was the note on the first draft.
 - **Enemies are native.** Nothing a biome does hurts them (the drowned know the tide; the Canopy grew
@@ -70,7 +70,7 @@ Companion to `DESIGN_BIOME_IDENTITY_0827.md` (the passive identities, all built)
 - **The Quench** at floor end (opt-in, always skippable): one press in a tight band. Perfect = temp
   damage buff for the next floor; miss = weapon **brittle** (-armor) for the next floor.
 
-## 5. Ashen Vault — THE LEDGER (gamble, lightest touch: teaching floor)
+## 5. Ashen Vault — THE COUNT'S TALLY (gamble, lightest touch: teaching floor)
 - At floor exit the Count shows **kills vs hits taken**. **Settle** = modest gold scaled by how clean the
   books are. **Carry** = larger payout next floor with a **Candle Thief ambush** chance. Walking past is free.
 
@@ -83,13 +83,13 @@ that affect and interact with these new room mechanics")
   *The Long Way Round* - accept a guaranteed spur now for a guaranteed loot node above).
 - Scorched: *The Bellows Still Breathe* already exists - make it shift the vent rhythm.
 - Tundra: one event that pre-applies a control the ring can practise on (tutorial-ish).
-- Vault: *The Jailer's Ledger* becomes the in-fiction explainer for the floor-end Ledger.
+- Vault: *The Jailer's Ledger* becomes the in-fiction explainer for the floor-end Tally.
 
 ## 7. Build order (proposed, needs M's go)
 1. Tide system + wheel HUD + breath ring + low/high effects + tide drops (Drowned vertical map).
 2. Canopy vertical map + break/spur + vine ring.
 3. Tundra control rings + roster riders.
-4. Scorched vents + Quench. 5. Vault Ledger. 6. Biome events pass (§6). 7. Coach-marks + lore text.
+4. Scorched vents + Quench. 5. Vault Tally. 6. Biome events pass (§6). 7. Coach-marks + lore text.
 Systems to hang on: parry/strike rings (combat Step ~4828 / Draw_64), layered-DAG floor gen
 (obj_floor_controller Create_0 ~117-320, `global.floor_node_w`), `floor_mod` flags (scr_stats ~13101),
 event `dungeon:` routing, boons, summons, initiative.

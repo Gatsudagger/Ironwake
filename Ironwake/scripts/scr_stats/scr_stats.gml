@@ -1399,8 +1399,19 @@ function apply_elemental_affix_to_item(item, elem) {
         if (_nlen > _tlen && string_copy(item.name, _nlen - _tlen + 1, _tlen) == _stat_tail) {
             item.name = string_copy(item.name, 1, _nlen - _tlen) + " " + item_fused_elem_suffix(elem, _last);
         } else {
-            // Tail not where expected (unexpected) - fall back to the plain append.
-            item.name = item.name + " " + elem.suffix;
+            // Tail is some other "of X" (authored names, e.g. the Ghost's "Tempered Saber of
+            // Grace" - M shot 09-29 "...of Grace of Frost"): fuse against the LAST "of" phrase
+            // with the composed form. Only a name with no "of" at all takes the prefix.
+            var _op = string_last_pos(" of ", item.name);
+            if (_op > 0) {
+                var _adj = elem.prefix;
+                if (variable_global_exists("name_combine_adj") && variable_struct_exists(global.name_combine_adj, elem.element))
+                    _adj = variable_struct_get(global.name_combine_adj, elem.element);
+                item.name = string_copy(item.name, 1, _op - 1) + " of " + _adj + " "
+                    + affix_suffix_noun(string_delete(item.name, 1, _op));
+            } else {
+                item.name = elem.prefix + " " + item.name;
+            }
         }
     } else {
         item.name = elem.prefix + " " + item.name;
@@ -4051,7 +4062,10 @@ function player_permanent_level() {
 // item_perm_level_req(item) - the PERMANENT-level gate an item carries (0 =
 // none). Shown on the item card like a stat requirement (M 08-15: the gate
 // was invisible until you TRIED to equip).
+// STORIED story-finale items (Contracts) are exempt: the whole chain was the gate (M 09-29).
+function item_is_storied(item) { return is_struct(item) && variable_struct_exists(item, "storied") && item.storied; }
 function item_perm_level_req(item) {
+    if (item_is_storied(item)) return 0;
     if (is_struct(item) && variable_struct_exists(item, "rarity") && item.rarity >= 4) {
         return LEGENDARY_EQUIP_PERM_LEVEL;
     }
@@ -4059,7 +4073,7 @@ function item_perm_level_req(item) {
 }
 
 function equip_stat_block_reason(item) {
-    if (is_struct(item) && variable_struct_exists(item, "rarity") && item.rarity >= 4
+    if (is_struct(item) && variable_struct_exists(item, "rarity") && item.rarity >= 4 && !item_is_storied(item)
         && player_permanent_level() < LEGENDARY_EQUIP_PERM_LEVEL) {
         return item.name + " requires Level " + string(LEGENDARY_EQUIP_PERM_LEVEL) + " (permanent) to equip.";
     }
@@ -4427,6 +4441,14 @@ function handle_enemy_drops(enemy_type) {
         array_push(global.run_items_found, _vl);
         consumable_award(_vl);
         _rune_suffix += "  +  " + _vl.name + " [Valuable]";
+    }
+    // PACKMULE calling (§1.7 combat echo, 09-29): the active companion carries what the
+    // fallen drop - 5% for one extra consumable on any kill (Famine still blocks it).
+    if (pet_calling_has(pet_active(), "packmule") && !curse_blocks_consumables() && irandom(99) < 5) {
+        var _pm = roll_consumable_weighted(global.consumables_standard);
+        array_push(global.run_items_found, _pm);
+        consumable_award(_pm);
+        _rune_suffix += "  +  " + _pm.name + " [Packmule]";
     }
 
     if (enemy_type == "standard") {
@@ -7604,7 +7626,7 @@ function quest_tick(obj_type, param, amount) {
         if (_d == undefined || _d.obj_type != obj_type) continue;
         if (_d.obj_param != "" && _d.obj_param != param) continue;
         var _was = _s.progress;
-        if (obj_type == "pet_stage") _s.progress = max(_s.progress, min(amount, _d.obj_target));
+        if (obj_type == "pet_stage") _s.progress = max(_s.progress, min(amount, _d.obj_target));   // (hub entry also ticks the roster's best stage - see pet_stage_quest_sync)
         else                         _s.progress = min(_d.obj_target, _s.progress + amount);
         if (_s.progress != _was) {
             journal_badge_quest(_s.id);
@@ -8580,6 +8602,7 @@ function gift_candidates() {
         for (var _i = 0; _i < array_length(_arr); _i++) {
             var _it = _arr[_i];
             if (!is_struct(_it)) continue;
+            if (item_is_storied(_it)) continue;   // 09-30 audit: Storied pieces are never given away
             array_push(_out, { source:_s, idx:_i, item:_it,
                 label:(variable_struct_exists(_it, "name") ? _it.name : "item"),
                 rarity:variable_struct_exists(_it, "rarity") ? _it.rarity : 0,
@@ -10694,14 +10717,10 @@ function pet_on_run_end(result) {
             return _p.name + " shrugged off the fall, unharmed (hardy spirit).";
         _p.injured += 1;
         if (_p.injured >= PET_INJURY_DEATH) {
-            var _lost = _p.name;
-            // Garden deepening (08-01): the lost creature gets a memorial stone
-            // in Bairc's garden instead of a silent delete.
-            array_push(bairc_memorials(), { name: _lost, species: _p.species });
-            bairc_lore_unlock("first_loss");
-            array_delete(global.pet_roster, global.active_pet, 1);   // the carried pet is the active one
-            global.active_pet = -1;
-            return _lost + " succumbed to its injuries and is lost. A stone waits in Bairc's garden.";
+            // Garden deepening (08-01) + 09-30 HEADSTONES: pet_lose files the memorial and puts
+            // the creature's own headstone in your garden stores.
+            var _lost = pet_lose(_p, "fell beside you in the dark");
+            return _lost + " succumbed to its injuries and is lost. Its headstone waits in your garden stores.";
         }
         return _p.name + " was hurt by your fall (injury " + string(_p.injured) + "/" + string(PET_INJURY_DEATH) + ").";
     }
@@ -11406,7 +11425,100 @@ function bairc_donated() {
 // Memorial stones: pets lost to the injury ladder rest in the garden forever.
 function bairc_memorials() {
     if (!variable_global_exists("bairc_memorials") || !is_array(global.bairc_memorials)) global.bairc_memorials = [];
-    return global.bairc_memorials;
+    // 09-30: pre-headstone memorials get their stone too (once) - it lands in the garden stores.
+    var _ms = global.bairc_memorials;
+    for (var _i = 0; _i < array_length(_ms); _i++) {
+        if (!is_struct(_ms[_i]) || variable_struct_exists(_ms[_i], "grave")) continue;
+        _ms[_i].grave = "grave_m" + string(_i);   // deterministic: a reload before the next save re-derives the same id
+        if (!variable_struct_exists(_ms[_i], "cause")) _ms[_i].cause = "lost to its injuries";
+        garden_decor_store(_ms[_i].grave);
+    }
+    return _ms;
+}
+// 09-30 (M: "if they lose a pet in a mission or dungeon delving, however you lose one, you are
+// gifted their headstone as an in-game item to place in the decor garden"). THE one way a
+// creature leaves the roster by death: memorial + headstone to the stores + roster/active fix.
+// Returns the creature's name.
+function pet_lose(_pet, _cause) {
+    var _r = pet_roster(), _idx = -1;
+    for (var _i = 0; _i < array_length(_r); _i++) if (_r[_i] == _pet) { _idx = _i; break; }
+    var _nm  = _pet.name;
+    var _gid = "grave_" + string(ledger_pet_uid(_pet)) + "_" + string(irandom(9999));
+    bairc_memorials();   // migrate older stones first, so this one is not double-stored
+    array_push(global.bairc_memorials, { name:_nm, species:_pet.species, stage:_pet.stage,
+        egg:(variable_struct_exists(_pet, "egg_type") ? _pet.egg_type : ""), cause:_cause,
+        run:ledger_run(), grave:_gid });
+    garden_decor_store(_gid);
+    bairc_lore_unlock("first_loss");
+    if (_idx >= 0) {
+        array_delete(global.pet_roster, _idx, 1);
+        if (variable_global_exists("active_pet")) {
+            if      (global.active_pet == _idx) global.active_pet = -1;
+            else if (global.active_pet >  _idx) global.active_pet -= 1;
+        }
+    }
+    return _nm;
+}
+// Memorials whose headstone is NOT standing on the grounds (the quiet corner keeps these).
+function bairc_memorials_unplaced() {
+    var _all = bairc_memorials(), _out = [];
+    for (var _i = 0; _i < array_length(_all); _i++) if (is_struct(_all[_i]) && !garden_decor_placed(_all[_i].grave)) array_push(_out, _all[_i]);
+    return _out;
+}
+function garden_grave_mem(id) {
+    var _ms = bairc_memorials();
+    for (var _i = 0; _i < array_length(_ms); _i++) if (is_struct(_ms[_i]) && _ms[_i].grave == id) return _ms[_i];
+    return undefined;
+}
+function garden_is_grave(id) { return is_string(id) && string_pos("grave_", id) == 1; }
+// A headstone as a decor def (free, grounds only, never sold - it is not in the catalog).
+function garden_grave_def(id) {
+    var _m = garden_grave_mem(id);
+    if (_m == undefined) return undefined;
+    var _sp = pet_species_get(_m.species);
+    return { id:id, name:_m.name + "'s Stone", gold:0, dust:0, room:"grounds", grave:true, mem:_m,
+             blurb:((_sp != undefined) ? _sp.name : "A creature") + " - " + _m.cause + "." };
+}
+// Species kind -> headstone motif (spr_garden_grave_<motif>). Small fitting indicators only.
+function garden_grave_motif(species) {
+    switch (species) {
+        case "saber_hound": case "bonehound": case "hollow_pup": case "bark_hound":
+        case "wispfox": case "gravefox": case "frostmarten":                                   return "hound";
+        case "nightowl": case "duskraven": case "mire_heron": case "chapel_bat":
+        case "icewing_skua": case "crypt_gryphon": case "flicker_finch": case "wing_hare":     return "wing";
+        case "wyrmling": case "glass_eel": case "paleswimmer": case "stormkirin":               return "serpent";
+        case "luna_moth": case "tallow_moth": case "pale_widow": case "ironshell_beetle":
+        case "gravel_tick": case "honeymaw":                                                   return "moth";
+        case "bone_stag": case "ember_ram": case "pyre_bison": case "barrowhorn":
+        case "witchwood_fawn": case "thorn_boar": case "bristleback":                         return "horn";
+        case "shellback": case "lockjaw_turtle": case "pressure_snail":                        return "shell";
+        case "voidkit": case "ashjaw_lynx": case "threehunger":                                return "feline";
+        case "gloomtoad": case "permafrost_toad": case "sporeling": case "glimmer_slime":       return "mire";
+        case "drowned_lamp": case "hippocamp":                                                 return "tide";
+    }
+    return "burrow";   // bears, moles, voles, shrews, hares, gravemask, snowmaw + anything new
+}
+function garden_grave_sprite(id) {
+    var _m = garden_grave_mem(id);
+    if (_m == undefined) return -1;
+    return asset_get_index("spr_garden_grave_" + garden_grave_motif(_m.species));
+}
+// Egg-type accent (flowers at the stone's foot, drawn in code): one colour per egg.
+function garden_grave_egg_color(egg) {
+    switch (egg) {
+        case "gilded":  return make_color_rgb(235, 200, 90);
+        case "fortune": return make_color_rgb(140, 220, 150);
+        case "savage":  return make_color_rgb(220, 90, 80);
+        case "tender":  return make_color_rgb(240, 170, 190);
+        case "vital":   return make_color_rgb(230, 110, 110);
+        case "ley":     return make_color_rgb(150, 130, 240);
+        case "scholar": return make_color_rgb(150, 190, 240);
+        case "dust":    return make_color_rgb(200, 190, 170);
+        case "warding": return make_color_rgb(150, 210, 220);
+        case "keen":    return make_color_rgb(240, 150, 80);
+        case "tidal":   return make_color_rgb(90, 190, 220);
+    }
+    return make_color_rgb(225, 225, 235);   // found, never an egg: pale blossoms
 }
 
 // Donated creatures KEEP GROWING: 1 tick per SURVIVED run (extract or clear),
@@ -11499,6 +11611,8 @@ function bairc_garden_blessing_pct() {
 // 09-22 late: the peddler's cart on the grounds (rotating decor stock) - by the back wall, left.
 #macro GARDEN_CART_X 560
 #macro GARDEN_CART_Y 792
+#macro GARDEN_PEDDLER_X 420   // 09-30: Gall stands just left of his cart
+#macro GARDEN_PEDDLER_Y 812
 function garden_world_w() { return 1920; }
 
 // ---- 09-22 ROOMS (DESIGN_HUT_INTERIOR_0922.md): "grounds" (the plate) or "hut" (Bairc's hut
@@ -11538,6 +11652,7 @@ function garden_blockers() {
         { kind:"circ", x:GARDEN_CAIRN_X, y:GARDEN_CAIRN_Y, r:44 },
         { kind:"rect", x0:GARDEN_MEM_X - 60, y0:GARDEN_MEM_Y - 30, x1:GARDEN_MEM_X + 230, y1:GARDEN_MEM_Y + 8 },  // the quiet corner
         { kind:"circ", x:GARDEN_CART_X, y:GARDEN_CART_Y, r:52 },   // 09-22 late: the peddler's cart
+        { kind:"circ", x:GARDEN_PEDDLER_X, y:GARDEN_PEDDLER_Y, r:30 },   // 09-30: Gall, the peddler
     ];
 }
 function garden_walkable(_x, _y) {
@@ -11754,7 +11869,10 @@ function garden_interactables(_gc) {
     }
     if (_room == "hut") {
         // 09-22 HUT: Bairc at his ledgers (-> creature station), the keepsake shelf, the fire, the door.
-        array_push(_out, { tag:"garden:desk",   label:"Bairc's Ledger - send the roster out", x:HUT_BAIRC_X,  y:HUT_BAIRC_Y, reach:150, top:190 });   // 09-25: the desk is THE LEDGER (M-locked §8.1)
+        // 09-30 (M: "Bairc should not be in the garden - in the hut he should just be in the hut"):
+        // Bairc himself opens the creature station; the desk behind him (right end) is THE LEDGER.
+        array_push(_out, { tag:"garden:bairc",  label:"Bairc - see the creatures", x:HUT_BAIRC_X,  y:HUT_BAIRC_Y, reach:120, top:190 });
+        array_push(_out, { tag:"garden:desk",   label:"Bairc's Ledger - send the roster out", x:1330, y:815, reach:130, top:190 });   // 09-25: the desk is THE LEDGER (M-locked §8.1)
         array_push(_out, { tag:"garden:shelf",  label:"The keepsake shelf",        x:HUT_SHELF_X,  y:HUT_DESK_Y,  reach:150, top:200 });
         array_push(_out, { tag:"garden:hearth", label:"Stoke the fire",            x:HUT_HEARTH_X, y:HUT_HEARTH_Y, reach:140, top:150 });
         array_push(_out, { tag:"garden:out",    label:"Step outside",              x:HUT_DOOR_X,   y:HUT_BAND_BOT, reach:110, top:40 });
@@ -11771,10 +11889,9 @@ function garden_interactables(_gc) {
         if (_spots[_s].taken) continue;
         array_push(_out, { tag:"garden:forage" + string(_spots[_s].idx), label:"Forage", x:_spots[_s].x, y:_spots[_s].y, reach:100, top:70 });
     }
-    // 09-22: Bairc opens his creature station from here now (M: "right now he does nothing").
-    array_push(_out, { tag:"garden:bairc", label:"Bairc - see the creatures", x:GARDEN_BAIRC_X, y:GARDEN_BAIRC_Y, reach:140, top:190 });
+    // 09-30: Bairc lives in the hut now (his station opens from there); the cart is Gall's.
     array_push(_out, { tag:"garden:door",  label:"Bairc's hut - go inside",  x:1394, y:960, reach:120, top:120 });
-    array_push(_out, { tag:"garden:shop",  label:"The peddler's cart",       x:GARDEN_CART_X, y:GARDEN_CART_Y + 30, reach:140, top:150 });
+    array_push(_out, { tag:"garden:cart",  label:peddler_name() + " - the peddler's cart", x:GARDEN_CART_X, y:GARDEN_CART_Y + 30, reach:150, top:150 });
     }
     // Placed ornaments: "take up" (two presses - the second confirms, see Step garden_remove_arm).
     var _dl = garden_decor_list();
@@ -11784,7 +11901,7 @@ function garden_interactables(_gc) {
         array_push(_out, { tag:"garden:orn" + string(_o), label:"Take up " + ((_od == undefined) ? "ornament" : _od.name),
                            x:_dl[_o].x, y:_dl[_o].y, reach:78, top:120 });
     }
-    if (_room == "grounds" && array_length(bairc_memorials()) > 0)
+    if (_room == "grounds" && array_length(bairc_memorials_unplaced()) > 0)
         array_push(_out, { tag:"garden:memorial", label:"The quiet corner", x:GARDEN_MEM_X + 90, y:GARDEN_MEM_Y + 30, reach:150, top:90 });
     return _out;
 }
@@ -11879,6 +11996,7 @@ function garden_decor_catalog() {
     return _out;
 }
 function garden_decor_get(id) {
+    if (garden_is_grave(id)) return garden_grave_def(id);   // 09-30 headstones
     var _c = garden_decor_catalog_all();
     for (var _i = 0; _i < array_length(_c); _i++) if (_c[_i].id == id) return _c[_i];
     return undefined;
@@ -11913,6 +12031,13 @@ function garden_decor_stored_rows() {
         var _n = garden_decor_stored_count(_all[_i].id);
         if (_n > 0) array_push(_out, { def:_all[_i], count:_n });
     }
+    // 09-30: headstones (one per lost creature) after the ornaments.
+    var _ms = bairc_memorials();
+    for (var _g = 0; _g < array_length(_ms); _g++) {
+        if (!is_struct(_ms[_g]) || garden_decor_stored_count(_ms[_g].grave) <= 0) continue;
+        var _gd = garden_grave_def(_ms[_g].grave);
+        if (_gd != undefined) array_push(_out, { def:_gd, count:1 });
+    }
     return _out;
 }
 function garden_decor_store(id) { array_push(garden_decor_stored(), id); }
@@ -11941,13 +12066,150 @@ function garden_shop_stock() {
 // Charge for an ornament (the shop does this at BUY time now; placement is free). "" ok / reason.
 function garden_decor_buy(id) {
     var _d = garden_decor_get(id);
-    if (_d == undefined) return "Unknown ornament.";
+    if (_d == undefined || garden_is_grave(id)) return "Unknown ornament.";
     if (!variable_global_exists("rune_dust")) global.rune_dust = 0;
-    if (global.gold < _d.gold || global.rune_dust < _d.dust) return "Needs " + string(_d.gold) + "g + " + string(_d.dust) + " dust.";
-    global.gold -= _d.gold; global.rune_dust -= _d.dust;
+    var _g = peddler_price(_d.gold), _du = peddler_price(_d.dust);   // 09-30: Gall's regulars' discount
+    if (global.gold < _g || global.rune_dust < _du) return "Needs " + string(_g) + "g + " + string(_du) + " dust.";
+    global.gold -= _g; global.rune_dust -= _du;
+    peddler_data().bought += 1;
     affinity_add("bairc", 2);   // tending his garden warms him (function-use drip)
     return "";
 }
+// ---- 09-30 THE PEDDLER (M: "shopping must be done at the cart... make a peddler npc";
+//      picked: named, a few lines that react to the garden, a small regulars' discount).
+//      State rides inside global.garden_decor (already persisted as-is by scr_save).
+function peddler_name() { return "Gall"; }
+function peddler_data() {
+    garden_ensure();
+    if (!variable_struct_exists(global.garden_decor, "peddler") || !is_struct(global.garden_decor.peddler))
+        global.garden_decor.peddler = { bought:0, sold:0, seen_mem:-1 };
+    return global.garden_decor.peddler;
+}
+// 5 purchases = 10% off, 12 = 20% off.
+function peddler_discount() { var _b = peddler_data().bought; return (_b >= 12) ? 0.20 : ((_b >= 5) ? 0.10 : 0); }
+function peddler_price(n) { return max(0, round(n * (1 - peddler_discount()))); }
+// Selling back: half the list price (never a headstone). "" when it cannot be sold.
+function garden_decor_sell_value(_d) { return (_d == undefined || garden_is_grave(_d.id)) ? undefined : { gold: floor(_d.gold / 2), dust: floor(_d.dust / 2) }; }
+function garden_decor_sell(id) {
+    var _d = garden_decor_get(id);
+    var _v = garden_decor_sell_value(_d);
+    if (_v == undefined) return "\"That one's not for selling. I'd not take it if you begged.\"";
+    if (!garden_decor_unstore(id)) return "Nothing of that kind in your stores.";
+    global.gold += _v.gold;
+    if (!variable_global_exists("rune_dust")) global.rune_dust = 0;
+    global.rune_dust += _v.dust;
+    peddler_data().sold += 1;
+    if (room == rm_hub || room == rm_character_select) save_game();
+    return "Gall takes the " + _d.name + " for " + string(_v.gold) + "g + " + string(_v.dust) + " dust.";
+}
+// What he says when you walk up (one line per visit; reacts to the garden).
+function peddler_greeting() {
+    var _p = peddler_data();
+    var _nm = array_length(bairc_memorials());
+    var _line;
+    if (_p.seen_mem >= 0 && _nm > _p.seen_mem) {
+        var _m = bairc_memorials()[_nm - 1];
+        _line = "\"Saw the new stone by the path. " + _m.name + ", was it? ... I don't charge for sorrow. Everything else, I do.\"";
+    } else if (array_length(garden_decor_list()) >= 10) {
+        _line = "\"Your garden's getting crowded. Good. Crowded gardens buy more.\"";
+    } else if (_p.bought == 5 || _p.bought == 12) {
+        _line = "\"A regular. Fine. You get the regular's price - don't tell the others.\"";
+    } else {
+        var _pool = ["\"Five things this time. Next time, five different. That's the whole trick.\"",
+                     "\"Came up the east road. Didn't meet anything. That's the good news.\"",
+                     "\"Bairc never buys. Just looks. Same as his creatures.\"",
+                     "\"Selling? I'll take it back at half. Buying's the better habit.\"",
+                     "\"Mind the cart. The left wheel has opinions.\""];
+        var _rc = variable_global_exists("run_count") ? global.run_count : 0;
+        _line = _pool[_rc mod array_length(_pool)];
+    }
+    _p.seen_mem = _nm;
+    return _line;
+}
+// Menu tabs per mode (LOGICAL ids: 0 BUY, 1 STORED, 2 GROUNDS, 3 SELL).
+function garden_shop_tabs(mode, room_id) {
+    if (mode == "cart") return (room_id == "grounds") ? [0, 3, 2] : [0, 3];
+    return [1];
+}
+function garden_shop_tab_label(tab) {
+    switch (tab) {
+        case 0: return "BUY";
+        case 1: return "STORED  (" + string(array_length(garden_decor_stored())) + ")";
+        case 2: return "GROUNDS";
+    }
+    return "SELL";
+}
+// The rows a tab lists (defs; themes for GROUNDS).
+function garden_shop_rows(tab) {
+    if (tab == 2) return garden_theme_catalog();
+    if (tab == 0) return garden_shop_stock();
+    var _out = [], _rows = garden_decor_stored_rows();
+    for (var _i = 0; _i < array_length(_rows); _i++) {
+        if (tab == 3 && garden_is_grave(_rows[_i].def.id)) continue;   // headstones are never sold
+        array_push(_out, _rows[_i].def);
+    }
+    return _out;
+}
+// 09-30 feet fix (M: "the shadow is still far below the model"): PixelLab character canvases
+// carry ~25% empty space under the feet and their bbox is the whole canvas, so pet_sprite_fit
+// set the CANVAS bottom on the ground. Measure the real feet row once per sprite (frame 0,
+// alpha > 40) and return the empty rows below it, in canvas px. Cached for the session.
+function sprite_feet_pad(spr) {
+    var _b = sprite_content_rows(spr);
+    return (sprite_get_height(spr) - 1) - _b.bot;
+}
+// The real content rows { top, bot } of frame 0 (alpha > 40), measured once per sprite.
+function sprite_content_rows(spr) {
+    if (!variable_global_exists("content_rows_cache")) global.content_rows_cache = {};
+    var _k = "s" + string(spr);
+    if (variable_struct_exists(global.content_rows_cache, _k)) return global.content_rows_cache[$ _k];
+    var _w = sprite_get_width(spr), _h = sprite_get_height(spr);
+    var _res = { top: 0, bot: _h - 1 };
+    var _sf = surface_create(_w, _h);
+    if (surface_exists(_sf)) {
+        surface_set_target(_sf);
+        draw_clear_alpha(c_black, 0);
+        gpu_set_blendmode(bm_normal);
+        draw_sprite(spr, 0, sprite_get_xoffset(spr), sprite_get_yoffset(spr));
+        surface_reset_target();
+        var _buf = buffer_create(_w * _h * 4, buffer_fixed, 1);
+        buffer_get_surface(_buf, _sf, 0);
+        var _found = -1, _ftop = -1;
+        for (var _y = _h - 1; _y >= 0 && _found < 0; _y--) {
+            for (var _x = 0; _x < _w; _x++) {
+                if (buffer_peek(_buf, (_y * _w + _x) * 4 + 3, buffer_u8) > 40) { _found = _y; break; }
+            }
+        }
+        for (var _y2 = 0; _y2 < _h && _ftop < 0; _y2++) {
+            for (var _x2 = 0; _x2 < _w; _x2++) {
+                if (buffer_peek(_buf, (_y2 * _w + _x2) * 4 + 3, buffer_u8) > 40) { _ftop = _y2; break; }
+            }
+        }
+        buffer_delete(_buf);
+        surface_free(_sf);
+        if (_found >= 0) _res.bot = _found;
+        if (_ftop >= 0 && _ftop <= _res.bot) _res.top = _ftop;
+    }
+    global.content_rows_cache[$ _k] = _res;
+    return _res;
+}
+// 09-30: fit a character by its REAL BODY height (not its canvas) with its real feet on
+// feet_y - old 92px sprites and the new HD 128-160px ones then stand at the same scale.
+function sprite_body_fit(spr, cx, feet_y, body_h) {
+    var _b  = sprite_content_rows(spr);
+    var _s  = body_h / max(1, _b.bot - _b.top + 1);
+    var _bl = sprite_get_bbox_left(spr), _br = sprite_get_bbox_right(spr);
+    return {
+        scale: _s,
+        x: cx - ((_bl + _br + 1) * 0.5 - sprite_get_xoffset(spr)) * _s,
+        y: feet_y - ((_b.bot + 1) - sprite_get_yoffset(spr)) * _s,
+    };
+}
+// Standing body heights in the garden/hut (x depth scale). Bairc is the big one (M: ~25% over
+// the player); Gall's hat and pack add a little.
+#macro GARDEN_BODY_PLAYER  100
+#macro GARDEN_BODY_PEDDLER 106
+#macro GARDEN_BODY_BAIRC   125
 function garden_decor_count(id) {
     var _l = garden_decor_list(), _n = 0;
     for (var _i = 0; _i < array_length(_l); _i++) if (_l[_i].id == id) _n++;
@@ -11979,8 +12241,38 @@ function garden_decor_spot_ok(id, _x, _y) {
         if (garden_decor_entry_room(_l[_i]) != garden_room()) continue;
         if (point_distance(_x, _y, _l[_i].x, _l[_i].y) < 70) return "Too close to another ornament.";
     }
-    if (point_distance(_x, _y, garden_bairc_x(), garden_bairc_y()) < 90) return "Bairc needs room to stand.";
+    if (garden_room() == "hut" && point_distance(_x, _y, garden_bairc_x(), garden_bairc_y()) < 90) return "Bairc needs room to stand.";
+    if (garden_room() == "grounds" && point_distance(_x, _y, GARDEN_PEDDLER_X, GARDEN_PEDDLER_Y) < 80) return "The peddler needs room to stand.";
+    if (garden_in_cart_pitch(id, _x, _y)) return "The peddler needs room for his cart.";
     return "";
+}
+// 09-29 (M shot "peddlers cart collides"): the cart sprite is ~220px wide but its walk blocker
+// is r52, so ornaments could be set flush against (or into) it. Ornaments on the grounds keep
+// clear of the cart's footprint: a box around its base, widened by the ornament's own radius.
+function garden_in_cart_pitch(id, _x, _y) {
+    if (garden_room() != "grounds") return false;
+    var _r = garden_decor_radius(id);
+    return (abs(_x - GARDEN_CART_X) < 150 + _r) && (_y > GARDEN_CART_Y - 90) && (_y < GARDEN_CART_Y + 50 + _r);
+}
+// Garden entry: any ornament a pre-09-29 save left on the cart's pitch is nudged sideways
+// (away from the cart) to the nearest free spot. Grounds only; never removes anything.
+function garden_decor_clear_cart_pitch() {
+    garden_ensure();
+    var _l = global.garden_decor.placed;
+    for (var _i = array_length(_l) - 1; _i >= 0; _i--) {
+        var _e = _l[_i];
+        if (garden_decor_entry_room(_e) != "grounds" || !garden_in_cart_pitch(_e.id, _e.x, _e.y)) continue;
+        array_delete(_l, _i, 1);                        // test spots without it colliding with itself
+        var _dir = (_e.x < GARDEN_CART_X) ? -1 : 1;
+        var _nx = _e.x;
+        for (var _step = 1; _step <= 40; _step++) {
+            var _tx = _e.x + _dir * _step * 20;
+            if (_tx < garden_x0() + 30 || _tx > garden_x1() - 30) { _dir = -_dir; _tx = _e.x + _dir * _step * 20; }
+            if (garden_decor_spot_ok(_e.id, _tx, _e.y) == "") { _nx = _tx; break; }
+        }
+        _e.x = _nx;
+        array_insert(_l, _i, _e);
+    }
 }
 // Buy + set the ornament at a free spot. "" on success else the reason.
 function garden_decor_place_at(id, _x, _y) {
@@ -12006,7 +12298,10 @@ function garden_decor_remove(idx) {
     return "You take up the " + ((_d == undefined) ? "ornament" : _d.name) + " - it goes to your stores ([B]).";
 }
 // Real ornament art (09-17 late batch) - -1 before import, and the vignette draws instead.
-function garden_ornament_sprite(id) { return asset_get_index("spr_garden_orn_" + id); }
+function garden_ornament_sprite(id) {
+    if (garden_is_grave(id)) return garden_grave_sprite(id);   // 09-30 headstones (motif art, -1 = code stone)
+    return asset_get_index("spr_garden_orn_" + id);
+}
 
 // ---- KEEPSAKE SHELF (09-22, hut): trinkets earned from state the game already keeps ----
 function garden_keepsake_catalog() {
@@ -12055,7 +12350,7 @@ function garden_hut_enter(_gc) {
     _gc.garden_vx = 0; _gc.garden_vy = 0; _gc.garden_face = garden_skin_frame(0, -1);
     _gc.garden_moving = false; _gc.garden_walk_t = 0;
     _gc.garden_tx = -1; _gc.garden_ty = -1; _gc.garden_goal = "";
-    garden_place_abandon(_gc); _gc.garden_shop_open = false; _gc.garden_shop_tab = 0;
+    garden_place_abandon(_gc); _gc.garden_shop_open = false; _gc.garden_shop_tab = 1; _gc.garden_shop_mode = "own";
     _gc.garden_remove_arm = -1; _gc.garden_remove_arm_t = 0;
     _gc.garden_fade = 16;
     var _n = garden_pets_follow(_gc, "hut");
@@ -12322,7 +12617,9 @@ function bairc_active() { return pet_count() > 0; }
 function pet_active() {
     if (!variable_global_exists("active_pet")) return undefined;
     if (global.active_pet < 0 || global.active_pet >= pet_count()) return undefined;
-    return global.pet_roster[global.active_pet];
+    var _ap = global.pet_roster[global.active_pet];
+    if (ledger_pet_away(_ap)) return undefined;   // 09-30 audit: a creature out on the ledger never fights or dies with you
+    return _ap;
 }
 
 // Add a pet/egg to the roster; returns it. The first pet ever owned auto-equips.
@@ -12330,7 +12627,9 @@ function pet_add(pet) {
     var _r = pet_roster();
     array_push(_r, pet);
     if (!variable_global_exists("active_pet")) global.active_pet = -1;
-    if (global.active_pet < 0) global.active_pet = 0;
+    // 09-30 audit: only the FIRST creature ever owned auto-equips. "No companion" stays chosen,
+    // and roster[0] (possibly AWAY on the ledger) is never promoted by an unrelated find.
+    if (global.active_pet < 0 && array_length(_r) == 1) global.active_pet = 0;
     return pet;
 }
 
@@ -12747,9 +13046,12 @@ function tutorial_catalog() {
         { id:"origin_egg",  title:"Something Stirs",    body:"The egg you stumbled upon in your travels stirs - perhaps someone here can help with that. Bairc the beast-warden can identify and hatch it: find him on the camp carousel and set the egg under his care. A raised creature fights beside you, or blesses your runs." },
         { id:"bond_gates",  title:"Growing Closer",     body:"Someone in camp has warmed to you - their bond has reached a GATE. Crossing a gate takes a FAVOR: speak with them at camp and they will ask it of you - accept or decline. Finish it, return, and they will ask whether you want to grow closer. Nothing deepens until you say yes. Mind your bonds: friendships DECAY if neglected, and only a few can hold the deepest tiers - deepening one may demote another." },
         { id:"pet_commands",  title:"Orders",          body:"Your companion takes ONE free order a turn - no AP. SIC [Z]: it goes for YOUR target this turn and leaves it Exposed. HEEL [X]: it steps in front of the next blow aimed at you and takes a third of it - guaranteed, once. FETCH [F]: a Luck check - it rifles your target's pockets for gold, once per foe. A used order rests through your next turn. On a pad: Y / LB / RB. On touch: the chips beside END TURN." },
-        { id:"ledger_intro",  title:"Bairc's Ledger",  body:"The bench works now. Pick a JOB on the left - each is ruled by one stat (PWR hunts, SPR keeps vigil, LCK scavenges) and prefers a HABITAT; a creature from that dungeon counts double. Toggle up to three creatures into the party and watch the meter, then SEND. They leave through the garden gate for one to three RUNS and Bairc reads you what came home when you next return. Your active companion, eggs, the badly hurt and the starving stay." },
-        { id:"ledger_first_send", title:"Out the Gate", body:"They are gone until the run count comes round - a death still brings them home; they were not with you. Two parties can be out at once (three once Bairc reaches rank 2). Long Forages grow the bench but never cross a stage on their own; Rescues can bring back a creature alive; Expeditions test all three stats for three runs. The OUT tab tracks who is where." },
-        { id:"elite_affixes", title:"Marked Foes",     body:"Some elites carry a MARK beside their name - Warded, Hasted, Thorned, Vampiric, Twinned. Warded: tougher hide. Hasted: acts early and hits harder. Thorned: your MELEE hits cost you 4 HP - cast or shoot instead. Vampiric: it heals from what it deals - burst it down. Twinned: it brought a weaker copy. Every mark on the field is a better loot roll when it falls. From Awakening 3 elites carry two, and bosses one." },
+        { id:"ledger_intro",  title:"Bairc's Ledger",  body:"The bench works now. Pick a JOB on the left - each is ruled by one stat (PWR hunts, SPR keeps vigil, LCK scavenges) and happens in a place; a creature whose HOME is that place adds +12% (its home shows in teal on its row). Hover any dotted word on the ledger for what it means. Toggle up to three creatures into the party and watch the meter, then SEND. They leave through the garden gate for one to three RUNS and Bairc reads you what came home when you next return. Your active companion, eggs, the badly hurt and the starving stay." },
+        { id:"ledger_first_send", title:"Out the Gate", body:"They are gone until the run count comes round - a death still brings them home; they were not with you. Two parties can be out at once (three once Bairc reaches rank 2). Long Forages grow the bench but never cross a stage on their own; Rescues can bring back a creature alive; Expeditions test all three stats for three runs. The OUT tab tracks who is where. Injuries from jobs stack like any other - a third is fatal - and PERILOUS jobs can kill outright." },
+        { id:"elite_affixes", title:"Elite Affixes",   body:"Some elites carry an AFFIX beside their name - Warded, Hasted, Thorned, Vampiric, Twinned. Warded: tougher hide. Hasted: acts early and hits harder. Thorned: your MELEE hits cost you 4 HP - cast or shoot instead. Vampiric: it heals from what it deals - burst it down. Twinned: it brought a weaker copy. Every affix on the field is a better loot roll when it falls. From Awakening 3 elites carry two, and bosses one." },
+        { id:"break_bar",    title:"Break Their Guard", body:"Elites and bosses carry an amber GUARD bar under their health. Every blow wears it down - a hit in the school they are WEAK to wears it twice as fast, damage over time half as fast. Empty it and they are STAGGERED: they lose their next turn and take +30% damage until then. Then they BRACE: the guard returns full and half again as large, and cannot be worn down until they have acted. A stagger also makes your next Stun, Root or Silence on them likelier to be shrugged off." },
+        { id:"cover_lines",  title:"Front Line, Back Line", body:"Archers and casters hang back. While any front-line foe still stands, a back-liner is COVERED: your single-target MELEE attacks cannot reach it, and single-target RANGED attacks lose 10 accuracy. Spells and area attacks ignore cover. Bear Trap and Tripline drag a covered foe forward for two of its turns." },
+        { id:"fervor",       title:"Fervor",            body:"The bar beside your AP is FERVOR. Each ability of a DIFFERENT kind than the last one you used this turn feeds it (+15) - so do a perfect parry (+10), an interrupt (+20) and a stagger (+10). At 100 it empties for +1 AP. It cools by 20 at the start of each of your turns." },
         { id:"maren_forge", title:"Rough Steel",       body:"Items drop UNFINISHED. The QUALITY tag shows how much of an item's true power it delivers right now.\nDorn's TEMPER tab raises that by +10% per step, for gold and rune dust. Each step also adds a little bonus max HP.\nA raw legendary barely beats a finished epic - always worth tempering what you love." },
         { id:"rune_caps",  title:"Aspect Runes Stack - to a Point", body:"Aspect runes socketed here ADD UP: three Hunter runes give three times the ranged accuracy. But each accuracy family is CAPPED - Hunter (ranged attacks) and Seer (spells) each stop at +12% total, so past that a fourth rune is wasted. The cap is printed on the rune and on the Accuracy line of your STATS page." },
         { id:"dormant_leg", title:"A Sleeping Legend", body:"You found a DORMANT legendary. It fell asleep when its last bearer died - it carries only a shadow of its true strength for now. Take it to Maren's AWAKEN craft (Runesmithing tab): 300g, 60 rune dust and two epics fed to the fire will wake it. Only the storied named legendaries are ever found awake." },
@@ -12930,6 +13232,7 @@ function item_picker_candidates_by_rarity(min_rarity) {
             if (!is_struct(_it)) continue;
             var _rar = variable_struct_exists(_it, "rarity") ? _it.rarity : 0;
             if (_rar < min_rarity) continue;
+            if (item_is_storied(_it)) continue;   // 09-30 audit: a Storied piece can't be earned twice - never offered up
             var _val = item_sell_value(_it);
             var _nm  = variable_struct_exists(_it, "name") ? _it.name : "item";
             array_push(_out, { source:_s, idx:_i, item:_it, label:_nm, rarity:_rar, value:_val });
@@ -14012,7 +14315,7 @@ function event_apply_effects(fx) {
     if (variable_struct_exists(fx, "escort") && fx.escort != "") {
         var _hl = story_hireling(fx.escort);
         var _emax = max(12, round(out_of_combat_max_hp() * 0.6));
-        global.contract_escort = { npc:fx.escort, qid:fx.escort_qid, name:_hl.name, loss_line:_hl.loss_line, hp:_emax, max_hp:_emax, alive:true };
+        global.contract_escort = { npc:fx.escort, qid:fx.escort_qid, name:_hl.name, loss_line:_hl.loss_line, hp:_emax, max_hp:_emax, alive:true, fights:0 };
         array_push(_sum, "[ALLY] " + _hl.name + " joins you for the rest of the run - " + npc_display_name(fx.escort) + " pays double if they walk out");
     }
     if (variable_struct_exists(fx, "timed_start") && fx.timed_start > 0) {
@@ -14034,6 +14337,11 @@ function event_apply_effects(fx) {
             array_push(global.run_items_found, _cit);
             array_push(global.carried_items, _cit);
             array_push(_sum, _cit.name + " [" + item_rarity_name(_cit.rarity) + "] - exactly what was asked for");
+        } else {
+            // 09-30 audit: nothing that truly matched - the seal is NOT spent; it returns next floor.
+            for (var _cf = array_length(global.contract_fired_this_run) - 1; _cf >= 0; _cf--)
+                if (global.contract_fired_this_run[_cf] == fx.cache_qid) array_delete(global.contract_fired_this_run, _cf, 1);
+            array_push(_sum, "The cache was picked clean - the seal will mark another room");
         }
     }
     if (variable_struct_exists(fx, "ambush_name") && fx.ambush_name != "") global.ambush_force_name = fx.ambush_name;
@@ -17785,6 +18093,55 @@ function petra_reagent_trade_terms() {
 // a placeholder diamond; count -1 hides the xN (one-of rows like eggs/songs).
 // Consumed by ui_draw_stash_screen (draw) + the stash Step block (cursor math).
 // =============================================================================
+
+// ---- STASH FILTERS (DESIGN_IMPROVEMENT_PLAN_0924 §4.5 / P0b, built 09-29) ----------
+// Equipment tab only. State lives on gc: stash_f_slot (index into stash_filter_slots),
+// stash_f_rar (minimum rarity, 0 = any), stash_f_sock (socketed only), stash_search
+// (case-insensitive text over name + stat line). The Step maps its cursor through
+// stash_equip_view (REAL array indices), the Draw lists stash_equip_filtered (the items).
+function stash_filter_slots() { return ["", "weapon", "ranged_weapon", "offhand", "helm", "chest", "gloves", "boots", "ring", "amulet"]; }
+function stash_filter_slot_label(i) {
+    var _s = stash_filter_slots()[clamp(i, 0, 9)];
+    return (_s == "") ? "All slots" : want_slot_label(_s);
+}
+function stash_filter_rar_label(r) { return (r <= 0) ? "Any rarity" : (item_rarity_name(r) + "+"); }
+function stash_filter_on(gc) {
+    return instance_exists(gc) && variable_instance_exists(gc, "stash_f_slot")
+        && (gc.stash_f_slot > 0 || gc.stash_f_rar > 0 || gc.stash_f_sock || gc.stash_search != "");
+}
+function stash_item_passes(gc, it) {
+    if (!is_struct(it)) return false;
+    if (!variable_instance_exists(gc, "stash_f_slot")) return true;
+    var _slot = stash_filter_slots()[clamp(gc.stash_f_slot, 0, 9)];
+    if (_slot != "" && (!variable_struct_exists(it, "slot") || it.slot != _slot)) return false;
+    if (gc.stash_f_rar > 0 && (!variable_struct_exists(it, "rarity") || it.rarity < gc.stash_f_rar)) return false;
+    if (gc.stash_f_sock && (!variable_struct_exists(it, "socket_count") || it.socket_count <= 0)) return false;
+    if (gc.stash_search != "") {
+        var _hay = string_lower(it.name + " " + ui_item_stat_str(it));
+        if (string_pos(string_lower(gc.stash_search), _hay) == 0) return false;
+    }
+    return true;
+}
+function stash_equip_view(gc, arr) {
+    var _out = [];
+    for (var _i = 0; _i < array_length(arr); _i++) if (stash_item_passes(gc, arr[_i])) array_push(_out, _i);
+    return _out;
+}
+function stash_equip_filtered(gc, arr) {
+    var _out = [];
+    for (var _i = 0; _i < array_length(arr); _i++) if (stash_item_passes(gc, arr[_i])) array_push(_out, arr[_i]);
+    return _out;
+}
+// Chip row geometry (Draw hit-tests + draws it; the Step reads the injected tags).
+// Five chips on the subtitle line: SLOT / RARITY / SOCKETED / SEARCH / CLEAR.
+function stash_filter_chip_rects() {
+    var _w = [230, 230, 200, 330, 130], _gap = 16, _tot = _gap * 4;
+    for (var _i = 0; _i < 5; _i++) _tot += _w[_i];
+    var _x = 960 - _tot / 2, _out = [];
+    for (var _i = 0; _i < 5; _i++) { array_push(_out, { x0:_x, y0:92, x1:_x + _w[_i], y1:130 }); _x += _w[_i] + _gap; }
+    return _out;
+}
+
 function stash_misc_rows() {
     var _rows = [];
     // Dungeon reagents - always all four, so the player learns what exists.
@@ -18505,7 +18862,7 @@ function ledger_tier()        { return min(3, 1 + (highest_awakening_unlocked() 
 function ledger_kind_catalog() {
     return [
         { id:"hunt",       name:"Hunt",        stat:"pow",    dur:1, weight:30, inj:25, inj_max:1,
-          pays:"dungeon reagents, a valuable, a feed",         risk:"On a failure one may limp home (injury, 25%).",
+          pays:"dungeon reagents, a valuable, a feed",         risk:"On a failure one may limp home (injury, 25%). Injuries stack - a third is fatal.",
           blurb:"Track and bring down what the dark breeds. Power carries the day." },
         { id:"vigil",      name:"Vigil",       stat:"spr",    dur:1, weight:15, inj:0,  inj_max:0,
           pays:"rune dust, a Mending Mash, eases corruption",  risk:"A Vigil never injures.",
@@ -18517,13 +18874,13 @@ function ledger_kind_catalog() {
           pays:"GROWTH for every member; a preferred feed",     risk:"Hunger drains twice as fast out there.",
           blurb:"Two runs in the wild. They come back bigger - never grown up on their own." },
         { id:"rescue",     name:"Rescue",      stat:"powspr", dur:2, weight:10, inj:35, inj_max:2,
-          pays:"a FOUND creature - or nothing",                 risk:"On a failure: injuries, tier 1-2 (35%).",
+          pays:"a FOUND creature - or nothing",                 risk:"On a failure: injuries, tier 1-2 (35%). Injuries stack - a third is fatal.",
           blurb:"Something is trapped down there and still alive. Power and Spirit both." },
         { id:"patrol",     name:"Patrol",      stat:"any",    dur:1, weight:0,  inj:0,  inj_max:0,
           pays:"+1 bond each, a little coin",                   risk:"None. It is a walk.",
           blurb:"Walk the fence line. Always on the ledger, never fails." },
         { id:"expedition", name:"Expedition",  stat:"all",    dur:3, weight:0,  inj:30, inj_max:2,
-          pays:"a tier-3 Hunt AND Scavenge, a valuable, growth - once in twenty, an egg", risk:"On a failure: injuries, tier 1-2 (30%).",
+          pays:"a tier-3 Hunt AND Scavenge, a valuable, growth - once in twenty, an egg", risk:"On a failure: injuries, tier 1-2 (30%). Injuries stack - a third is fatal.",
           blurb:"Three runs beyond the maps. Everything they are, tested at once." }
     ];
 }
@@ -18662,6 +19019,16 @@ function ledger_offers_rebuild(_l, _rc) {
     if (_tier >= 2 && !ledger_expedition_out() && irandom(99) < 60) {
         array_push(_out, ledger_offer_make("expedition", _hab[irandom(array_length(_hab) - 1)], 3, "", "", ""));
     }
+    // 09-30 PERILOUS (M: "hardcore variants for very high level quests and chance to lose pets"):
+    // from Awakening 4, half the boards carry ONE tier-4 job that can kill on a failure.
+    if (highest_awakening_unlocked() >= 4 && irandom(99) < 50) {
+        var _pks = ["hunt", "rescue", "forage"];
+        var _pk  = _pks[irandom(2)];
+        var _po = ledger_offer_make(_pk, _hab[irandom(array_length(_hab) - 1)], 4, "", "",
+            "Bairc does not like this one. Something down there kills what it catches - but what it guards is worth the dark.");
+        _po.perilous = true;
+        array_push(_out, _po);
+    }
     array_push(_out, ledger_offer_make("patrol", "", 1, "", "", ""));
     random_set_seed(_keep);
     _l.offers = _out; _l.offers_run = _rc;
@@ -18759,6 +19126,20 @@ function ledger_pet_matches(pet, offer) {
     if (pet_calling_has(pet, "nightwise") && ledger_habitat_is_night(offer.dungeon)) return true;
     return false;
 }
+// 09-30 PERILOUS helpers. Death chance on a FAILURE, per creature: 25%, cut by its SPR
+// (the hardy-spirit roll, up to -50% of it) and halved again by a Sentinel in the party.
+#macro LEDGER_PERIL_DEATH 25
+function ledger_offer_perilous(o) { return is_struct(o) && variable_struct_exists(o, "perilous") && o.perilous; }
+function ledger_death_pct(pet, sentinel) {
+    var _d = LEDGER_PERIL_DEATH * (1 - pet_spr_injury_resist(pet) / 100);
+    if (sentinel) _d *= 0.5;
+    return max(1, round(_d));
+}
+function ledger_party_has_sentinel(party_idx) {
+    var _r = pet_roster();
+    for (var _i = 0; _i < array_length(party_idx); _i++) if (pet_calling_has(_r[party_idx[_i]], "sentinel")) return true;
+    return false;
+}
 // The live success meter: recomputed as the party toggles.
 function ledger_party_eval(offer, party_idx) {
     var _r  = pet_roster();
@@ -18824,7 +19205,8 @@ function ledger_dispatch(offer_i, party_idx) {
     var _due = ledger_run() + _ev.dur;
     var _m = { uid:_uid, kind:_o.kind, dungeon:_o.dungeon, tier:_o.tier, npc:_o.npc, name:ledger_offer_title(_o),
                party:_uids, names:_names, sent_run:ledger_run(), due_run:_due, dur:_ev.dur, seed:_seed,
-               outcome:_outcome, p:round(_ev.p * 100), great:round(_ev.great * 100), matched:_ev.matched, score:round(_ev.score), req:_ev.req };
+               outcome:_outcome, p:round(_ev.p * 100), great:round(_ev.great * 100), matched:_ev.matched, score:round(_ev.score), req:_ev.req,
+               perilous:ledger_offer_perilous(_o) };
     for (var _j = 0; _j < _n; _j++) {
         var _pj = _r[party_idx[_j]];
         _pj.away_until = _due; _pj.away_kind = _o.kind;
@@ -18997,16 +19379,44 @@ function ledger_resolve_mission(m) {
             }
         }
         if (m.npc != "" && _mult >= 1) { affinity_add(m.npc, 3); array_push(_pay, "+3 bond with " + npc_display_name(m.npc)); }
+        // 09-30 PERILOUS: what it guards - a boss valuable always, an egg often.
+        if (variable_struct_exists(m, "perilous") && m.perilous) {
+            ledger_pay_valuable("boss", _pay);
+            if (irandom(99) < 40 * _mult) ledger_pay_egg(_hab, "egg_ledger", _pay);
+        }
     }
-    // --- Injury on a FAILURE only (Sentinel: never; Ironhide: takes it for the partner).
+    // --- Injury on a FAILURE only (Sentinel: never; Stonehide (id "ironhide"): takes it for the partner).
     var _inj_line = "";
     if (m.outcome == "fail" && _k.inj > 0 && !_sentinel && array_length(_party) > 0 && irandom(99) < _k.inj) {
         var _victim = (_ironhide != undefined) ? _ironhide : _party[irandom(array_length(_party) - 1)];
         var _t = 1 + ((_k.inj_max >= 2 && irandom(99) < 40) ? 1 : 0);
-        _victim.injured = max(_victim.injured, _t);
-        _inj_line = _victim.name + " came home hurt" + ((_t >= 2) ? " - badly. It will need the healer before it goes out again." : ". It will not eat for a day.");
+        // 09-30 (M picked "both"): ledger injuries STACK like dungeon ones - at 3 the creature dies.
+        _victim.injured += _t;
+        _inj_line = _victim.name + " came home hurt" + ((_t >= 2) ? " - badly." : ".") + "  (injury " + string(min(_victim.injured, PET_INJURY_DEATH)) + "/" + string(PET_INJURY_DEATH) + ")";
         _victim.ledger_inj = "Run " + string(_rc) + ": hurt on " + m.name;
         array_push(_lines, _inj_line);
+    }
+    // 09-30 PERILOUS: a PARTIAL wounds one member; a FAILURE rolls death for each.
+    var _peril = variable_struct_exists(m, "perilous") && m.perilous;
+    if (_peril && m.outcome == "partial" && !_sentinel && array_length(_party) > 0) {
+        var _pv = (_ironhide != undefined) ? _ironhide : _party[irandom(array_length(_party) - 1)];   // Stonehide takes it
+        _pv.injured += 1;
+        array_push(_lines, _pv.name + " got out, but not whole.  (injury " + string(min(_pv.injured, PET_INJURY_DEATH)) + "/" + string(PET_INJURY_DEATH) + ")");
+    }
+    var _dead = [];
+    for (var _dq = 0; _dq < array_length(_party); _dq++) {
+        var _dp = _party[_dq];
+        var _dies = (_dp.injured >= PET_INJURY_DEATH);
+        if (!_dies && _peril && m.outcome == "fail" && irandom(99) < ledger_death_pct(_dp, _sentinel)) _dies = true;
+        if (_dies) array_push(_dead, _dp);
+    }
+    for (var _dd = 0; _dd < array_length(_dead); _dd++) {
+        var _dname = _dead[_dd].name;
+        for (var _dx = array_length(_party) - 1; _dx >= 0; _dx--) if (_party[_dx] == _dead[_dd]) array_delete(_party, _dx, 1);
+        var _dl0 = ledger_ensure();   // a dead creature is never seen walking out of the garden
+        for (var _dq2 = array_length(_dl0.departures) - 1; _dq2 >= 0; _dq2--) if (_dl0.departures[_dq2].name == _dname) array_delete(_dl0.departures, _dq2, 1);
+        pet_lose(_dead[_dd], "did not come home from " + m.name);
+        array_push(_lines, _dname + " did not come home. Bairc carved its stone himself - it waits in your garden stores.");
     }
     // --- Every member: bond +1, hunger, home, report card.
     for (var _b = 0; _b < array_length(_party); _b++) {
@@ -19086,6 +19496,7 @@ function ledger_screen_open(gc) {
     gc.ledger_party  = [];
     gc.ledger_notice = "";
     gc.ledger_out_cursor = 0;
+    gc.ledger_peril_confirm = false;
     // Smart landing (09-25 UX pass): with parties out and nothing new to send, open on OUT.
     if (array_length(ledger_ensure().active) > 0 && array_length(ledger_ensure().active) >= ledger_parties_max()) gc.ledger_tab = 1;
     audio_play_sound(snd_page, 1, false);
@@ -19094,12 +19505,39 @@ function ledger_party_has(gc, idx) {
     for (var _i = 0; _i < array_length(gc.ledger_party); _i++) if (gc.ledger_party[_i] == idx) return _i;
     return -1;
 }
+// SEND the current party (shared by the R key / button and the PERILOUS confirm).
+function ledger_send_now(gc) {
+    var _offers = ledger_offers();
+    var _res = ledger_dispatch(gc.ledger_offer, gc.ledger_party);
+    if (_res == "") {
+        var _sent = _offers[gc.ledger_offer];
+        gc.ledger_notice = "Sent. " + ledger_offer_title(_sent) + " - back in " + string(ledger_party_eval(_sent, gc.ledger_party).dur) + " run(s).";
+        gc.ledger_party = [];
+        audio_play_sound(snd_confirm_major, 1, false);
+        tutorial_try_show("ledger_first_send");
+    } else {
+        gc.ledger_notice = _res;
+        audio_play_sound(snd_ui_error, 1, false);
+    }
+}
 function ledger_step(gc) {
     var _offers = ledger_offers();
     var _rows   = ledger_roster_rows();
     var _no     = array_length(_offers), _nr = array_length(_rows);
     gc.ledger_offer  = clamp(gc.ledger_offer, 0, max(0, _no - 1));
     gc.ledger_cursor = clamp(gc.ledger_cursor, 0, max(0, _nr - 1));
+    // 09-30 PERILOUS confirm owns every input while it is up (Esc keeps them home, not closes).
+    if (variable_instance_exists(gc, "ledger_peril_confirm") && gc.ledger_peril_confirm) {
+        if (input_confirm() || input_inject_take("ledger:perilyes")) {   // 09-30 audit: never the key that opened it
+            gc.ledger_peril_confirm = false;
+            ledger_send_now(gc);
+        } else if (input_cancel() || input_inject_take("ledger:perilno")) {
+            gc.ledger_peril_confirm = false;
+            gc.ledger_notice = "Kept home. Bairc looks relieved.";
+            audio_play_sound(snd_page, 1, false);
+        }
+        return;
+    }
     // Tabs: OFFERS | OUT
     if (input_tab_next() || input_tab_prev() || input_inject_take("ledger:tab")) {
         gc.ledger_tab = (gc.ledger_tab + 1) mod 2; gc.ledger_notice = "";
@@ -19122,20 +19560,36 @@ function ledger_step(gc) {
         }
         return;
     }
-    // Offer select: A/D (left/right), taps.
-    if (_no > 0 && nav_left())  { gc.ledger_offer = wrap_index(gc.ledger_offer - 1, _no); gc.ledger_party = []; gc.ledger_notice = ""; }
-    if (_no > 0 && nav_right()) { gc.ledger_offer = wrap_index(gc.ledger_offer + 1, _no); gc.ledger_party = []; gc.ledger_notice = ""; }
+    // 09-29 REDESIGN (M: "A and D move up and down? that doesnt make sense"): two FOCUS
+    // columns. A/D + Left/Right switch between JOBS (0) and CREATURES (1); W/S + Up/Down
+    // move inside the focused one. Enter/Space on a job hands focus to the creatures;
+    // on a creature it toggles it into the party. Taps set focus to where they land.
+    if (!variable_instance_exists(gc, "ledger_focus")) gc.ledger_focus = 0;
+    if (nav_left())  gc.ledger_focus = 0;
+    if (nav_right() && _nr > 0) gc.ledger_focus = 1;
+    var _up = nav_up(), _dn = nav_down();
+    if (gc.ledger_focus == 0) {
+        if (_no > 0 && _up) { gc.ledger_offer = wrap_index(gc.ledger_offer - 1, _no); gc.ledger_party = []; gc.ledger_notice = ""; }
+        if (_no > 0 && _dn) { gc.ledger_offer = wrap_index(gc.ledger_offer + 1, _no); gc.ledger_party = []; gc.ledger_notice = ""; }
+    } else {
+        if (_nr > 0 && _up) gc.ledger_cursor = wrap_index(gc.ledger_cursor - 1, _nr);
+        if (_nr > 0 && _dn) gc.ledger_cursor = wrap_index(gc.ledger_cursor + 1, _nr);
+    }
+    // 09-30 audit: the roster scrolls by wheel and by the scrollbar's arrow caps (touch).
+    if (_nr > 0 && (mouse_wheel_up()   || input_inject_take("ledger:rup"))) { gc.ledger_focus = 1; gc.ledger_cursor = max(0, gc.ledger_cursor - 1); }
+    if (_nr > 0 && (mouse_wheel_down() || input_inject_take("ledger:rdn"))) { gc.ledger_focus = 1; gc.ledger_cursor = min(_nr - 1, gc.ledger_cursor + 1); }
     for (var _oi = 0; _oi < _no; _oi++) {
         if (input_inject_take("ledger:offer" + string(_oi))) {
+            gc.ledger_focus = 0;
             if (gc.ledger_offer != _oi) { gc.ledger_offer = _oi; gc.ledger_party = []; gc.ledger_notice = ""; }
         }
     }
-    // Roster cursor + toggle: W/S + Space/Enter (pad A), taps.
-    if (_nr > 0 && nav_up())   gc.ledger_cursor = wrap_index(gc.ledger_cursor - 1, _nr);
-    if (_nr > 0 && nav_down()) gc.ledger_cursor = wrap_index(gc.ledger_cursor + 1, _nr);
     var _toggle = -1;
-    if (_nr > 0 && (input_confirm() || input_confirm_alt())) _toggle = _rows[gc.ledger_cursor];
-    for (var _ri = 0; _ri < _nr; _ri++) if (input_inject_take("ledger:pet" + string(_ri))) { _toggle = _rows[_ri]; gc.ledger_cursor = _ri; }
+    if (input_confirm() || input_confirm_alt()) {
+        if (gc.ledger_focus == 0) { if (_nr > 0) { gc.ledger_focus = 1; audio_play_sound(snd_page, 1, false); } }
+        else if (_nr > 0) _toggle = _rows[gc.ledger_cursor];
+    }
+    for (var _ri = 0; _ri < _nr; _ri++) if (input_inject_take("ledger:pet" + string(_ri))) { _toggle = _rows[_ri]; gc.ledger_cursor = _ri; gc.ledger_focus = 1; }
     if (_toggle >= 0 && _no > 0) {
         var _at = ledger_party_has(gc, _toggle);
         if (_at >= 0) { array_delete(gc.ledger_party, _at, 1); gc.ledger_notice = ""; audio_play_sound(snd_page, 1, false); }
@@ -19157,17 +19611,11 @@ function ledger_step(gc) {
     }
     // SEND: R (pad RT) / the button.
     if (input_hotkey("R") || input_inject_take("ledger:send")) {
-        var _res = ledger_dispatch(gc.ledger_offer, gc.ledger_party);
-        if (_res == "") {
-            var _sent = _offers[gc.ledger_offer];
-            gc.ledger_notice = "Sent. " + ledger_offer_title(_sent) + " - back in " + string(ledger_party_eval(_sent, gc.ledger_party).dur) + " run(s).";
-            gc.ledger_party = [];
-            audio_play_sound(snd_confirm_major, 1, false);
-            tutorial_try_show("ledger_first_send");
-        } else {
-            gc.ledger_notice = _res;
+        var _so = (_no > 0) ? _offers[gc.ledger_offer] : undefined;
+        if (_so != undefined && ledger_offer_perilous(_so) && !_so.taken && array_length(gc.ledger_party) > 0) {
+            gc.ledger_peril_confirm = true;   // 09-30: arm - the modal names who may die
             audio_play_sound(snd_ui_error, 1, false);
-        }
+        } else ledger_send_now(gc);
     }
 }
 
@@ -19213,10 +19661,10 @@ function ledger_garden_tick(gc) {
 function pet_calling_catalog() {
     return [
         { id:"trailblazer", name:"Trailblazer", stat:"pow", desc:"+2 PWR. Its parties come home a run sooner (never under one). In the field it acts first among companions." },
-        { id:"packmule",    name:"Packmule",    stat:"lck", desc:"+2 LCK. One extra payout roll on Scavenges and Expeditions. Carries what others drop." },
-        { id:"sentinel",    name:"Sentinel",    stat:"spr", desc:"+2 SPR. A party with a Sentinel is never injured on a failure. In combat its intercepts land 10% more often." },
+        { id:"packmule",    name:"Packmule",    stat:"lck", desc:"+2 LCK. One extra payout roll on Scavenges and Expeditions. As your companion, 5% per kill to carry home an extra consumable." },
+        { id:"sentinel",    name:"Sentinel",    stat:"spr", desc:"+2 SPR. A party with a Sentinel is never injured on a failure and halves the death odds on PERILOUS jobs. In combat its intercepts land 10% more often." },
         { id:"nightwise",   name:"Nightwise",   stat:"lck", desc:"+2 LCK. The night habitats (Canopy, Vault) always count as home. Under those skies you crit 3% more." },
-        { id:"ironhide",    name:"Ironhide",    stat:"spr", desc:"+2 SPR. Takes the injury instead of a partner. In combat it takes 15% less damage." },
+        { id:"ironhide",    name:"Stonehide",   stat:"spr", desc:"+2 SPR. Takes the injury instead of a partner. In combat it takes 15% less damage." },
         { id:"bloodnose",   name:"Bloodnose",   stat:"pow", desc:"+2 PWR. Hunts bring back one reagent more. In combat it deals 20% more to a bleeding foe." }
     ];
 }
@@ -19370,7 +19818,8 @@ function run_summary_build(rec, pet0, g0, b0, s0, found = undefined) {
         if (pet0.stage != s0 && s0 >= 0) _pet += " - EVOLVED to " + pet_stage_name(pet0.stage);
         else if (_dg > 0) _pet += " - growth +" + string(_dg);
         if (_db > 0) _pet += ", bond +" + string(_db);
-        if (pet0.injured > 0) _pet += ", INJURED";
+        if (pet0.injured >= PET_INJURY_DEATH) _pet += " - LOST. Its headstone waits in your garden stores";   // 09-30 audit
+        else if (pet0.injured > 0) _pet += ", INJURED";
         if (pet_hp(pet0) <= 0) _pet += ", knocked out";
     }
     var _missions = [];
@@ -19479,6 +19928,19 @@ function contract_is_story(d)     { return d != undefined && variable_struct_exi
 // mechanics: it reads the item / reagent / valuable / pet structs that exist.
 // -----------------------------------------------------------------------------
 function want_slots() { return ["weapon", "ranged_weapon", "chest", "helm", "gloves", "boots", "ring", "amulet", "offhand"]; }
+// 09-30 audit: the base stats each slot's loot tables actually roll (a poster asking for
+// "a blade, WIS 3+" could never be filled).
+function want_slot_stats(slot) {
+    switch (slot) {
+        case "weapon":        return ["STR", "DEX"];
+        case "ranged_weapon": return ["DEX", "INT"];
+        case "offhand":       return ["CON", "INT", "WIS"];
+        case "boots":         return ["CON", "DEX", "WIS"];
+        case "gloves":        return ["DEX", "INT", "STR"];
+        case "amulet":        return ["STR", "DEX", "CON", "INT", "WIS", "CHA"];
+    }
+    return ["STR", "DEX", "CON", "INT", "WIS"];
+}
 function want_slot_label(slot) {
     switch (slot) {
         case "weapon":        return "blade";
@@ -19558,8 +20020,10 @@ function want_generate(a, npc) {
         array_delete(_conds, _ci, 1);
         switch (_c) {
             case "stat": {
-                var _st = ["STR", "DEX", "CON", "INT", "WIS", "CHA"];
-                _w.stat_name = _st[irandom(5)];
+                // 09-30 audit: only stats this slot's bases actually drop with (CHA = amulets only).
+                var _st = want_slot_stats(_slot);
+                _w.stat_name = _st[irandom(array_length(_st) - 1)];
+                if (_w.affix_stat == _w.stat_name) _w.affix_stat = "";   // exclusions forbid base + affix of one stat
                 _w.stat_min  = 2 + min(a, 3);
             } break;
             case "affix": {
@@ -19569,7 +20033,11 @@ function want_generate(a, npc) {
                     _w.affix_stat = _sp[irandom(array_length(_sp) - 1)].stat_name;
                 } else if (variable_global_exists("affix_pool")) {
                     var _ap = global.affix_pool;
-                    _w.affix_stat = _ap[irandom(array_length(_ap) - 1)].stat_name;
+                    for (var _tr = 0; _tr < 8; _tr++) {   // 09-30 audit: never the stat the base already asks for
+                        _w.affix_stat = _ap[irandom(array_length(_ap) - 1)].stat_name;
+                        if (_w.affix_stat != _w.stat_name) break;
+                    }
+                    if (_w.affix_stat == _w.stat_name) _w.affix_stat = "";
                 }
             } break;
             case "elem": {
@@ -19618,6 +20086,7 @@ function want_item_matches(w, it) {
     if (!is_struct(w) || !is_struct(it) || w.kind != "item") return false;
     if (!variable_struct_exists(it, "slot") || it.slot != w.slot) return false;
     if (variable_struct_exists(it, "item_category") && it.item_category != "equipment") return false;
+    if (item_is_storied(it)) return false;   // a story's finale piece is never handed on (09-29 audit)
     var _r = variable_struct_exists(it, "rarity") ? it.rarity : 0;
     if (_r < w.rarity_min) return false;
     if (w.stat_name != "" && !(variable_struct_exists(it, "stat_name") && it.stat_name == w.stat_name && it.stat_value >= w.stat_min)) return false;
@@ -19704,9 +20173,10 @@ function want_make_item(w) {
             }
         }
     }
-    if (w.elem != "" && !(variable_struct_exists(_it, "elem_affix") && is_struct(_it.elem_affix)))
-        apply_elemental_affix_to_item(_it, make_elem_affix(w.elem, max(1, w.rarity_min)));
+    if (w.elem != "" && !(variable_struct_exists(_it, "elem_affix") && is_struct(_it.elem_affix) && _it.elem_affix.element == w.elem))
+        apply_elemental_affix_to_item(_it, make_elem_affix(w.elem, max(1, w.rarity_min)));   // 09-30 audit: a wrong element is REPLACED
     if (w.sockets_min > 0) _it.socket_count = max(_it.socket_count, w.sockets_min);
+    if (!want_item_matches(w, _it)) return undefined;   // 09-30 audit: never "exactly what was asked for" when it isn't
     return _it;
 }
 
@@ -19878,10 +20348,18 @@ function contract_resolve_pick(gc) {
         }
         if (contract_has_want(_d) && _c.item.gold_value >= _d.want.gold_value_min * 2) _bonus = 1;
     } else {
+        // 09-29 audit: runes socketed in a handed-over piece come back to the pouch - the
+        // asker wants the steel, not your runes.
+        if (variable_struct_exists(_c.item, "runes") && is_array(_c.item.runes)) {
+            for (var _ri = 0; _ri < array_length(_c.item.runes); _ri++)
+                array_push(global.rune_inventory, rune_make(_c.item.runes[_ri].id, _c.item.runes[_ri].tier));
+            if (array_length(_c.item.runes) > 0) inbox_push("board", "Runes returned", string(array_length(_c.item.runes)) + " rune(s) socketed in " + _c.label + " went back to your pouch.");
+        }
         item_picker_remove_selected();
         if (contract_has_want(_d) && _c.rarity > _d.want.rarity_min) _bonus = 1;
     }
-    contract_finish(gc, _qid, _bonus);
+    var _fin = contract_finish(gc, _qid, _bonus);
+    if (_fin != "") gc.tavern_board_note = _fin;   // 09-30 audit: story steps turned in this way said nothing
 }
 // Every road ends here: story steps pay fixed and advance; bounties / requests open
 // the pick-of-three (the state row stays ACTIVE until a card is chosen - the handed
@@ -19925,8 +20403,16 @@ function reward_pick_begin(gc, id, tier_bonus, pay_mult) {
     gc.reward_pick_data = {
         qid:id, coin:_coin, dust:(variable_struct_exists(_r, "dust") ? _r.dust : 0),
         chit:(variable_struct_exists(_r, "chit") ? _r.chit : 0), chit_tier:(variable_struct_exists(_r, "chit_tier") ? _r.chit_tier : 0),
-        boon:_bn, items:[_i1, _i2], item_sel:0, tier_bonus:tier_bonus, pay_mult:pay_mult, urgent:_urgent
+        boon:_bn, items:[_i1, _i2], item_sel:0, tier_bonus:tier_bonus, pay_mult:pay_mult, urgent:_urgent, dbl:-1
     };
+    // BOND EFFECT (§6, built 09-29): at Companion+ the asker sometimes DOUBLES one card (30%):
+    // coin x2 (+dust), the boon armed twice, or BOTH rolled items. Shown on the card + header.
+    if (affinity_tier(_d.npc) >= 3 && irandom(99) < 30) {
+        var _dc = irandom(2);
+        gc.reward_pick_data.dbl = _dc;
+        if (_dc == 0) { gc.reward_pick_data.coin *= 2; gc.reward_pick_data.dust *= 2; }
+        if (_dc == 1) gc.reward_pick_data.boon.label = "TWICE: " + gc.reward_pick_data.boon.label;
+    }
     gc.reward_pick_open   = true;
     gc.reward_pick_cursor = 0;
     gc.reward_pick_armed  = false;
@@ -19938,19 +20424,30 @@ function contract_roll_item(rarity, slot) {
     var _w = [0, 0, 0, 0, 0];
     _w[clamp(rarity, 0, 3)] = 100;
     var _last = undefined;
-    for (var _t = 0; _t < 14; _t++) {
+    for (var _t = 0; _t < 60; _t++) {   // 09-30 audit: 14 tries missed rare slots (and high tide swaps drops)
         var _it = drop_equipment(_w, false);
         if (_it == undefined) continue;
-        _last = _it;
-        if (variable_struct_exists(_it, "slot") && _it.slot == slot && _it.rarity <= 3) return _it;
+        if (variable_struct_exists(_it, "slot") && _it.slot == slot && _it.rarity <= 3) {
+            if (_it.rarity >= rarity) return _it;
+            _last = _it;
+        }
     }
-    return _last;
+    return _last;   // right slot at best (undefined if none) - want_make_item verifies the rest
+}
+// 09-30 audit: a "raise a creature to X" step stalled for players whose creatures were already
+// grown (it only ticked on a stage-up). Called on hub entry: counts the best stage you have.
+function pet_stage_quest_sync() {
+    var _r = pet_roster(), _best = -1;
+    for (var _i = 0; _i < array_length(_r); _i++) if (is_struct(_r[_i]) && !_r[_i].is_egg) _best = max(_best, _r[_i].stage);
+    if (_best >= 0) quest_tick("pet_stage", "", _best);
 }
 function reward_pick_step(gc) {
     gc.reward_pick_t += 1;
     var _d = gc.reward_pick_data;
     if (_d == undefined) { gc.reward_pick_open = false; return; }
     if (!gc.reward_pick_armed) {
+        // 09-30 audit: taps landing before the modal arms are dropped, never replayed as a pick.
+        input_inject_take("reward:card"); input_inject_take("reward:item_a"); input_inject_take("reward:item_b");
         if (gc.reward_pick_t > 12 && !input_any_held() && !mouse_check_button(mb_left)) gc.reward_pick_armed = true;
         return;
     }
@@ -19977,13 +20474,17 @@ function reward_pick_commit(gc) {
         audio_play_sound(snd_gold, 1, false);
     } else if (_card == 1) {
         contracts_ensure();
-        array_push(global.next_run_boons, { kind:_d.boon.kind, value:_d.boon.value, label:_d.boon.label });
+        var _bl = string_replace(_d.boon.label, "TWICE: ", "");
+        var _bn_times = (variable_struct_exists(_d, "dbl") && _d.dbl == 1) ? 2 : 1;   // Companion bond: armed twice
+        for (var _bt = 0; _bt < _bn_times; _bt++) array_push(global.next_run_boons, { kind:_d.boon.kind, value:_d.boon.value, label:_bl });
         array_push(_parts, _d.boon.label);
         audio_play_sound(snd_ui_confirm, 1, false);
     } else {
-        var _it = _d.items[clamp(_d.item_sel, 0, 1)];
-        if (_it == undefined) _it = _d.items[0];
-        if (_it != undefined) {
+        var _both = variable_struct_exists(_d, "dbl") && _d.dbl == 2;   // Companion bond: both pieces
+        for (var _ik = 0; _ik < 2; _ik++) {
+            var _it = _both ? _d.items[_ik] : ((_ik == 0) ? _d.items[clamp(_d.item_sel, 0, 1)] : undefined);
+            if (!_both && _ik == 0 && _it == undefined) _it = _d.items[0];
+            if (_it == undefined) continue;
             discover_item(item_base_name(_it), _it.rarity);
             array_push(global.equipment_stash, _it);
             array_push(_parts, _it.name + " (stashed)");
@@ -20050,7 +20551,10 @@ function contracts_run_end(result) {
         var _es = global.contract_escort;
         var _st = quest_state(_es.qid);
         if (_st != undefined && _st.status == "active") {
-            if (_es.alive && result >= 0) { _st.pay_mult = 2; ledger_add(_es.npc, "quest", _es.name + " walked out beside you. " + npc_display_name(_es.npc) + " will pay double."); }
+            var _efights = variable_struct_exists(_es, "fights") ? _es.fights : 0;
+            _st.escort_done = true;   // 09-30 audit: one walk per contract - the event is never re-offered
+            if (_es.alive && result >= 0 && _efights >= 2) { _st.pay_mult = 2; ledger_add(_es.npc, "quest", _es.name + " walked out beside you. " + npc_display_name(_es.npc) + " will pay double."); }
+            else if (_es.alive && result >= 0) { _st.pay_mult = 1; ledger_add(_es.npc, "quest", _es.name + " came back before the fighting started. " + npc_display_name(_es.npc) + " pays what was promised, no more."); }
             else { _st.pay_mult = 1; ledger_add(_es.npc, "quest", _es.name + " did not make it out. \"" + _es.loss_line + "\""); }
         }
         global.contract_escort = undefined;
@@ -20058,7 +20562,7 @@ function contracts_run_end(result) {
     if (global.contract_timed != undefined) {
         var _tm = global.contract_timed;
         var _ts = quest_state(_tm.qid);
-        if (_ts != undefined && _ts.status == "active" && result >= 0 && _tm.left > 0) _ts.tier_bonus = max(1, variable_struct_exists(_ts, "tier_bonus") ? _ts.tier_bonus : 0);
+        if (_ts != undefined && _ts.status == "active" && result == 1 && _tm.left > 0) _ts.tier_bonus = max(1, variable_struct_exists(_ts, "tier_bonus") ? _ts.tier_bonus : 0);
         global.contract_timed = undefined;
     }
     global.run_boon_mods = { xp_mult:1, gold_mult:1, boss_tier:0, labels:[] };
@@ -20082,6 +20586,7 @@ function contract_pending() {
         var _fired = false;
         for (var _j = 0; _j < array_length(global.contract_fired_this_run); _j++) if (global.contract_fired_this_run[_j] == _s.id) _fired = true;
         if (_fired) continue;
+        if (_d.contract.kind == "escort" && variable_struct_exists(_s, "escort_done") && _s.escort_done) continue;   // 09-30 audit
         if (contract_has_want(_d) && want_satisfiable(_d.want)) continue;   // already have the object - no cache needed
         if (_d.contract.kind == "ambush" && contract_has_bounty(_d) && _d.bounty.dungeon != (variable_global_exists("selected_dungeon") ? global.selected_dungeon : "")) continue;
         if (!contract_has_bounty(_d) && _s.progress >= _d.obj_target && !contract_has_want(_d)) continue;
@@ -20212,7 +20717,7 @@ function story_catalog() {
               flavor:"\"There's a golem down there that wears the old warden's plate. My brother's plate. Break it.\"",
               line:"\"Bring the pieces by the forge. I'll melt what's left of the mark off them.\"" },
             { name:"Gatebreaker",       obj_type:"clear_floors", obj_target:3,
-              objective:"Clear 3 dungeon floors carrying nothing from Dorn's forge (he trusts you now)",
+              objective:"Clear 3 dungeon floors and come back (he trusts you now)",
               flavor:"\"One more thing. Go below three floors and come back. That's all. Just come back.\"",
               line:"He sets a maul on the counter, its head wrapped in the warden's cloth. \"I made it for him. He'd want it swung.\"" }
         ],
@@ -20249,9 +20754,9 @@ function story_catalog() {
               objective:"Win 2 fights taking no damage",
               flavor:"\"Two clean wins. No bleeding. If you can't, don't sign.\"",
               line:"\"Hm.\" That is the whole review." },
-            { name:"The Drill",         obj_type:"bounty_kill", bounty:{ target:"Stone Golem", affix:"hasted", dungeon:"ashen_vault" },
-              objective:"Slay a Hasted Stone Golem in the Ashen Vault", contract:{ kind:"timed" },
-              flavor:"\"There's a golem that moves too fast for what it is. Kill it fast, or it'll teach you what slow costs.\"",
+            { name:"The Drill",         obj_type:"bounty_kill", bounty:{ target:"Vault Guardian", affix:"hasted", dungeon:"ashen_vault" },
+              objective:"Slay a Hasted Vault Guardian in the Ashen Vault", contract:{ kind:"timed" },
+              flavor:"\"There's a guardian down there that moves too fast for what it is. Kill it fast, or it'll teach you what slow costs.\"",
               line:"\"Faster than I expected. Slower than I'd like.\"" },
             { name:"Trainer's Lash",    obj_type:"want", want:{ kind:"item", slot:"ranged_weapon", rarity_min:2, stat_name:"DEX", stat_min:3, affix_stat:"", elem:"", sockets_min:0 },
               objective:"Bring a ranged weapon with DEX 3+, Rare or better", contract:{ kind:"cache" },
@@ -20263,9 +20768,9 @@ function story_catalog() {
               objective:"End a run carrying 250+ gold",
               flavor:"\"Come back rich for once. The town likes to see it.\"",
               line:"\"See? Doesn't that feel better than dying poor.\"" },
-            { name:"The Debtor",        obj_type:"bounty_kill", bounty:{ target:"Stone Golem", affix:"vampiric", dungeon:"ashen_vault" },
-              objective:"Slay a Vampiric Stone Golem in the Ashen Vault", contract:{ kind:"ambush" },
-              flavor:"\"Something down there took a shipment of mine and it's been living off the interest. Collect.\"",
+            { name:"Collections",       obj_type:"bounty_kill", bounty:{ target:"The Second Count", affix:"vampiric", dungeon:"ashen_vault" },
+              objective:"Slay a Vampiric Second Count in the Ashen Vault", contract:{ kind:"ambush" },
+              flavor:"\"The Second Count took a shipment of mine and has been living off the interest. Collect.\"",
               line:"\"Paid in full.\" She writes something in a book you have never seen her open." },
             { name:"Ledger of Debts",   obj_type:"want", want:{ kind:"valuable", gold_value_min:300 },
               objective:"Bring a Valuable worth 300g or more",
@@ -20362,6 +20867,7 @@ function story_turn_in(id) {
     if (_s == undefined || _d == undefined) return "Unknown step.";
     _s.status = "done";
     var _sg = _d.reward.gold * (variable_struct_exists(_s, "pay_mult") ? max(1, _s.pay_mult) : 1);   // escort walked out = x2
+    if (variable_struct_exists(_s, "tier_bonus") && _s.tier_bonus > 0) _sg = round(_sg * (1 + 0.5 * _s.tier_bonus));   // 09-30 audit: "the reward rises a tier"
     global.gold += _sg;
     var _parts = string(_sg) + "g";
     var _st = variable_struct_get(global.story, _d.npc);
@@ -20370,7 +20876,18 @@ function story_turn_in(id) {
         _st.step = _s.step + 1;
     }
     if (_d.finale) {
-        var _it = storied_make(_d.npc, (_st != undefined) ? _st.choice : "");
+        var _ch = (_st != undefined) ? _st.choice : "";
+        var _it = storied_make(_d.npc, _ch);
+        // BOND EFFECT (§6, built 09-29): a LOVER gets the choice variant free - the finale keeps
+        // your path AND carries the other path's affix (Sable's letters, Vael's mirror).
+        var _alt = story_choice_other(_d.npc, _ch);
+        if (_it != undefined && _alt != "" && affinity_tier(_d.npc) >= 4) {
+            var _it2 = storied_make(_d.npc, _alt);
+            if (_it2 != undefined && is_array(_it2.affixes) && array_length(_it2.affixes) > 0) {
+                array_push(_it.affixes, _it2.affixes[0]);
+                _it.lore += "  (Given by a lover: both roads at once.)";
+            }
+        }
         if (_it != undefined) {
             discover_item(item_base_name(_it), 4);
             array_push(global.equipment_stash, _it);
@@ -20390,6 +20907,15 @@ function story_turn_in(id) {
 }
 // The two-ending rooms (Sable's letters, Vael's mirror). Each ending stamps
 // state.choice; the finale item's variant reads it.
+// The path NOT taken in a two-ending chain ("" for chains without a variant). An untaken
+// choice ("") counts as the default path, so its "other" is the variant ending.
+function story_choice_other(npc, choice) {
+    switch (npc) {
+        case "sable": return (choice == "read") ? "burn" : "read";
+        case "vael":  return (choice == "other") ? "own" : "other";
+    }
+    return "";
+}
 function story_choice_room(npc, qid) {
     if (npc == "sable") {
         return { id:"contract_choice_sable", title:"The Sealed Room", tide_immune:true,

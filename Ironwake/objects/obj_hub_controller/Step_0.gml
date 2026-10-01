@@ -943,6 +943,7 @@ if (instance_exists(obj_game_controller)) {
                         _gc_ld.loadout_open      = false;
                         _gc_ld.loadout_confirmed = true;
                         audio_play_sound(snd_confirm_major, 1, false);   // committing to the descent
+                        contracts_run_start_arm();   // CONTRACTS: the mouse/touch confirm arms the next-run cards too (keyboard path above did; 09-29 audit)
                         music_hub_stop();   // stops the default AND any banshee-jukebox hub track
                         room_goto(rm_dungeon_floor);
                     }

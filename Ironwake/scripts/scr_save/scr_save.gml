@@ -1362,6 +1362,12 @@ function run_checkpoint_write(_live) {
         pending_status:      (variable_global_exists("pending_status") && is_struct(global.pending_status)) ? global.pending_status : 0,
         floor_mods:          variable_global_exists("floor_mods")      ? global.floor_mods      : {},
         ambush_loot_due:     variable_global_exists("ambush_loot_due") ? global.ambush_loot_due : "",
+        // CONTRACTS (09-29 audit): the run's armed cards, escort, clock and fired seals survive a resume.
+        run_boon_mods:           (variable_global_exists("run_boon_mods") && is_struct(global.run_boon_mods)) ? global.run_boon_mods : 0,
+        contract_escort:         (variable_global_exists("contract_escort") && is_struct(global.contract_escort)) ? global.contract_escort : 0,
+        contract_timed:          (variable_global_exists("contract_timed") && is_struct(global.contract_timed)) ? global.contract_timed : 0,
+        contract_fired_this_run: (variable_global_exists("contract_fired_this_run") && is_array(global.contract_fired_this_run)) ? global.contract_fired_this_run : [],
+        ambush_force_name:       variable_global_exists("ambush_force_name") ? global.ambush_force_name : "",
         gold_potion_bosses:  variable_global_exists("gold_potion_bosses")  ? global.gold_potion_bosses  : 0,
         loot_potion_bosses:  variable_global_exists("loot_potion_bosses")  ? global.loot_potion_bosses  : 0,
 
@@ -1537,7 +1543,13 @@ function run_checkpoint_apply(_c) {
     global.pending_status  = (variable_struct_exists(_c, "pending_status") && is_struct(_c.pending_status)) ? _c.pending_status : undefined;
     global.floor_mods      = (variable_struct_exists(_c, "floor_mods") && is_struct(_c.floor_mods)) ? _c.floor_mods : {};
     global.ambush_loot_due = variable_struct_exists(_c, "ambush_loot_due") ? _c.ambush_loot_due : "";
-    global.gold_potion_bosses   = variable_struct_exists(_c, "gold_potion_bosses")   ? _c.gold_potion_bosses   : 0;
+    // CONTRACTS (09-29 audit): older checkpoints lack these -> the run-start defaults.
+    global.run_boon_mods           = (variable_struct_exists(_c, "run_boon_mods") && is_struct(_c.run_boon_mods)) ? _c.run_boon_mods : { xp_mult:1, gold_mult:1, boss_tier:0, labels:[] };
+    global.contract_escort         = (variable_struct_exists(_c, "contract_escort") && is_struct(_c.contract_escort)) ? _c.contract_escort : undefined;
+    global.contract_timed          = (variable_struct_exists(_c, "contract_timed") && is_struct(_c.contract_timed)) ? _c.contract_timed : undefined;
+    global.contract_fired_this_run = (variable_struct_exists(_c, "contract_fired_this_run") && is_array(_c.contract_fired_this_run)) ? _c.contract_fired_this_run : [];
+    global.ambush_force_name       = (variable_struct_exists(_c, "ambush_force_name") && is_string(_c.ambush_force_name)) ? _c.ambush_force_name : "";
+    global.gold_potion_bosses  = variable_struct_exists(_c, "gold_potion_bosses")   ? _c.gold_potion_bosses   : 0;
     global.loot_potion_bosses   = variable_struct_exists(_c, "loot_potion_bosses")   ? _c.loot_potion_bosses   : 0;
 
     // Persistent-scope state that mutated mid-run (see the write side).

@@ -5,7 +5,7 @@ Per DESIGN_WORLD_EXPANSION_0806.md §9.5, this is where generation savings
 actually come from — vague prompts cause rerolls, and every reroll is another
 20-40 generations.
 
-**Status: DRAFT 2026-08-06 — awaiting M's approval.** Nothing generated yet.
+**Status:** used as the creature art reference since 08-06 (the species art runs followed it). It was written as a DRAFT and no formal sign-off was ever recorded here, so confirm with M before treating a line as a hard rule.
 
 ---
 

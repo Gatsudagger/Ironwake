@@ -1,6 +1,10 @@
 # DESIGN — Ironwake Improvement Plan (2026-09-24)
 
-**Status:** DESIGN-LOCKED by M 2026-09-24 (all §8 questions answered; decisions recorded in
+**Status (refreshed 2026-09-29):** P0 BUILT (cf1643e8) · P1 THE LEDGER BUILT (122c2d75) · §5.1 CONTRACTS pulled forward and BUILT (11ee2a90, doc: docs/systems/DESIGN_QUESTS_0925.md) · P0b, P2, P3 and the rest of P4 NOT built. Open work is tracked in ROADMAP.md.
+
+**09-29 renames (avoid clashes with shipped names):** §2.4 Momentum meter → **FERVOR** (Strike's "Momentum" AP refund and the Brutal/Phantom Momentum talent nodes already ship) · §2.7 auto-resolve `[X] Overwhelm` → **`[X] Rout`** (OVERWHELMED is a shipped status) · §1.7 Calling Ironhide → **Stonehide** (Ironhide is a Boon and an item name; save id stays `ironhide`) · Vault floor-end gamble → **THE COUNT'S TALLY** · Bairc-shelf items stay **keepsakes**; other rewards say trinket / token.
+
+**Original status:** DESIGN-LOCKED by M 2026-09-24 (all §8 questions answered; decisions recorded in
 §8 and folded into the sections). Build starts with P0 the same day. Every section names what
 exists today (verified in code 09-24), what is missing, the mechanic, the numbers, the data
 shape, the files it touches, art cost, mobile parity, save impact, and a size estimate.
@@ -23,9 +27,9 @@ sessions · `XL` = a multi-session system. One session ≈ 150-250k tokens.
 | **Pets** | 76 species (50 with adult art), 3 archetypes (Fortune / Warrior / Guardian), 5 stages, 3 stats **PWR / SPR / LCK** (base 3/1, +1 per stage, uid-hashed 0-2 talent, Devoted +1, signature +awk/2; `PET_STAT_COEFF 0.03` so a point is ~3%), bond tiers 4/10/18, hunger 0-100 with fed/hungry/starving gates, 8 treats with favored families, preferred feed per species, 21-entry kit (traits + Stage-3 capstones + Awakened splash), species innates + sig moves, quirks, stances (Gate-set), corruption push/cure, injury ladder + permadeath, stable cap 8 (+1 Bairc Friend), donation → garden residents, walkable garden + hut interior + keepsake shelf + peddler's cart. **LCK is consumed by exactly two things: gold find and loot find.** Non-active pets do nothing but eat. |
 | **Combat** | 3 AP, initiative, enemy intents (binding telegraphs), timed parry rings T1 + T2 strike windows (On/Assist/Off), Poise (unspent AP → shield), Interrupt, 8 element schools + per-enemy weaknesses + Exposed Weakness detonation, typed statuses, boss phases, enemy summons, Depth Wardens, duelist, 2.5D two-plane stage with station layouts, pet turns/stances/betrayal, ability mastery notches + run honing, VFX gigapack. |
 | **Character** | 3 classes (Arcanist / Bloodwarden / Shadowstrider), 7 origins, gender axis, 60 portraits (3 free per class+gender, rest at Vael), 26 Vael skins, epithets, talent webs (7-node wishbone) + class trunks, runes (gear sockets) + aspect slots, 8 gear slots, affixes incl. typed crit, Iron Vow hardcore modes, permanent level + run level, Awakening A0-A5. |
-| **Hub / UX** | 7-NPC carousel, station ranks (11 perks), affinity tiers + gates + Lover question, tavern board (8 templates), journal (7 tabs), character menu (5 tabs), stash (3 categories), settings (music/SFX/font size/timed combat), 7 first-open NPC tours, coach-marks, hub notices concatenated into one string (`pet_find_notice`). |
-| **Content** | 7 dungeon keys (Ashen Vault, Scorched Depths, Tundra Tomb, Drowned Reach, Hollow Canopy, Stormcrag, The Descent), 83 enemy entries, biome active mechanics (Tide, Climb…), 18 boons, 10 curses, events catalog, 4 reagents + valuables, 63 achievements wired, run seeds. |
-| **Parked (roadmap / backlog, not built)** | Cursed items · pet divergent growth · cloak slot · crit split P2 · quest/board rework · knucklebones (stubbed) · borrowed memories (stubbed) · hardcore achievement set · enemy AoE/buffs · rune set bonuses · boon rarities · shop buy-back. |
+| **Hub / UX** | 7-NPC carousel, station ranks (11 perks), affinity tiers + gates + Lover question, tavern board (9 templates; reworked into CONTRACTS 09-29), journal (7 tabs), character menu (5 tabs), stash (3 categories), settings (music/SFX/font size/timed combat), 7 first-open NPC tours, coach-marks, hub notices concatenated into one string (`pet_find_notice`). |
+| **Content** | 7 dungeon keys (Ashen Vault, Scorched Depths, Tundra Tomb, Drowned Reach, Hollow Canopy, The Descent - Stormcrag is only a display name, no content), 83 enemy entries, biome active mechanics (Tide, Climb…), 18 boons, 10 curses, events catalog, 4 reagents + valuables, 63 achievements wired, run seeds. |
+| **Parked (roadmap / backlog, not built)** | Cursed items · pet divergent growth · cloak slot · crit split P2 · quest/board rework (BUILT 09-29 as Contracts) · ~~knucklebones (stubbed)~~ built · ~~borrowed memories (stubbed)~~ built · hardcore achievement set · enemy AoE/buffs · rune set bonuses · boon rarities · shop buy-back. |
 
 ---
 
@@ -125,7 +129,7 @@ mission-only stat.
 | Packmule | LCK +2 | +1 payout roll | +1 consumable drop on kill (5%) |
 | Sentinel | SPR +2 | party cannot be injured on FAIL | intercept chance +10% (Guarded) |
 | Nightwise | LCK +2 | night habitats (Canopy, Vault) always count as matched | +3% crit to you at night themes |
-| Ironhide | SPR +2 | takes the injury instead of a partner | −15% damage taken by pet |
+| Stonehide (id `ironhide`) | SPR +2 | takes the injury instead of a partner | −15% damage taken by pet |
 | Bloodnose | PWR +2 | Hunt payouts +1 reagent | +20% damage vs Bleeding |
 
 Pool: 6 (v1), offer 2. Field `calling` on the pet, additive. Shown as a pill beside stage.
@@ -214,9 +218,9 @@ a 4th button on the ability bar, hotkey C / pad Y / a 130px touch button):
 - Files: `scr_combat` (`combat_pet_command`), Step (input + resolution before the pet's own
   turn), Draw (button + CD pips). Uses `pet_stance` as the default when no command given.
 
-### 2.4 Momentum and class Finishers  `M`
+### 2.4 Fervor (renamed from "Momentum" 09-29) and class Finishers  `M`
 The "ult meter" the 07-17 plan deferred, built so it rewards *variety*:
-- **Momentum** 0-100, combat-scoped. +15 per ability whose category differs from the last
+- **Fervor** 0-100, combat-scoped. +15 per ability whose category differs from the last
   one used this turn (Attack → Spell → Control = 45), +10 per PERFECT parry, +20 per
   Interrupt, +10 per stagger. Decays 20 at the start of your turn. Reading: a thin bar over
   the AP pips.
@@ -240,7 +244,7 @@ The "ult meter" the 07-17 plan deferred, built so it rewards *variety*:
 Diablo-style suffixes on elites (and bosses at A3+), 1 at A0-2, 2 at A3+, from the mechanics
 that already exist: **Warded** (fortify), **Hasted** (double_strike 50%), **Thorned**
 (retribution), **Vampiric** (regen on hit), **Twinned** (a summon clone at 50% HP),
-**Shrouded** (starts covered, 2.1). Shown on the nameplate ("Ash Revenant, Thorned") and in
+**Shrouded** (starts covered - needs §2.1 Cover first; NOT in the shipped five). Shown on the nameplate ("Ash Revenant, Thorned") and in
 the Bestiary as a seen list; +1 loot tier roll per affix. Files: `scr_enemies` (affix table +
 apply in clone), Draw (label), `handle_enemy_drops`.
 
@@ -256,7 +260,7 @@ text-only props; not recommended.
 - **Coup de grâce ring** `S`: when a hit will kill, a T2 ring opens; PERFECT = the kill
   drops +1 rarity tier once per fight. Uses existing strike windows.
 - **Auto-resolve trash** `S`: from Awakening ≥ 2, fights where every enemy is ≥ 6 levels
-  below the run level offer `[X] Overwhelm` — resolves at full loot, no XP, costs 10% HP.
+  below the run level offer `[X] Rout` — resolves at full loot, no XP, costs 10% HP.
   Respects timed-combat OFF. Mobile: a bottom-left button.
 - **Enemy buffs to allies** (backlog): a "Warcry" intent kind for pack leaders (+15% dmg to
   allies 2t) — gives Silence a target in packs. `S`.
@@ -272,12 +276,12 @@ abilities, so ability balance holds.
 
 | Class | Oath | Twist |
 |---|---|---|
-| Arcanist | **Ashen Scholar** | spells of the same school back-to-back cost −1 AP (min 1), but Momentum gains halved |
+| Arcanist | **Ashen Scholar** | spells of the same school back-to-back cost −1 AP (min 1), but Fervor gains halved |
 | Arcanist | **Voidbinder** | summons last +1 turn and detonate on expiry; you lose 2 max HP per active summon |
 | Bloodwarden | **Crimson Vow** | Blood cap 10 → 14; below 30% HP all Blood spends are free once per turn |
 | Bloodwarden | **Gravewarden** | Poise doubles; you cannot crit, but shields you hold at turn end deal 25% as thorns |
 | Shadowstrider | **Knifewind** | first ability each turn from stealth/dodge is a guaranteed crit; max AP 3 → 2 with +1 refund per kill |
-| Shadowstrider | **Hollow Step** | dodge kit gains a free counter (Counterblade math); dodges cost 1 Momentum each |
+| Shadowstrider | **Hollow Step** | dodge kit gains a free counter (Counterblade math); dodges cost 1 Fervor each |
 
 Data: `global.player_oath` (string, additive). Files: `scr_abilities` (cost/crit hooks),
 Step, trunks table, Vex screen row, stats tab line. Save additive.
@@ -385,7 +389,7 @@ Replace "count and redeem" with **contracts** that have a choice or a step mid-r
 When you die to a non-boss enemy, it becomes your **Nemesis**: named from the existing
 cursed-title generator, gets 1 elite affix (§2.5), +1 per further kill of you, and is
 guaranteed to appear once in your next run in that dungeon as an elite with a bounty
-(gold ×3, a Reforge Ingot, a keepsake at 3 kills). Killing it clears it. Shadow of Mordor's
+(gold ×3, a Reforge Ingot, a trinket at 3 kills). Killing it clears it. **09-29:** build it on the Contracts bounty plumbing (a Nemesis is a BOUNTY poster with a forced affix - `bounty_forced_affix` already guarantees the affix), not a parallel system. Shadow of Mordor's
 loop at the cost of one struct. Save: `global.nemesis {enemy, name, affixes, kills, dungeon}`.
 
 ### 5.3 Anomalies: weekly seeded runs  `M`
@@ -402,7 +406,7 @@ Each Bestiary entry has a **Mark**: kill 10 → its Compendium page unlocks a lo
 small permanent bonus vs that family (+3% damage). 83 entries make this a long tail that
 rewards the bestiary tab, which nobody opens today.
 
-### 5.5 NPC side stories  `M`  · text only
+### 5.5 NPC side stories  ~~`M`~~  · **FOLDED INTO CONTRACTS STORIES (09-29)** - the 7 bond-gated chains with Storied finale items cover this. What remains is only the optional shelf trinket per chain (see ROADMAP).
 Each of the seven NPCs gets a 3-beat side story gated by bond tier 2/3/4: a ledger event, a
 request with a real choice (two endings), and a payoff line + a keepsake trinket on the hut
 shelf (8 keepsakes exist; add 7 NPC ones — `ART` 7 tiny trinkets, ~7 gens, or reuse the
@@ -444,10 +448,12 @@ run's average banked gold per resolved mission (tunable constant `LEDGER_GOLD_CA
 |---|---|---|---|---|
 | **P0 quick wins** | 2.3 companion commands · 2.5 elite affixes · 4.4 combat readability (4 items) · 4.5 buy-back + filters · 3.5 presets · 5.4 Marks | 1-2 sessions | additive | none |
 | ↳ **P0 status 09-24** | BUILT, awaiting M F5: elite affixes (5, nameplate + inspect + compendium + tutorial + loot tier) · companion commands SIC/HEEL/FETCH (keys Z/X/F, pad Y/LB/RB, touch chips, tutorial) · Hunter's Marks (kill ledger saved, +3/5/8%, bestiary + inspect lines) · BUY-BACK tab on Petra + Dorn (last 10 sales, +25%, saved) · loadout presets P1-P3 (keys 1-3 / V, pad L3/R3/Select/Start, chips, saved). **Deferred to P0b:** stash filters + search, ability hold-to-preview on touch, enemy-panel tap on touch, bottom-docked End Turn (existing touch layout was M-tuned; revisit with the S25 pass). The turn-order strip already existed (top chips). | | | |
+| ↳ **P1 status 09-28** | BUILT + committed 122c2d75: jobs incl. Expedition, dispatch, away state, report page, Inbox, run summary, Callings. 09-29: Bloodnose + Packmule combat echoes built; Trailblazer's "acts first among companions" was already true (the pet always acts before the Knight / escort). Garden chores built; pet report card built. NOT built: Ledger Egg (§5.8). | | | |
 | **P1 THE LEDGER** | §1 in full (jobs, dispatch, away state, report) + 4.1 Inbox + 4.2 run summary + 1.7 Callings | 3-4 sessions | additive | none |
-| **P2 combat depth** | 2.1 cover · 2.2 break bar · 2.4 Momentum + finishers · 2.7 items · 2.6 props (art) | 2-3 sessions | none | 5 props |
+| ↳ **P0b + P2 status 09-29** | BUILT, awaiting M F5. P0b: stash filters + search, touch long-press enemy inspect (ability hold-preview already existed); End Turn dock skipped (M-tuned touch layout). P2: 2.1 Cover (lines are ROLE-based - ranged/caster = back - not the drawn station; pull = Bear Trap + Tripline when a back-liner springs them; no "Hook line" ability exists), 2.2 break bar (no T2 finisher ring yet - stagger = lost turn + 30% taken), 2.4 Fervor (+1 AP payoff). Not built: Heel-through-pet cover (§8.7), Shrouded, 2.6 props, 2.7 items. | | | |
+| **P2 combat depth** | 2.1 cover · 2.2 break bar · 2.4 Fervor + finishers · 2.7 items · 2.6 props (art) | 2-3 sessions | none | 5 props |
 | **P3 identity** | 3.1 Oaths · 3.2 Heirloom + cursed items · 3.3 tints · 3.4 Scars · 3.6 heraldry · 4.6 settings | 3 sessions | additive | none (shader) |
-| **P4 content** | 5.1 Contracts · 5.2 Nemesis · 5.3 Anomalies · 5.5 side stories · 5.6 keys · 5.7 trials · 5.8 eggs | 3-4 sessions | additive | 7 trinkets optional |
+| **P4 content** | ~~5.1 Contracts~~ (BUILT 09-29) · 5.2 Nemesis · 5.3 Anomalies · ~~5.5 side stories~~ (folded into Contracts) · 5.6 keys · 5.7 trials · 5.8 eggs | 3-4 sessions | additive | 7 trinkets optional |
 
 Every phase ends with an M F5, a mobile touch pass (S25), and a commit. P1 is the headline
 and should be the first thing after P0; P2-P4 can reorder on M's taste. Nothing here bumps
@@ -465,11 +471,11 @@ and should be the first thing after P0; P2-P4 can reorder on M's taste. Nothing 
    one offer at a time, never at tier 1) — added to the §1.3 table.
 4. **Long Forage grows the bench:** 3 growth per run away; never crosses a stage by itself.
 5. **Callings** are picked at the Young Adult crossing.
-6. **Finishers: one per Oath (six), ship with P3.** Momentum ships in P2 with a +1 AP payoff
+6. **Finishers: one per Oath (six), ship with P3.** Fervor (was "Momentum") ships in P2 with a +1 AP payoff
    at 100 (§2.4).
 7. **Cover applies to the pet:** while Heel is up, enemies must go through the pet.
 8. **Scars are opt-in** (choose none allowed), max three, Sable removes for dust.
 9. **Anomalies wire Steam leaderboards in the same batch** (weekly board key; Android local).
 10. **Keep all of §5** (Contracts, Nemesis, Anomalies + Marks + Trials, side stories + keys).
-11. **Momentum in P2** with the +1 AP placeholder payoff (see 6).
+11. **Fervor (was "Momentum") in P2** with the +1 AP placeholder payoff (see 6).
 12. **Go:** doc locked and committed 09-24; P0 quick wins begin the same session.

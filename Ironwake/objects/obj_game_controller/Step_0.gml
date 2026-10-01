@@ -280,29 +280,33 @@ if (garden_open && bairc_open) {
     } else
     // ---- ORNAMENT SHOP overlay (modal within the garden) ----
     if (garden_shop_open) {
-        // Tabs (09-22 late): 0 STOCK (the cart's rotating 5) / 1 STORED / 2 GROUNDS (outside only).
-        // Tab key, pad bumpers, or the header chips.
-        var _gs_ntabs = (garden_room() == "grounds") ? 3 : 2;
-        for (var _gst = 0; _gst < 3; _gst++) {
-            if (input_inject_take("garden:shoptab" + string(_gst)) && garden_shop_tab != _gst && _gst < _gs_ntabs) { garden_shop_tab = _gst; garden_shop_cur = 0; }
+        // 09-30 (M: "shopping must be done at the cart"): the overlay has two MODES.
+        //   own  ([B] anywhere) : STORED only - place what you own.
+        //   cart (Gall's cart)  : BUY (the rotating five) | SELL (your stores, half back) | GROUNDS.
+        // garden_shop_tab holds the LOGICAL tab id: 0 BUY, 1 STORED, 2 GROUNDS, 3 SELL.
+        if (!variable_instance_exists(id, "garden_shop_mode")) garden_shop_mode = "own";
+        if (!variable_instance_exists(id, "garden_sell_arm"))  garden_sell_arm  = -1;
+        var _gs_tabs  = garden_shop_tabs(garden_shop_mode, garden_room());
+        var _gs_ntabs = array_length(_gs_tabs);
+        var _gs_ti = 0;
+        for (var _gsq = 0; _gsq < _gs_ntabs; _gsq++) if (_gs_tabs[_gsq] == garden_shop_tab) _gs_ti = _gsq;
+        for (var _gst = 0; _gst < _gs_ntabs; _gst++) {
+            if (input_inject_take("garden:shoptab" + string(_gst)) && _gst != _gs_ti) { _gs_ti = _gst; garden_shop_cur = 0; garden_sell_arm = -1; }
         }
-        if (input_tab_next()) { garden_shop_tab = (garden_shop_tab + 1) mod _gs_ntabs; garden_shop_cur = 0; }
-        if (input_tab_prev()) { garden_shop_tab = (garden_shop_tab + _gs_ntabs - 1) mod _gs_ntabs; garden_shop_cur = 0; }
-        if (garden_shop_tab >= _gs_ntabs) garden_shop_tab = 0;
-        var _gs_cat = [];
-        if (garden_shop_tab == 2)      _gs_cat = garden_theme_catalog();
-        else if (garden_shop_tab == 0) _gs_cat = garden_shop_stock();
-        else { var _gs_rows = garden_decor_stored_rows(); for (var _gsr = 0; _gsr < array_length(_gs_rows); _gsr++) array_push(_gs_cat, _gs_rows[_gsr].def); }
+        if (_gs_ntabs > 1 && input_tab_next()) { _gs_ti = (_gs_ti + 1) mod _gs_ntabs; garden_shop_cur = 0; garden_sell_arm = -1; }
+        if (_gs_ntabs > 1 && input_tab_prev()) { _gs_ti = (_gs_ti + _gs_ntabs - 1) mod _gs_ntabs; garden_shop_cur = 0; garden_sell_arm = -1; }
+        garden_shop_tab = _gs_tabs[_gs_ti];
+        var _gs_cat = garden_shop_rows(garden_shop_tab);
         var _gs_n   = array_length(_gs_cat);
         if (garden_shop_cur >= _gs_n) garden_shop_cur = 0;
         for (var _gsi = 0; _gsi < _gs_n; _gsi++) {
             if (input_inject_take("garden:shoprow" + string(_gsi))) {
                 if (garden_shop_cur == _gsi) input_inject("garden:shopgo");   // 2nd tap = pick
-                else garden_shop_cur = _gsi;
+                else { garden_shop_cur = _gsi; garden_sell_arm = -1; }
             }
         }
-        if (_gs_n > 0 && nav_up())   garden_shop_cur = wrap_index(garden_shop_cur - 1, _gs_n);
-        if (_gs_n > 0 && nav_down()) garden_shop_cur = wrap_index(garden_shop_cur + 1, _gs_n);
+        if (_gs_n > 0 && nav_up())   { garden_shop_cur = wrap_index(garden_shop_cur - 1, _gs_n); garden_sell_arm = -1; }
+        if (_gs_n > 0 && nav_down()) { garden_shop_cur = wrap_index(garden_shop_cur + 1, _gs_n); garden_sell_arm = -1; }
         if (garden_shop_tab == 2 && (input_confirm() || input_inject_take("garden:shopgo"))) {
             var _gt_d = _gs_cat[garden_shop_cur];
             var _gt_ok = garden_theme_owned(_gt_d.id) || garden_theme_locked_reason(_gt_d.id) == "";
@@ -331,6 +335,16 @@ if (garden_open && bairc_open) {
                     garden_notice_t = 300;
                     audio_play_sound(snd_page, 1, false);
                 }
+            } else if (garden_shop_tab == 3) {
+                // SELL (09-30): arm on the first press, sell on the second (destructive one-click rule).
+                if (garden_sell_arm != garden_shop_cur) {
+                    garden_sell_arm = garden_shop_cur;
+                    audio_play_sound(snd_page, 1, false);
+                } else {
+                    garden_notice = garden_decor_sell(_gs_d.id); garden_notice_t = 220;
+                    garden_sell_arm = -1;
+                    audio_play_sound(snd_confirm_major, 1, false);
+                }
             } else {
                 // PLACE FROM STORES: free; one copy leaves the stores while it is being set down.
                 if (!_gs_here) {
@@ -339,7 +353,9 @@ if (garden_open && bairc_open) {
                 } else if (garden_decor_unstore(_gs_d.id)) {
                     garden_place_pick = _gs_d.id;
                     garden_shop_open  = false;
-                    garden_notice = "Set the " + _gs_d.name + " down: tap a spot, or walk there and press Enter. Esc puts it back in your stores.";
+                    garden_notice = variable_struct_exists(_gs_d, "grave")
+                        ? ("Choose where " + _gs_d.mem.name + " rests: tap a spot, or walk there and press Enter. Esc puts the stone back in your stores.")
+                        : ("Set the " + _gs_d.name + " down: tap a spot, or walk there and press Enter. Esc puts it back in your stores.");
                     garden_notice_t = 300;
                     audio_play_sound(snd_page, 1, false);
                 }
@@ -362,7 +378,9 @@ if (garden_open && bairc_open) {
                 var _gp_res = garden_decor_place_at(garden_place_pick, _gp_x, clamp(_gp_y, garden_band_top() + 10, garden_band_bot() - 4));
                 if (_gp_res == "") {
                     var _gp_d = garden_decor_get(garden_place_pick);
-                    garden_notice = "The " + _gp_d.name + " settles into the earth.";
+                    garden_notice = variable_struct_exists(_gp_d, "grave")   // 09-30 headstones
+                        ? (_gp_d.mem.name + "'s stone is set in the earth. Bairc stands beside it a while.")
+                        : ("The " + _gp_d.name + " settles into the earth.");
                     garden_notice_t = 200;
                     garden_place_pick = "";
                     audio_play_sound(snd_confirm_major, 1, false);
@@ -545,15 +563,22 @@ if (garden_open && bairc_open) {
             audio_play_sound(snd_page, 1, false);
         }
         if (input_inject_take("garden:memorial")) {
-            var _gmm = bairc_memorials(), _gms = "";
+            var _gmm = bairc_memorials_unplaced(), _gms = "";   // 09-30: placed stones rest where you set them
             for (var _gmi = 0; _gmi < min(6, array_length(_gmm)); _gmi++) _gms += ((_gmi > 0) ? ", " : "") + _gmm[_gmi].name;
             if (array_length(_gmm) > 6) _gms += " and " + string(array_length(_gmm) - 6) + " more";
             garden_notice = "The quiet corner remembers " + _gms + "."; garden_notice_t = 300;
         }
         // Shop open.
+        // 09-30: [B] / the chip = YOUR decor (stores only); the cart (walk up to Gall) = buy / sell.
         if (input_hotkey("B") || input_inject_take("garden:shop")) {
-            garden_shop_open = true;
-            garden_shop_cur  = 0;
+            garden_shop_open = true; garden_shop_mode = "own"; garden_shop_tab = 1;
+            garden_shop_cur  = 0; garden_sell_arm = -1;
+            audio_play_sound(snd_page, 1, false);
+        }
+        if (input_inject_take("garden:cart")) {
+            garden_shop_open = true; garden_shop_mode = "cart"; garden_shop_tab = 0;
+            garden_shop_cur  = 0; garden_sell_arm = -1;
+            garden_peddler_line = peddler_greeting();
             audio_play_sound(snd_page, 1, false);
         }
         // [M] / the music chip: cycle Default + the garden's track pool
@@ -1572,14 +1597,43 @@ if (!stash_mode_open && !loadout_open && !bairc_open && !text_entry_active() && 
 // STASH SCREEN - runs before the menu_open guard so it fires when menu is closed
 // =============================================================================
 if (stash_mode_open) {
+    // ---- 09-29 P0b FILTERS (equipment tab). Typing the search owns the keyboard while it
+    // is up (text_entry_active covers it, so the Android OSK shows and hotkeys stand down).
+    if (stash_search_typing) {
+        if (string_length(keyboard_string) > 24) keyboard_string = string_copy(keyboard_string, 1, 24);
+        stash_search = keyboard_string;
+        if (keyboard_check_pressed(vk_enter) || keyboard_check_pressed(vk_escape) || input_inject_take("stash:search")) {
+            stash_search_typing = false;
+            keyboard_clear(vk_enter); keyboard_clear(vk_escape);
+            io_clear();
+        }
+        stash_mode_index = 0; stash_scroll = 0;
+        exit;
+    }
+    if (stash_mode_tab == 0) {
+        var _fchg = false;
+        if (input_hotkey("F") || input_inject_take("stash:fslot")) { stash_f_slot = (stash_f_slot + 1) mod array_length(stash_filter_slots()); _fchg = true; }
+        if (input_hotkey("R") || input_inject_take("stash:frar"))  { stash_f_rar  = (stash_f_rar + 1) mod 5; _fchg = true; }
+        if (input_hotkey("G") || input_inject_take("stash:fsock")) { stash_f_sock = !stash_f_sock; _fchg = true; }
+        if (input_inject_take("stash:fclear")) { stash_f_slot = 0; stash_f_rar = 0; stash_f_sock = false; stash_search = ""; _fchg = true; }
+        if (keyboard_check_pressed(191) || input_inject_take("stash:search")) {   // 191 = '/' (vk_divide is the numpad key)
+            stash_search_typing = true; keyboard_string = stash_search;
+            audio_play_sound(snd_page, 1, false);
+            exit;
+        }
+        if (_fchg) { stash_mode_index = 0; stash_scroll = 0; audio_play_sound(snd_page, 1, false); }
+    }
+    // Equipment tab rows are a filtered VIEW of the arrays: _lv/_rv hold REAL indices.
+    var _lv = stash_equip_view(id, global.carried_items);
+    var _rv = stash_equip_view(id, global.equipment_stash);
     // Category tabs: 0 = equipment, 1 = consumables. Q/E flip the tab (matching
     // the journal/Maren/loadout idiom); both columns show only that category, so
     // the two item families no longer interleave in one long list.
     // Consumables navigate by GROUP (identical items share one xN row - see
     // ui_consumable_groups), equipment by individual item.
-    var _left_count  = (stash_mode_tab == 0) ? array_length(global.carried_items)
+    var _left_count  = (stash_mode_tab == 0) ? array_length(_lv)
                                              : array_length(ui_consumable_groups(global.consumable_inventory));
-    var _right_count = (stash_mode_tab == 0) ? array_length(global.equipment_stash)
+    var _right_count = (stash_mode_tab == 0) ? array_length(_rv)
                                              : array_length(ui_consumable_groups(global.consumable_stash));
     var _cur_count   = (stash_mode_side == 0) ? _left_count : _right_count;
 
@@ -1630,9 +1684,10 @@ if (stash_mode_open) {
     if (input_confirm() && stash_mode_tab != 2) {   // MISC is read-only - nothing to move
         // The tab picks the array pair, the side picks the direction.
         if (stash_mode_side == 0) {
-            if (stash_mode_tab == 0 && stash_mode_index < array_length(global.carried_items)) {
-                var _it = global.carried_items[stash_mode_index];
-                array_delete(global.carried_items, stash_mode_index, 1);
+            if (stash_mode_tab == 0 && stash_mode_index < array_length(_lv)) {
+                var _li = _lv[stash_mode_index];
+                var _it = global.carried_items[_li];
+                array_delete(global.carried_items, _li, 1);
                 array_push(global.equipment_stash, _it);
             } else if (stash_mode_tab == 1) {
                 // Grouped row: move ONE copy of the selected kind per press.
@@ -1646,13 +1701,14 @@ if (stash_mode_open) {
             }
             // Re-clamp against the POST-move count (a grouped xN row survives a
             // single-copy move, so the stale pre-move count would bump the cursor).
-            var _post_l = (stash_mode_tab == 0) ? array_length(global.carried_items)
+            var _post_l = (stash_mode_tab == 0) ? array_length(stash_equip_view(id, global.carried_items))
                                                 : array_length(ui_consumable_groups(global.consumable_inventory));
             stash_mode_index = clamp(stash_mode_index, 0, max(0, _post_l - 1));
         } else {
-            if (stash_mode_tab == 0 && stash_mode_index < array_length(global.equipment_stash)) {
-                var _it = global.equipment_stash[stash_mode_index];
-                array_delete(global.equipment_stash, stash_mode_index, 1);
+            if (stash_mode_tab == 0 && stash_mode_index < array_length(_rv)) {
+                var _ri = _rv[stash_mode_index];
+                var _it = global.equipment_stash[_ri];
+                array_delete(global.equipment_stash, _ri, 1);
                 array_push(global.carried_items, _it);
             } else if (stash_mode_tab == 1) {
                 // Grouped row: move ONE copy of the selected kind per press.
@@ -1664,7 +1720,7 @@ if (stash_mode_open) {
                     array_push(global.consumable_inventory, _it);
                 }
             }
-            var _post_r = (stash_mode_tab == 0) ? array_length(global.equipment_stash)
+            var _post_r = (stash_mode_tab == 0) ? array_length(stash_equip_view(id, global.equipment_stash))
                                                 : array_length(ui_consumable_groups(global.consumable_stash));
             stash_mode_index = clamp(stash_mode_index, 0, max(0, _post_r - 1));
         }
@@ -1713,7 +1769,7 @@ if (stash_mode_open) {
         if (_smx >= 45 && _smx < 900 && _smy >= 204 && _smy < _max_bot) {
             if (stash_mode_side != 0) { stash_mode_side = 0; stash_mode_index = 0; stash_scroll = 0; }
             else if (_smy >= _list_top) {
-                var _lcnt   = (stash_mode_tab == 0) ? array_length(global.carried_items)
+                var _lcnt   = (stash_mode_tab == 0) ? array_length(_lv)
                                                     : array_length(ui_consumable_groups(global.consumable_inventory));
                 var _lscr   = clamp(stash_scroll, 0, max(0, _lcnt - _rows_vis));
                 var _lrow   = _lscr + floor((_smy - _list_top) / _row_h);
@@ -1724,7 +1780,7 @@ if (stash_mode_open) {
         if (_smx >= 1020 && _smx < 1875 && _smy >= 204 && _smy < _max_bot) {
             if (stash_mode_side != 1) { stash_mode_side = 1; stash_mode_index = 0; stash_scroll = 0; }
             else if (_smy >= _list_top) {
-                var _rcnt   = (stash_mode_tab == 0) ? array_length(global.equipment_stash)
+                var _rcnt   = (stash_mode_tab == 0) ? array_length(_rv)
                                                     : array_length(ui_consumable_groups(global.consumable_stash));
                 var _rscr   = clamp(stash_scroll, 0, max(0, _rcnt - _rows_vis));
                 var _rrow   = _rscr + floor((_smy - _list_top) / _row_h);
@@ -3956,6 +4012,7 @@ if (variable_instance_exists(id, "bairc_open") && bairc_open && npc_tour_step < 
         garden_wip_t  = 0;     // WIP banner retired 09-17 (walkable diorama shipped)
         garden_shop_open = false; garden_place_pick = ""; garden_fx = [];
         garden_room_set("grounds"); garden_shelf_open = false; garden_hearth_t = -100000;   // 09-22 rooms
+        garden_decor_clear_cart_pitch();   // 09-29: ornaments on the peddler's pitch step aside
         // 09-17: spawn just inside the grounds, facing east; fresh steering state.
         garden_px = 300; garden_py = 1000; garden_vx = 0; garden_vy = 0;
         garden_face = garden_skin_frame(1, 0); garden_moving = false; garden_walk_t = 0;

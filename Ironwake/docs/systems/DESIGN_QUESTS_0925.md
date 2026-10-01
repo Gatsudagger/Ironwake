@@ -1,9 +1,9 @@
 # DESIGN_QUESTS_0925 — CONTRACTS: the quest / board rework
 
-Status: **BUILT 2026-09-29 (all five §8 steps, statically audited, awaiting M's F5).** Locked by M 2026-09-29 (§9). Was DRAFT 2026-09-25.
+Status: **BUILT + COMMITTED 2026-09-29 (11ee2a90, fixes 89cd4326 + 1fab8859); M F5 09-29: the game runs; the 7-point Contracts checklist (memory project_contracts_build_0929) is still to be confirmed line by line.** Locked by M 2026-09-29 (§9). Was DRAFT 2026-09-25. As-built reference; the open leftovers are listed in ROADMAP.md (Contracts leftovers).
 
 Build notes (09-29): run-start banner is the board header line + a run-summary block rather than a floor toast; §6 bond effects (Companion doubles a card, Lover free variant) not built; story bounties all name the Stone Golem (Ashen Vault) so every chain is completable at A0; contract seal = first uncleared EVENT room per floor; escort shares 30% of your blows and flees at 0 (never dies). Pulls §5.1 Contracts forward from P4 and folds in
-M's 09-25 asks. Builds as the batch right after Bairc's Ledger. Nothing here is built yet.
+M's 09-25 asks. Builds as the batch right after Bairc's Ledger. (Historical note: this paragraph predates the build.)
 
 M (09-25): *"right now they're blind click and farm mindless turn in for supplemental
 income/resources. i want the bulletin board to feel more like a bounty and true quest system.
@@ -54,7 +54,7 @@ idea from §5.1, folded in). Generator guarantees the ask is *possible at the po
 **Reagent wants**: `id` from `reagent_catalog` (vault_ash, cinder_marrow, rime_salt, void_silt) ×
 `n` (3–8). **Valuable wants**: `gold_value_min` (150/300/600). **Creature wants** (Bairc / Petra):
 "a creature whose habitat is X, at stage ≥ Y" — *not* consumed; it is shown, bond +2, and the
-creature earns a **keepsake tag** (name shown on its report card). Ties the Ledger's habitat
+creature earns a **token** (a named tag, e.g. "Bairc's Favourite"; called "token" to keep "keepsake" for the hut shelf) (name shown on its report card). Ties the Ledger's habitat
 model to the board.
 
 **Bounties**: `target` = enemy NAME (species) + optional `affix` (Warded / Hasted / Thorned /
@@ -73,7 +73,7 @@ At turn-in of any bounty or request, three cards; pick one:
 | **AN ITEM** | a rolled item at the poster's rarity (+1 if you over-delivered), **slot chosen from two** (the two shown are rolled from the ask's context: a weapon request pays weapons) | `drop_equipment` + `roll_affixes`, no new roller |
 
 **Story chains** pay fixed: each step pays a small COIN + a dialogue beat; the **finale pays a
-hand-authored named item** (see §5) *and* the chain's epithet / keepsake. No pick at the finale.
+hand-authored named item** (see §5) *and* the chain's epithet. No pick at the finale.
 
 Urgent postings pay ×2 on the COIN card only (so urgency reads as "take the money").
 
@@ -97,11 +97,11 @@ cannot die permanently; "dies" = leaves the run.
 
 ## 5. Story chains (7, one per NPC) and the named items
 
-Each chain: 3–4 steps, unlocked at Friend (tier 1), advancing only by turn-in, each step a
+Each chain: 3–4 steps, unlocked at Friend (bond gate_tier 2), advancing only by turn-in, each step a
 bounty / request / choice event in the NPC's voice, ending in a named elite (Nemesis-flavoured,
 §5.2 later) or a Cache. Written as data (`story_catalog`), ~40 lines of text per chain.
 
-Finale items (**7 hand-authored, rarity 3 "Storied", existing icons by slot, zero art**):
+Finale items (**7 hand-authored, rarity 4 "Storied" (LOCKED §9.4; exempt from the permanent-level equip gate, M 09-29), existing icons by slot, zero art**):
 fixed affixes chosen for the NPC's theme + a lore line + `unique_desc` that reuses an existing
 hook (e.g. Dorn's: "+1 armor per Reforge ingot spent this run" reads `run_honing`; Petra's: the
 Signet's price mult at 8%; Bairc's: pets take −10% damage). Two of the seven have a **choice
@@ -153,3 +153,21 @@ alone. Ships after Bairc's Ledger.
 5. Escort hirelings reuse the Knight ally math (lance strike + 45-frame act) as v1.
 6. Requests **consume** the handed item (Sacrifice). Creature wants are shown, not consumed.
 7. Bounty affix guarantee **overrides** the elite affix roll for that species in that dungeon.
+
+## 10. Post-build audit fixes (2026-09-29, after the doc review)
+
+- The mouse/touch loadout confirm (`obj_hub_controller` Step, the click path) now calls
+  `contracts_run_start_arm()`, as the keyboard path already did. Before this, armed next-run cards
+  never applied on Android or with a mouse.
+- The run-resume checkpoint now saves and restores `run_boon_mods`, `contract_escort`,
+  `contract_timed`, `contract_fired_this_run` and `ambush_force_name`, so a crash or Android kill
+  mid-run keeps the cards, the escort and the clock, and a seal cannot fire twice.
+- Handing over an item returns its socketed runes to the pouch (with an Inbox note), and Storied
+  items are never offered as request candidates.
+- Storied items skip the permanent-level rarity-4 equip gate (`item_is_storied`, M 09-29).
+
+**Built later 09-29:** §6 bond effects - at Companion+ a 30% chance one card is DOUBLED (coin x2 with
+dust, the boon armed twice, or both rolled items); at Lover the Storied finale of a two-ending chain
+(Sable, Vael) carries BOTH paths' affixes. The three story bounties name three different Vault elites
+(Stone Golem, Vault Guardian, The Second Count); Petra's step is renamed "Collections" ("The Debtor"
+is already an epithet).

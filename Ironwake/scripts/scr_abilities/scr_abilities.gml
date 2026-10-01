@@ -2172,6 +2172,8 @@ function ability_effect_full(ab) {
                 }
             }
             if (_t_chg > 1) _t_line += " Can be triggered " + string(_t_chg) + " times before it expires.";
+            if (ab.name == "Bear Trap" || ab.name == "Tripline")   // COVER pull (P2 2.1, 09-29)
+                _t_line += " A back-line foe that springs it is DRAGGED forward - no cover for 2 of its turns.";
             // Name the talents that are actually changing these numbers, so the
             // panel explains WHY it differs from the base ability.
             var _t_tal = [];

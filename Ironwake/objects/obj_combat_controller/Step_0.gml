@@ -759,6 +759,9 @@ if (player_turn) {
     // (DoTs deal damage; all durations decrement). Mirrors the enemy tick.
     if (need_player_status_tick) {
         need_player_status_tick = false;
+        // §2.4 FERVOR decays 20 as your turn opens; the category chain restarts.
+        if (variable_struct_exists(player, "fervor")) player.fervor = max(0, player.fervor - 20);
+        player.fervor_last_cat = "";
         // TIDEBOUND NECKLACE (09-03): once per combat, opening a turn below 30%
         // HP the tide comes in - heal 20% max HP and wash one affliction away.
         if (variable_struct_exists(player, "leg_tide") && player.leg_tide && !player.leg_tide_used
@@ -1420,6 +1423,7 @@ if (player_turn) {
     // Desktop mouse keeps press semantics - byte-identical for device 0/1.
     var _cb_tap = (input_device() == 2) && touch_tap();
     var _cb_lp  = (input_device() == 2) && touch_lp();
+    if (_cb_tap) touch_inspect_idx = -1;   // 09-29 P0b: any tap unpins the enemy inspect panel
     if ((input_device() != 2 && mouse_check_button_pressed(mb_left)) || _cb_tap || _cb_lp) {
         var _cmx = _cb_tap ? touch_tap_x() : (_cb_lp ? touch_lp_x() : device_mouse_x_to_gui(0));
         var _cmy = _cb_tap ? touch_tap_y() : (_cb_lp ? touch_lp_y() : device_mouse_y_to_gui(0));
@@ -1457,6 +1461,7 @@ if (player_turn) {
                 var _cbar_y = 96 + (_cbar_li div 2) * 132;   // keep in sync with Draw_64 _bar_row_gap
                 if (_cmx >= _cbar_x && _cmx < _cbar_x + 400 && _cmy >= _cbar_y && _cmy < _cbar_y + 42) {
                     selected_target = _cbar_li;
+                    if (_cb_lp) touch_inspect_idx = _cbar_li;   // 09-29 P0b: long-press pins the inspect panel
                 }
                 _cbar_li++;
             }
@@ -1604,7 +1609,7 @@ if (player_turn) {
                     for (var _sd_i = 0; _sd_i < array_length(_liv); _sd_i++) {
                         var _sd_e = _liv[_sd_i];
                         var _sd_d = max(1, (variable_struct_exists(_sm, "power") ? _sm.power : 22) - _sd_e.el_resist);
-                        _sd_e.HP -= _sd_d;
+                        _sd_d = combat_direct_hit(_sd_e, _sd_d);   // 09-30 audit
                         _sd_e.hit_flash = 15;
                         array_push(combat_log, _sd_e.name + " takes " + string(_sd_d) + " fire damage from the eruption!");
                         if (variable_struct_exists(_sd_e, "last_ex")) {
@@ -1629,7 +1634,7 @@ if (player_turn) {
                     for (var _sd_i = 0; _sd_i < array_length(_liv); _sd_i++) {
                         var _sd_e = _liv[_sd_i];
                         var _sd_d = 8;
-                        _sd_e.HP -= _sd_d;
+                        _sd_d = combat_direct_hit(_sd_e, _sd_d);   // 09-30 audit
                         _sd_e.hit_flash = 12;
                         array_push(_sd_e.status_effects, { name: "Warding Shockwave", effect_type: "debuff",
                             kind: "vulnerable", effect_value: 2, duration: 2, source: "player" });
@@ -1646,7 +1651,7 @@ if (player_turn) {
                     for (var _sd_i = 0; _sd_i < array_length(_liv); _sd_i++) {
                         var _sd_e = _liv[_sd_i];
                         var _sd_d = max(1, 14 - _sd_e.el_resist);
-                        _sd_e.HP -= _sd_d;
+                        _sd_d = combat_direct_hit(_sd_e, _sd_d);   // 09-30 audit
                         _sd_e.hit_flash = 12;
                         array_push(combat_log, _sd_e.name + " takes " + string(_sd_d) + " shock damage from the arc!");
                         if (variable_struct_exists(_sd_e, "last_ex")) {
@@ -1723,11 +1728,15 @@ if (player_turn) {
         // than a wasted whiff; the damage sink still zeroes anything that
         // arrives another way). Self-casts pass untouched.
         var _ph_block = false;
+        var _cov_block = "";   // §2.1 COVER gate (09-29): melee can't reach a covered back-liner
         if (!ab.self_targeted) {
             var _ph_liv = combat_living_enemies(combat_state);
             if (selected_target >= 0 && selected_target < array_length(_ph_liv)) {
                 var _ph_t = _ph_liv[selected_target];
                 _ph_block = variable_struct_exists(_ph_t, "phased_turns") && _ph_t.phased_turns > 0;
+                if (!(variable_struct_exists(ab, "is_aoe") && ab.is_aoe)
+                    && ability_attack_class(ab) == "melee_attack" && combat_enemy_covered(combat_state, _ph_t))
+                    _cov_block = _ph_t.name;
             }
         }
 
@@ -1745,6 +1754,9 @@ if (player_turn) {
 
         } else if (_ph_block) {
             array_push(combat_log, "It is PHASED - nothing will touch it until it returns. Pick another target or another play.");
+
+        } else if (_cov_block != "") {
+            array_push(combat_log, _cov_block + " is COVERED behind the front line - " + ab.name + " can't reach it. Use a ranged attack, a spell, or clear the front first.");
 
         // Resource gate - must have enough energy and secondary resource. Name the
         // missing resource explicitly ("Not enough resources." told M nothing when
@@ -2235,7 +2247,9 @@ if (player_turn) {
                     var _trk_acc = (player.class_id == 2 && variable_struct_exists(player, "preparation")
                                     && trunk_has("prep_acc")) ? 2 * player.preparation : 0;
                     var _cast_acc = ab.base_acc - combat_status_max(player, "blind") * 100
-                                    + rune_aspect_ranged_acc(ab) + _trk_acc;
+                                    + rune_aspect_ranged_acc(ab) + _trk_acc
+                                    // §2.1 COVER: a single-target ranged attack at a covered back-liner is -10.
+                                    - ((!_is_aoe && ability_attack_class(ab) == "ranged_attack" && combat_enemy_covered(combat_state, target)) ? 10 : 0);
                     // Inevitable Arcana trunk node (P2, 08-05): at 5+ Souls, spells cannot miss.
                     var _trk_sure = (player.class_id == 0 && variable_struct_exists(player, "souls")
                                      && player.souls >= 5 && ability_class_is_spell(ability_attack_class(ab))
@@ -3014,6 +3028,7 @@ if (player_turn) {
                             var _wk = enemy_weak_school(target.name);
                             if (_wk != "" && _wk == ability_school(ab)) {
                                 _final_dmg = round(_final_dmg * 1.30);
+                                target.guard_weak_hit = true;   // §2.2: a weakness blow chips guard double
                                 if (!variable_struct_exists(target, "weak_refunded") || !target.weak_refunded) {
                                     target.weak_refunded = true;
                                     player.energy += 1;
@@ -4158,6 +4173,7 @@ if (player_turn) {
                                     player.energy += 1;
                                     player.interrupt_used = true;
                                     array_push(combat_log, "INTERRUPT! " + target.name + "'s charged attack is broken - +1 AP!");
+                                    combat_fervor_add(player, 20, combat_log);   // §2.4
                                 }
 
                                 // Plaguebearer: single-target debuffs/DoTs also strike every
@@ -4768,6 +4784,7 @@ if (player_turn) {
 
             // Track use for this turn; player presses T to end their turn
             array_push(abilities_used_this_turn, ab.name);
+            combat_fervor_on_cast(player, ab, combat_log);   // §2.4 FERVOR: variety feeds it
         }
     }
 
@@ -5009,6 +5026,7 @@ if (player_turn) {
                 combat_apply_damage(actor, _q_rip);
                 actor.hit_flash = max(actor.hit_flash, 10);
                 array_push(combat_log, "PERFECT PARRY! " + actor.name + "'s blow is turned - riposte for " + string(_q_rip) + "!");
+                combat_fervor_add(player, 10, combat_log);   // §2.4 FERVOR: a perfect parry feeds it
                 if (actor.HP <= 0 && !actor.is_defeated) {
                     combat_on_enemy_defeated(actor, player, combat_log);
                     array_push(combat_log, "The riposte fells " + actor.name + " - the blow never lands!");
@@ -5043,6 +5061,7 @@ if (player_turn) {
                 && variable_struct_exists(actor, "intent") && actor.intent != undefined
                 && (actor.intent.eab == undefined || actor.intent.eab.kind == "spell")
                 && enemy_intent_blocked(actor) == ""
+                && !(variable_struct_exists(actor, "staggered_turns") && actor.staggered_turns > 0)   // 09-30 audit: a staggered foe swings at nothing
                 && !_q_thrust
                 && player.blink_charges <= 0
                 && player.shadow_step_charges <= 0
@@ -5110,10 +5129,26 @@ if (player_turn) {
         var _actor_reach = variable_struct_exists(actor, "reach") ? actor.reach : "melee";
         var _actor_kind  = variable_struct_exists(actor, "kind")  ? actor.kind  : "attack";
         var _ctrl_reason = "";
-        if (combat_has_status(actor, "stun"))                                       _ctrl_reason = "is stunned and cannot act";
+        // §2.2 BREAK BAR: checked FIRST so a stun landing on a staggered foe costs one
+        // turn, not two; the stun still ticks down below.
+        // 09-30 COMBO BREAKER: the guard comes back FULL and 50% larger, and the foe is
+        // BRACED (unbreakable) until it takes a real turn - see combat_guard_chip.
+        if (variable_struct_exists(actor, "staggered_turns") && actor.staggered_turns > 0) {
+            _ctrl_reason = "is STAGGERED and loses its turn";
+            actor.staggered_turns = 0;
+            actor.guard_max    = round(actor.guard_max * 1.5);
+            actor.guard        = actor.guard_max;
+            actor.guard_braced = true;
+            array_push(combat_log, actor.name + " BRACES - its guard returns stronger and cannot break until it acts.");
+        }
+        else if (combat_has_status(actor, "stun"))                                  _ctrl_reason = "is stunned and cannot act";
         else if (combat_has_status(actor, "root")    && _actor_reach == "melee")    _ctrl_reason = "is rooted and can't reach you";
         else if (combat_has_status(actor, "silence") && _actor_kind  == "spell")    _ctrl_reason = "is silenced and can't cast";
         var _was_controlled = (_ctrl_reason != "");
+        // A real turn ends the BRACE: from here the guard can be worn down again.
+        if (!_was_controlled && variable_struct_exists(actor, "guard_braced")) actor.guard_braced = false;
+        // §2.1 COVER: a pull wears off over the dragged foe's own turns.
+        if (variable_struct_exists(actor, "pulled_turns") && actor.pulled_turns > 0) actor.pulled_turns--;
 
         // --- Tick status effects on this enemy ---
         // Runs before the enemy attacks so DoT can kill the enemy before they act.
@@ -5150,6 +5185,7 @@ if (player_turn) {
                     && combat_status_element(_se) == "bleed") {
                     _dot_dmg += pet_active_innate("bleed_dmg");
                 }
+                actor.guard_dot_hit = true;   // §2.2: DoT ticks chip guard at half weight
                 combat_apply_damage(actor, _dot_dmg);
                 // Accelerating DoT (Entropy 07-16): each tick grows by `accel` (6/8/10/12).
                 if (variable_struct_exists(_se, "accel") && _se.accel > 0) _se.effect_value += _se.accel;
@@ -5432,6 +5468,12 @@ if (player_turn) {
                 }
 
                 array_push(combat_log, actor.name + " springs the " + _tp.name + "!");
+                // §2.1 COVER (09-29): Bear Trap and Tripline DRAG a back-liner that springs them
+                // out of the back line - no cover for two of its turns.
+                if ((_tp.name == "Bear Trap" || _tp.name == "Tripline") && combat_enemy_is_back(actor)) {
+                    actor.pulled_turns = 2;
+                    array_push(combat_log, actor.name + " is dragged out of the back line - no cover for 2 turns!");
+                }
                 // Spring conveyance v2 (M 08-13: the old flash sat low, near the log,
                 // and read as nothing). The banner now lands CENTER SCREEN and the
                 // trap's own flash bursts big ON the enemy that sprang it, so cause
@@ -5457,7 +5499,7 @@ if (player_turn) {
                                          col: trap_spring_tint(_tp.name) });
 
                 if (_tp_dmg > 0) {
-                    actor.HP -= _tp_dmg;
+                    _tp_dmg = combat_direct_hit(actor, _tp_dmg);   // 09-30 audit: wears guard, +30% when staggered
                     array_push(combat_log, actor.name + " takes " + string(_tp_dmg) + " damage from the trap!");
                 }
                 // Trap springs read as attacks in the log (M 08-13): attach the same
@@ -5518,8 +5560,8 @@ if (player_turn) {
                     for (var _tsi = 0; _tsi < array_length(combat_state.combatants); _tsi++) {
                         var _tsc = combat_state.combatants[_tsi];
                         if (_tsc.is_player || _tsc.is_defeated || _tsc == actor) continue;
-                        _tsc.HP -= _tp_dmg;
-                        array_push(combat_log, _tsc.name + " catches the spread for " + string(_tp_dmg) + "!");
+                        var _tsd = combat_direct_hit(_tsc, _tp_dmg);
+                        array_push(combat_log, _tsc.name + " catches the spread for " + string(_tsd) + "!");
                         if (_tsc.HP <= 0) combat_on_enemy_defeated(_tsc, player, combat_log);
                     }
                 }

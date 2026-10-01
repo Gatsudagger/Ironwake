@@ -213,6 +213,11 @@ function combat_next_turn(combat_state) {
         actor.energy += 1;
     }
 
+    // FERVOR (09-30 audit): AP it earned off-turn arrives now.
+    if (actor.is_player && variable_struct_exists(actor, "fervor_ap") && actor.fervor_ap > 0) {
+        actor.energy += actor.fervor_ap;
+        actor.fervor_ap = 0;
+    }
     // Galvanize (D§4, M-approved 07-09): a killing blow last turn banked +1 AP.
     if (actor.is_player && variable_struct_exists(actor, "galvanize_ap") && actor.galvanize_ap > 0) {
         actor.energy += actor.galvanize_ap;
@@ -981,9 +986,16 @@ function combat_apply_damage(target_struct, damage) {
                     + string(target_struct.shield_hp) + " remains)."));
         }
     }
+    // STAGGERED (§2.2 break bar, 09-29): a broken foe takes +30% from everything.
+    if (damage > 0 && variable_struct_exists(target_struct, "is_player") && !target_struct.is_player
+        && variable_struct_exists(target_struct, "staggered_turns") && target_struct.staggered_turns > 0) {
+        damage = round(damage * 1.30);
+    }
     var prev_hp         = target_struct.HP;
     target_struct.HP    = max(0, target_struct.HP - damage);
     var actual_dealt    = prev_hp - target_struct.HP;
+    if (variable_struct_exists(target_struct, "is_player") && !target_struct.is_player)
+        combat_guard_chip(target_struct, actual_dealt);   // §2.2: every blow wears the guard
     // RUN SUMMARY counters (09-25, §4.2): what you dealt and what you took, this run.
     if (actual_dealt > 0) {
         if (variable_struct_exists(target_struct, "is_player") && target_struct.is_player) {
@@ -2111,6 +2123,7 @@ function combat_tick_statuses(c, log) {
                     if (variable_struct_exists(_es_pl, "leg_censer") && _es_pl.leg_censer) _es_bonus = 2;
                 }
             }
+            c.guard_dot_hit = true;   // §2.2: DoT ticks chip guard at half weight
             combat_apply_damage(c, _se.effect_value + _es_bonus);
             array_push(log, _cname + " takes " + string(_se.effect_value + _es_bonus) + " " + _se.name + " damage!"
                 + (_es_bonus > 0 ? "  (Censer +2)" : ""));
@@ -2920,7 +2933,10 @@ function combat_on_enemy_defeated(target, player, combat_log) {
     global.current_run_kills++;
     global.total_kills++;   // lifetime counter - was initialized/saved/shown but never incremented (hub always read 0)
     mark_record_kill(target.name);   // Hunter's Marks per species (09-24, §5.4)
-    bounty_tick_kill(target.name);   // CONTRACTS (09-29): named-foe bounties ("Stone Golem@ashen_vault")
+    // 09-30 audit: only the MARKED foe counts - never its Twinned copy, never an unmarked one.
+    if (!(variable_struct_exists(target, "is_twin") && target.is_twin)
+        && (bounty_forced_affix(target.name) == "" || (variable_struct_exists(target, "bounty_mark") && target.bounty_mark)))
+        bounty_tick_kill(target.name);   // CONTRACTS (09-29): named-foe bounties ("Stone Golem@ashen_vault")
     quest_tick("kill_family", enemy_cull_family(target.name), 1);   // 09-15: elemental-first family   // Phase 4a quest objective
     array_push(combat_log, "Gained " + string(_gold_drop) + "g!");
 
@@ -3119,6 +3135,16 @@ function combat_knight_act(combat_state, player, combat_log, damage_popups, dmg,
     return true;
 }
 
+// BLOODNOSE calling (§1.7 combat echo, 09-29): +20% pet damage to a target carrying a Bleed DoT.
+function combat_pet_bloodnose_mult(pet, target) {
+    if (!pet_calling_has(pet, "bloodnose") || !is_struct(target)) return 1;
+    for (var _i = 0; _i < array_length(target.status_effects); _i++) {
+        var _se = target.status_effects[_i];
+        if (combat_status_kind_of(_se) == "dot" && combat_status_element(_se) == "bleed") return 1.20;
+    }
+    return 1;
+}
+
 function combat_pet_act(combat_state, player, combat_log, damage_popups) {
     // Ashen Duelist (M-locked): the duel is STRICTLY 1v1 - the companion sits out.
     if (variable_global_exists("duel_active") && global.duel_active) return false;
@@ -3165,7 +3191,7 @@ function combat_pet_act(combat_state, player, combat_log, damage_popups) {
         var _spk = combat_pet_pick_target(combat_state, _sel);
         if (_spk.t == undefined) return false;
         var _sdm = max(1, round((_adult ? 16 : 8) * 0.5 * _imult * _cmult * pet_stat_mult(_p, "pow")));
-        var _sdd = combat_resolve_damage(_sdm, 0, _spk.t.armor, _spk.t.el_resist);
+        var _sdd = combat_resolve_damage(round(_sdm * combat_pet_bloodnose_mult(_p, _spk.t)), 0, _spk.t.armor, _spk.t.el_resist);
         if (_sdd < 1) _sdd = 1;
         combat_apply_damage(_spk.t, _sdd);
         var _spt = combat_enemy_vfx_point(_spk.t);
@@ -3205,7 +3231,7 @@ function combat_pet_act(combat_state, player, combat_log, damage_popups) {
                 var _c = combat_state.combatants[_i];
                 if (_c.is_player || _c.is_defeated) continue;
                 var _cmul = (_c.max_HP > 0 && _c.HP < _c.max_HP * 0.30) ? _exec : 1;
-                var _cd = combat_resolve_damage(round(_base * _cmul), 0, _c.armor, _c.el_resist);
+                var _cd = combat_resolve_damage(round(_base * _cmul * combat_pet_bloodnose_mult(_p, _c)), 0, _c.armor, _c.el_resist);
                 if (_cd < 1) _cd = 1;
                 combat_apply_damage(_c, _cd);
                 // Executioner slay (C4): finish a still-standing target under 15%.
@@ -3275,7 +3301,7 @@ function combat_pet_act(combat_state, player, combat_log, damage_popups) {
             if (!_mv_bled) _mv = "Rend";
         }
         var _mv_mul = (_mv == "Pounce") ? 1.5 : ((_mv == "Rend") ? 0.75 : 1.0);
-        var _dmg = combat_resolve_damage(round(_base * _emul * _opp * _mv_mul), 0, _best.armor, _best.el_resist);
+        var _dmg = combat_resolve_damage(round(_base * _emul * _opp * _mv_mul * combat_pet_bloodnose_mult(_p, _best)), 0, _best.armor, _best.el_resist);
         if (_dmg < 1) _dmg = 1;
         combat_apply_damage(_best, _dmg);
         var _mv_pt = combat_enemy_vfx_point(_best);
@@ -3723,4 +3749,110 @@ function combat_pet_act_storied(combat_state, player, combat_log, damage_popups)
         array_push(combat_log, "[Companion] The whistle's note - you recover " + string(_h) + " HP.");
     }
     return _acted;
+}
+
+// =============================================================================
+// P2 COMBAT DEPTH (DESIGN_IMPROVEMENT_PLAN_0924 §2.1 / §2.2 / §2.4, built 09-29)
+// =============================================================================
+// ---- COVER (§2.1): the LINE is role-based, not where the sprite stands. Ranged foes
+// and spellcasters hold the BACK line; everyone else the FRONT. A back-liner is
+// COVERED while any front-liner still stands: single-target MELEE attacks cannot
+// reach it, single-target RANGED attacks take -10 accuracy, spells and AoE ignore
+// cover. Bear Trap / Tripline PULL a covered foe forward for 2 of its turns.
+function combat_enemy_is_back(e) {
+    if (!is_struct(e) || e.is_player) return false;
+    if (variable_struct_exists(e, "pulled_turns") && e.pulled_turns > 0) return false;
+    var _reach = variable_struct_exists(e, "reach") ? e.reach : "melee";
+    var _kind  = variable_struct_exists(e, "kind")  ? e.kind  : "attack";
+    return (_reach == "ranged" || _kind == "spell");
+}
+function combat_enemy_covered(cs, e) {
+    if (!combat_enemy_is_back(e) || !is_struct(cs)) return false;
+    for (var _i = 0; _i < array_length(cs.combatants); _i++) {
+        var _o = cs.combatants[_i];
+        if (_o.is_player || _o.is_defeated || _o == e) continue;
+        if (!combat_enemy_is_back(_o)) return true;   // a front-liner stands
+    }
+    return false;
+}
+
+// ---- BREAK BAR (§2.2): elites + bosses carry GUARD = 25% max HP. Every blow chips it
+// (weakness-school hits x2, DoT ticks x0.5). At 0 the foe is STAGGERED: it loses its
+// next turn and takes +30% damage until then.
+// 09-30 COMBO BREAKER (M: "I could stagger a boss continually"): after the lost turn the
+// guard returns FULL and 50% larger each time (25% -> 37.5% -> 56% of max HP), and the foe
+// is BRACED - no chip at all - until it has taken a real turn. A stagger also counts on the
+// shared control-resist ramp (combat_control_resist_try), so Stun/Root/Silence right after
+// a break face the higher resist too. No stagger-stun-stagger lock is possible.
+// Chip + stagger live in combat_apply_damage (every damage path funnels there).
+// 09-30 audit: the damage paths that subtract HP directly (trap springs, the golem's
+// eruption) still honour the break bar - +30% on a STAGGERED foe, and the blow wears guard.
+function combat_direct_hit(e, dmg) {
+    if (dmg <= 0 || !is_struct(e)) return 0;
+    if (variable_struct_exists(e, "staggered_turns") && e.staggered_turns > 0) dmg = round(dmg * 1.30);
+    var _hp0 = e.HP;
+    e.HP -= dmg;
+    combat_guard_chip(e, min(dmg, max(0, _hp0)));
+    return dmg;
+}
+function combat_guard_stamp(e) {
+    e.guard_max = max(1, round(e.max_HP * 0.25));
+    e.guard     = e.guard_max;
+    e.staggered_turns = 0;
+    e.guard_braced    = false;
+}
+function combat_guard_chip(e, dealt) {
+    // The per-hit flags are read + cleared FIRST, so a zero-damage blow never leaves one armed.
+    var _weak = variable_struct_exists(e, "guard_weak_hit") && e.guard_weak_hit;
+    var _dot  = variable_struct_exists(e, "guard_dot_hit") && e.guard_dot_hit;
+    e.guard_weak_hit = false; e.guard_dot_hit = false;
+    if (dealt <= 0 || !variable_struct_exists(e, "guard_max") || e.guard_max <= 0) return;
+    if (e.staggered_turns > 0 || e.HP <= 0) return;
+    if (variable_struct_exists(e, "guard_braced") && e.guard_braced) return;   // 09-30 combo breaker
+    e.guard = max(0, e.guard - dealt * (_weak ? 2 : (_dot ? 0.5 : 1)));
+    if (e.guard <= 0) {
+        e.staggered_turns = 1;
+        if (!variable_struct_exists(e, "control_stuck_n")) e.control_stuck_n = 0;
+        e.control_stuck_n += 1;   // shares the escalating control-resist ramp
+        if (instance_exists(obj_combat_controller)) {
+            var _cc = instance_find(obj_combat_controller, 0);
+            array_push(_cc.combat_log, e.name + " is STAGGERED - it loses its next turn and takes +30% damage!");
+            combat_fervor_add(_cc.player, 10, _cc.combat_log);
+            var _sa = combat_enemy_vfx_point(e);
+            array_push(_cc.damage_popups, { value: 0, text: "STAGGERED!", x: _sa.x, y: _sa.y - 130, timer: 60, col: make_color_rgb(255, 190, 80) });
+        }
+    }
+}
+
+// ---- FERVOR (§2.4, renamed from "Momentum" 09-29 - Strike's refund owns that word) ----
+// 0-100, combat-scoped. +15 for each ability whose CATEGORY differs from the last one
+// used this turn (the first cast of a turn counts), +10 per PERFECT parry, +20 per
+// INTERRUPT, +10 per STAGGER. -20 at the start of each of your turns. At 100 it empties
+// for +1 AP (a surplus pip, orange like AP items). Finishers replace the AP in P3 (Oaths).
+#macro FERVOR_MAX 100
+function combat_fervor_add(p, amt, log) {
+    if (!is_struct(p) || amt <= 0) return;
+    if (!variable_struct_exists(p, "fervor")) p.fervor = 0;
+    p.fervor += amt;
+    if (p.fervor >= FERVOR_MAX) {
+        p.fervor = 0;
+        // 09-30 audit: earned on the ENEMY's turn (parry, stagger by a riposte / DoT / pet)?
+        // Bank it - the turn-start refill would overwrite it (Galvanize idiom).
+        var _myturn = true;
+        if (instance_exists(obj_combat_controller)) {
+            var _fcc = instance_find(obj_combat_controller, 0);
+            _myturn = variable_struct_exists(_fcc.combat_state, "active") && _fcc.combat_state.active == p;
+        }
+        if (_myturn) p.energy += 1;
+        else p.fervor_ap = (variable_struct_exists(p, "fervor_ap") ? p.fervor_ap : 0) + 1;
+        if (is_array(log)) array_push(log, "FERVOR! The rhythm of it carries you - +1 AP" + (_myturn ? "." : " on your turn."));
+        audio_play_sound(snd_confirm_major, 1, false);
+    }
+}
+function combat_fervor_on_cast(p, ab, log) {
+    if (!is_struct(p) || !is_struct(ab)) return;
+    var _cat = ability_category(ab);
+    if (!variable_struct_exists(p, "fervor_last_cat")) p.fervor_last_cat = "";
+    if (_cat != "" && _cat != p.fervor_last_cat) { combat_fervor_add(p, 15, log); tutorial_try_show("fervor"); }
+    p.fervor_last_cat = _cat;
 }

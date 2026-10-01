@@ -240,7 +240,7 @@ function __input_ctx() {
         if (_gc.tavern_board_open)                                         return "board";
         if (_gc.journal_open)                                              return "journal";
         if (_gc.menu_open)                                                 return "charmenu";
-        if (_gc.stash_mode_open)                                           return "none";
+        if (_gc.stash_mode_open)                                           return "stash";   // 09-29: filter hotkeys
         if (_gc.loadout_open)                                              return "loadout";
         if (_gc.level_alloc_open)                                          return "none";
         if (_gc.dungeon_select_open)                                       return "none";
@@ -288,6 +288,8 @@ function __input_pad_hotkey_map() {
         // 09-25 Bairc's Ledger screen: R = SEND the party (RT), Q/E tabs ride input_tab_prev/next.
         _s = {}; _s[$ "R"] = gp_shoulderrb;                          _m[$ "ledger"]   = _s;
         _s = {};                                                     _m[$ "inbox"]    = _s;
+        // 09-29 stash filters: F slot / R rarity / G socketed on X / Y / R3 (search is keyboard + tap).
+        _s = {}; _s[$ "F"] = gp_face3; _s[$ "R"] = gp_face4; _s[$ "G"] = gp_stickr;   _m[$ "stash"]    = _s;
         _s = {};                                                     _m[$ "summary"]  = _s;
         _s = {}; _s[$ "E"] = gp_shoulderrb; _s[$ "G"] = gp_stickr;
                  _s[$ "J"] = gp_shoulderlb; _s[$ "I"] = gp_start;

@@ -1,7 +1,7 @@
 # PETS_DESIGN.md — Creature / Pet Subsystem
 
 **System:** Pets & the Creature Keeper (Bairc)
-**Status:** DESIGN COMPLETE — not yet implemented
+**Status:** BUILT (pets phases 1-4, signature forms, stances, commands, Ledger expeditions shipped 06-30 → 09-28). As-built reference; original design text below.
 **Build phase:** **Phase 2–3** (after Petra TT). Phase 2 = non-combat (Bairc net-new NPC, hatch, Companion Gate tab, feed via Petra, Stage evolution reusing Phase-1 banking hook + persistence). Phase 3 = combat/corruption/injury. See `BUILD_ORDER.md`.
 **Depends on:** event/shrine/curse room system, 3-AP combat, trait system, hybrid affix system, Petra merchant, Gate loadout screen, full-clear extraction logic
 **Stage-4 (Awakened) effects:** DESIGNED + BUILT 2026-07-03 — see §4a (splash crossover, A5 full-clear + Soul-bound gate, aura art treatment)

@@ -602,6 +602,17 @@ global.__sprite_includes = [
     spr_npc_bairc_idle, spr_npc_bairc_action, spr_npc_bairc_portrait,
     spr_tavern_board,   // Tavern Requests panel art (asset_get_index string ref, Phase 4b)
     spr_hub_background,
+    spr_npc_peddler_idle,
+    spr_garden_grave_hound,
+    spr_garden_grave_wing,
+    spr_garden_grave_serpent,
+    spr_garden_grave_moth,
+    spr_garden_grave_horn,
+    spr_garden_grave_shell,
+    spr_garden_grave_feline,
+    spr_garden_grave_mire,
+    spr_garden_grave_tide,
+    spr_garden_grave_burrow,
     spr_garden_cart,
     spr_garden_orn_rug,
     spr_garden_orn_perch,
@@ -904,7 +915,10 @@ garden_goal_x     = 0;      // interactable tapped in Draw -> walk there then fi
 garden_goal_y     = 0;
 garden_pets       = [];     // resident steering state (garden_pets_ensure/_tick)
 garden_pets_n     = -1;     // resident count the state was built for (rebuild on change)
-garden_shop_tab     = 0;    // 0 = ORNAMENTS, 1 = GROUNDS (seasonal themes)
+garden_shop_tab     = 1;    // 09-30 LOGICAL tab: 0 BUY, 1 STORED, 2 GROUNDS, 3 SELL
+garden_shop_mode    = "own";   // 09-30: "own" ([B], stores only) or "cart" (Gall: buy / sell / grounds)
+garden_sell_arm     = -1;      // 09-30: row armed for SELL (second press sells)
+garden_peddler_line = "";      // 09-30: Gall's greeting for this visit
 garden_remove_arm   = -1;   // placed-ornament index armed for "take up" (second press confirms)
 garden_remove_arm_t = 0;    // frames the arm stays live
 garden_shelf_open   = false;   // 09-22 keepsake shelf panel (hut interior)
@@ -1594,6 +1608,11 @@ stash_mode_side  = 0;       // 0 = carried column, 1 = stash column
 stash_mode_index = 0;
 stash_scroll     = 0;       // active column scroll offset (edge-triggered window)
 stash_mode_tab   = 0;       // 0 = equipment, 1 = consumables (Q/E)
+stash_f_slot     = 0;       // 09-29 P0b stash filters (equipment tab): slot index / min rarity / socketed only / search text
+stash_f_rar      = 0;
+stash_f_sock     = false;
+stash_search     = "";
+stash_search_typing = false;
 
 
 // -----------------------------------------------------------------------------
@@ -1826,6 +1845,7 @@ ledger_cursor          = 0;      // highlighted roster row
 ledger_scroll          = 0;
 ledger_party           = [];     // roster indices picked for the offer
 ledger_out_cursor      = 0;      // highlighted party on the OUT tab
+ledger_focus           = 0;      // 09-29 redesign: 0 = the JOBS column, 1 = the CREATURES column (A/D switch, W/S move inside)
 ledger_notice          = "";     // one-line feedback under the SEND button
 ledger_report_open     = false;  // Bairc's report page (missions that came home) - shown on hub arrival
 ledger_report_armed    = false;
